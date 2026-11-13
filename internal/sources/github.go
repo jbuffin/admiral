@@ -68,6 +68,8 @@ type openArgs struct {
 	onNote      func(method string, params json.RawMessage)
 	logf        func(format string, a ...any)
 	setWarnings func([]string)
+	// emit delivers an event this source saw itself; nil when nothing listens.
+	emit func(Event)
 }
 
 // A failed view keeps its last good orders next to the error.
@@ -94,12 +96,14 @@ type githubConn struct {
 	views    map[string]ghView
 	authMsg  string // the auth.required message in force
 	stopped  bool
+	// seen holds, per view or event search, the items its last answer had; a search with no entry yet has had no baseline.
+	seen map[string]map[string]bool
 }
 
 func openGitHub(a openArgs) *githubConn {
 	ctx, cancel := context.WithCancel(context.Background())
 	g := &githubConn{openArgs: a, fleet: a.def.Fleet, gone: make(chan struct{}), ctx: ctx, cancel: cancel,
-		wake: make(chan struct{}, 1), views: map[string]ghView{}}
+		wake: make(chan struct{}, 1), views: map[string]ghView{}, seen: map[string]map[string]bool{}}
 	if f, ok := a.cfg().Fleet(a.def.Fleet); ok {
 		g.env = f.Environ()
 	} else {
@@ -162,6 +166,15 @@ func (g *githubConn) call(ctx context.Context, method string, params any, _ time
 	case "orders.refresh":
 		g.refreshNow()
 		return json.RawMessage("{}"), nil
+	case "events.catalog":
+		g.mu.Lock()
+		kinds := []EventKind{{Kind: "review_requested", Title: "Review requested of you"}, {Kind: "assigned", Title: "Assigned to you"},
+			{Kind: "mentioned", Title: "You are mentioned"}}
+		for _, v := range g.settings.Views {
+			kinds = append(kinds, EventKind{Kind: "new_in_view", Title: "New in " + v.Title, Panel: v.ID})
+		}
+		g.mu.Unlock()
+		return json.Marshal(kinds)
 	case "orders.launched": // Admiral hides the order while its ship is at sea
 		return json.RawMessage("{}"), nil
 	}
@@ -305,8 +318,9 @@ func (g *githubConn) refresh() {
 	if wasOut {
 		g.notify("auth.ok", nil)
 	}
+	viewer := ""
 	for _, v := range views {
-		items, err := client.Search(g.ctx, token, v.Query)
+		items, login, err := client.SearchViewer(g.ctx, token, v.Query)
 		if g.ctx.Err() != nil {
 			return
 		}
@@ -314,11 +328,16 @@ func (g *githubConn) refresh() {
 			changed = g.store(v.ID, nil, err.Error()) || changed
 			continue
 		}
+		if login != "" {
+			viewer = login
+		}
 		orders := []map[string]any{}
+		var routed []github.Item
 		for _, it := range items {
 			if router.Route(client.Host(), it.Repo) != g.fleet {
 				continue
 			}
+			routed = append(routed, it)
 			order := map[string]any{"id": it.ID, "title": it.Title, "text": it.Text, "url": it.URL,
 				"repo": it.RepoURL, "hot": it.Hot, "labels": it.Labels, "sub_issues": it.SubIssues}
 			if p := it.PR; p != nil {
@@ -327,7 +346,74 @@ func (g *githubConn) refresh() {
 			orders = append(orders, order)
 		}
 		changed = g.store(v.ID, orders, "") || changed
+		for _, it := range g.fresh("view:"+v.ID, routed, len(items) >= github.MaxItems) {
+			g.emit(Event{Kind: "new_in_view", Panel: v.ID, Ref: it.URL, Author: it.Author, Viewer: login, Verified: true})
+		}
 	}
+	g.pollEvents(client, token, router, viewer)
+}
+
+// eventSearches are the searches behind the events that need no view.
+var eventSearches = []struct{ kind, query string }{
+	{"review_requested", "is:open is:pr review-requested:@me"},
+	{"assigned", "is:open assignee:@me"},
+	{"mentioned", "is:open mentions:@me"},
+}
+
+// pollEvents emits an event for each item that is new to one of eventSearches; a failed search keeps its last answer.
+func (g *githubConn) pollEvents(client *github.Client, token string, router *github.Router, viewer string) {
+	if g.emit == nil {
+		return
+	}
+	for _, es := range eventSearches {
+		items, login, err := client.SearchActing(g.ctx, token, es.query, es.kind)
+		if g.ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			g.logf("the %s search failed: %v", es.kind, err)
+			continue
+		}
+		if login == "" {
+			login = viewer
+		}
+		var routed []github.Item
+		for _, it := range items {
+			if router.Route(client.Host(), it.Repo) == g.fleet {
+				routed = append(routed, it)
+			}
+		}
+		for _, it := range g.fresh("kind:"+es.kind, routed, len(items) >= github.MaxItems) {
+			g.emit(Event{Kind: es.kind, Ref: it.URL, Actor: it.Actor, Author: it.Author, Viewer: login, Verified: true})
+		}
+	}
+}
+
+// fresh returns the items of a search that its previous answer lacked, and keeps this answer for the next. The first
+// answer is the baseline: nothing in it is new. A full answer was cut at the search's cap, so an item missing from it
+// may only have slid past the cap and stays remembered.
+func (g *githubConn) fresh(key string, items []github.Item, capped bool) []github.Item {
+	if g.emit == nil {
+		return nil
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	old, baselined := g.seen[key]
+	cur := map[string]bool{}
+	var out []github.Item
+	for _, it := range items {
+		cur[it.URL] = true
+		if baselined && !old[it.URL] {
+			out = append(out, it)
+		}
+	}
+	if capped {
+		for u := range old {
+			cur[u] = true
+		}
+	}
+	g.seen[key] = cur
+	return out
 }
 
 func (g *githubConn) store(id string, orders []map[string]any, errMsg string) bool {

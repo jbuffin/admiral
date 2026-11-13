@@ -100,15 +100,7 @@ func (r *runner) handleEvent(params json.RawMessage) {
 	}
 	deliver := r.onEvent
 	if listed {
-		now := time.Now()
-		if now.Sub(r.evWindow) >= time.Minute {
-			r.evWindow, r.evCount = now, 0
-		}
-		if r.evCount >= maxEventsPerMinute {
-			listed = false
-		} else {
-			r.evCount++
-		}
+		listed = r.spendBound(time.Now())
 	}
 	r.mu.Unlock()
 	if !listed {
@@ -117,5 +109,34 @@ func (r *runner) handleEvent(params json.RawMessage) {
 	}
 	if deliver != nil {
 		deliver(Event{Kind: p.Kind, Panel: p.Panel, Ref: p.Ref, Actor: p.Actor, Author: p.Author})
+	}
+}
+
+// spendBound counts one delivery against the current minute, which starts at its first event; false when it is spent.
+// r.mu must be held.
+func (r *runner) spendBound(now time.Time) bool {
+	if now.Sub(r.evWindow) >= time.Minute {
+		r.evWindow, r.evCount = now, 0
+	}
+	if r.evCount >= maxEventsPerMinute {
+		return false
+	}
+	r.evCount++
+	return true
+}
+
+// emitFrom is what the built-in source delivers its own events through, trusted but bounded like a plugin's; nil
+// when nothing listens.
+func (r *runner) emitFrom(sid int) func(Event) {
+	if r.onEvent == nil {
+		return nil
+	}
+	return func(ev Event) {
+		r.mu.Lock()
+		ok := sid == r.sid && r.spendBound(time.Now())
+		r.mu.Unlock()
+		if ok {
+			r.onEvent(ev)
+		}
 	}
 }

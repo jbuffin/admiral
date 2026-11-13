@@ -269,7 +269,7 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 
 func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMessage)) (conn, error) {
 	if def.Plugin == builtinGitHub {
-		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf,
+		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf, emit: r.emitFrom(sid),
 			setWarnings: func(w []string) { r.setWarnings(sid, w) }}), nil
 	}
 	m, dir, err := LoadManifest(r.home, def.Plugin)

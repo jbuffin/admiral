@@ -254,3 +254,63 @@ func authored(repo string, n int, title, author string) string {
 	return fmt.Sprintf(`{"number":%d,"title":%q,"url":"https://github.com/%s/issues/%d","author":{"login":%q},"repository":{"nameWithOwner":%q,"url":"https://github.com/%s"},"labels":{"nodes":[]}}`,
 		n, title, repo, n, author, repo, repo)
 }
+
+func TestAReviewRequestedEventNamesTheRequesterAsActorAndTheOpenerAsAuthor(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	sources := `"gh":{"plugin":"github","fleet":"alpha","settings":{"views":[{"id":"mine","title":"Mine","query":"is:open Q1"}]}}`
+	f := newServiceFixture(t, ghConfig(`"alpha":{"name":"Alpha","claude":{}}`, sources))
+	s := &sink{}
+	f.Svc.Sup.OnEvent = func(_ string, ev Event) { s.add(ev) }
+	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
+	reviewing := func(withSecond bool) {
+		nodes := reviewRequested("acme/api", 5, "five", "amy", "eng", "eng", "carol")
+		if withSecond {
+			nodes += "," + reviewRequested("acme/api", 6, "six", "amy", "bob", "eng", "carol")
+		}
+		g.write("search/rr.match", "review-requested:@me")
+		g.write("search/rr.json", `{"data":{"search":{"nodes":[`+nodes+`]}}}`)
+	}
+	g.write("viewer", "eng\n")
+	reviewing(false)
+	f.startSources()
+	f.waitView("gh", "item 1", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
+	time.Sleep(200 * time.Millisecond)
+	if s.n() != 0 {
+		t.Fatalf("%d events from the baseline poll, want 0: %+v", s.n(), s.got)
+	}
+	reviewing(true)
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	// the built-in Review requested view shares the search, so it also sees pull 6 as new to it
+	of := func(kind string) (out []Event) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, ev := range s.got {
+			if ev.Kind == kind {
+				out = append(out, ev)
+			}
+		}
+		return out
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for len(of("review_requested")) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	got := of("review_requested")
+	if len(got) != 1 {
+		t.Fatalf("%d review_requested events, want exactly the one for pull 6: %+v", len(got), s.got)
+	}
+	ev := got[0]
+	if ev.Kind != "review_requested" || !strings.HasSuffix(ev.Ref, "/issues/6") || ev.Actor != "bob" || ev.Author != "amy" || ev.Viewer != "eng" || !ev.Verified {
+		t.Errorf("event = %+v, want review_requested for 6, requested by bob on amy's item, viewer eng, verified", ev)
+	}
+}
+
+// reviewRequested is an item whose timeline has one review request by requester, aimed at reviewer; other is a
+// request for someone else, made by eng, that the actor must not be read from.
+func reviewRequested(repo string, n int, title, author, requester, reviewer, other string) string {
+	item := authored(repo, n, title, author)
+	return strings.TrimSuffix(item, "}") + fmt.Sprintf(`,"timelineItems":{"nodes":[`+
+		`{"__typename":"ReviewRequestedEvent","actor":{"login":%q},"requestedReviewer":{"login":%q}},`+
+		`{"__typename":"ReviewRequestedEvent","actor":{"login":"eng"},"requestedReviewer":{"login":%q}}]}}`, requester, reviewer, other)
+}

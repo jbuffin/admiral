@@ -153,10 +153,9 @@ func (s *Supervisor) reconcile(force string, gen uint64) {
 // s.mu must be held.
 func (s *Supervisor) start(def config.Source) {
 	ctx, cancel := context.WithCancel(s.ctx)
-	onEvent := func(ev Event) {
-		if s.OnEvent != nil {
-			s.OnEvent(def.Key, ev)
-		}
+	var onEvent func(Event) // nil when nothing listens, so the built-in source skips its event searches
+	if s.OnEvent != nil {
+		onEvent = func(ev Event) { s.OnEvent(def.Key, ev) }
 	}
 	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, onEvent, s.stopping[def.Key])
 	s.runners[def.Key], s.cancels[def.Key] = r, cancel
