@@ -458,14 +458,18 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 			t.Errorf("env PATH = %q, want $ADMIRAL_HOME/bin first", r.env["PATH"])
 		}
 		for k := range r.env {
-			// ADMIRAL_PORT and ADMIRAL_CHAT_FLEET are the chat's own: the port Admiral listens on and the fleet it answers for.
+			// ADMIRAL_PORT, ADMIRAL_CHAT_FLEET and ADMIRAL_CHAT_HARNESS are the chat's own: the port Admiral listens on,
+			// the fleet it answers for and the harness whose hooks may print context.
 			if strings.HasPrefix(k, "ADMIRAL_") && k != "ADMIRAL_HOME" && !(k == "ADMIRAL_PORT" && r.env[k] == w.in.Port) &&
-				!(k == "ADMIRAL_CHAT_FLEET" && r.env[k] == chatFleet) {
+				!(k == "ADMIRAL_CHAT_FLEET" && r.env[k] == chatFleet) && !(k == "ADMIRAL_CHAT_HARNESS" && r.env[k] == "claude") {
 				t.Errorf("env has %s=%q; the tmux server's global environment must not reach the chat", k, r.env[k])
 			}
 		}
 		if r.env["ADMIRAL_CHAT_FLEET"] != chatFleet {
 			t.Errorf("env ADMIRAL_CHAT_FLEET = %q, want %q: `admiral chat ask` finds its fleet there", r.env["ADMIRAL_CHAT_FLEET"], chatFleet)
+		}
+		if r.env["ADMIRAL_CHAT_HARNESS"] != "claude" {
+			t.Errorf("env ADMIRAL_CHAT_HARNESS = %q, want claude: the hooks print the brief and digest only for it", r.env["ADMIRAL_CHAT_HARNESS"])
 		}
 		if want := filepath.Join(w.home, "chat", chatFleet); r.cwd != want {
 			t.Errorf("cwd = %q, want %q", r.cwd, want)

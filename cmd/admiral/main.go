@@ -477,6 +477,7 @@ func serve(args []string) error {
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	shipService.ChatPrompt = chatService.PromptKey
 	chatService.OnQuestions = inboxService.Changed
+	chatService.Ships, chatService.Campaigns, chatService.Inbox = shipService.List, followStore.List, inboxService.List
 	inboxService.ChatQuestions = chatService.WaitingQuestions
 	inboxService.AnswerChat = chatService.AnswerQuestion
 	if err := chatService.RemoveOldLayout(); err != nil {

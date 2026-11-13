@@ -545,7 +545,8 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 	c := newBotWorld(t, botOpts{})
 	w := c.world
 	prompt := `event UserPromptSubmit {"prompt":"look at the harbour log"}`
-	w.writeCue(prompt, "mcp launch", "mcp again", prompt, "mcp next", "mcp stop-other", "mcp stop-own")
+	w.writeCue(prompt, "mcp launch", "mcp again", prompt, "mcp next", "mcp stop-other", "mcp stop-own",
+		"mcp note", "wait briefed", `event SessionStart {"source":"clear"}`)
 	w.start()
 	other := w.launch(w.order("ship", "claude", "otherrepo", noSkill, "x"))
 	c.start()
@@ -627,6 +628,44 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 		log := w.waitShipLog(mine.Session, 15*time.Second, "a stopped record", func(l []outRec) bool { return lastOf(l, "stopped") != nil })
 		if got := lastOf(log, "stopped"); got["via"] != "admiralbot" {
 			t.Errorf("the stopped record = %v, want via admiralbot", got)
+		}
+	})
+
+	t.Run("a note it saves is in the brief the next SessionStart loads", func(t *testing.T) {
+		const fact = "the harbour log is rotated on Mondays"
+		if r := c.mcpCall("note", "save_note", map[string]any{"text": fact}); r.IsError {
+			t.Fatalf("save_note was refused: %s", r.text())
+		}
+		briefPath := filepath.Join(w.home, "chat", chatFleet, "brief.md")
+		for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+			if b, _ := os.ReadFile(briefPath); strings.Contains(string(b), fact) {
+				break
+			}
+			if time.Now().After(end) {
+				b, _ := os.ReadFile(briefPath)
+				t.Fatalf("within 10s chat/%s/brief.md never held the note; it is %q", chatFleet, b)
+			}
+		}
+		c.touch("briefed")
+		stdoutPath := filepath.Join(c.recDir(), "event-stdout")
+		var out string
+		for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+			b, _ := os.ReadFile(stdoutPath)
+			if out = string(b); strings.Contains(out, fact) {
+				break
+			}
+			if time.Now().After(end) {
+				t.Fatalf("within 10s the SessionStart hook never printed the note; event-stdout is %q", out)
+			}
+		}
+		var got struct {
+			Output struct {
+				Event   string `json:"hookEventName"`
+				Context string `json:"additionalContext"`
+			} `json:"hookSpecificOutput"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &got); err != nil || got.Output.Event != "SessionStart" || !strings.Contains(got.Output.Context, fact) {
+			t.Errorf("SessionStart printed %q, want hookSpecificOutput for SessionStart whose additionalContext holds the brief with the note (%v)", out, err)
 		}
 	})
 }

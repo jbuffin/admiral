@@ -375,6 +375,7 @@ func (s Server) StartDetached(name string, cols, rows int, env, argv []string) e
 
 type ChatOptions struct {
 	Model, Effort, Fleet string
+	Digest               string // the highest digest sequence the chat's hook has printed; untrusted, "" before the first
 	Transcript           string // "<unix ns> <source> <path>", "" before the first SessionStart
 }
 
@@ -382,16 +383,16 @@ type ChatOptions struct {
 // in it can't shift the others.
 func (s Server) ReadChatOptions(ctx context.Context, pane string) (ChatOptions, error) {
 	format := strings.Join([]string{"#{" + ChatModelOption + "}", "#{" + ChatEffortOption + "}",
-		"#{" + ChatFleetOption + "}", "#{" + TranscriptOption + "}"}, sep)
+		"#{" + ChatFleetOption + "}", "#{" + Prefix + ChatDigestOpt + "}", "#{" + TranscriptOption + "}"}, sep)
 	out, err := s.run(call{ctx: ctx, utf8After: true, args: []string{"display-message", "-p", "-t", pane, format}})
 	if err != nil {
 		return ChatOptions{}, err
 	}
-	f := strings.SplitN(strings.TrimSuffix(out, "\n"), sep, 4)
-	if len(f) != 4 {
+	f := strings.SplitN(strings.TrimSuffix(out, "\n"), sep, 5)
+	if len(f) != 5 {
 		return ChatOptions{}, fmt.Errorf("unexpected options %q", out)
 	}
-	return ChatOptions{Model: f[0], Effort: f[1], Fleet: f[2], Transcript: f[3]}, nil
+	return ChatOptions{Model: f[0], Effort: f[1], Fleet: f[2], Digest: f[3], Transcript: f[4]}, nil
 }
 
 // The value is untrusted: anything running in the pane can write it.

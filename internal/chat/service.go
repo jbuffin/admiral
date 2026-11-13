@@ -15,14 +15,17 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/actor"
+	"github.com/jbuffin/admiral/internal/campaigns/follow"
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/ships"
 	"github.com/jbuffin/admiral/internal/transcriptfs"
 	"github.com/jbuffin/admiral/internal/usage"
 )
@@ -84,6 +87,12 @@ type Service struct {
 	Actor *actor.Minter
 	// OnQuestions runs when a chat's questions may have changed, for the Inbox that lists them.
 	OnQuestions func()
+	// Ships, Campaigns and Inbox feed the brief and the digest; nil reads as empty.
+	Ships     func() []ships.Ship
+	Campaigns func() []follow.Followed
+	Inbox     func() []inbox.Item
+	// DigestAcked replaces the digest sequence read from the chat's pane options; a test seam.
+	DigestAcked func(fleet string) uint64
 
 	logOnce sync.Once
 	log     *chatlog.Log
@@ -117,6 +126,9 @@ type fleetChat struct {
 	qSig     string // the waiting set the Inbox was last told of
 
 	resets resetUsage
+
+	tmu sync.Mutex // the brief and digest state below
+	tk  tickState
 }
 
 func (s *Service) notes() *ledger.Ledger {
@@ -186,6 +198,7 @@ type state struct {
 
 type chatOptions struct {
 	model, effort, fleet string
+	digest               string // the digest sequence the hook last printed, as the pane holds it
 	transcript           string // "<unix ns> <source> <path>", "" before the first SessionStart
 	screen               string // a Codex chat's pane text while it has no transcript
 }
@@ -236,6 +249,14 @@ func (s *Service) Run(ctx context.Context) {
 	}
 	events, cancel := s.Host.Subscribe()
 	defer cancel()
+	// Its own goroutine, one tick at a time: the brief and the digest never hold up a broadcast.
+	var done sync.WaitGroup
+	done.Add(1)
+	go func() {
+		defer done.Done()
+		s.tickLoop(ctx)
+	}()
+	defer done.Wait()
 	tick := time.NewTicker(500 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -530,7 +551,7 @@ func (s *fleetChat) readOptions(pane string) (chatOptions, error) {
 	if err != nil {
 		return chatOptions{}, err
 	}
-	opts := chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, transcript: o.Transcript}
+	opts := chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, digest: o.Digest, transcript: o.Transcript}
 	if o.Transcript == "" && (s.harness() == "codex" || s.harness() == "copilot") {
 		opts.screen = s.readScreen(pane)
 	}
@@ -811,7 +832,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, NotStarted)
 			return
 		}
-		s.withdraw()
+		s.withdrawAndRender()
 		s.mu.Lock()
 		s.clearLocked()
 		s.mu.Unlock()

@@ -249,8 +249,14 @@ func unanswered(qs []Question) bool {
 	return false
 }
 
-// WithdrawQuestions removes one fleet's chat questions, as a new chat session for it starts.
-func (s *Service) WithdrawQuestions(key string) { s.chat(key).withdraw() }
+// WithdrawQuestions removes one fleet's chat questions, as a new chat session for it starts, then renders the brief
+// the session's SessionStart will read.
+func (s *Service) WithdrawQuestions(key string) { s.chat(key).withdrawAndRender() }
+
+func (s *fleetChat) withdrawAndRender() {
+	s.withdraw()
+	s.renderBrief(s.tickInputs())
+}
 
 // A waiting `admiral chat ask` sees its question gone and exits 4.
 func (s *fleetChat) withdraw() {
