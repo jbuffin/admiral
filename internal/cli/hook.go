@@ -595,7 +595,7 @@ func preCompactText(home, fleet string) string {
 	for _, e := range entries {
 		notes = append(notes, brief.Note{ID: e.ID, Text: e.Text, Via: e.Via, TS: e.TS})
 	}
-	text := brief.PreCompact(instr, notes)
+	text := brief.PreCompact(instr, notes, nil)
 	if text == "" {
 		return ""
 	}

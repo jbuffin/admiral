@@ -30,6 +30,9 @@ type Input struct {
 	Ships     []Ship
 	Campaigns []Campaign
 	Notes     []Note // oldest first
+	// Commitments are the open and waiting ones, oldest first; Now is the age's reference.
+	Commitments []Commitment
+	Now         time.Time
 	// Entries are the fleet's recent chat log entries of every kind, oldest first.
 	Entries []Entry
 }
@@ -53,6 +56,17 @@ type Note struct {
 	Text string
 	Via  string
 	TS   time.Time
+}
+
+// Commitment is an open or waiting promise; Trigger and Action are the ledger's kind names, Subject the trigger's target.
+type Commitment struct {
+	ID      string
+	Text    string
+	Trigger string
+	Subject string
+	Action  string
+	TS      time.Time
+	Waiting bool
 }
 
 type Entry struct {
@@ -360,7 +374,7 @@ func Render(in Input) string {
 
 // PreCompact is the instruction a PreCompact hook prints so a compaction keeps the instructions and the open notes
 // (ids and texts) verbatim: plain text of at most MaxBytes, "" when there is nothing to keep.
-func PreCompact(instructions string, notes []Note) string {
+func PreCompact(instructions string, notes []Note, commitments []Commitment) string {
 	instr := strings.TrimSpace(strip(instructions, true))
 	var items []string // newest first, so the oldest are the ones dropped
 	for i := len(notes) - 1; i >= 0; i-- {
