@@ -139,6 +139,8 @@ test('the Standing orders tab shows the Work Limits as sentences, keeps a Check 
   await filing.getByRole('button', { name: 'Draft', exact: true }).click();
   await expect(filing.getByText(/1,?440 minutes/).first()).toBeVisible();
   await expect(filing.getByText(/loosen/i).first()).toBeVisible();
+  // On a touch project the link to the Limits page is a target at least 44px tall.
+  if (test.info().project.name.startsWith('ipad')) expect((await filing.getByRole('link', { name: 'open the Limits page' }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await expect(filing.getByRole('textbox', { name: 'Drafted Check 1' })).toHaveValue('Ask before changing CI.');
   await expect(filing.getByRole('textbox', { name: 'Drafted Guidance' })).toHaveValue('Keep commits small and focused.');
   await filing.getByRole('textbox', { name: 'Drafted Check 1' }).fill('Ask before changing CI or releases.');

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, saveFleet, type Fleet } from './api';
 import { capabilities, loadCapabilities } from './capabilities';
-import { confirmFailure, confirmLabel, confirmOrdersBody, draftedCheckIndex, draftFailure, draftingOff, joinGuidance, keptLimits, proseError, remainingLoosens, routineProblem, type Kept, type OrdersDraft } from './filing';
+import { confirmFailure, confirmLabel, confirmOrdersBody, draftedCheckIndex, draftFailure, draftingOff, fieldWords, loosenedLines, joinGuidance, keptLimits, proseError, remainingLoosens, routineProblem, type Kept, type OrdersDraft } from './filing';
 import { fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage } from './fleetSettings';
 import { go, limitsPath } from './router';
-import { canAddCheck, checkTooLong, guidanceTooLong, loosenedSentences, MAX_CHECK_RUNES, MAX_GUIDANCE_RUNES, ordersErrorTarget, ordersMessage, runes, saveFailure, type Sentence, type StandingOrdersFields } from './standingOrders';
+import { canAddCheck, checkTooLong, guidanceTooLong, MAX_CHECK_RUNES, MAX_GUIDANCE_RUNES, ordersErrorTarget, ordersMessage, runes, saveFailure, type Sentence, type StandingOrdersFields } from './standingOrders';
 import type { RoutineForm } from './routines';
 import { formOfRoutine, type Routine } from './routines';
 
@@ -27,7 +27,7 @@ function settingChange(limits: OrdersDraft['limits'], field: string): string {
   let at: unknown = limits;
   for (const part of field.split('.')) at = at !== null && typeof at === 'object' ? (at as Record<string, unknown>)[part] : undefined;
   const text = at === null ? 'back to the preset' : typeof at === 'string' || typeof at === 'number' ? String(at) : JSON.stringify(at);
-  return `${field.replace(/[._]/g, ' ')}: ${text}`;
+  return `${fieldWords(field)}: ${text}`;
 }
 
 const linkTo = (path: string) => (e: MouseEvent) => {
@@ -202,7 +202,7 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
           if (kind !== 'limit') void plainSave();
         }}
       >
-        <p class="note">Drafting is off{reason ? `: ${reason}` : ''}. Save the text as a Check or Guidance, or use Check again below to turn drafting back on.</p>
+        <p class="note">Drafting is off{reason ? `: ${reason}` : ''}. Save the text as a Check or Guidance, or use Check again to turn drafting back on.</p>
         {input}
         <fieldset class="seg" role="radiogroup">
           <legend>Save it as</legend>
@@ -256,20 +256,21 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
 
   return (
     <div class="orders-new" role="group" aria-label="Draft a standing order">
-      {input}
+      <div class="orders-row">
+        {input}
+        {!answer ? (
+          <button type="button" class="btn primary" disabled={busy || !prose.trim()} aria-busy={busy} onClick={() => void draft()}>
+            {busy ? 'Drafting…' : 'Draft'}
+          </button>
+        ) : null}
+      </div>
       <span class={proseRunes > 4000 ? 'note error' : 'note'}>{proseRunes}/4000</span>
       {error ? (
         <p class="note error" role="alert">
           {error}
         </p>
       ) : null}
-      {!answer ? (
-        <div class="routine-actions">
-          <button type="button" class="btn primary" disabled={busy || !prose.trim()} aria-busy={busy} onClick={() => void draft()}>
-            {busy ? 'Drafting…' : 'Draft'}
-          </button>
-        </div>
-      ) : (
+      {!answer ? null : (
         <section class="set draft-review" aria-label="Draft review">
           <h3 class="section-title">Drafted from your text</h3>
           {answer.changes.length === 0 && checks.length === 0 && !guidance && answer.problems.length === 0 ? <p class="note">Nothing in that text changes a Limit, adds a Check or adds Guidance.</p> : null}
@@ -300,7 +301,7 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
               </ul>
               <p class="note">
                 To change a value,{' '}
-                <a href={limitsPath(fleet.key)} onClick={linkTo(limitsPath(fleet.key))}>
+                <a class="touch-link" href={limitsPath(fleet.key)} onClick={linkTo(limitsPath(fleet.key))}>
                   open the Limits page
                 </a>
                 .
@@ -358,7 +359,7 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
             <div class="note warning" role="group" aria-label="Loosening">
               <p>These Limits would loosen:</p>
               <ul class="limit-list">
-                {loosenedSentences(loosens, answer.sentences).map((s) => (
+                {loosenedLines(loosens, answer.sentences).map((s) => (
                   <li key={s}>{s}</li>
                 ))}
               </ul>
@@ -423,6 +424,7 @@ export function DescribeRoutine({ fleet, onDrafted }: { fleet: Fleet; onDrafted:
 
   return (
     <div class="orders-new">
+      <div class="orders-row">
       <input
         type="text"
         aria-label="Describe a routine"
@@ -437,14 +439,15 @@ export function DescribeRoutine({ fleet, onDrafted }: { fleet: Fleet; onDrafted:
           if (e.key === 'Enter' && !busy) void draft();
         }}
       />
+      <button type="button" class="btn" disabled={busy || !prose.trim()} aria-busy={busy} onClick={() => void draft()}>
+        {busy ? 'Drafting…' : 'Draft'}
+      </button>
+      </div>
       {error ? (
         <p class="note error" role="alert">
           {error}
         </p>
       ) : null}
-      <button type="button" class="btn" disabled={busy || !prose.trim()} aria-busy={busy} onClick={() => void draft()}>
-        {busy ? 'Drafting…' : 'Draft'}
-      </button>
     </div>
   );
 }
