@@ -267,3 +267,35 @@ func TestCommodoreDirIsTheDirectoryOfTheCommodoreItPicks(t *testing.T) {
 		})
 	}
 }
+
+func TestListReadsEachSkillsDescription(t *testing.T) {
+	d := newIDs(t)
+	p := d.project("p")
+	put := func(base, name, frontmatter string) {
+		dir := filepath.Join(base, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: "+name+"\n"+frontmatter+"---\nBody.\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	user, project := filepath.Join(d.claude, "skills"), filepath.Join(p, ".claude", "skills")
+	put(user, "plain", "description: Plain words: with a colon.\n")
+	put(user, "quoted", "description: \"Say \\\"hi\\\" first.\"\n")
+	put(user, "folded", "description: >\n  One line\n  and the next.\nlicense: MIT\n")
+	put(user, "none", "")
+	put(user, "both", "description: The user's copy.\n")
+	put(project, "both", "description: The project's copy.\n")
+
+	want := []skillindex.Skill{
+		{Name: "both", Description: "The user's copy."},
+		{Name: "folded", Description: "One line and the next."},
+		{Name: "none", Description: ""},
+		{Name: "plain", Description: "Plain words: with a colon."},
+		{Name: "quoted", Description: `Say "hi" first.`},
+	}
+	if got := skillindex.List("claude", d.environ(), p); !reflect.DeepEqual(got, want) {
+		t.Errorf("List = %+v, want %+v", got, want)
+	}
+}

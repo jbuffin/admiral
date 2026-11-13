@@ -30,6 +30,38 @@ func Installed(harness string, environ []string, dir string) []string {
 	return out
 }
 
+// Skill is an installed skill as a person picks it: the name typed after the
+// harness's Mark, and the description from its SKILL.md.
+type Skill struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// List is Installed with each skill's description, read from the copy the
+// harness would load: the user's own before the project's.
+func List(harness string, environ []string, dir string) []Skill {
+	user, project := locations(harness, environ, dir)
+	seen := map[string]bool{}
+	var out []Skill
+	for _, sk := range append(user, project...) {
+		if seen[sk.name] {
+			continue
+		}
+		seen[sk.name] = true
+		out = append(out, Skill{sk.name, describe(filepath.Join(sk.dir, "SKILL.md"))})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// Mark is what a harness types before a skill's name: $ for Codex, / for Claude Code and Copilot.
+func Mark(harness string) string {
+	if harness == "codex" {
+		return "$"
+	}
+	return "/"
+}
+
 // The user's own locations come before the project's, so a cloned repository
 // cannot shadow the Commodore skill (ADR 0010).
 func FindCommodore(harness string, environ []string, dir string) (string, bool) {

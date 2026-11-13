@@ -4,6 +4,7 @@ import type { Conversation } from './conversation';
 import { boatRoutes } from './flotilla';
 import { Icon } from './Icon';
 import { bubblesShowing, snapshotOf, wakeRefused, type BoxState, type Send } from './messageBox';
+import { acceptSkill, matchSkills, skillQuery, type SkillList } from './skillMenu';
 
 /** What the box talks to: the ship, or one of its boats when `crew` is set. */
 export interface Target {
@@ -104,35 +105,153 @@ export function useComposer(target: Target, conv: Conversation) {
   return { waking: box.waking, wake, text: box.text, setText: (text: string) => patch(key, () => ({ text })), bubbles, error: box.error, interrupting: box.interrupting, send, interrupt };
 }
 
-/** One line that grows with its text, up to a third of the screen, with Send inside it; Enter sends and Shift+Enter breaks the line. */
-export function MessageField({ label, placeholder, text, setText, send, disabled, canSend, focus = false }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => void; disabled: boolean; canSend: boolean; focus?: boolean }) {
+// Skills change rarely, so a list is reused for a minute across boxes and remounts.
+const skillCache = new Map<string, { at: number; list: Promise<SkillList | null> }>();
+function loadSkills(route: string) {
+  const hit = skillCache.get(route);
+  if (hit && Date.now() - hit.at < 60_000) return hit.list;
+  const list = call<SkillList>('GET', route).then((r) => (r.ok ? r.data : null));
+  skillCache.set(route, { at: Date.now(), list });
+  return list;
+}
+
+/** The skills of the box's ship or boat, asked for once the box starts with a mark either harness types. */
+function useSkillList(route: string | undefined, wanted: boolean) {
+  const [list, setList] = useState<{ route: string; list: SkillList } | null>(null);
+  useEffect(() => {
+    if (!route || !wanted) return;
+    let live = true;
+    void loadSkills(route).then((l) => {
+      if (live && l) setList({ route, list: l });
+    });
+    return () => {
+      live = false;
+    };
+  }, [route, wanted]);
+  return list && list.route === route ? list.list : null;
+}
+
+let menuIds = 0;
+
+/** One line that grows with its text, up to a third of the screen, with Send inside it; Enter sends and Shift+Enter breaks the line. With `skills`, a box that starts with the harness's mark offers its skills above it, as the terminal does. */
+export function MessageField({ label, placeholder, text, setText, send, disabled, canSend, focus = false, skills }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => void; disabled: boolean; canSend: boolean; focus?: boolean; skills?: string }) {
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (focus && !disabled) field.current?.focus();
   }, [focus, disabled]);
+  const menu = useRef<HTMLUListElement>(null);
+  // Where a completion put the caret, set on the commit that shows its text: any later and fast typing lands on both sides of it.
+  const caretTo = useRef<number | null>(null);
+  const [caret, setCaret] = useState(0);
+  // The highlighted row, kept with the word it was picked for, so a new word starts at the top.
+  const [active, setActive] = useState({ query: '', index: 0 });
+  // Esc hides the menu for the word it was showing; typing another word brings it back.
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const menuId = useRef(`skill-menu-${++menuIds}`).current;
+  const list = useSkillList(skills, /^[/$]/.test(text));
+  const query = list ? skillQuery(text, caret, list.mark) : null;
+  const matches = query === null || query === dismissed ? [] : matchSkills(list!.skills, query);
+  const open = !disabled && matches.length > 0;
+  const pick = open ? matches[active.query === query ? Math.min(active.index, matches.length - 1) : 0] : undefined;
+
+  useEffect(() => {
+    if (pick) document.getElementById(`${menuId}-${pick.name}`)?.scrollIntoView({ block: 'nearest' });
+  }, [pick?.name]);
   useLayoutEffect(() => {
     const el = field.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
+    if (caretTo.current !== null) {
+      el.focus();
+      el.setSelectionRange(caretTo.current, caretTo.current);
+      caretTo.current = null;
+    }
   }, [text]);
+
+  const readCaret = () => setCaret(field.current?.selectionStart ?? 0);
+  const accept = (name: string) => {
+    const next = acceptSkill(text, list!.mark, name);
+    caretTo.current = next.caret;
+    setText(next.text);
+    setCaret(next.caret);
+  };
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (pick) {
+      const n = matches.length;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActive({ query: query!, index: (matches.indexOf(pick) + (e.key === 'ArrowDown' ? 1 : n - 1)) % n });
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDismissed(query);
+        return;
+      }
+      // Enter on a name already typed in full sends it, as the terminal runs it.
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && query !== pick.name)) {
+        e.preventDefault();
+        accept(pick.name);
+        return;
+      }
+    }
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    e.preventDefault();
+    send();
+  };
+
   return (
     <div class="msg-field">
+      {open ? (
+        <ul ref={menu} id={menuId} class="skill-menu" role="listbox" aria-label="Skills">
+          {matches.map((s) => (
+            <li
+              key={s.name}
+              id={`${menuId}-${s.name}`}
+              role="option"
+              aria-selected={s === pick}
+              class="skill-option"
+              // WebKit moves focus on a tap before the click, so an option takes it and the field's blur knows not to close the menu.
+              tabIndex={-1}
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => accept(s.name)}
+            >
+              <span class="skill-name">
+                {list!.mark}
+                {s.name}
+              </span>
+              {s.description ? <span class="skill-desc">{s.description}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <textarea
         ref={field}
         class="msg-input"
         aria-label={label}
+        aria-autocomplete={skills ? 'list' : undefined}
+        aria-controls={open ? menuId : undefined}
+        aria-activedescendant={pick ? `${menuId}-${pick.name}` : undefined}
         rows={1}
         value={text}
         disabled={disabled}
         placeholder={placeholder}
-        onInput={(e) => setText(e.currentTarget.value)}
-        onFocus={() => field.current?.scrollIntoView({ block: 'nearest' })}
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
-          e.preventDefault();
-          send();
+        onInput={(e) => {
+          setText(e.currentTarget.value);
+          setCaret(e.currentTarget.selectionStart);
         }}
+        onKeyUp={readCaret}
+        onClick={readCaret}
+        onBlur={(e) => {
+          if (!(e.relatedTarget instanceof Node && menu.current?.contains(e.relatedTarget))) setDismissed(query);
+        }}
+        onFocus={() => {
+          setDismissed(null);
+          field.current?.scrollIntoView({ block: 'nearest' });
+        }}
+        onKeyDown={onKeyDown}
       />
       <button type="button" class="msg-send" aria-label="Send" disabled={disabled || !canSend} onClick={send}>
         <span class="msg-send-dot">
@@ -183,6 +302,7 @@ export function Composer({ target, box, interrupt = true, focus = false }: { tar
         disabled={!state.enabled || waking}
         canSend={text.trim() !== ''}
         focus={focus}
+        skills={boatRoutes(target.session, target.crew).skills}
       />
     </div>
   );

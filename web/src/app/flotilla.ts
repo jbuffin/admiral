@@ -36,5 +36,5 @@ export function boatBoxState(b: Pick<CrewBoat, 'status' | 'exit_code' | 'exit_si
 /** Where a boat's conversation, terminal, messages and Interrupt live; the ship's when no boat is named. */
 export function boatRoutes(session: string, crew?: string) {
   const base = shipUrl(session, crew);
-  return { conversation: `${base}/conversation`, bridge: bridgePath(session, crew, '/ws/v1'), messages: `${base}/messages`, interrupt: `${base}/interrupt` };
+  return { conversation: `${base}/conversation`, bridge: bridgePath(session, crew, '/ws/v1'), messages: `${base}/messages`, interrupt: `${base}/interrupt`, skills: `${base}/skills` };
 }

@@ -65,12 +65,14 @@ describe('boatRoutes', () => {
       bridge: '/ws/v1/bridge/Salt%20paw/crew/rev',
       messages: '/api/v1/ships/Salt%20paw/crew/rev/messages',
       interrupt: '/api/v1/ships/Salt%20paw/crew/rev/interrupt',
+      skills: '/api/v1/ships/Salt%20paw/crew/rev/skills',
     });
     expect(boatRoutes('Salt paw')).toEqual({
       conversation: '/api/v1/ships/Salt%20paw/conversation',
       bridge: '/ws/v1/bridge/Salt%20paw',
       messages: '/api/v1/ships/Salt%20paw/messages',
       interrupt: '/api/v1/ships/Salt%20paw/interrupt',
+      skills: '/api/v1/ships/Salt%20paw/skills',
     });
   });
 });
