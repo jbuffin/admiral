@@ -15,7 +15,7 @@ The redesign lets work start without the engineer: a review requested on GitHub,
 Every outside event gets one tier, set by who caused it:
 
 - **T0**: the engineer in Admiral. A scheduled routine run is T0.
-- **T1**: the engineer's own pinned user ID in Slack or Teams, on a payload the channel can verify.
+- **T1**: the engineer's own pinned user ID in Slack or Teams, on a payload the channel can verify, or their own GitHub login on an event the built-in GitHub source saw itself. An event from a plugin is never verified.
 - **T2**: allowlisted people and trackers, and the engineer's own email.
 - **T3**: strangers.
 - **T4**: monitor alerts.

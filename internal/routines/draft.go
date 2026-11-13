@@ -362,7 +362,7 @@ func (s *Service) serveRoutineDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	problems := []problem{}
 	f, _ := s.Store.fleet(key)
-	if err := s.Store.validate(f, Routine{Name: d.Name, Enabled: d.Enabled, When: d.When, Do: d.Do, Before: d.Before, Notify: d.Notify}); err != nil {
+	if err := s.Store.validate(f, Routine{Name: d.Name, Enabled: d.Enabled, When: d.When, Do: d.Do, Before: d.Before, Notify: d.Notify}, false); err != nil {
 		problems = append(problems, routineProblem(err))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"draft": d, "problems": problems})

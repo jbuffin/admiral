@@ -43,6 +43,7 @@ type runner struct {
 	done chan struct{}
 
 	notify    func() // the state changed; must not block
+	onEvent   func(Event)
 	restartCh chan struct{}
 	wake      chan struct{}
 	gen       atomic.Uint64 // restart requests so far
@@ -62,6 +63,12 @@ type runner struct {
 	warnings []string // the router's, for a built-in GitHub source
 	queue    []string // orders.launched not yet delivered
 	pulls    pulls
+
+	catalog    []EventKind
+	hasCatalog bool
+	evWindow   time.Time // the first delivered event of the current minute
+	evCount    int
+	evDropped  int // events over the bound since the last log line about them
 }
 
 type pulls struct {
@@ -70,8 +77,8 @@ type pulls struct {
 	one    map[string]bool
 }
 
-func newRunner(ctx context.Context, home string, cfg func() *config.Config, def config.Source, notify func(), prev *runner) *runner {
-	r := &runner{home: home, key: def.Key, cfg: cfg, ctx: ctx, def: def, notify: notify, done: make(chan struct{}),
+func newRunner(ctx context.Context, home string, cfg func() *config.Config, def config.Source, notify func(), onEvent func(Event), prev *runner) *runner {
+	r := &runner{home: home, key: def.Key, cfg: cfg, ctx: ctx, def: def, notify: notify, onEvent: onEvent, done: make(chan struct{}),
 		restartCh: make(chan struct{}, 1), wake: make(chan struct{}, 1), state: StateStarting, caps: []string{}}
 	go func() {
 		if prev != nil {
@@ -220,6 +227,7 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 	if err != nil {
 		return fatal(err)
 	}
+	r.pullCatalog(ctx, p)
 	r.mu.Lock()
 	r.caps, r.schema = caps, schema
 	r.mergePanels(panels)
@@ -262,7 +270,7 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 
 func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMessage)) (conn, error) {
 	if def.Plugin == builtinGitHub {
-		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf,
+		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf, emit: r.emitFrom(sid),
 			setWarnings: func(w []string) { r.setWarnings(sid, w) }}), nil
 	}
 	m, dir, err := LoadManifest(r.home, def.Plugin)
@@ -490,6 +498,8 @@ func (r *runner) note(sid int, method string, params json.RawMessage) {
 		}
 		r.mu.Unlock()
 		r.notify()
+	case "event":
+		r.handleEvent(params)
 	default:
 		r.logf("protocol error: the notification %q is not one Admiral knows", method)
 	}

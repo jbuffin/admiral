@@ -16,6 +16,8 @@ type Supervisor struct {
 	Config *config.Manager
 	// OnChange must not block.
 	OnChange func()
+	// OnEvent receives each event a source raised that passed its catalog; it must not block.
+	OnEvent func(source string, ev Event)
 
 	mu      sync.Mutex
 	ctx     context.Context
@@ -151,7 +153,11 @@ func (s *Supervisor) reconcile(force string, gen uint64) {
 // s.mu must be held.
 func (s *Supervisor) start(def config.Source) {
 	ctx, cancel := context.WithCancel(s.ctx)
-	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, s.stopping[def.Key])
+	var onEvent func(Event) // nil when nothing listens, so the built-in source skips its event searches
+	if s.OnEvent != nil {
+		onEvent = func(ev Event) { s.OnEvent(def.Key, ev) }
+	}
+	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, onEvent, s.stopping[def.Key])
 	s.runners[def.Key], s.cancels[def.Key] = r, cancel
 	s.wg.Add(1)
 	go func() {
@@ -228,4 +234,29 @@ func routingOf(fleets []config.Fleet) string {
 	}
 	b, _ := json.Marshal(list)
 	return string(b)
+}
+
+// Events is the event catalog of source key when it belongs to fleet; ok is false when it has none.
+func (s *Supervisor) Events(fleet, key string) ([]EventKind, bool) {
+	r := s.runner(key)
+	if r == nil {
+		return nil, false
+	}
+	r.mu.Lock()
+	def := r.def
+	r.mu.Unlock()
+	if def.Fleet != fleet {
+		return nil, false
+	}
+	return r.Events()
+}
+
+// SourceFleet is the fleet source key belongs to, as configured now.
+func (s *Supervisor) SourceFleet(key string) (string, bool) {
+	for _, def := range s.Config.Current().SourceList {
+		if def.Key == key {
+			return def.Fleet, true
+		}
+	}
+	return "", false
 }

@@ -80,6 +80,14 @@ type Scheduler struct {
 	// HostKnown is false while the ships host cannot list ships; a nil one is always known.
 	HostKnown func() bool
 	Zone      *time.Location // the zone a When is read in; main passes time.Local
+	// Own says whether a ref is Admiral's own work (a ship's PR, a claimed issue); such an event is ignored. Nil owns nothing.
+	Own func(fleet, ref string) bool
+	// Enrich is where a Lookout adds the dedupe_key, repo, labels and costs before the decision. Nil adds nothing.
+	Enrich func(Event) Enrichment
+	// Live says what the ships hold for the rates and the dedupe_key; nil holds none.
+	Live EventLoad
+	// Acts, when set, receives each Reported or Proposed event decision. Nil records only.
+	Acts EventActs
 	// Ready, when set, closes once the ships host knows the fleet; Run catches up only after it.
 	Ready <-chan struct{}
 
@@ -178,7 +186,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 	}
 }
 
-// routinesOf lists every fleet's enabled routines that have a readable When.
+// routinesOf lists every fleet's enabled scheduled routines.
 func (s *Scheduler) routinesOf() []fleetRoutine {
 	var out []fleetRoutine
 	for _, key := range s.Store.FleetKeys() {
@@ -187,7 +195,8 @@ func (s *Scheduler) routinesOf() []fleetRoutine {
 			continue
 		}
 		for _, r := range list {
-			if r.Enabled {
+			// an event routine has no schedule; HandleEvent runs it
+			if r.Enabled && r.On == nil {
 				out = append(out, fleetRoutine{key, r})
 			}
 		}

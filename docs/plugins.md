@@ -142,6 +142,15 @@ For all three, Admiral has already refused text that is empty after trimming, ov
 {"jsonrpc":"2.0","id":9,"result":{}}
 ```
 
+**`events.catalog`**: the kinds of event you can raise, asked once after `panels.list`. Optional: a source that answers method-not-found (`-32601`), a result that is not a list or an error has no events, and that is not a crash.
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"events.catalog","params":{}}
+{"jsonrpc":"2.0","id":3,"result":[{"kind":"review_requested","title":"Review requested of you"},{"kind":"new_in_view","title":"New in Mine","panel":"mine"}]}
+```
+
+Each kind has a `kind` and a `title`, and a `panel` (one of your panel ids) when it belongs to one panel. A routine can run on a kind you list; a kind you don't list is never delivered.
+
 ### Plugin → Admiral notifications
 
 | Notification | Effect |
@@ -150,6 +159,11 @@ For all three, Admiral has already refused text that is empty after trimming, ov
 | `panels.changed` | Admiral asks `panels.list` again, then each panel's orders. |
 | `auth.required` | The source shows as `auth_required` with the message, a link and a code to enter there. `message` is required; `url` and `code` are optional. Orders you listed stay. |
 | `auth.ok` | Clears `auth.required`; the source is `ok` again. |
+| `event` | Something happened upstream. `params` is `{"kind", "ref", "panel"?, "actor"?, "author"?}`: `kind` (and `panel`, when the catalog gave one) must match a catalog entry, `ref` is the `http(s):` URL of the item, `actor` is who did it and `author` who wrote the item, as logins. Admiral works out how far to trust it from those logins and the fleet's lists; a `tier`, `verified` or `viewer` you add is ignored, so an event from a plugin is never verified. |
+
+```json
+{"jsonrpc":"2.0","method":"event","params":{"kind":"review_requested","ref":"https://example.com/pr/7","actor":"bob","author":"amy"}}
+```
 
 One full line of each:
 
@@ -174,6 +188,7 @@ Admiral treats everything a plugin sends as untrusted.
 - A control character (below 0x20, or 0x7f) in an order id or a panel id is refused. `text` may hold `\n`, `\t` and `\r` but no other control character. Titles are cut to one line.
 - A `settingsSchema` that is not a JSON object, or is over 256 KiB, is replaced with `{}`.
 - Error messages you answer with, and the text of a crash, are cut to one line of at most 300 characters.
+- An `event` with a `kind` the catalog lacks, a `ref` that is not an `http:` or `https:` URL, a `ref`, `kind` or `panel` over **512 bytes**, an `actor` or `author` over **100 bytes**, or a control, format or bidirectional-control character in any field is dropped. At most **60 events a minute** are delivered; the minute starts at the first event, the rest of it is dropped and Admiral logs how many once the minute ends. An event from a plugin names no repository, so a fleet whose repo allowlist is not empty skips it.
 - A `url` (in an order or in `auth.required`) must be `http:` or `https:`; Admiral drops any other. A `repo` that is not a git remote is dropped.
 
 A **protocol error** is a line that is not JSON, a reply to a request that is not waiting, a list that breaks a limit, or a notification Admiral does not know. Admiral logs it, drops that message and keeps the process running. A list that breaks a limit is dropped whole, and the panel keeps the orders it had. Only a failed or hung `initialize` or `panels.list` counts as a crash.

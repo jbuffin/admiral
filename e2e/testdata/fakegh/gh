@@ -116,7 +116,10 @@
 #                    content on stderr and nothing on stdout
 #       <key>.json   printed on stdout, exit 0
 #     No key matches: stderr says so, exit 1.
-#     The answer is the GraphQL response as GitHub sends it, whole. The fake
+#     The answer is the GraphQL response as GitHub sends it, whole, except that
+#     with $FAKEGH_DIR/viewer it also carries data.viewer.login (the file's
+#     content) when the canned data object starts the answer. Items may carry
+#     author and timelineItems as the query asks for them. The fake
 #     does not run --jq or --template, so it refuses them (exit 2).
 #
 #   gh api [-X METHOD] [-f NAME=VALUE]... [--hostname HOST] [--input FILE|-] ENDPOINT
@@ -467,7 +470,11 @@ EOF2
 					[ -s "$key.exit" ] && code=$(cat "$key.exit")
 					exit "$code"
 				fi
-				cat "$key.json"
+				if [ -s "$FAKEGH_DIR/viewer" ]; then
+					sed "s/^{\"data\":{/{\"data\":{\"viewer\":{\"login\":\"$(cat "$FAKEGH_DIR/viewer")\"},/" "$key.json"
+				else
+					cat "$key.json"
+				fi
 				exit 0
 				;;
 			esac

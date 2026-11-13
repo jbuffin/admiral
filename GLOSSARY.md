@@ -48,7 +48,7 @@ _Avoid_: schedule, automation, cron job
 A routine's setting for how far it may go on its own: Report only, Ask first or Act. It can only lower what the trigger tier and the fleet allow.
 
 **Trigger tier**:
-How far Admiral trusts an outside event, set by who caused it, from T0 (the engineer in Admiral) through T1 (the engineer's own verified chat account), T2 (allowlisted people and trackers, and the engineer's email) and T3 (strangers) to T4 (monitor alerts). An event's text is data, never instructions, unless its tier is T0 or T1.
+How far Admiral trusts an outside event, set by who caused it, from T0 (the engineer in Admiral) through T1 (the engineer's own verified chat account or GitHub login), T2 (allowlisted people and trackers, and the engineer's email) and T3 (strangers) to T4 (monitor alerts). An event's text is data, never instructions, unless its tier is T0 or T1.
 
 **Titler**:
 The judge call, on the small model, that names a ship launched without an order from its first prompt, and picks the one link the prompt is about when it holds several. Admiral asks it only when the ship's main link is not a GitHub pull request or issue (whose own title wins) and, on Claude Code, when the session's own title has not come.

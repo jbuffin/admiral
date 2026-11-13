@@ -482,7 +482,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                   >
                     <span class="crew-main">
                       <span class="crew-name">{r.name}</span>
-                      <span class="crew-sub">{cronSentence(r.when)}</span>
+                      <span class="crew-sub">{r.on ? `On ${r.on.kind.replace(/_/g, ' ')}` : cronSentence(r.when)}</span>
                     </span>
                     <span class="crew-side">
                       <span class="crew-count">{lastRunText(r.last_run, new Date())}</span>

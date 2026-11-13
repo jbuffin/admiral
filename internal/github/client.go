@@ -25,15 +25,25 @@ const MaxItems = 50
 // ghTimeout is the default limit for one gh call; Admiral gives a request 10 seconds.
 const ghTimeout = 8 * time.Second
 
-const itemFields = "number title url repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
+const itemFields = "number title url author { login } repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
 
 // prStateFields are the PullRequest fields the chips and ready read, the poll's own and no more, so a search stays light.
 const prStateFields = " state reviewDecision mergeable mergeStateStatus statusCheckRollup { state }"
 
 // searchQuery is GitHub's advanced search, the one github.com uses: it knows
 // qualifiers such as is:blocked, and it reads AND, OR and parentheses.
-var searchQuery = fmt.Sprintf("query($q: String!) { search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { "+
-	"... on Issue { %s subIssuesSummary { total } } ... on PullRequest { %s%s } } } }", MaxItems, itemFields, itemFields, prStateFields)
+var searchQuery = searchQueryWith("", "")
+
+// What happened to the viewer on an item: the timeline events that name them, with when. A mention names no one.
+const (
+	issueTimeline = " timelineItems(last: 20, itemTypes: [ASSIGNED_EVENT, MENTIONED_EVENT]) { nodes { __typename ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } } } ... on MentionedEvent { createdAt } } }"
+	prTimeline    = " timelineItems(last: 20, itemTypes: [REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT, MENTIONED_EVENT]) { nodes { __typename ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { ... on User { login } } } ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } } } ... on MentionedEvent { createdAt } } }"
+)
+
+func searchQueryWith(issueExtra, prExtra string) string {
+	return fmt.Sprintf("query($q: String!) { viewer { login } search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { "+
+		"... on Issue { %s subIssuesSummary { total }%s } ... on PullRequest { %s%s%s } } } }", MaxItems, itemFields, issueExtra, itemFields, prStateFields, prExtra)
+}
 
 // unreachable lists what gh prints when the network, not GitHub, failed. It
 // prints the first for a DNS error and the rest raw from Go's transport.
@@ -59,6 +69,12 @@ type Item struct {
 	SubIssues int
 	// PR is a pull request's state as the poll would serve it; nil for an issue.
 	PR *moor.PR
+	// Author is who opened the item. Actor is who last review-requested or assigned the viewer on it, and EventAt when
+	// the latest such event (or mention) happened, when the search asked (SearchActing) and the timeline says; empty
+	// and zero otherwise.
+	Author  string
+	Actor   string
+	EventAt time.Time
 }
 
 // SignInError means gh is missing or signed out, as opposed to a search that failed.
@@ -120,21 +136,38 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 // Search runs one GitHub search with token and returns at most MaxItems items.
 // Its errors read as the message to show, with the token redacted.
 func (c *Client) Search(ctx context.Context, token, query string) ([]Item, error) {
+	items, _, err := c.search(ctx, token, query, searchQuery, "")
+	return items, err
+}
+
+// SearchActing is Search that also reads the latest timeline event of the kind aimed at the viewer on each item (a
+// review request, an assignment or a mention; any other kind reads none): its actor, when it names one, and its time.
+// It returns the viewer's login.
+func (c *Client) SearchActing(ctx context.Context, token, query, kind string) ([]Item, string, error) {
+	return c.search(ctx, token, query, searchQueryWith(issueTimeline, prTimeline), kind)
+}
+
+// SearchViewer is Search that also returns the viewer's login: the signed-in account the search ran as.
+func (c *Client) SearchViewer(ctx context.Context, token, query string) ([]Item, string, error) {
+	return c.search(ctx, token, query, searchQuery, "")
+}
+
+func (c *Client) search(ctx context.Context, token, query, gql, actorKind string) ([]Item, string, error) {
 	if !hasSort.MatchString(query) {
 		query += " sort:updated-desc"
 	}
-	out, stderr, err := c.gh(ctx, []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + searchQuery, "-f", "q=" + query}, c.tokenVar(), token)
+	out, stderr, err := c.gh(ctx, []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + gql, "-f", "q=" + query}, c.tokenVar(), token)
 	if err != nil && ctx.Err() != nil {
-		return nil, ctx.Err()
+		return nil, "", ctx.Err()
 	}
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, errTimeout) {
-		return nil, c.unreachableErr()
+		return nil, "", c.unreachableErr()
 	}
 	if err != nil {
 		msg := redact(strings.TrimSpace(stderr), token)
 		for _, m := range unreachable {
 			if strings.Contains(msg, m) {
-				return nil, c.unreachableErr()
+				return nil, "", c.unreachableErr()
 			}
 		}
 		if msg = strings.TrimPrefix(msg, "gh: "); msg == "" {
@@ -143,15 +176,15 @@ func (c *Client) Search(ctx context.Context, token, query string) ([]Item, error
 				msg = fmt.Sprintf("gh exited with status %d", ee.ExitCode())
 			}
 		}
-		return nil, fmt.Errorf("Search failed: %s", msg)
+		return nil, "", fmt.Errorf("Search failed: %s", msg)
 	}
 	var body any
 	if json.Unmarshal([]byte(out), &body) != nil {
-		return nil, errors.New("Search failed: GitHub's answer was not JSON")
+		return nil, "", errors.New("Search failed: GitHub's answer was not JSON")
 	}
 	obj, _ := body.(map[string]any)
 	if obj == nil {
-		return nil, errNotUnderstood
+		return nil, "", errNotUnderstood
 	}
 	if errs, _ := obj["errors"].([]any); len(errs) > 0 {
 		first, _ := errs[0].(map[string]any)
@@ -159,24 +192,26 @@ func (c *Client) Search(ctx context.Context, token, query string) ([]Item, error
 		if msg == "" {
 			msg = "unknown error"
 		}
-		return nil, fmt.Errorf("Search failed: %s", redact(msg, token))
+		return nil, "", fmt.Errorf("Search failed: %s", redact(msg, token))
 	}
 	data, _ := obj["data"].(map[string]any)
 	search, _ := data["search"].(map[string]any)
 	nodes, ok := search["nodes"].([]any)
 	if !ok {
-		return nil, errNotUnderstood
+		return nil, "", errNotUnderstood
 	}
+	viewerObj, _ := data["viewer"].(map[string]any)
+	login, _ := viewerObj["login"].(string)
 	var items []Item
 	for _, n := range nodes {
-		if it, ok := c.item(n); ok {
+		if it, ok := c.item(n, actorKind, login); ok {
 			items = append(items, it)
 		}
 	}
 	if len(items) > MaxItems {
 		items = items[:MaxItems]
 	}
-	return items, nil
+	return items, login, nil
 }
 
 var errNotUnderstood = errors.New("Search failed: GitHub's answer was not understood")
@@ -193,7 +228,7 @@ func redact(text, token string) string {
 
 // item reads one search node. A node of another type has none of the fields
 // and is skipped.
-func (c *Client) item(raw any) (Item, bool) {
+func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 	var n struct {
 		prNode
 		Number     *int    `json:"number"`
@@ -211,6 +246,16 @@ func (c *Client) item(raw any) (Item, bool) {
 		SubIssuesSummary *struct {
 			Total int `json:"total"`
 		} `json:"subIssuesSummary"`
+		Author        *struct{ Login string } `json:"author"`
+		TimelineItems *struct {
+			Nodes []struct {
+				Typename  string    `json:"__typename"`
+				CreatedAt time.Time `json:"createdAt"`
+				Actor     *struct{ Login string }
+				Assignee  *struct{ Login string }
+				Reviewer  *struct{ Login string } `json:"requestedReviewer"`
+			} `json:"nodes"`
+		} `json:"timelineItems"`
 	}
 	b, _ := json.Marshal(raw)
 	if json.Unmarshal(b, &n) != nil || n.Number == nil || n.Title == nil || n.URL == nil ||
@@ -221,6 +266,31 @@ func (c *Client) item(raw any) (Item, bool) {
 	it := Item{ID: fmt.Sprintf("%s#%d", *n.Repository.NameWithOwner, *n.Number), Title: *n.Title,
 		Text: *n.URL, URL: *n.URL, RepoURL: *n.Repository.URL, Repo: *n.Repository.NameWithOwner,
 		Labels: []string{}}
+	if n.Author != nil {
+		it.Author = n.Author.Login
+	}
+	if n.TimelineItems != nil {
+		want := map[string]string{"review_requested": "ReviewRequestedEvent", "assigned": "AssignedEvent", "mentioned": "MentionedEvent"}[actorKind]
+		for _, ev := range n.TimelineItems.Nodes { // the latest event of the kind aimed at the viewer wins
+			if ev.Typename != want || ev.CreatedAt.Before(it.EventAt) {
+				continue
+			}
+			target := ev.Assignee
+			switch ev.Typename {
+			case "ReviewRequestedEvent":
+				target = ev.Reviewer
+			case "MentionedEvent": // names no mentioner, and the timeline does not say whom it mentioned
+				it.EventAt, it.Actor = ev.CreatedAt, ""
+				continue
+			}
+			if target != nil && strings.EqualFold(target.Login, viewer) {
+				it.EventAt, it.Actor = ev.CreatedAt, ""
+				if ev.Actor != nil {
+					it.Actor = ev.Actor.Login
+				}
+			}
+		}
+	}
 	if n.SubIssuesSummary != nil {
 		it.SubIssues = n.SubIssuesSummary.Total
 	}
