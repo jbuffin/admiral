@@ -26,7 +26,17 @@ func newFakeGH(t *testing.T) *fakeGH {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := &fakeGH{t: t, dir: t.TempDir()}
+	dir, err := os.MkdirTemp("", "fakegh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a gh the plugin started can still be logging its call when the test ends, so retry the removal
+	t.Cleanup(func() {
+		for i := 0; i < 50 && os.RemoveAll(dir) != nil; i++ {
+			time.Sleep(100 * time.Millisecond)
+		}
+	})
+	g := &fakeGH{t: t, dir: dir}
 	if err := os.MkdirAll(filepath.Join(g.dir, "search"), 0o755); err != nil {
 		t.Fatal(err)
 	}
