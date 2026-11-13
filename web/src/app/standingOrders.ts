@@ -69,3 +69,8 @@ export function judgeGap(h: HarnessCapabilities | undefined): { capability: stri
   const gap = h?.features.find((f) => f.id === 'judge')?.capabilities.find((c) => c.status !== 'passed');
   return gap && gap.status !== 'passed' ? { capability: gap.label, status: gap.status } : null;
 }
+
+/** The message for a save that failed: the server's words when it answered, a plain line when the request never got there. */
+export function saveFailure(r: { error: string; status?: number }): string {
+  return r.status === undefined ? "Couldn't reach Admiral. Your changes aren't saved yet." : r.error;
+}

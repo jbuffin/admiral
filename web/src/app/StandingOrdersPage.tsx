@@ -7,7 +7,7 @@ import { JudgeLine } from './HarnessCapabilities';
 import { MissingCapability } from './MissingCapability';
 import { RoutineTabs } from './RoutineTabs';
 import { go, limitsPath } from './router';
-import { canAddCheck, checkTooLong, guidanceTooLong, judgeGap, judgeOff, loosenedSentences, MAX_CHECKS, MAX_CHECK_RUNES, MAX_GUIDANCE_RUNES, NEEDS_JUDGE, ordersErrorTarget, ordersMessage, ordersPatch, runes, type Sentence } from './standingOrders';
+import { canAddCheck, checkTooLong, guidanceTooLong, judgeGap, judgeOff, loosenedSentences, MAX_CHECKS, MAX_CHECK_RUNES, MAX_GUIDANCE_RUNES, NEEDS_JUDGE, ordersErrorTarget, ordersMessage, ordersPatch, runes, saveFailure, type Sentence } from './standingOrders';
 
 interface Orders {
   checks: string[];
@@ -58,7 +58,7 @@ function CopyTo({ fleet, onCopied }: { fleet: Fleet; onCopied: () => void }) {
     const r = await call<Orders & { loosens?: string[] }>('POST', `${base(fleet.key)}/copy`, { to: target.key });
     setBusy(false);
     setConfirm(false);
-    if (!r.ok) return setError({ message: r.error, status: r.status });
+    if (!r.ok) return setError({ message: saveFailure(r), status: r.status });
     setOpen(false);
     setDone({ name: target.name, loosened: loosenedSentences(r.data.loosens ?? [], r.data.sentences) });
     void loadFleets();
@@ -174,7 +174,7 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
       // A key the person did not send keeps what they typed.
       adopt({ ...r.data, checks: r.data.checks ?? [], sentences: r.data.sentences ?? [], overridden: r.data.overridden ?? [] }, { checks: !('checks' in body), guidance: !('guidance' in body) });
       if ('checks' in body) setNewCheck('');
-    } else setError(r.error);
+    } else setError(saveFailure(r));
   };
 
   const target = error ? ordersErrorTarget(error, checks.length) : null;

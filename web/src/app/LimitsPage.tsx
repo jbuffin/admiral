@@ -3,6 +3,7 @@ import { saveFleet, type Fleet } from './api';
 import { fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage } from './fleetSettings';
 import { defaultThreshold, LEVELS, limitsBody, normalizeLimits, reconcileLimits, type Ceiling, type Level, type Limits, type Restricted, type Threshold, type Window } from './limitsForm';
+import { saveFailure } from './standingOrders';
 import { loc, limitsFieldOf } from './router';
 import { Switch } from './RoutinesPage';
 
@@ -281,7 +282,7 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
     setError(null);
     const r = await saveFleet(fleet.key, patch);
     if (r.ok) adopt(r.data);
-    else setError({ message: r.error, status: r.status });
+    else setError({ message: saveFailure(r), status: r.status });
     setBusy(false);
     return r.ok;
   };

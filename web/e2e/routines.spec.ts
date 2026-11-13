@@ -90,6 +90,11 @@ test('the Standing orders tab shows the Work Limits as sentences, keeps a Check 
     }
   }
 
+  // On a touch project each sentence link is a target at least 44px tall.
+  if (test.info().project.name.startsWith('ipad')) {
+    for (const link of await limits.getByRole('link').all()) expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  }
+
   // A Check and Guidance are kept.
   const checks = main.getByRole('region', { name: 'Checks' });
   await checks.getByRole('textbox', { name: 'New Check' }).fill('Run make check before any PR.');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canAddCheck, checkTooLong, guidanceTooLong, loosenedSentences, ordersBody, ordersErrorTarget, ordersMessage, ordersPatch, judgeGap, judgeOff, NEEDS_JUDGE, runes } from './standingOrders';
+import { canAddCheck, checkTooLong, guidanceTooLong, loosenedSentences, ordersBody, ordersErrorTarget, ordersMessage, ordersPatch, judgeGap, judgeOff, NEEDS_JUDGE, runes, saveFailure } from './standingOrders';
 
 describe('counters', () => {
   it('count characters the way the server does, not UTF-16 code units', () => {
@@ -117,5 +117,14 @@ describe('the judge', () => {
     expect(judgeGap(h('failed'))).toEqual({ capability: 'No network', status: 'failed' });
     expect(judgeGap(h('not_checked'))).toEqual({ capability: 'No network', status: 'not_checked' });
     expect(judgeGap(undefined)).toBeNull();
+  });
+});
+
+describe('saveFailure', () => {
+  it("says Admiral couldn't be reached when the request never got an answer", () => {
+    expect(saveFailure({ error: 'Load failed' })).toBe("Couldn't reach Admiral. Your changes aren't saved yet.");
+  });
+  it("keeps the server's own words when it answered", () => {
+    expect(saveFailure({ error: 'invalid standing orders: guidance: too long', status: 400 })).toBe('invalid standing orders: guidance: too long');
   });
 });
