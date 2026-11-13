@@ -38,6 +38,8 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
   await expect(surface(page, 'Inbox')).toBeVisible();
   await expect(page.getByRole('navigation').getByRole('link')).toHaveText(['Inbox', 'Ships', 'Chat', 'Campaigns', 'Routines', 'Crew', 'Preferences']);
+  // The build's version sits at the foot of the side nav.
+  await expect(page.getByRole('navigation').getByText('dev', { exact: true })).toBeVisible();
 
   // With no choice yet, the first fleet is active.
   const logo = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/logos/claude');

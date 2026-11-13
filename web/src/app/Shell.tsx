@@ -38,6 +38,7 @@ import { watchAttention } from './attention';
 import { watchPush } from './pushLink';
 import { MergeControl } from './PeekMerge';
 import { Failure } from './PeekItem';
+import { parseBuildStamp } from './buildCheck';
 import { ShipView } from './ShipView';
 import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
@@ -456,6 +457,8 @@ export function Shell() {
   );
 }
 
+const build = parseBuildStamp(document.querySelector('meta[name="admiral-build"]')?.getAttribute('content') ?? null);
+
 function DesktopShell({ surface }: { surface: Surface }) {
   return (
     <div class="shell">
@@ -470,6 +473,7 @@ function DesktopShell({ surface }: { surface: Surface }) {
             {s.id === 'campaigns' ? <CampaignSidebar /> : null}
           </Fragment>
         ))}
+        {build ? <span class="side-version">{build.version}</span> : null}
       </nav>
       <Stage surface={surface} title />
     </div>

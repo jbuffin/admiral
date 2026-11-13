@@ -13,6 +13,7 @@ a { color: inherit; text-decoration: none; }
 
 .shell { display: grid; grid-template-columns: 248px 1fr; height: 100dvh; }
 .side { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; background: var(--color-side); overflow-y: auto; }
+.side-version { margin-top: auto; padding: 12px 10px 2px; font-size: var(--font-size-meta); color: var(--color-muted); }
 .nav-link, .menu-item, .switcher-trigger, .tab {
   display: flex; align-items: center; gap: 10px; width: 100%;
   min-height: var(--shape-nav-height); padding: 0 10px; border-radius: var(--shape-radius-md);
