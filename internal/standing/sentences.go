@@ -53,13 +53,25 @@ func list(label string, none string, items []string) string {
 	return label + " " + strings.Join(items, ", ") + "."
 }
 
-func scopedNames(in []Scoped) []string {
+// RoutineNamer names a routine by its ID; ok is false when the routine no longer exists.
+type RoutineNamer func(id string) (name string, ok bool)
+
+func scopedNames(in []Scoped, name RoutineNamer) []string {
 	out := make([]string, len(in))
 	for i, s := range in {
 		out[i] = s.Value
-		if s.Routine != "" {
-			out[i] += " (" + s.Routine + " only)"
+		if s.Routine == "" {
+			continue
 		}
+		who := s.Routine
+		if name != nil {
+			if n, ok := name(s.Routine); ok {
+				who = n
+			} else {
+				who = "a deleted routine"
+			}
+		}
+		out[i] += " (" + who + " only)"
 	}
 	return out
 }
@@ -76,7 +88,11 @@ func quietSentence(ws []Window) string {
 }
 
 // Sentences is one plain-English sentence per Limit, in catalog order, then the two fixed ones.
-func Sentences(l Limits) []Sentence {
+// A scoped skip names its routine by ID.
+func Sentences(l Limits) []Sentence { return SentencesNamed(l, nil) }
+
+// SentencesNamed is Sentences with a scoped skip naming its routine through name; a nil name keeps the ID.
+func SentencesNamed(l Limits, name RoutineNamer) []Sentence {
 	c := l.Ceilings
 	repo := "Ships may start in any repo the fleet's search roots find."
 	if len(l.RepoAllowlist) > 0 {
@@ -100,9 +116,9 @@ func Sentences(l Limits) []Sentence {
 		{"spend.reviewer_call_usd", fmt.Sprintf("One reviewer call may cost at most $%.2f.", l.Spend.ReviewerCallUSD)},
 		{"quota_hold_percent", fmt.Sprintf("Commitments and review wakes wait, and routines ask first, while any plan window is at %d%% or more.", l.QuotaHoldPercent)},
 		{"write_deny", list("Ships may not write to", "Ships may write anywhere in their repo.", l.WriteDeny)},
-		{"skip.labels", list("Events with these labels are skipped:", "No label is skipped.", scopedNames(l.Skip.Labels))},
-		{"skip.senders", list("Events from these senders are skipped:", "No sender is skipped.", scopedNames(l.Skip.Senders))},
-		{"skip.dedupe_keys", list("Events with these keys are skipped:", "No key is skipped.", scopedNames(l.Skip.DedupeKeys))},
+		{"skip.labels", list("Events with these labels are skipped:", "No label is skipped.", scopedNames(l.Skip.Labels, name))},
+		{"skip.senders", list("Events from these senders are skipped:", "No sender is skipped.", scopedNames(l.Skip.Senders, name))},
+		{"skip.dedupe_keys", list("Events with these keys are skipped:", "No key is skipped.", scopedNames(l.Skip.DedupeKeys, name))},
 		{"", "A restricted ship never pushes."},
 		{"", "A restricted ship's network reaches package registries only."},
 	}

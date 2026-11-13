@@ -521,6 +521,7 @@ func serve(args []string) error {
 	// one store, so a scheduler built on it shares the write lock
 	routineStore := &routines.Store{Home: absDir, Fleets: func(k string) (config.Fleet, bool) { return cfg.Current().Fleet(k) },
 		ResourceKnown: func(name string) bool { _, ok := cfg.Current().Resources[name]; return ok }}
+	cfg.RoutineName = func(fleet, id string) (string, bool) { return routineStore.Namer(fleet)(id) }
 	routineScheduler := &routines.Scheduler{Store: routineStore, Clock: realClock{}, Ships: routineShips{shipService}, Chat: chatService, Proposer: routineProposer{inboxService}, Zone: time.Local, Ready: host.Ready(), HostKnown: host.Known,
 		QuotaHold: func(fleet, harness string) (string, bool) {
 			if harness == "" { // a prompt run goes to the fleet's AdmiralBot

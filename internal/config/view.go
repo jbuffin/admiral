@@ -68,6 +68,14 @@ func (m *Manager) View() View {
 	return m.viewLocked()
 }
 
+// routineNamer is the name lookup for fleet's scoped skips; nil when the server wired none.
+func (m *Manager) routineNamer(fleet string) standing.RoutineNamer {
+	if m.RoutineName == nil {
+		return nil
+	}
+	return func(id string) (string, bool) { return m.RoutineName(fleet, id) }
+}
+
 func (m *Manager) viewLocked() View {
 	v := View{Type: "config", Fleets: []FleetView{}, FavoriteSkills: m.cur.FavoriteSkills}
 	for _, f := range m.cur.Fleets {
@@ -77,7 +85,7 @@ func (m *Manager) viewLocked() View {
 			SearchRoots: f.SearchRoots, Owners: nonNil(f.Owners), WakeReviewers: nonNil(f.WakeReviewers), CloneRoot: f.CloneRoot,
 			CanLaunch: f.CanLaunch(), Notify: f.Notify, Docks: []DockView{},
 			Chat:   ChatView{f.Chat.Harness, f.Chat.Model, f.Chat.Effort, f.Chat.ThresholdJSON(), off == "", off, offered(opts), opts, ChatModelsFor(f.Chat.Harness), ChatEffortsFor(f.Chat.Harness)},
-			Preset: string(f.Preset), Limits: f.Limits.Clone(), Sentences: standing.Sentences(f.Limits), Overridden: nonNil(f.Overridden)}
+			Preset: string(f.Preset), Limits: f.Limits.Clone(), Sentences: standing.SentencesNamed(f.Limits, m.routineNamer(f.Key)), Overridden: nonNil(f.Overridden)}
 		for _, h := range f.Harnesses {
 			warnings := h.Warnings
 			if warnings == nil {

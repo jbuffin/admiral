@@ -125,6 +125,9 @@ func (s *Service) View() []SourceView {
 			v.Views = append(v.Views, p)
 		}
 		SortPanels(v.Views, st.def.PanelOrder)
+		if kinds, ok := s.Sup.Events(st.def.Fleet, st.def.Key); ok {
+			v.Events = kinds
+		}
 		out = append(out, v)
 	}
 	return out

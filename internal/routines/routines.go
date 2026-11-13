@@ -280,6 +280,24 @@ func (s *Store) List(fleet string) ([]Routine, error) {
 	return s.load(fleet)
 }
 
+// Namer names fleet's routines by ID for a Limit sentence.
+func (s *Store) Namer(fleet string) func(id string) (string, bool) {
+	return func(id string) (string, bool) {
+		s.mu.Lock()
+		list, err := s.load(fleet)
+		s.mu.Unlock()
+		if err != nil {
+			return "", false
+		}
+		for _, r := range list {
+			if r.ID == id {
+				return r.Name, true
+			}
+		}
+		return "", false
+	}
+}
+
 func (s *Store) Create(fleet string, r Routine) (Routine, error) {
 	f, err := s.fleet(fleet)
 	if err != nil {
