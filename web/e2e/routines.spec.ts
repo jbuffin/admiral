@@ -145,8 +145,30 @@ test('the Standing orders tab shows the Work Limits as sentences, keeps a Check 
   await filing.getByRole('button', { name: 'Confirm', exact: true }).click();
   await filing.getByRole('button', { name: /^Confirm, loosening 1 Limit/ }).waitFor();
   expect((await orders(admiral, 'zulu')).checks).toEqual(['Run make check before any PR.']);
+  // The orders save fails once after the Limits are stored: the message says so, and the retry sends only the orders.
+  let ordersPuts = 0;
+  let fleetPuts = 0;
+  await page.route('**/api/v1/fleets/zulu*', async (route) => {
+    if (route.request().method() === 'PUT' && new URL(route.request().url()).pathname === '/api/v1/fleets/zulu') fleetPuts++;
+    await route.fallback();
+  });
+  await page.route('**/api/v1/fleets/zulu/standing-orders', async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback();
+    ordersPuts++;
+    if (ordersPuts === 1) return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"disk full"}' });
+    return route.fallback();
+  });
+  const firstOrders = page.waitForResponse((r) => r.request().method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/fleets/zulu/standing-orders');
+  // A tap within 400ms of arming is a double tap and only arms.
+  await page.waitForTimeout(500);
   await filing.getByRole('button', { name: /^Confirm, loosening 1 Limit/ }).click();
+  await firstOrders;
+  await expect(filing.getByText(/The Limits were saved, but the Checks and Guidance weren't/)).toBeVisible();
+  expect(sentenceFor(await orders(admiral, 'zulu'), 'wall_clock_minutes')).toMatch(/1,?440 minutes/);
+  expect((await orders(admiral, 'zulu')).checks).toEqual(['Run make check before any PR.']);
+  await filing.getByRole('button', { name: 'Confirm', exact: true }).click();
   await expect.poll(async () => (await orders(admiral, 'zulu')).checks).toEqual(['Run make check before any PR.', 'Ask before changing CI or releases.']);
+  expect(fleetPuts).toBe(1);
   expect((await orders(admiral, 'zulu')).guidance).toBe('Prefer small PRs.\n\nKeep commits small and focused.');
   expect(sentenceFor(await orders(admiral, 'zulu'), 'wall_clock_minutes')).toMatch(/1,?440 minutes/);
   await expect(filing.getByRole('region', { name: 'Limits' }).getByText(sentenceFor(await orders(admiral, 'zulu'), 'wall_clock_minutes'), { exact: true })).toBeVisible();
@@ -225,6 +247,17 @@ test('with no proven judge the tab says so, greys the features that need one, an
   await plain.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(async () => (await orders(admiral, 'alpha')).checks).toEqual(['Never touch the payments-api migrations folder.']);
   await expect(main.getByRole('textbox', { name: 'Check 1', exact: true })).toHaveValue('Never touch the payments-api migrations folder.');
+
+  // An unsaved edit survives a filing through the form, and the later Save keeps both Checks.
+  await main.getByRole('textbox', { name: 'Check 1', exact: true }).fill('Never touch the payments-api folder.');
+  await plain.getByRole('textbox', { name: 'New standing order' }).fill('Ask before changing CI.');
+  await plain.getByRole('radio', { name: 'Check', exact: true }).check();
+  await plain.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(async () => (await orders(admiral, 'alpha')).checks).toEqual(['Never touch the payments-api migrations folder.', 'Ask before changing CI.']);
+  await expect(main.getByRole('textbox', { name: 'Check 1', exact: true })).toHaveValue('Never touch the payments-api folder.');
+  await expect(main.getByRole('textbox', { name: 'Check 2', exact: true })).toHaveValue('Ask before changing CI.');
+  await main.getByRole('button', { name: 'Save Checks' }).click();
+  await expect.poll(async () => (await orders(admiral, 'alpha')).checks).toEqual(['Never touch the payments-api folder.', 'Ask before changing CI.']);
 
   // The Routines tab hides Describe a routine, keeps New routine and says why.
   await page.goto(admiral.url + 'app/routines?fleet=alpha');
