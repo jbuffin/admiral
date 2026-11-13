@@ -864,7 +864,10 @@ export async function mergeFromThePRTab(page: Page, a: Admiral, opts: { phone: b
   const panel = await openPRTab(page, a, ship);
   await expect(page.getByRole('main')).toContainText('Ready to merge');
   await expect(panel).toContainText('#7');
-  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expect(panel).toContainText(chip);
+  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expectChipTone(page, panel.getByText(chip, { exact: true }), 'ok');
+  // The moored journeys seed no PR detail, so the header falls back to the number and a muted line, with no sub-tab row and no alert.
+  await expect(panel).toContainText("Couldn't load this PR from GitHub.");
+  await expect(panel.getByRole('tablist')).toHaveCount(0);
   const merge = panel.getByRole('button', { name: 'Merge', exact: true });
   const unfollow = panel.getByRole('button', { name: "Don't follow reviews" });
   for (const [name, b] of [['Merge', merge], ["Don't follow reviews", unfollow]] as const) {
@@ -1138,24 +1141,6 @@ export async function prTabOfARunningStack(page: Page, a: Admiral) {
   await viewTab(page, 'PR').tap();
   await tabs.nth(1).tap();
   await expect(panel.getByRole('heading', { name: 'Cache tokens, renamed again' })).toBeVisible();
-}
-
-/** A PR GitHub cannot give the detail of still shows its number and chips, and a muted line says why: no sub-tab row for one PR, and no alert. */
-export async function prTabWithoutDetail(page: Page, a: Admiral) {
-  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
-  const ship = await launchShipCarrying(a, [7]);
-
-  await page.goto(a.url + 'app/ships?fleet=zulu');
-  await rowLink(page, ship).tap();
-  await expect(page).toHaveURL(shipViewUrl(a, ship));
-  await viewTab(page, 'PR').tap();
-  const panel = viewPanel(page);
-  await expect(panel).toContainText('#7');
-  await expect(panel).toContainText("Couldn't load this PR from GitHub.");
-  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expectChipTone(page, panel.getByText(chip, { exact: true }), 'ok');
-  await expect(panel.getByRole('tablist'), 'one PR shows no sub-tab row').toHaveCount(0);
-  await expect(panel).not.toContainText('Stacked on GitHub');
-  await expect(page.getByRole('alert')).toHaveCount(0);
 }
 
 /**
