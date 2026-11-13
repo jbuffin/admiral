@@ -1136,8 +1136,7 @@ export async function prTabOfARunningStack(page: Page, a: Admiral) {
   const before = reads.length;
   detail8('Cache tokens, renamed again');
   await page.clock.fastForward(90_000);
-  await page.waitForTimeout(500);
-  expect(reads.length, 'a closed PR tab reads nothing').toBe(before);
+  await holds(() => reads.length === before, 'a closed PR tab reads nothing', 500);
   await viewTab(page, 'PR').tap();
   await tabs.nth(1).tap();
   await expect(panel.getByRole('heading', { name: 'Cache tokens, renamed again' })).toBeVisible();
