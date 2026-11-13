@@ -574,6 +574,43 @@ An Ask first run (or an `act` run while Hold fire is on) writes an Inbox item in
 
 A routine with Notify me on pushes `launched` (a tap opens the ship), `failed`, `breaker` and `proposed` (a tap opens the proposal's Peek). `skipped`, `missed` and `reported` push nothing. The fleet's Notify switch and the watched-window rule apply as for any push.
 
+## Standing orders
+
+A fleet's Checks (at most 20, each at most 300 characters, none empty or repeated), its Guidance (at most 2000 characters) and its Limits, which a fleet save also edits. The Checks and Guidance live in `$ADMIRAL_HOME/routines/<key>/standing-orders.json`; a worker-launched ship's prompt ends with the Guidance under `## Standing orders`. Every route is also served under `/api/v1/`. Errors are `{"error": "…"}`: 404 for an unknown fleet, 400 for a body that fails a check (the message names `checks[i]` or `guidance`), 409 when the config can't be edited. For AdmiralBot's actor only the `GET` is allowed (see "AdmiralBot's requests").
+
+### `GET /api/fleets/<key>/standing-orders`
+
+```json
+{"checks": ["Run make check before a PR."], "guidance": "Prefer small PRs.", "preset": "work",
+ "limits": {…}, "sentences": [{"field": "wall_clock_minutes", "sentence": "…"}], "overridden": ["wall_clock_minutes"]}
+```
+
+`checks` is `[]` and `guidance` `""` when none is filed. `limits` and `sentences` are the fleet's effective Limits, and `overridden` names the Limits the fleet sets over its preset.
+
+### `PUT /api/fleets/<key>/standing-orders`
+
+`{"checks": […], "guidance": "…"}`; a field left out keeps its stored value. Replaces what is stored once the whole result passes the checks. `200` with the `GET` shape.
+
+### `POST /api/fleets/<key>/standing-orders/copy`
+
+`{"to": "<fleet key>"}`. Copies this fleet's Checks, Guidance, preset and Limits to the target, replacing its own. `to` must be another fleet (400 otherwise, 404 when unknown); a repo allowlist the target can't satisfy is 400, and nothing changes when the copy is refused. `200` with the target's `GET` shape and `loosens`, the Limits the copy made looser than the target's were.
+
+### `POST /api/fleets/<key>/standing-orders/draft`
+
+`{"prose": "…"}` (1 to 4000 characters). One judge call turns the text into a draft; nothing is saved.
+
+```json
+{"draft": {"limits": {"wall_clock_minutes": 30}, "checks": ["…"], "guidance": "…" or null},
+ "sentences": […], "changes": [{"field": "…", "sentence": "…"}], "loosens": ["wall_clock_minutes"],
+ "problems": [{"field": "limits|checks|guidance", "message": "…"}]}
+```
+
+A Check or the Guidance that the prose does not hold (compared after whitespace is collapsed) is dropped and named in `problems`, as is a Limits patch the config refuses (`draft.limits` is then `null`). `changes` are the sentences the patch changes, and `loosens` the Limits it would loosen, which the engineer confirms. `409` with `{"error", "reason"}` when no harness is proven safe for judge calls; `502` with `{"error", "kind"}` when the call fails (`timeout`, `bad reply`, `budget spent` or `error`).
+
+### `POST /api/fleets/<key>/routines/draft`
+
+`{"prose": "…"}`. The same judge call, for a routine: `{"draft": {"name", "enabled", "when", "do": {"prompt": "…"}, "before_acting", "notify"}, "problems": [{"field": "name|when|before_acting|do", "message": "…"}]}`. The draft is a prompt routine and is checked as a save would be; it is not stored. The 400, 409 and 502 answers are the standing-orders draft's.
+
 ## Harness capabilities
 
 What each fleet's harnesses were probed to do (ADR 0035). These are not the server `capabilities` that `GET /api/version` lists. Both routes are also served under `/api/v1/`.
@@ -669,7 +706,7 @@ Revoke one device or all of them; 204, or 404 for an unknown id. The device's to
 A fleet's chat calls Admiral with its actor token in the `X-Admiral-Actor` header. The token is `HMAC-SHA256(secret, fleet + "\n" + nonce)`: the secret is a random key in `$ADMIRAL_HOME/actor-secret` (mode 0600) and the nonce is minted per chat session and kept in the tmux session option `@admiral-chat-nonce`, so a token survives an Admiral restart while its chat lives and is new with each chat session. The token is never logged and never put in a command line or a file.
 
 - A request with no header is the engineer's own and is unchanged. A valid token on a loopback request makes it AdmiralBot's for that fleet; an unknown or stale token is 401. A request off loopback is refused: 401 without a device cookie (the auth layer answers first), 403 with one.
-- AdmiralBot may call only: `GET /api/ships`, `GET /api/ships/<ship>/conversation`, `GET /api/inbox`, `GET /api/sources`, `GET /api/campaigns`, `GET /api/campaigns/<id>`, `POST /api/ships`, `POST /api/sources/<key>/orders`, `POST /api/inbox/<ship>/<id>/answer`, `POST /api/ships/<ship>/stop`, `POST /api/ships/<ship>/dismiss`, `POST /api/ships/<ship>/next`, `POST /api/ships/<ship>/wake`, `GET /api/outcomes`, `POST /api/chat/questions`, `GET /api/chat/questions/<id>/answer`, `GET /api/fleets/<fleet>/routines`, `GET /api/fleets/<fleet>/hold-fire`, `POST /api/fleets/<fleet>/routines/<id>/off`, `POST /api/fleets/<fleet>/hold-fire/on`, `GET /api/hold-fire`, `POST /api/hold-fire/on`, `POST /api/chat/notes` and `POST /api/chat/commitments`, each also under `/api/v1`. A `<fleet>` that is not its own is 403; turning a routine on, turning Hold fire off, and saving, editing or deleting a routine are 403 too. Every other route is 403, and a path that needs cleaning or decoding to match is refused.
+- AdmiralBot may call only: `GET /api/ships`, `GET /api/ships/<ship>/conversation`, `GET /api/inbox`, `GET /api/sources`, `GET /api/campaigns`, `GET /api/campaigns/<id>`, `POST /api/ships`, `POST /api/sources/<key>/orders`, `POST /api/inbox/<ship>/<id>/answer`, `POST /api/ships/<ship>/stop`, `POST /api/ships/<ship>/dismiss`, `POST /api/ships/<ship>/next`, `POST /api/ships/<ship>/wake`, `GET /api/outcomes`, `POST /api/chat/questions`, `GET /api/chat/questions/<id>/answer`, `GET /api/fleets/<fleet>/routines`, `GET /api/fleets/<fleet>/standing-orders`, `GET /api/fleets/<fleet>/hold-fire`, `POST /api/fleets/<fleet>/routines/<id>/off`, `POST /api/fleets/<fleet>/hold-fire/on`, `GET /api/hold-fire`, `POST /api/hold-fire/on`, `POST /api/chat/notes` and `POST /api/chat/commitments`, each also under `/api/v1`. A `<fleet>` that is not its own is 403; turning a routine on, turning Hold fire off, and saving, editing or deleting a routine are 403 too, as are `PUT` and `POST …/copy` on `standing-orders` and both drafts (`standing-orders/draft`, `routines/draft`). Every other route is 403, and a path that needs cleaning or decoding to match is refused.
 - The list reads (`ships`, `inbox`, `sources`, `campaigns`) hold only the actor's fleet. Touching another fleet's ship, item, source or campaign, or an item or ship of no known fleet, is 403 naming the fleet; a launch must name the actor's fleet and a source of that fleet. A launch body must be one JSON object: data after it is 400 (for the engineer too), and the guard and the handler read the same value. A chat session's own question is the engineer's to answer, so AdmiralBot's answer to an Inbox item of a chat session is 403.
 - `GET /api/outcomes[?ship=<ship>][&limit=<n>]` answers `{"outcomes": [<record>, ...]}`, oldest first, the latest `limit` (default 100, at most 1000; `400` for a bad value) of the month files' records. An actor sees only its fleet's: ship names are reused, so a record's fleet is the `fleet` of the latest `launched` record of its ship before it (read in file order); a record with no such record in the files read takes the fleet of the listed or moored ship that holds the name, unless the files hold a later `launched` record of that name, which hides it; a record of no known fleet is hidden. The fence applies before the limit. A `launched` or `woken` record carries `launched`, the ship's launch stamp (RFC 3339; a wake's is the wake time), which a commitment's ship trigger matches on; a record written before that field existed never matches. A `launched` record of a routine's ship has `trigger: {"fleet", "id"}`, pointing at that routine's trigger-log record.
 - Writes are stamped `"via":"admiralbot"`: the `launched`, `stopped`, `dismissed`, `answered`, `resumed`, `woken` and `unmoored` outcome records and the launched ship's `via`.

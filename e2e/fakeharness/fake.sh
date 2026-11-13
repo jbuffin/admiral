@@ -57,6 +57,13 @@
 #                  model, a one-line pick-me-when and short instructions. $FAKE_JUDGE=crew-invalid answers
 #                  a purser draft with a custom role and no based-on, which the resolver refuses.
 #                  fail and leak act on it as on every judge call.
+#                  The standing-orders drafter is the judge call whose prompt's first line is "You turn an
+#                  engineer's plain-English standing orders into a Limits patch, a list of Checks and
+#                  Guidance for one fleet." It answers a 30-minute wall clock, the Check "Always run make
+#                  check before a PR." and the Guidance "Prefer small PRs."; $FAKE_JUDGE=orders-loosen
+#                  answers a 1440-minute wall clock instead. The routine drafter's first line is "You turn
+#                  an engineer's plain-English description into one AdmiralBot routine for a fleet."; it
+#                  answers a nightly report-only routine whose do.prompt checks dependencies.
 #
 # Otherwise it runs inside a ship's tmux pane (so TMUX and TMUX_PANE are set by tmux, and
 # plain `tmux` talks to the ship's own server). It needs two variables from the
@@ -368,6 +375,10 @@ if [ -n "$judge" ]; then
   case "$jprompt" in *"You are the advisor"*) advise=1 ;; esac
   crewwriter=""
   [ "$(printf '%s\n' "$jprompt" | head -n 1)" = "You write one Admiral crew member." ] && crewwriter=1
+  ordersdraft=""
+  [ "$(printf '%s\n' "$jprompt" | head -n 1)" = "You turn an engineer's plain-English standing orders into a Limits patch, a list of Checks and Guidance for one fleet." ] && ordersdraft=1
+  routinedraft=""
+  [ "$(printf '%s\n' "$jprompt" | head -n 1)" = "You turn an engineer's plain-English description into one AdmiralBot routine for a fleet." ] && routinedraft=1
   if [ "$FAKE_JUDGE" = fail ]; then
     echo boom >&2
     exit 1
@@ -398,6 +409,15 @@ if [ -n "$judge" ]; then
     crew-invalid) body='{"name":"purser","role":"purser","based-on":"","skills":[],"model":"","pick-me-when":"Pick for the ship'"'"'s accounts.","instructions":"Keep the ledger."}' ;;
     *) body='{"name":"quartermaster","role":"implementer","based-on":"","skills":[],"model":"","pick-me-when":"Pick for provisioning chores.","instructions":"Check the stores before each voyage."}' ;;
     esac
+  fi
+  if [ -z "$body" ] && [ -n "$ordersdraft" ]; then
+    case "$FAKE_JUDGE" in
+    orders-loosen) body='{"limits":{"wall_clock_minutes":1440},"checks":[],"guidance":""}' ;;
+    *) body='{"limits":{"wall_clock_minutes":30},"checks":["Always run make check before a PR."],"guidance":"Prefer small PRs."}' ;;
+    esac
+  fi
+  if [ -z "$body" ] && [ -n "$routinedraft" ]; then
+    body='{"name":"Nightly dependency check","enabled":true,"when":"0 3 * * *","before_acting":"report_only","notify":true,"do":{"prompt":"Check for outdated dependencies and report what you find."}}'
   fi
   [ -z "$body" ] && body="{\"reply\":\"$text\"}"
   if [ "$(basename "$0")" = claude ]; then

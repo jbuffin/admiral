@@ -30,7 +30,7 @@ var routineWriter string
 
 const ordersSchema = `{"type":"object","properties":{` +
 	`"limits":{"type":"object"},` +
-	`"checks":{"type":"array","items":{"type":"string","maxLength":300},"maxItems":20},` +
+	`"checks":{"type":"array","items":{"type":"string","maxLength":300}},` +
 	`"guidance":{"type":"string","maxLength":2000}` +
 	`},"required":["limits","checks","guidance"],"additionalProperties":false}`
 

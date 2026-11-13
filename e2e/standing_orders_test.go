@@ -29,6 +29,19 @@ func TestStandingOrders_DraftThroughTheRealServerWithTheFakeJudgeSavesNothing(t 
 		t.Errorf("draft.checks = %v, want a list", got.Draft["checks"])
 	}
 
+	code, body = send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines/draft", map[string]any{"prose": "Every night, check for outdated dependencies."})
+	var routine struct {
+		Draft struct {
+			Do struct {
+				Prompt string `json:"prompt"`
+			} `json:"do"`
+		} `json:"draft"`
+		Problems []any `json:"problems"`
+	}
+	if err := json.Unmarshal([]byte(body), &routine); err != nil || code != http.StatusOK || routine.Draft.Do.Prompt == "" || len(routine.Problems) != 0 {
+		t.Fatalf("routine draft = %d %s (%v), want 200 with a do.prompt and no problems", code, body, err)
+	}
+
 	code, body = send(t, http.MethodGet, w.in.LocalURL+"/api/fleets/work/standing-orders", nil)
 	var stored struct {
 		Checks     []string `json:"checks"`
