@@ -90,3 +90,19 @@ func TestAQuoteInACommitmentTextCannotEndItsQuotationInTheDigest(t *testing.T) {
 		t.Errorf("digest = %q, want only the two quotes the line puts round the text", got)
 	}
 }
+
+func TestAnAgedCardsDigestLineAsksWhetherYouStillWantItAndDoesNotSayItCouldNotRun(t *testing.T) {
+	r := newBriefRig(t)
+	c := commitmentCard()
+	c.ID, c.Outcome, c.Ship = "commitment-c1-aged", commitments.OutcomeAged, ""
+	if err := r.PostCard("work", c); err != nil {
+		t.Fatal(err)
+	}
+	got := lineTexts(r.digest(t, "work"))
+	if strings.Contains(got, "could not run") {
+		t.Errorf("digest = %q, want an aged commitment not to read as one that could not run", got)
+	}
+	if !strings.Contains(got, "ferry the harbour quartz") {
+		t.Errorf("digest = %q, want the commitment's text", got)
+	}
+}

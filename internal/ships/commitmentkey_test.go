@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -136,6 +137,17 @@ func TestACommitmentCloneThatMeetsTheCapAfterCloningLaunchesIntoItOnTheRetry(t *
 		q.Dir, q.Clone, q.Autopilot, q.QuietGate, q.CommitmentKey = "", true, true, true, "commitment:c1"
 		q.Text = "port https://github.com/acme/widgetry to go"
 	})
+	// A launch in flight reads the config, so the cap changes by swapping which config is served, not by writing one.
+	open := r.s.Launcher.Config()
+	full := *open
+	full.MaxShips = 0
+	var capFull atomic.Bool
+	r.s.Launcher.Config = func() *config.Config {
+		if capFull.Load() {
+			return &full
+		}
+		return open
+	}
 	done := make(chan *launcher.Error, 1)
 	go func() {
 		_, lerr := r.s.Launch(context.Background(), req)
@@ -147,14 +159,14 @@ func TestACommitmentCloneThatMeetsTheCapAfterCloningLaunchesIntoItOnTheRetry(t *
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	r.s.Launcher.Config().MaxShips = 0 // the cap fills while gh runs
+	capFull.Store(true) // the cap fills while gh runs
 	if err := os.WriteFile(gate, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if lerr := <-done; lerr == nil || lerr.Wait == "" {
 		t.Fatalf("Launch = %v, want a waitable refusal for the cap", lerr)
 	}
-	r.s.Launcher.Config().MaxShips = 5
+	capFull.Store(false)
 	ship, lerr := r.s.Launch(context.Background(), req)
 	if lerr != nil {
 		t.Fatalf("retry = %v, want the ship launched into the clone", lerr)

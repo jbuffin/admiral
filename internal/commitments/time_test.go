@@ -96,8 +96,8 @@ func TestANoneTriggerNeverFires(t *testing.T) {
 		t.Errorf("the none commitment posted a reminder")
 	}
 	for _, c := range g.cards.cards() {
-		if strings.Contains(c.ID, none.ID) {
-			t.Errorf("the none commitment posted card %+v, want nothing: its aged card is a later unit's", c)
+		if strings.Contains(c.ID, none.ID) && c.Outcome != commitments.OutcomeAged {
+			t.Errorf("the none commitment posted card %+v, want only its aged card", c)
 		}
 	}
 }

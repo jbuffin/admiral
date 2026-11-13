@@ -16,7 +16,7 @@ type Message struct {
 	Role string `json:"role,omitempty"` // "user" or "assistant", for a message
 	Text string `json:"text"`           // a card's title; a marker's "New chat"
 	At   string `json:"at"`
-	// Card is a question's item as it was asked, without its answer, or a commitment card's {commitment, outcome, ship, reason}.
+	// Card is a question's item as it was asked, without its answer, or a commitment card's {commitment, outcome, ship, reason}; outcome is launched, reminded, cant_run, dropped or aged (a no-trigger commitment 14 days old).
 	Card json.RawMessage `json:"card,omitempty"`
 }
 

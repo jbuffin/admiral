@@ -2,6 +2,7 @@ package commitments
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -50,6 +51,9 @@ func (r *Runner) readLog(list []ledger.Commitment) *shipLog {
 		}
 	}
 	log := &shipLog{byShip: map[string][]rec{}}
+	if r.keptLogs == nil {
+		r.keptLogs = map[string]bool{}
+	}
 	files, err := outcomes.MonthFiles(filepath.Join(r.Home, "outcomes"))
 	if err != nil || since.IsZero() {
 		return log
@@ -58,18 +62,62 @@ func (r *Runner) readLog(list []ledger.Commitment) *shipLog {
 		if end := f.End(); !end.IsZero() && !end.After(since) {
 			continue
 		}
-		log.readFile(f.Path)
+		for ship, recs := range r.parseCached(f.Path) {
+			log.byShip[ship] = append(log.byShip[ship], recs...)
+		}
+		r.keptLogs[f.Path] = true
 	}
 	return log
 }
 
-func (l *shipLog) readFile(path string) {
-	fh, err := os.Open(path)
+// pruneLogs drops the cached month files no fleet read this tick; one fleet's call must not evict another's months.
+func (r *Runner) pruneLogs() {
+	for path := range r.logs {
+		if !r.keptLogs[path] {
+			delete(r.logs, path)
+		}
+	}
+	r.keptLogs = map[string]bool{}
+}
+
+// cachedLog is one month file's parsed records, good while its size and mtime stay.
+type cachedLog struct {
+	size   int64
+	mtime  time.Time
+	byShip map[string][]rec
+}
+
+// parseCached re-reads a month file only when its size or mtime changed.
+func (r *Runner) parseCached(path string) map[string][]rec {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+	if c, ok := r.logs[path]; ok && c.size == info.Size() && c.mtime.Equal(info.ModTime()) {
+		return c.byShip
+	}
+	l := &shipLog{byShip: map[string][]rec{}}
+	l.readFile(r.readBytes, path)
+	if r.logs == nil {
+		r.logs = map[string]cachedLog{}
+	}
+	r.logs[path] = cachedLog{size: info.Size(), mtime: info.ModTime(), byShip: l.byShip}
+	return l.byShip
+}
+
+func (r *Runner) readBytes(path string) ([]byte, error) {
+	if r.ReadFile != nil {
+		return r.ReadFile(path)
+	}
+	return os.ReadFile(path)
+}
+
+func (l *shipLog) readFile(read func(string) ([]byte, error), path string) {
+	data, err := read(path)
 	if err != nil {
 		return
 	}
-	defer fh.Close()
-	br := bufio.NewReaderSize(fh, 64<<10)
+	br := bufio.NewReaderSize(bytes.NewReader(data), 64<<10)
 	for {
 		line, err := outcomes.ReadLine(br)
 		if len(line) > 0 && line[0] == '{' {

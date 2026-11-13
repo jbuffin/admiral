@@ -523,6 +523,12 @@ func serve(args []string) error {
 		}}}
 	commitmentRunner := &commitments.Runner{Home: absDir, Ledger: chatService.Notes(), Clock: commitments.Clock{Now: time.Now, After: time.After},
 		Ships: commitmentShips{shipService}, Cards: chatService, SourceFleet: chatService.SourceFleet, Ready: host.Ready(),
+		GitHubFor: func(fleet, host string) commitments.GitHub {
+			if c, ok := supervisor.GitHubClient(fleet, host); ok {
+				return c
+			}
+			return nil
+		},
 		Fleets: func() []string {
 			var keys []string
 			for _, f := range cfg.Current().Fleets {
