@@ -120,7 +120,10 @@ type Service struct {
 	// Tail gives a ship's conversation tail from a cache; it must not block.
 	Tail func(session string) string
 	// Candidates gives the PR URLs a ship and its crew boats printed in tool results, in order of first appearance.
+	// It must not be called under mooredMu: it re-enters Get.
 	Candidates func(session string) []string
+	// KeepCandidates tells Candidates which ships are live, so it can forget the rest.
+	KeepCandidates func(live []string)
 	// Titling reports whether the titler is working out the ship's title.
 	Titling func(session string) bool
 	// Questions gives the pending questions of a ship's conversation, or of a crew boat's when crew is set, oldest first.

@@ -56,8 +56,14 @@ type Check struct {
 // Counted returns the PRs that count towards mooring: GitHub confirms them open,
 // they are on the client's host and they route to the ship's fleet.
 func Counted(ctx context.Context, c Check, prs []string) []string {
+	out, _ := CountedOK(ctx, c, prs)
+	return out
+}
+
+// CountedOK is Counted that also says whether GitHub answered: false when there is no client or the retries ran out.
+func CountedOK(ctx context.Context, c Check, prs []string) ([]string, bool) {
 	if c.GitHub == nil || c.Route == nil {
-		return nil
+		return nil, false
 	}
 	var candidates []string
 	for _, u := range prs {
@@ -68,7 +74,7 @@ func Counted(ctx context.Context, c Check, prs []string) []string {
 		candidates = append(candidates, u)
 	}
 	if len(candidates) == 0 {
-		return nil
+		return nil, true
 	}
 	ctx, cancel := context.WithTimeout(ctx, RetryWindow)
 	defer cancel()
@@ -82,11 +88,11 @@ func Counted(ctx context.Context, c Check, prs []string) []string {
 					out = append(out, u)
 				}
 			}
-			return out
+			return out, true
 		}
 		select {
 		case <-ctx.Done():
-			return nil
+			return nil, false
 		case <-time.After(pause):
 		}
 	}

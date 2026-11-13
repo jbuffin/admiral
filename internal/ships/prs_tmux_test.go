@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -112,7 +113,7 @@ func TestARunningShipDoesNotCarryAPRItDidNotOpenSinceItLaunched(t *testing.T) {
 	}
 }
 
-func TestTheOneBatchedQueryOfAFleetAsksForRunningAndMooredShipsTogether(t *testing.T) {
+func TestAFleetsPollAsksForRunningAndMooredShipsTogetherAndFreshCandidatesApart(t *testing.T) {
 	r := newPRRig(t)
 	r.candidates = []string{prSeven}
 	r.mine(prSeven, "OPEN", time.Minute)
@@ -128,8 +129,13 @@ func TestTheOneBatchedQueryOfAFleetAsksForRunningAndMooredShipsTogether(t *testi
 	r.s.PollMoored(context.Background())
 
 	calls := r.gh.callLog()
-	if len(calls) != 1 || !slices.Contains(calls[0], prSeven) || !slices.Contains(calls[0], prNine) {
-		t.Errorf("PullRequests calls = %v, want one call holding the running ship's candidate and the moored ship's PR", calls)
+	if len(calls) != 2 || !slices.Equal(calls[0], []string{prSeven}) || !slices.Equal(calls[1], []string{prNine}) {
+		t.Errorf("PullRequests calls = %v, want the fresh candidate in one call and the moored PR in another", calls)
+	}
+	r.candidates = nil
+	r.s.PollMoored(context.Background())
+	if calls := r.gh.callLog(); len(calls) != 3 || !slices.Contains(calls[2], prSeven) || !slices.Contains(calls[2], prNine) {
+		t.Errorf("PullRequests calls = %v, want a later poll to ask for the carried and moored PRs together", calls)
 	}
 }
 
@@ -221,7 +227,7 @@ func TestAWokenShipShowsItsMooredPRsAtOnceAndKeepsThemBesideTheNewOnes(t *testin
 	}
 }
 
-// reportPath is where the harness of start n was told to write its report.
+// reportPath is where the harness was told to write its report.
 func reportPath(env string) string {
 	for _, l := range strings.Split(env, "\n") {
 		if v, ok := strings.CutPrefix(l, "ADMIRAL_REPORT="); ok {
@@ -237,11 +243,13 @@ func TestACleanExitMoorsTheShipWithItsCarriedPRsMergedWithTheReports(t *testing.
 		carried map[string]string // url to state
 		report  string            // the report's prs, or empty for no report
 		want    []string
+		merged  bool // GitHub says the carried PRs merged after the poll
 	}{
-		{"no report moors the ship with the PR it carries", map[string]string{prSeven: "OPEN"}, "", []string{prSeven}},
-		{"a report that leaves out a carried PR does not remove it", map[string]string{prSeven: "OPEN"}, `[{"url":"` + prNine + `"}]`, []string{prSeven, prNine}},
-		{"a PR in both the report and the carried ones is stored once", map[string]string{prSeven: "OPEN"}, `[{"url":"` + prSeven + `"},{"url":"` + prNine + `"}]`, []string{prSeven, prNine}},
-		{"a carried PR that merged is dropped, an open one stays", map[string]string{prSeven: "OPEN", prNine: "MERGED"}, "", []string{prSeven}},
+		{"no report moors the ship with the PR it carries", map[string]string{prSeven: "OPEN"}, "", []string{prSeven}, false},
+		{"a report that leaves out a carried PR does not remove it", map[string]string{prSeven: "OPEN"}, `[{"url":"` + prNine + `"}]`, []string{prSeven, prNine}, false},
+		{"a PR in both the report and the carried ones is stored once", map[string]string{prSeven: "OPEN"}, `[{"url":"` + prSeven + `"},{"url":"` + prNine + `"}]`, []string{prSeven, prNine}, false},
+		{"a carried PR that merged is dropped, an open one stays", map[string]string{prSeven: "OPEN", prNine: "MERGED"}, "", []string{prSeven}, false},
+		{"a carried PR that merged since the poll is dropped and the ship sails off", map[string]string{prSeven: "OPEN"}, "", nil, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := newPRRig(t)
@@ -267,6 +275,11 @@ func TestACleanExitMoorsTheShipWithItsCarriedPRsMergedWithTheReports(t *testing.
 					t.Fatal(err)
 				}
 			}
+			if c.merged {
+				for u := range c.carried {
+					r.mine(u, "MERGED", time.Minute)
+				}
+			}
 			r.exit(t, "0")
 			waitUntil(t, "the ship to leave its pane", func() bool {
 				_ = r.s.Host.Sync(context.Background())
@@ -278,6 +291,12 @@ func TestACleanExitMoorsTheShipWithItsCarriedPRsMergedWithTheReports(t *testing.
 				return true
 			})
 			recs, err := moor.List(r.home)
+			if c.want == nil {
+				if err != nil || len(recs) != 0 {
+					t.Fatalf("moored records = %+v, %v; want the ship to sail off", recs, err)
+				}
+				return
+			}
 			if err != nil || len(recs) != 1 {
 				t.Fatalf("moored records = %+v, %v; want the ship moored", recs, err)
 			}
@@ -290,4 +309,154 @@ func TestACleanExitMoorsTheShipWithItsCarriedPRsMergedWithTheReports(t *testing.
 			}
 		})
 	}
+}
+
+func TestACandidateNotOnTheFleetsHostOrWithAnUnusableNumberIsNeverAsked(t *testing.T) {
+	r := newPRRig(t)
+	r.candidates = []string{
+		"https://ghe.example.com/acme/widgets/pull/7",
+		"https://github.com/acme/widgets/pull/07",
+		"https://github.com/acme/widgets/pull/2147483648",
+		"https://github.com/acme/widgets/pull/99999999999",
+		"https://GitHub.com/acme/widgets/pull/9",
+	}
+	r.mine(prNine, "OPEN", time.Minute)
+
+	r.s.PollMoored(context.Background())
+
+	if calls := r.gh.callLog(); len(calls) != 1 || !slices.Equal(calls[0], []string{prNine}) {
+		t.Errorf("PullRequests calls = %v, want one call for %s alone: the other host's URL, the zero-led and the oversized numbers stay out", calls, prNine)
+	}
+	if got := prURLs(r.ship(t).PRs); !slices.Equal(got, []string{prNine}) {
+		t.Errorf("prs = %v, want [%s], rebuilt on the client's host", got, prNine)
+	}
+}
+
+func TestAtMostTwentyFreshCandidatesAreAskedInOnePollAndTheRestWaitForTheNext(t *testing.T) {
+	r := newPRRig(t)
+	var urls []string
+	for i := 1; i <= 25; i++ {
+		u := "https://github.com/acme/widgets/pull/" + strconv.Itoa(100+i)
+		urls = append(urls, u)
+		r.mine(u, "OPEN", time.Minute)
+	}
+	r.candidates = urls
+
+	r.s.PollMoored(context.Background())
+	if calls := r.gh.callLog(); len(calls) != 1 || len(calls[0]) != 20 {
+		t.Fatalf("PullRequests calls = %v, want one call of 20", calls)
+	}
+	r.s.PollMoored(context.Background())
+	if got := len(r.ship(t).PRs); got != 25 {
+		t.Errorf("after two polls the ship carries %d PRs, want all 25", got)
+	}
+}
+
+func TestACandidateInARepositoryGitHubCannotFindDoesNotStaleTheShipOrHideItsRealPR(t *testing.T) {
+	r := newPRRig(t)
+	r.candidates = []string{prOther, prSeven}
+	r.mine(prSeven, "OPEN", time.Minute)
+	r.gh.mu.Lock()
+	r.gh.un = []string{prOther}
+	r.gh.mu.Unlock()
+
+	for range maxCandidateTries {
+		r.s.PollMoored(context.Background())
+	}
+
+	sh := r.ship(t)
+	if got := prURLs(sh.PRs); !slices.Equal(got, []string{prSeven}) || sh.Stale || !sh.CarriesPRs {
+		t.Errorf("prs %v, stale %v, carries_prs %v; want [%s] carried and not stale", got, sh.Stale, sh.CarriesPRs, prSeven)
+	}
+	n := len(r.gh.callLog())
+	r.s.PollMoored(context.Background())
+	for _, c := range r.gh.callLog()[n:] {
+		if slices.Contains(c, prOther) {
+			t.Errorf("a later call %v still asks for the repository GitHub cannot find", c)
+		}
+	}
+}
+
+func TestACandidateQueryThatFailsOutrightLeavesMooredShipsAnsweredAndIsDroppedAfterThreeTries(t *testing.T) {
+	r := newPRRig(t)
+	r.candidates = []string{prSeven}
+	r.gh.mu.Lock()
+	r.gh.failOn = prSeven
+	r.gh.mu.Unlock()
+	r.gh.set(prNine, moor.Status{State: "OPEN"})
+	if err := moor.Write(r.home, moor.Record{Name: "Hood", Session: "hood", Fleet: "work", Harness: "claude", Checkout: r.checkout,
+		PRs: []string{prNine}, MooredAt: time.Now().UTC().Truncate(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	r.s.mooredMu.Lock()
+	r.s.mooredLoaded = false
+	r.s.mooredMu.Unlock()
+
+	for range maxCandidateTries {
+		r.s.PollMoored(context.Background())
+	}
+
+	var hood Ship
+	for _, sh := range r.s.List() {
+		if sh.Name == "Hood" {
+			hood = sh
+		}
+	}
+	if hood.Name == "" || hood.Stale || hood.PolledAt == "" {
+		t.Errorf("the moored ship = %+v, want it answered and not stale beside a failing candidate query", hood)
+	}
+	if sh := r.ship(t); sh.Stale {
+		t.Errorf("the running ship is stale, want only a carried PR to stale it")
+	}
+	n := len(r.gh.callLog())
+	r.s.PollMoored(context.Background())
+	for _, c := range r.gh.callLog()[n:] {
+		if slices.Contains(c, prSeven) {
+			t.Errorf("a call %v asks for the candidate that failed %d times", c, maxCandidateTries)
+		}
+	}
+}
+
+func TestACarriedPRSurvivesAnAdmiralRestartWithNoTranscriptToReadItFrom(t *testing.T) {
+	r := newPRRig(t)
+	r.candidates = []string{prSeven}
+	r.mine(prSeven, "OPEN", time.Minute)
+	r.s.PollMoored(context.Background())
+
+	r.s.mooredMu.Lock()
+	r.s.running, r.s.mooredPolls = nil, nil // a new process knows nothing of the launch
+	r.s.mooredMu.Unlock()
+	r.s.Candidates = func(string) []string { return nil }
+	waitUntil(t, "the carried PR to be on the session", func() bool {
+		_ = r.s.Host.Sync(context.Background())
+		return r.options(t, "saltpaw")["prs"] == prSeven
+	})
+
+	sh := r.ship(t)
+	if got := prURLs(sh.PRs); !slices.Equal(got, []string{prSeven}) || !sh.CarriesPRs {
+		t.Errorf("after the restart: prs %v, carries_prs %v; want [%s] carried", got, sh.CarriesPRs, prSeven)
+	}
+	wantError(t, r.returnToPort("saltpaw"), http.StatusConflict, "a ship carrying an open PR it opened itself")
+}
+
+func TestAWokenShipWhoseMooredPollSawItsPRMergedShowsItMergedBeforeAnyPoll(t *testing.T) {
+	r := newWakeRig(t, 0)
+	r.moored(t, 0)
+	r.s.mooredMu.Lock()
+	r.s.polls()["saltpaw"] = polled{status: map[string]moor.Status{wakePR: {State: "MERGED"}}, at: time.Now().UTC()}
+	r.s.mooredMu.Unlock()
+	if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {
+		t.Fatal(lerr)
+	}
+	r.started(t, 1)
+
+	for _, sh := range r.s.List() {
+		if sh.Name == "Saltpaw" {
+			if len(sh.PRs) != 1 || sh.PRs[0].State != "MERGED" || sh.CarriesPRs {
+				t.Errorf("the woken ship: prs %+v, carries_prs %v; want [%s] MERGED and not carried", sh.PRs, sh.CarriesPRs, wakePR)
+			}
+			return
+		}
+	}
+	t.Fatal("no ship Saltpaw")
 }

@@ -205,6 +205,13 @@
 #                  to a rollout under ${CODEX_HOME:-$HOME/.codex}/sessions, then sets the pane's
 #                  @admiral-transcript to it, as the SessionStart hook would. With no option to
 #                  write to it puts why in `usage-error` and exits 1.
+#   toolresult <text>
+#                  Claude only, needs jq: appends a completed Bash tool call to the transcript
+#                  $CLAUDE_CONFIG_DIR/projects/zz/<id>.jsonl, <id> being the --session-id in its argv: an
+#                  assistant tool_use line and a user tool_result line holding <text>, as a `gh pr create`
+#                  that printed a URL would leave. Unlike `reply` it is not the last cue and answers nothing.
+#                  With no usable --session-id or no $CLAUDE_CONFIG_DIR it writes why to `toolresult-error`
+#                  and stderr and exits 1.
 #   replydelay <n> sleep n seconds before each message's lines are appended, so a test sees the
 #                  message sent and not yet recorded. Put it before `reply`.
 #
@@ -839,6 +846,25 @@ EOF5
 				done <"$d/.cmds"
 			fi
 			echo "$ev" >>"$d/events-done"
+			;;
+		toolresult)
+			sid=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--session-id" ] && sid=$a
+				prev=$a
+			done
+			case "$sid" in
+			"" | */*) echo "toolresult cue: no usable --session-id in argv" | tee "$d/toolresult-error" >&2; exit 1 ;;
+			esac
+			if [ -z "$CLAUDE_CONFIG_DIR" ]; then
+				echo "toolresult cue: CLAUDE_CONFIG_DIR is unset" | tee "$d/toolresult-error" >&2
+				exit 1
+			fi
+			mkdir -p "$CLAUDE_CONFIG_DIR/projects/zz"
+			jq -cn --arg r "$arg" '
+  {uuid: "fake-tool-call", type: "assistant", timestamp: (now | todate), message: {role: "assistant", content: [{type: "tool_use", id: "fake-tool", name: "Bash", input: {command: "gh pr create"}}]}},
+  {uuid: "fake-tool-result", type: "user", timestamp: (now | todate), message: {role: "user", content: [{type: "tool_result", tool_use_id: "fake-tool", content: $r}]}}' >>"$CLAUDE_CONFIG_DIR/projects/zz/$sid.jsonl"
 			;;
 		reply)
 			sid=""

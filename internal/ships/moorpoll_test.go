@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -36,6 +37,7 @@ type pollGitHub struct {
 	err      error                  // a transport failure
 	mergeErr error                  // what MergePR answers
 	un       []string               // PRs the answer leaves unanswered, with an *moor.Unanswered
+	failOn   string                 // a call that asks for this URL fails outright
 	block    chan struct{}          // when set, a call waits for it to close
 	calls    [][]string
 	active   int
@@ -101,6 +103,9 @@ func (g *pollGitHub) PullRequests(_ context.Context, urls []string) (map[string]
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.active--
+	if g.failOn != "" && slices.Contains(urls, g.failOn) {
+		err = errors.New("the query failed")
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -589,6 +589,7 @@ func serve(args []string) error {
 	tails := convService.Tails()
 	shipService.Tail = tails.Tail
 	shipService.Candidates = convService.PRCandidates
+	shipService.KeepCandidates = convService.KeepCandidates
 	titler := newTitler(dir, cfg, host, shipService, tails, supervisor)
 	shipService.Titling = titler.Titling
 	shipService.Questions = convService.PendingQuestions

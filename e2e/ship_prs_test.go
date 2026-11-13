@@ -40,7 +40,7 @@ func TestShipPRs_ARunningShipCarriesThePRItOpenedThroughToMooring(t *testing.T) 
 		t.Fatal(err)
 	}
 	cue := filepath.Join(w.root, "cue-f")
-	if err := os.WriteFile(cue, []byte("hook working\nwait go\nsleep 1\nexit 0\n"), 0o600); err != nil {
+	if err := os.WriteFile(cue, []byte("hook working\ntoolresult "+mooredPR+"\nwait go\nsleep 1\nexit 0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	env := w.harnessEnv()
@@ -59,22 +59,13 @@ func TestShipPRs_ARunningShipCarriesThePRItOpenedThroughToMooring(t *testing.T) 
 	w.start()
 
 	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
-	var id string
-	argv := w.record(ship.Session).argv
-	for i, a := range argv {
-		if a == "--session-id" && i+1 < len(argv) {
-			id = argv[i+1]
+	deadline := time.Now().Add(10 * time.Second)
+	for !transcriptHas(cfgDir, mooredPR) {
+		if time.Now().After(deadline) {
+			t.Fatal("the fake never wrote the tool result to its transcript")
 		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	if !uuidRe.MatchString(id) {
-		t.Fatalf("argv = %q, want a --session-id uuid", argv)
-	}
-	call, _ := json.Marshal(map[string]any{"type": "assistant", "uuid": "a-1", "message": map[string]any{"content": []map[string]any{
-		{"type": "tool_use", "id": "t1", "name": "Bash", "input": map[string]any{"command": "gh pr create"}}}}})
-	res, _ := json.Marshal(map[string]any{"type": "user", "uuid": "u-1", "message": map[string]any{"content": []map[string]any{
-		{"type": "tool_result", "tool_use_id": "t1", "content": mooredPR + "\n"}}}})
-	appendLines(t, filepath.Join(cfgDir, "projects", "zz", id+".jsonl"), string(call), string(res))
-
 	w.kickMoored()
 	list := w.in.waitShipsList(t, 20*time.Second, "the running ship carrying the PR it opened", func(l []shipJSON) bool {
 		s := byName(l)[ship.Name]
@@ -92,4 +83,15 @@ func TestShipPRs_ARunningShipCarriesThePRItOpenedThroughToMooring(t *testing.T) 
 	if !exists(w.mooredFile(byName(list)[ship.Name].Name)) {
 		t.Errorf("no moored record for %s, want the carried PR kept though the report named none", ship.Name)
 	}
+}
+
+// transcriptHas reports whether a Claude transcript under the config dir holds text.
+func transcriptHas(cfgDir, text string) bool {
+	files, _ := filepath.Glob(filepath.Join(cfgDir, "projects", "zz", "*.jsonl"))
+	for _, f := range files {
+		if b, err := os.ReadFile(f); err == nil && strings.Contains(string(b), text) {
+			return true
+		}
+	}
+	return false
 }

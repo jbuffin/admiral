@@ -31,7 +31,7 @@ func TestAWakeKeepsTheShipsWakeState(t *testing.T) {
 	session := f.moor(t, "Nelson", "work", prSeven)
 	seedWake(t, f, "Nelson")
 
-	f.s.dropMoored(session)
+	f.s.dropMoored(session, "")
 	if len(f.records(t)) != 0 {
 		t.Fatal("dropMoored left the record")
 	}

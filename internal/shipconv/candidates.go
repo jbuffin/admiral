@@ -1,6 +1,8 @@
 package shipconv
 
 import (
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/jbuffin/admiral/internal/conversation"
@@ -24,8 +26,7 @@ func candReader(harness string) *conversation.Reader {
 	return conversation.NewReader(conversation.Options{Harness: harness, Keep: func(it conversation.Item) bool { return it.Kind == conversation.KindToolCall }, MaxBytes: 1 << 20})
 }
 
-// PRCandidates is the PR URLs the ship and its crew boats printed in tool results, ship first, then each boat in crew order.
-// It reads what each transcript gained since the last call; a boat whose transcript is not found yet adds nothing until a later call finds it.
+// PRCandidates is the PR URLs the ship and its crew boats printed in tool results, reading only what each transcript gained since the last call.
 func (s *Service) PRCandidates(session string) []string {
 	sh, ok := s.shipOf(session, false)
 	if !ok {
@@ -68,6 +69,18 @@ func (s *Service) PRCandidates(session string) []string {
 		add(b.Name)
 	}
 	return out
+}
+
+// KeepCandidates drops the reads of ships not in live, which have ended.
+func (s *Service) KeepCandidates(live []string) {
+	s.cands.mu.Lock()
+	defer s.cands.mu.Unlock()
+	for k := range s.cands.follows {
+		session, _, _ := strings.Cut(k, "/crew/")
+		if !slices.Contains(live, session) {
+			delete(s.cands.follows, k)
+		}
+	}
 }
 
 func (s *Service) readCandidates(f *candFollow, w where) {

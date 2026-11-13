@@ -59,19 +59,28 @@ func (s *Service) report(session string) moor.Report {
 	return moor.ParseReport(s.readReport(session))
 }
 
-// countedPRs is the PRs of the ship's report that GitHub confirms open in the ship's fleet, then the open ones it already carried.
+// countedPRs is the PRs GitHub confirms open in the ship's fleet out of its report's and the ones it carries. When GitHub
+// cannot be asked, the carried PRs the last poll saw open stand.
 func (s *Service) countedPRs(ctx context.Context, sess sessionhost.Session) []string {
 	carried := s.carriedOpen(sess)
+	prs := slices.Clone(carried)
+	for _, u := range s.report(sess.Name).PRs {
+		if !slices.Contains(prs, u) {
+			prs = append(prs, u)
+		}
+	}
+	if len(prs) == 0 {
+		return nil
+	}
 	var counted []string
-	if prs := s.report(sess.Name).PRs; len(prs) > 0 && s.GitHub != nil {
+	ok := false
+	if s.GitHub != nil {
 		fleet := sess.Options["fleet"]
 		router := github.RouterFromFleets(s.Launcher.Config().Fleets)
-		counted = moor.Counted(ctx, moor.Check{Fleet: fleet, GitHub: s.GitHub(fleet), Route: router.Route}, prs)
+		counted, ok = moor.CountedOK(ctx, moor.Check{Fleet: fleet, GitHub: s.GitHub(fleet), Route: router.Route}, prs)
 	}
-	for _, u := range carried {
-		if !slices.Contains(counted, u) {
-			counted = append(counted, u)
-		}
+	if !ok {
+		return carried
 	}
 	return counted
 }

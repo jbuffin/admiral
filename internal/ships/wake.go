@@ -206,7 +206,7 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr, 
 		return Ship{}, lerr
 	}
 	s.releaseWhenListed(got.Session, release)
-	s.dropMoored(session)
+	s.dropMoored(session, got.Launched)
 	s.broadcast()
 	return got, nil
 }
@@ -278,8 +278,9 @@ func (s *Service) endWaking(session string) {
 	s.mu.Unlock()
 }
 
-// dropMoored removes the record of a ship that is live again: tmux is its record now.
-func (s *Service) dropMoored(session string) {
+// dropMoored removes the record of a ship that is live again: tmux is its record now. The record's last poll answer
+// goes to the new launch, which shows it until its first poll.
+func (s *Service) dropMoored(session, launched string) {
 	s.mooredMu.Lock()
 	defer s.mooredMu.Unlock()
 	s.loadMoored()
@@ -293,6 +294,10 @@ func (s *Service) dropMoored(session string) {
 			return
 		}
 		s.moored = slices.Delete(s.moored, i, i+1)
+		if s.running == nil {
+			s.running = map[string]*running{}
+		}
+		s.running[session] = &running{launched: launched, rejected: map[string]bool{}, tries: map[string]int{}, poll: s.mooredPolls[session]}
 		delete(s.mooredPolls, session)
 		return
 	}

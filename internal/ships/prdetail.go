@@ -9,7 +9,7 @@ import (
 	"github.com/jbuffin/admiral/internal/moor"
 )
 
-// detailTimeout bounds one detail read of GitHub.
+// detailTimeout keeps a slow GitHub from holding the request open.
 var detailTimeout = 15 * time.Second
 
 // servePRDetail reads one PR a running or moored ship carries, fresh from GitHub through the ship's fleet.
