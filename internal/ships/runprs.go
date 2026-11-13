@@ -32,6 +32,8 @@ func (s *Service) runState(sess sessionhost.Session) *running {
 	rs := s.running[sess.Name]
 	if rs == nil || rs.launched != sess.Options["launched"] {
 		rs = &running{launched: sess.Options["launched"], rejected: map[string]bool{}}
+		// A woken ship's PRs were just answered as moored: that answer stands until its first poll.
+		rs.poll = s.mooredPolls[sess.Name]
 		s.running[sess.Name] = rs
 	}
 	return rs

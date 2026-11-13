@@ -239,8 +239,8 @@ func TestACleanExitMoorsTheShipWithItsCarriedPRsMergedWithTheReports(t *testing.
 		want    []string
 	}{
 		{"no report moors the ship with the PR it carries", map[string]string{prSeven: "OPEN"}, "", []string{prSeven}},
-		{"a report that leaves out a carried PR does not remove it", map[string]string{prSeven: "OPEN"}, `["` + prNine + `"]`, []string{prSeven, prNine}},
-		{"a PR in both the report and the carried ones is stored once", map[string]string{prSeven: "OPEN"}, `["` + prSeven + `","` + prNine + `"]`, []string{prSeven, prNine}},
+		{"a report that leaves out a carried PR does not remove it", map[string]string{prSeven: "OPEN"}, `[{"url":"` + prNine + `"}]`, []string{prSeven, prNine}},
+		{"a PR in both the report and the carried ones is stored once", map[string]string{prSeven: "OPEN"}, `[{"url":"` + prSeven + `"},{"url":"` + prNine + `"}]`, []string{prSeven, prNine}},
 		{"a carried PR that merged is dropped, an open one stays", map[string]string{prSeven: "OPEN", prNine: "MERGED"}, "", []string{prSeven}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -263,7 +263,7 @@ func TestACleanExitMoorsTheShipWithItsCarriedPRsMergedWithTheReports(t *testing.
 			}
 			if c.report != "" {
 				_, env := r.started(t, 1)
-				if err := os.WriteFile(reportPath(env), []byte(`{"version":1,"result":"done","why":"w","prs":`+c.report+`}`), 0o600); err != nil {
+				if err := os.WriteFile(reportPath(env), []byte(`{"version":2,"result":"done","why":"w","prs":`+c.report+`}`), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}
