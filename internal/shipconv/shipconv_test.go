@@ -70,6 +70,7 @@ type fixture struct {
 	options map[string]string
 	starts  map[string]string // the command each ship's pane started with
 	harness map[string]string
+	boats   map[string][]string // each ship's crew boat names
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -88,14 +89,18 @@ func newFixture(t *testing.T) *fixture {
 	if err := os.MkdirAll(filepath.Join(codex, "sessions", "2026", "11", "11"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{t: t, cfg: cfg, codex: codex, options: map[string]string{}, starts: map[string]string{}, harness: map[string]string{}}
+	f := &fixture{t: t, cfg: cfg, codex: codex, options: map[string]string{}, starts: map[string]string{}, harness: map[string]string{}, boats: map[string][]string{}}
 	f.svc = &Service{
 		owns: func(ships.Ship, int) bool { return true }, // the fakes listen in this process, not under a pane
 		ship: func(session string) (ships.Ship, bool) {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			h, ok := f.harness[session]
-			return ships.Ship{Session: session, Harness: h, Launched: "L1"}, ok
+			sh := ships.Ship{Session: session, Harness: h, Launched: "L1"}
+			for _, name := range f.boats[session] {
+				sh.Crew = append(sh.Crew, ships.CrewBoat{Name: name, Conversation: true})
+			}
+			return sh, ok
 		},
 		option: func(sh ships.Ship) (string, string, string, bool) {
 			f.mu.Lock()

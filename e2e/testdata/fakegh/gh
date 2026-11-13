@@ -82,6 +82,15 @@
 #     that file on stderr. Every merge-flavoured call also records $GH_REPO and
 #     the working directory (see env and cwd above).
 #
+#   gh api graphql ...   (the PR tab's single-PR detail query)
+#     Taken before the batched query when an argument holds `isDraft`. It reads
+#     the one `d: repository(owner: "O", name: "N") { pullRequest(number: 7)`
+#     and answers data.d.pullRequest with the content of $FAKEGH_DIR/pr_detail/KEY
+#     (KEY as for pr_state): a JSON object in GitHub's shape, not checked against
+#     the query. No file: the item-level NOT_FOUND. $FAKEGH_DIR/pr_detail.fail
+#     (its content on stderr, exit 1) and $FAKEGH_DIR/pr_detail.sleep (seconds
+#     to wait first) make the call fail or run long.
+#
 #   gh api graphql ...   (the moor poll's batched pull request query)
 #     Taken when an argument holds `pullRequest(number:`, before the search
 #     match below. It reads each `ALIAS: repository(owner: "O", name: "N")
@@ -396,6 +405,35 @@ api)
 			[ -s "$FAKEGH_DIR/default_merge_method" ] && dm=$(cat "$FAKEGH_DIR/default_merge_method")
 			printf '{"data":{"repository":{"viewerDefaultMergeMethod":"%s"}}}\n' "$dm"
 			exit 0
+			;;
+		esac
+	done
+	for a in "$@"; do
+		case "$a" in
+		*isDraft*)
+			[ -s "$FAKEGH_DIR/pr_detail.sleep" ] && sleep "$(cat "$FAKEGH_DIR/pr_detail.sleep")"
+			if [ -e "$FAKEGH_DIR/pr_detail.fail" ]; then
+				cat "$FAKEGH_DIR/pr_detail.fail" >&2
+				exit 1
+			fi
+			dhost=github.com dprev=
+			for b in "$@"; do
+				[ "$dprev" = --hostname ] && dhost=$b
+				dprev=$b
+			done
+			dent=$(printf '%s' "$a" | tr -d '\n' | grep -oE 'repository\(owner: *"[^"]+", *name: *"[^"]+"\) *\{ *pullRequest\(number: *[0-9]+\)' | head -1 |
+				sed -E 's/^repository\(owner: *"([^"]+)", *name: *"([^"]+)"\) *\{ *pullRequest\(number: *([0-9]+)\)$/\1 \2 \3/')
+			read -r downer dname dnum <<EOF3
+$dent
+EOF3
+			dkey=$(printf '%s' "https://$dhost/$downer/$dname/pull/$dnum" | tr '/:' '__')
+			if [ -s "$FAKEGH_DIR/pr_detail/$dkey" ]; then
+				printf '{"data":{"d":{"pullRequest":%s}}}\n' "$(tr -d '\n' <"$FAKEGH_DIR/pr_detail/$dkey")"
+				exit 0
+			fi
+			printf '{"data":{"d":{"pullRequest":null}},"errors":[{"type":"NOT_FOUND","path":["d","pullRequest"],"message":"Could not resolve to a PullRequest with the number of %s."}]}\n' "$dnum"
+			echo "gh: Could not resolve to a PullRequest" >&2
+			exit 1
 			;;
 		esac
 	done

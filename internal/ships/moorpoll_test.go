@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -36,16 +37,57 @@ type pollGitHub struct {
 	err      error                  // a transport failure
 	mergeErr error                  // what MergePR answers
 	un       []string               // PRs the answer leaves unanswered, with an *moor.Unanswered
+	failOn   string                 // a call that asks for this URL fails outright
 	block    chan struct{}          // when set, a call waits for it to close
 	calls    [][]string
 	active   int
 	most     int
+
+	exitCheck   bool                   // OpenPRs answers from status instead of failing
+	detail      map[string]moor.Detail // what PullRequestDetail answers per URL
+	detailErr   error
+	detailBlock chan struct{} // when set, a detail call waits for it to close or its ctx to end
+	detailCalls []string
 }
 
 func (g *pollGitHub) Host() string { return "github.com" }
 
-func (g *pollGitHub) OpenPRs(context.Context, []string) (map[string]bool, error) {
-	return nil, errors.New("the poll uses the batched query")
+// OpenPRs is what mooring at exit asks; it answers from status only once a test sets exitCheck.
+func (g *pollGitHub) OpenPRs(_ context.Context, urls []string) (map[string]bool, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.exitCheck {
+		return nil, errors.New("the poll uses the batched query")
+	}
+	out := map[string]bool{}
+	for _, u := range urls {
+		if st, ok := g.status[u]; ok {
+			out[u] = st.State == "OPEN"
+		}
+	}
+	return out, nil
+}
+
+// PullRequestDetail answers detail[url], counts each call and fails with detailErr or waits for detailBlock when set.
+func (g *pollGitHub) PullRequestDetail(ctx context.Context, url string) (moor.Detail, error) {
+	g.mu.Lock()
+	g.detailCalls = append(g.detailCalls, url)
+	d, err, block := g.detail[url], g.detailErr, g.detailBlock
+	g.mu.Unlock()
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return moor.Detail{}, ctx.Err()
+		}
+	}
+	return d, err
+}
+
+func (g *pollGitHub) detailLog() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string(nil), g.detailCalls...)
 }
 
 func (g *pollGitHub) PullRequests(_ context.Context, urls []string) (map[string]moor.Status, error) {
@@ -61,6 +103,9 @@ func (g *pollGitHub) PullRequests(_ context.Context, urls []string) (map[string]
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.active--
+	if g.failOn != "" && slices.Contains(urls, g.failOn) {
+		err = errors.New("the query failed")
+	}
 	if err != nil {
 		return nil, err
 	}

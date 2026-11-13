@@ -60,6 +60,8 @@ type Request struct {
 	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
 	Autopilot bool     `json:"autopilot"`
 	ExtraArgs []string `json:"-"`
+	// PRs are the pull requests a woken ship carries from its mooring; they are confirmed already.
+	PRs []string `json:"-"`
 	// Resources are held while the ship is underway or needs you; a hand launch holds none.
 	Resources []string `json:"resources"`
 	// Name and Session relaunch a moored ship under its own identity instead of a picked name; Round is
@@ -205,7 +207,7 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	// The name and the time are ours.
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
+		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")},
 		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}}
 	for _, o := range opts {
 		if hasControl(o[1]) {

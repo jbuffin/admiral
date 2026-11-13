@@ -75,7 +75,7 @@ const (
 
 var actor = "author { __typename login }"
 
-var prFields = fmt.Sprintf(`state reviewDecision mergeable statusCheckRollup { state } headRefOid mergeStateStatus number
+var prFields = fmt.Sprintf(`state author { __typename login } createdAt reviewDecision mergeable statusCheckRollup { state } headRefOid mergeStateStatus number
  baseRef { branchProtectionRule { requiresStrictStatusChecks } rules(first: 20) { nodes { type parameters { ... on RequiredStatusChecksParameters { strictRequiredStatusChecksPolicy } } } } }
  reviews(last: %d) { nodes { id %s state submittedAt body url comments { totalCount } } }
  reviewThreads(last: %d) { nodes { comments(last: %d) { nodes { id %s createdAt body url } } } }
@@ -180,11 +180,13 @@ type nodes[T any] struct {
 }
 
 type prNode struct {
-	State             string `json:"state"`
-	ReviewDecision    string `json:"reviewDecision"`
-	Mergeable         string `json:"mergeable"`
-	MergeStateStatus  string `json:"mergeStateStatus"`
-	HeadRefOid        string `json:"headRefOid"`
+	State             string    `json:"state"`
+	Author            *gqlActor `json:"author"`
+	CreatedAt         time.Time `json:"createdAt"`
+	ReviewDecision    string    `json:"reviewDecision"`
+	Mergeable         string    `json:"mergeable"`
+	MergeStateStatus  string    `json:"mergeStateStatus"`
+	HeadRefOid        string    `json:"headRefOid"`
 	StatusCheckRollup *struct {
 		State string `json:"state"`
 	} `json:"statusCheckRollup"`
@@ -242,7 +244,8 @@ func cut(s string) string {
 }
 
 func (n *prNode) status() moor.Status {
-	st := moor.Status{State: n.State, Review: n.ReviewDecision, Mergeable: n.Mergeable, MergeState: n.MergeStateStatus, Head: n.HeadRefOid}
+	st := moor.Status{State: n.State, Review: n.ReviewDecision, Mergeable: n.Mergeable, MergeState: n.MergeStateStatus, Head: n.HeadRefOid,
+		Author: n.Author.actor().Login, CreatedAt: n.CreatedAt}
 	if n.StatusCheckRollup != nil {
 		st.Checks = n.StatusCheckRollup.State
 	}

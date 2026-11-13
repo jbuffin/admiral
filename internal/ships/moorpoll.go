@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/delay"
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
@@ -60,7 +61,8 @@ func (s *Service) RunMoored(ctx context.Context) {
 	}
 }
 
-// PollMoored runs one pass: one batched query per fleet's client for every moored ship's PRs.
+// PollMoored runs one pass: one batched query per fleet's client for every moored ship's PRs and the PRs live ships carry,
+// and a second one, only when a live ship has candidates to judge, so a candidate that fails cannot stale the first.
 func (s *Service) PollMoored(ctx context.Context) {
 	s.pollMu.Lock()
 	defer s.pollMu.Unlock()
@@ -79,30 +81,86 @@ func (s *Service) PollMoored(ctx context.Context) {
 		}
 		byFleet[r.Fleet] = append(byFleet[r.Fleet], r)
 	}
+	runs := s.runningAsks()
+	for f := range runs {
+		if _, ok := byFleet[f]; !ok {
+			fleets = append(fleets, f)
+		}
+	}
+	var route func(host, repo string) string
 	changed := false
 	for _, fleet := range fleets {
 		gh := s.GitHub(fleet)
 		if gh == nil || ctx.Err() != nil {
 			continue
 		}
-		var urls []string
+		var urls, cands []string
 		seen := map[string]bool{}
-		for _, r := range byFleet[fleet] {
-			for _, u := range r.PRs {
+		add := func(to *[]string, us []string) {
+			for _, u := range us {
 				if !seen[u] {
 					seen[u] = true
-					urls = append(urls, u)
+					*to = append(*to, u)
 				}
 			}
 		}
-		answer, err := gh.PullRequests(ctx, urls)
-		if ctx.Err() != nil {
-			return
+		for _, r := range byFleet[fleet] {
+			add(&urls, r.PRs)
+		}
+		for i, run := range runs[fleet] {
+			add(&urls, run.urls)
+			if len(run.raw) > 0 {
+				if route == nil {
+					route = github.RouterFromFleets(s.Launcher.Config().Fleets).Route
+				}
+				runs[fleet][i].cands = s.freshCandidates(run, fleet, gh.Host(), route)
+				add(&cands, runs[fleet][i].cands)
+			}
+		}
+		if len(urls) == 0 && len(cands) == 0 {
+			continue
+		}
+		var candAnswer map[string]moor.Status
+		candFailed := map[string]bool{}
+		if len(cands) > 0 {
+			var cerr error
+			candAnswer, cerr = gh.PullRequests(ctx, cands)
+			if ctx.Err() != nil {
+				return
+			}
+			var un *moor.Unanswered
+			switch {
+			case errors.As(cerr, &un):
+				for _, u := range un.URLs {
+					candFailed[u] = true
+				}
+			case cerr != nil:
+				for _, u := range cands {
+					candFailed[u] = true
+				}
+			}
+		}
+		var answer map[string]moor.Status
+		var err error
+		if len(urls) > 0 {
+			answer, err = gh.PullRequests(ctx, urls)
+			if ctx.Err() != nil {
+				return
+			}
 		}
 		// Some of the PRs unanswered: the ships holding one are stale, the others are answered.
 		var unanswered *moor.Unanswered
 		partial := errors.As(err, &unanswered)
 		changed = true
+		for _, run := range runs[fleet] {
+			if err != nil && (!partial || slices.ContainsFunc(run.urls, func(u string) bool { return slices.Contains(unanswered.URLs, u) })) {
+				s.markRunStale(run.sess)
+				continue
+			}
+			if s.storeRun(run, answer, candAnswer, candFailed) {
+				s.persistCarried(ctx, run.sess)
+			}
+		}
 		for _, r := range byFleet[fleet] {
 			if err != nil && (!partial || slices.ContainsFunc(r.PRs, func(u string) bool { return slices.Contains(unanswered.URLs, u) })) {
 				s.markStale(r)

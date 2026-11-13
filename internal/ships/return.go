@@ -37,7 +37,7 @@ func (s *Service) serveReturn(w http.ResponseWriter, r *http.Request) {
 	case sess.Options[sessionhost.OptReturning] != "":
 		writeJSON(w, http.StatusOK, map[string]any{"returning": true})
 		return
-	case carriesPRs(sess):
+	case s.carriesPRs(sess):
 		writeError(w, http.StatusConflict, "ship "+session+" carries a PR: it returns to port once its PRs are merged")
 		return
 	}
@@ -94,11 +94,6 @@ func (s *Service) sendReturnPrompt(name string) {
 	_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptReturning: "sent"})
 	_ = s.Host.Sync(ctx)
 	s.broadcast()
-}
-
-// carriesPRs is true for a ship woken from its mooring: its PRs were open when it woke.
-func carriesPRs(sess sessionhost.Session) bool {
-	return sess.Options["round"] != "" && sess.Options[sessionhost.OptReturning] == ""
 }
 
 // returnMerged wakes a moored ship whose PRs are all done, at least one merged, with its resume text and the clean-up

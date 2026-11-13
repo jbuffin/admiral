@@ -22,6 +22,8 @@ type GitHub interface {
 	// for is left out; an error is a failed call, not an answer, except an *Unanswered
 	// beside a good answer for the PRs not named in it.
 	PullRequests(ctx context.Context, urls []string) (map[string]Status, error)
+	// PullRequestDetail reads one pull request in full, fresh, with one query.
+	PullRequestDetail(ctx context.Context, url string) (Detail, error)
 	// DefaultMergeMethod is the repository's default merge method: merge, squash or rebase.
 	DefaultMergeMethod(ctx context.Context, nameWithOwner string) (string, error)
 	// MergePR merges one pull request with the method. Only the engineer's Merge act calls it. An error is gh's
@@ -54,8 +56,14 @@ type Check struct {
 // Counted returns the PRs that count towards mooring: GitHub confirms them open,
 // they are on the client's host and they route to the ship's fleet.
 func Counted(ctx context.Context, c Check, prs []string) []string {
+	out, _ := CountedOK(ctx, c, prs)
+	return out
+}
+
+// CountedOK is Counted that also says whether GitHub answered: false when there is no client or the retries ran out.
+func CountedOK(ctx context.Context, c Check, prs []string) ([]string, bool) {
 	if c.GitHub == nil || c.Route == nil {
-		return nil
+		return nil, false
 	}
 	var candidates []string
 	for _, u := range prs {
@@ -66,7 +74,7 @@ func Counted(ctx context.Context, c Check, prs []string) []string {
 		candidates = append(candidates, u)
 	}
 	if len(candidates) == 0 {
-		return nil
+		return nil, true
 	}
 	ctx, cancel := context.WithTimeout(ctx, RetryWindow)
 	defer cancel()
@@ -80,11 +88,11 @@ func Counted(ctx context.Context, c Check, prs []string) []string {
 					out = append(out, u)
 				}
 			}
-			return out
+			return out, true
 		}
 		select {
 		case <-ctx.Done():
-			return nil
+			return nil, false
 		case <-time.After(pause):
 		}
 	}

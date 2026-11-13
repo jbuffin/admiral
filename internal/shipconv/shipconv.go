@@ -74,6 +74,8 @@ type Service struct {
 	liveReadEvery time.Duration
 	observers     map[string]*observer
 
+	cands candidates
+
 	mu      sync.Mutex
 	seen    map[string]string // session -> option value a file was seen for: tells gone from none
 	clients map[*server.Client][]string
