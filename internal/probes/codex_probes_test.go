@@ -18,8 +18,8 @@ import (
 var (
 	// codexEvents are the JSONL events the fake prints; the shapes stand for what Codex emits.
 	codexEvents = struct {
-		reply        func(text string) string
-		shell        string
+		reply     func(text string) string
+		shell     string
 		webSearch string
 		subAgent  string
 		toolCall  func(server, tool string) string
@@ -49,9 +49,9 @@ var (
 		"error":       "codex failed: boom: not logged in",
 	}
 	codexHomeFailDetail = map[string]string{
-		"login-failed":  "login",
-		"no-reply":      "no reply",
-		"plugin-cache":  "github",
+		"login-failed": "login",
+		"no-reply":     "no reply",
+		"plugin-cache": "github",
 	}
 )
 

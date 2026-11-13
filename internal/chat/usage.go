@@ -69,8 +69,11 @@ func (s *fleetChat) recordReset(harness, path, configDir, fleet, clearedFrom str
 		if path != "" && configDir != "" {
 			if f, _, err := transcriptfs.OpenFor(harness, configDir, path); err == nil {
 				parse := usage.ParseClaude
-				if harness == "codex" {
+				switch harness {
+				case "codex":
 					parse = usage.ParseCodex
+				case "copilot":
+					parse = usage.ParseCopilot
 				}
 				if fig, err := parse(f); err == nil {
 					cur = &fig

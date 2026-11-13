@@ -148,7 +148,7 @@ func (l *Launcher) StartChat(key string) error {
 	if rerr != nil {
 		return rerr
 	}
-	if dock.Name != "claude" && dock.Name != "codex" {
+	if dock.Name != "claude" && dock.Name != "codex" && dock.Name != "copilot" {
 		return refuse(http.StatusNotImplemented, "the chat cannot launch on %s yet", config.HarnessName(dock.Name))
 	}
 	exe, found := dock.Resolve()
@@ -227,6 +227,34 @@ func (l *Launcher) StartChat(key string) error {
 		}
 		env["CODEX_HOME"] = ChatCodexHome(home, fleet.Key)
 		argv = codexChatArgv(exe, codexpane.HasNoDaemon(exe), chat, self, home, fleet.Key, env["ADMIRAL_PORT"])
+	} else if dock.Name == "copilot" {
+		self, serr := os.Executable()
+		if serr != nil {
+			return refuse(http.StatusInternalServerError, "could not find the admiral binary: %v", serr)
+		}
+		sid, serr := copilotSessionID()
+		if serr != nil {
+			return refuse(http.StatusInternalServerError, "could not make the chat's session id: %v", serr)
+		}
+		serverEnv := map[string]string{"ADMIRAL_ACTOR_TOKEN_FILE": CodexTokenFile(home, fleet.Key), "ADMIRAL_HOME": home, "ADMIRAL_CHAT_FLEET": fleet.Key}
+		if p := env["ADMIRAL_PORT"]; p != "" {
+			serverEnv["ADMIRAL_PORT"] = p
+		}
+		if err := prepareCopilotChat(home, fleet.Key, nonce); err != nil {
+			return err
+		}
+		// Another login, provider or config in the dock's env or Admiral's own would ride into a home of its own.
+		for k := range env {
+			if !CopilotEnvKept(k) {
+				delete(env, k)
+				unset[k] = true
+			}
+		}
+		env["COPILOT_HOME"] = ChatCopilotHome(home, fleet.Key)
+		env["COPILOT_PLUGIN_DIR_ONLY"] = "true"
+		delete(unset, "COPILOT_HOME")
+		delete(unset, "COPILOT_PLUGIN_DIR_ONLY")
+		argv = copilotChatArgv(exe, chat.Model, chat.Effort, sid, home, copilotMCPConfig(self, serverEnv))
 	} else if err := l.writeChatMCP(home, fleet.Key, nonce, env); err != nil {
 		return err
 	}
@@ -240,11 +268,16 @@ func (l *Launcher) StartChat(key string) error {
 	if n := sessionhost.CommandSize(argv); n > sessionhost.MaxMessage {
 		return refuse(http.StatusBadRequest, "the chat's command line is %d bytes and tmux carries at most %d", n, sessionhost.MaxMessage)
 	}
-	// The tmux server's global ADMIRAL_* names: -r hides them from this session
+	// The tmux server's global ADMIRAL_* names (and, for Copilot, the names its env filter drops): -r hides them from this session
 	// (-u would fall back to the server's). A server that isn't up yet has none.
 	if globals, err := l.server().GlobalEnvNames(); err == nil {
 		for _, name := range globals {
-			if chatVar.MatchString(name) && name != "ADMIRAL_HOME" && name != "ADMIRAL_CHAT_FLEET" {
+			_, own := env[name]
+			switch {
+			case chatVar.MatchString(name) && name != "ADMIRAL_HOME" && name != "ADMIRAL_CHAT_FLEET":
+				unset[name] = true
+			// A login, provider or collector set globally in a tmux server that outlived Admiral would ride into the chat's pane.
+			case dock.Name == "copilot" && !own && !CopilotEnvKept(name):
 				unset[name] = true
 			}
 		}

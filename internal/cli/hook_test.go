@@ -250,3 +250,33 @@ func TestChatPromptCall(t *testing.T) {
 		t.Errorf("a Stop wrote %q, want nothing", got)
 	}
 }
+
+// Copilot's sessionStart names no transcript, so a chat's hook points at the session's file in the chat's own home.
+func TestTranscriptCallForACopilotChatSessionStart(t *testing.T) {
+	now := time.Unix(1700000000, 5).UTC()
+	const id = "5d1f7a3e-2b4c-4e8a-9c61-3f0a7b8d9e12"
+	call := func(fleet, home, payload string) []string {
+		t.Setenv("ADMIRAL_CHAT_FLEET", fleet)
+		t.Setenv("COPILOT_HOME", home)
+		var p hookPayload
+		if err := json.Unmarshal([]byte(payload), &p); err != nil {
+			t.Fatal(err)
+		}
+		return transcriptCall("%1", "sessionStart", p, now)
+	}
+	got := call("work", "/c/copilot-home", `{"sessionId":"`+id+`","source":"new","initialPrompt":"hi"}`)
+	want := []string{"set", "-p", "-t", "%1", sessionhost.TranscriptOption, "1700000000000000005 new /c/copilot-home/session-state/" + id + "/events.jsonl"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("call = %q, want %q", got, want)
+	}
+	for name, c := range map[string][3]string{
+		"a ship, not a chat": {"", "/c/copilot-home", `{"sessionId":"` + id + `"}`},
+		"no home":            {"work", "", `{"sessionId":"` + id + `"}`},
+		"a relative home":    {"work", "copilot-home", `{"sessionId":"` + id + `"}`},
+		"an id that climbs":  {"work", "/c/copilot-home", `{"sessionId":"../../x"}`},
+	} {
+		if got := call(c[0], c[1], c[2]); got != nil {
+			t.Errorf("%s: wrote %q, want nothing", name, got)
+		}
+	}
+}

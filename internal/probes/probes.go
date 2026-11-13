@@ -114,7 +114,7 @@ func (r *Runner) Close() { r.stop() }
 func NewDefault(home string) *Runner { return New(home, defaultProbes()...) }
 
 func defaultProbes() []Probe {
-	return append([]Probe{ClaudeGuard(), ClaudeMCPFence(), CodexMCPFence(), CodexConfigHome()}, judgeProbes()...)
+	return append([]Probe{ClaudeGuard(), ClaudeMCPFence(), CodexMCPFence(), CodexConfigHome(), CopilotMCPFence(), CopilotConfigHome()}, judgeProbes()...)
 }
 
 // GuardHarnesses lists the harnesses with a registered guard probe: a stored pass for

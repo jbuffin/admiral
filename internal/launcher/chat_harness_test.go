@@ -11,29 +11,22 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// A chat whose harness is offered but has no launch of its own yet is refused at launch: Copilot, until it gets one.
+// A chat on a harness that is offered but has no launch of its own is refused at launch, creating nothing.
 
-func copilotChatConfig(t *testing.T) (*config.Config, string) {
-	t.Helper()
+const unlaunchableHarness = "gemini"
+
+func TestStartChatRefusesAnOfferedHarnessWithNoLaunchOfItsOwn(t *testing.T) {
 	root := t.TempDir()
-	exe := filepath.Join(root, "copilot")
+	exe := filepath.Join(root, unlaunchableHarness)
 	if err := os.WriteFile(exe, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	raw := `{"version":1,"fleets":{"work":{"name":"Work","search_roots":["` + root + `"],
-		"claude":{},"copilot":{"executable":"` + exe + `"},"chat":{"harness":"copilot","model":"gpt-5.6-sol"}}}}`
-	cfg, err := config.Parse([]byte(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Name: "Work", SearchRoots: []string{root},
+		Chat:      config.ChatSettings{Harness: unlaunchableHarness},
+		Harnesses: []config.Harness{{Name: unlaunchableHarness, Executable: exe, Found: true}}}}}
 	cfg.ChatProbe = func(fleet, harness, capability string) (string, string) { return "passed", "" }
-	return cfg, root
-}
-
-func TestChatDockAcceptsAnOfferedHarnessButStartChatRefusesCopilot(t *testing.T) {
-	cfg, root := copilotChatConfig(t)
-	if _, dock, err := ChatDock(cfg, "work"); err != nil || dock.Name != "copilot" {
-		t.Fatalf("ChatDock with both copilot probes passed = %+v, %v; want the copilot dock", dock, err)
+	if _, dock, err := ChatDock(cfg, "work"); err != nil || dock.Name != unlaunchableHarness {
+		t.Fatalf("ChatDock = %+v, %v; want the %s dock", dock, err, unlaunchableHarness)
 	}
 
 	// Tmux is only checked for being set: the refusal comes first.
@@ -43,8 +36,8 @@ func TestChatDockAcceptsAnOfferedHarnessButStartChatRefusesCopilot(t *testing.T)
 	if !errors.As(err, &rerr) {
 		t.Fatalf("StartChat = %v, want a refusal", err)
 	}
-	if rerr.Status != http.StatusNotImplemented || !strings.Contains(rerr.Msg, "Copilot") {
-		t.Errorf("StartChat refusal = %d %q, want 501 naming Copilot", rerr.Status, rerr.Msg)
+	if rerr.Status != http.StatusNotImplemented || !strings.Contains(rerr.Msg, unlaunchableHarness) {
+		t.Errorf("StartChat refusal = %d %q, want 501 naming %s", rerr.Status, rerr.Msg, unlaunchableHarness)
 	}
 	if _, statErr := os.Stat(ChatDir(l.Home, "work")); !os.IsNotExist(statErr) {
 		t.Errorf("a refused start created the chat directory: %v", statErr)

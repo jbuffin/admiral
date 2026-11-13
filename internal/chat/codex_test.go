@@ -60,12 +60,16 @@ func TestACodexChatsLoginDirIsTheEngineersAndNotItsOwnHome(t *testing.T) {
 	}
 }
 
-func servedFromFile(t *testing.T, s *Service, key, path string) []string {
+func servedFromFile(t *testing.T, s *Service, key, path string, source ...string) []string {
 	t.Helper()
 	fc := s.chat(key)
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
-	fc.transcriptChangedLocked("1 start " + path)
+	src := "start"
+	if len(source) > 0 {
+		src = source[0]
+	}
+	fc.transcriptChangedLocked("1 " + src + " " + path)
 	if fc.st.rd == nil {
 		t.Fatal("no reader after a transcript option")
 	}
@@ -110,24 +114,7 @@ func TestACodexResetRecordsTheChatHomeRolloutsUsageUnderCodex(t *testing.T) {
 
 	s.chat("b").recordReset("codex", rollout, home, "b", "")
 
-	var rec map[string]any
-	deadline := time.Now().Add(5 * time.Second)
-	for rec == nil && time.Now().Before(deadline) {
-		files, _ := filepath.Glob(filepath.Join(dir, "*.jsonl"))
-		for _, f := range files {
-			data, _ := os.ReadFile(f)
-			for _, l := range strings.Split(string(data), "\n") {
-				var r map[string]any
-				if json.Unmarshal([]byte(l), &r) == nil && r["event"] == "usage" {
-					rec = r
-				}
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if rec == nil {
-		t.Fatal("no usage record within 5 s")
-	}
+	rec := waitForUsage(t, dir)
 	if rec["harness"] != "codex" {
 		t.Errorf("usage harness = %v, want codex", rec["harness"])
 	}
@@ -165,4 +152,27 @@ func TestACodexChatWithNoTranscriptIsReadyOnceItsComposerShowsAndItsHooksAreTrus
 			t.Errorf("%s: ready=%v msg=%q, want ready=%v msg=%q", c.name, ready, msg, c.ready, c.msg)
 		}
 	}
+}
+
+func waitForUsage(t *testing.T, dir string) map[string]any {
+	t.Helper()
+	var rec map[string]any
+	deadline := time.Now().Add(5 * time.Second)
+	for rec == nil && time.Now().Before(deadline) {
+		files, _ := filepath.Glob(filepath.Join(dir, "*.jsonl"))
+		for _, f := range files {
+			data, _ := os.ReadFile(f)
+			for _, l := range strings.Split(string(data), "\n") {
+				var r map[string]any
+				if json.Unmarshal([]byte(l), &r) == nil && r["event"] == "usage" {
+					rec = r
+				}
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if rec == nil {
+		t.Fatal("no usage record within 5 s")
+	}
+	return rec
 }

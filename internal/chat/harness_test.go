@@ -76,16 +76,17 @@ func TestAChatStartsOnlyOnAnOfferedHarnessAndStartsOnceItsProbesPass(t *testing.
 }
 
 const copilotChat = `{"version":1,"fleets":{
-	"cop":{"name":"Cop","copilot":{},"chat":{"harness":"copilot"}},
+	"cop":{"name":"Cop","copilot":{"env":{"COPILOT_HOME":"/srv/fake-copilot-identity"}},"chat":{"harness":"copilot"}},
 	"cl":{"name":"Cl","claude":{"env":{"CLAUDE_CONFIG_DIR":"/srv/fake-claude-identity"}}}}}`
 
-func TestTheChatsLoginDirIsClaudesOnlyForAClaudeChat(t *testing.T) {
+func TestTheChatsLoginDirIsTheEngineersIdentityDirForEachHarness(t *testing.T) {
 	s := harnessService(t, copilotChat, fakeProbes{})
 	if got, want := s.Login(sessionhost.ChatSession("cl")), config.IdentityDir("claude", map[string]string{"CLAUDE_CONFIG_DIR": "/srv/fake-claude-identity"}); got != want || got == "" {
 		t.Errorf("a claude chat's login dir = %q, want %q", got, want)
 	}
-	if got := s.Login(sessionhost.ChatSession("cop")); got != "" {
-		t.Errorf("a copilot chat's login dir = %q, want none until its config home exists", got)
+	want := config.IdentityDir("copilot", map[string]string{"COPILOT_HOME": "/srv/fake-copilot-identity"})
+	if got := s.Login(sessionhost.ChatSession("cop")); got != want || want == "" {
+		t.Errorf("a copilot chat's login dir = %q, want the engineer's %q", got, want)
 	}
 }
 
