@@ -233,6 +233,28 @@ func TestChatMCPConfigNamesOnlyAdmiralMCPWithThisExecutableAndTheChatsEnv(t *tes
 	}
 }
 
+func TestChatDropsTheCompactionSwitchesAShipKeeps(t *testing.T) {
+	c := newChatRun(t)
+	dock := &c.l.Config().Fleets[0].Harnesses[0]
+	dock.Env = map[string]string{}
+	for _, k := range chatDropped {
+		dock.Env[k] = "1000000"
+	}
+	if out, err := exec.Command(c.tmux, "-S", c.sock, "-f", "/dev/null", "start-server", ";", "set-environment", "-g", "DISABLE_COMPACT", "1").CombinedOutput(); err != nil {
+		t.Fatalf("seeding the tmux server's environment: %v: %s", err, out)
+	}
+	_, env := c.start(t)
+	shipEnv := c.l.shipEnv(*dock)
+	for _, k := range chatDropped {
+		if strings.Contains("\n"+env, "\n"+k+"=") {
+			t.Errorf("the chat's env holds %s, which would override or switch off the backstop", k)
+		}
+		if shipEnv[k] != "1000000" {
+			t.Errorf("a ship's env %s = %q, want the dock's value", k, shipEnv[k])
+		}
+	}
+}
+
 func TestChatTokenReachesOnlyTheMCPConfig(t *testing.T) {
 	c := newChatRun(t)
 	argv, env := c.start(t)

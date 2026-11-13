@@ -79,6 +79,10 @@ func FenceArgs(settings, mcpConfig string) []string {
 		"--strict-mcp-config", "--mcp-config", mcpConfig, "--settings", settings}
 }
 
+// ChatAutoCompactWindow is the backstop, in tokens: Admiral's own resets fire long before it. A
+// CLAUDE_CODE_AUTO_COMPACT_WINDOW in the environment or a per-model setting overrides it.
+const ChatAutoCompactWindow = 300000
+
 // No idle_prompt: it fires after a minute of quiet and would turn every idle chat into
 // waiting. SessionStart has no matcher, since Claude Code would match it against the source.
 func claudeChatSettings() any {
@@ -89,8 +93,9 @@ func claudeChatSettings() any {
 		}
 		return g
 	}
-	return map[string]any{"statusLine": statusLine(" --chat"), "permissions": FencePermissions(ChatServer), "hooks": map[string]any{
+	return map[string]any{"statusLine": statusLine(" --chat"), "autoCompactWindow": ChatAutoCompactWindow, "permissions": FencePermissions(ChatServer), "hooks": map[string]any{
 		"SessionStart":     []any{group("", "SessionStart")},
+		"PreCompact":       []any{group("auto", "PreCompact")},
 		"UserPromptSubmit": []any{group("", "UserPromptSubmit")},
 		"PostToolUse":      []any{group("", "PostToolUse")},
 		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},

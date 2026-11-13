@@ -546,7 +546,7 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 	w := c.world
 	prompt := `event UserPromptSubmit {"prompt":"look at the harbour log"}`
 	w.writeCue(prompt, "mcp launch", "mcp again", prompt, "mcp next", "mcp stop-other", "mcp stop-own",
-		"mcp note", "wait briefed", `event SessionStart {"source":"clear"}`)
+		"mcp note", "wait briefed", `event SessionStart {"source":"clear"}`, `event PreCompact {"trigger":"auto","session_id":"s"}`)
 	w.start()
 	other := w.launch(w.order("ship", "claude", "otherrepo", noSkill, "x"))
 	c.start()
@@ -658,14 +658,46 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 				t.Fatalf("within 10s the SessionStart hook never printed the note; event-stdout is %q", out)
 			}
 		}
+		// The PreCompact cue's plain text follows the SessionStart line in the same file.
 		var got struct {
 			Output struct {
 				Event   string `json:"hookEventName"`
 				Context string `json:"additionalContext"`
 			} `json:"hookSpecificOutput"`
 		}
-		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &got); err != nil || got.Output.Event != "SessionStart" || !strings.Contains(got.Output.Context, fact) {
+		if err := json.Unmarshal([]byte(strings.TrimSpace(strings.SplitN(out, "\n", 2)[0])), &got); err != nil || got.Output.Event != "SessionStart" || !strings.Contains(got.Output.Context, fact) {
 			t.Errorf("SessionStart printed %q, want hookSpecificOutput for SessionStart whose additionalContext holds the brief with the note (%v)", out, err)
+		}
+	})
+
+	t.Run("the auto PreCompact hook prints the saved note's id to keep", func(t *testing.T) {
+		raw, err := os.ReadFile(filepath.Join(w.home, "chat", chatFleet, "ledger.jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var id string
+		for _, line := range strings.Split(string(raw), "\n") {
+			var ev struct {
+				ID   string `json:"id"`
+				Text string `json:"text"`
+			}
+			if json.Unmarshal([]byte(line), &ev) == nil && strings.Contains(ev.Text, "harbour log") {
+				id = ev.ID
+			}
+		}
+		if id == "" {
+			t.Fatalf("the ledger holds no saved note: %s", raw)
+		}
+		stdoutPath := filepath.Join(c.recDir(), "event-stdout")
+		var out string
+		for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+			b, _ := os.ReadFile(stdoutPath)
+			if out = string(b); strings.Contains(out, id) {
+				break
+			}
+			if time.Now().After(end) {
+				t.Fatalf("within 10s the PreCompact hook never printed note id %s; event-stdout is %q", id, out)
+			}
 		}
 	})
 }

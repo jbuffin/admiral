@@ -150,6 +150,10 @@ func ChatDock(cfg *config.Config, key string) (config.Fleet, config.Harness, *Er
 // besides every other ADMIRAL_* name but ADMIRAL_HOME.
 var chatOwned = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"}
 
+// chatDropped are Claude Code's own switches that would move or switch off the chat's compaction backstop; a
+// fleet's env or Admiral's can set them for ships, and the chat never gets them.
+var chatDropped = []string{"CLAUDE_CODE_AUTO_COMPACT_WINDOW", "DISABLE_AUTO_COMPACT", "DISABLE_COMPACT"}
+
 var chatVar = regexp.MustCompile(`^ADMIRAL_[A-Za-z0-9_]+$`)
 
 // The caller has checked that the fleet has no chat session. Unlike a ship's, the session has no
@@ -206,6 +210,10 @@ func (l *Launcher) StartChat(key string) error {
 	unset := map[string]bool{}
 	for _, k := range chatOwned {
 		unset[k] = true
+	}
+	for _, k := range chatDropped {
+		unset[k] = true
+		delete(env, k)
 	}
 	for k := range env {
 		if strings.HasPrefix(k, "ADMIRAL_") {

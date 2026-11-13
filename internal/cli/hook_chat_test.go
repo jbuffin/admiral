@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/digest"
+	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
@@ -242,6 +244,103 @@ func TestTheHookPrintsNoBriefOrDigestOnACodexOrUnmarkedChat(t *testing.T) {
 		}
 		if out.Len() != 0 {
 			t.Errorf("harness %q: SessionStart printed %q, want nothing: only Claude Code takes the brief", harness, out.String())
+		}
+	}
+}
+
+// seedMemory writes the instructions and a note the way the chat service does, and returns the note's id.
+func seedMemory(t *testing.T, home, fleet, instr, note string) string {
+	t.Helper()
+	l := ledger.New(home, time.Now)
+	if instr != "" {
+		if _, err := l.SetInstructions(fleet, instr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if note == "" {
+		return ""
+	}
+	e, err := l.AddNote(fleet, note, "admiralbot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e.ID
+}
+
+func TestPreCompactInAChatPrintsTheInstructionsAndNoteIDsAsPlainText(t *testing.T) {
+	home := t.TempDir()
+	id := seedMemory(t, home, "home", "Ask before launching.", "deploys go out on Tuesdays")
+	out := chatHook(t, home, "home", "PreCompact", `{"trigger":"auto","session_id":"s"}`)
+	for _, want := range []string{"Ask before launching.", id, "deploys go out on Tuesdays"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("PreCompact stdout lacks %q: %q", want, out)
+		}
+	}
+	if strings.HasPrefix(strings.TrimSpace(out), "{") {
+		t.Errorf("PreCompact stdout is JSON (%q), want plain text: Claude Code has no hookSpecificOutput form for it", out)
+	}
+	if len(strings.TrimSuffix(out, "\n")) > 9500 {
+		t.Errorf("PreCompact stdout is %d bytes, want at most 9500", len(out))
+	}
+}
+
+func TestPreCompactPrintsNothingWithoutMemoryOrOutsideAChat(t *testing.T) {
+	home := t.TempDir()
+	seedMemory(t, home, "home", "Ask before launching.", "deploys go out on Tuesdays")
+	if out := chatHook(t, home, "home", "PreCompact", `{"trigger":"auto"}`); out == "" {
+		t.Fatal("the control PreCompact printed nothing: the hook does not keep memory at all")
+	}
+	t.Run("a fleet with no files", func(t *testing.T) {
+		if out := chatHook(t, t.TempDir(), "home", "PreCompact", `{"trigger":"auto"}`); out != "" {
+			t.Errorf("stdout = %q, want nothing", out)
+		}
+	})
+	t.Run("a ship's hook", func(t *testing.T) {
+		if out := chatHook(t, home, "", "PreCompact", `{"trigger":"auto"}`); out != "" {
+			t.Errorf("a ship's PreCompact printed %q, want nothing", out)
+		}
+	})
+	t.Run("a corrupt ledger and an instructions directory", func(t *testing.T) {
+		h := t.TempDir()
+		writeChatFile(t, h, "home", "ledger.jsonl", "not json\n{")
+		if err := os.MkdirAll(filepath.Join(h, "chat", "home", "instructions.md"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if out := chatHook(t, h, "home", "PreCompact", `{"trigger":"auto"}`); out != "" {
+			t.Errorf("a corrupt ledger and an unreadable instructions file printed %q, want nothing", out)
+		}
+	})
+	t.Run("a ledger over the size bound", func(t *testing.T) {
+		h := t.TempDir()
+		seedMemory(t, h, "home", "Be brief.", "a note")
+		f, err := os.OpenFile(filepath.Join(h, "chat", "home", "ledger.jsonl"), os.O_WRONLY|os.O_APPEND, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if err := f.Truncate(5 << 20); err != nil {
+			t.Fatal(err)
+		}
+		if out := chatHook(t, h, "home", "PreCompact", `{"trigger":"auto"}`); out != "" {
+			t.Errorf("a 5 MiB ledger printed %d bytes, want nothing", len(out))
+		}
+	})
+}
+
+func TestPreCompactPrintsNothingOnACodexOrUnmarkedChat(t *testing.T) {
+	home := t.TempDir()
+	seedMemory(t, home, "home", "Ask before launching.", "deploys go out on Tuesdays")
+	if out := chatHook(t, home, "home", "PreCompact", `{"trigger":"auto"}`); out == "" {
+		t.Fatal("the control PreCompact printed nothing")
+	}
+	for _, harness := range []string{"codex", "copilot", ""} {
+		t.Setenv("ADMIRAL_CHAT_HARNESS", harness)
+		var out, errOut bytes.Buffer
+		if err := Hook([]string{"PreCompact"}, IO{In: strings.NewReader(`{"trigger":"auto"}`), Out: &out, Err: &errOut}); err != nil {
+			t.Fatal(err)
+		}
+		if out.Len() != 0 {
+			t.Errorf("harness %q: PreCompact printed %q, want nothing", harness, out.String())
 		}
 	}
 }
