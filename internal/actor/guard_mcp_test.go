@@ -68,3 +68,22 @@ func TestAnActorCannotReadOrWriteInstructionsOrDeleteOrPromoteANote(t *testing.T
 		}
 	}
 }
+
+func TestAnActorMayRecordACommitmentButNotListOrCancelAnyFleetsCommitments(t *testing.T) {
+	r := newRig(t)
+	if code := r.do("POST", "/api/chat/commitments", `{"text":"x"}`, "tok-personal", local).Code; code != 200 || r.reached != 1 || !r.acting || r.fleet != "personal" {
+		t.Errorf("POST /api/chat/commitments: code %d, reached %d, acting %v for %q; want AdmiralBot let through for personal", code, r.reached, r.acting, r.fleet)
+	}
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/api/chat/personal/commitments"},
+		{"GET", "/api/chat/work/commitments"},
+		{"DELETE", "/api/chat/personal/commitments/ab12cd34"},
+		{"DELETE", "/api/chat/work/commitments/ab12cd34"},
+		{"GET", "/api/v1/chat/personal/commitments"},
+	} {
+		r := newRig(t)
+		if code := r.do(c.method, c.path, "", "tok-personal", local).Code; code != 403 || r.reached != 0 {
+			t.Errorf("%s %s: code %d, reached %d; want 403 and nothing reached: only the engineer lists and cancels commitments", c.method, c.path, code, r.reached)
+		}
+	}
+}
