@@ -3,8 +3,11 @@ package ships
 import (
 	"context"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -57,4 +60,30 @@ func TestACommitmentKeyHoldsASecondLaunchAndNamesNoRoutine(t *testing.T) {
 		t.Errorf("a routine key found the commitment's ship")
 	}
 	r.wantHeld(t, func(q *launcher.Request) { q.CommitmentKey = key }, first)
+}
+
+// A ship trigger pairs a ship with its `launched` outcome record by the launch stamp, so the record must carry the stamp the listed ship has.
+func TestTheLaunchedOutcomeRecordCarriesTheShipsLaunchStamp(t *testing.T) {
+	r := newWakeRig(t, 0)
+	sh := r.mustLaunch(t, nil)
+	if sh.Launched == "" {
+		t.Fatal("the launched ship has no launch stamp")
+	}
+	want := `"launched":"` + sh.Launched + `"`
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		files, _ := filepath.Glob(filepath.Join(r.home, "outcomes", "*.jsonl"))
+		for _, f := range files {
+			b, _ := os.ReadFile(f)
+			for _, line := range strings.Split(string(b), "\n") {
+				if strings.Contains(line, `"event":"launched"`) && strings.Contains(line, `"ship":"`+sh.Session+`"`) && strings.Contains(line, want) {
+					return
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no launched record of %s carries %s", sh.Session, want)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
