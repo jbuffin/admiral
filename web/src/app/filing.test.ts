@@ -88,7 +88,7 @@ describe('confirmLabel', () => {
   });
 
   it('names how many Limits the second tap loosens', () => {
-    expect(confirmLabel(1)).toBe('Confirm, loosening 1 Limits');
+    expect(confirmLabel(1)).toBe('Confirm, loosening 1 Limit');
     expect(confirmLabel(3)).toBe('Confirm, loosening 3 Limits');
   });
 });
