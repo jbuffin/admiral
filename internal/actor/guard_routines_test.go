@@ -64,3 +64,17 @@ func TestTheRefusalOfAnotherFleetsStandingOrdersDoesNotCallThemRoutines(t *testi
 		t.Errorf("code %d body %q, want 403 with wording that fits standing orders as well as routines", rec.Code, body)
 	}
 }
+
+func TestAdmiralBotCannotMuteLaunchDismissOrReadTheDetailOfAnEventProposal(t *testing.T) {
+	r := newRig(t)
+	for _, c := range []struct{ method, target string }{
+		{"POST", "/api/fleets/work/routines/r1/mute"},
+		{"GET", "/api/inbox/_admiral/x1/event"},
+		{"POST", "/api/inbox/_admiral/x1/launch"},
+		{"POST", "/api/inbox/_admiral/x1/dismiss"},
+	} {
+		if code := r.do(c.method, c.target, `{"by":"sender","value":"a"}`, "tok-work", local).Code; code != 403 || r.reached != 0 {
+			t.Errorf("%s %s as AdmiralBot: code %d, reached %d; want 403 and the handler not reached", c.method, c.target, code, r.reached)
+		}
+	}
+}

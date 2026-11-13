@@ -25,6 +25,8 @@ const (
 	KindReset    = "reset"
 	// KindCommitment is a card the commitment runner posted: a promise kept, or why it was not.
 	KindCommitment = "commitment"
+	// KindEventCard is an A0 card for an outside event, shown to the engineer and never read by AdmiralBot.
+	KindEventCard = "event_card"
 )
 
 const (

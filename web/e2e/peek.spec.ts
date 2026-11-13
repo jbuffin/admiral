@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { crewNote, proveJudge, seedAdHocMember, seedCrew } from './crew';
-import { probeableClaude, addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, chatAnswerFile, chatAsks } from './shell';
+import { probeableClaude, addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, shipCheckout, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, chatAnswerFile, chatAsks } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const peekUrl = (session: string) => new RegExp(`/app/inbox/${encodeURIComponent(session)}(\\?|$)`);
@@ -840,4 +840,32 @@ test('Dismiss on a routine proposal removes it from the Inbox and starts no ship
   await expect(row).toHaveCount(0, { timeout: 15_000 });
   const res = await fetch(`${admiral.url}api/ships`);
   expect(((await res.json()) as { ships: unknown[] }).ships).toEqual([]);
+});
+
+test('Peek opens an event proposal with the untrusted summary, Mute rule by sender adds a skip that shows on the Limits page and can be removed, and an A0 card shows in chat marked untrusted', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const made = await page.request.post(admiral.url + 'api/fleets/zulu/routines', {
+    data: { name: 'Review watch', enabled: true, before_acting: 'ask_first', on: { source: 'gh', kind: 'review_requested' }, do: { launch: { harness: 'claude', dir: shipCheckout(admiral), text: 'sweep the board' } } },
+  });
+  expect(made.ok()).toBe(true);
+  const routine = (await made.json()).id as string;
+  seedInboxItem(admiral, '_admiral', { id: 'ev-1', kind: 'event_proposal', title: 'Review watch', fleet: 'zulu', routine, trigger: 'trig-1', tier: 'T3', expires: new Date(Date.now() + 3_600_000).toISOString() });
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+
+  await page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review watch' }).getByRole('link').first().tap();
+  const peek = peekOf(page);
+  await expect(peek).toBeVisible();
+  await expect(peek).toContainText('Untrusted');
+  await peek.getByRole('button', { name: 'Mute rule' }).tap();
+  await peek.getByRole('button', { name: /Mute this sender/ }).tap();
+
+  await page.goto(admiral.url + 'app/preferences/limits?fleet=zulu');
+  const skip = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review watch' });
+  await expect(skip).toBeVisible();
+  await skip.getByRole('button', { name: /Remove/ }).tap();
+  await expect(skip).toHaveCount(0);
+
+  await page.goto(admiral.url + 'app/chat?fleet=zulu');
+  await expect(page.getByRole('main').getByText('Untrusted').first()).toBeVisible();
 });

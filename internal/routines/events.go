@@ -35,6 +35,7 @@ type Event struct {
 	Actor    string
 	Author   string
 	Viewer   string // the engineer's login on the source; empty when the source can't say
+	Title    string // the item's title as the source read it; untrusted
 	Verified bool
 }
 
@@ -199,6 +200,8 @@ type Enrichment struct {
 	Labels    []string
 	Summary   string
 	Costs     []Cost
+	// Failure is the kind of a Lookout call that failed, such as timeout or bad_reply; HandleEvent records it as lookout_<kind>.
+	Failure string
 }
 
 // EventActs receives each decision that ends in a card (Reported) or a proposal (Proposed), with its saved record.

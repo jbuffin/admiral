@@ -1512,7 +1512,7 @@ export function setBoatState(a: Admiral, ship: LaunchedShip, name: string, state
 }
 
 /** An item file a ship leaves in its inbox; the server tags it with the ship's name and fleet. `session` `_admiral` is a notice. */
-export function seedInboxItem(a: Admiral, session: string, item: { id: string; kind: 'question' | 'review' | 'findings' | 'notice' | 'crew_notes' | 'crew_member' | 'routine_proposal'; title: string } & Record<string, unknown>) {
+export function seedInboxItem(a: Admiral, session: string, item: { id: string; kind: 'question' | 'review' | 'findings' | 'notice' | 'crew_notes' | 'crew_member' | 'routine_proposal' | 'event_proposal'; title: string } & Record<string, unknown>) {
   const dir = join(a.home, 'inbox', session);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${item.id}.json`), JSON.stringify({ version: 1, created: new Date().toISOString(), ...item }));
