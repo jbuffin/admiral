@@ -62,6 +62,9 @@ type event struct {
 	URL     string `json:"url,omitempty"`
 	Ship    string `json:"ship,omitempty"`
 	Harness string `json:"harness,omitempty"`
+	// Mode is how a launched child was started; QuestionID is the question a proposal asked.
+	Mode       string `json:"mode,omitempty"`
+	QuestionID string `json:"question,omitempty"`
 }
 
 // RefusedError is a write the ledger won't take; its message is for AdmiralBot to act on.
@@ -175,7 +178,7 @@ func (l *Ledger) fold(fleet string) ([]Entry, []Commitment, error) {
 			commits[i].Waiting, commits[i].WaitReason = true, ev.Reason
 		case EventShown:
 			commits[i].Shown = true
-		case EventChildLaunched, EventChildWaiting, EventChildDeclined, EventChildFailed:
+		case EventChildLaunched, EventChildWaiting, EventChildDeclined, EventChildFailed, EventChildProposed, EventChildWithdrawn:
 			commits[i].foldChild(ev)
 		case EventDone, EventDropped, EventCancelled:
 			commits = append(commits[:i], commits[i+1:]...)

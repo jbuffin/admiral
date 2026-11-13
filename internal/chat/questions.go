@@ -129,14 +129,21 @@ func (s *fleetChat) scanQuestions() []Question {
 			delete(s.qAnswers, n)
 		}
 	}
+	// Proposals sort above time ids, so they are capped on their own and never crowd out AdmiralBot's questions.
+	var asked, proposed int
 	for _, id := range ids {
-		if len(out) == maxQuestions {
-			break
+		n := &asked
+		if isProposal(id) {
+			n = &proposed
+		}
+		if *n == maxQuestions {
+			continue
 		}
 		it := s.questionItem(dir, id)
 		if it == nil {
 			continue
 		}
+		*n++
 		out = append(out, Question{Item: *it, Answer: s.answerOf(dir, id)})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -240,9 +247,15 @@ func (s *fleetChat) questions(fresh bool) []Question {
 	return append([]Question{}, s.qs...)
 }
 
+// proposalPrefix marks a question Admiral itself asks about a campaign child: the runner owns it, so it
+// stays out of the Inbox, out of what a reset waits on, and survives a new chat.
+const proposalPrefix = "campaign-"
+
+func isProposal(id string) bool { return strings.HasPrefix(id, proposalPrefix) }
+
 func unanswered(qs []Question) bool {
 	for _, q := range qs {
-		if len(q.Answer) == 0 {
+		if len(q.Answer) == 0 && !isProposal(q.Item.ID) {
 			return true
 		}
 	}
@@ -290,7 +303,15 @@ func (s *fleetChat) removeAll() {
 	}
 	names, _ := f.Readdirnames(-1)
 	f.Close()
+	here := map[string]bool{}
 	for _, n := range names {
+		here[n] = true
+	}
+	for _, n := range names {
+		// An unanswered proposal is the runner's to withdraw; one the runner never cleared after its answer goes.
+		if id, ok := strings.CutSuffix(n, ".json"); ok && isProposal(n) && !strings.HasSuffix(n, ".answer.json") && !here[inbox.AnswerName(id)] {
+			continue
+		}
 		_ = dir.Remove(n)
 	}
 }
@@ -302,7 +323,7 @@ func (s *Service) WaitingQuestions() []inbox.Item {
 	for _, fc := range s.onFleets() {
 		f, _ := cfg.Fleet(fc.key)
 		for _, q := range fc.questions(false) {
-			if len(q.Answer) > 0 {
+			if len(q.Answer) > 0 || isProposal(q.Item.ID) {
 				continue
 			}
 			it := q.Item

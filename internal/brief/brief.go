@@ -26,6 +26,8 @@ type Input struct {
 	Instructions string
 	// Questions are AdmiralBot's waiting chat questions, newest first.
 	Questions []Question
+	// Proposals are the questions Admiral itself asks the engineer, newest first.
+	Proposals []Question
 	// Ships are every ship of the fleet; Render picks the ones the brief names.
 	Ships     []Ship
 	Campaigns []Campaign
@@ -190,6 +192,14 @@ func (in Input) sections() []section {
 		}
 	}
 	out = append(out, section{heading: "AdmiralBot's waiting questions", items: qs})
+
+	var props []string
+	for _, q := range in.Proposals {
+		if t := Clean(q.Text); t != "" {
+			props = append(props, "- Admiral is asking the engineer: "+cut(t, maxLine))
+		}
+	}
+	out = append(out, section{heading: "Admiral's open proposals", intro: "Admiral asks these itself and acts on the answer. Don't ask them again and don't start the work.", items: props})
 
 	var ships []string
 	for _, s := range in.Ships {

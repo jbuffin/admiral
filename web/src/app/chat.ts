@@ -32,7 +32,7 @@ export interface EventCard {
 
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card';
+  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
@@ -54,7 +54,7 @@ export type ThreadItem =
   | { kind: 'reset'; id: string; text: string; at: string }
   | { kind: 'commitment'; id: string; text: string; at: string; card: CommitmentCard }
   | { kind: 'event'; id: string; text: string; at: string; card: EventCard }
-  | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer };
+  | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer; kept?: string };
 
 /** The snapshot's entries oldest first; entries with one time, or none that parses, keep the served order. */
 /** Claude's first-start dialog holds the chat; the server's text for that is the only error the terminal fixes. */
@@ -62,6 +62,8 @@ export const needsTerminal = (s: ChatSnapshot) => s.error === 'Open the terminal
 
 export function threadOf(s: ChatSnapshot): ThreadItem[] {
   const answers = new Map(s.questions.map((q) => [q.id, q.answer]));
+  // A question the server removed after its answer keeps that answer in the log.
+  const kept = new Map(s.messages.filter((m) => m.kind === 'answer').map((m) => [m.id, m.text]));
   const rows = s.messages.flatMap((m, i): { t: number; i: number; item: ThreadItem }[] => {
     const t = Date.parse(m.at);
     if (m.kind === 'reset') return [{ t, i, item: { kind: 'reset', id: m.id, text: m.text, at: m.at } }];
@@ -70,8 +72,9 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
     if (m.kind === 'question' && m.card) {
       const card = m.card as InboxItem;
       const answer = answers.get(card.id);
-      const state = answer === undefined ? 'withdrawn' : answer === null ? 'open' : 'answered';
-      return [{ t, i, item: { kind: 'question', id: m.id, at: m.at, card, state, ...(answer ? { answer } : {}) } }];
+      const keptText = answer === undefined ? kept.get('a-' + card.id) : undefined;
+      const state = answer === undefined && keptText === undefined ? 'withdrawn' : answer === null ? 'open' : 'answered';
+      return [{ t, i, item: { kind: 'question', id: m.id, at: m.at, card, state, ...(answer ? { answer } : {}), ...(keptText !== undefined ? { kept: keptText } : {}) } }];
     }
     if (m.kind === 'message' && m.role) return [{ t, i, item: { kind: 'message', id: m.id, role: m.role, text: m.text, at: m.at } }];
     return [];
@@ -109,3 +112,6 @@ export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment
   const eyebrow = { launched: 'AdmiralBot launched a ship', reminded: 'AdmiralBot reminds you', cant_run: "AdmiralBot can't run this", dropped: 'AdmiralBot dropped this', aged: 'Still want this?', ended: 'Campaign ended', too_large: 'Campaign too large to work on' }[outcome];
   return { eyebrow, text: item.text, reason: reason ?? '', shipHref: outcome === 'launched' && ship ? shipPath(ship) : '', settingsHref: outcome === 'aged' && fleet ? chatSettingsPath(fleet) : '', childLabel: child ? childRef(child) : '' };
 }
+
+/** The eyebrow of an open question card: Admiral's own proposals read differently from AdmiralBot's questions. */
+export const questionEyebrow = (id: string): string => (id.startsWith('campaign-') ? 'Admiral asks' : 'AdmiralBot asks');

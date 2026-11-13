@@ -27,6 +27,35 @@ type Clock struct {
 type ShipRef struct {
 	Session string
 	Name    string
+	// Status is the ship's status ("underway", "needs_you", "anchored", "moored"...); a pending ship reads as underway.
+	Status string
+}
+
+// Proposal is a question that asks the engineer whether to start a With-you child with them.
+type Proposal struct {
+	ID    string // unique per fleet: campaign-<commitment id>-<4 hex of the child URL's hash>-<n>
+	Title string
+	Child string // the child's URL
+}
+
+// What Proposals.Reply answers: the option labels of the question, and two states of no answer.
+const (
+	ProposalYes  = "Yes, start it with you"
+	ProposalNo   = "No, skip it"
+	ProposalOpen = ""
+	ProposalGone = "gone"
+)
+
+// Proposals is the chat's question seam for With-you children. A nil Proposals holds every With-you child.
+type Proposals interface {
+	// Propose writes the question; asking an id already asked is not an error.
+	Propose(fleet string, p Proposal) error
+	// Reply is ProposalYes, ProposalNo, ProposalOpen while unanswered, or ProposalGone when the question no longer exists.
+	Reply(fleet, id string) string
+	// Withdraw removes the question and its answer.
+	Withdraw(fleet, id string)
+	// ChatOn reports whether the fleet has AdmiralBot's chat, which a proposal needs.
+	ChatOn(fleet string) bool
 }
 
 // Ships is the part of the ships service the runner uses.
@@ -84,6 +113,8 @@ type Runner struct {
 	Clock       Clock
 	Ships       Ships
 	Cards       Cards
+	// Proposals asks the engineer about With-you children; nil holds them all.
+	Proposals Proposals
 	// Campaign reads a followed campaign for a campaign commitment's pass.
 	Campaign func(id string) campaigns.Read
 	// Ready closes once the host has listed the ships, so a restart finds the ship a launch already made.

@@ -82,16 +82,17 @@ export function triggerWords(trigger: ChatCommitment['trigger'], ships: Pick<Shi
 }
 
 /** What a commitment does when it fires. */
-export const actionWords = (action: ChatCommitment['action']): string => (action === 'launch' ? 'Launch a ship' : action === 'work' ? 'Launch Without-you children' : 'Remind you');
+export const actionWords = (action: ChatCommitment['action']): string => (action === 'launch' ? 'Launch a ship' : action === 'work' ? 'Launch Without-you children. Propose With-you children one at a time' : 'Remind you');
 
 /** A Cancel failure in words; a 404 means the commitment closed since the page loaded. */
 export const cancelErrorMessage = (status: number | undefined, error: string): string => (status === 404 ? 'That commitment already closed.' : error);
 
-/** The marks a commitment row carries: a campaign's counts, waiting, with the reason when the server gave one, and already asked about. */
-export function commitmentMarks(c: Pick<ChatCommitment, 'waiting' | 'wait_reason' | 'shown' | 'launched' | 'waiting_children'>): string[] {
+/** The marks a commitment row carries: a campaign's counts and open proposal, waiting, with the reason when the server gave one, and already asked about. */
+export function commitmentMarks(c: Pick<ChatCommitment, 'waiting' | 'wait_reason' | 'shown' | 'launched' | 'waiting_children' | 'proposal'>): string[] {
   return [
     ...(c.launched ? [`${c.launched} launched`] : []),
     ...(c.waiting_children ? [`${c.waiting_children} waiting`] : []),
+    ...(c.proposal ? ['Waiting for your answer'] : []),
     ...(c.waiting ? [c.wait_reason || 'Waiting for room'] : []),
     ...(c.shown ? ['Still want this?'] : []),
   ];

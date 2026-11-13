@@ -27,6 +27,8 @@ const (
 	KindCommitment = "commitment"
 	// KindEventCard is an A0 card for an outside event, shown to the engineer and never read by AdmiralBot.
 	KindEventCard = "event_card"
+	// KindAnswer keeps what the engineer answered a question that was then removed; its id is "a-" and the question's.
+	KindAnswer = "answer"
 )
 
 const (

@@ -167,12 +167,15 @@ type rig struct {
 	ships *fakeShips
 	cards *fakeCards
 	camp  *fakeCampaign
-	r     *commitments.Runner
+	props *fakeProposals
+	// fleets is what the runner serves; a test that needs a second fleet sets it before restart.
+	fleets []string
+	r      *commitments.Runner
 }
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	g := &rig{t: t, home: t.TempDir(), clk: &fakeClock{now: t0}, ships: &fakeShips{}, cards: &fakeCards{}, camp: &fakeCampaign{}}
+	g := &rig{t: t, home: t.TempDir(), clk: &fakeClock{now: t0}, ships: &fakeShips{}, cards: &fakeCards{}, camp: &fakeCampaign{}, props: &fakeProposals{}, fleets: []string{fleet}}
 	g.led = ledger.New(g.home, g.clk.Now)
 	g.restart()
 	return g
@@ -183,15 +186,16 @@ func (g *rig) restart() {
 	g.r = &commitments.Runner{
 		Home:   g.home,
 		Ledger: g.led,
-		Fleets: func() []string { return []string{fleet} },
+		Fleets: func() []string { return g.fleets },
 		SourceFleet: func(source string) (string, bool) {
 			fl, ok := map[string]string{"tracker": "work", "theirs": "home"}[source]
 			return fl, ok
 		},
-		Clock:    commitments.Clock{Now: g.clk.Now, After: g.clk.After},
-		Ships:    g.ships,
-		Cards:    g.cards,
-		Campaign: g.camp.read,
+		Clock:     commitments.Clock{Now: g.clk.Now, After: g.clk.After},
+		Ships:     g.ships,
+		Cards:     g.cards,
+		Proposals: g.props,
+		Campaign:  g.camp.read,
 	}
 }
 
@@ -362,3 +366,102 @@ func refusal(status int, msg, wait string) *launcher.Error {
 }
 
 var errCrash = errors.New("process died")
+
+// fakeProposals is the chat's question seam: it keeps the questions asked, the replies a test sets and the withdrawals.
+type fakeProposals struct {
+	mu        sync.Mutex
+	asked     []fakeAsk
+	replies   map[string]string
+	withdrawn []string
+	off       map[string]bool // fleets without a chat
+	proposeFn func(fleet string, p commitments.Proposal) error
+}
+
+type fakeAsk struct {
+	Fleet string
+	commitments.Proposal
+}
+
+func (f *fakeProposals) Propose(fl string, p commitments.Proposal) error {
+	f.mu.Lock()
+	fn := f.proposeFn
+	if fn == nil {
+		f.asked = append(f.asked, fakeAsk{fl, p})
+	}
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(fl, p)
+	}
+	return nil
+}
+
+func (f *fakeProposals) Reply(fl, id string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r, ok := f.replies[id]; ok {
+		return r
+	}
+	for _, w := range f.withdrawn {
+		if w == id {
+			return commitments.ProposalGone
+		}
+	}
+	for _, a := range f.asked {
+		if a.ID == id && a.Fleet == fl {
+			return commitments.ProposalOpen
+		}
+	}
+	return commitments.ProposalGone
+}
+
+func (f *fakeProposals) Withdraw(fl, id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.withdrawn = append(f.withdrawn, id)
+	delete(f.replies, id)
+}
+
+func (f *fakeProposals) ChatOn(fl string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.off[fl]
+}
+
+func (f *fakeProposals) reply(id, answer string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.replies == nil {
+		f.replies = map[string]string{}
+	}
+	f.replies[id] = answer
+}
+
+// gone is the engineer or a reset removing the question file by hand.
+func (f *fakeProposals) gone(id string) { f.reply(id, commitments.ProposalGone) }
+
+func (f *fakeProposals) chatOff(fl string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.off == nil {
+		f.off = map[string]bool{}
+	}
+	f.off[fl] = true
+}
+
+func (f *fakeProposals) questions() []fakeAsk {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]fakeAsk(nil), f.asked...)
+}
+
+func (f *fakeProposals) withdrawals() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.withdrawn...)
+}
+
+func (f *fakeProposals) chatOn(fl string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.off, fl)
+}

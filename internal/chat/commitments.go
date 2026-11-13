@@ -234,7 +234,9 @@ func (s *Service) serveCommitmentDelete(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	err := s.notes().CancelCommitment(fleet, r.PathValue("id"))
+	id := r.PathValue("id")
+	s.withdrawProposal(fleet, id)
+	err := s.notes().CancelCommitment(fleet, id)
 	switch {
 	case errors.Is(err, ledger.ErrNotFound):
 		writeError(w, http.StatusNotFound, "no open commitment with that id")
@@ -242,5 +244,19 @@ func (s *Service) serveCommitmentDelete(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, err.Error())
 	default:
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// withdrawProposal removes a commitment's open proposal before it closes, because a closed commitment takes no child event.
+func (s *Service) withdrawProposal(fleet, id string) {
+	list, err := s.notes().Commitments(fleet)
+	if err != nil {
+		return
+	}
+	for _, c := range list {
+		if c.ID == id && c.Proposal != nil {
+			s.Withdraw(fleet, c.Proposal.QuestionID)
+			_ = s.notes().ChildWithdrawn(fleet, id, c.Proposal.URL, "cancelled")
+		}
 	}
 }

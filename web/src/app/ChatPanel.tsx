@@ -5,7 +5,7 @@ import { probeChatSession, type Fleet } from './api';
 import { shipsLink } from './shipsLink';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
-import { commitmentCardView, needsTerminal, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
+import { commitmentCardView, needsTerminal, questionEyebrow, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
 import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
 import { MuteRule } from './MuteRule';
 import { Peek } from './Peek';
@@ -26,7 +26,7 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
     const draft = chat.drafts[card.id] ?? blankDraft();
     return (
       <div class="convo-card chat-card">
-        <p class="chat-card-eyebrow">AdmiralBot asks</p>
+        <p class="chat-card-eyebrow">{questionEyebrow(card.id)}</p>
         <PeekQuestions questions={card.question?.questions ?? []} draft={draft} edit={(fn) => chat.editDraft(card.id, fn)} onSend={(b) => void chat.answer(card.id, b)} />
       </div>
     );
@@ -34,7 +34,7 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
   return (
     <div class="convo-card chat-card quiet">
       <p class="convo-card-title">{card.title}</p>
-      <p class="line">{item.answer ? youAnswered(item.answer) : 'Withdrawn'}</p>
+      <p class="line">{item.answer ? youAnswered(item.answer) : item.kept !== undefined ? `You answered: ${item.kept}` : 'Withdrawn'}</p>
     </div>
   );
 }
@@ -50,6 +50,7 @@ function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'co
       {v.shipHref ? (
         <a
           class="btn"
+          aria-label={`Open ship ${item.card.ship}`}
           href={v.shipHref + fleetSearch.value}
           onClick={(e) => {
             if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

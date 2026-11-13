@@ -22,6 +22,7 @@ const campID = "camp-1"
 type fakeCampaign struct {
 	mu    sync.Mutex
 	read_ campaigns.Read
+	byID  map[string]campaigns.Read
 	reads int
 }
 
@@ -29,7 +30,20 @@ func (f *fakeCampaign) read(id string) campaigns.Read {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reads++
+	if r, ok := f.byID[id]; ok {
+		return r
+	}
 	return f.read_
+}
+
+// setFor answers one campaign's read apart from the default set answers.
+func (f *fakeCampaign) setFor(id string, r campaigns.Read) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.byID == nil {
+		f.byID = map[string]campaigns.Read{}
+	}
+	f.byID[id] = r
 }
 
 func (f *fakeCampaign) set(r campaigns.Read) {
@@ -78,18 +92,25 @@ func closedRead(nodes ...*campaigns.Node) campaigns.Read {
 
 // work seeds an open campaign commitment as a hand-written ledger line, so a runner test does not lean on the ledger's writer.
 func (g *rig) work(harness string) ledger.Commitment {
+	return g.workIn(fleet, "w1", campID, harness)
+}
+
+// workIn seeds an open campaign commitment of the given id and campaign in a fleet.
+func (g *rig) workIn(fl, id, campaign, harness string) ledger.Commitment {
 	g.t.Helper()
-	dir := filepath.Join(g.home, "chat", fleet)
+	dir := filepath.Join(g.home, "chat", fl)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		g.t.Fatal(err)
 	}
-	g.appendRaw(fmt.Sprintf(`{"v":1,"ts":%q,"event":"added","id":"w1","kind":"commitment","text":"work on acme/widgets#20","via":"admiralbot","trigger":{"kind":"campaign","subject":%q},"action":"work","harness":%q}`+"\n", stamp(t0), campID, harness))
-	return ledger.Commitment{ID: "w1", Text: "work on acme/widgets#20", Trigger: ledger.Trigger{Kind: ledger.TriggerCampaign, Subject: campID}, Action: ledger.ActionWork, Harness: harness, Via: actor.Via}
+	g.appendRawIn(fl, fmt.Sprintf(`{"v":1,"ts":%q,"event":"added","id":%q,"kind":"commitment","text":"work on acme/widgets#20","via":"admiralbot","trigger":{"kind":"campaign","subject":%q},"action":"work","harness":%q}`+"\n", stamp(t0), id, campaign, harness))
+	return ledger.Commitment{ID: id, Text: "work on acme/widgets#20", Trigger: ledger.Trigger{Kind: ledger.TriggerCampaign, Subject: campaign}, Action: ledger.ActionWork, Harness: harness, Via: actor.Via}
 }
 
-func (g *rig) appendRaw(lines string) {
+func (g *rig) appendRaw(lines string) { g.t.Helper(); g.appendRawIn(fleet, lines) }
+
+func (g *rig) appendRawIn(fl, lines string) {
 	g.t.Helper()
-	f, err := os.OpenFile(filepath.Join(g.home, "chat", fleet, "ledger.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(filepath.Join(g.home, "chat", fl, "ledger.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		g.t.Fatal(err)
 	}
@@ -424,21 +445,15 @@ func TestACancelThatLandsDuringTheLaunchStopsItThroughTheBeforeCheck(t *testing.
 	}
 }
 
-func TestAWithYouChildIsNeverLaunchedOrProposedWhileAWithoutYouOneLaunches(t *testing.T) {
+func TestAWithYouChildIsNeverLaunchedBySheerReadinessWhileAWithoutYouOneLaunches(t *testing.T) {
 	g := newRig(t)
-	c := g.work("claude")
+	g.work("claude")
 	g.camp.set(readOf(child(issue(21), campaigns.WithYou, campaigns.Ready), ready(22)))
 	g.tick()
 	g.tick()
 	calls := g.ships.requests()
 	if len(calls) != 1 || !strings.HasSuffix(calls[0].req.OrderID, "/"+issue(22)) {
 		t.Fatalf("launches %+v; want only the Without-you child, 22", calls)
-	}
-	if n := len(g.cards.cards()); n != 1 {
-		t.Errorf("%d cards %+v, want only 22's launched card: nothing is proposed", n, g.cards.cards())
-	}
-	if got := g.children(c.ID); len(got) != 1 {
-		t.Errorf("children = %+v; want only 22", got)
 	}
 }
 
