@@ -416,7 +416,8 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .term-box .xterm { padding: 8px 12px; }
 .term-box .xterm-viewport { background-color: var(--color-term) !important; }
 
-.convo { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; min-width: 0; overflow-y: auto; user-select: text; -webkit-user-select: text; }
+/* Positioned so a visually-hidden label inside it is placed and clipped here; otherwise it lengthens the page. */
+.convo { position: relative; display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; min-width: 0; overflow-y: auto; user-select: text; -webkit-user-select: text; }
 .convo-older { align-self: center; }
 .convo-card { padding: 16px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-lg); display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .convo-card-title { margin: 0; font-weight: 600; }

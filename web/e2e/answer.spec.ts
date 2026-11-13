@@ -119,6 +119,25 @@ test('a four-question Claude call is stepped through the card and answered with 
   await expect(record.locator('.q-free')).toHaveText('Other: Medium, thanks');
 });
 
+test('a long conversation with answered questions scrolls inside the view, never the page', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  const chatter = (from: number) => Array.from({ length: 30 }, (_, i) => line.assistant(`Step ${from + i}: still working through the build.`));
+  await appendLines(admiral, ship, [
+    ...chatter(1),
+    line.ask('toolu_s1', [{ question: 'Which colour?', options: ['Red', 'Green'] }]),
+    line.askResult('toolu_s1', { 'Which colour?': 'Green' }),
+    ...chatter(31),
+  ]);
+  await open(page, admiral, ship);
+
+  await expect(viewPanel(page).locator('.q-option.chosen')).toHaveText(/Green/);
+  await expect(viewPanel(page).getByText('Step 60:')).toBeVisible();
+  const doc = await page.evaluate(() => ({ height: document.scrollingElement!.scrollHeight, view: document.scrollingElement!.clientHeight }));
+  expect(doc.height).toBeLessThanOrEqual(doc.view);
+});
+
 test('a refused answer leaves the question in the transcript with the reason and an Open terminal button', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
