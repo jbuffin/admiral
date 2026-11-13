@@ -76,7 +76,7 @@ test('the Standing orders tab shows the Work Limits as sentences, keeps a Check 
   await expect(page).toHaveURL(/\/app\/routines\/standing-orders/);
   const main = page.getByRole('main');
   await expect(main.getByText(`${WORK} fleet only`)).toBeVisible();
-  await expect(main.getByText(/Judge calls: claude/)).toBeVisible();
+  await expect(main.getByText(/Judge calls: Claude/)).toBeVisible();
 
   // Every Limit is a sentence the server wrote; the fixed ones are plain text.
   const work = await orders(admiral, 'zulu');
@@ -143,8 +143,8 @@ test('Copy to another fleet confirms in place, replaces the target and names eac
   await confirm.getByRole('button', { name: /^Replace|^Confirm|^Copy/ }).click();
 
   await expect.poll(async () => (await orders(admiral, 'alpha')).checks).toEqual(['Ask before touching CI.']);
+  await expect.poll(async () => (await orders(admiral, 'alpha')).preset).toBe('home');
   const alpha = await orders(admiral, 'alpha');
-  expect(alpha.preset).toBe('home');
   await expect(main.getByText(/Copied/)).toContainText(HOME);
   // Home's T3 ceiling is higher than Work's, so the line names it with alpha's own sentence.
   await expect(main.getByText(sentenceFor(alpha, 'ceilings.t3'), { exact: true })).toBeVisible();
