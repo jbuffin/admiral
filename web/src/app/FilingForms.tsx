@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, saveFleet, type Fleet } from './api';
 import { capabilities, loadCapabilities } from './capabilities';
-import { confirmFailure, confirmLabel, confirmOrdersBody, draftedCheckIndex, draftFailure, joinGuidance, keptLimits, proseError, remainingLoosens, routineProblem, type Kept, type OrdersDraft } from './filing';
+import { confirmFailure, confirmLabel, confirmOrdersBody, draftedCheckIndex, draftFailure, draftingOff, joinGuidance, keptLimits, proseError, remainingLoosens, routineProblem, type Kept, type OrdersDraft } from './filing';
 import { fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage } from './fleetSettings';
 import { go, limitsPath } from './router';
@@ -26,7 +26,7 @@ type Failure = { message: string; raw: string; status?: number; part: 'limits' |
 function settingChange(limits: OrdersDraft['limits'], field: string): string {
   let at: unknown = limits;
   for (const part of field.split('.')) at = at !== null && typeof at === 'object' ? (at as Record<string, unknown>)[part] : undefined;
-  const text = typeof at === 'string' || typeof at === 'number' ? String(at) : JSON.stringify(at);
+  const text = at === null ? 'back to the preset' : typeof at === 'string' || typeof at === 'number' ? String(at) : JSON.stringify(at);
   return `${field.replace(/[._]/g, ' ')}: ${text}`;
 }
 
@@ -47,6 +47,8 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
   const [checks, setChecks] = useState<string[]>([]);
   const [guidance, setGuidance] = useState('');
   const [armed, setArmed] = useState(false);
+  const armedAt = useRef(0);
+  const [limitsSaved, setLimitsSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [kind, setKind] = useState<'check' | 'guidance' | 'limit'>('check');
@@ -59,8 +61,8 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
   }, [fleet.key]);
 
   const judge = capabilities.value.find((f) => f.key === fleet.key)?.judge;
-  const plain = offReason !== null || (!!judge && !judge.harness);
-  const reason = offReason ?? judge?.reason ?? '';
+  const plain = draftingOff(judge, offReason !== null);
+  const reason = judge?.reason ?? offReason ?? '';
 
   const draft = async () => {
     const refused = proseError(prose);
@@ -78,6 +80,7 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
       setChecks(r.data.draft.checks ?? []);
       setGuidance(r.data.draft.guidance ?? '');
       setArmed(false);
+      setLimitsSaved(false);
       setFailure(null);
       return;
     }
@@ -93,6 +96,7 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
     setAnswer(null);
     setFailure(null);
     setArmed(false);
+    setLimitsSaved(false);
   };
 
   const finish = (kept: Kept) => {
@@ -103,39 +107,57 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
     onFiled(kept);
   };
 
+  // The orders replace the whole list, so they are built from what is stored now plus the kept draft.
+  const storedOrders = async (key: string): Promise<StandingOrdersFields> => {
+    const r = await call<StandingOrdersFields>('GET', ordersPath(key));
+    return r.ok ? { checks: r.data.checks ?? [], guidance: r.data.guidance ?? '' } : shown;
+  };
+
   const confirm = async () => {
     if (!answer) return;
     const loosening = remainingLoosens(answer.loosens, removed).length;
-    if (loosening > 0 && !armed) return setArmed(true);
+    if (loosening > 0 && !armed) {
+      armedAt.current = Date.now();
+      return setArmed(true);
+    }
+    // A double tap on the first Confirm only arms it.
+    if (armed && Date.now() - armedAt.current < 400) return;
     const key = fleet.key;
-    const limits = keptLimits(answer.draft.limits, removed);
+    const limits = keptLimits(answer.draft.limits, removed, answer.changes.map((c) => c.field));
     const kept = { checks, guidance: guidance.trim() === '' ? '' : guidance };
-    const body = confirmOrdersBody(shown, kept);
     setSaving(true);
     setFailure(null);
+    let saved = limitsSaved;
     if (limits) {
       const r = await saveFleet(key, { limits });
-      if (!live.current || key !== fleet.key) return;
       if (!r.ok) {
+        if (!live.current) return;
         setSaving(false);
-        const raw = r.status === undefined ? saveFailure(r) : r.error;
+        const raw = r.status === undefined ? "Couldn't reach Admiral." : r.error;
         return setFailure({ message: confirmFailure('limits', false, raw), raw, status: r.status, part: 'limits' });
       }
       fleets.value = r.data;
+      saved = true;
+      if (live.current) setLimitsSaved(true);
     }
-    if (Object.keys(body).length > 0) {
+    if (kept.checks.length > 0 || kept.guidance !== '') {
+      const body = confirmOrdersBody(await storedOrders(key), kept);
       const r = await call('PUT', ordersPath(key), body);
-      if (!live.current || key !== fleet.key) return;
+      if (!live.current) return;
       if (!r.ok) {
         setSaving(false);
         // The Limits are stored; a retry must not send them again.
-        if (limits) setAnswer({ ...answer, draft: { ...answer.draft, limits: null }, changes: [], loosens: [] });
-        if (limits) onFiled({ checks: [], guidance: '' });
-        const raw = r.status === undefined ? saveFailure(r) : r.error;
-        return setFailure({ message: confirmFailure('orders', limits !== undefined, raw), raw, status: r.status, part: 'orders' });
+        if (limits) {
+          setAnswer({ ...answer, draft: { ...answer.draft, limits: null }, changes: [], loosens: [] });
+          onFiled({ checks: [], guidance: '' });
+        }
+        const raw = r.status === undefined ? "Couldn't reach Admiral." : r.error;
+        return setFailure({ message: confirmFailure('orders', saved, raw), raw, status: r.status, part: 'orders' });
       }
     }
+    if (!live.current) return;
     setSaving(false);
+    setLimitsSaved(false);
     finish(kept);
   };
 
@@ -143,15 +165,15 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
     const text = prose.trim();
     if (!text) return setError('Write what you want first.');
     const key = fleet.key;
-    const body = kind === 'check' ? confirmOrdersBody(shown, { checks: [text], guidance: '' }) : confirmOrdersBody(shown, { checks: [], guidance: text });
+    const kept = kind === 'check' ? { checks: [text], guidance: '' } : { checks: [], guidance: text };
     setBusy(true);
     setError('');
-    const r = await call('PUT', ordersPath(key), body);
-    if (!live.current || key !== fleet.key) return;
+    const r = await call('PUT', ordersPath(key), confirmOrdersBody(await storedOrders(key), kept));
+    if (!live.current) return;
     setBusy(false);
     if (!r.ok) return setError(ordersMessage(saveFailure(r)));
     setProse('');
-    onFiled({ checks: [], guidance: '' });
+    onFiled(kept);
   };
 
   const input = (
@@ -348,7 +370,7 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
             <p class="note error" role="alert">
               {failure.message}{' '}
               {failure.status === 409 ? (
-                <button type="button" class="btn" onClick={() => void loadFleets()}>
+                <button type="button" class="btn" onClick={() => { setFailure(null); void loadFleets(); }}>
                   Reload
                 </button>
               ) : null}
