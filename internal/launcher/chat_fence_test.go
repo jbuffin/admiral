@@ -319,6 +319,17 @@ func TestChatPromptTeachesTheToolsAndNoCLI(t *testing.T) {
 	}
 }
 
+func TestChatPromptTellsAdmiralBotToSaveANoteAndQuoteItBack(t *testing.T) {
+	c := newChatRun(t)
+	argv, _ := c.start(t)
+	prompt, _ := flagValue(argv, "--append-system-prompt")
+	for _, want := range []string{"save_note", "remember", "quote"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the appended prompt does not mention %q", want)
+		}
+	}
+}
+
 func TestEachChatStartRemovesPlantedProjectSettingsWithoutFollowingLinks(t *testing.T) {
 	c := newChatRun(t)
 	dir := ChatDir(c.home, "work")

@@ -39,3 +39,16 @@ func TestAnActorMayReadOutcomesAndUseTheChatQuestionRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestAnActorMayWriteANoteButNotListNotes(t *testing.T) {
+	r := newRig(t)
+	if code := r.do("POST", "/api/chat/notes", `{"text":"x"}`, "tok-personal", local).Code; code != 200 || r.reached != 1 || !r.acting || r.fleet != "personal" {
+		t.Errorf("POST /api/chat/notes: code %d, reached %d, acting %v for %q; want AdmiralBot let through for personal", code, r.reached, r.acting, r.fleet)
+	}
+	for _, path := range []string{"/api/chat/personal/notes", "/api/chat/work/notes"} {
+		r := newRig(t)
+		if code := r.do("GET", path, "", "tok-personal", local).Code; code != 403 || r.reached != 0 {
+			t.Errorf("GET %s: code %d, reached %d; want 403 and nothing reached: AdmiralBot gets its notes from the brief", path, code, r.reached)
+		}
+	}
+}

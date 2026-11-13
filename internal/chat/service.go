@@ -19,6 +19,7 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -87,6 +88,9 @@ type Service struct {
 	logOnce sync.Once
 	log     *chatlog.Log
 
+	ledgerOnce sync.Once
+	ledger     *ledger.Ledger
+
 	chatsMu sync.Mutex
 	chats   map[string]*fleetChat
 }
@@ -113,6 +117,11 @@ type fleetChat struct {
 	qSig     string // the waiting set the Inbox was last told of
 
 	resets resetUsage
+}
+
+func (s *Service) notes() *ledger.Ledger {
+	s.ledgerOnce.Do(func() { s.ledger = ledger.New(s.Home, time.Now) })
+	return s.ledger
 }
 
 func (s *Service) history() *chatlog.Log {
@@ -197,6 +206,8 @@ func (s *Service) route(h func(*fleetChat, http.ResponseWriter, *http.Request)) 
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat/questions", s.serveAsk)
 	mux.HandleFunc("GET /api/chat/questions/{id}/answer", s.serveAskAnswer)
+	mux.HandleFunc("POST /api/chat/notes", s.serveNoteAdd)
+	mux.HandleFunc("GET /api/chat/{fleet}/notes", s.serveNotes)
 	mux.HandleFunc("GET /api/chat/{fleet}/session", s.route((*fleetChat).serveSession))
 	mux.HandleFunc("POST /api/chat/{fleet}/start", s.route((*fleetChat).serveStart))
 	mux.HandleFunc("POST /api/chat/{fleet}/messages", s.route((*fleetChat).serveSend))
