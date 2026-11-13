@@ -37,7 +37,7 @@ export function rowVerb(e: Entry): string {
       return Array.isArray(cards) ? `sent ${cards.length} finding ${cards.length === 1 ? 'card' : 'cards'}` : 'sent finding cards';
     }
     case 'routine_proposal':
-      return 'proposes a routine run';
+      return e.item.routine_proposal?.reason ? `proposes a routine run, ${lower(e.item.routine_proposal.reason.split(':')[0])}` : 'proposes a routine run';
     case 'crew_notes':
       return 'proposes crew notes';
     case 'crew_member': {

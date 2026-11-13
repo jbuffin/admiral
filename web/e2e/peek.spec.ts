@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { crewNote, proveJudge, seedAdHocMember, seedCrew } from './crew';
@@ -767,6 +768,58 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
   await all.tap();
   await expect(all).not.toBeChecked();
   await expect(banner).toHaveCount(0);
+});
+
+test('with a plan window over the quota line, a due routine waits in the Inbox as a proposal that says it was held for quota, Usage says why, and Launch in its Peek starts one ship', async ({ page, admiral }) => {
+  test.setTimeout(150_000);
+  const claude = probeableClaude(admiral);
+  // The status-line ship needs the live fake's cue file and record dir, which the probeable dock leaves out.
+  seedFleets(admiral, { live: true, claude: { ...claude.dock, env: { ...claude.dock.env, FAKE_RECORD_DIR: join(admiral.home, 'rec'), FAKE_CUE: join(admiral.home, 'cue') } } });
+  await admiral.start({ env: withFakeGh(admiral) });
+  await proveJudge(page, admiral.url);
+  const api = (path: string, init?: RequestInit) => fetch(`${admiral.url}api/${path}`, { headers: { 'Content-Type': 'application/json' }, ...init });
+  const shipsNow = async () => ((await (await api('ships')).json()) as { ships: unknown[] }).ships.length;
+
+  // A running Claude ship reports its five-hour window at 93%, over the Work preset's line of 90.
+  const reading = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'internal', 'cli', 'testdata', 'claude-statusline.json'), 'utf8'));
+  reading.rate_limits.five_hour = { used_percentage: 93, resets_at: Math.floor(Date.now() / 1000) + 2 * 3600 };
+  reading.rate_limits.seven_day = { used_percentage: 41.2, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 };
+  await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['statusline ' + JSON.stringify(reading)] });
+  const quotaOf = async () => ((await (await fetch(admiral.url + 'api/v1/usage?fleet=zulu')).json()) as { quota: { harness: string; has_data: boolean }[] }).quota.find((q) => q.harness === 'claude');
+  await expect.poll(async () => (await quotaOf())?.has_data, { timeout: 30_000 }).toBe(true);
+  expect(await shipsNow()).toBe(1);
+
+  const due = new Date(Math.ceil((Date.now() + 5_000) / 60_000) * 60_000);
+  const created = await api('fleets/zulu/routines', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Quota sweep', enabled: true, when: `${due.getMinutes()} ${due.getHours()} * * *`, before_acting: 'act',
+      do: { launch: { harness: 'claude', dir: join(admiral.home, 'proj'), text: 'go' } },
+    }),
+  });
+  expect([200, 201]).toContain(created.status);
+
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Quota sweep' });
+  await expect(row).toBeVisible({ timeout: 120_000 });
+  await expect(row).toContainText(/held for quota/i);
+  expect(await shipsNow()).toBe(1);
+
+  // The fleet's Usage says unattended launches are held, which window, and until when.
+  await page.goto(admiral.url + 'app/preferences/zulu/usage');
+  const main = page.getByRole('main');
+  await expect(main).toContainText(/unattended launches are held/i, { timeout: 30_000 });
+  await expect(main).toContainText(/5-hour window/i);
+  await expect(main).toContainText(/\buntil\b/i);
+
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await row.getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toContainText('Quota sweep');
+  await expect(peek).toContainText(/held for quota/i);
+  await peek.getByRole('button', { name: 'Launch', exact: true }).tap();
+  await expect.poll(shipsNow, { timeout: 30_000 }).toBe(2);
+  await expect(row).toHaveCount(0, { timeout: 15_000 });
 });
 
 test('Dismiss on a routine proposal removes it from the Inbox and starts no ship', async ({ page, admiral }) => {

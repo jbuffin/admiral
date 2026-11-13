@@ -21,7 +21,7 @@ export interface InboxItem {
   review?: { pr_url?: string; review_id?: number | string; summary?: string };
   findings?: { pr_url?: string; cards?: unknown };
   notice?: { body?: string; entries?: { key: string; name: string; panel: string; fleet?: string }[] };
-  routine_proposal?: { fleet?: string; routine?: string; routine_name?: string; trigger?: string; action?: string; expires_at?: string };
+  routine_proposal?: { fleet?: string; routine?: string; routine_name?: string; trigger?: string; action?: string; reason?: string; expires_at?: string };
   crew_notes?: unknown;
   crew_member?: unknown;
 }

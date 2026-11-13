@@ -82,9 +82,9 @@ export const actionWords = (action: ChatCommitment['action']): string => (action
 /** A Cancel failure in words; a 404 means the commitment closed since the page loaded. */
 export const cancelErrorMessage = (status: number | undefined, error: string): string => (status === 404 ? 'That commitment already closed.' : error);
 
-/** The marks a commitment row carries: waiting for room, and already asked about. */
-export function commitmentMarks(c: Pick<ChatCommitment, 'waiting' | 'shown'>): string[] {
-  return [...(c.waiting ? ['Waiting for room'] : []), ...(c.shown ? ['Still want this?'] : [])];
+/** The marks a commitment row carries: waiting, with the reason when the server gave one, and already asked about. */
+export function commitmentMarks(c: Pick<ChatCommitment, 'waiting' | 'wait_reason' | 'shown'>): string[] {
+  return [...(c.waiting ? [c.wait_reason || 'Waiting for room'] : []), ...(c.shown ? ['Still want this?'] : [])];
 }
 
 /** How long ago a note was saved; a note lasts days, so the unit grows past minutes. */

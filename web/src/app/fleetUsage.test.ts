@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { QUOTA_LIVE_SECONDS, fleetRows, quotaCards, usagePeriods, type FleetUsage, type HarnessUsage, type Quota } from './fleetUsage';
+import { QUOTA_LIVE_SECONDS, fleetRows, heldLine, quotaCards, usagePeriods, type FleetUsage, type HarnessUsage, type Quota } from './fleetUsage';
 
 const tok = (input: number, output = 0, reasoning = 0) => ({ input, output, reasoning, cache_read: 9000, cache_write: 400 });
 const est = (amount: number, incomplete = false) => ({ amount, basis: 'estimate' as const, incomplete });
@@ -209,5 +209,24 @@ describe('fleetRows', () => {
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.harnesses[0].money)).toEqual(['est. $1.32', 'est. $2.00']);
     expect(JSON.stringify(rows)).not.toMatch(/3\.32|total/i);
+  });
+});
+
+describe('heldLine', () => {
+  const held = { held: true, harness: 'claude', window: 'primary', window_minutes: 300, used_percent: 93.4, line_percent: 90, resets_at: '2026-11-12T14:15:00Z' };
+  it('says unattended launches are held, which window is over the fleet line, and until when', () => {
+    expect(heldLine(fleet('f', [], { quota_hold: held }), now)).toBe("Unattended launches are held: Claude's 5-hour window is at 93% (line 90%), until it resets in 2h 15m.");
+  });
+  it('calls the 7-day window the weekly window, as the server does', () => {
+    const line = heldLine(fleet('f', [], { quota_hold: { ...held, window: 'secondary', window_minutes: 10080 } }), now);
+    expect(line).toBe("Unattended launches are held: Claude's weekly window is at 93% (line 90%), until it resets in 2h 15m.");
+  });
+  it('names a window with no minutes from its id and drops the reset when none is known', () => {
+    const line = heldLine(fleet('f', [], { quota_hold: { ...held, window: 'secondary', window_minutes: undefined, resets_at: undefined } }), now);
+    expect(line).toBe("Unattended launches are held: Claude's secondary window is at 93% (line 90%).");
+  });
+  it('says nothing when the fleet is not held', () => {
+    expect(heldLine(fleet('f', []), now)).toBeNull();
+    expect(heldLine(fleet('f', [], { quota_hold: { ...held, held: false } }), now)).toBeNull();
   });
 });

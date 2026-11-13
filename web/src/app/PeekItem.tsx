@@ -71,6 +71,7 @@ export function RoutineProposalBody({ entry, acting }: { entry: Entry; acting: A
   return (
     <div class="routine-proposal">
       {p?.action ? <p class="line">{p.action}</p> : null}
+      {p?.reason ? <p class="line">{p.reason}</p> : null}
       {expires && !Number.isNaN(expires.getTime()) ? <p class="line">Open until {expires.toLocaleString()}</p> : null}
       <div class="peek-actions">
         <button type="button" class="btn primary" disabled={off} onClick={() => void acting.run('launch', {}, () => 'Launched')}>

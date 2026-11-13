@@ -4,10 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/routines"
+	"github.com/jbuffin/admiral/internal/server"
 )
 
 func TestWiredLauncherReadsAFleetsGuidanceFromTheRoutinesStore(t *testing.T) {
@@ -43,4 +46,23 @@ func TestWiredLauncherReadsAFleetsGuidanceFromTheRoutinesStore(t *testing.T) {
 	if _, err := l.Guidance("nowhere"); err == nil {
 		t.Error("Guidance for an unknown fleet returned no error")
 	}
+}
+
+func TestTheRoutineProposerCarriesTheTriggersReasonOntoTheInboxProposal(t *testing.T) {
+	svc := &inbox.Service{Home: t.TempDir(), Hub: server.NewHub()}
+	why := "Held for quota: Claude's 5-hour window is at 93% (line 90%), resets 14:00"
+	err := routineProposer{svc}.Propose("work", routines.Routine{ID: "r1", Name: "Nightly sweep"},
+		routines.Trigger{ID: "t1", Action: "launch claude", Reason: why}, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range svc.List() {
+		if p, ok := it.RoutineProposal(); ok {
+			if p.Reason != why {
+				t.Errorf("proposal reason = %q, want %q", p.Reason, why)
+			}
+			return
+		}
+	}
+	t.Fatal("no routine proposal in the Inbox")
 }

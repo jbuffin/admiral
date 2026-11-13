@@ -52,7 +52,7 @@ type routineProposer struct{ inbox *inbox.Service }
 
 func (p routineProposer) Propose(fleet string, r routines.Routine, t routines.Trigger, expires time.Time) error {
 	_, err := p.inbox.PublishRoutineProposal(inbox.RoutineProposal{Fleet: fleet, Routine: r.ID, RoutineName: r.Name,
-		Trigger: t.ID, Action: t.Action, ExpiresAt: expires})
+		Trigger: t.ID, Action: t.Action, Reason: t.Reason, ExpiresAt: expires})
 	return err
 }
 

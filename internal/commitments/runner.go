@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -255,7 +256,7 @@ func (r *Runner) fire(ctx context.Context, fleet string, c ledger.Commitment) {
 			return
 		}
 	}
-	req.Via, req.CommitmentKey, req.Autopilot, req.QuietGate = c.Via, key, true, true
+	req.Via, req.CommitmentKey, req.Autopilot, req.QuietGate, req.Unattended = c.Via, key, true, true, true
 	// To AdmiralBot a ship of another fleet is only that fleet, so a refusal's text names no foreign ship.
 	req.ByFleet = fleet
 	// The launcher runs this under its lock, so a cancel that lands before it launches nothing.
@@ -271,14 +272,22 @@ func (r *Runner) fire(ctx context.Context, fleet string, c ledger.Commitment) {
 	switch {
 	case lerr != nil && cancelled:
 	case lerr != nil && lerr.Wait != "":
-		if !c.Waiting {
-			_ = r.Ledger.MarkFired(fleet, c.ID)
+		if !c.Waiting || !sameWait(c.WaitReason, lerr.Wait) {
+			_ = r.Ledger.MarkFired(fleet, c.ID, lerr.Wait)
 		}
 	case lerr != nil:
 		r.cantRun(fleet, c, lerr.Msg)
 	default:
 		r.launched(fleet, c, ship)
 	}
+}
+
+// usedPercent is the figure in a quota wait that moves every refresh without the reason changing.
+var usedPercent = regexp.MustCompile(` is at \d+%`)
+
+// sameWait says two wait reasons differ only in a quota figure, so the ledger keeps the first rather than logging each refresh.
+func sameWait(stored, now string) bool {
+	return usedPercent.ReplaceAllString(stored, " is at N%") == usedPercent.ReplaceAllString(now, " is at N%")
 }
 
 func (r *Runner) open(fleet, id string) bool {

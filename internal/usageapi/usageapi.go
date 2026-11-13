@@ -17,6 +17,7 @@ import (
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/ships"
+	"github.com/jbuffin/admiral/internal/standing"
 	"github.com/jbuffin/admiral/internal/usage"
 )
 
@@ -318,6 +319,18 @@ type fleetOut struct {
 	Name    string                `json:"name"`
 	Periods map[string]*periodOut `json:"periods"`
 	Quota   []quotaOut            `json:"quota"`
+	// QuotaHold is present only while unattended launches are held for a plan window.
+	QuotaHold *quotaHoldOut `json:"quota_hold,omitempty"`
+}
+
+type quotaHoldOut struct {
+	Held          bool    `json:"held"`
+	Harness       string  `json:"harness"`
+	Window        string  `json:"window"`
+	WindowMinutes int     `json:"window_minutes,omitempty"`
+	UsedPercent   float64 `json:"used_percent"`
+	LinePercent   int     `json:"line_percent"`
+	ResetsAt      string  `json:"resets_at,omitempty"`
 }
 
 func (a *acc) hasAny() bool { return a != nil && (a.hasTokens || a.money != nil || a.noMoney) }
@@ -449,7 +462,7 @@ func (s *Service) aggregate(want []config.Fleet) []fleetOut {
 	}
 	out := make([]fleetOut, 0, len(want))
 	for _, f := range want {
-		out = append(out, fleetOut{Key: f.Key, Name: f.Name, Periods: build(starts, buckets[f.Key]), Quota: s.quota(f)})
+		out = append(out, fleetOut{Key: f.Key, Name: f.Name, Periods: build(starts, buckets[f.Key]), Quota: s.quota(f), QuotaHold: s.quotaHold(f)})
 	}
 	return out
 }
@@ -472,6 +485,29 @@ func (s *Service) quota(f config.Fleet) []quotaOut {
 		out = append(out, q)
 	}
 	return out
+}
+
+// quotaHold is the first of the fleet's claude and codex logins whose plan window is at the fleet's line; the monthly spend never counts.
+func (s *Service) quotaHold(f config.Fleet) *quotaHoldOut {
+	if s.Live == nil {
+		return nil
+	}
+	for _, h := range f.Harnesses {
+		if h.Name != "claude" && h.Name != "codex" {
+			continue
+		}
+		quota, _, ok := s.Live.Quota(config.IdentityDir(h.Name, h.Env))
+		hold := standing.CheckQuotaHold(f.Limits, quota, ok)
+		if !hold.Held {
+			continue
+		}
+		out := &quotaHoldOut{Held: true, Harness: h.Name, Window: hold.Window, WindowMinutes: hold.WindowMinutes, UsedPercent: hold.UsedPercent, LinePercent: hold.LinePercent}
+		if !hold.ResetsAt.IsZero() {
+			out.ResetsAt = resetAt(hold.ResetsAt.Unix())
+		}
+		return out
+	}
+	return nil
 }
 
 func resetAt(unix int64) string {

@@ -75,6 +75,8 @@ type Scheduler struct {
 	Chat     Chat
 	Proposer Proposer
 	Notifier Notifier
+	// QuotaHold says why unattended launches of a fleet on a harness are held for quota; harness is "" for a prompt run. Nil holds nothing.
+	QuotaHold func(fleet, harness string) (reason string, held bool)
 	// HostKnown is false while the ships host cannot list ships; a nil one is always known.
 	HostKnown func() bool
 	Zone      *time.Location // the zone a When is read in; main passes time.Local
@@ -522,7 +524,17 @@ func (s *Scheduler) fire(ctx context.Context, fleet string, r Routine, due, now 
 		holdOn = true
 	}
 	rec.Action = describe(r)
-	switch Effective(r.Before, holdOn) {
+	mode := Effective(r.Before, holdOn)
+	if mode == Act && s.QuotaHold != nil {
+		harness := ""
+		if l != nil {
+			harness = l.Harness
+		}
+		if why, held := s.QuotaHold(fleet, harness); held {
+			mode, rec.Reason = AskFirst, why
+		}
+	}
+	switch mode {
 	case ReportOnly:
 		delete(s.waiting, r.ID)
 		rec.Outcome = Reported
@@ -648,7 +660,7 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 	id := newID()
 	ref, lerr := s.Ships.Launch(ctx, launcher.Request{
 		Fleet: fleet, Harness: l.Harness, Dir: l.Dir, Text: l.Text, Model: l.Model, Effort: l.Effort,
-		Skill: skill, Resources: l.Resources, ExtraArgs: l.Args, Autopilot: true,
+		Skill: skill, Resources: l.Resources, ExtraArgs: l.Args, Autopilot: true, Unattended: !accepted,
 		RoutineKey: routineKey(r.ID), TriggerID: id,
 	})
 	switch {

@@ -50,7 +50,9 @@ type Commitment struct {
 	TS      time.Time       `json:"ts"`
 	Via     string          `json:"via,omitempty"`
 	Waiting bool            `json:"waiting,omitempty"`
-	Shown   bool            `json:"shown,omitempty"`
+	// WaitReason is why a waiting launch has not started, as the refusal worded it.
+	WaitReason string `json:"wait_reason,omitempty"`
+	Shown      bool   `json:"shown,omitempty"`
 }
 
 var errNoCommitment = fmt.Errorf("%w: no such open commitment", ErrNotFound)
@@ -121,9 +123,9 @@ func (l *Ledger) Commitments(fleet string) ([]Commitment, error) {
 	return open, nil
 }
 
-// MarkFired moves an open launch commitment to waiting.
-func (l *Ledger) MarkFired(fleet, id string) error {
-	return l.commitmentEvent(fleet, id, EventFired, "")
+// MarkFired moves an open launch commitment to waiting, with why it has not started.
+func (l *Ledger) MarkFired(fleet, id, why string) error {
+	return l.commitmentEvent(fleet, id, EventFired, why)
 }
 
 func isRemind(c Commitment) bool { return c.Action == ActionRemind }

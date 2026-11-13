@@ -20,6 +20,7 @@ type RoutineProposal struct {
 	RoutineName string    `json:"routine_name"`
 	Trigger     string    `json:"trigger"`
 	Action      string    `json:"action"`
+	Reason      string    `json:"reason,omitempty"`
 	ExpiresAt   time.Time `json:"expires_at"`
 }
 

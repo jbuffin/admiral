@@ -27,7 +27,7 @@ const NUMS: Num[] = [
   { id: 'spend.lookout_call_usd', label: 'Lookout call, dollars', hint: 'Whole cents, 0 to 10000.', min: 0, max: 10000, step: 0.01, get: (l) => l.spend.lookout_call_usd, set: (l, v) => ({ ...l, spend: { ...l.spend, lookout_call_usd: v } }) },
   { id: 'spend.daily_worker_usd', label: 'Ships a day, dollars', hint: 'Whole cents, 0 to 10000.', min: 0, max: 10000, step: 0.01, get: (l) => l.spend.daily_worker_usd, set: (l, v) => ({ ...l, spend: { ...l.spend, daily_worker_usd: v } }) },
   { id: 'spend.reviewer_call_usd', label: 'Reviewer call, dollars', hint: 'Whole cents, 0 to 10000.', min: 0, max: 10000, step: 0.01, get: (l) => l.spend.reviewer_call_usd, set: (l, v) => ({ ...l, spend: { ...l.spend, reviewer_call_usd: v } }) },
-  { id: 'quota_hold_percent', label: 'Quota hold, percent', hint: 'Launches from outside events are held at this share of the quota. 1 to 100.', min: 1, max: 100, get: (l) => l.quota_hold_percent, set: (l, v) => ({ ...l, quota_hold_percent: v }) },
+  { id: 'quota_hold_percent', label: 'Quota hold, percent', hint: 'Commitments and review wakes wait, and routines ask first, while any plan window is at this share or more; hand launches never wait. 1 to 100.', min: 1, max: 100, get: (l) => l.quota_hold_percent, set: (l, v) => ({ ...l, quota_hold_percent: v }) },
 ];
 
 /** A number field keeps what was typed ("12." on the way to "12.5") and tells the form only a number that parses. */
