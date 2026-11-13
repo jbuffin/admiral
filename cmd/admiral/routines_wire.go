@@ -20,7 +20,6 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 type routineShips struct{ svc *ships.Service }
 
 func (r routineShips) Launch(ctx context.Context, req launcher.Request) (routines.ShipRef, *launcher.Error) {
-	req.WorkerLaunched = true
 	sh, lerr := r.svc.Launch(ctx, req)
 	if lerr != nil {
 		return routines.ShipRef{}, lerr
