@@ -152,6 +152,9 @@ func restrictedEnv(base []string, bin string) []string {
 	for _, k := range []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN"} {
 		delete(env, k)
 	}
+	for k, v := range launcher.RestrictedGitEnv {
+		env[k] = v
+	}
 	if p := env["PATH"]; p != "" {
 		bin += string(os.PathListSeparator) + p
 	}

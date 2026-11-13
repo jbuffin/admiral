@@ -453,6 +453,9 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			delete(env, k)
 			unset = append(unset, k)
 		}
+		for k, v := range RestrictedGitEnv {
+			env[k] = v
+		}
 		// Defence in depth against a planted nested repo's core.fsmonitor only; it does not stop filter drivers, so the reuse check stays the guard.
 		// GIT_CONFIG_PARAMETERS is dropped because a fleet value there would override these entries.
 		delete(env, "GIT_CONFIG_PARAMETERS")
