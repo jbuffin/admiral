@@ -65,6 +65,7 @@ type Routine struct {
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
 	When    string `json:"when"` // a 5-field cron expression in the server's local time zone
+	On      *On    `json:"on,omitempty"`
 	Do      Do     `json:"do"`
 	Before  Mode   `json:"before_acting"`
 	Notify  bool   `json:"notify"`
@@ -81,6 +82,8 @@ type Store struct {
 	Now    func() time.Time
 	// ResourceKnown says whether the config names a resource; a Launch naming an unknown one is refused on save.
 	ResourceKnown func(name string) bool
+	// Events lists the kinds a fleet's source can emit; ok is false when the fleet has no such source.
+	Events func(fleet, source string) (kinds []EventKind, ok bool)
 
 	mu sync.Mutex
 }
@@ -417,6 +420,9 @@ type Trigger struct {
 	Reason  string    `json:"reason,omitempty"`
 	Action  string    `json:"action,omitempty"`
 	Ship    string    `json:"ship,omitempty"`
+	// DedupeKey and Costs are set on an event record: the Lookout's key and what its judge calls cost.
+	DedupeKey string `json:"dedupe_key,omitempty"`
+	Costs     []Cost `json:"costs,omitempty"`
 	// Via marks a launch that came from an accepted proposal.
 	Via      string    `json:"via,omitempty"`
 	Undone   bool      `json:"undone,omitempty"`

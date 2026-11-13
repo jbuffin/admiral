@@ -80,6 +80,12 @@ type Scheduler struct {
 	// HostKnown is false while the ships host cannot list ships; a nil one is always known.
 	HostKnown func() bool
 	Zone      *time.Location // the zone a When is read in; main passes time.Local
+	// Own says whether a ref is Admiral's own work (a ship's PR, a claimed issue); such an event is ignored. Nil owns nothing.
+	Own func(fleet, ref string) bool
+	// Enrich is where a Lookout adds the dedupe_key, repo, labels and costs before the decision. Nil adds nothing.
+	Enrich func(Event) Enrichment
+	// Acts, when set, receives each Reported or Proposed event decision. Nil records only.
+	Acts EventActs
 	// Ready, when set, closes once the ships host knows the fleet; Run catches up only after it.
 	Ready <-chan struct{}
 
