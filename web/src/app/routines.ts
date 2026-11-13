@@ -49,6 +49,7 @@ export interface RoutineSpend {
   today_usd: number;
   cap_usd: number;
   reached: boolean;
+  unreadable?: boolean;
 }
 interface Switch {
   on: boolean;
@@ -137,6 +138,7 @@ export function eventHref(event: string | undefined): string | null {
 /** The sentence for a fleet whose daily worker spend is reached; null before that. */
 export function spendNotice(spend: RoutineSpend | undefined): string | null {
   if (!spend?.reached) return null;
+  if (spend.unreadable) return "Today's worker spend could not be read, so events stop at a proposal until it can.";
   return `Worker spend today is $${spend.today_usd.toFixed(2)} of the $${spend.cap_usd.toFixed(2)} cap, so events stop at a proposal until the day turns.`;
 }
 

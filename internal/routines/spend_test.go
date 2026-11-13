@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -73,5 +75,34 @@ func TestTheRoutinesListCarriesTodaysWorkerSpendAgainstTheCap(t *testing.T) {
 	got = read().Spend
 	if got.TodayUSD != 2.00 || !got.Reached {
 		t.Errorf("spend = %+v, want 2.00 of 2.00 reached (at the cap counts)", got)
+	}
+}
+
+func TestTheRoutinesListSaysSoWhenTodaysSpendCannotBeRead(t *testing.T) {
+	r := newRig(t)
+	r.create("work", launchRoutine())
+	if _, err := r.store.AppendTrigger("work", routines.Trigger{Routine: "r1", Outcome: routines.Proposed, Tier: "T3", At: r.now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(r.home, "routines", "work", "triggers.jsonl"), 0); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	(&routines.Service{Store: r.store}).Routes(mux)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	res, err := http.Get(srv.URL + "/api/fleets/work/routines")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var v struct {
+		Spend map[string]any `json:"spend"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Spend["unreadable"] != true || v.Spend["reached"] != true {
+		t.Errorf("spend = %v, want unreadable and reached", v.Spend)
 	}
 }

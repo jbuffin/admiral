@@ -542,7 +542,7 @@ A routine:
 
 ### `GET /api/fleets/<key>/routines`
 
-`{"routines": [<routine>, …]}`, `[]` when there are none. Each routine also carries `last_run: {"at", "outcome"}`, the newest record of its trigger log (see `…/runs`), and none while it has never run. The other routes return the routine without it. The body also carries `spend: {"today_usd", "cap_usd", "reached"}`: the fleet's worker spend today (the sum of every trigger record's `costs` since local midnight, the sum an event is checked against), its `spend.daily_worker_usd` Limit, and whether the first has reached the second. Once `reached` is true, events from this fleet stop at a proposal until the day turns, and the Routines screen says so.
+`{"routines": [<routine>, …]}`, `[]` when there are none. Each routine also carries `last_run: {"at", "outcome"}`, the newest record of its trigger log (see `…/runs`), and none while it has never run. The other routes return the routine without it. The body also carries `spend: {"today_usd", "cap_usd", "reached"}`: the fleet's worker spend today (the sum of every trigger record's `costs` since local midnight, the sum an event is checked against), its `spend.daily_worker_usd` Limit, and whether the first has reached the second. Once `reached` is true, events from this fleet stop at a proposal until the day turns, and the Routines screen says so. When today's trigger log can't be read, `spend` is `{"today_usd": 0, "cap_usd", "reached": true, "unreadable": true}`: events are held at a proposal, as the event path does, and the screen says the spend could not be read. `unreadable` is left out when the read works.
 
 ### `GET /api/sources`
 

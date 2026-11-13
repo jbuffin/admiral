@@ -102,4 +102,10 @@ describe('the spend-reached notice', () => {
     expect(text).toContain('$2.00');
     expect(text).toMatch(/proposal|A1/);
   });
+
+  it('says the spend could not be read, without figures', () => {
+    const text = spendNotice({ today_usd: 0, cap_usd: 2, reached: true, unreadable: true }) ?? '';
+    expect(text).toContain('could not be read');
+    expect(text).not.toContain('$');
+  });
 });

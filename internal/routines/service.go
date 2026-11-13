@@ -120,6 +120,8 @@ type Spend struct {
 	TodayUSD float64 `json:"today_usd"`
 	CapUSD   float64 `json:"cap_usd"`
 	Reached  bool    `json:"reached"`
+	// Unreadable is set when today's log couldn't be read; events are held then, as if the cap were reached.
+	Unreadable bool `json:"unreadable,omitempty"`
 }
 
 // spend is the same sum and cap check the event path makes, in the server's local zone.
@@ -130,7 +132,7 @@ func (s *Service) spend(fleet string) (Spend, bool) {
 	}
 	spent, err := s.Store.SpendToday(fleet, s.Store.now(), time.Local)
 	if err != nil {
-		return Spend{}, false
+		return Spend{CapUSD: f.Limits.Spend.DailyWorkerUSD, Reached: true, Unreadable: true}, true
 	}
 	return Spend{TodayUSD: spent, CapUSD: f.Limits.Spend.DailyWorkerUSD, Reached: f.Limits.DailySpendReached(spent)}, true
 }
