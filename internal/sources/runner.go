@@ -43,6 +43,7 @@ type runner struct {
 	done chan struct{}
 
 	notify    func() // the state changed; must not block
+	onEvent   func(Event)
 	restartCh chan struct{}
 	wake      chan struct{}
 	gen       atomic.Uint64 // restart requests so far

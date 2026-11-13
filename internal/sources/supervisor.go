@@ -16,6 +16,8 @@ type Supervisor struct {
 	Config *config.Manager
 	// OnChange must not block.
 	OnChange func()
+	// OnEvent receives each event a source raised that passed its catalog; it must not block.
+	OnEvent func(source string, ev Event)
 
 	mu      sync.Mutex
 	ctx     context.Context
