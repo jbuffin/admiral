@@ -1,7 +1,9 @@
 package routines
 
 import (
-	"errors"
+	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/standing"
@@ -40,8 +42,25 @@ type Cost struct {
 	USD  float64 `json:"usd"`
 }
 
-// TierOf is the less trusted of the actor's and the author's tiers; the stub returns a tier outside T1..T3.
-func TierOf(ev Event, limits standing.Limits) standing.Tier { return standing.Tier(0) }
+// TierOf is the less trusted of the actor's and the author's tiers, so a stranger's item the engineer touched stays T3.
+// A login the event doesn't carry is left out; an event with neither is a stranger's.
+func TierOf(ev Event, limits standing.Limits) standing.Tier {
+	tier := func(login string) standing.Tier {
+		switch {
+		case login == "":
+			return standing.T1
+		case ev.Verified && ev.Viewer != "" && strings.EqualFold(login, ev.Viewer):
+			return standing.T1
+		case limits.SenderAllowed(login):
+			return standing.T2
+		}
+		return standing.T3
+	}
+	if ev.Actor == "" && ev.Author == "" {
+		return standing.T3
+	}
+	return max(tier(ev.Actor), tier(ev.Author))
+}
 
 // EventTop is the highest action an event routine reaches until restricted and normal ships launch from events.
 const EventTop = standing.A1
@@ -84,8 +103,67 @@ type Decision struct {
 	Reasons  []string
 }
 
+// routineLevel maps a routine's Before acting onto the ladder.
+func routineLevel(m Mode) standing.Level {
+	switch m {
+	case ReportOnly:
+		return standing.A0
+	case AskFirst:
+		return standing.A1
+	}
+	return standing.A5
+}
+
 // Decide runs the skip filters, the repo allowlist, the effective action, Top, spend, quiet hours, rates and dedupe, in that order.
-func Decide(in DecideInput) Decision { return Decision{} }
+// Every budget only lowers an action to A1, so a card (A0) and a proposal (A1) never name one.
+func Decide(in DecideInput) Decision {
+	if in.Limits.Skipped(standing.SkipInput{Routine: in.Routine.ID, Labels: in.Labels, Sender: in.Sender, DedupeKey: in.DedupeKey}) {
+		return Decision{Outcome: Skipped, Reasons: []string{ReasonSkipFilter}}
+	}
+	// an event with no repo fails closed against a non-empty allowlist
+	if !in.Limits.RepoAllowed(in.Repo) {
+		return Decision{Outcome: Skipped, Reasons: []string{ReasonRepo}}
+	}
+	effective := func(m Mode) standing.Level {
+		return in.Limits.Effective(standing.Event{Tier: in.Tier, Routine: routineLevel(m), RestrictedHarness: in.RestrictedHarness}).Level
+	}
+	computed := effective(Effective(in.Routine.Before, in.HoldOn))
+	d := Decision{Computed: computed, Level: min(computed, in.Top)}
+	if in.HoldOn && Effective(in.Routine.Before, true) != in.Routine.Before && effective(in.Routine.Before) > standing.A1 {
+		d.Reasons = append(d.Reasons, ReasonHold)
+	}
+	if computed > standing.A1 {
+		if in.Top < computed {
+			d.Reasons = append(d.Reasons, ReasonTop)
+		}
+		if in.Limits.DailySpendReached(in.SpentTodayUSD) {
+			d.Reasons = append(d.Reasons, ReasonSpend)
+		}
+		if in.Limits.Held(in.Now) {
+			d.Reasons = append(d.Reasons, ReasonQuiet)
+		}
+		if v := in.Limits.CheckRates(in.Counts); !v.OK {
+			d.Reasons = append(d.Reasons, v.Reason)
+		}
+		if standing.DedupeHeld(in.LiveDedupeKeys, in.DedupeKey) {
+			d.Reasons = append(d.Reasons, ReasonDedupe)
+		}
+		for _, r := range d.Reasons {
+			if r != ReasonTop && r != ReasonHold {
+				d.Level = min(d.Level, standing.A1)
+			}
+		}
+	}
+	switch {
+	case d.Level <= standing.A0:
+		d.Outcome = Reported
+	case d.Level == standing.A1:
+		d.Outcome = Proposed
+	default:
+		d.Outcome = Launched
+	}
+	return d
+}
 
 // Enrichment is what a Lookout adds to an event before the decision.
 type Enrichment struct {
@@ -100,18 +178,174 @@ type EventActs interface {
 	Act(fleet string, r Routine, ev Event, rec Trigger, d Decision)
 }
 
+// EventLoad is what the decision reads of the ships: how many worker ships run and the dedupe_keys they hold.
+type EventLoad interface {
+	WorkerShips(fleet string) int
+	DedupeKeys(fleet string) []string
+}
+
+// repoOfRef is owner/name for a github.com ref, else empty.
+func repoOfRef(ref string) string {
+	u, err := url.Parse(ref)
+	if err != nil || !strings.EqualFold(u.Hostname(), "github.com") {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+	return parts[0] + "/" + parts[1]
+}
+
+// eventRoutines are the fleet's enabled routines whose When is this event.
+func (s *Scheduler) eventRoutines(ev Event) []Routine {
+	list, err := s.Store.List(ev.Fleet)
+	if err != nil {
+		return nil
+	}
+	var out []Routine
+	for _, r := range list {
+		if r.Enabled && r.On != nil && r.On.Source == ev.Source && r.On.Kind == ev.Kind && r.On.Panel == ev.Panel {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // HandleEvent matches ev to the fleet's enabled event routines, decides each pair and records it.
-func (s *Scheduler) HandleEvent(ev Event) {}
+// It takes no scheduler lock: no event launches yet, and a tick must not hold events up.
+func (s *Scheduler) HandleEvent(ev Event) {
+	if s.Own != nil && s.Own(ev.Fleet, ev.Ref) {
+		return
+	}
+	f, ok := s.Store.Fleets(ev.Fleet)
+	if !ok {
+		return
+	}
+	matches := s.eventRoutines(ev)
+	if len(matches) == 0 {
+		return
+	}
+	var en Enrichment
+	if s.Enrich != nil {
+		en = s.Enrich(ev)
+	}
+	if en.Repo == "" {
+		en.Repo = repoOfRef(ev.Ref)
+	}
+	now := s.Clock.Now()
+	zone := s.zone()
+	spent, _ := s.Store.SpendToday(ev.Fleet, now, zone)
+	for _, c := range en.Costs {
+		spent += c.USD
+	}
+	counts, _ := s.Store.CountsFor(ev.Fleet, ev.Actor, now, zone)
+	var live []string
+	if s.Live != nil {
+		counts.WorkerShips, live = s.Live.WorkerShips(ev.Fleet), s.Live.DedupeKeys(ev.Fleet)
+	}
+	holdOn, err := s.Store.HoldOn(ev.Fleet)
+	if err != nil {
+		holdOn = true
+	}
+	tier := TierOf(ev, f.Limits)
+	costs := en.Costs // one record carries them, or the spend would count once per routine
+	for _, r := range matches {
+		d := Decide(DecideInput{
+			Routine: r, Tier: tier, Limits: f.Limits, Top: EventTop, HoldOn: holdOn, Now: now.In(zone),
+			SpentTodayUSD: spent, Counts: counts, LiveDedupeKeys: live,
+			Sender: ev.Actor, Repo: en.Repo, Labels: en.Labels, DedupeKey: en.DedupeKey,
+		})
+		rec, ok := s.record(ev.Fleet, Trigger{
+			Routine: r.ID, Outcome: d.Outcome, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: ev.Actor, Rule: r.ID,
+			Reason: strings.Join(d.Reasons, ", "), Action: describe(r), DedupeKey: en.DedupeKey, Costs: costs,
+		})
+		costs = nil
+		if ok && s.Acts != nil && (d.Outcome == Reported || d.Outcome == Proposed) {
+			s.Acts.Act(ev.Fleet, r, ev, rec, d)
+		}
+	}
+}
 
 // Records is every trigger-log record of the fleet, newest first, with undo and failure marks applied.
-func (s *Store) Records(fleet string) ([]Trigger, error) { return nil, errors.New("not implemented") }
+func (s *Store) Records(fleet string) ([]Trigger, error) {
+	if _, err := s.fleet(fleet); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	lines, err := s.readLog(fleet)
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	undone := map[string]time.Time{}
+	failed := map[string]string{}
+	for _, l := range lines {
+		if l.UndoOf != "" {
+			undone[l.UndoOf] = l.At
+		}
+		if l.FailOf != "" {
+			failed[l.FailOf] = l.Reason
+		}
+	}
+	out := []Trigger{}
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := lines[i]
+		if l.UndoOf != "" || l.FailOf != "" {
+			continue
+		}
+		if reason, ok := failed[l.ID]; ok {
+			l.Outcome, l.Reason = Failed, reason
+		}
+		if at, ok := undone[l.ID]; ok {
+			l.Undone, l.UndoneAt = true, at
+		}
+		out = append(out, l.Trigger)
+	}
+	return out, nil
+}
+
+func sameDay(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	return ay == by && am == bm && ad == bd
+}
 
 // SpendToday sums the costs recorded on now's calendar day in zone.
 func (s *Store) SpendToday(fleet string, now time.Time, zone *time.Location) (float64, error) {
-	return 0, errors.New("not implemented")
+	recs, err := s.Records(fleet)
+	if err != nil {
+		return 0, err
+	}
+	var sum float64
+	for _, r := range recs {
+		if sameDay(r.At.In(zone), now.In(zone)) {
+			for _, c := range r.Costs {
+				sum += c.USD
+			}
+		}
+	}
+	return sum, nil
 }
 
 // CountsFor reads the rate counts a launch would be checked against from the fleet's log.
+// WorkerShips is left for the caller: the log doesn't know which ships are still here.
 func (s *Store) CountsFor(fleet, sender string, now time.Time, zone *time.Location) (standing.Counts, error) {
-	return standing.Counts{}, errors.New("not implemented")
+	recs, err := s.Records(fleet)
+	if err != nil {
+		return standing.Counts{}, err
+	}
+	var c standing.Counts
+	for _, r := range recs {
+		if r.Outcome != Launched {
+			continue
+		}
+		if age := now.Sub(r.At); age >= 0 && age < time.Hour {
+			c.LaunchesLastHour++
+		}
+		if sender != "" && strings.EqualFold(r.Sender, sender) && sameDay(r.At.In(zone), now.In(zone)) {
+			c.SenderLaunchesToday++
+		}
+	}
+	return c, nil
 }

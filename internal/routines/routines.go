@@ -192,12 +192,18 @@ func (s *Store) validate(f config.Fleet, r Routine) error {
 	if err := checkName(r.Name); err != nil {
 		return err
 	}
-	sched, err := ParseCron(r.When)
-	if err != nil {
-		return invalidf("when: %v", err)
-	}
-	if sched.Next(s.now()).IsZero() {
-		return invalidf("when: the cron expression %q never fires", r.When)
+	if r.On != nil {
+		if err := s.validateOn(f, r); err != nil {
+			return err
+		}
+	} else {
+		sched, err := ParseCron(r.When)
+		if err != nil {
+			return invalidf("when: %v", err)
+		}
+		if sched.Next(s.now()).IsZero() {
+			return invalidf("when: the cron expression %q never fires", r.When)
+		}
 	}
 	switch r.Before {
 	case ReportOnly, AskFirst, Act:
@@ -601,41 +607,49 @@ func (s *Store) FleetKeys() []string {
 
 // Recent is a routine's records newest first with marks folded in; limit 0 means all.
 func (s *Store) Recent(fleet, routine string, limit int) ([]Trigger, error) {
-	if _, err := s.fleet(fleet); err != nil {
-		return nil, err
-	}
-	s.mu.Lock()
-	lines, err := s.readLog(fleet)
-	s.mu.Unlock()
+	recs, err := s.Records(fleet)
 	if err != nil {
 		return nil, err
 	}
-	undone := map[string]time.Time{}
-	failed := map[string]string{}
-	for _, l := range lines {
-		if l.UndoOf != "" {
-			undone[l.UndoOf] = l.At
-		}
-		if l.FailOf != "" {
-			failed[l.FailOf] = l.Reason
-		}
-	}
 	out := []Trigger{}
-	for i := len(lines) - 1; i >= 0; i-- {
-		l := lines[i]
-		if l.UndoOf != "" || l.FailOf != "" || l.Routine != routine {
-			continue
-		}
-		if reason, ok := failed[l.ID]; ok {
-			l.Outcome, l.Reason = Failed, reason
-		}
-		if at, ok := undone[l.ID]; ok {
-			l.Undone, l.UndoneAt = true, at
-		}
-		out = append(out, l.Trigger)
-		if limit > 0 && len(out) == limit {
-			break
+	for _, r := range recs {
+		if r.Routine == routine {
+			out = append(out, r)
+			if limit > 0 && len(out) == limit {
+				break
+			}
 		}
 	}
 	return out, nil
+}
+
+// validateOn checks an event routine: no schedule, a source and kind the fleet's catalog lists, and a launch to run.
+func (s *Store) validateOn(f config.Fleet, r Routine) error {
+	if r.When != "" {
+		return invalidf("an event routine has no when: a routine runs on a schedule or on an event, not both")
+	}
+	if r.Do.Prompt != "" {
+		return invalidf("an event routine launches a ship; a source event never prompts AdmiralBot")
+	}
+	on := *r.On
+	if on.Source == "" || on.Kind == "" {
+		return invalidf("on needs a source and a kind")
+	}
+	var kinds []EventKind
+	ok := false
+	if s.Events != nil {
+		kinds, ok = s.Events(f.Key, on.Source)
+	}
+	if !ok {
+		return invalidf("on: the fleet has no source %q that raises events", on.Source)
+	}
+	for _, k := range kinds {
+		if k.Kind == on.Kind {
+			if k.Panel != on.Panel {
+				return invalidf("on: the kind %q belongs to panel %q, not %q", on.Kind, k.Panel, on.Panel)
+			}
+			return nil
+		}
+	}
+	return invalidf("on: the source %q lists no event kind %q", on.Source, on.Kind)
 }
