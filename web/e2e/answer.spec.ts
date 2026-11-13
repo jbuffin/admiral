@@ -155,9 +155,10 @@ test('a card goes when the pane moves on, and a refused answer removes it and se
   await expect(button(page, 'Allow once')).toBeVisible();
 
   // The reason moves on without the ship leaving needs you: the permission card is replaced, never kept.
+  // A finished turn waits for a message in the box, so it sends nobody to the terminal.
   setReason(admiral, ship, 'stop');
   await expect(button(page, 'Allow once')).toHaveCount(0);
-  await expect(terminalCard(page)).toBeVisible();
+  await expect(terminalCard(page)).toHaveCount(0);
 
   setReason(admiral, ship, 'permission:Edit');
   await expect(button(page, 'Allow once')).toBeVisible();
@@ -168,7 +169,7 @@ test('a card goes when the pane moves on, and a refused answer removes it and se
   expect(received(admiral, ship)).toBe('');
 
   // A refused card does not hide the next prompt, even one with the same reason.
-  setReason(admiral, ship, 'stop');
+  setReason(admiral, ship, 'bell');
   await expect(terminalCard(page)).toBeVisible();
   setReason(admiral, ship, 'permission:Edit');
   await expect(button(page, 'Allow once')).toBeEnabled();

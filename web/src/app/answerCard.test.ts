@@ -126,7 +126,7 @@ describe('answerCard: terminal', () => {
     expect(needs('permission:ExitPlanMode', ok(call('c1', 'ExitPlanMode', 'plan'))).kind).toBe('terminal');
   });
 
-  it.each(['trust', 'stop', 'bell', 'notification', 'something-new', ''])('sends the needs-you reason %j with no card to the terminal', (reason) => {
+  it.each(['trust', 'bell', 'notification', 'something-new', ''])('sends the needs-you reason %j with no card to the terminal', (reason) => {
     expect(needs(reason, ok(call('c1', 'Bash', 'ls'))).kind).toBe('terminal');
   });
 });
@@ -141,6 +141,10 @@ describe('answerCard: none', () => {
 
   it('shows nothing when the ship only needs you for its crew', () => {
     expect(needs('crew', conv).kind).toBe('none');
+  });
+
+  it.each(['claude', 'codex', 'copilot'])('shows nothing for a %s turn that finished and waits for a message', (harness) => {
+    expect(needs('stop', conv, { harness }).kind).toBe('none');
   });
 
   it('shows no question card for a codex harness yet', () => {
@@ -218,7 +222,7 @@ describe('answerCard: a codex ship', () => {
   });
 
   it('sends a reason with no card to the terminal', () => {
-    expect(needs('stop', ok(), { harness: 'codex' }).kind).toBe('terminal');
+    expect(needs('something-new', ok(), { harness: 'codex' }).kind).toBe('terminal');
   });
 });
 
