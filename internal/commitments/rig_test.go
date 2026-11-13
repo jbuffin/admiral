@@ -166,12 +166,13 @@ type rig struct {
 	led   *ledger.Ledger
 	ships *fakeShips
 	cards *fakeCards
+	camp  *fakeCampaign
 	r     *commitments.Runner
 }
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	g := &rig{t: t, home: t.TempDir(), clk: &fakeClock{now: t0}, ships: &fakeShips{}, cards: &fakeCards{}}
+	g := &rig{t: t, home: t.TempDir(), clk: &fakeClock{now: t0}, ships: &fakeShips{}, cards: &fakeCards{}, camp: &fakeCampaign{}}
 	g.led = ledger.New(g.home, g.clk.Now)
 	g.restart()
 	return g
@@ -187,9 +188,10 @@ func (g *rig) restart() {
 			fl, ok := map[string]string{"tracker": "work", "theirs": "home"}[source]
 			return fl, ok
 		},
-		Clock: commitments.Clock{Now: g.clk.Now, After: g.clk.After},
-		Ships: g.ships,
-		Cards: g.cards,
+		Clock:    commitments.Clock{Now: g.clk.Now, After: g.clk.After},
+		Ships:    g.ships,
+		Cards:    g.cards,
+		Campaign: g.camp.read,
 	}
 }
 

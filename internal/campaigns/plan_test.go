@@ -68,6 +68,15 @@ func TestPlan(t *testing.T) {
 			want: Plan{Launch: []Child{{Campaign: planCampaign, URL: other40, Title: "Child 40", Skill: Skill{Kind: "commodore"}}}},
 		},
 		{
+			name: "a child listed twice in one read launches once",
+			in: PlanInput{Followed: true, Campaign: func() Campaign {
+				c := Build(Input{Tree: tree(wo(2))})
+				c.Ready = append(c.Ready, c.Ready[0])
+				return c
+			}()},
+			want: Plan{Launch: []Child{commodore(2)}},
+		},
+		{
 			name: "a child already launched or fired does not launch again",
 			in: PlanInput{
 				Followed: true, Launched: urlsOf(2),
