@@ -425,3 +425,55 @@ func TestDirsKeepsThePreselectionWhenTheCloneTargetExists(t *testing.T) {
 		t.Errorf("selected %q (%s), want the old preselection %q (last_used): the clone would be refused", selected, reason, z)
 	}
 }
+
+func writeSkillMD(t *testing.T, dir, name, description string) {
+	t.Helper()
+	d := filepath.Join(dir, name)
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "SKILL.md"), []byte("---\nname: "+name+"\ndescription: "+description+"\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestShipSkillsComeFromItsOwnHarnessAndCheckout(t *testing.T) {
+	f := newFixture(t)
+	ids := t.TempDir()
+	t.Setenv("HOME", filepath.Join(ids, "home"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(ids, "claude"))
+	t.Setenv("CODEX_HOME", filepath.Join(ids, "codex"))
+	writeSkillMD(t, filepath.Join(ids, "claude", "skills"), "tdd", "Test-driven development.")
+	writeSkillMD(t, filepath.Join(ids, "codex", "skills"), "review", "Review the diff.")
+	// A worktree outside the fleet's search roots, which the launch dialog's route refuses.
+	worktree := filepath.Join(ids, "worktrees", "feature")
+	writeSkillMD(t, filepath.Join(worktree, ".claude", "skills"), "ship-it", "Release the build.")
+	f.ships = append(f.ships, ships.Ship{Session: "s1", Fleet: "work", Harness: "claude", Dir: worktree, Status: ships.StatusUnderway,
+		Crew: []ships.CrewBoat{{Name: "critic", Harness: "codex", Dir: worktree}}})
+
+	type answer struct {
+		Mark   string `json:"mark"`
+		Skills []struct{ Name, Description string }
+	}
+	get := func(path string) (int, answer) {
+		code, body := f.do(http.MethodGet, path, nil)
+		var a answer
+		_ = json.Unmarshal([]byte(body), &a)
+		return code, a
+	}
+	code, ship := get("/api/ships/s1/skills")
+	want := answer{"/", []struct{ Name, Description string }{{"ship-it", "Release the build."}, {"tdd", "Test-driven development."}}}
+	if code != http.StatusOK || !reflect.DeepEqual(ship, want) {
+		t.Errorf("the ship's skills = %d %+v, want %+v", code, ship, want)
+	}
+	code, boat := get("/api/ships/s1/crew/critic/skills")
+	want = answer{"$", []struct{ Name, Description string }{{"review", "Review the diff."}}}
+	if code != http.StatusOK || !reflect.DeepEqual(boat, want) {
+		t.Errorf("the Codex boat's skills = %d %+v, want %+v", code, boat, want)
+	}
+	for _, p := range []string{"/api/ships/nope/skills", "/api/ships/s1/crew/nope/skills"} {
+		if code, _ := get(p); code != http.StatusNotFound {
+			t.Errorf("%s = %d, want 404", p, code)
+		}
+	}
+}

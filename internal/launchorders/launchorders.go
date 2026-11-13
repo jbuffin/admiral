@@ -35,6 +35,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/launch-orders/dirs", s.serveDirs)
 	mux.HandleFunc("GET /api/launch-orders/skills", s.serveSkills)
 	mux.HandleFunc("GET /api/launch-orders/crew", s.serveCrew)
+	mux.HandleFunc("GET /api/ships/{session}/skills", s.serveShipSkills)
+	mux.HandleFunc("GET /api/ships/{session}/crew/{name}/skills", s.serveShipSkills)
 	mux.HandleFunc("PUT /api/favorites", s.serveFavorites)
 }
 
@@ -299,6 +301,46 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 		commodore = map[string]any{"found": true, "name": n}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"skills": list, "commodore": commodore})
+}
+
+// serveShipSkills lists the skills a ship's or boat's message box offers: its
+// own harness's, read in its own checkout, which may be a worktree the launch
+// dialog never lists.
+func (s *Service) serveShipSkills(w http.ResponseWriter, r *http.Request) {
+	session, boat := r.PathValue("session"), r.PathValue("name")
+	var sh ships.Ship
+	found := false
+	for _, x := range s.Ships() {
+		if x.Session == session {
+			sh, found = x, true
+			break
+		}
+	}
+	harness, dir := sh.Harness, sh.Dir
+	if found && boat != "" {
+		found = false
+		for _, b := range sh.Crew {
+			if b.Name == boat {
+				harness, dir, found = b.Harness, b.Dir, true
+				break
+			}
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	environ := os.Environ()
+	if fleet, ok := s.Config.Current().Fleet(sh.Fleet); ok {
+		if dock, ok := fleet.Harness(harness); ok {
+			environ = dock.Environ()
+		}
+	}
+	list := skillindex.List(harness, environ, dir)
+	if list == nil {
+		list = []skillindex.Skill{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"mark": skillindex.Mark(harness), "skills": list})
 }
 
 // serveCrew lists the members a launch could pin. Without a dir, the repo layer is left out.

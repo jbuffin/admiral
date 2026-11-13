@@ -543,10 +543,7 @@ func promptFor(harness, skill, kind, note, text string) string {
 		}
 		return note + "\n\n" + text
 	}
-	mark := "/"
-	if harness == "codex" {
-		mark = "$"
-	}
+	mark := skillindex.Mark(harness)
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return mark + skill
