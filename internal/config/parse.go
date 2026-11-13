@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/jbuffin/admiral/internal/standing"
 )
 
 const Version = 1
@@ -62,6 +64,8 @@ type Fleet struct {
 	Harnesses     []Harness         // dock order: claude, copilot, codex, as present
 	Chat          ChatSettings      // resolved: defaults filled in
 	Notify        bool              // pushes and alerts for this fleet; on unless config.json says false
+	Preset        standing.Preset   // work unless config.json says home
+	Limits        standing.Limits   // resolved: the preset's values under the fleet's own
 }
 
 func (c *Config) clone() *Config {

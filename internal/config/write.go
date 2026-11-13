@@ -135,6 +135,10 @@ type FleetFields struct {
 	Notify        *bool
 	// Chat holds the chat settings to change, by key; nil leaves them as stored.
 	Chat map[string]json.RawMessage
+	// Preset is work or home; switching it clears the Limit values and keeps quiet hours.
+	Preset *string
+	// Limits holds the Limit keys to change; nil leaves them as stored.
+	Limits map[string]json.RawMessage
 }
 
 var (
