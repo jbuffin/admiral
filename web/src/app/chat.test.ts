@@ -9,7 +9,7 @@ vi.hoisted(() => {
 
 
 import { commitmentCardView, needsTerminal, resetLabel, threadOf, youAnswered, type ChatSnapshot, type ThreadItem } from './chat';
-import { shipPath } from './router';
+import { chatSettingsPath, shipPath } from './router';
 
 const card = (id: string) => ({ version: 1, id, session: '_chat-harbor', kind: 'question' as const, created: '2026-01-02T03:04:05Z', title: 'Which panel?', question: { questions: [] } });
 const snap = (over: Partial<ChatSnapshot>): ChatSnapshot => ({ fleet: 'harbor', running: true, state: 'idle', messages: [], questions: [], ...over });
@@ -156,5 +156,10 @@ describe('a commitment card', () => {
     expect(v.shipHref).toBe('');
     const others = (['launched', 'reminded', 'cant_run', 'dropped'] as const).map((o) => commitmentCardView(itemOf(o)).eyebrow);
     expect(others).not.toContain(v.eyebrow);
+  });
+
+  it('points an aged card to the fleet\'s AdmiralBot page, where Cancel is, and no other outcome', () => {
+    expect(commitmentCardView(itemOf('aged'), 'harbor').settingsHref).toBe(chatSettingsPath('harbor'));
+    for (const o of ['launched', 'reminded', 'cant_run', 'dropped'] as const) expect(commitmentCardView(itemOf(o), 'harbor').settingsHref).toBe('');
   });
 });

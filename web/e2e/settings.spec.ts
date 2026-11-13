@@ -600,7 +600,15 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   mkdirSync(join(admiral.home, 'chat', 'harbor'), { recursive: true });
   writeFileSync(
     join(admiral.home, 'chat', 'harbor', 'ledger.jsonl'),
-    [ledgerAt(1).replace('%s', 'Deploys go out on Tuesdays.'), ledgerAt(2).replace('%s', 'The staging box is flaky.'), ledgerAt(3).replace('%s', `Stale note to delete. ${'x'.repeat(300)}`)].join(''),
+    [
+      ledgerAt(1).replace('%s', 'Deploys go out on Tuesdays.'),
+      ledgerAt(2).replace('%s', 'The staging box is flaky.'),
+      ledgerAt(3).replace('%s', `Stale note to delete. ${'x'.repeat(300)}`),
+      // Commitments that stay open through the runner's first tick: a time far ahead, and an old no-trigger one already asked about.
+      '{"v":1,"ts":"2026-10-01T09:00:00Z","event":"added","id":"c1","kind":"commitment","text":"Ask me about the dock review.","via":"admiralbot","trigger":{"kind":"none"},"action":"remind"}\n',
+      '{"v":1,"ts":"2026-11-05T09:00:00Z","event":"added","id":"c2","kind":"commitment","text":"Ring the bell at the new year.","via":"admiralbot","trigger":{"kind":"time","subject":"2099-01-01T00:00:00Z"},"action":"remind"}\n',
+      '{"v":1,"ts":"2026-11-06T09:00:00Z","event":"shown","id":"c1"}\n',
+    ].join(''),
   );
   await admiral.start();
   await expect.poll(async () => ((await (await fetch(`${admiral.url}api/v1/chat/harbor/notes`)).json()) as { notes: unknown[] }).notes.length).toBe(3);
@@ -675,6 +683,9 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
     const text = note('Stale note').locator('.set-text');
     await expect.poll(() => text.evaluate((e) => e.getBoundingClientRect().width)).toBeGreaterThan(150);
     for (const b of await note('Stale note').getByRole('button').all()) expect(await b.evaluate((e) => e.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+    const cancels = await main.getByRole('list', { name: 'Commitments' }).getByRole('button', { name: 'Cancel' }).all();
+    expect(cancels.length).toBeGreaterThan(0);
+    for (const b of cancels) expect(await b.evaluate((e) => e.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   }
   await page.setViewportSize(original);
   await expect(main.getByRole('listitem').filter({ hasText: /Deploys go out|staging box|Stale note/ })).toHaveCount(3);
@@ -708,6 +719,66 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   await page.reload();
   await expect(instructions).toHaveValue('Deploys go out on Tuesdays.\n\nBe terse.');
   await expect(main.getByRole('listitem').filter({ hasText: /Deploys go out|staging box|Stale note/ })).toHaveText([/The staging box is flaky\./]);
+
+  // Commitments: the open ones, oldest first with their marks; Cancel is the engineer's alone.
+  const list = main.getByRole('list', { name: 'Commitments' });
+  const commitment = (text: string) => list.getByRole('listitem').filter({ hasText: text });
+  const openIds = async () => ((await (await fetch(`${admiral.url}api/v1/chat/harbor/commitments`)).json()) as { commitments: { id: string }[] }).commitments.map((c) => c.id);
+  const ledgerEvents = () =>
+    readFileSync(join(admiral.home, 'chat', 'harbor', 'ledger.jsonl'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+  // A launch can't stay waiting in this home, so the first read gets one more row.
+  let waitingAdded = false;
+  await page.route('**/api/v1/chat/harbor/commitments', async (route) => {
+    if (waitingAdded || route.request().method() !== 'GET') return route.fallback();
+    waitingAdded = true;
+    const res = await route.fetch();
+    const body = (await res.json()) as { commitments: unknown[] };
+    body.commitments.push({
+      id: 'w1',
+      text: 'Launch the quartz ferry.',
+      trigger: { kind: 'ship_sailed', subject: 'gone-session' },
+      action: 'launch',
+      launch: { prompt: 'SECRET LAUNCH PROMPT' },
+      ts: '2026-11-07T09:00:00Z',
+      via: 'admiralbot',
+      waiting: true,
+    });
+    await route.fulfill({ response: res, json: body });
+  });
+  await page.reload();
+  await expect(list.getByRole('listitem')).toHaveText([/Ask me about the dock review\./, /Ring the bell at the new year\./, /Launch the quartz ferry\./]);
+  await expect(commitment('dock review')).toContainText(/no trigger/i);
+  await expect(commitment('dock review')).toContainText(/remind/i);
+  await expect(commitment('dock review')).toContainText('Still want this?');
+  await expect(commitment('new year')).toContainText('2099');
+  await expect(commitment('new year')).toContainText(/remind/i);
+  await expect(commitment('new year')).not.toContainText('Still want this?');
+  await expect(commitment('quartz ferry')).toContainText('gone-session');
+  await expect(commitment('quartz ferry')).toContainText(/waiting/i);
+  await expect(commitment('quartz ferry')).toContainText(/launch/i);
+  await expect(main).not.toContainText('SECRET LAUNCH PROMPT');
+  await expect(main).not.toContainText(/ledger|promise/i);
+  await page.unroute('**/api/v1/chat/harbor/commitments');
+
+  // Cancel removes the commitment, and it stays gone after a reload.
+  await commitment('new year').getByRole('button', { name: 'Cancel' }).click();
+  await expect(commitment('new year')).toHaveCount(0);
+  await expect.poll(openIds).toEqual(['c1']);
+  const cancelled = ledgerEvents().find((e) => e.event === 'cancelled' && e.id === 'c2');
+  expect(cancelled, 'the ledger holds a cancelled event for it').toBeDefined();
+  expect(cancelled).not.toHaveProperty('via');
+  await page.reload();
+  await expect(list.getByRole('listitem')).toHaveText([/Ask me about the dock review\./]);
+
+  // A commitment that closed since the page loaded answers 404: the error shows and the row leaves.
+  expect((await fetch(`${admiral.url}api/v1/chat/harbor/commitments/c1`, { method: 'DELETE' })).status).toBe(204);
+  await commitment('dock review').getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('alert')).toContainText(/no open commitment/i);
+  await expect(commitment('dock review')).toHaveCount(0);
+  await expect(main).toContainText(/no open commitments/i);
 
   // A fleet with no Claude Code dock: no harness to pick, the reason on top, the settings still editable.
   await prefsNav(page).getByRole('group', { name: `${HOME} fleet` }).getByRole('link', { name: 'AdmiralBot', exact: true }).click();

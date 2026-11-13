@@ -1,4 +1,4 @@
-import type { ChatHarnessOption } from './api';
+import type { ChatCommitment, ChatHarnessOption, Ship } from './api';
 import { fieldMessage } from './fleetSettings';
 
 export interface ChatSettings {
@@ -55,6 +55,16 @@ export const instructionsCount = (text: string): number => [...text.trim()].leng
 
 /** Whether "Save instructions" is enabled: the text differs from what is saved and fits the cap. */
 export const canSaveInstructions = (saved: string, edited: string): boolean => saved.trim() !== edited.trim() && instructionsCount(edited) <= INSTRUCTIONS_MAX;
+
+/** A commitment's trigger in plain words; `href` is set for a PR or issue. */
+export function triggerWords(_trigger: ChatCommitment['trigger'], _ships: Pick<Ship, 'session' | 'name'>[]): { text: string; href?: string } {
+  return { text: '' };
+}
+
+/** The marks a commitment row carries: waiting for room, and already asked about. */
+export function commitmentMarks(_c: Pick<ChatCommitment, 'waiting' | 'shown'>): string[] {
+  return [];
+}
 
 /** How long ago a note was saved; a note lasts days, so the unit grows past minutes. */
 export function noteAge(ts: string, now: number): string {
