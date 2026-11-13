@@ -744,6 +744,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .usage-tokens { color: var(--color-text2); }
 .usage-note, .usage-fresh, .usage-empty, .usage-bar-foot { font-size: var(--font-size-meta); color: var(--color-muted); }
 .usage-empty { margin: 0 0 12px; }
+.usage-held { margin: 0 0 12px; font-size: var(--font-size-meta); color: var(--color-muted); }
 .usage-bar { margin: 10px 0 0; }
 .usage-bar-head { display: flex; flex-wrap: wrap; gap: 0 12px; margin-bottom: 4px; font-size: var(--font-size-meta); }
 .usage-periods { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }

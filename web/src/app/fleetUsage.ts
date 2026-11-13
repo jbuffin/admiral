@@ -36,6 +36,8 @@ export interface FleetUsage {
   name: string;
   periods: Record<PeriodId, { harnesses: HarnessUsage[] }>;
   quota: Quota[];
+  /** Present only while unattended launches are held for a plan window. */
+  quota_hold?: { held: boolean; harness: string; window: string; window_minutes?: number; used_percent: number; line_percent: number; resets_at?: string };
 }
 
 /** A reading younger than this is live; the API sends only its age. */
@@ -174,4 +176,13 @@ export function quotaCards(quota: Quota[], now: Date): QuotaCard[] {
       bars: q.has_data ? q.windows.map((w) => bar(w, now)) : [],
     };
   });
+}
+
+/** The line that says unattended launches are held, why and until when; null when they are not. */
+export function heldLine(f: FleetUsage, now: Date): string | null {
+  const h = f.quota_hold;
+  if (!h?.held) return null;
+  const label = windowLabel({ id: h.window, used_percent: h.used_percent, window_minutes: h.window_minutes });
+  const resets = resetsText(h.resets_at, now);
+  return `Unattended launches are held: ${harnessName(h.harness)}'s ${/\d/.test(label) ? `${label} window` : `${label.toLowerCase()} window`} is at ${Math.round(h.used_percent)}% (line ${h.line_percent}%)${resets ? `, until it ${resets}` : ''}.`;
 }

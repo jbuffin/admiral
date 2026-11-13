@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { fleetPaint, fleets } from './fleets';
 import { Icon } from './Icon';
-import { fleetRows, quotaCards, usagePeriods, type FleetUsage, type HarnessLine, type PeriodId } from './fleetUsage';
+import { fleetRows, heldLine, quotaCards, usagePeriods, type FleetUsage, type HarnessLine, type PeriodId } from './fleetUsage';
 import { watchPath } from './shipUsage';
 
 /** The JSON at `path`, read on open, every 30 s and when the page turns visible; a failed read keeps what was shown. */
@@ -59,9 +59,12 @@ export function FleetUsagePage({ fleetKey, phone }: { fleetKey: string; phone: b
   const Sub = phone ? 'h3' : 'h2';
   const Card = phone ? 'h4' : 'h3';
   if (!data) return error ? <p class="usage-empty">{error}</p> : null;
-  const cards = quotaCards(data.quota ?? [], new Date());
+  const now = new Date();
+  const cards = quotaCards(data.quota ?? [], now);
+  const held = heldLine(data, now);
   return (
     <div class="usage">
+      {held ? <p class="usage-held">{held}</p> : null}
       {usagePeriods(data).map((p, i) => (
         <section key={p.label} class="usage-period" aria-labelledby={`usage-period-${i}`}>
           <Sub id={`usage-period-${i}`}>{p.label}</Sub>
