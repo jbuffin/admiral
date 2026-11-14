@@ -600,6 +600,7 @@ Every source, each `{"key", "name", "plugin", "fleet", "icon_url", "capabilities
 `views` is `[{"id", "title", "orders", "error"?, "refreshed_at"?}]`, one for each panel the source lists. `error` is Admiral's message when the view's last answer failed; the orders beside it are the last good ones. `refreshed_at` (RFC 3339) is when the view last answered successfully: for the built-in GitHub source, the time its search finished, so a search that finds the same orders still moves it; for a plugin, the time of the last good `orders.list`. It is left out until the first success, a failure leaves it as it was, and it survives a panels re-list and a settings Restart. A plugin can't set it.
 
 Each order is `{"id", "title", "text", "url", "hot", "repo", "labels"?, "sub_issues"?, "pr"?, "author"?, "opened_at"?, "excerpt"?, "review_requested_at"?, "reviewed_since_push"?}`. The fields after `hot` are left out when unknown or zero:
+
 - `author`: the login of whoever opened it, one line of at most 100 runes.
 - `opened_at`: when it was opened, RFC 3339.
 - `excerpt`: the body as one line. Whitespace runs become one space, other control characters go, the ends are trimmed, and a body over 280 runes is cut there with `…` added. Left out when nothing is left.
