@@ -340,7 +340,10 @@ export function proposeOnlyNote(caps: FleetCapabilities | undefined, limits: Lim
 
 /** The Stop all worker-launched button: its label with the count, and whether there is nothing to stop. */
 export function stopAllLabel(count: number | undefined, scope: 'fleet' | 'all'): { label: string; disabled: boolean } {
-  void count;
-  void scope;
-  return { label: '', disabled: false };
+  const label = scope === 'all' ? 'Stop all worker-launched, all fleets' : 'Stop all worker-launched';
+  return count === undefined ? { label, disabled: true } : { label: `${label} (${count})`, disabled: count === 0 };
 }
+
+/** The confirm text for Stop all worker-launched. */
+export const stopAllConfirm = (scope: 'fleet' | 'all') =>
+  `Stops every ship an outside event started in ${scope === 'all' ? 'every fleet' : 'this fleet'}. Their clones stay, so Undo and Promote still work.`;

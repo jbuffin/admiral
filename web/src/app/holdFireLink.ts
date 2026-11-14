@@ -34,9 +34,16 @@ export function watchHoldFire() {
   };
 }
 
-/** Stops this fleet's live worker-launched ships, or every fleet's, then reads the state back; the error text when refused. */
+/** What the last Stop all worker-launched stopped, as the page says it. */
+export const stopResult = signal('');
+
+/** Stops this fleet's live worker-launched ships, or every fleet's, then reads the state back; the error text when refused or a ship would not stop. */
 export async function stopWorkerShips(fleet: string, scope: 'fleet' | 'all'): Promise<string> {
-  void fleet;
-  void scope;
-  return '';
+  const base = scope === 'all' ? '' : `/fleets/${encodeURIComponent(fleet)}`;
+  const r = await call<{ stopped: string[]; failed: string[] }>('POST', `${base}/worker-ships/stop`);
+  await refreshHoldFire(fleet);
+  if (!r.ok) return r.error;
+  const n = r.data.stopped.length;
+  stopResult.value = `Stopped ${n} ${n === 1 ? 'ship' : 'ships'}`;
+  return r.data.failed.length ? `Could not stop ${r.data.failed.join(', ')}.` : '';
 }

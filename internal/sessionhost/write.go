@@ -2,8 +2,11 @@ package sessionhost
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -91,6 +94,57 @@ func (h *Host) KillSession(ctx context.Context, session string) error {
 }
 
 // EndHarness notes why, then signals the pane's process group (TERM, then KILL after grace) and keeps the pane.
+// remain-on-exit leaves the dead pane, so the ship reads anchored with the signal.
 func (h *Host) EndHarness(ctx context.Context, session, reason string, grace time.Duration) error {
+	pane := h.shipPane(session)
+	pid, dead, err := h.panePID(ctx, pane)
+	if err != nil {
+		return err
+	}
+	if dead {
+		return nil
+	}
+	if err := h.SetOptions(ctx, session, map[string]string{OptStoppedBy: reason}); err != nil {
+		return err
+	}
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+		return err
+	}
+	deadline := time.Now().Add(grace)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+		if _, dead, err := h.panePID(ctx, pane); err != nil || dead {
+			return err
+		}
+	}
+	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		return err
+	}
 	return nil
+}
+
+func (h *Host) panePID(ctx context.Context, pane string) (pid int, dead bool, err error) {
+	// display-message prints nothing useful over the control connection, so read the list and pick the pane
+	lines, err := h.command(ctx, "list-panes -a -F '#{pane_id}|#{pane_pid}|#{pane_dead}'")
+	if err != nil {
+		return 0, false, err
+	}
+	for _, line := range lines {
+		f := strings.Split(line, "|")
+		if len(f) != 3 || f[0] != pane {
+			continue
+		}
+		if f[2] == "1" { // a dead pane has no pid
+			return 0, true, nil
+		}
+		if pid, err = strconv.Atoi(f[1]); err != nil {
+			return 0, false, err
+		}
+		return pid, false, nil
+	}
+	return 0, false, fmt.Errorf("no pane %s", pane)
 }
