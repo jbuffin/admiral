@@ -597,6 +597,23 @@ A routine:
 
 Every source, each `{"key", "name", "plugin", "fleet", "icon_url", "capabilities", "has_schema", "state", "read_only", "error", "auth", "warnings", "views"}`. A source that raises events also carries `events: [{"kind", "title", "panel"?}]`, its event catalog: one entry for each kind and panel a routine's `on` may name, with `title` the words to show ("Review requested of you", `New in` and the view's title). `events` is left out until the source has listed them, so a client that needs it waits and asks again.
 
+`views` is `[{"id", "title", "orders", "error"?, "refreshed_at"?}]`, one for each panel the source lists. `error` is Admiral's message when the view's last answer failed; the orders beside it are the last good ones. `refreshed_at` (RFC 3339) is when the view last answered successfully: for the built-in GitHub source, the time its search finished, so a search that finds the same orders still moves it; for a plugin, the time of the last good `orders.list`. It is left out until the first success, a failure leaves it as it was, and it survives a panels re-list and a settings Restart. A plugin can't set it.
+
+Each order is `{"id", "title", "text", "url", "hot", "repo", "labels"?, "sub_issues"?, "pr"?, "author"?, "opened_at"?, "excerpt"?, "review_requested_at"?, "reviewed_since_push"?}`. The fields after `hot` are left out when unknown or zero:
+- `author`: the login of whoever opened it, one line of at most 100 runes.
+- `opened_at`: when it was opened, RFC 3339.
+- `excerpt`: the body as one line. Whitespace runs become one space, other control characters go, the ends are trimmed, and a body over 280 runes is cut there with `…` added. Left out when nothing is left.
+- `sub_issues`: how many sub-issues an issue has.
+- `pr`: a pull request's state, `{"state", "review", "checks", "mergeable", "conflicts", "ready", "failing_check_count"?}`. `failing_check_count` counts the failing checks, with the same states the moor poll calls failing (check runs `FAILURE`, `TIMED_OUT`, `STARTUP_FAILURE`, `ACTION_REQUIRED`; statuses `ERROR`, `FAILURE`), and is left out when none.
+- `review_requested_at` (pull requests): when the signed-in account was last asked, by name, to review it, from the newest of its last 10 review requests; left out when that window holds none or the request went to a team.
+- `reviewed_since_push` (pull requests): `true` when the account's latest review is submitted (`APPROVED`, `CHANGES_REQUESTED` or `COMMENTED`) on the pull request's current head commit, otherwise `false`.
+
+A plugin may send the same fields. Each is checked on its own and a bad one is dropped with the order kept: `opened_at` and `review_requested_at` must be RFC 3339, `author` one line of at most 100 runes, `excerpt` is read by the rule above, `reviewed_since_push` must be a boolean and `pr.failing_check_count` a non-negative integer.
+
+### `POST /api/sources/<key>/refresh` (alias `POST /api/v1/sources/<key>/refresh`)
+
+Asks the source to look again now. Body: `{"panel": "<view id>"}`, or none for every view. It answers `200 {"refreshing": "<key>"}` once the source has taken the request, not when it has an answer: the GitHub source only wakes its search worker, so the new orders and `refreshed_at` arrive afterwards, through the same stream as any other change. Errors: `400` for a body that is not valid JSON; `404` for an unknown source; `409` when the source does not list `refresh` in its `capabilities` (`The source cannot refresh orders`), is read-only, or is not running; a plugin that refuses the call answers `422`.
+
 ### `POST /api/fleets/<key>/routines`
 
 Saves the body as a new routine (`id`, `created_at` and `updated_at` are set by the server). `201` with the routine.

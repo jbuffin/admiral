@@ -25,20 +25,23 @@ const MaxItems = 50
 // ghTimeout is the default limit for one gh call; Admiral gives a request 10 seconds.
 const ghTimeout = 8 * time.Second
 
-const itemFields = "number title url author { login } repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
+const itemFields = "number title url createdAt bodyText author { login } repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
 
 // prStateFields are the PullRequest fields the chips and ready read, the poll's own and no more, so a search stays light.
-const prStateFields = " state reviewDecision mergeable mergeStateStatus statusCheckRollup { state }"
+const prStateFields = " state reviewDecision mergeable mergeStateStatus statusCheckRollup { state contexts { checkRunCountsByState { state count } statusContextCountsByState { state count } } } headRefOid viewerLatestReview { state commit { oid } }"
 
 // searchQuery is GitHub's advanced search, the one github.com uses: it knows
 // qualifiers such as is:blocked, and it reads AND, OR and parentheses.
-var searchQuery = searchQueryWith("", "")
+var searchQuery = searchQueryWith("", reviewRequests)
 
 // What happened to the viewer on an item: the timeline events that name them, with when. A mention names no one.
 const (
 	issueTimeline = " timelineItems(last: 20, itemTypes: [ASSIGNED_EVENT, MENTIONED_EVENT]) { nodes { __typename ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } } } ... on MentionedEvent { createdAt } } }"
 	prTimeline    = " timelineItems(last: 20, itemTypes: [REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT, MENTIONED_EVENT]) { nodes { __typename ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { ... on User { login } } } ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } } } ... on MentionedEvent { createdAt } } }"
 )
+
+// reviewRequests is the viewer's review requests on a pull request; the connection stays at 10 to keep the query's cost low.
+const reviewRequests = " timelineItems(last: 10, itemTypes: [REVIEW_REQUESTED_EVENT]) { nodes { __typename ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } } } } }"
 
 func searchQueryWith(issueExtra, prExtra string) string {
 	return fmt.Sprintf("query($q: String!) { viewer { login } search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { "+
@@ -69,6 +72,14 @@ type Item struct {
 	SubIssues int
 	// PR is a pull request's state as the poll would serve it; nil for an issue.
 	PR *moor.PR
+	// OpenedAt is when it was opened, Excerpt its body as one short line.
+	OpenedAt time.Time
+	Excerpt  string
+	// FailingChecks counts a pull request's failing checks, ReviewRequestedAt is when the viewer was last asked to review
+	// it, and ReviewedSincePush says the viewer's latest submitted review is on its head.
+	FailingChecks     int
+	ReviewRequestedAt time.Time
+	ReviewedSincePush bool
 	// Author is who opened the item. Actor is who last review-requested or assigned the viewer on it, and EventAt when
 	// the latest such event (or mention) happened, when the search asked (SearchActing) and the timeline says; empty
 	// and zero otherwise.
@@ -269,6 +280,7 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 	if n.Author != nil {
 		it.Author = n.Author.Login
 	}
+	it.OpenedAt, it.Excerpt = n.CreatedAt, Excerpt(n.BodyText)
 	if n.TimelineItems != nil {
 		want := map[string]string{"review_requested": "ReviewRequestedEvent", "assigned": "AssignedEvent", "mentioned": "MentionedEvent"}[actorKind]
 		for _, ev := range n.TimelineItems.Nodes { // the latest event of the kind aimed at the viewer wins
@@ -291,12 +303,21 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 			}
 		}
 	}
+	if n.TimelineItems != nil {
+		for _, ev := range n.TimelineItems.Nodes {
+			if ev.Typename == "ReviewRequestedEvent" && ev.Reviewer != nil && strings.EqualFold(ev.Reviewer.Login, viewer) && ev.CreatedAt.After(it.ReviewRequestedAt) {
+				it.ReviewRequestedAt = ev.CreatedAt
+			}
+		}
+	}
 	if n.SubIssuesSummary != nil {
 		it.SubIssues = n.SubIssuesSummary.Total
 	}
 	if n.State != "" { // only the pull request fragment asks for state
 		pr := moor.View(it.URL, n.status(), true)
 		it.PR = &pr
+		it.FailingChecks = n.failingChecks()
+		it.ReviewedSincePush = n.reviewedSincePush()
 	}
 	for _, l := range *n.Labels.Nodes {
 		if l.Name == nil {

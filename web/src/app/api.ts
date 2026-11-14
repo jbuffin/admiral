@@ -357,6 +357,8 @@ export const fetchSchema = (key: string) => call<unknown>('GET', `${src(key)}/sc
 export const fetchSettings = (key: string) => call<{ name: string; settings: Record<string, unknown> }>('GET', `${src(key)}/settings`);
 export const saveSource = (key: string, body: { name?: string; fleet?: string; settings?: Record<string, unknown> }) => call<Source>('PUT', src(key), body);
 export const restartSource = (key: string) => call<unknown>('POST', `${src(key)}/restart`);
+/** Asks the source to search again now; the new answer arrives with the usual stream. */
+export const refreshSource = (key: string) => call<unknown>('POST', `${src(key)}/refresh`);
 export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
 export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });
 
@@ -490,22 +492,37 @@ export async function probeShips(): Promise<ShipsProbe> {
 export interface Order {
   id: string;
   // A pull request's state, as a ship's prs[] entry gives it, without the url.
-  pr?: Omit<MooredPR, 'url'>;
+  pr?: Omit<MooredPR, 'url'> & { failing_check_count?: number };
   title: string;
   text?: string;
   repo?: string;
   url?: string;
   sub_issues?: number;
+  labels?: string[];
+  hot?: boolean;
+  author?: string;
+  /** RFC 3339. */
+  opened_at?: string;
+  /** The start of the body as one line. */
+  excerpt?: string;
+  /** RFC 3339: when the viewer was last asked to review this pull request. */
+  review_requested_at?: string;
+  reviewed_since_push?: boolean;
 }
 export interface OrderView {
   id: string;
   title: string;
   orders: Order[];
+  error?: string;
+  /** RFC 3339: the view's last successful answer; absent before the first. */
+  refreshed_at?: string;
 }
 export interface Source {
   key: string;
   name: string;
   fleet: string;
+  /** What the source can do, such as `refresh`. */
+  capabilities?: string[];
   views: OrderView[];
 }
 export interface Resource {

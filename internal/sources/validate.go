@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
+	"unicode/utf8"
 
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/repofinder"
 )
 
@@ -29,6 +32,14 @@ type Order struct {
 	SubIssues int `json:"sub_issues,omitempty"`
 	// PR is a pull request's state, as a ship's prs[] entry gives it; nil for any other order.
 	PR *OrderPR `json:"pr,omitempty"`
+	// Author is who opened it, OpenedAt when (RFC 3339) and Excerpt the start of its body as one line.
+	Author   string `json:"author,omitempty"`
+	OpenedAt string `json:"opened_at,omitempty"`
+	Excerpt  string `json:"excerpt,omitempty"`
+	// ReviewRequestedAt is when the viewer was last asked to review a pull request. ReviewedSincePush says their latest
+	// submitted review is on its head; nil when unknown.
+	ReviewRequestedAt string `json:"review_requested_at,omitempty"`
+	ReviewedSincePush *bool  `json:"reviewed_since_push,omitempty"`
 }
 
 // OrderPR is moor.PR without its url, which is the order's own.
@@ -39,14 +50,17 @@ type OrderPR struct {
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
 	Ready     bool   `json:"ready"`
+	// FailingCheckCount is how many checks fail; left out when none.
+	FailingCheckCount int `json:"failing_check_count,omitempty"`
 }
 
 type Panel struct {
 	ID     string  `json:"id"`
 	Title  string  `json:"title"`
 	Orders []Order `json:"orders"`
-	// Admiral sets Error, never the plugin.
-	Error string `json:"error,omitempty"`
+	// Admiral sets Error and RefreshedAt, never the plugin. RefreshedAt is the time of the view's last successful answer.
+	Error       string    `json:"error,omitempty"`
+	RefreshedAt time.Time `json:"refreshed_at,omitzero"`
 }
 
 type Auth struct {
@@ -157,6 +171,12 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		// Sub-issues is the count a GitHub issue has, read by the built-in source only.
 		SubIssues json.RawMessage `json:"sub_issues"` // anything but a positive integer is dropped
 		PR        json.RawMessage `json:"pr"`         // anything but a well-formed object is dropped
+		Author    *string         `json:"author"`
+		OpenedAt  *string         `json:"opened_at"`
+		Excerpt   *string         `json:"excerpt"`
+		// A field that fails its check is dropped and the order kept.
+		ReviewRequestedAt *string         `json:"review_requested_at"`
+		ReviewedSincePush json.RawMessage `json:"reviewed_since_push"`
 	}
 	if err := decodeInto(raw, &items); err != nil {
 		return nil, fmt.Errorf("orders.list: %w", err)
@@ -213,13 +233,57 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		if n := positiveInt(it.SubIssues); n > 0 {
 			o.SubIssues = n
 		}
-		var pr OrderPR
-		if len(it.PR) > 0 && it.PR[0] == '{' && json.Unmarshal(it.PR, &pr) == nil {
-			o.PR = &pr
+		o.PR = parseOrderPR(it.PR)
+		if it.Author != nil && !hasControl(*it.Author) && utf8.RuneCountInString(*it.Author) <= maxAuthor && strings.TrimSpace(*it.Author) != "" {
+			o.Author = *it.Author
+		}
+		o.OpenedAt = rfc3339(it.OpenedAt)
+		o.ReviewRequestedAt = rfc3339(it.ReviewRequestedAt)
+		if it.Excerpt != nil {
+			o.Excerpt = github.Excerpt(*it.Excerpt)
+		}
+		var seen bool
+		if json.Unmarshal(it.ReviewedSincePush, &seen) == nil && len(it.ReviewedSincePush) > 0 && it.ReviewedSincePush[0] != 'n' {
+			o.ReviewedSincePush = &seen
 		}
 		out = append(out, o)
 	}
 	return out, nil
+}
+
+const maxAuthor = 100
+
+// rfc3339 is s as a UTC RFC 3339 time, or "" when s is not one.
+func rfc3339(s *string) string {
+	if s == nil {
+		return ""
+	}
+	at, err := time.Parse(time.RFC3339, *s)
+	if err != nil {
+		return ""
+	}
+	return at.UTC().Format(time.RFC3339Nano)
+}
+
+// parseOrderPR reads a plugin's pr object; anything but a well-formed object is dropped, and a bad failing_check_count
+// only costs that count.
+func parseOrderPR(raw json.RawMessage) *OrderPR {
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return nil
+	}
+	count := positiveInt(fields["failing_check_count"])
+	delete(fields, "failing_check_count")
+	rest, _ := json.Marshal(fields)
+	var pr OrderPR
+	if json.Unmarshal(rest, &pr) != nil {
+		return nil
+	}
+	pr.FailingCheckCount = count
+	return &pr
 }
 
 func parseAuth(raw json.RawMessage) (*Auth, error) {

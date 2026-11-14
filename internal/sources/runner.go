@@ -343,6 +343,7 @@ func (r *runner) mergePanels(fresh []Panel) {
 			if old.ID == pn.ID {
 				fresh[i].Orders = old.Orders
 				fresh[i].Error = old.Error
+				fresh[i].RefreshedAt = old.RefreshedAt
 			}
 		}
 	}
@@ -368,11 +369,18 @@ func (r *runner) pullOrders(ctx context.Context, p conn, panel string) {
 		r.logf("protocol error: %v", err)
 		return
 	}
+	stamp := time.Now()
+	if a, ok := p.(answerer); ok {
+		stamp = a.answeredAt(panel)
+	}
 	r.mu.Lock()
 	for i := range r.panels {
 		if r.panels[i].ID == panel {
 			r.panels[i].Orders = orders
 			r.panels[i].Error = ""
+			if !stamp.IsZero() {
+				r.panels[i].RefreshedAt = stamp
+			}
 		}
 	}
 	r.mu.Unlock()

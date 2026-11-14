@@ -185,15 +185,18 @@ func newerThan(c Cursor, at time.Time, id string) bool {
 	return true
 }
 
-func failingState(c CheckContext) bool {
-	switch c.Kind {
+func failingState(c CheckContext) bool { return FailingCheckState(c.Kind, c.State) }
+
+// FailingCheckState reports whether a check run (kind CheckRun, by conclusion) or a commit status (kind StatusContext) is failing.
+func FailingCheckState(kind, state string) bool {
+	switch kind {
 	case "CheckRun":
-		switch c.State {
+		switch state {
 		case "FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED":
 			return true
 		}
 	case "StatusContext":
-		return c.State == "ERROR" || c.State == "FAILURE"
+		return state == "ERROR" || state == "FAILURE"
 	}
 	return false
 }
