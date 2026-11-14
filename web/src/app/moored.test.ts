@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Ship } from './api';
-import { carryingShip, mergeHint, nextStep, prChips, prLabel, reReviewPlace, reviews, rowButtons, staleNote } from './moored';
+import { carryingShip, mergeHint, moorSheetText, nextStep, offersMoor, prChips, prLabel, reReviewPlace, reviews, rowButtons, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -282,5 +282,53 @@ describe('reReviewPlace', () => {
   it('is null while the author has not responded, and for a ship that is not moored', () => {
     expect(reReviewPlace(ship({ url: stackUrl, prs: [layer(6), layer(7)] }))).toBeNull();
     expect(reReviewPlace(ship({ url: stackUrl, status: 'underway', prs: [layer(6, { responded: true }), layer(7)] }))).toBeNull();
+  });
+});
+
+describe('offersMoor', () => {
+  const live = (over: Partial<Ship> = {}) => ship({ status: 'needs_you', ...over });
+
+  it('is true for a live ship carrying an open PR it did not review', () => {
+    expect(offersMoor(live({ prs: [pr()] }))).toBe(true);
+    expect(offersMoor(live({ status: 'underway', prs: [pr()] }))).toBe(true);
+  });
+
+  it('is false for a moored ship, which gets Merge instead', () => {
+    expect(offersMoor(ship({ prs: [pr()] }))).toBe(false);
+  });
+
+  it('is false for a ship that reviews the PR', () => {
+    expect(offersMoor(live({ prs: [pr({ reviewing: true })] }))).toBe(false);
+  });
+
+  it('is false when every PR is merged or closed, and true while one is still open', () => {
+    expect(offersMoor(live({ prs: [pr({ state: 'MERGED' }), pr({ state: 'CLOSED' })] }))).toBe(false);
+    expect(offersMoor(live({ prs: [pr({ state: 'MERGED' }), pr({ url: 'https://github.com/acme/api/pull/8' })] }))).toBe(true);
+  });
+
+  it('is false for a ship returning to port', () => {
+    expect(offersMoor(live({ prs: [pr()], returning: true }))).toBe(false);
+  });
+
+  it('is false for a ship carrying no PR', () => {
+    expect(offersMoor(live({ prs: [] }))).toBe(false);
+    expect(offersMoor(live({ prs: undefined }))).toBe(false);
+  });
+});
+
+describe('moorSheetText', () => {
+  const two = [pr(), pr({ url: 'https://github.com/acme/api/pull/8' }), pr({ url: 'https://github.com/acme/api/pull/9', state: 'MERGED' })];
+
+  it('names the open PRs the ship carries', () => {
+    const text = moorSheetText(ship({ status: 'needs_you', name: 'kelp', prs: two }));
+    expect(text).toContain('kelp');
+    expect(text).toContain('api#7');
+    expect(text).toContain('api#8');
+    expect(text).not.toContain('api#9');
+  });
+
+  it('says the turn is cut off only while the ship is underway', () => {
+    expect(moorSheetText(ship({ status: 'underway', prs: two }))).toMatch(/cut off/i);
+    expect(moorSheetText(ship({ status: 'needs_you', prs: two }))).not.toMatch(/cut off/i);
   });
 });

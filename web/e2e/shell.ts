@@ -1272,6 +1272,67 @@ export async function chainedRunningShipWaitsToStack(page: Page, a: Admiral) {
   expect(stackLinkCalls(a)).toEqual([]);
 }
 
+/** The line a live ship's PR tab shows in place of Merge. */
+const MOOR_LINE = 'Admiral merges only from a moored ship. Moor ends the session and keeps its PRs; a feedback round or your next message wakes it in a new session.';
+
+/** A live ship carrying one ready PR, with its PR tab open: the line and a Moor button show where Merge will be. */
+async function liveShipOnItsPRTab(page: Page, a: Admiral) {
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  const ship = await launchShipCarrying(a, [7]);
+  const panel = await openPRTab(page, a, ship);
+  await expect(panel).toContainText(MOOR_LINE);
+  const moor = panel.getByRole('button', { name: 'Moor', exact: true });
+  await expect(moor).toBeVisible();
+  await expect(moor).not.toHaveClass(/\bprimary\b/);
+  expect((await moor.boundingBox())!.height, 'Moor height').toBeGreaterThanOrEqual(44);
+  await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
+  return { ship, panel, moor };
+}
+
+/** Moor on a live ship's PR tab asks first, then moors the ship; the view stays on the ship and the tab shows Merge with no reload. */
+export async function moorFromTheLivePRTab(page: Page, a: Admiral) {
+  const { ship, moor } = await liveShipOnItsPRTab(page, a);
+  await page.evaluate(() => ((window as unknown as { kept: boolean }).kept = true));
+
+  const sent = endRequest(page, ship, 'stop');
+  await moor.tap();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText(`${ship.name} carries 1 open PR`);
+  await expect(dialog.getByRole('link', { name: 'api#7' })).toHaveAttribute('href', `${PR_BASE}/7`);
+  await expect(dialog.getByRole('button')).toHaveText(['Cancel', 'Moor']);
+  await expect(dialog.getByRole('button', { name: 'Moor', exact: true })).toHaveClass(/\bprimary\b/);
+  expect(await statusOf(a, ship), 'the ask moors nothing').not.toBe('moored');
+
+  await dialog.getByRole('button', { name: 'Moor', exact: true }).tap();
+  const res = await sent;
+  expect(JSON.parse(res.request().postData() ?? 'null')).toEqual({ moor: true });
+  expect(res.status()).toBe(200);
+
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(shipViewUrl(a, ship));
+  await expect(viewPanel(page).getByRole('button', { name: 'Merge', exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(viewPanel(page).getByRole('button', { name: 'Moor', exact: true })).toHaveCount(0);
+  await expect(viewPanel(page)).not.toContainText(MOOR_LINE);
+  expect(await page.evaluate(() => (window as unknown as { kept?: boolean }).kept), 'no reload').toBe(true);
+  await expect.poll(() => statusOf(a, ship)).toBe('moored');
+}
+
+/** A PR that closed after the tab showed it: Moor's re-check refuses with 409, the sheet closes, the message shows under the row, and the ship stays live. The CLOSED answer races the tab's own poll; a poll that lands first still leaves the refusal's text in the tab. */
+export async function moorRefusedInTheLivePRTab(page: Page, a: Admiral) {
+  const { ship, moor } = await liveShipOnItsPRTab(page, a);
+  prAnswer(a, 7, { state: 'CLOSED' });
+  const sent = endRequest(page, ship, 'stop');
+  await moor.tap();
+  await page.getByRole('dialog').getByRole('button', { name: 'Moor', exact: true }).tap();
+  const res = await sent;
+  expect(res.status()).toBe(409);
+
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(viewPanel(page).getByRole('alert')).toContainText('has no open PR to moor');
+  expect(await statusOf(a, ship)).not.toBe('moored');
+  expect(outcomeEvents(a, ship, ENDINGS)).toEqual(['launched']);
+}
+
 /** The ship view's one-line PR summary button, which opens the PR tab. */
 export const prSummaryButton = (page: Page) => page.getByRole('main').getByRole('button', { name: /(\d+ PRs? · |^Reviewing \d+ PRs? )/ });
 
