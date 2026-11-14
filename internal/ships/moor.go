@@ -186,7 +186,7 @@ func (s *Service) setMoored(rec moor.Record) {
 	s.loadMoored()
 	var live polled
 	if rs := s.running[rec.Session]; rs != nil {
-		live = rs.poll
+		live = polled{status: rs.poll.status, at: rs.poll.at, stale: rs.poll.stale} // a woken ship's poll still holds the counts its wake answered
 	}
 	delete(s.running, rec.Session)
 	delete(s.mooredPolls, rec.Session) // a poll answered for an earlier ship of this session says nothing of this one
