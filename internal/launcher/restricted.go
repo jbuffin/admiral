@@ -97,7 +97,7 @@ func sharedTempDirs() []any {
 // restrictedSettings is the shared hook bundle plus the restricted profile for a ship working in checkout.
 // home is Admiral's own home and alternates the object directories the shared clone reads through, which come
 // from the routine's repository and never from a file the ship can write.
-func restrictedSettings(level standing.Restricted, checkout, home string, alternates []string) map[string]any {
+func restrictedSettings(level standing.Restricted, checkout, home, tempDir string, alternates []string) map[string]any {
 	out := claudeSettings().(map[string]any)
 	hosts := make([]any, len(registryAllowlist))
 	for i, h := range registryAllowlist {
@@ -106,7 +106,8 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 	// Pinned off so a repo's committed settings cannot widen them.
 	network := map[string]any{"allowedDomains": hosts, "allowLocalBinding": false, "allowAllUnixSockets": false}
 	// Sandbox paths are plain absolute; Edit and Write rules spell an absolute path with //.
-	allowRead := []any{checkout}
+	// The ship's own temp dir sits under Admiral's home, which is denied whole, so it is read again.
+	allowRead := []any{checkout, tempDir}
 	for _, a := range alternates {
 		allowRead = append(allowRead, a)
 	}
@@ -152,12 +153,16 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 
 // RestrictedProfile is the settings of a restricted ship working in checkout, a shared clone of the repository at dir,
 // under Admiral's home. The object dirs come from dir, never from the checkout the ship can write.
-func RestrictedProfile(level standing.Restricted, checkout, dir, home string) map[string]any {
+func RestrictedProfile(level standing.Restricted, checkout, dir, home, tempLink string) map[string]any {
 	realHome, err := filepath.EvalSymlinks(home)
 	if err != nil {
 		realHome = home
 	}
-	return restrictedSettings(level, checkout, realHome, objectDirsOf(dir))
+	tempDir, err := filepath.EvalSymlinks(tempLink)
+	if err != nil {
+		tempDir = tempLink
+	}
+	return restrictedSettings(level, checkout, realHome, tempDir, objectDirsOf(dir))
 }
 
 // RestrictedFlags are the flags that make Claude Code run under the settings file at path.
@@ -230,7 +235,11 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 	if err != nil {
 		realHome = home
 	}
-	raw, err := json.MarshalIndent(restrictedSettings(req.Restricted, made.checkout, realHome, objectDirs), "", "  ")
+	tempDir, err := filepath.EvalSymlinks(made.tempLink)
+	if err != nil {
+		return fail(err)
+	}
+	raw, err := json.MarshalIndent(restrictedSettings(req.Restricted, made.checkout, realHome, tempDir, objectDirs), "", "  ")
 	if err != nil {
 		return fail(err)
 	}

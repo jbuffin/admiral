@@ -149,6 +149,14 @@ func TestRestrictedProbeFailuresSayWhy(t *testing.T) {
 		r.wantFailed(t, capabilities.RestrictedSandbox, "outside")
 		r.wantFailed(t, capabilities.RestrictedAllow, "example.com")
 	})
+	t.Run("a write into the shared Claude temp dir lands", func(t *testing.T) {
+		r := runRestricted(t, "tmp-open", "")
+		r.wantFailed(t, capabilities.RestrictedSandbox, "landed", "/tmp/claude-")
+	})
+	t.Run("a write to .git lands", func(t *testing.T) {
+		r := runRestricted(t, "git-open", "")
+		r.wantFailed(t, capabilities.RestrictedSandbox, ".git")
+	})
 	t.Run("no network", func(t *testing.T) {
 		r := runRestricted(t, "no-network", "")
 		r.wantFailed(t, capabilities.RestrictedAllow, "registry.npmjs.org", "no network")

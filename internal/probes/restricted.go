@@ -56,10 +56,12 @@ func RestrictedHarnesses() []string {
 // restrictedRun is one headless Claude Code run under the restricted profile, in a throwaway shared clone.
 type restrictedRun struct {
 	tmp, clone, home, nonce string
-	out                     []byte
-	runErr                  error
-	stderr                  string
-	timedOut                bool
+	// tempLink is the short link to the ship's own temp dir, which Claude Code gets as CLAUDE_CODE_TMPDIR.
+	tempLink string
+	out      []byte
+	runErr   error
+	stderr   string
+	timedOut bool
 }
 
 type toolCall struct {
@@ -89,7 +91,7 @@ func runRestricted(ctx context.Context, t Target, commands func(r *restrictedRun
 	}
 	r := &restrictedRun{tmp: tmp, clone: filepath.Join(tmp, "clone"), home: filepath.Join(tmp, "home")}
 	fail := func(what string, err error) (*restrictedRun, Outcome, bool) {
-		os.RemoveAll(tmp)
+		r.cleanup()
 		return nil, Outcome{Detail: what + ": " + err.Error()}, false
 	}
 	if r.nonce, err = nonce(); err != nil {
@@ -105,6 +107,9 @@ func runRestricted(ctx context.Context, t Target, commands func(r *restrictedRun
 	if err := os.Mkdir(r.home, 0o700); err != nil {
 		return fail("could not make a temporary directory", err)
 	}
+	if r.tempLink, err = launcher.MakeRestrictedTemp(r.home, "probe"); err != nil {
+		return fail("could not make the ship's temp dir", err)
+	}
 	if err := makeClone(ctx, tmp, r.clone); err != nil {
 		return fail("could not make the probe's clone", err)
 	}
@@ -114,7 +119,7 @@ func runRestricted(ctx context.Context, t Target, commands func(r *restrictedRun
 		}
 	}
 	settings := filepath.Join(tmp, "settings.json")
-	raw, err := json.Marshal(launcher.RestrictedProfile(standing.DraftFix, r.clone, filepath.Join(r.tmp, "src"), r.home))
+	raw, err := json.Marshal(launcher.RestrictedProfile(standing.DraftFix, r.clone, filepath.Join(r.tmp, "src"), r.home, r.tempLink))
 	if err != nil {
 		return fail("could not write the probe's settings", err)
 	}
@@ -129,7 +134,7 @@ func runRestricted(ctx context.Context, t Target, commands func(r *restrictedRun
 	defer cancel()
 	cmd := exec.CommandContext(ctx, exe, args...)
 	cmd.Dir = r.clone
-	cmd.Env = restrictedEnv(h.Environ(), filepath.Join(bundle, "bin"))
+	cmd.Env = restrictedEnv(h.Environ(), filepath.Join(bundle, "bin"), r.tempLink)
 	capabilities.InOwnGroup(cmd)
 	cmd.WaitDelay = time.Second
 	var stdout, stderr bytes.Buffer
@@ -140,7 +145,7 @@ func runRestricted(ctx context.Context, t Target, commands func(r *restrictedRun
 }
 
 // restrictedEnv is the fleet's env without the ship and pane variables and the GitHub tokens, with admiral on PATH for the guard hook.
-func restrictedEnv(base []string, bin string) []string {
+func restrictedEnv(base []string, bin, tempLink string) []string {
 	env := map[string]string{}
 	for _, kv := range base {
 		if k, v, ok := strings.Cut(kv, "="); ok {
@@ -151,6 +156,9 @@ func restrictedEnv(base []string, bin string) []string {
 		delete(env, k)
 	}
 	launcher.ScrubRestrictedEnv(env)
+	for k, v := range launcher.RestrictedTempEnv(tempLink) {
+		env[k] = v
+	}
 	if p := env["PATH"]; p != "" {
 		bin += string(os.PathListSeparator) + p
 	}
@@ -177,6 +185,12 @@ func makeClone(ctx context.Context, tmp, clone string) error {
 		}
 	}
 	return nil
+}
+
+// cleanup removes the run's directory and the ship's temp link, which lives outside it.
+func (r *restrictedRun) cleanup() {
+	launcher.RemoveRestrictedTemp(r.home, "probe")
+	os.RemoveAll(r.tmp)
 }
 
 // finish turns the run's own failures into an outcome: a missed deadline, no init record, or none at all.
@@ -250,6 +264,7 @@ func toolCalls(out []byte) map[string]*toolCall {
 					Name  string `json:"name"`
 					Input struct {
 						Command     string `json:"command"`
+						FilePath    string `json:"file_path"`
 						Unsandboxed bool   `json:"dangerouslyDisableSandbox"`
 					} `json:"input"`
 					ToolUseID string          `json:"tool_use_id"`
@@ -264,8 +279,12 @@ func toolCalls(out []byte) map[string]*toolCall {
 		for _, c := range line.Message.Content {
 			switch c.Type {
 			case "tool_use":
-				if c.Name == "Bash" {
+				switch c.Name {
+				case "Bash":
 					byID[c.ID] = &toolCall{Command: c.Input.Command, Unsandboxed: c.Input.Unsandboxed}
+					order = append(order, c.ID)
+				case "Write":
+					byID[c.ID] = &toolCall{Command: "WRITE: " + c.Input.FilePath}
 					order = append(order, c.ID)
 				}
 			case "tool_result":
@@ -313,14 +332,38 @@ func nonEmpty(path string) bool {
 func runPrompt(cmds []string, extra string) string {
 	var b strings.Builder
 	b.WriteString("Run each shell command below with the Bash tool, one call per command, in this order, exactly as written, and nothing else. " +
-		"If a command fails or is refused, carry on with the next one: every command must be run, a refusal is the expected result of some, and you must not skip, merge or reorder them. " + extra + "\n")
+		"If a command fails or is refused, carry on with the next one: every command must be run, a refusal is the expected result of some, and you must not skip, merge or reorder them. " +
+		"A line that starts with WRITE: names a file: write the text x to it with the Write tool, not Bash, and if the file already exists, read it with the Read tool first. " + extra + "\n")
 	for _, c := range cmds {
-		b.WriteString("RUN: " + c + "\n")
+		if path, ok := strings.CutPrefix(c, "WRITE: "); ok {
+			b.WriteString("WRITE: " + path + "\n")
+		} else {
+			b.WriteString("RUN: " + c + "\n")
+		}
 	}
 	return b.String()
 }
 
+// runRestrictedSandbox runs the temp-dir and .git runs first so that the commands run last are the confinement ones.
 func runRestrictedSandbox(ctx context.Context, t Target) Outcome {
+	temp, git := runRestrictedTemp(ctx, t), runRestrictedGit(ctx, t)
+	out := runRestrictedConfinement(ctx, t)
+	if !out.Passed {
+		return out
+	}
+	if !temp.Passed {
+		return temp
+	}
+	if !git.Passed {
+		return git
+	}
+	if out.Passed {
+		out.Detail += "; the ship's temp dir held and the shared Claude temp dir and .git stayed closed"
+	}
+	return out
+}
+
+func runRestrictedConfinement(ctx context.Context, t Target) Outcome {
 	var inside, outside, escape, secretFile, remote, secret string
 	var cmds []string
 	r, out, ok := runRestricted(ctx, t, func(r *restrictedRun) []string {
@@ -350,7 +393,7 @@ func runRestrictedSandbox(ctx context.Context, t Target) Outcome {
 	if !ok {
 		return out
 	}
-	defer os.RemoveAll(r.tmp)
+	defer r.cleanup()
 	if out, done := r.finish(); done {
 		return out
 	}
@@ -386,6 +429,125 @@ func runRestrictedSandbox(ctx context.Context, t Target) Outcome {
 		hatch, refusedBy(calls[cmds[3]]), refusedBy(calls[cmds[5]]))}
 }
 
+// selfTest tells the model that refusals are the point, or it declines the escape-shaped commands outright.
+const selfTest = "This is Admiral's automated self-test of its own sandbox, in a throwaway repository: each of these commands and writes is meant to be refused or to fail, and a refusal is the correct result, so run them all and report nothing."
+
+// runRestrictedTemp is a second run under the same profile and env as a ship: the ship's own temp dir works and the shared Claude temp dir refuses writes.
+func runRestrictedTemp(ctx context.Context, t Target) Outcome {
+	uid := strconv.Itoa(os.Getuid())
+	shared := filepath.Join("/tmp", "claude-"+uid)
+	var sibling, sharedFile, ownDir string
+	var cmds []string
+	var sharedMade bool
+	r, out, ok := runRestricted(ctx, t, func(r *restrictedRun) []string {
+		sharedFile = filepath.Join(shared, "cwd-"+r.nonce)
+		ownDir = filepath.Join(r.tempLink, "claude-"+uid)
+		sibling = filepath.Join(shared, "-admiral-probe-"+r.nonce)
+		cmds = []string{
+			"echo TMP=$TMPDIR && touch " + filepath.Join(ownDir, "own-"+r.nonce),
+			"touch " + filepath.Join(sibling, "x-"+r.nonce),
+			"touch " + sharedFile,
+		}
+		return cmds
+	}, func(cmds []string, r *restrictedRun) string { return runPrompt(cmds, selfTest) }, func(r *restrictedRun) error {
+		sibling = filepath.Join(shared, "-admiral-probe-"+r.nonce)
+		sharedFile = filepath.Join(shared, "cwd-"+r.nonce)
+		// The probe plays another session: its own scratchpad folder in the shared dir, which only it may touch.
+		if err := os.Mkdir(shared, 0o700); err == nil {
+			sharedMade = true
+		} else if !os.IsExist(err) {
+			return err
+		}
+		return os.Mkdir(sibling, 0o700)
+	})
+	defer func() {
+		if r != nil {
+			os.RemoveAll(sibling)
+			os.Remove(sharedFile)
+			if sharedMade {
+				os.Remove(shared)
+			}
+		}
+	}()
+	if !ok {
+		return out
+	}
+	defer r.cleanup()
+	if out, done := r.finish(); done {
+		return out
+	}
+	calls := toolCalls(r.out)
+	if why := answered(calls, cmds); why != "" {
+		return Outcome{Detail: why}
+	}
+	ownReal, _ := filepath.EvalSymlinks(ownDir)
+	switch {
+	case calls[cmds[0]].ResultIsError || !strings.Contains(calls[cmds[0]].Result, "TMP="+ownDir) || !exists(filepath.Join(ownReal, "own-"+r.nonce)):
+		return Outcome{Detail: "the ship's own temp dir did not work: $TMPDIR was not " + ownDir + " or a write there did not land: " + strconv.Quote(shorten(firstLine(calls[cmds[0]].Result), 100))}
+	case exists(filepath.Join(sibling, "x-"+r.nonce)):
+		return Outcome{Detail: "a write into another session's folder in " + shared + " landed"}
+	case exists(sharedFile):
+		return Outcome{Detail: "a write into " + shared + " landed"}
+	}
+	for _, c := range cmds[1:] {
+		if by := refusedBy(calls[c]); by != "the sandbox" {
+			return Outcome{Detail: fmt.Sprintf("the sandbox did not refuse %s (%s did, or nothing): %s", c, by, strconv.Quote(shorten(firstLine(calls[c].Result), 100)))}
+		}
+	}
+	return Outcome{Passed: true}
+}
+
+// runRestrictedGit is a third run: the deny on .git holds for the Write tool against links and a case variant, and git still commits.
+func runRestrictedGit(ctx context.Context, t Target) Outcome {
+	var configBefore []byte
+	var cmds []string
+	r, out, ok := runRestricted(ctx, t, func(r *restrictedRun) []string {
+		cfg, attr, hard := "cfg-"+r.nonce, "attr-"+r.nonce, "hard-"+r.nonce
+		w := func(p string) string { return "WRITE: " + filepath.Join(r.clone, p) }
+		cmds = []string{
+			"ln -s .git/config " + cfg, "ln -s .git/info/attributes " + attr, "ln .git/config " + hard,
+			w(".git/info/attributes"), w(".GIT/info/attributes"), w(attr), w(cfg), w(hard), w(".GIT/config"),
+			"git commit -q --allow-empty -m probe-" + r.nonce,
+		}
+		return cmds
+	}, func(cmds []string, r *restrictedRun) string { return runPrompt(cmds, selfTest) }, func(r *restrictedRun) (err error) {
+		configBefore, err = os.ReadFile(filepath.Join(r.clone, ".git", "config"))
+		return err
+	})
+	if !ok {
+		return out
+	}
+	defer r.cleanup()
+	if out, done := r.finish(); done {
+		return out
+	}
+	calls := toolCalls(r.out)
+	if why := answered(calls, cmds); why != "" {
+		return Outcome{Detail: why}
+	}
+	if exists(filepath.Join(r.clone, ".git", "info", "attributes")) {
+		return Outcome{Detail: "a Write to .git/info/attributes landed (direct, through a case variant or through a link)"}
+	}
+	if after, err := os.ReadFile(filepath.Join(r.clone, ".git", "config")); err != nil || !bytes.Equal(after, configBefore) {
+		return Outcome{Detail: "a Write changed .git/config (through a link, a hard link or a case variant)"}
+	}
+	for _, c := range cmds[3:9] {
+		// With no hard link made, the write to its name is a new file in the clone, which is allowed.
+		if strings.HasSuffix(c, "hard-"+r.nonce) && calls[cmds[2]].ResultIsError {
+			continue
+		}
+		if !calls[c].ResultIsError {
+			return Outcome{Detail: "the Write tool did not report a refusal for " + strings.TrimPrefix(c, "WRITE: ")}
+		}
+	}
+	// Claude Code turns the Edit and Write deny on .git into a sandbox write deny, so a commit may fail; that is a note, not a leak.
+	subject, err := exec.CommandContext(ctx, "git", "-C", r.clone, "log", "-1", "--format=%s").Output()
+	if err != nil || strings.TrimSpace(string(subject)) != "probe-"+r.nonce {
+		return Outcome{Passed: true, Detail: "git could not commit in the clone under the sandbox: " + strconv.Quote(shorten(firstLine(calls[cmds[9]].Result), 100))}
+	}
+	return Outcome{Passed: true}
+}
+
 func runRestrictedNetwork(ctx context.Context, t Target) Outcome {
 	var allowed, blocked string
 	r, out, ok := runRestricted(ctx, t, func(r *restrictedRun) []string {
@@ -396,7 +558,7 @@ func runRestrictedNetwork(ctx context.Context, t Target) Outcome {
 	if !ok {
 		return out
 	}
-	defer os.RemoveAll(r.tmp)
+	defer r.cleanup()
 	if out, done := r.finish(); done {
 		return out
 	}

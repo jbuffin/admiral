@@ -489,6 +489,24 @@ func TestARestrictedShipsTempVarsPointAtAShortLinkToItsOwnDirUnderTheHome(t *tes
 	}
 }
 
+func TestARestrictedShipsOwnTempDirIsReadableThoughTheHomeIsNot(t *testing.T) {
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, nil)
+			out, _, argv, env := p.mustRestricted(t, level)
+			t.Cleanup(func() { RemoveRestrictedFiles(p.home, out.Session) })
+			_, got := settingsOf(t, argv)
+			real, err := filepath.EvalSymlinks(env["TMPDIR"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if allow := strs(t, sub(t, got, "sandbox", "filesystem")["allowRead"]); !slices.Contains(allow, real) {
+				t.Errorf("allowRead = %q lacks the ship's temp dir %s, which sits under the denied home", allow, real)
+			}
+		})
+	}
+}
+
 func TestRemovingARestrictedShipsFilesTakesAwayItsTempLinkAndDir(t *testing.T) {
 	p := newPinRig(t, nil)
 	out, _, _, env := p.mustRestricted(t, standing.DraftFix)

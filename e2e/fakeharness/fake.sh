@@ -557,12 +557,36 @@ if [ -n "$restrictedrun" ]; then
   cwd=$(pwd -P)
   echo '{"type":"system","subtype":"init","tools":["Bash","Edit","Write","Read"],"mcp_servers":[]}'
   [ "$mode" = no-tool ] && exit 0
+  # Claude Code puts its per-user temp dir under CLAUDE_CODE_TMPDIR and gives a sandboxed shell that as $TMPDIR.
+  if [ -n "$CLAUDE_CODE_TMPDIR" ]; then
+    mkdir -p "$CLAUDE_CODE_TMPDIR/claude-$(id -u)"
+    export TMPDIR="$CLAUDE_CODE_TMPDIR/claude-$(id -u)"
+  fi
   n=0
-  printf '%s\n' "$prompt" | sed -n 's/^RUN: //p' | while IFS= read -r cmd; do
+  printf '%s\n' "$prompt" | grep -E '^(RUN|WRITE): ' | while IFS= read -r line; do
     n=$((n + 1))
     unsandboxed=false
     blocked=""
     msg=""
+    case $line in
+    WRITE:\ *)
+      wpath=${line#WRITE: }
+      case $wpath in */.git/* | */.GIT/* | */cfg-* | */attr-* | */hard-*) blocked=1 msg="Permission to use Write with file path $wpath has been denied." ;; esac
+      [ "$mode" = no-sandbox ] || [ "$mode" = git-open ] && blocked=""
+      jq -cn --arg id "toolu_$n" --arg p "$wpath" \
+        '{type: "assistant", message: {content: [{type: "tool_use", id: $id, name: "Write", input: {file_path: $p, content: "x"}}]}}'
+      if [ -n "$blocked" ]; then
+        result=$msg iserr=true
+      else
+        mkdir -p "$(dirname "$wpath")" && printf x >"$wpath"
+        result="" iserr=false
+      fi
+      jq -cn --arg id "toolu_$n" --arg r "$result" --argjson e "$iserr" \
+        '{type: "user", message: {content: [{type: "tool_result", tool_use_id: $id, content: $r, is_error: $e}]}}'
+      continue
+      ;;
+    esac
+    cmd=${line#RUN: }
     path=${cmd#* }
     case $cmd in
     touch\ * | cat\ *)
@@ -577,6 +601,7 @@ if [ -n "$restrictedrun" ]; then
       ;;
     esac
     [ "$mode" = no-sandbox ] && blocked=""
+    [ "$mode" = tmp-open ] && case $path in /tmp/claude-*) blocked="" ;; esac
     jq -cn --arg id "toolu_$n" --arg c "$cmd" --argjson u "$unsandboxed" \
       '{type: "assistant", message: {content: [{type: "tool_use", id: $id, name: "Bash", input: ({command: $c} + (if $u then {dangerouslyDisableSandbox: true} else {} end))}]}}'
     result=""
