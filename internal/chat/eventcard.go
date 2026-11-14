@@ -31,6 +31,7 @@ func (s *Service) PostEventCard(fleet string, c EventCard) error {
 	card, err := json.Marshal(map[string]any{
 		"routine": c.Routine, "routine_name": c.RoutineName, "tier": c.Tier, "sender": c.Sender,
 		"link": c.Link, "dedupe_key": c.DedupeKey, "metadata": c.Metadata, "mute_by": c.MuteBy,
+		"verdict": c.Verdict, "check_id": c.CheckID, "check": c.CheckText, "reviewer_reason": c.ReviewerReason,
 	})
 	if err != nil {
 		return err
