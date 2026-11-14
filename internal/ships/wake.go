@@ -76,6 +76,9 @@ func (s *Service) roundHook(change func(rec moor.Record, cur moor.WakeState) (mo
 		if err != nil {
 			return nil, err
 		}
+		if feedback == "" {
+			return undo, nil
+		}
 		if _, err := moor.WriteFeedback(dir, rec.Round+1, feedback); err != nil {
 			undo()
 			return nil, err
@@ -357,10 +360,147 @@ func (s *Service) answerReview(ctx context.Context, session, pr string) (Ship, *
 	return s.wake(session, prompt, "hand", pr, viaOfCtx(ctx), write)
 }
 
+// commodoreToken is the skill token a resume text starts with, when that skill is Commodore: `/commodore`, `$commodore` or `/plugin:commodore`.
+func commodoreToken(resume string) (string, bool) {
+	tok, _, _ := strings.Cut(resume, " ")
+	if !moor.ValidResume(resume) {
+		return "", false
+	}
+	name := tok[1:]
+	if i := strings.LastIndex(name, ":"); i >= 0 {
+		name = name[i+1:]
+	}
+	return tok, name == "commodore"
+}
+
+// stackOpen reports the ship's PRs as the poll answered them: whether more than one is OPEN and every OPEN one has feedback.
+// A PR the poll has not answered counts as OPEN with none. The caller holds mooredMu.
+func (s *Service) stackOpen(rec moor.Record) bool {
+	p := s.mooredPolls[rec.Session]
+	open := 0
+	for _, u := range rec.PRs {
+		if st, ok := p.status[u]; ok && st.State != "OPEN" {
+			continue
+		}
+		if p.feedback[u] == 0 {
+			return false
+		}
+		open++
+	}
+	return open > 1
+}
+
+// stackHoldsShipsPRs says the stack's layers are exactly the PRs the ship carries, by URL.
+func stackHoldsShipsPRs(st *moor.DetailStack, rec moor.Record) bool {
+	if st == nil || len(st.Entries) != len(rec.PRs) {
+		return false
+	}
+	for _, e := range st.Entries {
+		if !slices.Contains(rec.PRs, e.URL) {
+			return false
+		}
+	}
+	return true
+}
+
+// answerAllPrompt is what Answer all reviews sends for the stack st of rec, or "" when the stack is not offered it.
+// It decides from the poll's stored answers, so a detail and the route agree.
+func (s *Service) answerAllPrompt(rec moor.Record, st *moor.DetailStack) string {
+	tok, ok := commodoreToken(rec.Resume)
+	if !ok || !stackHoldsShipsPRs(st, rec) || st.URL == "" {
+		return ""
+	}
+	s.mooredMu.Lock()
+	offered := s.stackOpen(rec)
+	s.mooredMu.Unlock()
+	if !offered {
+		return ""
+	}
+	return tok + " " + st.URL
+}
+
+// answerAll is the Answer all reviews wake, started by hand: one new Commodore run on the stack, launched attended.
+// It bumps the round once and advances every open PR's cursor, and writes no feedback file because the run reads GitHub itself.
+func (s *Service) answerAll(ctx context.Context, session, prompt string, stack *moor.DetailStack) (Ship, *launcher.Error) {
+	write := s.roundHook(func(rec moor.Record, cur moor.WakeState) (moor.WakeState, string, *launcher.Error) {
+		for _, e := range stack.Entries {
+			if !slices.Contains(rec.PRs, e.URL) {
+				return moor.WakeState{}, "", &launcher.Error{Status: http.StatusBadRequest, Msg: "ship " + rec.Session + " carries no PR " + e.URL}
+			}
+		}
+		s.mooredMu.Lock()
+		answers := maps.Clone(s.mooredPolls[rec.Session].status)
+		s.mooredMu.Unlock()
+		open := 0
+		for _, u := range rec.PRs {
+			if st, ok := answers[u]; !ok || st.State == "OPEN" {
+				open++
+			}
+		}
+		in := moor.WakeInput{Record: rec, State: cur, Answers: answers, Reviewers: s.wakeReviewers(rec), Now: time.Now().UTC()}
+		next, ok := moor.DecideStackRound(in)
+		if !ok || open < 2 || len(answers) < len(rec.PRs) {
+			return moor.WakeState{}, "", &launcher.Error{Status: http.StatusConflict, Msg: "not every open PR of the stack has feedback to answer"}
+		}
+		return next, "", nil
+	})
+	return s.wake(session, func(moor.Record) string { return prompt }, "hand", "", viaOfCtx(ctx), write)
+}
+
+// stackFor reads the ship's stack fresh from GitHub: the first of its PRs that sits in one. nil means GitHub reports none.
+func (s *Service) stackFor(ctx context.Context, rec moor.Record) (*moor.DetailStack, *launcher.Error) {
+	var gh moor.GitHub
+	if s.GitHub != nil {
+		gh = s.GitHub(rec.Fleet)
+	}
+	if gh == nil {
+		return nil, &launcher.Error{Status: http.StatusBadGateway, Msg: "fleet " + rec.Fleet + " has no GitHub access"}
+	}
+	ctx, cancel := context.WithTimeout(ctx, detailTimeout)
+	defer cancel()
+	for _, u := range rec.PRs {
+		d, err := gh.PullRequestDetail(ctx, u)
+		if err != nil {
+			return nil, &launcher.Error{Status: http.StatusBadGateway, Msg: "GitHub did not answer for " + u + ": " + err.Error()}
+		}
+		if d.Stack != nil {
+			return d.Stack, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *Service) serveAnswerAll(w http.ResponseWriter, r *http.Request, rec moor.Record, stack string) {
+	tok, ok := commodoreToken(rec.Resume)
+	if !ok {
+		writeError(w, http.StatusConflict, "ship "+rec.Session+" was not launched with Commodore, so Answer all reviews cannot start a run on its stack")
+		return
+	}
+	st, lerr := s.stackFor(r.Context(), rec)
+	switch {
+	case lerr != nil:
+		writeError(w, lerr.Status, lerr.Msg)
+		return
+	case !stackHoldsShipsPRs(st, rec):
+		writeError(w, http.StatusConflict, "GitHub reports no stack made of exactly the PRs of ship "+rec.Session)
+		return
+	case st.URL == "" || stack != st.URL:
+		writeError(w, http.StatusBadRequest, "stack "+stack+" is not the ship's stack")
+		return
+	}
+	got, lerr := s.answerAll(r.Context(), rec.Session, tok+" "+st.URL, st)
+	if lerr != nil {
+		writeError(w, lerr.Status, lerr.Msg)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
+}
+
 func (s *Service) serveAnswerReview(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	var body struct {
-		PR string `json:"pr"`
+		PR    string `json:"pr"`
+		Stack string `json:"stack"`
 	}
 	decodeErr := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body)
 	rec, lerr := s.wakeable(session)
@@ -370,6 +510,12 @@ func (s *Service) serveAnswerReview(w http.ResponseWriter, r *http.Request) {
 		return
 	case decodeErr != nil:
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+decodeErr.Error())
+		return
+	case (body.PR == "") == (body.Stack == ""):
+		writeError(w, http.StatusBadRequest, "give either pr or stack")
+		return
+	case body.Stack != "":
+		s.serveAnswerAll(w, r, rec, body.Stack)
 		return
 	case !slices.Contains(rec.PRs, body.PR):
 		writeError(w, http.StatusBadRequest, "ship "+session+" carries no PR "+body.PR)

@@ -39,6 +39,9 @@ func (s *Service) servePRDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "GitHub did not answer for "+url+": "+err.Error())
 		return
 	}
+	if rec, moored := s.mooredRecord(session); moored && d.Stack != nil {
+		d.AnswerAll = s.answerAllPrompt(rec, d.Stack)
+	}
 	writeJSON(w, http.StatusOK, d)
 }
 
