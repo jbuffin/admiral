@@ -293,12 +293,9 @@ function AnswerAll({ ship, stackUrl, command, locked, onBusy }: { ship: Ship; st
 function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolean; onError: (message: string) => void; onBusy: (busy: boolean) => void }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
-  const cancel = useRef<HTMLButtonElement>(null);
   // Frozen when the sheet opens, so a poll never changes the list under the tap.
   const [parts, setParts] = useState(() => moorSheetParts(ship));
-  useEffect(() => {
-    if (asking) cancel.current?.focus();
-  }, [asking]);
+  useCancelFocus(asking);
   const run = async () => {
     setBusy(true);
     onBusy(true);
@@ -315,32 +312,26 @@ function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolea
   return (
     <div class="peek-form">
       <div class="peek-merge">
-        <button
-          type="button"
-          class="btn"
-          disabled={locked || busy}
+        <Button
+          label="Moor"
+          busy={busy}
+          disabled={locked}
           onClick={() => {
             onError('');
             setParts(moorSheetParts(ship));
             setAsking(true);
           }}
-        >
-          Moor
-        </button>
+        />
         <span class="merge-hint">{MOOR_LINE}</span>
       </div>
       {asking ? (
         <Sheet label="Moor" kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
           <OpenPRs name={ship.name} urls={parts.urls} />
           <p class="line">{parts.explain}</p>
-          <div class="launch-foot">
-            <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
-              Cancel
-            </button>
-            <button type="button" class="btn primary" disabled={busy} onClick={() => void run()}>
-              Moor
-            </button>
-          </div>
+          <Actions class="launch-foot">
+            <Button label="Cancel" onClick={() => setAsking(false)} />
+            <Button label="Moor" variant="primary" onClick={run} />
+          </Actions>
         </Sheet>
       ) : null}
     </div>
