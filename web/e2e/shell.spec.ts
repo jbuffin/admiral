@@ -66,6 +66,8 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(row(page, billing)).toContainText('Reading billing/export.go');
   await expect(row(page, moored).locator('img[src="/api/v1/logos/codex"]')).toBeVisible();
   await expect(row(page, moored)).not.toContainText(/undefined|null|Reading|Which branch/);
+  // A row names the repo its ship launched in.
+  await expect(row(page, login).getByText('Repo proj')).toBeVisible();
   await expect(row(page, billing)).toContainText('1 crew');
   await expect(row(page, billing).locator('.ship-age')).toHaveText(/^(<1m|\d+m)$/);
   await expect(row(page, login)).not.toContainText('crew');
@@ -299,12 +301,15 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
 
   // Changes: a ship in a checkout lists the branch's commit, the uncommitted edit and the untracked file, each with its diff.
   const bridgesBefore = watch.paths.filter((p) => /^\/ws\/(v1\/)?bridge\//.test(p)).length;
-  const repo = gitCheckout(admiral, 'repo');
+  const repo = gitCheckout(admiral, 'harbor-web');
   const dev = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', dir: repo, cues: ['bracketedpaste'] });
   setState(admiral, dev, 'working');
   await expect.poll(async () => (await changesOf(admiral, dev)).files.map((f) => `${f.path} ${f.status}`).sort()).toEqual(['a.txt modified', 'b.txt added', 'c.txt untracked']);
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await expect(row(page, dev).getByText('Repo harbor-web')).toBeVisible();
   await rowLink(page, dev).tap();
+  // The boarded ship's header names its repo too.
+  await expect(page.locator('.ship-view-head').getByText('Repo harbor-web')).toBeVisible();
   await viewTab(page, 'Changes').tap();
   await expect(viewTab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
   await expect(viewPanel(page).getByRole('list')).toBeVisible();

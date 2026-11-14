@@ -24,7 +24,7 @@ import { InstallSheet } from './InstallPrompts';
 import { gateOf } from './pairing';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
 import { call, type Order, type Ship } from './api';
-import { ShipOrder, webUrl } from './ShipOrder';
+import { ShipOrder, ShipRepo, webUrl } from './ShipOrder';
 import { CrewPage } from './CrewPage';
 import { RoutinesPage } from './RoutinesPage';
 import { StandingOrdersPage } from './StandingOrdersPage';
@@ -123,6 +123,7 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
           <MooredActions ship={ship} onError={setError} />
         </div>
         <div class="ship-side">
+          <ShipRepo ship={ship} />
           {meta ? <span class="ship-meta">{meta}</span> : null}
           <span class="ship-age">{shipRowAge(ship, now)}</span>
         </div>
@@ -156,6 +157,7 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
           {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
         </div>
         <div class="ship-side">
+          <ShipRepo ship={ship} />
           {meta ? <span class="ship-meta">{meta}</span> : null}
           <span class="ship-age">{shipRowAge(ship, now)}</span>
         </div>

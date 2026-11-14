@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, probeShipList, type Changes, type CrewBoat, type Ship } from './api';
 import { isRunning, runningFor } from './shipList';
 import { useNow } from './useNow';
-import { ShipOrder } from './ShipOrder';
+import { ShipOrder, ShipRepo } from './ShipOrder';
 import { splitDiff } from './changes';
 import { followConversation, type Conversation } from './conversation';
 import { cardFor } from './answerCard';
@@ -467,6 +467,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
       <div class="ship-view-head">
         <BackLink label="Back" />
         <Heading>{ship.name}</Heading>
+        <ShipRepo ship={ship} />
         <ShipOrder ship={ship} />
         <RunningClock ship={ship} />
         {moored ? (
