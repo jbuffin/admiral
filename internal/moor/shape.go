@@ -20,7 +20,8 @@ const (
 // Shape is a ship's PR shape as GitHub has it now. PRs is bottom to top for stacked and chained, and as given for independent.
 type Shape struct {
 	Kind        ShapeKind
-	StackNumber int // stacked only
+	StackNumber int    // stacked only
+	Base        string // chained only: the bottom PR's base, the default branch
 	PRs         []string
 }
 
@@ -78,7 +79,7 @@ func ReadShape(ctx context.Context, gh GitHub, prs []string) (Shape, error) {
 		ordered = append(ordered, prs[i])
 		base = details[i].Head
 	}
-	return Shape{Kind: ShapeChained, PRs: ordered}, nil
+	return Shape{Kind: ShapeChained, Base: details[0].DefaultBranch, PRs: ordered}, nil
 }
 
 // stackedShape is the shape when every PR sits in one GitHub stack whose entries are exactly the ship's PRs.

@@ -107,30 +107,36 @@ func TestEndReasonSaysWhyEveryPRIsDone(t *testing.T) {
 	}
 }
 
-func TestViewReadsAPRReadyOnlyWhenEveryConditionHolds(t *testing.T) {
+func TestViewReadsAPRReadyExactlyWhenGitHubWouldLetItMerge(t *testing.T) {
 	const url = "https://github.com/acme/widgets/pull/7"
-	ready := Status{State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", MergeState: "CLEAN"}
-	if !View(url, ready, true).Ready {
-		t.Fatalf("an open, approved, green, mergeable, clean PR = %+v, want ready", View(url, ready, true))
-	}
-	for name, mod := range map[string]func(*Status){
-		"merged":              func(s *Status) { s.State = "MERGED" },
-		"closed":              func(s *Status) { s.State = "CLOSED" },
-		"no review decision":  func(s *Status) { s.Review = "" },
-		"review required":     func(s *Status) { s.Review = "REVIEW_REQUIRED" },
-		"changes requested":   func(s *Status) { s.Review = "CHANGES_REQUESTED" },
-		"no checks":           func(s *Status) { s.Checks = "" },
-		"checks pending":      func(s *Status) { s.Checks = "PENDING" },
-		"checks failing":      func(s *Status) { s.Checks = "FAILURE" },
-		"mergeable unknown":   func(s *Status) { s.Mergeable = "UNKNOWN" },
-		"conflicting":         func(s *Status) { s.Mergeable = "CONFLICTING" },
-		"merge state blocked": func(s *Status) { s.MergeState = "BLOCKED" },
-		"merge state behind":  func(s *Status) { s.MergeState = "BEHIND" },
-		"merge state dirty":   func(s *Status) { s.MergeState = "DIRTY" },
-		"merge state draft":   func(s *Status) { s.MergeState = "DRAFT" },
+	for name, st := range map[string]Status{
+		"clean and approved":                    {State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", MergeState: "CLEAN"},
+		"clean with no review asked for":        {State: "OPEN", Review: "", Checks: "SUCCESS", Mergeable: "MERGEABLE", MergeState: "CLEAN"},
+		"clean with no checks":                  {State: "OPEN", Mergeable: "MERGEABLE", MergeState: "CLEAN"},
+		"a check the base does not require red": {State: "OPEN", Checks: "FAILURE", Mergeable: "MERGEABLE", MergeState: "UNSTABLE"},
+		"pre-receive hooks":                     {State: "OPEN", Mergeable: "MERGEABLE", MergeState: "HAS_HOOKS"},
 	} {
-		t.Run(name, func(t *testing.T) {
-			st := ready
+		t.Run("ready: "+name, func(t *testing.T) {
+			if got := View(url, st, true); !got.Ready {
+				t.Errorf("View(%+v) = %+v, want ready", st, got)
+			}
+		})
+	}
+	clean := Status{State: "OPEN", Mergeable: "MERGEABLE", MergeState: "CLEAN"}
+	for name, mod := range map[string]func(*Status){
+		"merged":                      func(s *Status) { s.State = "MERGED" },
+		"closed":                      func(s *Status) { s.State = "CLOSED" },
+		"mergeable unknown":           func(s *Status) { s.Mergeable = "UNKNOWN" },
+		"conflicting":                 func(s *Status) { s.Mergeable = "CONFLICTING" },
+		"blocked by a required rule":  func(s *Status) { s.MergeState = "BLOCKED" },
+		"behind a base that needs it": func(s *Status) { s.MergeState = "BEHIND" },
+		"dirty":                       func(s *Status) { s.MergeState = "DIRTY" },
+		"draft":                       func(s *Status) { s.MergeState = "DRAFT" },
+		"merge state unknown":         func(s *Status) { s.MergeState = "UNKNOWN" },
+		"no merge state":              func(s *Status) { s.MergeState = "" },
+	} {
+		t.Run("not ready: "+name, func(t *testing.T) {
+			st := clean
 			mod(&st)
 			if got := View(url, st, true); got.Ready {
 				t.Errorf("View(%+v) = %+v, want not ready", st, got)

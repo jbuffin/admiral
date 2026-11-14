@@ -143,7 +143,7 @@ func TestStackAChainedMooredShipLinksOnGitHubAndThenMergesAsOneStack(t *testing.
 	}
 	c := links[0]
 	// PR numbers from GitHub, bottom to top: no branch (gh pushes branches), no URL and no flag (--open takes drafts out of draft).
-	if want := []string{"stack", "link", "21", "22"}; !slices.Equal(c.Argv, want) {
+	if want := []string{"stack", "link", "--base", "main", "21", "22"}; !slices.Equal(c.Argv, want) {
 		t.Errorf("argv = %q, want %q", c.Argv, want)
 	}
 	if c.Cwd == "" || c.Cwd == realPath(t, w.work) || strings.HasPrefix(c.Cwd, realPath(t, w.work)+string(filepath.Separator)) {

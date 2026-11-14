@@ -134,7 +134,7 @@ func (s *Service) serveStackLink(w http.ResponseWriter, r *http.Request) {
 		numbers = append(numbers, num)
 	}
 	// The link outlives a client that hangs up: stopping gh midway would leave its result unknown.
-	err = gh.LinkStack(context.WithoutCancel(r.Context()), repo, numbers)
+	err = gh.LinkStack(context.WithoutCancel(r.Context()), repo, shape.Base, numbers)
 	switch {
 	case errors.Is(err, moor.ErrMergeTimeout):
 		s.RefreshMoored()

@@ -44,6 +44,9 @@ func TestStackLinkPassesGitHubsNumbersBottomToTopWhateverOrderTheShipRecordedThe
 	if want := []string{"acme/widgets"}; !slices.Equal(g.linkedRepo, want) {
 		t.Errorf("LinkStack repos = %v, want %v", g.linkedRepo, want)
 	}
+	if want := []string{"main"}; !slices.Equal(g.linkedBase, want) {
+		t.Errorf("LinkStack bases = %v, want the bottom PR's base %v", g.linkedBase, want)
+	}
 	var got struct {
 		Shape string   `json:"shape"`
 		PRs   []string `json:"prs"`

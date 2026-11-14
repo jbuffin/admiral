@@ -1066,7 +1066,7 @@ export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts:
 
   await confirm.tap();
   await expect(confirm).toBeDisabled();
-  await expect.poll(() => stackLinkCalls(a)).toEqual([['stack', 'link', '7', '8']]);
+  await expect.poll(() => stackLinkCalls(a)).toEqual([['stack', 'link', '--base', 'main', '7', '8']]);
   await expect(sheet).toHaveCount(0);
   await expect(stackBar(panel)).toContainText('Stacked on GitHub · stack #4 · 2 PRs, bottom to top. Merge takes the whole stack.');
   await expect(panel.getByRole('button', { name: 'Stack on GitHub', exact: true })).toHaveCount(0);
@@ -1099,7 +1099,7 @@ export async function stackLinkFailsInThePRTab(page: Page, a: Admiral) {
   await expect(sheet.getByRole('alert')).toContainText('could not link the pull requests');
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole('button', { name: 'Stack on GitHub', exact: true })).toBeEnabled();
-  expect(stackLinkCalls(a)).toEqual([['stack', 'link', '7', '8']]);
+  expect(stackLinkCalls(a)).toEqual([['stack', 'link', '--base', 'main', '7', '8']]);
   await expect(stackBar(panel)).toContainText('Not a GitHub stack.');
   await expect(stackBar(panel)).not.toContainText('Stacked on GitHub');
   expect(mergeCalls(a)).toEqual([]);

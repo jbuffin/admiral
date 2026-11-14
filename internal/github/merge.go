@@ -66,9 +66,14 @@ func (c *Client) MergeStack(ctx context.Context, repo string, stackNumber int, m
 	return c.stackRun(ctx, repo, []string{"stack", "merge", strconv.Itoa(stackNumber), "--yes", "--merge-method", method}, "gh could not merge the pull request")
 }
 
-// LinkStack runs `gh stack link N...` with numbers of PRs GitHub answered in repo, which every one shares, bottom to top, and no flag: --open would take drafts out of draft.
-func (c *Client) LinkStack(ctx context.Context, repo string, numbers []int) error {
-	args := []string{"stack", "link"}
+// LinkStack runs `gh stack link --base BASE N...` with numbers of PRs GitHub answered in repo, which every one shares, bottom to top.
+// Without --base gh-stack asks git for the default branch, and the empty folder has none; a base other than the bottom PR's
+// own would retarget it. No --open: it would take drafts out of draft.
+func (c *Client) LinkStack(ctx context.Context, repo, base string, numbers []int) error {
+	if base == "" || strings.HasPrefix(base, "-") {
+		return fmt.Errorf("cannot link a stack on base branch %q", base)
+	}
+	args := []string{"stack", "link", "--base", base}
 	for _, n := range numbers {
 		args = append(args, strconv.Itoa(n))
 	}
