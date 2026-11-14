@@ -150,3 +150,8 @@ func (c *Client) StackPRs(ctx context.Context, dir, repo string) ([]moor.StackLa
 	}
 	return layers, nil
 }
+
+// StackOpenPRs is the open layers of GitHub's stack number in owner/repo, bottom first.
+func (c *Client) StackOpenPRs(ctx context.Context, owner, repo string, number int) ([]string, bool, error) {
+	return nil, false, nil
+}

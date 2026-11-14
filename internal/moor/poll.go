@@ -39,8 +39,10 @@ type PR struct {
 	Conflicts bool   `json:"conflicts"`
 	Ready     bool   `json:"ready"`
 	// Feedback counts the PR's waking events past its cursor; Answer is the prompt Answer review sends for it.
-	Feedback int    `json:"feedback,omitempty"`
-	Answer   string `json:"answer,omitempty"`
+	Feedback  int    `json:"feedback,omitempty"`
+	Answer    string `json:"answer,omitempty"`
+	Author    string `json:"author,omitempty"`
+	Reviewing bool   `json:"reviewing,omitempty"`
 }
 
 // View is the PR to serve. NOT_FOUND counts as closed, and a PR that is not open

@@ -346,6 +346,8 @@ type prJSON struct {
 	Ready     bool   `json:"ready"`
 	Feedback  int    `json:"feedback"`
 	Answer    string `json:"answer"`
+	Author    string `json:"author"`
+	Reviewing bool   `json:"reviewing"`
 }
 
 func send(t *testing.T, method, url string, body any) (int, string) {

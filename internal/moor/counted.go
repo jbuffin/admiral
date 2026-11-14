@@ -32,6 +32,9 @@ type GitHub interface {
 	// StackPRs is each layer of the stack checked out in dir, bottom first, as the checkout's own record has it; gh runs
 	// against repo (OWNER/NAME) on this client's host, whatever the checkout's remotes say.
 	StackPRs(ctx context.Context, dir, repo string) ([]StackLayer, error)
+	// StackOpenPRs is the open layers of GitHub's stack number in owner/repo, bottom first, as PR URLs on this client's host;
+	// found is false when GitHub answers 404 for the stack, and an error is any other failed call.
+	StackOpenPRs(ctx context.Context, owner, repo string, number int) (urls []string, found bool, err error)
 	// MergeStack merges the whole stack checked out in dir with the method, naming no target. Its errors are MergePR's.
 	MergeStack(ctx context.Context, dir, repo, method string) error
 }

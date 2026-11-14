@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -48,6 +49,10 @@ type pollGitHub struct {
 	detailErr   error
 	detailBlock chan struct{} // when set, a detail call waits for it to close or its ctx to end
 	detailCalls []string
+
+	stacks     map[string][]string // StackOpenPRs answers the layers per "owner/repo/N"; a key left out is a 404
+	stackErr   error               // when set, StackOpenPRs fails
+	stackCalls []string
 }
 
 func (g *pollGitHub) Host() string { return "github.com" }
@@ -131,6 +136,24 @@ func (g *pollGitHub) MergePR(context.Context, string, string) error {
 
 func (g *pollGitHub) StackPRs(context.Context, string, string) ([]moor.StackLayer, error) {
 	return nil, nil
+}
+
+func (g *pollGitHub) StackOpenPRs(_ context.Context, owner, repo string, number int) ([]string, bool, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	key := owner + "/" + repo + "/" + strconv.Itoa(number)
+	g.stackCalls = append(g.stackCalls, key)
+	if g.stackErr != nil {
+		return nil, false, g.stackErr
+	}
+	layers, ok := g.stacks[key]
+	return layers, ok, nil
+}
+
+func (g *pollGitHub) stackLog() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string(nil), g.stackCalls...)
 }
 
 func (g *pollGitHub) MergeStack(context.Context, string, string, string) error {
