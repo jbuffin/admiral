@@ -448,6 +448,9 @@ type Trigger struct {
 	Reason  string    `json:"reason,omitempty"`
 	Action  string    `json:"action,omitempty"`
 	Ship    string    `json:"ship,omitempty"`
+	// Restricted and WorkerLaunched mark an event ship launched at A3 or above.
+	Restricted     standing.Restricted `json:"restricted,omitempty"`
+	WorkerLaunched bool                `json:"worker_launched,omitempty"`
 	// DedupeKey and Costs are set on an event record: the Lookout's key and what its judge calls cost.
 	DedupeKey string `json:"dedupe_key,omitempty"`
 	Costs     []Cost `json:"costs,omitempty"`
