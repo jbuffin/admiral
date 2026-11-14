@@ -77,15 +77,15 @@ export function chooseStackDetail(
   carried: MooredPR[],
   details: Record<string, { stack: PRStack | null; answer_all?: string } | undefined>,
 ): { url: string; stack: PRStack; answerAll?: string } | null {
-  void carried;
-  void details;
+  for (const p of carried) {
+    const d = details[p.url];
+    if (d?.stack) return { url: p.url, stack: d.stack, answerAll: d.answer_all };
+  }
   return null;
 }
 
-/** Whether the stack bar offers Answer all reviews. */
+/** Whether the stack bar offers Answer all reviews. The pushed list decides when feedback clears, ahead of the detail's refresh. */
 export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined, answerAll: string | undefined): boolean {
-  void prs;
-  void stack;
-  void answerAll;
-  return true;
+  const live = open(prs);
+  return !!stack && !!answerAll && live.length > 1 && live.every((p) => (p.feedback ?? 0) > 0);
 }
