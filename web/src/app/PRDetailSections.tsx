@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { Button } from './Button';
 import type { PRActor, PRDetail } from './api';
 import { renderMarkdown } from './markdown';
 import { checksLine, descriptionSource, firstLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary, type TimelineItem } from './prSections';
@@ -60,9 +61,7 @@ function Description({ body }: { body: string }) {
         <>
           <div ref={desc} class={`desc md${open ? '' : ' clamped'}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(source) }} />
           {open || overflows ? (
-            <button type="button" class="link-btn" aria-expanded={open} onClick={() => setOpen(!open)}>
-              {open ? 'Show less' : 'Show more'}
-            </button>
+            <Button label={open ? 'Show less' : 'Show more'} variant="link" expanded={open} onClick={() => setOpen(!open)} />
           ) : null}
         </>
       ) : (
@@ -122,9 +121,7 @@ function Item({ item, now, folded, onToggle }: { item: TimelineItem; now: number
       </div>
       {item.body ? <p class="item-body">{folded ? firstLine(item.body) : item.body}</p> : null}
       {item.author.bot ? (
-        <button type="button" class="link-btn" aria-expanded={!folded} onClick={onToggle}>
-          {folded ? 'Show all' : 'Show less'}
-        </button>
+        <Button label={folded ? 'Show all' : 'Show less'} variant="link" expanded={!folded} onClick={onToggle} />
       ) : null}
       {item.replies.map((r, i) => (
         <div key={i} class="reply">

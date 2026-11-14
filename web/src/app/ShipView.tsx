@@ -8,6 +8,7 @@ import { followConversation, type Conversation } from './conversation';
 import { cardFor } from './answerCard';
 import { ConversationView } from './ConversationView';
 import { hasConversationAdapter } from './conversationGate';
+import { Actions, Button } from './Button';
 import { Composer, InterruptButton, useComposer, type Target } from './Composer';
 import { boatBoxState, chipState, flotilla } from './flotilla';
 import { Icon } from './Icon';
@@ -18,7 +19,7 @@ import { useSeenOnLeave } from './seen';
 import { NO_RESUME_NOTE, reviews } from './moored';
 import { usageRow, watchUsage, type ShipUsage } from './shipUsage';
 import { boxState } from './messageBox';
-import { Sheet } from './Sheet';
+import { Sheet, useCancelFocus } from './Sheet';
 import { OpenPRs } from './OpenPRs';
 import { fleetSearch } from './fleets';
 import { go, loc, surfacePath } from './router';
@@ -55,49 +56,53 @@ function BackLink({ label }: { label: string }) {
 interface ShipActionProps {
   ship: Ship;
   label: string;
+  variant: 'primary' | 'danger';
   cls: string;
   action: string;
   question: string;
   done: (moored: boolean) => void;
+  // The ship's own state while the transition runs, past the request's answer.
+  busy?: boolean;
+  busyLabel: string;
   // The sheet offers Moor beside the ending when the ship has open PRs as it opens.
-  moor: { end: string; endCls: string; explain: ComponentChildren };
+  moor: { end: string; endVariant?: 'danger'; explain: ComponentChildren };
 }
 
-function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActionProps) {
+function ShipAction({ ship, label, variant, cls, action, question, done, busy: shipBusy, busyLabel, moor }: ShipActionProps) {
   const [asking, setAsking] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const cancel = useRef<HTMLButtonElement>(null);
   // Frozen when the sheet opens, so a tap aimed at one button never lands on another that appeared meanwhile.
   const [prs, setPrs] = useState<string[]>([]);
   const withMoor = prs.length > 0;
-  useEffect(() => {
-    if (asking) cancel.current?.focus();
-  }, [asking]);
+  const key = ['ship', ship.session, action] as const;
+  useCancelFocus(asking);
   const run = async (moored = false) => {
-    setBusy(true);
+    setSending(true);
     setError('');
     const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/${action}`, moored ? { moor: true } : undefined, undefined, moored ? { timeoutMs: SLOW_TIMEOUT_MS } : undefined);
-    setBusy(false);
+    setSending(false);
     if (!r.ok) return setError(r.error);
     setAsking(false);
     done(moored);
   };
   return (
     <>
-      <button
-        type="button"
-        class={`btn ${cls}`}
+      <Button
+        label={label}
+        variant={variant}
+        class={cls}
+        busyLabel={busyLabel}
+        busy={shipBusy}
+        pending={key}
         onClick={() => {
           setError('');
           setPrs(ship.open_prs ?? []);
           setAsking(true);
         }}
-      >
-        {label}
-      </button>
+      />
       {asking ? (
-        <Sheet label={label} kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
+        <Sheet label={label} kind="launch-backdrop stop-backdrop" onClose={() => !sending && setAsking(false)}>
           {withMoor ? (
             <>
               <OpenPRs name={ship.name} urls={prs} />
@@ -111,19 +116,11 @@ function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActi
               {error}
             </p>
           ) : null}
-          <div class="launch-foot">
-            <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
-              Cancel
-            </button>
-            <button type="button" class={`btn ${withMoor ? moor.endCls : cls.split(' ')[0]}`} disabled={busy} onClick={() => void run()}>
-              {withMoor ? moor.end : label}
-            </button>
-            {withMoor ? (
-              <button type="button" class="btn primary" disabled={busy} onClick={() => void run(true)}>
-                Moor
-              </button>
-            ) : null}
-          </div>
+          <Actions class="launch-foot">
+            <Button label="Cancel" onClick={() => setAsking(false)} />
+            <Button label={withMoor ? moor.end : label} variant={withMoor ? moor.endVariant : variant} pending={key} onClick={() => run()} />
+            {withMoor ? <Button label="Moor" variant="primary" pending={['ship', ship.session, 'moor']} onClick={() => run(true)} /> : null}
+          </Actions>
         </Sheet>
       ) : null}
     </>
@@ -131,24 +128,19 @@ function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActi
 }
 
 function ReturnToPort({ ship }: { ship: Ship }) {
-  if (ship.returning) {
-    return (
-      <button type="button" class="btn return-port" disabled>
-        Returning to port
-      </button>
-    );
-  }
   return (
     <ShipAction
       ship={ship}
       label="Return to port"
-      cls="primary return-port"
+      variant="primary"
+      cls="return-port"
       action="return"
+      busy={ship.returning}
+      busyLabel="Returning to port"
       question={`Return ${ship.name} to port? Once its turn ends it's told to clean up after itself, and then it's stopped with its crew.`}
       done={(moored) => moored && back()}
       moor={{
         end: 'Return to port',
-        endCls: '',
         explain: (
           <>
             <strong>Moor</strong> ends the session now with no clean-up prompt and keeps the PRs. <strong>Return to port</strong> tells it to clean up, then stops it and forgets the PRs.
@@ -164,8 +156,10 @@ function StopShip({ ship }: { ship: Ship }) {
     <ShipAction
       ship={ship}
       label="Stop ship"
-      cls="danger stop-ship"
+      variant="danger"
+      cls="stop-ship"
       action="stop"
+      busyLabel="Stopping"
       question={
         ship.status === 'moored'
           ? `Stop ${ship.name} for good? Admiral forgets it; its PRs stay open on GitHub.`
@@ -174,7 +168,7 @@ function StopShip({ ship }: { ship: Ship }) {
       done={back}
       moor={{
         end: 'Stop for good',
-        endCls: 'danger',
+        endVariant: 'danger',
         explain: (
           <>
             <strong>Moor</strong> ends the session now and keeps the PRs; the ship wakes when reviews come in. <strong>Stop for good</strong> ends it and forgets them.
@@ -401,9 +395,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         <RunningClock ship={ship} />
         {moored ? (
           <div class="ship-actions">
-            <button type="button" class="btn primary stop-ship" disabled={box.waking} onClick={() => void box.wake()}>
-              Wake
-            </button>
+            <Button label="Wake" variant="primary" class="stop-ship" busyLabel="Waking" busy={box.waking} pending={['ship', ship.session, 'wake']} onClick={() => box.wake()} />
             <StopShip ship={ship} />
           </div>
         ) : (
@@ -442,7 +434,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
             </button>
           ))}
         </div>
-        {target.interruptible ? <InterruptButton box={box} /> : null}
+        {target.interruptible ? <InterruptButton target={target} box={box} /> : null}
       </div>
       <div role="tabpanel" id="view-panel" aria-labelledby={`tab-${tab}`} class={`view-panel${tab === 'Terminal' ? ' terminal' : ''}`}>
         {tab === 'Conversation' ? (
