@@ -9,7 +9,7 @@ import (
 	"github.com/jbuffin/admiral/internal/moor"
 )
 
-var detailFields = fmt.Sprintf(`number title body state isDraft headRefName baseRefName reviewDecision mergeable mergeStateStatus
+var detailFields = fmt.Sprintf(`number title body author { __typename login } state isDraft headRefName baseRefName reviewDecision mergeable mergeStateStatus
  statusCheckRollup { state }
  reviews(last: %d) { nodes { author { __typename login } state } }
  reviewThreads(last: %d) { nodes { isResolved path line comments(last: %d) { nodes { author { __typename login } createdAt body url } } } }
@@ -25,16 +25,17 @@ var detailFields = fmt.Sprintf(`number title body state isDraft headRefName base
 const maxStackEntries = 50
 
 type prDetailNode struct {
-	Number            int    `json:"number"`
-	Title             string `json:"title"`
-	Body              string `json:"body"`
-	State             string `json:"state"`
-	IsDraft           bool   `json:"isDraft"`
-	HeadRefName       string `json:"headRefName"`
-	BaseRefName       string `json:"baseRefName"`
-	ReviewDecision    string `json:"reviewDecision"`
-	Mergeable         string `json:"mergeable"`
-	MergeStateStatus  string `json:"mergeStateStatus"`
+	Number            int       `json:"number"`
+	Title             string    `json:"title"`
+	Author            *gqlActor `json:"author"`
+	Body              string    `json:"body"`
+	State             string    `json:"state"`
+	IsDraft           bool      `json:"isDraft"`
+	HeadRefName       string    `json:"headRefName"`
+	BaseRefName       string    `json:"baseRefName"`
+	ReviewDecision    string    `json:"reviewDecision"`
+	Mergeable         string    `json:"mergeable"`
+	MergeStateStatus  string    `json:"mergeStateStatus"`
 	StatusCheckRollup *struct {
 		State string `json:"state"`
 	} `json:"statusCheckRollup"`
@@ -114,7 +115,7 @@ func (c *Client) PullRequestDetail(ctx context.Context, url string) (moor.Detail
 }
 
 func (n *prDetailNode) detail(url string) moor.Detail {
-	d := moor.Detail{Number: n.Number, URL: url, Title: n.Title, Body: n.Body, State: n.State, Draft: n.IsDraft,
+	d := moor.Detail{Number: n.Number, URL: url, Title: n.Title, Author: detailActor(n.Author), Body: n.Body, State: n.State, Draft: n.IsDraft,
 		Head: n.HeadRefName, Base: n.BaseRefName, Review: n.ReviewDecision, Mergeable: n.Mergeable, MergeState: n.MergeStateStatus,
 		FailingChecks: []moor.DetailCheck{}, Reviews: []moor.DetailReview{}, Requested: []moor.DetailActor{},
 		Threads: []moor.DetailThread{}, Comments: []moor.DetailComment{}}

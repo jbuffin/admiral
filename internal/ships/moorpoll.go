@@ -27,6 +27,8 @@ type polled struct {
 	stale  bool                   // the latest poll failed
 	// waiting is why a due feedback round has not started; a new answer replaces the whole value, so it clears
 	waiting string
+	// feedback is each PR's count of waking events past its cursor, as the last decision found it
+	feedback map[string]int
 }
 
 func (s *Service) kickChan() chan struct{} {
@@ -109,12 +111,18 @@ func (s *Service) PollMoored(ctx context.Context) {
 		}
 		for i, run := range runs[fleet] {
 			add(&urls, run.urls)
+			if route == nil {
+				route = github.RouterFromFleets(s.Launcher.Config().Fleets).Route
+			}
 			if len(run.raw) > 0 {
-				if route == nil {
-					route = github.RouterFromFleets(s.Launcher.Config().Fleets).Route
-				}
 				runs[fleet][i].cands = s.freshCandidates(run, fleet, gh.Host(), route)
 				add(&cands, runs[fleet][i].cands)
+			}
+			runs[fleet][i].order = s.orderTargets(ctx, run, gh, fleet, route)
+			for _, u := range runs[fleet][i].order {
+				if !slices.Contains(run.urls, u) {
+					add(&cands, []string{u})
+				}
 			}
 		}
 		if len(urls) == 0 && len(cands) == 0 {
@@ -194,20 +202,24 @@ func (s *Service) PollMoored(ctx context.Context) {
 // decide reads a ship's wake state and the answered PRs, and either wakes the ship for a feedback round or
 // saves what the poll first saw. A refusal that clears later leaves the state alone, so the next poll decides the same way.
 func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]moor.Status) {
-	if ctx.Err() != nil || !moor.ValidResume(r.Resume) {
+	if ctx.Err() != nil {
 		return
-	}
-	var reviewers []string
-	if f, ok := s.Launcher.Config().Fleet(r.Fleet); ok {
-		reviewers = f.WakeReviewers
 	}
 	state, err := moor.ReadWake(s.Launcher.Home, r.Name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be read: %v\n", r.Name, err)
 		return
 	}
+	reviewers := s.wakeReviewers(r)
 	now := time.Now().UTC()
-	d := moor.DecideWake(moor.WakeInput{Record: r, State: state, Answers: answers, Reviewers: reviewers, Now: now})
+	// A reviewing ship never wakes or counts feedback for the PRs it reviews: Re-review is the engineer's to ask for.
+	wr := r
+	wr.PRs = slices.DeleteFunc(slices.Clone(r.PRs), func(u string) bool { return slices.Contains(r.Reviewing, u) })
+	s.setFeedback(r, moor.FeedbackCounts(moor.WakeInput{Record: wr, State: state, Answers: answers, Reviewers: reviewers, Now: now}))
+	if !moor.ValidResume(r.Resume) || len(wr.PRs) == 0 {
+		return
+	}
+	d := moor.DecideWake(moor.WakeInput{Record: wr, State: state, Answers: answers, Reviewers: reviewers, Now: now})
 	next, batches, ok := s.propose(r, state, d, now)
 	if !ok {
 		return
@@ -222,6 +234,24 @@ func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]
 		// The round did not start, so its cursor stays; the proposals it made are recorded so the next poll does not make them again.
 		s.saveNext(r, state, withProposed(state, batches))
 	}
+}
+
+func (s *Service) wakeReviewers(r moor.Record) []string {
+	if f, ok := s.Launcher.Config().Fleet(r.Fleet); ok {
+		return f.WakeReviewers
+	}
+	return nil
+}
+
+func (s *Service) setFeedback(r moor.Record, counts map[string]int) {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	if !s.stillMoored(r) {
+		return
+	}
+	p := s.polls()[r.Session]
+	p.feedback = counts
+	s.polls()[r.Session] = p
 }
 
 // waitingText is what a moored ship shows for a refused round: the refusal's own wait text when a later poll can clear it, else the refusal.
@@ -290,6 +320,7 @@ func (s *Service) storePoll(r moor.Record, p polled) ([]moor.PR, bool) {
 	if !s.stillMoored(r) {
 		return nil, false
 	}
+	p.feedback = s.polls()[r.Session].feedback // until decide counts again, so the list does not drop the bar between the two
 	s.polls()[r.Session] = p
 	return s.prsOf(r), true
 }
@@ -332,12 +363,20 @@ func (s *Service) prsOf(r moor.Record) []moor.PR {
 	p, ok := s.mooredPolls[r.Session]
 	out := make([]moor.PR, 0, len(r.PRs))
 	for _, u := range r.PRs {
-		if !ok || p.status == nil {
-			out = append(out, moor.PR{URL: u, State: "OPEN"})
-			continue
+		pr := moor.PR{URL: u, State: "OPEN"}
+		if ok && p.status != nil {
+			st, found := p.status[u]
+			pr = moor.View(u, st, found)
 		}
-		st, found := p.status[u]
-		out = append(out, moor.View(u, st, found))
+		if n := p.feedback[u]; ok && n > 0 && pr.State == "OPEN" {
+			pr.Feedback = n
+			if moor.ValidResume(r.Resume) {
+				pr.Answer = answerPrompt(r, u)
+			}
+		}
+		pr.Reviewing = slices.Contains(r.Reviewing, u)
+		pr.Responded = pr.Reviewing && ok && p.status != nil && moor.Responded(p.status[u])
+		out = append(out, pr)
 	}
 	return out
 }
@@ -419,7 +458,11 @@ func (s *Service) serveMooredRefresh(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) serveUnfollow(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	if _, ok := s.mooredRecord(session); ok {
+	if rec, ok := s.mooredRecord(session); ok {
+		if len(rec.Reviewing) > 0 {
+			writeError(w, http.StatusConflict, "ship "+session+" reviews a pull request, and has no reviews to stop following")
+			return
+		}
 		s.endByRequest(w, r, session, "unfollowed", "unfollowed")
 		return
 	}

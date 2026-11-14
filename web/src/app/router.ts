@@ -43,15 +43,18 @@ export interface PeekTarget {
   item?: string;
   /** The ship's ready-to-merge entry. */
   merge?: true;
+  /** The ship's Re-review entry. */
+  rereview?: true;
 }
 
 export const peekPath = (t: PeekTarget) => {
   const base = `/app/inbox/${encodeURIComponent(t.session)}`;
   if (t.merge) return `${base}/merge`;
+  if (t.rereview) return `${base}/rereview`;
   return t.crew !== undefined ? `${base}/crew/${encodeURIComponent(t.crew)}` : t.item !== undefined ? `${base}/item/${encodeURIComponent(t.item)}` : base;
 };
 
-/** What a Peek path opens: a ship's stop, a crew boat's stop, a file item or a ship's merge entry. Null for the list and for any other path. */
+/** What a Peek path opens: a ship's stop, a crew boat's stop, a file item or a ship's merge or Re-review entry. Null for the list and for any other path. */
 export function peekOf(path: string): PeekTarget | null {
   const [id, session, kind, name, ...rest] = segments(path);
   if (id !== 'inbox' || !session || rest.length > 0) return null;
@@ -61,6 +64,7 @@ export function peekOf(path: string): PeekTarget | null {
     if (decoded.includes('/')) return null;
     if (kind === undefined) return { session: decoded };
     if (kind === 'merge' && name === undefined) return { session: decoded, merge: true };
+    if (kind === 'rereview' && name === undefined) return { session: decoded, rereview: true };
     if (!name || (kind !== 'crew' && kind !== 'item')) return null;
     const n = decodeURIComponent(name);
     if (kind === 'crew' && n.includes('/')) return null;

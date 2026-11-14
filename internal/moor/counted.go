@@ -29,6 +29,9 @@ type GitHub interface {
 	// MergePR merges one pull request with the method. Only the engineer's Merge act calls it. An error is gh's
 	// message; ErrMergeTimeout says gh ran past its limit, so the merge may have happened.
 	MergePR(ctx context.Context, url, method string) error
+	// StackOpenPRs is the open layers of GitHub's stack number in owner/repo, bottom first, as PR URLs on this client's host;
+	// found is false when GitHub answers 404 for the stack, and an error is any other failed call.
+	StackOpenPRs(ctx context.Context, owner, repo string, number int) (urls []string, found bool, err error)
 	// MergeStack merges GitHub's stack number stackNumber in repo (OWNER/NAME) with the method, from no checkout. Its errors are MergePR's.
 	MergeStack(ctx context.Context, repo string, stackNumber int, method string) error
 }

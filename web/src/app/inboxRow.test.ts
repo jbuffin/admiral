@@ -148,3 +148,38 @@ describe('a merge entry', () => {
     expect(rowVerb(mergeEntry())).toBe('is ready to merge');
   });
 });
+
+describe('a rereview entry', () => {
+  const layer = (n: number, over: Record<string, unknown> = {}) => ({ url: `https://github.com/acme/api/pull/${n}`, state: 'OPEN', review: '', checks: '', mergeable: '', conflicts: false, reviewing: true, author: 'dana', ...over });
+  const entry = (prs: unknown[]): Entry => ({
+    key: 'rereview:s1',
+    type: 'rereview',
+    session: 's1',
+    ship: { ...ship, status: 'moored', prs } as unknown as Ship,
+    folded: null,
+    since: T0,
+  });
+
+  it('reads after the ship name as the author responding on the one PR', () => {
+    expect(rowShip(entry([layer(7, { responded: true })]))).toBe('Dory');
+    expect(rowVerb(entry([layer(7, { responded: true })]))).toBe('@dana responded on #7');
+  });
+
+  it('names the lowest responded layer, skipping one that has not responded', () => {
+    expect(rowVerb(entry([layer(6), layer(7, { responded: true })]))).toBe('@dana responded on #7');
+  });
+
+  it('adds the second layer by number, and counts any more', () => {
+    expect(rowVerb(entry([layer(7, { responded: true }), layer(8, { responded: true })]))).toBe('@dana responded on #7 and #8');
+    expect(rowVerb(entry([layer(7, { responded: true }), layer(8, { responded: true }), layer(9, { responded: true })]))).toBe('@dana responded on #7 and 2 more');
+    expect(rowVerb(entry([7, 8, 9, 10].map((n) => layer(n, { responded: true }))))).toBe('@dana responded on #7 and 3 more');
+  });
+
+  it('takes the author of the lowest responded layer', () => {
+    expect(rowVerb(entry([layer(7, { responded: true, author: 'dana' }), layer(8, { responded: true, author: 'lee' })]))).toBe('@dana responded on #7 and #8');
+  });
+
+  it('counts only reviewed layers that responded, not the fleet\'s own', () => {
+    expect(rowVerb(entry([layer(7, { responded: true, reviewing: false, author: 'fake-viewer' }), layer(8, { responded: true })]))).toBe('@dana responded on #8');
+  });
+});

@@ -321,7 +321,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/dismiss", s.serveDismiss)
 	mux.HandleFunc("POST /api/ships/{session}/unfollow", s.serveUnfollow)
 	mux.HandleFunc("POST /api/ships/{session}/wake", s.serveWake)
+	mux.HandleFunc("POST /api/ships/{session}/answer-review", s.serveAnswerReview)
 	mux.HandleFunc("POST /api/ships/{session}/next", s.serveNext)
+	mux.HandleFunc("POST /api/ships/{session}/rereview", s.serveRereview)
 	mux.HandleFunc("GET /api/outcomes", s.serveOutcomes)
 	mux.Handle("POST /api/ships/{session}/merge", s.mergeGuarded(http.HandlerFunc(s.serveMerge)))
 	mux.HandleFunc("POST /api/moored/refresh", s.serveMooredRefresh)
@@ -730,6 +732,11 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_ = s.Host.Sync(syncCtx)
 	cancel()
+	if _, _, _, ok := moor.ParsePR(req.URL); ok {
+		s.RefreshMoored() // a review ship is found by the next poll, not after the poll interval
+	} else if _, _, _, _, ok := moor.ParseStack(req.URL); ok {
+		s.RefreshMoored()
+	}
 	sess := sessionhost.Session{Name: got.Session, Options: got.Options}
 	if now, ok := s.find(got.Session); ok {
 		sess = now

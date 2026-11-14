@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CrewBoat, Ship } from './api';
-import { createInboxQueue, HOLD_MS, type InboxItem } from './inbox';
+import { attentionCount, createInboxQueue, HOLD_MS, type InboxItem } from './inbox';
 
 const T0 = Date.parse('2026-10-22T10:00:00Z');
 const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
@@ -307,5 +307,137 @@ describe('createInboxQueue: ready to merge', () => {
     q.fold('merge:a', 'Merged', T0);
     q.sync({ items: [], ships: [ready('a')] }, T0 + 1000);
     expect(rows(q)).toEqual([['merge:a', 'merge', 'Merged']]);
+  });
+});
+
+describe('createInboxQueue: re-review', () => {
+  const layer = (n: number, over: Record<string, unknown> = {}) => ({ url: `https://github.com/acme/api/pull/${n}`, state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE', conflicts: false, ready: true, reviewing: true, author: 'dana', ...over });
+  const responded = (session: string, status: Ship['status'] = 'moored', extra: Partial<Ship> = {}) => ship(session, 'alpha', status, { prs: [layer(7, { responded: true })], ...extra });
+  const rows = (q: ReturnType<typeof createInboxQueue>) => q.entries().map((e) => [e.key, e.type, e.folded]);
+
+  it('lists a moored ship whose reviewed PR the author responded on, tagged with its fleet', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [responded('a')] }, T0);
+    expect(q.entries().map((e) => [e.key, e.type, e.session, e.fleet])).toEqual([['rereview:a', 'rereview', 'a', { key: 'alpha', name: 'ALPHA', color: '#alpha' }]]);
+  });
+
+  it('lists one entry per ship, however many layers responded', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'moored', { prs: [layer(7, { responded: true }), layer(8, { responded: true })] })] }, T0);
+    expect(keys(q)).toEqual(['rereview:a']);
+  });
+
+  it('lists nothing for a live ship, an own PR, or a reviewed PR the author has not responded on', () => {
+    const q = createInboxQueue();
+    q.sync(
+      {
+        items: [],
+        ships: [
+          responded('live', 'underway'),
+          ship('own', 'alpha', 'moored', { prs: [layer(7, { responded: true, reviewing: false })] }),
+          ship('quiet', 'alpha', 'moored', { prs: [layer(7)] }),
+        ],
+      },
+      T0,
+    );
+    expect(keys(q)).toEqual([]);
+  });
+
+  it('raises no merge entry for a reviewing ship the server serves ready to merge', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'moored', { prs: [layer(7)], stack_ready: true }), responded('b', 'moored', { stack_ready: true })] }, T0);
+    expect(keys(q)).toEqual(['rereview:b']);
+  });
+
+  it('still raises a merge entry for a ship\'s own ready stack', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'moored', { prs: [layer(7, { reviewing: false })], stack_ready: true })] }, T0);
+    expect(keys(q)).toEqual(['merge:a']);
+  });
+
+  it('takes its start from first sight and keeps it across later pushes', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [responded('a')] }, T0);
+    q.sync({ items: [], ships: [responded('a')] }, T0 + 60_000);
+    expect(q.entries().map((e) => e.since)).toEqual([T0]);
+  });
+
+  it('sits after a merge entry that began at the same time, whatever the input order', () => {
+    for (const ships of [
+      [responded('a'), ship('b', 'alpha', 'moored', { prs: [layer(8, { reviewing: false })], stack_ready: true })],
+      [ship('b', 'alpha', 'moored', { prs: [layer(8, { reviewing: false })], stack_ready: true }), responded('a')],
+    ]) {
+      const q = createInboxQueue();
+      q.sync({ items: [], ships }, T0);
+      expect(keys(q)).toEqual(['merge:b', 'rereview:a']);
+    }
+  });
+
+  it('goes by itself, with no fold, when the author has not responded any more, the ship wakes or the ship leaves', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [responded('a'), responded('b'), responded('c')] }, T0);
+    expect(keys(q)).toEqual(['rereview:a', 'rereview:b', 'rereview:c']);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'moored', { prs: [layer(7)] }), responded('b', 'underway')] }, T0 + 1000);
+    expect(rows(q)).toEqual([]);
+  });
+
+  it('counts in the attention count until it is folded', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [responded('a')] }, T0);
+    expect(attentionCount(q)).toBe(1);
+    q.fold('rereview:a', 'Re-reviewing', T0 + 1000);
+    expect(attentionCount(q)).toBe(0);
+  });
+
+  it('folds with the given text, holds it for 5 s, then drops it', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [responded('a')] }, T0);
+    q.fold('rereview:a', 'Re-reviewing', T0 + 1000);
+    expect(rows(q)).toEqual([['rereview:a', 'rereview', 'Re-reviewing']]);
+    expect(q.tick(T0 + 1000 + HOLD_MS - 1)).toBe(false);
+    expect(q.tick(T0 + 1000 + HOLD_MS)).toBe(true);
+    expect(rows(q)).toEqual([]);
+  });
+
+  it('keeps a folded entry out while a stale push still serves the ship moored and responded', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [responded('a')] }, T0);
+    expect(keys(q)).toEqual(['rereview:a']);
+    q.fold('rereview:a', 'Re-reviewing', T0);
+    q.tick(T0 + HOLD_MS);
+    q.sync({ items: [], ships: [responded('a')] }, T0 + HOLD_MS + 1000);
+    expect(keys(q)).toEqual([]);
+  });
+
+  it('lists it again when the ship moors again with the author responded, even after a stale push in between', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [responded('a')] }, T0);
+    q.fold('rereview:a', 'Re-reviewing', T0);
+    q.tick(T0 + HOLD_MS);
+    // The woken ship keeps `responded` until a poll shows its new review.
+    q.sync({ items: [], ships: [responded('a', 'underway')] }, T0 + HOLD_MS + 1000);
+    q.sync({ items: [], ships: [responded('a')] }, T0 + HOLD_MS + 2000);
+    expect(keys(q)).toEqual(['rereview:a']);
+  });
+
+  it('lists it again once the author has not responded any more and then does', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [responded('a')] }, T0);
+    q.fold('rereview:a', 'Re-reviewing', T0);
+    q.tick(T0 + HOLD_MS);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'moored', { prs: [layer(7)] })] }, T0 + HOLD_MS + 1000);
+    q.sync({ items: [], ships: [responded('a')] }, T0 + HOLD_MS + 2000);
+    expect(keys(q)).toEqual(['rereview:a']);
+  });
+
+  it('lists it again when a sync shows the ship moored and responded under a new mooring, with no sync between', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [responded('a', 'moored', { moored_at: at(0) })] }, T0);
+    q.fold('rereview:a', 'Re-reviewing', T0);
+    q.tick(T0 + HOLD_MS);
+    q.sync({ items: [], ships: [responded('a', 'moored', { moored_at: at(0) })] }, T0 + HOLD_MS + 1000);
+    expect(keys(q)).toEqual([]);
+    q.sync({ items: [], ships: [responded('a', 'moored', { moored_at: at(600) })] }, T0 + HOLD_MS + 2000);
+    expect(keys(q)).toEqual(['rereview:a']);
   });
 });

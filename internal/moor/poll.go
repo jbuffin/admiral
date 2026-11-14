@@ -38,6 +38,12 @@ type PR struct {
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
 	Ready     bool   `json:"ready"`
+	// Feedback counts the PR's waking events past its cursor; Answer is the prompt Answer review sends for it.
+	Feedback  int    `json:"feedback,omitempty"`
+	Answer    string `json:"answer,omitempty"`
+	Author    string `json:"author,omitempty"`
+	Reviewing bool   `json:"reviewing,omitempty"`
+	Responded bool   `json:"responded,omitempty"`
 }
 
 // View is the PR to serve. NOT_FOUND counts as closed, and a PR that is not open
@@ -46,7 +52,7 @@ func View(url string, st Status, found bool) PR {
 	if !found {
 		return PR{URL: url, State: "CLOSED"}
 	}
-	return PR{URL: url, State: st.State, Review: st.Review, Checks: st.Checks, Mergeable: st.Mergeable,
+	return PR{URL: url, State: st.State, Review: st.Review, Checks: st.Checks, Mergeable: st.Mergeable, Author: st.Author,
 		Conflicts: st.State == "OPEN" && st.Mergeable == "CONFLICTING", Ready: st.Ready()}
 }
 

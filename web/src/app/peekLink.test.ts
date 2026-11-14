@@ -6,6 +6,8 @@ describe('peekKey', () => {
     expect(peekKey({ session: 's-1' })).toBe('stop:s-1');
     expect(peekKey({ session: 's-1', crew: 'scout' })).toBe('stop:s-1/scout');
     expect(peekKey({ session: 's-1', item: 'q-1' })).toBe('item:s-1/q-1');
+    expect(peekKey({ session: 's-1', merge: true })).toBe('merge:s-1');
+    expect(peekKey({ session: 's-1', rereview: true })).toBe('rereview:s-1');
   });
 });
 

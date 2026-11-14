@@ -92,6 +92,8 @@ export interface PRDetail {
   threads: { path: string; line: number; resolved: boolean; comments: { author: PRActor; body: string; url: string; created_at: string }[] }[];
   comments: { author: PRActor; body: string; url: string; created_at: string }[];
   stack: PRStack | null;
+  // The command Answer all reviews would send, only when the ship is moored and the whole stack has feedback.
+  answer_all?: string;
 }
 export type ShipStatus = 'needs_you' | 'underway' | 'moored' | 'anchored' | 'sailing_off';
 export interface MooredPR {
@@ -102,6 +104,12 @@ export interface MooredPR {
   mergeable: string;
   conflicts: boolean;
   ready?: boolean;
+  // New waking events since the ship's last round, and the command that answers them; both only on a moored ship's open PR.
+  feedback?: number;
+  answer?: string;
+  author?: string;
+  reviewing?: boolean;
+  responded?: boolean;
 }
 export interface Ship {
   session: string;

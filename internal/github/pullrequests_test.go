@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -281,5 +283,118 @@ func TestPullRequestsWithNoEventsFillsNothingIn(t *testing.T) {
 	}
 	if st.Viewer != "fake-viewer" {
 		t.Errorf("Viewer = %q, want the fake's default", st.Viewer)
+	}
+}
+
+func (f *fakeGH) stack(t *testing.T, endpoint string, status int, body, stderr string) {
+	t.Helper()
+	f.write(t, "rest/stack.endpoint", endpoint)
+	f.write(t, "rest/stack.status", strconv.Itoa(status))
+	f.write(t, "rest/stack.json", body)
+	if stderr != "" {
+		f.write(t, "rest/stack.stderr", stderr)
+	}
+}
+
+func TestStackOpenPRsAsksForTheStackAndAnswersItsOpenLayersBottomFirst(t *testing.T) {
+	cl, f := prClient(t)
+	f.stack(t, "repos/acme/widgets/stacks/12", 200, `{"number":12,"open":true,"base":{"ref":"main"},"pull_requests":[
+		{"number":21,"state":"open","head":{"ref":"l1","sha":"a1"}},
+		{"number":22,"state":"merged","head":{"ref":"l2","sha":"a2"}},
+		{"number":23,"state":"open","head":{"ref":"l3","sha":"a3"}},
+		{"number":24,"state":"closed","head":{"ref":"l4","sha":"a4"}}]}`, "")
+
+	got, found, err := cl.StackOpenPRs(context.Background(), "acme", "widgets", 12)
+	if err != nil || !found {
+		t.Fatalf("StackOpenPRs = %v, found %v, err %v; want an answer", got, found, err)
+	}
+	want := []string{"https://github.com/acme/widgets/pull/21", "https://github.com/acme/widgets/pull/23"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("layers = %v, want %v: the open ones, bottom first", got, want)
+	}
+	calls := f.calls(t, "api")
+	if len(calls) != 1 {
+		t.Fatalf("gh api calls = %d, want 1", len(calls))
+	}
+	if !strings.Contains(strings.Join(calls[0].argv, " "), "repos/acme/widgets/stacks/12") || strings.Contains(strings.Join(calls[0].argv, " "), "graphql") {
+		t.Errorf("argv = %v, want REST on repos/acme/widgets/stacks/12", calls[0].argv)
+	}
+}
+
+func TestStackOpenPRsTellsAStackGitHubDoesNotHaveFromAFailedCall(t *testing.T) {
+	cl, f := prClient(t)
+	f.stack(t, "repos/acme/widgets/stacks/12", 404, `{"message":"Not Found"}`, "gh: Not Found (HTTP 404)")
+	got, found, err := cl.StackOpenPRs(context.Background(), "acme", "widgets", 12)
+	if err != nil || found || len(got) != 0 {
+		t.Errorf("a 404 = %v, found %v, err %v; want no layers, not found and no error", got, found, err)
+	}
+
+	f.stack(t, "repos/acme/widgets/stacks/12", 502, `{}`, "gh: Bad Gateway (HTTP 502)")
+	if _, _, err := cl.StackOpenPRs(context.Background(), "acme", "widgets", 12); err == nil {
+		t.Error("a 502 answered no error, want a failed call")
+	}
+	f.stack(t, "repos/acme/widgets/stacks/99", 200, `{}`, "")
+	if _, _, err := cl.StackOpenPRs(context.Background(), "acme", "widgets", 12); err == nil {
+		t.Error("a call gh has no answer for (exit 1) gave no error, want a failed call")
+	}
+}
+
+const eventsReviewed = `{
+  "headRefOid": "def456",
+  "author": {"__typename": "User", "login": "dana"},
+  "reviews": {"nodes": [
+    {"id": "R1", "author": {"__typename": "User", "login": "jbuffin"}, "state": "COMMENTED", "commit": {"oid": "abc123"},
+     "submittedAt": "2026-11-02T12:10:00Z", "body": "", "url": "u", "comments": {"totalCount": 1}},
+    {"id": "R2", "author": {"__typename": "User", "login": "jbuffin"}, "state": "APPROVED", "commit": null,
+     "submittedAt": "2026-11-02T12:20:00Z", "body": "", "url": "u", "comments": {"totalCount": 0}}
+  ]},
+  "reviewThreads": {"nodes": [
+    {"id": "TH1", "comments": {"nodes": [
+      {"id": "T1", "author": {"__typename": "User", "login": "jbuffin"}, "createdAt": "2026-11-02T12:10:00Z", "body": "why", "url": "u"},
+      {"id": "T2", "author": {"__typename": "User", "login": "dana"}, "createdAt": "2026-11-02T12:30:00Z", "body": "because", "url": "u"}]}},
+    {"id": "TH2", "comments": {"nodes": [
+      {"id": "T3", "author": {"__typename": "User", "login": "dana"}, "createdAt": "2026-11-02T12:31:00Z", "body": "also", "url": "u"}]}}
+  ]}
+}`
+
+func TestPullRequestsReadsTheCommitOfEachReviewAndTheThreadOfEachThreadComment(t *testing.T) {
+	cl, f := prClient(t)
+	f.pr(t, prA, "OPEN", "", "", "MERGEABLE")
+	f.prEvents(t, prA, eventsReviewed)
+	f.write(t, "viewer", "jbuffin\n")
+
+	got, err := cl.PullRequests(context.Background(), []string{prA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := got[prA]
+	if len(st.Reviews) != 2 || st.Reviews[0].Commit != "abc123" || st.Reviews[1].Commit != "" {
+		t.Errorf("review commits = %+v, want abc123 and none for a review GitHub gave no commit", st.Reviews)
+	}
+	if len(st.ThreadComments) != 3 {
+		t.Fatalf("ThreadComments = %+v, want three", st.ThreadComments)
+	}
+	for i, want := range []string{"TH1", "TH1", "TH2"} {
+		if st.ThreadComments[i].Thread != want {
+			t.Errorf("ThreadComments[%d].Thread = %q, want %q", i, st.ThreadComments[i].Thread, want)
+		}
+	}
+}
+
+// The fake gh returns whatever a test seeds, so only the query text shows that the poll asks for the new fields.
+func TestThePollQueryAsksForEachReviewsCommitAndEachThreadsID(t *testing.T) {
+	cl, f := prClient(t)
+	f.pr(t, prA, "OPEN", "", "", "MERGEABLE")
+	if _, err := cl.PullRequests(context.Background(), []string{prA}); err != nil {
+		t.Fatal(err)
+	}
+	query := regexp.MustCompile(`\s+`).ReplaceAllString(strings.Join(f.only(t, "api").argv, " "), " ")
+	for name, re := range map[string]string{
+		"reviews { nodes { ... commit { oid } }": `reviews\(last: \d+\) \{ nodes \{[^{}]*commit \{ oid \}`,
+		"reviewThreads { nodes { id ...}":        `reviewThreads\(last: \d+\) \{ nodes \{ [^{}]*\bid\b`,
+	} {
+		if !regexp.MustCompile(re).MatchString(query) {
+			t.Errorf("the PR query does not ask for %s", name)
+		}
 	}
 }

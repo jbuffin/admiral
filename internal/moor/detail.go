@@ -7,6 +7,8 @@ type Detail struct {
 	Number        int             `json:"number"`
 	URL           string          `json:"url"`
 	Title         string          `json:"title"`
+	Author        DetailActor     `json:"author"`
+	Reviewing     bool            `json:"reviewing"`
 	Body          string          `json:"body"`
 	State         string          `json:"state"`
 	Draft         bool            `json:"draft"`
@@ -23,6 +25,8 @@ type Detail struct {
 	Threads       []DetailThread  `json:"threads"`
 	Comments      []DetailComment `json:"comments"`
 	Stack         *DetailStack    `json:"stack"`
+	// AnswerAll is the command Answer all reviews would send; set by the ships service, only when the whole stack has feedback.
+	AnswerAll string `json:"answer_all,omitempty"`
 }
 
 // DetailActor is who wrote something; Bot is true for a GraphQL Bot.

@@ -87,3 +87,13 @@ func TestAnActorMayRecordACommitmentButNotListOrCancelAnyFleetsCommitments(t *te
 		}
 	}
 }
+
+func TestAnActorCannotAnswerAReviewForAShip(t *testing.T) {
+	for _, prefix := range []string{"/api", "/api/v1"} {
+		r := newRig(t)
+		rec := r.do("POST", prefix+"/ships/p-1/answer-review", `{"pr":"https://github.com/acme/widgets/pull/7"}`, "tok-personal", local)
+		if rec.Code != 403 || r.reached != 0 {
+			t.Errorf("POST %s/ships/p-1/answer-review: code %d, reached %d; want 403 and nothing reached: only the engineer answers reviews by hand", prefix, rec.Code, r.reached)
+		}
+	}
+}

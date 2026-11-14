@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { call, type Ship } from './api';
-import { rowButtons } from './moored';
+import { reviews, rowButtons } from './moored';
 
 /** A moored ship's buttons. On the Ships row that is Wake, Dismiss and Don't follow reviews; in the PR tab (`tab`) only Don't follow reviews, since the view's head holds Wake. */
 export function MooredActions({ ship, onError, tab = false, locked = false, onBusy }: { ship: Ship; onError: (e: string) => void; tab?: boolean; locked?: boolean; onBusy?: (busy: boolean) => void }) {
@@ -30,9 +30,11 @@ export function MooredActions({ ship, onError, tab = false, locked = false, onBu
           Dismiss
         </button>
       )}
-      <button type="button" class="btn" disabled={off.others} onClick={() => act('unfollow')}>
-        Don't follow reviews
-      </button>
+      {reviews(ship) ? null : (
+        <button type="button" class="btn" disabled={off.others} onClick={() => act('unfollow')}>
+          Don't follow reviews
+        </button>
+      )}
     </div>
   );
 }

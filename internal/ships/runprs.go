@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +19,18 @@ type running struct {
 	rejected map[string]bool // candidates the ship did not open, or that GitHub never answered
 	tries    map[string]int  // failed asks per candidate
 	poll     polled
+
+	order     orderCheck
+	reviewing []string // carried PRs the ship reviews, found by the order check; the session's reviewing option holds them too
+}
+
+// orderCheck is the launch's one look at its order URL: a PR or stack someone else opened is carried as reviewing.
+// It keeps its own state, apart from the printed candidates', which reject any PR the viewer did not open.
+type orderCheck struct {
+	done     bool
+	tries    int
+	resolved bool     // a stack's layers are known
+	layers   []string // the open layers of a stack order, bottom first
 }
 
 // maxFreshPerPoll bounds how many unjudged candidates one ship puts to GitHub in one poll.
@@ -34,6 +45,7 @@ type runAsk struct {
 	urls  []string // carried
 	raw   []string // printed in tool results
 	cands []string // raw, filtered and not yet judged; set per fleet
+	order []string // the PRs the order check judges this poll; set per fleet
 }
 
 // runState is the live ship's state, replaced when the session is a later launch; the caller holds mooredMu.
@@ -63,20 +75,37 @@ func (s *Service) carried(sess sessionhost.Session) []string {
 	return urls
 }
 
+// reviewingOf is the carried PRs the ship reviews: the session's reviewing option plus any found since it was read; the caller holds mooredMu.
+func (s *Service) reviewingOf(sess sessionhost.Session) []string {
+	var urls []string
+	if v := sess.Options["reviewing"]; v != "" {
+		urls = strings.Split(v, ",")
+	}
+	for _, u := range s.runState(sess).reviewing {
+		if !slices.Contains(urls, u) {
+			urls = append(urls, u)
+		}
+	}
+	return urls
+}
+
 // runPRs is a live ship's carried PRs as last polled, each OPEN until a poll answers.
 func (s *Service) runPRs(sess sessionhost.Session) ([]moor.PR, polled) {
 	s.mooredMu.Lock()
 	defer s.mooredMu.Unlock()
 	urls := s.carried(sess)
+	reviewing := s.reviewingOf(sess)
 	p := s.runState(sess).poll
 	var out []moor.PR
 	for _, u := range urls {
-		if p.status == nil {
-			out = append(out, moor.PR{URL: u, State: "OPEN"})
-			continue
+		pr := moor.PR{URL: u, State: "OPEN"}
+		if p.status != nil {
+			st, found := p.status[u]
+			pr = moor.View(u, st, found)
 		}
-		st, found := p.status[u]
-		out = append(out, moor.View(u, st, found))
+		pr.Reviewing = slices.Contains(reviewing, u)
+		pr.Responded = pr.Reviewing && p.status != nil && moor.Responded(p.status[u])
+		out = append(out, pr)
 	}
 	return out, p
 }
@@ -115,7 +144,7 @@ func (s *Service) runningAsks() map[string][]runAsk {
 		live[sess.Name] = true
 		s.runState(sess)
 		urls := s.carried(sess)
-		if len(urls)+len(cands[sess.Name]) == 0 {
+		if len(urls)+len(cands[sess.Name]) == 0 && !s.orderPending(sess) {
 			continue
 		}
 		f := sess.Options["fleet"]
@@ -136,11 +165,10 @@ func (s *Service) freshCandidates(run runAsk, fleet string, host string, route f
 	rs := s.runState(run.sess)
 	var out []string
 	for _, raw := range run.raw {
-		h, repo, num, ok := moor.ParsePR(raw)
-		if n, err := strconv.ParseInt(num, 10, 32); !ok || err != nil || num[0] == '0' || n < 1 || !strings.EqualFold(h, host) || route(h, repo) != fleet {
+		u, repo, ok := prURLOn(raw, host)
+		if !ok || route(host, repo) != fleet {
 			continue
 		}
-		u := "https://" + host + "/" + repo + "/pull/" + num
 		if slices.Contains(run.urls, u) || slices.Contains(out, u) || rs.rejected[u] {
 			continue
 		}
@@ -157,8 +185,11 @@ func (s *Service) storeRun(run runAsk, answer, candAnswer map[string]moor.Status
 	defer s.mooredMu.Unlock()
 	rs := s.runState(run.sess)
 	launched, err := time.Parse(time.RFC3339, run.sess.Options["launched"])
-	added := false
+	added := s.judgeOrder(rs, run, answer, candAnswer, candFailed)
 	for _, u := range run.cands {
+		if slices.Contains(rs.found, u) {
+			continue
+		}
 		st, ok := candAnswer[u]
 		switch {
 		case candFailed[u]:
@@ -184,12 +215,13 @@ func (s *Service) storeRun(run runAsk, answer, candAnswer map[string]moor.Status
 	return added
 }
 
-// persistCarried writes the ship's carried PRs to its session, so a restarted Admiral reads them back.
+// persistCarried writes the ship's carried and reviewed PRs to its session, so a restarted Admiral reads them back.
 func (s *Service) persistCarried(ctx context.Context, sess sessionhost.Session) {
 	s.mooredMu.Lock()
 	v := strings.Join(s.carried(sess), ",")
+	rv := strings.Join(s.reviewingOf(sess), ",")
 	s.mooredMu.Unlock()
-	if err := s.Host.SetOptions(ctx, sess.Name, map[string]string{"prs": v}); err != nil && ctx.Err() == nil {
+	if err := s.Host.SetOptions(ctx, sess.Name, map[string]string{"prs": v, "reviewing": rv}); err != nil && ctx.Err() == nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its carried PRs cannot be saved on the session: %v\n", sess.Name, err)
 	}
 }
@@ -213,4 +245,13 @@ func (s *Service) carriedOpen(sess sessionhost.Session) []string {
 		}
 	}
 	return out
+}
+
+// reviewingOpen is the carried PRs the ship reviews that the last poll saw open, in carried order.
+func (s *Service) reviewingOpen(sess sessionhost.Session) []string {
+	open := s.carriedOpen(sess)
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	reviewing := s.reviewingOf(sess)
+	return slices.DeleteFunc(open, func(u string) bool { return !slices.Contains(reviewing, u) })
 }

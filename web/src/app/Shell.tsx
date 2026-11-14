@@ -9,7 +9,7 @@ import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { GROUP_TITLES, groupShips, shipRowAge } from './shipList';
 import { useNow } from './useNow';
-import { carryingShip, nextStep, prChips, rowButtons } from './moored';
+import { carryingShip, nextStep, prChips, reviews, rowButtons } from './moored';
 import { MooredActions } from './MooredActions';
 import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
@@ -221,7 +221,7 @@ function OrderRow({ order: o, source, onLaunch, onFollowError }: { order: Order;
       ) : null}
       {merged ? (
         <p class="line">Merged</p>
-      ) : ship?.stack_ready ? (
+      ) : ship?.stack_ready && !reviews(ship) ? (
         <MergeControl ship={ship} onMerged={() => (mergedOrders.value = new Set(mergedOrders.value).add(mergedKey))} onError={setError} />
       ) : null}
       <Failure message={error} />

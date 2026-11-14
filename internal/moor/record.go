@@ -33,8 +33,10 @@ type Record struct {
 	Title   string   `json:"title"`
 	Link    string   `json:"link,omitempty"`
 	PRs     []string `json:"prs"`
-	Resume  string   `json:"resume"`
-	Round   int      `json:"round"`
+	// Reviewing is the subset of PRs the ship reviews and did not open.
+	Reviewing []string `json:"reviewing,omitempty"`
+	Resume    string   `json:"resume"`
+	Round     int      `json:"round"`
 	// Via is who launched the ship when it was not the engineer.
 	Via string `json:"via,omitempty"`
 	// Chat is the ship's chat:<message id> launch key, so a moored ship still holds its message.

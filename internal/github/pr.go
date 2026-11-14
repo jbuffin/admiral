@@ -77,8 +77,8 @@ var actor = "author { __typename login }"
 
 var prFields = fmt.Sprintf(`state author { __typename login } createdAt reviewDecision mergeable statusCheckRollup { state } headRefOid mergeStateStatus number
  baseRef { branchProtectionRule { requiresStrictStatusChecks } rules(first: 20) { nodes { type parameters { ... on RequiredStatusChecksParameters { strictRequiredStatusChecksPolicy } } } } }
- reviews(last: %d) { nodes { id %s state submittedAt body url comments { totalCount } } }
- reviewThreads(last: %d) { nodes { comments(last: %d) { nodes { id %s createdAt body url } } } }
+ reviews(last: %d) { nodes { id commit { oid } %s state submittedAt body url comments { totalCount } } }
+ reviewThreads(last: %d) { nodes { id comments(last: %d) { nodes { id %s createdAt body url } } } }
  comments(last: %d) { nodes { id %s createdAt body url } }
  reviewRequests(first: %d) { nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Team { slug } } } }
  timelineItems(last: %d, itemTypes: [REVIEW_REQUESTED_EVENT]) { nodes { ... on ReviewRequestedEvent { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Team { slug } } } } }
@@ -205,11 +205,15 @@ type prNode struct {
 		gqlComment
 		State       string    `json:"state"`
 		SubmittedAt time.Time `json:"submittedAt"`
-		Comments    struct {
+		Commit      *struct {
+			Oid string `json:"oid"`
+		} `json:"commit"`
+		Comments struct {
 			TotalCount int `json:"totalCount"`
 		} `json:"comments"`
 	}] `json:"reviews"`
 	ReviewThreads nodes[struct {
+		ID       string            `json:"id"`
 		Comments nodes[gqlComment] `json:"comments"`
 	}] `json:"reviewThreads"`
 	Comments       nodes[gqlComment] `json:"comments"`
@@ -262,15 +266,21 @@ func (n *prNode) status() moor.Status {
 		}
 	}
 	for _, r := range n.Reviews.Nodes {
-		st.Reviews = append(st.Reviews, moor.Review{ID: r.ID, Author: r.Author.actor(), State: r.State, SubmittedAt: r.SubmittedAt,
-			Body: cut(r.Body), URL: r.URL, Comments: r.Comments.TotalCount})
+		rv := moor.Review{ID: r.ID, Author: r.Author.actor(), State: r.State, SubmittedAt: r.SubmittedAt,
+			Body: cut(r.Body), URL: r.URL, Comments: r.Comments.TotalCount}
+		if r.Commit != nil {
+			rv.Commit = r.Commit.Oid
+		}
+		st.Reviews = append(st.Reviews, rv)
 	}
 	toComment := func(c gqlComment) moor.Comment {
 		return moor.Comment{ID: c.ID, Author: c.Author.actor(), CreatedAt: c.CreatedAt, Body: cut(c.Body), URL: c.URL}
 	}
 	for _, t := range n.ReviewThreads.Nodes {
 		for _, c := range t.Comments.Nodes {
-			st.ThreadComments = append(st.ThreadComments, toComment(c))
+			tc := toComment(c)
+			tc.Thread = t.ID
+			st.ThreadComments = append(st.ThreadComments, tc)
 		}
 	}
 	for _, c := range n.Comments.Nodes {

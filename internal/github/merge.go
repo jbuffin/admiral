@@ -109,3 +109,46 @@ func (c *Client) merge(ctx context.Context, dir string, extra, args []string, me
 	}
 	return errors.New(msg)
 }
+
+// StackOpenPRs is the open layers of GitHub's stack number in owner/repo, bottom first, as PR URLs on this client's host.
+// found is false when GitHub answers 404 for the stack; any other failed call is an error.
+func (c *Client) StackOpenPRs(ctx context.Context, owner, repo string, number int) ([]string, bool, error) {
+	token, err := c.Token(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	endpoint := fmt.Sprintf("repos/%s/%s/stacks/%d", owner, repo, number)
+	out, stderr, err := c.gh(ctx, []string{"api", "--hostname", c.host, endpoint}, c.tokenVar(), token)
+	if err != nil {
+		switch {
+		case ctx.Err() != nil:
+			return nil, false, ctx.Err()
+		case errors.Is(err, errTimeout), errors.Is(err, exec.ErrNotFound):
+			return nil, false, c.unreachableErr()
+		}
+		msg := strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: ")
+		if strings.Contains(msg, "HTTP 404") {
+			return nil, false, nil
+		}
+		if msg == "" {
+			msg = "gh could not read the stack"
+		}
+		return nil, false, errors.New("stack lookup failed: " + msg)
+	}
+	var body struct {
+		PullRequests []struct {
+			Number int    `json:"number"`
+			State  string `json:"state"`
+		} `json:"pull_requests"`
+	}
+	if json.Unmarshal([]byte(out), &body) != nil || len(body.PullRequests) == 0 {
+		return nil, false, errors.New("stack lookup failed: GitHub's answer was not understood")
+	}
+	var urls []string
+	for _, p := range body.PullRequests {
+		if p.State == "open" && p.Number > 0 {
+			urls = append(urls, fmt.Sprintf("https://%s/%s/%s/pull/%d", c.host, owner, repo, p.Number))
+		}
+	}
+	return urls, true, nil
+}

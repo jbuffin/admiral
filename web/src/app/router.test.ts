@@ -212,6 +212,9 @@ describe('the Peek route', () => {
     expect(peekOf('/app/inbox/s-abc/item/q-port')).toEqual({ session: 's-abc', item: 'q-port' });
     expect(peekPath({ session: 's-abc', merge: true })).toBe('/app/inbox/s-abc/merge');
     expect(peekOf('/app/inbox/s-abc/merge')).toEqual({ session: 's-abc', merge: true });
+    expect(peekPath({ session: 's-abc', rereview: true })).toBe('/app/inbox/s-abc/rereview');
+    expect(peekOf('/app/inbox/s-abc/rereview')).toEqual({ session: 's-abc', rereview: true });
+    expect(peekOf('/app/inbox/s-abc/rereview/x')).toBeNull();
     expect(peekOf('/app/inbox/s-abc/item/q-port/')).toEqual({ session: 's-abc', item: 'q-port' });
   });
 
