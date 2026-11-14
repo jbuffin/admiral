@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { MooredPR, Ship } from './api';
-import { actingWhile, chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs, reviewMark, reviewStackBar } from './prTab';
+import type { MooredPR, Ship, StackShape } from './api';
+import { actingWhile, chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackedPRs, reviewMark, reviewStackBar, mergeFor, stackBarAction, stackBarLine, tabOrder } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -190,16 +190,117 @@ describe('defaultPR', () => {
   });
 });
 
-describe('stackBarText', () => {
-  it('says how many PRs are stacked, bottom to top', () => {
-    expect(stackBarText(2, true)).toBe('Stacked on GitHub · 2 PRs, bottom to top.');
-    expect(stackBarText(3, true)).toBe('Stacked on GitHub · 3 PRs, bottom to top.');
+const shape = (kind: StackShape['shape'], nums: number[], stack_number?: number): StackShape => ({ shape: kind, prs: nums.map(URL), ...(stack_number !== undefined && { stack_number }) });
+
+describe('stackBarLine', () => {
+  it('names a stack, its number and its PRs', () => {
+    expect(stackBarLine(shape('stacked', [7, 8], 4))).toBe('Stacked on GitHub · stack #4 · 2 PRs, bottom to top. Merge takes the whole stack.');
+    expect(stackBarLine(shape('stacked', [7, 8, 9], 12))).toBe('Stacked on GitHub · stack #12 · 3 PRs, bottom to top. Merge takes the whole stack.');
   });
 
-  it('is empty with no stack, and with fewer than two PRs to show', () => {
-    expect(stackBarText(2, false)).toBe('');
-    expect(stackBarText(1, true)).toBe('');
-    expect(stackBarText(0, true)).toBe('');
+  it('says chained PRs are not a GitHub stack', () => {
+    expect(stackBarLine(shape('chained', [7, 8]))).toBe('Not a GitHub stack. These 2 PRs build on each other branch by branch. Stacking them lets GitHub merge them together.');
+    expect(stackBarLine(shape('chained', [7, 8, 9]))).toContain('These 3 PRs');
+  });
+
+  it('says a mixed ship is not one chain or stack', () => {
+    expect(stackBarLine(shape('mixed', [7, 8, 9]))).toBe('Not one chain or stack. Merge these PRs on GitHub.');
+  });
+
+  it('has no bar for independent PRs, none, an unread shape, or fewer than two PRs', () => {
+    expect(stackBarLine(shape('independent', [7, 8]))).toBe('');
+    expect(stackBarLine(shape('none', []))).toBe('');
+    expect(stackBarLine(null)).toBe('');
+    expect(stackBarLine(shape('stacked', [7], 4))).toBe('');
+    expect(stackBarLine(shape('mixed', [7]))).toBe('');
+  });
+});
+
+describe('stackBarAction', () => {
+  it('offers Stack on GitHub on a moored ship with chained PRs', () => {
+    expect(stackBarAction(shape('chained', [7, 8]), 'moored')).toBe('stack');
+  });
+
+  it('says to stack after the ship moors while it is underway or needs you', () => {
+    expect(stackBarAction(shape('chained', [7, 8]), 'underway')).toBe('after-moor');
+    expect(stackBarAction(shape('chained', [7, 8]), 'needs_you')).toBe('after-moor');
+  });
+
+  it('offers nothing for any other shape', () => {
+    for (const kind of ['stacked', 'independent', 'mixed', 'none'] as const) expect(stackBarAction(shape(kind, [7, 8], 4), 'moored'), kind).toBe('none');
+    expect(stackBarAction(null, 'moored')).toBe('none');
+  });
+});
+
+describe('mergeFor', () => {
+  const a = ready(7);
+  const b = ready(8);
+  const none = { kind: 'none', note: '' };
+
+  it('shows no Merge for two or more PRs until the shape is read', () => {
+    expect(mergeFor(null, [a, b], a, true)).toEqual(none);
+  });
+
+  it('keeps Merge for a single PR when it is ready, with no shape needed', () => {
+    expect(mergeFor(null, [a], a, true)).toEqual({ kind: 'single', note: '' });
+    expect(mergeFor(shape('independent', [7]), [a], a, true)).toEqual({ kind: 'single', note: '' });
+    expect(mergeFor(null, [a], a, false)).toEqual(none);
+  });
+
+  it('merges a stack whole from the sub-tab of an open PR once the ship is ready', () => {
+    const s = shape('stacked', [7, 8], 4);
+    expect(mergeFor(s, [a, b], a, true)).toEqual({ kind: 'stack', note: '' });
+    expect(mergeFor(s, [a, b], b, true)).toEqual({ kind: 'stack', note: '' });
+    expect(mergeFor(s, [a, b], a, false)).toEqual(none);
+  });
+
+  it('hides a stack Merge on a merged layer\'s sub-tab', () => {
+    const merged = ready(7, { state: 'MERGED' });
+    expect(mergeFor(shape('stacked', [7, 8], 4), [merged, b], merged, true)).toEqual(none);
+    expect(mergeFor(shape('stacked', [7, 8], 4), [merged, b], b, true)).toEqual({ kind: 'stack', note: '' });
+  });
+
+  it('offers no Merge for chained PRs and says to stack them once every open PR is ready', () => {
+    const s = shape('chained', [7, 8]);
+    expect(mergeFor(s, [a, b], a, true)).toEqual({ kind: 'none', note: 'Stack them on GitHub to merge together' });
+    expect(mergeFor(s, [a, b], b, true)).toEqual({ kind: 'none', note: 'Stack them on GitHub to merge together' });
+    expect(mergeFor(s, [a, pr(8)], a, false), 'a PR that is not ready').toEqual(none);
+    expect(mergeFor(s, [ready(7, { state: 'MERGED' }), b], b, true), 'a merged layer does not hold it back').toEqual({ kind: 'none', note: 'Stack them on GitHub to merge together' });
+  });
+
+  it('merges each independent PR alone from its own sub-tab when it is open and ready', () => {
+    const s = shape('independent', [7, 8]);
+    expect(mergeFor(s, [a, b], a, true)).toEqual({ kind: 'pr', note: '' });
+    expect(mergeFor(s, [a, b], b, true)).toEqual({ kind: 'pr', note: '' });
+    expect(mergeFor(s, [a, pr(8)], a, false), 'the other PR being unready leaves this one').toEqual({ kind: 'pr', note: '' });
+    expect(mergeFor(s, [a, pr(8)], pr(8), false)).toEqual(none);
+    expect(mergeFor(s, [ready(7, { state: 'MERGED' }), b], ready(7, { state: 'MERGED' }), true)).toEqual(none);
+  });
+
+  it('offers no Merge for a mixed ship', () => {
+    expect(mergeFor(shape('mixed', [7, 8]), [a, b], a, true)).toEqual(none);
+    expect(mergeFor(shape('none', []), [a, b], a, true)).toEqual(none);
+  });
+});
+
+describe('tabOrder', () => {
+  const carried = [pr(8), pr(7), pr(9)];
+  const urls = (prs: MooredPR[]) => prs.map((p) => p.url);
+
+  it('follows the shape bottom first for a chained or stacked ship', () => {
+    expect(urls(tabOrder(carried, shape('chained', [7, 8, 9]), null))).toEqual([URL(7), URL(8), URL(9)]);
+    expect(urls(tabOrder(carried, shape('stacked', [9, 8, 7], 4), null))).toEqual([URL(9), URL(8), URL(7)]);
+  });
+
+  it('leaves a PR the shape does not name after the ones it does', () => {
+    expect(urls(tabOrder(carried, shape('chained', [7, 8]), null))).toEqual([URL(7), URL(8), URL(9)]);
+  });
+
+  it('keeps the ship\'s order for independent and mixed ships, or orders by the details\' stack', () => {
+    expect(urls(tabOrder(carried, shape('independent', [8, 7, 9]), null))).toEqual([URL(8), URL(7), URL(9)]);
+    expect(urls(tabOrder(carried, shape('mixed', [7, 8, 9]), null))).toEqual([URL(8), URL(7), URL(9)]);
+    const stack = { entries: [{ position: 1, number: 7, url: URL(7), state: 'OPEN', head: 'h7' }, { position: 2, number: 8, url: URL(8), state: 'OPEN', head: 'h8' }] };
+    expect(urls(tabOrder(carried, shape('independent', [8, 7, 9]), stack))).toEqual([URL(7), URL(8), URL(9)]);
   });
 });
 

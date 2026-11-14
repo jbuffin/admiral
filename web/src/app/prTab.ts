@@ -1,4 +1,4 @@
-import type { MooredPR, PRStack, Ship } from './api';
+import type { MooredPR, PRStack, Ship, ShipStatus, StackShape } from './api';
 import { isStackUrl, prChips, type ChipTone } from './moored';
 
 export type DetailTone = ChipTone | 'rev';
@@ -100,3 +100,21 @@ export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined
 
 /** Whether Merge and Don't follow reviews stay locked: a confirm locks them, and a ship that left its mooring is running its wake, so they are free when it moors again. */
 export const actingWhile = (acting: boolean, moored: boolean): boolean => moored && acting;
+
+/** The stack bar's line for the shape the server read, or '' when no bar shows. */
+export const stackBarLine = (_shape: StackShape | null): string => 'TODO';
+
+/** What the bar offers beside its line: Stack on GitHub on a moored ship, the words for a ship still out, or nothing. */
+export const stackBarAction = (_shape: StackShape | null, _status: ShipStatus): 'stack' | 'after-moor' | 'none' => 'TODO' as never;
+
+export interface MergeChoice {
+  kind: 'none' | 'single' | 'stack' | 'pr';
+  /** The line shown where Merge would be when there is none. */
+  note: string;
+}
+
+/** Which Merge the selected sub-tab of a moored ship shows, from the shape the server read; the client never classifies PRs itself. */
+export const mergeFor = (_shape: StackShape | null, _prs: MooredPR[], _current: MooredPR, _stackReady: boolean): MergeChoice => ({ kind: 'single', note: 'TODO' });
+
+/** The sub-tabs' order: the shape's `prs` for a chained or stacked shape, else the details' stack through orderPRs. */
+export const tabOrder = (_carried: MooredPR[], _shape: StackShape | null, _stack: Pick<PRStack, 'entries'> | null | undefined): MooredPR[] => [];

@@ -95,6 +95,12 @@ export interface PRDetail {
   // The command Answer all reviews would send, only when the ship is moored and the whole stack has feedback.
   answer_all?: string;
 }
+/** A ship's PR shape: GET /api/ships/<session>/stack. `prs` is bottom to top for stacked and chained, the ship's own order otherwise. */
+export interface StackShape {
+  shape: 'stacked' | 'chained' | 'independent' | 'mixed' | 'none';
+  stack_number?: number;
+  prs: string[];
+}
 export type ShipStatus = 'needs_you' | 'underway' | 'moored' | 'anchored' | 'sailing_off';
 export interface MooredPR {
   url: string;

@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { addGitHubSource, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, noAnswerAllForUnstackedPRs, noAnswerAllWhenAPRHasNoFeedback, noAnswerReviewOnARunningShip, noAnswerReviewWithoutNewFeedback, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, noWakeWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, stackMismatchInThePRTab, staleMergeTokenInThePRTab, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, moorRefusedWhenThePRClosed, plainReturnSheetStaysPlain, returnToPortCleansUp, returnToPortMoors, stopForGoodEnds, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, reviewedStackIsReReviewedFromPeek, seedReview } from './shell';
+import { addGitHubSource, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, noAnswerAllForUnstackedPRs, noAnswerAllWhenAPRHasNoFeedback, noAnswerReviewOnARunningShip, noAnswerReviewWithoutNewFeedback, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, noWakeWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, stackMismatchInThePRTab, staleMergeTokenInThePRTab, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, moorRefusedWhenThePRClosed, plainReturnSheetStaysPlain, returnToPortCleansUp, returnToPortMoors, stopForGoodEnds, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, reviewedStackIsReReviewedFromPeek, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime, stackLinkFailsInThePRTab } from './shell';
 
 test('a moored ship shows in its own group with chips from the poll, and Don\'t follow reviews and Dismiss take it out', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -66,7 +66,7 @@ test('the PR tab of a ready moored ship shows the PR, Merge and Don\'t follow re
   expect(watch.errors).toEqual([]);
 });
 
-test('the PR tab of a ready stack offers Merge for the whole stack, and one tap runs one gh stack merge', async ({ page, admiral }) => {
+test('the PR tab of chained PRs offers Stack on GitHub, which lists them bottom first and runs one gh stack link, and then Merge takes the whole stack with one gh stack merge', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   addGitHubSource(admiral);
   await admiral.start({ env: mooringEnv(admiral) });
@@ -118,13 +118,51 @@ test('a Merge the server refuses as 403 in the PR tab says Admiral restarted, of
   expect(watch.errors).toEqual([]);
 });
 
-test('PRs that GitHub does not hold as one stack show the refusal of the server in the PR tab and merges nothing', async ({ page, admiral }) => {
+test('PRs that are neither one chain nor a stack show a bar with nothing to press in the PR tab, and nothing merges', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   addGitHubSource(admiral);
   await admiral.start({ env: mooringEnv(admiral) });
   const watch = watchPage(page, admiral.url);
 
   await stackMismatchInThePRTab(page, admiral);
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('a stack link GitHub refuses shows its message in the sheet, and the bar still says Not a GitHub stack', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await stackLinkFailsInThePRTab(page, admiral);
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+});
+
+test('independent PRs show no bar and no Stack on GitHub, and each sub-tab\'s Merge runs one gh pr merge for its own PR while the ship stays moored', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await independentPRsMergeOneAtATime(page, admiral, { phone: false });
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('a running ship carrying two chained PRs says to stack after it moors, with no Stack on GitHub and no Merge', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await chainedRunningShipWaitsToStack(page, admiral);
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

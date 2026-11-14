@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { crewNote, proveJudge, seedAdHocMember, seedCrew } from './crew';
-import { WORK, openPreferences, probeableClaude, addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, seedReviewRequest, chatAnswerFile, chatAsks } from './shell';
+import { WORK, openPreferences, probeableClaude, addGitHubSource, appendLines, HOSTILE, launchShip, line, independentShipPointsPeekToThePRTab, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, seedReviewRequest, chatAnswerFile, chatAsks } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const peekUrl = (session: string) => new RegExp(`/app/inbox/${encodeURIComponent(session)}(\\?|$)`);
@@ -468,6 +468,14 @@ test('a ready stack shows Ready to merge, and Merge in Peek merges the whole sta
   await admiral.start({ env: mooringEnv(admiral) });
 
   await readyStackMergesFromPeek(page, admiral);
+});
+
+test('a ready ship of independent PRs has no Merge in Peek, which points to the PR tab and sends no merge', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+
+  await independentShipPointsPeekToThePRTab(page, admiral);
 });
 
 test('a Merge the server refuses as 403 says Admiral restarted, offers a reload, and merges nothing', async ({ page, admiral }) => {
