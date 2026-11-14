@@ -748,6 +748,40 @@ func TestMergeOfIndependentPRsMergesOneAtATimeAndTheShipStaysMooredUntilTheLast(
 	}
 }
 
+// Independent PRs in two repositories merge one at a time, each by its own URL.
+func TestMergeOfIndependentPRsInTwoRepositoriesMergesEachByItsOwnURL(t *testing.T) {
+	t.Parallel()
+	other := "https://github.com/acme/gadgets/pull/7"
+	w, g := mooring(t, "exit 0")
+	g.defaultMergeMethod("SQUASH")
+	g.independentPRs(layer1, other)
+	g.prReady(layer1)
+	g.prReady(other)
+	w.start()
+	ship := moorPRs(t, w, layer1, other)
+	w.kickMoored()
+	w.in.waitShipsList(t, 20*time.Second, "both PRs read ready", func(l []shipJSON) bool {
+		sh := byName(l)[ship.Name]
+		return len(sh.PRs) == 2 && sh.PRs[0].Ready && sh.PRs[1].Ready
+	})
+
+	for i, pr := range []string{other, layer1} {
+		code, body := w.postMerge(t, ship, map[string]any{"pr": pr})
+		if code != http.StatusAccepted {
+			t.Fatalf("POST merge naming %s = %d, want 202: %s", pr, code, body)
+		}
+		calls := g.mergeCalls()
+		if len(calls) != i+1 {
+			t.Fatalf("merge calls = %v, want %d", calls, i+1)
+		}
+		checkPRMergeArgv(t, calls[i], pr, "squash")
+		w.waitEvent(ship.Session, "merged", i+1)
+	}
+	if n := g.anyStackCalls(); n != 0 {
+		t.Errorf("gh stack calls = %d, want none for independent PRs", n)
+	}
+}
+
 func TestAStackReadsReadyUpToTheHighestLayerWhoseLowerLayersAreReady(t *testing.T) {
 	t.Parallel()
 	w, g := mooring(t, "exit 0")

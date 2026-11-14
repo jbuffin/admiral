@@ -38,10 +38,6 @@ func ReadShape(ctx context.Context, gh GitHub, prs []string) (Shape, error) {
 		details[i] = d
 	}
 	mixed := Shape{Kind: ShapeMixed}
-	if !oneRepo(prs) {
-		return mixed, nil // PR numbers mean nothing across repositories
-	}
-
 	if s, ok := stackedShape(prs, details); ok {
 		return s, nil
 	}
@@ -59,6 +55,9 @@ func ReadShape(ctx context.Context, gh GitHub, prs []string) (Shape, error) {
 	}
 	if independent {
 		return Shape{Kind: ShapeIndependent, PRs: slices.Clone(prs)}, nil
+	}
+	if !oneRepo(prs) {
+		return mixed, nil // branch names chain nothing across repositories
 	}
 
 	// A chain: the bottom is on the default branch and each next PR is based on the head of the one below.
