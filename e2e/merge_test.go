@@ -41,6 +41,15 @@ func (c mergeCall) has(arg string) bool {
 func (g *fakeGH) mergeCalls() []mergeCall {
 	g.t.Helper()
 	dirs, _ := filepath.Glob(filepath.Join(g.dir, "calls", "call.*"))
+	// The folder names end in a random suffix, so the order of the calls is the order they were written.
+	modTime := func(d string) time.Time {
+		fi, err := os.Stat(filepath.Join(d, "argv"))
+		if err != nil {
+			return time.Time{}
+		}
+		return fi.ModTime()
+	}
+	sort.SliceStable(dirs, func(i, j int) bool { return modTime(dirs[i]).Before(modTime(dirs[j])) })
 	var out []mergeCall
 	for _, d := range dirs {
 		raw, err := os.ReadFile(filepath.Join(d, "argv"))
