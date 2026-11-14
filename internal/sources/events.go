@@ -60,6 +60,9 @@ func (r *runner) Events() (kinds []EventKind, ok bool) {
 	return slices.Clone(r.catalog), r.hasCatalog
 }
 
+// retiredViewKind is an event kind Admiral no longer routes; a plugin may still list it.
+const retiredViewKind = "new_in_view"
+
 // pullCatalog asks the source for events.catalog; any failure leaves it with no catalog.
 func (r *runner) pullCatalog(ctx context.Context, p conn) {
 	res, err := p.call(ctx, "events.catalog", map[string]any{}, callTimeout)
@@ -75,6 +78,7 @@ func (r *runner) pullCatalog(ctx context.Context, p conn) {
 			}
 		}
 	}
+	kinds = slices.DeleteFunc(kinds, func(k EventKind) bool { return k.Kind == retiredViewKind })
 	var rpc *rpcError
 	if err != nil && !(errors.As(err, &rpc) && rpc.Code == codeMethodNotFound) {
 		r.logf("events.catalog failed: %v", err)
