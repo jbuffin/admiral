@@ -62,6 +62,8 @@ func decideIn(mod func(*routines.DecideInput)) routines.DecideInput {
 		Limits:  standing.PresetLimits(standing.Home),
 		Top:     standing.A5,
 		Now:     thursday,
+		// a Commodore launch is the only one that reaches A5
+		Commodore: true,
 	}
 	if mod != nil {
 		mod(&in)

@@ -93,9 +93,9 @@ type Request struct {
 	WorkerLaunched bool `json:"-"`
 	// Restricted launches the ship on the restricted profile at this level; empty is a normal launch.
 	Restricted standing.Restricted `json:"-"`
-	// EventText is the raw event; a restricted ship reads it from a file, never from its prompt.
+	// EventText is the raw event; an event ship reads it from a file, never from its prompt.
 	EventText string `json:"-"`
-	// Template is the routine's launch text, the start of a restricted ship's prompt.
+	// Template is the routine's launch text, the start of an event ship's prompt.
 	Template string `json:"-"`
 }
 
