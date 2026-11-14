@@ -34,9 +34,9 @@ function useReReview(ship: Ship, url: string, onDone: () => void) {
   return { busy, error, send };
 }
 
-const Command = ({ url }: { url: string }) => (
+const Command = ({ name, url }: { name: string; url: string }) => (
   <p class="line">
-    Wakes the ship under the same name with <code class="rr-cmd">/commodore {url}</code>
+    Wakes {name} under the same name with <code class="rr-cmd">/commodore {url}</code>
   </p>
 );
 
@@ -47,7 +47,7 @@ export function ReReviewSheet({ ship, prUrl, onClose }: { ship: Ship; prUrl?: st
   return (
     <Sheet label={label} kind="launch-backdrop stop-backdrop" onClose={() => !rr.busy && onClose()}>
       <p class="line">{line}</p>
-      <Command url={url} />
+      <Command name={ship.name} url={url} />
       {rr.error ? (
         <p class="launch-error" role="alert">
           {rr.error}
@@ -72,7 +72,7 @@ export function ReReviewBody({ ship, fold }: { ship: Ship; fold: (text: string) 
   return (
     <div class="peek-form">
       <p class="line">{line}</p>
-      <Command url={url} />
+      <Command name={ship.name} url={url} />
       <div class="peek-merge">
         <button type="button" class="btn primary" disabled={rr.busy} onClick={() => void rr.send()}>
           {label}
