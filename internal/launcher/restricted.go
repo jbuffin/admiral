@@ -299,7 +299,13 @@ func ignoreSubmodules(config string) error {
 func safeGit(dir string, args ...string) (string, error) {
 	pre := []string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "diff.ignoreSubmodules=all", "-c", "core.hooksPath=/dev/null"}
 	cmd := exec.Command("git", append(pre, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_OPTIONAL_LOCKS=0")
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_OPTIONAL_LOCKS=0")
 	out, err := cmd.Output()
 	return string(out), err
 }
@@ -321,8 +327,8 @@ func gitmodulesID(listing string) string {
 // checkClonedSubmodules refuses a kept clone holding a gitlink or a .gitmodules other than dir's own: git
 // treats the pair as a submodule, enters whatever git directory a ship put under it, and runs its config.
 func checkClonedSubmodules(checkout, dir string) error {
-	if _, err := os.Lstat(filepath.Join(checkout, ".git")); err != nil {
-		return nil
+	if fi, err := os.Lstat(filepath.Join(checkout, ".git")); err != nil || !fi.IsDir() {
+		return errors.New("the kept clone's .git is not a directory")
 	}
 	want, err := safeGit(dir, "ls-tree", "HEAD", "--", ".gitmodules")
 	if err != nil {
@@ -339,8 +345,9 @@ func checkClonedSubmodules(checkout, dir string) error {
 	}
 	for _, listing := range []string{index, head} {
 		for _, line := range strings.Split(listing, "\n") {
-			if strings.HasPrefix(line, "160000 ") {
-				return errors.New("the kept clone holds a gitlink, which git would treat as a submodule")
+			// git calls any entry whose mode masks to 0160000 a gitlink and reads the index mode raw, so only the three plain modes pass.
+			if mode, _, ok := strings.Cut(line, " "); ok && mode != "100644" && mode != "100755" && mode != "120000" {
+				return fmt.Errorf("the kept clone holds an entry of mode %s, which git may treat as a submodule", mode)
 			}
 		}
 		if id := gitmodulesID(listing); id != wantID {

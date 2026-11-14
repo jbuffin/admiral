@@ -451,8 +451,14 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			delete(env, k)
 			unset = append(unset, k)
 		}
-		// A nested repo a ship plants can name its own fsmonitor; this reaches the git that Claude Code runs and any git it starts in a submodule.
-		n, _ := strconv.Atoi(env["GIT_CONFIG_COUNT"])
+		// Defence in depth against a planted nested repo's core.fsmonitor only; it does not stop filter drivers, so the reuse check stays the guard.
+		// GIT_CONFIG_PARAMETERS is dropped because a fleet value there would override these entries.
+		delete(env, "GIT_CONFIG_PARAMETERS")
+		unset = append(unset, "GIT_CONFIG_PARAMETERS")
+		n, err := strconv.Atoi(env["GIT_CONFIG_COUNT"])
+		if err != nil || n < 0 {
+			n = 0
+		}
 		env["GIT_CONFIG_KEY_"+strconv.Itoa(n)], env["GIT_CONFIG_VALUE_"+strconv.Itoa(n)] = "core.fsmonitor", "false"
 		env["GIT_CONFIG_COUNT"] = strconv.Itoa(n + 1)
 	}

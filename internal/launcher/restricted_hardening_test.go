@@ -1,6 +1,9 @@
 package launcher
 
 import (
+	"bytes"
+	"crypto/sha1"
+	"encoding/binary"
 	"errors"
 	"os"
 	"os/exec"
@@ -249,10 +252,8 @@ func TestARelaunchOfARestrictedShipSucceedsInItsKeptCloneWithoutMakingANewOne(t 
 	req, fc := p.restricted(standing.DraftFix)
 	fc.t = t
 	req.Session, req.Name = "kelpie", "Kelpie"
-	kept := filepath.Join(p.home, "checkouts", "kelpie")
-	if err := os.MkdirAll(kept, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	commitRepo(t, p.work)
+	kept := keptDraftFixClone(t, p, p.work, "kelpie")
 	out, err := p.l.Launch(req)
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -666,5 +667,104 @@ func TestARelaunchAcceptsADirsOwnGitmodulesThatTheShipLeftAlone(t *testing.T) {
 	keptDraftFixClone(t, p, p.work, "kelpie")
 	if _, err := relaunchDraftFix(t, p, p.work, "kelpie"); err != nil {
 		t.Errorf("a relaunch over the Dir's own .gitmodules was refused: %v", err)
+	}
+}
+
+// patchIndexMode rewrites the raw mode of path's entry in a version 2 index and fixes the checksum, which git does not canonicalise.
+func patchIndexMode(t *testing.T, clone, path string, mode uint32) {
+	t.Helper()
+	file := filepath.Join(clone, ".git", "index")
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binary.BigEndian.Uint32(b[4:8]) != 2 {
+		t.Skip("index is not version 2")
+	}
+	n, off, found := int(binary.BigEndian.Uint32(b[8:12])), 12, false
+	for i := 0; i < n; i++ {
+		l := int(binary.BigEndian.Uint16(b[off+60:off+62]) & 0xfff)
+		name := b[off+62 : off+62+l]
+		if string(name) == path {
+			binary.BigEndian.PutUint32(b[off+24:off+28], mode)
+			found = true
+		}
+		off += (62 + l + 8) &^ 7
+	}
+	if !found {
+		t.Fatalf("no index entry %s", path)
+	}
+	sum := sha1.Sum(b[:len(b)-20])
+	copy(b[len(b)-20:], sum[:])
+	if err := os.WriteFile(file, bytes.Clone(b), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestARelaunchRefusesAKeptCloneWhoseIndexHoldsAGitlinkWithAnOddMode(t *testing.T) {
+	for _, mode := range []uint32{0o160644, 0o167777} {
+		p := newPinRig(t, nil)
+		commitRepo(t, p.work)
+		clone := keptDraftFixClone(t, p, p.work, "kelpie")
+		plantNestedRepo(t, clone, filepath.Join(t.TempDir(), "ran"))
+		patchIndexMode(t, clone, "sub", mode)
+		if _, err := relaunchDraftFix(t, p, p.work, "kelpie"); err == nil {
+			t.Errorf("a relaunch went ahead over an index entry of mode %o", mode)
+		}
+	}
+}
+
+func TestARelaunchRefusesAKeptCloneWhoseGitIsNotADirectory(t *testing.T) {
+	for _, kind := range []string{"missing", "gitfile", "link"} {
+		t.Run(kind, func(t *testing.T) {
+			p := newPinRig(t, nil)
+			commitRepo(t, p.work)
+			clone := keptDraftFixClone(t, p, p.work, "kelpie")
+			real := filepath.Join(t.TempDir(), "moved")
+			if err := os.Rename(filepath.Join(clone, ".git"), real); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "gitfile":
+				os.WriteFile(filepath.Join(clone, ".git"), []byte("gitdir: "+real+"\n"), 0o644)
+			case "link":
+				os.Symlink(real, filepath.Join(clone, ".git"))
+			}
+			if _, err := relaunchDraftFix(t, p, p.work, "kelpie"); err == nil {
+				t.Error("a relaunch went ahead without a real .git directory")
+			}
+		})
+	}
+}
+
+func TestTheChecksGitIgnoresGitVariablesInAdmiralsEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	commitRepo(t, dir)
+	other := t.TempDir()
+	commitRepo(t, other)
+	if err := os.WriteFile(filepath.Join(other, "extra"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, other, "add", "extra")
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(other, ".git", "index"))
+	out, err := safeGit(dir, "ls-files")
+	if err != nil || strings.Contains(out, "extra") {
+		t.Errorf("safeGit read another repository: %q %v", out, err)
+	}
+}
+
+func TestAShipsGitConfigEnvironmentSurvivesAnOddFleetValue(t *testing.T) {
+	for _, tc := range []struct{ name, count string }{{"negative", "-1"}, {"text", "lots"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newPinRig(t, map[string]string{"GIT_CONFIG_COUNT": tc.count, "GIT_CONFIG_PARAMETERS": "'core.fsmonitor=true'"})
+			_, _, _, env := p.mustRestricted(t, standing.DraftFix)
+			if env["GIT_CONFIG_COUNT"] != "1" || env["GIT_CONFIG_KEY_0"] != "core.fsmonitor" || env["GIT_CONFIG_VALUE_0"] != "false" {
+				t.Errorf("git config env = %v", env)
+			}
+			if v, ok := env["GIT_CONFIG_PARAMETERS"]; ok {
+				t.Errorf("GIT_CONFIG_PARAMETERS = %q, want it dropped", v)
+			}
+		})
 	}
 }
