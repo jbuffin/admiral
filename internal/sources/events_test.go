@@ -376,6 +376,60 @@ func TestAReviewRequestStampedBeforeThePollByASlowGitHubClockIsStillDeliveredOnc
 	}
 }
 
+// assignedBy is an item whose timeline has one assignment of assignee by assigner.
+func assignedBy(repo string, n int, title, author, assigner, assignee string) string {
+	at := soon
+	if n < 6 {
+		at = "2020-01-01T00:00:00Z"
+	}
+	item := authored(repo, n, title, author)
+	return strings.TrimSuffix(item, "}") + fmt.Sprintf(`,"timelineItems":{"nodes":[{"__typename":"AssignedEvent","createdAt":%q,"actor":{"login":%q},"assignee":{"login":%q}}]}}`, at, assigner, assignee)
+}
+
+func TestAnAssignedEventNamesTheAssignerAsActorAndTheOpenerAsAuthor(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	sources := `"gh":{"plugin":"github","fleet":"alpha","settings":{"views":[{"id":"mine","title":"Mine","query":"is:open Q1"}]}}`
+	f := newServiceFixture(t, ghConfig(`"alpha":{"name":"Alpha","claude":{}}`, sources))
+	s := &sink{}
+	f.Svc.Sup.OnEvent = func(_ string, ev Event) { s.add(ev) }
+	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
+	assigning := func(withSecond bool) {
+		nodes := assignedBy("acme/api", 5, "five", "amy", "bob", "eng")
+		if withSecond {
+			nodes += "," + assignedBy("acme/api", 6, "six", "amy", "bob", "eng")
+		}
+		g.write("search/as.match", "assignee:@me")
+		g.write("search/as.json", `{"data":{"search":{"nodes":[`+nodes+`]}}}`)
+	}
+	g.write("viewer", "eng\n")
+	assigning(false)
+	f.startSources()
+	f.waitView("gh", "item 1", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
+	time.Sleep(200 * time.Millisecond)
+	assigning(true)
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	var got []Event
+	deadline := time.Now().Add(5 * time.Second)
+	for len(got) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		s.mu.Lock()
+		for _, ev := range s.got {
+			if ev.Kind == "assigned" {
+				got = append(got, ev)
+			}
+		}
+		s.mu.Unlock()
+	}
+	if len(got) != 1 {
+		t.Fatalf("%d assigned events, want exactly the one for issue 6: %+v", len(got), s.got)
+	}
+	ev := got[0]
+	if !strings.HasSuffix(ev.Ref, "/issues/6") || ev.Actor != "bob" || ev.Author != "amy" || ev.Viewer != "eng" || !ev.Verified {
+		t.Errorf("event = %+v, want assigned for 6 by bob on amy's item, viewer eng, verified", ev)
+	}
+}
+
 func TestAMentionOfTheEngineerOnTheirOwnItemNamesNoActorSoItIsNotTheirs(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
