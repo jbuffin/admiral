@@ -172,6 +172,7 @@ test('the Standing orders tab shows the Work Limits as sentences, keeps a Check 
   await spend.press('ControlOrMeta+a');
   await spend.pressSequentially('0.3');
   await expect(spend).toHaveValue('0.3');
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).not.toHaveAttribute('aria-busy', 'true');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(async () => sentenceFor(await orders(admiral, 'zulu'), 'spend.lookout_call_usd')).not.toBe(spendBefore);
   expect(sentenceFor(await orders(admiral, 'zulu'), 'spend.lookout_call_usd')).toContain('0.3');
@@ -213,6 +214,7 @@ test('the Standing orders tab shows the Work Limits as sentences, keeps a Check 
   await expect(filing.getByText(/The Limits were saved, but the Checks and Guidance weren't/)).toBeVisible();
   expect(sentenceFor(await orders(admiral, 'zulu'), 'wall_clock_minutes')).toMatch(/1,?440 minutes/);
   expect((await orders(admiral, 'zulu')).checks).toEqual(['Run make check before any PR.']);
+  await expect(filing.getByRole('button', { name: 'Confirm', exact: true })).not.toHaveAttribute('aria-busy', 'true');
   await filing.getByRole('button', { name: 'Confirm', exact: true }).click();
   await expect.poll(async () => (await orders(admiral, 'zulu')).checks).toEqual(['Run make check before any PR.', 'Ask before changing CI or releases.']);
   expect(fleetPuts).toBe(1);
