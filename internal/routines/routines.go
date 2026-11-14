@@ -460,6 +460,9 @@ type Trigger struct {
 	ProposalOf string    `json:"proposal_of,omitempty"`
 	Undone     bool      `json:"undone,omitempty"`
 	UndoneAt   time.Time `json:"undone_at,omitzero"`
+	// Promoted and PromotedShip say a normal ship was started from this record's work.
+	Promoted     bool   `json:"promoted,omitempty"`
+	PromotedShip string `json:"promoted_ship,omitempty"`
 }
 
 // logLine is one line of triggers.jsonl: a record, or a mark that an earlier launch was undone or its ship ended failed.
@@ -467,6 +470,8 @@ type logLine struct {
 	Trigger
 	UndoOf string `json:"undo_of,omitempty"`
 	FailOf string `json:"fail_of,omitempty"`
+	// PromoteOf is the launch record a promoted ship started from; Trigger.Ship of the mark names that ship.
+	PromoteOf string `json:"promote_of,omitempty"`
 }
 
 func (s *Store) appendLine(fleet string, l logLine) error {

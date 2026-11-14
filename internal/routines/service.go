@@ -13,6 +13,7 @@ import (
 	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/judge"
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
 )
 
@@ -26,6 +27,8 @@ type Service struct {
 	Judge  func(context.Context, judge.Choice, judge.Call) (judge.Reply, error)
 	// Stop stops a ship by session name and returns ErrShipNotListed when the host does not list it.
 	Stop func(session string) error
+	// Launch starts a ship, as ships.Service.Launch does; Promote starts its normal ship through it.
+	Launch func(ctx context.Context, req launcher.Request) (ShipRef, *launcher.Error)
 
 	undoMu sync.Mutex
 
@@ -54,6 +57,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/mute", s.serveMute)
 	mux.HandleFunc("GET /api/fleets/{key}/routines/{id}/runs/{trigger}", s.serveRun)
 	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/runs/{trigger}/undo", s.serveUndo)
+	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/runs/{trigger}/promote", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotImplemented, "promote is not implemented")
+	})
 	mux.HandleFunc("GET /api/fleets/{key}/hold-fire", s.serveFleetHold)
 	mux.HandleFunc("POST /api/fleets/{key}/hold-fire/on", s.serveSetHold(true, false))
 	mux.HandleFunc("POST /api/fleets/{key}/hold-fire/off", s.serveSetHold(false, false))
