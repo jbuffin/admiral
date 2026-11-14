@@ -1082,7 +1082,7 @@ export async function expectChipTone(page: Page, chip: Locator, tone: 'ok' | 'er
 
 const HOUR = 3_600_000;
 const ago = (ms: number) => new Date(Date.now() - ms);
-const prSection = (panel: Locator, name: string) => panel.locator('section.pr-section').filter({ has: panel.getByRole('heading', { name, exact: true }) });
+const prSection = (panel: Locator, name: string) => panel.locator('section.pr-section').filter({ has: panel.page().getByRole('heading', { name, exact: true }) });
 
 /** The top PR's detail once its checks failed and people have reviewed and talked: every section has something to show. */
 function prSectionsFixture(): PRSections {
@@ -1118,7 +1118,7 @@ async function expectPRSections(page: Page, panel: Locator, subtab: Locator, opt
   await expect(subtab).toHaveAttribute('aria-selected', 'true');
   const checks = prSection(panel, 'Checks');
   const description = prSection(panel, 'Description');
-  const reviewers = panel.locator('section.pr-section').filter({ has: panel.locator('.reviewers') });
+  const reviewers = panel.locator('section.pr-section').filter({ has: panel.page().locator('.reviewers') });
   const conversation = prSection(panel, 'Conversation');
   const tall = async (l: Locator, what: string) => expect((await l.boundingBox())!.height, what).toBeGreaterThanOrEqual(44);
 
@@ -1314,13 +1314,13 @@ export async function prTabOfARunningStack(page: Page, a: Admiral, opts: { phone
   await expect(panel).toContainText('feat/limiter-cache → feat/limiter-core');
   await expect(panel).toContainText('Draft');
   await expect(panel.getByRole('link', { name: 'Open on GitHub' })).toHaveAttribute('href', `${PR_BASE}/8`);
-  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expectChipTone(page, panel.getByText(chip, { exact: true }), 'ok');
+  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expectChipTone(page, panel.locator('.pr-status').getByText(chip, { exact: true }), 'ok');
   await tabs.nth(0).tap();
   await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
   await expect(panel.getByRole('heading', { name: 'Add the limiter' })).toBeVisible();
   await expect(panel).toContainText('feat/limiter-core → main');
   await expect(panel).toContainText('Merged');
-  await expect(panel.getByText('Approved', { exact: true })).toHaveCount(0);
+  await expect(panel.locator('.pr-status').getByText('Approved', { exact: true })).toHaveCount(0);
 
   // A merged PR keeps its sections, with a muted line where it has nothing to show.
   await expect(prSection(panel, 'Checks')).toContainText('All checks passed');
@@ -1335,8 +1335,8 @@ export async function prTabOfARunningStack(page: Page, a: Admiral, opts: { phone
   expect((await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' })).status).toBe(202);
   await expect(summary).toHaveText(/1 PR · #8 changes requested/);
   await tabs.nth(1).tap();
-  for (const chip of ['Changes requested', 'Checks failing', 'Conflicts']) await expectChipTone(page, panel.getByText(chip, { exact: true }), 'err');
-  await expect(panel.getByText('Approved', { exact: true })).toHaveCount(0);
+  for (const chip of ['Changes requested', 'Checks failing', 'Conflicts']) await expectChipTone(page, panel.locator('.pr-status').getByText(chip, { exact: true }), 'err');
+  await expect(panel.locator('.pr-status').getByText('Approved', { exact: true })).toHaveCount(0);
 
   // Every 30s the open tab reads GitHub again; a tab left behind does not.
   detail8('Cache tokens, renamed', prSectionsFixture());
