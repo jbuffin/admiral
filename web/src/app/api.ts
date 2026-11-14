@@ -163,7 +163,7 @@ export interface ConversationPage {
   more: boolean;
 }
 
-export const API = '/api/v1';
+const API = '/api/v1';
 
 /** A ship's URL, or its crew boat's when one is named. */
 export const shipUrl = (session: string, crew?: string) => `${API}/ships/${encodeURIComponent(session)}${crew === undefined ? '' : `/crew/${encodeURIComponent(crew)}`}`;

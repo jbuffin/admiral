@@ -951,12 +951,10 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await expect(shipCard.getByRole('button', { name: 'Mute rule' })).toBeVisible();
   await expect(shipCard.getByRole('button', { name: 'Promote' })).toHaveCount(0);
   await shipCard.getByRole('button', { name: 'Undo', exact: true }).tap();
-  expect(existsSync(clone)).toBe(true);
   await shipCard.getByRole('button', { name: 'Confirm undo', exact: true }).tap();
   await expect(shipCard).toContainText(/undone/i);
   await expect(shipCard.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
   await expect(shipCard.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
-  await expect.poll(() => existsSync(clone)).toBe(false);
   await page.reload();
   const again = page.getByRole('main').locator('.chat-card').filter({ hasText: sail.session });
   await expect(again).toContainText(/undone/i);

@@ -1,83 +1,46 @@
-import type { ComponentChildren } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { activeFleet, fleetPaint, fleetSearch } from "./fleets";
-import { probeChatSession, type Fleet } from "./api";
-import { ships, shipsLink } from "./shipsLink";
-import {
-  fetchLaunchUndone,
-  launchCardView,
-  stopShip,
-  undoLaunch,
-} from "./launchCard";
-import { useBridgeTerminal } from "../useBridgeTerminal";
-import { KEYS, touchKeyboard } from "../keys";
-import {
-  commitmentCardView,
-  needsTerminal,
-  resetLabel,
-  threadOf,
-  youAnswered,
-  type ThreadItem,
-} from "./chat";
-import { Row, useInboxQueue, usePeekEntry, useStacked } from "./InboxPanel";
-import { MuteRule } from "./MuteRule";
-import { Peek } from "./Peek";
-import {
-  go,
-  loc,
-  chatPeekOf,
-  chatPeekPath,
-  chatSettingsPath,
-  chatTerminalOf,
-  chatTerminalPath,
-} from "./router";
-import { renderMarkdown } from "./markdown";
-import { PeekQuestions } from "./PeekQuestions";
-import { useChat } from "./useChat";
-import { MessageField } from "./Composer";
-import { workingLabel } from "./turns";
-import type { Surface } from "./surfaces";
-import { blankDraft } from "../questions";
+import type { ComponentChildren } from 'preact';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { activeFleet, fleetPaint, fleetSearch } from './fleets';
+import { probeChatSession, type Fleet } from './api';
+import { ships, shipsLink } from './shipsLink';
+import { fetchLaunchUndone, launchCardView, stopShip, undoLaunch } from './launchCard';
+import { useBridgeTerminal } from '../useBridgeTerminal';
+import { KEYS, touchKeyboard } from '../keys';
+import { commitmentCardView, needsTerminal, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
+import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
+import { MuteRule } from './MuteRule';
+import { Peek } from './Peek';
+import { go, loc, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
+import { renderMarkdown } from './markdown';
+import { PeekQuestions } from './PeekQuestions';
+import { useChat } from './useChat';
+import { MessageField } from './Composer';
+import { workingLabel } from './turns';
+import type { Surface } from './surfaces';
+import { blankDraft } from '../questions';
 
 type Chat = ReturnType<typeof useChat>;
 
-function QuestionCard({
-  item,
-  chat,
-}: {
-  item: Extract<ThreadItem, { kind: "question" }>;
-  chat: Chat;
-}) {
+function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'question' }>; chat: Chat }) {
   const { card } = item;
-  if (item.state === "open") {
+  if (item.state === 'open') {
     const draft = chat.drafts[card.id] ?? blankDraft();
     return (
       <div class="convo-card chat-card">
         <p class="chat-card-eyebrow">AdmiralBot asks</p>
-        <PeekQuestions
-          questions={card.question?.questions ?? []}
-          draft={draft}
-          edit={(fn) => chat.editDraft(card.id, fn)}
-          onSend={(b) => void chat.answer(card.id, b)}
-        />
+        <PeekQuestions questions={card.question?.questions ?? []} draft={draft} edit={(fn) => chat.editDraft(card.id, fn)} onSend={(b) => void chat.answer(card.id, b)} />
       </div>
     );
   }
   return (
     <div class="convo-card chat-card quiet">
       <p class="convo-card-title">{card.title}</p>
-      <p class="line">{item.answer ? youAnswered(item.answer) : "Withdrawn"}</p>
+      <p class="line">{item.answer ? youAnswered(item.answer) : 'Withdrawn'}</p>
     </div>
   );
 }
 
-function CommitmentCard({
-  item,
-  fleet,
-}: {
-  item: Extract<ThreadItem, { kind: "commitment" }>;
-  fleet: string;
-}) {
+function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'commitment' }>; fleet: string }) {
   const v = commitmentCardView(item, fleet);
   return (
     <div class="convo-card chat-card">
@@ -89,15 +52,7 @@ function CommitmentCard({
           class="btn"
           href={v.shipHref + fleetSearch.value}
           onClick={(e) => {
-            if (
-              e.defaultPrevented ||
-              e.button !== 0 ||
-              e.metaKey ||
-              e.ctrlKey ||
-              e.shiftKey ||
-              e.altKey
-            )
-              return;
+            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
             go(v.shipHref, fleetSearch.value);
           }}
@@ -110,15 +65,7 @@ function CommitmentCard({
           class="btn"
           href={v.settingsHref + fleetSearch.value}
           onClick={(e) => {
-            if (
-              e.defaultPrevented ||
-              e.button !== 0 ||
-              e.metaKey ||
-              e.ctrlKey ||
-              e.shiftKey ||
-              e.altKey
-            )
-              return;
+            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
             go(v.settingsHref, fleetSearch.value);
           }}
@@ -130,49 +77,31 @@ function CommitmentCard({
   );
 }
 
-function EventCardView({
-  item,
-  fleet,
-}: {
-  item: Extract<ThreadItem, { kind: "event" }>;
-  fleet: string;
-}) {
+function EventCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'event' }>; fleet: string }) {
   const c = item.card;
   return (
     <div class="convo-card chat-card">
-      <p class="chat-card-eyebrow">{c.routine_name ?? "Routine"} · Untrusted</p>
+      <p class="chat-card-eyebrow">
+        {c.routine_name ?? 'Routine'} · Untrusted
+      </p>
       <p class="line">{item.text}</p>
       {c.sender ? <p class="line">From {c.sender}</p> : null}
       {c.tier ? <p class="line">Tier {c.tier}</p> : null}
-      {c.link?.startsWith("https://") ? (
+      {c.link?.startsWith('https://') ? (
         <a href={c.link} target="_blank" rel="noopener noreferrer">
           {c.link} ↗
         </a>
       ) : null}
-      <MuteRule
-        target={{
-          fleet,
-          routine: c.routine,
-          sender: c.sender,
-          dedupe_key: c.dedupe_key,
-          mute_by: c.mute_by,
-        }}
-      />
+      <MuteRule target={{ fleet, routine: c.routine, sender: c.sender, dedupe_key: c.dedupe_key, mute_by: c.mute_by }} />
     </div>
   );
 }
 
-function LaunchCardView({
-  item,
-  fleet,
-}: {
-  item: Extract<ThreadItem, { kind: "launch" }>;
-  fleet: string;
-}) {
+function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'launch' }>; fleet: string }) {
   const c = item.card;
   const [undone, setUndone] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [state, setState] = useState({ busy: false, error: "" });
+  const [state, setState] = useState({ busy: false, error: '' });
   useEffect(() => {
     let live = true;
     void fetchLaunchUndone(fleet, c.routine, item.id).then((u) => {
@@ -183,13 +112,10 @@ function LaunchCardView({
     };
   }, [fleet, c.routine, item.id]);
   const v = launchCardView(item, { ships: ships.value, undone });
-  const run = async (
-    act: () => ReturnType<typeof stopShip>,
-    then?: () => void,
-  ) => {
-    setState({ busy: true, error: "" });
+  const run = async (act: () => ReturnType<typeof stopShip>, then?: () => void) => {
+    setState({ busy: true, error: '' });
     const r = await act();
-    setState({ busy: false, error: r.ok ? "" : r.error });
+    setState({ busy: false, error: r.ok ? '' : r.error });
     if (r.ok) then?.();
   };
   return (
@@ -198,7 +124,7 @@ function LaunchCardView({
       <p class="line">{v.text}</p>
       {c.sender ? <p class="line">From {c.sender}</p> : null}
       {c.tier ? <p class="line">Tier {c.tier}</p> : null}
-      {c.link?.startsWith("https://") ? (
+      {c.link?.startsWith('https://') ? (
         <a href={c.link} target="_blank" rel="noopener noreferrer">
           {c.link} ↗
         </a>
@@ -207,107 +133,46 @@ function LaunchCardView({
         <a
           href={v.shipHref + fleetSearch.value}
           onClick={(e) => {
-            if (
-              e.defaultPrevented ||
-              e.button !== 0 ||
-              e.metaKey ||
-              e.ctrlKey ||
-              e.shiftKey ||
-              e.altKey
-            )
-              return;
+            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
             go(v.shipHref, fleetSearch.value);
           }}
         >
           {v.ship}
         </a>
-        {v.status ? ` · ${v.status}` : ""}
+        {v.status ? ` · ${v.status}` : ''}
       </p>
       {v.notice ? <p class="line">{v.notice}</p> : null}
       {confirming ? (
         <div class="confirm" role="group" aria-label="Undo">
           <p class="line">{v.undoConfirm}</p>
-          <button
-            type="button"
-            class="btn danger"
-            disabled={state.busy}
-            onClick={() =>
-              void run(
-                () => undoLaunch(fleet, c.routine, item.id),
-                () => {
-                  setUndone(true);
-                  setConfirming(false);
-                },
-              )
-            }
-          >
+          <button type="button" class="btn danger" disabled={state.busy} onClick={() => void run(() => undoLaunch(fleet, c.routine, item.id), () => { setUndone(true); setConfirming(false); })}>
             Confirm undo
           </button>
-          <button
-            type="button"
-            class="btn"
-            disabled={state.busy}
-            onClick={() => setConfirming(false)}
-          >
+          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming(false)}>
             Cancel
           </button>
         </div>
-      ) : (
-        <div class="peek-actions">
-          {v.actions.stop ? (
-            <button
-              type="button"
-              class="btn"
-              disabled={state.busy}
-              onClick={() => void run(() => stopShip(c.ship))}
-            >
-              Stop
-            </button>
-          ) : null}
-          {v.actions.undo ? (
-            <button
-              type="button"
-              class="btn"
-              disabled={state.busy}
-              onClick={() => setConfirming(true)}
-            >
-              Undo
-            </button>
-          ) : null}
-        </div>
-      )}
-      {state.error ? (
-        <p class="inbox-error" role="alert">
-          {state.error}
-        </p>
       ) : null}
-      {v.actions.mute ? (
-        <MuteRule
-          target={{
-            fleet,
-            routine: c.routine,
-            sender: c.sender,
-            dedupe_key: c.dedupe_key,
-            mute_by: c.mute_by,
-          }}
-        />
-      ) : null}
+      {state.error ? <p class="inbox-error" role="alert">{state.error}</p> : null}
+      <div class="peek-actions">
+        {v.actions.stop && !confirming ? (
+          <button type="button" class="btn" disabled={state.busy} onClick={() => void run(() => stopShip(c.ship))}>
+            Stop
+          </button>
+        ) : null}
+        {v.actions.undo && !confirming ? (
+          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming(true)}>
+            Undo
+          </button>
+        ) : null}
+        {v.actions.mute ? <MuteRule target={{ fleet, routine: c.routine, sender: c.sender, dedupe_key: c.dedupe_key, mute_by: c.mute_by }} /> : null}
+      </div>
     </div>
   );
 }
 
-function Thread({
-  items,
-  working,
-  chat,
-  fleet,
-}: {
-  items: ThreadItem[];
-  working: boolean;
-  chat: Chat;
-  fleet: string;
-}) {
+function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working: boolean; chat: Chat; fleet: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   useLayoutEffect(() => {
@@ -323,32 +188,26 @@ function Thread({
         pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       }}
     >
-      {items.length === 0 && !working ? (
-        <p class="line">No messages yet.</p>
-      ) : null}
+      {items.length === 0 && !working ? <p class="line">No messages yet.</p> : null}
       {items.map((i) =>
-        i.kind === "reset" ? (
+        i.kind === 'reset' ? (
           <div key={i.id} class="compaction">
             <span>{resetLabel(i.text, i.at)}</span>
           </div>
-        ) : i.kind === "question" ? (
+        ) : i.kind === 'question' ? (
           <QuestionCard key={i.id} item={i} chat={chat} />
-        ) : i.kind === "event" ? (
+        ) : i.kind === 'event' ? (
           <EventCardView key={i.id} item={i} fleet={fleet} />
-        ) : i.kind === "launch" ? (
+        ) : i.kind === 'launch' ? (
           <LaunchCardView key={i.id} item={i} fleet={fleet} />
-        ) : i.kind === "commitment" ? (
+        ) : i.kind === 'commitment' ? (
           <CommitmentCard key={i.id} item={i} fleet={fleet} />
-        ) : i.role === "user" ? (
+        ) : i.role === 'user' ? (
           <div key={i.id} class="msg user">
             {i.text}
           </div>
         ) : (
-          <div
-            key={i.id}
-            class="msg assistant md"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(i.text) }}
-          />
+          <div key={i.id} class="msg assistant md" dangerouslySetInnerHTML={{ __html: renderMarkdown(i.text) }} />
         ),
       )}
       {working ? <p class="working">{workingLabel([], Date.now())}</p> : null}
@@ -365,52 +224,34 @@ function ChatComposer({ chat }: { chat: Chat }) {
           {error}
         </p>
       ) : null}
-      <MessageField
-        label="Message AdmiralBot"
-        placeholder="Ask AdmiralBot"
-        text={text}
-        setText={setText}
-        send={() => void send()}
-        disabled={false}
-        canSend={!sending && text.trim() !== ""}
-      />
+      <MessageField label="Message AdmiralBot" placeholder="Ask AdmiralBot" text={text} setText={setText} send={() => void send()} disabled={false} canSend={!sending && text.trim() !== ''} />
     </div>
   );
 }
 
 function OpenTerminal({ fleet }: { fleet: string }) {
   return (
-    <button
-      type="button"
-      class="btn"
-      onClick={() => go(chatTerminalPath(fleet), fleetSearch.value)}
-    >
+    <button type="button" class="btn" onClick={() => go(chatTerminalPath(fleet), fleetSearch.value)}>
       Open terminal
     </button>
   );
 }
 
 /** The fleet's chat session through the bridge, in place of its conversation. */
-function ChatTerminal({
-  fleet,
-  head,
-}: {
-  fleet: string;
-  head: (action: ComponentChildren) => ComponentChildren;
-}) {
-  const back = () => go("/app/chat", fleetSearch.value);
+function ChatTerminal({ fleet, head }: { fleet: string; head: (action: ComponentChildren) => ComponentChildren }) {
+  const back = () => go('/app/chat', fleetSearch.value);
   const { host, link, linkState, activity } = useBridgeTerminal({
     session: `_chat-${fleet}`,
     open: true,
-    gone: () => go("/app/chat", fleetSearch.value, true),
-    wsBase: "/ws/v1",
+    gone: () => go('/app/chat', fleetSearch.value, true),
+    wsBase: '/ws/v1',
     probe: () => probeChatSession(fleet),
-    signedOut: () => (shipsLink.value = "signed-out"),
+    signedOut: () => (shipsLink.value = 'signed-out'),
   });
-  const canType = linkState === "open";
+  const canType = linkState === 'open';
   const input = (data: string) => {
     activity.current();
-    link.current?.send({ type: "input", data });
+    link.current?.send({ type: 'input', data });
   };
   return (
     <>
@@ -419,25 +260,14 @@ function ChatTerminal({
           Back to chat
         </button>,
       )}
-      <section
-        class={linkState === "reconnecting" ? "term-body dim" : "term-body"}
-      >
+      <section class={linkState === 'reconnecting' ? 'term-body dim' : 'term-body'}>
         <div class="term-host" ref={host} />
       </section>
       <div class="term-keys">
-        {linkState === "reconnecting" ? (
-          <span class="term-note">Reconnecting…</span>
-        ) : null}
+        {linkState === 'reconnecting' ? <span class="term-note">Reconnecting…</span> : null}
         {touchKeyboard()
           ? KEYS.map(([name, label, bytes]) => (
-              <button
-                key={name}
-                type="button"
-                class="term-key"
-                aria-label={`Send ${name}`}
-                disabled={!canType}
-                onClick={() => input(bytes)}
-              >
+              <button key={name} type="button" class="term-key" aria-label={`Send ${name}`} disabled={!canType} onClick={() => input(bytes)}>
                 {label}
               </button>
             ))
@@ -447,13 +277,7 @@ function ChatTerminal({
   );
 }
 
-function Conversation({
-  fleet,
-  head,
-}: {
-  fleet: string;
-  head: (action: ComponentChildren) => ComponentChildren;
-}) {
+function Conversation({ fleet, head }: { fleet: string; head: (action: ComponentChildren) => ComponentChildren }) {
   const chat = useChat(fleet);
   const { snap } = chat;
   const items = snap ? threadOf(snap) : [];
@@ -462,34 +286,17 @@ function Conversation({
       {head(
         <>
           {snap?.running ? <OpenTerminal fleet={fleet} /> : null}
-          <button
-            type="button"
-            class="btn"
-            disabled={chat.resetting}
-            onClick={() => void chat.newChat()}
-          >
+          <button type="button" class="btn" disabled={chat.resetting} onClick={() => void chat.newChat()}>
             New chat
           </button>
         </>,
       )}
       {snap?.error ? (
         <p class="msg-note">
-          {snap.error}{" "}
-          {snap.running && needsTerminal(snap) ? (
-            <OpenTerminal fleet={fleet} />
-          ) : null}
+          {snap.error} {snap.running && needsTerminal(snap) ? <OpenTerminal fleet={fleet} /> : null}
         </p>
       ) : null}
-      {snap ? (
-        <Thread
-          items={items}
-          working={snap.state === "working"}
-          chat={chat}
-          fleet={fleet}
-        />
-      ) : (
-        <p class="line">Loading…</p>
-      )}
+      {snap ? <Thread items={items} working={snap.state === 'working'} chat={chat} fleet={fleet} /> : <p class="line">Loading…</p>}
       <ChatComposer chat={chat} />
     </>
   );
@@ -502,23 +309,11 @@ function ChatRail({ fleet }: { fleet: Fleet }) {
   const search = fleetSearch.value;
   const chatHref = `/app/chat`;
   const leave = () => go(chatHref, search, true);
-  const { open, closing, gone, foldKey } = usePeekEntry(
-    peek,
-    entries,
-    queue,
-    rerender,
-    leave,
-  );
+  const { open, closing, gone, foldKey } = usePeekEntry(peek, entries, queue, rerender, leave);
   if (open && !closing) {
     return (
       <aside class="chat-rail chat-peek" aria-label="Inbox">
-        <Peek
-          key={open.key}
-          entry={open}
-          gone={gone}
-          fold={(text) => foldKey(open.key, text)}
-          back={{ href: chatHref + search, go: () => go(chatHref, search) }}
-        />
+        <Peek key={open.key} entry={open} gone={gone} fold={(text) => foldKey(open.key, text)} back={{ href: chatHref + search, go: () => go(chatHref, search) }} />
       </aside>
     );
   }
@@ -536,11 +331,7 @@ function ChatRail({ fleet }: { fleet: Fleet }) {
               now={now}
               phone={false}
               selected={false}
-              peekHref={(t) =>
-                t.item !== undefined
-                  ? chatPeekPath(fleet.key, t.session, t.item)
-                  : null
-              }
+              peekHref={(t) => (t.item !== undefined ? chatPeekPath(fleet.key, t.session, t.item) : null)}
               fold={(text) => foldKey(e.key, text)}
             />
           ))}
@@ -559,15 +350,7 @@ function Off({ fleet }: { fleet: Fleet }) {
         class="btn"
         href={href}
         onClick={(e) => {
-          if (
-            e.defaultPrevented ||
-            e.button !== 0 ||
-            e.metaKey ||
-            e.ctrlKey ||
-            e.shiftKey ||
-            e.altKey
-          )
-            return;
+          if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();
           go(chatSettingsPath(fleet.key), fleetSearch.value);
         }}
@@ -579,35 +362,20 @@ function Off({ fleet }: { fleet: Fleet }) {
 }
 
 /** The Chat surface: the shown fleet's AdmiralBot, with the Inbox as a rail beside it when the width allows. */
-export function ChatPanel({
-  surface,
-  title,
-  phone,
-}: {
-  surface: Surface;
-  title: boolean;
-  phone: boolean;
-}) {
+export function ChatPanel({ surface, title, phone }: { surface: Surface; title: boolean; phone: boolean }) {
   const fleet = activeFleet.value;
   const stacked = useStacked(phone);
-  const stray =
-    fleet !== null &&
-    chatTerminalOf(loc.value.path) !== null &&
-    chatTerminalOf(loc.value.path) !== fleet.key;
+  const stray = fleet !== null && chatTerminalOf(loc.value.path) !== null && chatTerminalOf(loc.value.path) !== fleet.key;
   // A terminal path for another fleet shows this fleet's conversation, so the address says so.
   useEffect(() => {
-    if (stray) go("/app/chat", fleetSearch.value, true);
+    if (stray) go('/app/chat', fleetSearch.value, true);
   }, [stray]);
   if (!fleet) return null;
-  const Heading = title ? "h1" : "h2";
+  const Heading = title ? 'h1' : 'h2';
   const head = (action: ComponentChildren) => (
     <div class="chat-head">
       <Heading class="chat-title">
-        <span
-          class="dot"
-          style={{ background: fleetPaint(fleet).fill }}
-          aria-hidden="true"
-        />
+        <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
         <span class="chat-title-text">AdmiralBot · {fleet.name} fleet</span>
       </Heading>
       <div class="chat-actions">{action}</div>
