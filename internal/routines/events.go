@@ -440,9 +440,9 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	}
 	// review asks the step reviewer about one routine, outside s.mu so a slow judge never holds up another launch. It
 	// returns nil when no call belongs: no Checks, or the routine's budgets already hold it at A1 or below.
-	review := func(r Routine) (*Review, string) {
+	review := func(r Routine) (Routine, *Review, string) {
 		if !hasChecks {
-			return nil, ""
+			return r, nil, ""
 		}
 		s.mu.Lock()
 		r, in := gather(r)
@@ -451,9 +451,11 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		in.SpentTodayUSD = 0 // the day's cap is the reviewer's own check below, so it answers ask
 		provisional := Decide(in)
 		if provisional.Outcome != Launched {
-			return nil, ""
+			return r, nil, ""
 		}
-		ask := func(reason string) (*Review, string) { return &Review{Verdict: standing.Ask, Reason: reason}, "" }
+		ask := func(reason string) (Routine, *Review, string) {
+			return r, &Review{Verdict: standing.Ask, Reason: reason}, ""
+		}
 		if f.Limits.DailySpendReached(spent) {
 			return ask("daily spend reached")
 		}
@@ -472,7 +474,7 @@ func (s *Scheduler) HandleEvent(ev Event) {
 				text = c
 			}
 		}
-		return &rv, text
+		return r, &rv, text
 	}
 	// step decides one pair and launches it under one hold of s.mu. A card or proposal is posted after the hold, as the Inbox takes its own lock.
 	step := func(r Routine, rv *Review, checkText string) (Routine, Decision, Trigger, *Trigger, bool) {
@@ -481,6 +483,15 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		r, in := gather(r)
 		var reviewed Reviewed
 		recCosts := costs
+		if rv == nil && hasChecks {
+			// the gate and this read are separate, so a routine that rose above A1 in between is never launched unreviewed
+			in.Reviewer = standing.Ask
+			unreviewed := in
+			unreviewed.Reviewer = standing.Allow
+			if Decide(unreviewed).Outcome == Launched {
+				reviewed = Reviewed{Verdict: "ask", Reason: "not reviewed"}
+			}
+		}
 		if rv != nil {
 			in.Reviewer = rv.Verdict
 			reviewed = Reviewed{Verdict: verdictName(rv.Verdict), CheckID: rv.CheckID, CheckText: checkText, Reason: rv.Reason}
@@ -514,7 +525,7 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		return r, d, base, launched, done
 	}
 	for _, r := range matches {
-		rv, checkText := review(r)
+		r, rv, checkText := review(r) // the routine as tripped, so step's trip is a no-op
 		r, d, base, launched, done := step(r, rv, checkText)
 		if done {
 			costs = nil

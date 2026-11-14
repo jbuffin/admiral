@@ -369,3 +369,52 @@ func TestLaunchingAnAcceptedProposalMakesNoReviewerCall(t *testing.T) {
 		t.Errorf("%d reviewer calls after accepting the proposal, want still 1", n)
 	}
 }
+
+func TestARoutineWhoseBreakerTripsOnThisEventIsNeitherJudgedNorLaunchedAtA3(t *testing.T) {
+	v := newReviewed(t)
+	for d := 1; d <= 3; d++ {
+		if _, err := v.store.AppendTrigger("work", routines.Trigger{Routine: v.r.ID, Outcome: routines.Failed, Tier: "T0", At: at(d, 9, 0), Reason: "x"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v.send()
+	if rec := v.latest(v.r); rec.Outcome == routines.Launched {
+		t.Errorf("record = %+v, want no launch after three failures in a row", rec)
+	}
+	if got := v.stored(v.r).Before; got != routines.AskFirst {
+		t.Errorf("stored Before acting = %q, want ask_first", got)
+	}
+	if n := len(v.calls()); n != 0 {
+		t.Errorf("%d reviewer calls, want none for a routine the breaker holds at ask first", n)
+	}
+}
+
+// flipLive holds the event's dedupe key on its first read and lets go of it on the next.
+type flipLive struct {
+	mu    sync.Mutex
+	reads int
+}
+
+func (f *flipLive) WorkerShips(string) int { return 0 }
+func (f *flipLive) DedupeKeys(string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads++
+	if f.reads == 1 {
+		return []string{"gh:acme/api#7"}
+	}
+	return nil
+}
+
+func TestARoutineThatRoseToA3BetweenTheGateAndTheDecisionIsProposedUnreviewed(t *testing.T) {
+	v := newReviewed(t)
+	v.sched.Live = &flipLive{}
+	v.sched.Enrich = func(routines.Event) routines.Enrichment { return routines.Enrichment{DedupeKey: "gh:acme/api#7"} }
+	_, rec := v.send()
+	if n := len(v.calls()); n != 0 {
+		t.Errorf("%d reviewer calls, want none: the gate saw the routine held", n)
+	}
+	if rec.Outcome != routines.Proposed || rec.Verdict != "ask" || rec.ReviewerReason != "not reviewed" {
+		t.Errorf("record = %+v, want proposed with verdict ask and the reason \"not reviewed\"", rec)
+	}
+}

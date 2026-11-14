@@ -216,6 +216,7 @@ func TestAReplyThatBreaksARuleIsABadReplyThatFailsClosedToAskAndStillRecordsItsC
 		"a Check id that isn't the fleet's": {"verdict": "block", "check_id": "deadbeef", "reason": "made up"},
 		"a reason over 140":                 {"verdict": "ask", "check_id": idA, "reason": strings.Repeat("x", 141)},
 		"no verdict":                        {"check_id": idA, "reason": "forgot"},
+		"a block naming no Check":           {"verdict": "block", "check_id": "", "reason": "bad"},
 	}
 	for name, fields := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -281,5 +282,14 @@ func TestAJudgedAskReadsDifferentlyFromAFailedCall(t *testing.T) {
 	judged := review(t, answer(map[string]any{"verdict": "ask", "check_id": idA, "reason": "no make check yet"}), input())
 	if strings.Contains(judged.Reason, "reviewer failed") || judged.CheckID != idA {
 		t.Errorf("judged ask = %+v, want the reply's reason and check, not a failure", judged)
+	}
+}
+
+func TestAnAskOrAllowMayLeaveTheCheckIdEmpty(t *testing.T) {
+	for _, verdict := range []string{"ask", "allow"} {
+		got := review(t, answer(map[string]any{"verdict": verdict, "check_id": "", "reason": "unsure"}), input())
+		if strings.Contains(got.Reason, "reviewer failed") || got.CheckID != "" {
+			t.Errorf("%s with no Check = %+v, want it kept", verdict, got)
+		}
 	}
 }
