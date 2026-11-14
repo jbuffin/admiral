@@ -9,6 +9,7 @@ import { KEYS, touchKeyboard } from '../keys';
 import { commitmentCardView, needsTerminal, questionEyebrow, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
 import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
 import { MuteRule } from './MuteRule';
+import { ReviewerNoteView } from './ReviewerNoteView';
 import { Peek } from './Peek';
 import { go, loc, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
 import { renderMarkdown } from './markdown';
@@ -89,6 +90,7 @@ function EventCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'eve
       <p class="line">{item.text}</p>
       {c.sender ? <p class="line">From {c.sender}</p> : null}
       {c.tier ? <p class="line">Tier {c.tier}</p> : null}
+      <ReviewerNoteView r={c} />
       {c.link?.startsWith('https://') ? (
         <a href={c.link} target="_blank" rel="noopener noreferrer">
           {c.link} ↗

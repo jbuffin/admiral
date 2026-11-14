@@ -18,6 +18,11 @@ type EventCard struct {
 	Text        string   // the Lookout's summary, or the metadata line
 	Metadata    bool     // Text is the metadata line, not a summary
 	MuteBy      []string // the Mute rule choices the event allows: sender, dedupe_key
+	// Verdict, CheckID, CheckText and ReviewerReason are the step reviewer's answer; empty when it was not asked.
+	Verdict        string
+	CheckID        string
+	CheckText      string
+	ReviewerReason string
 }
 
 // PostEventCard appends the card to the fleet's chat log; a card whose ID the log holds adds nothing. It writes nothing to
@@ -26,6 +31,7 @@ func (s *Service) PostEventCard(fleet string, c EventCard) error {
 	card, err := json.Marshal(map[string]any{
 		"routine": c.Routine, "routine_name": c.RoutineName, "tier": c.Tier, "sender": c.Sender,
 		"link": c.Link, "dedupe_key": c.DedupeKey, "metadata": c.Metadata, "mute_by": c.MuteBy,
+		"verdict": c.Verdict, "check_id": c.CheckID, "check": c.CheckText, "reviewer_reason": c.ReviewerReason,
 	})
 	if err != nil {
 		return err

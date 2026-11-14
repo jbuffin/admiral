@@ -5,6 +5,8 @@ import { prLink } from '../inbox';
 import { createDecisions, type Decisions, type FindingCard, readCards, type Verdict } from '../findings';
 import { REMOVED_FOLD } from './itemActions';
 import { MuteRule } from './MuteRule';
+import { ReviewerNoteView } from './ReviewerNoteView';
+import type { ReviewerFields } from './reviewerNote';
 
 // Item files are written by ships and are untrusted: every field below is rendered as text, and the only links are
 // the PR's own https address (prLink).
@@ -86,7 +88,7 @@ export function RoutineProposalBody({ entry, acting }: { entry: Entry; acting: A
   );
 }
 
-interface EventDetail {
+interface EventDetail extends ReviewerFields {
   summary: string;
   title: string;
   sender: string;
@@ -120,6 +122,7 @@ export function EventProposalBody({ entry, acting }: { entry: Entry; acting: Act
           <p class="line">{detail.summary}</p>
           {detail.sender ? <p class="line">From {detail.sender}</p> : null}
           {p?.tier ? <p class="line">Tier {p.tier}</p> : null}
+          <ReviewerNoteView r={detail} />
           {detail.link.startsWith('https://') ? (
             <a href={detail.link} target="_blank" rel="noopener noreferrer">
               {detail.link} ↗

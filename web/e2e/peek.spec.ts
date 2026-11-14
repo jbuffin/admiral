@@ -889,6 +889,20 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   mkdirSync(chatDir, { recursive: true });
   const at = new Date().toISOString();
   writeFileSync(join(chatDir, 'conversation.jsonl'), JSON.stringify({ id: 'trig-card', kind: 'event_card', text: 'Mallory asks for a review of a lantern fix.', at, card, logged: at }) + '\n');
+  // The reviewer's Check and reason are model text over outside text: they render as plain text, never as markup.
+  const hostile = '<img src=x onerror="window.__pwned=1"> lantern-sentinel';
+  const blocked = { ...card, routine_name: 'Release watch', verdict: 'block', check_id: '0bbdf84d', check: `Never launch on release workflow edits ${hostile}`, reviewer_reason: `the diff edits release.yml ${hostile}` };
+  appendFileSync(join(chatDir, 'conversation.jsonl'), JSON.stringify({ id: 'trig-block', kind: 'event_card', text: 'Mallory asks for a release edit.', at, card: blocked, logged: at }) + '\n');
+  const askedId = 'event-trig-ask';
+  seedInboxItem(admiral, '_admiral', {
+    id: askedId, kind: 'event_proposal', title: 'Run Ask watch?',
+    event_proposal: { fleet: 'zulu', routine: 'r-ask', routine_name: 'Ask watch', trigger: 'trig-ask', tier: 'T3', expires_at: new Date(Date.now() + 3_600_000).toISOString() },
+  });
+  mkdirSync(join(admiral.home, 'inbox-events'), { recursive: true });
+  writeFileSync(join(admiral.home, 'inbox-events', `${askedId}.json`), JSON.stringify({
+    summary: 'Mallory asks for a release edit.', title: 'Release edit', sender: 'mallory-the-stranger', link: 'https://github.com/acme/api/pull/8', metadata: false, mute_by: ['sender'],
+    verdict: 'ask', check_id: '0bbdf84d', check: 'Never launch on release workflow edits', reviewer_reason: 'touches the release path',
+  }));
   await admiral.start({ env: withFakeGh(admiral) });
   await proveJudge(page, admiral.url);
   // The routine is made through the When picker, which lists the source's event kinds once it has reported them.
@@ -960,6 +974,23 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await expect(page.getByRole('main').getByText('Untrusted').first()).toBeVisible();
   await expect(page.getByRole('main')).toContainText('Tier T3');
   await expect(page.getByRole('main')).toContainText('Mallory asks for a review of a lantern fix.');
+
+  // A blocked event's A0 card names the Check, its id and the reviewer's reason, as text.
+  const blockCard = page.getByRole('main').locator('.chat-card').filter({ hasText: 'Release watch' });
+  await expect(blockCard).toContainText('Blocked by Check 0bbdf84d');
+  await expect(blockCard).toContainText('Never launch on release workflow edits');
+  await expect(blockCard).toContainText('the diff edits release.yml');
+  await expect(blockCard).toContainText('lantern-sentinel');
+  await expect(blockCard.locator('img')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
+
+  // An asked event's proposal shows why it wasn't launched.
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await page.getByRole('main').getByRole('listitem').filter({ hasText: 'Ask watch' }).getByRole('link').tap();
+  const asked = peekOf(page);
+  await expect(asked).toContainText('Asked about Check 0bbdf84d');
+  await expect(asked).toContainText('Never launch on release workflow edits');
+  await expect(asked).toContainText('touches the release path');
 
   // An event launch posts a launch card: Stop, Undo and Mute rule; Undo asks first, removes the clone, and stays undone after a reload.
   const sail = await launchShip(admiral, { fleet: 'zulu', harness: 'claude' });
