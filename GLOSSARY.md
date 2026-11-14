@@ -230,6 +230,10 @@ _Avoid_: unread
 A ship whose harness has exited with an error. It stays anchored, still in open water with a red mark, until the engineer dismisses it. A clean exit with an open PR moors the ship instead (see Moored), and any other clean exit sails off and disappears.
 _Avoid_: docked, finished, done
 
+**Lost**:
+A ship whose session disappeared without ending, through a reboot, a crash or a killed tmux server or session. It keeps its name and waits in open water until the engineer resumes it under the same name or dismisses it.
+_Avoid_: crashed, dead, orphaned
+
 **Moored**:
 A ship carrying an open PR whose harness isn't running, waiting for feedback. A ship moors when its harness exits cleanly with an open PR, when its report says `done` at the end of its turn with an open PR, or when the engineer picks Moor on Stop ship or Return to port. Once every PR it carries is done and at least one merged, it returns to port; if they were all closed, it sails off.
 _Avoid_: parked, sleeping, docked, idle
