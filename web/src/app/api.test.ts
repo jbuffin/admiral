@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { call, probeShips } from './api';
+import { call, probeShips, refreshSource } from './api';
 
 const answer = (status: number, body: unknown) => vi.stubGlobal('fetch', async () => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }));
 
@@ -72,5 +72,27 @@ describe('probeShips', () => {
 
     answerWith(async () => new Response('', { status: 500 }));
     expect(await probeShips()).toBe('down');
+  });
+});
+
+describe('refreshSource', () => {
+  it('posts to the source key, URL-encoded, and reports success', async () => {
+    const seen: { url: string; method?: string }[] = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      seen.push({ url, method: init.method });
+      return new Response(JSON.stringify({ refreshing: 'a b' }), { status: 200 });
+    });
+    const r = await refreshSource('a b');
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual([{ url: '/api/v1/sources/a%20b/refresh', method: 'POST' }]);
+  });
+
+  it('answers the refusal instead of throwing on a 500, and on an unreachable server', async () => {
+    answer(500, { error: 'boom' });
+    expect(await refreshSource('gh')).toMatchObject({ ok: false, status: 500, error: 'boom' });
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    expect(await refreshSource('gh')).toMatchObject({ ok: false });
   });
 });
