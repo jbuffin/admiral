@@ -1,11 +1,10 @@
-import { useState } from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { PRActor, PRDetail } from './api';
 import { renderMarkdown } from './markdown';
 import { checksLine, descriptionSource, firstLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary, type TimelineItem } from './prSections';
 
 const initials = (login: string) => login.replace(/[^a-z]/gi, '').slice(0, 2).toUpperCase();
 const BotTag = ({ actor }: { actor: PRActor }) => (actor.bot ? <span class="bot-tag">bot</span> : null);
-const who = (a: PRActor) => a.login || 'ghost';
 
 function Checks({ detail }: { detail: PRDetail }) {
   const line = checksLine(detail);
@@ -40,16 +39,31 @@ function Checks({ detail }: { detail: PRDetail }) {
 
 function Description({ body }: { body: string }) {
   const [open, setOpen] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const desc = useRef<HTMLDivElement>(null);
   const source = descriptionSource(body);
+  // Only a clamped description that is cut off needs Show more; the open one keeps its button to close.
+  useLayoutEffect(() => {
+    const el = desc.current;
+    if (!el || open) return;
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [source, open]);
   return (
     <section class="pr-section">
       <h4 class="pr-section-title">Description</h4>
       {source.trim() ? (
         <>
-          <div class={`desc md${open ? '' : ' clamped'}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(source) }} />
-          <button type="button" class="link-btn" aria-expanded={open} onClick={() => setOpen(!open)}>
-            {open ? 'Show less' : 'Show more'}
-          </button>
+          <div ref={desc} class={`desc md${open ? '' : ' clamped'}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(source) }} />
+          {open || overflows ? (
+            <button type="button" class="link-btn" aria-expanded={open} onClick={() => setOpen(!open)}>
+              {open ? 'Show less' : 'Show more'}
+            </button>
+          ) : null}
         </>
       ) : (
         <p class="empty">No description.</p>
@@ -100,7 +114,7 @@ function Item({ item, now, folded, onToggle }: { item: TimelineItem; now: number
   return (
     <div class={cls}>
       <div class="item-head">
-        <span class="author">{who(item.author)}</span>
+        <span class="author">{item.author.login}</span>
         <BotTag actor={item.author} />
         {item.kind === 'thread' ? <span class="file-ref">{item.ref}</span> : null}
         {item.resolved ? <span class="pr-chip">Resolved</span> : null}
@@ -115,7 +129,7 @@ function Item({ item, now, folded, onToggle }: { item: TimelineItem; now: number
       {item.replies.map((r, i) => (
         <div key={i} class="reply">
           <div class="item-head">
-            <span class="author">{who(r.author)}</span>
+            <span class="author">{r.author.login}</span>
             <BotTag actor={r.author} />
             <span class="when">{relativeTime(r.at, now)}</span>
           </div>
@@ -126,7 +140,7 @@ function Item({ item, now, folded, onToggle }: { item: TimelineItem; now: number
   );
 }
 
-function Conversation({ detail }: { detail: PRDetail }) {
+function PRTimeline({ detail }: { detail: PRDetail }) {
   const [resolvedOpen, setResolvedOpen] = useState(false);
   const [unfolded, setUnfolded] = useState<Set<string>>(new Set());
   const { open, resolved } = prTimeline(detail);
@@ -168,7 +182,7 @@ export function PRSections({ detail }: { detail: PRDetail }) {
         </div>
         <Reviewers detail={detail} />
       </div>
-      <Conversation detail={detail} />
+      <PRTimeline detail={detail} />
     </>
   );
 }

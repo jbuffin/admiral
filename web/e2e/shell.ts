@@ -1237,11 +1237,19 @@ async function expectPRSections(page: Page, panel: Locator, subtab: Locator, opt
   await expect(desc).not.toHaveClass(/\bclamped\b/);
   expect((await desc.boundingBox())!.height, 'the open description is taller').toBeGreaterThan(clampedHeight);
   await expect(desc).toContainText('Line 24 of the notes');
+
+  // Show less clamps it again, and Show more opens it for the refresh that follows.
+  await description.getByRole('button', { name: 'Show less' }).tap();
+  await expect(desc).toHaveClass(/\bclamped\b/);
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await more.tap();
+  await expect(desc).not.toHaveClass(/\bclamped\b/);
   await expect(page.getByRole('alert')).toHaveCount(0);
 }
 
 /** What the engineer opened stays open across a refresh: the description, the bot's text and the resolved threads. */
-async function expectPRSectionsStayOpen(panel: Locator) {
+async function expectPRSectionsStayOpen(panel: Locator, opts: { phone: boolean }) {
+  if (opts.phone) await expect(panel.locator('.rev-summary')).toHaveAttribute('aria-expanded', 'true');
   await expect(prSection(panel, 'Description').getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
   await expect(prSection(panel, 'Description').locator('.desc')).not.toHaveClass(/\bclamped\b/);
   const conversation = prSection(panel, 'Conversation');
@@ -1265,7 +1273,7 @@ export async function prTabOfARunningStack(page: Page, a: Admiral, opts: { phone
   const detail8 = (title: string, sections: PRSections = passing) => prDetail(a, 8, { title, head: 'feat/limiter-cache', base: 'feat/limiter-core', draft: true, stack, ...sections });
   prAnswer(a, 7, { state: 'MERGED', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
   prAnswer(a, 8, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
-  prDetail(a, 7, { title: 'Add the limiter', head: 'feat/limiter-core', base: 'main', state: 'MERGED', stack, checks: 'SUCCESS', reviews: [{ author: { login: 'ann' }, state: 'APPROVED' }] });
+  prDetail(a, 7, { title: 'Add the limiter', head: 'feat/limiter-core', base: 'main', state: 'MERGED', stack, body: 'The core limiter.', checks: 'SUCCESS', reviews: [{ author: { login: 'ann' }, state: 'APPROVED' }] });
   detail8('Cache tokens');
   const ship = await launchShipCarrying(a, [8, 7]);
 
@@ -1302,6 +1310,7 @@ export async function prTabOfARunningStack(page: Page, a: Admiral, opts: { phone
   await expect(subtabs.locator('.stack-arrow')).toHaveCount(1);
   await expect(tabs.nth(1), 'the tab opens on the first open PR, not the merged bottom one').toHaveAttribute('aria-selected', 'true');
   await expect(panel.getByRole('heading', { name: 'Cache tokens' })).toBeVisible();
+  await expect(prSection(panel, 'Description')).toContainText('No description.');
   expect(await subtabs.evaluate((e) => ['auto', 'scroll'].includes(getComputedStyle(e).overflowX)), 'the row scrolls sideways').toBe(true);
   await expect.poll(() => [...new Set(reads)].sort(), 'the tab reads every PR the ship carries').toEqual([`${PR_BASE}/7`, `${PR_BASE}/8`]);
   await expect(page.getByRole('alert')).toHaveCount(0);
@@ -1324,8 +1333,8 @@ export async function prTabOfARunningStack(page: Page, a: Admiral, opts: { phone
 
   // A merged PR keeps its sections, with a muted line where it has nothing to show.
   await expect(prSection(panel, 'Checks')).toContainText('All checks passed');
-  await expect(prSection(panel, 'Description')).toContainText('No description.');
-  await expect(prSection(panel, 'Description').getByRole('button')).toHaveCount(0);
+  await expect(prSection(panel, 'Description')).toContainText('The core limiter.');
+  await expect(prSection(panel, 'Description').getByRole('button'), 'a description that fits has nothing to unclamp').toHaveCount(0);
   await expect(prSection(panel, 'Conversation')).toContainText('No reviews or comments yet.');
   if (opts.phone) await panel.locator('.rev-summary').tap();
   await expect(panel.locator('.reviewers').getByRole('listitem')).toHaveText([/ann\s*Approved/]);
@@ -1348,7 +1357,7 @@ export async function prTabOfARunningStack(page: Page, a: Admiral, opts: { phone
   detail8('Cache tokens, refreshed', prSectionsFixture());
   await page.clock.fastForward(30_000);
   await expect(panel.getByRole('heading', { name: 'Cache tokens, refreshed' })).toBeVisible();
-  await expectPRSectionsStayOpen(panel);
+  await expectPRSectionsStayOpen(panel, { phone: opts.phone ?? false });
   const unbroken = 'Cache-tokens-' + 'x'.repeat(150);
   detail8(unbroken);
   await page.clock.fastForward(30_000);

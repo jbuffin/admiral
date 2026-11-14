@@ -32,6 +32,7 @@ export function descriptionSource(body: string): string {
 }
 
 const loginOf = (a: PRActor) => a.login || 'ghost';
+const shown = (a: PRActor): PRActor => ({ ...a, login: loginOf(a) });
 const DECIDED = new Set(['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED']);
 const VERDICTS: Record<string, [Verdict, Tone]> = {
   APPROVED: ['Approved', 'ok'],
@@ -91,16 +92,16 @@ export function prTimeline({ threads, comments }: Pick<PRDetail, 'threads' | 'co
     if (!first) continue;
     items.push({
       kind: 'thread',
-      author: first.author,
+      author: shown(first.author),
       at: first.created_at,
       url: first.url,
       ref: t.line ? `${t.path}:${t.line}` : t.path,
       resolved: t.resolved,
       body: first.body,
-      replies: rest.map((c) => ({ author: c.author, body: c.body, at: c.created_at })),
+      replies: rest.map((c) => ({ author: shown(c.author), body: c.body, at: c.created_at })),
     });
   }
-  for (const c of comments) items.push({ kind: 'comment', author: c.author, at: c.created_at, url: c.url, ref: '', resolved: false, body: c.body, replies: [] });
+  for (const c of comments) items.push({ kind: 'comment', author: shown(c.author), at: c.created_at, url: c.url, ref: '', resolved: false, body: c.body, replies: [] });
   items.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   return { open: items.filter((i) => !i.resolved), resolved: items.filter((i) => i.resolved) };
 }

@@ -195,6 +195,12 @@ describe('prTimeline', () => {
     ]);
   });
 
+  it('shows a deleted user (an empty login) as ghost on a thread, a reply and a comment', () => {
+    const { open } = prTimeline({ threads: [thread('a.ts', 1, false, [comment('', 'first', '2026-01-01T00:00:00Z'), comment('', 'second', '2026-01-01T01:00:00Z')])], comments: [comment('', 'hi', '2026-01-02T00:00:00Z')] });
+    expect(open.map((i) => i.author.login)).toEqual(['ghost', 'ghost']);
+    expect(open[0].replies.map((r) => r.author.login)).toEqual(['ghost']);
+  });
+
   it('shows just the path when the line is 0, and no ref for a PR comment', () => {
     const { open } = prTimeline({ threads: [thread('README.md', 0, false, [comment('bob', 'file-level', '2026-01-01T00:00:00Z')])], comments: [comment('ann', 'hi', '2026-01-02T00:00:00Z')] });
     expect(open.map((i) => i.ref)).toEqual(['README.md', '']);
