@@ -43,6 +43,7 @@ type PR struct {
 	Answer    string `json:"answer,omitempty"`
 	Author    string `json:"author,omitempty"`
 	Reviewing bool   `json:"reviewing,omitempty"`
+	Responded bool   `json:"responded,omitempty"`
 }
 
 // View is the PR to serve. NOT_FOUND counts as closed, and a PR that is not open

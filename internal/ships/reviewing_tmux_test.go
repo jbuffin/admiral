@@ -327,3 +327,13 @@ func TestAWokenReviewingShipReMoorsReviewingWhenGitHubNeverAnswersTheRound(t *te
 		t.Errorf("merge = %d %s, want 409 for a ship that reviews a PR", rec.Code, rec.Body)
 	}
 }
+
+func TestALiveReviewingShipShowsRespondedOnItsReviewedPRWhenTheAuthorPushed(t *testing.T) {
+	r := newReviewingRig(t, livePR7)
+	r.gh.pollGitHub.set(livePR7, pushedPast())
+	r.poll()
+
+	if got := r.prs(t); len(got) != 1 || !got[0].Reviewing || !got[0].Responded {
+		t.Errorf("prs = %+v, want %s reviewing and responded", got, livePR7)
+	}
+}
