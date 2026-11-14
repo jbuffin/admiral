@@ -13,17 +13,17 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/jbuffin/admiral/internal/server"
 )
 
 // Turning Tailscale mode on or off moves Admiral's listener without a restart and tells the browsers it leaves behind.
 
+// lanIPv4 asks the server's own picker, so a link-local adapter can't make the test expect a different address.
 func lanIPv4(t *testing.T) string {
 	t.Helper()
-	addrs, _ := net.InterfaceAddrs()
-	for _, a := range addrs {
-		if n, ok := a.(*net.IPNet); ok && !n.IP.IsLoopback() && n.IP.To4() != nil {
-			return n.IP.String()
-		}
+	if ip, ok := server.LANIPv4(); ok {
+		return ip
 	}
 	lanUnavailable(t, "no LAN IPv4 address")
 	return ""
