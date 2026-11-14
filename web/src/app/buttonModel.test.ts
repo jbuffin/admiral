@@ -46,6 +46,13 @@ describe('button model', () => {
     expect(buttonModel({ label: 'Stop', busyLabel: 'Stopping' }).name).toBe('Stop');
   });
 
+  it('names a busy or icon button by aria-label, since its text is hidden or absent', () => {
+    expect(buttonModel({ label: 'Merge', busy: true }).ariaLabel).toBe('Merge');
+    expect(buttonModel({ label: 'Stop', busyLabel: 'Stopping', busy: true }).ariaLabel).toBe('Stopping');
+    expect(buttonModel({ label: 'Close', icon: true }).ariaLabel).toBe('Close');
+    expect(buttonModel({ label: 'Merge' }).ariaLabel).toBeUndefined();
+  });
+
   it('uses label as the accessible name of an icon button', () => {
     expect(buttonModel({ label: 'Close', icon: true }).name).toBe('Close');
   });

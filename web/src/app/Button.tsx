@@ -1,15 +1,14 @@
 import type { ComponentChildren } from 'preact';
 import { createContext } from 'preact';
-import { useContext, useEffect, useId, useMemo, useState } from 'preact/hooks';
+import { useContext, useEffect, useId, useMemo } from 'preact/hooks';
 import { createActionGroup, isPending, runPending, type PendingKey } from './busy';
 import { buttonModel, type ButtonModelProps } from './buttonModel';
 
-type Group = ReturnType<typeof createActionGroup> & { bump: () => void };
+type Group = ReturnType<typeof createActionGroup>;
 const GroupContext = createContext<Group | null>(null);
 
 export function Actions({ children, class: cls = 'actions' }: { children: ComponentChildren; class?: string }) {
-  const [, setN] = useState(0);
-  const group = useMemo<Group>(() => ({ ...createActionGroup(), bump: () => setN((n) => n + 1) }), []);
+  const group = useMemo(createActionGroup, []);
   return (
     <div class={cls}>
       <GroupContext.Provider value={group}>{children}</GroupContext.Provider>
@@ -36,15 +35,14 @@ export function Button({ pending, onClick, children, ...props }: ButtonProps) {
   useEffect(() => {
     if (!group) return;
     group.setBusy(id, busy);
-    group.bump();
-    return () => {
-      group.setBusy(id, false);
-      group.bump();
-    };
+    return () => group.setBusy(id, false);
   }, [busy]);
 
   const tap = (e: MouseEvent) => {
-    if (m.ignoreTap) return;
+    if (m.ignoreTap) {
+      e.preventDefault();
+      return;
+    }
     void runPending(key, () => onClick?.(e));
   };
 
@@ -54,7 +52,7 @@ export function Button({ pending, onClick, children, ...props }: ButtonProps) {
       class={m.class}
       type={m.type}
       {...(m.href !== undefined ? { href: m.href, target: m.target, rel: m.rel } : {})}
-      aria-label={props.icon || m.name !== props.label ? m.name : undefined}
+      aria-label={m.ariaLabel}
       aria-busy={m.ariaBusy}
       aria-pressed={m.ariaPressed}
       disabled={m.disabled}

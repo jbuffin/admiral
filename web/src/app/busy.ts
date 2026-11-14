@@ -44,13 +44,15 @@ export function createPending({ now, after, onChange = () => {} }: Options) {
 
 /** Which buttons of one action group are busy; the others are disabled meanwhile. */
 export function createActionGroup() {
-  const busy = new Set<string>();
+  // A signal, so siblings that read disabledFor while rendering re-render when it changes.
+  const busy = signal<readonly string[]>([]);
   return {
     setBusy(id: string, on: boolean) {
-      if (on) busy.add(id);
-      else busy.delete(id);
+      const has = busy.peek().includes(id);
+      if (on === has) return;
+      busy.value = on ? [...busy.peek(), id] : busy.peek().filter((b) => b !== id);
     },
-    disabledFor: (id: string) => [...busy].some((b) => b !== id),
+    disabledFor: (id: string) => busy.value.some((b) => b !== id),
   };
 }
 
