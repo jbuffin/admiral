@@ -938,6 +938,8 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   appendFileSync(join(admiral.home, 'routines', 'zulu', 'triggers.jsonl'), JSON.stringify(launchRecord) + '\n');
   const launchCard = { routine, routine_name: 'Review watch', tier: 'T1', sender: 'alice', link: 'https://github.com/acme/api/pull/7', metadata: false, mute_by: ['sender'], ship: sail.session, level: 'A3', restricted: 'draft_fix' };
   appendFileSync(join(chatDir, 'conversation.jsonl'), JSON.stringify({ id: 'trig-launch', kind: 'launch_card', text: 'Alice asks for a review.', at: now, card: launchCard, logged: now }) + '\n');
+  // The chat log keeps its tail in memory once read, so a seeded line shows after a restart.
+  await admiral.restart();
   await expect
     .poll(async () => ((await (await page.request.get(admiral.url + 'api/chat/zulu/session')).json()) as { messages: { kind: string }[] }).messages.map((m) => m.kind))
     .toContain('launch_card');
