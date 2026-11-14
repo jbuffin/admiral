@@ -139,6 +139,7 @@ test('a stack link GitHub refuses shows its message in the sheet, and the bar st
 
   await stackLinkFailsInThePRTab(page, admiral);
 
+  expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
 });

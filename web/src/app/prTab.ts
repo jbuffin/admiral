@@ -99,14 +99,14 @@ export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined
 /** Whether Merge and Don't follow reviews stay locked: a confirm locks them, and a ship that left its mooring is running its wake, so they are free when it moors again. */
 export const actingWhile = (acting: boolean, moored: boolean): boolean => moored && acting;
 
-/** The stack bar's line for the shape the server read, or '' when no bar shows. */
-export function stackBarLine(shape: StackShape | null): string {
-  if (!shape || shape.prs.length < 2) return '';
+/** The stack bar's bold lead and the rest of its line for the shape the server read, or null when no bar shows. */
+export function stackBarLine(shape: StackShape | null): { lead: string; rest: string } | null {
+  if (!shape || shape.prs.length < 2) return null;
   const n = shape.prs.length;
-  if (shape.shape === 'stacked') return `Stacked on GitHub · stack #${shape.stack_number} · ${n} PRs, bottom to top. Merge takes the whole stack.`;
-  if (shape.shape === 'chained') return `Not a GitHub stack. These ${n} PRs build on each other branch by branch. Stacking them lets GitHub merge them together.`;
-  if (shape.shape === 'mixed') return 'Not one chain or stack. Merge these PRs on GitHub.';
-  return '';
+  if (shape.shape === 'stacked') return { lead: 'Stacked on GitHub', rest: ` · stack #${shape.stack_number} · ${n} PRs, bottom to top. Merge takes the whole stack.` };
+  if (shape.shape === 'chained') return { lead: 'Not a GitHub stack.', rest: ` These ${n} PRs build on each other branch by branch. Stacking them lets GitHub merge them together.` };
+  if (shape.shape === 'mixed') return { lead: 'Not one chain or stack.', rest: ' Merge these PRs on GitHub.' };
+  return null;
 }
 
 /** What the bar offers beside its line: Stack on GitHub on a moored ship, the words for a ship still out, or nothing. */
@@ -130,7 +130,7 @@ export function mergeFor(shape: StackShape | null, prs: MooredPR[], current: Moo
     case 'stacked':
       return live && stackReady ? { kind: 'stack', note: '' } : none;
     case 'chained':
-      return stackReady ? { kind: 'none', note: 'Stack them on GitHub to merge together' } : none;
+      return live && stackReady ? { kind: 'none', note: 'Stack them on GitHub to merge together' } : none;
     case 'independent':
       return live && !!current.ready ? { kind: 'pr', note: '' } : none;
     default:

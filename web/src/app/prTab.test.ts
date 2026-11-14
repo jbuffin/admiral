@@ -194,25 +194,25 @@ const shape = (kind: StackShape['shape'], nums: number[], stack_number?: number)
 
 describe('stackBarLine', () => {
   it('names a stack, its number and its PRs', () => {
-    expect(stackBarLine(shape('stacked', [7, 8], 4))).toBe('Stacked on GitHub · stack #4 · 2 PRs, bottom to top. Merge takes the whole stack.');
-    expect(stackBarLine(shape('stacked', [7, 8, 9], 12))).toBe('Stacked on GitHub · stack #12 · 3 PRs, bottom to top. Merge takes the whole stack.');
+    expect(stackBarLine(shape('stacked', [7, 8], 4))).toEqual({ lead: 'Stacked on GitHub', rest: ' · stack #4 · 2 PRs, bottom to top. Merge takes the whole stack.' });
+    expect(stackBarLine(shape('stacked', [7, 8, 9], 12))).toEqual({ lead: 'Stacked on GitHub', rest: ' · stack #12 · 3 PRs, bottom to top. Merge takes the whole stack.' });
   });
 
   it('says chained PRs are not a GitHub stack', () => {
-    expect(stackBarLine(shape('chained', [7, 8]))).toBe('Not a GitHub stack. These 2 PRs build on each other branch by branch. Stacking them lets GitHub merge them together.');
-    expect(stackBarLine(shape('chained', [7, 8, 9]))).toContain('These 3 PRs');
+    expect(stackBarLine(shape('chained', [7, 8]))).toEqual({ lead: 'Not a GitHub stack.', rest: ' These 2 PRs build on each other branch by branch. Stacking them lets GitHub merge them together.' });
+    expect(stackBarLine(shape('chained', [7, 8, 9]))?.rest).toContain('These 3 PRs');
   });
 
   it('says a mixed ship is not one chain or stack', () => {
-    expect(stackBarLine(shape('mixed', [7, 8, 9]))).toBe('Not one chain or stack. Merge these PRs on GitHub.');
+    expect(stackBarLine(shape('mixed', [7, 8, 9]))).toEqual({ lead: 'Not one chain or stack.', rest: ' Merge these PRs on GitHub.' });
   });
 
   it('has no bar for independent PRs, none, an unread shape, or fewer than two PRs', () => {
-    expect(stackBarLine(shape('independent', [7, 8]))).toBe('');
-    expect(stackBarLine(shape('none', []))).toBe('');
-    expect(stackBarLine(null)).toBe('');
-    expect(stackBarLine(shape('stacked', [7], 4))).toBe('');
-    expect(stackBarLine(shape('mixed', [7]))).toBe('');
+    expect(stackBarLine(shape('independent', [7, 8]))).toBeNull();
+    expect(stackBarLine(shape('none', []))).toBeNull();
+    expect(stackBarLine(null)).toBeNull();
+    expect(stackBarLine(shape('stacked', [7], 4))).toBeNull();
+    expect(stackBarLine(shape('mixed', [7]))).toBeNull();
   });
 });
 

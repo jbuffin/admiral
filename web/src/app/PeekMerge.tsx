@@ -60,6 +60,11 @@ function useStackShape(ship: Ship): StackShape | null {
   return shape;
 }
 
+const PR_TAB_LINK: Record<string, string> = {
+  independent: "Merge each PR from the ship's PR tab",
+  chained: "Stack these PRs from the ship's PR tab",
+};
+
 /** Merge for a ready ship outside its PR tab: a lone PR or a GitHub stack merges here, any other ship of several PRs is merged from the PR tab, which this points to. */
 export function ShipMerge({ ship, onMerged, onError }: { ship: Ship; onMerged: () => void; onError: (e: string) => void }) {
   const shape = useStackShape(ship);
@@ -77,7 +82,7 @@ export function ShipMerge({ ship, onMerged, onError }: { ship: Ship; onMerged: (
         go(shipPath(ship.session), search);
       }}
     >
-      Merge each PR from the ship's PR tab
+      {PR_TAB_LINK[shape.shape] ?? "Open the ship's PR tab"}
     </a>
   );
 }

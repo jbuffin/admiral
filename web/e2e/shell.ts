@@ -1119,11 +1119,12 @@ export async function independentPRsMergeOneAtATime(page: Page, a: Admiral, opts
   const panel = await openPRTab(page, a, ship);
   const tabs = panel.getByRole('tablist').getByRole('tab');
   await expect(tabs).toHaveText([/#7/, /#8/]);
+  const merge = panel.getByRole('button', { name: 'Merge', exact: true });
+  // Merge shows only once the shape is read, so these absences are not just the shape's not having arrived.
+  await expect(merge).toBeInViewport();
   await expect(stackBar(panel)).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Stack on GitHub' })).toHaveCount(0);
   await expect(panel.getByRole('button', { name: /Merge up to/ })).toHaveCount(0);
-  const merge = panel.getByRole('button', { name: 'Merge', exact: true });
-  await expect(merge).toBeInViewport();
   expect((await merge.boundingBox())!.height, 'Merge height').toBeGreaterThanOrEqual(44);
   await expect(panel.locator('.peek-merge .merge-hint')).toHaveText('squash');
   await expect(panel).not.toContainText(/whole stack/i);

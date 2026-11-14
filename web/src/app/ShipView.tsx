@@ -430,7 +430,10 @@ export function targetFor(ship: Ship, boat: CrewBoat | undefined, conv: Conversa
 }
 
 const OPEN_TAB: Record<string, Tab> = { terminal: 'Terminal', pr: 'PR' };
-const openTab = (): Tab => OPEN_TAB[new URLSearchParams(loc.value.search).get('tab') ?? ''] ?? 'Conversation';
+const openTab = (): Tab => {
+  const v = new URLSearchParams(loc.value.search).get('tab') ?? '';
+  return Object.hasOwn(OPEN_TAB, v) ? OPEN_TAB[v] : 'Conversation';
+};
 
 function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const [tab, setTab] = useState<Tab>(openTab);

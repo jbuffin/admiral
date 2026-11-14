@@ -45,11 +45,18 @@ function useDetails(session: string, urls: string[]): Record<string, PRDetail> {
 function useShape(session: string, many: boolean): [StackShape | null, (s: StackShape) => void, () => Promise<StackShape | null>] {
   const [shape, setShape] = useState<StackShape | null>(null);
   const live = useRef(true);
+  // A read that started before a newer answer (a link's, or a later read) must not overwrite it.
+  const seq = useRef(0);
   const read = async () => {
+    const mine = ++seq.current;
     const r = await fetchStackShape(session);
     if (!live.current || !r.ok) return null;
-    setShape(r.data);
+    if (mine === seq.current) setShape(r.data);
     return r.data;
+  };
+  const answer = (s: StackShape) => {
+    seq.current++;
+    setShape(s);
   };
   useLayoutEffect(() => {
     live.current = true;
@@ -61,7 +68,7 @@ function useShape(session: string, many: boolean): [StackShape | null, (s: Stack
       clearInterval(timer);
     };
   }, [session, many]);
-  return [shape, setShape, read];
+  return [shape, answer, read];
 }
 
 const STALE_LINK = 'Admiral restarted, reload to stack';
@@ -126,8 +133,6 @@ function StackSheet({ session, urls, details, onClose, onShape, read }: { sessio
     </Sheet>
   );
 }
-
-const LEAD = { stacked: 'Stacked on GitHub', chained: 'Not a GitHub stack.', mixed: 'Not one chain or stack.' } as const;
 
 function PRHeader({ ship, url, detail }: { ship: Ship; url: string; detail: PRDetail | undefined }) {
   const pr = (ship.prs ?? []).find((p) => p.url === url)!;
@@ -308,8 +313,7 @@ export function PRTab({ ship }: { ship: Ship }) {
   const reviewBar = reviewStackBar(ship);
   const place = reReviewPlace(ship);
   const respondedHere = moored && current.reviewing && current.responded && current.state === 'OPEN';
-  const line = reviewBar ? '' : stackBarLine(shape);
-  const lead = shape && shape.shape in LEAD ? LEAD[shape.shape as keyof typeof LEAD] : '';
+  const line = reviewBar ?? stackBarLine(shape);
   const action = reviewBar ? 'none' : stackBarAction(shape, ship.status);
   const choice = mergeFor(shape, prs, current, !!ship.stack_ready);
   const justMerged = mergedAll || merged.has(current.url);
@@ -322,20 +326,11 @@ export function PRTab({ ship }: { ship: Ship }) {
   };
   return (
     <div class="pr-tab">
-      {reviewBar || line ? (
+      {line ? (
         <div class="stack-bar">
           <span class="stack-text">
-            {reviewBar ? (
-              <>
-                <strong>{reviewBar.lead}</strong>
-                {reviewBar.rest}
-              </>
-            ) : (
-              <>
-                <strong>{lead}</strong>
-                {line.slice(lead.length)}
-              </>
-            )}
+            <strong>{line.lead}</strong>
+            {line.rest}
           </span>
           {reviewBar && place?.place === 'stack' ? (
             <button type="button" class="btn primary" onClick={() => setReReview('')}>
@@ -349,7 +344,7 @@ export function PRTab({ ship }: { ship: Ship }) {
               Stack on GitHub
             </button>
           ) : null}
-          {action === 'after-moor' ? <span>Stack after the ship moors</span> : null}
+          {action === 'after-moor' ? <span class="merge-hint">Stack after the ship moors</span> : null}
           {unseen && shape?.shape === 'chained' ? <span>GitHub hasn't shown the stack yet. It shows on the next refresh.</span> : null}
         </div>
       ) : null}
