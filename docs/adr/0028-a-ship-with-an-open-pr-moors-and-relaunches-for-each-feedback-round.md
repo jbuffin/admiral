@@ -1,6 +1,6 @@
 # 28. A ship with an open PR moors on a clean exit and relaunches for each feedback round
 
-Status: accepted, amended by [ADR 0036](0036-a-ship-returns-to-port-to-clean-up-before-it-ends.md) (a merge wakes the ship for a clean-up turn before it ends)
+Status: accepted, amended by [ADR 0036](0036-a-ship-returns-to-port-to-clean-up-before-it-ends.md) (a merge wakes the ship for a clean-up turn before it ends; Moor ends a live ship with open PRs on Stop and Return to port)
 
 ## Context
 
@@ -11,7 +11,7 @@ The ship that opened a PR stays with its change through review, and brings on th
 **A ship with an open PR moors when it exits cleanly. Admiral watches the PR and relaunches the ship under the same name for each feedback round. It never pushes a code change without the engineer's approval, and it sails off when every PR it carries is merged or closed.**
 
 - **The same ship is the same identity, not the same process.** The harness exits once the PR is open. Each round is a fresh session under the ship's name, and the skill's on-disk state (Commodore's run directory and `state.md`) carries its memory.
-- **What moors a ship.** Exit 0, and its report lists at least one PR that GitHub confirms is open and routes to the ship's fleet. Exit 0 without an open PR still sails off. A non-zero exit still anchors, and Dismiss ends following. Any ship that passes this test moors, whether launched by hand, by AdmiralBot or Promoted. Restricted ships never push, so they never qualify. Each ship has a **Don't follow reviews** switch. A PR opened by hand with no ship behind it is out of this: the engineer launches Commodore on it from the My PRs view.
+- **What moors a ship.** Exit 0, and its report lists at least one PR that GitHub confirms is open and routes to the ship's fleet. Exit 0 without an open PR still sails off. A live ship also moors without exiting cleanly: when its turn ends (needs you, reason `stop`) on a report whose `result` is `done` and that lists a PR GitHub confirms open, Admiral moors it and ends its session, crew boats included. A `partial` or `failed` report, or none, leaves it live. The engineer can moor a live ship with an open PR from Stop ship or Return to port (the sheet's **Moor**), which ends the session at once. A non-zero exit still anchors, and Dismiss ends following. Any ship that passes this test moors, whether launched by hand, by AdmiralBot or Promoted. Restricted ships never push, so they never qualify. Each ship has a **Don't follow reviews** switch. A PR opened by hand with no ship behind it is out of this: the engineer launches Commodore on it from the My PRs view.
 - **The record.** `$ADMIRAL_HOME/moored/<ship>.json` holds the name, fleet, harness, model, skill, checkout, PRs, the report's `resume` text and the round count. It survives reboots, and the ship's name stays reserved while it exists. The file is the record only while the ship isn't live; on a wake Admiral recreates the tmux session under the same name, and tmux is the record again.
 - **What wakes it.** Admiral polls the fleet's built-in GitHub client with one batched GraphQL query over every moored ship's PRs, every 2 minutes and when the Ships page opens.
   - Feedback: a review with comments or changes requested, new review-thread comments, PR comments.

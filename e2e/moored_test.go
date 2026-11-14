@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -23,12 +24,14 @@ func mooring(t *testing.T, exit string) (*world, *fakeGH) {
 	return w, g
 }
 
-func mooredReport(prs ...string) string {
+func mooredReport(prs ...string) string { return reportWith("done", prs...) }
+
+func reportWith(result string, prs ...string) string {
 	list := []map[string]any{}
 	for _, u := range prs {
 		list = append(list, map[string]any{"url": u, "closes": []string{}})
 	}
-	b, _ := json.Marshal(map[string]any{"version": 2, "result": "done", "why": "PR opened", "prs": list,
+	b, _ := json.Marshal(map[string]any{"version": 2, "result": result, "why": "PR opened", "prs": list,
 		"resume": "/commodore resume run-7"})
 	return string(b)
 }
@@ -150,8 +153,8 @@ func TestNonZeroExitAnchorsWhateverTheReportSays(t *testing.T) {
 	w.exitWith(ship, mooredReport(mooredPR))
 
 	w.in.waitShipsList(t, 20*time.Second, "the ship anchored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "anchored" })
-	holdThat(t, "an anchored ship moored, got a record or had its PR looked up", func() bool {
-		return byName(w.in.ships(t))[ship.Name].Status == "anchored" && !exists(w.mooredFile(ship.Name)) && !g.asked(mooredPR)
+	holdThat(t, "an anchored ship moored or got a record", func() bool {
+		return byName(w.in.ships(t))[ship.Name].Status == "anchored" && !exists(w.mooredFile(ship.Name))
 	})
 }
 
@@ -279,5 +282,122 @@ func TestMooredShipReturnsToPortWhenItsPRMerges(t *testing.T) {
 	first, _ := prs[0].(map[string]any)
 	if n != 1 || ev["reason"] != "merged" || len(prs) != 1 || first["url"] != mooredPR || first["state"] != "MERGED" {
 		t.Errorf("unmoored events = %d, last = %v; want one with reason merged and the PR MERGED", n, ev)
+	}
+}
+
+// liveMooring is a world whose ship writes nothing and stays up after its turn ends, so the server decides what happens.
+func liveMooring(t *testing.T) (*world, *fakeGH) {
+	t.Helper()
+	w := newWorld(t)
+	g := w.newFakeGH()
+	g.token("", "fake-token-f")
+	g.prState(mooredPR, "OPEN")
+	w.checkoutOf(w.work, "widgets", "acme/widgets")
+	w.outFleets(map[string][]string{"f": {"record", "bracketedpaste", "hook working", "wait go", `event Stop {"background_tasks":[]}`}},
+		srcDef{Key: "gh", Plugin: "github", Name: "GitHub", Fleet: "f", Settings: map[string]any{"views": []any{}}})
+	w.start()
+	return w, g
+}
+
+func (w *world) launchLive() shipJSON {
+	w.t.Helper()
+	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
+	w.waitFile(ship.Session, "recorded")
+	return ship
+}
+
+func (w *world) writeReportFor(ship shipJSON, report string) {
+	w.t.Helper()
+	path, _ := shipPaths(w.record(ship.Session))
+	if err := os.WriteFile(path, []byte(report), 0o600); err != nil {
+		w.t.Fatal(err)
+	}
+}
+
+func (w *world) wantMoored(ship shipJSON) {
+	w.t.Helper()
+	list := w.in.waitShipsList(w.t, 20*time.Second, "the ship moored", func(l []shipJSON) bool {
+		return byName(l)[ship.Name].Status == "moored"
+	})
+	if got := byName(list)[ship.Name]; len(got.PRs) != 1 || got.PRs[0].URL != mooredPR {
+		w.t.Errorf("moored ship = %+v, want its PR %s", got, mooredPR)
+	}
+	waitCond(w.t, 10*time.Second, "the tmux session is gone", func() bool { return !w.hasSession(ship.Session) })
+	log := w.waitEvent(ship.Session, "ended", 1)
+	var got []string
+	for _, e := range eventsOf(log) {
+		if e == "moored" || e == "ended" || e == "stopped" || e == "returning" {
+			got = append(got, e)
+		}
+	}
+	if want := []string{"moored", "ended"}; !reflect.DeepEqual(got, want) {
+		w.t.Errorf("records = %v, want %v: moored before ended, no stopped or returning", got, want)
+	}
+	if e := lastOf(log, "ended"); e["signal"] != "KILL" {
+		w.t.Errorf("ended = %v, want signal KILL", e)
+	}
+	if !exists(w.mooredFile(ship.Name)) {
+		w.t.Errorf("no moored record for %s", ship.Name)
+	}
+}
+
+func TestAShipMoorsWhenCommodoreIsDoneAndItsTurnEnds(t *testing.T) {
+	t.Parallel()
+	w, g := liveMooring(t)
+	ship := w.launchLive()
+
+	w.writeReportFor(ship, mooredReport(mooredPR))
+	w.in.waitShipsList(t, 20*time.Second, "open_prs to list the report's open PR", func(l []shipJSON) bool {
+		return reflect.DeepEqual(byName(l)[ship.Name].OpenPRs, []string{mooredPR})
+	})
+	holdThat(t, "the ship moored while its turn was still running", func() bool {
+		return byName(w.in.ships(t))[ship.Name].Status != "moored" && w.hasSession(ship.Session)
+	})
+	if !g.asked(mooredPR) {
+		t.Error("GitHub was never asked about the report's PR")
+	}
+
+	w.touch(ship.Session, "go")
+	w.wantMoored(ship)
+}
+
+func TestAShipWithAPartialReportStaysLiveWhenItsTurnEnds(t *testing.T) {
+	t.Parallel()
+	w, _ := liveMooring(t)
+	ship := w.launchLive()
+	w.writeReportFor(ship, reportWith("partial", mooredPR))
+	w.in.waitShipsList(t, 20*time.Second, "open_prs to list the report's open PR", func(l []shipJSON) bool {
+		return reflect.DeepEqual(byName(l)[ship.Name].OpenPRs, []string{mooredPR})
+	})
+	w.touch(ship.Session, "go")
+	w.waitFile(ship.Session, "cues-done")
+	w.in.waitShipsList(t, 20*time.Second, "the ship to need you at the end of its turn", func(l []shipJSON) bool {
+		return byName(l)[ship.Name].Status == "needs_you"
+	})
+	holdThat(t, "a ship whose report is partial left the live list", func() bool {
+		s := byName(w.in.ships(t))[ship.Name]
+		return s.Status != "moored" && w.hasSession(ship.Session) && !exists(w.mooredFile(ship.Name))
+	})
+}
+
+func TestReturnToPortWithMoorMoorsTheShipWithoutTheCleanUpPrompt(t *testing.T) {
+	t.Parallel()
+	w, _ := liveMooring(t)
+	ship := w.launchLive()
+	w.writeReportFor(ship, reportWith("partial", mooredPR))
+	w.touch(ship.Session, "go")
+	w.waitFile(ship.Session, "cues-done")
+
+	code, body := send(t, http.MethodPost, w.shipURL(ship.Session, "/return"), map[string]any{"moor": true})
+	if code != http.StatusOK || strings.TrimSpace(body) != `{"moored":"`+ship.Session+`"}` {
+		t.Fatalf("return with moor = %d %s, want 200 {\"moored\":%q}", code, body, ship.Session)
+	}
+	w.wantMoored(ship)
+	if got := w.inputOf(ship.Session, ""); strings.Contains(got, "Return to port") {
+		t.Errorf("the ship's terminal input = %q, want no clean-up prompt", got)
+	}
+
+	if code, _ := send(t, http.MethodPost, w.shipURL(ship.Session, "/return"), map[string]any{"moor": true}); code != http.StatusConflict {
+		t.Errorf("return with moor on the moored ship = %d, want today's 409", code)
 	}
 }

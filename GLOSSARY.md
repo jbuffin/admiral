@@ -195,11 +195,11 @@ A named, reusable teammate definition in a fleet or repo: its role, skills, inst
 _Avoid_: agent, persona, crew type
 
 **Stop ship**:
-The engineer ends a ship that is still running, from its conversation. Admiral kills the ship's session, crew boats included, and records `ended` with a `KILL` signal, then `stopped`. The ship leaves open water as after a dismissal.
+The engineer ends a ship that is still running, from its conversation. Admiral kills the ship's session, crew boats included, and records `ended` with a `KILL` signal, then `stopped`. The ship leaves open water as after a dismissal. A ship with an open PR (one it carries, or its report lists) asks first: Moor ends it and keeps the PRs, the other button ends it and forgets them.
 _Avoid_: kill, abort
 
 **Return to port**:
-A ship ending once it is done, after it cleans up: Admiral tells it to clean up after itself, never how, and stops it like Stop ship when that turn ends. The engineer starts it from the bridge of a live ship once its turn ends; a moored ship starts it by itself once its PRs are merged. A live ship that carries a PR doesn't offer it.
+A ship ending once it is done, after it cleans up: Admiral tells it to clean up after itself, never how, and stops it like Stop ship when that turn ends. The engineer starts it from the bridge of a live ship once its turn ends; a moored ship starts it by itself once its PRs are merged. A live ship that carries a PR doesn't offer it. A ship with an open PR may moor instead, with no clean-up prompt.
 _Avoid_: clean up (for the action), dock, finish
 
 **Subagent**:
@@ -227,11 +227,11 @@ The number of things waiting on the engineer across every fleet, shown in the ta
 _Avoid_: unread
 
 **Anchored**:
-A ship whose harness has exited with an error. It stays anchored, still in open water with a red mark, until the engineer dismisses it. A clean exit with an open PR moors the ship instead, and any other clean exit sails off and disappears.
+A ship whose harness has exited with an error. It stays anchored, still in open water with a red mark, until the engineer dismisses it. A clean exit with an open PR moors the ship instead (see Moored), and any other clean exit sails off and disappears.
 _Avoid_: docked, finished, done
 
 **Moored**:
-A ship carrying an open PR whose harness isn't running, waiting for feedback. Once every PR it carries is done and at least one merged, it returns to port; if they were all closed, it sails off.
+A ship carrying an open PR whose harness isn't running, waiting for feedback. A ship moors when its harness exits cleanly with an open PR, when its report says `done` at the end of its turn with an open PR, or when the engineer picks Moor on Stop ship or Return to port. Once every PR it carries is done and at least one merged, it returns to port; if they were all closed, it sails off.
 _Avoid_: parked, sleeping, docked, idle
 
 **Feedback round**:

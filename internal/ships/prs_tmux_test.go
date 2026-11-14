@@ -460,3 +460,29 @@ func TestAWokenShipWhoseMooredPollSawItsPRMergedShowsItMergedBeforeAnyPoll(t *te
 	}
 	t.Fatal("no ship Saltpaw")
 }
+
+func TestMoorOnAShipWhoseOnlyOpenPRIsACarriedOneMoorsItWithThatPR(t *testing.T) {
+	r := newPRRig(t)
+	r.gh.mu.Lock()
+	r.gh.exitCheck = true
+	r.gh.mu.Unlock()
+	r.candidates = []string{prSeven}
+	r.mine(prSeven, "OPEN", time.Minute)
+	r.s.PollMoored(context.Background())
+	if got := r.s.openPRsOf("saltpaw"); len(got) != 0 {
+		t.Fatalf("the report check cached %v for a ship with no report", got)
+	}
+	if sh := r.ship(t); !slices.Equal(sh.OpenPRs, []string{prSeven}) {
+		t.Fatalf("open_prs = %v, want the carried [%s]", sh.OpenPRs, prSeven)
+	}
+
+	rec := httptest.NewRecorder()
+	r.mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/ships/saltpaw/return", strings.NewReader(`{"moor":true}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("return with moor = %d %s, want 200", rec.Code, rec.Body)
+	}
+	recs, err := moor.List(r.home)
+	if err != nil || len(recs) != 1 || !slices.Equal(recs[0].PRs, []string{prSeven}) {
+		t.Fatalf("moored records = %+v, %v; want one with [%s]", recs, err, prSeven)
+	}
+}

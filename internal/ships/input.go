@@ -125,8 +125,17 @@ func (s *Service) serveInterrupt(w http.ResponseWriter, r *http.Request) {
 // serveStop ends a ship, live or anchored.
 func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	if _, ok := s.find(session); !ok {
+	sess, ok := s.find(session)
+	if !ok {
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
+		return
+	}
+	moored, ok := moorWanted(w, r)
+	if !ok {
+		return
+	}
+	if st := status(sess, time.Now()); moored && st != StatusAnchored && st != StatusSailingOff {
+		s.serveMoor(w, r, sess)
 		return
 	}
 	if err := s.stopShip(session, withVia(nil, viaOf(r))); err != nil {
@@ -142,13 +151,11 @@ func (s *Service) stopShip(session string, fields map[string]any) error {
 	// Not a request's context: a client that hangs up must not abandon the write.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	defer s.lockShip(session)()
 	sess, ok := s.find(session)
 	if !ok {
 		return ErrNotFound
 	}
-	s.mu.Lock()
-	tr := s.tracks[session]
-	s.mu.Unlock()
 	switch status(sess, time.Now()) {
 	case StatusAnchored, StatusSailingOff:
 		s.observe(ctx) // the ship's `ended` goes into the log before `stopped`
@@ -157,7 +164,18 @@ func (s *Service) stopShip(session string, fields map[string]any) error {
 		s.recordKilled(sess)
 	}
 	s.record(outcomes.Record{Ship: session, Event: "stopped", Fields: fields}, nil)
-	if err := s.killShip(ctx, session, false); err != nil {
+	if err := s.endSession(ctx, session, false); err != nil {
+		return err
+	}
+	return nil
+}
+
+// endSession kills a ship's session and settles the files its end leaves behind.
+func (s *Service) endSession(ctx context.Context, session string, keepInbox bool) error {
+	s.mu.Lock()
+	tr := s.tracks[session]
+	s.mu.Unlock()
+	if err := s.killShip(ctx, session, keepInbox); err != nil {
 		return err
 	}
 	_ = s.Host.Sync(ctx)
