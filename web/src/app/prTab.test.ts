@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR } from './api';
-import { chooseStack, chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs } from './prTab';
+import { chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -179,19 +179,6 @@ describe('stackedPRs', () => {
   });
 });
 
-describe('chooseStack', () => {
-  it('takes the first stack a carried PR\'s detail has, in the ship\'s order', () => {
-    const a = { ...entries(7, 8), number: 1 } as never;
-    const b = { ...entries(8, 9), number: 2 } as never;
-    expect(chooseStack([pr(9), pr(8), pr(7)], { [URL(7)]: { stack: b }, [URL(8)]: { stack: a } })).toBe(a);
-  });
-
-  it('is null when no detail has a stack, or none has loaded', () => {
-    expect(chooseStack([pr(7), pr(8)], { [URL(7)]: { stack: null } })).toBeNull();
-    expect(chooseStack([pr(7)], {})).toBeNull();
-  });
-});
-
 describe('defaultPR', () => {
   it('is the first open PR in stack order', () => {
     expect(defaultPR([pr(7, { state: 'MERGED' }), pr(8), pr(9)])).toEqual(pr(8));
@@ -246,8 +233,14 @@ describe('chooseStackDetail', () => {
     expect(got).toEqual({ url: URL(8), stack, answerAll: '/commodore https://github.com/acme/api/stack/12' });
   });
 
-  it('is null when no detail has a stack', () => {
-    expect(chooseStackDetail([pr(7)], { [URL(7)]: { stack: null } })).toBeNull();
+  it("takes the first stack in the ship's order, not the last", () => {
+    const a = { ...entries(7, 8), number: 1 } as never;
+    const b = { ...entries(8, 9), number: 2 } as never;
+    expect(chooseStackDetail([pr(9), pr(8), pr(7)], { [URL(7)]: { stack: b }, [URL(8)]: { stack: a } })?.stack).toBe(a);
+  });
+
+  it('is null when no detail has a stack, or none has loaded', () => {
+    expect(chooseStackDetail([pr(7), pr(8)], { [URL(7)]: { stack: null } })).toBeNull();
     expect(chooseStackDetail([pr(7)], {})).toBeNull();
   });
 });

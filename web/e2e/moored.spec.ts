@@ -323,7 +323,7 @@ test('a running ship that carries an open PR offers no Answer review', async ({ 
   await noAnswerReviewOnARunningShip(page, admiral);
 });
 
-test('the stack bar of a moored stack where every PR has feedback offers Answer all reviews, and it relaunches the ship with the Commodore command', { tag: '@critical' }, async ({ page, admiral }) => {
+test('the stack bar of a moored stack where every PR has feedback offers Answer all reviews, and it relaunches the ship with the Commodore command', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   addGitHubSource(admiral);
   addWakeReviewers(admiral, 'zulu', ['alice']);

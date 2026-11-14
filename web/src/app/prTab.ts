@@ -44,15 +44,6 @@ export function headerChips(pr: MooredPR): DetailChip[] {
   return prChips(pr).map((c): DetailChip => (pr.state === 'MERGED' ? { ...c, tone: 'rev' } : c));
 }
 
-/** The stack to order by: the first one a carried PR's detail returns, in the ship's order. */
-export function chooseStack(carried: MooredPR[], details: Record<string, { stack: PRStack | null } | undefined>): PRStack | null {
-  for (const p of carried) {
-    const stack = details[p.url]?.stack;
-    if (stack) return stack;
-  }
-  return null;
-}
-
 /** The carried PRs that are in the stack, bottom layer first by its positions; an entry matches a PR by URL, so another repo's PR with the same number is not in it. */
 export function stackedPRs(prs: MooredPR[], stack: Pick<PRStack, 'entries'> | null | undefined): MooredPR[] {
   if (!stack) return [];
