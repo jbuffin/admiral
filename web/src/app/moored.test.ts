@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Ship } from './api';
-import { carryingShip, mergeHint, nextStep, prChips, prLabel, reReviewPlace, reviews, rowButtons, staleNote } from './moored';
+import { carryingShip, mergeHint, moorSheetParts, nextStep, offersMoor, prChips, prLabel, reReviewPlace, reviews, rowButtons, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -282,5 +282,55 @@ describe('reReviewPlace', () => {
   it('is null while the author has not responded, and for a ship that is not moored', () => {
     expect(reReviewPlace(ship({ url: stackUrl, prs: [layer(6), layer(7)] }))).toBeNull();
     expect(reReviewPlace(ship({ url: stackUrl, status: 'underway', prs: [layer(6, { responded: true }), layer(7)] }))).toBeNull();
+  });
+});
+
+describe('offersMoor', () => {
+  const live = (over: Partial<Ship> = {}) => ship({ status: 'needs_you', ...over });
+
+  it('is true for a live ship carrying an open PR it did not review', () => {
+    expect(offersMoor(live({ prs: [pr()] }))).toBe(true);
+    expect(offersMoor(live({ status: 'underway', prs: [pr()] }))).toBe(true);
+  });
+
+  it('is false for a moored ship, which gets Merge instead', () => {
+    expect(offersMoor(ship({ prs: [pr()] }))).toBe(false);
+  });
+
+  it('is false for a ship that reviews the PR', () => {
+    expect(offersMoor(live({ prs: [pr({ reviewing: true })] }))).toBe(false);
+  });
+
+  it('is false when every PR is merged or closed, and true while one is still open', () => {
+    expect(offersMoor(live({ prs: [pr({ state: 'MERGED' }), pr({ state: 'CLOSED' })] }))).toBe(false);
+    expect(offersMoor(live({ prs: [pr({ state: 'MERGED' }), pr({ url: 'https://github.com/acme/api/pull/8' })] }))).toBe(true);
+  });
+
+  it('is false for a ship returning to port', () => {
+    expect(offersMoor(live({ prs: [pr()], returning: true }))).toBe(false);
+  });
+
+  it('is false for a ship carrying no PR', () => {
+    expect(offersMoor(live({ prs: [] }))).toBe(false);
+    expect(offersMoor(live({ prs: undefined }))).toBe(false);
+  });
+});
+
+describe('moorSheetParts', () => {
+  const two = [pr(), pr({ url: 'https://github.com/acme/api/pull/8' }), pr({ url: 'https://github.com/acme/api/pull/9', state: 'MERGED' })];
+
+  it('lists the open PRs it carries, not the merged ones', () => {
+    const parts = moorSheetParts(ship({ status: 'needs_you', name: 'kelp', prs: two }));
+    expect(parts.urls).toEqual(['https://github.com/acme/api/pull/7', 'https://github.com/acme/api/pull/8']);
+  });
+
+  it('says "the PR" for one PR and "the PRs" for more', () => {
+    expect(moorSheetParts(ship({ status: 'needs_you', prs: [pr()] })).explain).toContain('keeps the PR, so you can merge it here');
+    expect(moorSheetParts(ship({ status: 'needs_you', prs: two })).explain).toContain('keeps the PRs, so you can merge them here');
+  });
+
+  it('says the turn is cut off only while the ship is underway', () => {
+    expect(moorSheetParts(ship({ status: 'underway', name: 'kelp', prs: two })).explain).toContain('kelp is mid-turn: the turn is cut off.');
+    expect(moorSheetParts(ship({ status: 'needs_you', prs: two })).explain).not.toMatch(/cut off/i);
   });
 });

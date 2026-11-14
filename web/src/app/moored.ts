@@ -90,6 +90,28 @@ export const isStackUrl = (url: string | undefined): boolean => /\/stack\/\d+\/?
 /** Whether the ship carries a PR it reviews rather than one it opened. */
 export const reviews = (ship: Pick<Ship, 'prs'>): boolean => (ship.prs ?? []).some((p) => p.reviewing);
 
+/** Why Merge isn't here yet, shown beside Moor on a live ship's PR tab. */
+export const MOOR_LINE = 'Admiral merges only from a moored ship. Moor ends the session and keeps its PRs; a feedback round or your next message wakes it in a new session.';
+
+/** The open PRs a live ship opened itself; reviewed ones never merge from Admiral. */
+const ownOpenPRs = (ship: Pick<Ship, 'prs'>): MooredPR[] => (ship.prs ?? []).filter((p) => p.state === 'OPEN' && !p.reviewing);
+
+/** Whether a live ship's PR tab offers Moor: it carries an open PR it opened, and isn't moored or returning. */
+export function offersMoor(ship: Pick<Ship, 'status' | 'prs' | 'returning'>): boolean {
+  return ship.status !== 'moored' && !ship.returning && ownOpenPRs(ship).length > 0;
+}
+
+/** What the Moor sheet says: the open PRs it keeps, why Moor is the way to merge, and for an underway ship that its turn is cut off. */
+export function moorSheetParts(ship: Pick<Ship, 'name' | 'status' | 'prs'>): { urls: string[]; explain: string } {
+  const urls = ownOpenPRs(ship).map((p) => p.url);
+  const one = urls.length === 1;
+  const cut = ship.status === 'underway' ? ` ${ship.name} is mid-turn: the turn is cut off.` : '';
+  return {
+    urls,
+    explain: `Moor ends the session and keeps ${one ? 'the PR' : 'the PRs'}, so you can merge ${one ? 'it' : 'them'} here. A feedback round or a typed message wakes the ship in a new session.${cut}`,
+  };
+}
+
 /** The reviewed PRs whose author has responded since the fleet's review, bottom layer first. */
 export const respondedPRs = (ship: Pick<Ship, 'prs'>): MooredPR[] => (ship.prs ?? []).filter((p) => p.reviewing && p.responded && p.state === 'OPEN');
 
