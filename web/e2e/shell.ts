@@ -2500,9 +2500,11 @@ export async function answerReviewFromThePRTab(page: Page, a: Admiral, opts: { p
   expect(box.x + box.width, 'the command stays inside the sheet').toBeLessThanOrEqual(frame.x + frame.width + 1);
   if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
 
+  const posts: string[] = [];
+  page.on('request', (r) => r.method() === 'POST' && posts.push(new URL(r.url()).pathname));
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).tap();
   await expect(dialog).toBeHidden();
-  await page.waitForTimeout(1500);
+  expect(posts, 'Cancel sends nothing').toEqual([]);
   expect((await listShips(a)).find((s) => s.session === ship.session)?.status, 'Cancel starts nothing').toBe('moored');
 
   readyToWake(a, ship);
