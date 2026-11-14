@@ -364,7 +364,7 @@ Oldest `created` first. An item is its file's fields plus `session`, and `name`,
 
 A `crew_notes` item holds `crew_notes: {"fleet", "ship", "run_date", "notes": [{"id", "member", "role", "scope", "repo", "note", "replaces"}]}`. A `crew_member` item holds `crew_member: {"fleet", "ship", "run_date", "member", "role", "ad_hoc_run", "definition", "notes": [...]}`, where `definition` is the ad hoc file's text and the notes are that member's. `fleet` is the fleet key the ship was launched in. The answer files are `{"version": 1, "id", "kind", "answered", "notes": {"<note id>": {"decision", "note", "scope", "repo"}}}` for `crew_notes` and `{..., "decision", "file_removed"}` for `crew_member`.
 
-A migration notice also carries `notice.entries`: `[{"key", "name", "panel", "fleet"}]`, one for each order source panel the old config held (`key` is the source key, `panel` its view id, `fleet` the fleet the source fed: its own, else the first fleet). The shell shows an Automate… link for each; a note already on disk has no `entries` and stays plain text.
+A migration notice also carries `notice.entries`: `[{"key", "name", "panel", "fleet"}]`, one for each order source panel the old config held (`key` is the source key, `panel` its view id, `fleet` the fleet the source fed: its own, else the first fleet). The shell shows the notice as plain text with no link; a note already on disk has no `entries` and stays plain text.
 
 ### Acting on an item
 
@@ -575,7 +575,7 @@ A routine:
 
 ### `GET /api/sources`
 
-Every source, each `{"key", "name", "plugin", "fleet", "icon_url", "capabilities", "has_schema", "state", "read_only", "error", "auth", "warnings", "views"}`. A source that raises events also carries `events: [{"kind", "title", "panel"?}]`, its event catalog: one entry for each kind and panel a routine's `on` may name, with `title` the words to show ("Review requested of you", `New in` and the view's title). `events` is left out until the source has listed them, so a client that needs it waits and asks again.
+Every source, each `{"key", "name", "plugin", "fleet", "icon_url", "capabilities", "has_schema", "state", "read_only", "error", "auth", "warnings", "views"}`. A source that raises events also carries `events: [{"kind", "title", "panel"?}]`, its event catalog: one entry for each kind and panel a routine's `on` may name, with `title` the words to show ("Review requested of you", "Assigned to you"). `events` is left out until the source has listed them, so a client that needs it waits and asks again.
 
 `views` is `[{"id", "title", "orders", "error"?, "refreshed_at"?}]`, one for each panel the source lists. `error` is Admiral's message when the view's last answer failed; the orders beside it are the last good ones. `refreshed_at` (RFC 3339) is when the view last answered successfully: for the built-in GitHub source, the time its search finished, so a search that finds the same orders still moves it; for a plugin, the time of the last good `orders.list`. It is left out until the first success, a failure leaves it as it was, and it survives a panels re-list and a settings Restart. A GitHub view also keeps its orders across a Restart until the new search answers. A plugin can't set it.
 

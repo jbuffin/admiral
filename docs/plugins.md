@@ -146,10 +146,10 @@ For all three, Admiral has already refused text that is empty after trimming, ov
 
 ```json
 {"jsonrpc":"2.0","id":3,"method":"events.catalog","params":{}}
-{"jsonrpc":"2.0","id":3,"result":[{"kind":"review_requested","title":"Review requested of you"},{"kind":"new_in_view","title":"New in Mine","panel":"mine"}]}
+{"jsonrpc":"2.0","id":3,"result":[{"kind":"review_requested","title":"Review requested of you"},{"kind":"commented","title":"Commented in Mine","panel":"mine"}]}
 ```
 
-Each kind has a `kind` and a `title`, and a `panel` (one of your panel ids) when it belongs to one panel. A routine can run on a kind you list; a kind you don't list is never delivered.
+Each kind has a `kind` and a `title`, and a `panel` (one of your panel ids) when it belongs to one panel. A routine can run on a kind you list; a kind you don't list is never delivered. `new_in_view` is a retired kind: Admiral drops it from your catalog and drops its events, and a saved routine that names it shows as broken and never runs.
 
 ### Plugin → Admiral notifications
 

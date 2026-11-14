@@ -208,23 +208,6 @@ export const limitsPath = (fleetKey: string, field?: string): string => `/app/pr
 /** The field a Limits page query names, if any. */
 export const limitsFieldOf = (search: string): string | null => new URLSearchParams(search).get('field') || null;
 
-/** The query that opens the new-routine editor pre-filled for a view, with its fleet when known. */
-export function automateSearch(sourceKey: string, viewId: string, fleetKey?: string): string {
-  const q = new URLSearchParams();
-  if (fleetKey) q.set('fleet', fleetKey);
-  q.set('automate', sourceKey);
-  q.set('view', viewId);
-  return `?${q}`;
-}
-
-/** The view an Automate… query names, if any. */
-export function automateOf(search: string): { source: string; view: string } | null {
-  const q = new URLSearchParams(search);
-  const source = q.get('automate');
-  const view = q.get('view');
-  return source && view ? { source, view } : null;
-}
-
 function sync() {
   loc.value = { path: location.pathname, search: location.search };
 }

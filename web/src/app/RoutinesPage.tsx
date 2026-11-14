@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, type DirsAnswer, type Fleet, type FleetCapabilities } from './api';
-import { capabilities, capabilitiesFailed, capabilitiesLoaded, loadCapabilities } from './capabilities';
+import { capabilities, capabilitiesFailed, loadCapabilities } from './capabilities';
 import { cronSentence } from './cron';
 import { DescribeRoutine } from './FilingForms';
 import { fleetSearch } from './fleets';
@@ -11,11 +11,9 @@ import { CheckoutSelect, DockPicker, ModelEffortPair, ResourcesPicker, SkillSele
 import type { SkillsAnswer } from './launchForm';
 import { normalizeLimits } from './limitsForm';
 import { RoutineTabs } from './RoutineTabs';
-import { automateOf, go, loc, peekPath, routineNewPath, routinePath, shipPath } from './router';
+import { go, peekPath, routineNewPath, routinePath, shipPath } from './router';
 import {
   autopilotDocks,
-  automateDraft,
-  automateTarget,
   blankForm,
   breakerTripped,
   eventChoices,
@@ -28,6 +26,7 @@ import {
   holdFireNote,
   lastRunText,
   noEventsNote,
+  triggerRemoved,
   launchOnDock,
   routineBody,
   runCost,
@@ -43,7 +42,7 @@ import {
   type RoutineRun,
   type RoutineSpend,
 } from './routines';
-import { inboxItems, ships, shipsLoaded, sources } from './shipsLink';
+import { inboxItems, ships, sources } from './shipsLink';
 
 const api = (fleet: string, rest = '') => `/fleets/${encodeURIComponent(fleet)}/routines${rest}`;
 const BEFORE: { value: Before; label: string }[] = [
@@ -167,6 +166,9 @@ function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
     </section>
   );
 }
+
+/** What a routine that still names the removed view trigger says; the server refuses a save that keeps it. */
+const REMOVED_NOTE = 'The "New in <view>" trigger was removed, so this routine never runs.';
 
 function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSaved, onDeleted, onToggled }: { fleet: Fleet; routine: Routine | null; initial: RoutineForm; caps: FleetCapabilities | undefined; problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }; onSaved: (r: Routine) => void; onDeleted: () => void; onToggled: (r: Routine) => void }) {
   const [form, setForm] = useState(initial);
@@ -309,6 +311,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
               ))}
             </select>
           </label>
+          {triggerRemoved(form.on) ? <p class="note">{REMOVED_NOTE} Pick another event or a schedule to fix it.</p> : null}
           {choices.length === 0 ? <p class="note">{noEventsNote(sources.value, fleet.key)}</p> : <p class="note">Runs when this happens, with the Lookout reading the event first.</p>}
         </>
       ) : (
@@ -535,19 +538,8 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const selected = id ? (list.find((r) => r.id === id) ?? null) : null;
   const showDetail = id !== null || creating;
   const showList = !phone || !showDetail;
-  const automate = creating ? automateOf(loc.value.search) : null;
-  // Only a source and view that exist in this fleet draft a routine; any other query opens blank, so a crafted link pre-fills nothing.
-  const found = automate ? automateTarget(sources.value, fleet.key, automate) : null;
-  const gone = !!automate && shipsLoaded.value && !found;
   const judgeOff = !!caps?.judge && !caps.judge.harness;
-  const draft = (() => {
-    if (drafted) return drafted.form;
-    if (!found) return blankForm();
-    const dock = autopilotDocks(caps, fleet.docks).harnesses[0] ?? null;
-    return automateDraft({ sourceKey: found.source.key, sourceName: found.source.name, viewTitle: found.view.title }, { harness: dock, dir: '', commodore: true });
-  })();
-  // A draft waits for the sources and the capabilities, so its dock is known when the form opens.
-  const ready = !creating || !automate || (shipsLoaded.value && (caps !== undefined || capabilitiesLoaded.value));
+  const draft = drafted ? drafted.form : blankForm();
 
   return (
     <main class={`panel crew routines${showList && showDetail ? ' split' : ''}`}>
@@ -607,7 +599,17 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                   >
                     <span class="crew-main">
                       <span class="crew-name">{r.name}</span>
-                      <span class="crew-sub">{r.on ? `On: ${eventWords(sources.value, fleet.key, r.on)}` : cronSentence(r.when)}</span>
+                      <span class="crew-sub">
+                        {triggerRemoved(r.on) ? (
+                          <>
+                            <span class="pill">Broken</span> {REMOVED_NOTE}
+                          </>
+                        ) : r.on ? (
+                          `On: ${eventWords(sources.value, fleet.key, r.on)}`
+                        ) : (
+                          cronSentence(r.when)
+                        )}
+                      </span>
                     </span>
                     <span class="crew-side">
                       <span class="crew-count">{lastRunText(r.last_run, new Date())}</span>
@@ -647,26 +649,21 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                 </button>
               </p>
             ) : null}
-            {gone ? <p class="note">That view is no longer in this fleet, so this is a blank routine.</p> : null}
             {creating ? (
-              ready ? (
-                <RoutineEditor
-                  key={`new:${loc.value.search}:${drafted ? `described:${drafted.n}` : found ? 'draft' : 'blank'}`}
-                  fleet={fleet}
-                  routine={null}
-                  initial={draft}
-                  caps={caps}
-                  problem={drafted?.problem}
-                  onSaved={(r) => {
-                    void load();
-                    go(routinePath(r.id), search);
-                  }}
-                  onDeleted={() => toList()}
-                  onToggled={() => {}}
-                />
-              ) : (
-                <p class="line">Loading…</p>
-              )
+              <RoutineEditor
+                key={`new:${drafted ? `described:${drafted.n}` : 'blank'}`}
+                fleet={fleet}
+                routine={null}
+                initial={draft}
+                caps={caps}
+                problem={drafted?.problem}
+                onSaved={(r) => {
+                  void load();
+                  go(routinePath(r.id), search);
+                }}
+                onDeleted={() => toList()}
+                onToggled={() => {}}
+              />
             ) : selected ? (
               <>
                 <RoutineEditor

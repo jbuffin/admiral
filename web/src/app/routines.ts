@@ -1,7 +1,6 @@
 import type { Limits } from './limitsForm';
 import type { Dock, FleetCapabilities, Source } from './api';
 import { effortsFor, sourcesForFleet, type SkillChoice } from './launchForm';
-import { automateSearch, routineNewPath } from './router';
 
 export type Before = 'report_only' | 'ask_first' | 'act';
 export type Outcome = 'launched' | 'proposed' | 'skipped' | 'missed' | 'failed' | 'reported' | 'breaker';
@@ -222,13 +221,6 @@ export function launchOnDock(l: RoutineForm['launch'], harness: string): Routine
   return { ...l, harness, dir: '', model: '', effort: effortsFor(harness).includes(l.effort) ? l.effort : '' };
 }
 
-/** The source and view an Automate… query names, when the fleet has both. */
-export function automateTarget(sources: Source[], fleetKey: string, q: { source: string; view: string }): { source: Source; view: Source['views'][number] } | null {
-  const source = sourcesForFleet(sources, fleetKey).find((s) => s.key === q.source);
-  const view = source?.views.find((v) => v.id === q.view);
-  return source && view ? { source, view } : null;
-}
-
 /** The shell-wide banner for Hold fire; null while neither switch is on. */
 export function holdFireBanner(state: HoldFireState | null, fleetName: string, now: Date): HoldFireBanner | null {
   if (!state) return null;
@@ -246,19 +238,6 @@ export function holdFireBanner(state: HoldFireState | null, fleetName: string, n
 /** The note under Before acting while Hold fire is on and the routine is set to Act; null otherwise. */
 export function holdFireNote(before: Before, holdFireOn: boolean): string | null {
   return before === 'act' && holdFireOn ? 'Hold fire is on, so this routine will ask first until it is off. Its setting stays Act.' : null;
-}
-
-export interface AutomateView {
-  sourceKey: string;
-  sourceName: string;
-  viewTitle: string;
-}
-/** The unsaved scheduled routine Automate… drafts for a view; a prompt for AdmiralBot when no dock qualifies. */
-export function automateDraft(view: AutomateView, opts: { harness: string | null; dir: string; commodore: boolean }): RoutineForm {
-  const text = `Look at the "${view.viewTitle}" view of ${view.sourceName} (source ${view.sourceKey}), pick up what is new in it and work on it.`;
-  const form: RoutineForm = { ...blankForm(), name: `Automate ${view.viewTitle}`, when: '30 8 * * 1-5', before: 'ask_first' };
-  if (opts.harness === null) return { ...form, mode: 'prompt', prompt: text };
-  return { ...form, launch: { ...form.launch, harness: opts.harness, dir: opts.dir, text, skill: { kind: opts.commodore ? 'commodore' : 'none' } } };
 }
 
 export function blankForm(): RoutineForm {
@@ -293,28 +272,29 @@ export function formOfRoutine(r: Routine): RoutineForm {
   };
 }
 
-/** One Automate… link for each entry of a migration notice; none for a plain note. */
-export function noticeEntryLinks(notice: { body?: string; entries?: { key: string; name: string; panel: string; fleet?: string }[] } | undefined): { label: string; path: string }[] {
-  return (notice?.entries ?? []).map((e) => ({ label: `Automate… ${e.name}, view ${e.panel}`, path: routineNewPath + automateSearch(e.key, e.panel, e.fleet) }));
-}
-
 export interface EventChoice {
   value: string;
   title: string;
-  /** The optgroup label: the source, with view entries apart from the rest. */
+  /** The optgroup label: the source, with a view's entries under the view's title. */
   group: string;
   on: NonNullable<Routine['on']>;
 }
 
 export const eventValue = (on: NonNullable<Routine['on']>) => `event:${on.source}:${on.kind}${on.panel ? `:${on.panel}` : ''}`;
 
-/** Every (kind, panel) entry the fleet's sources list, in the server's words. */
+/** Whether a routine's trigger is one Admiral removed; a stored routine may still name it, from any source. */
+export const triggerRemoved = (on: Routine['on'] | undefined): boolean => on?.kind === 'new_in_view';
+
+/** Every (kind, panel) entry the fleet's sources list, in the server's words, except a removed trigger. */
 export function eventChoices(sources: Source[], fleetKey: string): EventChoice[] {
   return sourcesForFleet(sources, fleetKey).flatMap((s) =>
-    (s.events ?? []).map((e) => {
-      const on = { source: s.key, kind: e.kind, ...(e.panel ? { panel: e.panel } : {}) };
-      return { value: eventValue(on), title: e.title, group: e.panel ? `${s.name}: new in a view` : s.name, on };
-    }),
+    (s.events ?? [])
+      .filter((e) => !triggerRemoved({ source: s.key, kind: e.kind }))
+      .map((e) => {
+        const on = { source: s.key, kind: e.kind, ...(e.panel ? { panel: e.panel } : {}) };
+        const view = e.panel ? s.views.find((v) => v.id === e.panel)?.title : undefined;
+        return { value: eventValue(on), title: e.title, group: view ? `${s.name}: ${view}` : s.name, on };
+      }),
   );
 }
 
