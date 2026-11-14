@@ -731,6 +731,11 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_ = s.Host.Sync(syncCtx)
 	cancel()
+	if _, _, _, ok := moor.ParsePR(req.URL); ok {
+		s.RefreshMoored() // a review ship is found by the next poll, not after the poll interval
+	} else if _, _, _, _, ok := moor.ParseStack(req.URL); ok {
+		s.RefreshMoored()
+	}
 	sess := sessionhost.Session{Name: got.Session, Options: got.Options}
 	if now, ok := s.find(got.Session); ok {
 		sess = now

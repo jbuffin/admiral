@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -281,5 +282,58 @@ func TestPullRequestsWithNoEventsFillsNothingIn(t *testing.T) {
 	}
 	if st.Viewer != "fake-viewer" {
 		t.Errorf("Viewer = %q, want the fake's default", st.Viewer)
+	}
+}
+
+func (f *fakeGH) stack(t *testing.T, endpoint string, status int, body, stderr string) {
+	t.Helper()
+	f.write(t, "rest/stack.endpoint", endpoint)
+	f.write(t, "rest/stack.status", strconv.Itoa(status))
+	f.write(t, "rest/stack.json", body)
+	if stderr != "" {
+		f.write(t, "rest/stack.stderr", stderr)
+	}
+}
+
+func TestStackOpenPRsAsksForTheStackAndAnswersItsOpenLayersBottomFirst(t *testing.T) {
+	cl, f := prClient(t)
+	f.stack(t, "repos/acme/widgets/stacks/12", 200, `{"number":12,"open":true,"base":{"ref":"main"},"pull_requests":[
+		{"number":21,"state":"open","head":{"ref":"l1","sha":"a1"}},
+		{"number":22,"state":"merged","head":{"ref":"l2","sha":"a2"}},
+		{"number":23,"state":"open","head":{"ref":"l3","sha":"a3"}},
+		{"number":24,"state":"closed","head":{"ref":"l4","sha":"a4"}}]}`, "")
+
+	got, found, err := cl.StackOpenPRs(context.Background(), "acme", "widgets", 12)
+	if err != nil || !found {
+		t.Fatalf("StackOpenPRs = %v, found %v, err %v; want an answer", got, found, err)
+	}
+	want := []string{"https://github.com/acme/widgets/pull/21", "https://github.com/acme/widgets/pull/23"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("layers = %v, want %v: the open ones, bottom first", got, want)
+	}
+	calls := f.calls(t, "api")
+	if len(calls) != 1 {
+		t.Fatalf("gh api calls = %d, want 1", len(calls))
+	}
+	if !strings.Contains(strings.Join(calls[0].argv, " "), "repos/acme/widgets/stacks/12") || strings.Contains(strings.Join(calls[0].argv, " "), "graphql") {
+		t.Errorf("argv = %v, want REST on repos/acme/widgets/stacks/12", calls[0].argv)
+	}
+}
+
+func TestStackOpenPRsTellsAStackGitHubDoesNotHaveFromAFailedCall(t *testing.T) {
+	cl, f := prClient(t)
+	f.stack(t, "repos/acme/widgets/stacks/12", 404, `{"message":"Not Found"}`, "gh: Not Found (HTTP 404)")
+	got, found, err := cl.StackOpenPRs(context.Background(), "acme", "widgets", 12)
+	if err != nil || found || len(got) != 0 {
+		t.Errorf("a 404 = %v, found %v, err %v; want no layers, not found and no error", got, found, err)
+	}
+
+	f.stack(t, "repos/acme/widgets/stacks/12", 502, `{}`, "gh: Bad Gateway (HTTP 502)")
+	if _, _, err := cl.StackOpenPRs(context.Background(), "acme", "widgets", 12); err == nil {
+		t.Error("a 502 answered no error, want a failed call")
+	}
+	f.stack(t, "repos/acme/widgets/stacks/99", 200, `{}`, "")
+	if _, _, err := cl.StackOpenPRs(context.Background(), "acme", "widgets", 12); err == nil {
+		t.Error("a call gh has no answer for (exit 1) gave no error, want a failed call")
 	}
 }

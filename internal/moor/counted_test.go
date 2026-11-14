@@ -29,6 +29,9 @@ func (f *fakeGitHub) DefaultMergeMethod(context.Context, string) (string, error)
 
 func (f *fakeGitHub) MergePR(context.Context, string, string) error { return nil }
 
+func (f *fakeGitHub) StackOpenPRs(context.Context, string, string, int) ([]string, bool, error) {
+	return nil, false, nil
+}
 func (f *fakeGitHub) StackPRs(context.Context, string, string) ([]StackLayer, error) { return nil, nil }
 
 func (f *fakeGitHub) MergeStack(context.Context, string, string, string) error { return nil }

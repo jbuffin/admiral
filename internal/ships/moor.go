@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -91,7 +92,7 @@ func (s *Service) moorVia(ctx context.Context, sess sessionhost.Session, prs []s
 		s.CaptureResume(name) // before the report goes
 	}
 	rec := moor.Record{Name: o["name"], Session: name, Fleet: o["fleet"], Harness: o["harness"], Model: o["model"],
-		Skill: moor.Skill{Kind: o["skill-kind"], Name: o["skill"]}, Checkout: o["dir"], PRs: prs,
+		Skill: moor.Skill{Kind: o["skill-kind"], Name: o["skill"]}, Checkout: o["dir"], PRs: prs, Reviewing: s.reviewingIn(sess, prs),
 		Source: o["source"], Panel: o["panel"], OrderID: o["order"], URL: o["url"], Issues: splitIssues(o["issues"]), Title: o["title"], Link: o["link"],
 		Resume: s.report(name).Resume, Round: round, Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Launched: o["launched"], Resources: splitResources(o["resources"]), MooredAt: time.Now().UTC().Truncate(time.Second)}
 	if err := s.recordRound(ctx, sess, rec, time.Now().UTC()); err != nil {
@@ -105,6 +106,18 @@ func (s *Service) moorVia(ctx context.Context, sess sessionhost.Session, prs []s
 	s.record(outcomes.Record{Ship: name, Event: "moored", Fields: withVia(map[string]any{"prs": prs}, via)}, nil)
 	s.endRound(sess, "moored")
 	return true
+}
+
+func (s *Service) reviewingIn(sess sessionhost.Session, prs []string) []string {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	var out []string
+	for _, u := range s.reviewingOf(sess) {
+		if slices.Contains(prs, u) {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // recordRound appends the round the pane just finished to the ship's history, before the record goes, under wakeMu so an end cannot leave a file behind.
@@ -171,8 +184,15 @@ func (s *Service) setMoored(rec moor.Record) {
 	s.mooredMu.Lock()
 	defer s.mooredMu.Unlock()
 	s.loadMoored()
+	var live polled
+	if rs := s.running[rec.Session]; rs != nil {
+		live = polled{status: rs.poll.status, at: rs.poll.at, stale: rs.poll.stale} // a woken ship's poll still holds the counts its wake answered
+	}
 	delete(s.running, rec.Session)
 	delete(s.mooredPolls, rec.Session) // a poll answered for an earlier ship of this session says nothing of this one
+	if covers(live, rec.PRs) {         // a fresh poll shows its chips and authors before the first moored poll
+		s.polls()[rec.Session] = live
+	}
 	for i, r := range s.moored {
 		if r.Session == rec.Session {
 			s.moored[i] = rec
@@ -287,4 +307,9 @@ func (s *Service) Round(session string) int {
 // Rounds is the history of a ship's earlier rounds, oldest first.
 func (s *Service) Rounds(name string) ([]moor.Round, error) {
 	return moor.ReadRounds(s.Launcher.Home, name)
+}
+
+// covers says a poll answered for every one of the PRs.
+func covers(p polled, urls []string) bool {
+	return p.status != nil && !p.stale && !slices.ContainsFunc(urls, func(u string) bool { _, ok := p.status[u]; return !ok })
 }

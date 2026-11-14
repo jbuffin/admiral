@@ -221,7 +221,11 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr, 
 		return Ship{}, lerr
 	}
 	s.releaseWhenListed(got.Session, release)
-	s.dropMoored(session, got.Launched)
+	if kept := s.dropMoored(session, got.Launched); len(kept) > 0 {
+		if err := s.Host.SetOptions(context.Background(), got.Session, map[string]string{"reviewing": strings.Join(kept, ",")}); err != nil {
+			fmt.Fprintf(os.Stderr, "admiral: ship %s: its reviewed PRs cannot be saved on the session: %v\n", got.Session, err)
+		}
+	}
 	s.broadcast()
 	return got, nil
 }
@@ -294,8 +298,8 @@ func (s *Service) endWaking(session string) {
 }
 
 // dropMoored removes the record of a ship that is live again: tmux is its record now. The record's last poll answer
-// goes to the new launch, which shows it until its first poll.
-func (s *Service) dropMoored(session, launched string) {
+// goes to the new launch, which shows it until its first poll. It returns the PRs the ship keeps reviewing.
+func (s *Service) dropMoored(session, launched string) []string {
 	s.mooredMu.Lock()
 	defer s.mooredMu.Unlock()
 	s.loadMoored()
@@ -306,16 +310,18 @@ func (s *Service) dropMoored(session, launched string) {
 		if err := moor.Remove(s.Launcher.Home, r.Name); err != nil {
 			// kept: the live session hides it from the list, and moor replaces a record of an earlier round
 			fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be removed after the wake: %v\n", r.Name, err)
-			return
+			return nil
 		}
 		s.moored = slices.Delete(s.moored, i, i+1)
 		if s.running == nil {
 			s.running = map[string]*running{}
 		}
-		s.running[session] = &running{launched: launched, rejected: map[string]bool{}, tries: map[string]int{}, poll: s.mooredPolls[session]}
+		kept := slices.DeleteFunc(slices.Clone(r.Reviewing), func(u string) bool { return !slices.Contains(r.PRs, u) })
+		s.running[session] = &running{launched: launched, rejected: map[string]bool{}, tries: map[string]int{}, poll: s.mooredPolls[session], reviewing: kept}
 		delete(s.mooredPolls, session)
-		return
+		return kept
 	}
+	return nil
 }
 
 func (s *Service) serveWake(w http.ResponseWriter, r *http.Request) {

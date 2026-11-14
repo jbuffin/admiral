@@ -401,3 +401,137 @@ func TestReturnToPortWithMoorMoorsTheShipWithoutTheCleanUpPrompt(t *testing.T) {
 		t.Errorf("return with moor on the moored ship = %d, want today's 409", code)
 	}
 }
+
+const (
+	reviewedPR  = "https://github.com/acme/widgets/pull/7"
+	stackLayer1 = "https://github.com/acme/widgets/pull/21"
+	stackLayer2 = "https://github.com/acme/widgets/pull/23"
+	reviewStack = "https://github.com/acme/widgets/stack/5"
+	otherAuthor = "dana"
+)
+
+// prByAuthor steers the author and the review events the poll reads for a PR in one write, since prAuthored and prEvents each replace the whole file.
+func (g *fakeGH) prByAuthor(url, author string, createdAt time.Time, reviewer, body string, reviewAt time.Time) {
+	g.t.Helper()
+	key := strings.NewReplacer("/", "_", ":", "_").Replace(url)
+	if err := os.MkdirAll(filepath.Join(g.dir, "pr_events"), 0o755); err != nil {
+		g.t.Fatal(err)
+	}
+	ev := map[string]any{"author": map[string]any{"__typename": "User", "login": author}, "createdAt": createdAt.UTC().Format(time.RFC3339)}
+	if reviewer != "" {
+		ev["reviews"] = map[string]any{"nodes": []map[string]any{{
+			"id": "R1", "author": map[string]any{"__typename": "User", "login": reviewer}, "state": "COMMENTED",
+			"submittedAt": reviewAt.UTC().Format(time.RFC3339), "body": body, "url": url + "#pullrequestreview-1",
+			"comments": map[string]any{"totalCount": 0}}}}
+	}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		g.t.Fatal(err)
+	}
+	g.write("pr_events/"+key, string(b)+"\n")
+}
+
+// reviewingWorld is liveMooring with an order source whose one order, o1, carries url, and a checkout whose remote routes to the GitHub source.
+func reviewingWorld(t *testing.T, url string) (*world, *fakeGH) {
+	t.Helper()
+	w := newWorld(t)
+	g := w.newFakeGH()
+	g.token("", "fake-token-f")
+	w.checkoutOf(w.work, "widgets", "acme/widgets")
+	order := map[string]any{"id": "o1", "title": "Review it", "text": "review " + url}
+	if url != "" {
+		order["url"] = url
+	}
+	p := w.newTP("rv")
+	p.mainOrders(order)
+	w.installPlugin("testplug", "testplug")
+	w.outFleets(map[string][]string{"f": {"record", "bracketedpaste", "hook working", "wait go", `event Stop {"background_tasks":[]}`}},
+		srcDef{Key: "gh", Plugin: "github", Name: "GitHub", Fleet: "f", Settings: map[string]any{"views": []any{}}},
+		tpSource("rv", p, nil))
+	w.start()
+	w.waitSource("rv", 10*time.Second, "the order", func(s sourceJSON) bool { return isOK(s) && len(s.orderIDs()) == 1 })
+	return w, g
+}
+
+// launchReview launches order o1 of reviewingWorld's order source in the checkout of acme/widgets.
+func (w *world) launchReview() shipJSON {
+	w.t.Helper()
+	ship := w.launch(map[string]any{"fleet": "f", "harness": "claude", "dir": filepath.Join(w.work, "widgets"), "skill": commodore,
+		"source": "rv", "order_id": "o1"})
+	w.waitFile(ship.Session, "recorded")
+	return ship
+}
+
+// wantMooredWith is wantMoored for a ship that carries several PRs: they are listed in this order, each reviewing when reviewing says so.
+func (w *world) wantMooredWith(ship shipJSON, reviewing bool, urls ...string) shipJSON {
+	w.t.Helper()
+	list := w.in.waitShipsList(w.t, 20*time.Second, "the ship moored", func(l []shipJSON) bool {
+		return byName(l)[ship.Name].Status == "moored"
+	})
+	got := byName(list)[ship.Name]
+	var have []string
+	for _, p := range got.PRs {
+		have = append(have, p.URL)
+		if p.Reviewing != reviewing || p.Author != otherAuthor {
+			w.t.Errorf("moored PR %+v, want reviewing %v by %s", p, reviewing, otherAuthor)
+		}
+	}
+	if !reflect.DeepEqual(have, urls) {
+		w.t.Errorf("moored PRs = %v, want %v in this order", have, urls)
+	}
+	waitCond(w.t, 10*time.Second, "the tmux session is gone", func() bool { return !w.hasSession(ship.Session) })
+	if !exists(w.mooredFile(ship.Name)) {
+		w.t.Errorf("no moored record for %s", ship.Name)
+	}
+	return got
+}
+
+func (w *world) finishTurn(ship shipJSON, report string) {
+	w.t.Helper()
+	w.writeReportFor(ship, report)
+	w.touch(ship.Session, "go")
+}
+
+func TestAShipLaunchedOnAnotherAuthorsPRMoorsAndIsListedAsReviewing(t *testing.T) {
+	t.Parallel()
+	w, g := reviewingWorld(t, reviewedPR)
+	g.prState(reviewedPR, "OPEN")
+	g.prByAuthor(reviewedPR, otherAuthor, time.Now().Add(-time.Hour), "", "", time.Time{})
+	ship := w.launchReview()
+
+	w.finishTurn(ship, mooredReport())
+	got := w.wantMooredWith(ship, true, reviewedPR)
+	if !exists(w.mooredFile(ship.Name)) || !strings.Contains(w.readFile(w.mooredFile(ship.Name)), reviewedPR) {
+		t.Errorf("record of %s = %s, want it to list the reviewed PR", got.Name, w.readFile(w.mooredFile(ship.Name)))
+	}
+	if code, body := w.postMergeWith(t, ship, map[string]any{}, w.pageMergeToken(t)); code != http.StatusConflict {
+		t.Errorf("merge on a reviewing ship = %d %s, want 409", code, body)
+	}
+}
+
+func TestAShipLaunchedOnAStackMoorsCarryingEveryOpenLayerBottomFirst(t *testing.T) {
+	t.Parallel()
+	w, g := reviewingWorld(t, reviewStack)
+	for _, u := range []string{stackLayer1, stackLayer2} {
+		g.prState(u, "OPEN")
+		g.prByAuthor(u, otherAuthor, time.Now().Add(-time.Hour), "", "", time.Time{})
+	}
+	g.rest("stack", "GET", "repos/acme/widgets/stacks/5", 200, map[string]any{"pull_requests": []map[string]any{
+		{"number": 21, "state": "open"}, {"number": 22, "state": "closed"}, {"number": 23, "state": "open"}}}, "")
+	ship := w.launchReview()
+
+	w.finishTurn(ship, mooredReport())
+	w.wantMooredWith(ship, true, stackLayer1, stackLayer2)
+}
+
+func TestAFreeTextShipWithADoneReportThatListsNoPRsDoesNotMoor(t *testing.T) {
+	t.Parallel()
+	w, _ := reviewingWorld(t, "")
+	ship := w.launchReview()
+
+	w.finishTurn(ship, mooredReport())
+	w.waitFile(ship.Session, "cues-done")
+	holdThat(t, "a ship with no PR moored", func() bool {
+		return byName(w.in.ships(t))[ship.Name].Status != "moored" && w.hasSession(ship.Session) && !exists(w.mooredFile(ship.Name))
+	})
+}

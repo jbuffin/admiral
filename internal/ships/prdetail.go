@@ -15,7 +15,7 @@ var detailTimeout = 15 * time.Second
 // servePRDetail reads one PR a running or moored ship carries, fresh from GitHub through the ship's fleet.
 func (s *Service) servePRDetail(w http.ResponseWriter, r *http.Request) {
 	session, url := r.PathValue("session"), r.URL.Query().Get("url")
-	fleet, urls, ok := s.carriedBy(session)
+	fleet, urls, reviewing, ok := s.carriedBy(session)
 	if !ok {
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
 		return
@@ -42,21 +42,22 @@ func (s *Service) servePRDetail(w http.ResponseWriter, r *http.Request) {
 	if rec, moored := s.mooredRecord(session); moored && d.Stack != nil {
 		d.AnswerAll = s.answerAllPrompt(rec, d.Stack)
 	}
+	d.Reviewing = slices.Contains(reviewing, url)
 	writeJSON(w, http.StatusOK, d)
 }
 
-// carriedBy is the fleet and the PRs of a running or moored ship; an exited ship has none.
-func (s *Service) carriedBy(session string) (string, []string, bool) {
+// An exited ship carries nothing.
+func (s *Service) carriedBy(session string) (string, []string, []string, bool) {
 	if sess, live := s.find(session); live {
 		if !sess.IsShip() || status(sess, time.Now()) == StatusAnchored || status(sess, time.Now()) == StatusSailingOff {
-			return "", nil, false
+			return "", nil, nil, false
 		}
 		s.mooredMu.Lock()
 		defer s.mooredMu.Unlock()
-		return sess.Options["fleet"], s.carried(sess), true
+		return sess.Options["fleet"], s.carried(sess), s.reviewingOf(sess), true
 	}
 	if r, ok := s.mooredRecord(session); ok {
-		return r.Fleet, r.PRs, true
+		return r.Fleet, r.PRs, r.Reviewing, true
 	}
-	return "", nil, false
+	return "", nil, nil, false
 }
