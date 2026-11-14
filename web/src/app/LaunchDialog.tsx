@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call, type DirsAnswer, type Fleet } from './api';
+import { call, LAUNCH_TIMEOUT_MS, type DirsAnswer, type Fleet } from './api';
 import { modeLabel, skillLabel, type Mode, type SkillView } from './campaign';
 import {
   bareSkillName,
@@ -216,7 +216,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
       member: as ? member : undefined,
       memberHarness: as?.harness,
     }) };
-    const r = await call<{ ship: { session: string } }>('POST', sent.path, sent.body);
+    const r = await call<{ ship: { session: string } }>('POST', sent.path, sent.body, undefined, cloning ? { timeoutMs: LAUNCH_TIMEOUT_MS } : undefined);
     setBusy(false);
     if (!r.ok) return setError(r.error);
     onLaunched?.(r.data.ship.session);

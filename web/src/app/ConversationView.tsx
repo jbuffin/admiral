@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { call as post, shipUrl, type Item } from './api';
+import { call as post, shipUrl, SLOW_TIMEOUT_MS, type Item } from './api';
 import type { AnswerCard } from './answerCard';
 import { hasConversationAdapter } from './conversationGate';
 import { Icon } from './Icon';
@@ -128,7 +128,7 @@ function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCar
     if (sending.current) return;
     sending.current = true;
     setBusy(true);
-    const res = await post('POST', `${shipUrl(session, crew)}/answer`, body);
+    const res = await post('POST', `${shipUrl(session, crew)}/answer`, body, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     if (!res.ok) setGone(key);
   };
   if (card.kind === 'permission') {

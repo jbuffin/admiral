@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call, type CrewBoat, type Ship } from './api';
+import { call, SLOW_TIMEOUT_MS, type CrewBoat, type Ship } from './api';
 import { cardFor } from './answerCard';
 import { Composer, useComposer } from './Composer';
 import { ConversationView } from './ConversationView';
@@ -91,7 +91,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
   const notice = !chat || !question ? '' : chatEnd === 'answered' || (gone && answeredHere) ? ANSWERED : chatEnd === 'withdrawn' || gone ? WITHDRAWN : '';
   const send = async (body: AnswerBody) => {
     setDraft((d) => ({ ...d, sending: true, error: '' }));
-    const r = await call('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/answer`, body);
+    const r = await call('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/answer`, body, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     if (r.ok) return fold(foldText(body));
     if (chat && (r.status === 404 || lockedBy(r.status, r.error))) {
       setChatEnd(r.status === 404 ? 'withdrawn' : 'answered');

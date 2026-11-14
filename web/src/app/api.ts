@@ -252,13 +252,34 @@ export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(h
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number; field?: string; note?: string; kind?: string; reason?: string; aborted?: boolean };
 
-export async function call<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>, signal?: AbortSignal): Promise<Result<T>> {
+export const DEFAULT_TIMEOUT_MS = 30_000;
+export const SLOW_TIMEOUT_MS = 3 * 60_000;
+export const LAUNCH_TIMEOUT_MS = 10 * 60_000;
+
+const limitText = (ms: number) => (ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`);
+
+export interface CallOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+export async function call<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>, opts: CallOptions = {}): Promise<Result<T>> {
+  const limit = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const ctl = new AbortController();
+  let timedOut = false;
+  const onCallerAbort = () => ctl.abort();
+  if (opts.signal?.aborted) ctl.abort();
+  else opts.signal?.addEventListener('abort', onCallerAbort);
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctl.abort();
+  }, limit);
   try {
     const res = await fetch(path.startsWith(`${API}/`) ? path : API + path, {
       method,
       headers: body === undefined && headers === undefined ? undefined : { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
+      signal: ctl.signal,
     });
     const text = await res.text();
     let data: unknown = null;
@@ -282,8 +303,12 @@ export async function call<T>(method: string, path: string, body?: unknown, head
     }
     return { ok: true, data: data as T };
   } catch (e) {
-    if (e instanceof Error && e.name === 'AbortError') return { ok: false, error: 'The request was stopped.', aborted: true };
+    if (timedOut) return { ok: false, error: `Admiral didn't answer in ${limitText(limit)}. It may still finish, so check before trying again.` };
+    if (ctl.signal.aborted) return { ok: false, error: 'The request was stopped.', aborted: true };
     return { ok: false, error: e instanceof Error ? e.message : 'The request failed.' };
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener('abort', onCallerAbort);
   }
 }
 
@@ -291,7 +316,7 @@ const mergeToken = () => ({ 'X-Admiral-Merge-Token': document.querySelector<HTML
 
 /** Merges a moored ship's single PR, its whole stack, or with `pr` one independent PR by URL. The token is the one the server put in this page; it changes when Admiral restarts. */
 export function mergeShip(session: string, pr?: string): Promise<Result<unknown>> {
-  return call('POST', `/ships/${encodeURIComponent(session)}/merge`, pr ? { pr } : undefined, mergeToken());
+  return call('POST', `/ships/${encodeURIComponent(session)}/merge`, pr ? { pr } : undefined, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
 /** How a ship's PRs relate on GitHub; 404 for a ship that is anchored or has no PRs. */
@@ -301,7 +326,7 @@ export function fetchStackShape(session: string): Promise<Result<StackShape>> {
 
 /** Links the ship's chained PRs into one GitHub stack and answers the shape it then reads. */
 export function linkStack(session: string): Promise<Result<StackShape>> {
-  return call<StackShape>('POST', `/ships/${encodeURIComponent(session)}/stack`, undefined, mergeToken());
+  return call<StackShape>('POST', `/ships/${encodeURIComponent(session)}/stack`, undefined, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
 /** One PR a ship carries, read from GitHub: 404 when the ship doesn't carry it, 502 when GitHub fails. */
@@ -609,5 +634,5 @@ export interface RemoteView {
 }
 export const fetchRemote = () => call<RemoteView>('GET', '/remote');
 export const editLogins = (change: { add: string } | { remove: string }) => call<RemoteView>('POST', '/remote/logins', change);
-export const runTailscaleSetup = () => call<{ ok: boolean; checks: RemoteCheck[] }>('POST', '/remote/setup', { confirm: true });
+export const runTailscaleSetup = () => call<{ ok: boolean; checks: RemoteCheck[] }>('POST', '/remote/setup', { confirm: true }, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
 export const turnOffTailscale = () => call<RemoteView>('POST', '/remote/off', { confirm: true });
