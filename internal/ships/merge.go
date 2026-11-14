@@ -112,11 +112,21 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "cannot check the pull request before merging: "+err.Error())
 		return
 	}
+	open := 0
 	for _, url := range merging {
-		if st, found := fresh[url]; !found || !st.Ready() {
+		st, found := fresh[url]
+		if stacked && found && st.State != "OPEN" {
+			continue // a stack whose lower layers already merged still merges the rest
+		}
+		open++
+		if !found || !st.Ready() {
 			writeError(w, http.StatusConflict, "the pull request is not ready to merge: it must be open, approved, green and mergeable")
 			return
 		}
+	}
+	if open == 0 {
+		writeError(w, http.StatusConflict, "no pull request of the stack is open, so there is nothing to merge")
+		return
 	}
 	_, repo, number, _ := moor.ParsePR(merging[0])
 	method, err := s.mergeMethod(r.Context(), gh, rec.Fleet, repo)
