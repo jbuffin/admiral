@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, probeShipList, type Changes, type CrewBoat, type Ship } from './api';
 import { isRunning, runningFor } from './shipList';
@@ -17,7 +18,7 @@ import { MergeControl } from './PeekMerge';
 import { Failure } from './PeekItem';
 import { ReadyToMerge } from './StatusGlyph';
 import { useSeenOnLeave } from './seen';
-import { NO_RESUME_NOTE } from './moored';
+import { NO_RESUME_NOTE, prLabel } from './moored';
 import { usageRow, watchUsage, type ShipUsage } from './shipUsage';
 import { boxState } from './messageBox';
 import { Sheet } from './Sheet';
@@ -59,25 +60,30 @@ interface ShipActionProps {
   cls: string;
   action: string;
   question: string;
-  done: () => void;
+  done: (moored: boolean) => void;
+  // The sheet offers Moor beside the ending when the ship has open PRs as it opens.
+  moor: { end: string; endCls: string; explain: ComponentChildren };
 }
 
-function ShipAction({ ship, label, cls, action, question, done }: ShipActionProps) {
+function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActionProps) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const cancel = useRef<HTMLButtonElement>(null);
+  // Frozen when the sheet opens, so a tap aimed at one button never lands on another that appeared meanwhile.
+  const [prs, setPrs] = useState<string[]>([]);
+  const withMoor = prs.length > 0;
   useEffect(() => {
     if (asking) cancel.current?.focus();
   }, [asking]);
-  const run = async () => {
+  const run = async (moored = false) => {
     setBusy(true);
     setError('');
-    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/${action}`);
+    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/${action}`, moored ? { moor: true } : undefined);
     setBusy(false);
     if (!r.ok) return setError(r.error);
     setAsking(false);
-    done();
+    done(moored);
   };
   return (
     <>
@@ -86,6 +92,7 @@ function ShipAction({ ship, label, cls, action, question, done }: ShipActionProp
         class={`btn ${cls}`}
         onClick={() => {
           setError('');
+          setPrs(ship.open_prs ?? []);
           setAsking(true);
         }}
       >
@@ -93,7 +100,25 @@ function ShipAction({ ship, label, cls, action, question, done }: ShipActionProp
       </button>
       {asking ? (
         <Sheet label={label} kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
-          <p class="line">{question}</p>
+          {withMoor ? (
+            <>
+              <p class="line">
+                {ship.name} carries {prs.length === 1 ? '1 open PR' : `${prs.length} open PRs`}.
+              </p>
+              <ul class="pr-list">
+                {prs.map((url) => (
+                  <li key={url}>
+                    <a class="pr-link" href={url} target="_blank" rel="noreferrer">
+                      {prLabel(url)}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <p class="line">{moor.explain}</p>
+            </>
+          ) : (
+            <p class="line">{question}</p>
+          )}
           {error ? (
             <p class="launch-error" role="alert">
               {error}
@@ -103,9 +128,14 @@ function ShipAction({ ship, label, cls, action, question, done }: ShipActionProp
             <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
               Cancel
             </button>
-            <button type="button" class={`btn ${cls.split(' ')[0]}`} disabled={busy} onClick={() => void run()}>
-              {label}
+            <button type="button" class={`btn ${withMoor ? moor.endCls : cls.split(' ')[0]}`} disabled={busy} onClick={() => void run()}>
+              {withMoor ? moor.end : label}
             </button>
+            {withMoor ? (
+              <button type="button" class="btn primary" disabled={busy} onClick={() => void run(true)}>
+                Moor
+              </button>
+            ) : null}
           </div>
         </Sheet>
       ) : null}
@@ -128,7 +158,16 @@ function ReturnToPort({ ship }: { ship: Ship }) {
       cls="primary return-port"
       action="return"
       question={`Return ${ship.name} to port? Once its turn ends it's told to clean up after itself, and then it's stopped with its crew.`}
-      done={() => {}}
+      done={(moored) => moored && back()}
+      moor={{
+        end: 'Return to port',
+        endCls: '',
+        explain: (
+          <>
+            <strong>Moor</strong> ends the session now with no clean-up prompt and keeps the PRs. <strong>Return to port</strong> tells it to clean up, then stops it and forgets the PRs.
+          </>
+        ),
+      }}
     />
   );
 }
@@ -142,6 +181,15 @@ function StopShip({ ship }: { ship: Ship }) {
       action="stop"
       question={`Stop ${ship.name}? Its harness and crew end now.`}
       done={back}
+      moor={{
+        end: 'Stop for good',
+        endCls: 'danger',
+        explain: (
+          <>
+            <strong>Moor</strong> ends the session now and keeps the PRs; the ship wakes when reviews come in. <strong>Stop for good</strong> ends it and forgets them.
+          </>
+        ),
+      }}
     />
   );
 }

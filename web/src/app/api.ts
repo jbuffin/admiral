@@ -84,6 +84,8 @@ export interface Ship {
   returning?: boolean;
   // A live ship woken from its mooring: it returns to port by itself once its PRs are merged.
   carries_prs?: boolean;
+  // A live ship whose report lists PRs GitHub confirms open: it can be moored.
+  open_prs?: string[];
   crew_live: number;
   // Set on a moored ship; `stale` is omitted while false.
   moored_at?: string;

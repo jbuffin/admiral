@@ -509,6 +509,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .ship-view-head .ship-actions { display: flex; gap: 8px; margin-left: auto; flex: none; }
 .ship-view-head .ship-actions .stop-ship { margin-left: 0; }
 .stop-backdrop .line { margin: 4px 0 8px; }
+.stop-backdrop .pr-list { display: flex; flex-wrap: wrap; gap: 0 16px; margin: 0 0 8px; padding: 0; list-style: none; }
 .convo-area { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 @media (min-width: 641px) {
   .stop-backdrop .sheet { width: 520px; max-width: 100%; padding-bottom: 16px; border-radius: var(--shape-radius-lg); }
