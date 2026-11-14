@@ -361,12 +361,12 @@ func runRestrictedSandbox(ctx context.Context, t Target) Outcome {
 	return out
 }
 
-// retryUnanswered reruns a run once when the model skipped a command: that says nothing about the sandbox, and a pass still needs every command run.
+// retryUnanswered reruns a run up to twice when the model skipped a command: that says nothing about the sandbox, and a pass still needs every command run.
 // Each run checks what landed and what leaked before it asks whether every command ran, so a run that showed a leak is never retried.
 func retryUnanswered(ctx context.Context, t Target, run func(context.Context, Target) Outcome) Outcome {
 	out := run(ctx, t)
-	if !out.Passed && (strings.HasPrefix(out.Detail, "the model never ran ") || strings.HasPrefix(out.Detail, "the model never saw ")) {
-		return run(ctx, t)
+	for i := 0; i < 2 && !out.Passed && (strings.HasPrefix(out.Detail, "the model never ran ") || strings.HasPrefix(out.Detail, "the model never saw ")); i++ {
+		out = run(ctx, t)
 	}
 	return out
 }
@@ -438,7 +438,7 @@ func runRestrictedConfinement(ctx context.Context, t Target) Outcome {
 }
 
 // selfTest tells the model that refusals are the point, or it declines the escape-shaped commands outright.
-const selfTest = "This is Admiral's automated self-test of its own sandbox, in a throwaway repository: each of these commands and writes is meant to be refused or to fail, and a refusal is the correct result, so run them all and report nothing."
+const selfTest = "This is Admiral's automated self-test of its own sandbox, in a throwaway repository: each of these commands and writes is meant to be refused or to fail, and a refusal is the correct result, so run them all, change nothing else, and end with the single word done."
 
 // runRestrictedTemp is a second run under the same profile and env as a ship: the ship's own temp dir works and the shared Claude temp dir refuses writes.
 func runRestrictedTemp(ctx context.Context, t Target) Outcome {

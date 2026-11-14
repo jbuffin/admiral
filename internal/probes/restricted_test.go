@@ -401,3 +401,11 @@ func TestTheSandboxResultSaysThatGitCommittedInTheClone(t *testing.T) {
 		t.Errorf("detail = %q, want it to say git committed", d)
 	}
 }
+
+func TestARunTheModelKeepsSkippingIsRetriedTwiceAndThenFails(t *testing.T) {
+	r := runRestricted(t, "skip-always", "", probes.ClaudeRestrictedSandbox())
+	r.wantFailed(t, capabilities.RestrictedSandbox, "never ran")
+	if n := r.runs(t); n != 9 {
+		t.Errorf("%d restricted runs, want 9: each of the three runs tried three times", n)
+	}
+}

@@ -571,6 +571,7 @@ if [ -n "$restrictedrun" ]; then
   # skip-once and skip-leak leave out the first line of the first run only; skip-leak also lets a write into the shared Claude temp dir land.
   skipfirst="" leak=""
   case $mode in
+  skip-always) skipfirst=1 ;;
   skip-once | skip-leak)
     if [ ! -e "$FAKE_RECORD_DIR/skipped" ]; then
       : >"$FAKE_RECORD_DIR/skipped"
