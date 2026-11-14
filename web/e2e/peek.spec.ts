@@ -128,6 +128,7 @@ test('a refused question item answer shows the error: 409 locks Send, 400 keeps 
   await send.tap();
   await expect(peek.getByRole('alert')).toContainText('that answer is not valid');
   await expect(send).toBeEnabled();
+  await expect(send).not.toHaveAttribute('aria-busy', 'true');
 
   status = 409;
   await send.tap();
@@ -268,6 +269,7 @@ test('a review action GitHub refuses shows the error and keeps the actions; one 
   await peek.getByRole('button', { name: 'Submit APPROVE' }).tap();
   await expect(peek.getByRole('alert')).toContainText('still running');
   await expect(peek.getByRole('button', { name: 'Submit APPROVE' })).toBeEnabled();
+  await expect(peek.getByRole('button', { name: 'Submit APPROVE' })).not.toHaveAttribute('aria-busy', 'true');
 
   refusal = { status: 409, error: 'inbox item is already answered' };
   await peek.getByRole('button', { name: 'Submit APPROVE' }).tap();
