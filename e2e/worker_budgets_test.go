@@ -76,7 +76,10 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 		return false
 	})
 
-	// the anchored ship no longer holds a worker slot: a new event on the other routine launches
+	// the anchored ship no longer holds a worker slot: a new event on the other routine launches (the first is switched off so it cannot take the event)
+	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines/"+first+"/off", map[string]any{}); code != http.StatusOK {
+		t.Fatalf("switching %s off = %d %s, want 200", first, code, body)
+	}
 	again := ghNode("github.com", "acme/api", 8, true, "Fix the harbour lantern")
 	again["author"] = map[string]any{"login": "mallory-the-stranger"}
 	again["timelineItems"] = map[string]any{"nodes": []map[string]any{{"__typename": "ReviewRequestedEvent",
