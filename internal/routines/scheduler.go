@@ -187,7 +187,10 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 // routinesOf lists every fleet's enabled scheduled routines.
-func (s *Scheduler) routinesOf() []fleetRoutine {
+func (s *Scheduler) routinesOf() []fleetRoutine { return s.enabledRoutines(false) }
+
+// enabledRoutines lists every fleet's enabled routines; an event routine has no schedule, so it is left out unless withEvents.
+func (s *Scheduler) enabledRoutines(withEvents bool) []fleetRoutine {
 	var out []fleetRoutine
 	for _, key := range s.Store.FleetKeys() {
 		list, err := s.Store.List(key)
@@ -195,8 +198,7 @@ func (s *Scheduler) routinesOf() []fleetRoutine {
 			continue
 		}
 		for _, r := range list {
-			// an event routine has no schedule; HandleEvent runs it
-			if r.Enabled && r.On == nil {
+			if r.Enabled && (r.On == nil || withEvents) {
 				out = append(out, fleetRoutine{key, r})
 			}
 		}
@@ -395,7 +397,7 @@ func (s *Scheduler) seedWatch(now time.Time) {
 		return
 	}
 	s.seeded = true
-	for _, fr := range s.routinesOf() {
+	for _, fr := range s.enabledRoutines(true) {
 		recs, err := s.Store.Recent(fr.fleet, fr.r.ID, 50)
 		if err != nil {
 			continue
@@ -647,24 +649,9 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 		s.recordFor(fleet, r, rec)
 		return errors.New(reason)
 	}
-	f, ok := s.Store.Fleets(fleet)
-	if !ok {
-		return fail("the fleet is gone")
-	}
-	// the gates are checked again now: a guard probe or the allowlist may have changed since the routine was saved
-	if err := autopilotgate.Check(s.Store.Home, f, l.Harness); err != nil {
+	skill, err := s.gates(fleet, l)
+	if err != nil {
 		return fail(err.Error())
-	}
-	dock, ok := f.Harness(l.Harness)
-	if !ok {
-		return fail(fmt.Sprintf("fleet %s has no %s dock", fleet, l.Harness))
-	}
-	if err := launcher.AutopilotArgs(l.Harness, dock.Args, l.Args); err != nil {
-		return fail("args are off the allowlist: " + err.Error())
-	}
-	skill := l.Skill
-	if skill.Kind == "" {
-		skill.Kind = "none"
 	}
 	id := newID()
 	ref, lerr := s.Ships.Launch(ctx, launcher.Request{
@@ -687,6 +674,30 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 		s.watched[saved.ID] = watch{fleet: fleet, routine: r.ID, session: ref.Session, at: rec.At}
 	}
 	return nil
+}
+
+// gates are the fire-time checks of a launch, and the Skill it starts with. The gates are checked again now: a guard
+// probe or the allowlist may have changed since the routine was saved.
+func (s *Scheduler) gates(fleet string, l Launch) (launcher.Skill, error) {
+	f, ok := s.Store.Fleets(fleet)
+	if !ok {
+		return launcher.Skill{}, errors.New("the fleet is gone")
+	}
+	if err := autopilotgate.Check(s.Store.Home, f, l.Harness); err != nil {
+		return launcher.Skill{}, err
+	}
+	dock, ok := f.Harness(l.Harness)
+	if !ok {
+		return launcher.Skill{}, fmt.Errorf("fleet %s has no %s dock", fleet, l.Harness)
+	}
+	if err := launcher.AutopilotArgs(l.Harness, dock.Args, l.Args); err != nil {
+		return launcher.Skill{}, errors.New("args are off the allowlist: " + err.Error())
+	}
+	skill := l.Skill
+	if skill.Kind == "" {
+		skill.Kind = "none"
+	}
+	return skill, nil
 }
 
 // describe says what a run would do, for a record's Action.

@@ -89,8 +89,8 @@ func senderOf(ev Event) string {
 	return UnknownLogin
 }
 
-// EventTop is the highest action an event routine reaches until restricted and normal ships launch from events.
-const EventTop = standing.A1
+// EventTop is the highest action an event routine reaches.
+const EventTop = standing.A5
 
 // Why a decision ended where it did.
 const (
@@ -129,6 +129,8 @@ type DecideInput struct {
 	Repo              string
 	Labels            []string
 	DedupeKey         string
+	// Commodore is true when the routine's launch is a Commodore, which a level below A5 turns into a proposal.
+	Commodore bool
 }
 
 // Decision is the outcome of one pair. Computed is the level before Top and the budgets; Level is the one acted on.
@@ -163,10 +165,12 @@ func Decide(in DecideInput) Decision {
 	if !in.Limits.RepoAllowed(in.Repo) {
 		return Decision{Outcome: Skipped, Reasons: []string{ReasonRepo}}
 	}
-	effective := func(m Mode, restricted bool) standing.Level {
-		return in.Limits.Effective(standing.Event{Tier: in.Tier, Routine: routineLevel(m), RestrictedHarness: restricted, Reviewer: in.Reviewer}).Level
+	action := func(m Mode, restricted bool) standing.Action {
+		return in.Limits.Effective(standing.Event{Tier: in.Tier, Routine: routineLevel(m), RestrictedHarness: restricted, Reviewer: in.Reviewer})
 	}
-	computed := effective(Effective(in.Routine.Before, in.HoldOn), in.RestrictedHarness)
+	effective := func(m Mode, restricted bool) standing.Level { return action(m, restricted).Level }
+	act := action(Effective(in.Routine.Before, in.HoldOn), in.RestrictedHarness)
+	computed := act.Level
 	d := Decision{Computed: computed, Level: min(computed, in.Top)}
 	if !in.RestrictedHarness && effective(Effective(in.Routine.Before, in.HoldOn), true) > computed {
 		d.Reasons = append(d.Reasons, ReasonNoRestrict)
@@ -197,6 +201,13 @@ func Decide(in DecideInput) Decision {
 				d.Level = min(d.Level, standing.A1)
 			}
 		}
+		if in.Commodore && d.Level > standing.A1 && d.Level < standing.A5 {
+			d.Reasons = append(d.Reasons, ReasonCommodore)
+			d.Level = standing.A1
+		}
+	}
+	if d.Level == standing.A3 {
+		d.Restricted = act.Restricted
 	}
 	switch {
 	case d.Level <= standing.A0:
@@ -294,8 +305,9 @@ func (s *Scheduler) eventRoutines(ev Event) []Routine {
 }
 
 // HandleEvent matches ev to the fleet's enabled event routines, decides each pair and records it.
-// It takes no scheduler lock: no event launches yet, and a tick must not hold events up.
+// Only a launch takes the scheduler lock, and it lets go before a card or proposal is posted: the Inbox takes its own lock.
 func (s *Scheduler) HandleEvent(ev Event) {
+	s.init()
 	if s.Own != nil && s.Own(ev.Fleet, ev.Ref) {
 		return
 	}
@@ -362,8 +374,11 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	}
 	costs := en.Costs // one record carries them, or the spend would count once per routine
 	for _, r := range matches {
+		r = s.tripEvent(ev.Fleet, r, now)
+		commodore := r.Do.Launch.Skill.Kind == "commodore"
 		d := Decide(DecideInput{
-			Routine: r, Tier: tier, Limits: f.Limits, Top: EventTop, HoldOn: holdOn, Now: now.In(zone),
+			Commodore: commodore,
+			Routine:   r, Tier: tier, Limits: f.Limits, Top: EventTop, HoldOn: holdOn, Now: now.In(zone),
 			SpentTodayUSD: spent, SpendUnknown: readErr != nil, Counts: counts, LiveDedupeKeys: live,
 			RestrictedHarness: restricted, Reviewer: reviewer,
 			Sender: sender, Repo: en.Repo, Labels: en.Labels, DedupeKey: en.DedupeKey,
@@ -374,10 +389,23 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		if en.Failure != "" && d.Outcome != Skipped {
 			d.Reasons = append(d.Reasons, "lookout_"+en.Failure)
 		}
-		rec, ok := s.record(ev.Fleet, Trigger{
+		base := Trigger{
 			Routine: r.ID, Outcome: d.Outcome, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: sender, Rule: r.ID,
 			Reason: strings.Join(d.Reasons, ", "), Action: describe(r), DedupeKey: en.DedupeKey, Costs: costs,
-		})
+		}
+		// only a Commodore ship reaches A5
+		if d.Level == standing.A5 && !commodore {
+			d.Level = standing.A4
+		}
+		if d.Outcome == Launched {
+			var done bool
+			if d, done = s.launchEvent(ev.Fleet, r, ev, d, en, sender, base); done {
+				costs = nil
+				continue
+			}
+			base.Outcome, base.Reason = d.Outcome, strings.Join(d.Reasons, ", ")
+		}
+		rec, ok := s.record(ev.Fleet, base)
 		if ok {
 			costs = nil
 			if s.Acts != nil && (d.Outcome == Reported || d.Outcome == Proposed) {
