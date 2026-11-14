@@ -37,7 +37,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await page.goto(admiral.url + 'app/');
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
   await expect(surface(page, 'Inbox')).toBeVisible();
-  await expect(page.getByRole('navigation').getByRole('link')).toHaveText(['Inbox', 'Ships', 'Chat', 'Campaigns', 'Routines', 'Crew', 'Preferences']);
+  await expect(page.getByRole('navigation').getByRole('link')).toHaveText(['Inbox', 'Ships', 'Orders', 'Chat', 'Campaigns', 'Routines', 'Crew', 'Preferences']);
   // The build's version sits at the foot of the side nav.
   await expect(page.getByRole('navigation').getByText('dev', { exact: true })).toBeVisible();
 

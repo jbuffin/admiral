@@ -136,6 +136,12 @@ describe('the ship route', () => {
     expect(surfaceOf('/app/ships/s-abc/more')).toBeUndefined();
   });
 
+  it('knows the Orders screen at /app/orders', async () => {
+    const { surfaceOf, surfacePath } = await import('./router');
+    expect(surfaceOf('/app/orders')?.id).toBe('orders');
+    expect(surfacePath(surfaceOf('/app/orders')!)).toBe('/app/orders');
+  });
+
   it('carries a session whose name needs escaping', async () => {
     const { shipPath, shipSession } = await import('./router');
     const path = shipPath('a b/c');
