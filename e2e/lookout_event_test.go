@@ -278,3 +278,81 @@ func TestAReviewRequestFromAnAllowlistedSenderLaunchesARestrictedDraftFixShipInI
 		t.Errorf("the record %s is not marked undone: %+v", run.ID, w.routineRuns(id))
 	}
 }
+
+func TestPromotingARestrictedDraftFixShipStartsANormalShipWithTheTokensInItsOwnCloneAtTheRestrictedWork(t *testing.T) {
+	t.Parallel()
+	w, _ := lookoutWorldWith(t, map[string]any{"ceilings": map[string]any{"t2": map[string]any{"level": "A3", "restricted": "draft_fix"}}})
+	w.seedRestricted("work")
+	api := filepath.Join(w.root, "ra", "api")
+	if err := os.WriteFile(filepath.Join(api, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.git(api, "add", "base.txt")
+	w.git(api, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "base")
+	w.start()
+	id := w.eventRoutine("Draft fix watch", "act")
+	run := w.waitRun(id, "launched")
+	if run.Restricted != "draft_fix" || run.Ship == "" {
+		t.Fatalf("launched record = %+v, want restricted draft_fix and a ship", run)
+	}
+	clone := filepath.Join(w.home, "checkouts", run.Ship)
+	if err := os.WriteFile(filepath.Join(clone, "fix.txt"), []byte("the fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.git(clone, "add", "fix.txt")
+	w.git(clone, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "fix")
+
+	promote := w.in.LocalURL + "/api/fleets/work/routines/" + id + "/runs/" + run.ID + "/promote"
+	code, body := send(t, http.MethodPost, promote, map[string]any{})
+	if code != http.StatusOK {
+		t.Fatalf("promote = %d %s, want 200", code, body)
+	}
+	var heir runJSON
+	waitCond(t, 30*time.Second, "the record to name the promoted ship", func() bool {
+		for _, r := range w.routineRuns(id) {
+			if r.ID == run.ID {
+				heir = r
+			}
+		}
+		return heir.PromotedShip != ""
+	})
+	if !heir.Promoted || heir.Ship != run.Ship || heir.PromotedShip == run.Ship {
+		t.Fatalf("record = %+v, want promoted to a ship other than %s, with its own ship unchanged", heir, run.Ship)
+	}
+	w.waitShipCount(30*time.Second, "the promoted ship in the API", func(s shipJSON) bool { return s.Session == heir.PromotedShip }, 1)
+
+	rec := w.record(heir.PromotedShip)
+	for _, f := range []string{"--permission-mode", "--setting-sources", "--resume"} {
+		if slices.Contains(rec.argv, f) {
+			t.Errorf("argv = %q, want no %s: a promoted ship is a normal, new session", rec.argv, f)
+		}
+	}
+	if rec.env["GH_TOKEN"] == "" {
+		t.Errorf("env has no GH_TOKEN: a promoted ship keeps the fleet's tokens")
+	}
+	prompt := rec.argv[len(rec.argv)-1]
+	for _, banned := range []string{"Fix the quarry lantern", "Please review my lantern fix.", "mallory"} {
+		if strings.Contains(prompt, banned) {
+			t.Errorf("the promoted ship's order carries %q: %s", banned, prompt)
+		}
+	}
+	newClone := filepath.Join(w.home, "checkouts", heir.PromotedShip)
+	if b, err := os.ReadFile(filepath.Join(newClone, "fix.txt")); err != nil || string(b) != "the fix\n" {
+		t.Errorf("fix.txt in %s = %q (%v), want the restricted ship's commit", newClone, b, err)
+	}
+	if got := w.git(newClone, "branch", "--show-current"); got != "admiral/"+heir.PromotedShip {
+		t.Errorf("branch = %q, want admiral/%s", got, heir.PromotedShip)
+	}
+	if _, err := os.Stat(filepath.Join(newClone, ".admiral", "untrusted")); err == nil {
+		t.Error("the promoted ship's clone holds the event file")
+	}
+	w.waitShipCount(30*time.Second, "the restricted ship stopped by Promote", func(s shipJSON) bool { return s.Session == run.Ship && live(s) }, 0)
+
+	again, _ := send(t, http.MethodPost, promote, map[string]any{})
+	if again != http.StatusOK {
+		t.Errorf("a second promote = %d, want 200 with the first ship", again)
+	}
+	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines/"+id+"/runs/"+run.ID+"/undo", map[string]any{}); code != http.StatusBadRequest || !strings.Contains(body, "promoted") {
+		t.Errorf("undo of a promoted record = %d %s, want 400 promoted", code, body)
+	}
+}

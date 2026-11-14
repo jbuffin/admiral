@@ -97,7 +97,13 @@ type Request struct {
 	EventText string `json:"-"`
 	// Template is the routine's launch text, the start of an event ship's prompt.
 	Template string `json:"-"`
+	// StartFrom starts the ship from a restricted ship's work: its own clone, with Branch of Clone as the start.
+	StartFrom *StartFrom `json:"-"`
 }
+
+// StartFrom names the restricted clone and the branch a promoted ship starts from. Tip is the commit the caller read
+// (empty for an uncommitted diff); the launch fails when the work it reads again is not that.
+type StartFrom struct{ Clone, Branch, Tip string }
 
 // eventShip is a normal ship an outside event started, which works in its own clone with the event in a file.
 func (r Request) eventShip() bool {
@@ -365,7 +371,8 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	restricted := req.Restricted != ""
 	evented := req.eventShip()
-	if (restricted || evented) && l.Checkouts == nil {
+	promoted := req.StartFrom != nil
+	if (restricted || evented || promoted) && l.Checkouts == nil {
 		return nil, refuse(http.StatusServiceUnavailable, "event ships cannot be launched: no checkout maker is configured")
 	}
 	addPrompt := func(argv []string, prompt string) []string {
@@ -409,10 +416,12 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	opts[0][1] = name
 	launched := false
-	if restricted || evented {
+	if restricted || evented || promoted {
 		var made restrictedShip
 		if restricted {
 			argv, made, err = l.restrictedSetup(req, session, argv)
+		} else if promoted {
+			made, err = l.startFromSetup(req, session)
 		} else {
 			argv, made, err = l.eventSetup(req, session, skill, argv, flags, addPrompt)
 		}

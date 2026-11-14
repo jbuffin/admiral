@@ -555,7 +555,7 @@ func serve(args []string) error {
 			return keys
 		}}
 	chatService.Notes().OnChange = commitmentRunner.Changed
-	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop}
+	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop, Launch: routineShips{shipService}.Launch}
 	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
 	wireEvents(supervisor, routineStore, routineScheduler, allShips, newLookout(absDir, cfg, fleetRepos(cfg), supervisor), lookoutActs)
 	inboxService.LaunchEvent = launchEvent(routineScheduler)

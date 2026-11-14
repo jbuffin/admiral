@@ -1,9 +1,9 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
-import { probeChatSession, type Fleet } from './api';
+import { probeChatSession, type Fleet, type Result } from './api';
 import { ships, shipsLink } from './shipsLink';
-import { fetchLaunchUndone, launchCardView, stopShip, undoLaunch } from './launchCard';
+import { fetchLaunchState, launchCardView, promoteLaunch, stopShip, undoLaunch } from './launchCard';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
 import { commitmentCardView, needsTerminal, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
@@ -100,23 +100,26 @@ function EventCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'eve
 function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'launch' }>; fleet: string }) {
   const c = item.card;
   const [undone, setUndone] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [promotedShip, setPromotedShip] = useState('');
+  const [confirming, setConfirming] = useState<'' | 'undo' | 'promote'>('');
   const [state, setState] = useState({ busy: false, error: '' });
   useEffect(() => {
     let live = true;
-    void fetchLaunchUndone(fleet, c.routine, item.id).then((u) => {
-      if (live && u) setUndone(true);
+    void fetchLaunchState(fleet, c.routine, item.id).then((st) => {
+      if (!live || !st) return;
+      if (st.undone) setUndone(true);
+      if (st.promotedShip) setPromotedShip(st.promotedShip);
     });
     return () => {
       live = false;
     };
   }, [fleet, c.routine, item.id]);
-  const v = launchCardView(item, { ships: ships.value, undone });
-  const run = async (act: () => ReturnType<typeof stopShip>, then?: () => void) => {
+  const v = launchCardView(item, { ships: ships.value, undone, promotedShip });
+  const run = async <T,>(act: () => Promise<Result<T>>, then?: (data: T | null) => void) => {
     setState({ busy: true, error: '' });
     const r = await act();
     setState({ busy: false, error: r.ok ? '' : r.error });
-    if (r.ok) then?.();
+    if (r.ok) then?.(r.data);
   };
   return (
     <div class="convo-card chat-card">
@@ -142,14 +145,36 @@ function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'la
         </a>
         {v.status ? ` · ${v.status}` : ''}
       </p>
-      {v.notice ? <p class="line">{v.notice}</p> : null}
+      {v.promotedShip ? (
+        <p class="line">
+          Promoted to{' '}
+          <a
+            href={v.promotedHref + fleetSearch.value}
+            onClick={(e) => {
+              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              go(v.promotedHref, fleetSearch.value);
+            }}
+          >
+            {v.promotedShip}
+          </a>
+        </p>
+      ) : v.notice ? (
+        <p class="line">{v.notice}</p>
+      ) : null}
       {confirming ? (
-        <div class="confirm" role="group" aria-label="Undo">
-          <p class="line">{v.undoConfirm}</p>
-          <button type="button" class="btn danger" disabled={state.busy} onClick={() => void run(() => undoLaunch(fleet, c.routine, item.id), () => { setUndone(true); setConfirming(false); })}>
-            Confirm undo
-          </button>
-          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming(false)}>
+        <div class="confirm" role="group" aria-label={confirming === 'undo' ? 'Undo' : 'Promote'}>
+          <p class="line">{confirming === 'undo' ? v.undoConfirm : v.promoteConfirm}</p>
+          {confirming === 'undo' ? (
+            <button type="button" class="btn danger" disabled={state.busy} onClick={() => void run(() => undoLaunch(fleet, c.routine, item.id), () => { setUndone(true); setConfirming(''); })}>
+              Confirm undo
+            </button>
+          ) : (
+            <button type="button" class="btn danger" disabled={state.busy} onClick={() => void run(() => promoteLaunch(fleet, c.routine, item.id), (d) => { setPromotedShip(d?.promoted_ship ?? ''); setConfirming(''); })}>
+              Confirm promote
+            </button>
+          )}
+          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming('')}>
             Cancel
           </button>
         </div>
@@ -161,8 +186,13 @@ function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'la
             Stop
           </button>
         ) : null}
+        {v.actions.promote && !confirming ? (
+          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming('promote')}>
+            Promote
+          </button>
+        ) : null}
         {v.actions.undo && !confirming ? (
-          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming(true)}>
+          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming('undo')}>
             Undo
           </button>
         ) : null}
