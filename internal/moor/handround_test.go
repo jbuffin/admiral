@@ -266,3 +266,23 @@ func TestAHandRoundDoesNotChangeTheInputState(t *testing.T) {
 		t.Errorf("the input state changed to %+v from %+v", in.State, before)
 	}
 }
+
+func TestTheFeedbackCountsAgreeWithTheHandRoundOfEachPR(t *testing.T) {
+	viewer := wUser("jbuffin")
+	st := wOpen()
+	st.Reviews = []Review{wRev("R1", viewer, "CHANGES_REQUESTED", "fix", wNow.Add(-time.Minute))}
+	st.ThreadComments = []Comment{wCmt("C1", wBot("coderabbitai"), "nit", wNow.Add(-2*time.Minute))}
+	in := wInput(st)
+
+	counts := FeedbackCounts(in)
+
+	for _, pr := range in.Record.PRs {
+		round, ok := DecideHandRound(in, pr)
+		if got := counts[pr]; got != len(round.Events) || (got > 0) != ok {
+			t.Errorf("%s: count %d, hand round %d events (ok %v)", pr, got, len(round.Events), ok)
+		}
+	}
+	if counts[wpr1] != 2 {
+		t.Errorf("counts = %v, want 2 for %s", counts, wpr1)
+	}
+}

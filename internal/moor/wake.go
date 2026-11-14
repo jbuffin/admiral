@@ -506,3 +506,16 @@ func DecideHandRound(in WakeInput, pr string) (HandRound, bool) {
 	events, next := openRound(in, found, next, pr)
 	return HandRound{Events: events, Feedback: FeedbackText(pr, events), Next: next}, true
 }
+
+// FeedbackCounts is how many waking events each answered OPEN PR has for a hand round, whatever the debounce; a PR with none is left out.
+// It counts what DecideHandRound hands over.
+func FeedbackCounts(in WakeInput) map[string]int {
+	found, _, _, _, _ := scan(in)
+	out := map[string]int{}
+	for pr, ev := range found {
+		if n := len(ev.waking); n > 0 {
+			out[pr] = n
+		}
+	}
+	return out
+}

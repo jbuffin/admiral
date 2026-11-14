@@ -79,7 +79,7 @@ function PRHeader({ ship, url, detail }: { ship: Ship; url: string; detail: PRDe
 }
 
 /** The feedback bar of a moored PR with new feedback; Answer review shows the exact command in a sheet and starts the round on confirm. */
-function FeedbackBar({ ship, pr, locked }: { ship: Ship; pr: MooredPR; locked: boolean }) {
+function FeedbackBar({ ship, pr, locked, onBusy }: { ship: Ship; pr: MooredPR; locked: boolean; onBusy: (busy: boolean) => void }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -89,10 +89,15 @@ function FeedbackBar({ ship, pr, locked }: { ship: Ship; pr: MooredPR; locked: b
   }, [asking]);
   const run = async () => {
     setBusy(true);
+    onBusy(true);
     setError('');
     const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/answer-review`, { pr: pr.url });
-    setBusy(false);
-    if (!r.ok) return setError(r.error);
+    if (!r.ok) {
+      setBusy(false);
+      onBusy(false);
+      return setError(r.error);
+    }
+    // The bar stays off until the ships push removes it, so a second tap cannot meet the live-ship error.
     setAsking(false);
   };
   return (
@@ -101,7 +106,7 @@ function FeedbackBar({ ship, pr, locked }: { ship: Ship; pr: MooredPR; locked: b
       <button
         type="button"
         class="btn primary"
-        disabled={locked}
+        disabled={locked || busy}
         onClick={() => {
           setError('');
           setAsking(true);
@@ -169,7 +174,7 @@ export function PRTab({ ship }: { ship: Ship }) {
       ) : null}
       <div class="pr-detail">
         <PRHeader ship={ship} url={current.url} detail={details[current.url]} />
-        {moored && feedbackBarText(current) ? <FeedbackBar key={current.url} ship={ship} pr={current} locked={acting} /> : null}
+        {moored && feedbackBarText(current) ? <FeedbackBar key={current.url} ship={ship} pr={current} locked={acting} onBusy={setActing} /> : null}
         {moored && (merged || ship.stack_ready) ? (
           <div class="peek-form">
             {merged ? <p class="line">Merged</p> : <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} locked={acting} onBusy={setActing} />}

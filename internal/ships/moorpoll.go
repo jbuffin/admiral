@@ -206,7 +206,7 @@ func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]
 	}
 	reviewers := s.wakeReviewers(r)
 	now := time.Now().UTC()
-	s.setFeedback(r, feedbackCounts(r, state, answers, reviewers, now))
+	s.setFeedback(r, moor.FeedbackCounts(moor.WakeInput{Record: r, State: state, Answers: answers, Reviewers: reviewers, Now: now}))
 	if !moor.ValidResume(r.Resume) {
 		return
 	}
@@ -232,18 +232,6 @@ func (s *Service) wakeReviewers(r moor.Record) []string {
 		return f.WakeReviewers
 	}
 	return nil
-}
-
-// feedbackCounts is how many waking events each answered PR has for a hand round, whatever the debounce.
-func feedbackCounts(r moor.Record, state moor.WakeState, answers map[string]moor.Status, reviewers []string, now time.Time) map[string]int {
-	in := moor.WakeInput{Record: r, State: state, Answers: answers, Reviewers: reviewers, Now: now}
-	out := map[string]int{}
-	for _, pr := range r.PRs {
-		if round, ok := moor.DecideHandRound(in, pr); ok {
-			out[pr] = len(round.Events)
-		}
-	}
-	return out
 }
 
 func (s *Service) setFeedback(r moor.Record, counts map[string]int) {
@@ -323,6 +311,7 @@ func (s *Service) storePoll(r moor.Record, p polled) ([]moor.PR, bool) {
 	if !s.stillMoored(r) {
 		return nil, false
 	}
+	p.feedback = s.polls()[r.Session].feedback // until decide counts again, so the list does not drop the bar between the two
 	s.polls()[r.Session] = p
 	return s.prsOf(r), true
 }

@@ -54,12 +54,24 @@ func (s *Service) feedbackRound(session, pr, feedback string, was *moor.WakeStat
 	prompt := func(rec moor.Record) string {
 		return answerPrompt(rec, pr)
 	}
-	write := func(rec moor.Record, dir string) (undoFunc, error) {
+	write := s.roundHook(func(rec moor.Record, cur moor.WakeState) (moor.WakeState, string, *launcher.Error) {
+		if was != nil && !sameWake(cur, *was) {
+			return moor.WakeState{}, "", &launcher.Error{Status: http.StatusConflict, Msg: "the ship's wake state changed since the round was decided", Wait: WaitInFlight}
+		}
+		return next, feedback, nil
+	})
+	return s.wake(session, prompt, "feedback", pr, "", write)
+}
+
+// roundHook is the launch hook of a feedback round: it saves the state change gives with the round's feedback text, then writes the
+// text into the checkout. A refused change or a failed write refuses the wake, and a failed write puts the state back.
+func (s *Service) roundHook(change func(rec moor.Record, cur moor.WakeState) (moor.WakeState, string, *launcher.Error)) func(moor.Record, string) (undoFunc, error) {
+	return func(rec moor.Record, dir string) (undoFunc, error) {
+		var feedback string
 		undo, err := s.saveWake(rec.Name, func(cur moor.WakeState) (moor.WakeState, *launcher.Error) {
-			if was != nil && !sameWake(cur, *was) {
-				return moor.WakeState{}, &launcher.Error{Status: http.StatusConflict, Msg: "the ship's wake state changed since the round was decided", Wait: WaitInFlight}
-			}
-			return next, nil
+			next, text, lerr := change(rec, cur)
+			feedback = text
+			return next, lerr
 		})
 		if err != nil {
 			return nil, err
@@ -70,7 +82,6 @@ func (s *Service) feedbackRound(session, pr, feedback string, was *moor.WakeStat
 		}
 		return undo, nil
 	}
-	return s.wake(session, prompt, "feedback", pr, "", write)
 }
 
 // handRoundStart is the hand wake's hook: it opens the round's window, and gives a PR with no cursor the old
@@ -329,29 +340,20 @@ func answerPrompt(rec moor.Record, pr string) string {
 // The state it saves comes from the stored poll answers and the wake state read under wakeMu, so a stale page cannot hand it old events.
 func (s *Service) answerReview(ctx context.Context, session, pr string) (Ship, *launcher.Error) {
 	prompt := func(rec moor.Record) string { return answerPrompt(rec, pr) }
-	var feedback string
-	write := func(rec moor.Record, dir string) (undoFunc, error) {
-		undo, err := s.saveWake(rec.Name, func(cur moor.WakeState) (moor.WakeState, *launcher.Error) {
-			s.mooredMu.Lock()
-			answers := maps.Clone(s.mooredPolls[rec.Session].status)
-			s.mooredMu.Unlock()
-			in := moor.WakeInput{Record: rec, State: cur, Answers: answers, Reviewers: s.wakeReviewers(rec), Now: time.Now().UTC()}
-			round, ok := moor.DecideHandRound(in, pr)
-			if !ok {
-				return moor.WakeState{}, &launcher.Error{Status: http.StatusConflict, Msg: "PR " + pr + " has no new feedback to answer"}
-			}
-			feedback = round.Feedback
-			return round.Next, nil
-		})
-		if err != nil {
-			return nil, err
+	write := s.roundHook(func(rec moor.Record, cur moor.WakeState) (moor.WakeState, string, *launcher.Error) {
+		if !slices.Contains(rec.PRs, pr) {
+			return moor.WakeState{}, "", &launcher.Error{Status: http.StatusBadRequest, Msg: "ship " + rec.Session + " carries no PR " + pr}
 		}
-		if _, err := moor.WriteFeedback(dir, rec.Round+1, feedback); err != nil {
-			undo()
-			return nil, err
+		s.mooredMu.Lock()
+		answers := maps.Clone(s.mooredPolls[rec.Session].status)
+		s.mooredMu.Unlock()
+		in := moor.WakeInput{Record: rec, State: cur, Answers: answers, Reviewers: s.wakeReviewers(rec), Now: time.Now().UTC()}
+		round, ok := moor.DecideHandRound(in, pr)
+		if !ok {
+			return moor.WakeState{}, "", &launcher.Error{Status: http.StatusConflict, Msg: "PR " + pr + " has no new feedback to answer"}
 		}
-		return undo, nil
-	}
+		return round.Next, round.Feedback, nil
+	})
 	return s.wake(session, prompt, "hand", pr, viaOfCtx(ctx), write)
 }
 
