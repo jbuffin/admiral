@@ -2618,6 +2618,9 @@ export async function answerAllReviewsFromThePRTab(page: Page, a: Admiral, opts:
   writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'answered', prs: [7, 8].map((n) => ({ url: `${PR_BASE}/${n}`, closes: [] })), resume: RESUME }));
   writeFileSync(join(a.home, 'rec', ship.session, 'go'), '');
   await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status, { timeout: 30_000 }).toBe('moored');
+  // The ship page reopens on Conversation when the ship comes back, so the PR tab is opened again.
+  const prTab = viewTab(page, 'PR');
+  if ((await prTab.getAttribute('aria-selected')) !== 'true') await prTab.tap();
   await expect(panel.getByRole('button', { name: "Don't follow reviews" }), 'the tab is not left locked by the answered wake').toBeEnabled();
   await expect(bar.getByRole('button', { name: 'Answer all reviews', exact: true }), 'the feedback was taken').toHaveCount(0);
 }
