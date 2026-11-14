@@ -30,6 +30,8 @@ func TestAnActorMayReadRoutinesTurnOneOffAndTurnHoldFireOnButNothingElseAboutThe
 		{"POST", "/api/fleets/work/routines", "saving a routine"},
 		{"PUT", "/api/fleets/work/routines/r1", "editing a routine"},
 		{"DELETE", "/api/fleets/work/routines/r1", "deleting a routine"},
+		{"POST", "/api/fleets/work/worker-ships/stop", "Stop all worker-launched in its own fleet"},
+		{"POST", "/api/worker-ships/stop", "Stop all worker-launched in every fleet"},
 	} {
 		if code := r.do(c.method, c.path, `{"name":"x"}`, "tok-work", local).Code; code != 403 || r.reached != 0 {
 			t.Errorf("%s %s (%s): code %d, reached %d; want 403 and the handler not reached", c.method, c.path, c.why, code, r.reached)
