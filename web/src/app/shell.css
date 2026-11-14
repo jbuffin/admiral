@@ -99,15 +99,6 @@ a { color: inherit; text-decoration: none; }
 .phone .prefs-list .prefs-nav { flex: 1; border-bottom: 0; }
 .phone .prefs-page > .back-link { margin-bottom: 8px; }
 
-.btn {
-  display: inline-flex; align-items: center; gap: 6px; min-height: var(--shape-button-height); padding: 0 12px;
-  border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); background: var(--color-panel);
-  color: var(--color-text); font-weight: 500;
-}
-.btn:disabled { opacity: 0.5; cursor: default; }
-.btn.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
-.btn.danger { border-color: var(--color-needs); color: var(--color-needs); }
-@media (pointer: coarse) { .btn { min-height: var(--shape-min-touch-target); } }
 .box { border: 1px solid var(--color-line); border-radius: var(--shape-radius-lg); background: var(--color-panel); }
 .notify-box { margin-bottom: 14px; }
 .set { display: flex; align-items: center; gap: 16px; padding: 14px 16px; border-top: 1px solid var(--color-line); }
@@ -120,7 +111,7 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); background: var(--color-panel);
 }
 @media (pointer: coarse) {
-  .set input[type='text'], .set input[type='password'], .set input[type='number'], .set select, .set textarea, .row-field input, .move select, .set .btn { min-height: var(--shape-min-touch-target); }
+  .set input[type='text'], .set input[type='password'], .set input[type='number'], .set select, .set textarea, .row-field input, .move select { min-height: var(--shape-min-touch-target); }
 }
 .set select, .move select {
   appearance: none; -webkit-appearance: none; padding-right: 30px;
@@ -270,12 +261,6 @@ a { color: inherit; text-decoration: none; }
 .ship-row .alert { flex-basis: 100%; margin: 0 0 4px; }
 
 /* Launch form: a dialog on iPad, a bottom sheet on the phone. */
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; min-height: var(--shape-min-touch-target); padding: 0 14px;
-  border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); color: var(--color-text);
-}
-.btn.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); font-weight: 600; }
-.btn:disabled { opacity: 0.5; cursor: default; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .panel-head h1 { margin: 0; }
 
@@ -324,8 +309,6 @@ a { color: inherit; text-decoration: none; }
 /* Campaigns */
 .camp-side { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px 12px; }
 .camp-side .sec { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; font-size: var(--font-size-meta); color: var(--color-muted); }
-.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: var(--shape-control, 8px); background: transparent; color: var(--color-text2); cursor: pointer; }
-.icon-btn:hover { background: var(--color-hover); }
 .paste { display: flex; flex-direction: column; gap: 6px; padding: 4px 6px 8px; }
 .paste-input { width: 100%; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-panel); color: var(--color-text); font: inherit; font-size: 16px; box-sizing: border-box; }
 .hint { margin: 0; }
@@ -384,8 +367,6 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
   .group-note { margin-left: 0; flex-basis: 100%; }
 }
 .camp-page .mono, .detail .mono { font-family: var(--font-mono); font-size: var(--font-size-mono); }
-.btn.quiet { background: transparent; color: var(--color-text2); border-color: transparent; }
-.btn.quiet:hover { background: var(--color-hover); }
 .ti-mode { display: block; font-size: 11px; color: var(--color-muted); }
 
 /* Ship view: tabs over a conversation, a terminal, and placeholders. */
@@ -552,10 +533,19 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .chip-name, .chip-state { font-size: var(--font-size-meta); font-weight: 400; color: var(--color-muted); white-space: nowrap; }
 .chip.error .chip-state { color: var(--color-err); }
 .card-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.card-actions .btn { min-height: 44px; }
 .approve-input { box-sizing: border-box; max-width: 100%; max-height: 30vh; margin: 0; padding: 8px 10px; overflow: auto; border: 1px solid var(--color-line2); border-radius: var(--shape-radius); font-family: var(--font-mono); font-size: var(--font-size-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .approve-note { margin: 0; overflow-wrap: anywhere; }
-.card-option { display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
+.card-option {
+  display: flex; flex-direction: column; align-items: flex-start; box-sizing: border-box; min-height: 36px; margin: 0; padding: 0 14px; text-align: left;
+  border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); color: var(--color-text);
+  font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+@media (pointer: coarse) { .card-option { min-height: var(--shape-min-touch-target); } }
+.card-option:focus { outline: none; }
+.card-option:focus-visible { box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-accent); }
+.card-option:disabled { opacity: 0.5; cursor: default; }
+@media (hover: hover) { .card-option:hover:not(:disabled) { background: color-mix(in srgb, var(--color-panel), var(--color-text) 5%); } }
+.card-option:active:not(:disabled) { background: color-mix(in srgb, var(--color-panel), var(--color-text) 10%); }
 .card-option-note { font-size: var(--font-size-mono); }
 .convo-card { max-width: 100%; box-sizing: border-box; min-width: 0; }
 .moored-info { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 8px; }
@@ -571,13 +561,11 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .tailscale > .note { margin-top: 12px; }
 .set-add { display: flex; gap: 8px; margin: 0 0 14px; }
 .set-add input { flex: 1; min-width: 0; min-height: var(--shape-button-height); padding: 0 10px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); background: var(--color-panel); color: inherit; font: inherit; }
-.tailscale .btn, .set-add .btn, .tailscale-url .btn { min-height: var(--shape-min-touch-target); }
 .pair-url { font-family: var(--font-mono); font-size: var(--font-size-mono); color: var(--color-muted); overflow-wrap: anywhere; }
 .pair-code { font-family: var(--font-mono); font-size: 28px; letter-spacing: 0.08em; font-weight: 600; }
 .devices { list-style: none; margin: 0 0 14px; padding: 0; }
 .device.set { align-items: flex-start; }
 .device .t input { align-self: flex-start; min-width: 220px; }
-.device .btn, .pairing-box .btn, .confirm .btn, .prefs-page > .btn { min-height: var(--shape-min-touch-target); }
 .prefs-page > .confirm { margin-top: 14px; }
 .prefs-page > .btn { margin-top: 4px; }
 
@@ -749,7 +737,6 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .usage-bar { margin: 10px 0 0; }
 .usage-bar-head { display: flex; flex-wrap: wrap; gap: 0 12px; margin-bottom: 4px; font-size: var(--font-size-meta); }
 .usage-periods { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
-.usage-periods .btn[aria-pressed='true'] { border-color: var(--color-accent); }
 /* iOS Safari zooms the page when a focused field is under 16px. */
 .xterm-helper-textarea { font-size: 16px !important; }
 /* Chat surface */
@@ -762,8 +749,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .chat-head .btn { flex: none; }
 .phone .chat-title-text { overflow: visible; text-overflow: clip; white-space: normal; }
 .chat-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.msg-note .btn { margin-left: 8px; min-height: var(--shape-min-touch-target); }
-.chat-head .btn, .chat-off .btn { min-height: var(--shape-min-touch-target); }
+.msg-note .btn { margin-left: 8px; }
 .chat-main .convo { flex: 1; min-height: 0; overflow-y: auto; }
 .chat-card { margin: 10px 0; padding: 12px 14px; border: 1px solid var(--color-line); border-radius: var(--shape-radius-lg); }
 .chat-card.quiet { opacity: 0.7; }
@@ -853,7 +839,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .phone .orders-row { flex-direction: column; align-items: stretch; }
 .phone .orders-row .btn { align-self: flex-start; }
 .draft-review { flex-direction: column; align-items: stretch; gap: 8px; }
-@media (pointer: coarse) { .draft-review a.touch-link { display: inline-block; min-height: var(--shape-min-touch-target); line-height: var(--shape-min-touch-target); } .orders-new input[type='text'], .orders-new .btn, .draft-review .btn, .draft-review input[type='text'] { min-height: var(--shape-min-touch-target); } .orders-new .seg-opt { min-height: var(--shape-min-touch-target); } }
+@media (pointer: coarse) { .draft-review a.touch-link { display: inline-block; min-height: var(--shape-min-touch-target); line-height: var(--shape-min-touch-target); } .orders-new input[type='text'], .draft-review input[type='text'] { min-height: var(--shape-min-touch-target); } .orders-new .seg-opt { min-height: var(--shape-min-touch-target); } }
 .run-tier { font-size: var(--font-size-meta); padding: 0 6px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
 .run-sender { color: var(--color-text2); }
 
@@ -1036,7 +1022,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 }
 @media (max-width: 900px) { .odetail-pane { width: 300px; } }
 
-/* Button: the one definition; it follows the older .btn rules above so unmigrated screens keep working. */
+/* Button: the one definition. */
 :root { --press-shade: #000; }
 @media (prefers-color-scheme: dark) { :root { --press-shade: #fff; } }
 .btn {

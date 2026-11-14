@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useReducer, useRef, useState } from 'preact/hooks';
 import { call, type Fleet, type Result } from './api';
+import { Actions, Button } from './Button';
 import { Flag } from './Flag';
 import { fleetSearch } from './fleets';
 import { crewPath, go, loc } from './router';
@@ -175,6 +176,7 @@ function MemberEditor({
   const unplaced = open.filter((p) => !shown.includes(p.field));
   const save = async (e: Event) => {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
     setErr(null);
     const r = await onSubmit(f);
@@ -280,14 +282,10 @@ function MemberEditor({
           {(a) => <textarea {...a} rows={8} value={f.instructions} onInput={set('instructions')} />}
         </Field>
       )}
-      <div class="crew-actions">
-        <button type="submit" class="btn primary" disabled={busy}>
-          {saveLabel}
-        </button>
-        <button type="button" class="btn" disabled={busy} onClick={onSecondary}>
-          {secondaryLabel}
-        </button>
-      </div>
+      <Actions class="crew-actions">
+        <Button type="submit" variant="primary" label={saveLabel} busy={busy} />
+        <Button label={secondaryLabel} onClick={onSecondary} />
+      </Actions>
     </form>
   );
 }
@@ -388,22 +386,10 @@ function AddCrewPanel({ fleetKey, members, onClose, onCreated }: { fleetKey: str
               Drafting… {s.seconds}s
             </p>
           ) : null}
-          <div class="crew-actions">
-            {drafting ? (
-              <button type="button" class="btn" onClick={stop}>
-                Stop
-              </button>
-            ) : (
-              <button type="button" class="btn primary" disabled={!canDraft(s.description)} onClick={() => void draft()}>
-                {s.phase === 'failed' ? 'Try again' : 'Draft'}
-              </button>
-            )}
-            {describing ? (
-              <button type="button" class="btn" onClick={onClose}>
-                Cancel
-              </button>
-            ) : null}
-          </div>
+          <Actions class="crew-actions">
+            {drafting ? <Button key="stop" label="Stop" onClick={stop} /> : <Button key="draft" variant="primary" label={s.phase === 'failed' ? 'Try again' : 'Draft'} disabled={!canDraft(s.description)} onClick={draft} />}
+            {describing ? <Button label="Cancel" onClick={onClose} /> : null}
+          </Actions>
         </>
       )}
     </section>
@@ -417,6 +403,7 @@ function RenameSheet({ member, fleetKey, harness, onClose, onRenamed }: { member
   const [error, setError] = useState('');
   const submit = async (e: Event) => {
     e.preventDefault();
+    if (busy) return;
     const name = to.trim();
     setBusy(true);
     setError('');
@@ -443,14 +430,10 @@ function RenameSheet({ member, fleetKey, harness, onClose, onRenamed }: { member
             {error}
           </p>
         ) : null}
-        <div class="crew-actions">
-          <button type="submit" class="btn primary" disabled={busy || !to.trim() || to.trim() === member.name}>
-            Rename
-          </button>
-          <button type="button" class="btn" disabled={busy} onClick={onClose}>
-            Cancel
-          </button>
-        </div>
+        <Actions class="crew-actions">
+          <Button type="submit" variant="primary" label="Rename" busy={busy} disabled={!to.trim() || to.trim() === member.name} />
+          <Button label="Cancel" onClick={onClose} />
+        </Actions>
       </form>
     </Sheet>
   );
@@ -466,14 +449,10 @@ function NoteItem({ text, scope, notes, mode, setMode, busy, error, run }: { tex
         {splitNote(text).stamp ? <span class="crew-note-stamp">{splitNote(text).stamp}</span> : null}
         <textarea aria-label="Note text" rows={2} value={mode.text} onInput={(e) => setMode({ kind: 'edit', text: (e.currentTarget as HTMLTextAreaElement).value })} />
         {error ? <p class="note error">{error}</p> : null}
-        <div class="crew-actions">
-          <button type="button" class="btn primary" disabled={busy || !mode.text.trim()} onClick={() => run({ op: 'edit', ...base, text: mode.text.trim() })}>
-            Save
-          </button>
-          <button type="button" class="btn" onClick={() => setMode(null)}>
-            Cancel
-          </button>
-        </div>
+        <Actions class="crew-actions">
+          <Button variant="primary" label="Save" disabled={busy || !mode.text.trim()} onClick={() => run({ op: 'edit', ...base, text: mode.text.trim() })} />
+          <Button label="Cancel" onClick={() => setMode(null)} />
+        </Actions>
       </li>
     );
   }
@@ -492,31 +471,27 @@ function NoteItem({ text, scope, notes, mode, setMode, busy, error, run }: { tex
         </select>
         {mode.to === 'typed' ? <input type="text" aria-label="Repository, owner/repo" placeholder="owner/repo" value={mode.typed} autocapitalize="none" onInput={(e) => setMode({ ...mode, typed: (e.currentTarget as HTMLInputElement).value })} /> : null}
         {error ? <p class="note error">{error}</p> : null}
-        <div class="crew-actions">
-          <button type="button" class="btn primary" disabled={busy || !target} onClick={() => target && run({ op: 'move', ...base, to: target })}>
-            Move
-          </button>
-          <button type="button" class="btn" onClick={() => setMode(null)}>
-            Cancel
-          </button>
-        </div>
+        <Actions class="crew-actions">
+          <Button variant="primary" label="Move" disabled={busy || !target} onClick={() => target && run({ op: 'move', ...base, to: target })} />
+          <Button label="Cancel" onClick={() => setMode(null)} />
+        </Actions>
       </li>
     );
   }
   return (
     <li class="crew-note">
       <span class="crew-note-text">{text}</span>
-      <span class="crew-actions">
-        <button type="button" class="btn quiet" aria-label="Edit note" disabled={busy} onClick={() => setMode({ kind: 'edit', text: splitNote(text).fact })}>
+      <Actions class="crew-actions">
+        <Button variant="quiet" label="Edit note" disabled={busy} onClick={() => setMode({ kind: 'edit', text: splitNote(text).fact })}>
           Edit
-        </button>
-        <button type="button" class="btn quiet" aria-label="Move note" disabled={busy} onClick={() => setMode({ kind: 'move', to: moveChoices(notes, scope)[0].value, typed: '' })}>
+        </Button>
+        <Button variant="quiet" label="Move note" disabled={busy} onClick={() => setMode({ kind: 'move', to: moveChoices(notes, scope)[0].value, typed: '' })}>
           Move
-        </button>
-        <button type="button" class="btn quiet" aria-label="Delete note" disabled={busy} onClick={() => run({ op: 'delete', ...base })}>
+        </Button>
+        <Button variant="quiet" label="Delete note" disabled={busy} onClick={() => run({ op: 'delete', ...base })}>
           Delete
-        </button>
-      </span>
+        </Button>
+      </Actions>
     </li>
   );
 }
@@ -611,36 +586,24 @@ function Detail({ member, members, fleetKey, harness, reload, afterRename, after
           {error}
         </p>
       ) : null}
-      <div class="crew-actions">
+      <Actions class="crew-actions">
         {builtIn ? (
-          <button type="button" class="btn primary" disabled={busy} onClick={() => act(() => call('POST', crewApi(fleetKey, harness, `${path}/customize`)), reload)}>
-            Customize for this fleet
-          </button>
+          <Button variant="primary" label="Customize for this fleet" onClick={() => act(() => call('POST', crewApi(fleetKey, harness, `${path}/customize`)), reload)} />
         ) : (
           <>
-            <button type="button" class="btn" disabled={busy || editing} onClick={() => setEditing(true)}>
-              Edit
-            </button>
-            <button type="button" class="btn" disabled={busy} onClick={() => setRenaming(true)}>
-              Rename
-            </button>
-            <button type="button" class="btn danger" disabled={busy || confirming} onClick={() => setConfirming(true)}>
-              Delete
-            </button>
+            <Button label="Edit" disabled={busy || editing} onClick={() => setEditing(true)} />
+            <Button label="Rename" disabled={busy} onClick={() => setRenaming(true)} />
+            <Button variant="danger" label="Delete" disabled={busy || confirming} onClick={() => setConfirming(true)} />
           </>
         )}
-      </div>
+      </Actions>
       {confirming ? (
         <div class="crew-confirm">
           <p>{member.customized ? `Delete this fleet's ${member.name}? The built-in one takes its place.` : `Delete ${member.name}? Its notes stay under Unclaimed.`}</p>
-          <div class="crew-actions">
-            <button type="button" class="btn danger" disabled={busy} onClick={() => act(() => call('DELETE', crewApi(fleetKey, harness, path)), afterDelete)}>
-              Confirm delete
-            </button>
-            <button type="button" class="btn" disabled={busy} onClick={() => setConfirming(false)}>
-              Cancel
-            </button>
-          </div>
+          <Actions class="crew-actions">
+            <Button variant="danger" label="Confirm delete" onClick={() => act(() => call('DELETE', crewApi(fleetKey, harness, path)), afterDelete)} />
+            <Button label="Cancel" onClick={() => setConfirming(false)} />
+          </Actions>
         </div>
       ) : null}
       {editing ? (
@@ -754,9 +717,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
             <p class="alert" role="alert">
               {failed}
             </p>
-            <button type="button" class="btn" onClick={() => void load()}>
-              Try again
-            </button>
+            <Button label="Try again" onClick={load} />
           </>
         ) : (
           <p class="line">Loading…</p>
@@ -802,9 +763,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
       {data.errors.length > 0 ? (
         <div class="alert" role="alert">
           <p>Admiral can't read some crew files. Fix the file on disk, then reload.</p>
-          <button type="button" class="btn" onClick={() => void load()}>
-            Reload
-          </button>
+          <Button label="Reload" onClick={load} />
           <ul>
             {data.errors.map((d, i) => (
               <li key={i}>
@@ -829,9 +788,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
           <div class="crew-list">
             <div class="crew-toolbar">
               {dock}
-              <button type="button" class="btn" onClick={openAdd}>
-                Add crew
-              </button>
+              <Button label="Add crew" onClick={openAdd} />
             </div>
             {data.members.length === 0 && data.errors.length === 0 ? <p class="line">No crew members yet.</p> : null}
             <Group id="crew-fleet" title={groups[0].title} empty={data.errors.length > 0 ? '' : 'No fleet members yet.'} members={groups[0].members} selected={name} />

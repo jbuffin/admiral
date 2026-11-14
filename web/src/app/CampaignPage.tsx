@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call } from './api';
+import { Actions, Button } from './Button';
 import { isRunning, runningFor } from './shipList';
 import { useNow } from './useNow';
 import {
@@ -116,9 +117,9 @@ export function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
     <div class="camp-side">
       <div class="sec">
         <span>Campaigns</span>
-        <button type="button" class="icon-btn" aria-label="Add campaign" aria-expanded={addOpen.value} onClick={() => (addOpen.value = !addOpen.value)}>
+        <Button variant="quiet" icon label="Add campaign" expanded={addOpen.value} onClick={() => (addOpen.value = !addOpen.value)}>
           <Icon name="plus" size={14} />
-        </button>
+        </Button>
       </div>
       {addOpen.value ? <PasteField /> : null}
       <ul class="camp-list">
@@ -162,12 +163,8 @@ export function CampaignsList({ phone, title }: { phone: boolean; title: boolean
       {title ? <h1>Campaigns</h1> : null}
       {phone ? <PasteField /> : null}
       <div class="camp-tabs">
-        <button type="button" class={`btn${showEnded ? '' : ' primary'}`} aria-pressed={!showEnded} onClick={() => (endedOpen.value = false)}>
-          Following ({mine.length - ended.length})
-        </button>
-        <button type="button" class={`btn${showEnded ? ' primary' : ''}`} aria-pressed={showEnded} onClick={() => (endedOpen.value = true)}>
-          Ended ({ended.length})
-        </button>
+        <Button label={`Following (${mine.length - ended.length})`} pressed={!showEnded} onClick={() => (endedOpen.value = false)} />
+        <Button label={`Ended (${ended.length})`} pressed={showEnded} onClick={() => (endedOpen.value = true)} />
       </div>
       {list.length === 0 ? <p class="line">{showEnded ? 'No campaign has ended.' : 'Follow a campaign by pasting its issue, or with Follow on an order.'}</p> : null}
       <ul class="camp-cards">
@@ -269,16 +266,10 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
                 <input type="text" value={args} onInput={(e) => setArgs((e.target as HTMLInputElement).value)} />
               </label>
             ) : null}
-            <div class="actions">
-              <button type="button" class="btn" onClick={() => void save(false)}>
-                Save
-              </button>
-              {node.overridden ? (
-                <button type="button" class="btn" onClick={() => void save(true)}>
-                  Reset
-                </button>
-              ) : null}
-            </div>
+            <Actions>
+              <Button label="Save" onClick={() => save(false)} />
+              {node.overridden ? <Button label="Reset" onClick={() => save(true)} /> : null}
+            </Actions>
           </details>
         ) : null}
         {error ? (
@@ -287,16 +278,10 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
           </p>
         ) : null}
         {canLaunch ? <p class="note">A launch from here runs with you watching, with autopilot off.</p> : null}
-        <div class="actions">
-          <button type="button" class="btn" onClick={onClose}>
-            Close
-          </button>
-          {canLaunch ? (
-            <button type="button" class="btn primary" onClick={() => onLaunch(status === 'claimed-no-ship')}>
-              {status === 'claimed-no-ship' ? 'Start anyway' : 'Launch'}
-            </button>
-          ) : null}
-        </div>
+        <Actions>
+          <Button label="Close" onClick={onClose} />
+          {canLaunch ? <Button variant="primary" label={status === 'claimed-no-ship' ? 'Start anyway' : 'Launch'} onClick={() => onLaunch(status === 'claimed-no-ship')} /> : null}
+        </Actions>
       </div>
     </Sheet>
   );
@@ -340,9 +325,7 @@ function WorkRepo({ campaign, onSaved }: { campaign: Campaign; onSaved: (c: Camp
         onInput={(e) => setText((e.target as HTMLInputElement).value)}
         onKeyDown={(e) => e.key === 'Enter' && void save()}
       />
-      <button type="button" class="btn" onClick={() => void save()}>
-        Save
-      </button>
+      <Button label="Save" onClick={save} />
       {error ? (
         <span class="alert" role="alert">
           {error}
@@ -471,9 +454,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
         {campaign.ended ? <span class="pill ended">Ended</span> : null}
         <WorkRepo campaign={campaign} onSaved={(c) => setCampaign({ ...campaign, ...c, root: c.root ?? campaign.root })} />
         {campaign.ended ? null : (
-          <button type="button" class="btn quiet" onClick={() => void unfollow()}>
-            Unfollow
-          </button>
+          <Button variant="quiet" label="Unfollow" onClick={unfollow} />
         )}
       </div>
       <p class="kind">{kind}</p>
@@ -548,12 +529,8 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
             </ul>
             {g.key === 'ready-without-you' && checked.length >= 2 ? (
               <div class="slice-bar">
-                <button type="button" class="btn primary" onClick={() => setLaunching({ node: children.find((c) => c.url === checked[0])!, anyway: false, slice: checked.map((u) => children.find((c) => c.url === u)!) })}>
-                  Launch slice ({checked.length})
-                </button>
-                <button type="button" class="btn quiet" onClick={() => setSelected([])}>
-                  Clear
-                </button>
+                <Button variant="primary" label={`Launch slice (${checked.length})`} onClick={() => setLaunching({ node: children.find((c) => c.url === checked[0])!, anyway: false, slice: checked.map((u) => children.find((c) => c.url === u)!) })} />
+                <Button variant="quiet" label="Clear" onClick={() => setSelected([])} />
               </div>
             ) : null}
           </section>

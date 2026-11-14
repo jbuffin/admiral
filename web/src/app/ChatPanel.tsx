@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { Actions, Button } from './Button';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
 import { probeChatSession, type Fleet, type Result } from './api';
 import { ships, shipsLink } from './shipsLink';
@@ -50,9 +51,8 @@ function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'co
       {v.childLabel ? <p class="line">{v.childLabel}</p> : null}
       {v.reason ? <p class="line">{v.reason}</p> : null}
       {v.shipHref ? (
-        <a
-          class="btn"
-          aria-label={`Open ship ${item.card.ship}`}
+        <Button
+          label={`Open ship ${item.card.ship}`}
           href={v.shipHref + fleetSearch.value}
           onClick={(e) => {
             if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -61,20 +61,18 @@ function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'co
           }}
         >
           {item.card.ship}
-        </a>
+        </Button>
       ) : null}
       {v.settingsHref ? (
-        <a
-          class="btn"
+        <Button
+          label="Review in Preferences"
           href={v.settingsHref + fleetSearch.value}
           onClick={(e) => {
             if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
             go(v.settingsHref, fleetSearch.value);
           }}
-        >
-          Review in Preferences
-        </a>
+        />
       ) : null}
     </div>
   );
@@ -106,7 +104,7 @@ function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'la
   const [undone, setUndone] = useState(false);
   const [promotedShip, setPromotedShip] = useState('');
   const [confirming, setConfirming] = useState<'' | 'undo' | 'promote'>('');
-  const [state, setState] = useState({ busy: false, error: '' });
+  const [error, setError] = useState('');
   useEffect(() => {
     let live = true;
     void fetchLaunchState(fleet, c.routine, item.id).then((st) => {
@@ -120,9 +118,9 @@ function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'la
   }, [fleet, c.routine, item.id]);
   const v = launchCardView(item, { ships: ships.value, undone, promotedShip });
   const run = async <T,>(act: () => Promise<Result<T>>, then?: (data: T | null) => void) => {
-    setState({ busy: true, error: '' });
+    setError('');
     const r = await act();
-    setState({ busy: false, error: r.ok ? '' : r.error });
+    setError(r.ok ? '' : r.error);
     if (r.ok) then?.(r.data);
   };
   return (
@@ -167,41 +165,23 @@ function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'la
         <p class="line">{v.notice}</p>
       ) : null}
       {confirming ? (
-        <div class="confirm" role="group" aria-label={confirming === 'undo' ? 'Undo' : 'Promote'}>
+        <Actions class="confirm">
           <p class="line">{confirming === 'undo' ? v.undoConfirm : v.promoteConfirm}</p>
           {confirming === 'undo' ? (
-            <button type="button" class="btn danger" disabled={state.busy} onClick={() => void run(() => undoLaunch(fleet, c.routine, item.id), () => { setUndone(true); setConfirming(''); })}>
-              Confirm undo
-            </button>
+            <Button variant="danger" label="Confirm undo" onClick={() => run(() => undoLaunch(fleet, c.routine, item.id), () => { setUndone(true); setConfirming(''); })} />
           ) : (
-            <button type="button" class="btn danger" disabled={state.busy} onClick={() => void run(() => promoteLaunch(fleet, c.routine, item.id), (d) => { setPromotedShip(d?.promoted_ship ?? ''); setConfirming(''); })}>
-              Confirm promote
-            </button>
+            <Button variant="danger" label="Confirm promote" onClick={() => run(() => promoteLaunch(fleet, c.routine, item.id), (d) => { setPromotedShip(d?.promoted_ship ?? ''); setConfirming(''); })} />
           )}
-          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming('')}>
-            Cancel
-          </button>
-        </div>
+          <Button label="Cancel" onClick={() => setConfirming('')} />
+        </Actions>
       ) : null}
-      {state.error ? <p class="inbox-error" role="alert">{state.error}</p> : null}
-      <div class="peek-actions">
-        {v.actions.stop && !confirming ? (
-          <button type="button" class="btn" disabled={state.busy} onClick={() => void run(() => stopShip(c.ship))}>
-            Stop
-          </button>
-        ) : null}
-        {v.actions.promote && !confirming ? (
-          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming('promote')}>
-            Promote
-          </button>
-        ) : null}
-        {v.actions.undo && !confirming ? (
-          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming('undo')}>
-            Undo
-          </button>
-        ) : null}
+      {error ? <p class="inbox-error" role="alert">{error}</p> : null}
+      <Actions class="peek-actions">
+        {v.actions.stop && !confirming ? <Button label="Stop" busyLabel="Stopping" onClick={() => run(() => stopShip(c.ship))} /> : null}
+        {v.actions.promote && !confirming ? <Button label="Promote" onClick={() => setConfirming('promote')} /> : null}
+        {v.actions.undo && !confirming ? <Button label="Undo" onClick={() => setConfirming('undo')} /> : null}
         {v.actions.mute ? <MuteRule target={{ fleet, routine: c.routine, sender: c.sender, dedupe_key: c.dedupe_key, mute_by: c.mute_by }} /> : null}
-      </div>
+      </Actions>
     </div>
   );
 }
@@ -265,9 +245,7 @@ function ChatComposer({ chat }: { chat: Chat }) {
 
 function OpenTerminal({ fleet }: { fleet: string }) {
   return (
-    <button type="button" class="btn" onClick={() => go(chatTerminalPath(fleet), fleetSearch.value)}>
-      Open terminal
-    </button>
+    <Button label="Open terminal" onClick={() => go(chatTerminalPath(fleet), fleetSearch.value)} />
   );
 }
 
@@ -290,9 +268,7 @@ function ChatTerminal({ fleet, head }: { fleet: string; head: (action: Component
   return (
     <>
       {head(
-        <button type="button" class="btn" onClick={back}>
-          Back to chat
-        </button>,
+        <Button label="Back to chat" onClick={back} />,
       )}
       <section class={linkState === 'reconnecting' ? 'term-body dim' : 'term-body'}>
         <div class="term-host" ref={host} />
@@ -320,9 +296,7 @@ function Conversation({ fleet, head }: { fleet: string; head: (action: Component
       {head(
         <>
           {snap?.running ? <OpenTerminal fleet={fleet} /> : null}
-          <button type="button" class="btn" disabled={chat.resetting} onClick={() => void chat.newChat()}>
-            New chat
-          </button>
+          <Button label="New chat" busy={chat.resetting} onClick={() => chat.newChat()} />
         </>,
       )}
       {snap?.error ? (
@@ -380,17 +354,15 @@ function Off({ fleet }: { fleet: Fleet }) {
   return (
     <div class="chat-off">
       <p class="line">{fleet.chat.off_reason}</p>
-      <a
-        class="btn"
+      <Button
+        label="AdmiralBot settings"
         href={href}
         onClick={(e) => {
           if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();
           go(chatSettingsPath(fleet.key), fleetSearch.value);
         }}
-      >
-        AdmiralBot settings
-      </a>
+      />
     </div>
   );
 }

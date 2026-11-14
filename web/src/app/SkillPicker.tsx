@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'preact/hooks';
+import { Button } from './Button';
 import { call } from './api';
 import { crewApi, type CrewMember } from './crew';
 import { filterSkills, isChosen, pickSkill, rankSkills, skillWarning, typeSkill, type SkillEntry } from './crewSkills';
@@ -88,18 +89,15 @@ export function SkillPicker({ fleetKey, harness, skills, onChange, role, pickMeW
         </p>
       ) : null}
       <div>
-        <button
-          type="button"
-          class="btn"
-          aria-expanded={open}
+        <Button
+          label="Add skill"
+          expanded={open}
           onClick={() => {
             setOpen(!open);
             setQuery('');
             setRefusal('');
           }}
-        >
-          Add skill
-        </button>
+        />
       </div>
       {open ? (
         <div class="skill-add">
@@ -133,9 +131,7 @@ export function SkillPicker({ fleetKey, harness, skills, onChange, role, pickMeW
             </p>
           ) : null}
           {query.trim() ? (
-            <button type="button" class="btn" onClick={() => (typed.ok ? add(typed.skills) : setRefusal(typed.reason))}>
-              {`Add "${query.trim()}"`}
-            </button>
+            <Button label={`Add "${query.trim()}"`} onClick={() => (typed.ok ? add(typed.skills) : setRefusal(typed.reason))} />
           ) : null}
           {listing.state === 'loading' ? <p class="note">Loading skills…</p> : null}
           {listing.state === 'failed' ? <p class="note error">{listing.message}</p> : null}

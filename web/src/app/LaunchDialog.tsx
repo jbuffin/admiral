@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Actions, Button } from './Button';
 import { call, LAUNCH_TIMEOUT_MS, type DirsAnswer, type Fleet } from './api';
 import { modeLabel, skillLabel, type Mode, type SkillView } from './campaign';
 import {
@@ -65,6 +66,8 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const [autopilot, setAutopilot] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Which control started the launch in flight, so only it spins.
+  const [via, setVia] = useState<'form' | 'just'>('form');
   const box = useRef<HTMLDivElement>(null);
   const dirsError = useRef('');
   const skillNow = useRef(skill);
@@ -188,10 +191,13 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
 
   const submit = (e: Event) => {
     e.preventDefault();
+    if (busy) return;
+    setVia('form');
     void launch(campaign ? { kind: 'none' } : chosen());
   };
 
   const launch = async (s: SkillChoice | string) => {
+    if (busy) return;
     if (typeof s === 'string') return setError(s);
     setBusy(true);
     setError('');
@@ -333,19 +339,14 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
           )}
           {error ? <p role="alert" class="launch-error">{error}</p> : null}
         </div>
-        <div class="launch-foot">
-          <button type="button" class="btn" onClick={onClose}>
-            Cancel
-          </button>
-          {campaign || launchingAs ? null : (
-            <button type="button" class="btn" disabled={busy || (!cloning && !dir)} onClick={() => void launch({ kind: 'none' })}>
-              Just launch
-            </button>
-          )}
-          <button type="submit" class="btn primary" disabled={busy || (!cloning && !dir)}>
-            Launch
-          </button>
-        </div>
+        <Actions class="launch-foot">
+          <Button label="Cancel" onClick={onClose} />
+          {campaign || launchingAs ? null : <Button label="Just launch" disabled={!cloning && !dir} onClick={() => {
+            setVia('just');
+            return launch({ kind: 'none' });
+          }} />}
+          <Button type="submit" variant="primary" label="Launch" busy={busy && via === 'form'} disabled={!cloning && !dir} />
+        </Actions>
       </form>
       </div>
     </div>

@@ -8,6 +8,7 @@ import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { GROUP_TITLES, groupShips, shipRowAge } from './shipList';
 import { useNow } from './useNow';
+import { Button } from './Button';
 import { rowButtons } from './moored';
 import { MooredActions } from './MooredActions';
 import { MooredPRs } from './MooredPRs';
@@ -174,9 +175,7 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
   }, [fleetKey]);
   const [launching, setLaunching] = useState(false);
   const launch = fleet && fleet.docks.length > 0 ? (
-    <button type="button" class="btn primary launch-open" onClick={() => setLaunching(true)}>
-      Launch
-    </button>
+    <Button variant="primary" class="launch-open" label="Launch" onClick={() => setLaunching(true)} />
   ) : null;
   const form = launching && fleet ? <LaunchForm fleet={fleet} onClose={() => setLaunching(false)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null;
   const forYouText = forYouLinkText(needsYouCount());
@@ -270,17 +269,15 @@ function HoldFireBanner() {
   return (
     <div class="holdfire-banner" role="status">
       <span>{b.text}</span>
-      <a
-        class="btn"
+      <Button
+        label="Routines"
         href={'/app/routines' + fleetSearch.value}
         onClick={(e) => {
           if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();
           go('/app/routines', fleetSearch.value);
         }}
-      >
-        Routines
-      </a>
+      />
     </div>
   );
 }
