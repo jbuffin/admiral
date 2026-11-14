@@ -2788,6 +2788,7 @@ export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { pho
   await expect(feedbackBar(panel)).toHaveCount(0);
   await expect(page.getByRole('main')).not.toContainText('Ready to merge');
   await expect(prSummaryButton(page)).toHaveText(`Reviewing 1 PR by @${REVIEW_AUTHOR} · waiting on the author`);
+  await expect(page.getByRole('main')).toContainText('Moored, waiting on the author');
 
   // The author pushes after the fleet user's review.
   prReviewedBy(a, REVIEWED_PR, { reviewed: REVIEWED_SHA, head: PUSHED_SHA });
@@ -2812,9 +2813,17 @@ export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { pho
   await expect(rereviewSheet(page)).toHaveCount(0);
   await staysMoored(a, ship, 'Re-review is a tap and a confirm');
 
+  // A refusal keeps the sheet open with the server's message, and the ship moored.
+  await page.route(/\/api\/(v1\/)?ships\/[^/]+\/rereview$/, (route) => route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"the author has not responded"}' }));
   await reReview.tap();
-  const { confirm } = await expectRereviewSheet(page, `/commodore ${url}`, 'Re-review', opts);
-  await confirm.tap();
+  const refused = await expectRereviewSheet(page, `/commodore ${url}`, 'Re-review', opts);
+  await refused.confirm.tap();
+  await expect(refused.sheet.getByRole('alert')).toContainText('the author has not responded');
+  await expect(rereviewSheet(page)).toBeVisible();
+  await staysMoored(a, ship, 'a refused Re-review leaves the ship moored');
+  await page.unroute(/\/api\/(v1\/)?ships\/[^/]+\/rereview$/);
+  await refused.confirm.tap();
+  await expect(rereviewSheet(page)).toHaveCount(0);
   await expect(rereviewSheet(page)).toHaveCount(0);
   await expectWokenWith(page, a, ship, url);
   await expect(reReview).toHaveCount(0);
