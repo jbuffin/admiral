@@ -88,7 +88,7 @@ func wantStack(t *testing.T, what, body, shape string, number int, prs ...string
 	}
 }
 
-// stackLinkNumber is the number the fake gives the stack gh stack link makes.
+// stackCalls are the gh stack calls of one verb, in the order they ran.
 func (g *fakeGH) stackCalls(verb string) []ghCall {
 	var out []ghCall
 	for _, c := range g.calls() {
@@ -99,6 +99,7 @@ func (g *fakeGH) stackCalls(verb string) []ghCall {
 	return out
 }
 
+// stackLinkNumber is the number the fake gives the stack gh stack link makes.
 func (g *fakeGH) stackLinkNumber(n int) { g.t.Helper(); g.write("stack_link.number", itoa(n)+"\n") }
 
 // noStackCalls fails the test when the fake saw any gh stack call for the next hold seconds.

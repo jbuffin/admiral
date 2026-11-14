@@ -97,6 +97,10 @@ func (s *Service) serveStackLink(w http.ResponseWriter, r *http.Request) {
 		if repo == "" {
 			repo = prRepo
 		}
+		if !strings.EqualFold(repo, prRepo) {
+			writeError(w, http.StatusConflict, "these pull requests are in more than one repository, so they are not stacked")
+			return
+		}
 	}
 	if len(rec.PRs) < 2 {
 		writeError(w, http.StatusConflict, "a stack needs at least two pull requests")

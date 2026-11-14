@@ -66,7 +66,7 @@ func (c *Client) MergeStack(ctx context.Context, repo string, stackNumber int, m
 	return c.stackRun(ctx, repo, []string{"stack", "merge", strconv.Itoa(stackNumber), "--yes", "--merge-method", method}, "gh could not merge the pull request")
 }
 
-// LinkStack runs `gh stack link N...` with PR numbers from GitHub, bottom to top, and no flag: --open would take drafts out of draft.
+// LinkStack runs `gh stack link N...` with numbers of PRs GitHub answered in repo, which every one shares, bottom to top, and no flag: --open would take drafts out of draft.
 func (c *Client) LinkStack(ctx context.Context, repo string, numbers []int) error {
 	args := []string{"stack", "link"}
 	for _, n := range numbers {

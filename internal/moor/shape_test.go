@@ -89,6 +89,11 @@ func TestReadShapeNamesHowAShipsPRsRelateOnGitHub(t *testing.T) {
 			[]string{pr(23), pr(21), pr(22)},
 			Shape{Kind: ShapeChained, PRs: []string{pr(21), pr(22), pr(23)}},
 		},
+		"chained across two repositories": {
+			[]Detail{pull(21, "b21", "main", nil), {Number: 22, URL: "https://github.com/acme/other/pull/22", State: "OPEN", Head: "b22", Base: "b21", DefaultBranch: "main"}},
+			[]string{pr(21), "https://github.com/acme/other/pull/22"},
+			Shape{Kind: ShapeMixed},
+		},
 		"chained from a default branch that is not main": {
 			[]Detail{
 				{Number: 21, URL: pr(21), State: "OPEN", Head: "b21", Base: "trunk", DefaultBranch: "trunk"},

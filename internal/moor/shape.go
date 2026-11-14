@@ -38,6 +38,9 @@ func ReadShape(ctx context.Context, gh GitHub, prs []string) (Shape, error) {
 		details[i] = d
 	}
 	mixed := Shape{Kind: ShapeMixed}
+	if !oneRepo(prs) {
+		return mixed, nil // PR numbers mean nothing across repositories
+	}
 
 	if s, ok := stackedShape(prs, details); ok {
 		return s, nil
@@ -114,4 +117,17 @@ func stackedShape(prs []string, details []Detail) (Shape, bool) {
 		out = append(out, u)
 	}
 	return Shape{Kind: ShapeStacked, StackNumber: st.Number, PRs: out}, true
+}
+
+// oneRepo says every URL is a PR of the same repository, compared case-insensitively.
+func oneRepo(prs []string) bool {
+	var first string
+	for i, u := range prs {
+		r, ok := RepoOf(u)
+		if !ok || (i > 0 && !strings.EqualFold(r, first)) {
+			return false
+		}
+		first = r
+	}
+	return true
 }

@@ -115,3 +115,36 @@ func TestStackOfAShipWhoseDetailReadFailsAnswers502(t *testing.T) {
 		t.Errorf("POST stack = %d %s with %d link calls, want 502 and none", rec.Code, rec.Body, len(g.linked))
 	}
 }
+
+func TestStackLinkRefusesPRsOfTwoRepositoriesAndRunsNoLink(t *testing.T) {
+	const other = "https://github.com/acme/other/pull/9"
+	g := &pollGitHub{detail: map[string]moor.Detail{
+		prSeven: {Number: 7, State: "OPEN", Head: "b7", Base: "main", DefaultBranch: "main"},
+		other:   {Number: 9, State: "OPEN", Head: "b9", Base: "b7", DefaultBranch: "main"},
+	}}
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	session := f.moor(t, "Nelson", "work", prSeven, other)
+
+	if rec := f.post("/api/ships/" + session + "/stack"); rec.Code != http.StatusConflict || len(g.linked) != 0 {
+		t.Errorf("POST stack = %d %s with %d link calls, want 409 and none", rec.Code, rec.Body, len(g.linked))
+	}
+	var got struct{ Shape string }
+	if rec := f.getStack(session); json.Unmarshal(rec.Body.Bytes(), &got) != nil || got.Shape != "mixed" {
+		t.Errorf("GET stack = %s, want mixed", rec.Body)
+	}
+}
+
+func TestStackLinkOfAWakingShipIsRefusedAndRunsNoLink(t *testing.T) {
+	g := &pollGitHub{}
+	chainedSevenNine(g)
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	session := f.moor(t, "Nelson", "work", prSeven, prNine)
+	if !f.s.startWaking(session) {
+		t.Fatal("could not take the waking slot")
+	}
+	defer f.s.endWaking(session)
+
+	if rec := f.post("/api/ships/" + session + "/stack"); rec.Code != http.StatusConflict || len(g.linked) != 0 {
+		t.Errorf("POST stack = %d %s with %d link calls, want 409 and none", rec.Code, rec.Body, len(g.linked))
+	}
+}
