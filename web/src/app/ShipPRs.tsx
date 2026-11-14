@@ -6,6 +6,7 @@ import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { chooseStack, defaultPR, headerChips, orderPRs, prDot, prNumber, stackBarText, stackedPRs } from './prTab';
 import { staleNote } from './moored';
+import { PRSections } from './PRDetailSections';
 
 const REFRESH_MS = 30_000;
 
@@ -42,7 +43,7 @@ function PRHeader({ ship, url, detail }: { ship: Ship; url: string; detail: PRDe
   const pr = (ship.prs ?? []).find((p) => p.url === url)!;
   const note = staleNote(ship, Date.now());
   return (
-    <div class="pr-detail">
+    <>
       <div class="pr-head">
         <div class="pr-title-row">
           {detail ? <h3 class="pr-title">{detail.title}</h3> : <h3 class="pr-title">#{prNumber(url)}</h3>}
@@ -72,11 +73,11 @@ function PRHeader({ ship, url, detail }: { ship: Ship; url: string; detail: PRDe
         ))}
         {note ? <span class="ship-tail">{note}</span> : null}
       </div>
-    </div>
+    </>
   );
 }
 
-/** A ship's PRs: sub-tabs in stack order, the selected PR's header and chips, and for a moored ship Merge and Don't follow reviews. */
+/** A ship's PRs: sub-tabs in stack order, the selected PR's header, chips and sections, and for a moored ship Merge and Don't follow reviews. */
 export function PRTab({ ship }: { ship: Ship }) {
   const [error, setError] = useState('');
   const [merged, setMerged] = useState(false);
@@ -111,20 +112,21 @@ export function PRTab({ ship }: { ship: Ship }) {
           ))}
         </div>
       ) : null}
-      <PRHeader ship={ship} url={current.url} detail={details[current.url]} />
-      {moored ? (
-        <div class="peek-form">
-          {merged ? (
-            <p class="line">Merged</p>
-          ) : (
-            <>
-              {ship.stack_ready ? <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} locked={acting} onBusy={setActing} /> : null}
-              <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />
-            </>
-          )}
-          <Failure message={error} />
-        </div>
-      ) : null}
+      <div class="pr-detail">
+        <PRHeader ship={ship} url={current.url} detail={details[current.url]} />
+        {moored && (merged || ship.stack_ready) ? (
+          <div class="peek-form">
+            {merged ? <p class="line">Merged</p> : <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} locked={acting} onBusy={setActing} />}
+          </div>
+        ) : null}
+        {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : null}
+        {moored && (!merged || error) ? (
+          <div class="peek-form">
+            {merged ? null : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}
+            <Failure message={error} />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

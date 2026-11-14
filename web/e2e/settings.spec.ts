@@ -32,6 +32,7 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
   const settings = src.settings as Record<string, unknown>;
   Object.assign(settings, {
     label: 'before',
+    tags: ['alpha-team'],
     ...SECRETS,
     settingsSchema: {
       type: 'object',
@@ -40,6 +41,7 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
         label: { type: 'string', title: 'Label' },
         token: { type: 'string', title: 'Token', format: 'password' },
         tokens: { type: 'array', title: 'Tokens', items: { type: 'string', format: 'password' } },
+        tags: { type: 'array', title: 'Tags', items: { type: 'string' } },
         keys: { type: 'array', title: 'Keys', items: { type: 'object', properties: { name: { type: 'string' }, key: { type: 'string', format: 'password' } } } },
       },
     },
@@ -68,6 +70,10 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
   await expect(form.getByLabel('Token', { exact: true })).toHaveValue('');
   await expect(form).toContainText(/stored/i);
   await expect(form.getByLabel('Label')).toHaveValue('before');
+  // The PR tab's styles stay out of a settings row.
+  const tag = form.getByLabel('Tags 1', { exact: true });
+  await expect(tag).toHaveValue('alpha-team');
+  expect(await tag.locator('xpath=..').evaluate((e) => getComputedStyle(e).flexDirection)).toBe('row');
 
   await form.getByLabel('Label').fill('after');
   const put = page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/sources/orders');
