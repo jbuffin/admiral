@@ -166,6 +166,7 @@ export function MessageField({ label, placeholder, text, setText, send, disabled
 
   const readCaret = () => setCaret(field.current?.selectionStart ?? 0);
   const accept = (name: string) => {
+    if (busy || locked) return;
     const next = acceptSkill(text, list!.mark, name);
     caretTo.current = next.caret;
     setText(next.text);
@@ -188,7 +189,7 @@ export function MessageField({ label, placeholder, text, setText, send, disabled
       // Enter on a name already typed in full sends it, as the terminal runs it.
       if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && query !== pick.name)) {
         e.preventDefault();
-        accept(pick.name);
+        if (!busy && !locked) accept(pick.name);
         return;
       }
     }
@@ -243,6 +244,7 @@ export function MessageField({ label, placeholder, text, setText, send, disabled
           const pasted = e.clipboardData?.getData('text/plain');
           if (!pasted) return;
           e.preventDefault();
+          if (busy || locked) return;
           const el = e.currentTarget;
           el.setRangeText(pasted, el.selectionStart, el.selectionEnd, 'end');
           setText(el.value);

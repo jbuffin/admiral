@@ -95,7 +95,7 @@ function useShape(session: string, many: boolean): [StackShape | null, (s: Stack
 
 const STALE_LINK = 'Admiral restarted, reload to stack';
 
-/** The confirmation for Stack on GitHub: the PRs bottom to top, and one link call that keeps its button disabled while it runs. */
+/** The confirmation for Stack on GitHub: the PRs bottom to top, and one link call that keeps its button busy while it runs. */
 function StackSheet({ session, urls, details, onClose, onShape, read }: { session: string; urls: string[]; details: Record<string, PRDetail>; onClose: () => void; onShape: (s: StackShape) => void; read: () => Promise<StackShape | null> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');

@@ -96,7 +96,7 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
           ))}
         </ul>
         <Actions class="card-actions">
-          <Button label="Back" disabled={busy} onClick={() => setStep(step - 1)} />
+          <Button label="Back" onClick={() => setStep(step - 1)} />
           <Button label="Submit answers" busy={from === 'submit'} pending={['ship', session, 'answer-submit', crew ?? '']} onClick={() => send(body(), 'submit')} />
         </Actions>
       </div>

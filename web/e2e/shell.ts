@@ -585,9 +585,17 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
   await messageBox(page).fill('   ');
   await expect(sendButton(page)).toBeDisabled();
 
+  // A refused wake keeps the text, shows the error and gives the box back.
+  await page.route(`**/api/v1/ships/${ship.session}/wake`, (route) => route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"ship is not moored"}' }), { times: 1 });
+  await messageBox(page).fill('Also check the docs');
+  await press(sendButton(page));
+  await expect(viewPanel(page).getByRole('alert')).toContainText('ship is not moored');
+  await expect(messageBox(page)).toHaveValue('Also check the docs');
+  await expect(messageBox(page)).toBeEditable();
+  await expect(sendButton(page)).not.toHaveAttribute('aria-busy', 'true');
+
   readyToWake(a, ship);
   const woke = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/wake`);
-  await messageBox(page).fill('Also check the docs');
   await press(sendButton(page));
   expect((await woke).postDataJSON()).toEqual({ text: 'Also check the docs' });
 

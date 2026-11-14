@@ -18,7 +18,7 @@ test('a refused or lost send shows an error beside the box and keeps the text', 
     await route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"ship is anchored"}' });
   });
   await messageBox(page).fill('Keep this text');
-  await sendButton(page).tap();
+  await messageBox(page).press('Enter');
   await expect(sendButton(page)).toHaveAttribute('aria-busy', 'true');
   await expect(messageBox(page)).toHaveValue('Keep this text');
   await expect(messageBox(page)).not.toBeEditable();
