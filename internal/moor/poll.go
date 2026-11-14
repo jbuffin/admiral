@@ -38,6 +38,9 @@ type PR struct {
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
 	Ready     bool   `json:"ready"`
+	// Feedback counts the PR's waking events past its cursor; Answer is the prompt Answer review sends for it.
+	Feedback int    `json:"feedback,omitempty"`
+	Answer   string `json:"answer,omitempty"`
 }
 
 // View is the PR to serve. NOT_FOUND counts as closed, and a PR that is not open

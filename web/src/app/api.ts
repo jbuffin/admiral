@@ -102,6 +102,9 @@ export interface MooredPR {
   mergeable: string;
   conflicts: boolean;
   ready?: boolean;
+  // New waking events since the ship's last round, and the command that answers them; both only on a moored ship's open PR.
+  feedback?: number;
+  answer?: string;
 }
 export interface Ship {
   session: string;

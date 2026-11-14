@@ -313,3 +313,59 @@ func TestAReviewWakesAMooredShipOnItsOwnOnceAndOnlyOnce(t *testing.T) {
 		return n == 2
 	})
 }
+
+func TestAnswerReviewRelaunchesAMooredShipOnAReviewItsDebounceHasNotReleased(t *testing.T) {
+	t.Parallel()
+	w, g := mooring(t, "exit 0")
+	g.prState(mooredPR, "OPEN")
+	w.proveGuard("f")
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(w.readFile(configPath(w.home))), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg["fleets"].(map[string]any)["f"].(map[string]any)["wake_reviewers"] = []string{"reviewer-1"}
+	b, _ := json.Marshal(cfg)
+	writeConfig(t, w.home, string(b))
+	w.extra = append(w.extra, "ADMIRAL_WAKE_DEBOUNCE=1h", "ADMIRAL_MOOR_POLL=1s")
+	w.start()
+
+	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
+	w.exitWith(ship, wakeReport())
+	list := w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
+	mooredAt, err := time.Parse(time.RFC3339, byName(list)[ship.Name].MooredAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.prEvents(mooredPR, "reviewer-1", "please rename the helper", mooredAt.Add(time.Second))
+	w.kickMoored()
+
+	want := "/commodore resume run-7 feedback round 1 on " + mooredPR
+	list = w.in.waitShipsList(t, 20*time.Second, "the review offered as an answer", func(l []shipJSON) bool {
+		prs := byName(l)[ship.Name].PRs
+		return len(prs) == 1 && prs[0].Answer != ""
+	})
+	if pr := byName(list)[ship.Name].PRs[0]; pr.Answer != want || pr.Feedback != 1 {
+		t.Errorf("pr = %+v, want feedback 1 and answer %q", pr, want)
+	}
+	if byName(w.in.ships(t))[ship.Name].Status != "moored" {
+		t.Fatal("the ship woke on its own: the debounce should hold it")
+	}
+
+	if err := os.RemoveAll(filepath.Join(w.rec, ship.Session)); err != nil {
+		t.Fatal(err)
+	}
+	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/ships/"+ship.Session+"/answer-review", map[string]any{"pr": mooredPR})
+	if code != http.StatusCreated {
+		t.Fatalf("POST /api/ships/%s/answer-review = %d, want 201: %s", ship.Session, code, body)
+	}
+	r := w.record(ship.Session)
+	if got := promptWithHooks(t, w, r); got != want {
+		t.Errorf("prompt = %q, want %q", got, want)
+	}
+	if got := w.readFile(filepath.Join(w.work, "widgets", ".admiral", "untrusted", "feedback-1.md")); !strings.Contains(got, "please rename the helper") {
+		t.Errorf("feedback-1.md = %q, want the review's body", got)
+	}
+	if e := lastOf(w.waitEvent(ship.Session, "woken", 1), "woken"); e["by"] != "hand" || e["pr"] != mooredPR || e["round"] != float64(1) {
+		t.Errorf("woken event = %v, want by hand, round 1, on the PR", e)
+	}
+}

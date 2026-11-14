@@ -1,10 +1,11 @@
 import { Fragment } from 'preact';
-import { useLayoutEffect, useState } from 'preact/hooks';
-import { fetchPRDetail, type PRDetail, type Ship } from './api';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { call, fetchPRDetail, type MooredPR, type PRDetail, type Ship } from './api';
 import { MergeControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
-import { chooseStack, defaultPR, headerChips, orderPRs, prDot, prNumber, stackBarText, stackedPRs } from './prTab';
+import { Sheet } from './Sheet';
+import { chooseStack, defaultPR, feedbackBarText, headerChips, orderPRs, prDot, prNumber, stackBarText, stackedPRs } from './prTab';
 import { staleNote } from './moored';
 import { PRSections } from './PRDetailSections';
 
@@ -77,6 +78,65 @@ function PRHeader({ ship, url, detail }: { ship: Ship; url: string; detail: PRDe
   );
 }
 
+/** The feedback bar of a moored PR with new feedback; Answer review shows the exact command in a sheet and starts the round on confirm. */
+function FeedbackBar({ ship, pr, locked, onBusy }: { ship: Ship; pr: MooredPR; locked: boolean; onBusy: (busy: boolean) => void }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const cancel = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (asking) cancel.current?.focus();
+  }, [asking]);
+  const run = async () => {
+    setBusy(true);
+    onBusy(true);
+    setError('');
+    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/answer-review`, { pr: pr.url });
+    if (!r.ok) {
+      setBusy(false);
+      onBusy(false);
+      return setError(r.error);
+    }
+    // The bar stays off until the ships push removes it, so a second tap cannot meet the live-ship error.
+    setAsking(false);
+  };
+  return (
+    <div class="feedback-bar">
+      <span class="fb-text">{feedbackBarText(pr)}</span>
+      <button
+        type="button"
+        class="btn primary"
+        disabled={locked || busy}
+        onClick={() => {
+          setError('');
+          setAsking(true);
+        }}
+      >
+        Answer review
+      </button>
+      {asking ? (
+        <Sheet label="Answer review" kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
+          <p class="line">Starts a feedback round on #{prNumber(pr.url)} in the same Commodore run.</p>
+          <p class="cmd-block mono">{pr.answer}</p>
+          {error ? (
+            <p class="launch-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <div class="launch-foot">
+            <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+            <button type="button" class="btn primary" disabled={busy} onClick={() => void run()}>
+              Answer review
+            </button>
+          </div>
+        </Sheet>
+      ) : null}
+    </div>
+  );
+}
+
 /** A ship's PRs: sub-tabs in stack order, the selected PR's header, chips and sections, and for a moored ship Merge and Don't follow reviews. */
 export function PRTab({ ship }: { ship: Ship }) {
   const [error, setError] = useState('');
@@ -114,6 +174,7 @@ export function PRTab({ ship }: { ship: Ship }) {
       ) : null}
       <div class="pr-detail">
         <PRHeader ship={ship} url={current.url} detail={details[current.url]} />
+        {moored && feedbackBarText(current) ? <FeedbackBar key={current.url} ship={ship} pr={current} locked={acting} onBusy={setActing} /> : null}
         {moored && (merged || ship.stack_ready) ? (
           <div class="peek-form">
             {merged ? <p class="line">Merged</p> : <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} locked={acting} onBusy={setActing} />}

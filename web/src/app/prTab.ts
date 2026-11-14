@@ -23,6 +23,13 @@ export function prSummary(prs: MooredPR[] | undefined): string {
   return `${n} · #${prNumber(blocked.url)} ${why}`;
 }
 
+/** The feedback bar's text for a PR, or '' when there is no bar. */
+export function feedbackBarText(pr: MooredPR): string {
+  if (!pr.answer || !pr.feedback || pr.state !== 'OPEN') return '';
+  const items = pr.feedback === 1 ? '1 new item' : `${pr.feedback} new items`;
+  return `New feedback since the ship's last round: ${pr.review === 'CHANGES_REQUESTED' ? 'changes requested, ' : ''}${items}.`;
+}
+
 export const prNumber = (url: string): string => /\/pull\/(\d+)/.exec(url)?.[1] ?? '';
 
 export function prDot(pr: MooredPR): DotKind {

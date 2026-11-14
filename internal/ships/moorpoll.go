@@ -27,6 +27,8 @@ type polled struct {
 	stale  bool                   // the latest poll failed
 	// waiting is why a due feedback round has not started; a new answer replaces the whole value, so it clears
 	waiting string
+	// feedback is each PR's count of waking events past its cursor, as the last decision found it
+	feedback map[string]int
 }
 
 func (s *Service) kickChan() chan struct{} {
@@ -194,19 +196,20 @@ func (s *Service) PollMoored(ctx context.Context) {
 // decide reads a ship's wake state and the answered PRs, and either wakes the ship for a feedback round or
 // saves what the poll first saw. A refusal that clears later leaves the state alone, so the next poll decides the same way.
 func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]moor.Status) {
-	if ctx.Err() != nil || !moor.ValidResume(r.Resume) {
+	if ctx.Err() != nil {
 		return
-	}
-	var reviewers []string
-	if f, ok := s.Launcher.Config().Fleet(r.Fleet); ok {
-		reviewers = f.WakeReviewers
 	}
 	state, err := moor.ReadWake(s.Launcher.Home, r.Name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be read: %v\n", r.Name, err)
 		return
 	}
+	reviewers := s.wakeReviewers(r)
 	now := time.Now().UTC()
+	s.setFeedback(r, moor.FeedbackCounts(moor.WakeInput{Record: r, State: state, Answers: answers, Reviewers: reviewers, Now: now}))
+	if !moor.ValidResume(r.Resume) {
+		return
+	}
 	d := moor.DecideWake(moor.WakeInput{Record: r, State: state, Answers: answers, Reviewers: reviewers, Now: now})
 	next, batches, ok := s.propose(r, state, d, now)
 	if !ok {
@@ -222,6 +225,24 @@ func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]
 		// The round did not start, so its cursor stays; the proposals it made are recorded so the next poll does not make them again.
 		s.saveNext(r, state, withProposed(state, batches))
 	}
+}
+
+func (s *Service) wakeReviewers(r moor.Record) []string {
+	if f, ok := s.Launcher.Config().Fleet(r.Fleet); ok {
+		return f.WakeReviewers
+	}
+	return nil
+}
+
+func (s *Service) setFeedback(r moor.Record, counts map[string]int) {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	if !s.stillMoored(r) {
+		return
+	}
+	p := s.polls()[r.Session]
+	p.feedback = counts
+	s.polls()[r.Session] = p
 }
 
 // waitingText is what a moored ship shows for a refused round: the refusal's own wait text when a later poll can clear it, else the refusal.
@@ -290,6 +311,7 @@ func (s *Service) storePoll(r moor.Record, p polled) ([]moor.PR, bool) {
 	if !s.stillMoored(r) {
 		return nil, false
 	}
+	p.feedback = s.polls()[r.Session].feedback // until decide counts again, so the list does not drop the bar between the two
 	s.polls()[r.Session] = p
 	return s.prsOf(r), true
 }
@@ -337,7 +359,14 @@ func (s *Service) prsOf(r moor.Record) []moor.PR {
 			continue
 		}
 		st, found := p.status[u]
-		out = append(out, moor.View(u, st, found))
+		pr := moor.View(u, st, found)
+		if n := p.feedback[u]; n > 0 && pr.State == "OPEN" {
+			pr.Feedback = n
+			if moor.ValidResume(r.Resume) {
+				pr.Answer = answerPrompt(r, u)
+			}
+		}
+		out = append(out, pr)
 	}
 	return out
 }

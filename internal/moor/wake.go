@@ -353,16 +353,10 @@ func cloneState(s WakeState) WakeState {
 	return out
 }
 
-// DecideWake is pure: the same input gives the same Decision.
-func DecideWake(in WakeInput) Decision {
-	next := cloneState(in.State)
-	d := Decision{Next: next}
-	if in.Live {
-		return d
-	}
-	found := map[string]prEvents{}
-	var chosen string
-	var newest time.Time
+// scan collects every answered OPEN PR's events and resolves its Snapshot and Seen into next.
+func scan(in WakeInput) (found map[string]prEvents, next WakeState, t3 []Event, chosen string, newest time.Time) {
+	next = cloneState(in.State)
+	found = map[string]prEvents{}
 	for _, pr := range in.Record.PRs {
 		st, ok := in.Answers[pr]
 		if !ok || st.State != "OPEN" {
@@ -371,7 +365,7 @@ func DecideWake(in WakeInput) Decision {
 		ps := in.State.PRs[pr]
 		ev := collect(pr, in.Record, ps, st, in.Reviewers, in.Now)
 		found[pr] = ev
-		d.T3 = append(d.T3, ev.t3...)
+		t3 = append(t3, ev.t3...)
 		for _, e := range ev.waking {
 			if e.At.After(newest) {
 				newest = e.At
@@ -390,25 +384,22 @@ func DecideWake(in WakeInput) Decision {
 			next.PRs[pr] = ps
 		}
 	}
-	d.Next = next
-	if chosen == "" || in.Now.Sub(newest) < WakeDebounce {
-		return d
-	}
+	return found, next, t3, chosen, newest
+}
 
-	ev := found[chosen]
-	events := ev.waking
+// openRound is the feedback round on chosen: its events oldest first, and next with every answered PR's window open and chosen's cursor advanced.
+func openRound(in WakeInput, found map[string]prEvents, next WakeState, chosen string) ([]Event, WakeState) {
+	events := found[chosen].waking
 	sort.SliceStable(events, func(i, j int) bool { return events[i].At.Before(events[j].At) })
-	d.Wake, d.PR, d.Events = true, chosen, events
-	d.Feedback = FeedbackText(chosen, events)
 
 	// A PR with no cursor keeps the old mooring as its boundary, since the next mooring is later than events that queue meanwhile.
 	for _, pr := range in.Record.PRs {
 		if _, ok := found[pr]; !ok {
 			continue
 		}
-		ps := d.Next.PRs[pr]
-		if d.Next.PRs == nil {
-			d.Next.PRs = map[string]PRWake{}
+		ps := next.PRs[pr]
+		if next.PRs == nil {
+			next.PRs = map[string]PRWake{}
 		}
 		if ps.Cursor.At.IsZero() {
 			ps.Cursor = Cursor{At: in.Record.MooredAt}
@@ -421,8 +412,25 @@ func DecideWake(in WakeInput) Decision {
 			ps.Snapshot = Snapshot{Head: st.Head, Failing: found[pr].failed, Conflicting: st.Mergeable == "CONFLICTING", Behind: behind(st)}
 			ps.Seen = nil
 		}
-		d.Next.PRs[pr] = ps
+		next.PRs[pr] = ps
 	}
+	return events, next
+}
+
+// DecideWake is pure: the same input gives the same Decision.
+func DecideWake(in WakeInput) Decision {
+	d := Decision{Next: cloneState(in.State)}
+	if in.Live {
+		return d
+	}
+	found, next, t3, chosen, newest := scan(in)
+	d.Next, d.T3 = next, t3
+	if chosen == "" || in.Now.Sub(newest) < WakeDebounce {
+		return d
+	}
+	events, next := openRound(in, found, next, chosen)
+	d.Wake, d.PR, d.Events, d.Next = true, chosen, events, next
+	d.Feedback = FeedbackText(chosen, events)
 	return d
 }
 
@@ -479,4 +487,35 @@ func fenceFor(body string) string {
 		}
 	}
 	return strings.Repeat("`", longest+1)
+}
+
+// HandRound is the feedback round on one PR, as decided by hand.
+type HandRound struct {
+	Events   []Event // the PR's waking events, oldest first
+	Feedback string
+	Next     WakeState
+}
+
+// DecideHandRound is the round Answer review runs on pr: DecideWake's work for pr with the debounce already passed.
+// It reports false when pr has no feedback: it is not open, has no answer, or has no waking event.
+func DecideHandRound(in WakeInput, pr string) (HandRound, bool) {
+	found, next, _, _, _ := scan(in)
+	if len(found[pr].waking) == 0 {
+		return HandRound{}, false
+	}
+	events, next := openRound(in, found, next, pr)
+	return HandRound{Events: events, Feedback: FeedbackText(pr, events), Next: next}, true
+}
+
+// FeedbackCounts is how many waking events each answered OPEN PR has for a hand round, whatever the debounce; a PR with none is left out.
+// It counts what DecideHandRound hands over.
+func FeedbackCounts(in WakeInput) map[string]int {
+	found, _, _, _, _ := scan(in)
+	out := map[string]int{}
+	for pr, ev := range found {
+		if n := len(ev.waking); n > 0 {
+			out[pr] = n
+		}
+	}
+	return out
 }
