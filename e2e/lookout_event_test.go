@@ -5,13 +5,22 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/capabilities"
 )
 
 // lookoutWorld is a fleet "work" with a proven guard and judge, the built-in GitHub source and a review request waiting for the viewer.
 func lookoutWorld(t *testing.T) (*world, *fakeGH) {
+	t.Helper()
+	return lookoutWorldWith(t, nil)
+}
+
+// lookoutWorldWith is lookoutWorld with more keys in the fleet's limits, as a Limits save would leave them.
+func lookoutWorldWith(t *testing.T, limits map[string]any) (*world, *fakeGH) {
 	t.Helper()
 	w := newWorld(t)
 	w.proveGuard()
@@ -34,7 +43,11 @@ func lookoutWorld(t *testing.T) (*world, *fakeGH) {
 	g.write("rest/item.json", `{"title":"Fix the quarry lantern","body":"Please review my lantern fix."}`)
 	env := w.harnessEnv()
 	env["FAKE_JUDGE"] = "lookout"
-	f := map[string]any{"name": "Work", "color": "#336699", "search_roots": []string{root}, "limits": map[string]any{"sender_allowlist": []string{"mallory-the-stranger"}},
+	lim := map[string]any{"sender_allowlist": []string{"mallory-the-stranger"}}
+	for k, v := range limits {
+		lim[k] = v
+	}
+	f := map[string]any{"name": "Work", "color": "#336699", "search_roots": []string{root}, "limits": lim,
 		"claude": map[string]any{"executable": w.fakeExe("claude"), "env": env}}
 	fb, _ := json.Marshal(f)
 	writeConfig(t, w.home, ghConfig([]string{"work", string(fb)}, rawSources(
@@ -146,5 +159,81 @@ func TestAReviewRequestReachesAReportOnlyRoutineAsAnEventCardInChatAndNothingLau
 		if r.Ship != "" {
 			t.Errorf("record %+v launched a ship for a Report-only routine", r)
 		}
+	}
+}
+
+// seedRestricted stores the two restricted capabilities for claude's detected version, beside proveGuard's guard and judge.
+func (w *world) seedRestricted(fleet string) {
+	w.t.Helper()
+	store, now := capabilities.Open(w.home), time.Now()
+	for _, id := range []capabilities.ID{capabilities.RestrictedSandbox, capabilities.RestrictedAllow} {
+		if err := store.Record(fleet, "claude", fakeVersion, id, capabilities.Result{Passed: true, At: now, Detail: "seeded by the test"}); err != nil {
+			w.t.Fatal(err)
+		}
+	}
+}
+
+func TestAReviewRequestFromAnAllowlistedSenderLaunchesARestrictedDraftFixShipInItsOwnCloneWithNoTokens(t *testing.T) {
+	t.Parallel()
+	w, _ := lookoutWorldWith(t, map[string]any{"ceilings": map[string]any{"t2": map[string]any{"level": "A3", "restricted": "draft_fix"}}})
+	w.seedRestricted("work")
+	w.start()
+	id := w.eventRoutine("Draft fix watch", "act")
+	run := w.waitRun(id, "launched")
+	if run.Restricted != "draft_fix" || run.Ship == "" {
+		t.Fatalf("launched record = %+v, want restricted draft_fix and a ship", run)
+	}
+	if got := w.shipsWhere(func(s shipJSON) bool { return s.Session == run.Ship }); len(got) != 1 {
+		t.Errorf("the API lists %d ships named %s, want 1", len(got), run.Ship)
+	}
+	event, err := os.ReadFile(filepath.Join(w.home, "checkouts", run.Ship, ".admiral", "untrusted", "event.md"))
+	if err != nil || !strings.Contains(string(event), "Fix the quarry lantern") || !strings.Contains(string(event), "Please review my lantern fix.") {
+		t.Errorf("event.md = %q (%v), want the event's title and body", event, err)
+	}
+	settingsPath := filepath.Join(w.home, "restricted", run.Ship+"-settings.json")
+	raw, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("no restricted settings file: %v", err)
+	}
+	var cfg struct {
+		Sandbox struct {
+			Enabled                  bool `json:"enabled"`
+			AllowUnsandboxedCommands bool `json:"allowUnsandboxedCommands"`
+			Network                  struct {
+				AllowedDomains []string `json:"allowedDomains"`
+			} `json:"network"`
+		} `json:"sandbox"`
+		Permissions struct {
+			Deny []string `json:"deny"`
+		} `json:"permissions"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("settings are not JSON: %v\n%s", err, raw)
+	}
+	if !cfg.Sandbox.Enabled || cfg.Sandbox.AllowUnsandboxedCommands {
+		t.Errorf("sandbox = %+v, want it on with unsandboxed commands off", cfg.Sandbox)
+	}
+	for _, host := range []string{"registry.npmjs.org", "proxy.golang.org", "pypi.org", "crates.io"} {
+		if !slices.Contains(cfg.Sandbox.Network.AllowedDomains, host) {
+			t.Errorf("allowedDomains = %v, want the registry %s", cfg.Sandbox.Network.AllowedDomains, host)
+		}
+	}
+	for _, tool := range []string{"WebFetch", "WebSearch", "mcp__*", "Bash(git push *)"} {
+		if !slices.Contains(cfg.Permissions.Deny, tool) {
+			t.Errorf("deny = %v, want %s", cfg.Permissions.Deny, tool)
+		}
+	}
+	rec := w.record(run.Ship)
+	want := []string{"--permission-mode", "dontAsk", "--setting-sources", "project", "--settings", settingsPath}
+	if at := slices.Index(rec.argv, "--permission-mode"); at < 0 || !slices.Equal(rec.argv[at:min(at+len(want), len(rec.argv))], want) {
+		t.Errorf("argv = %q, want %q in a row", rec.argv, want)
+	}
+	for _, k := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
+		if v, ok := rec.env[k]; ok && v != "" {
+			t.Errorf("env holds %s = %q, want no token in a restricted ship", k, v)
+		}
+	}
+	if rec.env["GIT_CONFIG_GLOBAL"] != "/dev/null" {
+		t.Errorf("GIT_CONFIG_GLOBAL = %q, want /dev/null", rec.env["GIT_CONFIG_GLOBAL"])
 	}
 }

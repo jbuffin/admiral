@@ -103,6 +103,12 @@ const (
 	ReasonHold       = "hold_fire"
 	ReasonDedupe     = "dedupe_key_held"
 	ReasonNoRestrict = "no_restricted_harness"
+	ReasonCommodore  = "commodore_below_a5"
+	ReasonBusy       = "routine_busy"
+	ReasonGlobalCap  = "global_cap"
+	ReasonQuotaHold  = "quota_hold"
+	ReasonResources  = "resources"
+	ReasonHostUnk    = "host_unknown"
 )
 
 // DecideInput is everything the decision reads for one (event, routine) pair.
@@ -132,6 +138,8 @@ type Decision struct {
 	Level    standing.Level
 	Computed standing.Level
 	Reasons  []string
+	// Restricted is the profile of an A3 launch.
+	Restricted standing.Restricted
 }
 
 // routineLevel maps a routine's Before acting onto the ladder.
@@ -207,7 +215,9 @@ type Enrichment struct {
 	Repo      string
 	Labels    []string
 	Summary   string
-	Costs     []Cost
+	// Text is the event's own text for the launched ship's event file; it is never recorded or shown.
+	Text  string
+	Costs []Cost
 	// Failure is the kind of a Lookout call that failed, such as timeout or bad_reply; HandleEvent records it as lookout_<kind>.
 	Failure string
 }
