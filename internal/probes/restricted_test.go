@@ -157,6 +157,10 @@ func TestRestrictedProbeFailuresSayWhy(t *testing.T) {
 		r := runRestricted(t, "git-open", "")
 		r.wantFailed(t, capabilities.RestrictedSandbox, ".git")
 	})
+	t.Run("git cannot commit", func(t *testing.T) {
+		r := runRestricted(t, "no-commit", "")
+		r.wantFailed(t, capabilities.RestrictedSandbox, "commit", "index.lock")
+	})
 	t.Run("no network", func(t *testing.T) {
 		r := runRestricted(t, "no-network", "")
 		r.wantFailed(t, capabilities.RestrictedAllow, "registry.npmjs.org", "no network")
@@ -344,5 +348,56 @@ func TestASlowRestrictedProbeCannotStarveTheJudgesAndADeadlineIsNotAPass(t *test
 		if capabilities.Open(h).Proven("work", "claude", id) {
 			t.Errorf("%s is stored as proven after a run that hit its deadline", id)
 		}
+	}
+}
+
+// runs is how many restricted runs the fake saw, retries included.
+func (r restrictedRun) runs(t *testing.T) int {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(r.rec, "restricted-runs"))
+	if err != nil {
+		t.Fatalf("the fake logged no restricted runs: %v", err)
+	}
+	return strings.Count(string(b), "run\n")
+}
+
+func TestARunWhereTheModelSkippedACommandIsRetriedOnceAndThenPasses(t *testing.T) {
+	for _, mode := range []string{"skip-once", "unread-once"} {
+		t.Run(mode, func(t *testing.T) {
+			r := runRestricted(t, mode, "", probes.ClaudeRestrictedSandbox())
+			if l := r.line(t, capabilities.RestrictedSandbox); l.Status != capabilities.Passed {
+				t.Errorf("sandbox = %+v, want passed on the retry", l)
+			}
+			if n := r.runs(t); n != 4 {
+				t.Errorf("%d restricted runs, want 4: the three runs and one retry", n)
+			}
+		})
+	}
+}
+
+func TestAFailureThatIsNotASkippedCommandIsNeverRetried(t *testing.T) {
+	for mode, want := range map[string]string{"tmp-open": "landed", "git-open": ".git", "no-commit": "index.lock", "no-sandbox": "outside"} {
+		t.Run(mode, func(t *testing.T) {
+			r := runRestricted(t, mode, "", probes.ClaudeRestrictedSandbox())
+			r.wantFailed(t, capabilities.RestrictedSandbox, want)
+			if n := r.runs(t); n != 3 {
+				t.Errorf("%d restricted runs, want 3: a failure that is not a skipped command is not retried", n)
+			}
+		})
+	}
+}
+
+func TestARunThatLeakedIsNotRetriedEvenWhenTheModelAlsoSkippedACommand(t *testing.T) {
+	r := runRestricted(t, "skip-leak", "", probes.ClaudeRestrictedSandbox())
+	r.wantFailed(t, capabilities.RestrictedSandbox, "landed")
+	if n := r.runs(t); n != 3 {
+		t.Errorf("%d restricted runs, want 3: the leaking run must not be rerun into a pass", n)
+	}
+}
+
+func TestTheSandboxResultSaysThatGitCommittedInTheClone(t *testing.T) {
+	r := runRestricted(t, "pass", "", probes.ClaudeRestrictedSandbox())
+	if d := r.line(t, capabilities.RestrictedSandbox).Detail; !strings.Contains(d, "git committed in the clone") {
+		t.Errorf("detail = %q, want it to say git committed", d)
 	}
 }

@@ -25,7 +25,11 @@
 #                  working directory, a git push and a curl to a host other than registry.npmjs.org are blocked.
 #                  $FAKE_RESTRICTED_PROBE (process env) is pass (default), no-sandbox (nothing is blocked, so
 #                  the outside writes, the escape hatch and the blocked curl land), no-network (every curl
-#                  fails) or no-tool (init only).
+#                  fails), no-tool (init only), tmp-open (a touch under /tmp/claude-* lands), git-open (a
+#                  WRITE: to .git lands), no-commit (git commit is refused), skip-once (the first line of the
+#                  first run is left out), skip-leak (skip-once plus a landed write into /tmp/claude-*) or
+#                  unread-once (the first WRITE: fails as an unread file does, with no denial). A `WRITE: <path>`
+#                  line is a Write tool call. Each run appends a line to $FAKE_RECORD_DIR/restricted-runs.
 #
 #   codex exec --json
 #                  a fenced run (the Codex fence and config-home probes), not a judge call: the MCP server comes
@@ -562,9 +566,23 @@ if [ -n "$restrictedrun" ]; then
     mkdir -p "$CLAUDE_CODE_TMPDIR/claude-$(id -u)"
     export TMPDIR="$CLAUDE_CODE_TMPDIR/claude-$(id -u)"
   fi
+  mkdir -p "$FAKE_RECORD_DIR"
+  echo run >>"$FAKE_RECORD_DIR/restricted-runs"
+  # skip-once and skip-leak leave out the first line of the first run only; skip-leak also lets a write into the shared Claude temp dir land.
+  skipfirst="" leak=""
+  case $mode in
+  skip-once | skip-leak)
+    if [ ! -e "$FAKE_RECORD_DIR/skipped" ]; then
+      : >"$FAKE_RECORD_DIR/skipped"
+      skipfirst=1
+      [ "$mode" = skip-leak ] && leak=1
+    fi
+    ;;
+  esac
   n=0
   printf '%s\n' "$prompt" | grep -E '^(RUN|WRITE): ' | while IFS= read -r line; do
     n=$((n + 1))
+    [ -n "$skipfirst" ] && [ "$n" = 1 ] && continue
     unsandboxed=false
     blocked=""
     msg=""
@@ -573,6 +591,11 @@ if [ -n "$restrictedrun" ]; then
       wpath=${line#WRITE: }
       case $wpath in */.git/* | */.GIT/* | */cfg-* | */attr-* | */hard-*) blocked=1 msg="Permission to use Write with file path $wpath has been denied." ;; esac
       [ "$mode" = no-sandbox ] || [ "$mode" = git-open ] && blocked=""
+      # unread-once fails the first Write of the first run that has one as Claude Code does for a file the model did not read: no denial.
+      if [ "$mode" = unread-once ] && [ ! -e "$FAKE_RECORD_DIR/unread" ]; then
+        : >"$FAKE_RECORD_DIR/unread"
+        blocked=1 msg="File has not been read yet. Read it first before writing to it."
+      fi
       jq -cn --arg id "toolu_$n" --arg p "$wpath" \
         '{type: "assistant", message: {content: [{type: "tool_use", id: $id, name: "Write", input: {file_path: $p, content: "x"}}]}}'
       if [ -n "$blocked" ]; then
@@ -592,7 +615,10 @@ if [ -n "$restrictedrun" ]; then
     touch\ * | cat\ *)
       case $path in */escape-*) unsandboxed=true ;; esac
       case $path in "$cwd"/*) ;; *) blocked=1 msg="Operation not permitted" ;; esac
+      case $path in */.GITMODULES | */.gitmodules) blocked=1 msg="Operation not permitted" ;; esac
       ;;
+    mv\ *) blocked=1 msg="Operation not permitted" ;;
+    git\ commit\ *) [ "$mode" = no-commit ] && blocked=1 msg="fatal: Unable to create '.git/index.lock': Operation not permitted" ;;
     git\ push\ *) blocked=1 msg="Permission to use Bash with command $cmd has been denied." ;;
     sh\ -c\ * | git\ -C\ *) blocked=1 msg="Operation not permitted" ;;
     curl\ *)
@@ -601,7 +627,7 @@ if [ -n "$restrictedrun" ]; then
       ;;
     esac
     [ "$mode" = no-sandbox ] && blocked=""
-    [ "$mode" = tmp-open ] && case $path in /tmp/claude-*) blocked="" ;; esac
+    if [ "$mode" = tmp-open ] || [ -n "$leak" ]; then case $path in /tmp/claude-*) blocked="" ;; esac; fi
     jq -cn --arg id "toolu_$n" --arg c "$cmd" --argjson u "$unsandboxed" \
       '{type: "assistant", message: {content: [{type: "tool_use", id: $id, name: "Bash", input: ({command: $c} + (if $u then {dangerouslyDisableSandbox: true} else {} end))}]}}'
     result=""

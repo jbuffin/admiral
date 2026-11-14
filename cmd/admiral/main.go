@@ -249,6 +249,7 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
+	launcher.SweepRestrictedLinks(dir)
 	// Before the first load, so it sees the migrated file.
 	migration, err := config.Migrate(dir, version)
 	if err != nil {

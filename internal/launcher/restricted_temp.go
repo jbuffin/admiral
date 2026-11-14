@@ -84,6 +84,10 @@ func RemoveRestrictedTemp(home, session string) {
 	if _, _, ok := ShipFiles(home, session); !ok {
 		return
 	}
+	// A relative home would never equal the absolute target MakeRestrictedTemp wrote into the link.
+	if abs, err := filepath.Abs(home); err == nil {
+		home = abs
+	}
 	file := restrictedTempLinkFile(home, session)
 	if b, err := os.ReadFile(file); err == nil {
 		link := strings.TrimSpace(string(b))
@@ -104,6 +108,43 @@ func RemoveRestrictedTemp(home, session string) {
 			_ = root.RemoveAll(rel)
 		} else if err == nil {
 			_ = root.Remove(rel)
+		}
+	}
+}
+
+// SweepRestrictedLinks removes the temp links a crashed Admiral left: those in the link root whose target is gone and
+// was under this home's restricted dir. A link anywhere else is another Admiral's or not ours, and stays.
+func SweepRestrictedLinks(home string) {
+	abs, err := filepath.Abs(home)
+	if err != nil {
+		return
+	}
+	prefixes := []string{filepath.Join(abs, "restricted") + string(filepath.Separator)}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		prefixes = append(prefixes, filepath.Join(real, "restricted")+string(filepath.Separator))
+	}
+	root := linkRoot()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), "adm-") || e.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+		link := filepath.Join(root, e.Name())
+		target, err := os.Readlink(link)
+		if err != nil {
+			continue
+		}
+		if _, err := os.Stat(target); !errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		for _, p := range prefixes {
+			if strings.HasPrefix(target, p) {
+				_ = os.Remove(link)
+				break
+			}
 		}
 	}
 }

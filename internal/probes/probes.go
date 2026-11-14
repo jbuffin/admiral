@@ -38,7 +38,7 @@ func ValidEnv(dir, nonce string) bool { return nonceFormat.MatchString(nonce) &&
 func Command(dir, nonce string) string { return "touch " + SentinelPath(dir, nonce) }
 
 const (
-	defaultTimeout = 14 * time.Minute // the guard, fence and two restricted runs of up to 2 minutes each and four judge calls of up to 90s each
+	defaultTimeout = 26 * time.Minute // worst case, in order: the guard and fence (2 minutes each), the sandbox probe's three runs each retried once (6 x 2), the network run (2) and four judge calls of up to 90s each (6), with a little slack
 	versionTimeout = 15 * time.Second
 )
 
