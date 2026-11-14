@@ -152,6 +152,14 @@ func TestReadShapeNamesHowAShipsPRsRelateOnGitHub(t *testing.T) {
 			[]string{pr(21), pr(22)},
 			Shape{Kind: ShapeMixed},
 		},
+		"mixed: GitHub's stack is longer than the entries it answered": {
+			[]Detail{
+				pull(21, "b21", "main", &DetailStack{Number: 4, Size: 3, Entries: []DetailStackEntry{entry(1, 21), entry(2, 22)}}),
+				pull(22, "b22", "b21", &DetailStack{Number: 4, Size: 3, Entries: []DetailStackEntry{entry(1, 21), entry(2, 22)}}),
+			},
+			[]string{pr(21), pr(22)},
+			Shape{Kind: ShapeMixed},
+		},
 		"mixed: the PRs sit in two different stacks": {
 			[]Detail{pull(21, "b21", "main", stackOf(4, entry(1, 21))), pull(22, "b22", "main", stackOf(5, entry(1, 22)))},
 			[]string{pr(21), pr(22)},
@@ -198,5 +206,13 @@ func TestReadShapeFailsWhenGitHubDoesNotAnswerForAPR(t *testing.T) {
 				t.Errorf("shape = %+v with no error, want the failure and not a guess", got)
 			}
 		})
+	}
+}
+
+func TestReadShapeOfNoPRsIsMixedAndReadsNothing(t *testing.T) {
+	gh := &shapeGitHub{}
+	got, err := ReadShape(context.Background(), gh, nil)
+	if err != nil || got.Kind != ShapeMixed || len(gh.reads) != 0 {
+		t.Errorf("shape = %+v, err = %v, reads = %v; want mixed, no error, no reads", got, err, gh.reads)
 	}
 }

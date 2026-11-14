@@ -236,6 +236,8 @@ func TestMergeASinglePRRunsOneGhMergeWithTheDefaultMethod(t *testing.T) {
 	if ev := lastOf(w.waitEvent(ship.Session, "unmoored", 1), "unmoored"); ev["reason"] != "merged" {
 		t.Errorf("unmoored = %v, want reason merged", ev)
 	}
+	// A ship that sails off after a failed wake also ends unmoored merged; only returning says it woke to return to port.
+	w.waitEvent(ship.Session, "returning", 1)
 	if n := len(g.mergeCalls()); n != 1 {
 		t.Errorf("merge calls after the ship ended = %d, want still one", n)
 	}
@@ -354,16 +356,6 @@ func (g *fakeGH) independentPRs(prs ...string) {
 	}
 }
 
-func (g *fakeGH) stackCalls(verb string) []ghCall {
-	var out []ghCall
-	for _, c := range g.calls() {
-		if len(c.Argv) >= 2 && c.Argv[0] == "stack" && c.Argv[1] == verb {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
 // anyStackCalls counts every gh stack call, whatever its verb.
 func (g *fakeGH) anyStackCalls() int {
 	n := 0
@@ -409,7 +401,7 @@ func readyStack(t *testing.T, method string, prs ...string) (*world, *fakeGH, sh
 	return seedMoored(t, method, func(g *fakeGH) { g.githubStack(4, prs...) }, prs...)
 }
 
-// notAboutACheckout fails a refusal that blames the ship's checkout: GitHub's answer is the only record of a stack now.
+// notAboutACheckout fails a refusal that blames the ship's checkout, which Merge never reads.
 func notAboutACheckout(t *testing.T, body string) {
 	t.Helper()
 	if strings.Contains(strings.ToLower(body), "checkout") {
@@ -493,7 +485,7 @@ func TestMergeAGitHubStackRunsOneGhStackMergeByNumberWithNoCheckout(t *testing.T
 	w.in.waitShipsList(t, 20*time.Second, "the ship left its mooring after the merge", func(l []shipJSON) bool { return byName(l)[ship.Name].Status != "moored" })
 }
 
-// An unusable checkout is no longer a reason to refuse: the stack is merged from GitHub's number.
+// An unusable checkout is no reason to refuse: the stack is merged from GitHub's number.
 func TestMergeOfAGitHubStackNeedsNoCheckoutInTheRecord(t *testing.T) {
 	t.Parallel()
 	for what, checkout := range map[string]func(w *world) string{
@@ -527,50 +519,18 @@ func TestMergeOfAGitHubStackNeedsNoCheckoutInTheRecord(t *testing.T) {
 	}
 }
 
-// What GitHub holds is what decides: a stack that is not exactly the ship's PRs is refused, whatever the ship recorded.
-func TestMergeOfShipsWhoseStackOnGitHubIsNotExactlyTheirPRsIsRefusedAndRunsNoMerge(t *testing.T) {
+// Which shapes count as mixed is the shape unit test's; here a mixed ship is refused with nothing run.
+func TestMergeOfAShipWhoseStackOnGitHubIsNotExactlyItsPRsIsRefusedAndRunsNoMerge(t *testing.T) {
 	t.Parallel()
-	const other = "https://github.com/acme/widgets/pull/99"
-	for what, seed := range map[string]func(g *fakeGH){
-		"the stack holds one more PR": func(g *fakeGH) {
-			g.githubStack(4, layer1, layer2, other)
-		},
-		"the stack holds only one of the two": func(g *fakeGH) {
-			g.githubStack(4, layer1)
-			g.prDetail(layer2, branchOf(layer2), branchOf(layer1), nil)
-		},
-		"the PRs sit in two different stacks": func(g *fakeGH) {
-			g.githubStack(4, layer1)
-			g.githubStack(5, layer2)
-		},
-		"one PR is in the stack and the other is not": func(g *fakeGH) {
-			g.githubStack(4, layer1, layer2)
-			g.prDetail(layer2, branchOf(layer2), branchOf(layer1), nil)
-		},
-		"part chained and part independent": func(g *fakeGH) {
-			g.chainedPRs(layer1, layer2)
-			g.prDetail(layer3, branchOf(layer3), "main", nil)
-		},
-		"based on a branch that is neither the default nor a sibling's": func(g *fakeGH) {
-			g.independentPRs(layer1, layer2)
-			g.prDetail(layer2, branchOf(layer2), "develop", nil)
-		},
-	} {
-		t.Run(what, func(t *testing.T) {
-			t.Parallel()
-			prs := []string{layer1, layer2}
-			if what == "part chained and part independent" {
-				prs = []string{layer1, layer2, layer3}
-			}
-			w, g, ship := seedMoored(t, "MERGE", seed, prs...)
-			code, body := w.postMerge(t, ship, map[string]any{})
-			wantCode(t, "POST merge on a ship whose PRs are mixed", http.StatusConflict, code, body)
-			notAboutACheckout(t, body)
-			holdThat(t, "gh merged, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
-			if n := g.anyStackCalls(); n != 0 {
-				t.Errorf("gh stack calls = %d, want none", n)
-			}
-		})
+	w, g, ship := seedMoored(t, "MERGE", func(g *fakeGH) {
+		g.githubStack(4, layer1, layer2, "https://github.com/acme/widgets/pull/99")
+	}, layer1, layer2)
+	code, body := w.postMerge(t, ship, map[string]any{})
+	wantCode(t, "POST merge on a ship whose PRs are mixed", http.StatusConflict, code, body)
+	notAboutACheckout(t, body)
+	holdThat(t, "gh merged, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
+	if n := g.anyStackCalls(); n != 0 {
+		t.Errorf("gh stack calls = %d, want none", n)
 	}
 }
 

@@ -26,6 +26,9 @@ type Shape struct {
 
 // ReadShape reads each of the ship's PRs fresh and says how they relate. A failed read is an error, never a shape.
 func ReadShape(ctx context.Context, gh GitHub, prs []string) (Shape, error) {
+	if len(prs) == 0 {
+		return Shape{Kind: ShapeMixed}, nil
+	}
 	details := make([]Detail, len(prs))
 	for i, u := range prs {
 		d, err := gh.PullRequestDetail(ctx, u)
@@ -79,7 +82,7 @@ func ReadShape(ctx context.Context, gh GitHub, prs []string) (Shape, error) {
 // stackedShape is the shape when every PR sits in one GitHub stack whose entries are exactly the ship's PRs.
 func stackedShape(prs []string, details []Detail) (Shape, bool) {
 	st := details[0].Stack
-	if st == nil || len(st.Entries) != len(prs) {
+	if st == nil || len(st.Entries) != len(prs) || st.Size != len(prs) {
 		return Shape{}, false
 	}
 	for _, d := range details {

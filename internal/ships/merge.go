@@ -61,20 +61,15 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The PRs that were checked are the PRs that get merged: only the client's own host, and the argv URL is rebuilt from the parts.
-	var repo string
 	for _, pr := range rec.PRs {
-		host, prRepo, _, ok := moor.ParsePR(pr)
-		if !ok || !strings.EqualFold(host, gh.Host()) {
+		if host, _, _, ok := moor.ParsePR(pr); !ok || !strings.EqualFold(host, gh.Host()) {
 			writeError(w, http.StatusUnprocessableEntity, "the pull request is not on the fleet's GitHub host, so it is not merged")
 			return
-		}
-		if repo == "" {
-			repo = prRepo
 		}
 	}
 
 	// What gets merged, and as what: the one PR, one PR of independent PRs, or GitHub's stack.
-	merging, stackNumber := rec.PRs, 0
+	merging, stackNumber, stacked := rec.PRs, 0, false
 	if len(rec.PRs) > 1 {
 		shape, err := moor.ReadShape(r.Context(), gh, rec.PRs)
 		if err != nil {
@@ -91,7 +86,7 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, "Merge up to is not available; the whole stack merges")
 				return
 			}
-			stackNumber = shape.StackNumber
+			stackNumber, stacked = shape.StackNumber, true
 		case moor.ShapeIndependent:
 			if body.PR == "" {
 				writeError(w, http.StatusConflict, "these pull requests are independent, so name the one to merge with pr")
@@ -119,6 +114,7 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	_, repo, number, _ := moor.ParsePR(merging[0])
 	method, err := s.mergeMethod(r.Context(), gh, rec.Fleet, repo)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
@@ -126,11 +122,10 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The merge outlives a client that hangs up: stopping gh midway would leave its result unknown.
-	if stackNumber != 0 {
+	if stacked {
 		err = gh.MergeStack(context.WithoutCancel(r.Context()), repo, stackNumber, method)
 	} else {
-		_, prRepo, number, _ := moor.ParsePR(merging[0])
-		err = gh.MergePR(context.WithoutCancel(r.Context()), "https://"+gh.Host()+"/"+prRepo+"/pull/"+number, method)
+		err = gh.MergePR(context.WithoutCancel(r.Context()), "https://"+gh.Host()+"/"+repo+"/pull/"+number, method)
 	}
 	switch {
 	case errors.Is(err, moor.ErrMergeTimeout):

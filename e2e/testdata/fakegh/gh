@@ -12,7 +12,7 @@
 #                NAME=value lines; a variable that was not set has no line
 #   cwd          the working directory the call ran in
 #
-# It answers eleven kinds of call and nothing else (anything else exits 2):
+# It answers twelve kinds of call and nothing else (anything else exits 2):
 #
 #   gh --version
 #
@@ -299,7 +299,7 @@ stack)
 	mkdir -p "$FAKEGH_DIR/pr_state"
 	for k in $members; do
 		echo MERGED > "$FAKEGH_DIR/pr_state/$k"
-		sed 's/"state": *"OPEN"/"state":"MERGED"/g' "$FAKEGH_DIR/pr_detail/$k" > "$call_dir/detail.tmp" && mv "$call_dir/detail.tmp" "$FAKEGH_DIR/pr_detail/$k"
+		sed 's/"state":"OPEN"/"state":"MERGED"/g' "$FAKEGH_DIR/pr_detail/$k" > "$call_dir/detail.tmp" && mv "$call_dir/detail.tmp" "$FAKEGH_DIR/pr_detail/$k"
 	done
 	exit 0
 	;;
