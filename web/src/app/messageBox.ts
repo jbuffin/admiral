@@ -12,6 +12,8 @@ export function boxState(ship: Pick<Ship, 'status' | 'exit_code' | 'exit_signal'
   if (ship.status === 'underway' || ship.status === 'needs_you') return { enabled: true };
   if (ship.status === 'anchored') {
     // An anchored ship always exited with an error: a non-zero code, or no code and a signal.
+    const minutes = /^wall_clock:(\d+)$/.exec(ship.stopped_by ?? '')?.[1];
+    if (minutes) return { enabled: false, note: `Stopped at the ${minutes}-minute wall clock, read only` };
     if (ship.exit_code === null && ship.exit_signal) return { enabled: false, note: `Killed (${ship.exit_signal}), read only` };
     return { enabled: false, note: 'Exited with error, read only' };
   }

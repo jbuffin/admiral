@@ -102,6 +102,8 @@ type Scheduler struct {
 	last    map[string]time.Time
 	waiting map[string]waitRun
 	watched map[string]watch
+	// walled is, per launch record, when the wall clock may try its ship again: far off once it ended the harness.
+	walled map[string]time.Time
 	// proposals is each routine's open proposal, so one nobody answered is recorded expired once.
 	proposals map[string]openProposal
 	// toPropose holds the proposals a tick made; they go to the Proposer after mu is released, because the Inbox
@@ -140,6 +142,7 @@ func (s *Scheduler) init() {
 	s.once.Do(func() {
 		s.wake = make(chan struct{}, 1)
 		s.last, s.waiting, s.watched = map[string]time.Time{}, map[string]waitRun{}, map[string]watch{}
+		s.walled = map[string]time.Time{}
 		s.proposals = map[string]openProposal{}
 	})
 }
@@ -176,6 +179,9 @@ func (s *Scheduler) Run(ctx context.Context) {
 		d := idleWake
 		if next := s.nextDue(); !next.IsZero() {
 			d = next.Sub(s.Clock.Now())
+		}
+		if next := s.nextWallClock(); !next.IsZero() {
+			d = min(d, next.Sub(s.Clock.Now()))
 		}
 		select {
 		case <-ctx.Done():
@@ -368,6 +374,7 @@ func (s *Scheduler) tick(ctx context.Context) error {
 	s.expireProposals(now)
 	// after the breaker's count above, so a failure counts from the next tick on
 	s.markEnded(now)
+	s.wallClock(now)
 	return nil
 }
 

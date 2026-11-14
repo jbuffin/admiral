@@ -255,7 +255,11 @@ func (s *Service) fleetHold(key string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"on": f.On || g.On, "fleet": f, "global": g}, nil
+	here, all, err := s.workerShipCounts(key)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"on": f.On || g.On, "fleet": f, "global": g, "worker_ships": here, "all_worker_ships": all}, nil
 }
 
 func (s *Service) serveFleetHold(w http.ResponseWriter, r *http.Request) {
@@ -273,7 +277,15 @@ func (s *Service) serveGlobalHold(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, h)
+	_, all, err := s.workerShipCounts("")
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Hold
+		WorkerShips int `json:"worker_ships"`
+	}{h, all})
 }
 
 func (s *Service) serveSetHold(on, global bool) http.HandlerFunc {
@@ -302,8 +314,4 @@ func (s *Service) serveSetHold(on, global bool) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, out)
 	}
-}
-
-func (s *Service) serveStopWorkerShips(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "stop all worker-launched is not built yet")
 }
