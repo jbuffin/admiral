@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call } from './api';
+import { call, SLOW_TIMEOUT_MS } from './api';
 import type { Entry } from './inbox';
 import { prLink } from '../inbox';
 import { createDecisions, type Decisions, type FindingCard, readCards, type Verdict } from '../findings';
@@ -46,7 +46,7 @@ export function useActing(entry: Entry, fold: (text: string) => void, lockedBy: 
       if (busy.current) return;
       busy.current = true;
       setState((s) => ({ ...s, busy: true, error: '', note: '' }));
-      const r = await call<Record<string, unknown>>('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/${verb}`, body);
+      const r = await call<Record<string, unknown>>('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/${verb}`, body, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
       busy.current = false;
       if (r.ok) return fold(text((r.data ?? {}) as never));
       setState({ busy: false, error: r.error, note: r.note ?? '', locked: lockedBy(r.status, r.error) });
