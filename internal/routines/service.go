@@ -29,6 +29,8 @@ type Service struct {
 	Stop func(session string) error
 	// Launch starts a ship, as ships.Service.Launch does; Promote starts its normal ship through it.
 	Launch func(ctx context.Context, req launcher.Request) (ShipRef, *launcher.Error)
+	// Listed reads the host's ships; Stop all worker-launched picks the live ones it launched.
+	Listed func() []ListedShip
 
 	undoMu sync.Mutex
 
@@ -66,6 +68,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/fleets/{key}/standing-orders/copy", s.serveOrdersCopy)
 	mux.HandleFunc("POST /api/fleets/{key}/standing-orders/draft", s.serveOrdersDraft)
 	mux.HandleFunc("POST /api/fleets/{key}/routines/draft", s.serveRoutineDraft)
+	mux.HandleFunc("POST /api/fleets/{key}/worker-ships/stop", s.serveStopWorkerShips)
+	mux.HandleFunc("POST /api/worker-ships/stop", s.serveStopWorkerShips)
 	mux.HandleFunc("GET /api/hold-fire", s.serveGlobalHold)
 	mux.HandleFunc("POST /api/hold-fire/on", s.serveSetHold(true, true))
 	mux.HandleFunc("POST /api/hold-fire/off", s.serveSetHold(false, true))
@@ -298,4 +302,8 @@ func (s *Service) serveSetHold(on, global bool) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, out)
 	}
+}
+
+func (s *Service) serveStopWorkerShips(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "stop all worker-launched is not built yet")
 }
