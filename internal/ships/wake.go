@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"slices"
@@ -51,7 +52,7 @@ func (s *Service) FeedbackRound(ctx context.Context, session, pr, feedback strin
 // by the time the launch is certain, the round is refused and the next poll decides again from the new one.
 func (s *Service) feedbackRound(session, pr, feedback string, was *moor.WakeState, next moor.WakeState) (Ship, *launcher.Error) {
 	prompt := func(rec moor.Record) string {
-		return rec.Resume + " feedback round " + strconv.Itoa(rec.Round+1) + " on " + pr
+		return answerPrompt(rec, pr)
 	}
 	write := func(rec moor.Record, dir string) (undoFunc, error) {
 		undo, err := s.saveWake(rec.Name, func(cur moor.WakeState) (moor.WakeState, *launcher.Error) {
@@ -319,6 +320,63 @@ func (s *Service) serveWake(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
 }
 
+// answerPrompt is what Answer review sends for a PR of the record.
+func answerPrompt(rec moor.Record, pr string) string {
+	return rec.Resume + " feedback round " + strconv.Itoa(rec.Round+1) + " on " + pr
+}
+
+// answerReview is the feedback round on one PR, started by hand: the automatic round's work for pr, launched attended.
+// The state it saves comes from the stored poll answers and the wake state read under wakeMu, so a stale page cannot hand it old events.
+func (s *Service) answerReview(ctx context.Context, session, pr string) (Ship, *launcher.Error) {
+	prompt := func(rec moor.Record) string { return answerPrompt(rec, pr) }
+	var feedback string
+	write := func(rec moor.Record, dir string) (undoFunc, error) {
+		undo, err := s.saveWake(rec.Name, func(cur moor.WakeState) (moor.WakeState, *launcher.Error) {
+			s.mooredMu.Lock()
+			answers := maps.Clone(s.mooredPolls[rec.Session].status)
+			s.mooredMu.Unlock()
+			in := moor.WakeInput{Record: rec, State: cur, Answers: answers, Reviewers: s.wakeReviewers(rec), Now: time.Now().UTC()}
+			round, ok := moor.DecideHandRound(in, pr)
+			if !ok {
+				return moor.WakeState{}, &launcher.Error{Status: http.StatusConflict, Msg: "PR " + pr + " has no new feedback to answer"}
+			}
+			feedback = round.Feedback
+			return round.Next, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := moor.WriteFeedback(dir, rec.Round+1, feedback); err != nil {
+			undo()
+			return nil, err
+		}
+		return undo, nil
+	}
+	return s.wake(session, prompt, "hand", pr, viaOfCtx(ctx), write)
+}
+
 func (s *Service) serveAnswerReview(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented")
+	session := r.PathValue("session")
+	var body struct {
+		PR string `json:"pr"`
+	}
+	decodeErr := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body)
+	rec, lerr := s.wakeable(session)
+	switch {
+	case lerr != nil:
+		writeError(w, lerr.Status, lerr.Msg)
+		return
+	case decodeErr != nil:
+		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+decodeErr.Error())
+		return
+	case !slices.Contains(rec.PRs, body.PR):
+		writeError(w, http.StatusBadRequest, "ship "+session+" carries no PR "+body.PR)
+		return
+	}
+	got, lerr := s.answerReview(r.Context(), session, body.PR)
+	if lerr != nil {
+		writeError(w, lerr.Status, lerr.Msg)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
 }

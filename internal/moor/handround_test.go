@@ -243,7 +243,7 @@ func TestAHandRoundOnTheSecondPRAdvancesOnlyItsCursorAndOpensTheWindowOnBoth(t *
 		t.Errorf("the feedback holds the other PR's review:\n%s", got.Feedback)
 	}
 	want := WakeState{PRs: map[string]PRWake{
-		wpr1: {Cursor: Cursor{At: wT0}, RoundStart: wNow, Snapshot: Snapshot{Head: "abc"}},
+		wpr1: {Cursor: Cursor{At: wT0}, RoundStart: wNow},
 		wpr2: {Cursor: Cursor{At: wEv, IDs: []string{"R9"}}, RoundStart: wNow, Snapshot: Snapshot{Head: "abc"}},
 	}}
 	if !reflect.DeepEqual(got.Next, want) {
