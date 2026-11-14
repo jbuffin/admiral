@@ -129,10 +129,6 @@ func (g *pollGitHub) MergePR(context.Context, string, string) error {
 	return g.mergeErr
 }
 
-func (g *pollGitHub) StackPRs(context.Context, string, string) ([]moor.StackLayer, error) {
-	return nil, nil
-}
-
 func (g *pollGitHub) MergeStack(context.Context, string, int, string) error {
 	return g.MergePR(context.Background(), "", "")
 }

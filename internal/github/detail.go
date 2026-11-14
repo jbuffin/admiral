@@ -18,6 +18,7 @@ var detailFields = fmt.Sprintf(`number title body state isDraft headRefName base
  commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: %d) { nodes { __typename
   ... on CheckRun { name conclusion detailsUrl }
   ... on StatusContext { context state targetUrl } } } } } } }
+ baseRepository { defaultBranchRef { name } }
  stack { number size baseRefName entries(first: %d) { nodes { position pullRequest { number url state headRefName } } } }`,
 	maxReviews, maxThreads, maxThreadComments, maxComments, maxRequests, maxContexts, maxStackEntries)
 
@@ -64,6 +65,11 @@ type prDetailNode struct {
 			} `json:"statusCheckRollup"`
 		} `json:"commit"`
 	}] `json:"commits"`
+	BaseRepository *struct {
+		DefaultBranchRef *struct {
+			Name string `json:"name"`
+		} `json:"defaultBranchRef"`
+	} `json:"baseRepository"`
 	Stack *struct {
 		Number      int    `json:"number"`
 		Size        int    `json:"size"`
@@ -112,6 +118,9 @@ func (n *prDetailNode) detail(url string) moor.Detail {
 		Head: n.HeadRefName, Base: n.BaseRefName, Review: n.ReviewDecision, Mergeable: n.Mergeable, MergeState: n.MergeStateStatus,
 		FailingChecks: []moor.DetailCheck{}, Reviews: []moor.DetailReview{}, Requested: []moor.DetailActor{},
 		Threads: []moor.DetailThread{}, Comments: []moor.DetailComment{}}
+	if r := n.BaseRepository; r != nil && r.DefaultBranchRef != nil {
+		d.DefaultBranch = r.DefaultBranchRef.Name
+	}
 	if n.StatusCheckRollup != nil {
 		d.Checks = n.StatusCheckRollup.State
 	}

@@ -29,18 +29,8 @@ type GitHub interface {
 	// MergePR merges one pull request with the method. Only the engineer's Merge act calls it. An error is gh's
 	// message; ErrMergeTimeout says gh ran past its limit, so the merge may have happened.
 	MergePR(ctx context.Context, url, method string) error
-	// StackPRs is each layer of the stack checked out in dir, bottom first, as the checkout's own record has it; gh runs
-	// against repo (OWNER/NAME) on this client's host, whatever the checkout's remotes say.
-	StackPRs(ctx context.Context, dir, repo string) ([]StackLayer, error)
 	// MergeStack merges GitHub's stack number stackNumber in repo (OWNER/NAME) with the method, from no checkout. Its errors are MergePR's.
 	MergeStack(ctx context.Context, repo string, stackNumber int, method string) error
-}
-
-// StackLayer is one layer of a local stack; a field the record lacks is zero.
-type StackLayer struct {
-	URL    string // "" for a layer with no pull request
-	Number int
-	Head   string // the branch's commit SHA
 }
 
 // ErrMergeTimeout is a merge whose result is unknown.
