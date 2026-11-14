@@ -443,10 +443,10 @@ func TestTheRestrictedSettingsDenyCronProjectSendsAndRegistryPublishes(t *testin
 	}
 }
 
-func TestTheRestrictedSettingsDenyWritesToTheOtherSessionsScratchpadsInTheSharedTempDir(t *testing.T) {
+func TestTheRestrictedSettingsDenyWritesToTheWholeOfBothSharedClaudeTempDirs(t *testing.T) {
 	want := []string{
-		filepath.Join("/tmp", "claude-"+strconv.Itoa(os.Getuid()), "-*"),
-		filepath.Join("/private/tmp", "claude-"+strconv.Itoa(os.Getuid()), "-*"),
+		filepath.Join("/tmp", "claude-"+strconv.Itoa(os.Getuid())),
+		filepath.Join("/private/tmp", "claude-"+strconv.Itoa(os.Getuid())),
 	}
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
 		t.Run(string(level), func(t *testing.T) {
@@ -460,6 +460,87 @@ func TestTheRestrictedSettingsDenyWritesToTheOtherSessionsScratchpadsInTheShared
 				}
 			}
 		})
+	}
+}
+
+func TestARestrictedShipsTempVarsPointAtAShortLinkToItsOwnDirUnderTheHome(t *testing.T) {
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, map[string]string{"CLAUDE_CODE_TMPDIR": "/fleet/own", "TMPDIR": "/fleet/own"})
+			out, _, _, env := p.mustRestricted(t, level)
+			link := env["CLAUDE_CODE_TMPDIR"]
+			if env["TMPDIR"] != link || !strings.HasPrefix(filepath.Base(link), "adm-") || len(link) > maxTempLink {
+				t.Fatalf("CLAUDE_CODE_TMPDIR = %q, TMPDIR = %q, want one adm- link of at most %d characters", link, env["TMPDIR"], maxTempLink)
+			}
+			fi, err := os.Lstat(link)
+			if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+				t.Fatalf("%s is not a link: %v", link, err)
+			}
+			real, err := filepath.EvalSymlinks(link)
+			home, _ := filepath.EvalSymlinks(p.home)
+			if err != nil || real != filepath.Join(home, "restricted", out.Session+"-tmp") {
+				t.Errorf("%s resolves to %q (%v), want the ship's dir under the home", link, real, err)
+			}
+			if fi, err := os.Stat(real); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+				t.Errorf("the ship's temp dir: %v, %v", fi, err)
+			}
+			t.Cleanup(func() { RemoveRestrictedFiles(p.home, out.Session) })
+		})
+	}
+}
+
+func TestRemovingARestrictedShipsFilesTakesAwayItsTempLinkAndDir(t *testing.T) {
+	p := newPinRig(t, nil)
+	out, _, _, env := p.mustRestricted(t, standing.DraftFix)
+	link := env["TMPDIR"]
+	dir := filepath.Join(p.home, "restricted", out.Session+"-tmp")
+	RemoveRestrictedFiles(p.home, out.Session)
+	if _, err := os.Lstat(link); err == nil {
+		t.Errorf("the link %s is still there", link)
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Errorf("the dir %s is still there", dir)
+	}
+}
+
+func TestRemovingARestrictedShipsFilesNeverFollowsOrRemovesALinkSwappedToPointElsewhere(t *testing.T) {
+	p := newPinRig(t, nil)
+	out, _, _, env := p.mustRestricted(t, standing.DraftFix)
+	link := env["TMPDIR"]
+	elsewhere := t.TempDir()
+	if err := os.WriteFile(filepath.Join(elsewhere, "keep"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(link) })
+	RemoveRestrictedFiles(p.home, out.Session)
+	if _, err := os.Stat(filepath.Join(elsewhere, "keep")); err != nil {
+		t.Errorf("a file behind the swapped link is gone: %v", err)
+	}
+	if got, err := os.Readlink(link); err != nil || got != elsewhere {
+		t.Errorf("the swapped link was removed or changed: %q, %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(p.home, "restricted", out.Session+"-tmp")); err == nil {
+		t.Errorf("the ship's own dir is still there")
+	}
+}
+
+func TestANormalLaunchGetsNoTempLinkAndKeepsTheFleetsTempVars(t *testing.T) {
+	p := newPinRig(t, map[string]string{"TMPDIR": "/fleet/own"})
+	if _, err := p.l.Launch(p.justRequest()); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	_, env := p.shipRecord(t)
+	if env["TMPDIR"] != "/fleet/own" || env["CLAUDE_CODE_TMPDIR"] != "" {
+		t.Errorf("TMPDIR = %q, CLAUDE_CODE_TMPDIR = %q, want the fleet's own and none", env["TMPDIR"], env["CLAUDE_CODE_TMPDIR"])
+	}
+	if _, err := os.Stat(filepath.Join(p.home, "restricted")); err == nil {
+		t.Errorf("a normal launch made a restricted dir")
 	}
 }
 

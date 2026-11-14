@@ -26,6 +26,15 @@ func newPinRig(t *testing.T, fleetEnv map[string]string) *pinRig {
 	}
 	p := &pinRig{crewDirRig: newCrewDirRig(t, env), commodore: filepath.Join(identity, "skills", "commodore")}
 	mustMkdir(t, filepath.Join(p.commodore, "crew"))
+	// A restricted launch links its temp dir from the shared /tmp, outside the test's home.
+	t.Cleanup(func() {
+		links, _ := filepath.Glob(filepath.Join(p.home, "restricted", "*-tmp.link"))
+		for _, f := range links {
+			if b, err := os.ReadFile(f); err == nil {
+				os.Remove(strings.TrimSpace(string(b)))
+			}
+		}
+	})
 	if err := os.WriteFile(filepath.Join(p.commodore, "SKILL.md"), []byte("---\nname: commodore\ndescription: a fake skill\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

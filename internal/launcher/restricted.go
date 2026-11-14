@@ -84,12 +84,12 @@ func checkRestricted(req Request, dock config.Harness) *Error {
 	return nil
 }
 
-// sharedTempGlobs are the project folders in Claude Code's per-user temp dir, where the engineer's other sessions
-// keep their scratchpads; the sandbox leaves that dir writable, and the dir itself has to stay so for the shell to work.
-func sharedTempGlobs() []any {
+// sharedTempDirs are Claude Code's per-user temp dirs, where the engineer's other sessions keep their scratchpads. The
+// ship's own temp dir is elsewhere (see MakeRestrictedTemp), so the sandbox denies these whole.
+func sharedTempDirs() []any {
 	var out []any
 	for _, root := range []string{"/tmp", "/private/tmp"} {
-		out = append(out, filepath.Join(root, fmt.Sprintf("claude-%d", os.Getuid()), "-*"))
+		out = append(out, filepath.Join(root, fmt.Sprintf("claude-%d", os.Getuid())))
 	}
 	return out
 }
@@ -141,7 +141,7 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 		allow = []any{"Write(" + report + ")", "Edit(" + report + ")"}
 		filesystem["denyWrite"] = []any{checkout}
 	}
-	filesystem["denyWrite"] = append(filesystem["denyWrite"].([]any), sharedTempGlobs()...)
+	filesystem["denyWrite"] = append(filesystem["denyWrite"].([]any), sharedTempDirs()...)
 	out["sandbox"] = map[string]any{"enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false,
 		// Under dontAsk a Bash call with no allow rule is denied, so sandboxed commands are allowed by this setting.
 		"autoAllowBashIfSandboxed": true, "network": network, "filesystem": filesystem}
@@ -170,7 +170,7 @@ func restrictedSettingsPath(home, session string) string {
 }
 
 type restrictedShip struct {
-	checkout, settings string
+	checkout, settings, tempLink string
 	// reused is a clone an earlier round made: a failed launch leaves it, since it holds the ship's work.
 	reused bool
 }
@@ -183,10 +183,11 @@ func (r restrictedShip) remove(home, session string) {
 	RemoveRestrictedFiles(home, session)
 }
 
-// RemoveRestrictedFiles deletes a restricted ship's settings file.
+// RemoveRestrictedFiles deletes a restricted ship's settings file and temp dir and link.
 func RemoveRestrictedFiles(home, session string) {
 	if _, _, ok := ShipFiles(home, session); ok {
 		_ = os.Remove(restrictedSettingsPath(home, session))
+		RemoveRestrictedTemp(home, session)
 	}
 }
 
@@ -221,6 +222,9 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 		if err := writeEventFile(made.checkout, req.EventText); err != nil {
 			return fail(err)
 		}
+	}
+	if made.tempLink, err = MakeRestrictedTemp(home, session); err != nil {
+		return fail(err)
 	}
 	realHome, err := filepath.EvalSymlinks(home)
 	if err != nil {
