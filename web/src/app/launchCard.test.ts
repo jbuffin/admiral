@@ -40,6 +40,12 @@ describe('the launch card in the thread', () => {
 });
 
 describe('the launch card view', () => {
+  it('says a wall-clock stop in words where it would say anchored', () => {
+    const v = launchCardView(item(), { ships: [ship({ status: 'anchored', stopped_by: 'wall_clock:60' })], undone: false });
+    expect(v.status).toBe('Stopped at the 60-minute wall clock');
+    expect(launchCardView(item(), { ships: [ship({ status: 'anchored', stopped_by: 'other' })], undone: false }).status).toBe('anchored');
+  });
+
   it('offers Stop, Undo and Mute rule for a live ship, with its status and a link to it', () => {
     const v = launchCardView(item(), { ships: [ship({ status: 'needs_you' })], undone: false });
     expect(v.actions).toEqual({ stop: true, undo: true, mute: true, promote: true });

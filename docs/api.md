@@ -586,7 +586,7 @@ Stop all worker-launched: stops every live (underway or needs you) ship an event
 
 ### The wall clock
 
-A worker-launched ship that is still underway or needs you when its fleet's `wall_clock_minutes` (60 by default) have passed since it launched is stopped by Admiral: it ends the harness process and keeps the pane, so the ship is `anchored` with `exit_signal` and `stopped_by: "wall_clock:<minutes>"`. Its launch record turns `failed` with the reason `stopped at the <minutes>-minute wall clock`, which counts toward the routine's circuit breaker, and, as for any failed record, no longer counts toward launches per hour or per sender. Promoted, hand and scheduled ships have no wall clock.
+A worker-launched ship that is still underway or needs you when its fleet's `wall_clock_minutes` (60 by default) have passed since it launched is stopped by Admiral: it ends the harness process and keeps the pane, so the ship is `anchored` with `exit_signal` and `stopped_by: "wall_clock:<minutes>"`. Its launch record turns `failed` with the reason `stopped at the <minutes>-minute wall clock`, which counts toward the routine's circuit breaker, and, as for any failed record, no longer counts toward launches per hour or per sender. Promoted, hand, scheduled and proposal-launched ships (an event ship the engineer launched from an accepted Inbox proposal) have no wall clock, take no worker slot and are not stopped by Stop all. The deadline counts from the launch record's time.
 
 ### Outside events: `POST /api/fleets/<key>/routines/<id>/mute`, event proposals and event cards
 

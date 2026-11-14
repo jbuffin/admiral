@@ -15,6 +15,7 @@ import {
   formOfRoutine,
   holdFireBanner,
   holdFireNote,
+  stopAllConfirm,
   stopAllLabel,
   blankForm,
   errorText,
@@ -289,5 +290,15 @@ describe('the Stop all worker-launched button', () => {
   it('is disabled with nothing to stop, and while the count is not known yet', () => {
     expect(stopAllLabel(0, 'fleet')).toEqual({ label: 'Stop all worker-launched (0)', disabled: true });
     expect(stopAllLabel(undefined, 'fleet')).toEqual({ label: 'Stop all worker-launched', disabled: true });
+  });
+});
+
+describe('the Stop all worker-launched confirm', () => {
+  it('names this fleet, and says Undo and Promote still work', () => {
+    expect(stopAllConfirm('fleet')).toBe('Stops every ship an outside event started in this fleet. Their clones stay, so Undo and Promote still work.');
+  });
+
+  it('names every fleet for the global button', () => {
+    expect(stopAllConfirm('all')).toBe('Stops every ship an outside event started in every fleet. Their clones stay, so Undo and Promote still work.');
   });
 });

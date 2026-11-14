@@ -816,6 +816,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .routines-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 12px; }
 .routines-head h1 { margin: 0; }
 .holdfire-toggles, .routine-switches { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.holdfire-toggle { flex-wrap: wrap; }
 .holdfire-toggle, .routine-switch { display: inline-flex; align-items: center; gap: 10px; min-height: var(--shape-min-touch-target); }
 .routine-form { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
 .routine-form fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }

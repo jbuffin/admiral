@@ -83,18 +83,21 @@ function HoldFireToggles({ fleet }: { fleet: Fleet }) {
   };
   return (
     <div class="holdfire-toggles">
-      <span class="holdfire-toggle">
-        Hold fire <Switch label="Hold fire" on={!!state?.fleet.on} busy={busy || !state} onToggle={() => void flip('fleet')} />
-      </span>
-      <span class="holdfire-toggle">
-        All fleets <Switch label="Hold fire, all fleets" on={!!state?.global.on} busy={busy || !state} onToggle={() => void flip('all')} />
-      </span>
       {(['fleet', 'all'] as const).map((scope) => {
         const { label, disabled } = stopAllLabel(scope === 'all' ? state?.all_worker_ships : state?.worker_ships, scope);
         return (
-          <button type="button" class="btn" key={scope} disabled={busy || disabled} onClick={() => setConfirming(scope)}>
-            {label}
-          </button>
+          <span class="holdfire-toggle" key={scope}>
+            {scope === 'all' ? 'All fleets' : 'Hold fire'}{' '}
+            <Switch
+              label={scope === 'all' ? 'Hold fire, all fleets' : 'Hold fire'}
+              on={!!(scope === 'all' ? state?.global.on : state?.fleet.on)}
+              busy={busy || !state}
+              onToggle={() => void flip(scope)}
+            />
+            <button type="button" class="btn" disabled={busy || disabled} onClick={() => setConfirming(scope)}>
+              {label}
+            </button>
+          </span>
         );
       })}
       {confirming ? (
