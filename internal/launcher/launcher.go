@@ -451,6 +451,10 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			delete(env, k)
 			unset = append(unset, k)
 		}
+		// A nested repo a ship plants can name its own fsmonitor; this reaches the git that Claude Code runs and any git it starts in a submodule.
+		n, _ := strconv.Atoi(env["GIT_CONFIG_COUNT"])
+		env["GIT_CONFIG_KEY_"+strconv.Itoa(n)], env["GIT_CONFIG_VALUE_"+strconv.Itoa(n)] = "core.fsmonitor", "false"
+		env["GIT_CONFIG_COUNT"] = strconv.Itoa(n + 1)
 	}
 
 	// A Commodore on Claude compacts at 200k tokens; only the fleet's own env

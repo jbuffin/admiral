@@ -80,8 +80,8 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 		// The sandbox guards only .git/hooks and config; unsandboxed git reads the rest, and Edit and Write bypass the sandbox.
 		gitDir := filepath.Join(checkout, ".git")
 		filesystem["denyWrite"] = []any{filepath.Join(gitDir, "commondir"), filepath.Join(gitDir, "config.worktree"),
-			filepath.Join(gitDir, "info"), filepath.Join(gitDir, "modules"), filepath.Join(gitDir, "objects", "info")}
-		deny = append(deny, "Edit(/"+gitDir+"/**)", "Write(/"+gitDir+"/**)")
+			filepath.Join(gitDir, "info"), filepath.Join(gitDir, "modules"), filepath.Join(gitDir, "objects", "info"), filepath.Join(checkout, ".gitmodules")}
+		deny = append(deny, "Edit(/"+gitDir+"/**)", "Write(/"+gitDir+"/**)", "Edit(/"+filepath.Join(checkout, ".gitmodules")+")", "Write(/"+filepath.Join(checkout, ".gitmodules")+")")
 	case standing.Investigate:
 		report := "/" + filepath.Join(checkout, ".admiral", "report.md")
 		allow = []any{"Write(" + report + ")", "Edit(" + report + ")"}
@@ -133,6 +133,9 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 	// A relaunch or a new round of a restricted ship keeps working in its own clone.
 	if existing, err := filepath.EvalSymlinks(filepath.Join(home, "checkouts", session)); req.Session != "" && err == nil {
 		made.checkout, made.reused = existing, true
+		if err := checkClonedSubmodules(made.checkout, req.Dir); err != nil {
+			return nil, restrictedShip{}, refuse(http.StatusInternalServerError, "%v", err)
+		}
 		if err := resetClonedGit(made.checkout, objectDirs); err != nil {
 			return nil, restrictedShip{}, refuse(http.StatusInternalServerError, "%v", err)
 		}
@@ -288,6 +291,72 @@ func resetClonedGit(checkout string, objectDirs []string) error {
 func ignoreSubmodules(config string) error {
 	if out, err := exec.Command("git", "config", "--file", config, "diff.ignoreSubmodules", "all").CombinedOutput(); err != nil {
 		return fmt.Errorf("git config in the clone: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// safeGit runs git in dir with nothing a repository can configure able to run a command: no fsmonitor, hooks, filters or user config.
+func safeGit(dir string, args ...string) (string, error) {
+	pre := []string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "diff.ignoreSubmodules=all", "-c", "core.hooksPath=/dev/null"}
+	cmd := exec.Command("git", append(pre, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_OPTIONAL_LOCKS=0")
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+// gitmodulesID is the blob id of .gitmodules in an ls-files -s or ls-tree listing, or "" when it has none.
+func gitmodulesID(listing string) string {
+	for _, line := range strings.Split(listing, "\n") {
+		if meta, path, ok := strings.Cut(line, "\t"); ok && path == ".gitmodules" {
+			if f := strings.Fields(meta); len(f) >= 3 && f[1] == "blob" {
+				return f[2]
+			} else if len(f) >= 2 {
+				return f[1]
+			}
+		}
+	}
+	return ""
+}
+
+// checkClonedSubmodules refuses a kept clone holding a gitlink or a .gitmodules other than dir's own: git
+// treats the pair as a submodule, enters whatever git directory a ship put under it, and runs its config.
+func checkClonedSubmodules(checkout, dir string) error {
+	if _, err := os.Lstat(filepath.Join(checkout, ".git")); err != nil {
+		return nil
+	}
+	want, err := safeGit(dir, "ls-tree", "HEAD", "--", ".gitmodules")
+	if err != nil {
+		return fmt.Errorf("could not read .gitmodules from the routine's repository: %v", err)
+	}
+	wantID := gitmodulesID(want)
+	index, err := safeGit(checkout, "ls-files", "-s")
+	if err != nil {
+		return fmt.Errorf("could not list the kept clone's index: %v", err)
+	}
+	head, err := safeGit(checkout, "ls-tree", "-r", "HEAD")
+	if err != nil {
+		return fmt.Errorf("could not list the kept clone's HEAD: %v", err)
+	}
+	for _, listing := range []string{index, head} {
+		for _, line := range strings.Split(listing, "\n") {
+			if strings.HasPrefix(line, "160000 ") {
+				return errors.New("the kept clone holds a gitlink, which git would treat as a submodule")
+			}
+		}
+		if id := gitmodulesID(listing); id != wantID {
+			return errors.New("the kept clone's .gitmodules differs from the routine's repository")
+		}
+	}
+	fi, err := os.Lstat(filepath.Join(checkout, ".gitmodules"))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+	case err != nil || !fi.Mode().IsRegular():
+		return errors.New("the kept clone's .gitmodules is not a plain file")
+	default:
+		got, err := safeGit(checkout, "hash-object", "--no-filters", "--", ".gitmodules")
+		if err != nil || strings.TrimSpace(got) != wantID {
+			return errors.New("the kept clone's .gitmodules differs from the routine's repository")
+		}
 	}
 	return nil
 }

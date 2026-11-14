@@ -526,3 +526,145 @@ func TestAReusedCloneMadeBeforeTheFixRunsNothingFromANestedRepoEither(t *testing
 	plantNestedRepo(t, clone, marker)
 	assertGitInTheCloneRunsNothingFromANestedRepo(t, clone, marker)
 }
+
+const submoduleOn = "[submodule \"sub\"]\n\tpath = sub\n\turl = x\n\tignore = none\n"
+
+// plantSubmodule is what a ship can do to turn the planted gitlink into a configured submodule, which overrides
+// diff.ignoreSubmodules: a .gitmodules in the working tree, only in the index, or only in a commit.
+func plantSubmodule(t *testing.T, clone, where string) {
+	t.Helper()
+	switch where {
+	case "tree":
+		if err := os.WriteFile(filepath.Join(clone, ".gitmodules"), []byte(submoduleOn), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	case "index", "commit":
+		blob := gitIn(t, clone, submoduleOn, "hash-object", "-w", "--stdin")
+		git(t, clone, "update-index", "--add", "--cacheinfo", "100644,"+blob+",.gitmodules")
+		if where == "commit" {
+			git(t, clone, "commit", "-q", "-m", "plant")
+			git(t, clone, "update-index", "--force-remove", ".gitmodules")
+		}
+	case "gitlink":
+	default:
+		t.Fatalf("unknown plant %q", where)
+	}
+}
+
+func gitIn(t *testing.T, dir, stdin string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Stdin = strings.NewReader(stdin)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// shipGitEnv is the git configuration a Draft fix ship's environment carries, as the harness recorded it.
+func shipGitEnv(t *testing.T) []string {
+	t.Helper()
+	_, _, _, env := newPinRig(t, nil).mustRestricted(t, standing.DraftFix)
+	var out []string
+	for k, v := range env {
+		if strings.HasPrefix(k, "GIT_CONFIG_") {
+			out = append(out, k+"="+v)
+		}
+	}
+	return out
+}
+
+func assertNoMarkerFromGit(t *testing.T, clone, marker string, env []string) {
+	t.Helper()
+	for _, args := range [][]string{{"status"}, {"diff"}, {"status", "--porcelain=2"}} {
+		cmd := exec.Command("git", append([]string{"-C", clone}, args...)...)
+		cmd.Env = append(os.Environ(), env...)
+		_ = cmd.Run()
+		if _, err := os.Stat(marker); err == nil {
+			t.Fatalf("git %v in the clone ran the nested repo's core.fsmonitor", args)
+		}
+	}
+}
+
+func TestADraftFixShipsGitCannotBeMadeToRunANestedReposFsmonitor(t *testing.T) {
+	env := shipGitEnv(t)
+	if len(env) == 0 {
+		t.Fatal("the ship's environment carries no git configuration")
+	}
+	for _, where := range []string{"tree", "index", "commit"} {
+		t.Run(where, func(t *testing.T) {
+			dir, home := t.TempDir(), t.TempDir()
+			commitRepo(t, dir)
+			clone, err := GitCheckouts{}.Make(home, "kelpie", dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(t.TempDir(), "ran")
+			plantNestedRepo(t, clone, marker)
+			plantSubmodule(t, clone, where)
+			assertNoMarkerFromGit(t, clone, marker, env)
+		})
+	}
+}
+
+func TestAFleetsOwnGitConfigurationInTheEnvironmentIsKeptBesideTheFsmonitorSetting(t *testing.T) {
+	p := newPinRig(t, map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "fleet"})
+	_, _, _, env := p.mustRestricted(t, standing.DraftFix)
+	if env["GIT_CONFIG_COUNT"] != "2" || env["GIT_CONFIG_KEY_0"] != "user.name" || env["GIT_CONFIG_VALUE_0"] != "fleet" ||
+		env["GIT_CONFIG_KEY_1"] != "core.fsmonitor" || env["GIT_CONFIG_VALUE_1"] != "false" {
+		t.Errorf("git config env = %v, want the fleet's entry kept and core.fsmonitor=false added", env)
+	}
+}
+
+func TestADraftFixShipsSandboxAndToolsCannotWriteGitmodules(t *testing.T) {
+	p := newPinRig(t, nil)
+	_, fc, argv, _ := p.mustRestricted(t, standing.DraftFix)
+	_, got := settingsOf(t, argv)
+	gm := filepath.Join(fc.madeFor, ".gitmodules")
+	if deny := strs(t, sub(t, got, "sandbox", "filesystem")["denyWrite"]); !slices.Contains(deny, gm) {
+		t.Errorf("denyWrite = %q, want %s", deny, gm)
+	}
+	permDeny := strs(t, sub(t, got, "permissions")["deny"])
+	for _, tool := range []string{"Edit", "Write"} {
+		if want := tool + "(/" + gm + ")"; !slices.Contains(permDeny, want) {
+			t.Errorf("permissions.deny = %q, want %s", permDeny, want)
+		}
+	}
+}
+
+func TestARelaunchRefusesAKeptCloneWhoseSubmoduleStateTheShipChanged(t *testing.T) {
+	for _, where := range []string{"gitlink", "tree", "index", "commit"} {
+		t.Run(where, func(t *testing.T) {
+			p := newPinRig(t, nil)
+			commitRepo(t, p.work)
+			clone := keptDraftFixClone(t, p, p.work, "kelpie")
+			marker := filepath.Join(t.TempDir(), "ran")
+			plantNestedRepo(t, clone, marker)
+			plantSubmodule(t, clone, where)
+			if _, err := relaunchDraftFix(t, p, p.work, "kelpie"); err == nil {
+				t.Error("a relaunch went ahead over a planted gitlink")
+			}
+			if _, err := os.Stat(marker); err == nil {
+				t.Error("Admiral's own git ran the nested repo's core.fsmonitor")
+			}
+			if _, err := os.Stat(clone); err != nil {
+				t.Errorf("the refused relaunch removed the kept clone: %v", err)
+			}
+		})
+	}
+}
+
+func TestARelaunchAcceptsADirsOwnGitmodulesThatTheShipLeftAlone(t *testing.T) {
+	p := newPinRig(t, nil)
+	commitRepo(t, p.work)
+	if err := os.WriteFile(filepath.Join(p.work, ".gitmodules"), []byte(submoduleOn), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, p.work, "add", ".gitmodules")
+	git(t, p.work, "commit", "-q", "-m", "modules")
+	keptDraftFixClone(t, p, p.work, "kelpie")
+	if _, err := relaunchDraftFix(t, p, p.work, "kelpie"); err != nil {
+		t.Errorf("a relaunch over the Dir's own .gitmodules was refused: %v", err)
+	}
+}
