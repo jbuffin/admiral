@@ -71,6 +71,11 @@ func (c *Client) MergeStack(ctx context.Context, repo string, stackNumber int, m
 	return c.merge(ctx, dir, c.stackEnv(repo), []string{"stack", "merge", strconv.Itoa(stackNumber), "--yes", "--merge-method", method}, method)
 }
 
+// LinkStack is not built yet.
+func (c *Client) LinkStack(ctx context.Context, repo string, numbers []int) error {
+	return errors.New("gh stack link is not built yet")
+}
+
 // stackEnv pins gh-stack to the repo and host given here, whatever the environment holds, and its git config can name no program to run.
 func (c *Client) stackEnv(repo string) []string {
 	return []string{

@@ -71,6 +71,27 @@
 #     merging nothing. With $FAKEGH_DIR/stack_merge.sleep it sleeps that many
 #     seconds first. The call directory's cwd file is where gh ran.
 #
+#   gh stack link N N ...   (no flags)
+#     the Stack on GitHub act, by PR numbers bottom to top: two or more positional
+#     integers and nothing else (a flag, one number or a non-integer exits 2;
+#     real gh would also take branches and URLs and push branches, which Admiral
+#     never asks for). Each number is keyed the way `pr merge` keys a URL:
+#     pr_detail/KEY for https://$GH_REPO/pull/N, where Admiral pins GH_REPO to
+#     HOST/OWNER/NAME. A number with no fixture exits 1. It refuses a PR whose
+#     fixture already holds a stack (exit 1): real gh would update that stack, so
+#     this guard is the fake's, and it catches a server that links a stacked
+#     shape. A fixture holding neither a stack nor `"stack":null` exits 2. On
+#     success it replaces `"stack":null` in every listed PR's fixture with one
+#     stack object, number first (the `stack merge` cue matches on it), then size
+#     and entries in argument order, each entry's position from 1 and its
+#     pullRequest holding number, url, headRefName, baseRefName and state as the
+#     fixture's own top-level fields give them, and exits 0. The stack's number is
+#     the content of $FAKEGH_DIR/stack_link.number, or 1 with no such file. With
+#     $FAKEGH_DIR/stack_link.fail it exits 1 and prints that file on stderr,
+#     linking nothing. With $FAKEGH_DIR/stack_link.sleep it sleeps that many
+#     seconds first. The call directory's cwd file is where gh ran. It reads the
+#     compact fixture the test helpers write, as `stack merge` does.
+#
 #   gh api graphql ...   (the repository's default merge method)
 #     Taken when an argument holds `viewerDefaultMergeMethod`, before the other
 #     graphql matches. Prints
@@ -263,6 +284,51 @@ pr)
 	exit 1
 	;;
 stack)
+	if [ "$2" = link ]; then
+		shift 2
+		nums=
+		for a in "$@"; do
+			case "$a" in
+			-*) echo "fakegh: unsupported argument to gh stack link: $a" >&2; exit 2 ;;
+			''|*[!0-9]*) echo "fakegh: gh stack link takes PR numbers, got $a" >&2; exit 2 ;;
+			esac
+			nums="$nums $a"
+		done
+		[ $# -ge 2 ] || { echo "fakegh: gh stack link takes two or more PR numbers, got $#" >&2; exit 2; }
+		for n in $nums; do
+			f="$FAKEGH_DIR/pr_detail/$(printf '%s' "https://$GH_REPO/pull/$n" | tr '/:' '__')"
+			[ -s "$f" ] || { echo "fakegh: no pull request $n in $GH_REPO" >&2; exit 1; }
+			if grep -q '"stack": *{' "$f"; then
+				echo "fakegh: pull request $n is already in a stack" >&2
+				exit 1
+			fi
+			grep -q '"stack":null' "$f" || { echo "fakegh: the fixture of pull request $n has no \"stack\":null to replace" >&2; exit 2; }
+		done
+		[ -s "$FAKEGH_DIR/stack_link.sleep" ] && sleep "$(cat "$FAKEGH_DIR/stack_link.sleep")"
+		if [ -e "$FAKEGH_DIR/stack_link.fail" ]; then
+			cat "$FAKEGH_DIR/stack_link.fail" >&2
+			exit 1
+		fi
+		number=1
+		[ -s "$FAKEGH_DIR/stack_link.number" ] && number=$(tr -d '[:space:]' < "$FAKEGH_DIR/stack_link.number")
+		entries= pos=0
+		for n in $nums; do
+			pos=$((pos + 1))
+			url="https://$GH_REPO/pull/$n"
+			f="$FAKEGH_DIR/pr_detail/$(printf '%s' "$url" | tr '/:' '__')"
+			st=$(grep -o '"state":"[A-Z]*"' "$f" | head -1)
+			hd=$(grep -o '"headRefName":"[^"]*"' "$f" | head -1)
+			bs=$(grep -o '"baseRefName":"[^"]*"' "$f" | head -1)
+			[ -z "$entries" ] || entries="$entries,"
+			entries="$entries{\"position\":$pos,\"pullRequest\":{\"number\":$n,\"url\":\"$url\",$hd,$bs,$st}}"
+		done
+		stack="{\"number\":$number,\"size\":$pos,\"entries\":{\"nodes\":[$entries]}}"
+		for n in $nums; do
+			f="$FAKEGH_DIR/pr_detail/$(printf '%s' "https://$GH_REPO/pull/$n" | tr '/:' '__')"
+			sed "s|\"stack\":null|\"stack\":$stack|" "$f" > "$call_dir/detail.tmp" && mv "$call_dir/detail.tmp" "$f"
+		done
+		exit 0
+	fi
 	[ "$2" = merge ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
 	shift 2
 	yes=0 method= target= ntarget=0
