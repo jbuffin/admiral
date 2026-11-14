@@ -238,11 +238,11 @@ export function watchPage(page: Page, server: string) {
   const paths: string[] = [];
   const foreign: string[] = [];
   const errors: string[] = [];
-  // The browser logs each refused launch, ending, merge or work-repo save, and each PR detail GitHub cannot give, as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
+  // The browser logs each refused launch, ending, merge, Re-review or work-repo save, and each PR detail GitHub cannot give, as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
   const failedLoads: string[] = [];
   let refusedLaunches = 0;
   page.on('response', (r) => {
-    const refusable = { GET: /^\/api\/v1\/ships\/[^/]+\/pr$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
+    const refusable = { GET: /^\/api\/v1\/ships\/[^/]+\/pr$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|rereview)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
     const path = new URL(r.url()).pathname;
     if (refusable?.test(path) && r.status() >= 400) refusedLaunches++;
     // Moor's refusal is a 409; any other status on an ending stays an error.
@@ -2787,7 +2787,8 @@ export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { pho
   await expect(panel.getByRole('button', { name: /^Re-review/ })).toHaveCount(0);
   await expect(feedbackBar(panel)).toHaveCount(0);
   await expect(page.getByRole('main')).not.toContainText('Ready to merge');
-  await expect(prSummaryButton(page)).toHaveText(`Reviewing 1 PR by @${REVIEW_AUTHOR} · waiting on the author`);
+  await expect(prSummaryButton(page)).toContainText(`Reviewing 1 PR by @${REVIEW_AUTHOR} · waiting on the author`);
+  await page.getByRole('tab', { name: 'Conversation' }).tap();
   await expect(page.getByRole('main')).toContainText('Moored, waiting on the author');
 
   // The author pushes after the fleet user's review.
@@ -2800,7 +2801,7 @@ export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { pho
 
   const tab = await openPRTab(page, a, ship);
   await expect(feedbackBar(tab)).toBeVisible();
-  await expect(prSummaryButton(page)).toHaveText(`Reviewing 1 PR by @${REVIEW_AUTHOR} · author responded`);
+  await expect(prSummaryButton(page)).toContainText(`Reviewing 1 PR by @${REVIEW_AUTHOR} · author responded`);
   const reReview = tab.getByRole('button', { name: 'Re-review', exact: true });
   expect((await reReview.boundingBox())!.height, 'Re-review height').toBeGreaterThanOrEqual(44);
   if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);

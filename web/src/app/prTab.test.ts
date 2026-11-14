@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Ship } from './api';
-import { actingWhile, chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs, chooseStack, reviewMark, reviewStackBar } from './prTab';
+import { actingWhile, chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs, reviewMark, reviewStackBar } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -322,7 +322,7 @@ describe('reviewStackBar', () => {
     const prUrl = 'https://github.com/acme/api/pull/6';
     expect(reviewStackBar(stackShip([pr(6, { reviewing: true, author: 'dana' }), pr(9)], prUrl))).toBe('');
     expect(reviewStackBar(stackShip(layers('dana'), prUrl))).toBe('');
-    expect(reviewStackBar(stackShip(layers('dana'), undefined))).toBe('');
+    expect(reviewStackBar(stackShip(layers('dana'), ''))).toBe('');
   });
 
   it('is empty for a stack the fleet opened', () => {

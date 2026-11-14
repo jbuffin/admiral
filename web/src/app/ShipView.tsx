@@ -16,7 +16,7 @@ import { PRTab } from './ShipPRs';
 import { openCount, prSummary } from './prTab';
 import { ReadyToMerge } from './StatusGlyph';
 import { useSeenOnLeave } from './seen';
-import { NO_RESUME_NOTE, prLabel } from './moored';
+import { NO_RESUME_NOTE, prLabel, reviews } from './moored';
 import { usageRow, watchUsage, type ShipUsage } from './shipUsage';
 import { boxState } from './messageBox';
 import { Sheet } from './Sheet';
@@ -459,7 +459,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const Heading = title ? 'h1' : 'h2';
   const mooredCard = (
     <div class="convo-card">
-      <p class="convo-card-title">Moored, waiting on review</p>
+      <p class="convo-card-title">{reviews(ship) ? 'Moored, waiting on the author' : 'Moored, waiting on review'}</p>
       <p class="line">Send a message or tap Wake to start the next round.</p>
     </div>
   );

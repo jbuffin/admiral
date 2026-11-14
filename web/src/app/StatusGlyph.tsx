@@ -1,4 +1,5 @@
 import type { Ship } from './api';
+import { reviews } from './moored';
 import type { VisibleStatus } from './shipList';
 
 // Paths copied from designs/redesign/icons/status-*.svg; the colour comes from the surrounding text colour.
@@ -44,8 +45,9 @@ export function StatusGlyph({ status }: { status: VisibleStatus | 'ready' }) {
 }
 
 /** A moored ship whose whole stack can merge now; it stays in the Moored group. */
-export function ReadyToMerge({ ship }: { ship: Pick<Ship, 'status' | 'stack_ready'> }) {
-  if (ship.status !== 'moored' || !ship.stack_ready) return null;
+export function ReadyToMerge({ ship }: { ship: Pick<Ship, 'status' | 'stack_ready' | 'prs'> }) {
+  // Admiral doesn't merge a reviewed PR, though the server serves stack_ready for it.
+  if (ship.status !== 'moored' || !ship.stack_ready || reviews(ship)) return null;
   return (
     <span class="ready-badge">
       <StatusGlyph status="ready" /> Ready to merge

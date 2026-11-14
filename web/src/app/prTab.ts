@@ -1,5 +1,5 @@
 import type { MooredPR, PRStack, Ship } from './api';
-import { prChips, type ChipTone } from './moored';
+import { isStackUrl, prChips, type ChipTone } from './moored';
 
 export type DetailTone = ChipTone | 'rev';
 export interface DetailChip {
@@ -12,11 +12,16 @@ const open = (prs: MooredPR[] | undefined) => (prs ?? []).filter((p) => p.state 
 
 export const openCount = (prs: MooredPR[] | undefined): number => open(prs).length;
 
-/** The ship view's one line about its open PRs, or '' when none is open. The server's `ready` decides, and there is no per-PR feedback flag to name. */
+const by = (author: string | undefined) => (author ? ` by @${author}` : '');
+const plural = (n: number) => (n === 1 ? '1 PR' : `${n} PRs`);
+
+/** The ship view's one line about its open PRs, or '' when none is open. The server's `ready` decides; a reviewed PR never reads as ready to merge, since Admiral doesn't merge it. */
 export function prSummary(prs: MooredPR[] | undefined): string {
   const live = open(prs);
   if (live.length === 0) return '';
-  const n = live.length === 1 ? '1 PR' : `${live.length} PRs`;
+  const reviewed = live.filter((p) => p.reviewing);
+  if (reviewed.length > 0) return `Reviewing ${plural(reviewed.length)}${by(reviewed[0].author)} · ${reviewed.some((p) => p.responded) ? 'author responded' : 'waiting on the author'}`;
+  const n = plural(live.length);
   const blocked = live.find((p) => !p.ready);
   if (!blocked) return `${n} · Ready to merge`;
   const why = blocked.review === 'CHANGES_REQUESTED' ? 'changes requested' : blocked.checks === 'FAILURE' || blocked.checks === 'ERROR' ? 'checks failing' : 'waiting on review';
@@ -62,10 +67,15 @@ export function orderPRs(prs: MooredPR[], stack: Pick<PRStack, 'entries'> | null
 export const defaultPR = (ordered: MooredPR[]): MooredPR | undefined => ordered.find((p) => p.state === 'OPEN') ?? ordered[0];
 
 /** The role mark in a PR's header: `Reviewing · by @author`, `Reviewing` before a poll has the author, '' for an own PR. */
-export const reviewMark = (_pr: Pick<MooredPR, 'reviewing' | 'author'>): string => '';
+export const reviewMark = (pr: Pick<MooredPR, 'reviewing' | 'author'>): string => (pr.reviewing ? `Reviewing${pr.author ? ` · by @${pr.author}` : ''}` : '');
 
 /** The stack bar of a ship reviewing a GitHub stack, or '' for any other ship. */
-export const reviewStackBar = (_ship: Pick<Ship, 'url' | 'prs'>): string => '';
+export function reviewStackBar(ship: Pick<Ship, 'url' | 'prs'>): string {
+  // A PR-URL ship that also carries its own PRs is no stack, so the order's URL decides.
+  if (!isStackUrl(ship.url)) return '';
+  const layers = (ship.prs ?? []).filter((p) => p.reviewing);
+  return layers.length >= 2 ? `Reviewing a GitHub stack${by(layers[0].author)} · ${layers.length} PRs, bottom to top.` : '';
+}
 
 export const stackBarText = (stacked: number, hasStack: boolean): string => (hasStack && stacked >= 2 ? `Stacked on GitHub · ${stacked} PRs, bottom to top.` : '');
 

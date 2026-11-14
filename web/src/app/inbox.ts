@@ -1,4 +1,5 @@
 import type { CrewBoat, Ship } from './api';
+import { respondedPRs, reviews } from './moored';
 
 // The Inbox queue of the new shell: items and needs-you stops across every fleet. It is pure: time comes in
 // as `now` and nothing here sets a timer or reads a signal.
@@ -74,8 +75,10 @@ const isBack = (c?: CrewBoat) => c?.status === 'underway' || c?.status === 'idle
 // A sailing-off ship's session is about to die with its crew, so none of them waits on you.
 const waiting = (s: Ship) => (s.status === 'sailing_off' ? [] : (s.crew ?? []).filter((c) => c.status === 'needs_you'));
 
-// A moored ship whose whole stack can merge now.
-const readyToMerge = (s: Ship) => s.status === 'moored' && s.stack_ready === true;
+// A moored ship whose whole stack can merge now. A reviewed PR never merges here, though the server serves stack_ready for it.
+const readyToMerge = (s: Ship) => s.status === 'moored' && s.stack_ready === true && !reviews(s);
+// A moored ship reviewing a PR whose author has responded since the fleet's review.
+const needsReReview = (s: Ship) => s.status === 'moored' && respondedPRs(s).length > 0;
 
 const shipFleet = (s: Ship): EntryFleet => ({ key: s.fleet, name: s.fleet_name ?? '', color: s.fleet_color });
 const itemFleet = (it: InboxItem): EntryFleet | undefined =>
@@ -104,6 +107,9 @@ export function createInboxQueue() {
   const merged = new Set<string>();
   const stopFirstSeen = new Map<string, number>();
   const mergeFirstSeen = new Map<string, number>();
+  // Re-reviewed ships a stale push may still serve moored and responded: they stay out until that stops.
+  const reReviewed = new Set<string>();
+  const reviewFirstSeen = new Map<string, number>();
   // A crew stop's start, kept from first sight: the server keeps none for a crew boat.
   const crewSince = new Map<string, number>();
 
@@ -122,6 +128,10 @@ export function createInboxQueue() {
       const mk = mergeKey(s.session);
       if (readyToMerge(s) && !merged.has(mk) && !held.has(mk)) {
         out.push({ key: mk, type: 'merge', session: s.session, ship: s, folded: null, since: mergeFirstSeen.get(mk) ?? 0, fleet: shipFleet(s) });
+      }
+      const rk = rereviewKey(s.session);
+      if (needsReReview(s) && !reReviewed.has(rk) && !held.has(rk)) {
+        out.push({ key: rk, type: 'rereview', session: s.session, ship: s, folded: null, since: reviewFirstSeen.get(rk) ?? 0, fleet: shipFleet(s) });
       }
       for (const c of waiting(s)) {
         const ck = crewKey(s.session, c.name);
@@ -161,6 +171,13 @@ export function createInboxQueue() {
           mergeFirstSeen.delete(mk);
           merged.delete(mk);
         }
+        const rk = rereviewKey(s.session);
+        if (needsReReview(s)) {
+          if (!reviewFirstSeen.has(rk)) reviewFirstSeen.set(rk, now);
+        } else {
+          reviewFirstSeen.delete(rk);
+          reReviewed.delete(rk);
+        }
         const key = stopKey(s.session);
         if (needsYou(s) && !stopFirstSeen.has(key)) stopFirstSeen.set(key, now);
         if (!needsYou(s)) stopFirstSeen.delete(key);
@@ -172,6 +189,8 @@ export function createInboxQueue() {
       }
       for (const mk of [...mergeFirstSeen.keys()]) if (!ships.has(mk.slice('merge:'.length))) mergeFirstSeen.delete(mk);
       for (const mk of merged) if (!ships.has(mk.slice('merge:'.length))) merged.delete(mk);
+      for (const rk of [...reviewFirstSeen.keys()]) if (!ships.has(rk.slice('rereview:'.length))) reviewFirstSeen.delete(rk);
+      for (const rk of reReviewed) if (!ships.has(rk.slice('rereview:'.length))) reReviewed.delete(rk);
       for (const ck of crewSince.keys()) if (!live.has(ck)) crewSince.delete(ck);
       input = next;
       served = merge();
@@ -183,6 +202,7 @@ export function createInboxQueue() {
       if (!entry || held.has(key)) return;
       if (entry.type === 'item') answered.add(key);
       if (entry.type === 'merge') merged.add(key);
+      if (entry.type === 'rereview') reReviewed.add(key);
       held.set(key, { entry: { ...entry, folded: null }, text, until: now + HOLD_MS });
       served = merge();
     },

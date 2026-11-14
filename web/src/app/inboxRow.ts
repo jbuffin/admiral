@@ -2,6 +2,8 @@ import type { Fleet } from './api';
 import { readCrewMember } from './crewItems';
 import { fleetPaint } from './fleetPaint';
 import type { Entry } from './inbox';
+import { respondedPRs } from './moored';
+import { prNumber } from './prTab';
 import { shipAge } from './shipList';
 
 export function reasonWords(code: string): string {
@@ -26,6 +28,11 @@ const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 // The phrase reads after the ship name: "Dory asked", "Dory wants to run Bash".
 export function rowVerb(e: Entry): string {
   if (e.type === 'merge') return 'is ready to merge';
+  if (e.type === 'rereview') {
+    const [first, ...more] = respondedPRs(e.ship ?? {});
+    const rest = more.length === 0 ? '' : more.length === 1 ? ` and #${prNumber(more[0].url)}` : ` and ${more.length} more`;
+    return `${first?.author ? `@${first.author} ` : ''}responded on #${first ? prNumber(first.url) : ''}${rest}`;
+  }
   if (e.type === 'stop') return lower(reasonWords(e.crew?.reason ?? e.ship?.reason ?? ''));
   switch (e.item?.kind) {
     case 'question':

@@ -1,4 +1,5 @@
 import type { MooredPR, Ship } from './api';
+import { prSummary } from './prTab';
 import { shipAge } from './shipList';
 
 export type ChipTone = 'ok' | 'err' | 'muted';
@@ -83,11 +84,22 @@ function prStep(prs: MooredPR[]): string {
   return '';
 }
 
+/** A GitHub stack URL, `https://<host>/<owner>/<repo>/stack/<N>`. */
+export const isStackUrl = (url: string | undefined): boolean => /\/stack\/\d+\/?$/.test(url ?? '');
+
 /** Whether the ship carries a PR it reviews rather than one it opened. */
-export const reviews = (_ship: Pick<Ship, 'prs'>): boolean => false;
+export const reviews = (ship: Pick<Ship, 'prs'>): boolean => (ship.prs ?? []).some((p) => p.reviewing);
+
+/** The reviewed PRs whose author has responded since the fleet's review, bottom layer first. */
+export const respondedPRs = (ship: Pick<Ship, 'prs'>): MooredPR[] => (ship.prs ?? []).filter((p) => p.reviewing && p.responded && p.state === 'OPEN');
+
+/** The URL Re-review wakes the ship with: the stack's when the ship reviews one, else the lowest responded PR's. Exactly as served. */
+export const reReviewUrl = (ship: Pick<Ship, 'prs' | 'url'>): string => (isStackUrl(ship.url) ? ship.url! : (respondedPRs(ship)[0]?.url ?? ''));
 
 /** What a carrying ship does next: `ready` when its whole stack can merge (rendered by ReadyToMerge), else the ship's own note, else what its PR waits on. */
 export function nextStep(ship: Ship): { ready: boolean; text: string } {
+  // Admiral doesn't merge a reviewed PR, though the server still serves stack_ready for it.
+  if (reviews(ship)) return { ready: false, text: prSummary(ship.prs) };
   if (ship.stack_ready) return { ready: true, text: '' };
   return { ready: false, text: rowButtons(ship, false).note || prStep(ship.prs ?? []) };
 }
