@@ -586,9 +586,13 @@ func TestARestrictedShipDropsTheEnvVarsThatCarryGitConfigAskpassAndTheSshAgent(t
 	p := newPinRig(t, fleetEnv)
 	_, _, _, env := p.mustRestricted(t, standing.DraftFix)
 	for k := range fleetEnv {
-		if v, ok := env[k]; ok {
+		if v, ok := env[k]; ok && !strings.HasPrefix(k, "GIT_CONFIG_") {
 			t.Errorf("%s = %q in a restricted ship's env, want it unset", k, v)
 		}
+	}
+	// The fleet's entries are gone; the one left is Admiral's own.
+	if env["GIT_CONFIG_COUNT"] != "1" || env["GIT_CONFIG_KEY_0"] != "core.fsmonitor" || env["GIT_CONFIG_VALUE_0"] != "false" || env["GIT_CONFIG_PARAMETERS"] != "" {
+		t.Errorf("git config env = %v, want only core.fsmonitor=false", env)
 	}
 }
 
