@@ -1,5 +1,6 @@
 import { call, type Ship } from './api';
 import type { LaunchCard } from './chat';
+import { wallClockNote } from './messageBox';
 import { shipPath } from './router';
 
 export interface LaunchCardView {
@@ -34,7 +35,7 @@ export function launchCardView(item: { text: string; card: LaunchCard }, o: { sh
     text: item.text,
     ship: c.ship,
     shipHref: shipPath(c.ship),
-    status: live?.status ?? '',
+    status: live ? wallClockNote(live) || live.status : '',
     actions: { stop: !!live && !o.undone, undo: !o.undone && !promoted, mute: (c.mute_by?.length ?? 0) > 0, promote: c.restricted === 'draft_fix' && !o.undone && !promoted },
     undone: o.undone,
     notice: o.undone ? 'Launch undone: the ship was stopped and its local work deleted.' : promoted ? `Promoted to ${promoted}` : '',

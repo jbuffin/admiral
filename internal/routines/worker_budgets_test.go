@@ -27,6 +27,7 @@ type budgetShips struct {
 	status   map[string]string
 	extra    []routines.ListedShip
 	ends     []endCall
+	endErr   error
 	visible  int // the host lists a launch only once the event that made it is done
 }
 
@@ -54,7 +55,7 @@ func (b *budgetShips) end(session string, minutes int) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.ends = append(b.ends, endCall{session, minutes})
-	return nil
+	return b.endErr
 }
 
 func (b *budgetShips) list() []routines.ListedShip {
@@ -195,6 +196,19 @@ func TestAWorkerShipPastTheWallClockIsEndedOnceAndItsRecordFailsWithTheReason(t 
 	}
 }
 
+func TestAHarnessThatHadEndedOnItsOwnIsNotMarkedWithTheWallClockReason(t *testing.T) {
+	h, rs, b := budgetRun(t, 100, 60, 1)
+	b.fire()
+	b.endErr = routines.ErrAlreadyEnded
+	h.tickAt(day0.Add(61 * time.Minute))
+	if got := b.endCalls(); len(got) != 1 {
+		t.Fatalf("ended %v, want one try", got)
+	}
+	if rec := h.latest(rs[0]); rec.Outcome != routines.Launched {
+		t.Errorf("record = %s %q, want it left launched for the ended-ship check", rec.Outcome, rec.Reason)
+	}
+}
+
 func TestTheWallClockReadsTheFleetsOwnLimit(t *testing.T) {
 	h, _, b := budgetRun(t, 100, 30, 1)
 	b.fire()
@@ -226,6 +240,20 @@ func TestTheWallClockLeavesScheduledHandAndPromotedShipsAlone(t *testing.T) {
 	h.tickAt(h.clock.Now().Add(61 * time.Minute))
 	if got := b.endCalls(); len(got) != 1 || got[0].session != "ship-2" {
 		t.Errorf("ended %v at 61 minutes, want only the worker ship ship-2 (not the scheduled ship-1, hand-1 or the promoted swift-heron)", got)
+	}
+}
+
+func TestAShipLaunchedFromAnAcceptedEventProposalIsLeftAloneByTheWallClock(t *testing.T) {
+	h, rs, b := budgetRun(t, 100, 60, 1)
+	if _, err := h.sched.Store.AppendTrigger("work", routines.Trigger{Routine: rs[0].ID, Outcome: routines.Launched, Tier: "T2", Event: "https://x/9", Via: routines.ViaProposal, Ship: "proposed-1", At: h.clock.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	b.extra = []routines.ListedShip{{Session: "proposed-1", Fleet: "work", Routine: "routine:" + rs[0].ID, Launched: h.clock.Now().UTC().Format(time.RFC3339), Status: "underway"}}
+	b.mu.Unlock()
+	h.tickAt(h.clock.Now().Add(61 * time.Minute))
+	if got := b.endCalls(); len(got) != 0 {
+		t.Errorf("ended %v at 61 minutes, want nothing for a ship the engineer launched from a proposal", got)
 	}
 }
 

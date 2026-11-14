@@ -106,7 +106,8 @@ type LiveShip struct {
 // ListedShip is what the lookup reads of a listed ship: Routine is its routine:<id> key, Launched its RFC 3339 launch time, when it has one, and Status its ship status.
 type ListedShip struct{ Session, Fleet, Routine, Launched, Status string }
 
-// EventShips picks the listed ships of fleet that an event launch started. recs is newest first, so the first record per session is the
+// EventShips picks the listed ships of fleet that an event launch started on its own, not from an accepted
+// proposal. recs is newest first, so the first record per session is the
 // current launch; session names are reused, so the ship must still hold that record's routine key and not predate the record.
 func EventShips(fleet string, recs []Trigger, listed []ListedShip) []LiveShip {
 	newest := map[string]Trigger{}
@@ -118,17 +119,14 @@ func EventShips(fleet string, recs []Trigger, listed []ListedShip) []LiveShip {
 	var out []LiveShip
 	for _, sh := range listed {
 		rec, ok := newest[sh.Session]
-		if !ok || sh.Fleet != fleet || sh.Routine != routineKey(rec.Routine) {
+		if !ok || rec.Via == ViaProposal || sh.Fleet != fleet || sh.Routine != routineKey(rec.Routine) {
 			continue
 		}
-		launched := rec.At
-		if at, err := time.Parse(time.RFC3339, sh.Launched); err == nil {
-			if at.Before(rec.At.Truncate(time.Second)) {
-				continue
-			}
-			launched = at
+		// the wall clock starts from Admiral's own record, not from a time the ship's tmux session holds
+		if at, err := time.Parse(time.RFC3339, sh.Launched); err == nil && at.Before(rec.At.Truncate(time.Second)) {
+			continue
 		}
-		out = append(out, LiveShip{Session: sh.Session, DedupeKey: rec.DedupeKey, Ended: !isLiveStatus(sh.Status), Trigger: rec.ID, Launched: launched})
+		out = append(out, LiveShip{Session: sh.Session, DedupeKey: rec.DedupeKey, Ended: !isLiveStatus(sh.Status), Trigger: rec.ID, Launched: rec.At})
 	}
 	return out
 }

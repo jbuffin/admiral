@@ -87,7 +87,8 @@ type Scheduler struct {
 	// Live says what the ships hold for the rates and the dedupe_key; nil holds none.
 	Live EventLoad
 	// Listed reads the host's ships for the wall clock; EndHarness ends a ship's harness process, keeps its pane and notes the wall clock's minutes as the reason.
-	Listed     func() []ListedShip
+	Listed func() []ListedShip
+	// It answers ErrAlreadyEnded for a harness that had ended on its own.
 	EndHarness func(session string, minutes int) error
 	// Acts, when set, receives each Reported or Proposed event decision. Nil records only.
 	Acts EventActs
@@ -324,6 +325,7 @@ func (s *Scheduler) catchUp(ctx context.Context) error {
 func (s *Scheduler) Tick(ctx context.Context) error {
 	s.init()
 	err := s.tick(ctx)
+	s.wallClock(s.Clock.Now())
 	s.handOff()
 	return err
 }
@@ -374,7 +376,6 @@ func (s *Scheduler) tick(ctx context.Context) error {
 	s.expireProposals(now)
 	// after the breaker's count above, so a failure counts from the next tick on
 	s.markEnded(now)
-	s.wallClock(now)
 	return nil
 }
 

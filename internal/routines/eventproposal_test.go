@@ -189,3 +189,15 @@ func TestEventShipsSkipAHandLaunchedShipThatReusesAName(t *testing.T) {
 		t.Errorf("a ship with no launch time = %v, want counted by its routine key", got)
 	}
 }
+
+func TestEventShipsSkipAShipLaunchedFromAnAcceptedProposal(t *testing.T) {
+	at := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	recs := []routines.Trigger{
+		{Routine: "rt", Ship: "alpha", Event: "https://github.com/acme/api/issues/9", Via: routines.ViaProposal, At: at.Add(time.Hour)},
+		{Routine: "rt", Ship: "alpha", Event: "https://github.com/acme/api/issues/7", At: at},
+	}
+	listed := []routines.ListedShip{{Session: "alpha", Fleet: "work", Routine: "routine:rt", Launched: at.Add(time.Hour).UTC().Format(time.RFC3339), Status: "underway"}}
+	if got := routines.EventShips("work", recs, listed); len(got) != 0 {
+		t.Errorf("EventShips = %v, want none: the engineer launched alpha from a proposal, so no cap, wall clock or Stop all applies", got)
+	}
+}

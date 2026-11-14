@@ -39,6 +39,7 @@ The e2e harness shortens Admiral's production delays through environment variabl
 - `ADMIRAL_NO_HOOK_WAIT` (10 s): set only by the tests of the no-hook rule.
 - `ADMIRAL_CALL_TIMEOUT` (10 s, a plugin's time to answer): set only by the tests of a hung plugin.
 - `ADMIRAL_BRIDGE_IDLE` (30 s): set only by the tests of the bridge's linger.
+- `ADMIRAL_WALL_CLOCK_MINUTE` (1 min): the unit of a fleet's `wall_clock_minutes`, which is also what sets how soon the scheduler checks a worker ship's deadline. The wall-clock e2e sets `3s`.
 - `ADMIRAL_CHAT_RESET_IDLE` (10 min): AdmiralBot's short idle window before a scheduled reset; the long window is 6 times it. Set only by the tests of scheduled resets.
 - `ADMIRAL_CHAT_FLUSH_WAIT` (3 min): how long a reset or an idle New chat waits for the hidden flush turn. Set only by the tests of an abandoned flush.
 

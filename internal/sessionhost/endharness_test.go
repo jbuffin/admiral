@@ -2,8 +2,13 @@
 package sessionhost
 
 import (
+	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -89,5 +94,78 @@ func TestEndHarnessOnAShipThatIsNotListedIsAnError(t *testing.T) {
 	h, ctx := testHost(t)
 	if err := h.EndHarness(ctx, "nobody", "wall_clock:60", time.Second); err == nil {
 		t.Error("EndHarness of an unlisted ship answered nil, want an error")
+	}
+}
+
+// childPID reads the pid a ship's script wrote, and kills it when the test ends so a failure leaks nothing.
+func childPID(t *testing.T, file string) int {
+	t.Helper()
+	var pid int
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if b, err := os.ReadFile(file); err == nil {
+			if pid, err = strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
+				t.Cleanup(func() { syscall.Kill(pid, syscall.SIGKILL) })
+				return pid
+			}
+		}
+	}
+	t.Fatalf("the ship never wrote %s", file)
+	return 0
+}
+
+func waitGone(t *testing.T, pid int) {
+	t.Helper()
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			return
+		}
+	}
+	t.Errorf("process %d is still running after EndHarness", pid)
+}
+
+func TestEndHarnessKillsAChildThatIgnoresTermAndHupInTheSameGroup(t *testing.T) {
+	h, ctx := testHost(t)
+	file := filepath.Join(t.TempDir(), "child.pid")
+	startShip(t, h, "dodger", `(trap '' TERM HUP; exec sleep 600) & echo $! > `+file+`; wait`)
+	if err := h.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	pid := childPID(t, file)
+	if err := h.EndHarness(ctx, "dodger", "wall_clock:60", 2*time.Second); err != nil {
+		t.Fatalf("EndHarness: %v", err)
+	}
+	waitGone(t, pid)
+}
+
+func TestEndHarnessKillsADescendantInItsOwnProcessGroup(t *testing.T) {
+	h, ctx := testHost(t)
+	if _, err := exec.LookPath("perl"); err != nil {
+		t.Skip("no perl to start a process in its own group")
+	}
+	file := filepath.Join(t.TempDir(), "child.pid")
+	startShip(t, h, "apart", `perl -e 'use POSIX; my $p = fork; if ($p == 0) { POSIX::setsid(); $SIG{TERM} = "IGNORE"; open F, ">`+file+`"; print F $$; close F; sleep 600; exit } waitpid $p, 0'`)
+	if err := h.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	pid := childPID(t, file)
+	if err := h.EndHarness(ctx, "apart", "wall_clock:60", 500*time.Millisecond); err != nil {
+		t.Fatalf("EndHarness: %v", err)
+	}
+	waitGone(t, pid)
+}
+
+func TestEndHarnessOnAPaneThatHadAlreadyEndedSaysSo(t *testing.T) {
+	h, ctx := testHost(t)
+	startShip(t, h, "gone", "sleep 1; exit 1")
+	waitDead(t, h, "gone")
+	err := h.EndHarness(ctx, "gone", "wall_clock:60", time.Second)
+	if !errors.Is(err, ErrPaneDead) {
+		t.Errorf("EndHarness = %v, want ErrPaneDead", err)
+	}
+	if err := h.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := sessionNamed(h, "gone"); s.Options[OptStoppedBy] != "" {
+		t.Errorf("stopped-by = %q, want none for a ship the wall clock did not stop", s.Options[OptStoppedBy])
 	}
 }

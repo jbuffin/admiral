@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
@@ -107,7 +106,11 @@ func wallClockEnder(host *sessionhost.Host) func(session string, minutes int) er
 	return func(session string, minutes int) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		return host.EndHarness(ctx, session, "wall_clock:"+strconv.Itoa(minutes), 5*time.Second)
+		err := host.EndHarness(ctx, session, routines.WallClockReason(minutes), 5*time.Second)
+		if errors.Is(err, sessionhost.ErrPaneDead) {
+			return routines.ErrAlreadyEnded
+		}
+		return err
 	}
 }
 

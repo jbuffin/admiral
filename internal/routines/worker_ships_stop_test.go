@@ -36,7 +36,11 @@ func newStopRig(t *testing.T) *stopRig {
 	launch("work", u.other, "w-anchored", "https://x/3", "anchored")
 	launch("work", u.routine, "w-scheduled", "", "underway")
 	launch("play", s.play, "p-underway", "https://x/4", "underway")
+	if _, err := u.rig.store.AppendTrigger("work", routines.Trigger{Routine: u.routine.ID, Outcome: routines.Launched, Tier: "T2", Event: "https://x/5", Sender: "Eng", Ship: "w-proposed", Via: routines.ViaProposal}); err != nil {
+		t.Fatal(err)
+	}
 	s.listed = append(s.listed,
+		routines.ListedShip{Session: "w-proposed", Fleet: "work", Routine: "routine:" + u.routine.ID, Launched: u.rig.now.UTC().Format("2006-01-02T15:04:05Z07:00"), Status: "underway"},
 		routines.ListedShip{Session: "w-hand", Fleet: "work", Status: "underway"},
 		routines.ListedShip{Session: "w-promoted", Fleet: "work", Status: "underway"})
 	mux := http.NewServeMux()
@@ -70,7 +74,7 @@ func TestStopAllWorkerShipsInAFleetStopsOnlyThatFleetsLiveEventShips(t *testing.
 	}
 	want := []string{"w-needs-you", "w-underway"}
 	if got := sessionsOf(t, body, "stopped"); !slices.Equal(got, want) {
-		t.Errorf("stopped = %v, want %v (not the anchored, scheduled, hand or promoted ship, nor play's)", got, want)
+		t.Errorf("stopped = %v, want %v (not the anchored, scheduled, hand, promoted or proposal-launched ship, nor play's)", got, want)
 	}
 	if got := s.stop.calls; len(got) != 2 {
 		t.Errorf("Stop was called for %v, want the two live worker ships", got)

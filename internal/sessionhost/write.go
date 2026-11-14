@@ -2,7 +2,9 @@ package sessionhost
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -93,8 +95,11 @@ func (h *Host) KillSession(ctx context.Context, session string) error {
 	return err
 }
 
-// EndHarness notes why, then signals the pane's process group (TERM, then KILL after grace) and keeps the pane.
-// remain-on-exit leaves the dead pane, so the ship reads anchored with the signal.
+// ErrPaneDead is what EndHarness answers for a pane whose process had already ended.
+var ErrPaneDead = errors.New("the pane's process had already ended")
+
+// EndHarness notes why, then signals the pane's process group and every descendant it can see (TERM, then KILL after grace, or as soon
+// as the leader is gone) and keeps the pane. remain-on-exit leaves the dead pane, so the ship reads anchored with the signal.
 func (h *Host) EndHarness(ctx context.Context, session, reason string, grace time.Duration) error {
 	pane := h.shipPane(session)
 	pid, dead, err := h.panePID(ctx, pane)
@@ -102,12 +107,25 @@ func (h *Host) EndHarness(ctx context.Context, session, reason string, grace tim
 		return err
 	}
 	if dead {
-		return nil
+		return ErrPaneDead
+	}
+	if pid <= 1 {
+		return fmt.Errorf("pane %s has pid %d", pane, pid)
 	}
 	if err := h.SetOptions(ctx, session, map[string]string{OptStoppedBy: reason}); err != nil {
 		return err
 	}
-	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+	// a child in its own group still has the leader as an ancestor, so the tree is read before TERM
+	tree := descendants(pid)
+	signal := func(sig syscall.Signal) (first error) {
+		for _, target := range append([]int{-pid}, tree...) {
+			if err := syscall.Kill(target, sig); err != nil && err != syscall.ESRCH && first == nil {
+				first = err
+			}
+		}
+		return first
+	}
+	if err := signal(syscall.SIGTERM); err != nil {
 		return err
 	}
 	deadline := time.Now().Add(grace)
@@ -118,13 +136,41 @@ func (h *Host) EndHarness(ctx context.Context, session, reason string, grace tim
 		case <-time.After(50 * time.Millisecond):
 		}
 		if _, dead, err := h.panePID(ctx, pane); err != nil || dead {
-			return err
+			if err != nil {
+				return err
+			}
+			break
 		}
 	}
-	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
-		return err
+	return signal(syscall.SIGKILL)
+}
+
+// descendants is the pids below root, read from the process table.
+func descendants(root int) []int {
+	out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=").Output()
+	if err != nil {
+		return nil
 	}
-	return nil
+	children := map[int][]int{}
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) != 2 {
+			continue
+		}
+		p, e1 := strconv.Atoi(f[0])
+		pp, e2 := strconv.Atoi(f[1])
+		if e1 == nil && e2 == nil {
+			children[pp] = append(children[pp], p)
+		}
+	}
+	var tree []int
+	for queue := []int{root}; len(queue) > 0; queue = queue[1:] {
+		for _, c := range children[queue[0]] {
+			tree = append(tree, c)
+			queue = append(queue, c)
+		}
+	}
+	return tree
 }
 
 func (h *Host) panePID(ctx context.Context, pane string) (pid int, dead bool, err error) {

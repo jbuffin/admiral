@@ -1,8 +1,10 @@
 package routines
 
 import (
+	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/delay"
@@ -65,19 +67,40 @@ func (s *Scheduler) nextWallClock() time.Time {
 	return best
 }
 
+// ErrAlreadyEnded is what Scheduler.EndHarness answers for a harness that had ended before it was signalled.
+var ErrAlreadyEnded = errors.New("the harness had already ended")
+
+// WallClockReason is the stopped-by value of a ship the wall clock ended; the page reads the minutes back from it.
+func WallClockReason(minutes int) string { return "wall_clock:" + strconv.Itoa(minutes) }
+
 // wallClock ends the harness of each worker-launched ship past its fleet's wall clock and fails its launch record with the reason.
-// The ship's pane stays, so it shows anchored.
+// The ship's pane stays, so it shows anchored. The due ships are claimed under the lock and signalled after it, so a harness that
+// is slow to end does not hold up event decisions.
 func (s *Scheduler) wallClock(now time.Time) {
+	s.mu.Lock()
+	var due []wallShip
 	for _, w := range s.wallShips() {
-		if now.Before(w.deadline) {
-			continue
-		}
-		if err := s.EndHarness(w.ship.Session, w.minutes); err != nil {
-			log.Printf("routines: the wall clock could not end %s: %v", w.ship.Session, err)
+		if !now.Before(w.deadline) {
 			s.walled[w.ship.Trigger] = now.Add(wallClockRetry)
+			due = append(due, w)
+		}
+	}
+	s.mu.Unlock()
+	for _, w := range due {
+		err := s.EndHarness(w.ship.Session, w.minutes)
+		s.mu.Lock()
+		switch {
+		case errors.Is(err, ErrAlreadyEnded):
+			s.walled[w.ship.Trigger] = now.Add(watchFor)
+			s.mu.Unlock()
+			continue
+		case err != nil:
+			s.mu.Unlock()
+			log.Printf("routines: the wall clock could not end %s: %v", w.ship.Session, err)
 			continue
 		}
 		s.walled[w.ship.Trigger] = now.Add(watchFor)
+		s.mu.Unlock()
 		reason := fmt.Sprintf("stopped at the %d-minute wall clock", w.minutes)
 		if err := s.Store.MarkFailed(w.fleet, w.ship.Trigger, reason); err != nil && err != ErrNotFound {
 			log.Printf("routines: the wall clock could not mark %s failed: %v", w.ship.Session, err)
