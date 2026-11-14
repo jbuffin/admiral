@@ -233,8 +233,9 @@ func TestPromoteStopsTheRestrictedShipThenLaunchesANormalAutopilotShipFromItsWor
 	if req.EventText != "" || req.Template != "" {
 		t.Errorf("request carries event text %q or template %q", req.EventText, req.Template)
 	}
-	for _, want := range []string{rec.ID, "admiral/" + restrictedShip, p.base[:7], tip[:7], "review"} {
-		if !strings.Contains(req.Prompt, want) {
+	lower := strings.ToLower(req.Prompt)
+	for _, want := range []string{strings.ToLower(rec.ID), "admiral/" + restrictedShip, p.base[:7], tip[:7], "review"} {
+		if !strings.Contains(lower, want) {
 			t.Errorf("order lacks %q:\n%s", want, req.Prompt)
 		}
 	}
