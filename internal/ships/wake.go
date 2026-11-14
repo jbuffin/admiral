@@ -17,7 +17,6 @@ import (
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
-	"github.com/jbuffin/admiral/internal/skillindex"
 )
 
 // Wait texts are what a moored ship shows while a refusal that a later poll can clear holds its round back.
@@ -171,6 +170,7 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr, 
 type wakeOpts struct {
 	check    func(moor.Record) *launcher.Error
 	noResume bool
+	text     string // the launch text: the launcher builds the prompt from it and the resolved skill
 }
 
 func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Record) string, by, pr, wokenVia string, beforeLaunch func(rec moor.Record, dir string) (undoFunc, error)) (Ship, *launcher.Error) {
@@ -197,7 +197,7 @@ func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Recor
 	req := launcher.Request{Fleet: rec.Fleet, Harness: rec.Harness, Dir: rec.Checkout, Model: rec.Model,
 		Skill: launcher.Skill{Kind: rec.Skill.Kind, Name: rec.Skill.Name}, Source: rec.Source, OrderID: rec.OrderID,
 		Title: rec.Title, URL: rec.URL, Link: rec.Link, Issues: rec.Issues, Panel: rec.Panel, Resources: rec.Resources, PRs: rec.PRs,
-		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Autopilot: by == "feedback" || by == "proposal", Unattended: by == "feedback", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, ChatKey: rec.Chat, RoutineKey: rec.Routine, CommitmentKey: rec.Commitment}
+		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Text: opts.text, Autopilot: by == "feedback" || by == "proposal", Unattended: by == "feedback", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, ChatKey: rec.Chat, RoutineKey: rec.Routine, CommitmentKey: rec.Commitment}
 	var undo undoFunc
 	// The launcher runs this under its lock, just before it makes the session: a Dismiss or a merged PR that
 	// ended the mooring while this wake waited wins, and from here on an ending loses to the wake.
@@ -572,26 +572,20 @@ func (s *Service) serveAnswerReview(w http.ResponseWriter, r *http.Request) {
 }
 
 // Rereview wakes a moored reviewing ship by hand with its Commodore skill on url, which must be one of the PRs
-// the record reviews or the stack its order named; the prompt is built from the record's own string.
+// the record reviews or the stack its order named; the launcher builds the prompt from that URL and the Commodore
+// name the wake resolves, as a fresh launch does.
 func (s *Service) Rereview(ctx context.Context, session, url string) (Ship, *launcher.Error) {
-	var prompt string
 	check := func(rec moor.Record) *launcher.Error {
 		if rec.Skill.Kind != "commodore" {
 			return &launcher.Error{Status: http.StatusConflict, Msg: "ship " + session + " was not launched as Commodore, so it cannot be re-reviewed"}
 		}
-		carried := ""
-		if slices.Contains(rec.Reviewing, url) {
-			carried = url
-		} else if _, _, _, _, ok := moor.ParseStack(rec.URL); ok && len(rec.Reviewing) > 0 && rec.URL == url {
-			carried = rec.URL
-		}
-		if carried == "" {
+		_, _, _, _, isStack := moor.ParseStack(rec.URL)
+		if !slices.Contains(rec.Reviewing, url) && !(isStack && len(rec.Reviewing) > 0 && rec.URL == url) {
 			return &launcher.Error{Status: http.StatusBadRequest, Msg: "ship " + session + " is not reviewing " + url}
 		}
-		prompt = skillindex.Mark(rec.Harness) + rec.Skill.Name + " " + carried
 		return nil
 	}
-	return s.wakeWith(wakeOpts{check: check, noResume: true}, session, func(moor.Record) string { return prompt }, "hand", url, viaOfCtx(ctx), s.handRoundStart)
+	return s.wakeWith(wakeOpts{check: check, noResume: true, text: url}, session, func(moor.Record) string { return "" }, "hand", url, viaOfCtx(ctx), s.handRoundStart)
 }
 
 func (s *Service) serveRereview(w http.ResponseWriter, r *http.Request) {

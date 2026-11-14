@@ -78,6 +78,18 @@ func TestRespondedMeansTheAuthorPushedPastOrRepliedInAThreadOfTheViewersReview(t
 		{"the viewer replies after the author in that thread", func(st *Status) {
 			st.ThreadComments = []Comment{thread("T1", "TH1", me, 1), thread("T2", "TH1", author, 3), thread("T3", "TH1", me, 5)}
 		}, false},
+		{"the viewer reviewed again without posting in the thread the author replied in", func(st *Status) {
+			st.Reviews = []Review{rev("R1", me, "COMMENTED", "abc", 5)}
+			st.ThreadComments = []Comment{thread("T1", "TH1", me, 1), thread("T2", "TH1", author, 3)}
+		}, false},
+		{"the author replies again after the viewer's later review", func(st *Status) {
+			st.Reviews = []Review{rev("R1", me, "COMMENTED", "abc", 5)}
+			st.ThreadComments = []Comment{thread("T1", "TH1", me, 1), thread("T2", "TH1", author, 3), thread("T3", "TH1", author, 7)}
+		}, true},
+		{"a pending viewer review does not clear the author's reply", func(st *Status) {
+			st.Reviews = []Review{rev("R1", me, "PENDING", "abc", 5)}
+			st.ThreadComments = []Comment{thread("T1", "TH1", me, 1), thread("T2", "TH1", author, 3)}
+		}, true},
 		{"the author's top-level PR comment does not count", func(st *Status) {
 			st.Reviews = []Review{rev("R1", me, "COMMENTED", "abc", 1)}
 			st.Comments = []Comment{topLevel(author, 3)}

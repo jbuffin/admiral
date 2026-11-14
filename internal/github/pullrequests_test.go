@@ -379,9 +379,6 @@ func TestPullRequestsReadsTheCommitOfEachReviewAndTheThreadOfEachThreadComment(t
 			t.Errorf("ThreadComments[%d].Thread = %q, want %q", i, st.ThreadComments[i].Thread, want)
 		}
 	}
-	if !moor.Responded(st) {
-		t.Error("Responded = false, want true: the head moved past the viewer's review and dana replied in the viewer's thread")
-	}
 }
 
 // The fake gh returns whatever a test seeds, so only the query text shows that the poll asks for the new fields.

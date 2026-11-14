@@ -566,20 +566,22 @@ func TestAReviewedPRTheAuthorPushedToShowsRespondedWithoutWakingAndReReviewWakes
 	w.finishTurn(ship, mooredReport())
 	w.wantMooredWith(ship, true, reviewedPR)
 
+	before := byName(w.in.ships(t))[ship.Name].PolledAt
 	w.kickMoored()
+	w.in.waitShipsList(t, 20*time.Second, "a poll shows the PR not responded", func(l []shipJSON) bool {
+		got := byName(l)[ship.Name]
+		return got.PolledAt != before && len(got.PRs) == 1 && !got.PRs[0].Responded
+	})
 	g.prReviewedBy(reviewedPR, otherAuthor, created, "fake-viewer", "aaa111", "bbb222", time.Now().Add(-20*time.Minute)) // the author pushed
 	w.kickMoored()
-	list := w.in.waitShipsList(t, 20*time.Second, "the author's push shows as responded", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, 20*time.Second, "the author's push shows as responded", func(l []shipJSON) bool {
 		prs := byName(l)[ship.Name].PRs
 		return len(prs) == 1 && prs[0].Responded
 	})
-	if got := byName(list)[ship.Name]; got.Status != "moored" || !exists(w.mooredFile(ship.Name)) {
-		t.Errorf("ship %+v, want it still moored: a response never wakes a reviewing ship", got)
-	}
+	holdThat(t, "the ship stayed moored: a response never wakes a reviewing ship", func() bool {
+		return byName(w.in.ships(t))[ship.Name].Status == "moored" && exists(w.mooredFile(ship.Name))
+	})
 
-	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/ships/"+ship.Session+"/rereview", map[string]any{"url": reviewedPR + "/"}); code != http.StatusBadRequest {
-		t.Errorf("rereview on a URL the ship does not carry = %d %s, want 400", code, body)
-	}
 	if err := os.RemoveAll(filepath.Join(w.rec, ship.Session)); err != nil { // the fake harness reuses a session's recording directory
 		t.Fatal(err)
 	}

@@ -135,15 +135,15 @@ func TestReReviewOfOneLayerOfAReviewedStackIsAllowed(t *testing.T) {
 	}
 }
 
-func TestReReviewNamesTheSkillTheRecordSavedWhichACommodorePluginNamespaces(t *testing.T) {
+func TestReReviewNamesTheCommodoreTheWakeResolvesNotTheOneTheRecordSaved(t *testing.T) {
 	spec := singlePR()
 	spec.skill = moor.Skill{Kind: "commodore", Name: "jasonbuffin:commodore"}
 	r := newRereviewRig(t, spec)
 	if rec := r.rereview("saltpaw", `{"url":"`+wakePR+`"}`); rec.Code != http.StatusCreated {
 		t.Fatalf("rereview = %d %s, want 201", rec.Code, rec.Body)
 	}
-	if argv, _ := r.started(t, 1); prompt(argv) != "/jasonbuffin:commodore "+wakePR {
-		t.Errorf("prompt = %q, want the record's skill name in the invocation", prompt(argv))
+	if argv, _ := r.started(t, 1); prompt(argv) != "/commodore "+wakePR {
+		t.Errorf("prompt = %q, want the name the wake resolves in the checkout, not the record's jasonbuffin:commodore", prompt(argv))
 	}
 }
 
