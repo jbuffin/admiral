@@ -1,6 +1,6 @@
 # 12. Ships live in tmux, and everything else in `~/.admiral/`
 
-Status: accepted, amended by [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (the moored-ship file, which reserves the ship's name while it has no tmux session) and [ADR 0030](0030-ship-conversations-come-from-a-first-party-adapter-per-harness.md) (session ids live in pane options and the moored file and a history of the ship's rounds in `moored/rounds/`, never resumed)
+Status: accepted, amended by [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (the moored-ship file, which reserves the ship's name while it has no tmux session) and [ADR 0030](0030-ship-conversations-come-from-a-first-party-adapter-per-harness.md) (session ids live in pane options and the moored file and a history of the ship's rounds in `moored/rounds/`, never resumed) and [ADR 0037](0037-a-lost-ship-is-recorded-and-resumable.md) (a launch record outlives a dead tmux server, and a lost ship can be resumed)
 
 ## Context
 
@@ -11,7 +11,7 @@ Ships run in tmux sessions on Admiral's own socket and outlive the Admiral serve
 Decided in [What survives a restart and where it lives](https://github.com/jbuffin/admiral/issues/36).
 
 - **tmux is the only record of a ship.** Each ship's tmux session holds everything about it as session options next to `@admiral-name`: `@admiral-fleet` (key), `@admiral-fleet-name`, `@admiral-fleet-color`, `@admiral-harness`, `@admiral-dir`, `@admiral-skill`, `@admiral-source`, `@admiral-order` (the order source key and the order's `id`) and `@admiral-panel` (the panel the order was listed in, set at launch), `@admiral-resources` (the locked resources an autopilot launch holds, comma-separated; empty for a hand launch), `@admiral-launched` (launch time) and `@admiral-title` (the first line of the order's title, or of a dock launch's text, control and bidi characters stripped, shown in the bridge header). On startup Admiral lists the sessions on its socket and rebuilds every ship from them, anchored ones included, because the dead pane is still there (ADR 0008). Admiral keeps no ship table of its own.
-- **A dead tmux server ends every ship.** After a reboot or a `kill-server`, open water starts empty. There is no lost-ships list and no relaunch offer.
+- **A dead tmux server ends every ship.** After a reboot or a `kill-server`, open water starts empty. There is no lost-ships list and no relaunch offer. _Superseded by [ADR 0037](0037-a-lost-ship-is-recorded-and-resumable.md): a ship's launch record outlives the server, and it shows as lost with Resume._
 - **An order stays hidden while a ship with its source and `id` exists**, anchored ships included. Once the ship is gone (sailed off, dismissed, or lost with tmux), the order shows again if its source still lists it. Nothing beyond the ship's tmux options records this. The freeform list deletes an order on launch, so for it the question never comes up.
 - **`$ADMIRAL_HOME` (default `~/.admiral/`) is the data dir as well as the config dir:**
   - `config.json`: the engineer's (ADR 0010).
