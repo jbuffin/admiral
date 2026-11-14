@@ -34,7 +34,7 @@ func readStack(ctx context.Context, gh moor.GitHub, prs []string) (stackAnswer, 
 
 func (s *Service) serveStackShape(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	fleet, urls, ok := s.carriedBy(session)
+	fleet, urls, _, ok := s.carriedBy(session)
 	if !ok {
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
 		return
