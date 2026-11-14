@@ -8,7 +8,7 @@ export interface BoxState {
 }
 
 /** Whether the message box takes a message, and what it says when it does not. */
-export function boxState(ship: Pick<Ship, 'status' | 'exit_code' | 'exit_signal' | 'no_resume'>): BoxState {
+export function boxState(ship: Pick<Ship, 'status' | 'exit_code' | 'exit_signal' | 'no_resume' | 'stopped_by'>): BoxState {
   if (ship.status === 'underway' || ship.status === 'needs_you') return { enabled: true };
   if (ship.status === 'anchored') {
     // An anchored ship always exited with an error: a non-zero code, or no code and a signal.

@@ -15,6 +15,7 @@ import {
   formOfRoutine,
   holdFireBanner,
   holdFireNote,
+  stopAllLabel,
   blankForm,
   errorText,
   lastRunText,
@@ -273,5 +274,20 @@ describe('the list row and the run time', () => {
   it('carries the entry\'s fleet in a notice link', () => {
     const [l] = noticeEntryLinks({ entries: [{ key: 'gh', name: 'GitHub', panel: 'mine', fleet: 'work' }] });
     expect(l.path).toContain('fleet=work');
+  });
+});
+
+describe('the Stop all worker-launched button', () => {
+  it('shows the fleet count and is live while ships run', () => {
+    expect(stopAllLabel(2, 'fleet')).toEqual({ label: 'Stop all worker-launched (2)', disabled: false });
+  });
+
+  it('says all fleets for the global button', () => {
+    expect(stopAllLabel(3, 'all')).toEqual({ label: 'Stop all worker-launched, all fleets (3)', disabled: false });
+  });
+
+  it('is disabled with nothing to stop, and while the count is not known yet', () => {
+    expect(stopAllLabel(0, 'fleet')).toEqual({ label: 'Stop all worker-launched (0)', disabled: true });
+    expect(stopAllLabel(undefined, 'fleet')).toEqual({ label: 'Stop all worker-launched', disabled: true });
   });
 });

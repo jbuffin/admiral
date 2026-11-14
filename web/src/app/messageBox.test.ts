@@ -22,6 +22,15 @@ describe('boxState', () => {
     expect(killed.note).toBe('Killed (KILL), read only');
   });
 
+  it('says the wall clock stopped the ship, with its minutes, instead of naming the signal', () => {
+    const stopped = boxState({ ...exit('anchored', null, 'TERM'), stopped_by: 'wall_clock:60' });
+    expect(stopped).toEqual({ enabled: false, note: 'Stopped at the 60-minute wall clock, read only' });
+  });
+
+  it('keeps naming the signal when stopped_by is a reason it does not know', () => {
+    expect(boxState({ ...exit('anchored', null, 'TERM'), stopped_by: 'something_else' }).note).toBe('Killed (TERM), read only');
+  });
+
   it('is disabled while the ship sails off', () => {
     expect(boxState(exit('sailing_off', 0)).enabled).toBe(false);
   });
