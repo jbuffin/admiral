@@ -403,7 +403,9 @@ if [ -n "$judge" ]; then
   [ "$(printf '%s\n' "$jprompt" | head -n 1)" = "You turn an engineer's plain-English standing orders into a Limits patch, a list of Checks and Guidance for one fleet." ] && ordersdraft=1
   routinedraft=""
   [ "$(printf '%s\n' "$jprompt" | head -n 1)" = "You turn an engineer's plain-English description into one AdmiralBot routine for a fleet." ] && routinedraft=1
-  if [ "$FAKE_JUDGE" = fail ]; then
+  reviewcall=""
+  case "$(printf '%s\n' "$jprompt" | head -n 1)" in "You review one proposed action of an automation routine"*) reviewcall=1 ;; esac
+  if [ "$FAKE_JUDGE" = fail ] || { [ -n "$reviewcall" ] && [ "$FAKE_REVIEWER" = fail ]; }; then
     echo boom >&2
     exit 1
   fi
@@ -444,6 +446,14 @@ if [ -n "$judge" ]; then
   fi
   if [ -z "$body" ] && [ -n "$routinedraft" ]; then
     body='{"name":"Nightly dependency check","enabled":true,"when":"0 3 * * *","before_acting":"report_only","notify":true,"do":{"prompt":"Check for outdated dependencies and report what you find."}}'
+  fi
+  if [ -z "$body" ] && [ -n "$reviewcall" ]; then
+    firstcheck=$(printf '%s\n' "$jprompt" | sed -n 's/^- \([0-9a-f]\{8\}\): .*/\1/p' | head -n 1)
+    case "$FAKE_REVIEWER" in
+    allow) body='{"verdict":"allow","check_id":"","reason":"no Check is at stake"}' ;;
+    ask) body='{"verdict":"ask","check_id":"'"$firstcheck"'","reason":"a Check may be at stake"}' ;;
+    block) body='{"verdict":"block","check_id":"'"$firstcheck"'","reason":"this breaks a Check"}' ;;
+    esac
   fi
   if [ -z "$body" ] && [ -n "$lookoutcall" ] && [ "$FAKE_JUDGE" = lookout ]; then
     body='{"kind":"review request","repo":"acme/api","severity":"low","dedupe_key":"gh:acme/api#7","suggested_action":"ignore","summary":"Mallory asks for a review of a lantern fix."}'

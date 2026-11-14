@@ -214,7 +214,10 @@ func fields(f map[string]any, repos []string) (routines.Enrichment, bool) {
 	if act, ok := str("suggested_action"); !ok || !slices.Contains(suggestedActions, act) {
 		return routines.Enrichment{}, false
 	}
-	en := routines.Enrichment{Summary: summary}
+	kind, _ := str("kind")
+	sev, _ := str("severity")
+	act, _ := str("suggested_action")
+	en := routines.Enrichment{Summary: summary, Kind: kind, Severity: sev, SuggestedAction: act}
 	if key, _ := str("dedupe_key"); routines.ValidDedupeKey(key) {
 		en.DedupeKey = key
 	}

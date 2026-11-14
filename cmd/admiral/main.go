@@ -559,7 +559,8 @@ func serve(args []string) error {
 	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
 	routineService.Listed = listedShips(allShips)
 	routineScheduler.EndHarness = wallClockEnder(host)
-	wireEvents(supervisor, routineStore, routineScheduler, allShips, newLookout(absDir, cfg, fleetRepos(cfg), supervisor), lookoutActs)
+	lk := newLookout(absDir, cfg, fleetRepos(cfg), supervisor)
+	wireEvents(supervisor, routineStore, routineScheduler, allShips, lk, newReviewer(lk), lookoutActs)
 	inboxService.LaunchEvent = launchEvent(routineScheduler)
 	wireStandingOrders(shipService.Launcher, routineStore, routineService, cfg)
 	chatService.OnQuestions = func() { inboxService.Changed(); commitmentRunner.Changed() }
