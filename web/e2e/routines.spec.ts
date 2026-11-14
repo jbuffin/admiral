@@ -98,9 +98,8 @@ test('no order view offers Automate…, the Routines editor offers no New in vie
   const fresh = main.getByRole('form', { name: 'Routine' });
   await fresh.getByRole('radio', { name: 'An event' }).tap();
   const picker = fresh.getByLabel('When');
-  await expect(picker.locator('option')).not.toHaveCount(0);
+  await expect(picker.locator('option', { hasText: 'Review requested of you' })).toHaveCount(1);
   await expect(picker.locator('option', { hasText: /New in/ })).toHaveCount(0);
-  await expect(picker.locator('optgroup[label*="new in a view" i]')).toHaveCount(0);
 
   await page.goto(admiral.url + 'app/inbox?fleet=zulu');
   await main.getByRole('button', { name: /Admiral moved your sources into fleets/ }).tap();

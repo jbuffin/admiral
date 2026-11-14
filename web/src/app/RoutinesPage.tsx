@@ -299,7 +299,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
                 lastEvent.current = on;
                 set({ on });
               }}>
-              {!choices.some((c) => c.value === eventValue(form.on!)) ? <option value={eventValue(form.on)}>{form.on.kind ? eventWords(sources.value, fleet.key, form.on) : 'Choose an event'}</option> : null}
+              {!choices.some((c) => c.value === eventValue(form.on!)) ? <option value={eventValue(form.on)}>{triggerRemoved(form.on) ? 'New in view (removed)' : form.on.kind ? eventWords(sources.value, fleet.key, form.on) : 'Choose an event'}</option> : null}
               {groups.map(([group, list]) => (
                 <optgroup key={group} label={group}>
                   {list.map((c) => (
@@ -312,7 +312,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
             </select>
           </label>
           {triggerRemoved(form.on) ? <p class="note">{REMOVED_NOTE} Pick another event or a schedule to fix it.</p> : null}
-          {choices.length === 0 ? <p class="note">{noEventsNote(sources.value, fleet.key)}</p> : <p class="note">Runs when this happens, with the Lookout reading the event first.</p>}
+          {choices.length === 0 ? <p class="note">{noEventsNote(sources.value, fleet.key)}</p> : triggerRemoved(form.on) ? null : <p class="note">Runs when this happens, with the Lookout reading the event first.</p>}
         </>
       ) : (
         <>

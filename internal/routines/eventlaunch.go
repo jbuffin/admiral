@@ -37,7 +37,7 @@ func (s *Scheduler) LaunchProposed(ctx context.Context, fleet, routineID, trigge
 		return Trigger{}, ErrOff
 	}
 	l := r.Do.Launch
-	if l == nil {
+	if l == nil || (r.On != nil && r.On.Kind == RetiredViewKind) {
 		return Trigger{}, ErrNotIssued
 	}
 	recs, err := s.Store.Records(fleet)
