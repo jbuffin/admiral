@@ -261,6 +261,8 @@ test('a review action GitHub refuses shows the error and keeps the actions; one 
   await confirmed();
   await expect(peek.getByRole('alert')).toContainText('github said no');
   await expect(peek.getByRole('button', { name: 'Submit APPROVE' })).toBeEnabled();
+  await expect(peek.getByRole('button', { name: 'Submit APPROVE' })).not.toHaveAttribute('aria-busy', 'true');
+  await expect(peek.getByRole('button', { name: 'Discard', exact: true })).toBeEnabled();
 
   refusal = { status: 409, error: 'another action on this item is still running' };
   await peek.getByRole('button', { name: 'Submit APPROVE' }).tap();
@@ -762,8 +764,30 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
   const peek = peekOf(page);
   await expect(peek).toContainText('Held sweep');
   await expect(peek.getByRole('button', { name: 'Dismiss', exact: true })).toBeVisible();
-  await peek.getByRole('button', { name: 'Launch', exact: true }).tap();
+  let launchCalls = 0;
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/api/v1/inbox/*/*/launch', async (route) => {
+    launchCalls++;
+    await held;
+    await route.continue();
+  });
+  const launch = peek.getByRole('button', { name: 'Launch', exact: true });
+  await launch.tap();
+  await expect(launch).toHaveAttribute('aria-busy', 'true');
+  await expect(peek.getByRole('button', { name: 'Dismiss', exact: true })).toBeDisabled();
+  await launch.tap({ force: true });
+  expect(launchCalls).toBe(1);
+
+  // Leaving and reopening keeps the request busy; a reload would clear it.
+  await peek.getByRole('link', { name: 'Back', exact: true }).tap();
+  await expect(peekOf(page)).toHaveCount(0);
+  await row.getByRole('link').tap();
+  await expect(peekOf(page).getByRole('button', { name: 'Launch', exact: true })).toHaveAttribute('aria-busy', 'true');
+
+  release();
   await expect.poll(shipsNow, { timeout: 30_000 }).toBe(1);
+  expect(launchCalls).toBe(1);
   await expect(peekOf(page)).toHaveCount(0);
   await expect(row).toHaveCount(0, { timeout: 15_000 });
 
