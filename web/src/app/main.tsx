@@ -11,6 +11,9 @@ import { Shell } from './Shell';
 import { checkBuild } from './buildCheck';
 import { onShipsOpen, watchShips } from './shipsLink';
 
+// iOS Safari only applies :active on touch when a touch listener exists.
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 listenForInstall();
 startRouter();
 watchFleets();
