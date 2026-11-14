@@ -429,4 +429,15 @@ describe('createInboxQueue: re-review', () => {
     q.sync({ items: [], ships: [responded('a')] }, T0 + HOLD_MS + 2000);
     expect(keys(q)).toEqual(['rereview:a']);
   });
+
+  it('lists it again when a sync shows the ship moored and responded under a new mooring, with no sync between', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [responded('a', 'moored', { moored_at: at(0) })] }, T0);
+    q.fold('rereview:a', 'Re-reviewing', T0);
+    q.tick(T0 + HOLD_MS);
+    q.sync({ items: [], ships: [responded('a', 'moored', { moored_at: at(0) })] }, T0 + HOLD_MS + 1000);
+    expect(keys(q)).toEqual([]);
+    q.sync({ items: [], ships: [responded('a', 'moored', { moored_at: at(600) })] }, T0 + HOLD_MS + 2000);
+    expect(keys(q)).toEqual(['rereview:a']);
+  });
 });

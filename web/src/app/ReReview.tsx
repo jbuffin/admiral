@@ -1,21 +1,21 @@
 import { useState } from 'preact/hooks';
 import { call, type Ship } from './api';
-import { isStackUrl, reReviewUrl, respondedPRs } from './moored';
+import { reReviewPlace, respondedPRs } from './moored';
 import { Failure } from './PeekItem';
 import { Sheet } from './Sheet';
 import { prNumber } from './prTab';
 
 const who = (author: string | undefined) => (author ? `@${author}` : 'The author');
 
-/** What a Re-review shows and sends for a ship: the stack's URL for a reviewed stack, else the PR's, exactly as served. */
+/** What a Re-review shows and sends for a ship, from `reReviewPlace`; `prUrl` picks the PR the line names. */
 export function reReviewOf(ship: Ship, prUrl?: string) {
   const responded = respondedPRs(ship);
-  const stack = prUrl === undefined && isStackUrl(ship.url);
+  const place = reReviewPlace(ship);
+  const stack = place?.place === 'stack';
   const pr = responded.find((p) => p.url === prUrl) ?? responded[0];
-  const url = prUrl ?? reReviewUrl(ship);
   const label = stack ? 'Re-review stack' : 'Re-review';
   const what = stack ? 'the whole stack' : `#${pr ? prNumber(pr.url) : ''}`;
-  return { url, label, line: `${who(pr?.author)} has responded since your review. Commodore reviews ${what} again.` };
+  return { url: place?.url ?? '', label, line: `${who(pr?.author)} has responded since your review. Commodore reviews ${what} again.` };
 }
 
 /** One POST of Re-review; `onDone` runs on success, and an error stays for the caller to show. */

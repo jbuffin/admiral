@@ -305,28 +305,33 @@ describe('reviewStackBar', () => {
   const layers = (author: string | undefined) => [pr(6, { reviewing: true, author }), pr(7, { reviewing: true, author }), pr(8, { reviewing: true, author })];
 
   it('names the stack, its author and how many layers are reviewed, bottom to top', () => {
-    expect(reviewStackBar(stackShip(layers('dana')))).toBe('Reviewing a GitHub stack by @dana · 3 PRs, bottom to top.');
+    expect(reviewStackBar(stackShip(layers('dana')))).toEqual({ lead: 'Reviewing a GitHub stack', rest: ' by @dana · 3 PRs, bottom to top.' });
   });
 
   it('leaves the author out before a poll has it', () => {
-    expect(reviewStackBar(stackShip(layers(undefined)))).toBe('Reviewing a GitHub stack · 3 PRs, bottom to top.');
+    expect(reviewStackBar(stackShip(layers(undefined)))).toEqual({ lead: 'Reviewing a GitHub stack', rest: ' · 3 PRs, bottom to top.' });
   });
 
   it('counts the reviewing layers and takes the author of the bottom one, not the fleet\'s own layers', () => {
     const mixed = [pr(5, { reviewing: true, author: 'dana' }), pr(6, { reviewing: true, author: 'dana' }), pr(7, { author: 'fake-viewer' })];
-    expect(reviewStackBar(stackShip(mixed))).toBe('Reviewing a GitHub stack by @dana · 2 PRs, bottom to top.');
+    expect(reviewStackBar(stackShip(mixed))?.rest).toBe(' by @dana · 2 PRs, bottom to top.');
   });
 
-  it('is empty for a ship reviewing one PR, and for a PR-URL ship that also carries its own PR', () => {
-    expect(reviewStackBar(stackShip(layers('dana').slice(0, 1)))).toBe('');
+  it('shows for a mixed stack with one reviewed layer, counting it alone', () => {
+    const mixed = [pr(5, { author: 'fake-viewer' }), pr(6, { reviewing: true, author: 'dana' })];
+    expect(reviewStackBar(stackShip(mixed))).toEqual({ lead: 'Reviewing a GitHub stack', rest: ' by @dana · 1 PR, bottom to top.' });
+  });
+
+  it('is null for a one-layer stack, and for a PR-URL ship that also carries its own PR', () => {
+    expect(reviewStackBar(stackShip(layers('dana').slice(0, 1)))).toBeNull();
     const prUrl = 'https://github.com/acme/api/pull/6';
-    expect(reviewStackBar(stackShip([pr(6, { reviewing: true, author: 'dana' }), pr(9)], prUrl))).toBe('');
-    expect(reviewStackBar(stackShip(layers('dana'), prUrl))).toBe('');
-    expect(reviewStackBar(stackShip(layers('dana'), ''))).toBe('');
+    expect(reviewStackBar(stackShip([pr(6, { reviewing: true, author: 'dana' }), pr(9)], prUrl))).toBeNull();
+    expect(reviewStackBar(stackShip(layers('dana'), prUrl))).toBeNull();
+    expect(reviewStackBar(stackShip(layers('dana'), ''))).toBeNull();
   });
 
-  it('is empty for a stack the fleet opened', () => {
-    expect(reviewStackBar(stackShip([pr(6), pr(7)]))).toBe('');
+  it('is null for a stack the fleet opened', () => {
+    expect(reviewStackBar(stackShip([pr(6), pr(7)]))).toBeNull();
   });
 });
 

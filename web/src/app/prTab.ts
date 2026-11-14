@@ -69,12 +69,13 @@ export const defaultPR = (ordered: MooredPR[]): MooredPR | undefined => ordered.
 /** The role mark in a PR's header: `Reviewing · by @author`, `Reviewing` before a poll has the author, '' for an own PR. */
 export const reviewMark = (pr: Pick<MooredPR, 'reviewing' | 'author'>): string => (pr.reviewing ? `Reviewing${pr.author ? ` · by @${pr.author}` : ''}` : '');
 
-/** The stack bar of a ship reviewing a GitHub stack, or '' for any other ship. */
-export function reviewStackBar(ship: Pick<Ship, 'url' | 'prs'>): string {
+/** The stack bar of a ship reviewing a GitHub stack: its bold lead and the rest, or null for any other ship. */
+export function reviewStackBar(ship: Pick<Ship, 'url' | 'prs'>): { lead: string; rest: string } | null {
   // A PR-URL ship that also carries its own PRs is no stack, so the order's URL decides.
-  if (!isStackUrl(ship.url)) return '';
-  const layers = (ship.prs ?? []).filter((p) => p.reviewing);
-  return layers.length >= 2 ? `Reviewing a GitHub stack${by(layers[0].author)} · ${layers.length} PRs, bottom to top.` : '';
+  const prs = ship.prs ?? [];
+  const layers = prs.filter((p) => p.reviewing);
+  if (!isStackUrl(ship.url) || prs.length < 2 || layers.length === 0) return null;
+  return { lead: 'Reviewing a GitHub stack', rest: `${by(layers[0].author)} · ${layers.length} ${layers.length === 1 ? 'PR' : 'PRs'}, bottom to top.` };
 }
 
 export const stackBarText = (stacked: number, hasStack: boolean): string => (hasStack && stacked >= 2 ? `Stacked on GitHub · ${stacked} PRs, bottom to top.` : '');

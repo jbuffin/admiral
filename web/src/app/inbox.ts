@@ -108,7 +108,8 @@ export function createInboxQueue() {
   const stopFirstSeen = new Map<string, number>();
   const mergeFirstSeen = new Map<string, number>();
   // Re-reviewed ships a stale push may still serve moored and responded: they stay out until that stops.
-  const reReviewed = new Set<string>();
+  // Keyed to the mooring the entry was folded under: a later mooring is a new round, however many pushes were missed.
+  const reReviewed = new Map<string, string>();
   const reviewFirstSeen = new Map<string, number>();
   // A crew stop's start, kept from first sight: the server keeps none for a crew boat.
   const crewSince = new Map<string, number>();
@@ -173,6 +174,7 @@ export function createInboxQueue() {
         }
         const rk = rereviewKey(s.session);
         if (needsReReview(s)) {
+          if (reReviewed.has(rk) && reReviewed.get(rk) !== (s.moored_at ?? '')) reReviewed.delete(rk);
           if (!reviewFirstSeen.has(rk)) reviewFirstSeen.set(rk, now);
         } else {
           reviewFirstSeen.delete(rk);
@@ -190,7 +192,7 @@ export function createInboxQueue() {
       for (const mk of [...mergeFirstSeen.keys()]) if (!ships.has(mk.slice('merge:'.length))) mergeFirstSeen.delete(mk);
       for (const mk of merged) if (!ships.has(mk.slice('merge:'.length))) merged.delete(mk);
       for (const rk of [...reviewFirstSeen.keys()]) if (!ships.has(rk.slice('rereview:'.length))) reviewFirstSeen.delete(rk);
-      for (const rk of reReviewed) if (!ships.has(rk.slice('rereview:'.length))) reReviewed.delete(rk);
+      for (const rk of reReviewed.keys()) if (!ships.has(rk.slice('rereview:'.length))) reReviewed.delete(rk);
       for (const ck of crewSince.keys()) if (!live.has(ck)) crewSince.delete(ck);
       input = next;
       served = merge();
@@ -202,7 +204,7 @@ export function createInboxQueue() {
       if (!entry || held.has(key)) return;
       if (entry.type === 'item') answered.add(key);
       if (entry.type === 'merge') merged.add(key);
-      if (entry.type === 'rereview') reReviewed.add(key);
+      if (entry.type === 'rereview') reReviewed.set(key, entry.ship?.moored_at ?? '');
       held.set(key, { entry: { ...entry, folded: null }, text, until: now + HOLD_MS });
       served = merge();
     },

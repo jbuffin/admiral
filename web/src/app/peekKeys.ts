@@ -1,3 +1,5 @@
+import type { Entry } from './inbox';
+
 export const KEY_HINT = 'J K move · 1–3 answer · ↵ bridge · E remove';
 
 const MERGE_KEY_HINT = 'J K move · ↵ bridge';
@@ -15,10 +17,10 @@ interface KeyEvent {
 const TYPING = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
 /** The hint line under the Inbox; a merge or Re-review entry takes no answer or remove key. */
-export const keyHint = (type?: 'item' | 'stop' | 'merge' | 'rereview'): string => (type === 'merge' || type === 'rereview' ? MERGE_KEY_HINT : KEY_HINT);
+export const keyHint = (type?: Entry['type']): string => (type === 'merge' || type === 'rereview' ? MERGE_KEY_HINT : KEY_HINT);
 
 /** What a key press means on the Inbox, or null when the browser or a field owns it. */
-export function keyAction(e: KeyEvent, type?: 'item' | 'stop' | 'merge' | 'rereview'): KeyAct | null {
+export function keyAction(e: KeyEvent, type?: Entry['type']): KeyAct | null {
   if (e.ctrlKey || e.metaKey || e.altKey) return null;
   const t = e.target as { tagName?: string; isContentEditable?: boolean } | null | undefined;
   if (t && (TYPING.has((t.tagName ?? '').toUpperCase()) || t.isContentEditable)) return null;

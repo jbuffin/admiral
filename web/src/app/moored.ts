@@ -93,8 +93,13 @@ export const reviews = (ship: Pick<Ship, 'prs'>): boolean => (ship.prs ?? []).so
 /** The reviewed PRs whose author has responded since the fleet's review, bottom layer first. */
 export const respondedPRs = (ship: Pick<Ship, 'prs'>): MooredPR[] => (ship.prs ?? []).filter((p) => p.reviewing && p.responded && p.state === 'OPEN');
 
-/** The URL Re-review wakes the ship with: the stack's when the ship reviews one, else the lowest responded PR's. Exactly as served. */
-export const reReviewUrl = (ship: Pick<Ship, 'prs' | 'url'>): string => (isStackUrl(ship.url) ? ship.url! : (respondedPRs(ship)[0]?.url ?? ''));
+/** Where Re-review is offered and with which URL, exactly as served: on the stack bar for a stack-URL ship with two or more PRs, else on the responded PR (with the stack's URL for a stack-URL ship); null unless the ship is moored with a responded reviewed PR. */
+export function reReviewPlace(ship: Pick<Ship, 'status' | 'prs' | 'url'>): { place: 'stack' | 'pr'; url: string } | null {
+  const responded = respondedPRs(ship);
+  if (ship.status !== 'moored' || responded.length === 0) return null;
+  if (!isStackUrl(ship.url)) return { place: 'pr', url: responded[0].url };
+  return { place: (ship.prs ?? []).length >= 2 ? 'stack' : 'pr', url: ship.url! };
+}
 
 /** What a carrying ship does next: `ready` when its whole stack can merge (rendered by ReadyToMerge), else the ship's own note, else what its PR waits on. */
 export function nextStep(ship: Ship): { ready: boolean; text: string } {

@@ -2736,8 +2736,12 @@ async function reviewingOnTheServer(a: Admiral, ship: LaunchedShip, responded: b
 
 /** Shows that nothing woke the ship in the time a wake would take. */
 async function staysMoored(a: Admiral, ship: LaunchedShip, what: string) {
-  await new Promise((r) => setTimeout(r, 1500));
-  expect((await shipsOnTheServer(a)).find((s) => s.session === ship.session)?.status, what).toBe('moored');
+  // `holds` takes a sync check, so this is its loop with the server read each round.
+  const end = Date.now() + 1500;
+  do {
+    expect((await shipsOnTheServer(a)).find((s) => s.session === ship.session)?.status, what).toBe('moored');
+    await new Promise((r) => setTimeout(r, 100));
+  } while (Date.now() < end);
 }
 
 const feedbackBar = (panel: Locator) => panel.getByText(`@${REVIEW_AUTHOR} responded since your review.`);

@@ -6,7 +6,7 @@ import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet } from './Sheet';
 import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, orderPRs, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, stackBarText, stackedPRs } from './prTab';
-import { isStackUrl, respondedPRs, reviews, staleNote } from './moored';
+import { reReviewPlace, reviews, staleNote } from './moored';
 import { ReReviewSheet } from './ReReview';
 import { PRSections } from './PRDetailSections';
 
@@ -214,25 +214,24 @@ export function PRTab({ ship }: { ship: Ship }) {
   if (prs.length === 0) return <p class="line">No pull request yet. A PR shows here as soon as the ship or its crew opens one.</p>;
   const current = prs.find((p) => p.url === picked) ?? defaultPR(prs)!;
   const reviewBar = reviewStackBar(ship);
-  const bar = reviewBar || stackBarText(stackedPRs(prs, stack).length, stack !== null);
-  const reviewsStack = isStackUrl(ship.url);
+  const bar = reviewBar ? '' : stackBarText(stackedPRs(prs, stack).length, stack !== null);
+  const place = reReviewPlace(ship);
   const respondedHere = moored && current.reviewing && current.responded && current.state === 'OPEN';
-  const prefix = 'Reviewing a GitHub stack';
   return (
     <div class="pr-tab">
-      {bar ? (
+      {reviewBar || bar ? (
         <div class="stack-bar">
           <span class="stack-text">
             {reviewBar ? (
               <>
-                <strong>{prefix}</strong>
-                {reviewBar.slice(prefix.length)}
+                <strong>{reviewBar.lead}</strong>
+                {reviewBar.rest}
               </>
             ) : (
               bar
             )}
           </span>
-          {reviewBar && moored && respondedPRs(ship).length > 0 ? (
+          {reviewBar && place?.place === 'stack' ? (
             <button type="button" class="btn primary" onClick={() => setReReview('')}>
               Re-review stack
             </button>
@@ -264,7 +263,7 @@ export function PRTab({ ship }: { ship: Ship }) {
         {respondedHere ? (
           <div class="feedback-bar">
             <span class="fb-text">{current.author ? `@${current.author}` : 'The author'} responded since your review.</span>
-            {reviewsStack ? null : (
+            {place?.place === 'stack' ? null : (
               <button type="button" class="btn primary" onClick={() => setReReview(current.url)}>
                 Re-review
               </button>
