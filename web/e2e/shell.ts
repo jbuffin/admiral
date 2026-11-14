@@ -1012,12 +1012,28 @@ export async function mergeFromThePRTab(page: Page, a: Admiral, opts: { phone: b
   const ship = await launchMooredShip(a, 7);
   await readyOnTheServer(a, ship, 'squash');
 
+  // Hold the PR's detail read: until GitHub answers, its area stays open with a spinner, and the header claims no failure.
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  const isDetail = (u: URL) => /\/ships\/[^/]+\/pr$/.test(u.pathname);
+  await page.route(isDetail, async (route) => {
+    await held;
+    await route.continue();
+  });
   const panel = await openPRTab(page, a, ship);
+  const loading = panel.getByRole('status').filter({ hasText: 'Loading from GitHub' });
+  await expect(loading).toBeVisible();
+  expect((await loading.boundingBox())!.height, 'loading area height').toBeGreaterThanOrEqual(100);
+  await expect(panel).not.toContainText("Couldn't load this PR from GitHub.");
+  release();
   await expect(page.getByRole('main')).toContainText('Ready to merge');
   await expect(panel).toContainText('#7');
   for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expectChipTone(page, panel.getByText(chip, { exact: true }), 'ok');
-  // The moored journeys seed no PR detail, so the header falls back to the number and a muted line, with no sub-tab row and no alert.
+  // The moored journeys seed no PR detail, so the header falls back to the number and a muted line, the area says it tries again, with no sub-tab row and no alert.
   await expect(panel).toContainText("Couldn't load this PR from GitHub.");
+  await expect(loading).toHaveCount(0);
+  await expect(panel.getByRole('status').filter({ hasText: 'Trying again' })).toBeVisible();
+  await page.unroute(isDetail);
   await expect(panel.getByRole('tablist')).toHaveCount(0);
   const merge = panel.getByRole('button', { name: 'Merge', exact: true });
   const unfollow = panel.getByRole('button', { name: "Don't follow reviews" });
