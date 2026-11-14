@@ -136,7 +136,8 @@ func TestARelaunchOfAnEventShipKeepsItsCloneAndItsEventFile(t *testing.T) {
 	fc.t = t
 	req.EventText = ""
 	req.Session, req.Name = "kelpie", "Kelpie"
-	kept := filepath.Join(p.home, "checkouts", "kelpie")
+	commitRepo(t, p.work)
+	kept := keptDraftFixClone(t, p, p.work, "kelpie")
 	if err := os.MkdirAll(filepath.Join(kept, ".admiral", "untrusted"), 0o755); err != nil {
 		t.Fatal(err)
 	}
