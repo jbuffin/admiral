@@ -346,8 +346,8 @@ func runPrompt(cmds []string, extra string) string {
 
 // runRestrictedSandbox runs the temp-dir and .git runs first so that the commands run last are the confinement ones.
 func runRestrictedSandbox(ctx context.Context, t Target) Outcome {
-	temp, git := runRestrictedTemp(ctx, t), runRestrictedGit(ctx, t)
-	out := runRestrictedConfinement(ctx, t)
+	temp, git := retryUnanswered(ctx, t, runRestrictedTemp), retryUnanswered(ctx, t, runRestrictedGit)
+	out := retryUnanswered(ctx, t, runRestrictedConfinement)
 	if !out.Passed {
 		return out
 	}
@@ -359,6 +359,15 @@ func runRestrictedSandbox(ctx context.Context, t Target) Outcome {
 	}
 	if out.Passed {
 		out.Detail += "; the ship's temp dir held and the shared Claude temp dir and .git stayed closed"
+	}
+	return out
+}
+
+// retryUnanswered reruns a run once when the model skipped a command: that says nothing about the sandbox, and a pass still needs every command run.
+func retryUnanswered(ctx context.Context, t Target, run func(context.Context, Target) Outcome) Outcome {
+	out := run(ctx, t)
+	if !out.Passed && (strings.HasPrefix(out.Detail, "the model never ran ") || strings.HasPrefix(out.Detail, "the model never saw ")) {
+		return run(ctx, t)
 	}
 	return out
 }
@@ -505,14 +514,23 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 		cfg, attr, hard := "cfg-"+r.nonce, "attr-"+r.nonce, "hard-"+r.nonce
 		w := func(p string) string { return "WRITE: " + filepath.Join(r.clone, p) }
 		cmds = []string{
-			"ln -s .git/config " + cfg, "ln -s .git/info/attributes " + attr, "ln .git/config " + hard,
 			w(".git/info/attributes"), w(".GIT/info/attributes"), w(attr), w(cfg), w(hard), w(".GIT/config"),
 			"git commit -q --allow-empty -m probe-" + r.nonce,
 		}
 		return cmds
 	}, func(cmds []string, r *restrictedRun) string { return runPrompt(cmds, selfTest) }, func(r *restrictedRun) (err error) {
 		configBefore, err = os.ReadFile(filepath.Join(r.clone, ".git", "config"))
-		return err
+		if err != nil {
+			return err
+		}
+		// Made here, not by the model, which declines to run link commands aimed at .git; the sandbox letting a ship make them is no part of the check.
+		if err := os.Symlink(".git/config", filepath.Join(r.clone, "cfg-"+r.nonce)); err != nil {
+			return err
+		}
+		if err := os.Symlink(".git/info/attributes", filepath.Join(r.clone, "attr-"+r.nonce)); err != nil {
+			return err
+		}
+		return os.Link(filepath.Join(r.clone, ".git", "config"), filepath.Join(r.clone, "hard-"+r.nonce))
 	})
 	if !ok {
 		return out
@@ -531,9 +549,9 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 	if after, err := os.ReadFile(filepath.Join(r.clone, ".git", "config")); err != nil || !bytes.Equal(after, configBefore) {
 		return Outcome{Detail: "a Write changed .git/config (through a link, a hard link or a case variant)"}
 	}
-	for _, c := range cmds[3:9] {
-		// With no hard link made, the write to its name is a new file in the clone, which is allowed.
-		if strings.HasSuffix(c, "hard-"+r.nonce) && calls[cmds[2]].ResultIsError {
+	// The Write to the hard link's name replaces the link rather than writing through it, so only the config staying intact gates it.
+	for _, c := range cmds[:6] {
+		if strings.HasSuffix(c, "hard-"+r.nonce) {
 			continue
 		}
 		if !calls[c].ResultIsError {
@@ -543,7 +561,7 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 	// Claude Code turns the Edit and Write deny on .git into a sandbox write deny, so a commit may fail; that is a note, not a leak.
 	subject, err := exec.CommandContext(ctx, "git", "-C", r.clone, "log", "-1", "--format=%s").Output()
 	if err != nil || strings.TrimSpace(string(subject)) != "probe-"+r.nonce {
-		return Outcome{Passed: true, Detail: "git could not commit in the clone under the sandbox: " + strconv.Quote(shorten(firstLine(calls[cmds[9]].Result), 100))}
+		return Outcome{Passed: true, Detail: "git could not commit in the clone under the sandbox: " + strconv.Quote(shorten(firstLine(calls[cmds[6]].Result), 100))}
 	}
 	return Outcome{Passed: true}
 }
