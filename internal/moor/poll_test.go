@@ -168,3 +168,32 @@ func TestStackReadyNamesTheHighestLayerWhoseLowerLayersAreAllReady(t *testing.T)
 		})
 	}
 }
+
+func TestStackReadyCountsOnlyOpenPRs(t *testing.T) {
+	pr := func(n, state string, ready bool) PR {
+		return PR{URL: "https://github.com/acme/widgets/pull/" + n, State: state, Ready: ready}
+	}
+	merged1, closed1 := pr("1", "MERGED", false), pr("1", "CLOSED", false)
+	open2, open3 := pr("2", "OPEN", true), pr("3", "OPEN", true)
+	for name, c := range map[string]struct {
+		prs   []PR
+		ready bool
+		upTo  string
+	}{
+		"one merged and one ready":                {[]PR{merged1, open2}, true, open2.URL},
+		"one merged and one not ready":            {[]PR{merged1, pr("2", "OPEN", false)}, false, ""},
+		"every PR merged":                         {[]PR{merged1, pr("2", "MERGED", false)}, false, ""},
+		"every PR closed":                         {[]PR{closed1, pr("2", "CLOSED", false)}, false, ""},
+		"one closed and one ready":                {[]PR{closed1, open2}, true, open2.URL},
+		"a merged bottom with the top not ready":  {[]PR{merged1, open2, pr("3", "OPEN", false)}, false, open2.URL},
+		"a merged middle between ready layers":    {[]PR{pr("1", "OPEN", true), pr("2", "MERGED", false), open3}, true, open3.URL},
+		"a merged bottom with the next not ready": {[]PR{merged1, pr("2", "OPEN", false), open3}, false, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ready, upTo := StackReady(c.prs)
+			if ready != c.ready || upTo != c.upTo {
+				t.Errorf("StackReady = (%v, %q), want (%v, %q)", ready, upTo, c.ready, c.upTo)
+			}
+		})
+	}
+}

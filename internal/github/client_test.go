@@ -512,6 +512,73 @@ func TestMergeStackRunsGhStackMergeByNumberInAFreshFolderWithTheRepoPinned(t *te
 	}
 }
 
+func TestLinkStackRunsGhStackLinkByNumberBottomToTopInAFreshFolderWithTheRepoPinned(t *testing.T) {
+	f := newFake(t)
+	f.write(t, "token", "fake-token-work-2\n")
+	for _, n := range []string{"7", "8", "9"} {
+		f.write(t, "pr_detail/https___ghe.example.com_acme_widgets_pull_"+n, `{"number":`+n+`,"state":"OPEN","headRefName":"b`+n+`","baseRefName":"main","stack":null}`+"\n")
+	}
+	cl := NewClient("ghe.example.com", "", nil, append(f.env, "GH_REPO=evil.example/x/y", "GH_HOST=evil.example"))
+	if err := cl.LinkStack(context.Background(), "acme/widgets", []int{7, 9, 8}); err != nil {
+		t.Fatal(err)
+	}
+	c := f.only(t, "stack")
+	// Numbers only, in the order given: no flag (--open would take drafts out of draft) and no branch name (gh pushes branches).
+	if want := []string{"stack", "link", "7", "9", "8"}; !slices.Equal(c.argv, want) {
+		t.Errorf("argv = %q, want %q", c.argv, want)
+	}
+	for _, want := range []string{
+		"GH_HOST=ghe.example.com\n", "GH_REPO=ghe.example.com/acme/widgets\n", "GIT_CONFIG_COUNT=3\n",
+		"GIT_CONFIG_KEY_0=core.fsmonitor\n", "GIT_CONFIG_VALUE_0=false\n",
+		"GIT_CONFIG_KEY_1=core.hooksPath\n", "GIT_CONFIG_VALUE_1=/dev/null\n",
+		"GIT_CONFIG_KEY_2=core.sshCommand\n", "GIT_CONFIG_VALUE_2=\n",
+	} {
+		if !strings.Contains(c.env+"\n", want) {
+			t.Errorf("gh env lacks %q: %q", strings.TrimSpace(want), c.env)
+		}
+	}
+	if strings.Contains(c.env, "evil.example") {
+		t.Errorf("gh kept an inherited host or repo: %q", c.env)
+	}
+	wd, _ := os.Getwd()
+	if c.cwd == "" || c.cwd == wd {
+		t.Errorf("gh ran in %q, want a fresh folder and not the test's %q", c.cwd, wd)
+	}
+	if _, err := os.Lstat(c.cwd); err == nil {
+		t.Errorf("the folder gh ran in, %q, is still there afterwards", c.cwd)
+	}
+}
+
+func TestLinkStackReturnsGhsMessageWhenGhFails(t *testing.T) {
+	f := newFake(t)
+	f.write(t, "token", "fake-token-work-2\n")
+	f.write(t, "pr_detail/https___github.com_acme_widgets_pull_7", `{"number":7,"state":"OPEN","stack":null}`+"\n")
+	f.write(t, "pr_detail/https___github.com_acme_widgets_pull_8", `{"number":8,"state":"OPEN","stack":null}`+"\n")
+	f.write(t, "stack_link.fail", "gh: pull request 8 cannot join a stack\n")
+	cl := NewClient("github.com", "", nil, f.env)
+	err := cl.LinkStack(context.Background(), "acme/widgets", []int{7, 8})
+	if err == nil || err.Error() != "pull request 8 cannot join a stack" {
+		t.Fatalf("LinkStack = %v, want gh's message without its prefix", err)
+	}
+}
+
+func TestLinkStackThatRunsPastItsLimitIsAnUnknownResult(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\nif [ \"$1\" = auth ]; then echo fake-token-work-2; exit 0; fi\nexec sleep 5\n"
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	old := MergeTimeout
+	MergeTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { MergeTimeout = old })
+	cl := NewClient("github.com", "", nil, os.Environ())
+	err := cl.LinkStack(context.Background(), "acme/widgets", []int{7, 8})
+	if !errors.Is(err, moor.ErrMergeTimeout) {
+		t.Fatalf("LinkStack = %v, want moor.ErrMergeTimeout", err)
+	}
+}
+
 // prSearchNode is a search node for a pull request with GitHub's state fields; "" is null.
 func prSearchNode(repo string, n int, state, review, checks, mergeable, mergeState string) string {
 	opt := func(v string) string {

@@ -63,12 +63,16 @@ func (c *Client) MergePR(ctx context.Context, url, method string) error {
 // MergeStack runs `gh stack merge N --yes --merge-method METHOD` for GitHub's stack number N, in an empty folder of its
 // own so gh-stack reads no repository's git config; N is an integer from GitHub, never text from a request.
 func (c *Client) MergeStack(ctx context.Context, repo string, stackNumber int, method string) error {
-	dir, err := os.MkdirTemp("", "admiral-stack-merge-")
-	if err != nil {
-		return err
+	return c.stackRun(ctx, repo, []string{"stack", "merge", strconv.Itoa(stackNumber), "--yes", "--merge-method", method}, "gh could not merge the pull request")
+}
+
+// LinkStack runs `gh stack link N...` with numbers of PRs GitHub answered in repo, which every one shares, bottom to top, and no flag: --open would take drafts out of draft.
+func (c *Client) LinkStack(ctx context.Context, repo string, numbers []int) error {
+	args := []string{"stack", "link"}
+	for _, n := range numbers {
+		args = append(args, strconv.Itoa(n))
 	}
-	defer os.RemoveAll(dir)
-	return c.merge(ctx, dir, c.stackEnv(repo), []string{"stack", "merge", strconv.Itoa(stackNumber), "--yes", "--merge-method", method}, method)
+	return c.stackRun(ctx, repo, args, "gh could not link the pull requests")
 }
 
 // stackEnv pins gh-stack to the repo and host given here, whatever the environment holds, and its git config can name no program to run.
@@ -88,6 +92,21 @@ func (c *Client) merge(ctx context.Context, dir string, extra, args []string, me
 	default:
 		return fmt.Errorf("unknown merge method %q", method)
 	}
+	return c.runMutation(ctx, dir, extra, args, "gh could not merge the pull request")
+}
+
+// stackRun runs a gh stack command in a fresh empty folder with the repo pinned.
+func (c *Client) stackRun(ctx context.Context, repo string, args []string, fallback string) error {
+	dir, err := os.MkdirTemp("", "admiral-stack-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	return c.runMutation(ctx, dir, c.stackEnv(repo), args, fallback)
+}
+
+// runMutation runs a gh command that changes GitHub; a run past MergeTimeout is a result nobody knows.
+func (c *Client) runMutation(ctx context.Context, dir string, extra, args []string, fallback string) error {
 	token, err := c.Token(ctx)
 	if err != nil {
 		return err
@@ -105,7 +124,7 @@ func (c *Client) merge(ctx context.Context, dir string, extra, args []string, me
 	}
 	msg := strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: ")
 	if msg == "" {
-		msg = "gh could not merge the pull request"
+		msg = fallback
 	}
 	return errors.New(msg)
 }

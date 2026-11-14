@@ -38,7 +38,6 @@ func ReadShape(ctx context.Context, gh GitHub, prs []string) (Shape, error) {
 		details[i] = d
 	}
 	mixed := Shape{Kind: ShapeMixed}
-
 	if s, ok := stackedShape(prs, details); ok {
 		return s, nil
 	}
@@ -56,6 +55,9 @@ func ReadShape(ctx context.Context, gh GitHub, prs []string) (Shape, error) {
 	}
 	if independent {
 		return Shape{Kind: ShapeIndependent, PRs: slices.Clone(prs)}, nil
+	}
+	if !oneRepo(prs) {
+		return mixed, nil // branch names chain nothing across repositories
 	}
 
 	// A chain: the bottom is on the default branch and each next PR is based on the head of the one below.
@@ -114,4 +116,17 @@ func stackedShape(prs []string, details []Detail) (Shape, bool) {
 		out = append(out, u)
 	}
 	return Shape{Kind: ShapeStacked, StackNumber: st.Number, PRs: out}, true
+}
+
+// oneRepo says every URL is a PR of the same repository, compared case-insensitively.
+func oneRepo(prs []string) bool {
+	var first string
+	for i, u := range prs {
+		r, ok := RepoOf(u)
+		if !ok || (i > 0 && !strings.EqualFold(r, first)) {
+			return false
+		}
+		first = r
+	}
+	return true
 }

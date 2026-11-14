@@ -34,6 +34,9 @@ type GitHub interface {
 	StackOpenPRs(ctx context.Context, owner, repo string, number int) (urls []string, found bool, err error)
 	// MergeStack merges GitHub's stack number stackNumber in repo (OWNER/NAME) with the method, from no checkout. Its errors are MergePR's.
 	MergeStack(ctx context.Context, repo string, stackNumber int, method string) error
+	// LinkStack makes the PRs numbers (bottom to top, in repo OWNER/NAME) one stack on GitHub with gh stack link, from no checkout.
+	// Its errors are MergePR's.
+	LinkStack(ctx context.Context, repo string, numbers []int) error
 }
 
 // ErrMergeTimeout is a merge whose result is unknown.

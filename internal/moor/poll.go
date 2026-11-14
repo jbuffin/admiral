@@ -111,18 +111,23 @@ type Unanswered struct{ URLs []string }
 
 func (e *Unanswered) Error() string { return "GitHub could not look up " + strings.Join(e.URLs, ", ") }
 
-// StackReady says whether every PR of the stack (lowest layer first) is ready, and the URL of the highest layer
-// up to which every layer is ready; upTo is empty when the lowest layer is not ready.
+// StackReady says whether the stack has an open PR and every open PR (lowest layer first) is ready, and the URL of
+// the last ready open PR before the first open one that is not; merged and closed PRs are skipped, and upTo is
+// empty when the lowest open PR is not ready.
 func StackReady(prs []PR) (ready bool, upTo string) {
-	ready = len(prs) > 0
+	ready = false
+	open := false
 	for _, p := range prs {
+		if p.State != "OPEN" {
+			continue
+		}
+		open = true
 		if !p.Ready {
-			ready = false
-			break
+			return false, upTo
 		}
 		upTo = p.URL
 	}
-	return ready, upTo
+	return open, upTo
 }
 
 // RepoOf is the owner/name of a pull request URL's repository.

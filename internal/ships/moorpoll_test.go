@@ -53,6 +53,10 @@ type pollGitHub struct {
 	stacks     map[string][]string // StackOpenPRs answers the layers per "owner/repo/N"; a key left out is a 404
 	stackErr   error               // when set, StackOpenPRs fails
 	stackCalls []string
+
+	linkErr    error   // what LinkStack answers
+	linked     [][]int // the numbers of each LinkStack call
+	linkedRepo []string
 }
 
 func (g *pollGitHub) Host() string { return "github.com" }
@@ -154,6 +158,14 @@ func (g *pollGitHub) stackLog() []string {
 
 func (g *pollGitHub) MergeStack(context.Context, string, int, string) error {
 	return g.MergePR(context.Background(), "", "")
+}
+
+func (g *pollGitHub) LinkStack(_ context.Context, repo string, numbers []int) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.linked = append(g.linked, slices.Clone(numbers))
+	g.linkedRepo = append(g.linkedRepo, repo)
+	return g.linkErr
 }
 
 func (g *pollGitHub) set(url string, st moor.Status) {
