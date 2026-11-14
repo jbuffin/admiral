@@ -66,6 +66,8 @@ a { color: inherit; text-decoration: none; }
   background: var(--color-panel); border-radius: var(--shape-radius-lg) var(--shape-radius-lg) 0 0;
 }
 .sheet-title { margin: 4px 10px 8px; font-size: var(--font-size-title); }
+.sheet-sub { margin: 0 0 8px; color: var(--color-text2); font-size: var(--font-size-meta); line-height: 1.5; }
+.sheet ul.sheet-prs { margin: 0 0 12px; padding-left: 18px; color: var(--color-text2); font-size: var(--font-size-meta); overflow-wrap: anywhere; }
 
 /* Phone: header, content, bottom tab bar. */
 .phone { display: flex; flex-direction: column; }

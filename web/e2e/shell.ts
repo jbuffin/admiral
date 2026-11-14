@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Locator, type Page, expect } from '@playwright/test';
@@ -238,11 +238,11 @@ export function watchPage(page: Page, server: string) {
   const paths: string[] = [];
   const foreign: string[] = [];
   const errors: string[] = [];
-  // The browser logs each refused launch, ending, merge, Re-review or work-repo save, and each PR detail GitHub cannot give, as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
+  // The browser logs each refused launch, ending, merge, Re-review or work-repo save, and each PR detail or stack shape GitHub cannot give, as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
   const failedLoads: string[] = [];
   let refusedLaunches = 0;
   page.on('response', (r) => {
-    const refusable = { GET: /^\/api\/v1\/ships\/[^/]+\/pr$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|rereview)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
+    const refusable = { GET: /^\/api\/v1\/ships\/[^/]+\/(pr|stack)$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|rereview|stack)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
     const path = new URL(r.url()).pathname;
     if (refusable?.test(path) && r.status() >= 400) refusedLaunches++;
     // Moor's refusal is a 409; any other status on an ending stays an error.
@@ -717,7 +717,9 @@ export function ghStackMergeSlow(a: Admiral, seconds: number) {
 export function mergeCalls(a: Admiral): string[][] {
   const dir = join(a.home, 'fakegh', 'calls');
   if (!existsSync(dir)) return [];
+  // The fake names each call dir at random, so the order is the dirs' creation time.
   return readdirSync(dir)
+    .sort((x, y) => statSync(join(dir, x)).birthtimeMs - statSync(join(dir, y)).birthtimeMs)
     .map((d) => join(dir, d, 'argv'))
     .filter((f) => existsSync(f))
     .map((f) => readFileSync(f, 'utf8').split('\0').filter((x) => x !== ''))
@@ -732,12 +734,42 @@ export function seedGitHubStack(a: Admiral, numbers: number[], stackNumber = 4) 
   );
 }
 
+/** PRs in no GitHub stack where each is based on the head branch of the one below: chained. */
+export function seedChainedPRs(a: Admiral, numbers: number[]) {
+  numbers.forEach((n, i) => prDetail(a, n, { title: `PR ${n}`, head: `branch-${n}`, base: i === 0 ? 'main' : `branch-${numbers[i - 1]}` }));
+}
+
+/** PRs in no GitHub stack that are each based on the default branch: independent. */
+export function seedIndependentPRs(a: Admiral, numbers: number[]) {
+  for (const n of numbers) prDetail(a, n, { title: `PR ${n}`, head: `branch-${n}`, base: 'main' });
+}
+
+/** The argv (after `gh`) of every `stack link` call the fake gh recorded. */
+export function stackLinkCalls(a: Admiral): string[][] {
+  const dir = join(a.home, 'fakegh', 'calls');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .map((d) => join(dir, d, 'argv'))
+    .filter((f) => existsSync(f))
+    .map((f) => readFileSync(f, 'utf8').split('\0').filter((x) => x !== ''))
+    .filter((argv) => argv[0] === 'stack' && argv[1] === 'link');
+}
+
+/** The number GitHub gives the stack the fake's next `stack link` makes. */
+export const ghStackLinkNumber = (a: Admiral, n: number) => writeFileSync(join(a.home, 'fakegh', 'stack_link.number'), `${n}\n`);
+
+export const ghStackLinkFails = (a: Admiral, message: string) => writeFileSync(join(a.home, 'fakegh', 'stack_link.fail'), message + '\n');
+
+export const ghStackLinkSlow = (a: Admiral, seconds: number) => writeFileSync(join(a.home, 'fakegh', 'stack_link.sleep'), `${seconds}\n`);
+
 /** Every merge call the fake gh recorded with the directory it ran in (resolved, as the fake's `pwd -P` prints it). */
 export function mergeCallsIn(a: Admiral): { argv: string[]; cwd: string }[] {
   const dir = join(a.home, 'fakegh', 'calls');
   if (!existsSync(dir)) return [];
+  // The fake names each call dir at random, so the order is the dirs' creation time.
   return readdirSync(dir)
     .filter((d) => existsSync(join(dir, d, 'argv')) && existsSync(join(dir, d, 'cwd')))
+    .sort((x, y) => statSync(join(dir, x)).birthtimeMs - statSync(join(dir, y)).birthtimeMs)
     .map((d) => ({ argv: readFileSync(join(dir, d, 'argv'), 'utf8').split('\0').filter((x) => x !== ''), cwd: readFileSync(join(dir, d, 'cwd'), 'utf8').trim() }))
     .filter(({ argv }) => (argv[0] === 'pr' || argv[0] === 'stack') && argv[1] === 'merge');
 }
@@ -837,6 +869,34 @@ export async function mergeFailsInPeek(page: Page, a: Admiral) {
   expect(got?.status).toBe('moored');
 }
 
+/** A ready ship whose PRs are independent has no Merge in Peek, which a 409 would refuse: it points to the ship's PR tab, which opens there. */
+export async function independentShipPointsPeekToThePRTab(page: Page, a: Admiral) {
+  const ship = await readyStack(a, 'independent');
+  const merges: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/ships\/[^/]+\/merge$/.test(new URL(r.url()).pathname)) merges.push(r.url());
+  });
+
+  await page.goto(a.url + 'app/inbox?fleet=zulu');
+  await expect(inboxRow(page, ship)).toContainText('ready to merge');
+  await rowLinkIn(page, ship).tap();
+  const peek = peekOf(page);
+  await expect(peek).toBeVisible();
+  for (const chip of ['api#7', 'api#8']) await expect(peek.getByRole('link', { name: chip })).toBeVisible();
+  const pointer = peek.getByRole('link', { name: "Merge each PR from the ship's PR tab" });
+  await expect(pointer).toBeVisible();
+  await expect(peek.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
+  await expect(peek.getByRole('button', { name: /Merge up to/ })).toHaveCount(0);
+  expect((await pointer.boundingBox())!.height, 'the pointer height').toBeGreaterThanOrEqual(44);
+
+  await pointer.tap();
+  await expect(page).toHaveURL(shipViewUrl(a, ship));
+  await expect(viewTab(page, 'PR')).toHaveAttribute('aria-selected', 'true');
+  await expect(viewPanel(page).getByRole('button', { name: 'Merge', exact: true })).toBeVisible();
+  expect(merges, 'Peek never sent the Merge the server refuses').toEqual([]);
+  expect(mergeCalls(a)).toEqual([]);
+}
+
 /** A Merge the server answers 403, which a page that outlived an Admiral restart gets, says to reload, and the ship is not merged. */
 export async function staleMergeTokenInPeek(page: Page, a: Admiral) {
   seedMergeMethod(a, 'squash');
@@ -855,12 +915,14 @@ export async function staleMergeTokenInPeek(page: Page, a: Admiral) {
   expect(mergeCalls(a)).toEqual([]);
 }
 
-/** A ready 2-PR stack that GitHub holds as stack 4, moored and served ready, with the repository's method squash. */
-async function readyStack(a: Admiral): Promise<LaunchedShip> {
+/** A ready 2-PR ship, moored and served ready, with the repository's method squash: GitHub holds it as stack 4, or its PRs are chained or independent and in no stack. */
+async function readyStack(a: Admiral, kind: 'stacked' | 'chained' | 'independent' = 'stacked'): Promise<LaunchedShip> {
   seedMergeMethod(a, 'squash');
   prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
   prAnswer(a, 8, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
-  seedGitHubStack(a, [7, 8]);
+  if (kind === 'stacked') seedGitHubStack(a, [7, 8]);
+  else if (kind === 'chained') seedChainedPRs(a, [7, 8]);
+  else seedIndependentPRs(a, [7, 8]);
   const ship = await launchMooredShip(a, 7, { more: [8] });
   await readyOnTheServer(a, ship, 'squash');
   return ship;
@@ -964,18 +1026,56 @@ export async function mergeFromThePRTab(page: Page, a: Admiral, opts: { phone: b
   expect(mergeCalls(a), 'one merge, not one per render or poll').toHaveLength(1);
 }
 
-/** A ready stack in the PR tab: Merge with the whole-stack hint, nothing merged before the tap, and one gh stack merge by GitHub's stack number after it. */
+/** The bar of a PR tab. */
+const stackBar = (panel: Locator) => panel.locator('.stack-bar');
+
+const STACK_THEM = 'Stack them on GitHub to merge together';
+
+/**
+ * Chained PRs a moored ship carries become one GitHub stack from the PR tab, then merge as one. The bar says Not a GitHub stack and the tab
+ * offers no Merge, only the hint; Stack on GitHub opens a sheet that lists the PRs bottom first; confirming runs exactly one `gh stack link 7 8`
+ * (and nothing before it); the bar then says Stacked on GitHub with the stack's number, and one tap on Merge runs one `gh stack merge` by it.
+ */
 export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
-  const ship = await readyStack(a);
+  ghStackLinkNumber(a, 4);
+  ghStackLinkSlow(a, 2);
+  const ship = await readyStack(a, 'chained');
   ghStackMergeSlow(a, 2);
 
   const panel = await openPRTab(page, a, ship);
   await expect(page.getByRole('main')).toContainText('Ready to merge');
   await expect(panel.getByRole('tablist').getByRole('tab')).toHaveText([/#7/, /#8/]);
+  await expect(stackBar(panel)).toContainText('Not a GitHub stack. These 2 PRs build on each other branch by branch. Stacking them lets GitHub merge them together.');
+  await expect(panel.getByRole('button', { name: 'Merge', exact: true }), 'chained PRs have no Merge').toHaveCount(0);
+  await expect(panel.locator('.peek-merge .merge-hint')).toHaveText(STACK_THEM);
+  const stack = panel.getByRole('button', { name: 'Stack on GitHub', exact: true });
+  await expect(stack).toBeInViewport();
+  expect((await stack.boundingBox())!.height, 'Stack on GitHub height').toBeGreaterThanOrEqual(44);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+  await holds(() => stackLinkCalls(a).length === 0 && mergeCalls(a).length === 0, 'nothing links or merges before the tap');
+
+  await stack.tap();
+  const sheet = page.getByRole('dialog', { name: 'Stack on GitHub' });
+  await expect(sheet).toContainText('Make these 2 PRs one GitHub stack, bottom to top. Nothing is rebased or pushed; GitHub links the PRs so Merge can take them together.');
+  await expect(sheet.locator('.sheet-prs li')).toHaveText([/#7\s+branch-7\s+→\s+main/, /#8\s+branch-8\s+→\s+branch-7/]);
+  await expect(sheet.getByRole('button')).toHaveText(['Cancel', 'Stack on GitHub']);
+  const confirm = sheet.getByRole('button', { name: 'Stack on GitHub', exact: true });
+  await expect(confirm).toHaveClass(/\bprimary\b/);
+  for (const b of await sheet.getByRole('button').all()) expect((await b.boundingBox())!.height, `${await b.textContent()} height`).toBeGreaterThanOrEqual(44);
+  await holds(() => stackLinkCalls(a).length === 0, 'opening the sheet links nothing');
+
+  await confirm.tap();
+  await expect(confirm).toBeDisabled();
+  await expect.poll(() => stackLinkCalls(a)).toEqual([['stack', 'link', '7', '8']]);
+  await expect(sheet).toHaveCount(0);
+  await expect(stackBar(panel)).toContainText('Stacked on GitHub · stack #4 · 2 PRs, bottom to top. Merge takes the whole stack.');
+  await expect(panel.getByRole('button', { name: 'Stack on GitHub', exact: true })).toHaveCount(0);
+  await expect(panel.getByText("GitHub hasn't shown the stack yet")).toHaveCount(0);
+  expect(stackLinkCalls(a), 'one link, not one per tap or render').toHaveLength(1);
+
   const merge = await expectWholeStackMerge(panel);
   await expect(panel.getByRole('button', { name: "Don't follow reviews" })).toBeEnabled();
   await expect(wakeButton(page)).toHaveCount(1);
-  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
   await holds(() => mergeCalls(a).length === 0, 'a stack is merged only by the tap');
 
   await merge.tap();
@@ -985,6 +1085,72 @@ export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts:
     .poll(async () => (await (await fetch(`${a.url}api/v1/ships`)).json() as { ships: ShipJSON[] }).ships.find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
     .not.toBe('moored');
   expect(mergeCalls(a), 'one merge, not one per layer').toHaveLength(1);
+}
+
+/** A link GitHub refuses keeps the sheet open with the message, runs the one link, and the bar still says Not a GitHub stack. */
+export async function stackLinkFailsInThePRTab(page: Page, a: Admiral) {
+  ghStackLinkFails(a, 'GraphQL: could not link the pull requests (linkStack)');
+  const ship = await readyStack(a, 'chained');
+
+  const panel = await openPRTab(page, a, ship);
+  await panel.getByRole('button', { name: 'Stack on GitHub', exact: true }).tap();
+  const sheet = page.getByRole('dialog', { name: 'Stack on GitHub' });
+  await sheet.getByRole('button', { name: 'Stack on GitHub', exact: true }).tap();
+  await expect(sheet.getByRole('alert')).toContainText('could not link the pull requests');
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Stack on GitHub', exact: true })).toBeEnabled();
+  expect(stackLinkCalls(a)).toEqual([['stack', 'link', '7', '8']]);
+  await expect(stackBar(panel)).toContainText('Not a GitHub stack.');
+  await expect(stackBar(panel)).not.toContainText('Stacked on GitHub');
+  expect(mergeCalls(a)).toEqual([]);
+  await sheet.getByRole('button', { name: 'Cancel', exact: true }).tap();
+  await expect(sheet).toHaveCount(0);
+  expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
+}
+
+/**
+ * Two independent PRs (each based on the default branch) a moored ship carries: no bar, no Stack on GitHub; each sub-tab's Merge runs
+ * `gh pr merge` for its own PR alone, with the method as its only hint; the ship stays moored after the first and leaves after the last.
+ */
+export async function independentPRsMergeOneAtATime(page: Page, a: Admiral, opts: { phone: boolean }) {
+  const ship = await readyStack(a, 'independent');
+  ghMergeSlow(a, 1);
+
+  const panel = await openPRTab(page, a, ship);
+  const tabs = panel.getByRole('tablist').getByRole('tab');
+  await expect(tabs).toHaveText([/#7/, /#8/]);
+  const merge = panel.getByRole('button', { name: 'Merge', exact: true });
+  // Merge shows only once the shape is read, so these absences are not just the shape's not having arrived.
+  await expect(merge).toBeInViewport();
+  await expect(stackBar(panel)).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Stack on GitHub' })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: /Merge up to/ })).toHaveCount(0);
+  expect((await merge.boundingBox())!.height, 'Merge height').toBeGreaterThanOrEqual(44);
+  await expect(panel.locator('.peek-merge .merge-hint')).toHaveText('squash');
+  await expect(panel).not.toContainText(/whole stack/i);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+  await holds(() => mergeCalls(a).length === 0, 'nothing merges before the tap');
+
+  await merge.tap();
+  await expect(merge).toBeDisabled();
+  await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
+  await expect(panel.locator('.pr-detail').getByText('Merged', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
+  // The merge asks for a poll; the sub-tab turning merged shows it ran.
+  await expect(tabs.nth(0)).toHaveClass(/\bmerged\b/);
+  expect((await listShips(a)).find((s) => s.session === ship.session)?.status, 'the ship stays moored while PR 8 is open').toBe('moored');
+
+  await tabs.nth(1).tap();
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(panel.locator('.pr-detail').getByText('Merged', { exact: true }), "the other PR's Merged does not follow").toHaveCount(0);
+  const second = panel.getByRole('button', { name: 'Merge', exact: true });
+  await expect(second).toBeEnabled();
+  await expect(panel.locator('.peek-merge .merge-hint')).toHaveText('squash');
+  await second.tap();
+  await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash'], ['pr', 'merge', `${PR_BASE}/8`, '--squash']]);
+  await expect
+    .poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
+    .not.toBe('moored');
 }
 
 /** Don't follow reviews in the PR tab ends the mooring the way the Ships row's button does: the same route, and the ship leaves. */
@@ -1036,22 +1202,39 @@ export async function staleMergeTokenInThePRTab(page: Page, a: Admiral) {
   expect(mergeCalls(a)).toEqual([]);
 }
 
-/** PRs GitHub does not hold as one stack (PR 8 is based on another branch) are refused by the server (409), and the tab shows that message and merges nothing. */
+/** PRs that are neither one chain nor a stack (PR 8 is based on another branch) show a bar with nothing to press and no Merge, and nothing is sent to GitHub. */
 export async function stackMismatchInThePRTab(page: Page, a: Admiral) {
   const ship = await readyStack(a);
   prDetail(a, 8, { title: 'PR 8', head: 'branch-8', base: 'develop' });
 
   const panel = await openPRTab(page, a, ship);
-  const refused = page.waitForResponse((r) => r.request().method() === 'POST' && /\/ships\/[^/]+\/merge$/.test(new URL(r.url()).pathname));
-  await panel.getByRole('button', { name: 'Merge', exact: true }).tap();
-  const res = await refused;
-  expect(res.status()).toBe(409);
-  const message = ((await res.json()) as { error: string }).error;
-  expect(message, 'GitHub is the record of a stack, so the refusal names no checkout').not.toMatch(/checkout/i);
-  await expect(panel.getByRole('alert')).toContainText(message);
-  await expect(page.getByRole('alert')).toHaveCount(1);
-  expect(mergeCalls(a)).toEqual([]);
+  await expect(stackBar(panel)).toContainText('Not one chain or stack. Merge these PRs on GitHub.');
+  await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Stack on GitHub' })).toHaveCount(0);
+  await expect(stackBar(panel).getByRole('button')).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: "Don't follow reviews" })).toBeEnabled();
+  await holds(() => mergeCalls(a).length === 0 && stackLinkCalls(a).length === 0, 'a mixed ship sends nothing to GitHub');
   expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
+}
+
+/** A running ship carrying two chained PRs says to stack after it moors, with no Stack on GitHub and no Merge to press. */
+export async function chainedRunningShipWaitsToStack(page: Page, a: Admiral) {
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  prAnswer(a, 8, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  seedChainedPRs(a, [7, 8]);
+  const ship = await launchShipCarrying(a, [7, 8]);
+
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  await rowLink(page, ship).tap();
+  await expect(page).toHaveURL(shipViewUrl(a, ship));
+  await viewTab(page, 'PR').tap();
+  const panel = viewPanel(page);
+  await expect(stackBar(panel)).toContainText('Not a GitHub stack. These 2 PRs build on each other branch by branch. Stacking them lets GitHub merge them together.');
+  await expect(stackBar(panel)).toContainText('Stack after the ship moors');
+  await expect(panel.getByRole('button', { name: 'Stack on GitHub' })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
+  await expect(panel.getByRole('tablist').getByRole('tab')).toHaveText([/#7/, /#8/]);
+  expect(stackLinkCalls(a)).toEqual([]);
 }
 
 /** The ship view's one-line PR summary button, which opens the PR tab. */
@@ -1373,7 +1556,7 @@ export async function prTabOfARunningStack(page: Page, a: Admiral, opts: { phone
 
   // The sub-tabs follow the stack, bottom first, though the ship listed the top layer first; the merged one keeps its tab with its style.
   const panel = viewPanel(page);
-  await expect(panel).toContainText('Stacked on GitHub · 2 PRs, bottom to top.');
+  await expect(panel).toContainText('Stacked on GitHub · stack #4 · 2 PRs, bottom to top. Merge takes the whole stack.');
   const subtabs = panel.getByRole('tablist');
   const tabs = subtabs.getByRole('tab');
   await expect(tabs).toHaveText([/#7\s*Add the limiter/, /#8\s*Cache tokens/]);
@@ -2620,7 +2803,7 @@ export async function noAnswerReviewOnARunningShip(page: Page, a: Admiral) {
 }
 
 const STACK_URL = 'https://github.com/acme/api/stack/4';
-const stackBar = (page: Page) => viewPanel(page).locator('.stack-bar');
+const pageStackBar = (page: Page) => viewPanel(page).locator('.stack-bar');
 
 /** A moored ship carrying PRs 7 and 8, both approved, with alice's review on each; the details say they are one GitHub stack, or none. */
 async function mooredPair(a: Admiral, opts: { stacked: boolean; feedbackOn: number[] }): Promise<LaunchedShip> {
@@ -2647,8 +2830,8 @@ export async function answerAllReviewsFromThePRTab(page: Page, a: Admiral, opts:
   const command = `/commodore ${STACK_URL}`;
 
   const panel = await openPRTab(page, a, ship);
-  const bar = stackBar(page);
-  await expect(bar).toContainText('Stacked on GitHub · 2 PRs, bottom to top.');
+  const bar = pageStackBar(page);
+  await expect(bar).toContainText('Stacked on GitHub · stack #4 · 2 PRs, bottom to top.');
   const answerAll = bar.getByRole('button', { name: 'Answer all reviews', exact: true });
   await expect(answerAll).toHaveClass(/\bprimary\b/);
   expect((await answerAll.boundingBox())!.height, 'Answer all reviews height').toBeGreaterThanOrEqual(44);
@@ -2702,19 +2885,19 @@ export async function noAnswerAllWhenAPRHasNoFeedback(page: Page, a: Admiral) {
   const ship = await mooredPair(a, { stacked: true, feedbackOn: [7] });
 
   const panel = await openPRTab(page, a, ship);
-  await expect(stackBar(page)).toContainText('Stacked on GitHub · 2 PRs, bottom to top.');
+  await expect(pageStackBar(page)).toContainText('Stacked on GitHub · stack #4 · 2 PRs, bottom to top.');
   await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
   await expect(answerFeedbackBar(page).getByRole('button', { name: 'Answer review', exact: true })).toBeVisible();
   await expect(panel).toBeVisible();
 }
 
-/** Unstacked PRs, each with feedback, get only the per-PR Answer review. */
+/** Chained PRs not stacked on GitHub, each with feedback, get only the per-PR Answer review. */
 export async function noAnswerAllForUnstackedPRs(page: Page, a: Admiral) {
   const ship = await mooredPair(a, { stacked: false, feedbackOn: [7, 8] });
 
   await openPRTab(page, a, ship);
   await expect(answerFeedbackBar(page).getByRole('button', { name: 'Answer review', exact: true })).toBeVisible();
-  await expect(stackBar(page)).toHaveCount(0);
+  await expect(pageStackBar(page)).toContainText('Not a GitHub stack.');
   await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
 }
 

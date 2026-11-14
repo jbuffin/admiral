@@ -1,4 +1,4 @@
-import type { MooredPR, PRStack, Ship } from './api';
+import type { MooredPR, PRStack, Ship, ShipStatus, StackShape } from './api';
 import { isStackUrl, prChips, type ChipTone } from './moored';
 
 export type DetailTone = ChipTone | 'rev';
@@ -78,8 +78,6 @@ export function reviewStackBar(ship: Pick<Ship, 'url' | 'prs'>): { lead: string;
   return { lead: 'Reviewing a GitHub stack', rest: `${by(layers[0].author)} · ${layers.length} ${layers.length === 1 ? 'PR' : 'PRs'}, bottom to top.` };
 }
 
-export const stackBarText = (stacked: number, hasStack: boolean): string => (hasStack && stacked >= 2 ? `Stacked on GitHub · ${stacked} PRs, bottom to top.` : '');
-
 /** The detail that holds the stack: the first carried PR's, with its stack and answer_all. */
 export function chooseStackDetail(
   carried: MooredPR[],
@@ -100,3 +98,51 @@ export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined
 
 /** Whether Merge and Don't follow reviews stay locked: a confirm locks them, and a ship that left its mooring is running its wake, so they are free when it moors again. */
 export const actingWhile = (acting: boolean, moored: boolean): boolean => moored && acting;
+
+/** The stack bar's bold lead and the rest of its line for the shape the server read, or null when no bar shows. */
+export function stackBarLine(shape: StackShape | null): { lead: string; rest: string } | null {
+  if (!shape || shape.prs.length < 2) return null;
+  const n = shape.prs.length;
+  if (shape.shape === 'stacked') return { lead: 'Stacked on GitHub', rest: ` · stack #${shape.stack_number} · ${n} PRs, bottom to top. Merge takes the whole stack.` };
+  if (shape.shape === 'chained') return { lead: 'Not a GitHub stack.', rest: ` These ${n} PRs build on each other branch by branch. Stacking them lets GitHub merge them together.` };
+  if (shape.shape === 'mixed') return { lead: 'Not one chain or stack.', rest: ' Merge these PRs on GitHub.' };
+  return null;
+}
+
+/** What the bar offers beside its line: Stack on GitHub on a moored ship, the words for a ship still out, or nothing. */
+export function stackBarAction(shape: StackShape | null, status: ShipStatus): 'stack' | 'after-moor' | 'none' {
+  if (shape?.shape !== 'chained' || shape.prs.length < 2) return 'none';
+  return status === 'moored' ? 'stack' : status === 'underway' || status === 'needs_you' ? 'after-moor' : 'none';
+}
+
+export interface MergeChoice {
+  kind: 'none' | 'single' | 'stack' | 'pr';
+  /** The line shown where Merge would be when there is none. */
+  note: string;
+}
+
+/** Which Merge the selected sub-tab of a moored ship shows, from the shape the server read; the client never classifies PRs itself. */
+export function mergeFor(shape: StackShape | null, prs: MooredPR[], current: MooredPR, stackReady: boolean): MergeChoice {
+  const none: MergeChoice = { kind: 'none', note: '' };
+  const live = current.state === 'OPEN';
+  if (prs.length < 2) return stackReady ? { kind: 'single', note: '' } : none;
+  switch (shape?.shape) {
+    case 'stacked':
+      return live && stackReady ? { kind: 'stack', note: '' } : none;
+    case 'chained':
+      return live && stackReady ? { kind: 'none', note: 'Stack them on GitHub to merge together' } : none;
+    case 'independent':
+      return live && !!current.ready ? { kind: 'pr', note: '' } : none;
+    default:
+      return none;
+  }
+}
+
+/** The sub-tabs' order: the shape's `prs` for a chained or stacked shape, else the details' stack through orderPRs. */
+export function tabOrder(carried: MooredPR[], shape: StackShape | null, stack: Pick<PRStack, 'entries'> | null | undefined): MooredPR[] {
+  if (shape && (shape.shape === 'chained' || shape.shape === 'stacked')) {
+    const named = shape.prs.flatMap((u) => carried.filter((p) => p.url === u));
+    return [...named, ...carried.filter((p) => !named.includes(p))];
+  }
+  return orderPRs(carried, stack);
+}

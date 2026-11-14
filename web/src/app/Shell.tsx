@@ -37,7 +37,7 @@ import { ChatPanel } from './ChatPanel';
 import { InboxPanel } from './InboxPanel';
 import { watchAttention } from './attention';
 import { watchPush } from './pushLink';
-import { MergeControl } from './PeekMerge';
+import { ShipMerge } from './PeekMerge';
 import { Failure } from './PeekItem';
 import { parseBuildStamp } from './buildCheck';
 import { ShipView } from './ShipView';
@@ -222,7 +222,7 @@ function OrderRow({ order: o, source, onLaunch, onFollowError }: { order: Order;
       {merged ? (
         <p class="line">Merged</p>
       ) : ship?.stack_ready && !reviews(ship) ? (
-        <MergeControl ship={ship} onMerged={() => (mergedOrders.value = new Set(mergedOrders.value).add(mergedKey))} onError={setError} />
+        <ShipMerge ship={ship} onMerged={() => (mergedOrders.value = new Set(mergedOrders.value).add(mergedKey))} onError={setError} />
       ) : null}
       <Failure message={error} />
     </li>
