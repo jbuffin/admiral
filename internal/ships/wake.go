@@ -17,6 +17,7 @@ import (
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
+	"github.com/jbuffin/admiral/internal/skillindex"
 )
 
 // Wait texts are what a moored ship shows while a refusal that a later poll can clear holds its round back.
@@ -163,13 +164,28 @@ func (s *Service) removeWake(name string) {
 // wake is the one relaunch: a moored ship's session is recreated under its name with its record's fleet,
 // harness, model, skill, checkout and resources, and the record then hands over to tmux.
 func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr, wokenVia string, beforeLaunch func(rec moor.Record, dir string) (undoFunc, error)) (Ship, *launcher.Error) {
+	return s.wakeWith(wakeOpts{}, session, prompt, by, pr, wokenVia, beforeLaunch)
+}
+
+// wakeOpts changes wake for a Re-review: it checks the record wake read before any side effect, and needs no resume text.
+type wakeOpts struct {
+	check    func(moor.Record) *launcher.Error
+	noResume bool
+}
+
+func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Record) string, by, pr, wokenVia string, beforeLaunch func(rec moor.Record, dir string) (undoFunc, error)) (Ship, *launcher.Error) {
 	if !s.startWaking(session) {
 		return Ship{}, &launcher.Error{Status: http.StatusConflict, Msg: "a wake of ship " + session + " is already in progress", Wait: WaitInFlight}
 	}
 	defer s.endWaking(session)
-	rec, lerr := s.wakeable(session)
+	rec, lerr := s.wakeable(session, !opts.noResume)
 	if lerr != nil {
 		return Ship{}, lerr
+	}
+	if opts.check != nil {
+		if lerr := opts.check(rec); lerr != nil {
+			return Ship{}, lerr
+		}
 	}
 	if (by == "feedback" || by == "proposal") && !slices.Contains(rec.PRs, pr) {
 		return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "ship " + session + " carries no PR " + pr}
@@ -252,8 +268,8 @@ func (s *Service) uncommitWake(session string) {
 }
 
 // wakeable is the record of a ship that can be woken: 404 when it has none and is not live, 409 for a live
-// ship or a record with no resume text to prompt with.
-func (s *Service) wakeable(session string) (moor.Record, *launcher.Error) {
+// ship or, when needResume, a record with no resume text to prompt with.
+func (s *Service) wakeable(session string, needResume bool) (moor.Record, *launcher.Error) {
 	s.mooredMu.Lock()
 	s.loadMoored()
 	var rec moor.Record
@@ -272,7 +288,7 @@ func (s *Service) wakeable(session string) (moor.Record, *launcher.Error) {
 		return rec, &launcher.Error{Status: http.StatusConflict, Msg: "ship " + session + " is " + status(sess, time.Now()) + ", and only a moored ship can be woken"}
 	case !found:
 		return rec, &launcher.Error{Status: http.StatusNotFound, Msg: "ship " + session + " not found"}
-	case !moor.ValidResume(rec.Resume):
+	case needResume && !moor.ValidResume(rec.Resume):
 		return rec, &launcher.Error{Status: http.StatusConflict, Msg: "ship " + session + " has no valid resume text in its report, so it cannot be woken"}
 	}
 	return rec, nil
@@ -526,7 +542,7 @@ func (s *Service) serveAnswerReview(w http.ResponseWriter, r *http.Request) {
 		Stack string `json:"stack"`
 	}
 	decodeErr := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body)
-	rec, lerr := s.wakeable(session)
+	rec, lerr := s.wakeable(session, true)
 	switch {
 	case lerr != nil:
 		writeError(w, lerr.Status, lerr.Msg)
@@ -543,8 +559,50 @@ func (s *Service) serveAnswerReview(w http.ResponseWriter, r *http.Request) {
 	case !slices.Contains(rec.PRs, body.PR):
 		writeError(w, http.StatusBadRequest, "ship "+session+" carries no PR "+body.PR)
 		return
+	case slices.Contains(rec.Reviewing, body.PR):
+		writeError(w, http.StatusConflict, "ship "+session+" reviews "+body.PR+": Re-review it instead")
+		return
 	}
 	got, lerr := s.answerReview(r.Context(), session, body.PR)
+	if lerr != nil {
+		writeError(w, lerr.Status, lerr.Msg)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
+}
+
+// Rereview wakes a moored reviewing ship by hand with its Commodore skill on url, which must be one of the PRs
+// the record reviews or the stack its order named; the prompt is built from the record's own string.
+func (s *Service) Rereview(ctx context.Context, session, url string) (Ship, *launcher.Error) {
+	var prompt string
+	check := func(rec moor.Record) *launcher.Error {
+		if rec.Skill.Kind != "commodore" {
+			return &launcher.Error{Status: http.StatusConflict, Msg: "ship " + session + " was not launched as Commodore, so it cannot be re-reviewed"}
+		}
+		carried := ""
+		if slices.Contains(rec.Reviewing, url) {
+			carried = url
+		} else if _, _, _, _, ok := moor.ParseStack(rec.URL); ok && len(rec.Reviewing) > 0 && rec.URL == url {
+			carried = rec.URL
+		}
+		if carried == "" {
+			return &launcher.Error{Status: http.StatusBadRequest, Msg: "ship " + session + " is not reviewing " + url}
+		}
+		prompt = skillindex.Mark(rec.Harness) + rec.Skill.Name + " " + carried
+		return nil
+	}
+	return s.wakeWith(wakeOpts{check: check, noResume: true}, session, func(moor.Record) string { return prompt }, "hand", url, viaOfCtx(ctx), s.handRoundStart)
+}
+
+func (s *Service) serveRereview(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
+		return
+	}
+	got, lerr := s.Rereview(r.Context(), r.PathValue("session"), body.URL)
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
 		return

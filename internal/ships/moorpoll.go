@@ -375,6 +375,7 @@ func (s *Service) prsOf(r moor.Record) []moor.PR {
 			}
 		}
 		pr.Reviewing = slices.Contains(r.Reviewing, u)
+		pr.Responded = pr.Reviewing && ok && p.status != nil && moor.Responded(p.status[u])
 		out = append(out, pr)
 	}
 	return out

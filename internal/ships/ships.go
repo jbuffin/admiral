@@ -323,9 +323,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/wake", s.serveWake)
 	mux.HandleFunc("POST /api/ships/{session}/answer-review", s.serveAnswerReview)
 	mux.HandleFunc("POST /api/ships/{session}/next", s.serveNext)
-	mux.HandleFunc("POST /api/ships/{session}/rereview", func(w http.ResponseWriter, _ *http.Request) {
-		writeError(w, http.StatusNotImplemented, "not implemented")
-	})
+	mux.HandleFunc("POST /api/ships/{session}/rereview", s.serveRereview)
 	mux.HandleFunc("GET /api/outcomes", s.serveOutcomes)
 	mux.Handle("POST /api/ships/{session}/merge", s.mergeGuarded(http.HandlerFunc(s.serveMerge)))
 	mux.HandleFunc("POST /api/moored/refresh", s.serveMooredRefresh)
