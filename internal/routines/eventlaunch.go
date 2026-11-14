@@ -96,8 +96,8 @@ func EventLink(ref string) string {
 // LiveShip is a listed ship a routine launched on an event, with the dedupe_key of its trigger record.
 type LiveShip struct{ Session, DedupeKey string }
 
-// ListedShip is what the lookup reads of a listed ship: Routine is its routine:<id> key and Launched its RFC 3339 launch time, when it has one.
-type ListedShip struct{ Session, Fleet, Routine, Launched string }
+// ListedShip is what the lookup reads of a listed ship: Routine is its routine:<id> key, Launched its RFC 3339 launch time, when it has one, and Status its ship status.
+type ListedShip struct{ Session, Fleet, Routine, Launched, Status string }
 
 // EventShips picks the listed ships of fleet that an event launch started. recs is newest first, so the first record per session is the
 // current launch; session names are reused, so the ship must still hold that record's routine key and not predate the record.

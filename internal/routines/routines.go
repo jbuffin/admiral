@@ -463,6 +463,8 @@ type Trigger struct {
 	// Promoted and PromotedShip say a normal ship was started from this record's work.
 	Promoted     bool   `json:"promoted,omitempty"`
 	PromotedShip string `json:"promoted_ship,omitempty"`
+	// PromotedAt is when the promote mark was written; a Promote counts toward the fleet's launches per hour from then.
+	PromotedAt time.Time `json:"promoted_at,omitzero"`
 }
 
 // logLine is one line of triggers.jsonl: a record, or a mark that an earlier launch was undone or its ship ended failed.

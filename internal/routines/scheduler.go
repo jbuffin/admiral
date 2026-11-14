@@ -86,6 +86,9 @@ type Scheduler struct {
 	Enrich func(Event) Enrichment
 	// Live says what the ships hold for the rates and the dedupe_key; nil holds none.
 	Live EventLoad
+	// Listed reads the host's ships for the wall clock; EndHarness ends a ship's harness process, keeps its pane and notes the wall clock's minutes as the reason.
+	Listed     func() []ListedShip
+	EndHarness func(session string, minutes int) error
 	// Acts, when set, receives each Reported or Proposed event decision. Nil records only.
 	Acts EventActs
 	// Ready, when set, closes once the ships host knows the fleet; Run catches up only after it.

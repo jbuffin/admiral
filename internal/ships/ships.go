@@ -65,6 +65,8 @@ type Ship struct {
 	Status     string          `json:"status"`
 	ExitCode   *int            `json:"exit_code"`
 	ExitSignal *string         `json:"exit_signal"`
+	// StoppedBy is why Admiral ended the harness: wall_clock:<minutes>.
+	StoppedBy string `json:"stopped_by,omitempty"`
 	Position   *state.Position `json:"position"`
 	// PRs are a moored ship's, or the ones a running ship carries; MooredAt is set only on a moored ship.
 	PRs      []moor.PR `json:"prs,omitempty"`
