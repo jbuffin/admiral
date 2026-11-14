@@ -58,7 +58,7 @@ function Row({ row, phone, muted, onLaunch }: { row: OrderRow; phone: boolean; m
           <span class="orow-title">{o.title}</span>
           <span class="orow-meta">
             <span class="mono">{orderRef(o)}</span>
-            {row.state ? <span>·</span> : null}
+            {row.state ? <span>{' · '}</span> : null}
             {state}
           </span>
         </div>
