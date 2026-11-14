@@ -228,19 +228,6 @@ export const shipUrl = (session: string, crew?: string) => `${API}/ships/${encod
 export const conversationUrl = (session: string, before?: string, crew?: string) =>
   `${shipUrl(session, crew)}/conversation${before === undefined ? '' : `?before=${encodeURIComponent(before)}`}`;
 
-export interface ChangedFile {
-  path: string;
-  status: string;
-  added: number;
-  removed: number;
-}
-export interface Changes {
-  state: 'ok' | 'none';
-  files: ChangedFile[];
-  diff: string;
-  truncated: boolean;
-}
-
 const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
   (body.fleets ?? []).map((f) => ({
     ...f,
