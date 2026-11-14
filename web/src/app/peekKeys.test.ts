@@ -52,3 +52,15 @@ describe('a merge entry', () => {
     expect(keyHint('stop')).toBe(KEY_HINT);
   });
 });
+
+describe('a rereview entry', () => {
+  it('moves and opens the bridge, and takes no answer or remove key', () => {
+    expect(keyAction({ key: 'k' }, 'rereview')).toEqual({ kind: 'move', by: -1 });
+    expect(keyAction({ key: 'Enter' }, 'rereview')).toEqual({ kind: 'bridge' });
+    for (const key of ['r', 'R', 'y', ' ', '1', '2', '3', 'e', 'E']) expect(keyAction({ key }, 'rereview'), key).toBeNull();
+  });
+
+  it('shows the same short hint as a merge entry', () => {
+    expect(keyHint('rereview')).toBe('J K move · ↵ bridge');
+  });
+});

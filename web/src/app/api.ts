@@ -107,6 +107,9 @@ export interface MooredPR {
   // New waking events since the ship's last round, and the command that answers them; both only on a moored ship's open PR.
   feedback?: number;
   answer?: string;
+  author?: string;
+  reviewing?: boolean;
+  responded?: boolean;
 }
 export interface Ship {
   session: string;

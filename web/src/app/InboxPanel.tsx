@@ -30,7 +30,7 @@ export function useStacked(phone: boolean) {
   return phone || narrow;
 }
 
-const targetOf = (e: Entry) => ({ session: e.session, ...(e.type === 'merge' ? { merge: true as const } : e.type === 'item' ? { item: e.id } : e.crew ? { crew: e.crew.name } : {}) });
+const targetOf = (e: Entry) => ({ session: e.session, ...(e.type === 'merge' ? { merge: true as const } : e.type === 'rereview' ? { rereview: true as const } : e.type === 'item' ? { item: e.id } : e.crew ? { crew: e.crew.name } : {}) });
 
 // What an entry asks of you: an answer to a stop, a question or a merge; the rest is a review.
 const needsAnswer = (e: Entry) => e.type !== 'item' || ANSWER.has(e.item!.kind);

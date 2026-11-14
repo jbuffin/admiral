@@ -11,6 +11,7 @@ import { CrewMemberBody, CrewNotesBody, isCrewKind, type MemberStep, readCrew, u
 import { crewRemoveFold } from './crewItems';
 import { blankReview, EventProposalBody, FindingsBody, RoutineProposalBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
 import { MergeBody } from './PeekMerge';
+import { ReReviewBody } from './ReReview';
 import { PeekQuestions } from './PeekQuestions';
 import { EVENTS } from './PeekItem';
 import type { KeyAct } from './peekKeys';
@@ -217,9 +218,9 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
         ) : null}
       </div>
       <div class="peek-body">
-        {entry.type === 'merge' ? (
+        {entry.type === 'merge' || entry.type === 'rereview' ? (
           ship ? (
-            <MergeBody ship={ship} fold={fold} />
+            entry.type === 'merge' ? <MergeBody ship={ship} fold={fold} /> : <ReReviewBody ship={ship} fold={fold} />
           ) : shipsLoaded.value ? (
             <p class="line">This ship is gone.</p>
           ) : null

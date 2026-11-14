@@ -5,8 +5,9 @@ import { MergeControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet } from './Sheet';
-import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, orderPRs, prDot, prNumber, showAnswerAll, stackBarText, stackedPRs } from './prTab';
-import { staleNote } from './moored';
+import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, orderPRs, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, stackBarText, stackedPRs } from './prTab';
+import { reReviewPlace, reviews, staleNote } from './moored';
+import { ReReviewSheet } from './ReReview';
 import { PRSections } from './PRDetailSections';
 
 const REFRESH_MS = 30_000;
@@ -55,6 +56,7 @@ function PRHeader({ ship, url, detail }: { ship: Ship; url: string; detail: PRDe
           ) : null}
         </div>
         <div class="pr-meta">
+          {reviewMark(pr) ? <span class="role-mark">{reviewMark(pr)}</span> : null}
           {detail ? <span class="mono">#{detail.number}</span> : null}
           {detail ? (
             <span class="mono">
@@ -200,6 +202,8 @@ export function PRTab({ ship }: { ship: Ship }) {
   const [merged, setMerged] = useState(false);
   const [acting, setActing] = useState(false);
   const [picked, setPicked] = useState('');
+  // The URL of the Re-review sheet that's open: a PR's, or '' for the stack.
+  const [reReview, setReReview] = useState<string | null>(null);
   const carried = ship.prs ?? [];
   const details = useDetails(ship.session, carried.map((p) => p.url));
   const chosen = chooseStackDetail(carried, details);
@@ -209,13 +213,29 @@ export function PRTab({ ship }: { ship: Ship }) {
   useEffect(() => setActing((a) => actingWhile(a, moored)), [moored]);
   if (prs.length === 0) return <p class="line">No pull request yet. A PR shows here as soon as the ship or its crew opens one.</p>;
   const current = prs.find((p) => p.url === picked) ?? defaultPR(prs)!;
-  const bar = stackBarText(stackedPRs(prs, stack).length, stack !== null);
+  const reviewBar = reviewStackBar(ship);
+  const bar = reviewBar ? '' : stackBarText(stackedPRs(prs, stack).length, stack !== null);
+  const place = reReviewPlace(ship);
+  const respondedHere = moored && current.reviewing && current.responded && current.state === 'OPEN';
   return (
     <div class="pr-tab">
-      {bar ? (
+      {reviewBar || bar ? (
         <div class="stack-bar">
-          <span class="stack-text">{bar}</span>
-          {moored && chosen && showAnswerAll(carried, stack, chosen.answerAll) ? (
+          <span class="stack-text">
+            {reviewBar ? (
+              <>
+                <strong>{reviewBar.lead}</strong>
+                {reviewBar.rest}
+              </>
+            ) : (
+              bar
+            )}
+          </span>
+          {reviewBar && place?.place === 'stack' ? (
+            <button type="button" class="btn primary" onClick={() => setReReview('')}>
+              Re-review stack
+            </button>
+          ) : moored && chosen && showAnswerAll(carried, stack, chosen.answerAll) ? (
             <AnswerAll ship={ship} stackUrl={stack!.url} command={chosen.answerAll!} locked={acting} onBusy={setActing} />
           ) : null}
         </div>
@@ -240,8 +260,18 @@ export function PRTab({ ship }: { ship: Ship }) {
       ) : null}
       <div class="pr-detail">
         <PRHeader ship={ship} url={current.url} detail={details[current.url]} />
-        {moored && feedbackBarText(current) ? <FeedbackBar key={current.url} ship={ship} pr={current} locked={acting} onBusy={setActing} /> : null}
-        {moored && (merged || ship.stack_ready) ? (
+        {respondedHere ? (
+          <div class="feedback-bar">
+            <span class="fb-text">{current.author ? `@${current.author}` : 'The author'} responded since your review.</span>
+            {place?.place === 'stack' ? null : (
+              <button type="button" class="btn primary" onClick={() => setReReview(current.url)}>
+                Re-review
+              </button>
+            )}
+          </div>
+        ) : null}
+        {moored && !current.reviewing && feedbackBarText(current) ? <FeedbackBar key={current.url} ship={ship} pr={current} locked={acting} onBusy={setActing} /> : null}
+        {moored && !reviews(ship) && (merged || ship.stack_ready) ? (
           <div class="peek-form">
             {merged ? <p class="line">Merged</p> : <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} locked={acting} onBusy={setActing} />}
           </div>
@@ -249,11 +279,12 @@ export function PRTab({ ship }: { ship: Ship }) {
         {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : null}
         {moored && (!merged || error) ? (
           <div class="peek-form">
-            {merged ? null : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}
+            {merged || reviews(ship) ? null : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}
             <Failure message={error} />
           </div>
         ) : null}
       </div>
+      {reReview !== null ? <ReReviewSheet ship={ship} prUrl={reReview || undefined} onClose={() => setReReview(null)} /> : null}
     </div>
   );
 }

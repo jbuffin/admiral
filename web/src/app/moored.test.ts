@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Ship } from './api';
-import { carryingShip, mergeHint, nextStep, NO_RESUME_NOTE, prChips, prLabel, rowButtons, staleNote } from './moored';
+import { carryingShip, mergeHint, nextStep, NO_RESUME_NOTE, prChips, prLabel, reReviewPlace, reviews, rowButtons, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -232,5 +232,55 @@ describe('nextStep', () => {
     const conflicting = pr({ url: 'https://github.com/acme/api/pull/8', conflicts: true, mergeable: 'CONFLICTING' });
     expect(nextStep(ship({ prs: [ready, failing, conflicting] })).text).toBe('Checks failing');
     expect(nextStep(ship({ prs: [ready, conflicting, failing] })).text).toBe('Has conflicts');
+  });
+});
+
+describe('reviews', () => {
+  it('is true when any PR the ship carries is one it reviews', () => {
+    expect(reviews(ship({ prs: [pr({ reviewing: true })] }))).toBe(true);
+    expect(reviews(ship({ prs: [pr(), pr({ url: 'https://github.com/acme/api/pull/8', reviewing: true })] }))).toBe(true);
+  });
+
+  it('is false for the ship\'s own PRs, no PRs and a ship with no list', () => {
+    expect(reviews(ship({ prs: [pr(), pr({ reviewing: false })] }))).toBe(false);
+    expect(reviews(ship({ prs: [] }))).toBe(false);
+    expect(reviews(ship({ prs: undefined }))).toBe(false);
+  });
+});
+
+describe('nextStep for a reviewing ship', () => {
+  const rev = (over: Partial<MooredPR> = {}) => pr({ reviewing: true, author: 'dana', ...over });
+
+  it('is never ready to merge, though the server serves stack_ready', () => {
+    expect(nextStep(ship({ stack_ready: true, prs: [rev({ ready: true })] })).ready).toBe(false);
+  });
+});
+
+describe('reReviewPlace', () => {
+  const stackUrl = 'https://github.com/acme/api/stack/9';
+  const layer = (n: number, over: Partial<MooredPR> = {}) => pr({ url: `https://github.com/acme/api/pull/${n}`, reviewing: true, author: 'dana', ...over });
+
+  it('puts Re-review on the responded PR with the PR\'s own URL for a PR-URL ship', () => {
+    const prUrl = 'https://github.com/acme/api/pull/7';
+    expect(reReviewPlace(ship({ url: prUrl, prs: [layer(7, { responded: true })] }))).toEqual({ place: 'pr', url: prUrl });
+  });
+
+  it('puts Re-review stack on the stack bar with the stack URL for a reviewed stack of three layers', () => {
+    const prs = [layer(6), layer(7, { responded: true }), layer(8)];
+    expect(reReviewPlace(ship({ url: stackUrl, prs }))).toEqual({ place: 'stack', url: stackUrl });
+  });
+
+  it('puts Re-review stack on the bar of a mixed stack with one reviewed layer', () => {
+    const prs = [pr({ url: 'https://github.com/acme/api/pull/5' }), layer(6, { responded: true })];
+    expect(reReviewPlace(ship({ url: stackUrl, prs }))).toEqual({ place: 'stack', url: stackUrl });
+  });
+
+  it('puts Re-review on the PR, with the stack URL, for a stack that has one layer left', () => {
+    expect(reReviewPlace(ship({ url: stackUrl, prs: [layer(6, { responded: true })] }))).toEqual({ place: 'pr', url: stackUrl });
+  });
+
+  it('is null while the author has not responded, and for a ship that is not moored', () => {
+    expect(reReviewPlace(ship({ url: stackUrl, prs: [layer(6), layer(7)] }))).toBeNull();
+    expect(reReviewPlace(ship({ url: stackUrl, status: 'underway', prs: [layer(6, { responded: true }), layer(7)] }))).toBeNull();
   });
 });
