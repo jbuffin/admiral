@@ -177,7 +177,11 @@ function StopShip({ ship }: { ship: Ship }) {
       label="Stop ship"
       cls="danger stop-ship"
       action="stop"
-      question={`Stop ${ship.name}? Its harness and crew end now.`}
+      question={
+        ship.status === 'moored'
+          ? `Stop ${ship.name} for good? Admiral forgets it; its PRs stay open on GitHub.`
+          : `Stop ${ship.name}? Its harness and crew end now.`
+      }
       done={back}
       moor={{
         end: 'Stop for good',
@@ -476,9 +480,12 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         <ShipOrder ship={ship} />
         <RunningClock ship={ship} />
         {moored ? (
-          <button type="button" class="btn primary stop-ship" disabled={ship.no_resume || box.waking} onClick={() => void box.wake()}>
-            Wake
-          </button>
+          <div class="ship-actions">
+            <button type="button" class="btn primary stop-ship" disabled={box.waking} onClick={() => void box.wake()}>
+              Wake
+            </button>
+            <StopShip ship={ship} />
+          </div>
         ) : (
           <div class="ship-actions">
             {ship.status === 'anchored' || ship.status === 'sailing_off' || ship.carries_prs ? null : <ReturnToPort ship={ship} />}

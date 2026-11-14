@@ -26,7 +26,7 @@ func (f *mooredFixture) listed(t *testing.T) map[string]map[string]any {
 	return out
 }
 
-// no_resume is the one flag a client needs to know a moored ship cannot be woken, so it is true only then and absent otherwise.
+// no_resume tells a client a moored ship's wake starts bare, so it is true only then and absent otherwise.
 func TestAMooredShipWithNoValidResumeTextCarriesNoResumeAndOneWithItDoesNot(t *testing.T) {
 	f := mooredService(t, nil)
 	for name, resume := range map[string]string{"Bare": "", "Loose": "resume it", "Valid": "/commodore resume run-7"} {

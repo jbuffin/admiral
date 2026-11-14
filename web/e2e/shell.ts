@@ -595,20 +595,39 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
   await expect.poll(async () => viewPanel(page).innerText()).not.toMatch(/Feedback round 1[^\n]*\s*No conversation for this round/);
 }
 
-/** A moored ship whose report has no valid resume text cannot be woken: Wake and the box are off, with the reason, on the row and in the view. */
-export async function noWakeWithoutResume(page: Page, a: Admiral, press: (l: Locator) => Promise<void>) {
+/**
+ * A moored ship whose report has no valid resume text still wakes and stops: Wake and the box are on, with a note that the wake
+ * starts it fresh, a message wakes it with that message as the whole prompt, and Stop ship ends another one for good.
+ */
+export async function wakeAndStopWithoutResume(page: Page, a: Admiral, press: (l: Locator) => Promise<void>) {
   prAnswer(a, 9, { state: 'OPEN' });
+  prAnswer(a, 10, { state: 'OPEN' });
   const ship = await launchMooredShip(a, 9, { resume: 'resume it' });
+  const other = await launchMooredShip(a, 10, { resume: 'resume it' });
   await page.goto(a.url + 'app/ships?fleet=zulu');
-  const row = page.getByRole('main').getByRole('region', { name: /^Moored/ }).getByRole('listitem').filter({ hasText: ship.name });
-  await expect(row.getByRole('button', { name: 'Wake', exact: true })).toBeDisabled();
-  await expect(row).toContainText(/resume/i);
+  const moored = page.getByRole('main').getByRole('region', { name: /^Moored/ });
+  const row = moored.getByRole('listitem').filter({ hasText: ship.name });
+  await expect(row.getByRole('button', { name: 'Wake', exact: true })).toBeEnabled();
+
+  await press(rowLink(page, other));
+  await expect(page).toHaveURL(shipViewUrl(a, other));
+  await press(stopShipButton(page));
+  await press(stopDialog(page).getByRole('button', { name: 'Stop ship' }));
+  await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
+  await expect(moored.getByRole('listitem').filter({ hasText: other.name })).toHaveCount(0);
+  await expect.poll(() => outcomeEvents(a, other, ['unmoored', 'stopped'])).toContain('unmoored');
 
   await press(rowLink(page, ship));
   await expect(page).toHaveURL(shipViewUrl(a, ship));
-  await expect(wakeButton(page)).toBeDisabled();
-  await expect(messageBox(page)).toBeDisabled();
-  await expect(viewPanel(page)).toContainText(/resume/i);
+  await expect(wakeButton(page)).toBeEnabled();
+  await expect(stopShipButton(page)).toBeEnabled();
+  await expect(page.getByRole('main')).toContainText(/no resume text/i);
+  await expect(messageBox(page)).toBeEnabled();
+  readyToWake(a, ship);
+  await messageBox(page).fill('Pick up where you left off');
+  await press(sendButton(page));
+  await expect(wakeButton(page)).toHaveCount(0);
+  expect(await wokenPrompt(a, ship)).toBe('Pick up where you left off');
   await expect(page.getByRole('alert')).toHaveCount(0);
 }
 
