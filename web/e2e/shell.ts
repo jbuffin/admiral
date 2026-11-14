@@ -2753,7 +2753,8 @@ async function expectRereviewSheet(page: Page, command: string, title: 'Re-revie
   await expect(sheet).toBeVisible();
   await expect(sheet).toHaveAccessibleName(title);
   await expect(sheet).toContainText(`@${REVIEW_AUTHOR} has responded since your review.`);
-  await expect(sheet).toContainText(command);
+  await expect(sheet).toContainText('under the same name with:');
+  await expect(sheet.locator('code')).toHaveText(command);
   await expect(sheet.getByRole('button', { name: 'Cancel' })).toBeVisible();
   const confirm = sheet.getByRole('button', { name: title, exact: true });
   expect((await confirm.boundingBox())!.height, 'confirm height').toBeGreaterThanOrEqual(44);

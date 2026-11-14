@@ -35,9 +35,12 @@ function useReReview(ship: Ship, url: string, onDone: () => void) {
 }
 
 const Command = ({ name, url }: { name: string; url: string }) => (
-  <p class="line">
-    Wakes {name} under the same name with <code class="rr-cmd">/commodore {url}</code>
-  </p>
+  <>
+    <p class="sheet-sub">Wakes {name} under the same name with:</p>
+    <p class="sheet-sub">
+      <code class="rr-cmd">/commodore {url}</code>
+    </p>
+  </>
 );
 
 /** The confirm sheet behind the PR tab's Re-review buttons. */
