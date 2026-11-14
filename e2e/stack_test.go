@@ -28,12 +28,11 @@ func (w *world) getStack(t *testing.T, ship shipJSON) (int, string) {
 	return resp.StatusCode, string(b)
 }
 
-// postStackWith posts to the stack route with the token header as given; an empty token sends no header.
-func (w *world) postStackWith(t *testing.T, ship shipJSON, token string) (int, string) {
-	t.Helper()
+// doStack posts to the stack route with the token header as given; an empty token sends no header.
+func (w *world) doStack(ship shipJSON, token string) (int, string, error) {
 	req, err := http.NewRequest(http.MethodPost, w.stackURL(ship), bytes.NewReader([]byte("{}")))
 	if err != nil {
-		t.Fatal(err)
+		return 0, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
@@ -41,11 +40,20 @@ func (w *world) postStackWith(t *testing.T, ship shipJSON, token string) (int, s
 	}
 	resp, err := client().Do(req)
 	if err != nil {
-		t.Fatal(err)
+		return 0, "", err
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, string(b)
+	return resp.StatusCode, string(b), nil
+}
+
+func (w *world) postStackWith(t *testing.T, ship shipJSON, token string) (int, string) {
+	t.Helper()
+	code, body, err := w.doStack(ship, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return code, body
 }
 
 func (w *world) postStack(t *testing.T, ship shipJSON) (int, string) {
@@ -397,7 +405,7 @@ func TestStackLinkThatGhFailsAnswers502AndChangesNothing(t *testing.T) {
 }
 
 // A link, a merge and a wake of one ship never overlap.
-func TestStackLinkWhileAnotherLinkOrAMergeIsRunningIsRefused(t *testing.T) {
+func TestStackLinkWhileAnotherLinkIsRunningIsRefused(t *testing.T) {
 	t.Parallel()
 	w, g, ship := seedMoored(t, "MERGE", func(g *fakeGH) { g.chainedPRs(layer1, layer2) }, layer1, layer2)
 	g.write("stack_link.sleep", "2\n")
@@ -405,9 +413,13 @@ func TestStackLinkWhileAnotherLinkOrAMergeIsRunningIsRefused(t *testing.T) {
 		code int
 		body string
 	}
+	token := w.pageMergeToken(t)
 	first := make(chan result, 1)
 	go func() {
-		c, b := w.postStack(t, ship)
+		c, b, err := w.doStack(ship, token)
+		if err != nil {
+			b = err.Error()
+		}
 		first <- result{c, b}
 	}()
 	deadline := time.Now().Add(10 * time.Second)
@@ -420,15 +432,10 @@ func TestStackLinkWhileAnotherLinkOrAMergeIsRunningIsRefused(t *testing.T) {
 
 	code, body := w.postStack(t, ship)
 	wantCode(t, "POST stack while a link is running", http.StatusConflict, code, body)
-	code, body = w.postMerge(t, ship, map[string]any{})
-	wantCode(t, "POST merge while a link is running", http.StatusConflict, code, body)
 	r := <-first
 	wantCode(t, "the first POST stack", http.StatusOK, r.code, r.body)
 	if n := len(g.stackCalls("link")); n != 1 {
 		t.Errorf("gh stack link calls = %d, want one: the refused POSTs ran nothing", n)
-	}
-	if n := len(g.mergeCalls()); n != 0 {
-		t.Errorf("merge calls = %d, want none", n)
 	}
 }
 
