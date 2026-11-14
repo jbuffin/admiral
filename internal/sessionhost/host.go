@@ -108,6 +108,8 @@ const (
 	OptStopSince  = "stop-since"
 	// OptReturning is "queued" until the clean-up prompt is typed, then "sent" until the ship is stopped.
 	OptReturning = "returning"
+	// OptStoppedBy is why Admiral ended the harness while keeping the pane: wall_clock:<minutes>.
+	OptStoppedBy = "stopped-by"
 )
 
 const fixedFields = 8
