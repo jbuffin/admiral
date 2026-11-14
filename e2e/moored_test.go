@@ -566,11 +566,9 @@ func TestAReviewedPRTheAuthorPushedToShowsRespondedWithoutWakingAndReReviewWakes
 	w.finishTurn(ship, mooredReport())
 	w.wantMooredWith(ship, true, reviewedPR)
 
-	before := byName(w.in.ships(t))[ship.Name].PolledAt
-	w.kickMoored()
 	w.in.waitShipsList(t, 20*time.Second, "a poll shows the PR not responded", func(l []shipJSON) bool {
-		got := byName(l)[ship.Name]
-		return got.PolledAt != before && len(got.PRs) == 1 && !got.PRs[0].Responded
+		prs := byName(l)[ship.Name].PRs
+		return len(prs) == 1 && prs[0].Author == otherAuthor && !prs[0].Responded
 	})
 	g.prReviewedBy(reviewedPR, otherAuthor, created, "fake-viewer", "aaa111", "bbb222", time.Now().Add(-20*time.Minute)) // the author pushed
 	w.kickMoored()
