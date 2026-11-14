@@ -54,6 +54,45 @@ export interface Fleet {
   overridden: string[];
 }
 
+export interface PRActor {
+  login: string;
+  bot: boolean;
+}
+export interface PRStackEntry {
+  position: number;
+  number: number;
+  url: string;
+  state: string;
+  head: string;
+}
+export interface PRStack {
+  number: number;
+  size: number;
+  base: string;
+  url: string;
+  entries: PRStackEntry[];
+}
+/** One PR a ship carries, read fresh from GitHub: GET /api/ships/<session>/pr?url=<PR URL>. */
+export interface PRDetail {
+  number: number;
+  url: string;
+  title: string;
+  body: string;
+  state: string;
+  draft: boolean;
+  head: string;
+  base: string;
+  review: string;
+  checks: string;
+  mergeable: string;
+  merge_state: string;
+  failing_checks: { name: string; url: string }[];
+  reviews: { author: PRActor; state: string }[];
+  requested: PRActor[];
+  threads: { path: string; line: number; resolved: boolean; comments: { author: PRActor; body: string; url: string; created_at: string }[] }[];
+  comments: { author: PRActor; body: string; url: string; created_at: string }[];
+  stack: PRStack | null;
+}
 export type ShipStatus = 'needs_you' | 'underway' | 'moored' | 'anchored' | 'sailing_off';
 export interface MooredPR {
   url: string;
@@ -249,6 +288,11 @@ export async function call<T>(method: string, path: string, body?: unknown, head
 export function mergeShip(session: string): Promise<Result<unknown>> {
   const token = document.querySelector<HTMLMetaElement>('meta[name="admiral-merge-token"]')?.content ?? '';
   return call('POST', `/ships/${encodeURIComponent(session)}/merge`, undefined, { 'X-Admiral-Merge-Token': token });
+}
+
+/** One PR a ship carries, read from GitHub: 404 when the ship doesn't carry it, 502 when GitHub fails. */
+export function fetchPRDetail(session: string, url: string): Promise<Result<PRDetail>> {
+  return call<PRDetail>('GET', `/ships/${encodeURIComponent(session)}/pr?url=${encodeURIComponent(url)}`);
 }
 
 export interface Source {

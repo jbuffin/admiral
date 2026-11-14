@@ -108,7 +108,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   // PR is a placeholder here. login works in proj, which has no commit: there is nothing to compare, and reading Changes never joins the bridge.
   await viewTab(page, 'PR').tap();
   await expect(viewTab(page, 'PR')).toHaveAttribute('aria-selected', 'true');
-  await expect(viewPanel(page)).toContainText('No pull request yet');
+  await expect(viewPanel(page)).toContainText('No pull request yet. A PR shows here as soon as the ship or its crew opens one.');
   await viewTab(page, 'Changes').tap();
   await expect(viewTab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
   await expect(viewPanel(page)).toContainText('No git history to compare');

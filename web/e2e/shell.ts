@@ -238,11 +238,11 @@ export function watchPage(page: Page, server: string) {
   const paths: string[] = [];
   const foreign: string[] = [];
   const errors: string[] = [];
-  // The browser logs each refused launch, ending, merge or work-repo save as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
+  // The browser logs each refused launch, ending, merge or work-repo save, and each PR detail GitHub cannot give, as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
   const failedLoads: string[] = [];
   let refusedLaunches = 0;
   page.on('response', (r) => {
-    const refusable = { POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
+    const refusable = { GET: /^\/api\/v1\/ships\/[^/]+\/pr$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
     const path = new URL(r.url()).pathname;
     if (refusable?.test(path) && r.status() >= 400) refusedLaunches++;
     // Moor's refusal is a 409; any other status on an ending stays an error.
@@ -471,7 +471,7 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
 
   const main = page.getByRole('main');
   await expect(main).toContainText(/moored/i);
-  await expect(main).toContainText('api#7');
+  await expect(prSummaryButton(page)).toHaveText(/1 PR · #7 waiting on review/);
   await expect(wakeButton(page)).toBeEnabled();
   await expect(viewPanel(page)).toContainText(/moored/i);
   await expect(page.getByRole('alert')).toHaveCount(0);
@@ -482,7 +482,7 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
   await expect(viewPanel(page).getByText('Loading…')).toHaveCount(0);
   await expect(page.getByRole('alert')).toHaveCount(0);
   await viewTab(page, 'PR').click();
-  await expect(viewPanel(page)).toContainText('api#7');
+  await expect(viewPanel(page)).toContainText('#7');
   // A moored ship that is not ready: the tab has Don't follow reviews and no Merge or Dismiss, and the head's Wake is the only one.
   await expect(viewPanel(page).getByRole('button', { name: "Don't follow reviews" })).toBeEnabled();
   await expect(viewPanel(page).getByRole('button', { name: /^Merge/ })).toHaveCount(0);
@@ -571,6 +571,8 @@ export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Loca
   for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expect(rowOf(first)).toContainText(chip);
   for (const chip of ['Changes requested', 'Checks failing', 'Conflicts']) await expect(rowOf(second)).toContainText(chip);
   await expect(rowOf(first)).not.toContainText('Conflicts');
+  await expectChipTone(page, rowOf(first).getByText('Approved', { exact: true }), 'ok');
+  await expectChipTone(page, rowOf(second).getByText('Checks failing', { exact: true }), 'err');
   // Ready to merge is a status on the moored row, which stays in its group; a PR that is not ready shows none.
   await expect(rowOf(first)).toContainText('Ready to merge');
   await expect(rowOf(second)).not.toContainText('Ready to merge');
@@ -861,8 +863,11 @@ export async function mergeFromThePRTab(page: Page, a: Admiral, opts: { phone: b
 
   const panel = await openPRTab(page, a, ship);
   await expect(page.getByRole('main')).toContainText('Ready to merge');
-  await expect(panel.getByRole('link', { name: 'api#7' })).toHaveAttribute('href', `${PR_BASE}/7`);
-  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expect(panel).toContainText(chip);
+  await expect(panel).toContainText('#7');
+  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expectChipTone(page, panel.getByText(chip, { exact: true }), 'ok');
+  // The moored journeys seed no PR detail, so the header falls back to the number and a muted line, with no sub-tab row and no alert.
+  await expect(panel).toContainText("Couldn't load this PR from GitHub.");
+  await expect(panel.getByRole('tablist')).toHaveCount(0);
   const merge = panel.getByRole('button', { name: 'Merge', exact: true });
   const unfollow = panel.getByRole('button', { name: "Don't follow reviews" });
   for (const [name, b] of [['Merge', merge], ["Don't follow reviews", unfollow]] as const) {
@@ -896,7 +901,7 @@ export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts:
 
   const panel = await openPRTab(page, a, ship);
   await expect(page.getByRole('main')).toContainText('Ready to merge');
-  for (const chip of ['api#7', 'api#8']) await expect(panel.getByRole('link', { name: chip })).toBeVisible();
+  await expect(panel.getByRole('tablist').getByRole('tab')).toHaveText([/#7/, /#8/]);
   const merge = await expectWholeStackMerge(panel);
   await expect(panel.getByRole('button', { name: "Don't follow reviews" })).toBeEnabled();
   await expect(wakeButton(page)).toHaveCount(1);
@@ -976,6 +981,176 @@ export async function stackMismatchInThePRTab(page: Page, a: Admiral) {
   await expect(page.getByRole('alert')).toHaveCount(1);
   expect(mergeCalls(a)).toEqual([]);
   expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
+}
+
+/** The ship view's one-line PR summary button, which opens the PR tab. */
+export const prSummaryButton = (page: Page) => page.getByRole('main').getByRole('button', { name: /\d+ PRs? · / });
+
+/** What the fake gh's poll reads of a PR's author and creation time: a running ship carries a PR its fleet's user opened at or after the ship's launch. */
+export function prAuthored(a: Admiral, number: number, p: { login?: string; at?: Date } = {}) {
+  const dir = join(a.home, 'fakegh', 'pr_events');
+  mkdirSync(dir, { recursive: true });
+  const createdAt = (p.at ?? new Date(Date.now() + 3_600_000)).toISOString().replace(/\.\d+Z$/, 'Z');
+  const event = { author: { __typename: 'User', login: p.login ?? 'fake-viewer' }, createdAt };
+  writeFileSync(join(dir, `${PR_BASE}/${number}`.replace(/[/:]/g, '_')), JSON.stringify(event) + '\n');
+}
+
+/** What the fake gh answers the PR tab's single-PR query with, in GitHub's shape: `stack` lists every layer, bottom first. */
+export function prDetail(a: Admiral, number: number, d: { title: string; head: string; base: string; state?: string; draft?: boolean; stack?: { number: number; state: string; head: string }[] }) {
+  const node = {
+    number,
+    url: `${PR_BASE}/${number}`,
+    title: d.title,
+    body: '',
+    state: d.state ?? 'OPEN',
+    isDraft: d.draft ?? false,
+    headRefName: d.head,
+    baseRefName: d.base,
+    stack: d.stack
+      ? { number: 4, size: d.stack.length, baseRefName: 'main', entries: { nodes: d.stack.map((l, i) => ({ position: i + 1, pullRequest: { number: l.number, url: `${PR_BASE}/${l.number}`, state: l.state, headRefName: l.head } })) } }
+      : null,
+  };
+  const dir = join(a.home, 'fakegh', 'pr_detail');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${PR_BASE}/${number}`.replace(/[/:]/g, '_')), JSON.stringify(node) + '\n');
+}
+
+/**
+ * Launches a running ship that carries these PRs: one tool result names them all (cues read in one pass collapse to the last), the fake gh
+ * says the fleet's user opened them, and the poll is kicked until the server serves them on the ship. The caller seeds each PR's answer first.
+ */
+export async function launchShipCarrying(a: Admiral, numbers: number[]): Promise<LaunchedShip> {
+  for (const n of numbers) prAuthored(a, n);
+  const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', cues: [`toolresult ${numbers.map((n) => `${PR_BASE}/${n}`).join(' ')}`] });
+  await expect
+    .poll(
+      async () => {
+        await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
+        const got = (await listShips(a)).find((s) => s.session === ship.session) as (ShipJSON & { prs?: { url: string }[] }) | undefined;
+        return (got?.prs ?? []).map((p) => p.url).sort();
+      },
+      { timeout: 30_000 },
+    )
+    .toEqual(numbers.map((n) => `${PR_BASE}/${n}`).sort());
+  return ship;
+}
+
+/** The colour a design token paints, as the browser computes it, so a test names the token and not an RGB. */
+async function tokenColor(page: Page, token: '--color-ok' | '--color-err') {
+  return page.evaluate((t) => {
+    const probe = document.createElement('span');
+    probe.style.color = `var(${t})`;
+    document.body.appendChild(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, token);
+}
+
+/** A PR chip paints its text in the ok (green) or err (red) colour, not the muted one a shared chip rule would give it. */
+export async function expectChipTone(page: Page, chip: Locator, tone: 'ok' | 'err') {
+  await expect(chip).toHaveCSS('color', await tokenColor(page, tone === 'ok' ? '--color-ok' : '--color-err'));
+}
+
+/**
+ * Acceptance criteria 1, 4 and 5 for a running ship carrying a 2-PR stack whose bottom layer is merged (the ship listed the top one first):
+ * the tab counts the open PR, the summary line opens the tab, the sub-tabs follow the stack with the merged one marked, a tap on a sub-tab
+ * switches the header and the chips, an approved passing PR's chips are green and a failing one's red, and the tab re-reads GitHub every 30s
+ * only while it is open.
+ */
+export async function prTabOfARunningStack(page: Page, a: Admiral) {
+  const stack = [
+    { number: 7, state: 'MERGED', head: 'feat/limiter-core' },
+    { number: 8, state: 'OPEN', head: 'feat/limiter-cache' },
+  ];
+  const detail8 = (title: string) => prDetail(a, 8, { title, head: 'feat/limiter-cache', base: 'feat/limiter-core', draft: true, stack });
+  prAnswer(a, 7, { state: 'MERGED', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  prAnswer(a, 8, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  prDetail(a, 7, { title: 'Add the limiter', head: 'feat/limiter-core', base: 'main', state: 'MERGED', stack });
+  detail8('Cache tokens');
+  const ship = await launchShipCarrying(a, [8, 7]);
+
+  await page.clock.install();
+  const reads: string[] = [];
+  page.on('request', (r) => {
+    const u = new URL(r.url());
+    if (u.pathname === `/api/v1/ships/${ship.session}/pr`) reads.push(u.searchParams.get('url') ?? '');
+  });
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  await rowLink(page, ship).tap();
+  await expect(page).toHaveURL(shipViewUrl(a, ship));
+  expect(reads, 'the PR tab is closed: nothing reads a PR from GitHub').toEqual([]);
+
+  // The tab counts the open PRs, and the count is part of its name.
+  await expect(page.getByRole('tab', { name: /^PR\s*1$/ })).toBeVisible();
+
+  // The summary sits above the tabs and opens the PR tab.
+  const summary = prSummaryButton(page);
+  await expect(summary).toHaveText(/1 PR · Ready to merge/);
+  expect((await summary.boundingBox())!.y).toBeLessThan((await viewTab(page, 'PR').boundingBox())!.y);
+  await expect(viewTab(page, 'PR')).toHaveAttribute('aria-selected', 'false');
+  await summary.tap();
+  await expect(viewTab(page, 'PR')).toHaveAttribute('aria-selected', 'true');
+
+  // The sub-tabs follow the stack, bottom first, though the ship listed the top layer first; the merged one keeps its tab with its style.
+  const panel = viewPanel(page);
+  await expect(panel).toContainText('Stacked on GitHub · 2 PRs, bottom to top.');
+  const subtabs = panel.getByRole('tablist');
+  const tabs = subtabs.getByRole('tab');
+  await expect(tabs).toHaveText([/#7\s*Add the limiter/, /#8\s*Cache tokens/]);
+  await expect(tabs.nth(0)).toHaveClass(/\bmerged\b/);
+  await expect(tabs.nth(1)).not.toHaveClass(/\bmerged\b/);
+  await expect(subtabs.locator('.stack-arrow')).toHaveCount(1);
+  await expect(tabs.nth(1), 'the tab opens on the first open PR, not the merged bottom one').toHaveAttribute('aria-selected', 'true');
+  await expect(panel.getByRole('heading', { name: 'Cache tokens' })).toBeVisible();
+  expect(await subtabs.evaluate((e) => ['auto', 'scroll'].includes(getComputedStyle(e).overflowX)), 'the row scrolls sideways').toBe(true);
+  await expect.poll(() => [...new Set(reads)].sort(), 'the tab reads every PR the ship carries').toEqual([`${PR_BASE}/7`, `${PR_BASE}/8`]);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+
+  // Tapping a sub-tab switches the header and the chips.
+  await tabs.nth(1).tap();
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(panel.getByRole('heading', { name: 'Cache tokens' })).toBeVisible();
+  await expect(panel).toContainText('#8');
+  await expect(panel).toContainText('feat/limiter-cache → feat/limiter-core');
+  await expect(panel).toContainText('Draft');
+  await expect(panel.getByRole('link', { name: 'Open on GitHub' })).toHaveAttribute('href', `${PR_BASE}/8`);
+  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expectChipTone(page, panel.getByText(chip, { exact: true }), 'ok');
+  await tabs.nth(0).tap();
+  await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await expect(panel.getByRole('heading', { name: 'Add the limiter' })).toBeVisible();
+  await expect(panel).toContainText('feat/limiter-core → main');
+  await expect(panel).toContainText('Merged');
+  await expect(panel.getByText('Approved', { exact: true })).toHaveCount(0);
+
+  // A failing PR's chips are red, and the summary and dot follow the later poll.
+  prAnswer(a, 8, { state: 'OPEN', review: 'CHANGES_REQUESTED', checks: 'FAILURE', mergeable: 'CONFLICTING' });
+  expect((await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' })).status).toBe(202);
+  await expect(summary).toHaveText(/1 PR · #8 changes requested/);
+  await tabs.nth(1).tap();
+  for (const chip of ['Changes requested', 'Checks failing', 'Conflicts']) await expectChipTone(page, panel.getByText(chip, { exact: true }), 'err');
+  await expect(panel.getByText('Approved', { exact: true })).toHaveCount(0);
+
+  // Every 30s the open tab reads GitHub again; a tab left behind does not.
+  const unbroken = 'Cache-tokens-' + 'x'.repeat(150);
+  detail8(unbroken);
+  await page.clock.fastForward(30_000);
+  await expect(panel.getByRole('heading', { name: unbroken })).toBeVisible();
+  expect(await noHorizontalScroll(page), 'an unbroken long title wraps inside the header').toBe(true);
+  // A refresh GitHub fails keeps the last good detail, so the stack and its order hold.
+  rmSync(join(a.home, 'fakegh', 'pr_detail', `${PR_BASE}/7`.replace(/[/:]/g, '_')));
+  const failed = reads.length;
+  await page.clock.fastForward(30_000);
+  await expect.poll(() => reads.length, 'the refresh reads again').toBeGreaterThan(failed);
+  await expect(tabs).toHaveText([/#7\s*Add the limiter/, /#8/]);
+  await viewTab(page, 'Conversation').tap();
+  const before = reads.length;
+  detail8('Cache tokens, renamed again');
+  await page.clock.fastForward(90_000);
+  await holds(() => reads.length === before, 'a closed PR tab reads nothing', 500);
+  await viewTab(page, 'PR').tap();
+  await tabs.nth(1).tap();
+  await expect(panel.getByRole('heading', { name: 'Cache tokens, renamed again' })).toBeVisible();
 }
 
 /**
@@ -1108,7 +1283,7 @@ export async function holds(ok: () => boolean, what: string, ms = 1500) {
 }
 
 /** The ship view's tabs, and the link that opens the view from the ship's row. */
-export const viewTab = (page: Page, name: 'Conversation' | 'Terminal' | 'Changes' | 'PR') => page.getByRole('tab', { name, exact: true });
+export const viewTab = (page: Page, name: 'Conversation' | 'Terminal' | 'Changes' | 'PR') => page.getByRole('tab', { name: new RegExp(`^${name}(\\s*\\d+)?$`) });
 export const rowLink = (page: Page, ship: LaunchedShip) =>
   page.getByRole('main').getByRole('listitem').filter({ hasText: ship.name }).getByRole('link', { name: new RegExp(ship.name) });
 export const viewPanel = (page: Page) => page.getByRole('tabpanel');
