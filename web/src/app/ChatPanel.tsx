@@ -148,46 +148,28 @@ function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'la
       {confirming ? (
         <div class="confirm" role="group" aria-label="Undo">
           <p class="line">{v.undoConfirm}</p>
-          <button
-            type="button"
-            class="btn danger"
-            disabled={state.busy}
-            onClick={() =>
-              void run(
-                () => undoLaunch(fleet, c.routine, item.id),
-                () => {
-                  setUndone(true);
-                  setConfirming(false);
-                },
-              )
-            }
-          >
+          <button type="button" class="btn danger" disabled={state.busy} onClick={() => void run(() => undoLaunch(fleet, c.routine, item.id), () => { setUndone(true); setConfirming(false); })}>
             Confirm undo
           </button>
           <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming(false)}>
             Cancel
           </button>
         </div>
-      ) : (
-        <div class="peek-actions">
-          {v.actions.stop ? (
-            <button type="button" class="btn" disabled={state.busy} onClick={() => void run(() => stopShip(c.ship))}>
-              Stop
-            </button>
-          ) : null}
-          {v.actions.undo ? (
-            <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming(true)}>
-              Undo
-            </button>
-          ) : null}
-        </div>
-      )}
-      {state.error ? (
-        <p class="inbox-error" role="alert">
-          {state.error}
-        </p>
       ) : null}
-      {v.actions.mute ? <MuteRule target={{ fleet, routine: c.routine, sender: c.sender, dedupe_key: c.dedupe_key, mute_by: c.mute_by }} /> : null}
+      {state.error ? <p class="inbox-error" role="alert">{state.error}</p> : null}
+      <div class="peek-actions">
+        {v.actions.stop && !confirming ? (
+          <button type="button" class="btn" disabled={state.busy} onClick={() => void run(() => stopShip(c.ship))}>
+            Stop
+          </button>
+        ) : null}
+        {v.actions.undo && !confirming ? (
+          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming(true)}>
+            Undo
+          </button>
+        ) : null}
+        {v.actions.mute ? <MuteRule target={{ fleet, routine: c.routine, sender: c.sender, dedupe_key: c.dedupe_key, mute_by: c.mute_by }} /> : null}
+      </div>
     </div>
   );
 }

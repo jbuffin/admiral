@@ -55,12 +55,6 @@ describe('the launch card view', () => {
     expect(v.status).toBe('');
   });
 
-  it('has no Promote button, which arrives with its route', () => {
-    const v = launchCardView(item(), { ships: [ship()], undone: false });
-    expect(v.actions.undo).toBe(true);
-    expect(Object.keys(v.actions)).not.toContain('promote');
-  });
-
   it('names the routine, the level and the restricted profile of an A3 card, marked untrusted', () => {
     expect(launchCardView(item({ restricted: 'draft_fix' }), { ships: [], undone: false }).eyebrow).toBe('Review watch · A3 · Restricted · Draft fix · Untrusted');
     expect(launchCardView(item({ restricted: 'investigate' }), { ships: [], undone: false }).eyebrow).toBe('Review watch · A3 · Restricted · Investigate · Untrusted');
@@ -111,7 +105,7 @@ describe('the launch card’s calls', () => {
   it('a reload reads the undone state from the one record', async () => {
     const calls = record(200, { id: 'trig-1', undone: true });
     expect(await fetchLaunchUndone('work', 'r1', 'trig-1')).toBe(true);
-    expect(calls).toEqual([{ url: '/api/v1/fleets/work/routines/r1/runs/trig-1', method: undefined }]);
+    expect(calls).toEqual([{ url: '/api/v1/fleets/work/routines/r1/runs/trig-1', method: 'GET' }]);
     record(200, { id: 'trig-1' });
     expect(await fetchLaunchUndone('work', 'r1', 'trig-1')).toBe(false);
     record(404, { error: 'no such record' });

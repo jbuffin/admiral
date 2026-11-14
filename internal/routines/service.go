@@ -27,6 +27,8 @@ type Service struct {
 	// Stop stops a ship by session name and returns ErrShipNotListed when the host does not list it.
 	Stop func(session string) error
 
+	undoMu sync.Mutex
+
 	// ordersMu holds a Copy's snapshot, store write, config write and restore apart from any other standing-orders save.
 	ordersMu sync.Mutex
 }

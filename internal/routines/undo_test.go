@@ -296,3 +296,50 @@ func TestTheSingleRecordRouteIs404ForAnUnknownRecordAndForAnotherRoutinesRecord(
 		})
 	}
 }
+
+func TestAnUndoOfALaunchWhoseShipEndedFailedStopsItRemovesItsCloneAndMarksIt(t *testing.T) {
+	u := newUndoRig(t)
+	rec := u.launch("calm-otter")
+	dir := u.clone("calm-otter")
+	if err := u.rig.store.MarkFailed("work", rec.ID, "the ship ended failed"); err != nil {
+		t.Fatal(err)
+	}
+	if code := u.undo(u.routine.ID, rec.ID); code != http.StatusOK {
+		t.Fatalf("undo = %d, want 200", code)
+	}
+	if u.stop.n() != 1 || exists(dir) || !u.undone(rec.ID) {
+		t.Errorf("stops = %d, clone present = %v, undone = %v, want one stop, no clone and the mark", u.stop.n(), exists(dir), u.undone(rec.ID))
+	}
+}
+
+func TestAnUndoWhoseCloneIsGoneNeverStopsANewShipThatHoldsTheName(t *testing.T) {
+	u := newUndoRig(t)
+	rec := u.launch("calm-otter")
+	if code := u.undo(u.routine.ID, rec.ID); code != http.StatusOK {
+		t.Fatalf("undo = %d, want 200", code)
+	}
+	if u.stop.n() != 0 {
+		t.Errorf("stop calls = %v, want none: a listed ship with no clone is not this launch's", u.stop.calls)
+	}
+	if !u.undone(rec.ID) {
+		t.Error("the record is not marked undone")
+	}
+}
+
+func TestAnUndoWithNoStopSeamFailsAndRemovesNothing(t *testing.T) {
+	u := newUndoRig(t)
+	mux := http.NewServeMux()
+	(&routines.Service{Store: u.rig.store}).Routes(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	rec := u.launch("calm-otter")
+	dir := u.clone("calm-otter")
+	res, err := http.Post(srv.URL+"/api/fleets/work/routines/"+u.routine.ID+"/runs/"+rec.ID+"/undo", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError || !exists(dir) || u.undone(rec.ID) {
+		t.Errorf("status = %d, clone present = %v, undone = %v, want 500, the clone and no mark", res.StatusCode, exists(dir), u.undone(rec.ID))
+	}
+}

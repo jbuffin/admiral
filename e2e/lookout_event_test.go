@@ -241,14 +241,10 @@ func TestAReviewRequestFromAnAllowlistedSenderLaunchesARestrictedDraftFixShipInI
 
 	// the launch posts one launch card for the record, with no event body in it
 	var chatBody string
-	deadline := time.Now().Add(30 * time.Second)
-	for {
+	waitCond(t, 30*time.Second, "the fleet chat to hold the launch card", func() bool {
 		_, chatBody = send(t, http.MethodGet, w.in.LocalURL+"/api/chat/work/session", nil)
-		if strings.Contains(chatBody, "launch_card") || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+		return strings.Contains(chatBody, "launch_card")
+	})
 	if n := strings.Count(chatBody, `"launch_card"`); n != 1 {
 		t.Fatalf("the fleet chat holds %d launch cards, want 1: %s", n, chatBody)
 	}
