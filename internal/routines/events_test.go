@@ -82,15 +82,21 @@ func TestTheDecisionFollowsTheRoutineAndTheCeilingsUntilTheTop(t *testing.T) {
 	if g.Computed != standing.A5 {
 		t.Errorf("Computed = A%d, want A5", g.Computed)
 	}
-	g = routines.Decide(decideIn(func(in *routines.DecideInput) { in.Top = routines.EventTop }))
+	g = routines.Decide(decideIn(func(in *routines.DecideInput) { in.Top = standing.A1 }))
 	wantDecision(t, g, routines.Proposed, standing.A1, routines.ReasonTop)
 	if g.Computed != standing.A5 {
 		t.Errorf("Computed = A%d, want A5 before the top", g.Computed)
 	}
 }
 
+func TestAnEventRoutineReachesTheWholeLadderSoTheTopIsA5(t *testing.T) {
+	if routines.EventTop != standing.A5 {
+		t.Errorf("EventTop = A%d, want A5", routines.EventTop)
+	}
+}
+
 func TestTheRoutinesBeforeActingSetsTheLevelItStartsFrom(t *testing.T) {
-	for _, top := range []standing.Level{routines.EventTop, standing.A5} {
+	for _, top := range []standing.Level{standing.A1, standing.A5} {
 		g := routines.Decide(decideIn(func(in *routines.DecideInput) { in.Top, in.Routine.Before = top, routines.ReportOnly }))
 		wantDecision(t, g, routines.Reported, standing.A0)
 		g = routines.Decide(decideIn(func(in *routines.DecideInput) { in.Top, in.Routine.Before = top, routines.AskFirst }))
@@ -178,7 +184,7 @@ func TestSpendReachedStopsAnActionAtA1AndLeavesAReportAlone(t *testing.T) {
 
 func TestWithTheTopAtA1SpendReachedStillSaysSo(t *testing.T) {
 	cap := standing.PresetLimits(standing.Home).Spend.DailyWorkerUSD
-	g := routines.Decide(decideIn(func(in *routines.DecideInput) { in.Top, in.SpentTodayUSD = routines.EventTop, cap }))
+	g := routines.Decide(decideIn(func(in *routines.DecideInput) { in.Top, in.SpentTodayUSD = standing.A1, cap }))
 	wantDecision(t, g, routines.Proposed, standing.A1, routines.ReasonTop, routines.ReasonSpend)
 }
 
@@ -262,7 +268,7 @@ func TestTheDecisionNamesCausesInTheOrderSpendQuietRatesDedupe(t *testing.T) {
 func TestARoutineAlreadyAtA1NamesNoLimitThatCouldNotLowerIt(t *testing.T) {
 	limits := standing.PresetLimits(standing.Home)
 	g := routines.Decide(decideIn(func(in *routines.DecideInput) {
-		in.Routine.Before, in.Top = routines.AskFirst, routines.EventTop
+		in.Routine.Before, in.Top = routines.AskFirst, standing.A1
 		in.SpentTodayUSD = limits.Spend.DailyWorkerUSD
 		in.Limits.QuietHours = []standing.Window{{Weekdays: []string{"thu"}, Start: "09:00", End: "11:00"}}
 	}))
@@ -519,7 +525,7 @@ func evFrom(actor string) routines.Event {
 		Actor: actor, Author: actor, Viewer: "Eng", Verified: true}
 }
 
-func TestAnEventReachesAMatchingRoutineAndWritesItsRecordWithoutLaunching(t *testing.T) {
+func TestAnEventReachesAMatchingRoutineAndLaunchesItWithOneRecordAndNoProposal(t *testing.T) {
 	h := newHarness(t)
 	h.withEvents(standing.PresetLimits(standing.Home))
 	r := h.onRoutine(routines.Act, nil)
@@ -529,11 +535,11 @@ func TestAnEventReachesAMatchingRoutineAndWritesItsRecordWithoutLaunching(t *tes
 		t.Fatalf("%d records, want 1: %+v", len(recs), recs)
 	}
 	got := recs[0]
-	if got.Outcome != routines.Proposed || got.Tier != "T1" || got.Event != "https://github.com/acme/api/pull/7" || got.Sender != "Eng" ||
-		got.Rule != r.ID || !strings.Contains(got.Reason, routines.ReasonTop) {
-		t.Errorf("record = %+v, want proposed, T1, the ref, sender Eng, rule %s and the top as the reason", got, r.ID)
+	if got.Outcome != routines.Launched || got.Tier != "T1" || got.Event != "https://github.com/acme/api/pull/7" || got.Sender != "Eng" ||
+		got.Rule != r.ID || got.Ship == "" || strings.Contains(got.Reason, routines.ReasonTop) {
+		t.Errorf("record = %+v, want launched, T1, the ref, sender Eng, rule %s, a ship and no top_action reason", got, r.ID)
 	}
-	h.wantLaunches(0)
+	h.wantLaunches(1)
 	if n := len(h.proposer.proposals()); n != 0 {
 		t.Errorf("%d proposals through today's Proposer, want none: an event proposal is not a scheduled run's", n)
 	}
