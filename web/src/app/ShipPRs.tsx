@@ -6,7 +6,7 @@ import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet } from './Sheet';
 import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, stackBarAction, stackBarLine, tabOrder } from './prTab';
-import { reReviewPlace, reviews, staleNote } from './moored';
+import { MOOR_LINE, moorSheetParts, offersMoor, prLabel, reReviewPlace, reviews, staleNote } from './moored';
 import { ReReviewSheet } from './ReReview';
 import { PRSections } from './PRDetailSections';
 
@@ -309,6 +309,70 @@ function AnswerAll({ ship, stackUrl, command, locked, onBusy }: { ship: Ship; st
   );
 }
 
+/** Moor on a live ship's PR tab: the sheet lists the open PRs, and a refusal closes it and shows its message in the tab. The ship view stays; the ships push turns the row into Merge. */
+function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolean; onError: (message: string) => void; onBusy: (busy: boolean) => void }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const cancel = useRef<HTMLButtonElement>(null);
+  // Frozen when the sheet opens, so a poll never changes the list under the tap.
+  const [parts, setParts] = useState(() => moorSheetParts(ship));
+  useEffect(() => {
+    if (asking) cancel.current?.focus();
+  }, [asking]);
+  const run = async () => {
+    setBusy(true);
+    onBusy(true);
+    onError('');
+    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/stop`, { moor: true });
+    setBusy(false);
+    onBusy(false);
+    setAsking(false);
+    if (!r.ok) onError(r.error);
+  };
+  return (
+    <div class="peek-form">
+      <div class="peek-merge">
+        <button
+          type="button"
+          class="btn"
+          disabled={locked || busy}
+          onClick={() => {
+            onError('');
+            setParts(moorSheetParts(ship));
+            setAsking(true);
+          }}
+        >
+          Moor
+        </button>
+        <span class="merge-hint">{MOOR_LINE}</span>
+      </div>
+      {asking ? (
+        <Sheet label="Moor" kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
+          <p class="line">{parts.intro}</p>
+          <ul class="pr-list">
+            {parts.urls.map((url) => (
+              <li key={url}>
+                <a class="pr-link" href={url} target="_blank" rel="noreferrer">
+                  {prLabel(url)}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p class="line">{parts.explain}</p>
+          <div class="launch-foot">
+            <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+            <button type="button" class="btn primary" disabled={busy} onClick={() => void run()}>
+              Moor
+            </button>
+          </div>
+        </Sheet>
+      ) : null}
+    </div>
+  );
+}
+
 /** A ship's PRs: the stack bar, sub-tabs in stack order, the selected PR's header, chips and sections, and for a moored ship Merge and Don't follow reviews. */
 export function PRTab({ ship }: { ship: Ship }) {
   const [error, setError] = useState('');
@@ -425,10 +489,11 @@ export function PRTab({ ship }: { ship: Ship }) {
             )}
           </div>
         ) : null}
+        {offersMoor(ship) ? <MoorRow ship={ship} locked={acting} onError={setError} onBusy={setActing} /> : null}
         {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : <PRLoading failed={failed.has(current.url)} />}
-        {moored && (!mergedAll || error) ? (
+        {(moored && !mergedAll) || error ? (
           <div class="peek-form">
-            {mergedAll || reviews(ship) ? null : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}
+            {moored && !mergedAll && !reviews(ship) ? <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} /> : null}
             <Failure message={error} />
           </div>
         ) : null}
