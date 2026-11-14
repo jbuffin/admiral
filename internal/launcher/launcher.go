@@ -5,6 +5,7 @@ package launcher
 import (
 	"errors"
 	"fmt"
+	"github.com/jbuffin/admiral/internal/standing"
 	"io/fs"
 	"net/http"
 	"os"
@@ -92,6 +93,12 @@ type Request struct {
 	TriggerID string `json:"-"`
 	// WorkerLaunched marks a ship started by an outside event, which gets the fleet's Guidance in its prompt.
 	WorkerLaunched bool `json:"-"`
+	// Restricted launches the ship on the restricted profile at this level; empty is a normal launch.
+	Restricted standing.Restricted `json:"-"`
+	// EventText is the raw event; a restricted ship reads it from a file, never from its prompt.
+	EventText string `json:"-"`
+	// Template is the routine's launch text, the start of a restricted ship's prompt.
+	Template string `json:"-"`
 }
 
 // ChatOption is the chat:<fleet>:<id> key the ship stores, so a fleet's message ids never meet another's;
@@ -152,8 +159,16 @@ type Launcher struct {
 	Warn func(msg string)
 	// Guidance is a fleet's Guidance text; a worker-launched ship's prompt carries it.
 	Guidance func(fleet string) (string, error)
+	// Checkouts makes a restricted ship's own checkout; nil refuses a restricted launch.
+	Checkouts Checkouts
 
 	mu sync.Mutex // one launch at a time, so two don't pick one name
+}
+
+// Checkouts makes the checkout a restricted ship works in.
+type Checkouts interface {
+	// Make returns the path of a new checkout of dir for the session, on branch admiral/<session>.
+	Make(home, session, dir string) (path string, err error)
 }
 
 // Checked is a request that passed CheckSpec: the checkout is cleaned and Commodore resolved.
@@ -282,6 +297,11 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 			return Checked{}, refuse(http.StatusBadRequest, "the %s dock of fleet %s has %q in its args, which Admiral refuses because %s", req.Harness, fleet.Name, bad, why)
 		}
 	}
+	if req.Restricted != "" {
+		if lerr := checkRestricted(req, dock); lerr != nil {
+			return Checked{}, lerr
+		}
+	}
 	return Checked{Req: req, Fleet: fleet, Dock: dock, Skill: skill, Opts: opts, Exe: exe, Pins: pins, MemberArgs: memberArgs, MemberPrompt: memberPrompt, Warnings: warnings}, nil
 }
 
@@ -329,13 +349,20 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if !known {
 		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)
 	}
-	argv = append(argv, flags...)
-	if req.Harness == "copilot" {
-		if prompt != "" {
-			argv = append(argv, "--interactive="+prompt)
+	restricted := req.Restricted != ""
+	if restricted && l.Checkouts == nil {
+		return nil, refuse(http.StatusServiceUnavailable, "restricted ships cannot be launched: no checkout maker is configured")
+	}
+	// A restricted ship's settings, checkout and prompt all depend on its session, so they come after nameFor.
+	if !restricted {
+		argv = append(argv, flags...)
+		if req.Harness == "copilot" {
+			if prompt != "" {
+				argv = append(argv, "--interactive="+prompt)
+			}
+		} else {
+			argv = appendPrompt(argv, prompt, req.dockLaunch())
 		}
-	} else {
-		argv = appendPrompt(argv, prompt, req.dockLaunch())
 	}
 	if req.Harness == "codex" {
 		sock, err := codexpane.SocketPath(os.Getuid())
@@ -346,8 +373,14 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		paneOpts = append(paneOpts, [2]string{"codex-socket", sock})
 	}
 	env := l.shipEnv(dock)
-	if n := sessionhost.CommandSize(argv); n > sessionhost.MaxMessage {
-		return nil, refuse(http.StatusBadRequest, "the order is too long to launch: its command line is %d bytes and tmux carries at most %d", n, sessionhost.MaxMessage)
+	tooLong := func() error {
+		if n := sessionhost.CommandSize(argv); n > sessionhost.MaxMessage {
+			return refuse(http.StatusBadRequest, "the order is too long to launch: its command line is %d bytes and tmux carries at most %d", n, sessionhost.MaxMessage)
+		}
+		return nil
+	}
+	if err := tooLong(); err != nil {
+		return nil, err
 	}
 
 	l.mu.Lock()
@@ -357,6 +390,27 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 	opts[0][1] = name
+	launched := false
+	if restricted {
+		var made restrictedShip
+		if argv, made, err = l.restrictedSetup(req, session, argv); err != nil {
+			return nil, err
+		}
+		defer func() {
+			if !launched {
+				made.remove(l.Home, session)
+			}
+		}()
+		req.Dir = made.checkout
+		for i := range opts {
+			if opts[i][0] == "dir" {
+				opts[i][1] = made.checkout
+			}
+		}
+		if err := tooLong(); err != nil {
+			return nil, err
+		}
+	}
 	if req.Before != nil {
 		if err := req.Before(req.Dir); err != nil {
 			return nil, err
@@ -394,6 +448,12 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		delete(env, k)
 		unset = append(unset, k)
 	}
+	if restricted {
+		for _, k := range githubTokenVars {
+			delete(env, k)
+			unset = append(unset, k)
+		}
+	}
 
 	// A Commodore on Claude compacts at 200k tokens; only the fleet's own env
 	// overrides that, not a value Admiral inherited.
@@ -410,6 +470,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 		return nil, err
 	}
+	launched = true
 	out := &Launched{Session: session, Options: map[string]string{}}
 	for _, o := range opts {
 		out.Options[o[0]] = o[1]
@@ -613,6 +674,7 @@ func RemoveShipFiles(home, session string) {
 		_ = root.RemoveAll(rel)
 	}
 	_ = removeRunCrew(home, session)
+	RemoveRestrictedFiles(home, session)
 }
 
 // A link would send a delete under it somewhere else.
@@ -706,7 +768,14 @@ func (l *Launcher) pickName() (string, error) {
 	for _, r := range moored {
 		shipNames[r.Name], sessions[r.Session] = true, true
 	}
-	return pickName(taken(shipNames, sessions, l.Kept)), nil
+	// A restricted ship's clone outlives the ship, and Make refuses a path that exists.
+	kept := func(session string) bool {
+		if _, err := os.Lstat(filepath.Join(l.Home, "checkouts", session)); err == nil {
+			return true
+		}
+		return l.Kept != nil && l.Kept(session)
+	}
+	return pickName(taken(shipNames, sessions, kept)), nil
 }
 
 // A kept inbox takes a name too, and so does a moored ship's record.
