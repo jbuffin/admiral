@@ -373,6 +373,10 @@ func commodoreToken(resume string) (string, bool) {
 	return tok, name == "commodore"
 }
 
+func notCommodore(session string) *launcher.Error {
+	return &launcher.Error{Status: http.StatusConflict, Msg: "ship " + session + " was not launched with Commodore, so Answer all reviews cannot start a run on its stack"}
+}
+
 // stackOpen reports the ship's PRs as the poll answered them: whether more than one is OPEN and every OPEN one has feedback.
 // A PR the poll has not answered counts as OPEN with none. The caller holds mooredMu.
 func (s *Service) stackOpen(rec moor.Record) bool {
@@ -390,13 +394,18 @@ func (s *Service) stackOpen(rec moor.Record) bool {
 	return open > 1
 }
 
-// stackHoldsShipsPRs says the stack's layers are exactly the PRs the ship carries, by URL.
+// stackHoldsShipsPRs says the stack's layers and the PRs the ship carries are the same set of URLs.
 func stackHoldsShipsPRs(st *moor.DetailStack, rec moor.Record) bool {
-	if st == nil || len(st.Entries) != len(rec.PRs) {
+	if st == nil {
 		return false
 	}
 	for _, e := range st.Entries {
 		if !slices.Contains(rec.PRs, e.URL) {
+			return false
+		}
+	}
+	for _, u := range rec.PRs {
+		if !slices.ContainsFunc(st.Entries, func(e moor.DetailStackEntry) bool { return e.URL == u }) {
 			return false
 		}
 	}
@@ -421,8 +430,11 @@ func (s *Service) answerAllPrompt(rec moor.Record, st *moor.DetailStack) string 
 
 // answerAll is the Answer all reviews wake, started by hand: one new Commodore run on the stack, launched attended.
 // It bumps the round once and advances every open PR's cursor, and writes no feedback file because the run reads GitHub itself.
-func (s *Service) answerAll(ctx context.Context, session, prompt string, stack *moor.DetailStack) (Ship, *launcher.Error) {
+func (s *Service) answerAll(ctx context.Context, session string, stack *moor.DetailStack) (Ship, *launcher.Error) {
 	write := s.roundHook(func(rec moor.Record, cur moor.WakeState) (moor.WakeState, string, *launcher.Error) {
+		if _, ok := commodoreToken(rec.Resume); !ok {
+			return moor.WakeState{}, "", notCommodore(rec.Session)
+		}
 		for _, e := range stack.Entries {
 			if !slices.Contains(rec.PRs, e.URL) {
 				return moor.WakeState{}, "", &launcher.Error{Status: http.StatusBadRequest, Msg: "ship " + rec.Session + " carries no PR " + e.URL}
@@ -444,7 +456,12 @@ func (s *Service) answerAll(ctx context.Context, session, prompt string, stack *
 		}
 		return next, "", nil
 	})
-	return s.wake(session, func(moor.Record) string { return prompt }, "hand", "", viaOfCtx(ctx), write)
+	// The hook has refused a resume that is not Commodore's, so the token is there by the time the prompt is used.
+	prompt := func(rec moor.Record) string {
+		tok, _ := commodoreToken(rec.Resume)
+		return tok + " " + stack.URL
+	}
+	return s.wake(session, prompt, "hand", "", viaOfCtx(ctx), write)
 }
 
 // stackFor reads the ship's stack fresh from GitHub: the first of its PRs that sits in one. nil means GitHub reports none.
@@ -471,9 +488,9 @@ func (s *Service) stackFor(ctx context.Context, rec moor.Record) (*moor.DetailSt
 }
 
 func (s *Service) serveAnswerAll(w http.ResponseWriter, r *http.Request, rec moor.Record, stack string) {
-	tok, ok := commodoreToken(rec.Resume)
-	if !ok {
-		writeError(w, http.StatusConflict, "ship "+rec.Session+" was not launched with Commodore, so Answer all reviews cannot start a run on its stack")
+	if _, ok := commodoreToken(rec.Resume); !ok {
+		lerr := notCommodore(rec.Session)
+		writeError(w, lerr.Status, lerr.Msg)
 		return
 	}
 	st, lerr := s.stackFor(r.Context(), rec)
@@ -488,7 +505,7 @@ func (s *Service) serveAnswerAll(w http.ResponseWriter, r *http.Request, rec moo
 		writeError(w, http.StatusBadRequest, "stack "+stack+" is not the ship's stack")
 		return
 	}
-	got, lerr := s.answerAll(r.Context(), rec.Session, tok+" "+st.URL, st)
+	got, lerr := s.answerAll(r.Context(), rec.Session, st)
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
 		return

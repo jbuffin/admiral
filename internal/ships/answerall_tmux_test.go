@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/moor"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 const (
@@ -127,6 +128,10 @@ func TestAStacksDetailCarriesNoCommandUnlessEveryRuleHolds(t *testing.T) {
 			a.stacked(t, "/commodore resume run-7")
 			a.setStack(stackOf(wakePR, wakePR2, "https://github.com/acme/widgets/pull/9"))
 		}},
+		{"the stack lists one of the ship's PRs twice and lacks the other", func(t *testing.T, a *answerRig) {
+			a.stacked(t, "/commodore resume run-7")
+			a.setStack(stackOf(wakePR, wakePR))
+		}},
 		{"the stack lacks one of the ship's PRs", func(t *testing.T, a *answerRig) {
 			a.stacked(t, "/commodore resume run-7")
 			a.setStack(stackOf(wakePR))
@@ -206,6 +211,7 @@ func TestAnswerAllRefusesInTheOrderTheCodeReachesTheErrors(t *testing.T) {
 			"none":        {},
 			"extra layer": stackOf(wakePR, wakePR2, "https://github.com/acme/widgets/pull/9"),
 			"missing":     stackOf(wakePR),
+			"duplicate":   stackOf(wakePR, wakePR),
 		} {
 			a := newAnswerRig(t, 3)
 			a.stacked(t, "/commodore resume run-7")
@@ -227,6 +233,23 @@ func TestAnswerAllRefusesInTheOrderTheCodeReachesTheErrors(t *testing.T) {
 		}
 		if !a.stillMoored(t) {
 			t.Error("a refused answer woke the ship")
+		}
+	})
+	t.Run("a wake already in progress is 409 that waits", func(t *testing.T) {
+		a := newAnswerRig(t, 3)
+		a.stacked(t, "/commodore resume run-7")
+		a.s.startWaking("saltpaw")
+		defer a.s.endWaking("saltpaw")
+		if rec := a.answerStack(stackBody); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "already in progress") {
+			t.Errorf("answer = %d %s, want 409 for the wake in progress", rec.Code, rec.Body)
+		}
+	})
+	t.Run("ships that are not known yet is 503", func(t *testing.T) {
+		a := newAnswerRig(t, 3)
+		a.stacked(t, "/commodore resume run-7")
+		a.s.Host = sessionhost.New("tmux", t.TempDir()+"/tmux.sock") // never run: not ready
+		if rec := a.answerStack(stackBody); rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("answer = %d %s, want 503", rec.Code, rec.Body)
 		}
 	})
 	t.Run("a PR that lost its feedback since the page showed the button is 409", func(t *testing.T) {
@@ -340,4 +363,29 @@ func TestAFailedAnswerAllLaunchPutsTheWakeStateBack(t *testing.T) {
 	if got := a.logged(t, "woken"); len(got) != 0 {
 		t.Errorf("woken events = %v, want none", got)
 	}
+}
+
+func TestAnswerAllChecksTheRecordItWakesNotTheOneTheRouteRead(t *testing.T) {
+	t.Run("a resume that is no longer Commodore's is 409 and nothing starts", func(t *testing.T) {
+		a := newAnswerRig(t, 3)
+		a.stacked(t, "/review resume run-7")
+		_, lerr := a.s.answerAll(context.Background(), "saltpaw", stackOf(wakePR, wakePR2).Stack)
+		if lerr == nil || lerr.Status != http.StatusConflict {
+			t.Fatalf("answerAll = %v, want 409", lerr)
+		}
+		if !a.stillMoored(t) {
+			t.Error("a refused wake took the ship off its mooring")
+		}
+	})
+	t.Run("a stack entry the record does not carry is 400", func(t *testing.T) {
+		a := newAnswerRig(t, 3)
+		a.stacked(t, "/commodore resume run-7")
+		_, lerr := a.s.answerAll(context.Background(), "saltpaw", stackOf(wakePR, "https://github.com/acme/widgets/pull/9").Stack)
+		if lerr == nil || lerr.Status != http.StatusBadRequest {
+			t.Fatalf("answerAll = %v, want 400", lerr)
+		}
+		if !a.stillMoored(t) {
+			t.Error("a refused wake took the ship off its mooring")
+		}
+	})
 }
