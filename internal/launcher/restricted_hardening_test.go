@@ -1,7 +1,6 @@
 package launcher
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -266,35 +265,34 @@ func TestARelaunchOfARestrictedShipSucceedsInItsKeptCloneWithoutMakingANewOne(t 
 	}
 }
 
-// setupDraftFix runs the restricted setup for session in a real shared clone of dir and returns the clone and the settings it wrote.
-func setupDraftFix(t *testing.T, p *pinRig, dir, session string, reuse bool) (string, map[string]any) {
+// keptDraftFixClone makes the clone an earlier round of a Draft fix ship would have left under session.
+func keptDraftFixClone(t *testing.T, p *pinRig, dir, session string) string {
+	t.Helper()
+	path, err := GitCheckouts{}.Make(p.home, session, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// relaunchDraftFix relaunches session in its kept clone and returns the settings the ship was given.
+func relaunchDraftFix(t *testing.T, p *pinRig, dir, session string) (map[string]any, error) {
 	t.Helper()
 	p.l.Checkouts = GitCheckouts{}
 	p.guided(guidanceText, nil)
-	req := Request{Fleet: "work", Harness: "claude", Dir: dir, Skill: Skill{Kind: "none"}, Restricted: standing.DraftFix, EventText: rawEvent}
-	if reuse {
-		req.Session = session
+	if _, err := p.l.Launch(Request{Fleet: "work", Harness: "claude", Dir: dir, Skill: Skill{Kind: "none"},
+		Restricted: standing.DraftFix, Template: "Fix it.", Session: session, Name: "Kelpie"}); err != nil {
+		return nil, err
 	}
-	if _, made, err := p.l.restrictedSetup(req, session, nil); err != nil {
-		t.Fatal(err)
-	} else {
-		b, err := os.ReadFile(made.settings)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var m map[string]any
-		if err := json.Unmarshal(b, &m); err != nil {
-			t.Fatal(err)
-		}
-		return made.checkout, m
-	}
-	return "", nil
+	argv, _ := p.shipRecord(t)
+	_, got := settingsOf(t, argv)
+	return got, nil
 }
 
 func TestAShipCannotWidenItsReadsThroughTheAlternatesFileOfItsKeptClone(t *testing.T) {
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
-	clone, _ := setupDraftFix(t, p, p.work, "kelpie", false)
+	clone := keptDraftFixClone(t, p, p.work, "kelpie")
 	f, err := os.OpenFile(filepath.Join(clone, ".git", "objects", "info", "alternates"), os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatal(err)
@@ -304,7 +302,10 @@ func TestAShipCannotWidenItsReadsThroughTheAlternatesFileOfItsKeptClone(t *testi
 	}
 	f.Close()
 
-	_, got := setupDraftFix(t, p, p.work, "kelpie", true)
+	got, err := relaunchDraftFix(t, p, p.work, "kelpie")
+	if err != nil {
+		t.Fatal(err)
+	}
 	allow := strs(t, sub(t, got, "sandbox", "filesystem")["allowRead"])
 	if slices.Contains(allow, "/Users/x/.ssh") {
 		t.Errorf("allowRead = %q holds a path the ship wrote into alternates", allow)
@@ -317,13 +318,40 @@ func TestAShipCannotWidenItsReadsThroughTheAlternatesFileOfItsKeptClone(t *testi
 
 func TestALinkedWorktreeDirAllowsItsCommonObjectDirectory(t *testing.T) {
 	p := newPinRig(t, nil)
-	commitRepo(t, p.work)
-	wt := filepath.Join(t.TempDir(), "wt")
-	git(t, p.work, "worktree", "add", "-q", "-b", "side", wt)
-	_, got := setupDraftFix(t, p, wt, "kelpie", false)
-	want, _ := filepath.EvalSymlinks(filepath.Join(p.work, ".git", "objects"))
+	main := t.TempDir()
+	commitRepo(t, main)
+	git(t, main, "worktree", "add", "-q", "-b", "side", p.work)
+	keptDraftFixClone(t, p, p.work, "kelpie")
+	got, err := relaunchDraftFix(t, p, p.work, "kelpie")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(filepath.Join(main, ".git", "objects"))
 	if allow := strs(t, sub(t, got, "sandbox", "filesystem")["allowRead"]); !slices.Contains(allow, want) {
 		t.Errorf("allowRead = %q, want the common objects %s", allow, want)
+	}
+}
+
+func TestADirThatBorrowsObjectsByARelativeAlternateAllowsThemToo(t *testing.T) {
+	p := newPinRig(t, nil)
+	commitRepo(t, p.work)
+	lender := t.TempDir()
+	commitRepo(t, lender)
+	rel, err := filepath.Rel(filepath.Join(p.work, ".git", "objects"), filepath.Join(lender, ".git", "objects"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.work, ".git", "objects", "info", "alternates"), []byte(rel+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	keptDraftFixClone(t, p, p.work, "kelpie")
+	got, err := relaunchDraftFix(t, p, p.work, "kelpie")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(filepath.Join(lender, ".git", "objects"))
+	if allow := strs(t, sub(t, got, "sandbox", "filesystem")["allowRead"]); !slices.Contains(allow, want) {
+		t.Errorf("allowRead = %q, want the borrowed objects %s", allow, want)
 	}
 }
 
@@ -348,7 +376,7 @@ func TestADraftFixShipsSandboxCannotWriteTheFilesGitReadsItsConfigurationFrom(t 
 func TestARelaunchRemovesGitConfigurationAShipPlantedInItsKeptClone(t *testing.T) {
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
-	clone, _ := setupDraftFix(t, p, p.work, "kelpie", false)
+	clone := keptDraftFixClone(t, p, p.work, "kelpie")
 	gitDir := filepath.Join(clone, ".git")
 	attrs := filepath.Join(gitDir, "info", "attributes")
 	if err := os.WriteFile(attrs, []byte("* filter=evil\n"), 0o644); err != nil {
@@ -357,7 +385,9 @@ func TestARelaunchRemovesGitConfigurationAShipPlantedInItsKeptClone(t *testing.T
 	if err := os.MkdirAll(filepath.Join(gitDir, "modules", "m"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	setupDraftFix(t, p, p.work, "kelpie", true)
+	if _, err := relaunchDraftFix(t, p, p.work, "kelpie"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.Stat(attrs); err == nil {
 		t.Error("info/attributes survived the relaunch")
 	}
@@ -369,47 +399,68 @@ func TestARelaunchRemovesGitConfigurationAShipPlantedInItsKeptClone(t *testing.T
 	}
 }
 
-func TestACommitStillWorksInACloneThatReadsItsObjectsThroughAlternates(t *testing.T) {
-	dir, home := t.TempDir(), t.TempDir()
-	commitRepo(t, dir)
-	path, err := GitCheckouts{}.Make(home, "kelp-1", dir)
+func TestACommitAndAnFsckStillWorkInAClonePastTheReusesAlternatesRewrite(t *testing.T) {
+	p := newPinRig(t, nil)
+	commitRepo(t, p.work)
+	clone := keptDraftFixClone(t, p, p.work, "kelpie")
+	if _, err := relaunchDraftFix(t, p, p.work, "kelpie"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clone, "b.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, clone, "add", "b.txt")
+	git(t, clone, "commit", "-q", "-m", "second")
+	git(t, clone, "fsck", "--connectivity-only")
+	if got := git(t, clone, "log", "--format=%s", "-n", "2"); got != "second\nfirst" {
+		t.Errorf("log = %q, want the clone to read the Dir's objects through the rewritten alternates", got)
+	}
+}
+
+func TestARelaunchWhoseDirsObjectsCannotBeFoundRefusesAndKeepsTheClonesAlternates(t *testing.T) {
+	p := newPinRig(t, nil)
+	commitRepo(t, p.work)
+	clone := keptDraftFixClone(t, p, p.work, "kelpie")
+	alt := filepath.Join(clone, ".git", "objects", "info", "alternates")
+	before, err := os.ReadFile(alt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(path, "b.txt"), []byte("new\n"), 0o644); err != nil {
+	if err := os.Rename(filepath.Join(p.work, ".git"), filepath.Join(p.work, ".git-away")); err != nil {
 		t.Fatal(err)
 	}
-	git(t, path, "add", "b.txt")
-	git(t, path, "commit", "-q", "-m", "second")
-	if got := git(t, path, "log", "--format=%s", "-n", "2"); got != "second\nfirst" {
-		t.Errorf("log = %q", got)
+	if _, err := relaunchDraftFix(t, p, p.work, "kelpie"); err == nil {
+		t.Error("a relaunch went ahead with no object directory for the Dir")
+	}
+	if after, _ := os.ReadFile(alt); string(after) != string(before) {
+		t.Errorf("alternates = %q, want it left as %q", after, before)
 	}
 }
 
 func TestARelaunchNeverFollowsALinkTheShipPlantedInsideItsKeptClonesGit(t *testing.T) {
-	for _, rel := range []string{"info", filepath.Join("objects", "info")} {
+	for _, rel := range []string{"info", filepath.Join("objects", "info"), "config"} {
 		t.Run(rel, func(t *testing.T) {
 			p := newPinRig(t, nil)
 			commitRepo(t, p.work)
-			clone, _ := setupDraftFix(t, p, p.work, "kelpie", false)
+			clone := keptDraftFixClone(t, p, p.work, "kelpie")
 			outside := t.TempDir()
 			for _, name := range []string{"attributes", "alternates"} {
 				if err := os.WriteFile(filepath.Join(outside, name), []byte("keep\n"), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
+			target := outside
+			if rel == "config" {
+				target = filepath.Join(outside, "alternates")
+			}
 			link := filepath.Join(clone, ".git", rel)
 			if err := os.RemoveAll(link); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink(outside, link); err != nil {
+			if err := os.Symlink(target, link); err != nil {
 				t.Fatal(err)
 			}
-			p.l.Checkouts = GitCheckouts{}
-			p.guided(guidanceText, nil)
-			_, _, err := p.l.restrictedSetup(Request{Fleet: "work", Harness: "claude", Dir: p.work, Skill: Skill{Kind: "none"},
-				Restricted: standing.DraftFix, Session: "kelpie"}, "kelpie", nil)
-			if err == nil {
+			if _, err := relaunchDraftFix(t, p, p.work, "kelpie"); err == nil {
 				t.Error("a relaunch over a linked .git/" + rel + " went ahead")
 			}
 			for _, name := range []string{"attributes", "alternates"} {
@@ -422,4 +473,56 @@ func TestARelaunchNeverFollowsALinkTheShipPlantedInsideItsKeptClonesGit(t *testi
 			}
 		})
 	}
+}
+
+// plantNestedRepo does what a ship can inside its sandbox: a gitlink in the index over a gitfile that points
+// at a git directory of its own, whose config runs marker's command when any git looks at the nested repo.
+func plantNestedRepo(t *testing.T, clone, marker string) {
+	t.Helper()
+	evil := filepath.Join(clone, "evil")
+	git(t, clone, "init", "-q", "--bare", evil)
+	git(t, clone, "--git-dir="+evil, "config", "core.bare", "false")
+	git(t, clone, "--git-dir="+evil, "config", "core.fsmonitor", "touch "+marker)
+	if err := os.MkdirAll(filepath.Join(clone, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clone, "sub", ".git"), []byte("gitdir: ../evil\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, clone, "update-index", "--add", "--cacheinfo", "160000,"+git(t, clone, "rev-parse", "HEAD")+",sub")
+}
+
+func assertGitInTheCloneRunsNothingFromANestedRepo(t *testing.T, clone, marker string) {
+	t.Helper()
+	for _, args := range [][]string{{"status"}, {"diff"}, {"status", "--porcelain=2"}} {
+		git(t, clone, args...)
+		if _, err := os.Stat(marker); err == nil {
+			t.Fatalf("git %v in the clone ran the nested repo's core.fsmonitor", args)
+		}
+	}
+}
+
+func TestAFreshCloneRunsNothingFromANestedRepoAShipPlantsWhenGitLooksAtIt(t *testing.T) {
+	dir, home := t.TempDir(), t.TempDir()
+	commitRepo(t, dir)
+	clone, err := GitCheckouts{}.Make(home, "kelpie", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(t.TempDir(), "ran")
+	plantNestedRepo(t, clone, marker)
+	assertGitInTheCloneRunsNothingFromANestedRepo(t, clone, marker)
+}
+
+func TestAReusedCloneMadeBeforeTheFixRunsNothingFromANestedRepoEither(t *testing.T) {
+	p := newPinRig(t, nil)
+	commitRepo(t, p.work)
+	clone := keptDraftFixClone(t, p, p.work, "kelpie")
+	_ = exec.Command("git", "-C", clone, "config", "--unset", "diff.ignoreSubmodules").Run() // the clone predates the fix
+	if _, err := relaunchDraftFix(t, p, p.work, "kelpie"); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(t.TempDir(), "ran")
+	plantNestedRepo(t, clone, marker)
+	assertGitInTheCloneRunsNothingFromANestedRepo(t, clone, marker)
 }

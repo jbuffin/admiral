@@ -129,10 +129,11 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 	if _, _, ok := ShipFiles(home, session); !ok {
 		return nil, made, refuse(http.StatusInternalServerError, "%q is not a name a ship can have", session)
 	}
+	objectDirs := objectDirsOf(req.Dir)
 	// A relaunch or a new round of a restricted ship keeps working in its own clone.
 	if existing, err := filepath.EvalSymlinks(filepath.Join(home, "checkouts", session)); req.Session != "" && err == nil {
 		made.checkout, made.reused = existing, true
-		if err := resetClonedGit(made.checkout, req.Dir); err != nil {
+		if err := resetClonedGit(made.checkout, objectDirs); err != nil {
 			return nil, restrictedShip{}, refuse(http.StatusInternalServerError, "%v", err)
 		}
 	} else if made.checkout, err = l.Checkouts.Make(l.Home, session, req.Dir); err != nil {
@@ -151,7 +152,7 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 	if err != nil {
 		realHome = home
 	}
-	raw, err := json.MarshalIndent(restrictedSettings(req.Restricted, made.checkout, realHome, objectDirsOf(req.Dir)), "", "  ")
+	raw, err := json.MarshalIndent(restrictedSettings(req.Restricted, made.checkout, realHome, objectDirs), "", "  ")
 	if err != nil {
 		return fail(err)
 	}
@@ -233,7 +234,10 @@ func objectDirsOf(dir string) []string {
 	dirs := []string{objects}
 	if b, err := os.ReadFile(filepath.Join(objects, "info", "alternates")); err == nil {
 		for _, line := range strings.Split(string(b), "\n") {
-			if line = strings.TrimSpace(line); filepath.IsAbs(line) {
+			if line = strings.TrimSpace(line); line != "" {
+				if !filepath.IsAbs(line) {
+					line = filepath.Join(objects, line)
+				}
 				if real, err := filepath.EvalSymlinks(line); err == nil {
 					line = real
 				}
@@ -245,32 +249,45 @@ func objectDirsOf(dir string) []string {
 }
 
 // resetClonedGit clears what a ship left in its kept clone's .git for unsandboxed git to read, refusing a linked folder in the way.
-func resetClonedGit(checkout, dir string) error {
+func resetClonedGit(checkout string, objectDirs []string) error {
 	root, err := os.OpenRoot(checkout)
 	if err != nil {
 		return err
 	}
 	defer root.Close()
-	for _, rel := range []string{".git", filepath.Join(".git", "info"), filepath.Join(".git", "objects"), filepath.Join(".git", "objects", "info")} {
+	for _, rel := range []string{".git", filepath.Join(".git", "info"), filepath.Join(".git", "objects"), filepath.Join(".git", "objects", "info"), filepath.Join(".git", "config")} {
 		if fi, err := root.Lstat(rel); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("%s in the kept clone is a link", rel)
 		}
+	}
+	alt := filepath.Join(".git", "objects", "info", "alternates")
+	_, altErr := root.Lstat(alt)
+	if altErr == nil && len(objectDirs) == 0 {
+		return errors.New("the routine's repository has no object directory to point the kept clone at")
 	}
 	for _, rel := range []string{filepath.Join(".git", "info", "attributes"), filepath.Join(".git", "modules")} {
 		if err := root.RemoveAll(rel); err != nil {
 			return err
 		}
 	}
-	alt := filepath.Join(".git", "objects", "info", "alternates")
-	if _, err := root.Lstat(alt); err != nil {
+	if _, err := root.Lstat(filepath.Join(".git", "config")); err == nil {
+		if err := ignoreSubmodules(filepath.Join(checkout, ".git", "config")); err != nil {
+			return err
+		}
+	}
+	if altErr != nil {
 		return nil
 	}
 	if err := root.Remove(alt); err != nil {
 		return err
 	}
-	dirs := objectDirsOf(dir)
-	if len(dirs) == 0 {
-		return nil
+	return root.WriteFile(alt, []byte(objectDirs[0]+"\n"), 0o644)
+}
+
+// ignoreSubmodules stops git from entering a nested repo's git directory, which a ship can plant and which carries its own config.
+func ignoreSubmodules(config string) error {
+	if out, err := exec.Command("git", "config", "--file", config, "diff.ignoreSubmodules", "all").CombinedOutput(); err != nil {
+		return fmt.Errorf("git config in the clone: %v: %s", err, strings.TrimSpace(string(out)))
 	}
-	return root.WriteFile(alt, []byte(dirs[0]+"\n"), 0o644)
+	return nil
 }

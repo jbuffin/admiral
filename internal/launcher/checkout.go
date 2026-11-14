@@ -38,6 +38,9 @@ func (GitCheckouts) Make(home, session, dir string) (path string, err error) {
 	if out, err := exec.Command("git", "-C", path, "checkout", "--quiet", "-b", branch).CombinedOutput(); err != nil {
 		return fail("git checkout -b "+branch, out, err)
 	}
+	if err := ignoreSubmodules(filepath.Join(path, ".git", "config")); err != nil {
+		return fail("config", nil, err)
+	}
 	exclude := filepath.Join(path, ".git", "info", "exclude")
 	if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
 		return fail("exclude", nil, err)
