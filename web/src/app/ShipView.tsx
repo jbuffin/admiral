@@ -16,10 +16,11 @@ import { PRTab } from './ShipPRs';
 import { openCount, prSummary } from './prTab';
 import { ReadyToMerge } from './StatusGlyph';
 import { useSeenOnLeave } from './seen';
-import { NO_RESUME_NOTE, prLabel, reviews } from './moored';
+import { NO_RESUME_NOTE, reviews } from './moored';
 import { usageRow, watchUsage, type ShipUsage } from './shipUsage';
 import { boxState } from './messageBox';
 import { Sheet } from './Sheet';
+import { OpenPRs } from './OpenPRs';
 import { fleetSearch } from './fleets';
 import { go, loc, surfacePath } from './router';
 import { ships, shipsLink, shipsLoaded } from './shipsLink';
@@ -100,18 +101,7 @@ function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActi
         <Sheet label={label} kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
           {withMoor ? (
             <>
-              <p class="line">
-                {ship.name} carries {prs.length === 1 ? '1 open PR' : `${prs.length} open PRs`}.
-              </p>
-              <ul class="pr-list">
-                {prs.map((url) => (
-                  <li key={url}>
-                    <a class="pr-link" href={url} target="_blank" rel="noreferrer">
-                      {prLabel(url)}
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              <OpenPRs name={ship.name} urls={prs} />
               <p class="line">{moor.explain}</p>
             </>
           ) : (

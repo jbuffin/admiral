@@ -5,8 +5,9 @@ import { MergeControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet } from './Sheet';
+import { OpenPRs } from './OpenPRs';
 import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, stackBarAction, stackBarLine, tabOrder } from './prTab';
-import { MOOR_LINE, moorSheetParts, offersMoor, prLabel, reReviewPlace, reviews, staleNote } from './moored';
+import { MOOR_LINE, moorSheetParts, offersMoor, reReviewPlace, reviews, staleNote } from './moored';
 import { ReReviewSheet } from './ReReview';
 import { PRSections } from './PRDetailSections';
 
@@ -324,10 +325,12 @@ function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolea
     onBusy(true);
     onError('');
     const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/stop`, { moor: true });
+    setAsking(false);
+    // After a 200 the row stays off until the ships push marks the ship moored and removes it, so a second tap cannot post to a moored ship.
+    if (r.ok) return;
     setBusy(false);
     onBusy(false);
-    setAsking(false);
-    if (!r.ok) onError(r.error);
+    onError(r.error);
   };
   return (
     <div class="peek-form">
@@ -348,16 +351,7 @@ function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolea
       </div>
       {asking ? (
         <Sheet label="Moor" kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
-          <p class="line">{parts.intro}</p>
-          <ul class="pr-list">
-            {parts.urls.map((url) => (
-              <li key={url}>
-                <a class="pr-link" href={url} target="_blank" rel="noreferrer">
-                  {prLabel(url)}
-                </a>
-              </li>
-            ))}
-          </ul>
+          <OpenPRs name={ship.name} urls={parts.urls} />
           <p class="line">{parts.explain}</p>
           <div class="launch-foot">
             <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
@@ -490,10 +484,15 @@ export function PRTab({ ship }: { ship: Ship }) {
           </div>
         ) : null}
         {offersMoor(ship) ? <MoorRow ship={ship} locked={acting} onError={setError} onBusy={setActing} /> : null}
-        {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : <PRLoading failed={failed.has(current.url)} />}
-        {(moored && !mergedAll) || error ? (
+        {!moored && error ? (
           <div class="peek-form">
-            {moored && !mergedAll && !reviews(ship) ? <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} /> : null}
+            <Failure message={error} />
+          </div>
+        ) : null}
+        {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : <PRLoading failed={failed.has(current.url)} />}
+        {moored && (!mergedAll || error) ? (
+          <div class="peek-form">
+            {mergedAll || reviews(ship) ? null : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}
             <Failure message={error} />
           </div>
         ) : null}

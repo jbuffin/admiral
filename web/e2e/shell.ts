@@ -1278,6 +1278,8 @@ const MOOR_LINE = 'Admiral merges only from a moored ship. Moor ends the session
 /** A live ship carrying one ready PR, with its PR tab open: the line and a Moor button show where Merge will be. */
 async function liveShipOnItsPRTab(page: Page, a: Admiral) {
   prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  // A long description keeps Checks well below the row, so a message that lands under the PR sections is off screen.
+  prDetail(a, 7, { title: 'Cache tokens', head: 'feat/cache', base: 'main', checks: 'SUCCESS', body: Array.from({ length: 24 }, (_, i) => `Line ${i + 1} of the notes.`).join('\n\n') });
   const ship = await launchShipCarrying(a, [7]);
   const panel = await openPRTab(page, a, ship);
   await expect(panel).toContainText(MOOR_LINE);
@@ -1289,11 +1291,28 @@ async function liveShipOnItsPRTab(page: Page, a: Admiral) {
   return { ship, panel, moor };
 }
 
-/** Moor on a live ship's PR tab asks first, then moors the ship; the view stays on the ship and the tab shows Merge with no reload. */
+/** Moor on a live ship's PR tab asks first. A refusal (the PR closed on GitHub since the tab showed it) closes the sheet and shows its message under the row, above Checks, with the ship still live. Once GitHub says OPEN again, Moor moors the ship; the view stays on the ship and the tab shows Merge with no reload. */
 export async function moorFromTheLivePRTab(page: Page, a: Admiral) {
-  const { ship, moor } = await liveShipOnItsPRTab(page, a);
+  const { ship, panel, moor } = await liveShipOnItsPRTab(page, a);
   await page.evaluate(() => ((window as unknown as { kept: boolean }).kept = true));
 
+  prAnswer(a, 7, { state: 'CLOSED' });
+  const refused = endRequest(page, ship, 'stop');
+  await moor.tap();
+  await page.getByRole('dialog').getByRole('button', { name: 'Moor', exact: true }).tap();
+  expect((await refused).status()).toBe(409);
+  await expect(page.getByRole('dialog')).toBeHidden();
+  const alert = panel.getByRole('alert');
+  await expect(alert).toContainText('has no open PR to moor');
+  const checks = prSection(panel, 'Checks');
+  await expect(checks).toBeVisible();
+  const [m, al, c] = [await moor.boundingBox(), await alert.boundingBox(), await checks.boundingBox()];
+  expect(al!.y, 'the message is under the Moor row').toBeGreaterThanOrEqual(m!.y + m!.height - 1);
+  expect(al!.y + al!.height, 'the message is above Checks').toBeLessThanOrEqual(c!.y + 1);
+  expect(await statusOf(a, ship), 'a refused Moor leaves the ship live').not.toBe('moored');
+  expect(outcomeEvents(a, ship, ENDINGS)).toEqual(['launched']);
+
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
   const sent = endRequest(page, ship, 'stop');
   await moor.tap();
   const dialog = page.getByRole('dialog');
@@ -1313,24 +1332,9 @@ export async function moorFromTheLivePRTab(page: Page, a: Admiral) {
   await expect(viewPanel(page).getByRole('button', { name: 'Merge', exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(viewPanel(page).getByRole('button', { name: 'Moor', exact: true })).toHaveCount(0);
   await expect(viewPanel(page)).not.toContainText(MOOR_LINE);
+  await expect(viewPanel(page).getByRole('alert')).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { kept?: boolean }).kept), 'no reload').toBe(true);
   await expect.poll(() => statusOf(a, ship)).toBe('moored');
-}
-
-/** A PR that closed after the tab showed it: Moor's re-check refuses with 409, the sheet closes, the message shows under the row, and the ship stays live. The CLOSED answer races the tab's own poll; a poll that lands first still leaves the refusal's text in the tab. */
-export async function moorRefusedInTheLivePRTab(page: Page, a: Admiral) {
-  const { ship, moor } = await liveShipOnItsPRTab(page, a);
-  prAnswer(a, 7, { state: 'CLOSED' });
-  const sent = endRequest(page, ship, 'stop');
-  await moor.tap();
-  await page.getByRole('dialog').getByRole('button', { name: 'Moor', exact: true }).tap();
-  const res = await sent;
-  expect(res.status()).toBe(409);
-
-  await expect(page.getByRole('dialog')).toBeHidden();
-  await expect(viewPanel(page).getByRole('alert')).toContainText('has no open PR to moor');
-  expect(await statusOf(a, ship)).not.toBe('moored');
-  expect(outcomeEvents(a, ship, ENDINGS)).toEqual(['launched']);
 }
 
 /** The ship view's one-line PR summary button, which opens the PR tab. */
