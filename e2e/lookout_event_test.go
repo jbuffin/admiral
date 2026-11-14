@@ -271,9 +271,7 @@ func TestAReviewRequestFromAnAllowlistedSenderLaunchesARestrictedDraftFixShipInI
 	if _, err := os.Stat(clone); !os.IsNotExist(err) {
 		t.Errorf("the clone %s is still there after undo (%v)", clone, err)
 	}
-	if got := w.shipsWhere(func(s shipJSON) bool { return s.Session == run.Ship }); len(got) != 0 {
-		t.Errorf("the API still lists %d ships named %s after undo", len(got), run.Ship)
-	}
+	w.waitShipCount(30*time.Second, "no ship named "+run.Ship+" after undo", func(s shipJSON) bool { return s.Session == run.Ship }, 0)
 	var marked bool
 	for _, r := range w.routineRuns(id) {
 		if r.ID == run.ID {
