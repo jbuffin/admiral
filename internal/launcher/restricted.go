@@ -1,9 +1,11 @@
 package launcher
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +14,8 @@ import (
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/neutralgit"
+	"github.com/jbuffin/admiral/internal/promote"
 	"github.com/jbuffin/admiral/internal/standing"
 )
 
@@ -136,9 +140,12 @@ func restrictedSettings(level standing.Restricted, checkout, home, tempDir strin
 			denyWrite = append(denyWrite, filepath.Join(gitDir, d))
 			deny = append(deny, "Edit(/"+filepath.Join(gitDir, d)+"/**)", "Write(/"+filepath.Join(gitDir, d)+"/**)")
 		}
+		// Project settings and servers are denied too: a relaunch in this clone would load what the ship planted.
 		gm := filepath.Join(checkout, ".gitmodules")
-		filesystem["denyWrite"] = append(denyWrite, gm)
-		deny = append(deny, "Edit(/"+gm+")", "Write(/"+gm+")")
+		claude := filepath.Join(checkout, ".claude")
+		mcp := filepath.Join(checkout, ".mcp.json")
+		filesystem["denyWrite"] = append(denyWrite, gm, claude, mcp)
+		deny = append(deny, "Edit(/"+gm+")", "Write(/"+gm+")", "Edit(/"+claude+"/**)", "Write(/"+claude+"/**)", "Edit(/"+mcp+")", "Write(/"+mcp+")")
 	case standing.Investigate:
 		report := "/" + filepath.Join(checkout, ".admiral", "report.md")
 		allow = []any{"Write(" + report + ")", "Edit(" + report + ")"}
@@ -221,13 +228,63 @@ func (l *Launcher) shipCheckout(req Request, session string) (restrictedShip, st
 	} else if made.checkout, err = l.Checkouts.Make(l.Home, session, req.Dir); err != nil {
 		return restrictedShip{}, "", asError(err)
 	}
-	if !made.reused || req.EventText != "" {
+	if req.StartFrom == nil && (!made.reused || req.EventText != "") {
 		if err := writeEventFile(made.checkout, req.EventText); err != nil {
 			made.remove(home, session)
 			return restrictedShip{}, "", refuse(http.StatusInternalServerError, "%v", err)
 		}
 	}
 	return made, home, nil
+}
+
+// startFromSetup makes a promoted ship's own clone and puts the restricted ship's work in it, with neutral git.
+func (l *Launcher) startFromSetup(req Request, session string) (restrictedShip, error) {
+	var made restrictedShip
+	// The reason can carry file names from the untrusted work, so the caller gets a fixed message and the log the detail.
+	fail := func(err error) (restrictedShip, error) {
+		made.remove(l.Home, session)
+		log.Printf("admiral: starting a ship from %s: %v", req.StartFrom.Branch, err)
+		return restrictedShip{}, refuse(http.StatusInternalServerError, "could not start the ship from the restricted work")
+	}
+	ctx := context.Background()
+	work, err := promote.Read(ctx, req.Dir, req.StartFrom.Clone, req.StartFrom.Branch)
+	if err != nil {
+		return fail(err)
+	}
+	made, _, err = l.shipCheckout(req, session)
+	if err != nil {
+		return made, err
+	}
+	if work.Tip != req.StartFrom.Tip {
+		return fail(errors.New("the work changed since it was read"))
+	}
+	g, err := neutralgit.New(ctx, made.checkout)
+	if err != nil {
+		return fail(err)
+	}
+	g.Env = append(g.Env, "GIT_WORK_TREE="+made.checkout)
+	if work.Kind == promote.Diff {
+		c := g.Cmd(ctx, "apply", "--binary", "--whitespace=nowarn")
+		c.Stdin = strings.NewReader(work.Patch)
+		if out, err := c.CombinedOutput(); err != nil {
+			return fail(fmt.Errorf("applying the diff: %v: %s", err, strings.TrimSpace(string(out))))
+		}
+		return made, nil
+	}
+	if _, err := g.List(ctx, "fetch", "--quiet", "--no-tags", "--", req.StartFrom.Clone, "refs/heads/"+req.StartFrom.Branch); err != nil {
+		return fail(err)
+	}
+	if got, err := g.List(ctx, "rev-parse", "--verify", "FETCH_HEAD^{commit}"); err != nil || strings.TrimSpace(string(got)) != work.Tip {
+		return fail(errors.New("the branch moved while it was fetched"))
+	}
+	// Again in the new clone, where the ship cannot write the refs or objects the read went through.
+	if base, err := promote.Verify(ctx, g, work.Tip); err != nil || base != work.Base {
+		return fail(fmt.Errorf("the fetched work differs from the work read (base %s, want %s): %v", base, work.Base, err))
+	}
+	if _, err := g.List(ctx, "reset", "--hard", "--quiet", work.Tip, "--"); err != nil {
+		return fail(err)
+	}
+	return made, nil
 }
 
 // eventPrompt is the template, the line that points at the event file, and the fleet's Guidance.
