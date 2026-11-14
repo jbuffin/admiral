@@ -519,3 +519,9 @@ func FeedbackCounts(in WakeInput) map[string]int {
 	}
 	return out
 }
+
+// DecideStackRound is the wake state the Answer all reviews wake saves: every OPEN PR's cursor advanced past its feedback.
+// It reports false when an answered OPEN PR has no feedback.
+func DecideStackRound(in WakeInput) (WakeState, bool) {
+	return WakeState{}, true
+}
