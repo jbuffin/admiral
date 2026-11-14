@@ -95,8 +95,8 @@ func TestAnA3DraftFixEventLaunchesOneRestrictedShipWithTheEventTextOnlyInEventTe
 	if rec.Outcome != routines.Launched || rec.Ship != "ship-1" || rec.Restricted != standing.DraftFix || !rec.WorkerLaunched || rec.Tier != "T1" {
 		t.Errorf("record = %+v, want launched, ship ship-1, restricted draft_fix, worker_launched, T1", rec)
 	}
-	if len(acts.got) != 0 {
-		t.Errorf("%d decisions reached the acts, want none for a launch", len(acts.got))
+	if len(acts.got) != 1 || acts.got[0].Outcome != routines.Launched {
+		t.Errorf("acts got %+v, want the one launched decision, for the card", acts.got)
 	}
 	wantNoBodyOnDisk(t, h.home)
 }
@@ -136,8 +136,8 @@ func TestANonCommodoreActAtAnA5CeilingLaunchesAtA4(t *testing.T) {
 	if req.Restricted != "" || req.Skill.Kind == "commodore" || req.EventText != evText {
 		t.Errorf("request = %+v, want a normal A4 ship with the event text", req)
 	}
-	if rec := h.latest(r); rec.Outcome != routines.Launched || len(acts.got) != 0 {
-		t.Errorf("record = %+v and %d decisions at the acts, want launched and none", rec, len(acts.got))
+	if rec := h.latest(r); rec.Outcome != routines.Launched || len(acts.got) != 1 {
+		t.Errorf("record = %+v and %d decisions at the acts, want launched and the one for its card", rec, len(acts.got))
 	}
 }
 

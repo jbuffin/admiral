@@ -29,6 +29,8 @@ const (
 	KindEventCard = "event_card"
 	// KindAnswer keeps what the engineer answered a question that was then removed; its id is "a-" and the question's.
 	KindAnswer = "answer"
+	// KindLaunchCard is the card an event launch posts for its ship, shown to the engineer and never read by AdmiralBot.
+	KindLaunchCard = "launch_card"
 )
 
 const (

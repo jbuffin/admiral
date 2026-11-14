@@ -1,6 +1,7 @@
 package lookout_test
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -10,16 +11,25 @@ import (
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/lookout"
 	"github.com/jbuffin/admiral/internal/routines"
+	"github.com/jbuffin/admiral/internal/standing"
 )
 
 type fakeCards struct {
 	fleets []string
 	cards  []chat.EventCard
+	// launches are the launch cards posted.
+	launches []chat.LaunchCard
 }
 
 func (f *fakeCards) PostEventCard(fleet string, c chat.EventCard) error {
 	f.fleets = append(f.fleets, fleet)
 	f.cards = append(f.cards, c)
+	return nil
+}
+
+func (f *fakeCards) PostLaunchCard(fleet string, c chat.LaunchCard) error {
+	f.fleets = append(f.fleets, fleet)
+	f.launches = append(f.launches, c)
 	return nil
 }
 
@@ -126,5 +136,57 @@ func TestTheMuteOptionsDropASenderThatIsUnattributedAndADedupeKeyThatIsEmpty(t *
 				t.Errorf("proposal MuteBy = %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+func launchOn(a *lookout.Acts, level standing.Level, profile standing.Restricted, en routines.Enrichment) {
+	ev := ghEvent()
+	ev.Title = "Fix the quarry lantern"
+	r := routines.Routine{ID: "r1", Name: "Review watch"}
+	rec := routines.Trigger{ID: "trig-1", At: time.Now(), Routine: "r1", Outcome: routines.Launched, Tier: "T1", Sender: "alice",
+		Ship: "calm-otter", WorkerLaunched: true, Restricted: profile}
+	a.Act("work", r, ev, rec, routines.Decision{Outcome: routines.Launched, Level: level, Restricted: profile}, en)
+}
+
+func TestALaunchedDecisionPostsOneLaunchCardWithTheShipLevelAndProfileAndNoEventBody(t *testing.T) {
+	for name, c := range map[string]struct {
+		level   standing.Level
+		profile standing.Restricted
+		want    string
+	}{
+		"A3 draft fix":   {standing.A3, standing.DraftFix, "A3"},
+		"A3 investigate": {standing.A3, standing.Investigate, "A3"},
+		"A4":             {standing.A4, "", "A4"},
+		"A5":             {standing.A5, "", "A5"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, cards, props := actRig()
+			launchOn(a, c.level, c.profile, routines.Enrichment{Summary: "Alice asks for a review.", DedupeKey: "gh:acme/api#7", Repo: "acme/api", Text: "BODY-SENTINEL: wire the saffron budget"})
+			if len(cards.launches) != 1 || len(cards.cards) != 0 || len(props.props) != 0 || cards.fleets[0] != "work" {
+				t.Fatalf("%d launch cards, %d event cards, %d proposals (fleets %v), want one launch card for work", len(cards.launches), len(cards.cards), len(props.props), cards.fleets)
+			}
+			card := cards.launches[0]
+			if card.ID != "trig-1" || card.Ship != "calm-otter" || card.Level != c.want || card.Restricted != string(c.profile) {
+				t.Errorf("card = %+v, want trigger trig-1, ship calm-otter, level %s, profile %q", card, c.want, c.profile)
+			}
+			if card.Routine != "r1" || card.RoutineName != "Review watch" || card.Tier != "T1" || card.Sender != "alice" ||
+				card.Link != "https://github.com/acme/api/pull/7" || card.DedupeKey != "gh:acme/api#7" || card.Text != "Alice asks for a review." {
+				t.Errorf("card = %+v, want the event card's fields: routine, tier, sender, link, dedupe key and the Lookout's summary", card)
+			}
+			if got := slices.Clone(card.MuteBy); !slices.Equal(got, []string{"sender", "dedupe_key"}) {
+				t.Errorf("MuteBy = %v, want sender and dedupe_key", got)
+			}
+			if all := fmt.Sprintf("%+v", card); strings.Contains(all, "BODY-SENTINEL") || strings.Contains(all, "quarry") {
+				t.Errorf("card %s holds the event's body or title", all)
+			}
+		})
+	}
+}
+
+func TestALaunchCardWithNoLookoutSummaryUsesTheMetadataLine(t *testing.T) {
+	a, cards, _ := actRig()
+	launchOn(a, standing.A4, "", routines.Enrichment{})
+	if len(cards.launches) != 1 || !cards.launches[0].Metadata || cards.launches[0].Text != lookout.Metadata(ghEvent(), "acme/api") {
+		t.Errorf("launch cards = %+v, want one holding the metadata line", cards.launches)
 	}
 }
