@@ -731,6 +731,9 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
   await expect(holdFire).toBeChecked();
   await expect(banner).toContainText('you');
   await expect.poll(async () => ((await (await api('fleets/zulu/hold-fire')).json()) as { on: boolean }).on).toBe(true);
+  // No worker-launched ship is live, so Stop all counts none and is disabled; the all-fleets button says so too.
+  await expect(page.getByRole('main').getByRole('button', { name: 'Stop all worker-launched (0)', exact: true })).toBeDisabled();
+  await expect(page.getByRole('main').getByRole('button', { name: 'Stop all worker-launched, all fleets (0)', exact: true })).toBeDisabled();
   const due = new Date(Math.ceil((Date.now() + 5_000) / 60_000) * 60_000);
   const created = await api('fleets/zulu/routines', {
     method: 'POST',
