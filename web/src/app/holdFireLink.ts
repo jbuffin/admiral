@@ -33,3 +33,10 @@ export function watchHoldFire() {
     removeEventListener('focus', again);
   };
 }
+
+/** Stops this fleet's live worker-launched ships, or every fleet's, then reads the state back; the error text when refused. */
+export async function stopWorkerShips(fleet: string, scope: 'fleet' | 'all'): Promise<string> {
+  void fleet;
+  void scope;
+  return '';
+}

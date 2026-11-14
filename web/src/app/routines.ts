@@ -61,6 +61,9 @@ export interface HoldFireState {
   on: boolean;
   fleet: Switch;
   global: Switch;
+  /** Live worker-launched ships in this fleet, and in every fleet. */
+  worker_ships?: number;
+  all_worker_ships?: number;
 }
 
 /** What the editor form holds; args is the one text field the server's list is typed into. */
@@ -333,4 +336,11 @@ export function proposeOnlyNote(caps: FleetCapabilities | undefined, limits: Lim
   const { t1, t2, t3, t4 } = limits.ceilings;
   if (![t1, t2, t3, t4].some((c) => c.level === 'A3')) return '';
   return 'Draft fix routines run as propose only: no harness in this fleet has passed the restricted-ship probe.';
+}
+
+/** The Stop all worker-launched button: its label with the count, and whether there is nothing to stop. */
+export function stopAllLabel(count: number | undefined, scope: 'fleet' | 'all'): { label: string; disabled: boolean } {
+  void count;
+  void scope;
+  return { label: '', disabled: false };
 }

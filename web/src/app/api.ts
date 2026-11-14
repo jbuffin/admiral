@@ -108,6 +108,8 @@ export interface Ship {
   reason?: string;
   exit_code: number | null;
   exit_signal: string | null;
+  // Why Admiral ended the harness: wall_clock:<minutes>.
+  stopped_by?: string;
   crew: CrewBoat[];
 }
 
