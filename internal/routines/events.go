@@ -144,6 +144,37 @@ type Decision struct {
 	Reasons  []string
 	// Restricted is the profile of an A3 launch.
 	Restricted standing.Restricted
+	// Reviewed is what the step reviewer said; the zero value means it was not asked.
+	Reviewed Reviewed
+}
+
+// Reviewed is the reviewer's answer as the acts read it. CheckText is the Check's text as the reviewer judged it, since
+// the orders may be edited before a card is posted.
+type Reviewed struct {
+	Verdict   string
+	CheckID   string
+	CheckText string
+	Reason    string
+}
+
+// ReviewInput is what the step reviewer judges for one routine of one event.
+type ReviewInput struct {
+	Fleet      string
+	Event      Event
+	Enrichment Enrichment
+	Routine    Routine
+	// Level and Restricted are the provisional action: the effective level with the reviewer's verdict at Allow.
+	Level      standing.Level
+	Restricted standing.Restricted
+	Checks     []string
+}
+
+// Review is the step reviewer's answer. A failed call is an Ask whose Reason says why it failed.
+type Review struct {
+	Verdict standing.Verdict
+	CheckID string
+	Reason  string
+	Costs   []Cost
 }
 
 // routineLevel maps a routine's Before acting onto the ladder.
@@ -237,6 +268,10 @@ type Enrichment struct {
 	Repo      string
 	Labels    []string
 	Summary   string
+	// Kind, Severity and SuggestedAction are the Lookout's other fields, which only the step reviewer reads.
+	Kind            string
+	Severity        string
+	SuggestedAction string
 	// Text is the event's own text for the launched ship's event file; it is never recorded or shown.
 	Text  string
 	Costs []Cost

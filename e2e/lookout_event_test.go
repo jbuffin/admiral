@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -21,6 +23,12 @@ func lookoutWorld(t *testing.T) (*world, *fakeGH) {
 
 // lookoutWorldWith is lookoutWorld with more keys in the fleet's limits, as a Limits save would leave them.
 func lookoutWorldWith(t *testing.T, limits map[string]any) (*world, *fakeGH) {
+	t.Helper()
+	return lookoutWorldEnv(t, limits, nil)
+}
+
+// lookoutWorldEnv is lookoutWorldWith with more variables in the fake harness's environment, such as FAKE_REVIEWER.
+func lookoutWorldEnv(t *testing.T, limits map[string]any, extra map[string]string) (*world, *fakeGH) {
 	t.Helper()
 	w := newWorld(t)
 	w.proveGuard()
@@ -43,6 +51,9 @@ func lookoutWorldWith(t *testing.T, limits map[string]any) (*world, *fakeGH) {
 	g.write("rest/item.json", `{"title":"Fix the quarry lantern","body":"Please review my lantern fix."}`)
 	env := w.harnessEnv()
 	env["FAKE_JUDGE"] = "lookout"
+	for k, v := range extra {
+		env[k] = v
+	}
 	// tokens a restricted ship must lose, so the scrub assertion has something to catch
 	env["GH_TOKEN"], env["GITHUB_TOKEN"] = "fake-token-work-2", "fake-token-work-3"
 	lim := map[string]any{"sender_allowlist": []string{"mallory-the-stranger"}}
@@ -354,5 +365,69 @@ func TestPromotingARestrictedDraftFixShipStartsANormalShipWithTheTokensInItsOwnC
 	}
 	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines/"+id+"/runs/"+run.ID+"/undo", map[string]any{}); code != http.StatusBadRequest || !strings.Contains(body, "promoted") {
 		t.Errorf("undo of a promoted record = %d %s, want 400 promoted", code, body)
+	}
+}
+
+// reviewedWorld is an A3 world whose fleet holds two Checks and whose fake judge answers the reviewer as mode says.
+func reviewedWorld(t *testing.T, mode string) (w *world, id string, firstCheck string) {
+	t.Helper()
+	w, _ = lookoutWorldEnv(t, map[string]any{"ceilings": map[string]any{"t2": map[string]any{"level": "A3", "restricted": "draft_fix"}}},
+		map[string]string{"FAKE_REVIEWER": mode})
+	w.seedRestricted("work")
+	w.start()
+	firstCheck = "Always run make check before a PR."
+	code, body := send(t, http.MethodPut, w.in.LocalURL+"/api/fleets/work/standing-orders",
+		map[string]any{"checks": []string{firstCheck, "Never touch the release workflow."}})
+	if code != http.StatusOK {
+		t.Fatalf("PUT standing-orders = %d %s", code, body)
+	}
+	return w, w.eventRoutine("Reviewed watch", "act"), firstCheck
+}
+
+func TestTheReviewerJudgesAnA3LaunchAgainstTheFleetsChecksAndItsVerdictDecidesWhatHappens(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ mode, outcome string }{{"allow", "launched"}, {"ask", "proposed"}, {"block", "reported"}} {
+		t.Run(c.mode, func(t *testing.T) {
+			t.Parallel()
+			w, id, check := reviewedWorld(t, c.mode)
+			run := w.waitRun(id, c.outcome)
+			sum := sha256.Sum256([]byte(check))
+			wantID := hex.EncodeToString(sum[:])[:8]
+			if run.Verdict != c.mode || run.ReviewerReason == "" {
+				t.Errorf("record = %+v, want verdict %s and a reviewer reason", run, c.mode)
+			}
+			if c.mode != "allow" && run.CheckID != wantID {
+				t.Errorf("check_id = %q, want %q, the first Check's id", run.CheckID, wantID)
+			}
+			var reviewer int
+			for _, cost := range run.Costs {
+				if cost.Call == "reviewer" {
+					reviewer++
+				}
+			}
+			if reviewer != 1 {
+				t.Errorf("costs = %+v, want one reviewer cost on the record", run.Costs)
+			}
+			if c.mode == "allow" && (run.Ship == "" || run.Restricted != "draft_fix") {
+				t.Errorf("record = %+v, want a restricted draft_fix ship", run)
+			}
+			if c.mode != "allow" && run.Ship != "" {
+				t.Errorf("record = %+v, want no ship launched on %s", run, c.mode)
+			}
+		})
+	}
+}
+
+func TestAReviewerThatFailsOrIsNotAnsweredFailsClosedToAProposalWithTheReasonRecorded(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"fail", ""} { // an unset mode is a reply the reviewer cannot read
+		t.Run("mode "+mode, func(t *testing.T) {
+			t.Parallel()
+			w, id, _ := reviewedWorld(t, mode)
+			run := w.waitRun(id, "proposed")
+			if run.Verdict != "ask" || !strings.Contains(run.ReviewerReason, "reviewer failed") || run.Ship != "" {
+				t.Errorf("record = %+v, want verdict ask, a reviewer reason saying it failed and no ship", run)
+			}
+		})
 	}
 }

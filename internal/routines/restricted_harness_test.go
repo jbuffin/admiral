@@ -150,18 +150,27 @@ func TestAMissingOrCorruptCapabilityStoreIsNotACapableHarness(t *testing.T) {
 	h.wantComputed(d, reason, standing.A1, true)
 }
 
-func TestAFleetWithChecksDropsToA1EvenWithAProvenRestrictedHarness(t *testing.T) {
-	h := newHarness(t)
-	h.withEvents(a3Limits())
-	r := h.actRoutine()
-	h.proveRestricted("2.1.300", true, true)
-	checks := []string{"Always run make check before a PR."}
-	if _, err := h.store.SetStandingOrders("work", routines.StandingOrdersPatch{Checks: &checks}); err != nil {
-		t.Fatal(err)
-	}
-	d, _ := h.decide(r)
-	if d.Computed != standing.A1 {
-		t.Errorf("Computed = A%d, want A1: the step reviewer counts as ask in a fleet with Checks", d.Computed)
+func TestAFleetWithChecksKeepsA3OnlyWhenTheReviewerAllowsAndAsksOrBlocksLowerIt(t *testing.T) {
+	for name, c := range map[string]struct {
+		verdict standing.Verdict
+		want    standing.Level
+	}{"allow": {standing.Allow, standing.A3}, "ask": {standing.Ask, standing.A1}, "block": {standing.Block, standing.A0}} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.withEvents(a3Limits())
+			r := h.actRoutine()
+			h.proveRestricted("2.1.300", true, true)
+			checks := []string{"Always run make check before a PR."}
+			if _, err := h.store.SetStandingOrders("work", routines.StandingOrdersPatch{Checks: &checks}); err != nil {
+				t.Fatal(err)
+			}
+			h.sched.Review = func(in routines.ReviewInput) routines.Review {
+				return routines.Review{Verdict: c.verdict, CheckID: "0bbdf84d", Reason: "scripted"}
+			}
+			if d, _ := h.decide(r); d.Computed != c.want {
+				t.Errorf("Computed = A%d, want A%d for a reviewer verdict of %s", d.Computed, c.want, name)
+			}
+		})
 	}
 }
 
