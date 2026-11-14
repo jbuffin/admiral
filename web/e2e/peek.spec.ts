@@ -761,6 +761,8 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
 
   await page.goto(admiral.url + 'app/routines?fleet=zulu');
   await expect(banner).toBeVisible();
+  // A ship the engineer launched from a proposal is not worker-launched, so it stays out of the Stop all count.
+  await expect(page.getByRole('main').getByRole('button', { name: 'Stop all worker-launched (0)', exact: true })).toBeDisabled();
   await page.getByRole('main').getByRole('switch', { name: 'Hold fire', exact: true }).tap();
   await expect(banner).toHaveCount(0);
   await expect.poll(async () => ((await (await api('fleets/zulu/hold-fire')).json()) as { on: boolean }).on).toBe(false);
