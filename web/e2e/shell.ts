@@ -1097,7 +1097,8 @@ export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts:
   await holds(() => stackLinkCalls(a).length === 0, 'opening the sheet links nothing');
 
   await confirm.tap();
-  await expect(confirm).toBeDisabled();
+  await expect(confirm).toHaveAttribute('aria-busy', 'true');
+  await expect(sheet.getByRole('button', { name: 'Cancel' })).toBeDisabled();
   await expect.poll(() => stackLinkCalls(a)).toEqual([['stack', 'link', '--base', 'main', '7', '8']]);
   await expect(sheet).toHaveCount(0);
   await expect(stackBar(panel)).toContainText('Stacked on GitHub · stack #4 · 2 PRs, bottom to top. Merge takes the whole stack.');
@@ -2611,7 +2612,7 @@ export async function stopShipMoors(page: Page, a: Admiral, press: (l: Locator) 
   });
   const sent = endRequest(page, ship, 'stop');
   await press(dialog.getByRole('button', { name: 'Moor', exact: true }));
-  await expect(dialog.getByRole('button', { name: 'Moor', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Moor', exact: true })).toHaveAttribute('aria-busy', 'true');
   await expect(dialog.getByRole('button', { name: 'Stop for good', exact: true })).toBeDisabled();
   release();
   const res = await sent;
@@ -2664,7 +2665,7 @@ export async function returnToPortCleansUp(page: Page, a: Admiral, press: (l: Lo
   const res = await sent;
   expect(res.request().postData() ?? '').toBe('');
   expect(res.status()).toBe(200);
-  await expect(page.getByRole('button', { name: 'Returning to port' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Returning to port' })).toHaveAttribute('aria-busy', 'true');
   setReason(a, ship, 'stop');
   setState(a, ship, 'needs_you');
   await expect.poll(() => received(a, ship)).toContain('Return to port: this run is over');

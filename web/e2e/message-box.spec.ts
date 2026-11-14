@@ -11,11 +11,22 @@ test('a refused or lost send shows an error beside the box and keeps the text', 
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await rowLink(page, ship).tap();
 
-  await page.route('**/api/v1/ships/*/messages', (route) => route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"ship is anchored"}' }));
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route('**/api/v1/ships/*/messages', async (route) => {
+    await gate;
+    await route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"ship is anchored"}' });
+  });
   await messageBox(page).fill('Keep this text');
   await sendButton(page).tap();
+  await expect(sendButton(page)).toHaveAttribute('aria-busy', 'true');
+  await expect(messageBox(page)).toHaveValue('Keep this text');
+  await expect(messageBox(page)).not.toBeEditable();
+  release();
   await expect(viewPanel(page).getByRole('alert')).toBeVisible();
   await expect(messageBox(page)).toHaveValue('Keep this text');
+  await expect(messageBox(page)).toBeEditable();
+  await expect(sendButton(page)).not.toHaveAttribute('aria-busy', 'true');
   await expect(sentBubble(page, 'Keep this text')).toHaveCount(0);
 
   await page.unroute('**/api/v1/ships/*/messages');

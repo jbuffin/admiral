@@ -215,7 +215,8 @@ test('a double tap on Allow once posts one answer', async ({ page, admiral }) =>
     el.click();
     el.click();
   });
-  await expect(button(page, 'Allow once')).toBeDisabled();
+  await expect(button(page, 'Allow once')).toHaveAttribute('aria-busy', 'true');
+  await expect(button(page, 'Deny')).toBeDisabled();
   await done;
   expect(posts).toBe(1);
 });
