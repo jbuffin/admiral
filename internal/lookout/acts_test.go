@@ -190,3 +190,52 @@ func TestALaunchCardWithNoLookoutSummaryUsesTheMetadataLine(t *testing.T) {
 		t.Errorf("launch cards = %+v, want one holding the metadata line", cards.launches)
 	}
 }
+
+const (
+	checkText = "Never launch on a PR that touches the release workflow"
+	checkID   = "0bbdf84d"
+)
+
+func actReviewed(a *lookout.Acts, outcome routines.Outcome, level standing.Level, rv routines.Reviewed) {
+	ev := ghEvent()
+	ev.Title = "Fix the quarry lantern"
+	r := routines.Routine{ID: "r1", Name: "Review watch"}
+	rec := routines.Trigger{ID: "trig-1", At: time.Now(), Routine: "r1", Outcome: outcome, Tier: "T3", Sender: "alice", Verdict: rv.Verdict, CheckID: rv.CheckID, ReviewerReason: rv.Reason}
+	a.Act("work", r, ev, rec, routines.Decision{Outcome: outcome, Level: level, Reviewed: rv}, routines.Enrichment{Summary: "Alice asks for a review."})
+}
+
+func TestABlockedDecisionPostsAnA0CardNamingTheCheckItsIDAndTheReviewersReason(t *testing.T) {
+	a, cards, _ := actRig()
+	actReviewed(a, routines.Reported, standing.A0, routines.Reviewed{Verdict: "block", CheckID: checkID, CheckText: checkText, Reason: "the diff edits release.yml"})
+	if len(cards.cards) != 1 {
+		t.Fatalf("%d event cards, want 1", len(cards.cards))
+	}
+	c := cards.cards[0]
+	if c.Verdict != "block" || c.CheckID != checkID || c.CheckText != checkText || c.ReviewerReason != "the diff edits release.yml" {
+		t.Errorf("card = %+v, want verdict block, the Check's id and text, and the reviewer's reason", c)
+	}
+}
+
+func TestAnAskedDecisionsProposalCarriesTheVerdictCheckAndReasonInItsDetailOnly(t *testing.T) {
+	for name, rv := range map[string]routines.Reviewed{
+		"a judged ask naming a Check": {Verdict: "ask", CheckID: checkID, CheckText: checkText, Reason: "touches the release path"},
+		"an unsure ask with no Check": {Verdict: "ask", Reason: "unsure whether this is covered"},
+		"a failed call":               {Verdict: "ask", Reason: "reviewer failed: timeout"},
+		"not reviewed":                {Verdict: "ask", Reason: "not reviewed"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, _, props := actRig()
+			actReviewed(a, routines.Proposed, standing.A1, rv)
+			if len(props.details) != 1 {
+				t.Fatalf("%d proposals, want 1", len(props.details))
+			}
+			d := props.details[0]
+			if d.Verdict != "ask" || d.CheckID != rv.CheckID || d.CheckText != rv.CheckText || d.ReviewerReason != rv.Reason {
+				t.Errorf("detail = %+v, want the verdict ask with the reviewer's Check and reason", d)
+			}
+			if all := fmt.Sprintf("%+v", props.props[0]); rv.Reason != "" && strings.Contains(all, rv.Reason) || rv.CheckText != "" && strings.Contains(all, rv.CheckText) {
+				t.Errorf("proposal %s holds reviewer text, which AdmiralBot reads", all)
+			}
+		})
+	}
+}

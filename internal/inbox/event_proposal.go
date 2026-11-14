@@ -39,6 +39,11 @@ type EventDetail struct {
 	Metadata bool `json:"metadata"`
 	// MuteBy lists the Mute rule choices: sender and dedupe_key, each only when the event has one.
 	MuteBy []string `json:"mute_by"`
+	// Verdict, CheckID, CheckText and ReviewerReason are the step reviewer's answer; empty when it was not asked.
+	Verdict        string `json:"verdict,omitempty"`
+	CheckID        string `json:"check_id,omitempty"`
+	CheckText      string `json:"check,omitempty"`
+	ReviewerReason string `json:"reviewer_reason,omitempty"`
 }
 
 // LaunchEventFunc launches an event proposal's routine. status is 0 on success, else the refusal's HTTP status with msg.

@@ -18,6 +18,11 @@ type EventCard struct {
 	Text        string   // the Lookout's summary, or the metadata line
 	Metadata    bool     // Text is the metadata line, not a summary
 	MuteBy      []string // the Mute rule choices the event allows: sender, dedupe_key
+	// Verdict, CheckID, CheckText and ReviewerReason are the step reviewer's answer; empty when it was not asked.
+	Verdict        string
+	CheckID        string
+	CheckText      string
+	ReviewerReason string
 }
 
 // PostEventCard appends the card to the fleet's chat log; a card whose ID the log holds adds nothing. It writes nothing to

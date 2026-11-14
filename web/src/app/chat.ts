@@ -28,6 +28,10 @@ export interface EventCard {
   dedupe_key?: string;
   metadata?: boolean;
   mute_by?: string[];
+  verdict?: string;
+  check_id?: string;
+  check?: string;
+  reviewer_reason?: string;
 }
 
 /** The card an event launch posts for its ship: the event card's fields, the ship, its level and, at A3, its restricted profile. */

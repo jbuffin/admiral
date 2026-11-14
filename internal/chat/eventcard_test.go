@@ -78,3 +78,23 @@ func TestAnEventCardsSummarySenderAndLinkNeverReachTheDigestOrTheBrief(t *testin
 		}
 	}
 }
+
+func TestAnEventCardKeepsTheReviewersVerdictCheckAndReasonInItsCardJSON(t *testing.T) {
+	r := newBriefRig(t)
+	c := eventCard()
+	c.Verdict, c.CheckID, c.CheckText, c.ReviewerReason = "block", "0bbdf84d", "Never touch the release workflow", "the diff edits release.yml"
+	if err := r.PostEventCard("work", c); err != nil {
+		t.Fatalf("PostEventCard = %v", err)
+	}
+	got, _ := r.history().Recent("work", 50)
+	var card map[string]any
+	if len(got) != 1 || json.Unmarshal(got[0].Card, &card) != nil {
+		t.Fatalf("history = %+v, want one card", got)
+	}
+	want := map[string]any{"verdict": "block", "check_id": "0bbdf84d", "check": "Never touch the release workflow", "reviewer_reason": "the diff edits release.yml"}
+	for k, v := range want {
+		if card[k] != v {
+			t.Errorf("card[%q] = %v, want %v (card %s)", k, card[k], v, got[0].Card)
+		}
+	}
+}
