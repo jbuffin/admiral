@@ -262,7 +262,7 @@ test('a review action GitHub refuses shows the error and keeps the actions; one 
   await expect(peek.getByRole('alert')).toContainText('github said no');
   await expect(peek.getByRole('button', { name: 'Submit APPROVE' })).toBeEnabled();
   await expect(peek.getByRole('button', { name: 'Submit APPROVE' })).not.toHaveAttribute('aria-busy', 'true');
-  await expect(peek.getByRole('button', { name: 'Discard', exact: true })).toBeEnabled();
+  await expect(peek.getByRole('button', { name: 'Change', exact: true })).toBeEnabled();
 
   refusal = { status: 409, error: 'another action on this item is still running' };
   await peek.getByRole('button', { name: 'Submit APPROVE' }).tap();
