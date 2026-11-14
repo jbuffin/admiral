@@ -2,6 +2,7 @@ import { signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call } from './api';
 import { Actions, Button } from './Button';
+import { runPending } from './busy';
 import { isRunning, runningFor } from './shipList';
 import { useNow } from './useNow';
 import {
@@ -200,7 +201,7 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
   const canLaunch = canStart && !campaign.ended && (status === 'ready' || status === 'claimed-no-ship');
   return (
     <Sheet label={node.title} onClose={onClose}>
-      <div class="detail">
+      <Actions class="detail">
         <p class="mono">
           {node.repo ? `${node.repo}#${node.number}` : `#${node.number}`} · {statusLabel(status)}
           {node.ship ? ` · ${node.ship}` : ''}
@@ -266,10 +267,10 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
                 <input type="text" value={args} onInput={(e) => setArgs((e.target as HTMLInputElement).value)} />
               </label>
             ) : null}
-            <Actions>
-              <Button label="Save" onClick={() => save(false)} />
-              {node.overridden ? <Button label="Reset" onClick={() => save(true)} /> : null}
-            </Actions>
+            <div class="actions">
+              <Button label="Save" pending={['campaign', campaign.id, 'override', node.url, 'save']} onClick={() => save(false)} />
+              {node.overridden ? <Button label="Reset" pending={['campaign', campaign.id, 'override', node.url, 'reset']} onClick={() => save(true)} /> : null}
+            </div>
           </details>
         ) : null}
         {error ? (
@@ -278,11 +279,11 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
           </p>
         ) : null}
         {canLaunch ? <p class="note">A launch from here runs with you watching, with autopilot off.</p> : null}
-        <Actions>
+        <div class="actions">
           <Button label="Close" onClick={onClose} />
           {canLaunch ? <Button variant="primary" label={status === 'claimed-no-ship' ? 'Start anyway' : 'Launch'} onClick={() => onLaunch(status === 'claimed-no-ship')} /> : null}
-        </Actions>
-      </div>
+        </div>
+      </Actions>
     </Sheet>
   );
 }
@@ -302,6 +303,7 @@ function WorkRepo({ campaign, onSaved }: { campaign: Campaign; onSaved: (c: Camp
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(campaign.work_repo);
   const [error, setError] = useState('');
+  const workRepoKey = ['campaign', campaign.id, 'work-repo'] as const;
   const save = async () => {
     const r = await call<Campaign>('PUT', `/campaigns/${campaign.id}/work-repo`, { repo: text.trim() });
     if (!r.ok) return setError(r.error);
@@ -323,9 +325,9 @@ function WorkRepo({ campaign, onSaved }: { campaign: Campaign; onSaved: (c: Camp
         value={text}
         placeholder="github.com/owner/repo"
         onInput={(e) => setText((e.target as HTMLInputElement).value)}
-        onKeyDown={(e) => e.key === 'Enter' && void save()}
+        onKeyDown={(e) => e.key === 'Enter' && void runPending(workRepoKey, save)}
       />
-      <Button label="Save" onClick={save} />
+      <Button label="Save" pending={workRepoKey} onClick={save} />
       {error ? (
         <span class="alert" role="alert">
           {error}
@@ -454,7 +456,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
         {campaign.ended ? <span class="pill ended">Ended</span> : null}
         <WorkRepo campaign={campaign} onSaved={(c) => setCampaign({ ...campaign, ...c, root: c.root ?? campaign.root })} />
         {campaign.ended ? null : (
-          <Button variant="quiet" label="Unfollow" onClick={unfollow} />
+          <Button variant="quiet" label="Unfollow" pending={['campaign', campaign.id, 'unfollow']} onClick={unfollow} />
         )}
       </div>
       <p class="kind">{kind}</p>

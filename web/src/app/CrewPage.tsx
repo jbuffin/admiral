@@ -441,7 +441,7 @@ function RenameSheet({ member, fleetKey, harness, onClose, onRenamed }: { member
 
 type NoteMode = { kind: 'edit'; text: string } | { kind: 'move'; to: string; typed: string };
 
-function NoteItem({ text, scope, notes, mode, setMode, busy, error, run }: { text: string; scope: Scope; notes: Notes; mode: NoteMode | null; setMode: (m: NoteMode | null) => void; busy: boolean; error: string; run: (body: object) => Promise<void> }) {
+function NoteItem({ pendingBase, text, scope, notes, mode, setMode, busy, error, run }: { pendingBase: readonly string[]; text: string; scope: Scope; notes: Notes; mode: NoteMode | null; setMode: (m: NoteMode | null) => void; busy: boolean; error: string; run: (body: object) => Promise<void> }) {
   const base = { scope: scope.scope, repo: scope.repo, note: text };
   if (mode?.kind === 'edit') {
     return (
@@ -488,7 +488,7 @@ function NoteItem({ text, scope, notes, mode, setMode, busy, error, run }: { tex
         <Button variant="quiet" label="Move note" disabled={busy} onClick={() => setMode({ kind: 'move', to: moveChoices(notes, scope)[0].value, typed: '' })}>
           Move
         </Button>
-        <Button variant="quiet" label="Delete note" disabled={busy} onClick={() => run({ op: 'delete', ...base })}>
+        <Button variant="quiet" label="Delete note" disabled={busy} pending={[...pendingBase, 'note', scope.key, text, 'delete']} onClick={() => run({ op: 'delete', ...base })}>
           Delete
         </Button>
       </Actions>
@@ -536,7 +536,7 @@ function NoteScopes({ member, notes, regions, fleetKey, harness, reload }: { mem
           <ul class="crew-notes">
             {s.notes.map((text, i) => {
               const mine = open?.key === s.key && open.text === text;
-              return <NoteItem key={`${i}:${text}`} text={text} scope={s} notes={notes} mode={mine ? open!.mode : null} setMode={(m) => setOpen(m ? { key: s.key, text, mode: m } : null)} busy={busy} error={mine ? error : ''} run={run} />;
+              return <NoteItem pendingBase={['member', fleetKey, harness, member]} key={`${i}:${text}`} text={text} scope={s} notes={notes} mode={mine ? open!.mode : null} setMode={(m) => setOpen(m ? { key: s.key, text, mode: m } : null)} busy={busy} error={mine ? error : ''} run={run} />;
             })}
           </ul>
         );
@@ -588,7 +588,7 @@ function Detail({ member, members, fleetKey, harness, reload, afterRename, after
       ) : null}
       <Actions class="crew-actions">
         {builtIn ? (
-          <Button variant="primary" label="Customize for this fleet" onClick={() => act(() => call('POST', crewApi(fleetKey, harness, `${path}/customize`)), reload)} />
+          <Button variant="primary" label="Customize for this fleet" pending={['member', fleetKey, harness, member.name, 'customize']} onClick={() => act(() => call('POST', crewApi(fleetKey, harness, `${path}/customize`)), reload)} />
         ) : (
           <>
             <Button label="Edit" disabled={busy || editing} onClick={() => setEditing(true)} />
@@ -601,7 +601,7 @@ function Detail({ member, members, fleetKey, harness, reload, afterRename, after
         <div class="crew-confirm">
           <p>{member.customized ? `Delete this fleet's ${member.name}? The built-in one takes its place.` : `Delete ${member.name}? Its notes stay under Unclaimed.`}</p>
           <Actions class="crew-actions">
-            <Button variant="danger" label="Confirm delete" onClick={() => act(() => call('DELETE', crewApi(fleetKey, harness, path)), afterDelete)} />
+            <Button variant="danger" label="Confirm delete" pending={['member', fleetKey, harness, member.name, 'delete']} onClick={() => act(() => call('DELETE', crewApi(fleetKey, harness, path)), afterDelete)} />
             <Button label="Cancel" onClick={() => setConfirming(false)} />
           </Actions>
         </div>

@@ -73,17 +73,22 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   const go = form.getByRole('button', { name: 'Launch', exact: true });
   await press(go);
   await expect(go).toHaveAttribute('aria-busy', 'true');
+  // Focus moves to the busy Launch, so the dialog box draws no focus ring.
+  await expect(go).toBeFocused();
   await expect(form.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
   await go.click({ force: true });
   // A select takes no implicit submit, so Enter in the form is what requestSubmit does.
   await form.locator('form').evaluate((f: HTMLFormElement) => f.requestSubmit());
-  expect(launchPosts).toBe(1);
+  // Escape and a backdrop tap don't close the dialog while the launch is out.
+  await page.keyboard.press('Escape');
+  await page.locator('.launch-backdrop').click({ position: { x: 2, y: 2 } });
+  await expect(form).toBeVisible();
   release();
   const body = (await sent).postDataJSON() as Record<string, unknown>;
-  expect(launchPosts).toBe(1);
   expect(body).toMatchObject({ child_url: issueUrl(21), harness: 'claude', dir: join(admiral.home, 'widgets') });
   for (const f of ['skill', 'text', 'autopilot', 'resources']) expect(body).not.toHaveProperty(f);
   await expect(form).toBeHidden();
+  expect(launchPosts).toBe(1);
   // The child is underway in its Ready group, with its ship's name and how long the ship has been going.
   await expect(group('Ready, with you').getByRole('listitem').filter({ hasText: T.grill })).toContainText(/Underway · .+ · (<1m|\d+m)/);
   // Its number opens the issue on GitHub; the row itself still opens its sheet.
@@ -121,6 +126,8 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await repo.press('Enter');
   const message = ((await (await refused).json()) as { error: string }).error;
   await expect(main.getByRole('alert')).toContainText(message);
+  // The refused save's spinner holds Save for its minimum time, and an Enter inside it is dropped.
+  await expect(main.getByRole('button', { name: 'Save', exact: true })).not.toHaveAttribute('aria-busy', 'true');
   await repo.fill('github.com/acme/widgets');
   await repo.press('Enter');
   await expect(main.getByRole('button', { name: 'github.com/acme/widgets' })).toBeVisible();

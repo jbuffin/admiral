@@ -161,6 +161,11 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
     return () => opener?.isConnected && opener.focus();
   }, []);
 
+  // Focus stays on the dialog box through a launch, which draws the global focus ring, so it moves to the busy button.
+  useEffect(() => {
+    if (busy) box.current?.querySelector<HTMLElement>('[aria-busy="true"]')?.focus();
+  }, [busy]);
+
   const efforts = effortsFor(harness);
   const model = models[harness] ?? '';
   const clone = dirs?.clone ?? null;
@@ -178,7 +183,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   };
 
   const keys = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') return onClose();
+    if (e.key === 'Escape') return busy ? undefined : onClose();
     if (e.key !== 'Tab' || !box.current) return;
     const items = [...box.current.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((i) => !(i as HTMLButtonElement).disabled && i.offsetParent !== null && !(i instanceof HTMLInputElement && i.type === 'radio' && !i.checked));
     if (items.length === 0) return;
@@ -230,7 +235,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   };
 
   return (
-    <div class="backdrop launch-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div class="backdrop launch-backdrop" onClick={(e) => e.target === e.currentTarget && !busy && onClose()}>
       <div ref={box} class="sheet launch-form" role="dialog" aria-modal="true" aria-label="Launch" tabIndex={-1} onKeyDown={keys}>
       <form class="launch-inner" onSubmit={submit}>
         <h2 class="sheet-title">Launch</h2>

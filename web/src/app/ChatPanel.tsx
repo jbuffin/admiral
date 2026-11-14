@@ -165,19 +165,21 @@ function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'la
         <p class="line">{v.notice}</p>
       ) : null}
       {confirming ? (
-        <Actions class="confirm">
+        <div class="confirm" role="group" aria-label={confirming === 'undo' ? 'Undo' : 'Promote'}>
           <p class="line">{confirming === 'undo' ? v.undoConfirm : v.promoteConfirm}</p>
+          <Actions class="confirm-actions">
           {confirming === 'undo' ? (
-            <Button variant="danger" label="Confirm undo" onClick={() => run(() => undoLaunch(fleet, c.routine, item.id), () => { setUndone(true); setConfirming(''); })} />
+            <Button variant="danger" label="Confirm undo" pending={['launch', fleet, c.routine, item.id, 'undo']} onClick={() => run(() => undoLaunch(fleet, c.routine, item.id), () => { setUndone(true); setConfirming(''); })} />
           ) : (
-            <Button variant="danger" label="Confirm promote" onClick={() => run(() => promoteLaunch(fleet, c.routine, item.id), (d) => { setPromotedShip(d?.promoted_ship ?? ''); setConfirming(''); })} />
+            <Button variant="danger" label="Confirm promote" pending={['launch', fleet, c.routine, item.id, 'promote']} onClick={() => run(() => promoteLaunch(fleet, c.routine, item.id), (d) => { setPromotedShip(d?.promoted_ship ?? ''); setConfirming(''); })} />
           )}
           <Button label="Cancel" onClick={() => setConfirming('')} />
-        </Actions>
+          </Actions>
+        </div>
       ) : null}
       {error ? <p class="inbox-error" role="alert">{error}</p> : null}
       <Actions class="peek-actions">
-        {v.actions.stop && !confirming ? <Button label="Stop" busyLabel="Stopping" onClick={() => run(() => stopShip(c.ship))} /> : null}
+        {v.actions.stop && !confirming ? <Button label="Stop" busyLabel="Stopping" pending={['ship', c.ship, 'stop']} onClick={() => run(() => stopShip(c.ship))} /> : null}
         {v.actions.promote && !confirming ? <Button label="Promote" onClick={() => setConfirming('promote')} /> : null}
         {v.actions.undo && !confirming ? <Button label="Undo" onClick={() => setConfirming('undo')} /> : null}
         {v.actions.mute ? <MuteRule target={{ fleet, routine: c.routine, sender: c.sender, dedupe_key: c.dedupe_key, mute_by: c.mute_by }} /> : null}
@@ -296,7 +298,7 @@ function Conversation({ fleet, head }: { fleet: string; head: (action: Component
       {head(
         <>
           {snap?.running ? <OpenTerminal fleet={fleet} /> : null}
-          <Button label="New chat" busy={chat.resetting} onClick={() => chat.newChat()} />
+          <Button label="New chat" busy={chat.resetting} pending={['fleet', fleet, 'new-chat']} onClick={() => chat.newChat()} />
         </>,
       )}
       {snap?.error ? (
