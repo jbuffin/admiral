@@ -27,6 +27,18 @@ describe('draftCrew', () => {
     expect(fetched[0].init.method).toBe('POST');
     expect(JSON.parse(String(fetched[0].init.body))).toEqual({ description: 'A quartermaster.' });
   });
+
+  it('stops the request when the caller aborts', async () => {
+    vi.stubGlobal(
+      'fetch',
+      (_url: string, init: RequestInit) =>
+        new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))),
+    );
+    const ctl = new AbortController();
+    const pending = draftCrew('zulu', 'A quartermaster.', ctl.signal);
+    ctl.abort();
+    expect(await pending).toMatchObject({ ok: false, aborted: true });
+  });
 });
 
 describe('canDraft', () => {
