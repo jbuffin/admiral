@@ -57,8 +57,3 @@ export async function fetchLaunchState(fleet: string, routine: string, trigger: 
 }
 
 export const promoteLaunch = (fleet: string, routine: string, trigger: string) => call<{ promoted_ship?: string }>('POST', `${runPath(fleet, routine, trigger)}/promote`);
-
-/** Whether the launch record is marked undone, or undefined when it can't be read. */
-export async function fetchLaunchUndone(fleet: string, routine: string, trigger: string): Promise<boolean | undefined> {
-  return (await fetchLaunchState(fleet, routine, trigger))?.undone;
-}

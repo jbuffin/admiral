@@ -17,6 +17,8 @@ var (
 	ErrNothing      = errors.New("nothing to promote")
 	ErrAdmiralPaths = errors.New("commits touch .admiral/")
 	ErrAlternates   = errors.New("the clone's alternates were changed")
+	ErrHarness      = errors.New("the work touches harness config")
+	ErrSymlink      = errors.New("the work adds a symlink")
 )
 
 // Kind is how the restricted ship left its work.
@@ -40,6 +42,11 @@ type Work struct {
 
 // admiralPath keeps the ship's own files out of what a normal ship takes; icase because a checkout can sit on a case-folding disk.
 const admiralPath = ":(top,icase).admiral"
+
+// harnessPaths are the project files a harness loads as settings, hooks, servers or instructions; a normal ship with tokens
+// must not start on ones an untrusted ship wrote. Case-insensitive like admiralPath.
+var harnessPaths = []string{":(top,icase).claude", ":(top,icase).mcp.json", ":(top,icase)CLAUDE.md", ":(top,icase)CLAUDE.local.md",
+	":(top,icase)AGENTS.md", ":(top,icase).codex", ":(top,icase).github/copilot-instructions.md"}
 
 // Read reads the work in clone's branch against dir, refusing as the sentinels say.
 func Read(ctx context.Context, dir, clone, branch string) (Work, error) {
@@ -75,12 +82,8 @@ func Read(ctx context.Context, dir, clone, branch string) (Work, error) {
 	base := strings.TrimSpace(string(baseOut))
 	span := base + ".." + tip
 	if tip != base {
-		touched, err := cg.List(ctx, "rev-list", "--full-history", "-n1", span, "--", admiralPath)
-		if err != nil {
+		if err := CheckRange(ctx, cg, base, tip); err != nil {
 			return Work{}, err
-		}
-		if len(bytes.TrimSpace(touched)) > 0 {
-			return Work{}, ErrAdmiralPaths
 		}
 		return Work{Kind: Commits, Base: base, Tip: tip, Range: span}, nil
 	}
@@ -92,6 +95,51 @@ func Read(ctx context.Context, dir, clone, branch string) (Work, error) {
 		return Work{}, ErrNothing
 	}
 	return Work{Kind: Diff, Base: base, Range: "uncommitted changes", Patch: string(patch)}, nil
+}
+
+// CheckRange refuses commits base..tip that touch .admiral/ or harness config, or add a symlink.
+func CheckRange(ctx context.Context, g *neutralgit.Git, base, tip string) error {
+	span := base + ".." + tip
+	for _, c := range []struct {
+		paths []string
+		err   error
+	}{{[]string{admiralPath}, ErrAdmiralPaths}, {harnessPaths, ErrHarness}} {
+		touched, err := g.List(ctx, append([]string{"rev-list", "--full-history", "-n1", span, "--"}, c.paths...)...)
+		if err != nil {
+			return err
+		}
+		if len(bytes.TrimSpace(touched)) > 0 {
+			return c.err
+		}
+	}
+	raw, err := g.List(ctx, "log", "-m", "--format=", "--raw", "--no-renames", "--diff-filter=AMT", span)
+	if err != nil {
+		return err
+	}
+	if addsSymlink(raw) {
+		return ErrSymlink
+	}
+	return nil
+}
+
+// Verify recomputes the merge-base of tip and HEAD in g's repository and checks the range as Read does; it returns the base.
+func Verify(ctx context.Context, g *neutralgit.Git, tip string) (string, error) {
+	out, err := g.List(ctx, "merge-base", tip, "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("the branch shares no history with HEAD")
+	}
+	base := strings.TrimSpace(string(out))
+	return base, CheckRange(ctx, g, base, tip)
+}
+
+// addsSymlink reports whether git's --raw output has a path that ends as a symlink (mode 120000).
+func addsSymlink(raw []byte) bool {
+	for _, line := range strings.Split(string(raw), "\n") {
+		if f := strings.Fields(line); len(f) > 1 && strings.HasPrefix(line, ":") && f[1] == "120000" {
+			return true
+		}
+	}
+	return false
 }
 
 // checkAlternates refuses a clone whose alternates name anything but dir's objects, as Checkouts.Make wrote them.
@@ -131,5 +179,20 @@ func uncommitted(ctx context.Context, g *neutralgit.Git, clone, base string) ([]
 			return nil, fmt.Errorf("git %s in %s: %w", args[0], clone, err)
 		}
 	}
-	return g.List(ctx, "diff", "--cached", "--binary", "--full-index", base, "--", ".", ":(exclude,top,icase).admiral")
+	notAdmiral := []string{"--", ".", ":(exclude,top,icase).admiral"}
+	touched, err := g.List(ctx, append([]string{"diff", "--cached", "--name-only", base, "--"}, harnessPaths...)...)
+	if err != nil {
+		return nil, err
+	}
+	if len(bytes.TrimSpace(touched)) > 0 {
+		return nil, ErrHarness
+	}
+	raw, err := g.List(ctx, append([]string{"diff", "--cached", "--raw", "--no-renames", "--diff-filter=AMT", base}, notAdmiral...)...)
+	if err != nil {
+		return nil, err
+	}
+	if addsSymlink(raw) {
+		return nil, ErrSymlink
+	}
+	return g.List(ctx, append([]string{"diff", "--cached", "--binary", "--full-index", base}, notAdmiral...)...)
 }

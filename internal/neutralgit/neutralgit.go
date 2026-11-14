@@ -33,6 +33,7 @@ func New(ctx context.Context, dir string) (*Git, error) {
 		"PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
 		"HOME=/nonexistent", "XDG_CONFIG_HOME=/nonexistent",
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=/dev/null", // refs/replace and info/grafts are the ship's to write
 		"GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_PAGER=cat", "LC_ALL=C",
 	}}
 	g.neutral = []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.pager=cat",

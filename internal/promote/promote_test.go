@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/neutralgit"
 	"github.com/jbuffin/admiral/internal/promote"
 )
 
@@ -236,5 +237,92 @@ func TestThePlantedFsmonitorDoesRunUnderPlainGit(t *testing.T) {
 	git(t, w.clone, "-c", "core.hooksPath=", "status")
 	if hits(t, markers) == "" {
 		t.Skip("this git does not run the planted fsmonitor, so the checks above cannot tell")
+	}
+}
+
+func TestWorkThatTouchesHarnessConfigIsRefusedAsCommitsAndAsADiffWhateverTheCase(t *testing.T) {
+	for _, path := range []string{".claude/settings.json", ".mcp.json", "CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".codex/config.toml",
+		".github/copilot-instructions.md", ".Claude/Settings.json", "claude.MD", "agents.md", ".MCP.JSON"} {
+		w := newWorld(t)
+		commit(t, w.clone, path, "x\n")
+		if _, err := w.read(t); !errors.Is(err, promote.ErrHarness) {
+			t.Errorf("commit of %s: err = %v, want ErrHarness", path, err)
+		}
+		w = newWorld(t)
+		write(t, filepath.Join(w.clone, path), "x\n")
+		if _, err := w.read(t); !errors.Is(err, promote.ErrHarness) {
+			t.Errorf("uncommitted %s: err = %v, want ErrHarness", path, err)
+		}
+	}
+}
+
+func TestAHarnessConfigDeletedOrRenamedInTheWorkIsRefusedAndAnOrdinaryFileStillPromotes(t *testing.T) {
+	w := newWorld(t)
+	commit(t, w.dir, "CLAUDE.md", "mine\n")
+	w = &world{dir: w.dir, branch: w.branch}
+	clone, err := launcher.GitCheckouts{}.Make(t.TempDir(), session, w.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.clone = clone
+	git(t, w.clone, "mv", "CLAUDE.md", "notes.md")
+	git(t, w.clone, "commit", "-q", "-m", "rename")
+	if _, err := w.read(t); !errors.Is(err, promote.ErrHarness) {
+		t.Errorf("renamed away: err = %v, want ErrHarness", err)
+	}
+	w2 := newWorld(t)
+	commit(t, w2.clone, "docs/claude.md.txt", "fine\n")
+	commit(t, w2.clone, "src/CLAUDE.md.go", "fine\n")
+	if got := w2.mustRead(t); got.Kind != promote.Commits {
+		t.Errorf("ordinary files: kind = %v, want commits", got.Kind)
+	}
+}
+
+func TestAddingASymlinkIsRefusedAsCommitsAndAsADiff(t *testing.T) {
+	w := newWorld(t)
+	if err := os.Symlink("/etc/hosts", filepath.Join(w.clone, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.read(t); !errors.Is(err, promote.ErrSymlink) {
+		t.Errorf("uncommitted symlink: err = %v, want ErrSymlink", err)
+	}
+	git(t, w.clone, "add", "link")
+	git(t, w.clone, "commit", "-q", "-m", "link")
+	if _, err := w.read(t); !errors.Is(err, promote.ErrSymlink) {
+		t.Errorf("committed symlink: err = %v, want ErrSymlink", err)
+	}
+}
+
+// hide makes commit target read as a look-alike without its changes, the way a ship can with refs/replace.
+func hide(t *testing.T, clone, target string) {
+	t.Helper()
+	fake := git(t, clone, "commit-tree", target+"~1^{tree}", "-p", target+"~1", "-m", "look-alike")
+	git(t, clone, "replace", target, fake)
+}
+
+func TestAReplaceRefThatHidesAnAdmiralOrHarnessCommitDoesNotHideIt(t *testing.T) {
+	for path, want := range map[string]error{".admiral/untrusted/event.md": promote.ErrAdmiralPaths, ".claude/settings.json": promote.ErrHarness} {
+		w := newWorld(t)
+		commit(t, w.clone, "c.txt", "c\n")
+		bad := commit(t, w.clone, path, "smuggled\n")
+		hide(t, w.clone, bad)
+		if _, err := w.read(t); !errors.Is(err, want) {
+			t.Errorf("%s hidden by a replace ref: Read err = %v, want %v", path, err, want)
+		}
+	}
+}
+
+func TestVerifyRunsTheSameRefusalsAndReturnsTheMergeBase(t *testing.T) {
+	w := newWorld(t)
+	commit(t, w.clone, "c.txt", "c\n")
+	bad := commit(t, w.clone, ".claude/settings.json", "x\n")
+	hide(t, w.clone, bad)
+	git(t, w.clone, "checkout", "-q", "--detach", w.b) // HEAD as a fresh clone of Dir has it
+	g, err := neutralgit.New(context.Background(), w.clone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base, err := promote.Verify(context.Background(), g, bad); !errors.Is(err, promote.ErrHarness) || base != w.b {
+		t.Errorf("Verify = %q, %v; want base %s and ErrHarness", base, err, w.b)
 	}
 }

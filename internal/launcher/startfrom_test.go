@@ -2,6 +2,8 @@
 package launcher
 
 import (
+	"context"
+	"github.com/jbuffin/admiral/internal/promote"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,8 +52,13 @@ func (p *pinRig) restrictedClone(t *testing.T) (clone, branch string) {
 func (p *pinRig) promoted(clone, branch string) Request {
 	p.l.Checkouts = GitCheckouts{}
 	p.guided(guidanceText, nil)
+	// The caller reads the work first and hands the tip it saw, as the promote route does.
+	tip := ""
+	if w, err := promote.Read(context.Background(), p.work, clone, branch); err == nil {
+		tip = w.Tip
+	}
 	return Request{Fleet: "work", Harness: "claude", Dir: p.work, Skill: Skill{Kind: "none"}, Prompt: promotedOrder, By: "promote",
-		StartFrom: &StartFrom{Clone: clone, Branch: branch}}
+		StartFrom: &StartFrom{Clone: clone, Branch: branch, Tip: tip}}
 }
 
 func TestAShipStartedFromCommitsWorksInItsOwnCloneOnItsOwnBranchAtTheRestrictedTip(t *testing.T) {
@@ -152,6 +159,47 @@ func TestAStartFromWhoseFetchFailsFailsTheLaunchAndLeavesNoCloneAndNoSession(t *
 		}
 		if out, err := exec.Command(p.l.Tmux, "-S", p.l.Socket, "list-sessions").CombinedOutput(); err == nil {
 			t.Errorf("%s: a failed launch left sessions: %s", name, out)
+		}
+	}
+}
+
+func TestAStartFromWhoseTipIsNotTheOneTheCallerReadFailsAfterTheCloneExistsAndRemovesIt(t *testing.T) {
+	p := newPinRig(t, nil)
+	clone, branch := p.restrictedClone(t)
+	startWrite(t, filepath.Join(clone, "c.txt"), "the fix\n")
+	startGit(t, clone, "add", "c.txt")
+	startGit(t, clone, "commit", "-q", "-m", "fix")
+	req := p.promoted(clone, branch)
+	req.StartFrom.Tip = "0000000000000000000000000000000000000001"
+	_, err := p.l.Launch(req)
+	if err == nil {
+		t.Fatal("Launch succeeded, want the tip mismatch to fail it")
+	}
+	if left, _ := os.ReadDir(filepath.Join(p.home, "checkouts")); len(left) != 1 || left[0].Name() != "restricted-one" {
+		t.Errorf("checkouts = %v, want only the restricted clone", left)
+	}
+	if strings.Contains(err.Error(), "c.txt") {
+		t.Errorf("the refusal %q names a file of the work", err)
+	}
+}
+
+func TestAStartFromRefusesWorkThatTouchesAdmiralOrHarnessConfigEvenWhenAReplaceRefHidesIt(t *testing.T) {
+	for _, path := range []string{".admiral/untrusted/event.md", ".claude/settings.json"} {
+		p := newPinRig(t, nil)
+		clone, branch := p.restrictedClone(t)
+		startWrite(t, filepath.Join(clone, "c.txt"), "c\n")
+		startGit(t, clone, "add", "c.txt")
+		startGit(t, clone, "commit", "-q", "-m", "c")
+		startWrite(t, filepath.Join(clone, path), "smuggled\n")
+		startGit(t, clone, "add", "-f", path)
+		startGit(t, clone, "commit", "-q", "-m", "bad")
+		fake := startGit(t, clone, "commit-tree", "HEAD~1^{tree}", "-p", "HEAD~1", "-m", "look-alike")
+		startGit(t, clone, "replace", "HEAD", fake)
+		if _, err := p.l.Launch(p.promoted(clone, branch)); err == nil {
+			t.Errorf("%s hidden by a replace ref: Launch succeeded, want it refused", path)
+		}
+		if left, _ := os.ReadDir(filepath.Join(p.home, "checkouts")); len(left) != 1 {
+			t.Errorf("%s: checkouts = %v, want only the restricted clone", path, left)
 		}
 	}
 }

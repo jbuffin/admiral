@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -139,9 +140,12 @@ func restrictedSettings(level standing.Restricted, checkout, home, tempDir strin
 			denyWrite = append(denyWrite, filepath.Join(gitDir, d))
 			deny = append(deny, "Edit(/"+filepath.Join(gitDir, d)+"/**)", "Write(/"+filepath.Join(gitDir, d)+"/**)")
 		}
+		// Project settings and servers are denied too: a relaunch in this clone would load what the ship planted.
 		gm := filepath.Join(checkout, ".gitmodules")
-		filesystem["denyWrite"] = append(denyWrite, gm)
-		deny = append(deny, "Edit(/"+gm+")", "Write(/"+gm+")")
+		claude := filepath.Join(checkout, ".claude")
+		mcp := filepath.Join(checkout, ".mcp.json")
+		filesystem["denyWrite"] = append(denyWrite, gm, claude, mcp)
+		deny = append(deny, "Edit(/"+gm+")", "Write(/"+gm+")", "Edit(/"+claude+"/**)", "Write(/"+claude+"/**)", "Edit(/"+mcp+")", "Write(/"+mcp+")")
 	case standing.Investigate:
 		report := "/" + filepath.Join(checkout, ".admiral", "report.md")
 		allow = []any{"Write(" + report + ")", "Edit(" + report + ")"}
@@ -236,9 +240,11 @@ func (l *Launcher) shipCheckout(req Request, session string) (restrictedShip, st
 // startFromSetup makes a promoted ship's own clone and puts the restricted ship's work in it, with neutral git.
 func (l *Launcher) startFromSetup(req Request, session string) (restrictedShip, error) {
 	var made restrictedShip
+	// The reason can carry file names from the untrusted work, so the caller gets a fixed message and the log the detail.
 	fail := func(err error) (restrictedShip, error) {
 		made.remove(l.Home, session)
-		return restrictedShip{}, refuse(http.StatusInternalServerError, "starting from %s: %v", req.StartFrom.Branch, err)
+		log.Printf("admiral: starting a ship from %s: %v", req.StartFrom.Branch, err)
+		return restrictedShip{}, refuse(http.StatusInternalServerError, "could not start the ship from the restricted work")
 	}
 	ctx := context.Background()
 	work, err := promote.Read(ctx, req.Dir, req.StartFrom.Clone, req.StartFrom.Branch)
@@ -248,6 +254,9 @@ func (l *Launcher) startFromSetup(req Request, session string) (restrictedShip, 
 	made, _, err = l.shipCheckout(req, session)
 	if err != nil {
 		return made, err
+	}
+	if work.Tip != req.StartFrom.Tip {
+		return fail(errors.New("the work changed since it was read"))
 	}
 	g, err := neutralgit.New(ctx, made.checkout)
 	if err != nil {
@@ -267,6 +276,10 @@ func (l *Launcher) startFromSetup(req Request, session string) (restrictedShip, 
 	}
 	if got, err := g.List(ctx, "rev-parse", "--verify", "FETCH_HEAD^{commit}"); err != nil || strings.TrimSpace(string(got)) != work.Tip {
 		return fail(errors.New("the branch moved while it was fetched"))
+	}
+	// Again in the new clone, where the ship cannot write the refs or objects the read went through.
+	if base, err := promote.Verify(ctx, g, work.Tip); err != nil || base != work.Base {
+		return fail(fmt.Errorf("the fetched work differs from the work read (base %s, want %s): %v", base, work.Base, err))
 	}
 	if _, err := g.List(ctx, "reset", "--hard", "--quiet", work.Tip, "--"); err != nil {
 		return fail(err)
