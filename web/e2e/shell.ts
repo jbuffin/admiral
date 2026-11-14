@@ -519,9 +519,21 @@ export async function wakeFromTheShell(page: Page, a: Admiral, press: (l: Locato
   await expect(wake).toHaveText('Wake');
 
   readyToWake(a, ship);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route(`**/api/v1/ships/${ship.session}/wake`, async (route) => {
+    await gate;
+    await route.continue();
+  });
   const woke = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/wake`);
   await press(wake);
+  // The tapped Wake spins under its busy name while the request is out, and is never disabled.
+  const waking = row.filter({ hasText: ship.name }).getByRole('button', { name: 'Waking', exact: true });
+  await expect(waking).toHaveAttribute('aria-busy', 'true');
+  await expect(waking).toBeEnabled();
+  release();
   expect((await woke).status()).toBe(201);
+  await page.unroute(`**/api/v1/ships/${ship.session}/wake`);
 
   await expect(group).toHaveCount(0);
   await expect(rowLink(page, ship)).toBeVisible();
