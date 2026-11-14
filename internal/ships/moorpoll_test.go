@@ -56,6 +56,7 @@ type pollGitHub struct {
 
 	linkErr    error   // what LinkStack answers
 	linked     [][]int // the numbers of each LinkStack call
+	linkedBase []string
 	linkedRepo []string
 }
 
@@ -160,11 +161,12 @@ func (g *pollGitHub) MergeStack(context.Context, string, int, string) error {
 	return g.MergePR(context.Background(), "", "")
 }
 
-func (g *pollGitHub) LinkStack(_ context.Context, repo string, numbers []int) error {
+func (g *pollGitHub) LinkStack(_ context.Context, repo, base string, numbers []int) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.linked = append(g.linked, slices.Clone(numbers))
 	g.linkedRepo = append(g.linkedRepo, repo)
+	g.linkedBase = append(g.linkedBase, base)
 	return g.linkErr
 }
 
@@ -740,7 +742,7 @@ func readyStatus() moor.Status {
 
 func TestAMooredStackServesWhetherItIsReadyAndUpToWhichLayer(t *testing.T) {
 	notReady := readyStatus()
-	notReady.Checks = "PENDING"
+	notReady.Checks, notReady.MergeState = "PENDING", "BLOCKED"
 	for name, c := range map[string]struct {
 		layers [3]moor.Status
 		ready  bool

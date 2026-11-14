@@ -82,12 +82,12 @@ func TestReadShapeNamesHowAShipsPRsRelateOnGitHub(t *testing.T) {
 		"chained, two": {
 			[]Detail{pull(22, "b22", "b21", nil), pull(21, "b21", "main", nil)},
 			[]string{pr(22), pr(21)},
-			Shape{Kind: ShapeChained, PRs: []string{pr(21), pr(22)}},
+			Shape{Kind: ShapeChained, Base: "main", PRs: []string{pr(21), pr(22)}},
 		},
 		"chained, three, given out of order": {
 			[]Detail{pull(23, "b23", "b22", nil), pull(21, "b21", "main", nil), pull(22, "b22", "b21", nil)},
 			[]string{pr(23), pr(21), pr(22)},
-			Shape{Kind: ShapeChained, PRs: []string{pr(21), pr(22), pr(23)}},
+			Shape{Kind: ShapeChained, Base: "main", PRs: []string{pr(21), pr(22), pr(23)}},
 		},
 		"chained across two repositories": {
 			[]Detail{pull(21, "b21", "main", nil), {Number: 22, URL: "https://github.com/acme/other/pull/22", State: "OPEN", Head: "b22", Base: "b21", DefaultBranch: "main"}},
@@ -105,7 +105,7 @@ func TestReadShapeNamesHowAShipsPRsRelateOnGitHub(t *testing.T) {
 				{Number: 22, URL: pr(22), State: "OPEN", Head: "b22", Base: "b21", DefaultBranch: "trunk"},
 			},
 			[]string{pr(22), pr(21)},
-			Shape{Kind: ShapeChained, PRs: []string{pr(21), pr(22)}},
+			Shape{Kind: ShapeChained, Base: "trunk", PRs: []string{pr(21), pr(22)}},
 		},
 		"independent": {
 			[]Detail{pull(21, "b21", "main", nil), pull(22, "b22", "main", nil)},

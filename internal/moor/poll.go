@@ -56,17 +56,17 @@ func View(url string, st Status, found bool) PR {
 		Conflicts: st.State == "OPEN" && st.Mergeable == "CONFLICTING", Ready: st.Ready()}
 }
 
-// Ready says the PR is open, approved, green, mergeable and not held back by its base. A repository that
-// requires no review or runs no checks never reads ready. A draft shows as mergeStateStatus DRAFT or BLOCKED.
+// Ready says GitHub would let the engineer press Merge now: GitHub's mergeStateStatus already holds the base's
+// rules (required reviews, required checks, up to date), and UNSTABLE is a failing check the base does not require.
 func (st Status) Ready() bool {
-	if st.State != "OPEN" || st.Review != "APPROVED" || st.Checks != "SUCCESS" || st.Mergeable != "MERGEABLE" {
+	if st.State != "OPEN" || st.Mergeable != "MERGEABLE" {
 		return false
 	}
 	switch st.MergeState {
-	case "BLOCKED", "BEHIND", "DIRTY", "DRAFT":
-		return false
+	case "CLEAN", "HAS_HOOKS", "UNSTABLE":
+		return true
 	}
-	return true
+	return false
 }
 
 // EndReason says why a ship whose every PR is merged or closed sails off; ended

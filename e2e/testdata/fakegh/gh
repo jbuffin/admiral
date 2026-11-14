@@ -71,9 +71,12 @@
 #     merging nothing. With $FAKEGH_DIR/stack_merge.sleep it sleeps that many
 #     seconds first. The call directory's cwd file is where gh ran.
 #
-#   gh stack link N N ...   (no flags)
-#     the Stack on GitHub act, by PR numbers bottom to top: two or more positional
-#     integers and nothing else (a flag, one number or a non-integer exits 2;
+#   gh stack link --base BRANCH N N ...
+#     the Stack on GitHub act, by PR numbers bottom to top. Without a leading
+#     --base it exits 1 with real gh-stack's message, as real gh does outside a
+#     git checkout; a BRANCH that is not the bottom PR's baseRefName exits 1, as
+#     real gh would retarget that PR. Then two or more positional integers and
+#     nothing else (another flag, one number or a non-integer exits 2;
 #     real gh would also take branches and URLs and push branches, which Admiral
 #     never asks for). Each number is keyed the way `pr merge` keys a URL:
 #     pr_detail/KEY for https://$GH_REPO/pull/N, where Admiral pins GH_REPO to
@@ -126,6 +129,10 @@
 #                         baseRef, reviews, reviewThreads, comments, reviewRequests,
 #                         timelineItems, commits). The query's own fields are not
 #                         checked: what the file holds is what the client reads.
+#     With no mergeStateStatus in pr_events, it is what GitHub gives on a base
+#     that requires an approval and green checks: DIRTY when CONFLICTING,
+#     UNKNOWN when mergeable is, CLEAN when approved, green and MERGEABLE, and
+#     BLOCKED otherwise.
 #     $FAKEGH_DIR/viewer holds the login of data.viewer (none: fake-viewer).
 #       pr_notfound/KEY   any content: NOT_FOUND for this PR even with a state
 #       repo_notfound/OWNER_NAME  any content: the repository itself is NOT_FOUND
@@ -286,6 +293,9 @@ pr)
 stack)
 	if [ "$2" = link ]; then
 		shift 2
+		[ "$1" = --base ] && [ -n "$2" ] || { echo "unable to determine default branch" >&2; echo "Use --base to specify the base branch" >&2; exit 1; }
+		base=$2
+		shift 2
 		nums=
 		for a in "$@"; do
 			case "$a" in
@@ -304,6 +314,9 @@ stack)
 			fi
 			grep -q '"stack":null' "$f" || { echo "fakegh: the fixture of pull request $n has no \"stack\":null to replace" >&2; exit 2; }
 		done
+		first=${nums# }
+		bottom="$FAKEGH_DIR/pr_detail/$(printf '%s' "https://$GH_REPO/pull/${first%% *}" | tr '/:' '__')"
+		grep -q "\"baseRefName\":\"$base\"" "$bottom" || { echo "fakegh: --base $base is not the bottom pull request's base; real gh would retarget it" >&2; exit 1; }
 		[ -s "$FAKEGH_DIR/stack_link.sleep" ] && sleep "$(cat "$FAKEGH_DIR/stack_link.sleep")"
 		if [ -e "$FAKEGH_DIR/stack_link.fail" ]; then
 			cat "$FAKEGH_DIR/stack_link.fail" >&2
@@ -532,6 +545,18 @@ EOF3
 				if [ -s "$FAKEGH_DIR/pr_events/$key" ]; then
 					extra=",$(tr -d '\n' <"$FAKEGH_DIR/pr_events/$key" | sed -E 's/^[[:space:]]*\{//; s/\}[[:space:]]*$//')"
 				fi
+				case "$extra" in
+				*'"mergeStateStatus"'*) ;;
+				*)
+					case "$mg$rv$ck" in
+					'"CONFLICTING"'*) ms=DIRTY ;;
+					'"UNKNOWN"'*) ms=UNKNOWN ;;
+					'"MERGEABLE""APPROVED"{"state":"SUCCESS"}') ms=CLEAN ;;
+					*) ms=BLOCKED ;;
+					esac
+					extra="$extra,\"mergeStateStatus\":\"$ms\""
+					;;
+				esac
 				node="{\"state\":\"$st\",\"reviewDecision\":$rv,\"mergeable\":$mg,\"statusCheckRollup\":$ck$extra}"
 			fi
 			data="$data${data:+,}\"$alias\":{\"pullRequest\":$node}"

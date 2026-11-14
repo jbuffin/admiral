@@ -519,12 +519,12 @@ func TestLinkStackRunsGhStackLinkByNumberBottomToTopInAFreshFolderWithTheRepoPin
 		f.write(t, "pr_detail/https___ghe.example.com_acme_widgets_pull_"+n, `{"number":`+n+`,"state":"OPEN","headRefName":"b`+n+`","baseRefName":"main","stack":null}`+"\n")
 	}
 	cl := NewClient("ghe.example.com", "", nil, append(f.env, "GH_REPO=evil.example/x/y", "GH_HOST=evil.example"))
-	if err := cl.LinkStack(context.Background(), "acme/widgets", []int{7, 9, 8}); err != nil {
+	if err := cl.LinkStack(context.Background(), "acme/widgets", "main", []int{7, 9, 8}); err != nil {
 		t.Fatal(err)
 	}
 	c := f.only(t, "stack")
-	// Numbers only, in the order given: no flag (--open would take drafts out of draft) and no branch name (gh pushes branches).
-	if want := []string{"stack", "link", "7", "9", "8"}; !slices.Equal(c.argv, want) {
+	// The base, then numbers in the order given: no --open (it would take drafts out of draft) and no branch name (gh pushes branches).
+	if want := []string{"stack", "link", "--base", "main", "7", "9", "8"}; !slices.Equal(c.argv, want) {
 		t.Errorf("argv = %q, want %q", c.argv, want)
 	}
 	for _, want := range []string{
@@ -552,11 +552,11 @@ func TestLinkStackRunsGhStackLinkByNumberBottomToTopInAFreshFolderWithTheRepoPin
 func TestLinkStackReturnsGhsMessageWhenGhFails(t *testing.T) {
 	f := newFake(t)
 	f.write(t, "token", "fake-token-work-2\n")
-	f.write(t, "pr_detail/https___github.com_acme_widgets_pull_7", `{"number":7,"state":"OPEN","stack":null}`+"\n")
+	f.write(t, "pr_detail/https___github.com_acme_widgets_pull_7", `{"number":7,"state":"OPEN","baseRefName":"main","stack":null}`+"\n")
 	f.write(t, "pr_detail/https___github.com_acme_widgets_pull_8", `{"number":8,"state":"OPEN","stack":null}`+"\n")
 	f.write(t, "stack_link.fail", "gh: pull request 8 cannot join a stack\n")
 	cl := NewClient("github.com", "", nil, f.env)
-	err := cl.LinkStack(context.Background(), "acme/widgets", []int{7, 8})
+	err := cl.LinkStack(context.Background(), "acme/widgets", "main", []int{7, 8})
 	if err == nil || err.Error() != "pull request 8 cannot join a stack" {
 		t.Fatalf("LinkStack = %v, want gh's message without its prefix", err)
 	}
@@ -573,7 +573,7 @@ func TestLinkStackThatRunsPastItsLimitIsAnUnknownResult(t *testing.T) {
 	MergeTimeout = 300 * time.Millisecond
 	t.Cleanup(func() { MergeTimeout = old })
 	cl := NewClient("github.com", "", nil, os.Environ())
-	err := cl.LinkStack(context.Background(), "acme/widgets", []int{7, 8})
+	err := cl.LinkStack(context.Background(), "acme/widgets", "main", []int{7, 8})
 	if !errors.Is(err, moor.ErrMergeTimeout) {
 		t.Fatalf("LinkStack = %v, want moor.ErrMergeTimeout", err)
 	}
@@ -604,7 +604,9 @@ func TestSearchGivesAPullRequestTheStateThePollGivesForTheSameAnswer(t *testing.
 	}{
 		{"ready", "OPEN", "APPROVED", "SUCCESS", "MERGEABLE", "CLEAN", true, false},
 		{"review required", "OPEN", "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", "BLOCKED", false, false},
-		{"checks failing", "OPEN", "APPROVED", "FAILURE", "MERGEABLE", "UNSTABLE", false, false},
+		{"no review asked for", "OPEN", "", "SUCCESS", "MERGEABLE", "CLEAN", true, false},
+		{"a required check failing", "OPEN", "APPROVED", "FAILURE", "MERGEABLE", "BLOCKED", false, false},
+		{"a check the base does not require failing", "OPEN", "APPROVED", "FAILURE", "MERGEABLE", "UNSTABLE", true, false},
 		{"conflicting", "OPEN", "APPROVED", "SUCCESS", "CONFLICTING", "DIRTY", false, true},
 		{"approved and green but blocked by its base", "OPEN", "APPROVED", "SUCCESS", "MERGEABLE", "BLOCKED", false, false},
 		{"merged", "MERGED", "APPROVED", "SUCCESS", "CONFLICTING", "CLEAN", false, false},
