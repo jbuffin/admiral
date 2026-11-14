@@ -123,3 +123,68 @@ func TestMergeAndDontFollowReviewsRefuseAShipWithAReviewedPR(t *testing.T) {
 		})
 	}
 }
+
+// pushedPast is a PR by the author whose head moved past the viewer's review.
+func pushedPast() moor.Status {
+	return moor.Status{State: "OPEN", Author: author, Viewer: viewer, Head: "def456",
+		Reviews: []moor.Review{{ID: "R1", Author: moor.Actor{Type: "User", Login: viewer}, State: "COMMENTED", Commit: "abc123",
+			SubmittedAt: time.Now().Add(-20 * time.Minute).UTC().Truncate(time.Second)}}}
+}
+
+func TestAMooredReviewingShipWhoseAuthorPushedShowsRespondedAndNothingWakesOrProposes(t *testing.T) {
+	g := &pollGitHub{}
+	g.set(prSeven, pushedPast())
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	f.moorReviewing(t, "Nelson", "work", []string{prSeven}, prSeven)
+	f.s.PollMoored(context.Background())
+
+	sh, _ := f.ship(t, "Nelson")
+	if len(sh.PRs) != 1 || !sh.PRs[0].Responded || !sh.PRs[0].Reviewing {
+		t.Errorf("prs = %+v, want %s reviewing and responded", sh.PRs, prSeven)
+	}
+	if v, ok := f.listed(t)["Nelson"]["prs"].([]any); !ok || len(v) != 1 || v[0].(map[string]any)["responded"] != true {
+		t.Errorf("GET /api/ships prs = %v, want responded true on the wire", f.listed(t)["Nelson"]["prs"])
+	}
+	if sh.Status != "moored" || sh.Waiting != "" {
+		t.Errorf("status %q waiting %q, want moored with no wake due: the author's response never wakes a reviewer", sh.Status, sh.Waiting)
+	}
+	if got := proposals(t, f.home); len(got) != 0 {
+		t.Errorf("proposals = %d, want none", len(got))
+	}
+	if _, err := os.Stat(wakeFile(f, "Nelson")); err == nil {
+		t.Error("the responded PR got a wake state file, want none")
+	}
+}
+
+func TestAMooredReviewingShipThatTheAuthorHasNotAnsweredShowsNoResponded(t *testing.T) {
+	g := &pollGitHub{}
+	st := pushedPast()
+	st.Head = "abc123"
+	g.set(prSeven, st)
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	f.moorReviewing(t, "Nelson", "work", []string{prSeven}, prSeven)
+	f.s.PollMoored(context.Background())
+
+	if sh, _ := f.ship(t, "Nelson"); len(sh.PRs) != 1 || sh.PRs[0].Responded {
+		t.Errorf("prs = %+v, want %s not responded: the head is the one the viewer reviewed", sh.PRs, prSeven)
+	}
+	if v := f.listed(t)["Nelson"]["prs"].([]any)[0].(map[string]any); v["responded"] != nil {
+		t.Errorf("prs[0] = %v, want no responded key when false", v)
+	}
+}
+
+func TestAnOwnPROnAMixedShipNeverShowsResponded(t *testing.T) {
+	g := &pollGitHub{}
+	g.set(prSeven, pushedPast())
+	own := pushedPast() // the same shape of answer, but the viewer opened it
+	own.Author = viewer
+	g.set(prNine, own)
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	f.moorReviewing(t, "Nelson", "work", []string{prSeven}, prSeven, prNine)
+	f.s.PollMoored(context.Background())
+
+	sh, _ := f.ship(t, "Nelson")
+	if len(sh.PRs) != 2 || !sh.PRs[0].Responded || sh.PRs[1].Responded {
+		t.Errorf("prs = %+v, want only the reviewed PR responded", sh.PRs)
+	}
+}

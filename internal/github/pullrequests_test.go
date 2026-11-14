@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -335,5 +336,65 @@ func TestStackOpenPRsTellsAStackGitHubDoesNotHaveFromAFailedCall(t *testing.T) {
 	f.stack(t, "repos/acme/widgets/stacks/99", 200, `{}`, "")
 	if _, _, err := cl.StackOpenPRs(context.Background(), "acme", "widgets", 12); err == nil {
 		t.Error("a call gh has no answer for (exit 1) gave no error, want a failed call")
+	}
+}
+
+const eventsReviewed = `{
+  "headRefOid": "def456",
+  "author": {"__typename": "User", "login": "dana"},
+  "reviews": {"nodes": [
+    {"id": "R1", "author": {"__typename": "User", "login": "jbuffin"}, "state": "COMMENTED", "commit": {"oid": "abc123"},
+     "submittedAt": "2026-11-02T12:10:00Z", "body": "", "url": "u", "comments": {"totalCount": 1}},
+    {"id": "R2", "author": {"__typename": "User", "login": "jbuffin"}, "state": "APPROVED", "commit": null,
+     "submittedAt": "2026-11-02T12:20:00Z", "body": "", "url": "u", "comments": {"totalCount": 0}}
+  ]},
+  "reviewThreads": {"nodes": [
+    {"id": "TH1", "comments": {"nodes": [
+      {"id": "T1", "author": {"__typename": "User", "login": "jbuffin"}, "createdAt": "2026-11-02T12:10:00Z", "body": "why", "url": "u"},
+      {"id": "T2", "author": {"__typename": "User", "login": "dana"}, "createdAt": "2026-11-02T12:30:00Z", "body": "because", "url": "u"}]}},
+    {"id": "TH2", "comments": {"nodes": [
+      {"id": "T3", "author": {"__typename": "User", "login": "dana"}, "createdAt": "2026-11-02T12:31:00Z", "body": "also", "url": "u"}]}}
+  ]}
+}`
+
+func TestPullRequestsReadsTheCommitOfEachReviewAndTheThreadOfEachThreadComment(t *testing.T) {
+	cl, f := prClient(t)
+	f.pr(t, prA, "OPEN", "", "", "MERGEABLE")
+	f.prEvents(t, prA, eventsReviewed)
+	f.write(t, "viewer", "jbuffin\n")
+
+	got, err := cl.PullRequests(context.Background(), []string{prA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := got[prA]
+	if len(st.Reviews) != 2 || st.Reviews[0].Commit != "abc123" || st.Reviews[1].Commit != "" {
+		t.Errorf("review commits = %+v, want abc123 and none for a review GitHub gave no commit", st.Reviews)
+	}
+	if len(st.ThreadComments) != 3 {
+		t.Fatalf("ThreadComments = %+v, want three", st.ThreadComments)
+	}
+	for i, want := range []string{"TH1", "TH1", "TH2"} {
+		if st.ThreadComments[i].Thread != want {
+			t.Errorf("ThreadComments[%d].Thread = %q, want %q", i, st.ThreadComments[i].Thread, want)
+		}
+	}
+}
+
+// The fake gh returns whatever a test seeds, so only the query text shows that the poll asks for the new fields.
+func TestThePollQueryAsksForEachReviewsCommitAndEachThreadsID(t *testing.T) {
+	cl, f := prClient(t)
+	f.pr(t, prA, "OPEN", "", "", "MERGEABLE")
+	if _, err := cl.PullRequests(context.Background(), []string{prA}); err != nil {
+		t.Fatal(err)
+	}
+	query := regexp.MustCompile(`\s+`).ReplaceAllString(strings.Join(f.only(t, "api").argv, " "), " ")
+	for name, re := range map[string]string{
+		"reviews { nodes { ... commit { oid } }": `reviews\(last: \d+\) \{ nodes \{[^{}]*commit \{ oid \}`,
+		"reviewThreads { nodes { id ...}":        `reviewThreads\(last: \d+\) \{ nodes \{ [^{}]*\bid\b`,
+	} {
+		if !regexp.MustCompile(re).MatchString(query) {
+			t.Errorf("the PR query does not ask for %s", name)
+		}
 	}
 }

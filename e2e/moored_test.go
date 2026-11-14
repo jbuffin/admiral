@@ -431,6 +431,26 @@ func (g *fakeGH) prByAuthor(url, author string, createdAt time.Time, reviewer, b
 	g.write("pr_events/"+key, string(b)+"\n")
 }
 
+// prReviewedBy is prByAuthor for a PR the viewer reviewed on commit reviewed while its head is head: the viewer's review is the one submitted at reviewAt.
+func (g *fakeGH) prReviewedBy(url, author string, createdAt time.Time, viewer, reviewed, head string, reviewAt time.Time) {
+	g.t.Helper()
+	key := strings.NewReplacer("/", "_", ":", "_").Replace(url)
+	if err := os.MkdirAll(filepath.Join(g.dir, "pr_events"), 0o755); err != nil {
+		g.t.Fatal(err)
+	}
+	ev := map[string]any{"author": map[string]any{"__typename": "User", "login": author}, "createdAt": createdAt.UTC().Format(time.RFC3339),
+		"headRefOid": head,
+		"reviews": map[string]any{"nodes": []map[string]any{{
+			"id": "R1", "author": map[string]any{"__typename": "User", "login": viewer}, "state": "COMMENTED",
+			"commit": map[string]any{"oid": reviewed}, "submittedAt": reviewAt.UTC().Format(time.RFC3339), "body": "looks fine", "url": url + "#pullrequestreview-1",
+			"comments": map[string]any{"totalCount": 0}}}}}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		g.t.Fatal(err)
+	}
+	g.write("pr_events/"+key, string(b)+"\n")
+}
+
 // reviewingWorld is liveMooring with an order source whose one order, o1, carries url, and a checkout whose remote routes to the GitHub source.
 func reviewingWorld(t *testing.T, url string) (*world, *fakeGH) {
 	t.Helper()
@@ -534,4 +554,47 @@ func TestAFreeTextShipWithADoneReportThatListsNoPRsDoesNotMoor(t *testing.T) {
 	holdThat(t, "a ship with no PR moored", func() bool {
 		return byName(w.in.ships(t))[ship.Name].Status != "moored" && w.hasSession(ship.Session) && !exists(w.mooredFile(ship.Name))
 	})
+}
+
+func TestAReviewedPRTheAuthorPushedToShowsRespondedWithoutWakingAndReReviewWakesTheShipOnThatURL(t *testing.T) {
+	t.Parallel()
+	w, g := reviewingWorld(t, reviewedPR)
+	g.prState(reviewedPR, "OPEN")
+	created := time.Now().Add(-time.Hour)
+	g.prReviewedBy(reviewedPR, otherAuthor, created, "fake-viewer", "aaa111", "aaa111", time.Now().Add(-20*time.Minute))
+	ship := w.launchReview()
+	w.finishTurn(ship, mooredReport())
+	w.wantMooredWith(ship, true, reviewedPR)
+
+	w.in.waitShipsList(t, 20*time.Second, "a poll shows the PR not responded", func(l []shipJSON) bool {
+		prs := byName(l)[ship.Name].PRs
+		return len(prs) == 1 && prs[0].Author == otherAuthor && !prs[0].Responded
+	})
+	g.prReviewedBy(reviewedPR, otherAuthor, created, "fake-viewer", "aaa111", "bbb222", time.Now().Add(-20*time.Minute)) // the author pushed
+	w.kickMoored()
+	w.in.waitShipsList(t, 20*time.Second, "the author's push shows as responded", func(l []shipJSON) bool {
+		prs := byName(l)[ship.Name].PRs
+		return len(prs) == 1 && prs[0].Responded
+	})
+	holdThat(t, "the ship stayed moored: a response never wakes a reviewing ship", func() bool {
+		return byName(w.in.ships(t))[ship.Name].Status == "moored" && exists(w.mooredFile(ship.Name))
+	})
+
+	if err := os.RemoveAll(filepath.Join(w.rec, ship.Session)); err != nil { // the fake harness reuses a session's recording directory
+		t.Fatal(err)
+	}
+	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/ships/"+ship.Session+"/rereview", map[string]any{"url": reviewedPR})
+	if code != http.StatusCreated {
+		t.Fatalf("POST /api/ships/%s/rereview = %d, want 201: %s", ship.Session, code, body)
+	}
+	if woken := decodeShip(t, body); woken.Session != ship.Session || woken.Name != ship.Name {
+		t.Errorf("woken ship = %s (%s), want %s (%s)", woken.Name, woken.Session, ship.Name, ship.Session)
+	}
+	if got := promptWithHooks(t, w, w.record(ship.Session)); got != "/commodore "+reviewedPR {
+		t.Errorf("prompt = %q, want %q", got, "/commodore "+reviewedPR)
+	}
+	log := w.waitEvent(ship.Session, "woken", 1)
+	if e := lastOf(log, "woken"); e["by"] != "hand" || e["pr"] != reviewedPR {
+		t.Errorf("woken event = %v, want by hand on %s", e, reviewedPR)
+	}
 }

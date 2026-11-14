@@ -104,6 +104,7 @@ func (s *Service) runPRs(sess sessionhost.Session) ([]moor.PR, polled) {
 			pr = moor.View(u, st, found)
 		}
 		pr.Reviewing = slices.Contains(reviewing, u)
+		pr.Responded = pr.Reviewing && p.status != nil && moor.Responded(p.status[u])
 		out = append(out, pr)
 	}
 	return out, p

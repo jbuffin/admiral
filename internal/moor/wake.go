@@ -24,6 +24,7 @@ type Review struct {
 	Body        string
 	URL         string
 	Comments    int
+	Commit      string // the commit the review was made on; empty when GitHub names none
 }
 
 // Comment is a PR comment or a review-thread comment.
@@ -33,6 +34,7 @@ type Comment struct {
 	CreatedAt time.Time
 	Body      string
 	URL       string
+	Thread    string // the review thread's ID for a thread comment; empty for a PR comment
 }
 
 // CheckContext is one check run or commit status on the head commit.
