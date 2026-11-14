@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { inStandalone } from './ios';
 import { acceptInstallOffer, installedHere, installOffer, installState } from './install';
 import { installSheetDue, markInstallSheetShown } from './installSheet';
+import { Button } from './Button';
 import { Sheet } from './Sheet';
 
 function HomeScreenSteps() {
@@ -31,9 +32,7 @@ export function InstallPage() {
   return (
     <>
       <p>Install Admiral as an app on this device, with its own window and push notifications.</p>
-      <button type="button" class="btn primary" onClick={() => void acceptInstallOffer()}>
-        Install
-      </button>
+      <Button label="Install" variant="primary" onClick={() => void acceptInstallOffer()} />
     </>
   );
 }
@@ -49,9 +48,7 @@ export function InstallSheet() {
     <Sheet label="Add Admiral to your Home Screen" onClose={() => setOpen(false)}>
       <HomeScreenSteps />
       <p class="install-why">You can find these steps again in Preferences → Install app.</p>
-      <button type="button" class="btn primary" onClick={() => setOpen(false)}>
-        Got it
-      </button>
+      <Button label="Got it" variant="primary" onClick={() => setOpen(false)} />
     </Sheet>
   );
 }

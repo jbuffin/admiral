@@ -30,7 +30,7 @@ export function Button({ pending, onClick, children, ...props }: ButtonProps) {
   const localKey = useMemo<PendingKey>(() => ['local', id], [id]);
   const key = pending ?? localKey;
   const busy = !!props.busy || isPending(key);
-  const m = buttonModel({ ...props, busy, disabled: props.disabled || (group?.disabledFor(id) ?? false) });
+  const m = buttonModel({ ...props, text: typeof children === 'string' ? children : undefined, busy, disabled: props.disabled || (group?.disabledFor(id) ?? false) });
 
   useEffect(() => {
     if (!group) return;
@@ -49,6 +49,7 @@ export function Button({ pending, onClick, children, ...props }: ButtonProps) {
   const Tag = m.tag as 'button';
   return (
     <Tag
+      id={m.id}
       class={m.class}
       type={m.type}
       {...(m.href !== undefined ? { href: m.href, target: m.target, rel: m.rel } : {})}
@@ -57,6 +58,7 @@ export function Button({ pending, onClick, children, ...props }: ButtonProps) {
       aria-pressed={m.ariaPressed}
       aria-expanded={m.ariaExpanded}
       disabled={m.disabled}
+      onBlur={m.onBlur}
       onClick={m.href !== undefined ? onClick : tap}
     >
       <span class="label">{props.icon ? children : (children ?? props.label)}</span>

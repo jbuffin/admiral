@@ -14,6 +14,10 @@ export interface ButtonModelProps {
   href?: string;
   external?: boolean;
   type?: 'button' | 'submit';
+  /** The visible text, when it is a string; a label that differs from it names the button. */
+  text?: string;
+  id?: string;
+  onBlur?: () => void;
 }
 
 export function buttonModel(p: ButtonModelProps) {
@@ -33,8 +37,10 @@ export function buttonModel(p: ButtonModelProps) {
     target: link && p.external ? '_blank' : undefined,
     rel: link && p.external ? 'noopener noreferrer' : undefined,
     name,
-    // A busy button hides its label, so it is named by attribute; an icon button has no text.
-    ariaLabel: busy || p.icon ? name : undefined,
+    id: p.id,
+    onBlur: p.onBlur,
+    // A busy button hides its label, so it is named by attribute; an icon button has no text; visible text that differs from the label would otherwise name it.
+    ariaLabel: busy || p.icon || (p.text !== undefined && p.text !== p.label) ? name : undefined,
     ariaBusy: busy ? ('true' as const) : undefined,
     ariaPressed: p.pressed === undefined ? undefined : p.pressed ? ('true' as const) : ('false' as const),
     ariaExpanded: p.expanded === undefined ? undefined : p.expanded ? ('true' as const) : ('false' as const),

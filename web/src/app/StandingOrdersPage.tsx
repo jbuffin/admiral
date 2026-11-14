@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { Actions, Button } from './Button';
 import { call, type Fleet } from './api';
 import { capabilities, loadCapabilities } from './capabilities';
 import { NewStandingOrder } from './FilingForms';
@@ -69,9 +70,7 @@ function CopyTo({ fleet, onCopied }: { fleet: Fleet; onCopied: () => void }) {
   return (
     <div class="orders-copy">
       {!open && !confirm ? (
-        <button type="button" class="btn" onClick={() => { setOpen(true); setDone(null); }}>
-          Copy to another fleet
-        </button>
+        <Button label="Copy to another fleet" onClick={() => { setOpen(true); setDone(null); }} />
       ) : null}
       {open && !confirm ? (
         <div class="row-field">
@@ -85,25 +84,17 @@ function CopyTo({ fleet, onCopied }: { fleet: Fleet; onCopied: () => void }) {
               ))}
             </select>
           </label>
-          <button type="button" class="btn" onClick={() => setConfirm(true)}>
-            Copy
-          </button>
-          <button type="button" class="btn" onClick={() => setOpen(false)}>
-            Cancel
-          </button>
+          <Button label="Copy" onClick={() => setConfirm(true)} />
+          <Button label="Cancel" onClick={() => setOpen(false)} />
         </div>
       ) : null}
       {confirm ? (
         <div class="set confirm" role="group" aria-label={`Copy to ${target.name}`}>
           <p class="note">Copying replaces {target.name}’s Checks, Guidance, preset and Limits with this fleet’s.</p>
-          <div class="routine-actions">
-            <button type="button" class="btn danger" disabled={busy} onClick={() => void copy()}>
-              Replace {target.name}’s
-            </button>
-            <button type="button" class="btn" disabled={busy} onClick={() => setConfirm(false)}>
-              Cancel
-            </button>
-          </div>
+          <Actions class="routine-actions">
+            <Button label={`Replace ${target.name}’s`} variant="danger" pending={['fleet', fleet.key, 'copy-orders']} onClick={copy} />
+            <Button label="Cancel" onClick={() => setConfirm(false)} />
+          </Actions>
         </div>
       ) : null}
       {error ? (
@@ -111,9 +102,7 @@ function CopyTo({ fleet, onCopied }: { fleet: Fleet; onCopied: () => void }) {
           {error.status === 409 ? 'The config file changed or is invalid, so nothing was copied. ' : ''}
           {error.message}{' '}
           {error.status === 409 ? (
-            <button type="button" class="btn" onClick={() => { setError(null); void loadFleets(); onCopied(); }}>
-              Reload
-            </button>
+            <Button label="Reload" onClick={() => { setError(null); void loadFleets(); onCopied(); }} />
           ) : null}
         </p>
       ) : null}
@@ -266,9 +255,9 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
                   <span class={checkTooLong(c) ? 'note error' : 'note'}>
                     {runes(c)}/{MAX_CHECK_RUNES}
                   </span>
-                  <button type="button" class="btn" disabled={busy} aria-label={`Remove Check ${i + 1}`} onClick={() => void save('checks', checks.filter((_, j) => j !== i), guidance)}>
+                  <Button label={`Remove Check ${i + 1}`} disabled={busy} pending={['fleet', fleet.key, 'remove-check', String(i)]} onClick={() => save('checks', checks.filter((_, j) => j !== i), guidance)}>
                     Remove
-                  </button>
+                  </Button>
                   {target?.kind === 'check' && target.index === i ? (
                     <p class="note error" role="alert">
                       {message}
@@ -278,9 +267,7 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
               ))}
             </ul>
             {checksDirty ? (
-              <button type="button" class="btn primary" disabled={busy || checks.some(checkTooLong)} onClick={() => void save('checks', checks, guidance)}>
-                Save Checks
-              </button>
+              <Button label="Save Checks" variant="primary" disabled={busy || checks.some(checkTooLong)} pending={['fleet', fleet.key, 'save-checks']} onClick={() => save('checks', checks, guidance)} />
             ) : null}
             <div class="row-field">
               <input type="text" aria-label="New Check" value={newCheck} disabled={busy} onInput={(e) => setNewCheck((e.target as HTMLInputElement).value)} />
@@ -292,9 +279,7 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
                   {message}
                 </p>
               ) : null}
-              <button type="button" class="btn" disabled={busy || !adding || checkTooLong(newCheck) || !canAddCheck(checks.length)} onClick={() => void save('checks', [...checks, adding], guidance)}>
-                Add
-              </button>
+              <Button label="Add" disabled={busy || !adding || checkTooLong(newCheck) || !canAddCheck(checks.length)} pending={['fleet', fleet.key, 'add-check']} onClick={() => save('checks', [...checks, adding], guidance)} />
             </div>
           </section>
 
@@ -313,9 +298,7 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
               </p>
             ) : null}
             <div class="routine-actions">
-              <button type="button" class="btn primary" disabled={busy || !guidanceDirty || guidanceTooLong(guidance)} onClick={() => void save('guidance', checks, guidance)}>
-                Save
-              </button>
+              <Button label="Save" variant="primary" disabled={busy || !guidanceDirty || guidanceTooLong(guidance)} pending={['fleet', fleet.key, 'save-guidance']} onClick={() => save('guidance', checks, guidance)} />
             </div>
           </section>
 

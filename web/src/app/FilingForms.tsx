@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Actions, Button } from './Button';
 import { call, saveFleet, SLOW_TIMEOUT_MS, type Fleet } from './api';
 import { capabilities, loadCapabilities } from './capabilities';
 import { confirmFailure, confirmLabel, confirmOrdersBody, draftedCheckIndex, draftFailure, draftingOff, fieldWords, loosenedLines, joinGuidance, keptLimits, proseError, remainingLoosens, routineProblem, type Kept, type OrdersDraft } from './filing';
@@ -113,15 +114,20 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
     return r.ok ? { checks: r.data.checks ?? [], guidance: r.data.guidance ?? '' } : shown;
   };
 
-  const confirm = async () => {
+  const tapConfirm = () => {
     if (!answer) return;
     const loosening = remainingLoosens(answer.loosens, removed).length;
     if (loosening > 0 && !armed) {
       armedAt.current = Date.now();
-      return setArmed(true);
+      setArmed(true);
+      return;
     }
     // A double tap on the first Confirm only arms it.
     if (armed && Date.now() - armedAt.current < 400) return;
+    return confirm(answer);
+  };
+
+  const confirm = async (answer: OrdersAnswer) => {
     const key = fleet.key;
     const limits = keptLimits(answer.draft.limits, removed, answer.changes.map((c) => c.field));
     const kept = { checks, guidance: guidance.trim() === '' ? '' : guidance };
@@ -231,13 +237,9 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
         ) : null}
         <div class="routine-actions">
           {kind === 'limit' ? (
-            <a class="btn" href={limitsPath(fleet.key)} onClick={linkTo(limitsPath(fleet.key))}>
-              Open Limits
-            </a>
+            <Button label="Open Limits" href={limitsPath(fleet.key)} onClick={linkTo(limitsPath(fleet.key))} />
           ) : (
-            <button type="submit" class="btn primary" disabled={busy || !prose.trim() || tooLong}>
-              Save
-            </button>
+            <Button label="Save" variant="primary" type="submit" busy={busy} disabled={!prose.trim() || tooLong} />
           )}
         </div>
       </form>
@@ -259,9 +261,7 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
       <div class="orders-row">
         {input}
         {!answer ? (
-          <button type="button" class="btn primary" disabled={busy || !prose.trim()} aria-busy={busy} onClick={() => void draft()}>
-            {busy ? 'Drafting…' : 'Draft'}
-          </button>
+          <Button label="Draft" variant="primary" busy={busy} disabled={!prose.trim()} onClick={() => void draft()} />
         ) : null}
       </div>
       <span class={proseRunes > 4000 ? 'note error' : 'note'}>{proseRunes}/4000</span>
@@ -283,10 +283,8 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
                   <li key={c.field} class="row-field">
                     <span>{c.sentence}</span>
                     <span class="note">{settingChange(answer.draft.limits, c.field)}</span>
-                    <button
-                      type="button"
-                      class="btn"
-                      aria-label={`Remove change: ${c.sentence}`}
+                    <Button
+                      label={`Remove change: ${c.sentence}`}
                       disabled={saving}
                       onClick={() => {
                         setRemoved([...removed, c.field]);
@@ -294,7 +292,7 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
                       }}
                     >
                       Remove
-                    </button>
+                    </Button>
                     {limitsFailure?.limit === c.field && failure ? inline(fieldMessage(failure.raw, fleet.key)) : null}
                   </li>
                 ))}
@@ -325,9 +323,9 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
                     <span class={checkTooLong(c) ? 'note error' : 'note'}>
                       {runes(c)}/{MAX_CHECK_RUNES}
                     </span>
-                    <button type="button" class="btn" aria-label={`Remove drafted Check ${i + 1}`} disabled={saving} onClick={() => setChecks(checks.filter((_, j) => j !== i))}>
+                    <Button label={`Remove drafted Check ${i + 1}`} disabled={saving} onClick={() => setChecks(checks.filter((_, j) => j !== i))}>
                       Remove
-                    </button>
+                    </Button>
                     {draftedIndex === i && failure ? inline(ordersMessage(failure.raw)) : null}
                   </li>
                 ))}
@@ -371,20 +369,14 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
             <p class="note error" role="alert">
               {failure.message}{' '}
               {failure.status === 409 ? (
-                <button type="button" class="btn" onClick={() => { setFailure(null); void loadFleets(); }}>
-                  Reload
-                </button>
+                <Button label="Reload" onClick={() => { setFailure(null); void loadFleets(); }} />
               ) : null}
             </p>
           ) : null}
-          <div class="routine-actions">
-            <button type="button" class="btn primary" disabled={saving || nothing || checks.some(checkTooLong) || guidanceTooLong(joinGuidance(shown.guidance, guidance))} onClick={() => void confirm()}>
-              {confirmLabel(armed ? loosens.length : 0)}
-            </button>
-            <button type="button" class="btn" disabled={saving} onClick={discard}>
-              Discard draft
-            </button>
-          </div>
+          <Actions class="routine-actions">
+            <Button label={confirmLabel(armed ? loosens.length : 0)} variant="primary" disabled={nothing || checks.some(checkTooLong) || guidanceTooLong(joinGuidance(shown.guidance, guidance))} pending={['fleet', fleet.key, 'confirm-draft']} onClick={tapConfirm} />
+            <Button label="Discard draft" onClick={discard} />
+          </Actions>
         </section>
       )}
     </div>
@@ -439,9 +431,7 @@ export function DescribeRoutine({ fleet, onDrafted }: { fleet: Fleet; onDrafted:
           if (e.key === 'Enter' && !busy) void draft();
         }}
       />
-      <button type="button" class="btn" disabled={busy || !prose.trim()} aria-busy={busy} onClick={() => void draft()}>
-        {busy ? 'Drafting…' : 'Draft'}
-      </button>
+      <Button label="Draft" busy={busy} disabled={!prose.trim()} onClick={() => void draft()} />
       </div>
       {error ? (
         <p class="note error" role="alert">

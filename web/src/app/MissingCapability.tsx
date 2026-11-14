@@ -1,3 +1,4 @@
+import { Button } from './Button';
 import { checkKey, checking, recheck } from './capabilities';
 import { harnessName } from './harnessName';
 
@@ -23,9 +24,9 @@ export function MissingCapability({ fleet, harness, capability, reason, id }: {
           </>
         )}
       </span>
-      <button type="button" class="btn" disabled={busy} aria-label={`Check again ${capability ? `${capability} on ` : ''}${name}`} onClick={() => void recheck(fleet, harness)}>
+      <Button label={`Check again ${capability ? `${capability} on ` : ''}${name}`} busy={busy} onClick={() => void recheck(fleet, harness)}>
         Check again
-      </button>
+      </Button>
     </p>
   );
 }

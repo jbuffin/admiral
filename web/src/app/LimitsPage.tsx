@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { call, saveFleet, type Fleet } from './api';
+import { Actions, Button } from './Button';
 import { fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage } from './fleetSettings';
 import { defaultThreshold, LEVELS, limitsBody, normalizeLimits, reconcileLimits, type Ceiling, type Level, type Limits, type Restricted, type Threshold, type Window } from './limitsForm';
@@ -88,9 +89,9 @@ function Row({ id, label, hint, sentence, overridden, reset, onReset, error, chi
       <div class="control">
         {children}
         {overridden ? (
-          <button type="button" class="btn" aria-label={reset ? `Keep my ${label}` : `Reset ${label} to the preset`} onClick={() => onReset(!reset)}>
+          <Button label={reset ? `Keep my ${label}` : `Reset ${label} to the preset`} onClick={() => onReset(!reset)}>
             {reset ? 'Keep mine' : 'Reset to preset'}
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>
@@ -180,14 +181,12 @@ function Rows({ id, item, add, values, notes, disabled, onEdit, onRemove, onAdd 
         <div class="row-field" key={i}>
           <input id={i === 0 ? id : undefined} type="text" aria-label={`${item} ${i + 1}`} value={v} disabled={disabled} onInput={(e) => onEdit(i, target(e).value)} />
           {notes?.[i] ? <span class="hint">{notes[i]}</span> : null}
-          <button type="button" class="btn" disabled={disabled} aria-label={`Remove ${item.toLowerCase()} ${i + 1}`} onClick={() => onRemove(i)}>
+          <Button label={`Remove ${item.toLowerCase()} ${i + 1}`} disabled={disabled} onClick={() => onRemove(i)}>
             Remove
-          </button>
+          </Button>
         </div>
       ))}
-      <button type="button" class="btn" id={values.length === 0 ? id : undefined} disabled={disabled} onClick={onAdd}>
-        {add}
-      </button>
+      <Button label={add} id={values.length === 0 ? id : undefined} disabled={disabled} onClick={onAdd} />
     </div>
   );
 }
@@ -208,14 +207,12 @@ function QuietHours({ id, windows, disabled, onChange }: { id: string; windows: 
               </label>
             ))}
           </span>
-          <button type="button" class="btn" disabled={disabled} aria-label={`Remove window ${i + 1}`} onClick={() => onChange(windows.filter((_, j) => j !== i))}>
+          <Button label={`Remove window ${i + 1}`} disabled={disabled} onClick={() => onChange(windows.filter((_, j) => j !== i))}>
             Remove
-          </button>
+          </Button>
         </div>
       ))}
-      <button type="button" class="btn" id={windows.length === 0 ? id : undefined} disabled={disabled} onClick={() => onChange([...windows, { start: '22:00', end: '07:00', weekdays: [...WEEKDAYS] }])}>
-        Add a window
-      </button>
+      <Button label="Add a window" id={windows.length === 0 ? id : undefined} disabled={disabled} onClick={() => onChange([...windows, { start: '22:00', end: '07:00', weekdays: [...WEEKDAYS] }])} />
     </div>
   );
 }
@@ -331,9 +328,7 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
       {topError.status === 409 ? 'The config file changed or is invalid, so nothing was saved. ' : ''}
       {topError.message}{' '}
       {topError.status === 409 ? (
-        <button type="button" class="btn" onClick={() => void reload()}>
-          Reload
-        </button>
+        <Button label="Reload" onClick={() => void reload()} />
       ) : null}
     </p>
   ) : null;
@@ -345,9 +340,7 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
       {stale ? (
         <p class="note warning" role="status">
           This fleet’s Limits changed elsewhere. Reload to see them; your unsaved edits will be dropped.{' '}
-          <button type="button" class="btn" onClick={() => void reload()}>
-            Reload
-          </button>
+          <Button label="Reload" onClick={() => void reload()} />
         </p>
       ) : null}
       <div class="box">
@@ -375,23 +368,19 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
                 {error.message}
               </p>
             ) : null}
-            <div class="routine-actions">
-              <button
-                type="button"
-                class="btn danger"
-                disabled={busy}
+            <Actions class="routine-actions">
+              <Button
+                label="Switch"
+                variant="danger"
+                pending={['fleet', fleet.key, 'switch-preset']}
                 onClick={() =>
-                  void send({ preset: pending }).then((ok) => {
+                  send({ preset: pending }).then((ok) => {
                     if (ok) setPending(null);
                   })
                 }
-              >
-                Switch
-              </button>
-              <button type="button" class="btn" onClick={() => setPending(null)}>
-                Cancel
-              </button>
-            </div>
+              />
+              <Button label="Cancel" onClick={() => setPending(null)} />
+            </Actions>
           </div>
         ) : null}
       </div>
@@ -419,9 +408,7 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
 
       <div class="box">
         <div class="set actions">
-          <button type="button" class="btn primary" disabled={busy || !dirty} onClick={() => void send({ limits: body })}>
-            Save
-          </button>
+          <Button label="Save" variant="primary" disabled={busy || !dirty} pending={['fleet', fleet.key, 'save-limits']} onClick={() => send({ limits: body })} />
         </div>
       </div>
     </>
