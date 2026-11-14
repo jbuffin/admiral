@@ -344,6 +344,8 @@ type prJSON struct {
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
 	Ready     bool   `json:"ready"`
+	Feedback  int    `json:"feedback"`
+	Answer    string `json:"answer"`
 }
 
 func send(t *testing.T, method, url string, body any) (int, string) {

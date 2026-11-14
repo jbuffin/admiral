@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { addGitHubSource, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, noWakeWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, stopShipMoors, withFakeGh } from './shell';
+import { addGitHubSource, addWakeReviewers, answeringEnv, answerReviewFromThePRTab, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, noWakeWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, stopShipMoors, withFakeGh } from './shell';
 
 test('on the phone, a moored ship shows in its own group with chips from the poll, and Don\'t follow reviews and Dismiss take it out by touch', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -184,6 +184,20 @@ test('on the phone, a ship carrying a 2-PR stack shows each PR\'s sections in on
   const watch = watchPage(page, admiral.url);
 
   await prTabOfARunningStack(page, admiral, { phone: true });
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('on the phone, the feedback bar and the Answer review sheet fit, with the command wrapped and no sideways scroll', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  addWakeReviewers(admiral, 'zulu', ['alice']);
+  await admiral.start({ env: answeringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await answerReviewFromThePRTab(page, admiral, { phone: true });
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

@@ -23,6 +23,11 @@ export function prSummary(prs: MooredPR[] | undefined): string {
   return `${n} · #${prNumber(blocked.url)} ${why}`;
 }
 
+/** The feedback bar's text for a PR, or '' when there is no bar. */
+export function feedbackBarText(pr: MooredPR): string {
+  return 'not implemented';
+}
+
 export const prNumber = (url: string): string => /\/pull\/(\d+)/.exec(url)?.[1] ?? '';
 
 export function prDot(pr: MooredPR): DotKind {

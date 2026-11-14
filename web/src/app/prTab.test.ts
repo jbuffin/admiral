@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR } from './api';
-import { chooseStack, defaultPR, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs } from './prTab';
+import { chooseStack, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -213,5 +213,27 @@ describe('stackBarText', () => {
     expect(stackBarText(2, false)).toBe('');
     expect(stackBarText(1, true)).toBe('');
     expect(stackBarText(0, true)).toBe('');
+  });
+});
+
+describe('feedbackBarText', () => {
+  const answer = (n: number, over: Partial<MooredPR> = {}) => pr(7, { feedback: n, answer: `/commodore resume run-7 feedback round 1 on ${URL(7)}`, ...over });
+
+  it('counts the new items, 1 singular and 2 plural', () => {
+    expect(feedbackBarText(answer(1))).toBe("New feedback since the ship's last round: 1 new item.");
+    expect(feedbackBarText(answer(2))).toBe("New feedback since the ship's last round: 2 new items.");
+  });
+
+  it('names changes requested only when the PR\'s review is CHANGES_REQUESTED', () => {
+    expect(feedbackBarText(answer(1, { review: 'CHANGES_REQUESTED' }))).toBe("New feedback since the ship's last round: changes requested, 1 new item.");
+    expect(feedbackBarText(answer(3, { review: 'CHANGES_REQUESTED' }))).toBe("New feedback since the ship's last round: changes requested, 3 new items.");
+    expect(feedbackBarText(answer(1, { review: 'APPROVED' }))).not.toContain('changes requested');
+  });
+
+  it('is empty, so no bar shows, without an answer or on a PR that has ended', () => {
+    expect(feedbackBarText(pr(7))).toBe('');
+    expect(feedbackBarText(pr(7, { feedback: 2 }))).toBe('');
+    expect(feedbackBarText(answer(1, { state: 'MERGED' }))).toBe('');
+    expect(feedbackBarText(answer(1, { state: 'CLOSED' }))).toBe('');
   });
 });

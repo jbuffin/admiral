@@ -480,3 +480,16 @@ func fenceFor(body string) string {
 	}
 	return strings.Repeat("`", longest+1)
 }
+
+// HandRound is the feedback round on one PR, as decided by hand.
+type HandRound struct {
+	Events   []Event // the PR's waking events, oldest first
+	Feedback string
+	Next     WakeState
+}
+
+// DecideHandRound is the round Answer review runs on pr: DecideWake's work for pr with the debounce already passed.
+// It reports false when pr has no feedback: it is not open, has no answer, or has no waking event.
+func DecideHandRound(in WakeInput, pr string) (HandRound, bool) {
+	return HandRound{}, true // stub: the implementation replaces it
+}

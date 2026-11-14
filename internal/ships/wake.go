@@ -318,3 +318,7 @@ func (s *Service) serveWake(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
 }
+
+func (s *Service) serveAnswerReview(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "not implemented")
+}
