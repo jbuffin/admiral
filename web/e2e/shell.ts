@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Locator, type Page, expect } from '@playwright/test';
@@ -717,7 +717,9 @@ export function ghStackMergeSlow(a: Admiral, seconds: number) {
 export function mergeCalls(a: Admiral): string[][] {
   const dir = join(a.home, 'fakegh', 'calls');
   if (!existsSync(dir)) return [];
+  // The fake names each call dir at random, so the order is the dirs' creation time.
   return readdirSync(dir)
+    .sort((x, y) => statSync(join(dir, x)).birthtimeMs - statSync(join(dir, y)).birthtimeMs)
     .map((d) => join(dir, d, 'argv'))
     .filter((f) => existsSync(f))
     .map((f) => readFileSync(f, 'utf8').split('\0').filter((x) => x !== ''))
@@ -764,8 +766,10 @@ export const ghStackLinkSlow = (a: Admiral, seconds: number) => writeFileSync(jo
 export function mergeCallsIn(a: Admiral): { argv: string[]; cwd: string }[] {
   const dir = join(a.home, 'fakegh', 'calls');
   if (!existsSync(dir)) return [];
+  // The fake names each call dir at random, so the order is the dirs' creation time.
   return readdirSync(dir)
     .filter((d) => existsSync(join(dir, d, 'argv')) && existsSync(join(dir, d, 'cwd')))
+    .sort((x, y) => statSync(join(dir, x)).birthtimeMs - statSync(join(dir, y)).birthtimeMs)
     .map((d) => ({ argv: readFileSync(join(dir, d, 'argv'), 'utf8').split('\0').filter((x) => x !== ''), cwd: readFileSync(join(dir, d, 'cwd'), 'utf8').trim() }))
     .filter(({ argv }) => (argv[0] === 'pr' || argv[0] === 'stack') && argv[1] === 'merge');
 }
