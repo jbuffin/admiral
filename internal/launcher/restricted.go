@@ -77,11 +77,23 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 	switch level {
 	case standing.DraftFix:
 		allow = []any{"Edit(/" + checkout + "/**)", "Write(/" + checkout + "/**)"}
-		// The sandbox guards only .git/hooks and config; unsandboxed git reads the rest, and Edit and Write bypass the sandbox.
+		// Unsandboxed git reads and runs what lives in these paths, and Edit and Write bypass the sandbox. They are denied one by one:
+		// Claude Code turns a deny on .git/** into a sandbox deny on all of .git, which stops git from writing the index, refs and locks.
 		gitDir := filepath.Join(checkout, ".git")
-		filesystem["denyWrite"] = []any{filepath.Join(gitDir, "commondir"), filepath.Join(gitDir, "config.worktree"),
-			filepath.Join(gitDir, "info"), filepath.Join(gitDir, "modules"), filepath.Join(gitDir, "objects", "info"), filepath.Join(checkout, ".gitmodules")}
-		deny = append(deny, "Edit(/"+gitDir+"/**)", "Write(/"+gitDir+"/**)", "Edit(/"+filepath.Join(checkout, ".gitmodules")+")", "Write(/"+filepath.Join(checkout, ".gitmodules")+")")
+		files := []string{"config", "commondir", "config.worktree"}
+		dirs := []string{"hooks", "info", "modules", filepath.Join("objects", "info"), "worktrees"}
+		var denyWrite []any
+		for _, f := range files {
+			denyWrite = append(denyWrite, filepath.Join(gitDir, f))
+			deny = append(deny, "Edit(/"+filepath.Join(gitDir, f)+")", "Write(/"+filepath.Join(gitDir, f)+")")
+		}
+		for _, d := range dirs {
+			denyWrite = append(denyWrite, filepath.Join(gitDir, d))
+			deny = append(deny, "Edit(/"+filepath.Join(gitDir, d)+"/**)", "Write(/"+filepath.Join(gitDir, d)+"/**)")
+		}
+		gm := filepath.Join(checkout, ".gitmodules")
+		filesystem["denyWrite"] = append(denyWrite, gm)
+		deny = append(deny, "Edit(/"+gm+")", "Write(/"+gm+")")
 	case standing.Investigate:
 		report := "/" + filepath.Join(checkout, ".admiral", "report.md")
 		allow = []any{"Write(" + report + ")", "Edit(" + report + ")"}

@@ -366,10 +366,21 @@ func TestADraftFixShipsSandboxCannotWriteTheFilesGitReadsItsConfigurationFrom(t 
 			t.Errorf("Draft fix denyWrite = %q, want .git/%s", deny, rel)
 		}
 	}
+	for _, rel := range []string{"config", "hooks"} {
+		if !slices.Contains(deny, filepath.Join(fc.madeFor, ".git", rel)) {
+			t.Errorf("Draft fix denyWrite = %q, want .git/%s", deny, rel)
+		}
+	}
 	permDeny := strs(t, sub(t, got, "permissions")["deny"])
+	git := "/" + fc.madeFor + "/.git/"
 	for _, tool := range []string{"Edit", "Write"} {
-		if want := tool + "(/" + fc.madeFor + "/.git/**)"; !slices.Contains(permDeny, want) {
-			t.Errorf("permissions.deny = %q, want %s", permDeny, want)
+		for _, want := range []string{"config", "commondir", "config.worktree", "hooks/**", "info/**", "modules/**", "objects/info/**", "worktrees/**"} {
+			if !slices.Contains(permDeny, tool+"("+git+want+")") {
+				t.Errorf("permissions.deny = %q, want %s(%s%s)", permDeny, tool, git, want)
+			}
+		}
+		if bad := tool + "(" + git + "**)"; slices.Contains(permDeny, bad) {
+			t.Errorf("permissions.deny holds %s, which Claude Code turns into a sandbox write deny on all of .git and stops git commit", bad)
 		}
 	}
 }
