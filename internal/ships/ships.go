@@ -61,11 +61,13 @@ type Ship struct {
 	// Routine is the routine:<id> key a routine's ship holds.
 	Routine string `json:"-"`
 	// Commitment is the commitment:<id> key a commitment's ship holds.
-	Commitment string          `json:"-"`
-	Status     string          `json:"status"`
-	ExitCode   *int            `json:"exit_code"`
-	ExitSignal *string         `json:"exit_signal"`
-	Position   *state.Position `json:"position"`
+	Commitment string  `json:"-"`
+	Status     string  `json:"status"`
+	ExitCode   *int    `json:"exit_code"`
+	ExitSignal *string `json:"exit_signal"`
+	// StoppedBy is why Admiral ended the harness: wall_clock:<minutes>.
+	StoppedBy string          `json:"stopped_by,omitempty"`
+	Position  *state.Position `json:"position"`
 	// PRs and MooredAt are set only on a moored ship.
 	PRs      []moor.PR `json:"prs,omitempty"`
 	MooredAt string    `json:"moored_at,omitempty"`
@@ -240,6 +242,9 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
 		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "", CarriesPRs: carriesPRs(sess)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
+	if sh.Status == "anchored" {
+		sh.StoppedBy = o[sessionhost.OptStoppedBy]
+	}
 	sh.Crew, sh.Subagents = crewBoats(sess.Crew), sess.Subagents
 	if sh.Subagents == nil {
 		sh.Subagents = []sessionhost.Subagent{}

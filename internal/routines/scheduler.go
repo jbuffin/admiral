@@ -86,6 +86,10 @@ type Scheduler struct {
 	Enrich func(Event) Enrichment
 	// Live says what the ships hold for the rates and the dedupe_key; nil holds none.
 	Live EventLoad
+	// Listed reads the host's ships for the wall clock; EndHarness ends a ship's harness process, keeps its pane and notes the wall clock's minutes as the reason.
+	Listed func() []ListedShip
+	// It answers ErrAlreadyEnded for a harness that had ended on its own.
+	EndHarness func(session string, minutes int) error
 	// Acts, when set, receives each Reported or Proposed event decision. Nil records only.
 	Acts EventActs
 	// Ready, when set, closes once the ships host knows the fleet; Run catches up only after it.
@@ -99,6 +103,8 @@ type Scheduler struct {
 	last    map[string]time.Time
 	waiting map[string]waitRun
 	watched map[string]watch
+	// walled is, per launch record, when the wall clock may try its ship again: far off once it ended the harness.
+	walled map[string]time.Time
 	// proposals is each routine's open proposal, so one nobody answered is recorded expired once.
 	proposals map[string]openProposal
 	// toPropose holds the proposals a tick made; they go to the Proposer after mu is released, because the Inbox
@@ -137,6 +143,7 @@ func (s *Scheduler) init() {
 	s.once.Do(func() {
 		s.wake = make(chan struct{}, 1)
 		s.last, s.waiting, s.watched = map[string]time.Time{}, map[string]waitRun{}, map[string]watch{}
+		s.walled = map[string]time.Time{}
 		s.proposals = map[string]openProposal{}
 	})
 }
@@ -173,6 +180,9 @@ func (s *Scheduler) Run(ctx context.Context) {
 		d := idleWake
 		if next := s.nextDue(); !next.IsZero() {
 			d = next.Sub(s.Clock.Now())
+		}
+		if next := s.nextWallClock(); !next.IsZero() {
+			d = min(d, next.Sub(s.Clock.Now()))
 		}
 		select {
 		case <-ctx.Done():
@@ -315,6 +325,7 @@ func (s *Scheduler) catchUp(ctx context.Context) error {
 func (s *Scheduler) Tick(ctx context.Context) error {
 	s.init()
 	err := s.tick(ctx)
+	s.wallClock(s.Clock.Now())
 	s.handOff()
 	return err
 }

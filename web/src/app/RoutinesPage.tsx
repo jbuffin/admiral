@@ -4,7 +4,7 @@ import { capabilities, capabilitiesFailed, capabilitiesLoaded, loadCapabilities 
 import { cronSentence } from './cron';
 import { DescribeRoutine } from './FilingForms';
 import { fleetSearch } from './fleets';
-import { holdFire, setHoldFire } from './holdFireLink';
+import { holdFire, setHoldFire, stopResult, stopWorkerShips } from './holdFireLink';
 import { JudgeLine } from './HarnessCapabilities';
 import { MissingCapability } from './MissingCapability';
 import { CheckoutSelect, DockPicker, ModelEffortPair, ResourcesPicker, SkillSelect, skillOfValue, skillValue } from './LaunchPickers';
@@ -34,6 +34,8 @@ import {
   runLine,
   spendNotice,
   proposeOnlyNote,
+  stopAllConfirm,
+  stopAllLabel,
   runTime,
   type Before,
   type Routine,
@@ -65,6 +67,14 @@ function HoldFireToggles({ fleet }: { fleet: Fleet }) {
   const state = holdFire.value?.fleet === fleet.key ? holdFire.value.state : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [confirming, setConfirming] = useState<'' | 'fleet' | 'all'>('');
+  const stop = async (scope: 'fleet' | 'all') => {
+    setBusy(true);
+    setConfirming('');
+    stopResult.value = '';
+    setError(await stopWorkerShips(fleet.key, scope));
+    setBusy(false);
+  };
   const flip = async (scope: 'fleet' | 'all') => {
     if (!state) return;
     setBusy(true);
@@ -73,12 +83,35 @@ function HoldFireToggles({ fleet }: { fleet: Fleet }) {
   };
   return (
     <div class="holdfire-toggles">
-      <span class="holdfire-toggle">
-        Hold fire <Switch label="Hold fire" on={!!state?.fleet.on} busy={busy || !state} onToggle={() => void flip('fleet')} />
-      </span>
-      <span class="holdfire-toggle">
-        All fleets <Switch label="Hold fire, all fleets" on={!!state?.global.on} busy={busy || !state} onToggle={() => void flip('all')} />
-      </span>
+      {(['fleet', 'all'] as const).map((scope) => {
+        const { label, disabled } = stopAllLabel(scope === 'all' ? state?.all_worker_ships : state?.worker_ships, scope);
+        return (
+          <span class="holdfire-toggle" key={scope}>
+            {scope === 'all' ? 'All fleets' : 'Hold fire'}{' '}
+            <Switch
+              label={scope === 'all' ? 'Hold fire, all fleets' : 'Hold fire'}
+              on={!!(scope === 'all' ? state?.global.on : state?.fleet.on)}
+              busy={busy || !state}
+              onToggle={() => void flip(scope)}
+            />
+            <button type="button" class="btn" disabled={busy || disabled} onClick={() => setConfirming(scope)}>
+              {label}
+            </button>
+          </span>
+        );
+      })}
+      {confirming ? (
+        <div class="confirm" role="group" aria-label="Stop all worker-launched">
+          <p class="line">{stopAllConfirm(confirming)}</p>
+          <button type="button" class="btn danger" disabled={busy} onClick={() => void stop(confirming)}>
+            Confirm stop
+          </button>
+          <button type="button" class="btn" onClick={() => setConfirming('')}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
+      {stopResult.value ? <p class="line" role="status">{stopResult.value}</p> : null}
       {error ? (
         <p class="alert" role="alert">
           {error}

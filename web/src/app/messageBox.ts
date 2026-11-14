@@ -7,11 +7,19 @@ export interface BoxState {
   placeholder?: string;
 }
 
+/** What a ship the wall clock stopped says of itself, empty for any other ship. */
+export function wallClockNote(ship: Pick<Ship, 'status' | 'stopped_by'>): string {
+  const minutes = ship.status === 'anchored' ? /^wall_clock:(\d+)$/.exec(ship.stopped_by ?? '')?.[1] : undefined;
+  return minutes ? `Stopped at the ${minutes}-minute wall clock` : '';
+}
+
 /** Whether the message box takes a message, and what it says when it does not. */
-export function boxState(ship: Pick<Ship, 'status' | 'exit_code' | 'exit_signal' | 'no_resume'>): BoxState {
+export function boxState(ship: Pick<Ship, 'status' | 'exit_code' | 'exit_signal' | 'no_resume' | 'stopped_by'>): BoxState {
   if (ship.status === 'underway' || ship.status === 'needs_you') return { enabled: true };
   if (ship.status === 'anchored') {
     // An anchored ship always exited with an error: a non-zero code, or no code and a signal.
+    const stopped = wallClockNote(ship);
+    if (stopped) return { enabled: false, note: `${stopped}, read only` };
     if (ship.exit_code === null && ship.exit_signal) return { enabled: false, note: `Killed (${ship.exit_signal}), read only` };
     return { enabled: false, note: 'Exited with error, read only' };
   }

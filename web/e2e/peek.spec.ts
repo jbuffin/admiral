@@ -731,6 +731,9 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
   await expect(holdFire).toBeChecked();
   await expect(banner).toContainText('you');
   await expect.poll(async () => ((await (await api('fleets/zulu/hold-fire')).json()) as { on: boolean }).on).toBe(true);
+  // No worker-launched ship is live, so Stop all counts none and is disabled; the all-fleets button says so too.
+  await expect(page.getByRole('main').getByRole('button', { name: 'Stop all worker-launched (0)', exact: true })).toBeDisabled();
+  await expect(page.getByRole('main').getByRole('button', { name: 'Stop all worker-launched, all fleets (0)', exact: true })).toBeDisabled();
   const due = new Date(Math.ceil((Date.now() + 5_000) / 60_000) * 60_000);
   const created = await api('fleets/zulu/routines', {
     method: 'POST',
@@ -758,9 +761,30 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
 
   await page.goto(admiral.url + 'app/routines?fleet=zulu');
   await expect(banner).toBeVisible();
+  // A ship the engineer launched from a proposal is not worker-launched, so it stays out of the Stop all count.
+  await expect(page.getByRole('main').getByRole('button', { name: 'Stop all worker-launched (0)', exact: true })).toBeDisabled();
   await page.getByRole('main').getByRole('switch', { name: 'Hold fire', exact: true }).tap();
   await expect(banner).toHaveCount(0);
   await expect.poll(async () => ((await (await api('fleets/zulu/hold-fire')).json()) as { on: boolean }).on).toBe(false);
+
+  // A live event-started ship: a ship launched through the API, holding the routine's key, with an event record from before it launched.
+  const { id: routineId } = (await created.json()) as { id: string };
+  const worker = await launchShip(admiral, { fleet: 'zulu', harness: 'claude' });
+  spawnSync('tmux', ['-S', join(admiral.home, 'tmux.sock'), 'set-option', '-t', `${worker.session}:`, '@admiral-routine', `routine:${routineId}`], { encoding: 'utf8' });
+  appendFileSync(
+    join(admiral.home, 'routines', 'zulu', 'triggers.jsonl'),
+    JSON.stringify({ id: 'trig-worker', at: new Date(Date.now() - 60_000).toISOString(), routine: routineId, outcome: 'launched', tier: 'T1', event: 'https://github.com/acme/api/pull/7', sender: 'alice', ship: worker.session, restricted: 'draft_fix', worker_launched: true }) + '\n',
+  );
+  const workerShips = async () => ((await (await api('fleets/zulu/hold-fire')).json()) as { worker_ships: number }).worker_ships;
+  await expect.poll(workerShips, { timeout: 30_000 }).toBe(1);
+  await page.goto(admiral.url + 'app/routines?fleet=zulu');
+  const stopAll = page.getByRole('main').getByRole('button', { name: 'Stop all worker-launched (1)', exact: true });
+  await stopAll.tap();
+  await expect(page.getByRole('main').getByRole('group', { name: 'Stop all worker-launched' })).toContainText('Stops every ship an outside event started in this fleet. Their clones stay, so Undo and Promote still work.');
+  await page.getByRole('main').getByRole('button', { name: 'Confirm stop', exact: true }).tap();
+  await expect.poll(workerShips, { timeout: 30_000 }).toBe(0);
+  await expect(page.getByRole('main').getByRole('status').filter({ hasText: 'Stopped 1 ship' })).toBeVisible();
+  await expect(page.getByRole('main').getByRole('button', { name: 'Stop all worker-launched (0)', exact: true })).toBeDisabled();
 
   const all = page.getByRole('main').getByRole('switch', { name: 'Hold fire, all fleets', exact: true });
   await all.tap();

@@ -325,6 +325,10 @@ type shipJSON struct {
 	StopSince  string   `json:"stop_since"`
 	Seen       bool     `json:"seen"`
 
+	// ExitSignal and StoppedBy are set on an anchored ship: the signal that ended its harness, and why Admiral did (wall_clock:<minutes>).
+	ExitSignal *string `json:"exit_signal"`
+	StoppedBy  string  `json:"stopped_by"`
+
 	StackReady  bool   `json:"stack_ready"`
 	ReadyUpTo   string `json:"ready_up_to"`
 	MergeMethod string `json:"merge_method"`
