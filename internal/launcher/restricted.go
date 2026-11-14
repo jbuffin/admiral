@@ -213,10 +213,10 @@ func (l *Launcher) shipCheckout(req Request, session string) (restrictedShip, st
 	if existing, err := filepath.EvalSymlinks(filepath.Join(home, "checkouts", session)); req.Session != "" && err == nil {
 		made.checkout, made.reused = existing, true
 		if err := checkClonedSubmodules(made.checkout, req.Dir); err != nil {
-			return nil, restrictedShip{}, refuse(http.StatusInternalServerError, "%v", err)
+			return restrictedShip{}, "", refuse(http.StatusInternalServerError, "%v", err)
 		}
 		if err := resetClonedGit(made.checkout, objectDirs); err != nil {
-			return nil, restrictedShip{}, refuse(http.StatusInternalServerError, "%v", err)
+			return restrictedShip{}, "", refuse(http.StatusInternalServerError, "%v", err)
 		}
 	} else if made.checkout, err = l.Checkouts.Make(l.Home, session, req.Dir); err != nil {
 		return restrictedShip{}, "", asError(err)
