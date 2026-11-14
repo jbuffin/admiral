@@ -200,6 +200,7 @@ func TestSearchMakesTheExcerptOneShortLineOfTheBody(t *testing.T) {
 		{"a body of exactly 280 runes is kept whole", atCap, atCap},
 		{"a body of 281 runes is cut", atCap + "é", atCap + "…"},
 		{"control characters are dropped and the ends trimmed", "  \n x\u0007y \t\n", "xy"},
+		{"zero-width, bidi and C1 characters are dropped", "a\u200bb\u202e c\u2066d\ufeff\u0090e", "ab cde"},
 		{"an empty body leaves no excerpt", "", ""},
 		{"a whitespace-only body leaves no excerpt", " \n\t \r\n", ""},
 	} {

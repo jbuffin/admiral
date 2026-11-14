@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jbuffin/admiral/internal/github"
@@ -171,11 +172,11 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		// Sub-issues is the count a GitHub issue has, read by the built-in source only.
 		SubIssues json.RawMessage `json:"sub_issues"` // anything but a positive integer is dropped
 		PR        json.RawMessage `json:"pr"`         // anything but a well-formed object is dropped
-		Author    *string         `json:"author"`
-		OpenedAt  *string         `json:"opened_at"`
-		Excerpt   *string         `json:"excerpt"`
-		// A field that fails its check is dropped and the order kept.
-		ReviewRequestedAt *string         `json:"review_requested_at"`
+		// A field of the wrong type or that fails its check is dropped and the order kept.
+		Author            json.RawMessage `json:"author"`
+		OpenedAt          json.RawMessage `json:"opened_at"`
+		Excerpt           json.RawMessage `json:"excerpt"`
+		ReviewRequestedAt json.RawMessage `json:"review_requested_at"`
 		ReviewedSincePush json.RawMessage `json:"reviewed_since_push"`
 	}
 	if err := decodeInto(raw, &items); err != nil {
@@ -234,13 +235,13 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 			o.SubIssues = n
 		}
 		o.PR = parseOrderPR(it.PR)
-		if it.Author != nil && !hasControl(*it.Author) && utf8.RuneCountInString(*it.Author) <= maxAuthor && strings.TrimSpace(*it.Author) != "" {
-			o.Author = *it.Author
+		if a, ok := rawString(it.Author); ok && !hasControl(a) && !hasInvisible(a) && utf8.RuneCountInString(a) <= maxAuthor && strings.TrimSpace(a) != "" {
+			o.Author = a
 		}
 		o.OpenedAt = rfc3339(it.OpenedAt)
 		o.ReviewRequestedAt = rfc3339(it.ReviewRequestedAt)
-		if it.Excerpt != nil {
-			o.Excerpt = github.Excerpt(*it.Excerpt)
+		if e, ok := rawString(it.Excerpt); ok {
+			o.Excerpt = github.Excerpt(e)
 		}
 		var seen bool
 		if json.Unmarshal(it.ReviewedSincePush, &seen) == nil && len(it.ReviewedSincePush) > 0 && it.ReviewedSincePush[0] != 'n' {
@@ -253,12 +254,28 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 
 const maxAuthor = 100
 
-// rfc3339 is s as a UTC RFC 3339 time, or "" when s is not one.
-func rfc3339(s *string) string {
-	if s == nil {
+// rawString is raw as a JSON string; false for any other type, null or nothing.
+func rawString(raw json.RawMessage) (string, bool) {
+	var s string
+	if len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &s) != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// hasInvisible reports a C1 control or a Unicode format character (zero-width, bidi override or isolate, BOM), which
+// show nothing or reorder what is around them.
+func hasInvisible(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) >= 0
+}
+
+// rfc3339 is raw as a UTC RFC 3339 time, or "" when it is not a string holding one.
+func rfc3339(raw json.RawMessage) string {
+	s, ok := rawString(raw)
+	if !ok {
 		return ""
 	}
-	at, err := time.Parse(time.RFC3339, *s)
+	at, err := time.Parse(time.RFC3339, s)
 	if err != nil {
 		return ""
 	}
@@ -271,18 +288,16 @@ func parseOrderPR(raw json.RawMessage) *OrderPR {
 	if len(raw) == 0 || raw[0] != '{' {
 		return nil
 	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil {
+	// The outer field shadows OrderPR's own, so a bad count costs only the count, whatever its key's case.
+	var in struct {
+		OrderPR
+		FailingCheckCount json.RawMessage `json:"failing_check_count"`
+	}
+	if json.Unmarshal(raw, &in) != nil {
 		return nil
 	}
-	count := positiveInt(fields["failing_check_count"])
-	delete(fields, "failing_check_count")
-	rest, _ := json.Marshal(fields)
-	var pr OrderPR
-	if json.Unmarshal(rest, &pr) != nil {
-		return nil
-	}
-	pr.FailingCheckCount = count
+	pr := in.OrderPR
+	pr.FailingCheckCount = positiveInt(in.FailingCheckCount)
 	return &pr
 }
 

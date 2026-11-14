@@ -361,3 +361,100 @@ func TestParseOrdersReadsTheNewFieldsAndDropsABadOneKeepingTheOrder(t *testing.T
 		t.Errorf("a 100-rune author = %v, want it kept", kept["author"])
 	}
 }
+
+func TestParseOrdersDropsAWrongTypedFieldAndKeepsTheOrderAndItsNeighbours(t *testing.T) {
+	for _, field := range []string{"author", "opened_at", "excerpt", "review_requested_at"} {
+		for name, bad := range map[string]any{"a number": 7, "an object": obj{"x": 1}, "a list": []any{"a"}, "a boolean": true} {
+			t.Run(field+" as "+name, func(t *testing.T) {
+				raw, err := json.Marshal([]obj{{"id": "first", "title": "F", "author": "alice"}, {"id": "bad", "title": "B", field: bad}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := parseOrders(raw)
+				if err != nil || len(got) != 2 {
+					t.Fatalf("parseOrders = %d orders, %v; a wrong type must drop only the field", len(got), err)
+				}
+				if m := asJSON(t, got[1]); m["id"] != "bad" {
+					t.Errorf("order = %v, want it kept", m)
+				} else {
+					absent(t, m, "the order", field)
+				}
+				if got[0].Author != "alice" {
+					t.Errorf("the neighbour = %+v, want its author kept", got[0])
+				}
+			})
+		}
+	}
+}
+
+func TestParseOrdersDropsAnAuthorWithInvisibleOrDirectionalCharacters(t *testing.T) {
+	for name, author := range map[string]string{"a right-to-left override": "al\u202eice", "a zero-width space": "al\u200bice", "a bidi isolate": "al\u2066ice",
+		"a word joiner": "al\u2060ice", "a byte order mark": "\ufeffalice", "a C1 control": "al\u0085ice"} {
+		raw, _ := json.Marshal([]obj{{"id": "a", "title": "A", "author": author}})
+		got, err := parseOrders(raw)
+		if err != nil || len(got) != 1 {
+			t.Fatalf("%s: parseOrders = %v, %v", name, got, err)
+		}
+		if got[0].Author != "" {
+			t.Errorf("%s: author = %q, want it dropped", name, got[0].Author)
+		}
+	}
+}
+
+func TestParseOrdersReadsTheFailingCountOfAPrWhateverTheKeysCase(t *testing.T) {
+	raw := json.RawMessage(`[{"id":"a","title":"A","pr":{"state":"OPEN","Failing_Check_Count":"x"}},{"id":"b","title":"B","pr":{"state":"OPEN","Failing_Check_Count":3}}]`)
+	got, err := parseOrders(raw)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("parseOrders = %v, %v", got, err)
+	}
+	if got[0].PR == nil || got[0].PR.State != "OPEN" || got[0].PR.FailingCheckCount != 0 {
+		t.Errorf("a bad count in another case: pr = %+v, want the pr kept with no count", got[0].PR)
+	}
+	if got[1].PR == nil || got[1].PR.FailingCheckCount != 3 {
+		t.Errorf("a good count in another case: pr = %+v, want 3, as encoding/json matches keys without case", got[1].PR)
+	}
+}
+
+func TestGitHubViewKeepsItsOrdersAndTimeAcrossARestartUntilTheNewSearchAnswers(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	slowSearch(t, g)
+	writeSearch(t, g, "bugs", "label:bug", searchNode("issues", 13, obj{"subIssuesSummary": obj{"total": 0}}))
+	f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
+	f.startSources()
+	bugs := func(s SourceView) Panel { return s.view("bugs") }
+	first := f.waitView("gha", "the first search", func(s SourceView) bool { _, ok := refreshedAt(t, bugs(s)); return ok && len(s.orders("bugs")) == 1 })
+	t1, _ := refreshedAt(t, bugs(first))
+
+	sid := func() int {
+		r := f.Svc.Sup.runner("gha")
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.sid
+	}
+	before := sid()
+	writeSearch(t, g, "bugs", "label:bug", searchNode("issues", 14, obj{"subIssuesSummary": obj{"total": 0}}))
+	g.write("slow", "1")
+	if code, body := f.do(http.MethodPost, "/gha/restart", nil); code != http.StatusOK {
+		t.Fatalf("POST restart = %d %s", code, body)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for sid() == before {
+		if time.Now().After(deadline) {
+			t.Fatal("the source did not restart")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(400 * time.Millisecond) // the new process has listed its panels and pulled; its search takes a second
+	mid := f.Svc.viewOf(t, "gha")
+	if at, ok := refreshedAt(t, bugs(mid)); !ok || !at.Equal(t1) || len(mid.orders("bugs")) != 1 || bugs(mid).Orders[0].ID != "acme/widgets#13" {
+		t.Errorf("before the new search: orders %v refreshed_at %v (present %v), want the old order 13 and %v", mid.orders("bugs"), at, ok, t1)
+	}
+	after := f.waitView("gha", "the new search", func(s SourceView) bool {
+		at, ok := refreshedAt(t, bugs(s))
+		return ok && at.After(t1)
+	})
+	if o := bugs(after).Orders; len(o) != 1 || o[0].ID != "acme/widgets#14" {
+		t.Errorf("after the new search orders = %v, want order 14", o)
+	}
+}

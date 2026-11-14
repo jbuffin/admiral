@@ -10,7 +10,7 @@ import (
 // ExcerptRunes is the longest an order's excerpt gets, before its ellipsis.
 const ExcerptRunes = 280
 
-// Excerpt reads text as one short line: whitespace runs become one space, other control characters go, the ends are
+// Excerpt reads text as one short line: whitespace runs become one space, other control and format characters go, the ends are
 // trimmed, and a line past ExcerptRunes is cut on a rune boundary with an ellipsis. Empty when nothing is left.
 func Excerpt(text string) string {
 	var b strings.Builder
@@ -19,7 +19,7 @@ func Excerpt(text string) string {
 		switch {
 		case unicode.IsSpace(r):
 			space = true
-		case unicode.IsControl(r):
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r): // C1 controls and invisible or direction-changing format characters
 		default:
 			if space && b.Len() > 0 {
 				b.WriteByte(' ')
