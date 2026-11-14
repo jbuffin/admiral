@@ -114,7 +114,7 @@ func runRestricted(ctx context.Context, t Target, commands func(r *restrictedRun
 		}
 	}
 	settings := filepath.Join(tmp, "settings.json")
-	raw, err := json.Marshal(launcher.RestrictedProfile(standing.DraftFix, r.clone, r.home))
+	raw, err := json.Marshal(launcher.RestrictedProfile(standing.DraftFix, r.clone, filepath.Join(r.tmp, "src"), r.home))
 	if err != nil {
 		return fail("could not write the probe's settings", err)
 	}
