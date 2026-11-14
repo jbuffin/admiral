@@ -46,4 +46,4 @@ What happens to the engine's parts:
 - A quota hold ([#246](https://github.com/jbuffin/admiral/issues/246)) drops unattended launches, autopilot ones included, to Propose while a plan window is above its line.
 - An existing autopilot config loses its panel entries on upgrade. The engineer gets them back only by confirming each drafted routine.
 
-Amended 2026-11-14 (Automate… removed, [#597](https://github.com/jbuffin/admiral/issues/597)): [#572](https://github.com/jbuffin/admiral/issues/572) decision 23 removed the Automate… action and the "New in <view>" trigger. A view has no way to draft a routine, and the migration note lists the dropped entries with no links.
+Amended 2026-11-14 (Automate… removed, [#597](https://github.com/jbuffin/admiral/issues/597)): [#572](https://github.com/jbuffin/admiral/issues/572) decision 23 removed the Automate… action and the `New in <view>` trigger. A view has no way to draft a routine, and the migration note lists the dropped entries with no links.
