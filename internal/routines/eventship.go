@@ -17,7 +17,7 @@ func eventText(ev Event, en Enrichment, sender string) string {
 		return en.Text
 	}
 	title := strings.TrimSpace(ev.Title)
-	if title == "" && ev.Ref == "" {
+	if title == "" {
 		return noEventText
 	}
 	meta := []string{"kind: " + ev.Kind}
