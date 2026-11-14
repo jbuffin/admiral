@@ -48,12 +48,15 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await press(row(T.grill).getByRole('button').first());
   const sheet = page.getByRole('dialog', { name: new RegExp(T.grill) });
   await expect(sheet).toContainText('With you');
+  // The sheet and the launch form both show the issue's GitHub labels, so the person sees why it starts the way it does.
+  await expect(sheet.getByRole('list', { name: 'GitHub labels' })).toHaveText('wayfinder:grilling');
   const dirs = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/v1/launch-orders/dirs');
   await press(sheet.getByRole('button', { name: /^Launch/ }));
   expect(JSON.stringify((await dirs).postDataJSON())).toContain(`"source":"campaign"`);
   expect(JSON.stringify((await dirs).postDataJSON())).toContain(`${id}/${issueUrl(21)}`);
   const form = page.getByRole('dialog', { name: 'Launch', exact: true });
   await expect(form.getByLabel('Checkout')).toHaveValue(join(admiral.home, 'widgets'));
+  await expect(form.getByRole('list', { name: 'GitHub labels' })).toHaveText('wayfinder:grilling');
   await expect(form.getByLabel('Skill')).toHaveCount(0);
   await expect(form.getByRole('checkbox', { name: /autopilot/i })).toHaveCount(0);
   const sent = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/campaigns/${id}/launch`);

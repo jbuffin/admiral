@@ -31,6 +31,7 @@ import {
 import { campaignList, endedOpen, followReference, noteCampaign, refreshCampaigns } from './campaignsLink';
 import { activeFleet, fleetPaint, fleets } from './fleets';
 import { Icon } from './Icon';
+import { IssueLabels } from './IssueLabels';
 import { LaunchForm } from './LaunchDialog';
 import { campaignPath, go } from './router';
 import { Sheet } from './Sheet';
@@ -207,6 +208,7 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
           {node.repo ? `${node.repo}#${node.number}` : `#${node.number}`} · {statusLabel(status)}
           {node.ship ? ` · ${node.ship}` : ''}
         </p>
+        <IssueLabels labels={node.labels} />
         {safeHref(node.url) ? (
           <a href={safeHref(node.url)!} target="_blank" rel="noopener noreferrer">
             Open the issue on GitHub
@@ -576,7 +578,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
       {launching && fleet && fleet.docks.length > 0 ? (
         <LaunchForm
           fleet={fleet}
-          campaign={{ campaignId: campaign.id, url: launching.node.url, ...(launching.slice && { issues: launching.slice.map((c) => c.url) }), title: launching.slice ? `${launching.slice.length} children: ${launching.node.title}` : launching.node.title, mode: launching.node.mode ?? 'with-you', skill: launching.node.skill, startAnyway: launching.anyway }}
+          campaign={{ campaignId: campaign.id, url: launching.node.url, ...(launching.slice && { issues: launching.slice.map((c) => c.url) }), title: launching.slice ? `${launching.slice.length} children: ${launching.node.title}` : launching.node.title, mode: launching.node.mode ?? 'with-you', skill: launching.node.skill, ...(!launching.slice && { labels: launching.node.labels }), startAnyway: launching.anyway }}
           onClose={() => setLaunching(null)}
           onLaunched={() => {
             if (launching.slice) setSelected([]);

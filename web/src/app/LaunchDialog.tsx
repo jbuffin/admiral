@@ -16,6 +16,7 @@ import {
   type SkillsAnswer,
   togglePin,
 } from './launchForm';
+import { IssueLabels } from './IssueLabels';
 import { CheckoutSelect, CLONE, DockPicker, ModelEffortPair, NO_DIR, ResourcesPicker, SkillSelect, skillValue } from './LaunchPickers';
 
 export interface OrderRef {
@@ -34,6 +35,7 @@ export interface CampaignChildRef {
   title: string;
   mode: Mode;
   skill?: SkillView;
+  labels?: string[];
   startAnyway: boolean;
 }
 
@@ -257,9 +259,12 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
           {(dirs?.entries.find((d) => d.path === dir)?.ships_here ?? 0) > 0 ? <p class="note warn">Another ship already runs here.</p> : null}
 
           {campaign ? (
-            <p class="note">
-              {modeLabel(campaign.mode)} · {skillLabel(campaign.skill)}
-            </p>
+            <>
+              <p class="note">
+                {modeLabel(campaign.mode)} · {skillLabel(campaign.skill)}
+              </p>
+              <IssueLabels labels={campaign.labels} />
+            </>
           ) : (
           <SkillSelect
             value={skill}
