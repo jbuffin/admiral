@@ -111,9 +111,20 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
   // Restart re-reads the source until its state settles.
   const moved = source(page, 'Orders');
   const starts = admiral.flags('orders').starts();
-  await moved.getByRole('button', { name: 'Restart', exact: true }).click();
+  const restart = moved.getByRole('button', { name: 'Restart', exact: true });
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/v1/sources/orders/restart', async (route) => {
+    await held;
+    await route.continue();
+  });
+  await restart.click();
+  // A held restart spins under its own label instead of swapping the text.
+  await expect(restart).toHaveAttribute('aria-busy', 'true');
+  await expect(restart).toHaveText('Restart');
+  release();
   await expect.poll(() => admiral.flags('orders').starts()).toBeGreaterThan(starts);
-  await expect(moved.getByRole('button', { name: 'Restart', exact: true })).toBeEnabled();
+  await expect(restart).not.toHaveAttribute('aria-busy', 'true');
   await expect(moved).toContainText(/plugin · ok/);
 
   // Add source offers the test plugin and not GitHub, and adds to this page's fleet.

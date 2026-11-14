@@ -581,12 +581,13 @@ test('Check again shows that it is working, and says so when the harness cannot 
   });
   claude.version('FAIL');
   await again.tap();
-  await expect(again).toBeDisabled();
+  await expect(again).toHaveAttribute('aria-busy', 'true');
   await expect(harness).toContainText(/checking/i);
   release();
 
   // `--version` fails: the server answers 502, the page says the check could not run and lets the person try again.
   await expect(harness.getByRole('alert')).toBeVisible();
+  await expect(again).not.toHaveAttribute('aria-busy', 'true');
   await expect(again).toBeEnabled();
   await expect(harness).not.toContainText(/checking/i);
 

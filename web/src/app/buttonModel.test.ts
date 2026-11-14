@@ -82,4 +82,22 @@ describe('button model', () => {
     expect(m.rel).toBe('noopener noreferrer');
     expect(buttonModel({ label: 'x', href: '/app/' }).target).toBeUndefined();
   });
+
+  it('names a button by aria-label at rest when its visible text differs from its label', () => {
+    expect(buttonModel({ label: 'Remove search root 2', text: 'Remove' }).ariaLabel).toBe('Remove search root 2');
+    expect(buttonModel({ label: 'Check again Claude', text: 'Check again' }).name).toBe('Check again Claude');
+  });
+
+  it('adds no aria-label at rest when the visible text is the label', () => {
+    expect(buttonModel({ label: 'Remove', text: 'Remove' }).ariaLabel).toBeUndefined();
+    expect(buttonModel({ label: 'Remove' }).ariaLabel).toBeUndefined();
+  });
+
+  it('passes id and onBlur through to the element', () => {
+    const onBlur = () => {};
+    const m = buttonModel({ label: 'Add', id: 'limits-add', onBlur });
+    expect(m.id).toBe('limits-add');
+    expect(m.onBlur).toBe(onBlur);
+    expect(buttonModel({ label: 'Add' }).id).toBeUndefined();
+  });
 });
