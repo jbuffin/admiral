@@ -244,7 +244,7 @@ type Enrichment struct {
 	Failure string
 }
 
-// EventActs receives each decision that ends in a card (Reported) or a proposal (Proposed), with its saved record.
+// EventActs receives each decision that ends in a card (Reported), a proposal (Proposed) or a started ship (Launched), with its saved record.
 type EventActs interface {
 	Act(fleet string, r Routine, ev Event, rec Trigger, d Decision, en Enrichment)
 }
@@ -375,7 +375,7 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	var madeKeys []string
 	// step decides one pair and launches it under one hold of s.mu: the counts and live keys it reads are the ones its
 	// launch, and a concurrent event's, change. A card or proposal is posted after the hold, as the Inbox takes its own lock.
-	step := func(r Routine) (Routine, Decision, Trigger, bool) {
+	step := func(r Routine) (Routine, Decision, Trigger, *Trigger, bool) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		r = s.trip(ev.Fleet, r, now) // the tick's markEnded turns an event ship that ended failed into a failed record
@@ -415,10 +415,12 @@ func (s *Scheduler) HandleEvent(ev Event) {
 			Reason: strings.Join(d.Reasons, ", "), Action: describe(r), DedupeKey: en.DedupeKey, Costs: costs,
 		}
 		if d.Outcome != Launched {
-			return r, d, base, false
+			return r, d, base, nil, false
 		}
-		d, started, done := s.launchEvent(ev.Fleet, r, ev, d, en, sender, base)
+		d, saved, started, done := s.launchEvent(ev.Fleet, r, ev, d, en, sender, base)
+		var launched *Trigger
 		if started {
+			launched = &saved
 			madeShips++
 			if en.DedupeKey != "" {
 				madeKeys = append(madeKeys, en.DedupeKey)
@@ -427,12 +429,15 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		if !done {
 			base.Outcome, base.Reason = d.Outcome, strings.Join(d.Reasons, ", ")
 		}
-		return r, d, base, done
+		return r, d, base, launched, done
 	}
 	for _, r := range matches {
-		r, d, base, done := step(r)
+		r, d, base, launched, done := step(r)
 		if done {
 			costs = nil
+			if launched != nil && s.Acts != nil {
+				s.Acts.Act(ev.Fleet, r, ev, *launched, d, en)
+			}
 			continue
 		}
 		rec, ok := s.record(ev.Fleet, base)

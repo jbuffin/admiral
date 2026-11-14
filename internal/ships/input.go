@@ -136,6 +136,9 @@ func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"stopped": session})
 }
 
+// Stop ends a listed ship, live or anchored, for a caller inside Admiral; ErrNotFound when the host does not list it.
+func (s *Service) Stop(session string) error { return s.stopShip(session, nil) }
+
 // stopShip ends a ship. A live ship is killed, so its `ended` is written here with signal KILL, as a dead pane's
 // would be, before `stopped`.
 func (s *Service) stopShip(session string, fields map[string]any) error {

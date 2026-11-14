@@ -293,13 +293,3 @@ func (s *Service) serveSetHold(on, global bool) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, out)
 	}
 }
-
-// ErrShipNotListed is what Stop returns for a session the host does not list.
-var ErrShipNotListed = errors.New("the ship is not listed")
-
-func (s *Service) serveRun(w http.ResponseWriter, _ *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not built")
-}
-func (s *Service) serveUndo(w http.ResponseWriter, _ *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not built")
-}
