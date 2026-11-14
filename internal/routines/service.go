@@ -29,6 +29,8 @@ type Service struct {
 	Stop func(session string) error
 	// Launch starts a ship, as ships.Service.Launch does; Promote starts its normal ship through it.
 	Launch func(ctx context.Context, req launcher.Request) (ShipRef, *launcher.Error)
+	// Listed reads the host's ships; Stop all worker-launched picks the live ones it launched.
+	Listed func() []ListedShip
 
 	undoMu sync.Mutex
 
@@ -66,6 +68,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/fleets/{key}/standing-orders/copy", s.serveOrdersCopy)
 	mux.HandleFunc("POST /api/fleets/{key}/standing-orders/draft", s.serveOrdersDraft)
 	mux.HandleFunc("POST /api/fleets/{key}/routines/draft", s.serveRoutineDraft)
+	mux.HandleFunc("POST /api/fleets/{key}/worker-ships/stop", s.serveStopWorkerShips)
+	mux.HandleFunc("POST /api/worker-ships/stop", s.serveStopWorkerShips)
 	mux.HandleFunc("GET /api/hold-fire", s.serveGlobalHold)
 	mux.HandleFunc("POST /api/hold-fire/on", s.serveSetHold(true, true))
 	mux.HandleFunc("POST /api/hold-fire/off", s.serveSetHold(false, true))
@@ -251,7 +255,11 @@ func (s *Service) fleetHold(key string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"on": f.On || g.On, "fleet": f, "global": g}, nil
+	here, all, err := s.workerShipCounts(key)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"on": f.On || g.On, "fleet": f, "global": g, "worker_ships": here, "all_worker_ships": all}, nil
 }
 
 func (s *Service) serveFleetHold(w http.ResponseWriter, r *http.Request) {
@@ -269,7 +277,15 @@ func (s *Service) serveGlobalHold(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, h)
+	_, all, err := s.workerShipCounts("")
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Hold
+		WorkerShips int `json:"worker_ships"`
+	}{h, all})
 }
 
 func (s *Service) serveSetHold(on, global bool) http.HandlerFunc {

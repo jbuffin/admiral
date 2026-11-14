@@ -462,6 +462,10 @@ func spendAndCounts(recs []Trigger, sender string, now time.Time, zone *time.Loc
 				spent += cost.USD
 			}
 		}
+		// a promote starts a normal ship, so it spends one launch of the hour from its own mark, whatever the record's outcome
+		if age := now.Sub(r.PromotedAt); !r.PromotedAt.IsZero() && age >= 0 && age < time.Hour {
+			c.LaunchesLastHour++
+		}
 		if r.Outcome != Launched {
 			continue
 		}
@@ -488,10 +492,10 @@ func (s *Store) Records(fleet string) ([]Trigger, error) {
 	}
 	undone := map[string]time.Time{}
 	failed := map[string]string{}
-	promoted := map[string]string{}
+	promoted := map[string]logLine{}
 	for _, l := range lines {
 		if l.PromoteOf != "" {
-			promoted[l.PromoteOf] = l.Ship
+			promoted[l.PromoteOf] = l
 		}
 		if l.UndoOf != "" {
 			undone[l.UndoOf] = l.At
@@ -509,8 +513,8 @@ func (s *Store) Records(fleet string) ([]Trigger, error) {
 		if reason, ok := failed[l.ID]; ok {
 			l.Outcome, l.Reason = Failed, reason
 		}
-		if ship, ok := promoted[l.ID]; ok {
-			l.Promoted, l.PromotedShip = true, ship
+		if p, ok := promoted[l.ID]; ok {
+			l.Promoted, l.PromotedShip, l.PromotedAt = true, p.Ship, p.At
 		}
 		if at, ok := undone[l.ID]; ok {
 			l.Undone, l.UndoneAt = true, at

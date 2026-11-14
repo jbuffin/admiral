@@ -15,6 +15,7 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/lookout"
 	"github.com/jbuffin/admiral/internal/routines"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 	"github.com/jbuffin/admiral/internal/sources"
 	"github.com/jbuffin/admiral/internal/standing"
@@ -89,18 +90,37 @@ func wakeOn(ctx context.Context, changed func() <-chan struct{}, fns ...func()) 
 	}
 }
 
+// listedShips is what the routines read of every ship the host lists.
+func listedShips(list func() []ships.Ship) func() []routines.ListedShip {
+	return func() []routines.ListedShip {
+		var out []routines.ListedShip
+		for _, sh := range list() {
+			out = append(out, routines.ListedShip{Session: sh.Session, Fleet: sh.Fleet, Routine: sh.Routine, Launched: sh.Launched, Status: sh.Status})
+		}
+		return out
+	}
+}
+
+// wallClockEnder ends a ship's harness at the wall clock; its pane stays, so the ship shows anchored.
+func wallClockEnder(host *sessionhost.Host) func(session string, minutes int) error {
+	return func(session string, minutes int) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		err := host.EndHarness(ctx, session, routines.WallClockReason(minutes), 5*time.Second)
+		if errors.Is(err, sessionhost.ErrPaneDead) {
+			return routines.ErrAlreadyEnded
+		}
+		return err
+	}
+}
+
 // wireEvents routes each source event to the scheduler, and answers an event routine's catalog check from the sources.
 // A held ship's dedupe_key is read from the trigger record that launched it.
 func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.Scheduler, list func() []ships.Ship, lk *lookout.Lookout, acts *lookout.Acts) {
 	sched.Enrich = lk.Enrich
 	sched.Acts = acts
-	listed := func() []routines.ListedShip {
-		var out []routines.ListedShip
-		for _, sh := range list() {
-			out = append(out, routines.ListedShip{Session: sh.Session, Fleet: sh.Fleet, Routine: sh.Routine, Launched: sh.Launched})
-		}
-		return out
-	}
+	listed := listedShips(list)
+	sched.Listed = listed
 	sched.Live = routines.EventLive{Listed: listed, Ships: func(fleet string) []routines.LiveShip {
 		recs, err := store.Records(fleet)
 		if err != nil {
