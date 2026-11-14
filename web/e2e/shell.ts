@@ -1330,6 +1330,7 @@ export async function moorFromTheLivePRTab(page: Page, a: Admiral) {
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(shipViewUrl(a, ship));
   await expect(viewPanel(page).getByRole('button', { name: 'Merge', exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(viewPanel(page).getByRole('button', { name: 'Merge', exact: true })).toBeEnabled();
   await expect(viewPanel(page).getByRole('button', { name: 'Moor', exact: true })).toHaveCount(0);
   await expect(viewPanel(page)).not.toContainText(MOOR_LINE);
   await expect(viewPanel(page).getByRole('alert')).toHaveCount(0);

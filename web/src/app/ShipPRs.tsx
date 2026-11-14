@@ -326,10 +326,11 @@ function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolea
     onError('');
     const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/stop`, { moor: true });
     setAsking(false);
+    // The tab's lock must be free when the ship moors, or Merge arrives disabled.
+    onBusy(false);
     // After a 200 the row stays off until the ships push marks the ship moored and removes it, so a second tap cannot post to a moored ship.
     if (r.ok) return;
     setBusy(false);
-    onBusy(false);
     onError(r.error);
   };
   return (
