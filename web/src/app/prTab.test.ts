@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR } from './api';
-import { chooseStack, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs } from './prTab';
+import { actingWhile, chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -179,19 +179,6 @@ describe('stackedPRs', () => {
   });
 });
 
-describe('chooseStack', () => {
-  it('takes the first stack a carried PR\'s detail has, in the ship\'s order', () => {
-    const a = { ...entries(7, 8), number: 1 } as never;
-    const b = { ...entries(8, 9), number: 2 } as never;
-    expect(chooseStack([pr(9), pr(8), pr(7)], { [URL(7)]: { stack: b }, [URL(8)]: { stack: a } })).toBe(a);
-  });
-
-  it('is null when no detail has a stack, or none has loaded', () => {
-    expect(chooseStack([pr(7), pr(8)], { [URL(7)]: { stack: null } })).toBeNull();
-    expect(chooseStack([pr(7)], {})).toBeNull();
-  });
-});
-
 describe('defaultPR', () => {
   it('is the first open PR in stack order', () => {
     expect(defaultPR([pr(7, { state: 'MERGED' }), pr(8), pr(9)])).toEqual(pr(8));
@@ -235,5 +222,64 @@ describe('feedbackBarText', () => {
     expect(feedbackBarText(pr(7, { feedback: 2 }))).toBe('');
     expect(feedbackBarText(answer(1, { state: 'MERGED' }))).toBe('');
     expect(feedbackBarText(answer(1, { state: 'CLOSED' }))).toBe('');
+  });
+});
+
+describe('chooseStackDetail', () => {
+  const stack = { number: 12, size: 2, base: 'main', url: 'https://github.com/acme/api/stack/12', ...entries(7, 8) };
+
+  it("returns the URL, stack and command of the first carried PR whose detail has a stack", () => {
+    const got = chooseStackDetail([pr(7), pr(8)], { [URL(7)]: { stack: null }, [URL(8)]: { stack, answer_all: '/commodore https://github.com/acme/api/stack/12' } });
+    expect(got).toEqual({ url: URL(8), stack, answerAll: '/commodore https://github.com/acme/api/stack/12' });
+  });
+
+  it("takes the first stack in the ship's order, not the last", () => {
+    const a = { ...entries(7, 8), number: 1 } as never;
+    const b = { ...entries(8, 9), number: 2 } as never;
+    expect(chooseStackDetail([pr(9), pr(8), pr(7)], { [URL(7)]: { stack: b }, [URL(8)]: { stack: a } })?.stack).toBe(a);
+  });
+
+  it('is null when no detail has a stack, or none has loaded', () => {
+    expect(chooseStackDetail([pr(7), pr(8)], { [URL(7)]: { stack: null } })).toBeNull();
+    expect(chooseStackDetail([pr(7)], {})).toBeNull();
+  });
+});
+
+describe('showAnswerAll', () => {
+  const stack = { number: 12, size: 2, base: 'main', url: 'https://github.com/acme/api/stack/12', ...entries(7, 8) };
+  const cmd = '/commodore https://github.com/acme/api/stack/12';
+  const fb = (n: number, over: Partial<MooredPR> = {}) => pr(n, { feedback: 1, answer: `a${n}`, ...over });
+
+  it('shows for a two-PR stack where both PRs have feedback', () => {
+    expect(showAnswerAll([fb(7), fb(8)], stack, cmd)).toBe(true);
+  });
+
+  it('hides without answer_all', () => {
+    expect(showAnswerAll([fb(7), fb(8)], stack, undefined)).toBe(false);
+    expect(showAnswerAll([fb(7), fb(8)], stack, '')).toBe(false);
+  });
+
+  it('hides when an open PR in the pushed list has no feedback, even if the detail still has answer_all', () => {
+    expect(showAnswerAll([fb(7), pr(8)], stack, cmd)).toBe(false);
+  });
+
+  it('hides for unstacked PRs', () => {
+    expect(showAnswerAll([fb(7), fb(8)], null, cmd)).toBe(false);
+  });
+
+  it('hides when only one PR is open, and a merged layer does not need feedback', () => {
+    expect(showAnswerAll([fb(7, { state: 'MERGED' }), fb(8)], stack, cmd)).toBe(false);
+    expect(showAnswerAll([pr(7, { state: 'MERGED' }), fb(8), fb(9)], { ...stack, ...entries(7, 8, 9) }, cmd)).toBe(true);
+  });
+});
+
+describe('actingWhile', () => {
+  it('keeps a confirm locked while the ship is moored', () => {
+    expect(actingWhile(true, true)).toBe(true);
+    expect(actingWhile(false, true)).toBe(false);
+  });
+
+  it('frees the actions once the ship has left its mooring, for the next time it moors', () => {
+    expect(actingWhile(true, false)).toBe(false);
   });
 });

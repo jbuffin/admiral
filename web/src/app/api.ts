@@ -92,6 +92,8 @@ export interface PRDetail {
   threads: { path: string; line: number; resolved: boolean; comments: { author: PRActor; body: string; url: string; created_at: string }[] }[];
   comments: { author: PRActor; body: string; url: string; created_at: string }[];
   stack: PRStack | null;
+  // The command Answer all reviews would send, only when the ship is moored and the whole stack has feedback.
+  answer_all?: string;
 }
 export type ShipStatus = 'needs_you' | 'underway' | 'moored' | 'anchored' | 'sailing_off';
 export interface MooredPR {

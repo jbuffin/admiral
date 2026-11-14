@@ -3,9 +3,11 @@ package e2e
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -367,5 +369,93 @@ func TestAnswerReviewRelaunchesAMooredShipOnAReviewItsDebounceHasNotReleased(t *
 	}
 	if e := lastOf(w.waitEvent(ship.Session, "woken", 1), "woken"); e["by"] != "hand" || e["pr"] != mooredPR || e["round"] != float64(1) {
 		t.Errorf("woken event = %v, want by hand, round 1, on the PR", e)
+	}
+}
+
+const (
+	mooredPR2   = "https://github.com/acme/widgets/pull/8"
+	mooredStack = "https://github.com/acme/widgets/stack/12"
+)
+
+// prStack makes the PR's detail say it sits in a GitHub stack of these PRs, bottom first.
+func (g *fakeGH) prStack(url string, layers ...string) {
+	g.t.Helper()
+	key := strings.NewReplacer("/", "_", ":", "_").Replace(url)
+	if err := os.MkdirAll(filepath.Join(g.dir, "pr_detail"), 0o755); err != nil {
+		g.t.Fatal(err)
+	}
+	nodes := []map[string]any{}
+	for i, l := range layers {
+		n := l[strings.LastIndex(l, "/")+1:]
+		num, _ := strconv.Atoi(n)
+		nodes = append(nodes, map[string]any{"position": i + 1, "pullRequest": map[string]any{"number": num, "url": l, "state": "OPEN", "headRefName": "layer-" + n}})
+	}
+	detail, err := json.Marshal(map[string]any{
+		"number": 7, "url": url, "title": "Layer", "body": "", "state": "OPEN", "headRefName": "layer-7", "baseRefName": "main",
+		"stack": map[string]any{"number": 12, "size": len(layers), "baseRefName": "main", "entries": map[string]any{"nodes": nodes}},
+	})
+	if err != nil {
+		g.t.Fatal(err)
+	}
+	g.write("pr_detail/"+key, string(detail)+"\n")
+}
+
+func TestAnswerAllReviewsRelaunchesAMooredStackWithTheCommodoreCommand(t *testing.T) {
+	t.Parallel()
+	w, g := mooring(t, "exit 0")
+	g.prState(mooredPR, "OPEN")
+	g.prState(mooredPR2, "OPEN")
+	g.prStack(mooredPR, mooredPR, mooredPR2)
+	g.prStack(mooredPR2, mooredPR, mooredPR2)
+	w.proveGuard("f")
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(w.readFile(configPath(w.home))), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg["fleets"].(map[string]any)["f"].(map[string]any)["wake_reviewers"] = []string{"reviewer-1"}
+	b, _ := json.Marshal(cfg)
+	writeConfig(t, w.home, string(b))
+	w.extra = append(w.extra, "ADMIRAL_WAKE_DEBOUNCE=1h", "ADMIRAL_MOOR_POLL=1s")
+	w.start()
+
+	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
+	w.exitWith(ship, mooredReport(mooredPR, mooredPR2))
+	list := w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
+	mooredAt, err := time.Parse(time.RFC3339, byName(list)[ship.Name].MooredAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.prEvents(mooredPR, "reviewer-1", "please rename the helper", mooredAt.Add(time.Second))
+	g.prEvents(mooredPR2, "reviewer-1", "and this one", mooredAt.Add(time.Second))
+	w.kickMoored()
+	w.in.waitShipsList(t, 20*time.Second, "both PRs offered as answers", func(l []shipJSON) bool {
+		prs := byName(l)[ship.Name].PRs
+		return len(prs) == 2 && prs[0].Feedback == 1 && prs[1].Feedback == 1
+	})
+
+	want := "/commodore " + mooredStack
+	code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/ships/"+ship.Session+"/pr?url="+url.QueryEscape(mooredPR), nil)
+	var detail struct {
+		AnswerAll string `json:"answer_all"`
+	}
+	if code != http.StatusOK || json.Unmarshal([]byte(body), &detail) != nil || detail.AnswerAll != want {
+		t.Fatalf("GET pr = %d %s, want answer_all %q", code, body, want)
+	}
+	if byName(w.in.ships(t))[ship.Name].Status != "moored" {
+		t.Fatal("the ship woke on its own: the debounce should hold it")
+	}
+
+	if err := os.RemoveAll(filepath.Join(w.rec, ship.Session)); err != nil {
+		t.Fatal(err)
+	}
+	code, body = send(t, http.MethodPost, w.in.LocalURL+"/api/ships/"+ship.Session+"/answer-review", map[string]any{"stack": mooredStack})
+	if code != http.StatusCreated {
+		t.Fatalf("POST /api/ships/%s/answer-review = %d, want 201: %s", ship.Session, code, body)
+	}
+	if got := promptWithHooks(t, w, w.record(ship.Session)); got != want {
+		t.Errorf("prompt = %q, want %q", got, want)
+	}
+	if e := lastOf(w.waitEvent(ship.Session, "woken", 1), "woken"); e["by"] != "hand" || e["round"] != float64(1) || e["pr"] != nil {
+		t.Errorf("woken event = %v, want by hand, round 1, on no PR", e)
 	}
 }

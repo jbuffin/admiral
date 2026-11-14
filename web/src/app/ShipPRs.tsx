@@ -5,7 +5,7 @@ import { MergeControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet } from './Sheet';
-import { chooseStack, defaultPR, feedbackBarText, headerChips, orderPRs, prDot, prNumber, stackBarText, stackedPRs } from './prTab';
+import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, orderPRs, prDot, prNumber, showAnswerAll, stackBarText, stackedPRs } from './prTab';
 import { staleNote } from './moored';
 import { PRSections } from './PRDetailSections';
 
@@ -137,6 +137,63 @@ function FeedbackBar({ ship, pr, locked, onBusy }: { ship: Ship; pr: MooredPR; l
   );
 }
 
+/** Answer all reviews in the stack bar: the sheet shows the server's command and posts the stack's URL on confirm. */
+function AnswerAll({ ship, stackUrl, command, locked, onBusy }: { ship: Ship; stackUrl: string; command: string; locked: boolean; onBusy: (busy: boolean) => void }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const cancel = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (asking) cancel.current?.focus();
+  }, [asking]);
+  const run = async () => {
+    setBusy(true);
+    onBusy(true);
+    setError('');
+    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/answer-review`, { stack: stackUrl });
+    if (!r.ok) {
+      setBusy(false);
+      onBusy(false);
+      return setError(r.error);
+    }
+    setAsking(false);
+  };
+  return (
+    <>
+      <button
+        type="button"
+        class="btn primary"
+        disabled={locked || busy}
+        onClick={() => {
+          setError('');
+          setAsking(true);
+        }}
+      >
+        Answer all reviews
+      </button>
+      {asking ? (
+        <Sheet label="Answer all reviews" kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
+          <p class="line">One Commodore run answers the feedback on every PR in the stack.</p>
+          <p class="cmd-block mono">{command}</p>
+          {error ? (
+            <p class="launch-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <div class="launch-foot">
+            <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+            <button type="button" class="btn primary" disabled={busy} onClick={() => void run()}>
+              Answer all reviews
+            </button>
+          </div>
+        </Sheet>
+      ) : null}
+    </>
+  );
+}
+
 /** A ship's PRs: sub-tabs in stack order, the selected PR's header, chips and sections, and for a moored ship Merge and Don't follow reviews. */
 export function PRTab({ ship }: { ship: Ship }) {
   const [error, setError] = useState('');
@@ -145,15 +202,24 @@ export function PRTab({ ship }: { ship: Ship }) {
   const [picked, setPicked] = useState('');
   const carried = ship.prs ?? [];
   const details = useDetails(ship.session, carried.map((p) => p.url));
-  const stack = chooseStack(carried, details);
+  const chosen = chooseStackDetail(carried, details);
+  const stack = chosen?.stack ?? null;
   const prs = orderPRs(carried, stack);
   const moored = ship.status === 'moored';
+  useEffect(() => setActing((a) => actingWhile(a, moored)), [moored]);
   if (prs.length === 0) return <p class="line">No pull request yet. A PR shows here as soon as the ship or its crew opens one.</p>;
   const current = prs.find((p) => p.url === picked) ?? defaultPR(prs)!;
   const bar = stackBarText(stackedPRs(prs, stack).length, stack !== null);
   return (
     <div class="pr-tab">
-      {bar ? <div class="stack-bar">{bar}</div> : null}
+      {bar ? (
+        <div class="stack-bar">
+          <span class="stack-text">{bar}</span>
+          {moored && chosen && showAnswerAll(carried, stack, chosen.answerAll) ? (
+            <AnswerAll ship={ship} stackUrl={stack!.url} command={chosen.answerAll!} locked={acting} onBusy={setActing} />
+          ) : null}
+        </div>
+      ) : null}
       {prs.length > 1 ? (
         <div class="pr-subtabs" role="tablist" aria-label="Pull requests, bottom of the stack first">
           {prs.map((p, i) => (

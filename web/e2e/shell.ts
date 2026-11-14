@@ -2546,3 +2546,102 @@ export async function noAnswerReviewOnARunningShip(page: Page, a: Admiral) {
   await expect(feedbackBar(page)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Answer review' })).toHaveCount(0);
 }
+
+const STACK_URL = 'https://github.com/acme/api/stack/4';
+const stackBar = (page: Page) => viewPanel(page).locator('.stack-bar');
+
+/** A moored ship carrying PRs 7 and 8, both approved, with alice's review on each; the details say they are one GitHub stack, or none. */
+async function mooredPair(a: Admiral, opts: { stacked: boolean; feedbackOn: number[] }): Promise<LaunchedShip> {
+  for (const n of [7, 8]) {
+    prAnswer(a, n, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+    prDetail(a, n, {
+      title: `Layer ${n}`, head: `layer-${n}`, base: n === 7 ? 'main' : 'layer-7',
+      ...(opts.stacked ? { stack: [{ number: 7, state: 'OPEN', head: 'layer-7' }, { number: 8, state: 'OPEN', head: 'layer-8' }] } : {}),
+    });
+  }
+  const ship = await launchMooredShip(a, 7, { more: [8] });
+  for (const n of opts.feedbackOn) prReview(a, n, { author: 'alice', body: `please rename the helper in ${n}` });
+  for (const n of [7, 8]) await polledOnTheServer(a, ship, n, opts.feedbackOn.includes(n));
+  return ship;
+}
+
+/**
+ * Answer all reviews in the stack bar of a moored two-PR stack where each PR has feedback: the sheet shows the exact command, Cancel
+ * sends nothing, the confirm posts the stack's URL and relaunches the ship with the command, and when the ship moors again in the same
+ * tab Merge and Don't follow reviews are not left locked.
+ */
+export async function answerAllReviewsFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
+  const ship = await mooredPair(a, { stacked: true, feedbackOn: [7, 8] });
+  const command = `/commodore ${STACK_URL}`;
+
+  const panel = await openPRTab(page, a, ship);
+  const bar = stackBar(page);
+  await expect(bar).toContainText('Stacked on GitHub · 2 PRs, bottom to top.');
+  const answerAll = bar.getByRole('button', { name: 'Answer all reviews', exact: true });
+  await expect(answerAll).toHaveClass(/\bprimary\b/);
+  expect((await answerAll.boundingBox())!.height, 'Answer all reviews height').toBeGreaterThanOrEqual(44);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+
+  await answerAll.tap();
+  const dialog = page.getByRole('dialog', { name: 'Answer all reviews' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('One Commodore run answers the feedback on every PR in the stack.');
+  await expect(dialog).toContainText(command);
+  await expect(dialog.getByRole('button')).toHaveText(['Cancel', 'Answer all reviews']);
+  const box = (await dialog.getByText(command).boundingBox())!;
+  const frame = (await dialog.boundingBox())!;
+  expect(box.x + box.width, 'the command stays inside the sheet').toBeLessThanOrEqual(frame.x + frame.width + 1);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+
+  const posts: string[] = [];
+  page.on('request', (r) => r.method() === 'POST' && posts.push(new URL(r.url()).pathname));
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).tap();
+  await expect(dialog).toBeHidden();
+  expect(posts, 'Cancel sends nothing').toEqual([]);
+  expect((await listShips(a)).find((s) => s.session === ship.session)?.status, 'Cancel starts nothing').toBe('moored');
+
+  // The woken harness waits for `go`, then exits, so it can moor again.
+  rmSync(join(a.home, 'rec', ship.session), { recursive: true, force: true });
+  writeFileSync(join(a.home, 'cue'), 'wait go\nexit 0\n');
+  await answerAll.tap();
+  const sent = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/answer-review`);
+  await dialog.getByRole('button', { name: 'Answer all reviews', exact: true }).tap();
+  const res = await sent;
+  expect(JSON.parse(res.request().postData() ?? 'null')).toEqual({ stack: STACK_URL });
+  expect(res.status()).toBe(201);
+  expect(await wokenPrompt(a, ship)).toBe(command);
+  await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).not.toBe('moored');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+
+  const report = /^ADMIRAL_REPORT=(.*)$/m.exec(readFileSync(join(a.home, 'rec', ship.session, 'env'), 'utf8'))?.[1];
+  expect(report, 'the woken harness env names a report path').toBeTruthy();
+  writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'answered', prs: [7, 8].map((n) => ({ url: `${PR_BASE}/${n}`, closes: [] })), resume: RESUME }));
+  writeFileSync(join(a.home, 'rec', ship.session, 'go'), '');
+  await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status, { timeout: 30_000 }).toBe('moored');
+  // The ship page reopens on Conversation when the ship comes back, so the PR tab is opened again.
+  const prTab = viewTab(page, 'PR');
+  if ((await prTab.getAttribute('aria-selected')) !== 'true') await prTab.tap();
+  await expect(panel.getByRole('button', { name: "Don't follow reviews" }), 'the tab is not left locked by the answered wake').toBeEnabled();
+  await expect(bar.getByRole('button', { name: 'Answer all reviews', exact: true }), 'the feedback was taken').toHaveCount(0);
+}
+
+/** A stack where one PR has no feedback offers no Answer all reviews, and the PR that has feedback keeps its own Answer review. */
+export async function noAnswerAllWhenAPRHasNoFeedback(page: Page, a: Admiral) {
+  const ship = await mooredPair(a, { stacked: true, feedbackOn: [7] });
+
+  const panel = await openPRTab(page, a, ship);
+  await expect(stackBar(page)).toContainText('Stacked on GitHub · 2 PRs, bottom to top.');
+  await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
+  await expect(feedbackBar(page).getByRole('button', { name: 'Answer review', exact: true })).toBeVisible();
+  await expect(panel).toBeVisible();
+}
+
+/** Unstacked PRs, each with feedback, get only the per-PR Answer review. */
+export async function noAnswerAllForUnstackedPRs(page: Page, a: Admiral) {
+  const ship = await mooredPair(a, { stacked: false, feedbackOn: [7, 8] });
+
+  await openPRTab(page, a, ship);
+  await expect(feedbackBar(page).getByRole('button', { name: 'Answer review', exact: true })).toBeVisible();
+  await expect(stackBar(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
+}

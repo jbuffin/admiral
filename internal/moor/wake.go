@@ -343,6 +343,7 @@ func cloneState(s WakeState) WakeState {
 	}
 	out.PRs = map[string]PRWake{}
 	for k, v := range s.PRs {
+		v.Cursor.IDs = append([]string(nil), v.Cursor.IDs...)
 		seen := map[string]time.Time{}
 		for id, t := range v.Seen {
 			seen[id] = t
@@ -518,4 +519,23 @@ func FeedbackCounts(in WakeInput) map[string]int {
 		}
 	}
 	return out
+}
+
+// DecideStackRound is the wake state the Answer all reviews wake saves: every OPEN PR's cursor advanced past its feedback.
+// It reports false when an answered OPEN PR has no feedback.
+func DecideStackRound(in WakeInput) (WakeState, bool) {
+	found, next, _, _, _ := scan(in)
+	if len(found) == 0 {
+		return WakeState{}, false
+	}
+	for _, pr := range in.Record.PRs {
+		if _, ok := found[pr]; !ok {
+			continue
+		}
+		if len(found[pr].waking) == 0 {
+			return WakeState{}, false
+		}
+		_, next = openRound(in, found, next, pr)
+	}
+	return next, true
 }

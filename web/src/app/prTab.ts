@@ -44,15 +44,6 @@ export function headerChips(pr: MooredPR): DetailChip[] {
   return prChips(pr).map((c): DetailChip => (pr.state === 'MERGED' ? { ...c, tone: 'rev' } : c));
 }
 
-/** The stack to order by: the first one a carried PR's detail returns, in the ship's order. */
-export function chooseStack(carried: MooredPR[], details: Record<string, { stack: PRStack | null } | undefined>): PRStack | null {
-  for (const p of carried) {
-    const stack = details[p.url]?.stack;
-    if (stack) return stack;
-  }
-  return null;
-}
-
 /** The carried PRs that are in the stack, bottom layer first by its positions; an entry matches a PR by URL, so another repo's PR with the same number is not in it. */
 export function stackedPRs(prs: MooredPR[], stack: Pick<PRStack, 'entries'> | null | undefined): MooredPR[] {
   if (!stack) return [];
@@ -71,3 +62,24 @@ export function orderPRs(prs: MooredPR[], stack: Pick<PRStack, 'entries'> | null
 export const defaultPR = (ordered: MooredPR[]): MooredPR | undefined => ordered.find((p) => p.state === 'OPEN') ?? ordered[0];
 
 export const stackBarText = (stacked: number, hasStack: boolean): string => (hasStack && stacked >= 2 ? `Stacked on GitHub · ${stacked} PRs, bottom to top.` : '');
+
+/** The detail that holds the stack: the first carried PR's, with its stack and answer_all. */
+export function chooseStackDetail(
+  carried: MooredPR[],
+  details: Record<string, { stack: PRStack | null; answer_all?: string } | undefined>,
+): { url: string; stack: PRStack; answerAll?: string } | null {
+  for (const p of carried) {
+    const d = details[p.url];
+    if (d?.stack) return { url: p.url, stack: d.stack, answerAll: d.answer_all };
+  }
+  return null;
+}
+
+/** Whether the stack bar offers Answer all reviews. The pushed list decides when feedback clears, ahead of the detail's refresh. */
+export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined, answerAll: string | undefined): boolean {
+  const live = open(prs);
+  return !!stack && !!answerAll && live.length > 1 && live.every((p) => (p.feedback ?? 0) > 0);
+}
+
+/** Whether Merge and Don't follow reviews stay locked: a confirm locks them, and a ship that left its mooring is running its wake, so they are free when it moors again. */
+export const actingWhile = (acting: boolean, moored: boolean): boolean => moored && acting;

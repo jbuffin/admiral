@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { addGitHubSource, addWakeReviewers, answeringEnv, answerReviewFromThePRTab, noAnswerReviewOnARunningShip, noAnswerReviewWithoutNewFeedback, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, noWakeWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, stackMismatchInThePRTab, staleMergeTokenInThePRTab, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, moorRefusedWhenThePRClosed, plainReturnSheetStaysPlain, returnToPortCleansUp, returnToPortMoors, stopForGoodEnds, stopShipMoors, withFakeGh } from './shell';
+import { addGitHubSource, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, noAnswerAllForUnstackedPRs, noAnswerAllWhenAPRHasNoFeedback, noAnswerReviewOnARunningShip, noAnswerReviewWithoutNewFeedback, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, noWakeWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, stackMismatchInThePRTab, staleMergeTokenInThePRTab, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, moorRefusedWhenThePRClosed, plainReturnSheetStaysPlain, returnToPortCleansUp, returnToPortMoors, stopForGoodEnds, stopShipMoors, withFakeGh } from './shell';
 
 test('a moored ship shows in its own group with chips from the poll, and Don\'t follow reviews and Dismiss take it out', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -321,4 +321,36 @@ test('a running ship that carries an open PR offers no Answer review', async ({ 
   await admiral.start({ env: answeringEnv(admiral) });
 
   await noAnswerReviewOnARunningShip(page, admiral);
+});
+
+test('the stack bar of a moored stack where every PR has feedback offers Answer all reviews, and it relaunches the ship with the Commodore command', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  addWakeReviewers(admiral, 'zulu', ['alice']);
+  await admiral.start({ env: answeringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await answerAllReviewsFromThePRTab(page, admiral, { phone: false });
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('a stack where one PR has no feedback offers no Answer all reviews', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  addWakeReviewers(admiral, 'zulu', ['alice']);
+  await admiral.start({ env: answeringEnv(admiral) });
+
+  await noAnswerAllWhenAPRHasNoFeedback(page, admiral);
+});
+
+test('unstacked PRs with feedback get only the per-PR Answer review', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  addWakeReviewers(admiral, 'zulu', ['alice']);
+  await admiral.start({ env: answeringEnv(admiral) });
+
+  await noAnswerAllForUnstackedPRs(page, admiral);
 });
