@@ -26,15 +26,20 @@ func TestWakeOfAShipThatIsNotMooredAnswers404(t *testing.T) {
 	}
 }
 
-func TestWakeOfAMooredShipWithNoResumeTextAnswers409NamingIt(t *testing.T) {
+func TestStopEndsAMooredShipAndLogsItStopped(t *testing.T) {
 	f := mooredService(t, nil)
 	session := f.moor(t, "Saltpaw", "work", "https://github.com/acme/widgets/pull/7")
-	rec := f.wake(session, `{"text":"go on"}`)
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "resume") {
-		t.Errorf("wake with no resume text = %d %s, want 409 naming the resume text", rec.Code, rec.Body)
+	if rec := f.post("/api/ships/" + session + "/stop"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"stopped"`) {
+		t.Fatalf("stop of a moored ship = %d %s, want 200 naming it stopped", rec.Code, rec.Body)
 	}
-	if got := f.records(t); len(got) != 1 {
-		t.Errorf("the refused wake left %d moored records, want the one it started with", len(got))
+	if got := f.records(t); len(got) != 0 {
+		t.Errorf("moored records = %v, want none once the ship is stopped", got)
+	}
+	if got := f.events(t, session, "unmoored"); len(got) != 1 || got[0]["reason"] != "stopped" {
+		t.Errorf("unmoored events = %v, want one with reason stopped", got)
+	}
+	if rec := f.post("/api/ships/" + session + "/stop"); rec.Code != http.StatusNotFound {
+		t.Errorf("a second stop = %d %s, want 404", rec.Code, rec.Body)
 	}
 }
 

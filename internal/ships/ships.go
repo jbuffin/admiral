@@ -79,7 +79,7 @@ type Ship struct {
 	StackReady  bool   `json:"stack_ready,omitempty"`
 	ReadyUpTo   string `json:"ready_up_to,omitempty"`
 	MergeMethod string `json:"merge_method,omitempty"`
-	// NoResume is true on a moored ship whose record has no valid resume text, which cannot be woken.
+	// NoResume is true on a moored ship whose record has no valid resume text: a hand wake starts it bare, and no feedback round can.
 	NoResume bool `json:"no_resume,omitempty"`
 	// Waiting is why a moored ship's feedback round has not started, while one is due.
 	Waiting string `json:"waiting,omitempty"`

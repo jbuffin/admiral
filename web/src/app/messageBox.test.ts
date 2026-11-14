@@ -43,10 +43,8 @@ describe('boxState on a moored ship', () => {
     expect(boxState(moored())).toEqual({ enabled: true, placeholder: 'Wake the ship with this message' });
   });
 
-  it('is off with the reason when the ship has no valid resume text', () => {
-    const state = boxState(moored({ no_resume: true }));
-    expect(state.enabled).toBe(false);
-    expect(state.note).toMatch(/resume/i);
+  it('takes a message when the ship has no valid resume text, since a hand wake starts it bare', () => {
+    expect(boxState(moored({ no_resume: true }) as Parameters<typeof boxState>[0])).toEqual({ enabled: true, placeholder: 'Wake the ship with this message' });
   });
 
   it('still takes a message from a ship whose poll failed, since waking needs no GitHub', () => {

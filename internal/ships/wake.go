@@ -29,16 +29,21 @@ const (
 // undoFunc puts back what a launch hook wrote, when the launch fails after the hook ran.
 type undoFunc func()
 
-// Wake relaunches a moored ship by hand, with the engineer's optional text after its resume text.
+// Wake relaunches a moored ship by hand, with the engineer's optional text after its resume text. A record with no
+// resume text wakes bare: the text alone is the prompt, and with none the harness starts idle, waiting for a message.
 // Like a hand launch it counts toward the cap and is never blocked by it.
 func (s *Service) Wake(ctx context.Context, session, text string) (Ship, *launcher.Error) {
+	t := strings.TrimSpace(text)
 	prompt := func(rec moor.Record) string {
-		if t := strings.TrimSpace(text); t != "" {
+		if !moor.ValidResume(rec.Resume) {
+			return t
+		}
+		if t != "" {
 			return rec.Resume + " " + t
 		}
 		return rec.Resume
 	}
-	return s.wake(session, prompt, "hand", "", viaOfCtx(ctx), s.handRoundStart)
+	return s.wakeWith(wakeOpts{noResume: true, bare: true}, session, prompt, "hand", "", viaOfCtx(ctx), s.handRoundStart)
 }
 
 // FeedbackRound relaunches a moored ship, unattended, for the feedback on one of its PRs. The text reaches
@@ -166,10 +171,11 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr, 
 	return s.wakeWith(wakeOpts{}, session, prompt, by, pr, wokenVia, beforeLaunch)
 }
 
-// wakeOpts changes wake for a Re-review: it checks the record wake read before any side effect, and needs no resume text.
+// wakeOpts changes wake for a hand wake or a Re-review: it checks the record wake read before any side effect, and needs no resume text.
 type wakeOpts struct {
 	check    func(moor.Record) *launcher.Error
 	noResume bool
+	bare     bool   // a record with no resume text launches with the prompt as given, even an empty one
 	text     string // the launch text: the launcher builds the prompt from it and the resolved skill
 }
 
@@ -197,7 +203,7 @@ func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Recor
 	req := launcher.Request{Fleet: rec.Fleet, Harness: rec.Harness, Dir: rec.Checkout, Model: rec.Model,
 		Skill: launcher.Skill{Kind: rec.Skill.Kind, Name: rec.Skill.Name}, Source: rec.Source, OrderID: rec.OrderID,
 		Title: rec.Title, URL: rec.URL, Link: rec.Link, Issues: rec.Issues, Panel: rec.Panel, Resources: rec.Resources, PRs: rec.PRs,
-		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Text: opts.text, Autopilot: by == "feedback" || by == "proposal", Unattended: by == "feedback", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, ChatKey: rec.Chat, RoutineKey: rec.Routine, CommitmentKey: rec.Commitment}
+		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Bare: opts.bare && !moor.ValidResume(rec.Resume), Text: opts.text, Autopilot: by == "feedback" || by == "proposal", Unattended: by == "feedback", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, ChatKey: rec.Chat, RoutineKey: rec.Routine, CommitmentKey: rec.Commitment}
 	var undo undoFunc
 	// The launcher runs this under its lock, just before it makes the session: a Dismiss or a merged PR that
 	// ended the mooring while this wake waited wins, and from here on an ending loses to the wake.

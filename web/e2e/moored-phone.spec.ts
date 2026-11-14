@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { addGitHubSource, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, noWakeWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime } from './shell';
+import { addGitHubSource, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, wakeAndStopWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime } from './shell';
 
 test('on the phone, a moored ship shows in its own group with chips from the poll, and Don\'t follow reviews and Dismiss take it out by touch', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -42,13 +42,13 @@ test('on the phone, a moored row opens its ship view, and a message sent there w
   expect(watch.errors).toEqual([]);
 });
 
-test('on the phone, a moored ship with no valid resume text shows Wake and the message box off, with the reason', async ({ page, admiral }) => {
+test('on the phone, a moored ship with no valid resume text wakes from the box with the message alone, and Stop ship ends one', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   addGitHubSource(admiral);
   await admiral.start({ env: mooringEnv(admiral) });
   const watch = watchPage(page, admiral.url);
 
-  await noWakeWithoutResume(page, admiral, (l) => l.tap());
+  await wakeAndStopWithoutResume(page, admiral, (l) => l.tap());
   expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
 
   expect(watch.unversioned()).toEqual([]);

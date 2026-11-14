@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { addGitHubSource, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, noAnswerAllForUnstackedPRs, noAnswerAllWhenAPRHasNoFeedback, noAnswerReviewOnARunningShip, noAnswerReviewWithoutNewFeedback, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, noWakeWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, stackMismatchInThePRTab, staleMergeTokenInThePRTab, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, moorRefusedWhenThePRClosed, plainReturnSheetStaysPlain, returnToPortCleansUp, returnToPortMoors, stopForGoodEnds, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, reviewedStackIsReReviewedFromPeek, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime, stackLinkFailsInThePRTab } from './shell';
+import { addGitHubSource, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, noAnswerAllForUnstackedPRs, noAnswerAllWhenAPRHasNoFeedback, noAnswerReviewOnARunningShip, noAnswerReviewWithoutNewFeedback, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, wakeAndStopWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, stackMismatchInThePRTab, staleMergeTokenInThePRTab, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, moorRefusedWhenThePRClosed, plainReturnSheetStaysPlain, returnToPortCleansUp, returnToPortMoors, stopForGoodEnds, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, reviewedStackIsReReviewedFromPeek, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime, stackLinkFailsInThePRTab } from './shell';
 
 test('a moored ship shows in its own group with chips from the poll, and Don\'t follow reviews and Dismiss take it out', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -40,13 +40,13 @@ test('a moored row opens its ship view, and a message sent there wakes the ship 
   expect(watch.errors).toEqual([]);
 });
 
-test('a moored ship with no valid resume text shows Wake and the message box off, with the reason', async ({ page, admiral }) => {
+test('a moored ship with no valid resume text wakes from the box with the message alone, and Stop ship ends one', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   addGitHubSource(admiral);
   await admiral.start({ env: mooringEnv(admiral) });
   const watch = watchPage(page, admiral.url);
 
-  await noWakeWithoutResume(page, admiral, (l) => l.click());
+  await wakeAndStopWithoutResume(page, admiral, (l) => l.click());
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

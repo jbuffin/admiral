@@ -16,16 +16,26 @@ const REFRESH_MS = 30_000;
 const lastRead = new Map<string, PRDetail>();
 const seen = (urls: string[]) => Object.fromEntries(urls.flatMap((u) => (lastRead.has(u) ? [[u, lastRead.get(u)!]] : [])));
 
-/** Each carried PR's detail, read when the tab opens and every 30s while it stays open; a failed read keeps the last good detail, and a PR never read has none. */
-function useDetails(session: string, urls: string[]): Record<string, PRDetail> {
+/** Each carried PR's detail, read when the tab opens and every 30s while it stays open; a failed read keeps the last good detail, and a PR never read has none. `failed` holds the PRs whose last read failed. */
+function useDetails(session: string, urls: string[]): { details: Record<string, PRDetail>; failed: Set<string> } {
   const [details, setDetails] = useState<Record<string, PRDetail>>(() => seen(urls));
+  const [failed, setFailed] = useState<Set<string>>(() => new Set());
   const key = urls.join('\n');
   useLayoutEffect(() => {
     let live = true;
+    const mark = (url: string, bad: boolean) =>
+      setFailed((f) => {
+        if (f.has(url) === bad) return f;
+        const n = new Set(f);
+        if (bad) n.add(url);
+        else n.delete(url);
+        return n;
+      });
     const read = () =>
       urls.forEach((url) =>
         void fetchPRDetail(session, url).then((r) => {
           if (!live) return;
+          mark(url, !r.ok);
           if (!r.ok) return;
           lastRead.set(url, r.data);
           setDetails((d) => ({ ...d, [url]: r.data }));
@@ -38,7 +48,17 @@ function useDetails(session: string, urls: string[]): Record<string, PRDetail> {
       clearInterval(timer);
     };
   }, [session, key]);
-  return details;
+  return { details, failed };
+}
+
+/** Where a PR's checks, description, reviewers and timeline go, held open while GitHub has not answered yet. */
+function PRLoading({ failed }: { failed: boolean }) {
+  return (
+    <div class="pr-loading" role="status">
+      <span class="spinner" aria-hidden="true" />
+      <span>{failed ? 'Trying again…' : 'Loading from GitHub…'}</span>
+    </div>
+  );
 }
 
 /** The ship's PR shape, read when the tab opens, every 30s and on `read`; a failed read keeps the last good one, and a ship of one PR has none. */
@@ -134,7 +154,7 @@ function StackSheet({ session, urls, details, onClose, onShape, read }: { sessio
   );
 }
 
-function PRHeader({ ship, url, detail }: { ship: Ship; url: string; detail: PRDetail | undefined }) {
+function PRHeader({ ship, url, detail, failed }: { ship: Ship; url: string; detail: PRDetail | undefined; failed: boolean }) {
   const pr = (ship.prs ?? []).find((p) => p.url === url)!;
   const note = staleNote(ship, Date.now());
   return (
@@ -155,9 +175,9 @@ function PRHeader({ ship, url, detail }: { ship: Ship; url: string; detail: PRDe
             <span class="mono">
               {detail.head} → {detail.base}
             </span>
-          ) : (
+          ) : failed ? (
             <span>Couldn't load this PR from GitHub.</span>
-          )}
+          ) : null}
           {detail?.draft ? <span>Draft</span> : null}
         </div>
       </div>
@@ -301,7 +321,7 @@ export function PRTab({ ship }: { ship: Ship }) {
   const [stacking, setStacking] = useState(false);
   const [unseen, setUnseen] = useState(false);
   const carried = ship.prs ?? [];
-  const details = useDetails(ship.session, carried.map((p) => p.url));
+  const { details, failed } = useDetails(ship.session, carried.map((p) => p.url));
   const chosen = chooseStackDetail(carried, details);
   const stack = chosen?.stack ?? null;
   const [shape, setShape, read] = useShape(ship.session, carried.length > 1);
@@ -380,7 +400,7 @@ export function PRTab({ ship }: { ship: Ship }) {
         </div>
       ) : null}
       <div class="pr-detail">
-        <PRHeader ship={ship} url={current.url} detail={details[current.url]} />
+        <PRHeader ship={ship} url={current.url} detail={details[current.url]} failed={failed.has(current.url)} />
         {respondedHere ? (
           <div class="feedback-bar">
             <span class="fb-text">{current.author ? `@${current.author}` : 'The author'} responded since your review.</span>
@@ -405,7 +425,7 @@ export function PRTab({ ship }: { ship: Ship }) {
             )}
           </div>
         ) : null}
-        {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : null}
+        {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : <PRLoading failed={failed.has(current.url)} />}
         {moored && (!mergedAll || error) ? (
           <div class="peek-form">
             {mergedAll || reviews(ship) ? null : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}

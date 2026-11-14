@@ -72,6 +72,8 @@ type Request struct {
 	Round   int    `json:"-"`
 	// Prompt, when set, is the harness's prompt verbatim: a wake's resume text already carries its skill invocation.
 	Prompt string `json:"-"`
+	// Bare makes Prompt the harness's prompt even when empty, with no skill invocation: a wake with no resume text.
+	Bare bool `json:"-"`
 	// Before runs under the launch lock with the validated checkout, just before the session is made; its error refuses the launch.
 	Before func(dir string) error `json:"-"`
 	// By and PR say what started a round, for the `woken` event.
@@ -363,7 +365,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if memberPrompt != nil {
 		prompt = *memberPrompt
 	}
-	if req.Prompt != "" {
+	if req.Prompt != "" || req.Bare {
 		prompt = req.Prompt
 	}
 	prompt = l.withGuidance(req, prompt)

@@ -127,6 +127,10 @@ func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	sess, ok := s.find(session)
 	if !ok {
+		if _, moored := s.mooredRecord(session); moored {
+			s.endByRequest(w, r, session, "stopped", "stopped")
+			return
+		}
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
 		return
 	}

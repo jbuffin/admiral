@@ -257,6 +257,8 @@ func apply(cur stance, e rec) stance {
 			return dismissed
 		case "unfollowed":
 			return unfollowed
+		case "stopped":
+			return stopped
 		}
 	}
 	return cur

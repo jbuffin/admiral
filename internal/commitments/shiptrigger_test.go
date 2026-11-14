@@ -67,6 +67,7 @@ var shipRows = []struct {
 	{"sailed: a dismissed ship drops", ledger.TriggerShipSailed, step{dismissedAt(time.Minute), later, drops, "dismissed"}, nil},
 	{"sailed: unmoored as dismissed drops", ledger.TriggerShipSailed, step{unmooredAt("dismissed", time.Minute), later, drops, "dismissed"}, nil},
 	{"sailed: unmoored as unfollowed drops", ledger.TriggerShipSailed, step{unmooredAt("unfollowed", time.Minute), later, drops, "unfollowed"}, nil},
+	{"sailed: a moored ship stopped drops", ledger.TriggerShipSailed, step{unmooredAt("stopped", time.Minute), later, drops, "stopped"}, nil},
 	// ship_anchored
 	{"anchored: an end with an error fires", ledger.TriggerShipAnchored, step{errored(time.Minute), later, fires, ""}, nil},
 	{"anchored: nothing happened waits", ledger.TriggerShipAnchored, step{func(*rig) {}, later, waits, ""}, &step{errored(2 * time.Hour), 3 * time.Hour, fires, ""}},

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Ship } from './api';
-import { carryingShip, mergeHint, nextStep, NO_RESUME_NOTE, prChips, prLabel, reReviewPlace, reviews, rowButtons, staleNote } from './moored';
+import { carryingShip, mergeHint, nextStep, prChips, prLabel, reReviewPlace, reviews, rowButtons, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -139,8 +139,8 @@ describe('rowButtons', () => {
     expect(rowButtons({}, true)).toEqual({ wake: true, others: true, note: '' });
     expect(rowButtons({}, false).wake).toBe(false);
   });
-  it('turns Wake off with the reason for a ship with no valid resume text, and leaves the others on', () => {
-    expect(rowButtons({ no_resume: true }, false)).toEqual({ wake: true, others: false, note: NO_RESUME_NOTE });
+  it('leaves Wake on for a ship with no valid resume text, since a hand wake starts it bare', () => {
+    expect(rowButtons({ no_resume: true } as Parameters<typeof rowButtons>[0], false)).toEqual({ wake: false, others: false, note: '' });
   });
   it('shows the waiting line as the note and leaves Wake and the others on', () => {
     expect(rowButtons({ waiting: 'Waiting for room under the cap' }, false)).toEqual({ wake: false, others: false, note: 'Waiting for room under the cap' });
@@ -201,10 +201,10 @@ describe('nextStep', () => {
     expect(nextStep(ship({ stack_ready: true, waiting: 'Waiting for room under the cap', prs: [pr({ checks: 'FAILURE' })] })).ready).toBe(true);
   });
 
-  it('gives the server\'s waiting text, then the no-resume note, over what the chips imply', () => {
+  it('gives the server\'s waiting text over what the chips imply, and a missing resume text changes nothing', () => {
     const failing = [pr({ checks: 'FAILURE' })];
     expect(nextStep(ship({ waiting: 'Waiting for room under the cap', prs: failing }))).toEqual({ ready: false, text: 'Waiting for room under the cap' });
-    expect(nextStep(ship({ no_resume: true, prs: failing }))).toEqual({ ready: false, text: NO_RESUME_NOTE });
+    expect(nextStep(ship({ no_resume: true, prs: failing }))).toEqual(nextStep(ship({ prs: failing })));
   });
 
   it('says what the PR itself waits on when the ship says nothing', () => {
