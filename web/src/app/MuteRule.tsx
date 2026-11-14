@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { call } from './api';
+import { Actions, Button } from './Button';
 
 export interface MuteTarget {
   fleet: string;
@@ -15,6 +16,7 @@ export function MuteRule({ target, disabled = false }: { target: MuteTarget; dis
   const [state, setState] = useState({ busy: false, error: '', done: '' });
   const by = (target.mute_by ?? []).filter((b) => (b === 'sender' ? target.sender : b === 'dedupe_key' ? target.dedupe_key : false));
   if (by.length === 0) return null;
+  const key = (kind: string) => ['routine', target.fleet, target.routine, 'mute', kind] as const;
   const mute = async (kind: 'sender' | 'dedupe_key') => {
     const value = kind === 'sender' ? target.sender! : target.dedupe_key!;
     setState({ busy: true, error: '', done: '' });
@@ -24,21 +26,13 @@ export function MuteRule({ target, disabled = false }: { target: MuteTarget; dis
   };
   return (
     <div class="mute-rule">
-      <button type="button" class="btn" disabled={disabled || state.busy} aria-expanded={open} onClick={() => setOpen(!open)}>
-        Mute rule
-      </button>
+      <Button label="Mute rule" disabled={disabled || state.busy} expanded={open} onClick={() => setOpen(!open)} />
       {open ? (
-        <div class="peek-actions" role="group" aria-label="Mute rule">
-          {by.includes('sender') ? (
-            <button type="button" class="btn" disabled={state.busy} onClick={() => void mute('sender')}>
-              Mute this sender ({target.sender})
-            </button>
-          ) : null}
-          {by.includes('dedupe_key') ? (
-            <button type="button" class="btn" disabled={state.busy} onClick={() => void mute('dedupe_key')}>
-              Mute this key ({target.dedupe_key})
-            </button>
-          ) : null}
+        <div role="group" aria-label="Mute rule">
+          <Actions class="peek-actions">
+            {by.includes('sender') ? <Button label={`Mute this sender (${target.sender})`} pending={key('sender')} onClick={() => mute('sender')} /> : null}
+            {by.includes('dedupe_key') ? <Button label={`Mute this key (${target.dedupe_key})`} pending={key('dedupe_key')} onClick={() => mute('dedupe_key')} /> : null}
+          </Actions>
         </div>
       ) : null}
       {state.done ? <p class="line">{state.done}</p> : null}

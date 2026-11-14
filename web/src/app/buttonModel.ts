@@ -10,6 +10,7 @@ export interface ButtonModelProps {
   busyLabel?: string;
   disabled?: boolean;
   pressed?: boolean;
+  expanded?: boolean;
   href?: string;
   external?: boolean;
   type?: 'button' | 'submit';
@@ -36,6 +37,7 @@ export function buttonModel(p: ButtonModelProps) {
     ariaLabel: busy || p.icon ? name : undefined,
     ariaBusy: busy ? ('true' as const) : undefined,
     ariaPressed: p.pressed === undefined ? undefined : p.pressed ? ('true' as const) : ('false' as const),
+    ariaExpanded: p.expanded === undefined ? undefined : p.expanded ? ('true' as const) : ('false' as const),
     disabled: !link && !busy && !!p.disabled,
     ignoreTap: busy,
   };

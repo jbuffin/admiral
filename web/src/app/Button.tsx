@@ -55,6 +55,7 @@ export function Button({ pending, onClick, children, ...props }: ButtonProps) {
       aria-label={m.ariaLabel}
       aria-busy={m.ariaBusy}
       aria-pressed={m.ariaPressed}
+      aria-expanded={m.ariaExpanded}
       disabled={m.disabled}
       onClick={m.href !== undefined ? onClick : tap}
     >

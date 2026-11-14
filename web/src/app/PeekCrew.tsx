@@ -1,7 +1,8 @@
 import { useRef, useState } from 'preact/hooks';
 import type { Entry } from './inbox';
 import { createNoteDecisions, crewMemberFold, type CrewMemberItem, type CrewNote, type NoteEdit, markHidden, noteEditProblems, NOTE_MAX, readCrewMember, readCrewNotes } from './crewItems';
-import { type Acting } from './PeekItem';
+import { Actions, Button } from './Button';
+import { type Acting, itemKey } from './PeekItem';
 
 // Every string below was written by a ship and renders as text.
 
@@ -51,22 +52,9 @@ function EditForm({ n, i, draft, setDraft, save, cancel, locked }: { n: CrewNote
     <div class="inbox-proposal">
       <textarea class="inbox-note" aria-label={`Edit note ${i}`} rows={3} value={draft.note} readOnly={locked} onInput={(e) => setDraft({ ...draft, note: (e.target as HTMLTextAreaElement).value })} />
       {problems.note && <span class="inbox-hint">{problems.note}</span>}
-      <div
-        class="inbox-send-row"
-        role="radiogroup"
-        aria-label={`Scope for note ${i}`}
-        onKeyDown={(e) => {
-          if (locked || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
-          e.preventDefault();
-          const next = draft.scope === 'fleet' ? 'repo' : 'fleet';
-          setDraft({ ...draft, scope: next });
-          (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-scope="${next}"]`)?.focus();
-        }}
-      >
+      <div class="inbox-send-row" role="group" aria-label={`Scope for note ${i}`}>
         {(['fleet', 'repo'] as const).map((s) => (
-          <button key={s} data-scope={s} type="button" role="radio" aria-checked={draft.scope === s} tabIndex={draft.scope === s ? 0 : -1} class={`btn${draft.scope === s ? ' primary' : ''}`} disabled={locked} onClick={() => setDraft({ ...draft, scope: s })}>
-            {s === 'fleet' ? 'Fleet' : 'Repo'}
-          </button>
+          <Button key={s} label={s === 'fleet' ? 'Fleet' : 'Repo'} pressed={draft.scope === s} disabled={locked} onClick={() => setDraft({ ...draft, scope: s })} />
         ))}
       </div>
       {draft.scope === 'repo' && (
@@ -76,19 +64,15 @@ function EditForm({ n, i, draft, setDraft, save, cancel, locked }: { n: CrewNote
         </>
       )}
       <div class="inbox-send-row">
-        <button type="button" class="btn primary" disabled={locked || Object.keys(problems).length > 0} onClick={save}>
-          Save
-        </button>
-        <button type="button" class="btn" onClick={cancel}>
-          Cancel
-        </button>
+        <Button label="Save" variant="primary" disabled={locked || Object.keys(problems).length > 0} onClick={save} />
+        <Button label="Cancel" onClick={cancel} />
       </div>
       <span class="inbox-hint">At most {NOTE_MAX} characters, on one line. {n.replaces !== null ? 'The line it replaces stays as proposed.' : ''}</span>
     </div>
   );
 }
 
-export function CrewNotesBody({ acting, state, decided: closeRemove }: { acting: Acting; state: CrewNotesState; decided: () => void }) {
+export function CrewNotesBody({ entry, acting, state, decided: closeRemove }: { entry: Entry; acting: Acting; state: CrewNotesState; decided: () => void }) {
   const { item, d, drafts, setDrafts, changed } = state;
   const { decided, total } = d.progress();
   const open = Object.keys(drafts).length > 0;
@@ -105,7 +89,7 @@ export function CrewNotesBody({ acting, state, decided: closeRemove }: { acting:
     const counts = { keep: 0, edit: 0, drop: 0 };
     for (const n of item.notes) counts[d.decision(n.id)!]++;
     const text = `Crew notes sent: ${counts.keep} kept, ${counts.edit} edited, ${counts.drop} dropped`;
-    void acting.run('crew-notes', d.payload(), () => text);
+    return acting.run('crew-notes', d.payload(), () => text);
   };
   return (
     <>
@@ -145,33 +129,24 @@ export function CrewNotesBody({ acting, state, decided: closeRemove }: { acting:
               </p>
             )}
             <div class="inbox-send-row" role="group" aria-label={`Decision for note ${i}`}>
-              <button type="button" class={`btn${dec === 'keep' ? ' primary' : ''}`} aria-pressed={dec === 'keep'} disabled={off} onClick={() => pick('keep')}>
-                Keep
-              </button>
-              <button
-                type="button"
-                class={`btn${dec === 'edit' ? ' primary' : ''}`}
-                aria-pressed={dec === 'edit'}
+              <Button label="Keep" pressed={dec === 'keep'} disabled={off} onClick={() => pick('keep')} />
+              <Button
+                label="Edit"
+                pressed={dec === 'edit'}
                 disabled={off}
                 onClick={() => {
                   if (refused) acting.clear();
                   closeRemove();
                   setDraft(n.id, d.edit(n.id) ?? { note: n.note, scope: n.scope, repo: n.repo });
                 }}
-              >
-                Edit
-              </button>
-              <button type="button" class={`btn${dec === 'drop' ? ' primary' : ''}`} aria-pressed={dec === 'drop'} disabled={off} onClick={() => pick('drop')}>
-                Drop
-              </button>
+              />
+              <Button label="Drop" pressed={dec === 'drop'} disabled={off} onClick={() => pick('drop')} />
             </div>
           </section>
         );
       })}
       <div class="inbox-send-row">
-        <button type="button" class="btn primary" disabled={!d.canSend() || open || off} onClick={send}>
-          Send
-        </button>
+        <Button label="Send" variant="primary" pending={itemKey(entry, 'crew-notes')} disabled={!d.canSend() || open || off} onClick={send} />
         <span class="inbox-progress">
           {decided} of {total} decided
         </span>
@@ -186,7 +161,7 @@ const CONFIRM: Record<'keep' | 'drop', string> = {
   drop: 'The ad hoc file is deleted and its notes are discarded.',
 };
 
-export function CrewMemberBody({ item, step, setStep, acting, decided }: { item: CrewMemberItem; step: MemberStep; setStep: (s: MemberStep) => void; acting: Acting; decided: () => void }) {
+export function CrewMemberBody({ entry, item, step, setStep, acting, decided }: { entry: Entry; item: CrewMemberItem; step: MemberStep; setStep: (s: MemberStep) => void; acting: Acting; decided: () => void }) {
   const off = acting.busy || acting.locked;
   const go = (s: MemberStep) => {
     acting.clear();
@@ -194,7 +169,7 @@ export function CrewMemberBody({ item, step, setStep, acting, decided }: { item:
     setStep(s);
   };
   const hidden = markHidden(item.definition);
-  const answer = (decision: 'keep' | 'drop') => void acting.run('crew-member', { decision }, (data) => crewMemberFold(decision, item.member, data));
+  const answer = (decision: 'keep' | 'drop') => acting.run('crew-member', { decision }, (data) => crewMemberFold(decision, item.member, data));
   return (
     <>
       <div class="inbox-summary">
@@ -222,25 +197,17 @@ export function CrewMemberBody({ item, step, setStep, acting, decided }: { item:
       ))}
       {step === 'idle' && (
         <div class="inbox-send-row">
-          <button type="button" class="btn primary" disabled={off} onClick={() => go('keep')}>
-            Keep
-          </button>
-          <button type="button" class="btn danger" disabled={off} onClick={() => go('drop')}>
-            Drop
-          </button>
+          <Button label="Keep" variant="primary" disabled={off} onClick={() => go('keep')} />
+          <Button label="Drop" variant="danger" disabled={off} onClick={() => go('drop')} />
         </div>
       )}
       {step !== 'idle' && (
         <div class={`inbox-ask confirm${step === 'drop' ? ' discard' : ''}`}>
           <p>{CONFIRM[step]}</p>
-          <div class="inbox-send-row">
-            <button type="button" class={`btn ${step === 'keep' ? 'primary' : 'danger'}`} disabled={off} onClick={() => answer(step)}>
-              {step === 'keep' ? 'Keep' : 'Drop'} {item.member}
-            </button>
-            <button type="button" class="btn" disabled={acting.busy} onClick={() => go('idle')}>
-              Cancel
-            </button>
-          </div>
+          <Actions class="inbox-send-row">
+            <Button label={`${step === 'keep' ? 'Keep' : 'Drop'} ${item.member}`} variant={step === 'keep' ? 'primary' : 'danger'} pending={itemKey(entry, `crew-member:${step}`)} disabled={acting.locked} onClick={() => answer(step)} />
+            <Button label="Cancel" onClick={() => go('idle')} />
+          </Actions>
         </div>
       )}
     </>

@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { Actions, Button } from './Button';
 import { call, type Ship } from './api';
 import { reReviewPlace, respondedPRs } from './moored';
 import { Failure } from './PeekItem';
@@ -56,14 +57,10 @@ export function ReReviewSheet({ ship, prUrl, onClose }: { ship: Ship; prUrl?: st
           {rr.error}
         </p>
       ) : null}
-      <div class="launch-foot">
-        <button type="button" class="btn" disabled={rr.busy} onClick={onClose}>
-          Cancel
-        </button>
-        <button type="button" class="btn primary" disabled={rr.busy} onClick={() => void rr.send()}>
-          {label}
-        </button>
-      </div>
+      <Actions class="launch-foot">
+        <Button label="Cancel" onClick={onClose} />
+        <Button label={label} variant="primary" busy={rr.busy} onClick={() => void rr.send()} />
+      </Actions>
     </Sheet>
   );
 }
@@ -77,9 +74,7 @@ export function ReReviewBody({ ship, fold }: { ship: Ship; fold: (text: string) 
       <p class="line">{line}</p>
       <Command name={ship.name} url={url} />
       <div class="peek-merge">
-        <button type="button" class="btn primary" disabled={rr.busy} onClick={() => void rr.send()}>
-          {label}
-        </button>
+        <Button label={label} variant="primary" busy={rr.busy} onClick={() => void rr.send()} />
       </div>
       <Failure message={rr.error} />
     </div>

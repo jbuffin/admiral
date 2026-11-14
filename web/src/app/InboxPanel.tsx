@@ -3,6 +3,7 @@ import { fleets, fleetSearch } from './fleets';
 import { syncSharedQueue, queueRev } from './attention';
 import { sharedInboxQueue, type Entry, type InboxQueue } from './inbox';
 import { call } from './api';
+import { Button } from './Button';
 import { isChatSession, Peek, peekKeys } from './Peek';
 import { REMOVED_FOLD } from './itemActions';
 import { bridgeSearch } from './peekLink';
@@ -36,14 +37,11 @@ const needsAnswer = (e: Entry) => e.type !== 'item' || ANSWER.has(e.item!.kind);
 
 export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now: number; phone: boolean; selected: boolean; fold: (text: string) => void; peekHref?: (t: PeekTarget) => string | null }) {
   const [open, setOpen] = useState(false);
-  const [dismissing, setDismissing] = useState(false);
   const [error, setError] = useState('');
   const dismiss = async () => {
-    setDismissing(true);
     setError('');
     const r = await call('POST', `/inbox/${encodeURIComponent(e.session)}/${encodeURIComponent(e.id!)}/remove`);
     if (r.ok) return fold(REMOVED_FOLD);
-    setDismissing(false);
     setError(r.error);
   };
   const fleet = fleetLabel(e, fleets.value);
@@ -92,9 +90,7 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
             <>
               <p class="inbox-body">{e.item?.notice?.body ?? ''}</p>
               <div class="inbox-send-row inbox-body">
-                <button type="button" class="btn" disabled={dismissing} onClick={() => void dismiss()}>
-                  Dismiss
-                </button>
+                <Button label="Dismiss" pending={['item', e.session, e.id!, 'remove']} onClick={dismiss} />
               </div>
               {error ? (
                 <p class="inbox-error inbox-body" role="alert">

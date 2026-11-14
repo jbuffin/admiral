@@ -1,3 +1,5 @@
+import { Button } from './Button';
+import type { PendingKey } from './busy';
 import type { InboxQuestion } from './inbox';
 import { type AnswerBody, type Draft, answerBody, answeredQuestion, choose, chooseOther, pickOf, setOtherText } from '../questions';
 
@@ -36,7 +38,9 @@ interface CardProps {
   questions: InboxQuestion[];
   draft: Draft;
   edit: (fn: (d: Draft) => Draft) => void;
-  onSend: (body: AnswerBody) => void;
+  onSend: (body: AnswerBody) => unknown;
+  /** Lets a request's busy state outlive this card; without it the button shows the draft's own sending state. */
+  pending?: PendingKey;
   /** A refused answer that cannot be sent again. */
   locked?: boolean;
 }
@@ -73,7 +77,7 @@ function Question({ q, i, of, draft, edit, tap }: { q: InboxQuestion; i: number;
   );
 }
 
-export function PeekQuestions({ questions: qs, draft: d, edit, onSend, locked = false }: CardProps) {
+export function PeekQuestions({ questions: qs, draft: d, edit, onSend, pending, locked = false }: CardProps) {
   const done = qs.filter((q) => answeredQuestion(pickOf(d, q))).length;
   const tap = (q: InboxQuestion, label: string) => edit((x) => choose(x, q, label));
   return (
@@ -98,9 +102,7 @@ export function PeekQuestions({ questions: qs, draft: d, edit, onSend, locked = 
         </p>
       )}
       <div class="inbox-send-row">
-        <button type="button" class="btn primary" disabled={locked || qs.length === 0 || done < qs.length || d.sending} onClick={() => onSend(answerBody(qs, d))}>
-          Send answers
-        </button>
+        <Button label="Send answers" variant="primary" pending={pending} disabled={locked || qs.length === 0 || done < qs.length || d.sending} onClick={() => onSend(answerBody(qs, d))} />
         <span class="inbox-progress">
           {done} of {qs.length} answered
         </span>

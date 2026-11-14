@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Button } from './Button';
 import { call, fetchStackShape, mergeShip, type Ship, type StackShape } from './api';
 import { fleetSearch } from './fleets';
 import { MooredPRs } from './MooredPRs';
@@ -10,13 +11,13 @@ const STALE_TOKEN = 'Admiral restarted, reload to merge';
 
 /** Merge for a ready ship with the method it will use: the ship's one PR, its whole stack (`stack`), or with `pr` that independent PR alone. The caller shows it only when the ship is ready, and shows the error it reports. */
 export function MergeControl({ ship, pr, stack = false, onMerged, onError, locked = false, onBusy }: { ship: Ship; pr?: string; stack?: boolean; onMerged: () => void; onError: (e: string) => void; locked?: boolean; onBusy?: (busy: boolean) => void }) {
-  const [state, setState] = useState({ busy: false, stale: false });
+  const [stale, setStale] = useState(false);
   const busy = useRef(false);
   const hint = mergeHint(ship.merge_method, stack);
   const merge = async () => {
     if (busy.current) return;
     busy.current = true;
-    setState({ busy: true, stale: false });
+    setStale(false);
     onBusy?.(true);
     onError('');
     const r = await mergeShip(ship.session, pr);
@@ -26,21 +27,15 @@ export function MergeControl({ ship, pr, stack = false, onMerged, onError, locke
       void call('POST', '/moored/refresh');
       return onMerged();
     }
-    const stale = r.status === 403;
-    setState({ busy: false, stale });
-    onError(stale ? STALE_TOKEN : r.error);
+    const refused = r.status === 403;
+    setStale(refused);
+    onError(refused ? STALE_TOKEN : r.error);
   };
   return (
     <div class="peek-merge">
-      <button type="button" class="btn primary" disabled={state.busy || locked} onClick={() => void merge()}>
-        Merge
-      </button>
+      <Button label="Merge" variant="primary" pending={['ship', ship.session, 'merge', pr ?? '']} disabled={locked} onClick={merge} />
       {hint ? <span class="merge-hint">{hint}</span> : null}
-      {state.stale ? (
-        <button type="button" class="btn" onClick={() => location.reload()}>
-          Reload
-        </button>
-      ) : null}
+      {stale ? <Button label="Reload" onClick={() => location.reload()} /> : null}
     </div>
   );
 }
@@ -73,17 +68,15 @@ export function ShipMerge({ ship, onMerged, onError }: { ship: Ship; onMerged: (
   if (shape.shape === 'stacked') return <MergeControl ship={ship} stack onMerged={onMerged} onError={onError} />;
   const search = `${fleetSearch.value}${fleetSearch.value ? '&' : '?'}tab=pr`;
   return (
-    <a
-      class="btn"
+    <Button
+      label={PR_TAB_LINK[shape.shape] ?? "Open the ship's PR tab"}
       href={shipPath(ship.session) + search}
       onClick={(e) => {
         if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
         go(shipPath(ship.session), search);
       }}
-    >
-      {PR_TAB_LINK[shape.shape] ?? "Open the ship's PR tab"}
-    </a>
+    />
   );
 }
 
