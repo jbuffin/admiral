@@ -443,6 +443,25 @@ func TestTheRestrictedSettingsDenyCronProjectSendsAndRegistryPublishes(t *testin
 	}
 }
 
+func TestTheRestrictedSettingsDenyTheToolsThatRanOnRealClaudeCodeAndAShipDoesNotNeed(t *testing.T) {
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, nil)
+			_, _, argv, _ := p.mustRestricted(t, level)
+			_, got := settingsOf(t, argv)
+			deny := strs(t, sub(t, got, "permissions")["deny"])
+			for _, tool := range []string{"Workflow", "EnterWorktree", "ExitWorktree", "Skill", "ScheduleWakeup", "Monitor", "DesignSync", "TaskStop"} {
+				if !slices.Contains(deny, tool) {
+					t.Errorf("permissions.deny = %q lacks %s", deny, tool)
+				}
+			}
+			if slices.Contains(deny, "Task") {
+				t.Errorf("permissions.deny = %q holds Task: its subagent's Bash was observed sandboxed, and a ship may use it", deny)
+			}
+		})
+	}
+}
+
 func TestTheRestrictedSettingsDenyWritesToTheOtherSessionsScratchpadsInTheSharedTempDir(t *testing.T) {
 	want := []string{
 		filepath.Join("/tmp", "claude-"+strconv.Itoa(os.Getuid()), "-*"),

@@ -57,6 +57,8 @@ var unsafeRestrictedFlags = []string{"--dangerously-skip-permissions", "--permis
 var restrictedDeniedTools = []any{"WebFetch", "WebSearch", "mcp__*", "Bash(git push *)", "Bash(gh *)", "NotebookEdit",
 	"SendMessage", "ListAgents", "RemoteTrigger", "PushNotification", "Artifact", "SendUserFile", "SendFeedback",
 	"CronCreate", "SendToProject", "SendToProjectContext",
+	// On Claude Code 2.1.325 each of these ran under the profile and a ship does not need it; Task stays, its subagent's Bash was sandboxed.
+	"Workflow", "EnterWorktree", "ExitWorktree", "Skill", "ScheduleWakeup", "Monitor", "DesignSync", "TaskStop",
 	// The registries are on the allowlist, so an upload there is the one way out left; these raise the cost, they are not a boundary.
 	"Bash(npm publish *)", "Bash(cargo publish *)", "Bash(gem push *)"}
 
