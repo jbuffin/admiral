@@ -531,13 +531,16 @@ test('Peek answers a crew notes item: keep one note, edit another to repo scope,
   await text.fill('');
   await expect(card2.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await text.fill('Ada runs make check before anything');
-  await card2.getByRole('radio', { name: 'Repo', exact: true }).or(card2.getByRole('button', { name: 'Repo', exact: true })).tap();
+  await card2.getByRole('button', { name: 'Repo', exact: true }).tap();
+  await expect(card2.getByRole('button', { name: 'Repo', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(card2.getByRole('button', { name: 'Fleet', exact: true })).toHaveAttribute('aria-pressed', 'false');
   const repo = card2.getByRole('textbox', { name: /repo/i });
   await repo.fill('acme');
   await expect(card2.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await repo.fill('acme/api');
   await card2.getByRole('button', { name: 'Save', exact: true }).tap();
   await expect(peek).toContainText('2 of 2 decided');
+  await expect(card2.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(send).toBeEnabled();
 
   const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/inbox/_admiral/crew-n1/crew-notes');

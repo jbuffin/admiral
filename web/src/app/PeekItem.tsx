@@ -366,7 +366,6 @@ const removeCopy = (kind: string | undefined, review: boolean) =>
 export function RemoveRow({ entry, confirm, setConfirm, acting, fold = () => REMOVED_FOLD }: { entry: Entry; confirm: boolean; setConfirm: (on: boolean) => void; acting: Acting; fold?: (data: never) => string }) {
   const review = entry.item?.kind === 'review';
   const kind = entry.item?.kind;
-  const off = acting.busy;
   if (!confirm) {
     return (
       <div class="inbox-remove-row">
@@ -385,9 +384,10 @@ export function RemoveRow({ entry, confirm, setConfirm, acting, fold = () => REM
     <div class="inbox-ask discard">
       <p>{removeCopy(kind, review)}</p>
       <Actions class="inbox-send-row">
-        <Button label="Remove" variant="danger" pending={itemKey(entry, 'remove')} disabled={off} onClick={() => acting.run('remove', undefined, fold)} />
+        <Button label="Remove" variant="danger" pending={itemKey(entry, 'remove')} disabled={acting.locked} onClick={() => acting.run('remove', undefined, fold)} />
         <Button
           label={kind === 'crew_notes' || kind === 'crew_member' ? 'Cancel' : 'Keep it'}
+          disabled={acting.locked}
           onClick={() => {
             acting.clear();
             setConfirm(false);

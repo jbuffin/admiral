@@ -16,7 +16,7 @@ export function MuteRule({ target, disabled = false }: { target: MuteTarget; dis
   const [state, setState] = useState({ busy: false, error: '', done: '' });
   const by = (target.mute_by ?? []).filter((b) => (b === 'sender' ? target.sender : b === 'dedupe_key' ? target.dedupe_key : false));
   if (by.length === 0) return null;
-  const key = (kind: string) => ['routine', target.fleet, target.routine, 'mute', kind] as const;
+  const key = (kind: string) => ['routine', target.fleet, target.routine, 'mute', kind, kind === 'sender' ? target.sender! : target.dedupe_key!] as const;
   const mute = async (kind: 'sender' | 'dedupe_key') => {
     const value = kind === 'sender' ? target.sender! : target.dedupe_key!;
     setState({ busy: true, error: '', done: '' });
