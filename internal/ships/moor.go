@@ -108,7 +108,6 @@ func (s *Service) moorVia(ctx context.Context, sess sessionhost.Session, prs []s
 	return true
 }
 
-// reviewingIn is the ones of prs the ship reviews.
 func (s *Service) reviewingIn(sess sessionhost.Session, prs []string) []string {
 	s.mooredMu.Lock()
 	defer s.mooredMu.Unlock()
@@ -191,7 +190,7 @@ func (s *Service) setMoored(rec moor.Record) {
 	}
 	delete(s.running, rec.Session)
 	delete(s.mooredPolls, rec.Session) // a poll answered for an earlier ship of this session says nothing of this one
-	if covers(live, rec.PRs) {         // so its chips and authors show before the first moored poll
+	if covers(live, rec.PRs) {         // a fresh poll shows its chips and authors before the first moored poll
 		s.polls()[rec.Session] = live
 	}
 	for i, r := range s.moored {
@@ -312,5 +311,5 @@ func (s *Service) Rounds(name string) ([]moor.Round, error) {
 
 // covers says a poll answered for every one of the PRs.
 func covers(p polled, urls []string) bool {
-	return p.status != nil && !slices.ContainsFunc(urls, func(u string) bool { _, ok := p.status[u]; return !ok })
+	return p.status != nil && !p.stale && !slices.ContainsFunc(urls, func(u string) bool { _, ok := p.status[u]; return !ok })
 }

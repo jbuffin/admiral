@@ -19,11 +19,10 @@ func prURLOn(raw, host string) (url, repo string, ok bool) {
 	return "https://" + host + "/" + repo + "/pull/" + num, repo, true
 }
 
-// orderPending says the ship's order URL is a PR or stack URL the order check has not finished with. A ship whose
-// reviewing option is set was checked by an earlier Admiral. The caller holds mooredMu.
+// The check reruns after a restart because the reviewing option alone does not say every layer answered.
 func (s *Service) orderPending(sess sessionhost.Session) bool {
 	url := sess.Options["url"]
-	if url == "" || sess.Options["reviewing"] != "" || s.runState(sess).order.done {
+	if url == "" || s.runState(sess).order.done {
 		return false
 	}
 	if _, _, _, ok := moor.ParsePR(url); ok {
@@ -33,13 +32,11 @@ func (s *Service) orderPending(sess sessionhost.Session) bool {
 	return ok
 }
 
-// orderTargets is the PRs to judge for the ship's order this poll: the PR itself, or a stack's open layers once GitHub
-// has listed them. It is empty once the check is done, and gives the lookup's failure to the launch's tries.
 func (s *Service) orderTargets(ctx context.Context, run runAsk, gh moor.GitHub, fleet string, route func(host, repo string) string) []string {
 	s.mooredMu.Lock()
 	rs := s.runState(run.sess)
 	url := run.sess.Options["url"]
-	if url == "" || rs.order.done || run.sess.Options["reviewing"] != "" {
+	if url == "" || rs.order.done {
 		s.mooredMu.Unlock()
 		return nil
 	}
@@ -92,8 +89,7 @@ func (o *orderCheck) fail() {
 	}
 }
 
-// judgeOrder carries each answered order PR that is open and not the viewer's as reviewing, and reports whether one
-// joined; the caller holds mooredMu. A failed ask counts toward the launch's tries, and a clean answer ends the check.
+// Only a clean answer of every target ends the check; the caller holds mooredMu.
 func (s *Service) judgeOrder(rs *running, run runAsk, answer, candAnswer map[string]moor.Status, candFailed map[string]bool) bool {
 	if len(run.order) == 0 || rs.order.done {
 		return false

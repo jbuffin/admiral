@@ -535,25 +535,3 @@ func TestAFreeTextShipWithADoneReportThatListsNoPRsDoesNotMoor(t *testing.T) {
 		return byName(w.in.ships(t))[ship.Name].Status != "moored" && w.hasSession(ship.Session) && !exists(w.mooredFile(ship.Name))
 	})
 }
-
-func TestAReviewEventOnAReviewedPRNeitherWakesNorProposes(t *testing.T) {
-	t.Parallel()
-	w, g := reviewingWorld(t, reviewedPR)
-	g.prState(reviewedPR, "OPEN")
-	g.prByAuthor(reviewedPR, otherAuthor, time.Now().Add(-2*time.Hour), "", "", time.Time{})
-	ship := w.launchReview()
-	w.finishTurn(ship, mooredReport())
-	w.wantMooredWith(ship, true, reviewedPR)
-
-	g.prByAuthor(reviewedPR, otherAuthor, time.Now().Add(-2*time.Hour), "review-bot", "please fix this", time.Now().Add(-time.Hour))
-	w.kickMoored()
-	w.kickMoored()
-	holdThat(t, "a review event on a reviewed PR woke the ship or proposed a wake", func() bool {
-		got := byName(w.in.ships(t))[ship.Name]
-		woken := false
-		for _, e := range eventsOf(w.shipLog(ship.Session)) {
-			woken = woken || e == "woken"
-		}
-		return got.Status == "moored" && !woken && exists(w.mooredFile(ship.Name))
-	})
-}

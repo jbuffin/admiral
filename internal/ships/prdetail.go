@@ -46,7 +46,7 @@ func (s *Service) servePRDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, d)
 }
 
-// carriedBy is the fleet, the PRs and the reviewed PRs of a running or moored ship; an exited ship has none.
+// An exited ship carries nothing.
 func (s *Service) carriedBy(session string) (string, []string, []string, bool) {
 	if sess, live := s.find(session); live {
 		if !sess.IsShip() || status(sess, time.Now()) == StatusAnchored || status(sess, time.Now()) == StatusSailingOff {

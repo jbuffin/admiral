@@ -107,7 +107,6 @@ func TestAShipLaunchedOnItsOwnPRDoesNotGainReviewing(t *testing.T) {
 	}
 }
 
-// A guard: free text carried no PR before this unit and must not now.
 func TestAShipLaunchedFromFreeTextCarriesNoPRAndAsksGitHubNothing(t *testing.T) {
 	r := newReviewingRig(t, "")
 	r.others(livePR7)
@@ -254,4 +253,77 @@ func readRecord(t *testing.T, path string) moor.Record {
 		t.Fatal(err)
 	}
 	return rec
+}
+
+func TestAStackLayerGitHubFailedToAnswerIsAskedAgainOnTheNextPoll(t *testing.T) {
+	const l1, l2 = "https://github.com/acme/widgets/pull/21", "https://github.com/acme/widgets/pull/22"
+	r := newReviewingRig(t, reviewStack)
+	r.gh.stacks = map[string][]string{"acme/widgets/12": {l1, l2}}
+	r.others(l1)
+	r.others(l2)
+	r.gh.un = []string{l2}
+	r.poll()
+	_ = r.s.Host.Sync(context.Background()) // the host reads back the reviewing option the poll wrote
+	r.gh.un = nil
+	r.poll()
+
+	var urls []string
+	for _, p := range r.prs(t) {
+		if !p.Reviewing {
+			t.Errorf("layer %+v, want reviewing", p)
+		}
+		urls = append(urls, p.URL)
+	}
+	if !slices.Equal(urls, []string{l1, l2}) {
+		t.Errorf("carried layers = %v, want [%s %s] once the second poll answered both", urls, l1, l2)
+	}
+	if o := r.options(t, "saltpaw"); o["reviewing"] != l1+","+l2 {
+		t.Errorf("reviewing option = %q, want %s,%s", o["reviewing"], l1, l2)
+	}
+}
+
+// A woken ship keeps the role of the record it was moored with, even when GitHub answers nothing for the round.
+func TestAWokenReviewingShipReMoorsReviewingWhenGitHubNeverAnswersTheRound(t *testing.T) {
+	r := newWakeRig(t, 0)
+	err := moor.Write(r.home, moor.Record{Name: "Saltpaw", Session: "saltpaw", Fleet: "work", Harness: "claude", Model: "opus",
+		Skill: moor.Skill{Kind: "skill", Name: "review"}, Checkout: r.checkout, Source: "s", OrderID: "o1", Panel: "p",
+		URL: "https://github.com/acme/widgets/issues/3", Title: "Fix it", PRs: []string{wakePR}, Reviewing: []string{wakePR},
+		Resume: resumeText, MooredAt: time.Now().Add(-30 * time.Minute).UTC().Truncate(time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := "[remote \"origin\"]\n\turl = https://github.com/acme/widgets.git\n"
+	if err := os.WriteFile(r.checkout+"/.git/config", []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g := &openGH{open: map[string]bool{wakePR: true}}
+	g.pollGitHub.set(wakePR, moor.Status{State: "OPEN", Author: author, Viewer: viewer})
+	r.s.GitHub = func(string) moor.GitHub { return g }
+	r.s.PollMoored(context.Background()) // the moored poll the woken round starts from
+	if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {
+		t.Fatalf("Wake = %v", lerr)
+	}
+	r.started(t, 1)
+	r.s.MergeGuard = func(h http.Handler) http.Handler { return h }
+	mux := http.NewServeMux()
+	r.s.Routes(mux)
+	l := &liveRig{nextRig: &nextRig{wakeRig: r, mux: mux}, gh: g, stamp: time.Now()}
+	if o := r.options(t, "saltpaw"); o["reviewing"] != wakePR {
+		t.Errorf("woken session's reviewing option = %q, want %s", o["reviewing"], wakePR)
+	}
+
+	old := moor.RetryWindow
+	moor.RetryWindow = 300 * time.Millisecond
+	t.Cleanup(func() { moor.RetryWindow = old })
+	g.pollGitHub.err = context.DeadlineExceeded
+	g.set(nil, context.DeadlineExceeded)
+	r.exit(t, "0")
+	l.waitMoored(t)
+
+	if rec := readRecord(t, l.mooredFile()); !slices.Equal(rec.Reviewing, []string{wakePR}) {
+		t.Errorf("re-moored record reviewing = %v, want [%s]", rec.Reviewing, wakePR)
+	}
+	if rec := l.post("merge", "{}"); rec.Code != http.StatusConflict {
+		t.Errorf("merge = %d %s, want 409 for a ship that reviews a PR", rec.Code, rec.Body)
+	}
 }
