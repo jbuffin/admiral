@@ -523,7 +523,6 @@ test('Settings shows the Tailscale checks, copies the URL, edits the allowed log
   ts.status();
   await section.getByRole('button', { name: 'Set up', exact: true }).click();
   const turnOn = page.getByRole('group', { name: 'Set up Tailscale mode' }).getByRole('button', { name: 'Turn on Tailscale mode' });
-  await expect(turnOn).not.toHaveAttribute('aria-busy', 'true');
   await turnOn.click();
   await expect.poll(async () => (await remote()).tailscale).toBe(true);
   expect(ts.serveCalls()).toEqual([`serve --bg --https=443 http://127.0.0.1:${port}`]);

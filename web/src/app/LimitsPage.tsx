@@ -372,6 +372,7 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
               <Button
                 label="Switch"
                 variant="danger"
+                disabled={busy}
                 pending={['fleet', fleet.key, 'switch-preset']}
                 onClick={() =>
                   send({ preset: pending }).then((ok) => {

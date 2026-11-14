@@ -255,7 +255,7 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
                   <span class={checkTooLong(c) ? 'note error' : 'note'}>
                     {runes(c)}/{MAX_CHECK_RUNES}
                   </span>
-                  <Button label={`Remove Check ${i + 1}`} disabled={busy} pending={['fleet', fleet.key, 'remove-check', String(i)]} onClick={() => save('checks', checks.filter((_, j) => j !== i), guidance)}>
+                  <Button label={`Remove Check ${i + 1}`} disabled={busy} pending={['fleet', fleet.key, 'remove-check', c]} onClick={() => save('checks', checks.filter((_, j) => j !== i), guidance)}>
                     Remove
                   </Button>
                   {target?.kind === 'check' && target.index === i ? (

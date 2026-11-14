@@ -70,10 +70,10 @@ function HoldFireToggles({ fleet }: { fleet: Fleet }) {
   const [confirming, setConfirming] = useState<'' | 'fleet' | 'all'>('');
   const stop = async (scope: 'fleet' | 'all') => {
     setBusy(true);
-    setConfirming('');
     stopResult.value = '';
     setError(await stopWorkerShips(fleet.key, scope));
     setBusy(false);
+    setConfirming('');
   };
   const flip = async (scope: 'fleet' | 'all') => {
     if (!state) return;
@@ -173,6 +173,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
   const lastEvent = useRef(initial.on);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [dirs, setDirs] = useState<DirsAnswer | null>(null);
   const [skills, setSkills] = useState<SkillsAnswer | null>(null);
@@ -232,9 +233,11 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
   const save = async (e: Event) => {
     e.preventDefault();
     setBusy(true);
+    setSaving(true);
     setError('');
     const r = routine ? await call<Routine>('PUT', api(fleet.key, `/${encodeURIComponent(routine.id)}`), routineBody({ ...form, enabled: routine.enabled })) : await call<Routine>('POST', api(fleet.key), routineBody(form));
     setBusy(false);
+    setSaving(false);
     if (!r.ok) return setError(r.error);
     onSaved(r.data);
   };
@@ -399,7 +402,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
 
       {err?.field === 'form' ? <p class="alert" role="alert">{err.text}</p> : null}
       <Actions class="routine-actions">
-        <Button label="Save" variant="primary" type="submit" busy={busy} />
+        <Button label="Save" variant="primary" type="submit" busy={saving} disabled={busy && !saving} />
         {routine ? (
           <Button
             label={confirming ? 'Delete routine?' : 'Delete'}

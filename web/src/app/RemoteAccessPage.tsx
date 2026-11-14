@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { editLogins, fetchDevices, fetchRemote, runTailscaleSetup, turnOffTailscale, mintPairingCode, renameDevice, revokeAllDevices, revokeDevice, type Device, type PairingCode, type RemoteCheck, type RemoteView, type Result } from './api';
 import { Actions, Button } from './Button';
+import { runPending } from './busy';
 import { qrMatrix } from './qr';
 import { checkLogin, copyOutcome, removingOwnLogin } from './remoteTailscale';
 import { expiryState, formatCode, routeOf, signedOutLine, thisDeviceMark } from './remoteAccess';
@@ -37,7 +38,7 @@ function Pairing({ onResult }: { onResult: (r: Result<unknown>) => void }) {
       setError(r.error);
     }
   };
-  useEffect(() => void mint(), []);
+  useEffect(() => void runPending(['pairing', 'mint'], mint), []);
   useEffect(() => {
     if (!code) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -160,7 +161,6 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
   const [askingOff, setAskingOff] = useState(false);
   // Kept from the Turn off answer until the page reloads, since the off view no longer runs the CLI.
   const [stopServe, setStopServe] = useState('');
-  const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<RemoteCheck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [turnedOn, setTurnedOn] = useState(false);
@@ -169,30 +169,32 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
   const urlEl = useRef<HTMLElement>(null);
 
   const setUp = async () => {
-    setAsking(false);
-    setBusy(true);
     setError(null);
     setTurnedOn(false);
     setServed('');
-    const r = await runTailscaleSetup();
-    setBusy(false);
-    onResult(r);
-    if (!r.ok) return setError(r.error);
-    setRows(r.data.ok ? null : r.data.checks);
-    setServed(r.data.ok ? (r.data.checks.find((c) => c.id === 'serve')?.detail ?? '') : '');
-    setTurnedOn(r.data.ok);
-    await reload();
+    try {
+      const r = await runTailscaleSetup();
+      onResult(r);
+      if (!r.ok) return setError(r.error);
+      setRows(r.data.ok ? null : r.data.checks);
+      setServed(r.data.ok ? (r.data.checks.find((c) => c.id === 'serve')?.detail ?? '') : '');
+      setTurnedOn(r.data.ok);
+      await reload();
+    } finally {
+      setAsking(false);
+    }
   };
   const turnOff = async () => {
-    setAskingOff(false);
-    setBusy(true);
     setError(null);
-    const r = await turnOffTailscale();
-    setBusy(false);
-    onResult(r);
-    if (!r.ok) return setError(r.error);
-    setStopServe(r.data.serveOff);
-    await reload();
+    try {
+      const r = await turnOffTailscale();
+      onResult(r);
+      if (!r.ok) return setError(r.error);
+      setStopServe(r.data.serveOff);
+      await reload();
+    } finally {
+      setAskingOff(false);
+    }
   };
   const copyUrl = async (url: string) => {
     const outcome = await copyOutcome(url, navigator.clipboard);
@@ -231,7 +233,7 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
               </div>
             ) : null}
             {askingOff ? null : (
-              <Button label="Turn off" disabled={busy || !local} onClick={() => (setAskingOff(true), setError(null))} />
+              <Button label="Turn off" disabled={!local} onClick={() => (setAskingOff(true), setError(null))} />
             )}
             {remote ? <p class="note">Turn off runs on the Mac that runs Admiral.</p> : null}
           </>
@@ -246,7 +248,7 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
             {view.listenExplicit ? <ListenNote /> : null}
             {rows ? <CheckRows rows={rows} /> : null}
             {asking ? null : (
-              <Button label="Set up" disabled={busy || !local} onClick={() => (setAsking(true), setRows(null), setError(null))} />
+              <Button label="Set up" disabled={!local} onClick={() => (setAsking(true), setRows(null), setError(null))} />
             )}
             {remote ? <p class="note">Run Set up on the Mac that runs Admiral, or run admiral setup there.</p> : null}
           </>
@@ -290,6 +292,7 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
   if (!view) return null;
 
   const act = async (change: { add: string } | { remove: string }) => {
@@ -307,7 +310,10 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
     e.preventDefault();
     const c = checkLogin(text, view.allowedLogins);
     if (!c.ok) return setError(c.error);
-    if (await act({ add: c.login })) setText('');
+    setAdding(true);
+    const ok = await act({ add: c.login });
+    setAdding(false);
+    if (ok) setText('');
   };
 
   return (
@@ -341,7 +347,7 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
       </ul>
       <form class="set-add" onSubmit={(e) => void add(e)}>
         <input type="text" aria-label="Allowed login" placeholder="name@example.com" value={text} onInput={(e) => setText(e.currentTarget.value)} />
-        <Button label="Add login" type="submit" busy={busy} />
+        <Button label="Add login" type="submit" busy={adding} disabled={busy && !adding} />
       </form>
       {error ? (
         <p class="note error-text" role="alert">
