@@ -1131,8 +1131,8 @@ export async function independentPRsMergeOneAtATime(page: Page, a: Admiral, opts
   await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
   await expect(panel.locator('.pr-detail').getByText('Merged', { exact: true })).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
-  // The merge asks for a poll; give it time to run before reading the ship.
-  await page.waitForTimeout(3000);
+  // The merge asks for a poll; the sub-tab turning merged shows it ran.
+  await expect(tabs.nth(0)).toHaveClass(/\bmerged\b/);
   expect((await listShips(a)).find((s) => s.session === ship.session)?.status, 'the ship stays moored while PR 8 is open').toBe('moored');
 
   await tabs.nth(1).tap();
