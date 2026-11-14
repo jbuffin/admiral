@@ -101,8 +101,9 @@ type Request struct {
 	StartFrom *StartFrom `json:"-"`
 }
 
-// StartFrom names the restricted clone and the branch a promoted ship starts from.
-type StartFrom struct{ Clone, Branch string }
+// StartFrom names the restricted clone and the branch a promoted ship starts from. Tip is the commit the caller read
+// (empty for an uncommitted diff); the launch fails when the work it reads again is not that.
+type StartFrom struct{ Clone, Branch, Tip string }
 
 // eventShip is a normal ship an outside event started, which works in its own clone with the event in a file.
 func (r Request) eventShip() bool {

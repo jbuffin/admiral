@@ -9,7 +9,7 @@ vi.hoisted(() => {
 
 import type { Ship } from './api';
 import { threadOf, type ChatSnapshot, type LaunchCard } from './chat';
-import { fetchLaunchState, fetchLaunchUndone, launchCardView, promoteLaunch, stopShip, undoLaunch } from './launchCard';
+import { fetchLaunchState, launchCardView, promoteLaunch, stopShip, undoLaunch } from './launchCard';
 import { shipPath } from './router';
 
 const base: LaunchCard = {
@@ -153,11 +153,11 @@ describe('the launch card’s calls', () => {
 
   it('a reload reads the undone state from the one record', async () => {
     const calls = record(200, { id: 'trig-1', undone: true });
-    expect(await fetchLaunchUndone('work', 'r1', 'trig-1')).toBe(true);
+    expect(await fetchLaunchState('work', 'r1', 'trig-1')).toMatchObject({ undone: true });
     expect(calls).toEqual([{ url: '/api/v1/fleets/work/routines/r1/runs/trig-1', method: 'GET' }]);
     record(200, { id: 'trig-1' });
-    expect(await fetchLaunchUndone('work', 'r1', 'trig-1')).toBe(false);
+    expect(await fetchLaunchState('work', 'r1', 'trig-1')).toMatchObject({ undone: false });
     record(404, { error: 'no such record' });
-    expect(await fetchLaunchUndone('work', 'r1', 'trig-1')).toBeUndefined();
+    expect(await fetchLaunchState('work', 'r1', 'trig-1')).toBeUndefined();
   });
 });

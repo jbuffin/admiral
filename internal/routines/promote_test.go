@@ -408,12 +408,12 @@ func TestPromoteRefusesAClonesChangedAlternatesBeforeStoppingTheShip(t *testing.
 	}
 }
 
-func TestALaunchRefusalAnswers409WithItsReasonAndRecordsNothing(t *testing.T) {
+func TestALaunchRefusalAnswersItsOwnStatusWithItsReasonAndRecordsNothing(t *testing.T) {
 	p := newPromoRig(t, true)
 	rec, _, _ := p.ready()
 	p.seams.refuse = &launcher.Error{Status: http.StatusTooManyRequests, Msg: "the global cap of 4 ships is reached"}
 	code, body := p.promote(p.routine.ID, rec.ID)
-	wantError(t, code, body, http.StatusConflict)
+	wantError(t, code, body, http.StatusTooManyRequests)
 	if msg, _ := body["error"].(string); !strings.Contains(msg, "global cap") {
 		t.Errorf("error = %q, want the launcher's reason", msg)
 	}
@@ -423,6 +423,35 @@ func TestALaunchRefusalAnswers409WithItsReasonAndRecordsNothing(t *testing.T) {
 	p.seams.refuse = nil
 	if body := p.mustPromote(rec.ID); body["promoted_ship"] != promotedShip {
 		t.Errorf("retry = %v, want it to launch", body)
+	}
+}
+
+func TestALauncherSetupFailureAnswersItsOwn500NotA409(t *testing.T) {
+	p := newPromoRig(t, true)
+	rec, _, _ := p.ready()
+	p.seams.refuse = &launcher.Error{Status: http.StatusInternalServerError, Msg: "could not start the ship from the restricted work"}
+	code, body := p.promote(p.routine.ID, rec.ID)
+	wantError(t, code, body, http.StatusInternalServerError)
+}
+
+func TestPromoteRefusesHarnessConfigAndSymlinksBeforeStoppingTheShip(t *testing.T) {
+	p := newPromoRig(t, true)
+	rec := p.draftFix(restrictedShip)
+	clone := p.clone(restrictedShip)
+	p.commitIn(clone, ".claude/settings.json", "{}\n", "settings")
+	code, body := p.promote(p.routine.ID, rec.ID)
+	p.wantRefused(code, body, http.StatusBadRequest, "touches harness config")
+	if msg, _ := body["error"].(string); strings.Contains(msg, "settings.json") {
+		t.Errorf("error = %q, want the rule and no file names", msg)
+	}
+	promoGit(t, clone, "reset", "-q", "--hard", "HEAD~1")
+	if err := os.Symlink("/etc/hosts", filepath.Join(clone, "link")); err != nil {
+		t.Fatal(err)
+	}
+	code, body = p.promote(p.routine.ID, rec.ID)
+	p.wantRefused(code, body, http.StatusBadRequest, "adds a symlink")
+	if got := p.seams.calls(); len(got) != 0 {
+		t.Errorf("calls = %v, want none", got)
 	}
 }
 

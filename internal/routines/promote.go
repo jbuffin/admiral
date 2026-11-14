@@ -68,7 +68,8 @@ func (s *Service) servePromote(w http.ResponseWriter, r *http.Request) {
 	l := *routineRec.Do.Launch
 	work, err := promote.Read(r.Context(), l.Dir, clone, branch)
 	if err != nil {
-		if errors.Is(err, promote.ErrNothing) || errors.Is(err, promote.ErrAdmiralPaths) || errors.Is(err, promote.ErrAlternates) {
+		if errors.Is(err, promote.ErrNothing) || errors.Is(err, promote.ErrAdmiralPaths) || errors.Is(err, promote.ErrAlternates) ||
+			errors.Is(err, promote.ErrHarness) || errors.Is(err, promote.ErrSymlink) {
 			fail(w, invalidf("%v", err))
 			return
 		}
@@ -86,10 +87,14 @@ func (s *Service) servePromote(w http.ResponseWriter, r *http.Request) {
 	ref, lerr := s.Launch(r.Context(), launcher.Request{
 		Fleet: fleet, Harness: l.Harness, Dir: l.Dir, Model: l.Model, Effort: l.Effort, Skill: launcher.Skill{Kind: "none"},
 		Autopilot: true, By: "promote", Prompt: promotedOrder(rec, routineRec.Name, branch, work),
-		StartFrom: &launcher.StartFrom{Clone: clone, Branch: branch},
+		StartFrom: &launcher.StartFrom{Clone: clone, Branch: branch, Tip: work.Tip},
 	})
 	if lerr != nil {
-		writeError(w, http.StatusConflict, lerr.Msg)
+		status := lerr.Status
+		if status < 400 {
+			status = http.StatusInternalServerError
+		}
+		writeError(w, status, lerr.Msg)
 		return
 	}
 	if err := s.Store.Promote(fleet, rec.ID, ref.Session); err != nil {

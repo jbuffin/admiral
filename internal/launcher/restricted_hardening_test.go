@@ -264,3 +264,22 @@ func TestARelaunchOfARestrictedShipSucceedsInItsKeptCloneWithoutMakingANewOne(t 
 		t.Errorf("dir = %s, want the kept clone %s", out.Options["dir"], kept)
 	}
 }
+
+func TestADraftFixShipCannotWriteProjectSettingsOrServersInItsCheckout(t *testing.T) {
+	p := newPinRig(t, nil)
+	_, fc, argv, _ := p.mustRestricted(t, standing.DraftFix)
+	_, got := settingsOf(t, argv)
+	deny := strs(t, sub(t, got, "sandbox", "filesystem")["denyWrite"])
+	rules := strs(t, sub(t, got, "permissions")["deny"])
+	for _, want := range []string{filepath.Join(fc.madeFor, ".claude"), filepath.Join(fc.madeFor, ".mcp.json")} {
+		if !slices.Contains(deny, want) {
+			t.Errorf("denyWrite = %q, want %s", deny, want)
+		}
+	}
+	for _, want := range []string{"Edit(/" + fc.madeFor + "/.claude/**)", "Write(/" + fc.madeFor + "/.claude/**)",
+		"Edit(/" + fc.madeFor + "/.mcp.json)", "Write(/" + fc.madeFor + "/.mcp.json)"} {
+		if !slices.Contains(rules, want) {
+			t.Errorf("permissions.deny = %q, want %s", rules, want)
+		}
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -118,11 +119,15 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 	}
 	filesystem := map[string]any{"denyRead": []any{"~/", home, "~/.gem/credentials"}, "allowRead": allowRead}
 	var allow []any
+	deny := append([]any(nil), restrictedDeniedTools...)
 	switch level {
 	case standing.DraftFix:
 		allow = []any{"Edit(/" + checkout + "/**)", "Write(/" + checkout + "/**)"}
 		// The sandbox protects .git/hooks and .git/config only; commondir would point git at a config the ship controls.
-		filesystem["denyWrite"] = []any{filepath.Join(checkout, ".git", "commondir"), filepath.Join(checkout, ".git", "config.worktree")}
+		// Project settings and servers are denied too: a relaunch in this clone would load what the ship planted.
+		filesystem["denyWrite"] = []any{filepath.Join(checkout, ".git", "commondir"), filepath.Join(checkout, ".git", "config.worktree"),
+			filepath.Join(checkout, ".claude"), filepath.Join(checkout, ".mcp.json")}
+		deny = append(deny, "Edit(/"+checkout+"/.claude/**)", "Write(/"+checkout+"/.claude/**)", "Edit(/"+checkout+"/.mcp.json)", "Write(/"+checkout+"/.mcp.json)")
 	case standing.Investigate:
 		report := "/" + filepath.Join(checkout, ".admiral", "report.md")
 		allow = []any{"Write(" + report + ")", "Edit(" + report + ")"}
@@ -133,7 +138,7 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 		// Under dontAsk a Bash call with no allow rule is denied, so sandboxed commands are allowed by this setting.
 		"autoAllowBashIfSandboxed": true, "network": network, "filesystem": filesystem}
 	out["disableAllHooks"] = false
-	out["permissions"] = map[string]any{"allow": allow, "deny": restrictedDeniedTools, "blockReadsOutsideWorkingDirectories": true}
+	out["permissions"] = map[string]any{"allow": allow, "deny": deny, "blockReadsOutsideWorkingDirectories": true}
 	return out
 }
 
@@ -204,9 +209,11 @@ func (l *Launcher) shipCheckout(req Request, session string) (restrictedShip, st
 // startFromSetup makes a promoted ship's own clone and puts the restricted ship's work in it, with neutral git.
 func (l *Launcher) startFromSetup(req Request, session string) (restrictedShip, error) {
 	var made restrictedShip
+	// The reason can carry file names from the untrusted work, so the caller gets a fixed message and the log the detail.
 	fail := func(err error) (restrictedShip, error) {
 		made.remove(l.Home, session)
-		return restrictedShip{}, refuse(http.StatusInternalServerError, "starting from %s: %v", req.StartFrom.Branch, err)
+		log.Printf("admiral: starting a ship from %s: %v", req.StartFrom.Branch, err)
+		return restrictedShip{}, refuse(http.StatusInternalServerError, "could not start the ship from the restricted work")
 	}
 	ctx := context.Background()
 	work, err := promote.Read(ctx, req.Dir, req.StartFrom.Clone, req.StartFrom.Branch)
@@ -216,6 +223,9 @@ func (l *Launcher) startFromSetup(req Request, session string) (restrictedShip, 
 	made, _, err = l.shipCheckout(req, session)
 	if err != nil {
 		return made, err
+	}
+	if work.Tip != req.StartFrom.Tip {
+		return fail(errors.New("the work changed since it was read"))
 	}
 	g, err := neutralgit.New(ctx, made.checkout)
 	if err != nil {
@@ -235,6 +245,10 @@ func (l *Launcher) startFromSetup(req Request, session string) (restrictedShip, 
 	}
 	if got, err := g.List(ctx, "rev-parse", "--verify", "FETCH_HEAD^{commit}"); err != nil || strings.TrimSpace(string(got)) != work.Tip {
 		return fail(errors.New("the branch moved while it was fetched"))
+	}
+	// Again in the new clone, where the ship cannot write the refs or objects the read went through.
+	if base, err := promote.Verify(ctx, g, work.Tip); err != nil || base != work.Base {
+		return fail(fmt.Errorf("the fetched work differs from the work read (base %s, want %s): %v", base, work.Base, err))
 	}
 	if _, err := g.List(ctx, "reset", "--hard", "--quiet", work.Tip, "--"); err != nil {
 		return fail(err)
