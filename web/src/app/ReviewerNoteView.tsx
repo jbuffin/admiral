@@ -10,7 +10,7 @@ export function ReviewerNoteView({ r }: { r: ReviewerFields }) {
         <strong>{n.heading}</strong>
       </p>
       {n.check ? <p class="line">Check: {n.check}</p> : null}
-      {n.reason ? <p class="line">Reviewer: {n.reason}</p> : null}
+      {n.reason ? <p class="line">{n.reasonLabel}: {n.reason}</p> : null}
     </div>
   );
 }

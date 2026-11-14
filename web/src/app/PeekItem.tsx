@@ -6,6 +6,7 @@ import { createDecisions, type Decisions, type FindingCard, readCards, type Verd
 import { REMOVED_FOLD } from './itemActions';
 import { MuteRule } from './MuteRule';
 import { ReviewerNoteView } from './ReviewerNoteView';
+import type { ReviewerFields } from './reviewerNote';
 
 // Item files are written by ships and are untrusted: every field below is rendered as text, and the only links are
 // the PR's own https address (prLink).
@@ -87,7 +88,7 @@ export function RoutineProposalBody({ entry, acting }: { entry: Entry; acting: A
   );
 }
 
-interface EventDetail {
+interface EventDetail extends ReviewerFields {
   summary: string;
   title: string;
   sender: string;
@@ -95,10 +96,6 @@ interface EventDetail {
   dedupe_key?: string;
   metadata: boolean;
   mute_by: string[];
-  verdict?: string;
-  check_id?: string;
-  check?: string;
-  reviewer_reason?: string;
 }
 
 /** An Ask first outside event: the Lookout's summary, marked untrusted, with Launch, Dismiss and Mute rule. */

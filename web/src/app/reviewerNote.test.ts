@@ -8,6 +8,7 @@ describe('the reviewer note on an event card or proposal', () => {
       check: 'Never touch the release workflow',
       checkId: '0bbdf84d',
       reason: 'the diff edits release.yml',
+      reasonLabel: 'Reviewer',
     });
     // an event the reviewer allowed or was not asked about has no note
     expect(reviewerNote({})).toBeNull();
@@ -19,12 +20,19 @@ describe('the reviewer note on an event card or proposal', () => {
       heading: 'Asked about Check 0bbdf84d',
       check: 'Never touch the release workflow',
     });
-    expect(reviewerNote({ verdict: 'ask', reviewer_reason: 'reviewer failed: timeout' })).toEqual({
-      heading: 'Asked by the reviewer',
-      check: '',
-      checkId: '',
-      reason: 'reviewer failed: timeout',
-    });
+    expect(reviewerNote({ verdict: 'ask', check_id: '0bbdf84d', check: 'c', reviewer_reason: 'r' })).toMatchObject({ reasonLabel: 'Reviewer' });
+  });
+
+  it('says an ask that never reached the judge is held for approval, with the reason as Why', () => {
+    for (const reason of ['daily spend reached', 'reviewer failed: timeout']) {
+      expect(reviewerNote({ verdict: 'ask', reviewer_reason: reason })).toEqual({
+        heading: 'Held for your approval',
+        check: '',
+        checkId: '',
+        reason,
+        reasonLabel: 'Why',
+      });
+    }
   });
 
   it('hands reviewer and Check text back untouched, for the view to render as text', () => {

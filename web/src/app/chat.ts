@@ -1,4 +1,5 @@
 import type { InboxItem } from './inbox';
+import type { ReviewerFields } from './reviewerNote';
 import type { AnswerBody } from '../questions';
 import { chatSettingsPath, shipPath } from './router';
 
@@ -19,7 +20,7 @@ export interface CommitmentCard {
 }
 
 /** The A0 card for an outside event: the Lookout's summary or the metadata line, never the event's own text. */
-export interface EventCard {
+export interface EventCard extends ReviewerFields {
   routine: string;
   routine_name?: string;
   tier?: string;
@@ -28,14 +29,10 @@ export interface EventCard {
   dedupe_key?: string;
   metadata?: boolean;
   mute_by?: string[];
-  verdict?: string;
-  check_id?: string;
-  check?: string;
-  reviewer_reason?: string;
 }
 
-/** The card an event launch posts for its ship: the event card's fields, the ship, its level and, at A3, its restricted profile. */
-export interface LaunchCard extends EventCard {
+/** The card an event launch posts for its ship: the event card's fields without the reviewer's, the ship, its level and, at A3, its restricted profile. */
+export interface LaunchCard extends Omit<EventCard, keyof ReviewerFields> {
   ship: string;
   level: 'A3' | 'A4' | 'A5';
   restricted?: 'investigate' | 'draft_fix';
