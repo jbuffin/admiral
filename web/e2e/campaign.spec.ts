@@ -60,8 +60,27 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(form.getByLabel('Skill')).toHaveCount(0);
   await expect(form.getByRole('checkbox', { name: /autopilot/i })).toHaveCount(0);
   const sent = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/campaigns/${id}/launch`);
-  await press(form.getByRole('button', { name: 'Launch', exact: true }));
+  // Held, the launch spins in place and keeps its name, Cancel is unavailable, and a second tap and an Enter send nothing.
+  let launchPosts = 0;
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/api/v1/campaigns/*/launch', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    launchPosts++;
+    await held;
+    await route.continue();
+  });
+  const go = form.getByRole('button', { name: 'Launch', exact: true });
+  await press(go);
+  await expect(go).toHaveAttribute('aria-busy', 'true');
+  await expect(form.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
+  await go.click({ force: true });
+  // A select takes no implicit submit, so Enter in the form is what requestSubmit does.
+  await form.locator('form').evaluate((f: HTMLFormElement) => f.requestSubmit());
+  expect(launchPosts).toBe(1);
+  release();
   const body = (await sent).postDataJSON() as Record<string, unknown>;
+  expect(launchPosts).toBe(1);
   expect(body).toMatchObject({ child_url: issueUrl(21), harness: 'claude', dir: join(admiral.home, 'widgets') });
   for (const f of ['skill', 'text', 'autopilot', 'resources']) expect(body).not.toHaveProperty(f);
   await expect(form).toBeHidden();
