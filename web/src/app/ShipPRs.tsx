@@ -5,7 +5,7 @@ import { MergeControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet } from './Sheet';
-import { chooseStackDetail, defaultPR, feedbackBarText, headerChips, orderPRs, prDot, prNumber, showAnswerAll, stackBarText, stackedPRs } from './prTab';
+import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, orderPRs, prDot, prNumber, showAnswerAll, stackBarText, stackedPRs } from './prTab';
 import { staleNote } from './moored';
 import { PRSections } from './PRDetailSections';
 
@@ -206,10 +206,7 @@ export function PRTab({ ship }: { ship: Ship }) {
   const stack = chosen?.stack ?? null;
   const prs = orderPRs(carried, stack);
   const moored = ship.status === 'moored';
-  // A ship that left its mooring is running its wake, so what the confirm locked is free when it moors again.
-  useEffect(() => {
-    if (!moored) setActing(false);
-  }, [moored]);
+  useEffect(() => setActing((a) => actingWhile(a, moored)), [moored]);
   if (prs.length === 0) return <p class="line">No pull request yet. A PR shows here as soon as the ship or its crew opens one.</p>;
   const current = prs.find((p) => p.url === picked) ?? defaultPR(prs)!;
   const bar = stackBarText(stackedPRs(prs, stack).length, stack !== null);

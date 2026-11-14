@@ -80,3 +80,6 @@ export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined
   const live = open(prs);
   return !!stack && !!answerAll && live.length > 1 && live.every((p) => (p.feedback ?? 0) > 0);
 }
+
+/** Whether Merge and Don't follow reviews stay locked: a confirm locks them, and a ship that left its mooring is running its wake, so they are free when it moors again. */
+export const actingWhile = (acting: boolean, moored: boolean): boolean => moored && acting;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR } from './api';
-import { chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs } from './prTab';
+import { actingWhile, chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -270,5 +270,16 @@ describe('showAnswerAll', () => {
   it('hides when only one PR is open, and a merged layer does not need feedback', () => {
     expect(showAnswerAll([fb(7, { state: 'MERGED' }), fb(8)], stack, cmd)).toBe(false);
     expect(showAnswerAll([pr(7, { state: 'MERGED' }), fb(8), fb(9)], { ...stack, ...entries(7, 8, 9) }, cmd)).toBe(true);
+  });
+});
+
+describe('actingWhile', () => {
+  it('keeps a confirm locked while the ship is moored', () => {
+    expect(actingWhile(true, true)).toBe(true);
+    expect(actingWhile(false, true)).toBe(false);
+  });
+
+  it('frees the actions once the ship has left its mooring, for the next time it moors', () => {
+    expect(actingWhile(true, false)).toBe(false);
   });
 });
