@@ -504,7 +504,7 @@ func TestAShipLaunchedOnAnotherAuthorsPRMoorsAndIsListedAsReviewing(t *testing.T
 	if !exists(w.mooredFile(ship.Name)) || !strings.Contains(w.readFile(w.mooredFile(ship.Name)), reviewedPR) {
 		t.Errorf("record of %s = %s, want it to list the reviewed PR", got.Name, w.readFile(w.mooredFile(ship.Name)))
 	}
-	if code, body := send(t, http.MethodPost, w.shipURL(ship.Session, "/merge"), nil); code != http.StatusConflict {
+	if code, body := w.postMergeWith(t, ship, map[string]any{}, w.pageMergeToken(t)); code != http.StatusConflict {
 		t.Errorf("merge on a reviewing ship = %d %s, want 409", code, body)
 	}
 }
@@ -517,7 +517,7 @@ func TestAShipLaunchedOnAStackMoorsCarryingEveryOpenLayerBottomFirst(t *testing.
 		g.prByAuthor(u, otherAuthor, time.Now().Add(-time.Hour), "", "", time.Time{})
 	}
 	g.rest("stack", "GET", "repos/acme/widgets/stacks/5", 200, map[string]any{"pull_requests": []map[string]any{
-		{"html_url": stackLayer1, "state": "open"}, {"html_url": "https://github.com/acme/widgets/pull/22", "state": "closed"}, {"html_url": stackLayer2, "state": "open"}}}, "")
+		{"number": 21, "state": "open"}, {"number": 22, "state": "closed"}, {"number": 23, "state": "open"}}}, "")
 	ship := w.launchReview()
 
 	w.finishTurn(ship, mooredReport())
