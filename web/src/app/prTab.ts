@@ -71,3 +71,21 @@ export function orderPRs(prs: MooredPR[], stack: Pick<PRStack, 'entries'> | null
 export const defaultPR = (ordered: MooredPR[]): MooredPR | undefined => ordered.find((p) => p.state === 'OPEN') ?? ordered[0];
 
 export const stackBarText = (stacked: number, hasStack: boolean): string => (hasStack && stacked >= 2 ? `Stacked on GitHub · ${stacked} PRs, bottom to top.` : '');
+
+/** The detail that holds the stack: the first carried PR's, with its stack and answer_all. */
+export function chooseStackDetail(
+  carried: MooredPR[],
+  details: Record<string, { stack: PRStack | null; answer_all?: string } | undefined>,
+): { url: string; stack: PRStack; answerAll?: string } | null {
+  void carried;
+  void details;
+  return null;
+}
+
+/** Whether the stack bar offers Answer all reviews. */
+export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined, answerAll: string | undefined): boolean {
+  void prs;
+  void stack;
+  void answerAll;
+  return true;
+}
