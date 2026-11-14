@@ -1,4 +1,4 @@
-import type { MooredPR, PRStack } from './api';
+import type { MooredPR, PRStack, Ship } from './api';
 import { prChips, type ChipTone } from './moored';
 
 export type DetailTone = ChipTone | 'rev';
@@ -60,6 +60,12 @@ export function orderPRs(prs: MooredPR[], stack: Pick<PRStack, 'entries'> | null
 
 /** The PR the tab opens on: the first open one in stack order, or the bottom one when none is open. */
 export const defaultPR = (ordered: MooredPR[]): MooredPR | undefined => ordered.find((p) => p.state === 'OPEN') ?? ordered[0];
+
+/** The role mark in a PR's header: `Reviewing · by @author`, `Reviewing` before a poll has the author, '' for an own PR. */
+export const reviewMark = (_pr: Pick<MooredPR, 'reviewing' | 'author'>): string => '';
+
+/** The stack bar of a ship reviewing a GitHub stack, or '' for any other ship. */
+export const reviewStackBar = (_ship: Pick<Ship, 'url' | 'prs'>): string => '';
 
 export const stackBarText = (stacked: number, hasStack: boolean): string => (hasStack && stacked >= 2 ? `Stacked on GitHub · ${stacked} PRs, bottom to top.` : '');
 

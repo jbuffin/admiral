@@ -83,6 +83,9 @@ function prStep(prs: MooredPR[]): string {
   return '';
 }
 
+/** Whether the ship carries a PR it reviews rather than one it opened. */
+export const reviews = (_ship: Pick<Ship, 'prs'>): boolean => false;
+
 /** What a carrying ship does next: `ready` when its whole stack can merge (rendered by ReadyToMerge), else the ship's own note, else what its PR waits on. */
 export function nextStep(ship: Ship): { ready: boolean; text: string } {
   if (ship.stack_ready) return { ready: true, text: '' };

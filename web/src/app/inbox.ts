@@ -43,7 +43,7 @@ export interface EntryFleet {
 
 export interface Entry {
   key: string;
-  type: 'item' | 'stop' | 'merge';
+  type: 'item' | 'stop' | 'merge' | 'rereview';
   session: string;
   id?: string;
   item?: InboxItem;
@@ -63,6 +63,7 @@ export const HOLD_MS = 5000;
 export const itemKey = (session: string, id: string) => `item:${session}/${id}`;
 export const stopKey = (session: string) => `stop:${session}`;
 export const mergeKey = (session: string) => `merge:${session}`;
+export const rereviewKey = (session: string) => `rereview:${session}`;
 export const crewKey = (session: string, crew: string) => `stop:${session}/${crew}`;
 
 // The wire says needs_you/crew while only a crew boat waits, so the ship itself needs you on any other reason.
@@ -80,7 +81,7 @@ const shipFleet = (s: Ship): EntryFleet => ({ key: s.fleet, name: s.fleet_name ?
 const itemFleet = (it: InboxItem): EntryFleet | undefined =>
   it.fleet === undefined ? undefined : { key: it.fleet, name: it.fleet_name ?? '', color: it.fleet_color ?? '' };
 
-const RANK: Record<Entry['type'], number> = { item: 0, stop: 1, merge: 2 };
+const RANK: Record<Entry['type'], number> = { item: 0, stop: 1, merge: 2, rereview: 3 };
 
 const compare = (a: Entry, b: Entry) =>
   a.since - b.since ||

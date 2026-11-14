@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Ship } from './api';
-import { carryingShip, mergeHint, nextStep, NO_RESUME_NOTE, prChips, prLabel, rowButtons, staleNote } from './moored';
+import { carryingShip, mergeHint, nextStep, NO_RESUME_NOTE, prChips, prLabel, reviews, rowButtons, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -232,5 +232,31 @@ describe('nextStep', () => {
     const conflicting = pr({ url: 'https://github.com/acme/api/pull/8', conflicts: true, mergeable: 'CONFLICTING' });
     expect(nextStep(ship({ prs: [ready, failing, conflicting] })).text).toBe('Checks failing');
     expect(nextStep(ship({ prs: [ready, conflicting, failing] })).text).toBe('Has conflicts');
+  });
+});
+
+describe('reviews', () => {
+  it('is true when any PR the ship carries is one it reviews', () => {
+    expect(reviews(ship({ prs: [pr({ reviewing: true })] }))).toBe(true);
+    expect(reviews(ship({ prs: [pr(), pr({ url: 'https://github.com/acme/api/pull/8', reviewing: true })] }))).toBe(true);
+  });
+
+  it('is false for the ship\'s own PRs, no PRs and a ship with no list', () => {
+    expect(reviews(ship({ prs: [pr(), pr({ reviewing: false })] }))).toBe(false);
+    expect(reviews(ship({ prs: [] }))).toBe(false);
+    expect(reviews(ship({ prs: undefined }))).toBe(false);
+  });
+});
+
+describe('nextStep for a reviewing ship', () => {
+  const rev = (over: Partial<MooredPR> = {}) => pr({ reviewing: true, author: 'dana', ...over });
+
+  it('is never ready to merge, though the server serves stack_ready', () => {
+    expect(nextStep(ship({ stack_ready: true, prs: [rev({ ready: true })] })).ready).toBe(false);
+  });
+
+  it('reads the PR summary: waiting on the author, or that the author responded', () => {
+    expect(nextStep(ship({ prs: [rev()] }))).toEqual({ ready: false, text: 'Reviewing 1 PR by @dana · waiting on the author' });
+    expect(nextStep(ship({ stack_ready: true, prs: [rev({ responded: true })] }))).toEqual({ ready: false, text: 'Reviewing 1 PR by @dana · author responded' });
   });
 });

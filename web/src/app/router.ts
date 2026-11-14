@@ -43,6 +43,8 @@ export interface PeekTarget {
   item?: string;
   /** The ship's ready-to-merge entry. */
   merge?: true;
+  /** The ship's Re-review entry. */
+  rereview?: true;
 }
 
 export const peekPath = (t: PeekTarget) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { MooredPR } from './api';
-import { actingWhile, chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs } from './prTab';
+import type { MooredPR, Ship } from './api';
+import { actingWhile, chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs, chooseStack, reviewMark, reviewStackBar } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -281,5 +281,73 @@ describe('actingWhile', () => {
 
   it('frees the actions once the ship has left its mooring, for the next time it moors', () => {
     expect(actingWhile(true, false)).toBe(false);
+  });
+});
+
+describe('reviewMark', () => {
+  it('names the author a reviewed PR was opened by', () => {
+    expect(reviewMark(pr(7, { reviewing: true, author: 'dana' }))).toBe('Reviewing · by @dana');
+  });
+
+  it('says Reviewing alone before a poll has the author', () => {
+    expect(reviewMark(pr(7, { reviewing: true }))).toBe('Reviewing');
+  });
+
+  it('is empty for a PR the fleet opened, whatever its author field says', () => {
+    expect(reviewMark(pr(7))).toBe('');
+    expect(reviewMark(pr(7, { author: 'fake-viewer' }))).toBe('');
+  });
+});
+
+describe('reviewStackBar', () => {
+  const stackUrl = 'https://github.com/acme/api/stack/9';
+  const stackShip = (prs: MooredPR[], url: string | undefined = stackUrl) => ({ url, prs }) as Pick<Ship, 'url' | 'prs'>;
+  const layers = (author: string | undefined) => [pr(6, { reviewing: true, author }), pr(7, { reviewing: true, author }), pr(8, { reviewing: true, author })];
+
+  it('names the stack, its author and how many layers are reviewed, bottom to top', () => {
+    expect(reviewStackBar(stackShip(layers('dana')))).toBe('Reviewing a GitHub stack by @dana · 3 PRs, bottom to top.');
+  });
+
+  it('leaves the author out before a poll has it', () => {
+    expect(reviewStackBar(stackShip(layers(undefined)))).toBe('Reviewing a GitHub stack · 3 PRs, bottom to top.');
+  });
+
+  it('counts the reviewing layers and takes the author of the bottom one, not the fleet\'s own layers', () => {
+    const mixed = [pr(5, { reviewing: true, author: 'dana' }), pr(6, { reviewing: true, author: 'dana' }), pr(7, { author: 'fake-viewer' })];
+    expect(reviewStackBar(stackShip(mixed))).toBe('Reviewing a GitHub stack by @dana · 2 PRs, bottom to top.');
+  });
+
+  it('is empty for a ship reviewing one PR, and for a PR-URL ship that also carries its own PR', () => {
+    expect(reviewStackBar(stackShip(layers('dana').slice(0, 1)))).toBe('');
+    const prUrl = 'https://github.com/acme/api/pull/6';
+    expect(reviewStackBar(stackShip([pr(6, { reviewing: true, author: 'dana' }), pr(9)], prUrl))).toBe('');
+    expect(reviewStackBar(stackShip(layers('dana'), prUrl))).toBe('');
+    expect(reviewStackBar(stackShip(layers('dana'), undefined))).toBe('');
+  });
+
+  it('is empty for a stack the fleet opened', () => {
+    expect(reviewStackBar(stackShip([pr(6), pr(7)]))).toBe('');
+  });
+});
+
+describe('prSummary for a reviewing ship', () => {
+  const rev = (n: number, over: Partial<MooredPR> = {}) => pr(n, { reviewing: true, author: 'dana', ...over });
+
+  it('says the author responded', () => {
+    expect(prSummary([rev(7, { responded: true })])).toBe('Reviewing 1 PR by @dana · author responded');
+    expect(prSummary([rev(7), rev(8, { responded: true })])).toBe('Reviewing 2 PRs by @dana · author responded');
+  });
+
+  it('says it waits on the author, never Ready to merge, even when the server marks the PR ready', () => {
+    expect(prSummary([rev(7)])).toBe('Reviewing 1 PR by @dana · waiting on the author');
+    expect(prSummary([rev(7, { ready: true, review: 'APPROVED', checks: 'SUCCESS' }), rev(8, { ready: true })])).toBe('Reviewing 2 PRs by @dana · waiting on the author');
+  });
+
+  it('leaves the author out before a poll has it', () => {
+    expect(prSummary([pr(7, { reviewing: true })])).toBe('Reviewing 1 PR · waiting on the author');
+  });
+
+  it('counts only open reviewed PRs', () => {
+    expect(prSummary([rev(7, { state: 'MERGED' }), rev(8)])).toBe('Reviewing 1 PR by @dana · waiting on the author');
   });
 });

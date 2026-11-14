@@ -15,10 +15,10 @@ interface KeyEvent {
 const TYPING = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
 /** The hint line under the Inbox; a merge entry takes no answer or remove key. */
-export const keyHint = (type?: 'item' | 'stop' | 'merge'): string => (type === 'merge' ? MERGE_KEY_HINT : KEY_HINT);
+export const keyHint = (type?: 'item' | 'stop' | 'merge' | 'rereview'): string => (type === 'merge' ? MERGE_KEY_HINT : KEY_HINT);
 
 /** What a key press means on the Inbox, or null when the browser or a field owns it. */
-export function keyAction(e: KeyEvent, type?: 'item' | 'stop' | 'merge'): KeyAct | null {
+export function keyAction(e: KeyEvent, type?: 'item' | 'stop' | 'merge' | 'rereview'): KeyAct | null {
   if (e.ctrlKey || e.metaKey || e.altKey) return null;
   const t = e.target as { tagName?: string; isContentEditable?: boolean } | null | undefined;
   if (t && (TYPING.has((t.tagName ?? '').toUpperCase()) || t.isContentEditable)) return null;

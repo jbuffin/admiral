@@ -317,7 +317,7 @@ async function listShips(a: Admiral): Promise<ShipJSON[]> {
 /** The cue makes the harness exit (0 sails off, 3 anchors); `cues` are cue lines the harness runs instead; without either it idles. */
 export async function launchShip(
   a: Admiral,
-  req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; exit?: 0 | 3; cue?: string; cues?: string[]; dir?: string },
+  req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; exit?: 0 | 3; cue?: string; cues?: string[]; dir?: string; skill?: 'commodore' },
 ): Promise<LaunchedShip> {
   const cue = join(a.home, 'cue');
   if (req.cue !== undefined) writeFileSync(cue, req.cue);
@@ -328,7 +328,7 @@ export async function launchShip(
     fleet: req.fleet,
     harness: req.harness,
     dir: req.dir ?? join(a.home, 'proj'),
-    skill: { kind: 'none' },
+    skill: { kind: req.skill ?? 'none' },
     ...(req.order ? { source: 'orders', order_id: req.order } : { text: 'Go.' }),
   };
   // Admiral answers 503 until it has read the tmux server's sessions.
@@ -383,16 +383,88 @@ export const RESUME = '/commodore resume run-7';
 /** Launches a ship whose harness waits, then exits 0 with a report naming the PR (and the `more` PRs, a stack): Admiral moors it. `resume` is the report's resume text; `lines` are transcript lines round 0 holds when it moors. */
 export async function launchMooredShip(a: Admiral, prNumber: number, opts: { resume?: string; lines?: TranscriptLine[]; more?: number[] } = {}): Promise<LaunchedShip> {
   const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', cue: 'wait go\nexit 0\n' });
+  await mooreWith(a, ship, [prNumber, ...(opts.more ?? [])], opts);
+  return ship;
+}
+
+async function mooreWith(a: Admiral, ship: LaunchedShip, prs: number[], opts: { resume?: string; lines?: TranscriptLine[] }) {
   const rec = join(a.home, 'rec', ship.session);
   // The fake writes `recorded` last; `env` can exist while it is still half written.
   await expect.poll(() => existsSync(join(rec, 'recorded'))).toBe(true);
   if (opts.lines) await appendLines(a, ship, opts.lines);
   const report = /^ADMIRAL_REPORT=(.*)$/m.exec(readFileSync(join(rec, 'env'), 'utf8'))?.[1];
   expect(report, 'the harness env names a report path').toBeTruthy();
-  writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'PR opened', prs: [prNumber, ...(opts.more ?? [])].map((n) => ({ url: `${PR_BASE}/${n}`, closes: [] })), resume: opts.resume ?? RESUME }));
+  writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'PR opened', prs: prs.map((n) => ({ url: `${PR_BASE}/${n}`, closes: [] })), resume: opts.resume ?? RESUME }));
   writeFileSync(join(rec, 'go'), '');
   await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status, { timeout: 30_000 }).toBe('moored');
+}
+
+/** A PR someone else opened, and the stack of such PRs, that the Orders source offers as orders carrying the PR's or the stack's URL. */
+export const REVIEWED_PR = 42;
+export const REVIEW_AUTHOR = 'dana';
+export const REVIEW_STACK_URL = 'https://github.com/acme/api/stack/9';
+/** The stack's layers, bottom first: the middle one is closed, so the ship carries the other two. */
+export const REVIEW_STACK_LAYERS = [21, 22, 23];
+
+/**
+ * What a review ship needs before Admiral starts: orders that carry a PR URL (ord-review) and a stack URL (ord-review-stack), and a Commodore
+ * skill in the claude dock's identity, since the server wakes a review only for a ship launched with Commodore. Call after seedFleets with `live`.
+ */
+export function seedReview(a: Admiral) {
+  a.flags('orders').orders({
+    orders: [
+      ...ORDERS,
+      { id: 'ord-review', title: 'Review the limiter', text: `review ${PR_BASE}/${REVIEWED_PR}`, repo: 'https://github.com/acme/api', url: `${PR_BASE}/${REVIEWED_PR}` },
+      { id: 'ord-review-stack', title: 'Review the cache stack', text: `review ${REVIEW_STACK_URL}`, repo: 'https://github.com/acme/api', url: REVIEW_STACK_URL },
+    ],
+  });
+  const commodore = join(a.home, 'identity', 'zulu-claude', 'skills', 'commodore');
+  mkdirSync(commodore, { recursive: true });
+  writeFileSync(join(commodore, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
+}
+
+/** Launches a Commodore ship on a review order, ends its turn with a done report naming `prs` (none for a stack, which the order's URL resolves), and waits for it to moor. */
+export async function launchMooredReview(a: Admiral, order: 'ord-review' | 'ord-review-stack', prs: number[]): Promise<LaunchedShip> {
+  const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', order, skill: 'commodore', cue: 'wait go\nexit 0\n' });
+  await mooreWith(a, ship, prs, {});
   return ship;
+}
+
+/** The fake gh's poll answer for a PR the fleet's user (`fake-viewer`) reviewed on commit `reviewed` while its head was `head`, opened by `author`; moving `head` is the author pushing. */
+export function prReviewedBy(a: Admiral, number: number, p: { author?: string; reviewed: string; head: string; viewer?: string }) {
+  const dir = join(a.home, 'fakegh', 'pr_events');
+  mkdirSync(dir, { recursive: true });
+  const url = `${PR_BASE}/${number}`;
+  const event = {
+    author: { __typename: 'User', login: p.author ?? REVIEW_AUTHOR },
+    createdAt: new Date(Date.now() - 3_600_000).toISOString().replace(/\.\d+Z$/, 'Z'),
+    headRefOid: p.head,
+    reviews: {
+      nodes: [
+        {
+          id: 'R1',
+          author: { __typename: 'User', login: p.viewer ?? 'fake-viewer' },
+          state: 'COMMENTED',
+          commit: { oid: p.reviewed },
+          submittedAt: new Date(Date.now() - 1_200_000).toISOString().replace(/\.\d+Z$/, 'Z'),
+          body: 'looks fine',
+          url: `${url}#pullrequestreview-1`,
+          comments: { totalCount: 0 },
+        },
+      ],
+    },
+  };
+  writeFileSync(join(dir, url.replace(/[/:]/g, '_')), JSON.stringify(event) + '\n');
+}
+
+/** What `gh api repos/acme/api/stacks/<n>` answers: the stack's layers, bottom first, each open or closed. */
+export function stackAnswer(a: Admiral, stack: number, layers: { number: number; state: 'open' | 'closed' }[]) {
+  const dir = join(a.home, 'fakegh', 'rest');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'stack.endpoint'), `repos/acme/api/stacks/${stack}`);
+  writeFileSync(join(dir, 'stack.method'), 'GET');
+  writeFileSync(join(dir, 'stack.status'), '200');
+  writeFileSync(join(dir, 'stack.json'), JSON.stringify({ number: stack, open: true, pull_requests: layers }));
 }
 
 /**
@@ -984,7 +1056,7 @@ export async function stackMismatchInThePRTab(page: Page, a: Admiral) {
 }
 
 /** The ship view's one-line PR summary button, which opens the PR tab. */
-export const prSummaryButton = (page: Page) => page.getByRole('main').getByRole('button', { name: /\d+ PRs? · / });
+export const prSummaryButton = (page: Page) => page.getByRole('main').getByRole('button', { name: /(\d+ PRs? · |^Reviewing \d+ PRs? )/ });
 
 /** What the fake gh's poll reads of a PR's author and creation time: a running ship carries a PR its fleet's user opened at or after the ship's launch. */
 export function prAuthored(a: Admiral, number: number, p: { login?: string; at?: Date } = {}) {
@@ -2468,7 +2540,7 @@ async function polledOnTheServer(a: Admiral, ship: LaunchedShip, number: number,
     .toBe(answered ? 'answer' : 'no answer');
 }
 
-const feedbackBar = (page: Page) => viewPanel(page).locator('.feedback-bar');
+const answerFeedbackBar = (page: Page) => viewPanel(page).locator('.feedback-bar');
 
 /**
  * A moored ship whose PR got a waking review shows the feedback bar in the PR tab. Answer review opens a sheet with the exact command,
@@ -2482,7 +2554,7 @@ export async function answerReviewFromThePRTab(page: Page, a: Admiral, opts: { p
   const command = `${RESUME} feedback round 1 on ${PR_BASE}/7`;
 
   const panel = await openPRTab(page, a, ship);
-  const bar = feedbackBar(page);
+  const bar = answerFeedbackBar(page);
   await expect(bar).toHaveText(/^New feedback since the ship's last round: changes requested, 1 new item\./);
   const answer = bar.getByRole('button', { name: 'Answer review', exact: true });
   await expect(answer).toHaveClass(/\bprimary\b/);
@@ -2528,7 +2600,7 @@ export async function noAnswerReviewWithoutNewFeedback(page: Page, a: Admiral) {
 
   const panel = await openPRTab(page, a, ship);
   await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toBeVisible();
-  await expect(feedbackBar(page)).toHaveCount(0);
+  await expect(answerFeedbackBar(page)).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Answer review' })).toHaveCount(0);
 }
 
@@ -2543,7 +2615,7 @@ export async function noAnswerReviewOnARunningShip(page: Page, a: Admiral) {
   await viewTab(page, 'PR').tap();
   await expect(viewPanel(page)).toContainText('#7');
   await expect(viewPanel(page)).toContainText('Changes requested');
-  await expect(feedbackBar(page)).toHaveCount(0);
+  await expect(answerFeedbackBar(page)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Answer review' })).toHaveCount(0);
 }
 
@@ -2632,7 +2704,7 @@ export async function noAnswerAllWhenAPRHasNoFeedback(page: Page, a: Admiral) {
   const panel = await openPRTab(page, a, ship);
   await expect(stackBar(page)).toContainText('Stacked on GitHub · 2 PRs, bottom to top.');
   await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
-  await expect(feedbackBar(page).getByRole('button', { name: 'Answer review', exact: true })).toBeVisible();
+  await expect(answerFeedbackBar(page).getByRole('button', { name: 'Answer review', exact: true })).toBeVisible();
   await expect(panel).toBeVisible();
 }
 
@@ -2641,7 +2713,165 @@ export async function noAnswerAllForUnstackedPRs(page: Page, a: Admiral) {
   const ship = await mooredPair(a, { stacked: false, feedbackOn: [7, 8] });
 
   await openPRTab(page, a, ship);
-  await expect(feedbackBar(page).getByRole('button', { name: 'Answer review', exact: true })).toBeVisible();
+  await expect(answerFeedbackBar(page).getByRole('button', { name: 'Answer review', exact: true })).toBeVisible();
   await expect(stackBar(page)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
+}
+
+const REVIEWED_SHA = 'sha-reviewed';
+const PUSHED_SHA = 'sha-pushed';
+const shipsOnTheServer = async (a: Admiral) => ((await (await fetch(`${a.url}api/v1/ships`)).json()) as { ships: ShipJSON[] }).ships;
+
+/** Waits until the server serves the ship's PRs as reviewing, and as responded when asked, so a red journey is the UI's and not the seeding's. */
+async function reviewingOnTheServer(a: Admiral, ship: LaunchedShip, responded: boolean) {
+  await expect
+    .poll(async () => {
+      await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
+      const got = (await shipsOnTheServer(a)).find((s) => s.session === ship.session) as (ShipJSON & { prs?: { reviewing?: boolean; responded?: boolean }[] }) | undefined;
+      const prs = got?.prs ?? [];
+      return prs.length > 0 && prs.every((p) => p.reviewing === true) && prs.some((p) => p.responded === true) === responded;
+    }, { timeout: 30_000 })
+    .toBe(true);
+}
+
+/** Shows that nothing woke the ship in the time a wake would take. */
+async function staysMoored(a: Admiral, ship: LaunchedShip, what: string) {
+  await new Promise((r) => setTimeout(r, 1500));
+  expect((await shipsOnTheServer(a)).find((s) => s.session === ship.session)?.status, what).toBe('moored');
+}
+
+const feedbackBar = (panel: Locator) => panel.getByText(`@${REVIEW_AUTHOR} responded since your review.`);
+const rereviewSheet = (page: Page) => page.getByRole('dialog', { name: /^Re-review/ });
+
+/** The sheet Re-review opens: what it says, the command Commodore gets, Cancel, and the confirm button, at the touch size. */
+async function expectRereviewSheet(page: Page, command: string, title: 'Re-review' | 'Re-review stack', opts: { phone: boolean }) {
+  const sheet = rereviewSheet(page);
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toHaveAccessibleName(title);
+  await expect(sheet).toContainText(`@${REVIEW_AUTHOR} has responded since your review.`);
+  await expect(sheet).toContainText(command);
+  await expect(sheet.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  const confirm = sheet.getByRole('button', { name: title, exact: true });
+  expect((await confirm.boundingBox())!.height, 'confirm height').toBeGreaterThanOrEqual(44);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+  return { sheet, confirm };
+}
+
+/** After Re-review's confirm the same ship leaves the Moored group and its harness starts with exactly `/commodore <url>`. */
+async function expectWokenWith(page: Page, a: Admiral, ship: LaunchedShip, url: string) {
+  expect(await wokenPrompt(a, ship)).toBe(`/commodore ${url}`);
+  await expect
+    .poll(async () => (await shipsOnTheServer(a)).find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
+    .not.toBe('moored');
+}
+
+/**
+ * A single reviewed PR: the PR tab says Reviewing · by the author and offers neither Merge nor Don't follow reviews; nothing offers Re-review
+ * until the author pushes past the fleet user's review; then the feedback bar, the Inbox entry and, after a tap and a confirm, a ship woken with
+ * `/commodore <url>`.
+ */
+export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { phone: boolean }) {
+  const url = `${PR_BASE}/${REVIEWED_PR}`;
+  seedMergeMethod(a, 'squash');
+  prAnswer(a, REVIEWED_PR, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  prDetail(a, REVIEWED_PR, { title: 'Add the limiter', head: 'feat/limiter', base: 'main', checks: 'SUCCESS', reviews: [{ author: { login: 'carol' }, state: 'APPROVED' }] });
+  prReviewedBy(a, REVIEWED_PR, { reviewed: REVIEWED_SHA, head: REVIEWED_SHA });
+  const ship = await launchMooredReview(a, 'ord-review', [REVIEWED_PR]);
+  await reviewingOnTheServer(a, ship, false);
+
+  const panel = await openPRTab(page, a, ship);
+  await expect(panel).toContainText(`Reviewing · by @${REVIEW_AUTHOR}`);
+  await expect(panel.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: "Don't follow reviews" })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: /^Stack on GitHub/ })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: /^Re-review/ })).toHaveCount(0);
+  await expect(feedbackBar(panel)).toHaveCount(0);
+  await expect(page.getByRole('main')).not.toContainText('Ready to merge');
+  await expect(prSummaryButton(page)).toHaveText(`Reviewing 1 PR by @${REVIEW_AUTHOR} · waiting on the author`);
+
+  // The author pushes after the fleet user's review.
+  prReviewedBy(a, REVIEWED_PR, { reviewed: REVIEWED_SHA, head: PUSHED_SHA });
+  await reviewingOnTheServer(a, ship, true);
+  await page.goto(a.url + 'app/inbox?fleet=zulu');
+  const row = inboxRow(page, ship);
+  await expect(row).toContainText(`@${REVIEW_AUTHOR} responded on #${REVIEWED_PR}`);
+  await expect(row).not.toContainText('ready to merge');
+
+  const tab = await openPRTab(page, a, ship);
+  await expect(feedbackBar(tab)).toBeVisible();
+  await expect(prSummaryButton(page)).toHaveText(`Reviewing 1 PR by @${REVIEW_AUTHOR} · author responded`);
+  const reReview = tab.getByRole('button', { name: 'Re-review', exact: true });
+  expect((await reReview.boundingBox())!.height, 'Re-review height').toBeGreaterThanOrEqual(44);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+
+  // Opening the sheet starts nothing; Cancel closes it.
+  readyToWake(a, ship);
+  await reReview.tap();
+  const first = await expectRereviewSheet(page, `/commodore ${url}`, 'Re-review', opts);
+  await first.sheet.getByRole('button', { name: 'Cancel' }).tap();
+  await expect(rereviewSheet(page)).toHaveCount(0);
+  await staysMoored(a, ship, 'Re-review is a tap and a confirm');
+
+  await reReview.tap();
+  const { confirm } = await expectRereviewSheet(page, `/commodore ${url}`, 'Re-review', opts);
+  await confirm.tap();
+  await expect(rereviewSheet(page)).toHaveCount(0);
+  await expectWokenWith(page, a, ship, url);
+  await expect(reReview).toHaveCount(0);
+}
+
+/**
+ * A reviewed GitHub stack: every open layer is a sub-tab marked Reviewing, nothing says Ready to merge or offers Merge though every layer is ready,
+ * and the stack bar names the author; when the author pushes, the Inbox entry's Peek is the confirmation and one tap wakes the ship with the stack's URL.
+ */
+export async function reviewedStackIsReReviewedFromPeek(page: Page, a: Admiral, opts: { phone: boolean }) {
+  const [bottom, , top] = REVIEW_STACK_LAYERS;
+  const layers = REVIEW_STACK_LAYERS.map((n) => ({ number: n, state: n === 22 ? ('closed' as const) : ('open' as const) }));
+  stackAnswer(a, 9, layers);
+  seedMergeMethod(a, 'squash');
+  for (const n of [bottom, top]) {
+    prAnswer(a, n, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+    prReviewedBy(a, n, { reviewed: `${REVIEWED_SHA}${n}`, head: `${REVIEWED_SHA}${n}` });
+    const stack = [bottom, top].map((m) => ({ number: m, state: 'OPEN', head: `feat/layer-${m}` }));
+    prDetail(a, n, { title: `Layer ${n}`, head: `feat/layer-${n}`, base: n === bottom ? 'main' : `feat/layer-${bottom}`, stack, checks: 'SUCCESS', reviews: [{ author: { login: 'carol' }, state: 'APPROVED' }] });
+  }
+  const ship = await launchMooredReview(a, 'ord-review-stack', []);
+  await reviewingOnTheServer(a, ship, false);
+
+  const panel = await openPRTab(page, a, ship);
+  await expect(panel).toContainText(`Reviewing a GitHub stack by @${REVIEW_AUTHOR} · 2 PRs, bottom to top.`);
+  await expect(panel).not.toContainText('Stacked on GitHub');
+  const tabs = panel.getByRole('tablist').getByRole('tab');
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs.nth(0)).toContainText(`#${bottom}`);
+  await expect(tabs.nth(1)).toContainText(`#${top}`);
+  for (const n of [0, 1]) {
+    await tabs.nth(n).tap();
+    await expect(panel).toContainText(`Reviewing · by @${REVIEW_AUTHOR}`);
+    await expect(panel.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
+  }
+  await expect(page.getByRole('main')).not.toContainText('Ready to merge');
+  await expect(panel.getByRole('button', { name: /^Re-review/ })).toHaveCount(0);
+
+  // The author pushes to the top layer only.
+  prReviewedBy(a, top, { reviewed: `${REVIEWED_SHA}${top}`, head: PUSHED_SHA });
+  await reviewingOnTheServer(a, ship, true);
+  await page.goto(a.url + 'app/inbox?fleet=zulu');
+  await expect(inboxRow(page, ship)).toContainText(`@${REVIEW_AUTHOR} responded on #${top}`);
+  await expect(inboxRow(page, ship)).not.toContainText('ready to merge');
+
+  readyToWake(a, ship);
+  await rowLinkIn(page, ship).tap();
+  const peek = peekOf(page);
+  await expect(peek).toBeVisible();
+  await expect(peek).toContainText(`/commodore ${REVIEW_STACK_URL}`);
+  await expect(peek.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
+  const reReview = peek.getByRole('button', { name: 'Re-review stack', exact: true });
+  expect((await reReview.boundingBox())!.height, 'Re-review stack height').toBeGreaterThanOrEqual(44);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+  await staysMoored(a, ship, 'opening the entry wakes nothing');
+
+  await reReview.tap();
+  await expectWokenWith(page, a, ship, REVIEW_STACK_URL);
+  await expect(inboxRow(page, ship)).toContainText('Re-reviewing');
 }
