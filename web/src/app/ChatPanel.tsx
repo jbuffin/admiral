@@ -122,7 +122,7 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           <QuestionCard key={i.id} item={i} chat={chat} />
         ) : i.kind === 'event' ? (
           <EventCardView key={i.id} item={i} fleet={fleet} />
-        ) : i.kind === 'commitment' ? (
+        ) : i.kind === 'launch' ? null : i.kind === 'commitment' ? (
           <CommitmentCard key={i.id} item={i} fleet={fleet} />
         ) : i.role === 'user' ? (
           <div key={i.id} class="msg user">

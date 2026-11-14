@@ -27,6 +27,8 @@ const (
 	KindCommitment = "commitment"
 	// KindEventCard is an A0 card for an outside event, shown to the engineer and never read by AdmiralBot.
 	KindEventCard = "event_card"
+	// KindLaunchCard is the card an event launch posts for its ship, shown to the engineer and never read by AdmiralBot.
+	KindLaunchCard = "launch_card"
 )
 
 const (

@@ -238,4 +238,49 @@ func TestAReviewRequestFromAnAllowlistedSenderLaunchesARestrictedDraftFixShipInI
 	if rec.env["GIT_CONFIG_GLOBAL"] != "/dev/null" {
 		t.Errorf("GIT_CONFIG_GLOBAL = %q, want /dev/null", rec.env["GIT_CONFIG_GLOBAL"])
 	}
+
+	// the launch posts one launch card for the record, with no event body in it
+	var chatBody string
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		_, chatBody = send(t, http.MethodGet, w.in.LocalURL+"/api/chat/work/session", nil)
+		if strings.Contains(chatBody, "launch_card") || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if n := strings.Count(chatBody, `"launch_card"`); n != 1 {
+		t.Fatalf("the fleet chat holds %d launch cards, want 1: %s", n, chatBody)
+	}
+	if !strings.Contains(chatBody, run.Ship) || !strings.Contains(chatBody, run.ID) {
+		t.Errorf("the launch card does not name the ship %s and record %s: %s", run.Ship, run.ID, chatBody)
+	}
+	if strings.Contains(chatBody, "Please review my lantern fix.") {
+		t.Errorf("the chat holds the event body: %s", chatBody)
+	}
+
+	// Undo stops the ship, removes its clone and marks the record
+	clone := filepath.Join(w.home, "checkouts", run.Ship)
+	if _, err := os.Stat(clone); err != nil {
+		t.Fatalf("no clone to undo at %s: %v", clone, err)
+	}
+	undo := w.in.LocalURL + "/api/fleets/work/routines/" + id + "/runs/" + run.ID + "/undo"
+	if code, body := send(t, http.MethodPost, undo, map[string]any{}); code != http.StatusOK {
+		t.Fatalf("undo = %d %s, want 200", code, body)
+	}
+	if _, err := os.Stat(clone); !os.IsNotExist(err) {
+		t.Errorf("the clone %s is still there after undo (%v)", clone, err)
+	}
+	if got := w.shipsWhere(func(s shipJSON) bool { return s.Session == run.Ship }); len(got) != 0 {
+		t.Errorf("the API still lists %d ships named %s after undo", len(got), run.Ship)
+	}
+	var marked bool
+	for _, r := range w.routineRuns(id) {
+		if r.ID == run.ID {
+			marked = r.Undone
+		}
+	}
+	if !marked {
+		t.Errorf("the record %s is not marked undone: %+v", run.ID, w.routineRuns(id))
+	}
 }

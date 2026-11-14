@@ -246,6 +246,7 @@ func Metadata(ev routines.Event, repo string) string {
 // CardPoster posts an A0 card to a fleet's chat.
 type CardPoster interface {
 	PostEventCard(fleet string, c chat.EventCard) error
+	PostLaunchCard(fleet string, c chat.LaunchCard) error
 }
 
 // ProposalPublisher publishes an A1 event proposal to the Inbox.
