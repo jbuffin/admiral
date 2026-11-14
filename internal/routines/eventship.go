@@ -3,7 +3,6 @@ package routines
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/standing"
@@ -12,23 +11,43 @@ import (
 const noEventText = "(the event carried no text)"
 
 // eventText is what the launched ship reads: the Lookout's text, else the title and one line about the event.
+// The line is kept here, not shared with lookout.Metadata: lookout imports routines, so routines can't import it.
 func eventText(ev Event, en Enrichment, sender string) string {
 	if t := strings.TrimSpace(en.Text); t != "" {
 		return en.Text
 	}
+	repo := RepoOfRef(ev.Ref)
+	if repo == "" {
+		repo = en.Repo
+	}
+	key := GitHubKey(ev.Ref)
+	if key == "" {
+		key = en.DedupeKey
+	}
+	var meta []string
+	add := func(name, v string) {
+		if v = strings.TrimSpace(v); v != "" {
+			meta = append(meta, name+": "+v)
+		}
+	}
+	add("kind", ev.Kind)
+	add("repo", repo)
+	if _, n, ok := strings.Cut(key, "#"); ok {
+		add("number", n)
+	}
+	add("sender", sender)
+	add("link", ev.Ref)
+	line := strings.Join(meta, ", ")
 	title := strings.TrimSpace(ev.Title)
-	if title == "" {
-		return noEventText
+	switch {
+	case title != "" && line != "":
+		return title + "\n\n" + line
+	case title != "":
+		return title
+	case line != "":
+		return line
 	}
-	meta := []string{"kind: " + ev.Kind}
-	if repo := RepoOfRef(ev.Ref); repo != "" {
-		meta = append(meta, "repo: "+repo)
-	}
-	meta = append(meta, "sender: "+sender)
-	if ev.Ref != "" {
-		meta = append(meta, "link: "+ev.Ref)
-	}
-	return title + "\n\n" + strings.Join(meta, ", ")
+	return noEventText
 }
 
 // proposeInstead turns a launch that can't happen now into the A1 proposal of the decision, with reason.
@@ -54,21 +73,19 @@ func refusalReason(e *launcher.Error) (string, bool) {
 	return "", false
 }
 
-// launchEvent starts the ship of a Launched decision. It returns done when the launch or its failure is recorded; a
-// refusal that a later try could clear returns the decision as a proposal for the caller to record and act on.
-// A launch never waits and never falls back to a less confined one.
-func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, en Enrichment, sender string, rec Trigger) (Decision, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// launchEvent starts the ship of a Launched decision, with s.mu held. It returns done when the launch or its failure is
+// recorded, and started when a ship was launched; a refusal that a later try could clear returns the decision as a
+// proposal for the caller to record and act on. A launch never waits and never falls back to a less confined one.
+func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, en Enrichment, sender string, rec Trigger) (Decision, bool, bool) {
 	l := *r.Do.Launch
 	rec.Action = describe(r)
-	fail := func(reason string) (Decision, bool) {
+	fail := func(reason string) (Decision, bool, bool) {
 		rec.Outcome, rec.Reason = Failed, reason
 		s.recordFor(fleet, r, rec)
-		return d, true
+		return d, false, true
 	}
 	if _, held := s.Ships.Holder(routineKey(r.ID)); held {
-		return proposeInstead(d, ReasonBusy), false
+		return proposeInstead(d, ReasonBusy), false, false
 	}
 	skill, err := s.gates(fleet, l)
 	if err != nil {
@@ -87,7 +104,7 @@ func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, e
 	ref, lerr := s.Ships.Launch(context.Background(), req)
 	if lerr != nil {
 		if reason, ok := refusalReason(lerr); ok {
-			return proposeInstead(d, reason), false
+			return proposeInstead(d, reason), false, false
 		}
 		return fail(lerr.Msg)
 	}
@@ -95,36 +112,5 @@ func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, e
 	if saved, ok := s.recordFor(fleet, r, rec); ok && ref.Session != "" {
 		s.watched[saved.ID] = watch{fleet: fleet, routine: r.ID, session: ref.Session, at: rec.At}
 	}
-	return d, true
-}
-
-// tripEvent is the breaker for an event routine. No tick walks an event routine's ships, so before the count it
-// turns the records of its recent ships that ended failed into failed ones.
-func (s *Scheduler) tripEvent(fleet string, r Routine, now time.Time) Routine {
-	if r.Before != Act {
-		return r
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	recs, err := s.Store.Recent(fleet, r.ID, 0)
-	if err != nil {
-		return r
-	}
-	named := map[string]bool{}
-	held, holding := s.Ships.Holder(routineKey(r.ID))
-	for _, rec := range recs {
-		if rec.Outcome != Launched || rec.Undone || rec.Ship == "" || now.Sub(rec.At) > watchFor {
-			continue
-		}
-		// session names are reused: only the newest launch of a name is the ship EndedFailed speaks of, and a ship that
-		// now holds the key under another name says nothing about this one
-		if named[rec.Ship] || holding && held.Session != rec.Ship {
-			continue
-		}
-		named[rec.Ship] = true
-		if s.Ships.EndedFailed(rec.Ship) {
-			s.Store.MarkFailed(fleet, rec.ID, "the ship ended failed")
-		}
-	}
-	return s.trip(fleet, r, now)
+	return d, true, true
 }

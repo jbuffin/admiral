@@ -273,17 +273,36 @@ func TestAnEventShipsTextIsTheLookoutsTextWhenItGaveOneAndOtherwiseTheEventsTitl
 	}
 }
 
-func TestAnEventWithNoTextAtAllLaunchesWithTheOneLineSoItStillWritesItsEventFile(t *testing.T) {
+func TestAnEventWithNoTitleAndNoLookoutTextStillTellsTheShipWhichItemItIs(t *testing.T) {
 	h, _, _ := eventRun(t, standing.Ceiling{Level: standing.A4}, nil)
 	h.sched.Enrich = nil
 	h.sched.HandleEvent(evFrom("Eng"))
-	if got := h.onlyRequest().EventText; got != "(the event carried no text)" {
-		t.Errorf("EventText = %q, want the one line for an event that carried no text", got)
+	got := h.onlyRequest().EventText
+	for _, want := range []string{"kind: review_requested", "repo: acme/api", "number: 7", "sender: Eng", "link: https://github.com/acme/api/pull/7"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("EventText = %q, want it to hold %q", got, want)
+		}
+	}
+	if strings.Contains(got, "carried no text") {
+		t.Errorf("EventText = %q, want the placeholder only when the title and the line are both empty", got)
+	}
+}
+
+func TestAnEventWithATitleAndNoLookoutTextGetsTheTitleThenTheLine(t *testing.T) {
+	h, _, _ := eventRun(t, standing.Ceiling{Level: standing.A4}, nil)
+	h.sched.Enrich = nil
+	ev := evFrom("Eng")
+	ev.Title = evTitle
+	h.sched.HandleEvent(ev)
+	want := evTitle + "\n\nkind: review_requested, repo: acme/api, number: 7, sender: Eng, link: https://github.com/acme/api/pull/7"
+	if got := h.onlyRequest().EventText; got != want {
+		t.Errorf("EventText = %q, want %q", got, want)
 	}
 }
 
 func TestDecideCarriesTheRestrictedProfileOfAnA3LaunchAndNoneAbove(t *testing.T) {
 	a3 := routines.Decide(decideIn(func(in *routines.DecideInput) {
+		in.Commodore = false
 		in.Limits = a3Limits()
 		in.RestrictedHarness = true
 	}))
@@ -291,6 +310,7 @@ func TestDecideCarriesTheRestrictedProfileOfAnA3LaunchAndNoneAbove(t *testing.T)
 		t.Errorf("A3 decision = level A%d restricted %q, want A3 draft_fix", a3.Level, a3.Restricted)
 	}
 	a4 := routines.Decide(decideIn(func(in *routines.DecideInput) {
+		in.Commodore = false
 		in.Limits.Ceilings.T1 = standing.Ceiling{Level: standing.A4}
 	}))
 	if a4.Level != standing.A4 || a4.Restricted != "" {
@@ -302,8 +322,14 @@ func TestAnEventRoutineThatFailedThreeShipsInARowIsAskFirstAndTheNextEventIsProp
 	h, r, acts := eventRun(t, standing.Ceiling{Level: standing.A4}, nil)
 	for i := 1; i <= 3; i++ {
 		h.sched.HandleEvent(evFrom("Eng"))
-		h.ships.set(func() { h.ships.failed = map[string]bool{"ship-" + strconv.Itoa(i): true} })
+		ship := "ship-" + strconv.Itoa(i)
+		h.ships.set(func() {
+			h.ships.failed = map[string]bool{ship: true}
+			h.ships.holders = map[string]routines.ShipRef{"routine:" + r.ID: {Session: ship, Status: "anchored"}}
+		})
+		h.sched.Changed()
 		h.tickAt(at(i, 9, 0))
+		h.ships.set(func() { h.ships.holders = nil })
 	}
 	h.wantLaunches(3)
 	h.sched.HandleEvent(evFrom("Eng"))
@@ -317,4 +343,78 @@ func TestAnEventRoutineThatFailedThreeShipsInARowIsAskFirstAndTheNextEventIsProp
 	if rec := h.latest(r); rec.Outcome != routines.Proposed || len(acts.got) == 0 {
 		t.Errorf("latest record = %+v with %d decisions at the acts, want the fourth event proposed", rec, len(acts.got))
 	}
+}
+
+func TestAFailedLookoutHoldsAnEventAtAnA4CeilingToOneProposalAndNoLaunch(t *testing.T) {
+	h, r, acts := eventRun(t, standing.Ceiling{Level: standing.A4}, nil)
+	h.sched.Enrich = func(routines.Event) routines.Enrichment { return routines.Enrichment{Failure: "bad_reply"} }
+	h.sched.HandleEvent(evFrom("Eng"))
+	h.wantLaunches(0)
+	rec := h.latest(r)
+	if rec.Outcome != routines.Proposed || !strings.Contains(rec.Reason, "lookout_bad_reply") {
+		t.Errorf("record = %+v, want proposed with lookout_bad_reply", rec)
+	}
+	if len(h.records(r)) != 1 || len(acts.got) != 1 {
+		t.Errorf("%d records and %d decisions at the acts, want one of each", len(h.records(r)), len(acts.got))
+	}
+}
+
+// twoRoutinesOnOneEvent adds a second Act routine on the same source and kind as eventRun's.
+func twoRoutinesOnOneEvent(t *testing.T, mod func(*standing.Limits)) (*harness, routines.Routine, routines.Routine) {
+	t.Helper()
+	h, first, _ := eventRun(t, standing.Ceiling{Level: standing.A4}, nil)
+	l := standing.PresetLimits(standing.Home)
+	l.Ceilings.T1 = standing.Ceiling{Level: standing.A4}
+	l.Rates = standing.Rates{LaunchesPerHour: 100, LaunchesPerSenderPerDay: 100, Concurrent: 100}
+	mod(&l)
+	h.withEvents(l)
+	second := h.onRoutine(routines.Act, func(r *routines.Routine) { r.Name = "second" })
+	return h, first, second
+}
+
+func TestTwoRoutinesOnOneEventShareTheLaunchesPerHourBudget(t *testing.T) {
+	h, first, second := twoRoutinesOnOneEvent(t, func(l *standing.Limits) { l.Rates.LaunchesPerHour = 1 })
+	h.sched.HandleEvent(evFrom("Eng"))
+	h.wantLaunches(1)
+	var launched, proposed int
+	for _, r := range []routines.Routine{first, second} {
+		for _, rec := range h.records(r) {
+			switch rec.Outcome {
+			case routines.Launched:
+				launched++
+			case routines.Proposed:
+				proposed++
+			}
+		}
+	}
+	if launched != 1 || proposed != 1 {
+		t.Errorf("%d launched and %d proposed records, want one of each", launched, proposed)
+	}
+}
+
+func TestTwoRoutinesOnOneEventLaunchOneShipPerDedupeKey(t *testing.T) {
+	h, first, second := twoRoutinesOnOneEvent(t, func(*standing.Limits) {})
+	h.sched.HandleEvent(evFrom("Eng"))
+	h.wantLaunches(1)
+	var reasons []string
+	for _, r := range []routines.Routine{first, second} {
+		for _, rec := range h.records(r) {
+			if rec.Outcome == routines.Proposed {
+				reasons = append(reasons, rec.Reason)
+			}
+		}
+	}
+	if len(reasons) != 1 || !strings.Contains(reasons[0], "dedupe") {
+		t.Errorf("proposal reasons = %v, want one naming the dedupe hold", reasons)
+	}
+}
+
+func TestDecideTopsANonCommodoreActAtA4AndALookoutFailureHoldsAtA1(t *testing.T) {
+	plain := routines.Decide(decideIn(func(in *routines.DecideInput) { in.Commodore = false }))
+	if plain.Level != standing.A4 || plain.Outcome != routines.Launched {
+		t.Errorf("non-Commodore decision = A%d %s, want A4 launched", plain.Level, plain.Outcome)
+	}
+	wantDecision(t, routines.Decide(decideIn(nil)), routines.Launched, standing.A5)
+	wantDecision(t, routines.Decide(decideIn(func(in *routines.DecideInput) { in.LookoutFailure = "timeout" })),
+		routines.Proposed, standing.A1, "lookout_timeout")
 }

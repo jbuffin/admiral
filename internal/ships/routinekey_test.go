@@ -1,6 +1,7 @@
 package ships
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -17,6 +18,9 @@ func TestASecondLaunchOfARoutineWhileItsShipIsListedIsRefusedNamingTheShip(t *te
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, routineKey("r1"))
 	r.wantHeld(t, routineKey("r1"), first)
+	if _, lerr := r.s.Launch(context.Background(), r.keyReq(routineKey("r1"))); lerr == nil || lerr.Cause != launcher.CauseRoutineHeld {
+		t.Errorf("the refusal = %+v, want Cause %q", lerr, launcher.CauseRoutineHeld)
+	}
 }
 
 func TestAShipThatHoldsARoutineKeyIsFoundByIt(t *testing.T) {

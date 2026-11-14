@@ -43,6 +43,8 @@ func lookoutWorldWith(t *testing.T, limits map[string]any) (*world, *fakeGH) {
 	g.write("rest/item.json", `{"title":"Fix the quarry lantern","body":"Please review my lantern fix."}`)
 	env := w.harnessEnv()
 	env["FAKE_JUDGE"] = "lookout"
+	// tokens a restricted ship must lose, so the scrub assertion has something to catch
+	env["GH_TOKEN"], env["GITHUB_TOKEN"] = "fake-token-work-2", "fake-token-work-3"
 	lim := map[string]any{"sender_allowlist": []string{"mallory-the-stranger"}}
 	for k, v := range limits {
 		lim[k] = v

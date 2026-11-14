@@ -434,7 +434,7 @@ func TestTheRestrictedSettingsDenyCronProjectSendsAndRegistryPublishes(t *testin
 			_, _, argv, _ := p.mustRestricted(t, level)
 			_, got := settingsOf(t, argv)
 			deny := strs(t, sub(t, got, "permissions")["deny"])
-			for _, r := range []string{"CronCreate", "SendToProject", "SendToProjectContext", "Bash(npm publish *)", "Bash(cargo publish *)", "Bash(gem push *)"} {
+			for _, r := range []string{"CronCreate", "CronList", "CronDelete", "SendToProject", "SendToProjectContext", "Bash(npm publish *)", "Bash(cargo publish *)", "Bash(gem push *)"} {
 				if !slices.Contains(deny, r) {
 					t.Errorf("permissions.deny = %q lacks %s", deny, r)
 				}

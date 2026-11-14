@@ -131,6 +131,8 @@ type DecideInput struct {
 	DedupeKey         string
 	// Commodore is true when the routine's launch is a Commodore, which a level below A5 turns into a proposal.
 	Commodore bool
+	// LookoutFailure is the kind of a failed Lookout call; a failed Lookout fails closed to a proposal.
+	LookoutFailure string
 }
 
 // Decision is the outcome of one pair. Computed is the level before Top and the budgets; Level is the one acted on.
@@ -196,6 +198,9 @@ func Decide(in DecideInput) Decision {
 		if standing.DedupeHeld(in.LiveDedupeKeys, in.DedupeKey) {
 			d.Reasons = append(d.Reasons, ReasonDedupe)
 		}
+		if in.LookoutFailure != "" {
+			d.Reasons = append(d.Reasons, "lookout_"+in.LookoutFailure)
+		}
 		for _, r := range d.Reasons {
 			if r != ReasonTop && r != ReasonHold {
 				d.Level = min(d.Level, standing.A1)
@@ -205,6 +210,12 @@ func Decide(in DecideInput) Decision {
 			d.Reasons = append(d.Reasons, ReasonCommodore)
 			d.Level = standing.A1
 		}
+		// only a Commodore ship reaches A5
+		if !in.Commodore && d.Level == standing.A5 {
+			d.Level = standing.A4
+		}
+	} else if in.LookoutFailure != "" {
+		d.Reasons = append(d.Reasons, "lookout_"+in.LookoutFailure)
 	}
 	if d.Level == standing.A3 {
 		d.Restricted = act.Restricted
@@ -326,7 +337,7 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	if readErr != nil {
 		log.Printf("routines: event on %s: the trigger log is unreadable (%v), so spend and rates count as reached", ev.Fleet, readErr)
 	}
-	spent, counts := spendAndCounts(recs, sender, now, zone)
+	spent, _ := spendAndCounts(recs, sender, now, zone)
 	spendReason := ""
 	switch {
 	case readErr != nil:
@@ -348,19 +359,6 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		en.Repo = repo
 		en.DedupeKey = GitHubKey(ev.Ref) // a plugin's key is the Lookout's; for the built-in source Admiral reads the ref itself
 	}
-	for _, c := range en.Costs {
-		spent += c.USD
-	}
-	var live []string
-	switch l := s.Live.(type) {
-	case nil:
-	case interface {
-		Load(fleet string, recs []Trigger) (int, []string)
-	}:
-		counts.WorkerShips, live = l.Load(ev.Fleet, recs)
-	default:
-		counts.WorkerShips, live = l.WorkerShips(ev.Fleet), l.DedupeKeys(ev.Fleet)
-	}
 	holdOn, err := s.Store.HoldOn(ev.Fleet)
 	if err != nil {
 		holdOn = true
@@ -373,37 +371,69 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		reviewer = standing.Ask
 	}
 	costs := en.Costs // one record carries them, or the spend would count once per routine
-	for _, r := range matches {
-		r = s.tripEvent(ev.Fleet, r, now)
+	var madeShips int // ships this event has launched, which the Live view may not list yet
+	var madeKeys []string
+	// step decides one pair and launches it under one hold of s.mu: the counts and live keys it reads are the ones its
+	// launch, and a concurrent event's, change. A card or proposal is posted after the hold, as the Inbox takes its own lock.
+	step := func(r Routine) (Routine, Decision, Trigger, bool) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		r = s.trip(ev.Fleet, r, now) // the tick's markEnded turns an event ship that ended failed into a failed record
+		recs, readErr := s.Store.Records(ev.Fleet)
+		if readErr != nil {
+			log.Printf("routines: event on %s: the trigger log is unreadable (%v), so spend and rates count as reached", ev.Fleet, readErr)
+		}
+		spent, counts := spendAndCounts(recs, sender, now, zone)
+		for _, c := range costs {
+			spent += c.USD
+		}
+		var live []string
+		switch l := s.Live.(type) {
+		case nil:
+		case interface {
+			Load(fleet string, recs []Trigger) (int, []string)
+		}:
+			counts.WorkerShips, live = l.Load(ev.Fleet, recs)
+		default:
+			counts.WorkerShips, live = l.WorkerShips(ev.Fleet), l.DedupeKeys(ev.Fleet)
+		}
+		counts.WorkerShips += madeShips
+		live = append(live, madeKeys...)
 		commodore := r.Do.Launch.Skill.Kind == "commodore"
 		d := Decide(DecideInput{
 			Commodore: commodore,
 			Routine:   r, Tier: tier, Limits: f.Limits, Top: EventTop, HoldOn: holdOn, Now: now.In(zone),
 			SpentTodayUSD: spent, SpendUnknown: readErr != nil, Counts: counts, LiveDedupeKeys: live,
 			RestrictedHarness: restricted, Reviewer: reviewer,
-			Sender: sender, Repo: en.Repo, Labels: en.Labels, DedupeKey: en.DedupeKey,
+			Sender: sender, Repo: en.Repo, Labels: en.Labels, DedupeKey: en.DedupeKey, LookoutFailure: en.Failure,
 		})
 		if spendReason != "" && d.Outcome != Skipped && !slices.Contains(d.Reasons, spendReason) {
 			d.Reasons = append(d.Reasons, spendReason) // the Lookout was not asked
-		}
-		if en.Failure != "" && d.Outcome != Skipped {
-			d.Reasons = append(d.Reasons, "lookout_"+en.Failure)
 		}
 		base := Trigger{
 			Routine: r.ID, Outcome: d.Outcome, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: sender, Rule: r.ID,
 			Reason: strings.Join(d.Reasons, ", "), Action: describe(r), DedupeKey: en.DedupeKey, Costs: costs,
 		}
-		// only a Commodore ship reaches A5
-		if d.Level == standing.A5 && !commodore {
-			d.Level = standing.A4
+		if d.Outcome != Launched {
+			return r, d, base, false
 		}
-		if d.Outcome == Launched {
-			var done bool
-			if d, done = s.launchEvent(ev.Fleet, r, ev, d, en, sender, base); done {
-				costs = nil
-				continue
+		d, started, done := s.launchEvent(ev.Fleet, r, ev, d, en, sender, base)
+		if started {
+			madeShips++
+			if en.DedupeKey != "" {
+				madeKeys = append(madeKeys, en.DedupeKey)
 			}
+		}
+		if !done {
 			base.Outcome, base.Reason = d.Outcome, strings.Join(d.Reasons, ", ")
+		}
+		return r, d, base, done
+	}
+	for _, r := range matches {
+		r, d, base, done := step(r)
+		if done {
+			costs = nil
+			continue
 		}
 		rec, ok := s.record(ev.Fleet, base)
 		if ok {

@@ -41,8 +41,8 @@ func (h *harness) proveRestricted(version string, sandbox, network bool) {
 // actRoutine saves the Act event routine while the rig's guard is still proven, since a store that proves less refuses to save one.
 func (h *harness) actRoutine() routines.Routine { return h.onRoutine(routines.Act, nil) }
 
-// decide sends one event from the engineer through r and returns the decision and the record's reason. A3 now launches, so its
-// decision never reaches the acts and is read back from the launched record's restricted profile.
+// decide sends one event from the engineer through r and returns the decision and the record's reason. An A3 decision never
+// reaches the acts, so it is read back from the launched record's restricted profile.
 func (h *harness) decide(r routines.Routine) (routines.Decision, string) {
 	h.t.Helper()
 	acts := &decisionActs{}
