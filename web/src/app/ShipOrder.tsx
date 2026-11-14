@@ -31,3 +31,12 @@ export function ShipOrder({ ship }: { ship: Ship }) {
     </span>
   );
 }
+
+/** The repo a ship launched in: its checkout's folder, with the full path on hover. */
+export const ShipRepo = ({ ship }: { ship: Ship }) =>
+  ship.repo ? (
+    <span class="ship-repo" title={ship.dir}>
+      <span class="visually-hidden">Repo </span>
+      {ship.repo}
+    </span>
+  ) : null;
