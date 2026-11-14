@@ -97,7 +97,12 @@ type Request struct {
 	EventText string `json:"-"`
 	// Template is the routine's launch text, the start of an event ship's prompt.
 	Template string `json:"-"`
+	// StartFrom starts the ship from a restricted ship's work: its own clone, with Branch of Clone as the start.
+	StartFrom *StartFrom `json:"-"`
 }
+
+// StartFrom names the restricted clone and the branch a promoted ship starts from.
+type StartFrom struct{ Clone, Branch string }
 
 // eventShip is a normal ship an outside event started, which works in its own clone with the event in a file.
 func (r Request) eventShip() bool {

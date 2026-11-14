@@ -1,4 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
@@ -938,6 +939,30 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   appendFileSync(join(admiral.home, 'routines', 'zulu', 'triggers.jsonl'), JSON.stringify(launchRecord) + '\n');
   const launchCard = { routine, routine_name: 'Review watch', tier: 'T1', sender: 'alice', link: 'https://github.com/acme/api/pull/7', metadata: false, mute_by: ['sender'], ship: sail.session, level: 'A3', restricted: 'draft_fix' };
   appendFileSync(join(chatDir, 'conversation.jsonl'), JSON.stringify({ id: 'trig-launch', kind: 'launch_card', text: 'Alice asks for a review.', at: now, card: launchCard, logged: now }) + '\n');
+  // Undo and Promote exclude each other, so a second Draft fix card carries the Promote flow. proj has no commit and Promote needs a base, so it gets one first.
+  const proj = join(admiral.home, 'proj');
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' },
+    });
+    expect(r.status, r.stderr).toBe(0);
+    return r.stdout.trim();
+  };
+  writeFileSync(join(proj, 'base.txt'), 'base\n');
+  git(proj, 'add', 'base.txt');
+  git(proj, 'commit', '-q', '-m', 'base');
+  const second = await launchShip(admiral, { fleet: 'zulu', harness: 'claude' });
+  const secondClone = join(admiral.home, 'checkouts', second.session);
+  rmSync(secondClone, { recursive: true, force: true });
+  git(admiral.home, 'clone', '-q', '--shared', proj, secondClone);
+  git(secondClone, 'checkout', '-q', '-b', `admiral/${second.session}`);
+  writeFileSync(join(secondClone, 'fix.txt'), 'the fix\n');
+  git(secondClone, 'add', 'fix.txt');
+  git(secondClone, 'commit', '-q', '-m', 'fix');
+  appendFileSync(join(admiral.home, 'routines', 'zulu', 'triggers.jsonl'), JSON.stringify({ ...launchRecord, id: 'trig-promote', ship: second.session }) + '\n');
+  appendFileSync(join(chatDir, 'conversation.jsonl'), JSON.stringify({ id: 'trig-promote', kind: 'launch_card', text: 'Bob asks for a fix.', at: now, card: { ...launchCard, sender: 'bob', ship: second.session }, logged: now }) + '\n');
   // The chat log keeps its tail in memory once read, so a seeded line shows after a restart.
   await admiral.restart();
   await expect
@@ -949,14 +974,40 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await expect(shipCard.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
   await expect(shipCard.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
   await expect(shipCard.getByRole('button', { name: 'Mute rule' })).toBeVisible();
-  await expect(shipCard.getByRole('button', { name: 'Promote' })).toHaveCount(0);
+  await expect(shipCard.getByRole('button', { name: 'Promote', exact: true })).toHaveCount(1);
   await shipCard.getByRole('button', { name: 'Undo', exact: true }).tap();
   await shipCard.getByRole('button', { name: 'Confirm undo', exact: true }).tap();
   await expect(shipCard).toContainText(/undone/i);
   await expect(shipCard.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
   await expect(shipCard.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
+  await expect(shipCard.getByRole('button', { name: 'Promote', exact: true })).toHaveCount(0);
   await page.reload();
   const again = page.getByRole('main').locator('.chat-card').filter({ hasText: sail.session });
   await expect(again).toContainText(/undone/i);
   await expect(again.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
+
+  // Promote asks first, starts a normal ship from the restricted ship's work, and the card keeps saying so after a reload.
+  const promoteCard = () => page.getByRole('main').locator('.chat-card').filter({ hasText: second.session });
+  const promotedShip = async () => {
+    const runs = (await (await page.request.get(admiral.url + `api/fleets/zulu/routines/${routine}/runs`)).json()) as { runs: { id: string; promoted_ship?: string }[] | null };
+    return (runs.runs ?? []).find((r) => r.id === 'trig-promote')?.promoted_ship ?? '';
+  };
+  expect(await promotedShip()).toBe('');
+  await expect(promoteCard().getByRole('button', { name: 'Promote', exact: true })).toBeVisible();
+  await promoteCard().getByRole('button', { name: 'Promote', exact: true }).tap();
+  await expect(promoteCard()).toContainText('That ship can push and open PRs.');
+  await promoteCard().getByRole('button', { name: 'Confirm promote', exact: true }).tap();
+  await expect.poll(promotedShip, { timeout: 30_000 }).not.toBe('');
+  const heir = await promotedShip();
+  expect(heir).not.toBe(second.session);
+  await expect(promoteCard()).toContainText(`Promoted to ${heir}`);
+  await expect(promoteCard().getByRole('link', { name: heir })).toBeVisible();
+  await expect(promoteCard().getByRole('button', { name: 'Promote', exact: true })).toHaveCount(0);
+  await expect(promoteCard().getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(promoteCard()).toContainText(`Promoted to ${heir}`);
+  await expect(promoteCard().getByRole('button', { name: 'Promote', exact: true })).toHaveCount(0);
+  await expect(promoteCard().getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
+  expect(existsSync(join(admiral.home, 'checkouts', heir, 'fix.txt'))).toBe(true);
+  expect(existsSync(join(admiral.home, 'checkouts', heir, '.admiral', 'untrusted'))).toBe(false);
 });

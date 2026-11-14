@@ -9,7 +9,7 @@ vi.hoisted(() => {
 
 import type { Ship } from './api';
 import { threadOf, type ChatSnapshot, type LaunchCard } from './chat';
-import { fetchLaunchUndone, launchCardView, stopShip, undoLaunch } from './launchCard';
+import { fetchLaunchState, fetchLaunchUndone, launchCardView, promoteLaunch, stopShip, undoLaunch } from './launchCard';
 import { shipPath } from './router';
 
 const base: LaunchCard = {
@@ -42,7 +42,7 @@ describe('the launch card in the thread', () => {
 describe('the launch card view', () => {
   it('offers Stop, Undo and Mute rule for a live ship, with its status and a link to it', () => {
     const v = launchCardView(item(), { ships: [ship({ status: 'needs_you' })], undone: false });
-    expect(v.actions).toEqual({ stop: true, undo: true, mute: true });
+    expect(v.actions).toEqual({ stop: true, undo: true, mute: true, promote: true });
     expect(v.ship).toBe('calm-otter');
     expect(v.shipHref).toBe(shipPath('calm-otter'));
     expect(v.status).toBe('needs_you');
@@ -51,7 +51,7 @@ describe('the launch card view', () => {
 
   it('offers no Stop for a ship the host no longer lists, and keeps Undo and Mute rule', () => {
     const v = launchCardView(item(), { ships: [ship({ session: 'brisk-heron' })], undone: false });
-    expect(v.actions).toEqual({ stop: false, undo: true, mute: true });
+    expect(v.actions).toEqual({ stop: false, undo: true, mute: true, promote: true });
     expect(v.status).toBe('');
   });
 
@@ -84,6 +84,55 @@ describe('the launch card view', () => {
       expect(c.toLowerCase()).toContain('pushed');
       expect(c).toContain('PR');
     }
+  });
+});
+
+describe('Promote on the launch card', () => {
+  const view = (card: Partial<LaunchCard>, o: { undone?: boolean; promotedShip?: string } = {}) =>
+    launchCardView(item(card), { ships: [ship()], undone: false, ...o });
+
+  it('is offered on a restricted Draft fix card and on no other', () => {
+    expect(view({ restricted: 'draft_fix' }).actions.promote).toBe(true);
+    expect(view({ restricted: 'investigate' }).actions.promote).toBe(false);
+    for (const level of ['A4', 'A5'] as const) expect(view({ level, restricted: undefined }).actions.promote).toBe(false);
+  });
+
+  it('asks first, saying the restricted ship stops and the new one can push and open PRs', () => {
+    const c = view({}).promoteConfirm;
+    expect(c).toBe('Stops the restricted ship if it’s running and starts a normal ship from its work. That ship can push and open PRs.');
+  });
+
+  it('after Promote shows where the work went, with a link to that ship, and no Promote or Undo', () => {
+    const v = view({}, { promotedShip: 'swift-heron' });
+    expect(v.notice).toBe('Promoted to swift-heron');
+    expect(v.promotedShip).toBe('swift-heron');
+    expect(v.promotedHref).toBe(shipPath('swift-heron'));
+    expect(v.actions.promote).toBe(false);
+    expect(v.actions.undo).toBe(false);
+  });
+
+  it('is not offered on an undone launch', () => {
+    expect(view({}).actions.promote).toBe(true);
+    expect(view({}, { undone: true }).actions.promote).toBe(false);
+  });
+
+  it('posts to the record’s promote route and passes the new ship or a refusal on', async () => {
+    let calls = record(200, { id: 'trig-1', promoted: true, promoted_ship: 'swift-heron' });
+    const ok = await promoteLaunch('work', 'r1', 'trig-1');
+    expect(calls).toEqual([{ url: '/api/v1/fleets/work/routines/r1/runs/trig-1/promote', method: 'POST' }]);
+    expect(ok).toMatchObject({ ok: true, data: { promoted_ship: 'swift-heron' } });
+    calls = record(409, { error: 'the global cap of 4 ships is reached' });
+    expect(await promoteLaunch('work', 'r1', 'trig-1')).toMatchObject({ ok: false, error: 'the global cap of 4 ships is reached' });
+  });
+
+  it('a reload reads the promoted ship, and the undone state, from the one record', async () => {
+    const calls = record(200, { id: 'trig-1', promoted: true, promoted_ship: 'swift-heron' });
+    expect(await fetchLaunchState('work', 'r1', 'trig-1')).toEqual({ undone: false, promotedShip: 'swift-heron' });
+    expect(calls).toEqual([{ url: '/api/v1/fleets/work/routines/r1/runs/trig-1', method: 'GET' }]);
+    record(200, { id: 'trig-1', undone: true });
+    expect(await fetchLaunchState('work', 'r1', 'trig-1')).toEqual({ undone: true, promotedShip: '' });
+    record(404, { error: 'no such record' });
+    expect(await fetchLaunchState('work', 'r1', 'trig-1')).toBeUndefined();
   });
 });
 

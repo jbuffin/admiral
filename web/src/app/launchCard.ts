@@ -9,15 +9,21 @@ export interface LaunchCardView {
   shipHref: string;
   /** The live ship's status, empty when the host no longer lists it. */
   status: string;
-  actions: { stop: boolean; undo: boolean; mute: boolean };
+  actions: { stop: boolean; undo: boolean; mute: boolean; promote: boolean };
   undone: boolean;
   notice: string;
   undoConfirm: string;
+  promoteConfirm: string;
+  /** The normal ship Promote started, empty until then. */
+  promotedShip: string;
+  promotedHref: string;
 }
+
+export interface LaunchState { undone: boolean; promotedShip: string }
 
 const PROFILE = { investigate: 'Investigate', draft_fix: 'Draft fix' } as const;
 
-export function launchCardView(item: { text: string; card: LaunchCard }, o: { ships: Ship[]; undone: boolean }): LaunchCardView {
+export function launchCardView(item: { text: string; card: LaunchCard }, o: { ships: Ship[]; undone: boolean; promotedShip?: string }): LaunchCardView {
   const c = item.card;
   const live = o.ships.find((s) => s.session === c.ship);
   const profile = c.restricted ? ` · Restricted · ${PROFILE[c.restricted]}` : '';
@@ -28,12 +34,20 @@ export function launchCardView(item: { text: string; card: LaunchCard }, o: { sh
     ship: c.ship,
     shipHref: shipPath(c.ship),
     status: live?.status ?? '',
-    actions: { stop: !!live && !o.undone, undo: !o.undone, mute: (c.mute_by?.length ?? 0) > 0 },
+    actions: { stop: !!live && !o.undone, undo: !o.undone, mute: (c.mute_by?.length ?? 0) > 0, promote: false },
     undone: o.undone,
     notice: o.undone ? 'Launch undone: the ship was stopped and its local work deleted.' : '',
     undoConfirm: `Stop ${c.ship} and delete its local clone and branch?${stays}`,
+    promoteConfirm: '',
+    promotedShip: '',
+    promotedHref: '',
   };
 }
+
+export const promoteLaunch = (_fleet: string, _routine: string, _trigger: string): Promise<{ ok: boolean; error?: string; data?: { promoted_ship?: string } }> => Promise.reject(new Error('promote: not implemented'));
+
+/** The launch record's undone and promoted state, or undefined when it can't be read. */
+export const fetchLaunchState = (_fleet: string, _routine: string, _trigger: string): Promise<LaunchState | undefined> => Promise.reject(new Error('promote: not implemented'));
 
 export const stopShip = (session: string) => call<unknown>('POST', `/ships/${encodeURIComponent(session)}/stop`);
 
