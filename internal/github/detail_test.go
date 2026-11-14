@@ -73,6 +73,7 @@ func detailNode() string {
     {"__typename": "CheckRun", "name": "lint", "conclusion": "SUCCESS", "detailsUrl": "https://ci.example/run/2"},
     {"__typename": "StatusContext", "context": "ci/legacy", "state": "ERROR", "targetUrl": "https://ci.example/legacy"}
   ]}}}}]},
+  "baseRepository": {"defaultBranchRef": {"name": "trunk"}},
   "stack": {"number": 4, "size": 2, "baseRefName": "main", "entries": {"nodes": [
     {"position": 1, "pullRequest": {"number": 7, "url": "https://github.com/acme/widgets/pull/7", "state": "OPEN", "headRefName": "feature/w"}},
     {"position": 2, "pullRequest": {"number": 8, "url": "https://github.com/acme/widgets/pull/8", "state": "OPEN", "headRefName": "feature/x"}}
@@ -94,6 +95,9 @@ func TestPullRequestDetailReadsEveryFieldOfOnePRWithOneQuery(t *testing.T) {
 	}
 	if d.Number != 7 || d.URL != prA || d.Title != "Add widgets" || d.State != "OPEN" || !d.Draft || d.Head != "feature/w" || d.Base != "main" {
 		t.Errorf("number, url, title, state, draft, head, base = %d %q %q %q %v %q %q", d.Number, d.URL, d.Title, d.State, d.Draft, d.Head, d.Base)
+	}
+	if d.DefaultBranch != "trunk" {
+		t.Errorf("default branch = %q, want trunk: the repository's default branch, which is not the PR's base", d.DefaultBranch)
 	}
 	if d.Body != longBody {
 		t.Errorf("body is %d bytes (cut: %v), want the whole %d-byte Markdown as GitHub returns it", len(d.Body), strings.Contains(d.Body, "[cut]"), len(longBody))
@@ -142,6 +146,9 @@ func TestPullRequestDetailReadsEveryFieldOfOnePRWithOneQuery(t *testing.T) {
 		t.Fatalf("%d gh api calls, want exactly one query for the PR", len(calls))
 	}
 	query := strings.Join(calls[0].argv, " ")
+	if !strings.Contains(query, "defaultBranchRef") {
+		t.Errorf("the query does not ask for the repository's default branch")
+	}
 	for _, c := range []struct{ field, limit string }{
 		{"reviews", `last:\s*20`}, {"reviewThreads", `last:\s*20`}, {"comments", `last:\s*10`}, {"comments", `last:\s*20`},
 		{"reviewRequests", `first:\s*20`}, {"contexts", `first:\s*50`}, {"entries", `first:\s*50`},

@@ -122,7 +122,7 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 
 	// The merge outlives a client that hangs up: stopping gh midway would leave its result unknown.
 	if stack {
-		err = gh.MergeStack(context.WithoutCancel(r.Context()), rec.Checkout, repo, method)
+		err = gh.MergeStack(context.WithoutCancel(r.Context()), repo, 0, method)
 	} else {
 		err = gh.MergePR(context.WithoutCancel(r.Context()), mergeURL, method)
 	}

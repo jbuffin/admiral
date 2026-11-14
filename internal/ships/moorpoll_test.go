@@ -133,7 +133,7 @@ func (g *pollGitHub) StackPRs(context.Context, string, string) ([]moor.StackLaye
 	return nil, nil
 }
 
-func (g *pollGitHub) MergeStack(context.Context, string, string, string) error {
+func (g *pollGitHub) MergeStack(context.Context, string, int, string) error {
 	return g.MergePR(context.Background(), "", "")
 }
 

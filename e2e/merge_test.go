@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -225,30 +226,117 @@ func TestMergeASinglePRRunsOneGhMergeWithTheDefaultMethod(t *testing.T) {
 	}
 }
 
-// headOf is the commit the fake gives a PR as its head, and the head the checkout's stack records for its layer.
-func headOf(url string) string { return "sha" + url[strings.LastIndex(url, "/")+1:] }
-
-// prHead makes GitHub read the PR's head as headOf(url).
-func (g *fakeGH) prHead(url string) {
-	g.t.Helper()
-	if err := os.MkdirAll(filepath.Join(g.dir, "pr_events"), 0o755); err != nil {
-		g.t.Fatal(err)
-	}
-	g.write("pr_events/"+strings.NewReplacer("/", "_", ":", "_").Replace(url), `{"headRefOid":"`+headOf(url)+`"}`+"\n")
+// The detail fixture is one compact line in GitHub's shape, in this field order: the fake gh finds a PR's stack by the
+// text `"stack":{"number":N,` and flips `"state":"OPEN"` when it merges.
+type detailFixture struct {
+	Number         int           `json:"number"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	State          string        `json:"state"`
+	IsDraft        bool          `json:"isDraft"`
+	HeadRefName    string        `json:"headRefName"`
+	BaseRefName    string        `json:"baseRefName"`
+	BaseRepository baseRepoFix   `json:"baseRepository"`
+	Stack          *stackFixture `json:"stack"`
 }
 
-// stackView seeds what `gh stack view --json` prints: an open stack of these PRs, bottom first.
-func (g *fakeGH) stackView(prs ...string) {
-	g.t.Helper()
-	branches := []map[string]any{}
-	for i, u := range prs {
-		n, _ := strconv.Atoi(u[strings.LastIndex(u, "/")+1:])
-		branches = append(branches, map[string]any{"name": "layer-" + strconv.Itoa(i+1), "head": headOf(u), "base": "main",
-			"isCurrent": i == len(prs)-1, "isMerged": false, "isQueued": false, "needsRebase": false, "futureBranchKey": []int{1},
-			"pr": map[string]any{"number": n, "url": u, "state": "OPEN", "futurePRKey": "x"}})
+type baseRepoFix struct {
+	DefaultBranchRef struct {
+		Name string `json:"name"`
+	} `json:"defaultBranchRef"`
+}
+
+type stackFixture struct {
+	Number      int    `json:"number"`
+	Size        int    `json:"size"`
+	BaseRefName string `json:"baseRefName"`
+	Entries     struct {
+		Nodes []stackEntryFix `json:"nodes"`
+	} `json:"entries"`
+}
+
+type stackEntryFix struct {
+	Position    int `json:"position"`
+	PullRequest struct {
+		Number      int    `json:"number"`
+		URL         string `json:"url"`
+		State       string `json:"state"`
+		HeadRefName string `json:"headRefName"`
+	} `json:"pullRequest"`
+}
+
+func prNumber(url string) int {
+	n, _ := strconv.Atoi(url[strings.LastIndex(url, "/")+1:])
+	return n
+}
+
+// branchOf is the head branch the fixtures give a PR.
+func branchOf(url string) string { return "branch-" + strconv.Itoa(prNumber(url)) }
+
+// stackIn is GitHub's stack number n holding the PRs bottom to top, entries listed in the order given by position (callers shuffle by listing positions).
+func stackIn(n int, positions map[string]int) *stackFixture {
+	st := &stackFixture{Number: n, Size: len(positions), BaseRefName: "main"}
+	for url, pos := range positions {
+		var e stackEntryFix
+		e.Position = pos
+		e.PullRequest.Number, e.PullRequest.URL, e.PullRequest.State, e.PullRequest.HeadRefName = prNumber(url), url, "OPEN", branchOf(url)
+		st.Entries.Nodes = append(st.Entries.Nodes, e)
 	}
-	b, _ := json.Marshal(map[string]any{"trunk": "main", "currentBranch": "layer-" + strconv.Itoa(len(prs)), "branches": branches, "futureTopKey": map[string]any{"a": 1}})
-	g.write("stack_view.json", string(b)+"\n")
+	sort.Slice(st.Entries.Nodes, func(i, j int) bool {
+		return st.Entries.Nodes[i].PullRequest.Number > st.Entries.Nodes[j].PullRequest.Number
+	})
+	return st
+}
+
+// prDetail seeds what GitHub answers the detail query with for one PR: its branches, and the stack it sits in (nil for none). The default branch is main.
+func (g *fakeGH) prDetail(url, head, base string, stack *stackFixture) {
+	g.t.Helper()
+	d := detailFixture{Number: prNumber(url), Title: "PR " + strconv.Itoa(prNumber(url)), State: "OPEN", HeadRefName: head, BaseRefName: base, Stack: stack}
+	d.BaseRepository.DefaultBranchRef.Name = "main"
+	b, err := json.Marshal(d)
+	if err != nil {
+		g.t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(g.dir, "pr_detail"), 0o755); err != nil {
+		g.t.Fatal(err)
+	}
+	g.write("pr_detail/"+strings.NewReplacer("/", "_", ":", "_").Replace(url), string(b)+"\n")
+}
+
+// githubStack seeds GitHub's stack number n of these PRs, bottom first: every PR's detail holds it, each PR based on the one below.
+func (g *fakeGH) githubStack(n int, prs ...string) {
+	g.t.Helper()
+	pos := map[string]int{}
+	for i, u := range prs {
+		pos[u] = i + 1
+	}
+	for i, u := range prs {
+		base := "main"
+		if i > 0 {
+			base = branchOf(prs[i-1])
+		}
+		g.prDetail(u, branchOf(u), base, stackIn(n, pos))
+	}
+}
+
+// chainedPRs seeds PRs that are chained and in no GitHub stack: each is based on the head branch of the one below.
+func (g *fakeGH) chainedPRs(prs ...string) {
+	g.t.Helper()
+	for i, u := range prs {
+		base := "main"
+		if i > 0 {
+			base = branchOf(prs[i-1])
+		}
+		g.prDetail(u, branchOf(u), base, nil)
+	}
+}
+
+// independentPRs seeds PRs that are each based on the default branch and in no GitHub stack.
+func (g *fakeGH) independentPRs(prs ...string) {
+	g.t.Helper()
+	for _, u := range prs {
+		g.prDetail(u, branchOf(u), "main", nil)
+	}
 }
 
 func (g *fakeGH) stackCalls(verb string) []ghCall {
@@ -261,6 +349,17 @@ func (g *fakeGH) stackCalls(verb string) []ghCall {
 	return out
 }
 
+// anyStackCalls counts every gh stack call, whatever its verb.
+func (g *fakeGH) anyStackCalls() int {
+	n := 0
+	for _, c := range g.calls() {
+		if len(c.Argv) >= 1 && c.Argv[0] == "stack" {
+			n++
+		}
+	}
+	return n
+}
+
 func realPath(t *testing.T, p string) string {
 	t.Helper()
 	r, err := filepath.EvalSymlinks(p)
@@ -270,32 +369,29 @@ func realPath(t *testing.T, p string) string {
 	return r
 }
 
-// readyStack moors a ship on these PRs, all ready, and waits until the server serves the stack ready.
-func readyStack(t *testing.T, method string, prs ...string) (*world, *fakeGH, shipJSON) {
+// seedMoored is the state every moored-ship test starts from: the PRs ready, the details of GitHub's answer seeded by seed, the ship moored on prs.
+func seedMoored(t *testing.T, method string, seed func(g *fakeGH), prs ...string) (*world, *fakeGH, shipJSON) {
 	t.Helper()
 	w, g := mooring(t, "exit 0")
 	g.defaultMergeMethod(method)
 	for _, u := range prs {
 		g.prReady(u)
-		g.prHead(u)
 	}
-	g.stackView(prs...)
+	seed(g)
 	w.start()
 	ship := moorPRs(t, w, prs...)
-	var rec struct {
-		Checkout string `json:"checkout"`
-	}
-	if b, err := os.ReadFile(w.mooredFile(ship.Name)); err != nil {
-		t.Fatalf("moored record of %s: %v", ship.Name, err)
-	} else if err := json.Unmarshal(b, &rec); err != nil || realPath(t, rec.Checkout) != realPath(t, w.checkout("widgets")) {
-		t.Fatalf("seeding: the moored record's checkout = %q (%v), want the widgets checkout", rec.Checkout, err)
-	}
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the stack read ready", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, 20*time.Second, "every PR read ready", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
 		return sh.StackReady && sh.ReadyUpTo == prs[len(prs)-1]
 	})
 	return w, g, ship
+}
+
+// readyStack moors a ship on these PRs, all ready and held by GitHub stack 4, and waits until the server serves them ready.
+func readyStack(t *testing.T, method string, prs ...string) (*world, *fakeGH, shipJSON) {
+	t.Helper()
+	return seedMoored(t, method, func(g *fakeGH) { g.githubStack(4, prs...) }, prs...)
 }
 
 func stillMooredWithNoMerge(w *world, g *fakeGH, ship shipJSON) func() bool {
@@ -305,14 +401,19 @@ func stillMooredWithNoMerge(w *world, g *fakeGH, ship shipJSON) func() bool {
 	}
 }
 
-func TestMergeAReadyStackRunsOneArglessGhStackMergeInTheCheckout(t *testing.T) {
+func TestMergeAGitHubStackRunsOneGhStackMergeByNumberWithNoCheckout(t *testing.T) {
 	t.Parallel()
 	w, g, ship := readyStack(t, "SQUASH", layer1, layer2)
 	holdThat(t, "gh merged before anyone posted a merge", stillMooredWithNoMerge(w, g, ship))
+	// GitHub is the only record of the stack: the ship's directory is not needed, and nothing reads it.
+	checkout := w.checkout("widgets")
+	if err := os.RemoveAll(checkout); err != nil {
+		t.Fatal(err)
+	}
 
 	code, body := w.postMerge(t, ship, map[string]any{})
 	if code != http.StatusAccepted {
-		t.Fatalf("POST merge on a ready stack = %d, want 202: %s", code, body)
+		t.Fatalf("POST merge on a GitHub stack = %d, want 202: %s", code, body)
 	}
 	var got struct {
 		Merged []string `json:"merged"`
@@ -327,37 +428,28 @@ func TestMergeAReadyStackRunsOneArglessGhStackMergeInTheCheckout(t *testing.T) {
 		t.Fatalf("merge calls = %v, want exactly one gh stack merge", calls)
 	}
 	c := calls[0]
-	// No target: gh-stack merges the current branch's whole stack, and a bare number could name another stack.
-	if len(c.Argv) != 5 || c.Argv[0] != "stack" || c.Argv[1] != "merge" || !c.has("--yes") || !c.has("--merge-method") || !c.has("squash") {
-		t.Errorf("argv = %q, want gh stack merge --yes --merge-method squash and nothing else", c.Argv)
+	// GitHub's stack number (4), never a PR number, a branch or anything from the request.
+	if want := []string{"stack", "merge", "4", "--yes", "--merge-method", "squash"}; !slices.Equal(c.Argv, want) {
+		t.Errorf("argv = %q, want %q", c.Argv, want)
 	}
-	if want := realPath(t, w.checkout("widgets")); c.Cwd != want {
-		t.Errorf("gh stack merge ran in %q, want the ship's checkout %q", c.Cwd, want)
+	if c.Cwd == "" || c.Cwd == realPath(t, w.work) || strings.HasPrefix(c.Cwd, realPath(t, w.work)+string(filepath.Separator)) {
+		t.Errorf("gh stack merge ran in %q, want a folder of its own and not a ship's checkout under %q", c.Cwd, w.work)
+	}
+	if exists(c.Cwd) {
+		t.Errorf("the folder gh stack merge ran in, %q, is still there: it should be removed afterwards", c.Cwd)
 	}
 	if c.Env["GH_TOKEN"] != "fake-token-f" {
 		t.Errorf("GH_TOKEN = %q, want the fleet's token", c.Env["GH_TOKEN"])
 	}
-	views := g.stackCalls("view")
-	if len(views) == 0 || !views[0].has("--json") || views[0].Cwd != c.Cwd {
-		t.Errorf("stack views = %v, want gh stack view --json in the same checkout before the merge", views)
+	// The repo and host are pinned, so no git config of any directory can steer gh-stack.
+	if c.Env["GH_HOST"] != "github.com" || c.Env["GH_REPO"] != "github.com/acme/widgets" {
+		t.Errorf("stack merge env GH_HOST=%q GH_REPO=%q, want github.com and github.com/acme/widgets", c.Env["GH_HOST"], c.Env["GH_REPO"])
 	}
-	// The checkout's remotes are the ship's to write: gh-stack is told the fleet's host and the ship's repo.
-	for _, env := range []map[string]string{c.Env, views[0].Env} {
-		if env["GH_HOST"] != "github.com" || env["GH_REPO"] != "github.com/acme/widgets" {
-			t.Errorf("stack call env GH_HOST=%q GH_REPO=%q, want github.com and github.com/acme/widgets", env["GH_HOST"], env["GH_REPO"])
-		}
-		if env["GIT_CONFIG_COUNT"] != "3" || env["GIT_CONFIG_KEY_0"] != "core.fsmonitor" || env["GIT_CONFIG_KEY_1"] != "core.hooksPath" || env["GIT_CONFIG_KEY_2"] != "core.sshCommand" {
-			t.Errorf("stack call env = %v, want the checkout's fsmonitor, hooksPath and sshCommand blanked", env)
-		}
+	if c.Env["GIT_CONFIG_COUNT"] != "3" || c.Env["GIT_CONFIG_KEY_0"] != "core.fsmonitor" || c.Env["GIT_CONFIG_KEY_1"] != "core.hooksPath" || c.Env["GIT_CONFIG_KEY_2"] != "core.sshCommand" {
+		t.Errorf("stack merge env = %v, want fsmonitor, hooksPath and sshCommand blanked", c.Env)
 	}
-	var order []string
-	for _, x := range g.calls() {
-		if len(x.Argv) >= 2 && x.Argv[0] == "stack" {
-			order = append(order, x.Argv[1])
-		}
-	}
-	if !slices.Equal(order, []string{"view", "merge"}) {
-		t.Errorf("gh stack calls in order = %v, want view then merge", order)
+	if n := g.anyStackCalls(); n != 1 {
+		t.Errorf("gh stack calls = %d, want only the merge: the stack is read through GitHub's detail query, not gh stack view", n)
 	}
 
 	w.waitEvent(ship.Session, "merged", 1)
@@ -368,104 +460,11 @@ func TestMergeAReadyStackRunsOneArglessGhStackMergeInTheCheckout(t *testing.T) {
 			}
 		}
 	}
-	w.in.waitShipsList(t, 20*time.Second, "the ship sailed off after the merge", func(l []shipJSON) bool { _, ok := byName(l)[ship.Name]; return !ok })
+	w.in.waitShipsList(t, 20*time.Second, "the ship left its mooring after the merge", func(l []shipJSON) bool { return byName(l)[ship.Name].Status != "moored" })
 }
 
-func TestMergeOfAStackWhoseCheckoutHoldsAnotherStackIsRefusedAndRunsNoMerge(t *testing.T) {
-	t.Parallel()
-	const other = "https://github.com/acme/widgets/pull/99"
-	for what, view := range map[string][]string{
-		"other PRs":       {"https://github.com/acme/widgets/pull/90", other},
-		"an extra layer":  {layer1, layer2, layer3},
-		"a missing layer": {layer1},
-		"another order":   {layer2, layer1},
-	} {
-		t.Run(what, func(t *testing.T) {
-			t.Parallel()
-			w, g, ship := readyStack(t, "MERGE", layer1, layer2)
-			g.stackView(view...)
-			code, body := w.postMerge(t, ship, map[string]any{})
-			wantCode(t, "POST merge on a stack the checkout does not hold", http.StatusConflict, code, body)
-			if len(g.stackCalls("view")) == 0 {
-				t.Errorf("the checkout's stack was never read, so the 409 came from elsewhere: %s", body)
-			}
-			holdThat(t, "gh stack merge ran, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
-		})
-	}
-}
-
-// The checkout's stack record is the ship's to write: its URLs match, but GitHub's numbers and heads must too.
-func TestMergeOfAStackWhoseRecordDisagreesWithGitHubOnANumberOrAHeadIsRefusedAndRunsNoMerge(t *testing.T) {
-	t.Parallel()
-	layer := func(url string, number int, head string) string {
-		return `{"name":"b","head":"` + head + `","pr":{"number":` + strconv.Itoa(number) + `,"url":"` + url + `"}}`
-	}
-	for what, branches := range map[string][]string{
-		"another number": {layer(layer1, 21, headOf(layer1)), layer(layer2, 99, headOf(layer2))},
-		"another head":   {layer(layer1, 21, headOf(layer1)), layer(layer2, 22, "deadbeef")},
-		"no head":        {layer(layer1, 21, headOf(layer1)), layer(layer2, 22, "")},
-		"no number":      {layer(layer1, 0, headOf(layer1)), layer(layer2, 22, headOf(layer2))},
-		"a head of a PR": {layer(layer1, 21, headOf(layer2)), layer(layer2, 22, headOf(layer1))},
-	} {
-		t.Run(what, func(t *testing.T) {
-			t.Parallel()
-			w, g, ship := readyStack(t, "MERGE", layer1, layer2)
-			g.write("stack_view.json", `{"trunk":"main","branches":[`+strings.Join(branches, ",")+`]}`+"\n")
-			code, body := w.postMerge(t, ship, map[string]any{})
-			wantCode(t, "POST merge on a stack whose record disagrees with GitHub", http.StatusConflict, code, body)
-			if len(g.stackCalls("view")) == 0 {
-				t.Errorf("the checkout's stack was never read, so the 409 came from elsewhere: %s", body)
-			}
-			holdThat(t, "gh stack merge ran, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
-		})
-	}
-}
-
-// Another ship in the checkout could switch its branch between the view and the merge.
-func TestMergeOfAStackIsRefusedWhileAnotherShipWorksInTheSameCheckout(t *testing.T) {
-	t.Parallel()
-	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
-	other := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
-	if got := realPath(t, w.checkout("widgets")); other.Dir != "" && realPath(t, other.Dir) != got {
-		t.Fatalf("seeding: the other ship runs in %q, want the moored ship's checkout %q", other.Dir, got)
-	}
-	code, body := w.postMerge(t, ship, map[string]any{})
-	wantCode(t, "POST merge on a stack while another ship works in its checkout", http.StatusConflict, code, body)
-	if !strings.Contains(body, "another ship") {
-		t.Errorf("body = %s, want it to say another ship is working in the checkout", body)
-	}
-	holdThat(t, "a gh stack call ran, or the ship left its mooring", func() bool {
-		sh, ok := w.shipNamed(ship)
-		return ok && sh.Status == "moored" && len(g.mergeCalls()) == 0 && len(g.stackCalls("view")) == 0 && len(g.stackCalls("merge")) == 0
-	})
-}
-
-// A layer without a pr is a layer that is not the ship's, so it is an extra layer.
-func TestMergeOfAStackWhoseCheckoutHasALayerWithNoPRIsRefusedAndRunsNoMerge(t *testing.T) {
-	t.Parallel()
-	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
-	g.write("stack_view.json", `{"trunk":"main","branches":[{"name":"a","pr":{"number":1,"url":"`+layer1+`"}},{"name":"b","pr":{"number":2,"url":"`+layer2+`"}},{"name":"c"}]}`+"\n")
-	code, body := w.postMerge(t, ship, map[string]any{})
-	wantCode(t, "POST merge on a stack with a layer that has no PR", http.StatusConflict, code, body)
-	holdThat(t, "gh stack merge ran, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
-}
-
-func TestMergeOfAStackWhoseViewFailsIsRefusedAndRunsNoMerge(t *testing.T) {
-	t.Parallel()
-	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
-	g.write("stack_view.fail", "gh stack: not a stack\n")
-	code, body := w.postMerge(t, ship, map[string]any{})
-	if code < 400 {
-		t.Fatalf("POST merge when gh stack view fails = %d, want a refusal: %s", code, body)
-	}
-	if len(g.stackCalls("view")) == 0 {
-		t.Errorf("the checkout's stack was never read, so the refusal came from elsewhere: %s", body)
-	}
-	holdThat(t, "gh merged, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
-
-}
-
-func TestMergeOfAStackWhoseCheckoutIsEmptyOrGoneIsRefusedAndRunsNothing(t *testing.T) {
+// An unusable checkout is no longer a reason to refuse: the stack is merged from GitHub's number.
+func TestMergeOfAGitHubStackNeedsNoCheckoutInTheRecord(t *testing.T) {
 	t.Parallel()
 	for what, checkout := range map[string]func(w *world) string{
 		"no checkout":      func(*world) string { return "" },
@@ -476,7 +475,7 @@ func TestMergeOfAStackWhoseCheckoutIsEmptyOrGoneIsRefusedAndRunsNothing(t *testi
 			w, g := mooring(t, "exit 0")
 			g.prReady(layer1)
 			g.prReady(layer2)
-			g.stackView(layer1, layer2)
+			g.githubStack(4, layer1, layer2)
 			b, _ := json.Marshal(map[string]any{"name": "Adrift", "session": "adrift", "fleet": "f", "harness": "claude",
 				"checkout": checkout(w), "prs": []string{layer1, layer2}, "moored_at": time.Now().UTC()})
 			if err := os.MkdirAll(filepath.Dir(w.mooredFile("adrift")), 0o755); err != nil {
@@ -487,19 +486,112 @@ func TestMergeOfAStackWhoseCheckoutIsEmptyOrGoneIsRefusedAndRunsNothing(t *testi
 			}
 			w.start()
 			w.in.waitShipsList(t, 20*time.Second, "the record moored", func(l []shipJSON) bool { return byName(l)["Adrift"].Status == "moored" })
+			w.kickMoored()
+			w.in.waitShipsList(t, 20*time.Second, "the stack read ready", func(l []shipJSON) bool { return byName(l)["Adrift"].StackReady })
 			code, body := w.postMerge(t, shipJSON{Session: "adrift"}, map[string]any{})
-			wantCode(t, "POST merge on a record whose checkout is unusable", http.StatusConflict, code, body)
-			holdThat(t, "gh stack ran for a record with no usable checkout", func() bool {
-				return len(g.mergeCalls()) == 0 && len(g.stackCalls("view")) == 0 && len(g.stackCalls("merge")) == 0
-			})
+			wantCode(t, "POST merge on a stacked record with an unusable checkout", http.StatusAccepted, code, body)
+			if calls := g.mergeCalls(); len(calls) != 1 || !slices.Equal(calls[0].Argv, []string{"stack", "merge", "4", "--yes", "--merge-method", "merge"}) {
+				t.Errorf("merge calls = %v, want one gh stack merge 4", calls)
+			}
 		})
 	}
+}
+
+// What GitHub holds is what decides: a stack that is not exactly the ship's PRs is refused, whatever the ship recorded.
+func TestMergeOfShipsWhoseStackOnGitHubIsNotExactlyTheirPRsIsRefusedAndRunsNoMerge(t *testing.T) {
+	t.Parallel()
+	const other = "https://github.com/acme/widgets/pull/99"
+	for what, seed := range map[string]func(g *fakeGH){
+		"the stack holds one more PR": func(g *fakeGH) {
+			g.githubStack(4, layer1, layer2, other)
+		},
+		"the stack holds only one of the two": func(g *fakeGH) {
+			g.githubStack(4, layer1)
+			g.prDetail(layer2, branchOf(layer2), branchOf(layer1), nil)
+		},
+		"the PRs sit in two different stacks": func(g *fakeGH) {
+			g.githubStack(4, layer1)
+			g.githubStack(5, layer2)
+		},
+		"one PR is in the stack and the other is not": func(g *fakeGH) {
+			g.githubStack(4, layer1, layer2)
+			g.prDetail(layer2, branchOf(layer2), branchOf(layer1), nil)
+		},
+		"part chained and part independent": func(g *fakeGH) {
+			g.chainedPRs(layer1, layer2)
+			g.prDetail(layer3, branchOf(layer3), "main", nil)
+		},
+		"based on a branch that is neither the default nor a sibling's": func(g *fakeGH) {
+			g.independentPRs(layer1, layer2)
+			g.prDetail(layer2, branchOf(layer2), "develop", nil)
+		},
+	} {
+		t.Run(what, func(t *testing.T) {
+			t.Parallel()
+			prs := []string{layer1, layer2}
+			if what == "part chained and part independent" {
+				prs = []string{layer1, layer2, layer3}
+			}
+			w, g, ship := seedMoored(t, "MERGE", seed, prs...)
+			code, body := w.postMerge(t, ship, map[string]any{})
+			wantCode(t, "POST merge on a ship whose PRs are mixed", http.StatusConflict, code, body)
+			holdThat(t, "gh merged, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
+			if n := g.anyStackCalls(); n != 0 {
+				t.Errorf("gh stack calls = %d, want none", n)
+			}
+		})
+	}
+}
+
+func TestMergeOfChainedPRsGitHubDoesNotHoldAsAStackIsRefusedAndRunsNoMerge(t *testing.T) {
+	t.Parallel()
+	w, g, ship := seedMoored(t, "MERGE", func(g *fakeGH) { g.chainedPRs(layer1, layer2) }, layer1, layer2)
+	code, body := w.postMerge(t, ship, map[string]any{})
+	wantCode(t, "POST merge on chained PRs that are not a GitHub stack", http.StatusConflict, code, body)
+	if !strings.Contains(body, "stack it on GitHub") {
+		t.Errorf("body = %s, want it to tell the engineer to stack it on GitHub first", body)
+	}
+	holdThat(t, "gh merged, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
+	if n := g.anyStackCalls(); n != 0 {
+		t.Errorf("gh stack calls = %d, want none", n)
+	}
+}
+
+func TestMergeOfAGitHubStackNamingAPRIsRefused(t *testing.T) {
+	t.Parallel()
+	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
+	code, body := w.postMerge(t, ship, map[string]any{"pr": layer1})
+	wantCode(t, "POST merge naming one PR of a stack", http.StatusConflict, code, body)
+	holdThat(t, "gh merged, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
+	if n := g.anyStackCalls(); n != 0 {
+		t.Errorf("gh stack calls = %d, want none: the refusal comes from GitHub's answer, not from gh", n)
+	}
+}
+
+func TestMergeWhenGitHubDoesNotAnswerTheStackQuestionIsRefusedAndRunsNoMerge(t *testing.T) {
+	t.Parallel()
+	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
+	g.write("pr_detail.fail", "gh: HTTP 502\n")
+	code, body := w.postMerge(t, ship, map[string]any{})
+	wantCode(t, "POST merge when the detail read fails", http.StatusBadGateway, code, body)
+	holdThat(t, "gh merged, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
+}
+
+func TestMergeOfAShipWhosePRHasNoDetailOnGitHubIsRefusedAndRunsNoMerge(t *testing.T) {
+	t.Parallel()
+	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
+	if err := os.Remove(filepath.Join(g.dir, "pr_detail", strings.NewReplacer("/", "_", ":", "_").Replace(layer2))); err != nil {
+		t.Fatal(err)
+	}
+	code, body := w.postMerge(t, ship, map[string]any{})
+	wantCode(t, "POST merge when one PR's detail is not found", http.StatusBadGateway, code, body)
+	holdThat(t, "gh merged, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
 }
 
 func TestMergeOfAStackWithALayerNotReadyIsRefusedAndRunsNoMergeOfAnyKind(t *testing.T) {
 	t.Parallel()
 	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
-	// Layer 2 stops being ready after the last poll, while the checkout's stack still matches.
+	// Layer 2 stops being ready after the last poll, while GitHub's stack still matches.
 	g.prChips(layer2, "APPROVED", "PENDING", "MERGEABLE")
 	code, body := w.postMerge(t, ship, map[string]any{})
 	wantCode(t, "POST merge with layer 2 not ready", http.StatusConflict, code, body)
@@ -519,7 +611,7 @@ func TestMergeOfAStackWithAPROnAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
 	if err := os.WriteFile(w.mooredFile("foreign"), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	g.stackView(layer1, foreign)
+	g.githubStack(4, layer1)
 	w.start()
 	w.in.waitShipsList(t, 20*time.Second, "the foreign record moored", func(l []shipJSON) bool {
 		return byName(l)["Foreign"].Status == "moored"
@@ -527,15 +619,18 @@ func TestMergeOfAStackWithAPROnAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
 	code, body := w.postMerge(t, shipJSON{Session: "foreign"}, map[string]any{})
 	wantCode(t, "POST merge on a stack whose second PR is on another host", http.StatusUnprocessableEntity, code, body)
 	if !strings.Contains(body, "GitHub host") {
-		t.Errorf("body = %s, want the host refusal and not the old stack refusal", body)
+		t.Errorf("body = %s, want the host refusal", body)
 	}
-	holdThat(t, "gh merged a PR on another host", func() bool { return len(g.mergeCalls()) == 0 && len(g.stackCalls("merge")) == 0 })
+	holdThat(t, "gh merged a PR on another host", func() bool { return len(g.mergeCalls()) == 0 && g.anyStackCalls() == 0 })
 }
 
-func TestMergeOfAStackUpToALowerLayerIsRefusedAndTheTopLayerMergesTheWhole(t *testing.T) {
+// upTo means the top of GitHub's stack, and GitHub's order is not the order the ship recorded its PRs in.
+func TestMergeOfAStackUpToAnythingButGitHubsTopLayerIsRefusedAndTheTopLayerMergesTheWhole(t *testing.T) {
 	t.Parallel()
 	w, g, ship := readyStack(t, "REBASE", layer1, layer2, layer3)
-	for _, up := range []string{layer1, layer2} {
+	// GitHub's bottom to top is 21, 23, 22; the ship's record ends with 23.
+	g.githubStack(4, layer1, layer3, layer2)
+	for _, up := range []string{layer1, layer3} {
 		code, b := w.postMerge(t, ship, map[string]any{"upTo": up})
 		wantCode(t, "POST merge up to "+up, http.StatusBadRequest, code, b)
 		if !strings.Contains(b, "whole stack") {
@@ -544,13 +639,13 @@ func TestMergeOfAStackUpToALowerLayerIsRefusedAndTheTopLayerMergesTheWhole(t *te
 	}
 	holdThat(t, "gh merged for an upTo below the top, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
 
-	code, b := w.postMerge(t, ship, map[string]any{"upTo": layer3})
+	code, b := w.postMerge(t, ship, map[string]any{"upTo": layer2})
 	if code != http.StatusAccepted {
-		t.Fatalf("POST merge up to the top layer = %d, want 202: %s", code, b)
+		t.Fatalf("POST merge up to GitHub's top layer = %d, want 202: %s", code, b)
 	}
 	calls := g.mergeCalls()
-	if len(calls) != 1 || calls[0].Argv[0] != "stack" || len(calls[0].Argv) != 5 || !calls[0].has("rebase") {
-		t.Errorf("merge calls = %v, want one argless gh stack merge --yes --merge-method rebase", calls)
+	if len(calls) != 1 || !slices.Equal(calls[0].Argv, []string{"stack", "merge", "4", "--yes", "--merge-method", "rebase"}) {
+		t.Errorf("merge calls = %v, want one gh stack merge 4 --yes --merge-method rebase", calls)
 	}
 	if !strings.Contains(b, layer1) || !strings.Contains(b, layer2) || !strings.Contains(b, layer3) {
 		t.Errorf("answer = %s, want all three PRs", b)
@@ -572,6 +667,84 @@ func TestAFailedGhStackMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T)
 		sh, ok := w.shipNamed(ship)
 		return ok && sh.Status == "moored" && mergedEvents(w, ship) == 0
 	})
+}
+
+// A ship's independent PRs merge one at a time by URL, and the ship stays moored until the last one is merged.
+func TestMergeOfIndependentPRsMergesOneAtATimeAndTheShipStaysMooredUntilTheLast(t *testing.T) {
+	t.Parallel()
+	w, g := mooring(t, "exit 0")
+	g.defaultMergeMethod("SQUASH")
+	g.independentPRs(layer1, layer2)
+	g.prReady(layer1)
+	g.prState(layer2, "OPEN")
+	g.prChips(layer2, "APPROVED", "PENDING", "MERGEABLE") // not ready, and its Merge is not the first one's business
+	w.start()
+	ship := moorPRs(t, w, layer1, layer2)
+	w.kickMoored()
+	w.in.waitShipsList(t, 20*time.Second, "the first PR read ready", func(l []shipJSON) bool {
+		sh := byName(l)[ship.Name]
+		return len(sh.PRs) == 2 && sh.PRs[0].Ready && !sh.PRs[1].Ready
+	})
+
+	code, body := w.postMerge(t, ship, map[string]any{})
+	wantCode(t, "POST merge on independent PRs naming none", http.StatusConflict, code, body)
+	code, body = w.postMerge(t, ship, map[string]any{"pr": "https://github.com/acme/widgets/pull/99"})
+	wantCode(t, "POST merge naming a PR that is not the ship's", http.StatusBadRequest, code, body)
+	code, body = w.postMerge(t, ship, map[string]any{"pr": layer2})
+	wantCode(t, "POST merge naming the PR that is not ready", http.StatusConflict, code, body)
+	holdThat(t, "gh merged for a refused merge, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
+
+	code, body = w.postMerge(t, ship, map[string]any{"pr": layer1})
+	if code != http.StatusAccepted {
+		t.Fatalf("POST merge naming the first PR = %d, want 202: %s", code, body)
+	}
+	var got struct {
+		Merged []string `json:"merged"`
+		Method string   `json:"method"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil || !slices.Equal(got.Merged, []string{layer1}) || got.Method != "squash" {
+		t.Errorf("answer = %s, want only the first PR merged, with squash", body)
+	}
+	calls := g.mergeCalls()
+	if len(calls) != 1 {
+		t.Fatalf("merge calls = %v, want exactly one gh pr merge", calls)
+	}
+	checkPRMergeArgv(t, calls[0], layer1, "squash")
+	if n := g.anyStackCalls(); n != 0 {
+		t.Errorf("gh stack calls = %d, want none for an independent PR", n)
+	}
+	w.waitEvent(ship.Session, "merged", 1)
+	for _, m := range w.outcomeLog() {
+		if m["ship"] == ship.Session && m["event"] == "merged" {
+			if f, _ := json.Marshal(m["prs"]); string(f) != `["`+layer1+`"]` {
+				t.Errorf("merged outcome prs = %s, want only the first PR", f)
+			}
+		}
+	}
+	w.in.waitShipsList(t, 20*time.Second, "the poll saw the first PR merged", func(l []shipJSON) bool {
+		sh := byName(l)[ship.Name]
+		return len(sh.PRs) == 2 && sh.PRs[0].State == "MERGED"
+	})
+	holdThat(t, "the ship left its mooring while one PR is still open", func() bool {
+		sh, ok := w.shipNamed(ship)
+		return ok && sh.Status == "moored" && lastOf(w.outcomeLog(), "unmoored") == nil
+	})
+
+	// The second PR is merged by its own Merge, when it is ready; the merged first PR does not hold it up.
+	g.prChips(layer2, "APPROVED", "SUCCESS", "MERGEABLE")
+	code, body = w.postMerge(t, ship, map[string]any{"pr": layer2})
+	if code != http.StatusAccepted {
+		t.Fatalf("POST merge naming the second PR = %d, want 202: %s", code, body)
+	}
+	calls = g.mergeCalls()
+	if len(calls) != 2 {
+		t.Fatalf("merge calls = %v, want the first and the second", calls)
+	}
+	checkPRMergeArgv(t, calls[1], layer2, "squash")
+	w.in.waitShipsList(t, 20*time.Second, "the ship left its mooring after its last PR merged", func(l []shipJSON) bool { return byName(l)[ship.Name].Status != "moored" })
+	if ev := lastOf(w.waitEvent(ship.Session, "unmoored", 1), "unmoored"); ev["reason"] != "merged" {
+		t.Errorf("unmoored = %v, want reason merged", ev)
+	}
 }
 
 func TestAStackReadsReadyUpToTheHighestLayerWhoseLowerLayersAreReady(t *testing.T) {

@@ -60,8 +60,8 @@ func (c *Client) MergePR(ctx context.Context, url, method string) error {
 
 // MergeStack runs `gh stack merge --yes --merge-method METHOD` in dir with no target, so gh-stack merges the current
 // branch's whole stack; a number would let it pick another stack.
-func (c *Client) MergeStack(ctx context.Context, dir, repo, method string) error {
-	return c.merge(ctx, dir, c.stackEnv(repo), []string{"stack", "merge", "--yes", "--merge-method", method}, method)
+func (c *Client) MergeStack(ctx context.Context, repo string, stackNumber int, method string) error {
+	return errors.New("not implemented")
 }
 
 // stackEnv is what pins gh-stack, which runs in a checkout the ship can write: the repo and host come from here and not

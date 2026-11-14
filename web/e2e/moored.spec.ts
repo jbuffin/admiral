@@ -118,7 +118,7 @@ test('a Merge the server refuses as 403 in the PR tab says Admiral restarted, of
   expect(watch.errors).toEqual([]);
 });
 
-test('a stack whose checkout holds other PRs shows the refusal of the server in the PR tab and merges nothing', async ({ page, admiral }) => {
+test('PRs that GitHub does not hold as one stack show the refusal of the server in the PR tab and merges nothing', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   addGitHubSource(admiral);
   await admiral.start({ env: mooringEnv(admiral) });

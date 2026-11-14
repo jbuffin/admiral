@@ -31,7 +31,7 @@ func (f *fakeGitHub) MergePR(context.Context, string, string) error { return nil
 
 func (f *fakeGitHub) StackPRs(context.Context, string, string) ([]StackLayer, error) { return nil, nil }
 
-func (f *fakeGitHub) MergeStack(context.Context, string, string, string) error { return nil }
+func (f *fakeGitHub) MergeStack(context.Context, string, int, string) error { return nil }
 
 func (f *fakeGitHub) OpenPRs(_ context.Context, urls []string) (map[string]bool, error) {
 	f.mu.Lock()

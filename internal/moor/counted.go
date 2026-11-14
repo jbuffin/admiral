@@ -32,8 +32,8 @@ type GitHub interface {
 	// StackPRs is each layer of the stack checked out in dir, bottom first, as the checkout's own record has it; gh runs
 	// against repo (OWNER/NAME) on this client's host, whatever the checkout's remotes say.
 	StackPRs(ctx context.Context, dir, repo string) ([]StackLayer, error)
-	// MergeStack merges the whole stack checked out in dir with the method, naming no target. Its errors are MergePR's.
-	MergeStack(ctx context.Context, dir, repo, method string) error
+	// MergeStack merges GitHub's stack number stackNumber in repo (OWNER/NAME) with the method, from no checkout. Its errors are MergePR's.
+	MergeStack(ctx context.Context, repo string, stackNumber int, method string) error
 }
 
 // StackLayer is one layer of a local stack; a field the record lacks is zero.

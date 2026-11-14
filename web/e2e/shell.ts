@@ -652,17 +652,12 @@ export function mergeCalls(a: Admiral): string[][] {
     .filter((argv) => (argv[0] === 'pr' || argv[0] === 'stack') && argv[1] === 'merge');
 }
 
-/** What `gh stack view --json` prints in the ship's checkout: an open stack of these PRs, bottom first. */
-export function seedStackView(a: Admiral, numbers: number[]) {
-  const branches = numbers.map((n, i) => ({
-    name: `layer-${i + 1}`, head: `sha${n}`, base: 'main', isCurrent: i === numbers.length - 1, isMerged: false, isQueued: false, needsRebase: false,
-    pr: { number: n, url: `${PR_BASE}/${n}`, state: 'OPEN' },
-  }));
-  writeFileSync(join(a.home, 'fakegh', 'stack_view.json'), JSON.stringify({ trunk: 'main', currentBranch: `layer-${numbers.length}`, branches }) + '\n');
-  // The merge binds each layer's head to the head GitHub reports for its PR.
-  const events = join(a.home, 'fakegh', 'pr_events');
-  mkdirSync(events, { recursive: true });
-  for (const n of numbers) writeFileSync(join(events, `${PR_BASE}/${n}`.replace(/[/:]/g, '_')), JSON.stringify({ headRefOid: `sha${n}` }) + '\n');
+/** GitHub's stack number n of these PRs, bottom first: each PR's detail holds the whole stack, each PR based on the head branch of the one below. */
+export function seedGitHubStack(a: Admiral, numbers: number[], stackNumber = 4) {
+  const layers = numbers.map((n) => ({ number: n, state: 'OPEN', head: `branch-${n}` }));
+  numbers.forEach((n, i) =>
+    prDetail(a, n, { title: `PR ${n}`, head: `branch-${n}`, base: i === 0 ? 'main' : `branch-${numbers[i - 1]}`, stack: layers, stackNumber }),
+  );
 }
 
 /** Every merge call the fake gh recorded with the directory it ran in (resolved, as the fake's `pwd -P` prints it). */
@@ -675,8 +670,11 @@ export function mergeCallsIn(a: Admiral): { argv: string[]; cwd: string }[] {
     .filter(({ argv }) => (argv[0] === 'pr' || argv[0] === 'stack') && argv[1] === 'merge');
 }
 
-/** The checkout a journey's ships launch in, where the argless `gh stack merge` must run. */
-export const shipCheckout = (a: Admiral) => realpathSync(join(a.home, 'proj'));
+/** Whether a gh call ran in the checkout a journey's ships launch in, or under it: a stack merge reads no checkout and must not. */
+export const ranInTheCheckout = (a: Admiral, cwd: string) => {
+  const proj = realpathSync(join(a.home, 'proj'));
+  return cwd === proj || cwd.startsWith(proj + '/');
+};
 
 /** Waits until the server serves the moored ship as ready to merge, with the repository's method when given, so a red journey is the UI's and not the seeding's. */
 export async function readyOnTheServer(a: Admiral, ship: LaunchedShip, method?: string) {
@@ -785,22 +783,22 @@ export async function staleMergeTokenInPeek(page: Page, a: Admiral) {
   expect(mergeCalls(a)).toEqual([]);
 }
 
-/** A ready 2-PR stack whose checkout holds exactly that stack, moored and served ready, with the repository's method squash. */
+/** A ready 2-PR stack that GitHub holds as stack 4, moored and served ready, with the repository's method squash. */
 async function readyStack(a: Admiral): Promise<LaunchedShip> {
   seedMergeMethod(a, 'squash');
   prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
   prAnswer(a, 8, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
-  seedStackView(a, [7, 8]);
+  seedGitHubStack(a, [7, 8]);
   const ship = await launchMooredShip(a, 7, { more: [8] });
-  const rec = JSON.parse(readFileSync(join(a.home, 'moored', `${ship.name}.json`), 'utf8')) as { checkout: string };
-  expect(realpathSync(rec.checkout), 'seeding: the moored record\'s checkout').toBe(shipCheckout(a));
   await readyOnTheServer(a, ship, 'squash');
   return ship;
 }
 
-/** What the whole stack's one argless merge looks like: no target, in the ship's checkout, with the repository's method. */
+/** What the whole stack's one merge looks like: GitHub's stack number, the repository's method, and a folder of gh's own rather than the ship's checkout. */
 async function expectOneStackMerge(a: Admiral) {
-  await expect.poll(() => mergeCallsIn(a)).toEqual([{ argv: ['stack', 'merge', '--yes', '--merge-method', 'squash'], cwd: shipCheckout(a) }]);
+  await expect.poll(() => mergeCallsIn(a).map((c) => c.argv)).toEqual([['stack', 'merge', '4', '--yes', '--merge-method', 'squash']]);
+  const [call] = mergeCallsIn(a);
+  expect(ranInTheCheckout(a, call.cwd), `gh stack merge ran in ${call.cwd}, the ship's checkout`).toBe(false);
 }
 
 /** Merge as the stack's one act: the button, with the method and that it merges the whole stack, and none of the old gh stack note. */
@@ -815,7 +813,7 @@ async function expectWholeStackMerge(scope: Locator) {
   return merge;
 }
 
-/** A ready stack shows Ready to merge, and Peek offers Merge for the whole stack: nothing merges before the tap, and one tap runs one argless gh stack merge. */
+/** A ready stack shows Ready to merge, and Peek offers Merge for the whole stack: nothing merges before the tap, and one tap runs one gh stack merge by GitHub's stack number. */
 export async function readyStackMergesFromPeek(page: Page, a: Admiral) {
   const ship = await readyStack(a);
   ghStackMergeSlow(a, 2);
@@ -894,7 +892,7 @@ export async function mergeFromThePRTab(page: Page, a: Admiral, opts: { phone: b
   expect(mergeCalls(a), 'one merge, not one per render or poll').toHaveLength(1);
 }
 
-/** A ready stack in the PR tab: Merge with the whole-stack hint, nothing merged before the tap, and one argless gh stack merge after it. */
+/** A ready stack in the PR tab: Merge with the whole-stack hint, nothing merged before the tap, and one gh stack merge by GitHub's stack number after it. */
 export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
   const ship = await readyStack(a);
   ghStackMergeSlow(a, 2);
@@ -966,10 +964,10 @@ export async function staleMergeTokenInThePRTab(page: Page, a: Admiral) {
   expect(mergeCalls(a)).toEqual([]);
 }
 
-/** A stack whose checkout holds other PRs is refused by the server (409), and the tab shows that message and merges nothing. */
+/** PRs GitHub does not hold as one stack (PR 8 is based on another branch) are refused by the server (409), and the tab shows that message and merges nothing. */
 export async function stackMismatchInThePRTab(page: Page, a: Admiral) {
   const ship = await readyStack(a);
-  seedStackView(a, [7, 99]);
+  prDetail(a, 8, { title: 'PR 8', head: 'branch-8', base: 'develop' });
 
   const panel = await openPRTab(page, a, ship);
   const refused = page.waitForResponse((r) => r.request().method() === 'POST' && /\/ships\/[^/]+\/merge$/.test(new URL(r.url()).pathname));
@@ -977,6 +975,7 @@ export async function stackMismatchInThePRTab(page: Page, a: Admiral) {
   const res = await refused;
   expect(res.status()).toBe(409);
   const message = ((await res.json()) as { error: string }).error;
+  expect(message, 'GitHub is the record of a stack, so the refusal names no checkout').not.toMatch(/checkout/i);
   await expect(panel.getByRole('alert')).toContainText(message);
   await expect(page.getByRole('alert')).toHaveCount(1);
   expect(mergeCalls(a)).toEqual([]);
@@ -1014,8 +1013,8 @@ export interface PRSections {
   comments?: GqlComment[];
 }
 
-/** What the fake gh answers the PR tab's single-PR query with, in GitHub's shape: `stack` lists every layer, bottom first. */
-export function prDetail(a: Admiral, number: number, d: { title: string; head: string; base: string; state?: string; draft?: boolean; stack?: { number: number; state: string; head: string }[] } & PRSections) {
+/** What the fake gh answers the PR tab's single-PR query with, in GitHub's shape: `stack` lists every layer, bottom first. The fake's `stack merge N` finds the stack by the compact `"stack":{"number":N,` this writes. */
+export function prDetail(a: Admiral, number: number, d: { title: string; head: string; base: string; state?: string; draft?: boolean; stack?: { number: number; state: string; head: string }[]; stackNumber?: number } & PRSections) {
   const contexts = (d.failing ?? []).map((f) =>
     f.status ? { __typename: 'StatusContext', context: f.name, state: 'FAILURE', targetUrl: f.url } : { __typename: 'CheckRun', name: f.name, conclusion: 'FAILURE', detailsUrl: f.url },
   );
@@ -1028,6 +1027,7 @@ export function prDetail(a: Admiral, number: number, d: { title: string; head: s
     isDraft: d.draft ?? false,
     headRefName: d.head,
     baseRefName: d.base,
+    baseRepository: { defaultBranchRef: { name: 'main' } },
     statusCheckRollup: d.checks ? { state: d.checks } : null,
     commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: contexts } } } }] },
     reviews: { nodes: (d.reviews ?? []).map((r) => ({ author: gqlActor(r.author), state: r.state })) },
@@ -1035,7 +1035,7 @@ export function prDetail(a: Admiral, number: number, d: { title: string; head: s
     reviewThreads: { nodes: (d.threads ?? []).map((t, i) => ({ isResolved: t.resolved ?? false, path: t.path, line: t.line, comments: { nodes: t.comments.map((c, j) => gqlComment(c, i * 10 + j)) } })) },
     comments: { nodes: (d.comments ?? []).map((c, i) => gqlComment(c, 100 + i)) },
     stack: d.stack
-      ? { number: 4, size: d.stack.length, baseRefName: 'main', entries: { nodes: d.stack.map((l, i) => ({ position: i + 1, pullRequest: { number: l.number, url: `${PR_BASE}/${l.number}`, state: l.state, headRefName: l.head } })) } }
+      ? { number: d.stackNumber ?? 4, size: d.stack.length, baseRefName: 'main', entries: { nodes: d.stack.map((l, i) => ({ position: i + 1, pullRequest: { number: l.number, url: `${PR_BASE}/${l.number}`, state: l.state, headRefName: l.head } })) } }
       : null,
   };
   const dir = join(a.home, 'fakegh', 'pr_detail');
