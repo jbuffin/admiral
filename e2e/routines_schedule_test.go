@@ -15,6 +15,7 @@ type runJSON struct {
 	Reason  string `json:"reason"`
 	// Restricted is the profile an event ship launched on, empty for a normal ship.
 	Restricted string `json:"restricted"`
+	Undone     bool   `json:"undone"`
 }
 
 func (w *world) routineRuns(id string) []runJSON {

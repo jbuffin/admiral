@@ -41,6 +41,15 @@ func (r routineShips) Holder(key string) (routines.ShipRef, bool) {
 	return routines.ShipRef{Session: sh.Session, Status: sh.Status}, ok
 }
 
+// Stop ends the ship, and reports ErrShipNotListed for one the host does not list.
+func (r routineShips) Stop(session string) error {
+	err := r.svc.Stop(session)
+	if errors.Is(err, ships.ErrNotFound) {
+		return routines.ErrShipNotListed
+	}
+	return err
+}
+
 // EndedFailed reads an anchored ship's exit: a non-zero code or a signal.
 func (r routineShips) EndedFailed(session string) bool {
 	sh, ok := r.svc.Get(session)

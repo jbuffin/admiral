@@ -24,6 +24,10 @@ type Service struct {
 	// Config reads and saves the fleet's Limits; Judge runs the drafters' judge calls (judge.Run when nil).
 	Config *config.Manager
 	Judge  func(context.Context, judge.Choice, judge.Call) (judge.Reply, error)
+	// Stop stops a ship by session name and returns ErrShipNotListed when the host does not list it.
+	Stop func(session string) error
+
+	undoMu sync.Mutex
 
 	// ordersMu holds a Copy's snapshot, store write, config write and restore apart from any other standing-orders save.
 	ordersMu sync.Mutex
@@ -48,6 +52,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/off", s.serveEnable(false))
 	mux.HandleFunc("GET /api/fleets/{key}/routines/{id}/runs", s.serveRuns)
 	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/mute", s.serveMute)
+	mux.HandleFunc("GET /api/fleets/{key}/routines/{id}/runs/{trigger}", s.serveRun)
+	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/runs/{trigger}/undo", s.serveUndo)
 	mux.HandleFunc("GET /api/fleets/{key}/hold-fire", s.serveFleetHold)
 	mux.HandleFunc("POST /api/fleets/{key}/hold-fire/on", s.serveSetHold(true, false))
 	mux.HandleFunc("POST /api/fleets/{key}/hold-fire/off", s.serveSetHold(false, false))
