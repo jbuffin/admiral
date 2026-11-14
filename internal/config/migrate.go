@@ -44,6 +44,7 @@ type Migration struct {
 	AutopilotObject bool
 	GitHub          bool // an old GitHub plugin source became built in, on every fleet
 	GitHubCustom    bool // and it had custom views, which the default views now sit beside
+	GitHubViews     bool // a GitHub source's views list gained the built-in views
 	// Chat is set when the top-level chat key went. ChatFleet is the fleet whose own chat
 	// settings it went onto, empty when nothing moved: ChatUnreadable says the key could
 	// not be read, else the file had no fleet to take it.
@@ -61,6 +62,7 @@ type migrationPlan struct {
 	changed bool // a kept source lost its autopilot, whether or not it is listed above
 	github  bool
 	custom  bool
+	views   bool
 	chat    *chatMove
 }
 
@@ -131,6 +133,7 @@ func planMigration(data []byte) *migrationPlan {
 			}
 		}
 		p.github, p.custom = migrateGitHub(top, sources)
+		p.views = migrateGitHubViews(sources)
 		top.Set("sources", sources.JSON())
 	}
 	// The top-level autopilot object: its cap moves up, the rest goes.
@@ -147,7 +150,7 @@ func planMigration(data []byte) *migrationPlan {
 		p.object = true
 	}
 	p.chat = migrateChat(top)
-	if len(p.moved) == 0 && len(p.removed) == 0 && len(p.entries) == 0 && !p.object && !p.changed && !p.github && p.chat == nil {
+	if len(p.moved) == 0 && len(p.removed) == 0 && len(p.entries) == 0 && !p.object && !p.changed && !p.github && !p.views && p.chat == nil {
 		return nil
 	}
 	out := top.JSON()
@@ -322,13 +325,13 @@ func freeGitHubKey(sources *Object, fleet string) string {
 }
 
 // githubSourceFor is a built-in GitHub source for fleet carrying the template's name, panel order
-// and githubCarried settings; a nil template gives an unnamed source with no views.
+// and githubCarried settings; a nil template gives an unnamed source with the built-in views.
 func githubSourceFor(template *Object, fleet string) json.RawMessage {
 	carried := NewObject()
 	src := NewObject()
 	src.SetValue("plugin", "github")
 	if template == nil {
-		carried.Set("views", json.RawMessage("[]"))
+		carried.Set("views", WithGitHubBuiltinViewsJSON(nil))
 	} else {
 		settings, _ := ParseObject(mustRaw(template, "settings"))
 		for _, k := range githubCarried {
@@ -413,7 +416,7 @@ func Migrate(dir, version string) (*Migration, error) {
 	if err := replaceFile(path, p.out); err != nil {
 		return nil, err
 	}
-	m := &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, Entries: p.entries, AutopilotObject: p.object, GitHub: p.github, GitHubCustom: p.custom}
+	m := &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, Entries: p.entries, AutopilotObject: p.object, GitHub: p.github, GitHubCustom: p.custom, GitHubViews: p.views}
 	if p.chat != nil {
 		m.Chat, m.ChatFleet, m.ChatFleetName, m.ChatUnreadable = true, p.chat.fleet, p.chat.name, p.chat.unreadable
 	}
@@ -486,14 +489,14 @@ func (m *Migration) Notice() (title, body string) {
 	fleets := len(m.Moved)+len(m.Removed) > 0
 	autopilot := len(m.Entries) > 0 || m.AutopilotObject
 	title = "Admiral updated your config"
-	if !fleets && !m.GitHub && !m.Chat {
+	if !fleets && !m.GitHub && !m.GitHubViews && !m.Chat {
 		title = "Admiral removed autopilot from your config"
 	}
 	var did []string
 	if fleets {
 		did = append(did, "moved your sources into fleets")
 	}
-	if m.GitHub && !fleets {
+	if (m.GitHub || m.GitHubViews) && !fleets {
 		did = append(did, "updated your GitHub source")
 	}
 	switch {
@@ -536,6 +539,9 @@ func (m *Migration) Notice() (title, body string) {
 		if m.GitHubCustom {
 			b.WriteString(" Your custom views were copied to each one. The three default views (Assigned to me, Review requested, My PRs) now show beside them.")
 		}
+	}
+	if m.GitHubViews {
+		b.WriteString("\n- GitHub's built-in views are now in its views list, where you can hide, rename and reorder them.")
 	}
 	if m.Chat {
 		switch {

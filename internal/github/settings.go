@@ -2,17 +2,19 @@ package github
 
 import (
 	"encoding/json"
+	"github.com/jbuffin/admiral/internal/config"
 	"math"
-	"regexp"
 	"strconv"
 	"strings"
 )
 
 // View is one list of items: one GitHub search.
 type View struct {
-	ID    string
-	Title string
-	Query string
+	ID      string
+	Title   string
+	Query   string // empty for For you, which is no search
+	Hidden  bool
+	Builtin bool
 }
 
 // Settings is a fleet's GitHub source settings, read the way the plugin read
@@ -20,9 +22,20 @@ type View struct {
 type Settings struct {
 	Host           string   // trimmed; DefaultHost when blank
 	Account        string   // trimmed; "" for the host's active account
-	Views          []View   // the three defaults, then the custom views
+	Views          []View   // the stored list in tab order, built-ins included
 	HotLabels      []string // lowercase; the defaults when none are given
 	RefreshMinutes int      // 1..1440, default 5
+}
+
+// SearchViews are the views that are panels: visible, and a search.
+func (s Settings) SearchViews() []View {
+	var out []View
+	for _, v := range s.Views {
+		if !v.Hidden && v.Query != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 const (
@@ -30,16 +43,18 @@ const (
 	maxRefreshMinutes     = 24 * 60
 )
 
-// defaultViews are always there, ahead of the custom views.
+// defaultViews are the built-in views, in their default order.
 var defaultViews = []View{
-	{"assigned-to-me", "Assigned to me", "is:open assignee:@me"},
-	{"review-requested", "Review requested", "is:open is:pr review-requested:@me"},
-	{"my-prs", "My PRs", "is:open is:pr author:@me"},
+	{ID: "for-you", Title: "For you", Builtin: true},
+	{ID: "assigned-to-me", Title: "Assigned to me", Query: "is:open assignee:@me", Builtin: true},
+	{ID: "review-requested", Title: "Review requested", Query: "is:open is:pr review-requested:@me", Builtin: true},
+	{ID: "my-prs", Title: "My PRs", Query: "is:open is:pr author:@me", Builtin: true},
 }
 
-// ParseSettings reads settings decoded from JSON (map[string]any). The custom
-// views list is under the key "views". An entry without a title or a query is
-// skipped; a custom view with a default's id replaces that default in place.
+// ParseSettings reads settings decoded from JSON (map[string]any). The views
+// list is under the key "views": built-in entries {id, hidden, title?} and
+// custom entries {title, query}. A custom entry without a title or a query is
+// skipped, and so is a built-in entry with an unknown id.
 func ParseSettings(m map[string]any) Settings {
 	return Settings{
 		Host:           textSetting(m["host"], DefaultHost),
@@ -57,46 +72,59 @@ func textSetting(v any, def string) string {
 	return def
 }
 
-var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
-
-// slug is a title as a view id.
-func slug(title string) string {
-	if s := strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(title), "-"), "-"); s != "" {
-		return s
-	}
-	return "panel"
-}
-
 func readViews(v any) []View {
-	views := append([]View(nil), defaultViews...)
 	list, _ := v.([]any)
 	used := map[string]bool{}
+	builtins := map[string]View{}
+	for _, d := range defaultViews {
+		used[d.ID] = true
+		builtins[d.ID] = d
+	}
+	var views []View
+	seen := map[string]bool{}
 	for _, e := range list {
 		entry, _ := e.(map[string]any)
+		hidden, _ := entry["hidden"].(bool)
 		title, _ := entry["title"].(string)
+		title = strings.TrimSpace(title)
+		if id, _ := entry["id"].(string); builtins[id].Builtin {
+			if seen[id] {
+				continue
+			}
+			d := builtins[id]
+			seen[id] = true
+			if title != "" {
+				d.Title = title
+			}
+			d.Hidden = hidden
+			views = append(views, d)
+			continue
+		}
 		query, _ := entry["query"].(string)
-		title, query = strings.TrimSpace(title), strings.TrimSpace(query)
+		query = strings.TrimSpace(query)
 		if title == "" || query == "" {
 			continue
 		}
-		base := slug(title)
+		base := config.ViewSlug(title)
 		id := base
 		for n := 2; used[id]; n++ {
 			id = base + "-" + strconv.Itoa(n)
 		}
 		used[id] = true
-		view := View{id, title, query}
-		replaced := false
-		for i, d := range views[:len(defaultViews)] {
-			if d.ID == id {
-				views[i], replaced = view, true
-			}
-		}
-		if !replaced {
-			views = append(views, view)
+		views = append(views, View{ID: id, Title: title, Query: query, Hidden: hidden})
+	}
+	// A built-in the list lacks comes back visible after the entries present.
+	var missing []View
+	for _, d := range defaultViews {
+		if !seen[d.ID] {
+			missing = append(missing, d)
 		}
 	}
-	return views
+	if len(missing) == len(defaultViews) {
+		// An old list holds only custom views: the built-ins come first.
+		return append(missing, views...)
+	}
+	return append(views, missing...)
 }
 
 func readHotLabels(v any) []string {

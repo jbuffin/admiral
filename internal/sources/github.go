@@ -34,10 +34,12 @@ var githubSchema = json.RawMessage(`{
     "views": {
       "type": "array",
       "title": "Views",
-      "description": "One custom view per GitHub search, after the built-in views: Assigned to me, Review requested, My PRs",
+      "description": "The built-in views (For you, Assigned to me, Review requested, My PRs) and one custom view per GitHub search, in tab order",
       "items": {
         "type": "object",
         "properties": {
+          "id": {"type": "string"},
+          "hidden": {"type": "boolean"},
           "title": {"type": "string", "title": "Title", "description": "The view's title"},
           "query": {"type": "string", "title": "Query", "description": "A GitHub search, as on github.com, e.g. repo:acme/widgets is:open label:bug"}
         }
@@ -157,8 +159,9 @@ func (g *githubConn) call(ctx context.Context, method string, params any, _ time
 		return g.initialize(params)
 	case "panels.list":
 		g.mu.Lock()
-		list := make([]map[string]string, 0, len(g.settings.Views))
-		for _, v := range g.settings.Views {
+		searched := g.settings.SearchViews()
+		list := make([]map[string]string, 0, len(searched))
+		for _, v := range searched {
 			list = append(list, map[string]string{"id": v.ID, "title": v.Title})
 		}
 		g.mu.Unlock()
@@ -237,7 +240,7 @@ func (g *githubConn) initialize(params any) (json.RawMessage, error) {
 	g.mu.Lock()
 	g.settings = s
 	g.client = github.NewClient(s.Host, s.Account, s.HotLabels, g.env)
-	for _, v := range s.Views {
+	for _, v := range s.SearchViews() {
 		g.views[v.ID] = ghView{orders: []map[string]any{}}
 	}
 	g.mu.Unlock()
@@ -276,7 +279,7 @@ func (g *githubConn) cycle() {
 		if p := recover(); p != nil {
 			g.logf("the refresh panicked: %v", p)
 			g.mu.Lock()
-			views := g.settings.Views
+			views := g.settings.SearchViews()
 			g.mu.Unlock()
 			changed := false
 			for _, v := range views {
@@ -293,7 +296,7 @@ func (g *githubConn) cycle() {
 // The router is built each cycle because a new clone changes no config; orders.changed goes out once, after every view.
 func (g *githubConn) refresh() {
 	g.mu.Lock()
-	client, views := g.client, g.settings.Views
+	client, views := g.client, g.settings.SearchViews()
 	g.mu.Unlock()
 	router := github.RouterFromFleets(g.cfg().Fleets)
 	warnings := append([]string{}, router.Warnings(g.fleet)...)

@@ -247,7 +247,7 @@ func TestHidingRenamingAndReorderingViewsSurvivesARestart(t *testing.T) {
 		t.Errorf("view titles after the restart = %v, want %v", titles, want)
 	}
 	code, body := g2.do(http.MethodGet, "/gh/settings", nil)
-	if code != http.StatusOK || !strings.Contains(body, `"id":"for-you","hidden":true`) {
+	if code != http.StatusOK || !strings.Contains(body, `"hidden":true,"id":"for-you"`) { // keys come back sorted
 		t.Errorf("GET settings after the restart = %d %s, want For you hidden", code, body)
 	}
 }

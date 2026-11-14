@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VIEWS, UNCHANGED, buildSettings, fieldKinds, jsonText, parseWholeJson, replacedDefault } from './sourceSettings';
+import { DEFAULT_VIEWS, UNCHANGED, buildSettings, fieldKinds, jsonText, parseWholeJson } from './sourceSettings';
 
 const schema = {
   type: 'object',
@@ -135,12 +135,5 @@ describe('default views', () => {
   it('lists the three the GitHub source always has', () => {
     expect(DEFAULT_VIEWS.map((v) => v.title)).toEqual(['Assigned to me', 'Review requested', 'My PRs']);
     expect(DEFAULT_VIEWS.map((v) => v.query)).toEqual(['is:open assignee:@me', 'is:open is:pr review-requested:@me', 'is:open is:pr author:@me']);
-  });
-
-  it('names the default a custom title replaces, by its slug', () => {
-    expect(replacedDefault('my prs')?.title).toBe('My PRs');
-    expect(replacedDefault(' Review  Requested! ')?.title).toBe('Review requested');
-    expect(replacedDefault('Bugs')).toBeNull();
-    expect(replacedDefault('')).toBeNull();
   });
 });

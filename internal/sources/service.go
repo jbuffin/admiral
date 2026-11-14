@@ -117,7 +117,9 @@ func (s *Service) View() []SourceView {
 		for _, p := range st.panels {
 			v.Views = append(v.Views, p)
 		}
-		SortPanels(v.Views, st.def.PanelOrder)
+		if st.def.Plugin != builtinGitHub { // a GitHub source's views list is its order
+			SortPanels(v.Views, st.def.PanelOrder)
+		}
 		if kinds, ok := s.Sup.Events(st.def.Fleet, st.def.Key); ok {
 			v.Events = kinds
 		}
@@ -362,9 +364,7 @@ func withViews(settings json.RawMessage) json.RawMessage {
 	if json.Unmarshal(settings, &m) != nil || m == nil {
 		m = map[string]json.RawMessage{}
 	}
-	if _, ok := m["views"]; !ok {
-		m["views"] = json.RawMessage("[]")
-	}
+	m["views"] = config.WithGitHubBuiltinViewsJSON(m["views"])
 	out, _ := json.Marshal(m)
 	return out
 }
@@ -463,13 +463,19 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 const unchangedMarker = "__admiral_unchanged__"
 
 func (s *Service) schemaOf(key string) json.RawMessage {
-	rn := s.Sup.runner(key)
-	if rn == nil {
-		return nil
+	if rn := s.Sup.runner(key); rn != nil {
+		rn.mu.Lock()
+		schema := rn.schema
+		rn.mu.Unlock()
+		if schema != nil {
+			return schema
+		}
 	}
-	rn.mu.Lock()
-	defer rn.mu.Unlock()
-	return rn.schema
+	// The built-in source's schema is fixed, so it masks right before the source has started.
+	if def, ok := s.Config.Current().Source(key); ok && def.Plugin == builtinGitHub {
+		return githubSchema
+	}
+	return nil
 }
 
 // decodeValue reads JSON keeping numbers exactly as written.
@@ -744,7 +750,12 @@ func (s *Service) servePanelOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "source "+key+" not found")
 		return
 	}
-	list[i].PanelOrder = req.Panels
+	if list[i].Plugin == builtinGitHub {
+		list[i].Settings = config.ReorderGitHubViews(list[i].Settings, req.Panels)
+		list[i].PanelOrder = nil
+	} else {
+		list[i].PanelOrder = req.Panels
+	}
 	err := s.write(list)
 	s.mu.Unlock()
 	if err != nil {

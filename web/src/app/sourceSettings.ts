@@ -111,8 +111,3 @@ export function parseWholeJson(text: string): Built {
   }
   return { ok: false, error: 'The settings must be valid JSON and an object.' };
 }
-
-const slug = (title: string) => title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'panel';
-
-/** The default view a custom view with this title takes the place of. */
-export const replacedDefault = (title: string): DefaultView | null => DEFAULT_VIEWS.find((d) => d.id === slug(title)) ?? null;
