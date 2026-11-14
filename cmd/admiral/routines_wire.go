@@ -14,6 +14,7 @@ import (
 	"github.com/jbuffin/admiral/internal/judge"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/lookout"
+	"github.com/jbuffin/admiral/internal/reviewer"
 	"github.com/jbuffin/admiral/internal/routines"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -116,8 +117,9 @@ func wallClockEnder(host *sessionhost.Host) func(session string, minutes int) er
 
 // wireEvents routes each source event to the scheduler, and answers an event routine's catalog check from the sources.
 // A held ship's dedupe_key is read from the trigger record that launched it.
-func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.Scheduler, list func() []ships.Ship, lk *lookout.Lookout, acts *lookout.Acts) {
+func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.Scheduler, list func() []ships.Ship, lk *lookout.Lookout, rv *reviewer.Reviewer, acts *lookout.Acts) {
 	sched.Enrich = lk.Enrich
+	sched.Review = rv.Review
 	sched.Acts = acts
 	listed := listedShips(list)
 	sched.Listed = listed
@@ -156,6 +158,11 @@ func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.
 			log.Printf("source event dropped: queue full (%s %s)", source, ev.Kind)
 		}
 	}
+}
+
+// newReviewer builds the step reviewer on the same fleet judge harness and Limits as the Lookout.
+func newReviewer(lk *lookout.Lookout) *reviewer.Reviewer {
+	return &reviewer.Reviewer{Choose: lk.Choose, Limits: lk.Limits}
 }
 
 // newLookout builds the Lookout for a fleet's judge harness; the item's text is read through the fleet's GitHub client.

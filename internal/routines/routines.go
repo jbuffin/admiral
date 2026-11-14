@@ -445,9 +445,12 @@ type Trigger struct {
 	Sender  string    `json:"sender,omitempty"`
 	Rule    string    `json:"rule,omitempty"`
 	Verdict string    `json:"verdict,omitempty"`
-	Reason  string    `json:"reason,omitempty"`
-	Action  string    `json:"action,omitempty"`
-	Ship    string    `json:"ship,omitempty"`
+	// CheckID and ReviewerReason are the step reviewer's Check and reason on an event record.
+	CheckID        string `json:"check_id,omitempty"`
+	ReviewerReason string `json:"reviewer_reason,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	Action         string `json:"action,omitempty"`
+	Ship           string `json:"ship,omitempty"`
 	// Restricted and WorkerLaunched mark an event ship launched at A3 or above.
 	Restricted     standing.Restricted `json:"restricted,omitempty"`
 	WorkerLaunched bool                `json:"worker_launched,omitempty"`

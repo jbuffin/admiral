@@ -13,6 +13,14 @@ type runJSON struct {
 	Tier    string `json:"tier"`
 	Ship    string `json:"ship"`
 	Reason  string `json:"reason"`
+	// Verdict, CheckID and ReviewerReason are the step reviewer's answer on an event record; Costs are the judge calls' prices.
+	Verdict        string `json:"verdict"`
+	CheckID        string `json:"check_id"`
+	ReviewerReason string `json:"reviewer_reason"`
+	Costs          []struct {
+		Call string  `json:"call"`
+		USD  float64 `json:"usd"`
+	} `json:"costs"`
 	// Restricted is the profile an event ship launched on, empty for a normal ship.
 	Restricted string `json:"restricted"`
 	Undone     bool   `json:"undone"`

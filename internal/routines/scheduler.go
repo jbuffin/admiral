@@ -84,6 +84,8 @@ type Scheduler struct {
 	Own func(fleet, ref string) bool
 	// Enrich is where a Lookout adds the dedupe_key, repo, labels and costs before the decision. Nil adds nothing.
 	Enrich func(Event) Enrichment
+	// Review is the step reviewer, asked once per routine whose provisional level is A3 or higher in a fleet with Checks. Nil asks.
+	Review func(ReviewInput) Review
 	// Live says what the ships hold for the rates and the dedupe_key; nil holds none.
 	Live EventLoad
 	// Listed reads the host's ships for the wall clock; EndHarness ends a ship's harness process, keeps its pane and notes the wall clock's minutes as the reason.
