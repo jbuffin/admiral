@@ -53,20 +53,19 @@ func (s *Store) loadOrders(fleet string) (StandingOrders, error) {
 	return o, nil
 }
 
-// HasChecks reports whether the fleet's orders hold Checks. A file that can't be parsed (or that a read has already set
-// aside as .bad) counts as holding some, so a damaged file never reads as having none.
+// HasChecks reports whether the fleet's orders hold Checks. A file that can't be parsed, or that a read has set aside as
+// .bad with no valid file saved since, counts as holding some, so a damaged file never reads as having none. Once a valid
+// file exists it decides, whatever .bad is left over.
 func (s *Store) HasChecks(fleet string) bool {
 	if _, err := s.fleet(fleet); err != nil {
 		return true
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := os.Stat(s.ordersPath(fleet) + ".bad"); err == nil {
-		return true
-	}
 	b, err := os.ReadFile(s.ordersPath(fleet))
 	if errors.Is(err, os.ErrNotExist) {
-		return false
+		_, bad := os.Stat(s.ordersPath(fleet) + ".bad")
+		return bad == nil
 	}
 	var o StandingOrders
 	if err != nil || json.Unmarshal(b, &o) != nil {

@@ -830,3 +830,45 @@ func TestRoutineDraftMakesOneStrongCallAndItsPromptIsNotTheStandingOrderDrafters
 		t.Errorf("the routine prompt does not fence the prose as data:\n%s", rc.Prompt)
 	}
 }
+
+func TestHasChecksFollowsTheCurrentFileOnceValidOrdersAreSaved(t *testing.T) {
+	r := newSO(t)
+	if r.store.HasChecks("work") {
+		t.Fatal("no file and no .bad: HasChecks = true, want false")
+	}
+	if err := os.MkdirAll(filepath.Dir(r.file("work")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(r.file("work"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !r.store.HasChecks("work") {
+		t.Error("a corrupt file: HasChecks = false, want true")
+	}
+	if _, err := r.store.StandingOrders("work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r.file("work") + ".bad"); err != nil {
+		t.Fatalf("the corrupt file is set aside as .bad: %v", err)
+	}
+	if !r.store.HasChecks("work") {
+		t.Error("set aside with no valid file yet: HasChecks = false, want true")
+	}
+	guidance := "keep it short"
+	if _, err := r.store.SetStandingOrders("work", routines.StandingOrdersPatch{Guidance: &guidance}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r.file("work") + ".bad"); err != nil {
+		t.Fatalf("the .bad file stays: %v", err)
+	}
+	if r.store.HasChecks("work") {
+		t.Error("valid orders without Checks saved, .bad left over: HasChecks = true, want false")
+	}
+	checks := []string{"no new deps"}
+	if _, err := r.store.SetStandingOrders("work", routines.StandingOrdersPatch{Checks: &checks}); err != nil {
+		t.Fatal(err)
+	}
+	if !r.store.HasChecks("work") {
+		t.Error("valid orders with Checks: HasChecks = false, want true")
+	}
+}
