@@ -41,16 +41,30 @@ func (h *harness) proveRestricted(version string, sandbox, network bool) {
 // actRoutine saves the Act event routine while the rig's guard is still proven, since a store that proves less refuses to save one.
 func (h *harness) actRoutine() routines.Routine { return h.onRoutine(routines.Act, nil) }
 
-// decide sends one event from the engineer through r and returns the decision and the record's reason.
+// decide sends one event from the engineer through r and returns the decision and the record's reason. An A3 decision never
+// reaches the acts, so it is read back from the launched record's restricted profile.
 func (h *harness) decide(r routines.Routine) (routines.Decision, string) {
 	h.t.Helper()
 	acts := &decisionActs{}
 	h.sched.Acts = acts
 	h.sched.HandleEvent(evFrom("Eng"))
-	if len(acts.got) != 1 {
-		h.t.Fatalf("%d decisions reached the acts, want 1", len(acts.got))
+	rec := h.latest(r)
+	if len(acts.got) == 0 && rec.Outcome == routines.Launched && rec.Restricted != "" {
+		return routines.Decision{Outcome: routines.Launched, Level: standing.A3, Computed: standing.A3, Restricted: rec.Restricted}, rec.Reason
 	}
-	return acts.got[0], h.latest(r).Reason
+	if len(acts.got) != 1 {
+		h.t.Fatalf("%d decisions reached the acts and the latest record is %+v, want one decision or a restricted launch", len(acts.got), rec)
+	}
+	return acts.got[0], rec.Reason
+}
+
+// wantRestrictedLaunch is true when the one event ended as a launched ship on the restricted profile, not as a proposal.
+func (h *harness) wantRestrictedLaunch(r routines.Routine, want bool) {
+	h.t.Helper()
+	rec := h.latest(r)
+	if got := rec.Outcome == routines.Launched && rec.Restricted == standing.DraftFix; got != want {
+		h.t.Errorf("latest record = %+v, want a launched draft_fix ship: %v", rec, want)
+	}
 }
 
 func (h *harness) wantComputed(d routines.Decision, reason string, want standing.Level, wantReason bool) {
@@ -91,6 +105,7 @@ func TestAnA3TierStaysA3WithBothRestrictedCapabilitiesAndTheGuardProvenAtTheDete
 	h.proveRestricted("2.1.300", true, true)
 	d, reason := h.decide(r)
 	h.wantComputed(d, reason, standing.A3, false)
+	h.wantRestrictedLaunch(r, true)
 }
 
 func TestAnA3TierDropsToA1WhenTheGuardIsNotProven(t *testing.T) {
@@ -117,8 +132,10 @@ func TestAnA3TierDropsToA1AfterAVersionChangeAndRisesAgainWhenReproven(t *testin
 	h.wantComputed(d, reason, standing.A1, true)
 
 	h.proveRestricted("2.1.400", true, true)
+	h.wantRestrictedLaunch(r, false)
 	d, reason = h.decide(r)
 	h.wantComputed(d, reason, standing.A3, false)
+	h.wantRestrictedLaunch(r, true)
 }
 
 func TestAMissingOrCorruptCapabilityStoreIsNotACapableHarness(t *testing.T) {

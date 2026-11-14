@@ -13,6 +13,8 @@ type runJSON struct {
 	Tier    string `json:"tier"`
 	Ship    string `json:"ship"`
 	Reason  string `json:"reason"`
+	// Restricted is the profile an event ship launched on, empty for a normal ship.
+	Restricted string `json:"restricted"`
 }
 
 func (w *world) routineRuns(id string) []runJSON {

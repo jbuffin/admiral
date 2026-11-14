@@ -139,12 +139,13 @@ func hasHidden(s string) bool { return oneLine(s) != s }
 func (l *Lookout) Enrich(ev routines.Event) routines.Enrichment {
 	choice, err := l.Choose(ev.Fleet)
 	if err != nil {
-		return routines.Enrichment{}
+		return routines.Enrichment{Text: Metadata(ev, routines.RepoOfRef(ev.Ref))}
 	}
-	title, body := ev.Title, ""
+	title, body, text := ev.Title, "", Metadata(ev, routines.RepoOfRef(ev.Ref))
 	if ev.Verified && l.Item != nil {
 		if t, b, err := l.Item(context.Background(), ev); err == nil {
 			title, body = t, b
+			text = strings.TrimSpace(t + "\n\n" + b)
 		}
 	}
 	callUSD := l.Limits(ev.Fleet).Spend.LookoutCallUSD
@@ -164,7 +165,9 @@ func (l *Lookout) Enrich(ev routines.Event) routines.Enrichment {
 	reply, err := run(ctx, choice, judge.Call{Kind: judge.Lookout, Prompt: prompt(ev, title, body),
 		Schema: schema(repos), BudgetUSD: callUSD, Timeout: Timeout})
 	if err != nil {
-		return failed(err, choice.CallCap, callUSD)
+		en := failed(err, choice.CallCap, callUSD)
+		en.Text = text
+		return en
 	}
 	en, ok := fields(reply.Fields, repos)
 	if !ok {
@@ -173,6 +176,7 @@ func (l *Lookout) Enrich(ev routines.Event) routines.Enrichment {
 	if reply.Cost.Reported {
 		en.Costs = []routines.Cost{{Call: "lookout", USD: reply.Cost.USD}}
 	}
+	en.Text = text
 	return en
 }
 

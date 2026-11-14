@@ -56,7 +56,9 @@ var unsafeRestrictedFlags = []string{"--dangerously-skip-permissions", "--permis
 // Tools that reach outside the machine or into the engineer's other sessions; a restricted ship has none of them.
 var restrictedDeniedTools = []any{"WebFetch", "WebSearch", "mcp__*", "Bash(git push *)", "Bash(gh *)", "NotebookEdit",
 	"SendMessage", "ListAgents", "RemoteTrigger", "PushNotification", "Artifact", "SendUserFile", "SendFeedback",
-	"CronCreate", "SendToProject", "SendToProjectContext",
+	"CronCreate", "CronList", "CronDelete", "SendToProject", "SendToProjectContext",
+	// On Claude Code 2.1.325 each of these ran under the profile and a ship does not need it; Task stays, its subagent's Bash was sandboxed.
+	"Workflow", "EnterWorktree", "ExitWorktree", "Skill", "ScheduleWakeup", "Monitor", "DesignSync", "TaskStop",
 	// The registries are on the allowlist, so an upload there is the one way out left; these raise the cost, they are not a boundary.
 	"Bash(npm publish *)", "Bash(cargo publish *)", "Bash(gem push *)"}
 
@@ -171,30 +173,50 @@ func RemoveRestrictedFiles(home, session string) {
 	}
 }
 
-// restrictedSetup makes the ship's checkout, event file and settings, and ends argv with the profile flags and prompt.
-func (l *Launcher) restrictedSetup(req Request, session string, argv []string) ([]string, restrictedShip, error) {
+// shipCheckout makes the ship's clone, or keeps the one an earlier round made, and writes the event file into it.
+func (l *Launcher) shipCheckout(req Request, session string) (restrictedShip, string, error) {
 	var made restrictedShip
 	home, err := filepath.Abs(l.Home)
 	if err != nil {
-		return nil, made, refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
+		return made, "", refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
 	}
 	if _, _, ok := ShipFiles(home, session); !ok {
-		return nil, made, refuse(http.StatusInternalServerError, "%q is not a name a ship can have", session)
+		return made, "", refuse(http.StatusInternalServerError, "%q is not a name a ship can have", session)
 	}
-	// A relaunch or a new round of a restricted ship keeps working in its own clone.
+	// A relaunch or a new round of an event ship keeps working in its own clone.
 	if existing, err := filepath.EvalSymlinks(filepath.Join(home, "checkouts", session)); req.Session != "" && err == nil {
 		made.checkout, made.reused = existing, true
 	} else if made.checkout, err = l.Checkouts.Make(l.Home, session, req.Dir); err != nil {
-		return nil, restrictedShip{}, asError(err)
+		return restrictedShip{}, "", asError(err)
+	}
+	if !made.reused || req.EventText != "" {
+		if err := writeEventFile(made.checkout, req.EventText); err != nil {
+			made.remove(home, session)
+			return restrictedShip{}, "", refuse(http.StatusInternalServerError, "%v", err)
+		}
+	}
+	return made, home, nil
+}
+
+// eventPrompt is the template, the line that points at the event file, and the fleet's Guidance.
+func (l *Launcher) eventPrompt(req Request, template string) string {
+	prompt := eventFileLine
+	if t := strings.TrimSpace(template); t != "" {
+		prompt = t + "\n\n" + eventFileLine
+	}
+	req.WorkerLaunched = true
+	return l.withGuidance(req, prompt)
+}
+
+// restrictedSetup makes the ship's checkout, event file and settings, and ends argv with the profile flags and prompt.
+func (l *Launcher) restrictedSetup(req Request, session string, argv []string) ([]string, restrictedShip, error) {
+	made, home, err := l.shipCheckout(req, session)
+	if err != nil {
+		return nil, made, err
 	}
 	fail := func(err error) ([]string, restrictedShip, error) {
 		made.remove(home, session)
 		return nil, restrictedShip{}, refuse(http.StatusInternalServerError, "%v", err)
-	}
-	if !made.reused || req.EventText != "" {
-		if err := writeEventFile(made.checkout, req.EventText); err != nil {
-			return fail(err)
-		}
 	}
 	raw, err := json.MarshalIndent(RestrictedProfile(req.Restricted, made.checkout, home), "", "  ")
 	if err != nil {
@@ -204,14 +226,18 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 	if err := writeFileAtomic(made.settings, append(raw, '\n')); err != nil {
 		return fail(err)
 	}
-	prompt := eventFileLine
-	if t := strings.TrimSpace(req.Template); t != "" {
-		prompt = t + "\n\n" + eventFileLine
-	}
-	req.WorkerLaunched = true
-	prompt = l.withGuidance(req, prompt)
 	argv = append(argv, RestrictedFlags(made.settings)...)
-	return appendPrompt(argv, prompt, false), made, nil
+	return appendPrompt(argv, l.eventPrompt(req, req.Template), false), made, nil
+}
+
+// eventSetup makes an event ship's clone and event file, and ends argv with the hook flags and the event prompt.
+func (l *Launcher) eventSetup(req Request, session, skill string, argv, flags []string, addPrompt func([]string, string) []string) ([]string, restrictedShip, error) {
+	made, _, err := l.shipCheckout(req, session)
+	if err != nil {
+		return nil, made, err
+	}
+	template := promptFor(req.Harness, skill, req.Skill.Kind, "", req.Template)
+	return addPrompt(append(argv, flags...), l.eventPrompt(req, template)), made, nil
 }
 
 func writeFileAtomic(path string, b []byte) error {
