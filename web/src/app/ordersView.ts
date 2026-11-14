@@ -206,10 +206,16 @@ export function sourceName(sources: Source[], id: string): string {
   return (id === FOR_YOU ? sources.find(isGitHub) : find(sources, id)?.src)?.name ?? '';
 }
 
+// The GitHub source sends the repository's URL; plugins and tests send owner/repo.
+export function repoName(o: Order): string {
+  const fromUrl = (u: string) => /^https?:\/\/[^/]+\/([^/]+\/[^/]+?)(?:\/|$)/.exec(u)?.[1];
+  return (o.repo && (fromUrl(o.repo) ?? o.repo)) || fromUrl(o.url ?? '') || '';
+}
+
 export function orderRef(o: Order): string {
   const num = /#(\d+)$/.exec(o.id)?.[1] ?? /\/(\d+)\/?$/.exec(o.url ?? '')?.[1];
-  const repo = o.repo ?? /github\.com\/([^/]+\/[^/]+)\//.exec(o.url ?? '')?.[1];
-  return join(repo && num ? `${repo} #${num}` : (repo ?? o.id));
+  const repo = repoName(o);
+  return repo && num ? `${repo} #${num}` : repo || o.id;
 }
 
 export interface Filter {
@@ -220,14 +226,14 @@ export interface Filter {
 export function filterRows(rows: OrderRow[], f: Filter): OrderRow[] {
   const q = (f.query ?? '').trim().toLowerCase();
   return rows.filter(({ order: o }) => {
-    if (f.repo && o.repo !== f.repo) return false;
+    if (f.repo && repoName(o) !== f.repo) return false;
     if (!q) return true;
-    return [o.title, o.repo ?? '', ...(o.labels ?? [])].some((t) => t.toLowerCase().includes(q));
+    return [o.title, repoName(o), ...(o.labels ?? [])].some((t) => t.toLowerCase().includes(q));
   });
 }
 
 export function repoOptions(rows: OrderRow[]): string[] {
-  return [...new Set(rows.map((r) => r.order.repo).filter((r): r is string => !!r))];
+  return [...new Set(rows.map((r) => repoName(r.order)).filter(Boolean))];
 }
 
 /** The Launch dialog's order for a row's arrow. */
