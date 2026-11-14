@@ -7,6 +7,8 @@ type Detail struct {
 	Number        int             `json:"number"`
 	URL           string          `json:"url"`
 	Title         string          `json:"title"`
+	Author        DetailActor     `json:"author"`
+	Reviewing     bool            `json:"reviewing"`
 	Body          string          `json:"body"`
 	State         string          `json:"state"`
 	Draft         bool            `json:"draft"`

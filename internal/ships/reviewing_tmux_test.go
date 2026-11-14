@@ -199,7 +199,7 @@ func TestAReviewingShipMoorsWhenItsTurnEndsDoneWithAReportThatListsNoPRs(t *test
 	go r.s.Run(r.ctx)
 	r.turn(t, "working", "")
 	r.writeReport(t, "done")
-	waitUntil(t, "the poll to carry the reviewed PR", func() bool { return len(r.prs(t)) == 1 })
+	waitUntil(t, "the poll to carry the reviewed PR", func() bool { r.poll(); return len(r.prs(t)) == 1 })
 	r.turn(t, "needs_you", "stop")
 	r.waitMoored(t)
 
@@ -207,6 +207,7 @@ func TestAReviewingShipMoorsWhenItsTurnEndsDoneWithAReportThatListsNoPRs(t *test
 	if !slices.Equal(rec.PRs, []string{livePR7}) || !slices.Equal(rec.Reviewing, []string{livePR7}) {
 		t.Errorf("record prs %v reviewing %v, want both [%s]", rec.PRs, rec.Reviewing, livePR7)
 	}
+	r.poll()
 	if got := r.prs(t); len(got) != 1 || !got[0].Reviewing || got[0].Author != author {
 		t.Errorf("moored prs = %+v, want %s reviewing by %s", got, livePR7, author)
 	}
@@ -218,7 +219,7 @@ func TestAReviewingShipMoorsItsReviewedPRsBeforeTheOnesItsReportListsWithoutDupl
 	go r.s.Run(r.ctx)
 	r.turn(t, "working", "")
 	r.writeReport(t, "done", livePR9, livePR7)
-	waitUntil(t, "the poll to carry the reviewed PR", func() bool { return len(r.prs(t)) >= 1 })
+	waitUntil(t, "the poll to carry the reviewed PR", func() bool { r.poll(); return len(r.prs(t)) >= 1 })
 	r.turn(t, "needs_you", "stop")
 	r.waitMoored(t)
 

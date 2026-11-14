@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -91,7 +92,7 @@ func (s *Service) moorVia(ctx context.Context, sess sessionhost.Session, prs []s
 		s.CaptureResume(name) // before the report goes
 	}
 	rec := moor.Record{Name: o["name"], Session: name, Fleet: o["fleet"], Harness: o["harness"], Model: o["model"],
-		Skill: moor.Skill{Kind: o["skill-kind"], Name: o["skill"]}, Checkout: o["dir"], PRs: prs,
+		Skill: moor.Skill{Kind: o["skill-kind"], Name: o["skill"]}, Checkout: o["dir"], PRs: prs, Reviewing: s.reviewingIn(sess, prs),
 		Source: o["source"], Panel: o["panel"], OrderID: o["order"], URL: o["url"], Issues: splitIssues(o["issues"]), Title: o["title"], Link: o["link"],
 		Resume: s.report(name).Resume, Round: round, Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Launched: o["launched"], Resources: splitResources(o["resources"]), MooredAt: time.Now().UTC().Truncate(time.Second)}
 	if err := s.recordRound(ctx, sess, rec, time.Now().UTC()); err != nil {
@@ -105,6 +106,19 @@ func (s *Service) moorVia(ctx context.Context, sess sessionhost.Session, prs []s
 	s.record(outcomes.Record{Ship: name, Event: "moored", Fields: withVia(map[string]any{"prs": prs}, via)}, nil)
 	s.endRound(sess, "moored")
 	return true
+}
+
+// reviewingIn is the ones of prs the ship reviews.
+func (s *Service) reviewingIn(sess sessionhost.Session, prs []string) []string {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	var out []string
+	for _, u := range s.reviewingOf(sess) {
+		if slices.Contains(prs, u) {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // recordRound appends the round the pane just finished to the ship's history, before the record goes, under wakeMu so an end cannot leave a file behind.

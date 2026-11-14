@@ -51,7 +51,7 @@ func View(url string, st Status, found bool) PR {
 	if !found {
 		return PR{URL: url, State: "CLOSED"}
 	}
-	return PR{URL: url, State: st.State, Review: st.Review, Checks: st.Checks, Mergeable: st.Mergeable,
+	return PR{URL: url, State: st.State, Review: st.Review, Checks: st.Checks, Mergeable: st.Mergeable, Author: st.Author,
 		Conflicts: st.State == "OPEN" && st.Mergeable == "CONFLICTING", Ready: st.Ready()}
 }
 

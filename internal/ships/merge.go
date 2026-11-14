@@ -46,6 +46,10 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
 		return
 	}
+	if len(rec.Reviewing) > 0 {
+		writeError(w, http.StatusConflict, "ship "+session+" reviews a pull request, and a review ship does not merge it")
+		return
+	}
 	if body.UpTo != "" && !slices.Contains(rec.PRs, body.UpTo) {
 		writeError(w, http.StatusBadRequest, "upTo is not one of ship "+session+"'s pull requests")
 		return
