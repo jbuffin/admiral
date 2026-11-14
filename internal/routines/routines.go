@@ -509,7 +509,7 @@ func (s *Store) readLog(fleet string) ([]logLine, error) {
 	for {
 		line, err := r.ReadBytes('\n')
 		var l logLine
-		if len(line) > 0 && json.Unmarshal(line, &l) == nil && (l.ID != "" || l.UndoOf != "" || l.FailOf != "") {
+		if len(line) > 0 && json.Unmarshal(line, &l) == nil && (l.ID != "" || l.UndoOf != "" || l.FailOf != "" || l.PromoteOf != "") {
 			out = append(out, l)
 		}
 		if err == io.EOF {
@@ -532,7 +532,7 @@ func (s *Store) AppendTrigger(fleet string, t Trigger) (Trigger, error) {
 	if t.At.IsZero() {
 		t.At = s.now()
 	}
-	t.Undone, t.UndoneAt = false, time.Time{}
+	t.Undone, t.UndoneAt, t.Promoted, t.PromotedShip = false, time.Time{}, false, ""
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return t, s.appendLine(fleet, logLine{Trigger: t})
@@ -563,6 +563,30 @@ func (s *Store) Undo(fleet, id string) error {
 		}
 	}
 	return ErrNotFound
+}
+
+// Promote appends a mark that the launch record id started the normal ship ship; a second mark is left out.
+func (s *Store) Promote(fleet, id, ship string) error {
+	if _, err := s.fleet(fleet); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lines, err := s.readLog(fleet)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, l := range lines {
+		if l.PromoteOf == id {
+			return nil
+		}
+		found = found || l.ID == id
+	}
+	if !found {
+		return ErrNotFound
+	}
+	return s.appendLine(fleet, logLine{Trigger: Trigger{At: s.now(), Ship: ship}, PromoteOf: id})
 }
 
 // MarkFailed appends a mark that the launch record id's ship ended failed; Recent then reads the record as failed.

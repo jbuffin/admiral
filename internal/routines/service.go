@@ -57,9 +57,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/mute", s.serveMute)
 	mux.HandleFunc("GET /api/fleets/{key}/routines/{id}/runs/{trigger}", s.serveRun)
 	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/runs/{trigger}/undo", s.serveUndo)
-	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/runs/{trigger}/promote", func(w http.ResponseWriter, _ *http.Request) {
-		writeError(w, http.StatusNotImplemented, "promote is not implemented")
-	})
+	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/runs/{trigger}/promote", s.servePromote)
 	mux.HandleFunc("GET /api/fleets/{key}/hold-fire", s.serveFleetHold)
 	mux.HandleFunc("POST /api/fleets/{key}/hold-fire/on", s.serveSetHold(true, false))
 	mux.HandleFunc("POST /api/fleets/{key}/hold-fire/off", s.serveSetHold(false, false))

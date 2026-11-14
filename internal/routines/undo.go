@@ -67,6 +67,10 @@ func (s *Service) serveUndo(w http.ResponseWriter, r *http.Request) {
 		fail(w, invalidf("only a launch of an event ship can be undone"))
 		return
 	}
+	if rec.Promoted {
+		fail(w, invalidf("a promoted record cannot be undone: its ship is yours now"))
+		return
+	}
 	if rec.Undone {
 		writeJSON(w, http.StatusOK, rec)
 		return
