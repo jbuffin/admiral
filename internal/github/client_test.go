@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -57,6 +58,7 @@ func (f *fakeGH) answer(t *testing.T, files map[string]string) {
 type call struct {
 	argv []string
 	env  string
+	cwd  string
 }
 
 func (f *fakeGH) calls(t *testing.T, first string) []call {
@@ -73,7 +75,8 @@ func (f *fakeGH) calls(t *testing.T, first string) []call {
 			continue
 		}
 		env, _ := os.ReadFile(filepath.Join(d, "env"))
-		out = append(out, call{argv: argv, env: string(env)})
+		cwd, _ := os.ReadFile(filepath.Join(d, "cwd"))
+		out = append(out, call{argv: argv, env: string(env), cwd: strings.TrimSpace(string(cwd))})
 	}
 	return out
 }
@@ -471,37 +474,41 @@ func TestMergePRThatRunsPastItsLimitIsAnUnknownResult(t *testing.T) {
 	}
 }
 
-func TestStackCallsPinTheRepoAndNeutraliseTheCheckoutsGitConfig(t *testing.T) {
+func TestMergeStackRunsGhStackMergeByNumberInAFreshFolderWithTheRepoPinned(t *testing.T) {
 	f := newFake(t)
 	f.write(t, "token", "fake-token-work-2\n")
-	f.write(t, "stack_view.json", `{"branches":[{"head":"abc","pr":{"number":7,"url":"https://ghe.example.com/acme/widgets/pull/7"}}]}`)
-	cl := NewClient("ghe.example.com", "", nil, append(f.env, "GH_REPO=evil.example/x/y", "GH_HOST=evil.example"))
-	dir := t.TempDir()
-	layers, err := cl.StackPRs(context.Background(), dir, "acme/widgets")
-	if err != nil || len(layers) != 1 || layers[0] != (moor.StackLayer{URL: "https://ghe.example.com/acme/widgets/pull/7", Number: 7, Head: "abc"}) {
-		t.Fatalf("StackPRs = %+v, %v; want the one layer with its number and head", layers, err)
-	}
-	if err := cl.MergeStack(context.Background(), dir, "acme/widgets", "squash"); err != nil {
+	if err := os.MkdirAll(filepath.Join(f.dir, "pr_detail"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cs := f.calls(t, "stack")
-	if len(cs) != 2 {
-		t.Fatalf("want a stack view and a stack merge, got %d calls", len(cs))
+	f.write(t, "pr_detail/https___ghe.example.com_acme_widgets_pull_7", `{"number":7,"state":"OPEN","stack":{"number":7,"size":1,"entries":{"nodes":[]}}}`+"\n")
+	cl := NewClient("ghe.example.com", "", nil, append(f.env, "GH_REPO=evil.example/x/y", "GH_HOST=evil.example"))
+	if err := cl.MergeStack(context.Background(), "acme/widgets", 7, "squash"); err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range cs {
-		for _, want := range []string{
-			"GH_HOST=ghe.example.com\n", "GH_REPO=ghe.example.com/acme/widgets\n", "GIT_CONFIG_COUNT=3\n",
-			"GIT_CONFIG_KEY_0=core.fsmonitor\n", "GIT_CONFIG_VALUE_0=false\n",
-			"GIT_CONFIG_KEY_1=core.hooksPath\n", "GIT_CONFIG_VALUE_1=/dev/null\n",
-			"GIT_CONFIG_KEY_2=core.sshCommand\n", "GIT_CONFIG_VALUE_2=\n",
-		} {
-			if !strings.Contains(c.env+"\n", want) {
-				t.Errorf("gh %v env lacks %q: %q", c.argv, strings.TrimSpace(want), c.env)
-			}
+	c := f.only(t, "stack")
+	if want := []string{"stack", "merge", "7", "--yes", "--merge-method", "squash"}; !slices.Equal(c.argv, want) {
+		t.Errorf("argv = %q, want %q", c.argv, want)
+	}
+	for _, want := range []string{
+		"GH_HOST=ghe.example.com\n", "GH_REPO=ghe.example.com/acme/widgets\n", "GIT_CONFIG_COUNT=3\n",
+		"GIT_CONFIG_KEY_0=core.fsmonitor\n", "GIT_CONFIG_VALUE_0=false\n",
+		"GIT_CONFIG_KEY_1=core.hooksPath\n", "GIT_CONFIG_VALUE_1=/dev/null\n",
+		"GIT_CONFIG_KEY_2=core.sshCommand\n", "GIT_CONFIG_VALUE_2=\n",
+	} {
+		if !strings.Contains(c.env+"\n", want) {
+			t.Errorf("gh env lacks %q: %q", strings.TrimSpace(want), c.env)
 		}
-		if strings.Contains(c.env, "evil.example") {
-			t.Errorf("gh %v kept an inherited host or repo: %q", c.argv, c.env)
-		}
+	}
+	if strings.Contains(c.env, "evil.example") {
+		t.Errorf("gh kept an inherited host or repo: %q", c.env)
+	}
+	// An empty folder of its own: "" would run gh in Admiral's cwd, which can sit inside a repository whose config gh-stack reads.
+	wd, _ := os.Getwd()
+	if c.cwd == "" || c.cwd == wd {
+		t.Errorf("gh ran in %q, want a fresh folder and not the test's %q", c.cwd, wd)
+	}
+	if _, err := os.Lstat(c.cwd); err == nil {
+		t.Errorf("the folder gh ran in, %q, is still there afterwards", c.cwd)
 	}
 }
 

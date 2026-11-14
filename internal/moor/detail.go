@@ -14,6 +14,7 @@ type Detail struct {
 	Draft         bool            `json:"draft"`
 	Head          string          `json:"head"`
 	Base          string          `json:"base"`
+	DefaultBranch string          `json:"default_branch"`
 	Review        string          `json:"review"`
 	Checks        string          `json:"checks"`
 	Mergeable     string          `json:"mergeable"`

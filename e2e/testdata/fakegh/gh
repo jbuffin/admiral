@@ -55,23 +55,21 @@
 #     on stderr, merging nothing. With $FAKEGH_DIR/pr_merge.sleep it sleeps that
 #     many seconds first, so a second merge can arrive while this one runs.
 #
-#   gh stack view --json
-#     the stack of the checkout the call runs in (the gh-stack extension).
-#     Prints $FAKEGH_DIR/stack_view.json (the answer as gh-stack prints it:
-#     {"trunk":..,"branches":[{"name":..,"pr":{"number":..,"url":..,"state":..}}..]}).
-#     With $FAKEGH_DIR/stack_view.fail it exits 1 and prints that file on stderr.
-#     With no stack_view.json there is no stack here: stderr says so, exit 1.
-#
-#   gh stack merge --yes --merge-method (merge|squash|rebase)
-#     the Merge act's whole-stack merge. It takes NO target: any positional
-#     argument is refused (exit 2), so a test fails if a stack or PR number is
-#     ever passed. --yes and --merge-method are required, so a call that could
-#     stop to ask refuses (exit 2). On success it flips every pr.url in
-#     stack_view.json to MERGED as above and exits 0 (no stack_view.json: no
-#     stack, exit 1). With $FAKEGH_DIR/stack_merge.fail it exits 1 and prints
-#     that file on stderr, merging nothing. With $FAKEGH_DIR/stack_merge.sleep it
-#     sleeps that many seconds first. The call directory's cwd file is the
-#     checkout it ran in.
+#   gh stack merge N --yes --merge-method (merge|squash|rebase)
+#     the Merge act's whole-stack merge, by GitHub's stack number: exactly one
+#     positional argument, an integer (anything else exits 2). --yes and
+#     --merge-method are required, so a call that could stop to ask refuses
+#     (exit 2). There is no `gh stack view`: Admiral reads a stack through the
+#     detail query. A number that no pr_detail/KEY fixture holds as its
+#     "stack":{"number":N, exits 1 ("no stack N"). On success it merges every PR
+#     whose pr_detail/KEY has that stack: it writes MERGED into pr_state/KEY and
+#     rewrites each "state":"OPEN" in pr_detail/KEY to "state":"MERGED" (the
+#     stack entries' too), then exits 0. The match and the rewrite read the
+#     compact fixture the test helpers write: `"stack":{"number":N,` and
+#     `"state":"OPEN"`, with no space after a colon. With
+#     $FAKEGH_DIR/stack_merge.fail it exits 1 and prints that file on stderr,
+#     merging nothing. With $FAKEGH_DIR/stack_merge.sleep it sleeps that many
+#     seconds first. The call directory's cwd file is where gh ran.
 #
 #   gh api graphql ...   (the repository's default merge method)
 #     Taken when an argument holds `viewerDefaultMergeMethod`, before the other
@@ -219,7 +217,11 @@ pr)
 			exit 1
 		fi
 		mkdir -p "$FAKEGH_DIR/pr_state"
-		echo MERGED > "$FAKEGH_DIR/pr_state/$(printf '%s' "$prurl" | tr '/:' '__')"
+		mkey=$(printf '%s' "$prurl" | tr '/:' '__')
+		echo MERGED > "$FAKEGH_DIR/pr_state/$mkey"
+		if [ -s "$FAKEGH_DIR/pr_detail/$mkey" ]; then
+			sed 's/"state":"OPEN"/"state":"MERGED"/g' "$FAKEGH_DIR/pr_detail/$mkey" > "$call_dir/detail.tmp" && mv "$call_dir/detail.tmp" "$FAKEGH_DIR/pr_detail/$mkey"
+		fi
 		exit 0
 	fi
 	[ "$2" = view ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
@@ -261,59 +263,45 @@ pr)
 	exit 1
 	;;
 stack)
-	case "$2" in
-	view)
-		shift 2
-		[ "$*" = --json ] || { echo "fakegh: gh stack view needs exactly --json" >&2; exit 2; }
-		if [ -e "$FAKEGH_DIR/stack_view.fail" ]; then
-			cat "$FAKEGH_DIR/stack_view.fail" >&2
-			exit 1
-		fi
-		if [ -s "$FAKEGH_DIR/stack_view.json" ]; then
-			cat "$FAKEGH_DIR/stack_view.json"
-			exit 0
-		fi
-		echo "fakegh: no stack in $(pwd -P)" >&2
-		exit 1
-		;;
-	merge)
-		shift 2
-		yes=0 method=
-		while [ $# -gt 0 ]; do
-			case "$1" in
-			--yes|-y) yes=1; shift ;;
-			--merge-method) method=$2; shift 2 ;;
-			--merge-method=*) method=${1#--merge-method=}; shift ;;
-			-*) echo "fakegh: unsupported argument to gh stack merge: $1" >&2; exit 2 ;;
-			*) echo "fakegh: gh stack merge takes no target, got $1" >&2; exit 2 ;;
-			esac
-		done
-		[ "$yes" = 1 ] || { echo "fakegh: gh stack merge without --yes would stop to ask" >&2; exit 2; }
-		case "$method" in
-		merge|squash|rebase) ;;
-		*) echo "fakegh: gh stack merge needs --merge-method merge, squash or rebase" >&2; exit 2 ;;
+	[ "$2" = merge ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
+	shift 2
+	yes=0 method= target= ntarget=0
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--yes|-y) yes=1; shift ;;
+		--merge-method) method=$2; shift 2 ;;
+		--merge-method=*) method=${1#--merge-method=}; shift ;;
+		-*) echo "fakegh: unsupported argument to gh stack merge: $1" >&2; exit 2 ;;
+		*) target=$1; ntarget=$((ntarget + 1)); shift ;;
 		esac
-		echo "$method" > "$call_dir/method"
-		[ -s "$FAKEGH_DIR/stack_merge.sleep" ] && sleep "$(cat "$FAKEGH_DIR/stack_merge.sleep")"
-		if [ -e "$FAKEGH_DIR/stack_merge.fail" ]; then
-			cat "$FAKEGH_DIR/stack_merge.fail" >&2
-			exit 1
-		fi
-		if [ ! -s "$FAKEGH_DIR/stack_view.json" ]; then
-			echo "fakegh: no stack in $(pwd -P)" >&2
-			exit 1
-		fi
-		mkdir -p "$FAKEGH_DIR/pr_state"
-		for u in $(grep -oE '"url" *: *"[^"]*"' "$FAKEGH_DIR/stack_view.json" | sed -E 's/.*"(https:[^"]*)"$/\1/'); do
-			echo MERGED > "$FAKEGH_DIR/pr_state/$(printf '%s' "$u" | tr '/:' '__')"
-		done
-		exit 0
-		;;
-	*)
-		echo "fakegh: unsupported: gh $*" >&2
-		exit 2
-		;;
+	done
+	[ "$ntarget" = 1 ] || { echo "fakegh: gh stack merge takes exactly one stack number, got $ntarget arguments" >&2; exit 2; }
+	case "$target" in
+	''|*[!0-9]*) echo "fakegh: gh stack merge takes a stack number, got $target" >&2; exit 2 ;;
 	esac
+	[ "$yes" = 1 ] || { echo "fakegh: gh stack merge without --yes would stop to ask" >&2; exit 2; }
+	case "$method" in
+	merge|squash|rebase) ;;
+	*) echo "fakegh: gh stack merge needs --merge-method merge, squash or rebase" >&2; exit 2 ;;
+	esac
+	echo "$method" > "$call_dir/method"
+	members=
+	for f in "$FAKEGH_DIR"/pr_detail/*; do
+		[ -s "$f" ] || continue
+		grep -qE "\"stack\": *\{ *\"number\": *$target *[,}]" "$f" && members="$members $(basename "$f")"
+	done
+	[ -n "$members" ] || { echo "fakegh: no stack $target" >&2; exit 1; }
+	[ -s "$FAKEGH_DIR/stack_merge.sleep" ] && sleep "$(cat "$FAKEGH_DIR/stack_merge.sleep")"
+	if [ -e "$FAKEGH_DIR/stack_merge.fail" ]; then
+		cat "$FAKEGH_DIR/stack_merge.fail" >&2
+		exit 1
+	fi
+	mkdir -p "$FAKEGH_DIR/pr_state"
+	for k in $members; do
+		echo MERGED > "$FAKEGH_DIR/pr_state/$k"
+		sed 's/"state":"OPEN"/"state":"MERGED"/g' "$FAKEGH_DIR/pr_detail/$k" > "$call_dir/detail.tmp" && mv "$call_dir/detail.tmp" "$FAKEGH_DIR/pr_detail/$k"
+	done
+	exit 0
 	;;
 repo)
 	[ "$2" = clone ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }

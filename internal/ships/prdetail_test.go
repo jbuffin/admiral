@@ -30,7 +30,7 @@ func wantFailure(t *testing.T, rec *httptest.ResponseRecorder, why string) {
 }
 
 func sevenDetail(title string) moor.Detail {
-	return moor.Detail{Number: 7, URL: prSeven, Title: title, Body: strings.Repeat("Description line.\n", 500), State: "OPEN", Head: "feat", Base: "main",
+	return moor.Detail{Number: 7, URL: prSeven, Title: title, Body: strings.Repeat("Description line.\n", 500), State: "OPEN", Head: "feat", Base: "main", DefaultBranch: "trunk",
 		Stack: &moor.DetailStack{Number: 4, Size: 2, URL: "https://github.com/acme/widgets/stack/4"}}
 }
 
@@ -42,8 +42,8 @@ func TestTheDetailRouteServesAMooredShipsPRReadFreshEveryTime(t *testing.T) {
 	rec := f.detail("nelson", prSeven)
 	var got moor.Detail
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil || got.Title != "First" || got.Number != 7 || got.Body != sevenDetail("").Body ||
-		got.Stack == nil || got.Stack.URL != "https://github.com/acme/widgets/stack/4" {
-		t.Fatalf("detail = %d %.200s, want 200 with the PR's title, full body and stack", rec.Code, rec.Body)
+		got.Stack == nil || got.Stack.URL != "https://github.com/acme/widgets/stack/4" || got.DefaultBranch != "trunk" {
+		t.Fatalf("detail = %d %.200s, want 200 with the PR's title, full body, stack and default branch", rec.Code, rec.Body)
 	}
 
 	g.mu.Lock()

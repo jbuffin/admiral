@@ -134,10 +134,6 @@ func (g *pollGitHub) MergePR(context.Context, string, string) error {
 	return g.mergeErr
 }
 
-func (g *pollGitHub) StackPRs(context.Context, string, string) ([]moor.StackLayer, error) {
-	return nil, nil
-}
-
 func (g *pollGitHub) StackOpenPRs(_ context.Context, owner, repo string, number int) ([]string, bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -156,7 +152,7 @@ func (g *pollGitHub) stackLog() []string {
 	return append([]string(nil), g.stackCalls...)
 }
 
-func (g *pollGitHub) MergeStack(context.Context, string, string, string) error {
+func (g *pollGitHub) MergeStack(context.Context, string, int, string) error {
 	return g.MergePR(context.Background(), "", "")
 }
 
