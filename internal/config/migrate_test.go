@@ -152,6 +152,9 @@ func TestReadConfigRefusesAnUnmigratedConfig(t *testing.T) {
 
 const migrateVersion = "9.9.9-test"
 
+// builtinEntries is the four built-in views as a migrated config stores them.
+const builtinEntries = `{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}`
+
 const ghFleets = `"fleets":{
   "a":{"name":"Alpha","search_roots":["/srv/a"],"claude":{}},
   "b":{"name":"Bravo","search_roots":["/srv/b"],"claude":{}}}`
@@ -218,20 +221,24 @@ func TestMigrateGitHubPluginSource(t *testing.T) {
 		t.Fatal("Migrate returned nil for a plugin GitHub source that already has a fleet")
 	}
 	srcs, _ := readSources(t, dir)
-	views := `[{"title":"Bugs","query":"label:bug"},{"title":"Assigned to me","query":"assignee:@me"}]`
+	// panel_order ["bugs","my-prs"] swaps the two positions those views held.
+	views := `[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},` +
+		`{"title":"Bugs","query":"label:bug"},{"id":"my-prs","hidden":false},{"title":"Assigned to me","query":"assignee:@me"}]`
 
 	a := srcs["github"]
 	if a == nil || a["fleet"] != "a" || a["plugin"] != "github" || a["name"] != "GitHub" {
 		t.Fatalf("source github = %v, want it kept on fleet a", a)
 	}
 	as := settingsOf(t, a)
-	wantJSON(t, "github settings.views (entries kept, even one equal to a default)", as["views"], views)
+	wantJSON(t, "github settings.views (built-ins gained, customs kept, panel_order folded in)", as["views"], views)
 	if _, has := as["panels"]; has {
 		t.Errorf("github settings still hold panels: %v", as)
 	}
 	wantJSON(t, "github settings carried over", map[string]any{"host": as["host"], "account": as["account"], "hotLabels": as["hotLabels"], "refreshMinutes": as["refreshMinutes"]},
 		`{"host":"ghe.example.com","account":"work","hotLabels":["p0"],"refreshMinutes":10}`)
-	wantJSON(t, "github panel_order", a["panel_order"], `["bugs","my-prs"]`)
+	if _, has := a["panel_order"]; has {
+		t.Errorf("github still has panel_order %v: the views list is the only order", a["panel_order"])
+	}
 	if _, has := a["autopilot"]; has {
 		t.Errorf("github has autopilot %v, want none", a["autopilot"])
 	}
@@ -245,7 +252,9 @@ func TestMigrateGitHubPluginSource(t *testing.T) {
 	}
 	bs := settingsOf(t, b)
 	wantJSON(t, "github-b settings", bs, `{"views":`+views+`,"host":"ghe.example.com","account":"work","hotLabels":["p0"],"refreshMinutes":10}`)
-	wantJSON(t, "github-b panel_order", b["panel_order"], `["bugs","my-prs"]`)
+	if _, has := b["panel_order"]; has {
+		t.Errorf("github-b has panel_order %v: the views list is the only order", b["panel_order"])
+	}
 	if _, has := b["autopilot"]; has {
 		t.Errorf("github-b has autopilot %v: only the fleet that had the plugin keeps it", b["autopilot"])
 	}
@@ -293,12 +302,12 @@ func TestMigrateGitHubSourceWithNoSettings(t *testing.T) {
 		t.Fatalf("Migrate = %+v, %v, want a migration", m, err)
 	}
 	srcs, _ := readSources(t, dir)
-	wantJSON(t, "github settings.views", settingsOf(t, srcs["github"])["views"], `[]`)
+	wantJSON(t, "github settings.views", settingsOf(t, srcs["github"])["views"], `[`+builtinEntries+`]`)
 	b := srcs["github-b"]
 	if b == nil || b["fleet"] != "b" {
 		t.Fatalf("sources = %v, want github-b on fleet b", keysOfSources(srcs))
 	}
-	wantJSON(t, "github-b settings.views", settingsOf(t, b)["views"], `[]`)
+	wantJSON(t, "github-b settings.views", settingsOf(t, b)["views"], `[`+builtinEntries+`]`)
 	_, body := m.Notice()
 	if strings.Contains(body, "moved your sources into fleets") || strings.Contains(body, "default views now show") {
 		t.Errorf("notice for a source with no custom views:\n%s", body)
@@ -321,7 +330,7 @@ func TestMigrateGitHubKeyTakenAndOtherFleetCovered(t *testing.T) {
 		}
 	})
 	t.Run("a fleet that already has a GitHub source gets no second one", func(t *testing.T) {
-		both := oldGitHub + `,"mine":{"plugin":"github","name":"Mine","fleet":"b","settings":{"views":[]}}`
+		both := oldGitHub + `,"mine":{"plugin":"github","name":"Mine","fleet":"b","settings":{"views":[` + builtinEntries + `]}}`
 		dir := migrateDir(t, migrateConfig(both))
 		if m, err := config.Migrate(dir, migrateVersion); err != nil || m == nil {
 			t.Fatalf("Migrate = %+v, %v", m, err)
@@ -330,20 +339,26 @@ func TestMigrateGitHubKeyTakenAndOtherFleetCovered(t *testing.T) {
 		if len(srcs) != 2 {
 			t.Errorf("sources = %v, want github and mine only", keysOfSources(srcs))
 		}
-		wantJSON(t, "mine settings", settingsOf(t, srcs["mine"]), `{"views":[]}`)
+		wantJSON(t, "mine settings", settingsOf(t, srcs["mine"]), `{"views":[`+builtinEntries+`]}`)
 	})
 }
 
 func TestMigrateLeavesBuiltInAndOtherConfigs(t *testing.T) {
 	cases := map[string]string{
-		"github sources that already have views": migrateConfig(
-			`"github":{"plugin":"github","name":"GitHub","fleet":"a","settings":{"views":[{"title":"Bugs","query":"label:bug"}]}}`),
-		"a user who deleted a fleet's GitHub source": migrateConfig(
-			`"github":{"plugin":"github","name":"GitHub","fleet":"a","settings":{"views":[]}}`),
+		"github sources that already have the built-in entries": migrateConfig(
+			`"github":{"plugin":"github","name":"GitHub","fleet":"a","settings":{"views":[` + builtinEntries + `,{"title":"Bugs","query":"label:bug"}]}}`),
+		"a fleet whose GitHub source was deleted": migrateConfig(
+			`"github":{"plugin":"github","name":"GitHub","fleet":"a","settings":{"views":[` + builtinEntries + `]}}`),
+		"built-ins hidden and reordered": migrateConfig(
+			`"github":{"plugin":"github","name":"GitHub","fleet":"a","settings":{"views":[{"id":"my-prs","hidden":true,"title":"Mine"},{"id":"for-you","hidden":false},` +
+				`{"id":"review-requested","hidden":false},{"id":"assigned-to-me","hidden":false}]}}`),
 		"no GitHub source": migrateConfig(`"tracker":{"plugin":"jira","name":"Jira","fleet":"a"}`),
 	}
 	for name, cfg := range cases {
 		t.Run(name, func(t *testing.T) {
+			if config.NeedsMigration([]byte(cfg)) {
+				t.Fatalf("NeedsMigration is true for a config that has its built-in entries")
+			}
 			dir := migrateDir(t, cfg)
 			if m, err := config.Migrate(dir, migrateVersion); err != nil || m != nil {
 				t.Fatalf("Migrate = %+v, %v, want nil, nil", m, err)
@@ -355,6 +370,61 @@ func TestMigrateLeavesBuiltInAndOtherConfigs(t *testing.T) {
 				t.Errorf("a backup was written: %v", b)
 			}
 		})
+	}
+}
+
+// A source that already has views gains the built-ins in front, with its own notice and flag.
+func TestMigrateGivesAGitHubSourceItsBuiltInViews(t *testing.T) {
+	cfg := migrateConfig(`"github":{"plugin":"github","name":"GitHub","fleet":"a","settings":{"views":[` +
+		`{"title":"Bugs","query":"label:bug"},{"title":"Docs","query":"label:docs","hidden":true}]},"panel_order":["docs","bugs"]},` +
+		`"github-b":{"plugin":"github","fleet":"b","settings":{"views":[]}},` +
+		`"tracker":{"plugin":"jira","name":"Jira","fleet":"a","panel_order":["x","y"]}`)
+	if !config.NeedsMigration([]byte(cfg)) {
+		t.Fatal("NeedsMigration is false for a GitHub source with no built-in entries")
+	}
+	dir := migrateDir(t, cfg)
+	m, err := config.Migrate(dir, migrateVersion)
+	if err != nil || m == nil {
+		t.Fatalf("Migrate = %+v, %v, want a migration", m, err)
+	}
+	if got := readText(t, filepath.Join(dir, "config.json.pre-"+migrateVersion)); got != cfg {
+		t.Errorf("the backup is not the old file byte for byte:\n%s", got)
+	}
+	srcs, _ := readSources(t, dir)
+	// panel_order ["docs","bugs"] puts Docs ahead of Bugs; the built-ins keep their places in front.
+	wantJSON(t, "github views", settingsOf(t, srcs["github"])["views"],
+		`[`+builtinEntries+`,{"title":"Docs","query":"label:docs","hidden":true},{"title":"Bugs","query":"label:bug"}]`)
+	if _, has := srcs["github"]["panel_order"]; has {
+		t.Errorf("github still has panel_order %v", srcs["github"]["panel_order"])
+	}
+	wantJSON(t, "github-b views", settingsOf(t, srcs["github-b"])["views"], `[`+builtinEntries+`]`)
+	wantJSON(t, "another plugin's panel_order", srcs["tracker"]["panel_order"], `["x","y"]`)
+
+	if m.GitHub || m.GitHubCustom {
+		t.Errorf("Migration = %+v: the built-in-views step must not raise the 'GitHub is now built in' flags", m)
+	}
+	if !m.GitHubViews {
+		t.Errorf("Migration = %+v, want GitHubViews set", m)
+	}
+	_, body := m.Notice()
+	if strings.Contains(body, "GitHub is now built in") {
+		t.Errorf("the notice says GitHub became built in:\n%s", body)
+	}
+	for _, want := range []string{m.Backup, "built-in views", "reorder"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("notice lacks %q:\n%s", want, body)
+		}
+	}
+
+	if _, err := config.ReadConfig(dir); err != nil {
+		t.Errorf("the migrated config is still refused: %v", err)
+	}
+	before := readText(t, filepath.Join(dir, "config.json"))
+	if m2, err := config.Migrate(dir, migrateVersion); err != nil || m2 != nil {
+		t.Fatalf("second Migrate = %+v, %v, want nil, nil", m2, err)
+	}
+	if after := readText(t, filepath.Join(dir, "config.json")); after != before {
+		t.Errorf("a second Migrate rewrote config.json:\n%s", after)
 	}
 }
 

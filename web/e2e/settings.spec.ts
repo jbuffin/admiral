@@ -154,6 +154,9 @@ function checkout(root: string, dir: string, repo: string) {
   }
 }
 
+// The entries the startup migration adds ahead of a source's custom views.
+const BUILT_IN_VIEWS = ['for-you', 'assigned-to-me', 'review-requested', 'my-prs'].map((id) => ({ id, hidden: false }));
+
 test('a GitHub source keeps its host, account and custom views, names its fleet and shows routing warnings', async ({ page, admiral }) => {
   const gh = admiral.fakeGh();
   gh.token('', 'fake-token-default-1');
@@ -206,12 +209,12 @@ test('a GitHub source keeps its host, account and custom views, names its fleet 
   // iOS Safari zooms the page when a focused field is under 16px.
   expect(await custom1.getByLabel('Title').evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
 
-  // Add a custom view whose title replaces a default, and say so.
+  // A custom view that shares a built-in's title sits beside it: nothing is replaced, so nothing is said.
   await form.getByRole('button', { name: 'Add view' }).click();
   const custom2 = form.getByRole('group', { name: 'Custom view 2' });
   await custom2.getByLabel('Title').fill('My PRs');
   await custom2.getByLabel('Query').fill('is:open is:pr author:@me label:ready');
-  await expect(custom2.getByRole('status')).toContainText(/replaces.*My PRs/i);
+  await expect(custom2.getByRole('status')).toHaveCount(0);
   await custom2.getByLabel('Title').fill('Bugs');
   await custom2.getByLabel('Query').fill('is:open label:bug');
   await expect(custom2.getByRole('status')).toHaveCount(0);
@@ -226,6 +229,7 @@ test('a GitHub source keeps its host, account and custom views, names its fleet 
       host: 'ghe.example.test',
       account: 'default',
       views: [
+        ...BUILT_IN_VIEWS,
         { title: 'Newbies', query: 'is:open label:newbie' },
         { title: 'Bugs', query: 'is:open label:bug' },
       ],
@@ -240,8 +244,8 @@ test('a GitHub source keeps its host, account and custom views, names its fleet 
   // Delete a custom view.
   await again.getByRole('group', { name: 'Custom view 1' }).getByRole('button', { name: 'Remove view' }).click();
   await again.getByRole('button', { name: 'Save' }).click();
-  await expect.poll(() => (config(admiral).sources.gz.settings.views as unknown[]).length).toBe(1);
-  expect(config(admiral).sources.gz.settings.views).toEqual([{ title: 'Bugs', query: 'is:open label:bug' }]);
+  await expect.poll(() => (config(admiral).sources.gz.settings.views as unknown[]).length).toBe(BUILT_IN_VIEWS.length + 1);
+  expect(config(admiral).sources.gz.settings.views).toEqual([...BUILT_IN_VIEWS, { title: 'Bugs', query: 'is:open label:bug' }]);
   expect(Object.keys(config(admiral).sources)).toContain('gz');
 
   // The other fleet's GitHub source names that fleet, and a GitHub source has no move control.

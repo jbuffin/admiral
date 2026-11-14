@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -421,6 +422,34 @@ func inFleet(fleet string, sources map[string]any) map[string]any {
 	return sources
 }
 
+// withBuiltInViews gives a GitHub source's settings the built-in view entries a migrated config holds, ahead of any custom views.
+func withBuiltInViews(settings map[string]any) map[string]any {
+	out := maps.Clone(settings)
+	if _, has := out["views"]; !has {
+		return out
+	}
+	var views []any
+	for _, id := range []string{"for-you", "assigned-to-me", "review-requested", "my-prs"} {
+		views = append(views, map[string]any{"id": id, "hidden": false})
+	}
+	var custom []any
+	switch v := out["views"].(type) {
+	case []any:
+		custom = v
+	case []map[string]any:
+		for _, c := range v {
+			custom = append(custom, c)
+		}
+	}
+	for _, c := range custom {
+		if m, ok := c.(map[string]any); ok && m["id"] != nil && m["query"] == nil {
+			return out // already has its built-in entries
+		}
+	}
+	out["views"] = append(views, custom...)
+	return out
+}
+
 func rawSources(defs ...srcDef) string {
 	parts := []string{}
 	for _, d := range defs {
@@ -430,6 +459,9 @@ func rawSources(defs ...srcDef) string {
 		}
 		if d.Settings != nil {
 			m["settings"] = d.Settings
+			if d.Plugin == "github" {
+				m["settings"] = withBuiltInViews(d.Settings)
+			}
 		}
 		b, _ := json.Marshal(m)
 		k, _ := json.Marshal(d.Key)

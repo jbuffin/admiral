@@ -106,7 +106,7 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 		// Both fleets are new and the file had no GitHub source, so each gets the defaults.
 		srcs := c.sources(t)
 		for _, f := range []string{"zulu", "alpha"} {
-			if !sameJSON(t, srcs["github-"+f], `{"plugin":"github","fleet":"`+f+`","settings":{"views":[]}}`) {
+			if !sameJSON(t, srcs["github-"+f], `{"plugin":"github","fleet":"`+f+`","settings":{"views":[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]}}`) {
 				t.Errorf("source github-%s = %s, want a GitHub source with the default views", f, srcs["github-"+f])
 			}
 		}
@@ -224,7 +224,7 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 		if !added {
 			t.Errorf("the diff should show the new fleet as a `+` line naming zulu:\n%s", r.stdout)
 		}
-		if !sameJSON(t, c.sources(t)["github-zulu"], `{"plugin":"github","fleet":"zulu","settings":{"views":[]}}`) {
+		if !sameJSON(t, c.sources(t)["github-zulu"], `{"plugin":"github","fleet":"zulu","settings":{"views":[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]}}`) {
 			t.Errorf("source github-zulu = %s, want the new fleet's GitHub source", c.sources(t)["github-zulu"])
 		}
 

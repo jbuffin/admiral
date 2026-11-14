@@ -197,7 +197,7 @@ func TestGitHubBuiltin(t *testing.T) {
 	w.waitGH("github-charlie", 20*time.Second, "the new fleet's assigned item", func(s ghSrcJSON) bool {
 		return s.State == "ok" && reflect.DeepEqual(s.viewOrders("assigned-to-me"), []string{"newco/gadget#3"})
 	})
-	if got := w.readConfig().sources(t)["github-charlie"]; !sameJSON(t, got, `{"plugin":"github","name":"GitHub","fleet":"charlie","settings":{"views":[]}}`) {
+	if got := w.readConfig().sources(t)["github-charlie"]; !sameJSON(t, got, `{"plugin":"github","name":"GitHub","fleet":"charlie","settings":{"views":[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]}}`) {
 		t.Errorf("source github-charlie = %s, want gha's name and views on fleet charlie", got)
 	}
 }

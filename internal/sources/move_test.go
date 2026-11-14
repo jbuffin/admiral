@@ -13,7 +13,7 @@ const moveConfig = `{"version":1,"x_note":"kept","fleets":{"work":{"name":"Work"
 
 // Never started: a running GitHub source would read the machine's gh login.
 const ghMoveConfig = `{"version":1,"fleets":{"work":{"name":"Work","claude":{}},"home":{"name":"Home","claude":{}}},
-  "sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]}}}}`
+  "sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]}}}}`
 
 func (f *serviceFixture) storedFleet(key string) string {
 	f.t.Helper()

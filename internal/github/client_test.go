@@ -374,13 +374,14 @@ func ids(vs []View) string {
 
 func TestViewsDefaultsAndSlugs(t *testing.T) {
 	d := settings(t, `{}`)
-	if ids(d.Views) != "assigned-to-me,review-requested,my-prs" {
+	if ids(d.Views) != "for-you,assigned-to-me,review-requested,my-prs" {
 		t.Fatalf("default view ids = %s", ids(d.Views))
 	}
-	wantQ := []string{"is:open assignee:@me", "is:open is:pr review-requested:@me", "is:open is:pr author:@me"}
+	wantQ := []string{"", "is:open assignee:@me", "is:open is:pr review-requested:@me", "is:open is:pr author:@me"}
+	wantT := []string{"For you", "Assigned to me", "Review requested", "My PRs"}
 	for i, v := range d.Views {
-		if v.Query != wantQ[i] {
-			t.Errorf("default %s query = %q, want %q", v.ID, v.Query, wantQ[i])
+		if v.Query != wantQ[i] || v.Title != wantT[i] || !v.Builtin || v.Hidden {
+			t.Errorf("default view %d = %+v, want a visible built-in %q with query %q", i, v, wantT[i], wantQ[i])
 		}
 	}
 
@@ -392,27 +393,95 @@ func TestViewsDefaultsAndSlugs(t *testing.T) {
 		"not an object",
 		{"title":"!!!","query":"q3"},
 		{"title":"Bugs","query":"q4"}]}`)
-	if got := ids(s.Views); got != "assigned-to-me,review-requested,my-prs,bugs,bugs-2,panel,bugs-3" {
+	if got := ids(s.Views); got != "for-you,assigned-to-me,review-requested,my-prs,bugs,bugs-2,panel,bugs-3" {
 		t.Fatalf("view ids = %s", got)
 	}
-	if v := s.Views[3]; v.Title != "Bugs!" || v.Query != "q1" {
+	if v := s.Views[4]; v.Title != "Bugs!" || v.Query != "q1" || v.Builtin || v.Hidden {
 		t.Errorf("custom view not trimmed: %+v", v)
 	}
 }
 
-func TestCustomReplacesDefaultByID(t *testing.T) {
+func TestCustomViewSitsBesideABuiltInWithTheSameSlug(t *testing.T) {
 	s := settings(t, `{"views":[
 		{"title":"My PRs","query":"is:pr author:@me label:mine"},
 		{"title":"Assigned to me","query":"is:open assignee:@me label:x"},
-		{"title":"assigned to me","query":"second"}]}`)
-	if got := ids(s.Views); got != "assigned-to-me,review-requested,my-prs,assigned-to-me-2" {
+		{"title":"assigned to me","query":"second"},
+		{"title":"For you","query":"third"}]}`)
+	if got := ids(s.Views); got != "for-you,assigned-to-me,review-requested,my-prs,my-prs-2,assigned-to-me-2,assigned-to-me-3,for-you-2" {
 		t.Fatalf("view ids = %s", got)
 	}
-	if v := s.Views[0]; v.Query != "is:open assignee:@me label:x" {
-		t.Errorf("Assigned to me not replaced in place: %+v", v)
+	if v := s.Views[3]; v.Title != "My PRs" || v.Query != "is:open is:pr author:@me" || !v.Builtin {
+		t.Errorf("the built-in My PRs was replaced: %+v", v)
 	}
-	if v := s.Views[2]; v.Title != "My PRs" || v.Query != "is:pr author:@me label:mine" {
-		t.Errorf("My PRs not replaced in place: %+v", v)
+	if v := s.Views[4]; v.Title != "My PRs" || v.Query != "is:pr author:@me label:mine" || v.Builtin {
+		t.Errorf("the custom My PRs = %+v, want a custom view with its own query", v)
+	}
+	if v := s.Views[1]; v.Query != "is:open assignee:@me" {
+		t.Errorf("the built-in Assigned to me was replaced: %+v", v)
+	}
+}
+
+func TestViewsFollowTheStoredOrderHiddenAndTitle(t *testing.T) {
+	s := settings(t, `{"views":[
+		{"id":"my-prs","hidden":false,"title":"Mine"},
+		{"title":"Bugs","query":"label:bug","hidden":true},
+		{"id":"for-you","hidden":true},
+		{"id":"assigned-to-me","hidden":false},
+		{"id":"review-requested","hidden":true,"title":"Reviews"},
+		{"title":"Docs","query":"label:docs"}]}`)
+	if got := ids(s.Views); got != "my-prs,bugs,for-you,assigned-to-me,review-requested,docs" {
+		t.Fatalf("view ids = %s, want the stored order", got)
+	}
+	want := []struct {
+		title, query string
+		hidden       bool
+	}{
+		{"Mine", "is:open is:pr author:@me", false},
+		{"Bugs", "label:bug", true},
+		{"For you", "", true},
+		{"Assigned to me", "is:open assignee:@me", false},
+		{"Reviews", "is:open is:pr review-requested:@me", true},
+		{"Docs", "label:docs", false},
+	}
+	for i, w := range want {
+		if v := s.Views[i]; v.Title != w.title || v.Query != w.query || v.Hidden != w.hidden {
+			t.Errorf("view %d = %+v, want title %q query %q hidden %v", i, v, w.title, w.query, w.hidden)
+		}
+	}
+}
+
+func TestABuiltInsSearchComesFromTheDefaultsWhateverTheEntrySays(t *testing.T) {
+	s := settings(t, `{"views":[
+		{"id":"for-you","hidden":false,"query":"is:open anything","title":"Home"},
+		{"id":"assigned-to-me","hidden":false,"query":"is:open assignee:somebody"},
+		{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]}`)
+	if v := s.Views[0]; v.ID != "for-you" || v.Query != "" || v.Title != "Home" || !v.Builtin {
+		t.Errorf("For you = %+v, want a title and no search", v)
+	}
+	if v := s.Views[1]; v.Query != "is:open assignee:@me" {
+		t.Errorf("Assigned to me query = %q, want the built-in's", v.Query)
+	}
+}
+
+func TestAnOldListWithNoBuiltInEntriesReadsAsForYouTheBuiltInsThenTheCustoms(t *testing.T) {
+	s := settings(t, `{"views":[{"title":"Bugs","query":"label:bug"},{"title":"Docs","query":"label:docs"}]}`)
+	if got := ids(s.Views); got != "for-you,assigned-to-me,review-requested,my-prs,bugs,docs" {
+		t.Fatalf("view ids = %s", got)
+	}
+}
+
+func TestAMissingBuiltInIsAddedAfterTheEntriesPresentAndAnUnknownOneIsSkipped(t *testing.T) {
+	s := settings(t, `{"views":[
+		{"id":"review-requested","hidden":false},
+		{"id":"nope","hidden":false},
+		{"title":"Bugs","query":"label:bug"}]}`)
+	if got := ids(s.Views); got != "review-requested,bugs,for-you,assigned-to-me,my-prs" {
+		t.Fatalf("view ids = %s, want the missing built-ins last, For you first among them", got)
+	}
+	for _, v := range s.Views[2:] {
+		if !v.Builtin || v.Hidden {
+			t.Errorf("a missing built-in %+v should come back visible", v)
+		}
 	}
 }
 

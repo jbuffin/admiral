@@ -175,7 +175,7 @@ func TestGitHubSourceRoutesItemsToFleets(t *testing.T) {
 	fleets := fmt.Sprintf(`"alpha":{"name":"Alpha","claude":{},"search_roots":[%q]},"bravo":{"name":"Bravo","claude":{},"search_roots":[%q],"owners":["globex"]}`, rootA, rootB)
 	f := newServiceFixture(t, ghConfig(fleets,
 		`"gha":{"plugin":"github","fleet":"alpha","settings":{"views":[{"title":"Bugs","query":"is:open label:bug"}]}},`+
-			`"ghb":{"plugin":"github","fleet":"bravo","settings":{"account":"work","views":[]}}`))
+			`"ghb":{"plugin":"github","fleet":"bravo","settings":{"account":"work","views":[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]}}`))
 	// A Python plugin left in the folder must never run: the source is built in.
 	marker := filepath.Join(t.TempDir(), "plugin-ran")
 	dir := filepath.Join(f.home, "plugins", "github")
@@ -317,9 +317,7 @@ func TestAddGitHubSourceNeedsNoPluginFolder(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &added); code != http.StatusCreated || err != nil {
 		t.Fatalf("POST = %d %s, want 201 with the key", code, body)
 	}
-	if got := f.stored(added.Key); got != `{"views":[]}` {
-		t.Errorf("stored settings = %q, want {\"views\":[]}: a github source with views is the built-in one", got)
-	}
+	sameJSON(t, "stored settings (a github source with views is the built-in one)", f.stored(added.Key), `{"views":[`+builtinViewEntries+`]}`)
 }
 
 func TestStaleSessionCannotSetWarnings(t *testing.T) {
@@ -363,7 +361,7 @@ func TestFleetEnvChangeRestartsOnlyItsFleetsSources(t *testing.T) {
 	fleets := func(mark string) string {
 		return fmt.Sprintf(`"alpha":{"name":"Alpha","claude":{},"env":{"FLEET_MARK":%q}},"bravo":{"name":"Bravo","claude":{}}`, mark)
 	}
-	sources := `"gha":{"plugin":"github","fleet":"alpha","settings":{"views":[]}},"ghb":{"plugin":"github","fleet":"bravo","settings":{"views":[]}}`
+	sources := `"gha":{"plugin":"github","fleet":"alpha","settings":{"views":[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]}},"ghb":{"plugin":"github","fleet":"bravo","settings":{"views":[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]}}`
 	f := newServiceFixture(t, ghConfig(fleets("one"), sources))
 	f.startSources()
 	waitMarks := func(what string, pred func([]string) bool) {
