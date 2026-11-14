@@ -114,15 +114,15 @@ export function PRTab({ ship }: { ship: Ship }) {
       ) : null}
       <div class="pr-detail">
         <PRHeader ship={ship} url={current.url} detail={details[current.url]} />
-        {moored && !merged && ship.stack_ready ? (
+        {moored && (merged || ship.stack_ready) ? (
           <div class="peek-form">
-            <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} locked={acting} onBusy={setActing} />
+            {merged ? <p class="line">Merged</p> : <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} locked={acting} onBusy={setActing} />}
           </div>
         ) : null}
         {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : null}
-        {moored ? (
+        {moored && (!merged || error) ? (
           <div class="peek-form">
-            {merged ? <p class="line">Merged</p> : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}
+            {merged ? null : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}
             <Failure message={error} />
           </div>
         ) : null}
