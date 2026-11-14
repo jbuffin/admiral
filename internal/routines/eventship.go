@@ -17,7 +17,7 @@ func eventText(ev Event, en Enrichment, sender string) string {
 		return en.Text
 	}
 	title := strings.TrimSpace(ev.Title)
-	if title == "" {
+	if title == "" && ev.Ref == "" {
 		return noEventText
 	}
 	meta := []string{"kind: " + ev.Kind}
@@ -101,21 +101,27 @@ func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, e
 // tripEvent is the breaker for an event routine. No tick walks an event routine's ships, so before the count it
 // turns the records of its recent ships that ended failed into failed ones.
 func (s *Scheduler) tripEvent(fleet string, r Routine, now time.Time) Routine {
+	if r.Before != Act {
+		return r
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	recs, err := s.Store.Recent(fleet, r.ID, 0)
 	if err != nil {
 		return r
 	}
+	named := map[string]bool{}
 	held, holding := s.Ships.Holder(routineKey(r.ID))
 	for _, rec := range recs {
 		if rec.Outcome != Launched || rec.Undone || rec.Ship == "" || now.Sub(rec.At) > watchFor {
 			continue
 		}
-		// session names are reused: a ship that now holds the key under another name says nothing about this one
-		if holding && held.Session != rec.Ship {
+		// session names are reused: only the newest launch of a name is the ship EndedFailed speaks of, and a ship that
+		// now holds the key under another name says nothing about this one
+		if named[rec.Ship] || holding && held.Session != rec.Ship {
 			continue
 		}
+		named[rec.Ship] = true
 		if s.Ships.EndedFailed(rec.Ship) {
 			s.Store.MarkFailed(fleet, rec.ID, "the ship ended failed")
 		}
