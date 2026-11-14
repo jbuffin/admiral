@@ -34,6 +34,7 @@ import { automateSearch, campaignOf, crewOf, go, loc, routineNewPath, routineCre
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
 import { followReference } from './campaignsLink';
 import { ChatPanel } from './ChatPanel';
+import { NeedsYouBadge, OrdersPanel } from './OrdersScreen';
 import { InboxPanel } from './InboxPanel';
 import { watchAttention } from './attention';
 import { watchPush } from './pushLink';
@@ -338,6 +339,7 @@ function Panel({ surface, title, phone }: { surface: Surface; title: boolean; ph
   if (surface.id === 'inbox') return <InboxPanel surface={surface} title={title} phone={!!phone} />;
   if (surface.id === 'chat') return <ChatPanel surface={surface} title={title} phone={!!phone} />;
   if (surface.id === 'ships') return <ShipsPanel surface={surface} title={title} />;
+  if (surface.id === 'orders' && activeFleet.value) return <OrdersPanel phone={!!phone} />;
   if (surface.id === 'campaigns') {
     const id = campaignOf(loc.value.path);
     return id ? <CampaignPage key={id} id={id} title={title} /> : <CampaignsList phone={!!phone} title={title} />;
@@ -419,6 +421,7 @@ function PhoneShell({ surface }: { surface: Surface }) {
           <Link key={id} surface={surfaceById(id)} class="tab">
             <Icon name={id} size={20} />
             {surfaceById(id).title}
+            {id === 'orders' ? <NeedsYouBadge /> : null}
           </Link>
         ))}
         <button ref={moreBtn} type="button" class="tab" aria-haspopup="dialog" aria-expanded={more} onClick={() => setMore(true)}>
@@ -462,6 +465,7 @@ function DesktopShell({ surface }: { surface: Surface }) {
             <Link surface={s} class="nav-link">
               <Icon name={s.id} />
               {s.title}
+              {s.id === 'orders' ? <NeedsYouBadge /> : null}
             </Link>
             {s.id === 'campaigns' ? <CampaignSidebar /> : null}
           </Fragment>
