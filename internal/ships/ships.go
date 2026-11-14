@@ -533,7 +533,7 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 	if req.Unattended {
 		if hold, held := s.QuotaHold(req.Fleet, req.Harness); held {
 			why := hold.Why(config.HarnessName(req.Harness), time.Now(), time.Local)
-			return release, &launcher.Error{Status: http.StatusConflict, Msg: why, Wait: why}
+			return release, &launcher.Error{Status: http.StatusConflict, Msg: why, Wait: why, Cause: launcher.CauseQuota}
 		}
 	}
 	if req.Autopilot {
@@ -569,14 +569,14 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 		s.mu.Unlock()
 		if n >= cfg.MaxShips {
 			return release, &launcher.Error{Status: http.StatusConflict, Msg: launcher.AutopilotCapText + " of " +
-				strconv.Itoa(cfg.MaxShips) + plural(cfg.MaxShips, " ship", " ships"), Wait: WaitCap}
+				strconv.Itoa(cfg.MaxShips) + plural(cfg.MaxShips, " ship", " ships"), Wait: WaitCap, Cause: launcher.CauseCap}
 		}
 	}
 	if len(req.Resources) > 0 && s.Reserve != nil {
 		rel, name, why := s.Reserve(req.Resources)
 		if rel == nil {
 			return release, &launcher.Error{Status: http.StatusConflict, Msg: "resource " + strconv.Quote(name) + " is " + why,
-				Wait: "Waiting for " + name + " (" + why + ")"}
+				Wait: "Waiting for " + name + " (" + why + ")", Cause: launcher.CauseResources}
 		}
 		release = rel
 	}
@@ -617,7 +617,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		self = cmpName(req.Name, req.Session)
 	}
 	if req.Round == 0 && (req.Source != "" || len(req.Issues) > 0 || chat != "" || req.RoutineKey != "" || req.CommitmentKey != "") && !s.Host.Known() {
-		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg, Wait: WaitHost}
+		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg, Wait: WaitHost, Cause: launcher.CauseHost}
 	}
 	if req.Source != "" && req.Round == 0 {
 		if !s.lockOrder(key) {
@@ -729,7 +729,7 @@ func claimed(req launcher.Request) []string {
 }
 
 func routineHeld(holder string) *launcher.Error {
-	return &launcher.Error{Status: http.StatusConflict, Msg: "this routine's last ship is still here (" + holder + ")"}
+	return &launcher.Error{Status: http.StatusConflict, Msg: "this routine's last ship is still here (" + holder + ")", Cause: launcher.CauseRoutineHeld}
 }
 
 func commitmentHeld(holder string) *launcher.Error {

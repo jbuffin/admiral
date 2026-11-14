@@ -182,7 +182,7 @@ func TestARefusalThatAWaitCanClearBecomesAProposalWithItsCauseAndNothingRetries(
 			}
 			h.ships.set(func() {
 				h.ships.launch = func(int, launcher.Request) (routines.ShipRef, *launcher.Error) {
-					return routines.ShipRef{}, &launcher.Error{Status: http.StatusConflict, Msg: c.wait, Wait: c.wait}
+					return routines.ShipRef{}, &launcher.Error{Status: http.StatusConflict, Msg: c.wait, Wait: c.wait, Cause: c.reason}
 				}
 			})
 			h.sched.HandleEvent(evFrom("Eng"))
@@ -217,7 +217,7 @@ func TestARoutineWhoseLastShipIsStillHereIsProposedAsBusyWhetherTheHolderOrTheRe
 		"the ships' routine-held refusal": func(h *harness, _ routines.Routine) {
 			h.ships.set(func() {
 				h.ships.launch = func(int, launcher.Request) (routines.ShipRef, *launcher.Error) {
-					return routines.ShipRef{}, &launcher.Error{Status: http.StatusConflict, Msg: "this routine's last ship is still here (old-ship)"}
+					return routines.ShipRef{}, &launcher.Error{Status: http.StatusConflict, Msg: "this routine's last ship is still here (old-ship)", Cause: launcher.CauseRoutineHeld}
 				}
 			})
 		},

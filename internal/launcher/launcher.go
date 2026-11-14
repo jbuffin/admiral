@@ -99,6 +99,11 @@ type Request struct {
 	Template string `json:"-"`
 }
 
+// eventShip is a normal ship an outside event started, which works in its own clone with the event in a file.
+func (r Request) eventShip() bool {
+	return r.Restricted == "" && r.WorkerLaunched && (r.EventText != "" || r.Template != "")
+}
+
 // ChatOption is the chat:<fleet>:<id> key the ship stores, so a fleet's message ids never meet another's;
 // an anyway launch stores none, so it never holds its message.
 func (r Request) ChatOption() string {
@@ -125,7 +130,18 @@ type Error struct {
 	Msg    string
 	// Wait is set on a refusal that a later try can clear, and holds what the engineer reads while the ship waits.
 	Wait string
+	// Cause says which refusal this is when a caller acts on the kind, not the text: one of the Cause constants.
+	Cause string
 }
+
+// Why a launch was refused, for a caller that handles each differently.
+const (
+	CauseCap         = "global_cap"
+	CauseQuota       = "quota_hold"
+	CauseResources   = "resources"
+	CauseHost        = "host_unknown"
+	CauseRoutineHeld = "routine_busy"
+)
 
 func (e *Error) Error() string { return e.Msg }
 
@@ -348,19 +364,23 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)
 	}
 	restricted := req.Restricted != ""
-	if restricted && l.Checkouts == nil {
-		return nil, refuse(http.StatusServiceUnavailable, "restricted ships cannot be launched: no checkout maker is configured")
+	evented := req.eventShip()
+	if (restricted || evented) && l.Checkouts == nil {
+		return nil, refuse(http.StatusServiceUnavailable, "event ships cannot be launched: no checkout maker is configured")
 	}
-	// A restricted ship's settings, checkout and prompt all depend on its session, so they come after nameFor.
-	if !restricted {
-		argv = append(argv, flags...)
+	addPrompt := func(argv []string, prompt string) []string {
 		if req.Harness == "copilot" {
 			if prompt != "" {
-				argv = append(argv, "--interactive="+prompt)
+				return append(argv, "--interactive="+prompt)
 			}
-		} else {
-			argv = appendPrompt(argv, prompt, req.dockLaunch())
+			return argv
 		}
+		return appendPrompt(argv, prompt, req.dockLaunch())
+	}
+	// An event ship's checkout and prompt depend on its session, so they come after nameFor.
+	if !restricted && !evented {
+		argv = append(argv, flags...)
+		argv = addPrompt(argv, prompt)
 	}
 	if req.Harness == "codex" {
 		sock, err := codexpane.SocketPath(os.Getuid())
@@ -389,9 +409,14 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	opts[0][1] = name
 	launched := false
-	if restricted {
+	if restricted || evented {
 		var made restrictedShip
-		if argv, made, err = l.restrictedSetup(req, session, argv); err != nil {
+		if restricted {
+			argv, made, err = l.restrictedSetup(req, session, argv)
+		} else {
+			argv, made, err = l.eventSetup(req, session, skill, argv, flags, addPrompt)
+		}
+		if err != nil {
 			return nil, err
 		}
 		defer func() {
