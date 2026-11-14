@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -262,5 +263,163 @@ func TestARelaunchOfARestrictedShipSucceedsInItsKeptCloneWithoutMakingANewOne(t 
 	}
 	if !samePath(t, out.Options["dir"], kept) {
 		t.Errorf("dir = %s, want the kept clone %s", out.Options["dir"], kept)
+	}
+}
+
+// setupDraftFix runs the restricted setup for session in a real shared clone of dir and returns the clone and the settings it wrote.
+func setupDraftFix(t *testing.T, p *pinRig, dir, session string, reuse bool) (string, map[string]any) {
+	t.Helper()
+	p.l.Checkouts = GitCheckouts{}
+	p.guided(guidanceText, nil)
+	req := Request{Fleet: "work", Harness: "claude", Dir: dir, Skill: Skill{Kind: "none"}, Restricted: standing.DraftFix, EventText: rawEvent}
+	if reuse {
+		req.Session = session
+	}
+	if _, made, err := p.l.restrictedSetup(req, session, nil); err != nil {
+		t.Fatal(err)
+	} else {
+		b, err := os.ReadFile(made.settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		return made.checkout, m
+	}
+	return "", nil
+}
+
+func TestAShipCannotWidenItsReadsThroughTheAlternatesFileOfItsKeptClone(t *testing.T) {
+	p := newPinRig(t, nil)
+	commitRepo(t, p.work)
+	clone, _ := setupDraftFix(t, p, p.work, "kelpie", false)
+	f, err := os.OpenFile(filepath.Join(clone, ".git", "objects", "info", "alternates"), os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("/Users/x/.ssh\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	_, got := setupDraftFix(t, p, p.work, "kelpie", true)
+	allow := strs(t, sub(t, got, "sandbox", "filesystem")["allowRead"])
+	if slices.Contains(allow, "/Users/x/.ssh") {
+		t.Errorf("allowRead = %q holds a path the ship wrote into alternates", allow)
+	}
+	objects, _ := filepath.EvalSymlinks(filepath.Join(p.work, ".git", "objects"))
+	if !slices.Contains(allow, objects) {
+		t.Errorf("allowRead = %q, want the dir's objects %s", allow, objects)
+	}
+}
+
+func TestALinkedWorktreeDirAllowsItsCommonObjectDirectory(t *testing.T) {
+	p := newPinRig(t, nil)
+	commitRepo(t, p.work)
+	wt := filepath.Join(t.TempDir(), "wt")
+	git(t, p.work, "worktree", "add", "-q", "-b", "side", wt)
+	_, got := setupDraftFix(t, p, wt, "kelpie", false)
+	want, _ := filepath.EvalSymlinks(filepath.Join(p.work, ".git", "objects"))
+	if allow := strs(t, sub(t, got, "sandbox", "filesystem")["allowRead"]); !slices.Contains(allow, want) {
+		t.Errorf("allowRead = %q, want the common objects %s", allow, want)
+	}
+}
+
+func TestADraftFixShipsSandboxCannotWriteTheFilesGitReadsItsConfigurationFrom(t *testing.T) {
+	p := newPinRig(t, nil)
+	_, fc, argv, _ := p.mustRestricted(t, standing.DraftFix)
+	_, got := settingsOf(t, argv)
+	deny := strs(t, sub(t, got, "sandbox", "filesystem")["denyWrite"])
+	for _, rel := range []string{"info", "modules", filepath.Join("objects", "info")} {
+		if !slices.Contains(deny, filepath.Join(fc.madeFor, ".git", rel)) {
+			t.Errorf("Draft fix denyWrite = %q, want .git/%s", deny, rel)
+		}
+	}
+	permDeny := strs(t, sub(t, got, "permissions")["deny"])
+	for _, tool := range []string{"Edit", "Write"} {
+		if want := tool + "(/" + fc.madeFor + "/.git/**)"; !slices.Contains(permDeny, want) {
+			t.Errorf("permissions.deny = %q, want %s", permDeny, want)
+		}
+	}
+}
+
+func TestARelaunchRemovesGitConfigurationAShipPlantedInItsKeptClone(t *testing.T) {
+	p := newPinRig(t, nil)
+	commitRepo(t, p.work)
+	clone, _ := setupDraftFix(t, p, p.work, "kelpie", false)
+	gitDir := filepath.Join(clone, ".git")
+	attrs := filepath.Join(gitDir, "info", "attributes")
+	if err := os.WriteFile(attrs, []byte("* filter=evil\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(gitDir, "modules", "m"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	setupDraftFix(t, p, p.work, "kelpie", true)
+	if _, err := os.Stat(attrs); err == nil {
+		t.Error("info/attributes survived the relaunch")
+	}
+	if _, err := os.Stat(filepath.Join(gitDir, "modules")); err == nil {
+		t.Error(".git/modules survived the relaunch")
+	}
+	if b, _ := os.ReadFile(filepath.Join(gitDir, "info", "exclude")); !strings.Contains(string(b), ".admiral/") {
+		t.Errorf("info/exclude = %q, want it kept with .admiral/", b)
+	}
+}
+
+func TestACommitStillWorksInACloneThatReadsItsObjectsThroughAlternates(t *testing.T) {
+	dir, home := t.TempDir(), t.TempDir()
+	commitRepo(t, dir)
+	path, err := GitCheckouts{}.Make(home, "kelp-1", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "b.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, path, "add", "b.txt")
+	git(t, path, "commit", "-q", "-m", "second")
+	if got := git(t, path, "log", "--format=%s", "-n", "2"); got != "second\nfirst" {
+		t.Errorf("log = %q", got)
+	}
+}
+
+func TestARelaunchNeverFollowsALinkTheShipPlantedInsideItsKeptClonesGit(t *testing.T) {
+	for _, rel := range []string{"info", filepath.Join("objects", "info")} {
+		t.Run(rel, func(t *testing.T) {
+			p := newPinRig(t, nil)
+			commitRepo(t, p.work)
+			clone, _ := setupDraftFix(t, p, p.work, "kelpie", false)
+			outside := t.TempDir()
+			for _, name := range []string{"attributes", "alternates"} {
+				if err := os.WriteFile(filepath.Join(outside, name), []byte("keep\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			link := filepath.Join(clone, ".git", rel)
+			if err := os.RemoveAll(link); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, link); err != nil {
+				t.Fatal(err)
+			}
+			p.l.Checkouts = GitCheckouts{}
+			p.guided(guidanceText, nil)
+			_, _, err := p.l.restrictedSetup(Request{Fleet: "work", Harness: "claude", Dir: p.work, Skill: Skill{Kind: "none"},
+				Restricted: standing.DraftFix, Session: "kelpie"}, "kelpie", nil)
+			if err == nil {
+				t.Error("a relaunch over a linked .git/" + rel + " went ahead")
+			}
+			for _, name := range []string{"attributes", "alternates"} {
+				if b, _ := os.ReadFile(filepath.Join(outside, name)); string(b) != "keep\n" {
+					t.Errorf("%s outside the clone = %q, want it untouched", name, b)
+				}
+			}
+			if _, err := os.Stat(clone); err != nil {
+				t.Errorf("the refused relaunch removed the kept clone: %v", err)
+			}
+		})
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -52,7 +53,8 @@ func checkRestricted(req Request, dock config.Harness) *Error {
 }
 
 // restrictedSettings is the shared hook bundle plus the restricted profile for a ship working in checkout.
-// home is Admiral's own home and alternates the object directories the shared clone reads through.
+// home is Admiral's own home and alternates the object directories the shared clone reads through, which come
+// from the routine's repository and never from a file the ship can write.
 func restrictedSettings(level standing.Restricted, checkout, home string, alternates []string) map[string]any {
 	out := claudeSettings().(map[string]any)
 	hosts := make([]any, len(registryAllowlist))
@@ -71,11 +73,15 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 	}
 	filesystem := map[string]any{"denyRead": []any{"~/", home, "~/.gem/credentials"}, "allowRead": allowRead}
 	var allow []any
+	deny := slices.Clone(restrictedDeniedTools)
 	switch level {
 	case standing.DraftFix:
 		allow = []any{"Edit(/" + checkout + "/**)", "Write(/" + checkout + "/**)"}
-		// The sandbox protects .git/hooks and .git/config only; commondir would point git at a config the ship controls.
-		filesystem["denyWrite"] = []any{filepath.Join(checkout, ".git", "commondir"), filepath.Join(checkout, ".git", "config.worktree")}
+		// The sandbox guards only .git/hooks and config; unsandboxed git reads the rest, and Edit and Write bypass the sandbox.
+		gitDir := filepath.Join(checkout, ".git")
+		filesystem["denyWrite"] = []any{filepath.Join(gitDir, "commondir"), filepath.Join(gitDir, "config.worktree"),
+			filepath.Join(gitDir, "info"), filepath.Join(gitDir, "modules"), filepath.Join(gitDir, "objects", "info")}
+		deny = append(deny, "Edit(/"+gitDir+"/**)", "Write(/"+gitDir+"/**)")
 	case standing.Investigate:
 		report := "/" + filepath.Join(checkout, ".admiral", "report.md")
 		allow = []any{"Write(" + report + ")", "Edit(" + report + ")"}
@@ -84,7 +90,7 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 	out["sandbox"] = map[string]any{"enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false,
 		"network": network, "filesystem": filesystem}
 	out["disableAllHooks"] = false
-	out["permissions"] = map[string]any{"allow": allow, "deny": restrictedDeniedTools, "blockReadsOutsideWorkingDirectories": true}
+	out["permissions"] = map[string]any{"allow": allow, "deny": deny, "blockReadsOutsideWorkingDirectories": true}
 	return out
 }
 
@@ -126,6 +132,9 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 	// A relaunch or a new round of a restricted ship keeps working in its own clone.
 	if existing, err := filepath.EvalSymlinks(filepath.Join(home, "checkouts", session)); req.Session != "" && err == nil {
 		made.checkout, made.reused = existing, true
+		if err := resetClonedGit(made.checkout, req.Dir); err != nil {
+			return nil, restrictedShip{}, refuse(http.StatusInternalServerError, "%v", err)
+		}
 	} else if made.checkout, err = l.Checkouts.Make(l.Home, session, req.Dir); err != nil {
 		return nil, restrictedShip{}, asError(err)
 	}
@@ -142,7 +151,7 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 	if err != nil {
 		realHome = home
 	}
-	raw, err := json.MarshalIndent(restrictedSettings(req.Restricted, made.checkout, realHome, alternatesOf(made.checkout)), "", "  ")
+	raw, err := json.MarshalIndent(restrictedSettings(req.Restricted, made.checkout, realHome, objectDirsOf(req.Dir)), "", "  ")
 	if err != nil {
 		return fail(err)
 	}
@@ -211,22 +220,57 @@ func writeEventFile(checkout, text string) error {
 	return err
 }
 
-// alternatesOf lists the object directories a shared clone reads through, which git in the clone needs the sandbox to read.
-func alternatesOf(checkout string) []string {
-	b, err := os.ReadFile(filepath.Join(checkout, ".git", "objects", "info", "alternates"))
+// objectDirsOf lists the object directories a shared clone of dir reads through, taken from dir and never from the clone.
+func objectDirsOf(dir string) []string {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
 	if err != nil {
 		return nil
 	}
-	var out []string
-	for _, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || !filepath.IsAbs(line) {
-			continue
-		}
-		if real, err := filepath.EvalSymlinks(line); err == nil {
-			line = real
-		}
-		out = append(out, line)
+	objects := filepath.Join(strings.TrimSpace(string(out)), "objects")
+	if real, err := filepath.EvalSymlinks(objects); err == nil {
+		objects = real
 	}
-	return out
+	dirs := []string{objects}
+	if b, err := os.ReadFile(filepath.Join(objects, "info", "alternates")); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			if line = strings.TrimSpace(line); filepath.IsAbs(line) {
+				if real, err := filepath.EvalSymlinks(line); err == nil {
+					line = real
+				}
+				dirs = append(dirs, line)
+			}
+		}
+	}
+	return dirs
+}
+
+// resetClonedGit clears what a ship left in its kept clone's .git for unsandboxed git to read, refusing a linked folder in the way.
+func resetClonedGit(checkout, dir string) error {
+	root, err := os.OpenRoot(checkout)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for _, rel := range []string{".git", filepath.Join(".git", "info"), filepath.Join(".git", "objects"), filepath.Join(".git", "objects", "info")} {
+		if fi, err := root.Lstat(rel); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s in the kept clone is a link", rel)
+		}
+	}
+	for _, rel := range []string{filepath.Join(".git", "info", "attributes"), filepath.Join(".git", "modules")} {
+		if err := root.RemoveAll(rel); err != nil {
+			return err
+		}
+	}
+	alt := filepath.Join(".git", "objects", "info", "alternates")
+	if _, err := root.Lstat(alt); err != nil {
+		return nil
+	}
+	if err := root.Remove(alt); err != nil {
+		return err
+	}
+	dirs := objectDirsOf(dir)
+	if len(dirs) == 0 {
+		return nil
+	}
+	return root.WriteFile(alt, []byte(dirs[0]+"\n"), 0o644)
 }
