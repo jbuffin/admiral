@@ -298,10 +298,21 @@ export async function call<T>(method: string, path: string, body?: unknown, head
   }
 }
 
-/** Merges a moored ship's single PR. The token is the one the server put in this page; it changes when Admiral restarts. */
-export function mergeShip(session: string): Promise<Result<unknown>> {
-  const token = document.querySelector<HTMLMetaElement>('meta[name="admiral-merge-token"]')?.content ?? '';
-  return call('POST', `/ships/${encodeURIComponent(session)}/merge`, undefined, { 'X-Admiral-Merge-Token': token });
+const mergeToken = () => ({ 'X-Admiral-Merge-Token': document.querySelector<HTMLMetaElement>('meta[name="admiral-merge-token"]')?.content ?? '' });
+
+/** Merges a moored ship's single PR, its whole stack, or with `pr` one independent PR by URL. The token is the one the server put in this page; it changes when Admiral restarts. */
+export function mergeShip(session: string, pr?: string): Promise<Result<unknown>> {
+  return call('POST', `/ships/${encodeURIComponent(session)}/merge`, pr ? { pr } : undefined, mergeToken());
+}
+
+/** How a ship's PRs relate on GitHub; 404 for a ship that is anchored or has no PRs. */
+export function fetchStackShape(session: string): Promise<Result<StackShape>> {
+  return call<StackShape>('GET', `/ships/${encodeURIComponent(session)}/stack`);
+}
+
+/** Links the ship's chained PRs into one GitHub stack and answers the shape it then reads. */
+export function linkStack(session: string): Promise<Result<StackShape>> {
+  return call<StackShape>('POST', `/ships/${encodeURIComponent(session)}/stack`, undefined, mergeToken());
 }
 
 /** One PR a ship carries, read from GitHub: 404 when the ship doesn't carry it, 502 when GitHub fails. */

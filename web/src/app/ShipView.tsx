@@ -429,7 +429,8 @@ export function targetFor(ship: Ship, boat: CrewBoat | undefined, conv: Conversa
     : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasConversationAdapter(ship.harness)), subject: 'This ship', wake: ship.status === 'moored', mooredAt: ship.moored_at };
 }
 
-const openTab = (): Tab => (new URLSearchParams(loc.value.search).get('tab') === 'terminal' ? 'Terminal' : 'Conversation');
+const OPEN_TAB: Record<string, Tab> = { terminal: 'Terminal', pr: 'PR' };
+const openTab = (): Tab => OPEN_TAB[new URLSearchParams(loc.value.search).get('tab') ?? ''] ?? 'Conversation';
 
 function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const [tab, setTab] = useState<Tab>(openTab);
@@ -550,7 +551,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   );
 }
 
-/** One ship: Conversation, Terminal, Changes and PR. The view opens on Conversation, or on Terminal when the URL says `?tab=terminal`. */
+/** One ship: Conversation, Terminal, Changes and PR. The view opens on Conversation, or on Terminal or PR when the URL says `?tab=terminal` or `?tab=pr`. */
 export function ShipView({ session, title }: { session: string; title: boolean }) {
   const ship = ships.value.find((s) => s.session === session);
   if (!ship) {

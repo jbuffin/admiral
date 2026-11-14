@@ -238,11 +238,11 @@ export function watchPage(page: Page, server: string) {
   const paths: string[] = [];
   const foreign: string[] = [];
   const errors: string[] = [];
-  // The browser logs each refused launch, ending, merge, Re-review or work-repo save, and each PR detail GitHub cannot give, as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
+  // The browser logs each refused launch, ending, merge, Re-review or work-repo save, and each PR detail or stack shape GitHub cannot give, as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
   const failedLoads: string[] = [];
   let refusedLaunches = 0;
   page.on('response', (r) => {
-    const refusable = { GET: /^\/api\/v1\/ships\/[^/]+\/pr$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|rereview)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
+    const refusable = { GET: /^\/api\/v1\/ships\/[^/]+\/(pr|stack)$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|rereview|stack)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
     const path = new URL(r.url()).pathname;
     if (refusable?.test(path) && r.status() >= 400) refusedLaunches++;
     // Moor's refusal is a 409; any other status on an ending stays an error.
@@ -2798,7 +2798,7 @@ export async function noAnswerReviewOnARunningShip(page: Page, a: Admiral) {
 }
 
 const STACK_URL = 'https://github.com/acme/api/stack/4';
-const stackBar = (page: Page) => viewPanel(page).locator('.stack-bar');
+const pageStackBar = (page: Page) => viewPanel(page).locator('.stack-bar');
 
 /** A moored ship carrying PRs 7 and 8, both approved, with alice's review on each; the details say they are one GitHub stack, or none. */
 async function mooredPair(a: Admiral, opts: { stacked: boolean; feedbackOn: number[] }): Promise<LaunchedShip> {
@@ -2825,8 +2825,8 @@ export async function answerAllReviewsFromThePRTab(page: Page, a: Admiral, opts:
   const command = `/commodore ${STACK_URL}`;
 
   const panel = await openPRTab(page, a, ship);
-  const bar = stackBar(page);
-  await expect(bar).toContainText('Stacked on GitHub · 2 PRs, bottom to top.');
+  const bar = pageStackBar(page);
+  await expect(bar).toContainText('Stacked on GitHub · stack #4 · 2 PRs, bottom to top.');
   const answerAll = bar.getByRole('button', { name: 'Answer all reviews', exact: true });
   await expect(answerAll).toHaveClass(/\bprimary\b/);
   expect((await answerAll.boundingBox())!.height, 'Answer all reviews height').toBeGreaterThanOrEqual(44);
@@ -2880,19 +2880,19 @@ export async function noAnswerAllWhenAPRHasNoFeedback(page: Page, a: Admiral) {
   const ship = await mooredPair(a, { stacked: true, feedbackOn: [7] });
 
   const panel = await openPRTab(page, a, ship);
-  await expect(stackBar(page)).toContainText('Stacked on GitHub · 2 PRs, bottom to top.');
+  await expect(pageStackBar(page)).toContainText('Stacked on GitHub · stack #4 · 2 PRs, bottom to top.');
   await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
   await expect(answerFeedbackBar(page).getByRole('button', { name: 'Answer review', exact: true })).toBeVisible();
   await expect(panel).toBeVisible();
 }
 
-/** Unstacked PRs, each with feedback, get only the per-PR Answer review. */
+/** Chained PRs not stacked on GitHub, each with feedback, get only the per-PR Answer review. */
 export async function noAnswerAllForUnstackedPRs(page: Page, a: Admiral) {
   const ship = await mooredPair(a, { stacked: false, feedbackOn: [7, 8] });
 
   await openPRTab(page, a, ship);
   await expect(answerFeedbackBar(page).getByRole('button', { name: 'Answer review', exact: true })).toBeVisible();
-  await expect(stackBar(page)).toHaveCount(0);
+  await expect(pageStackBar(page)).toContainText('Not a GitHub stack.');
   await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
 }
 

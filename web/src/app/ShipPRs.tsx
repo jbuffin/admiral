@@ -1,11 +1,11 @@
 import { Fragment } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { call, fetchPRDetail, type MooredPR, type PRDetail, type Ship } from './api';
+import { call, fetchPRDetail, fetchStackShape, linkStack, type MooredPR, type PRDetail, type Ship, type StackShape } from './api';
 import { MergeControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet } from './Sheet';
-import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, orderPRs, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, stackBarText, stackedPRs } from './prTab';
+import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, stackBarAction, stackBarLine, tabOrder } from './prTab';
 import { reReviewPlace, reviews, staleNote } from './moored';
 import { ReReviewSheet } from './ReReview';
 import { PRSections } from './PRDetailSections';
@@ -40,6 +40,94 @@ function useDetails(session: string, urls: string[]): Record<string, PRDetail> {
   }, [session, key]);
   return details;
 }
+
+/** The ship's PR shape, read when the tab opens, every 30s and on `read`; a failed read keeps the last good one, and a ship of one PR has none. */
+function useShape(session: string, many: boolean): [StackShape | null, (s: StackShape) => void, () => Promise<StackShape | null>] {
+  const [shape, setShape] = useState<StackShape | null>(null);
+  const live = useRef(true);
+  const read = async () => {
+    const r = await fetchStackShape(session);
+    if (!live.current || !r.ok) return null;
+    setShape(r.data);
+    return r.data;
+  };
+  useLayoutEffect(() => {
+    live.current = true;
+    if (!many) return;
+    void read();
+    const timer = setInterval(() => void read(), REFRESH_MS);
+    return () => {
+      live.current = false;
+      clearInterval(timer);
+    };
+  }, [session, many]);
+  return [shape, setShape, read];
+}
+
+const STALE_LINK = 'Admiral restarted, reload to stack';
+
+/** The confirmation for Stack on GitHub: the PRs bottom to top, and one link call that keeps its button disabled while it runs. */
+function StackSheet({ session, urls, details, onClose, onShape, read }: { session: string; urls: string[]; details: Record<string, PRDetail>; onClose: () => void; onShape: (s: StackShape) => void; read: () => Promise<StackShape | null> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [stale, setStale] = useState(false);
+  const running = useRef(false);
+  const link = async () => {
+    if (running.current) return;
+    running.current = true;
+    setBusy(true);
+    setError('');
+    const r = await linkStack(session);
+    if (r.ok) {
+      onShape(r.data);
+      return onClose();
+    }
+    if (r.status === 403) {
+      running.current = false;
+      setBusy(false);
+      setStale(true);
+      return setError(STALE_LINK);
+    }
+    // A 502 can come after GitHub took the link, so the shape decides whether it failed.
+    if ((await read())?.shape === 'stacked') return onClose();
+    running.current = false;
+    setBusy(false);
+    setError(r.error);
+  };
+  return (
+    <Sheet label="Stack on GitHub" kind="launch-backdrop stop-backdrop" onClose={() => !busy && onClose()}>
+      <p class="sheet-sub">Make these {urls.length} PRs one GitHub stack, bottom to top. Nothing is rebased or pushed; GitHub links the PRs so Merge can take them together.</p>
+      <ul class="sheet-prs">
+        {urls.map((u) => (
+          <li key={u}>
+            <span class="mono">#{prNumber(u)}</span>{' '}
+            {details[u] ? (
+              <span class="mono">
+                {details[u].head} → {details[u].base}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      <Failure message={error} />
+      <div class="launch-foot">
+        <button type="button" class="btn" disabled={busy} onClick={onClose}>
+          Cancel
+        </button>
+        {stale ? (
+          <button type="button" class="btn" onClick={() => location.reload()}>
+            Reload
+          </button>
+        ) : null}
+        <button type="button" class="btn primary" disabled={busy} onClick={() => void link()}>
+          Stack on GitHub
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+const LEAD = { stacked: 'Stacked on GitHub', chained: 'Not a GitHub stack.', mixed: 'Not one chain or stack.' } as const;
 
 function PRHeader({ ship, url, detail }: { ship: Ship; url: string; detail: PRDetail | undefined }) {
   const pr = (ship.prs ?? []).find((p) => p.url === url)!;
@@ -196,30 +284,45 @@ function AnswerAll({ ship, stackUrl, command, locked, onBusy }: { ship: Ship; st
   );
 }
 
-/** A ship's PRs: sub-tabs in stack order, the selected PR's header, chips and sections, and for a moored ship Merge and Don't follow reviews. */
+/** A ship's PRs: the stack bar, sub-tabs in stack order, the selected PR's header, chips and sections, and for a moored ship Merge and Don't follow reviews. */
 export function PRTab({ ship }: { ship: Ship }) {
   const [error, setError] = useState('');
-  const [merged, setMerged] = useState(false);
+  const [merged, setMerged] = useState<Set<string>>(new Set());
+  const [mergedAll, setMergedAll] = useState(false);
   const [acting, setActing] = useState(false);
   const [picked, setPicked] = useState('');
   // The URL of the Re-review sheet that's open: a PR's, or '' for the stack.
   const [reReview, setReReview] = useState<string | null>(null);
+  const [stacking, setStacking] = useState(false);
+  const [unseen, setUnseen] = useState(false);
   const carried = ship.prs ?? [];
   const details = useDetails(ship.session, carried.map((p) => p.url));
   const chosen = chooseStackDetail(carried, details);
   const stack = chosen?.stack ?? null;
-  const prs = orderPRs(carried, stack);
+  const [shape, setShape, read] = useShape(ship.session, carried.length > 1);
+  const prs = tabOrder(carried, shape, stack);
   const moored = ship.status === 'moored';
   useEffect(() => setActing((a) => actingWhile(a, moored)), [moored]);
   if (prs.length === 0) return <p class="line">No pull request yet. A PR shows here as soon as the ship or its crew opens one.</p>;
   const current = prs.find((p) => p.url === picked) ?? defaultPR(prs)!;
   const reviewBar = reviewStackBar(ship);
-  const bar = reviewBar ? '' : stackBarText(stackedPRs(prs, stack).length, stack !== null);
   const place = reReviewPlace(ship);
   const respondedHere = moored && current.reviewing && current.responded && current.state === 'OPEN';
+  const line = reviewBar ? '' : stackBarLine(shape);
+  const lead = shape && shape.shape in LEAD ? LEAD[shape.shape as keyof typeof LEAD] : '';
+  const action = reviewBar ? 'none' : stackBarAction(shape, ship.status);
+  const choice = mergeFor(shape, prs, current, !!ship.stack_ready);
+  const justMerged = mergedAll || merged.has(current.url);
+  const onMerged = () => {
+    // The default PR is the first open one, so a merged PR would otherwise hand the view to the next.
+    setPicked(current.url);
+    if (choice.kind === 'pr') setMerged((m) => new Set(m).add(current.url));
+    else setMergedAll(true);
+    if (carried.length > 1) void read();
+  };
   return (
     <div class="pr-tab">
-      {reviewBar || bar ? (
+      {reviewBar || line ? (
         <div class="stack-bar">
           <span class="stack-text">
             {reviewBar ? (
@@ -228,7 +331,10 @@ export function PRTab({ ship }: { ship: Ship }) {
                 {reviewBar.rest}
               </>
             ) : (
-              bar
+              <>
+                <strong>{lead}</strong>
+                {line.slice(lead.length)}
+              </>
             )}
           </span>
           {reviewBar && place?.place === 'stack' ? (
@@ -238,7 +344,27 @@ export function PRTab({ ship }: { ship: Ship }) {
           ) : moored && chosen && showAnswerAll(carried, stack, chosen.answerAll) ? (
             <AnswerAll ship={ship} stackUrl={stack!.url} command={chosen.answerAll!} locked={acting} onBusy={setActing} />
           ) : null}
+          {action === 'stack' ? (
+            <button type="button" class="btn" onClick={() => setStacking(true)}>
+              Stack on GitHub
+            </button>
+          ) : null}
+          {action === 'after-moor' ? <span>Stack after the ship moors</span> : null}
+          {unseen && shape?.shape === 'chained' ? <span>GitHub hasn't shown the stack yet. It shows on the next refresh.</span> : null}
         </div>
+      ) : null}
+      {stacking ? (
+        <StackSheet
+          session={ship.session}
+          urls={prs.map((p) => p.url)}
+          details={details}
+          onClose={() => setStacking(false)}
+          onShape={(s) => {
+            setShape(s);
+            setUnseen(s.shape === 'chained');
+          }}
+          read={read}
+        />
       ) : null}
       {prs.length > 1 ? (
         <div class="pr-subtabs" role="tablist" aria-label="Pull requests, bottom of the stack first">
@@ -271,15 +397,23 @@ export function PRTab({ ship }: { ship: Ship }) {
           </div>
         ) : null}
         {moored && !current.reviewing && feedbackBarText(current) ? <FeedbackBar key={current.url} ship={ship} pr={current} locked={acting} onBusy={setActing} /> : null}
-        {moored && !reviews(ship) && (merged || ship.stack_ready) ? (
+        {moored && !reviews(ship) && (justMerged || choice.kind !== 'none' || choice.note) ? (
           <div class="peek-form">
-            {merged ? <p class="line">Merged</p> : <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} locked={acting} onBusy={setActing} />}
+            {justMerged ? (
+              current.state === 'MERGED' ? null : <p class="line">Merged</p>
+            ) : choice.kind === 'none' ? (
+              <div class="peek-merge">
+                <span class="merge-hint">{choice.note}</span>
+              </div>
+            ) : (
+              <MergeControl key={current.url} ship={ship} pr={choice.kind === 'pr' ? current.url : undefined} stack={choice.kind === 'stack'} onMerged={onMerged} onError={setError} locked={acting} onBusy={setActing} />
+            )}
           </div>
         ) : null}
         {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : null}
-        {moored && (!merged || error) ? (
+        {moored && (!mergedAll || error) ? (
           <div class="peek-form">
-            {merged || reviews(ship) ? null : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}
+            {mergedAll || reviews(ship) ? null : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}
             <Failure message={error} />
           </div>
         ) : null}
