@@ -391,6 +391,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	opts[0][1] = name
 	launched := false
+	var tempLink string
 	if restricted {
 		var made restrictedShip
 		if argv, made, err = l.restrictedSetup(req, session, argv); err != nil {
@@ -401,7 +402,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 				made.remove(l.Home, session)
 			}
 		}()
-		req.Dir = made.checkout
+		req.Dir, tempLink = made.checkout, made.tempLink
 		for i := range opts {
 			if opts[i][0] == "dir" {
 				opts[i][1] = made.checkout
@@ -449,20 +450,13 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		unset = append(unset, k)
 	}
 	if restricted {
-		for _, k := range githubTokenVars {
-			delete(env, k)
-			unset = append(unset, k)
-		}
+		unset = append(unset, ScrubRestrictedEnv(env)...)
 		// Defence in depth against a planted nested repo's core.fsmonitor only; it does not stop filter drivers, so the reuse check stays the guard.
-		// GIT_CONFIG_PARAMETERS is dropped because a fleet value there would override these entries.
-		delete(env, "GIT_CONFIG_PARAMETERS")
-		unset = append(unset, "GIT_CONFIG_PARAMETERS")
-		n, err := strconv.Atoi(env["GIT_CONFIG_COUNT"])
-		if err != nil || n < 0 {
-			n = 0
+		// The scrub dropped any GIT_CONFIG_COUNT and entries, so this is the only one.
+		env["GIT_CONFIG_KEY_0"], env["GIT_CONFIG_VALUE_0"], env["GIT_CONFIG_COUNT"] = "core.fsmonitor", "false", "1"
+		for k, v := range RestrictedTempEnv(tempLink) {
+			env[k] = v
 		}
-		env["GIT_CONFIG_KEY_"+strconv.Itoa(n)], env["GIT_CONFIG_VALUE_"+strconv.Itoa(n)] = "core.fsmonitor", "false"
-		env["GIT_CONFIG_COUNT"] = strconv.Itoa(n + 1)
 	}
 
 	// A Commodore on Claude compacts at 200k tokens; only the fleet's own env

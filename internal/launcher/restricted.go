@@ -18,7 +18,36 @@ import (
 // registryAllowlist is the only network a restricted ship reaches: package registries, as exact hosts.
 var registryAllowlist = []string{"registry.npmjs.org", "proxy.golang.org", "sum.golang.org", "pypi.org", "files.pythonhosted.org", "crates.io", "static.crates.io", "rubygems.org"}
 
+// RestrictedGitEnv gives git a fixed identity and no global config, which may hold a token and which the sandbox hides.
+var RestrictedGitEnv = map[string]string{"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+	"GIT_AUTHOR_NAME": "Admiral", "GIT_AUTHOR_EMAIL": "admiral@localhost", "GIT_COMMITTER_NAME": "Admiral", "GIT_COMMITTER_EMAIL": "admiral@localhost"}
+
 var githubTokenVars = []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN"}
+
+// ScrubRestrictedEnv drops from env what could carry a credential into a restricted ship (the GitHub tokens, git's
+// env-supplied config, askpass and the ssh agent socket), and sets RestrictedGitEnv. It returns the names it removed.
+func ScrubRestrictedEnv(env map[string]string) []string {
+	var removed []string
+	drop := func(k string) {
+		delete(env, k)
+		removed = append(removed, k)
+	}
+	for _, k := range githubTokenVars {
+		drop(k)
+	}
+	for _, k := range []string{"GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_ASKPASS", "SSH_ASKPASS", "SSH_AUTH_SOCK"} {
+		drop(k)
+	}
+	for k := range env {
+		if strings.HasPrefix(k, "GIT_CONFIG_KEY_") || strings.HasPrefix(k, "GIT_CONFIG_VALUE_") {
+			drop(k)
+		}
+	}
+	for k, v := range RestrictedGitEnv {
+		env[k] = v
+	}
+	return removed
+}
 
 // A restricted ship's args may not undo the profile's permissions, tools or settings.
 var unsafeRestrictedFlags = []string{"--dangerously-skip-permissions", "--permission-mode", "--settings", "--setting-sources", "--add-dir",
@@ -27,7 +56,10 @@ var unsafeRestrictedFlags = []string{"--dangerously-skip-permissions", "--permis
 
 // Tools that reach outside the machine or into the engineer's other sessions; a restricted ship has none of them.
 var restrictedDeniedTools = []any{"WebFetch", "WebSearch", "mcp__*", "Bash(git push *)", "Bash(gh *)", "NotebookEdit",
-	"SendMessage", "ListAgents", "RemoteTrigger", "PushNotification", "Artifact", "SendUserFile", "SendFeedback"}
+	"SendMessage", "ListAgents", "RemoteTrigger", "PushNotification", "Artifact", "SendUserFile", "SendFeedback",
+	"CronCreate", "SendToProject", "SendToProjectContext",
+	// The registries are on the allowlist, so an upload there is the one way out left; these raise the cost, they are not a boundary.
+	"Bash(npm publish *)", "Bash(cargo publish *)", "Bash(gem push *)"}
 
 // Toolchain caches under the home the sandbox may read though the rest of it is denied.
 var toolchainCaches = []string{"~/go/pkg/mod", "~/Library/Caches/go-build", "~/.cache/go-build", "~/.npm", "~/.cache/pip",
@@ -52,10 +84,20 @@ func checkRestricted(req Request, dock config.Harness) *Error {
 	return nil
 }
 
+// sharedTempDirs are Claude Code's per-user temp dirs, where the engineer's other sessions keep their scratchpads. The
+// ship's own temp dir is elsewhere (see MakeRestrictedTemp), so the sandbox denies these whole.
+func sharedTempDirs() []any {
+	var out []any
+	for _, root := range []string{"/tmp", "/private/tmp"} {
+		out = append(out, filepath.Join(root, fmt.Sprintf("claude-%d", os.Getuid())))
+	}
+	return out
+}
+
 // restrictedSettings is the shared hook bundle plus the restricted profile for a ship working in checkout.
 // home is Admiral's own home and alternates the object directories the shared clone reads through, which come
 // from the routine's repository and never from a file the ship can write.
-func restrictedSettings(level standing.Restricted, checkout, home string, alternates []string) map[string]any {
+func restrictedSettings(level standing.Restricted, checkout, home, tempDir string, alternates []string) map[string]any {
 	out := claudeSettings().(map[string]any)
 	hosts := make([]any, len(registryAllowlist))
 	for i, h := range registryAllowlist {
@@ -64,7 +106,8 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 	// Pinned off so a repo's committed settings cannot widen them.
 	network := map[string]any{"allowedDomains": hosts, "allowLocalBinding": false, "allowAllUnixSockets": false}
 	// Sandbox paths are plain absolute; Edit and Write rules spell an absolute path with //.
-	allowRead := []any{checkout}
+	// The ship's own temp dir sits under Admiral's home, which is denied whole, so it is read again.
+	allowRead := []any{checkout, tempDir}
 	for _, a := range alternates {
 		allowRead = append(allowRead, a)
 	}
@@ -99,11 +142,32 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 		allow = []any{"Write(" + report + ")", "Edit(" + report + ")"}
 		filesystem["denyWrite"] = []any{checkout}
 	}
+	filesystem["denyWrite"] = append(filesystem["denyWrite"].([]any), sharedTempDirs()...)
 	out["sandbox"] = map[string]any{"enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false,
-		"network": network, "filesystem": filesystem}
+		// Under dontAsk a Bash call with no allow rule is denied, so sandboxed commands are allowed by this setting.
+		"autoAllowBashIfSandboxed": true, "network": network, "filesystem": filesystem}
 	out["disableAllHooks"] = false
 	out["permissions"] = map[string]any{"allow": allow, "deny": deny, "blockReadsOutsideWorkingDirectories": true}
 	return out
+}
+
+// RestrictedProfile is the settings of a restricted ship working in checkout, a shared clone of the repository at dir,
+// under Admiral's home. The object dirs come from dir, never from the checkout the ship can write.
+func RestrictedProfile(level standing.Restricted, checkout, dir, home, tempLink string) map[string]any {
+	realHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		realHome = home
+	}
+	tempDir, err := filepath.EvalSymlinks(tempLink)
+	if err != nil {
+		tempDir = tempLink
+	}
+	return restrictedSettings(level, checkout, realHome, tempDir, objectDirsOf(dir))
+}
+
+// RestrictedFlags are the flags that make Claude Code run under the settings file at path.
+func RestrictedFlags(settings string) []string {
+	return []string{"--permission-mode", "dontAsk", "--setting-sources", "project", "--settings", settings}
 }
 
 func restrictedSettingsPath(home, session string) string {
@@ -111,7 +175,7 @@ func restrictedSettingsPath(home, session string) string {
 }
 
 type restrictedShip struct {
-	checkout, settings string
+	checkout, settings, tempLink string
 	// reused is a clone an earlier round made: a failed launch leaves it, since it holds the ship's work.
 	reused bool
 }
@@ -124,10 +188,11 @@ func (r restrictedShip) remove(home, session string) {
 	RemoveRestrictedFiles(home, session)
 }
 
-// RemoveRestrictedFiles deletes a restricted ship's settings file.
+// RemoveRestrictedFiles deletes a restricted ship's settings file and temp dir and link.
 func RemoveRestrictedFiles(home, session string) {
 	if _, _, ok := ShipFiles(home, session); ok {
 		_ = os.Remove(restrictedSettingsPath(home, session))
+		RemoveRestrictedTemp(home, session)
 	}
 }
 
@@ -163,11 +228,18 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 			return fail(err)
 		}
 	}
+	if made.tempLink, err = MakeRestrictedTemp(home, session); err != nil {
+		return fail(err)
+	}
 	realHome, err := filepath.EvalSymlinks(home)
 	if err != nil {
 		realHome = home
 	}
-	raw, err := json.MarshalIndent(restrictedSettings(req.Restricted, made.checkout, realHome, objectDirs), "", "  ")
+	tempDir, err := filepath.EvalSymlinks(made.tempLink)
+	if err != nil {
+		return fail(err)
+	}
+	raw, err := json.MarshalIndent(restrictedSettings(req.Restricted, made.checkout, realHome, tempDir, objectDirs), "", "  ")
 	if err != nil {
 		return fail(err)
 	}
@@ -181,7 +253,7 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 	}
 	req.WorkerLaunched = true
 	prompt = l.withGuidance(req, prompt)
-	argv = append(argv, "--permission-mode", "dontAsk", "--setting-sources", "project", "--settings", made.settings)
+	argv = append(argv, RestrictedFlags(made.settings)...)
 	return appendPrompt(argv, prompt, false), made, nil
 }
 

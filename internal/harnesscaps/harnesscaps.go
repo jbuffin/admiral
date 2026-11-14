@@ -60,6 +60,8 @@ type fleetJSON struct {
 	Name      string        `json:"name"`
 	Harnesses []harnessJSON `json:"harnesses"`
 	Judge     judgeJSON     `json:"judge"`
+	// Restricted is whether a harness of the fleet can run a restricted ship; without one an A3 routine runs as propose only.
+	Restricted bool `json:"restricted"`
 }
 
 // judgeJSON is the fleet's judge harness, or why it has none.
@@ -138,7 +140,7 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) {
 	store := capabilities.Open(s.Home)
 	out := []fleetJSON{}
 	for _, f := range s.Config().Fleets {
-		fj := fleetJSON{Key: f.Key, Name: f.Name, Harnesses: []harnessJSON{}, Judge: judgeOf(store, f)}
+		fj := fleetJSON{Key: f.Key, Name: f.Name, Harnesses: []harnessJSON{}, Judge: judgeOf(store, f), Restricted: autopilotgate.RestrictedCapable(s.Home, f)}
 		for _, h := range f.Harnesses {
 			fj.Harnesses = append(fj.Harnesses, s.harness(store, f, h.Name))
 		}

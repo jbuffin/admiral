@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -410,5 +411,207 @@ func TestANormalLaunchIsUnchangedByTheRestrictedProfile(t *testing.T) {
 	}
 	if argv[len(argv)-1] != "ship the fix" {
 		t.Errorf("prompt = %q, want the text as written", argv[len(argv)-1])
+	}
+}
+
+func TestTheRestrictedSettingsAutoAllowSandboxedBashSoDontAskRunsCommands(t *testing.T) {
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, nil)
+			_, _, argv, _ := p.mustRestricted(t, level)
+			_, got := settingsOf(t, argv)
+			if v := sub(t, got, "sandbox")["autoAllowBashIfSandboxed"]; v != true {
+				t.Errorf("sandbox.autoAllowBashIfSandboxed = %v, want true: under dontAsk every Bash call is refused without it", v)
+			}
+		})
+	}
+}
+
+func TestTheRestrictedSettingsDenyCronProjectSendsAndRegistryPublishes(t *testing.T) {
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, nil)
+			_, _, argv, _ := p.mustRestricted(t, level)
+			_, got := settingsOf(t, argv)
+			deny := strs(t, sub(t, got, "permissions")["deny"])
+			for _, r := range []string{"CronCreate", "SendToProject", "SendToProjectContext", "Bash(npm publish *)", "Bash(cargo publish *)", "Bash(gem push *)"} {
+				if !slices.Contains(deny, r) {
+					t.Errorf("permissions.deny = %q lacks %s", deny, r)
+				}
+			}
+		})
+	}
+}
+
+func TestTheRestrictedSettingsDenyWritesToTheWholeOfBothSharedClaudeTempDirs(t *testing.T) {
+	want := []string{
+		filepath.Join("/tmp", "claude-"+strconv.Itoa(os.Getuid())),
+		filepath.Join("/private/tmp", "claude-"+strconv.Itoa(os.Getuid())),
+	}
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, nil)
+			_, _, argv, _ := p.mustRestricted(t, level)
+			_, got := settingsOf(t, argv)
+			deny := strs(t, sub(t, sub(t, got, "sandbox"), "filesystem")["denyWrite"])
+			for _, w := range want {
+				if !slices.Contains(deny, w) {
+					t.Errorf("sandbox.filesystem.denyWrite = %q lacks %s", deny, w)
+				}
+			}
+		})
+	}
+}
+
+func TestARestrictedShipsTempVarsPointAtAShortLinkToItsOwnDirUnderTheHome(t *testing.T) {
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, map[string]string{"CLAUDE_CODE_TMPDIR": "/fleet/own", "TMPDIR": "/fleet/own"})
+			out, _, _, env := p.mustRestricted(t, level)
+			link := env["CLAUDE_CODE_TMPDIR"]
+			if env["TMPDIR"] != link || !strings.HasPrefix(filepath.Base(link), "adm-") || len(link) > maxTempLink {
+				t.Fatalf("CLAUDE_CODE_TMPDIR = %q, TMPDIR = %q, want one adm- link of at most %d characters", link, env["TMPDIR"], maxTempLink)
+			}
+			fi, err := os.Lstat(link)
+			if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+				t.Fatalf("%s is not a link: %v", link, err)
+			}
+			real, err := filepath.EvalSymlinks(link)
+			home, _ := filepath.EvalSymlinks(p.home)
+			if err != nil || real != filepath.Join(home, "restricted", out.Session+"-tmp") {
+				t.Errorf("%s resolves to %q (%v), want the ship's dir under the home", link, real, err)
+			}
+			if fi, err := os.Stat(real); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+				t.Errorf("the ship's temp dir: %v, %v", fi, err)
+			}
+			t.Cleanup(func() { RemoveRestrictedFiles(p.home, out.Session) })
+		})
+	}
+}
+
+func TestARestrictedShipsOwnTempDirIsReadableThoughTheHomeIsNot(t *testing.T) {
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, nil)
+			out, _, argv, env := p.mustRestricted(t, level)
+			t.Cleanup(func() { RemoveRestrictedFiles(p.home, out.Session) })
+			_, got := settingsOf(t, argv)
+			real, err := filepath.EvalSymlinks(env["TMPDIR"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if allow := strs(t, sub(t, got, "sandbox", "filesystem")["allowRead"]); !slices.Contains(allow, real) {
+				t.Errorf("allowRead = %q lacks the ship's temp dir %s, which sits under the denied home", allow, real)
+			}
+		})
+	}
+}
+
+func TestRemovingARestrictedShipsFilesTakesAwayItsTempLinkAndDir(t *testing.T) {
+	p := newPinRig(t, nil)
+	out, _, _, env := p.mustRestricted(t, standing.DraftFix)
+	link := env["TMPDIR"]
+	dir := filepath.Join(p.home, "restricted", out.Session+"-tmp")
+	RemoveRestrictedFiles(p.home, out.Session)
+	if _, err := os.Lstat(link); err == nil {
+		t.Errorf("the link %s is still there", link)
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Errorf("the dir %s is still there", dir)
+	}
+}
+
+func TestRemovingARestrictedShipsFilesNeverFollowsOrRemovesALinkSwappedToPointElsewhere(t *testing.T) {
+	p := newPinRig(t, nil)
+	out, _, _, env := p.mustRestricted(t, standing.DraftFix)
+	link := env["TMPDIR"]
+	elsewhere := t.TempDir()
+	if err := os.WriteFile(filepath.Join(elsewhere, "keep"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(link) })
+	RemoveRestrictedFiles(p.home, out.Session)
+	if _, err := os.Stat(filepath.Join(elsewhere, "keep")); err != nil {
+		t.Errorf("a file behind the swapped link is gone: %v", err)
+	}
+	if got, err := os.Readlink(link); err != nil || got != elsewhere {
+		t.Errorf("the swapped link was removed or changed: %q, %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(p.home, "restricted", out.Session+"-tmp")); err == nil {
+		t.Errorf("the ship's own dir is still there")
+	}
+}
+
+func TestANormalLaunchGetsNoTempLinkAndKeepsTheFleetsTempVars(t *testing.T) {
+	p := newPinRig(t, map[string]string{"TMPDIR": "/fleet/own"})
+	if _, err := p.l.Launch(p.justRequest()); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	_, env := p.shipRecord(t)
+	if env["TMPDIR"] != "/fleet/own" || env["CLAUDE_CODE_TMPDIR"] != "" {
+		t.Errorf("TMPDIR = %q, CLAUDE_CODE_TMPDIR = %q, want the fleet's own and none", env["TMPDIR"], env["CLAUDE_CODE_TMPDIR"])
+	}
+	if _, err := os.Stat(filepath.Join(p.home, "restricted")); err == nil {
+		t.Errorf("a normal launch made a restricted dir")
+	}
+}
+
+func TestARestrictedShipGetsAStubGitConfigAndIdentityOnEveryLaunch(t *testing.T) {
+	want := map[string]string{"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+		"GIT_AUTHOR_NAME": "Admiral", "GIT_AUTHOR_EMAIL": "admiral@localhost", "GIT_COMMITTER_NAME": "Admiral", "GIT_COMMITTER_EMAIL": "admiral@localhost"}
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			// The fleet's own values lose to the stub.
+			p := newPinRig(t, map[string]string{"GIT_CONFIG_GLOBAL": "/home/engineer/.gitconfig", "GIT_AUTHOR_NAME": "Engineer"})
+			_, _, _, env := p.mustRestricted(t, level)
+			for k, v := range want {
+				if env[k] != v {
+					t.Errorf("%s = %q, want %q", k, env[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestARestrictedShipDropsTheEnvVarsThatCarryGitConfigAskpassAndTheSshAgent(t *testing.T) {
+	fleetEnv := map[string]string{"GIT_CONFIG_PARAMETERS": "'url.https://fake-token-work-1@github.com/.insteadof=https://github.com/'",
+		"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "credential.helper", "GIT_CONFIG_VALUE_0": "!echo fake-token-work-2",
+		"GIT_ASKPASS": "/usr/bin/fake-askpass", "SSH_ASKPASS": "/usr/bin/fake-askpass", "SSH_AUTH_SOCK": "/tmp/fake-agent.sock"}
+	p := newPinRig(t, fleetEnv)
+	_, _, _, env := p.mustRestricted(t, standing.DraftFix)
+	for k := range fleetEnv {
+		if v, ok := env[k]; ok && !strings.HasPrefix(k, "GIT_CONFIG_") {
+			t.Errorf("%s = %q in a restricted ship's env, want it unset", k, v)
+		}
+	}
+	// The fleet's entries are gone; the one left is Admiral's own.
+	if env["GIT_CONFIG_COUNT"] != "1" || env["GIT_CONFIG_KEY_0"] != "core.fsmonitor" || env["GIT_CONFIG_VALUE_0"] != "false" || env["GIT_CONFIG_PARAMETERS"] != "" {
+		t.Errorf("git config env = %v, want only core.fsmonitor=false", env)
+	}
+}
+
+func TestANormalLaunchKeepsTheFleetsGitEnvAndGetsNoStubIdentity(t *testing.T) {
+	fleetEnv := map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_ASKPASS": "/usr/bin/fake-askpass", "SSH_AUTH_SOCK": "/tmp/fake-agent.sock"}
+	p := newPinRig(t, fleetEnv)
+	p.l.Checkouts = &fakeCheckouts{t: t}
+	if _, err := p.l.Launch(p.justRequest()); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	_, env := p.shipRecord(t)
+	for k, v := range fleetEnv {
+		if env[k] != v {
+			t.Errorf("%s = %q in a normal ship's env, want the fleet's %q", k, env[k], v)
+		}
+	}
+	for _, k := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_AUTHOR_NAME", "GIT_COMMITTER_EMAIL"} {
+		if v, ok := env[k]; ok && (v == "/dev/null" || v == "Admiral" || v == "admiral@localhost" || v == "1") {
+			t.Errorf("%s = %q in a normal ship's env, want no restricted stub", k, v)
+		}
 	}
 }

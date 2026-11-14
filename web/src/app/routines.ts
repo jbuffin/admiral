@@ -1,3 +1,4 @@
+import type { Limits } from './limitsForm';
 import type { Dock, FleetCapabilities, Source } from './api';
 import { effortsFor, sourcesForFleet, type SkillChoice } from './launchForm';
 import { automateSearch, routineNewPath } from './router';
@@ -86,6 +87,7 @@ const REASON_WORDS: Record<string, string> = {
   quiet_hours: 'quiet hours',
   hold_fire: 'Hold fire is on',
   dedupe_key_held: 'the same event was already held',
+  no_restricted_harness: 'no harness in this fleet has passed the restricted-ship probe',
 };
 
 /** A reason code, or a comma-joined list of them, in words; a code it doesn't know stays as it is. */
@@ -323,4 +325,12 @@ export function noEventsNote(sources: Source[], fleetKey: string): string {
 export function eventWords(sources: Source[], fleetKey: string, on: NonNullable<Routine['on']>): string {
   const hit = eventChoices(sources, fleetKey).find((c) => c.value === eventValue(on));
   return hit?.title ?? on.kind.replace(/_/g, ' ');
+}
+
+/** The fleet-level note on the Routines screen when A3 routines run as propose only. */
+export function proposeOnlyNote(caps: FleetCapabilities | undefined, limits: Limits | undefined): string {
+  if (!caps || !limits || caps.restricted !== false) return '';
+  const { t1, t2, t3, t4 } = limits.ceilings;
+  if (![t1, t2, t3, t4].some((c) => c.level === 'A3')) return '';
+  return 'Draft fix routines run as propose only: no harness in this fleet has passed the restricted-ship probe.';
 }

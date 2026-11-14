@@ -38,7 +38,7 @@ func ValidEnv(dir, nonce string) bool { return nonceFormat.MatchString(nonce) &&
 func Command(dir, nonce string) string { return "touch " + SentinelPath(dir, nonce) }
 
 const (
-	defaultTimeout = 8 * time.Minute // the guard run and four judge calls of up to 90s each
+	defaultTimeout = 32 * time.Minute // worst case, in order: the guard and fence (2 minutes each), the sandbox probe's three runs each tried three times (9 x 2), the network run (2) and four judge calls of up to 90s each (6), with a little slack
 	versionTimeout = 15 * time.Second
 )
 
@@ -114,7 +114,9 @@ func (r *Runner) Close() { r.stop() }
 func NewDefault(home string) *Runner { return New(home, defaultProbes()...) }
 
 func defaultProbes() []Probe {
-	return append([]Probe{ClaudeGuard(), ClaudeMCPFence(), CodexMCPFence(), CodexConfigHome(), CopilotMCPFence(), CopilotConfigHome()}, judgeProbes()...)
+	ps := append([]Probe{ClaudeGuard(), ClaudeMCPFence(), CodexMCPFence(), CodexConfigHome(), CopilotMCPFence(), CopilotConfigHome()}, judgeProbes()...)
+	// Last, so a slow restricted run cannot starve the judge calls of the run's time.
+	return append(ps, ClaudeRestrictedSandbox(), ClaudeRestrictedNetwork())
 }
 
 // GuardHarnesses lists the harnesses with a registered guard probe: a stored pass for

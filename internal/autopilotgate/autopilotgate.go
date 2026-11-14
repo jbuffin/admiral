@@ -37,6 +37,23 @@ func Proven(home, fleetKey, harness string) bool {
 	return capabilities.Open(home).Proven(fleetKey, harness, capabilities.AutopilotGuard)
 }
 
+// RestrictedCapable reports whether some harness of the fleet can run a restricted ship: both
+// restricted capabilities proven, plus the guard and the fleet's advisor that every restricted ship
+// runs with. It reads the store fresh, and an unreadable store is not capable.
+func RestrictedCapable(home string, fleet config.Fleet) bool {
+	store := capabilities.Open(home)
+	for _, h := range probes.RestrictedHarnesses() {
+		if _, ok := fleet.Harness(h); !ok {
+			continue
+		}
+		if store.Proven(fleet.Key, h, capabilities.RestrictedSandbox) && store.Proven(fleet.Key, h, capabilities.RestrictedAllow) && Proven(home, fleet.Key, h) {
+			ok, _ := Advisor(fleet, store)
+			return ok
+		}
+	}
+	return false
+}
+
 // AdvisorRefusal is the error Check returns for a fleet with no judge harness, which
 // every autopilot ship's advisor runs on.
 type AdvisorRefusal struct {

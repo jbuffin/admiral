@@ -620,12 +620,11 @@ func TestADraftFixShipsGitCannotBeMadeToRunANestedReposFsmonitor(t *testing.T) {
 	}
 }
 
-func TestAFleetsOwnGitConfigurationInTheEnvironmentIsKeptBesideTheFsmonitorSetting(t *testing.T) {
-	p := newPinRig(t, map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "fleet"})
+func TestAFleetsOwnGitConfigurationInTheEnvironmentIsDroppedAndOnlyTheFsmonitorSettingRemains(t *testing.T) {
+	p := newPinRig(t, map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "credential.helper", "GIT_CONFIG_VALUE_0": "!echo fake-token-work-2"})
 	_, _, _, env := p.mustRestricted(t, standing.DraftFix)
-	if env["GIT_CONFIG_COUNT"] != "2" || env["GIT_CONFIG_KEY_0"] != "user.name" || env["GIT_CONFIG_VALUE_0"] != "fleet" ||
-		env["GIT_CONFIG_KEY_1"] != "core.fsmonitor" || env["GIT_CONFIG_VALUE_1"] != "false" {
-		t.Errorf("git config env = %v, want the fleet's entry kept and core.fsmonitor=false added", env)
+	if env["GIT_CONFIG_COUNT"] != "1" || env["GIT_CONFIG_KEY_0"] != "core.fsmonitor" || env["GIT_CONFIG_VALUE_0"] != "false" || env["GIT_CONFIG_KEY_1"] != "" {
+		t.Errorf("git config env = %v, want only core.fsmonitor=false", env)
 	}
 }
 
