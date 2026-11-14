@@ -927,4 +927,36 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await expect(page.getByRole('main').getByText('Untrusted').first()).toBeVisible();
   await expect(page.getByRole('main')).toContainText('Tier T3');
   await expect(page.getByRole('main')).toContainText('Mallory asks for a review of a lantern fix.');
+
+  // An event launch posts a launch card: Stop, Undo and Mute rule; Undo asks first, removes the clone, and stays undone after a reload.
+  const sail = await launchShip(admiral, { fleet: 'zulu', harness: 'claude' });
+  const clone = join(admiral.home, 'checkouts', sail.session);
+  mkdirSync(clone, { recursive: true });
+  writeFileSync(join(clone, 'work.txt'), 'local work');
+  const now = new Date().toISOString();
+  const launchRecord = { id: 'trig-launch', at: now, routine, outcome: 'launched', tier: 'T1', ship: sail.session, restricted: 'draft_fix', worker_launched: true };
+  appendFileSync(join(admiral.home, 'routines', 'zulu', 'triggers.jsonl'), JSON.stringify(launchRecord) + '\n');
+  const launchCard = { routine, routine_name: 'Review watch', tier: 'T1', sender: 'alice', link: 'https://github.com/acme/api/pull/7', metadata: false, mute_by: ['sender'], ship: sail.session, level: 'A3', restricted: 'draft_fix' };
+  appendFileSync(join(chatDir, 'conversation.jsonl'), JSON.stringify({ id: 'trig-launch', kind: 'launch_card', text: 'Alice asks for a review.', at: now, card: launchCard, logged: now }) + '\n');
+  // The chat log keeps its tail in memory once read, so a seeded line shows after a restart.
+  await admiral.restart();
+  await expect
+    .poll(async () => ((await (await page.request.get(admiral.url + 'api/chat/zulu/session')).json()) as { messages: { kind: string }[] }).messages.map((m) => m.kind))
+    .toContain('launch_card');
+  await page.goto(admiral.url + 'app/chat?fleet=zulu');
+  const shipCard = page.getByRole('main').locator('.chat-card').filter({ hasText: sail.session });
+  await expect(shipCard).toContainText('Restricted · Draft fix');
+  await expect(shipCard.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+  await expect(shipCard.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
+  await expect(shipCard.getByRole('button', { name: 'Mute rule' })).toBeVisible();
+  await expect(shipCard.getByRole('button', { name: 'Promote' })).toHaveCount(0);
+  await shipCard.getByRole('button', { name: 'Undo', exact: true }).tap();
+  await shipCard.getByRole('button', { name: 'Confirm undo', exact: true }).tap();
+  await expect(shipCard).toContainText(/undone/i);
+  await expect(shipCard.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
+  await expect(shipCard.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
+  await page.reload();
+  const again = page.getByRole('main').locator('.chat-card').filter({ hasText: sail.session });
+  await expect(again).toContainText(/undone/i);
+  await expect(again.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
 });

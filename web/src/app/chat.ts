@@ -29,13 +29,20 @@ export interface EventCard {
   mute_by?: string[];
 }
 
+/** The card an event launch posts for its ship: the event card's fields, the ship, its level and, at A3, its restricted profile. */
+export interface LaunchCard extends EventCard {
+  ship: string;
+  level: 'A3' | 'A4' | 'A5';
+  restricted?: 'investigate' | 'draft_fix';
+}
+
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card';
+  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'launch_card';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
-  card?: InboxItem | CommitmentCard | EventCard;
+  card?: InboxItem | CommitmentCard | EventCard | LaunchCard;
 }
 
 /** A fleet's chat as the server serves it: GET /api/chat/<fleet>/session and the `chat` socket message. */
@@ -53,6 +60,7 @@ export type ThreadItem =
   | { kind: 'reset'; id: string; text: string; at: string }
   | { kind: 'commitment'; id: string; text: string; at: string; card: CommitmentCard }
   | { kind: 'event'; id: string; text: string; at: string; card: EventCard }
+  | { kind: 'launch'; id: string; text: string; at: string; card: LaunchCard }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer };
 
 /** The snapshot's entries oldest first; entries with one time, or none that parses, keep the served order. */
@@ -66,6 +74,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
     if (m.kind === 'reset') return [{ t, i, item: { kind: 'reset', id: m.id, text: m.text, at: m.at } }];
     if (m.kind === 'commitment' && m.card) return [{ t, i, item: { kind: 'commitment', id: m.id, text: m.text, at: m.at, card: m.card as CommitmentCard } }];
     if (m.kind === 'event_card' && m.card) return [{ t, i, item: { kind: 'event', id: m.id, text: m.text, at: m.at, card: m.card as EventCard } }];
+    if (m.kind === 'launch_card' && m.card) return [{ t, i, item: { kind: 'launch', id: m.id, text: m.text, at: m.at, card: m.card as LaunchCard } }];
     if (m.kind === 'question' && m.card) {
       const card = m.card as InboxItem;
       const answer = answers.get(card.id);

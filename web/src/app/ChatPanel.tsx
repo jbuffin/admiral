@@ -1,8 +1,9 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
 import { probeChatSession, type Fleet } from './api';
-import { shipsLink } from './shipsLink';
+import { ships, shipsLink } from './shipsLink';
+import { fetchLaunchUndone, launchCardView, stopShip, undoLaunch } from './launchCard';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
 import { commitmentCardView, needsTerminal, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
@@ -96,6 +97,81 @@ function EventCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'eve
   );
 }
 
+function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'launch' }>; fleet: string }) {
+  const c = item.card;
+  const [undone, setUndone] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [state, setState] = useState({ busy: false, error: '' });
+  useEffect(() => {
+    let live = true;
+    void fetchLaunchUndone(fleet, c.routine, item.id).then((u) => {
+      if (live && u) setUndone(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [fleet, c.routine, item.id]);
+  const v = launchCardView(item, { ships: ships.value, undone });
+  const run = async (act: () => ReturnType<typeof stopShip>, then?: () => void) => {
+    setState({ busy: true, error: '' });
+    const r = await act();
+    setState({ busy: false, error: r.ok ? '' : r.error });
+    if (r.ok) then?.();
+  };
+  return (
+    <div class="convo-card chat-card">
+      <p class="chat-card-eyebrow">{v.eyebrow}</p>
+      <p class="line">{v.text}</p>
+      {c.sender ? <p class="line">From {c.sender}</p> : null}
+      {c.tier ? <p class="line">Tier {c.tier}</p> : null}
+      {c.link?.startsWith('https://') ? (
+        <a href={c.link} target="_blank" rel="noopener noreferrer">
+          {c.link} ↗
+        </a>
+      ) : null}
+      <p class="line">
+        <a
+          href={v.shipHref + fleetSearch.value}
+          onClick={(e) => {
+            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            go(v.shipHref, fleetSearch.value);
+          }}
+        >
+          {v.ship}
+        </a>
+        {v.status ? ` · ${v.status}` : ''}
+      </p>
+      {v.notice ? <p class="line">{v.notice}</p> : null}
+      {confirming ? (
+        <div class="confirm" role="group" aria-label="Undo">
+          <p class="line">{v.undoConfirm}</p>
+          <button type="button" class="btn danger" disabled={state.busy} onClick={() => void run(() => undoLaunch(fleet, c.routine, item.id), () => { setUndone(true); setConfirming(false); })}>
+            Confirm undo
+          </button>
+          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
+      {state.error ? <p class="inbox-error" role="alert">{state.error}</p> : null}
+      <div class="peek-actions">
+        {v.actions.stop && !confirming ? (
+          <button type="button" class="btn" disabled={state.busy} onClick={() => void run(() => stopShip(c.ship))}>
+            Stop
+          </button>
+        ) : null}
+        {v.actions.undo && !confirming ? (
+          <button type="button" class="btn" disabled={state.busy} onClick={() => setConfirming(true)}>
+            Undo
+          </button>
+        ) : null}
+        {v.actions.mute ? <MuteRule target={{ fleet, routine: c.routine, sender: c.sender, dedupe_key: c.dedupe_key, mute_by: c.mute_by }} /> : null}
+      </div>
+    </div>
+  );
+}
+
 function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working: boolean; chat: Chat; fleet: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -122,6 +198,8 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           <QuestionCard key={i.id} item={i} chat={chat} />
         ) : i.kind === 'event' ? (
           <EventCardView key={i.id} item={i} fleet={fleet} />
+        ) : i.kind === 'launch' ? (
+          <LaunchCardView key={i.id} item={i} fleet={fleet} />
         ) : i.kind === 'commitment' ? (
           <CommitmentCard key={i.id} item={i} fleet={fleet} />
         ) : i.role === 'user' ? (

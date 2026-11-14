@@ -74,18 +74,18 @@ func refusalReason(e *launcher.Error) (string, bool) {
 }
 
 // launchEvent starts the ship of a Launched decision, with s.mu held. It returns done when the launch or its failure is
-// recorded, and started when a ship was launched; a refusal that a later try could clear returns the decision as a
+// recorded, and started when a ship was launched, with the saved launch record; a refusal that a later try could clear returns the decision as a
 // proposal for the caller to record and act on. A launch never waits and never falls back to a less confined one.
-func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, en Enrichment, sender string, rec Trigger) (Decision, bool, bool) {
+func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, en Enrichment, sender string, rec Trigger) (Decision, Trigger, bool, bool) {
 	l := *r.Do.Launch
 	rec.Action = describe(r)
-	fail := func(reason string) (Decision, bool, bool) {
+	fail := func(reason string) (Decision, Trigger, bool, bool) {
 		rec.Outcome, rec.Reason = Failed, reason
 		s.recordFor(fleet, r, rec)
-		return d, false, true
+		return d, Trigger{}, false, true
 	}
 	if _, held := s.Ships.Holder(routineKey(r.ID)); held {
-		return proposeInstead(d, ReasonBusy), false, false
+		return proposeInstead(d, ReasonBusy), Trigger{}, false, false
 	}
 	skill, err := s.gates(fleet, l)
 	if err != nil {
@@ -104,13 +104,17 @@ func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, e
 	ref, lerr := s.Ships.Launch(context.Background(), req)
 	if lerr != nil {
 		if reason, ok := refusalReason(lerr); ok {
-			return proposeInstead(d, reason), false, false
+			return proposeInstead(d, reason), Trigger{}, false, false
 		}
 		return fail(lerr.Msg)
 	}
 	rec.ID, rec.Outcome, rec.Ship, rec.WorkerLaunched = req.TriggerID, Launched, ref.Session, true
-	if saved, ok := s.recordFor(fleet, r, rec); ok && ref.Session != "" {
+	saved, ok := s.recordFor(fleet, r, rec)
+	if ok && ref.Session != "" {
 		s.watched[saved.ID] = watch{fleet: fleet, routine: r.ID, session: ref.Session, at: rec.At}
 	}
-	return d, true, true
+	if !ok {
+		saved = rec
+	}
+	return d, saved, true, true
 }

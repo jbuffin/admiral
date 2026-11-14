@@ -243,9 +243,10 @@ func Metadata(ev routines.Event, repo string) string {
 	return strings.Join(parts, " · ")
 }
 
-// CardPoster posts an A0 card to a fleet's chat.
+// CardPoster posts an A0 event card or a launch card to a fleet's chat.
 type CardPoster interface {
 	PostEventCard(fleet string, c chat.EventCard) error
+	PostLaunchCard(fleet string, c chat.LaunchCard) error
 }
 
 // ProposalPublisher publishes an A1 event proposal to the Inbox.
@@ -253,7 +254,8 @@ type ProposalPublisher interface {
 	PublishEventProposal(p inbox.EventProposal, d inbox.EventDetail) (string, error)
 }
 
-// Acts is the scheduler's Acts seam: a Reported decision becomes a card, a Proposed one an Inbox proposal.
+// Acts is the scheduler's Acts seam: a Reported decision becomes a card, a Proposed one an Inbox proposal and a started
+// ship a launch card.
 type Acts struct {
 	Cards     CardPoster
 	Proposals ProposalPublisher
@@ -281,6 +283,15 @@ func (a *Acts) Act(fleet string, r routines.Routine, ev routines.Event, rec rout
 		if err := a.Cards.PostEventCard(fleet, chat.EventCard{ID: rec.ID, Routine: r.ID, RoutineName: r.Name, Tier: rec.Tier,
 			Sender: rec.Sender, Link: ev.Ref, DedupeKey: en.DedupeKey, Text: text, Metadata: metadata, MuteBy: muteBy}); err != nil {
 			log.Printf("lookout: card for %s on %s: %v", r.ID, fleet, err)
+		}
+	case routines.Launched:
+		if a.Cards == nil {
+			return
+		}
+		if err := a.Cards.PostLaunchCard(fleet, chat.LaunchCard{ID: rec.ID, Routine: r.ID, RoutineName: r.Name, Tier: rec.Tier,
+			Sender: rec.Sender, Link: ev.Ref, DedupeKey: en.DedupeKey, Text: text, Metadata: metadata, MuteBy: muteBy,
+			Ship: rec.Ship, Level: d.Level.String(), Restricted: string(rec.Restricted)}); err != nil {
+			log.Printf("lookout: launch card for %s on %s: %v", r.ID, fleet, err)
 		}
 	case routines.Proposed:
 		if a.Proposals == nil {
