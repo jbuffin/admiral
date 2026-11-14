@@ -351,6 +351,11 @@ func (r *runner) mergePanels(fresh []Panel) {
 }
 
 func (r *runner) pullOrders(ctx context.Context, p conn, panel string) {
+	// Read before the list: a search landing between the two leaves a stamp older than the orders, never newer.
+	stamp := time.Now()
+	if a, ok := p.(answerer); ok {
+		stamp = a.answeredAt(panel)
+	}
 	res, err := p.call(ctx, "orders.list", map[string]any{"panel": panel}, callTimeout)
 	if err != nil {
 		r.logf("orders.list for panel %q failed: %v", panel, err)
@@ -368,10 +373,6 @@ func (r *runner) pullOrders(ctx context.Context, p conn, panel string) {
 	if err != nil {
 		r.logf("protocol error: %v", err)
 		return
-	}
-	stamp := time.Now()
-	if a, ok := p.(answerer); ok {
-		stamp = a.answeredAt(panel)
 	}
 	r.mu.Lock()
 	for i := range r.panels {
