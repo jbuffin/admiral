@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { call, probeShips, refreshSource } from './api';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { call, fetchStackShape, linkStack, mergeShip, probeShips, refreshSource } from './api';
 
 const answer = (status: number, body: unknown) => vi.stubGlobal('fetch', async () => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }));
 
@@ -31,24 +31,102 @@ describe('call on a draft refusal', () => {
     answer(409, { error: 'no judge harness', reason: 'claude has not passed the no-network check' });
     expect(await call('POST', '/x')).toEqual({ ok: false, status: 409, error: 'no judge harness', reason: 'claude has not passed the no-network check' });
   });
-
-  it('sends the AbortSignal it is given to fetch', async () => {
-    let seen: AbortSignal | null | undefined;
-    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
-      seen = init.signal;
-      return new Response('{}', { status: 200 });
-    });
+  it('stops the request when the caller aborts it, and answers aborted', async () => {
+    hangUntilAborted();
     const ctl = new AbortController();
-    await call('POST', '/x', {}, undefined, ctl.signal);
-    expect(seen).toBe(ctl.signal);
+    const pending = call('POST', '/x', {}, undefined, { signal: ctl.signal });
+    ctl.abort();
+    expect(await pending).toEqual({ ok: false, error: 'The request was stopped.', aborted: true });
+  });
+});
+
+const hangUntilAborted = () =>
+  vi.stubGlobal(
+    'fetch',
+    (_url: string, init: RequestInit) =>
+      new Promise<Response>((_, reject) => {
+        const stop = () => reject(new DOMException('The operation was aborted.', 'AbortError'));
+        if (init.signal?.aborted) stop();
+        init.signal?.addEventListener('abort', stop);
+      }),
+  );
+
+const timedOut = (limit: string) => ({ ok: false, error: `Admiral didn't answer in ${limit}. It may still finish, so check before trying again.` });
+
+describe('call timeout', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('fails with the timeout message once the default 30 s passes, and not before', async () => {
+    hangUntilAborted();
+    let settled = false;
+    const pending = call('GET', '/x').then((r) => {
+      settled = true;
+      return r;
+    });
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await pending).toEqual(timedOut('30 s'));
   });
 
-  it('answers aborted, not an error to show, when the signal cancels the request', async () => {
-    vi.stubGlobal('fetch', async () => {
-      throw new DOMException('The operation was aborted.', 'AbortError');
+  it('does not call a timeout an abort', async () => {
+    hangUntilAborted();
+    const pending = call('GET', '/x');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await pending).not.toHaveProperty('aborted');
+  });
+
+  it("lets a call's own limit replace the default and names that limit", async () => {
+    hangUntilAborted();
+    let settled = false;
+    const pending = call('POST', '/x', {}, undefined, { timeoutMs: 180_000 }).then((r) => {
+      settled = true;
+      return r;
     });
-    const r = await call('POST', '/x', {}, undefined, new AbortController().signal);
-    expect(r).toMatchObject({ ok: false, aborted: true });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(150_000);
+    expect(await pending).toEqual(timedOut('3 min'));
+  });
+
+  it('writes whole minutes as N min and anything else as N s', async () => {
+    for (const [ms, label] of [[600_000, '10 min'], [60_000, '1 min'], [45_000, '45 s'], [90_000, '90 s']] as const) {
+      hangUntilAborted();
+      const pending = call('POST', '/x', {}, undefined, { timeoutMs: ms });
+      await vi.advanceTimersByTimeAsync(ms);
+      expect(await pending, label).toEqual(timedOut(label));
+    }
+  });
+
+  it("keeps a caller's abort an abort when it comes before the limit", async () => {
+    hangUntilAborted();
+    const ctl = new AbortController();
+    const pending = call('POST', '/x', {}, undefined, { signal: ctl.signal });
+    await vi.advanceTimersByTimeAsync(10_000);
+    ctl.abort();
+    expect(await pending).toEqual({ ok: false, error: 'The request was stopped.', aborted: true });
+  });
+
+  it('leaves no timer behind once the request answers', async () => {
+    answer(200, {});
+    expect(await call('GET', '/x')).toEqual({ ok: true, data: {} });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('gives the long routes their own limit and leaves the quick ones at the default', async () => {
+    vi.stubGlobal('document', { querySelector: () => null });
+    const limits: [string, () => Promise<unknown>, string][] = [
+      ['mergeShip', () => mergeShip('s1'), '3 min'],
+      ['linkStack', () => linkStack('s1'), '3 min'],
+      ['fetchStackShape', () => fetchStackShape('s1'), '30 s'],
+    ];
+    for (const [name, run, label] of limits) {
+      hangUntilAborted();
+      const pending = run();
+      await vi.advanceTimersByTimeAsync(label === '30 s' ? 30_000 : 180_000);
+      expect(await pending, name).toMatchObject(timedOut(label));
+    }
   });
 });
 
