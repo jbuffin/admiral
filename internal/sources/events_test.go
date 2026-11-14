@@ -30,7 +30,7 @@ func (c *catalogConn) kill()                   {}
 func (c *catalogConn) exited() <-chan struct{} { return nil }
 func (c *catalogConn) exitReason() string      { return "" }
 
-const catalogJSON = `[{"kind":"review_requested","title":"Review requested"},{"kind":"new_in_view","title":"New in a view","panel":"mine"}]`
+const catalogJSON = `[{"kind":"review_requested","title":"Review requested"},{"kind":"commented","title":"Commented in a view","panel":"mine"}]`
 
 func catalogRunner(t *testing.T, res string, err error) *runner {
 	t.Helper()
@@ -121,11 +121,29 @@ func TestAnEventTheCatalogCannotVouchForIsDropped(t *testing.T) {
 
 func TestAPanelKindNeedsItsPanelToExist(t *testing.T) {
 	r, s := withCatalog(t)
-	send(r, "new_in_view", "https://example.com/1", `,"panel":"other"`)
-	send(r, "new_in_view", "https://example.com/2", "")
-	send(r, "new_in_view", "https://example.com/3", `,"panel":"mine"`)
+	send(r, "commented", "https://example.com/1", `,"panel":"other"`)
+	send(r, "commented", "https://example.com/2", "")
+	send(r, "commented", "https://example.com/3", `,"panel":"mine"`)
 	if s.n() != 1 || s.got[0].Panel != "mine" {
 		t.Errorf("delivered %+v, want only the event for panel mine", s.got)
+	}
+}
+
+func TestAPluginCatalogListingTheRetiredViewKindKeepsItsOtherKindsAndDropsTheSend(t *testing.T) {
+	r := catalogRunner(t, `[{"kind":"new_in_view","title":"New in a view","panel":"mine"},{"kind":"review_requested","title":"Review requested"}]`, nil)
+	s := &sink{}
+	r.onEvent = s.add
+	kinds, ok := r.Events()
+	if !ok || len(kinds) != 1 || kinds[0].Kind != "review_requested" {
+		t.Errorf("Events = %+v, %v, want only review_requested kept", kinds, ok)
+	}
+	send(r, "new_in_view", "https://example.com/1", `,"panel":"mine"`)
+	if s.n() != 0 {
+		t.Errorf("%d new_in_view events delivered, want 0", s.n())
+	}
+	send(r, "review_requested", "https://example.com/2", "")
+	if s.n() != 1 {
+		t.Errorf("%d events after a review_requested send, want 1", s.n())
 	}
 }
 
@@ -187,7 +205,7 @@ func TestValidEventsAroundAnInvalidOneAreBothDelivered(t *testing.T) {
 	}
 }
 
-func TestTheBuiltInGitHubSourceEmitsOnlyItemsNewToAViewAndFillsTheViewer(t *testing.T) {
+func TestTheBuiltInGitHubSourceEmitsNoEventWhenAViewGainsAnItem(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
 	sources := `"gh":{"plugin":"github","fleet":"alpha","settings":{"views":[{"id":"mine","title":"Mine","query":"is:open Q1"}]}}`
@@ -198,37 +216,16 @@ func TestTheBuiltInGitHubSourceEmitsOnlyItemsNewToAViewAndFillsTheViewer(t *test
 	g.write("viewer", "eng\n")
 	f.startSources()
 	f.waitView("gh", "item 1", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
-	if s.n() != 0 {
-		t.Fatalf("%d events from the baseline poll, want 0: %+v", s.n(), s.got)
-	}
 	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
 	g.searchMore("mine", "acme/api", 2, "two", "bob")
 	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
 	f.waitView("gh", "item 2", func(v SourceView) bool { return len(v.orders("mine")) == 2 })
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(time.Second)
 	for s.n() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if s.n() != 1 {
-		t.Fatalf("%d events after item 2 appeared, want exactly 1: %+v", s.n(), s.got)
-	}
-	ev := s.got[0]
-	if ev.Kind != "new_in_view" || ev.Panel != "mine" || !strings.HasSuffix(ev.Ref, "/issues/2") || ev.Author != "bob" || ev.Viewer != "eng" || !ev.Verified {
-		t.Errorf("event = %+v, want new_in_view on mine for issue 2, author bob, viewer eng, verified", ev)
-	}
-	// leaving the view and coming back is new to it again
-	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
-	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
-	f.waitView("gh", "item 2 gone", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
-	g.searchMore("mine", "acme/api", 2, "two", "bob")
-	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
-	f.waitView("gh", "item 2 back", func(v SourceView) bool { return len(v.orders("mine")) == 2 })
-	deadline = time.Now().Add(5 * time.Second)
-	for s.n() < 2 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if s.n() != 2 {
-		t.Errorf("%d events after item 2 left and came back, want 2 in all", s.n())
+	if s.n() != 0 {
+		t.Errorf("%d events after item 2 appeared, want 0: %+v", s.n(), s.got)
 	}
 }
 

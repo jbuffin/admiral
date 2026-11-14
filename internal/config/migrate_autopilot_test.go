@@ -84,18 +84,18 @@ func TestMigrationListsEnabledEntriesOfADroppedSource(t *testing.T) {
 	}
 }
 
-// The note no longer says routines are still to come; they have landed.
-func TestMigrationNoticeNoLongerSaysRoutinesAreComing(t *testing.T) {
+// The note names each removed entry and points at no replacement on a view.
+func TestMigrationNoticeNamesTheEntriesAndPointsAtNoAutomateLink(t *testing.T) {
 	const entry = `{"enabled":true,"fleet":"work","harness":"claude","skill":{"kind":"none"}}`
 	_, p := planOut(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":{"notes":{"plugin":"freeform","name":"Notes","autopilot":{"orders":`+entry+`}}}}`)
 	m := &Migration{Removed: p.removed, Entries: p.entries}
 	_, body := m.Notice()
-	if strings.Contains(body, "once scheduled routines land") || !strings.Contains(body, "Notes") || !strings.Contains(body, "Automate") {
-		t.Errorf("notice body should name the entry and point at Automate…, not say routines are coming:\n%s", body)
+	if strings.Contains(body, "once scheduled routines land") || !strings.Contains(body, "Notes") || strings.Contains(body, "Automate") {
+		t.Errorf("notice body should name the entry and not point at Automate…:\n%s", body)
 	}
 }
 
-// Automate… opens in the fleet the source fed: its own, else the first fleet.
+// An entry carries the fleet its source fed: its own, else the first fleet.
 func TestMigrationEntriesCarryTheirSourcesFleet(t *testing.T) {
 	const ap = `"autopilot":{"orders":{"enabled":true,"fleet":"work","harness":"claude","skill":{"kind":"none"}}}`
 	_, p := planOut(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}},"home":{"name":"Home","claude":{}}},"sources":{"a":{"plugin":"freeform","fleet":"home",`+ap+`},"b":{"plugin":"freeform",`+ap+`}}}`)

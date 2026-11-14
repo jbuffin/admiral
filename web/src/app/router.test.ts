@@ -15,7 +15,7 @@ const page = vi.hoisted(() => {
   return l;
 });
 
-import { limitsFieldOf, limitsPath, standingOrdersPath, standingOrdersTab, routineCreating, installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, automateOf, automateSearch, routineNewPath, routineOf, routinePath } from './router';
+import { limitsFieldOf, limitsPath, standingOrdersPath, standingOrdersTab, routineCreating, installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, routineNewPath, routineOf, routinePath } from './router';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -92,12 +92,6 @@ describe('routine paths', () => {
     expect(surfaceOf('/app/routines/9f2c')?.id).toBe('routines');
     expect(surfaceOf(routineNewPath)?.id).toBe('routines');
     expect(surfaceOf('/app/routines/9f2c/extra')).toBeUndefined();
-  });
-  it('round-trips the view an Automate… query names, with its fleet', () => {
-    expect(automateOf(automateSearch('gh', 'mine', 'work'))).toEqual({ source: 'gh', view: 'mine' });
-    expect(automateOf(automateSearch('a&b', 'x y=z'))).toEqual({ source: 'a&b', view: 'x y=z' });
-    expect(automateSearch('gh', 'mine', 'work')).toContain('fleet=work');
-    expect(automateOf('?fleet=work')).toBeNull();
   });
 });
 

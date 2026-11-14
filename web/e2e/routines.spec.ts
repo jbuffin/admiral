@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import { proveJudge } from './crew';
-import { HOME, WORK, probeableClaude, seedFleets, withFakeGh } from './shell';
+import { HOME, WORK, addGitHubSource, probeableClaude, seedFleets, withFakeGh } from './shell';
 
 test('a routine made through the form fires on its minute and its ship shows in Recent runs', async ({ page, admiral }) => {
   test.setTimeout(150_000);
@@ -48,6 +48,52 @@ test('a routine made through the form fires on its minute and its ship shows in 
   await row.getByRole('switch').tap();
   await expect(row.getByRole('switch')).not.toBeChecked();
   await expect(editor.getByRole('switch', { name: 'On', exact: true })).not.toBeChecked();
+});
+
+test('no order view offers Automate…, the Routines editor offers no New in view trigger, and a stored one shows as broken with a note', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  const dir = join(admiral.home, 'routines', 'zulu');
+  mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString();
+  const stored = {
+    id: 'r-view',
+    name: 'Watch the Bugs view',
+    enabled: true,
+    when: '',
+    on: { source: 'gh', kind: 'new_in_view', panel: 'bugs' },
+    do: { launch: { harness: 'claude', dir: join(admiral.home, 'proj'), text: 'look' } },
+    before_acting: 'ask_first',
+    notify: false,
+    created_at: stamp,
+    updated_at: stamp,
+  };
+  writeFileSync(join(dir, 'routines.json'), JSON.stringify({ routines: [stored] }));
+  await admiral.start({ env: withFakeGh(admiral) });
+  const listed = async () => ((await (await fetch(`${admiral.url}api/fleets/zulu/routines`)).json()) as { routines: { id: string }[] }).routines.map((r) => r.id);
+  await expect.poll(listed).toEqual(['r-view']);
+
+  await page.goto(admiral.url + 'app/orders?fleet=zulu');
+  const main = page.getByRole('main');
+  await expect(main.getByText('Fix the login redirect')).toBeVisible();
+  await expect(main.getByRole('button', { name: /Automate/ })).toHaveCount(0);
+  await expect(main.getByRole('link', { name: /Automate/ })).toHaveCount(0);
+
+  await page.goto(admiral.url + 'app/routines?fleet=zulu');
+  const row = main.getByRole('listitem').filter({ hasText: 'Watch the Bugs view' });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText(/removed/i);
+  await row.getByRole('link').first().tap();
+  const form = main.getByRole('form', { name: 'Routine' });
+  await expect(form).toContainText(/trigger was removed/i);
+
+  await page.goto(admiral.url + 'app/routines/new?fleet=zulu');
+  const fresh = main.getByRole('form', { name: 'Routine' });
+  await fresh.getByRole('radio', { name: 'An event' }).tap();
+  const picker = fresh.getByLabel('When');
+  await expect(picker.locator('option')).not.toHaveCount(0);
+  await expect(picker.locator('option', { hasText: /New in/ })).toHaveCount(0);
+  await expect(picker.locator('optgroup[label*="new in a view" i]')).toHaveCount(0);
 });
 
 type Sentences = { sentences: { field: string; sentence: string }[]; checks: string[]; guidance: string; preset: string };
