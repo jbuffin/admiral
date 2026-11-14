@@ -475,7 +475,7 @@ func spendAndCounts(recs []Trigger, sender string, now time.Time, zone *time.Loc
 	return spent, c
 }
 
-// Records is every trigger-log record of the fleet, newest first, with undo and failure marks applied.
+// Records is every trigger-log record of the fleet, newest first, with undo, failure and promote marks applied.
 func (s *Store) Records(fleet string) ([]Trigger, error) {
 	if _, err := s.fleet(fleet); err != nil {
 		return nil, err
@@ -488,7 +488,11 @@ func (s *Store) Records(fleet string) ([]Trigger, error) {
 	}
 	undone := map[string]time.Time{}
 	failed := map[string]string{}
+	promoted := map[string]string{}
 	for _, l := range lines {
+		if l.PromoteOf != "" {
+			promoted[l.PromoteOf] = l.Ship
+		}
 		if l.UndoOf != "" {
 			undone[l.UndoOf] = l.At
 		}
@@ -499,11 +503,14 @@ func (s *Store) Records(fleet string) ([]Trigger, error) {
 	out := []Trigger{}
 	for i := len(lines) - 1; i >= 0; i-- {
 		l := lines[i]
-		if l.UndoOf != "" || l.FailOf != "" {
+		if l.UndoOf != "" || l.FailOf != "" || l.PromoteOf != "" {
 			continue
 		}
 		if reason, ok := failed[l.ID]; ok {
 			l.Outcome, l.Reason = Failed, reason
+		}
+		if ship, ok := promoted[l.ID]; ok {
+			l.Promoted, l.PromotedShip = true, ship
 		}
 		if at, ok := undone[l.ID]; ok {
 			l.Undone, l.UndoneAt = true, at

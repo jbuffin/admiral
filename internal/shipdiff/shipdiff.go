@@ -4,27 +4,24 @@ package shipdiff
 import (
 	"bytes"
 	"context"
-	"errors"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/neutralgit"
 )
 
 const (
 	StateOK   = "ok"
 	StateNone = "none"
 
-	MaxDiff    = 2 << 20 // bytes of unified diff returned
-	MaxFiles   = 2000
-	callTime   = 10 * time.Second
-	totalTime  = 20 * time.Second
-	maxListOut = 4 << 20 // bytes read from a listing
+	MaxDiff   = 2 << 20 // bytes of unified diff returned
+	MaxFiles  = 2000
+	totalTime = 20 * time.Second
 
 	maxCountRead  = 64 << 20        // bytes read from one untracked file to count its lines
 	deadlineSlack = 3 * time.Second // below this much time left, per-file diffs stop
@@ -62,36 +59,36 @@ func Compute(ctx context.Context, dir string) (Result, error) {
 		return none, nil
 	}
 	dir = top
-	g, err := newGit(ctx, dir)
+	g, err := neutralgit.New(ctx, dir)
 	if err != nil {
 		return none, err
 	}
-	g.env = append(g.env, "GIT_WORK_TREE="+dir) // beats core.worktree, which a -c cannot override
-	if _, err := g.list(ctx, "rev-parse", "--is-inside-work-tree"); err != nil {
+	g.Env = append(g.Env, "GIT_WORK_TREE="+dir) // beats core.worktree, which a -c cannot override
+	if _, err := g.List(ctx, "rev-parse", "--is-inside-work-tree"); err != nil {
 		return none, nil
 	}
-	head, err := g.list(ctx, "rev-parse", "--verify", "-q", "HEAD")
+	head, err := g.List(ctx, "rev-parse", "--verify", "-q", "HEAD")
 	if err != nil {
 		return none, nil // no commit yet
 	}
 	base := strings.TrimSpace(string(head))
-	if ref := g.baseRef(ctx); ref != "" {
-		if mb, err := g.list(ctx, "merge-base", ref, "HEAD"); err == nil && strings.TrimSpace(string(mb)) != "" {
+	if ref := baseRef(ctx, g); ref != "" {
+		if mb, err := g.List(ctx, "merge-base", ref, "HEAD"); err == nil && strings.TrimSpace(string(mb)) != "" {
 			base = strings.TrimSpace(string(mb))
 		}
 	}
 
 	res := Result{State: StateOK, Files: []File{}}
-	status, err := g.list(ctx, "diff", "-M", "--name-status", "-z", base, "--")
+	status, err := g.List(ctx, "diff", "-M", "--name-status", "-z", base, "--")
 	if err != nil {
 		return none, err
 	}
-	numstat, err := g.list(ctx, "diff", "-M", "--numstat", "-z", base, "--")
+	numstat, err := g.List(ctx, "diff", "-M", "--numstat", "-z", base, "--")
 	if err != nil {
 		return none, err
 	}
 	res.Files = mergeFiles(parseNameStatus(status), parseNumstat(numstat))
-	untracked, err := g.list(ctx, "ls-files", "--others", "--exclude-standard", "-z")
+	untracked, err := g.List(ctx, "ls-files", "--others", "--exclude-standard", "-z")
 	if err != nil {
 		return none, err
 	}
@@ -104,7 +101,7 @@ func Compute(ctx context.Context, dir string) (Result, error) {
 	sort.Strings(paths)
 
 	var diff bytes.Buffer
-	patch, cut, err := g.capped(ctx, maxDiff, "diff", "-M", base, "--")
+	patch, cut, err := g.Capped(ctx, maxDiff, "diff", "-M", base, "--")
 	if err != nil {
 		return none, err
 	}
@@ -129,7 +126,7 @@ func Compute(ctx context.Context, dir string) (Result, error) {
 			res.Truncated = true
 			continue
 		}
-		part, cut, err := g.capped(ctx, maxDiff-diff.Len(), "diff", "--no-index", "--", os.DevNull, p)
+		part, cut, err := g.Capped(ctx, maxDiff-diff.Len(), "diff", "--no-index", "--", os.DevNull, p)
 		if err != nil {
 			if ctx.Err() != nil {
 				res.Truncated = true
@@ -167,126 +164,17 @@ func workTreeOf(dir string) (string, bool) {
 	}
 }
 
-type git struct {
-	bin, dir string
-	env      []string
-	neutral  []string // -c options that blank every program the checkout's config names
-}
-
-// newGit builds the safe invocation: the checkout's .git/config and .gitattributes are the ship's to write,
-// so no program they name may run, and nothing from Admiral's own environment reaches git.
-func newGit(ctx context.Context, dir string) (*git, error) {
-	bin, err := exec.LookPath("git")
-	if err != nil {
-		return nil, err
-	}
-	g := &git{bin: bin, dir: dir, env: []string{
-		"PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-		"HOME=/nonexistent", "XDG_CONFIG_HOME=/nonexistent",
-		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_PAGER=cat", "LC_ALL=C",
-	}}
-	g.neutral = []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.pager=cat",
-		"-c", "core.alternateRefsCommand=", "-c", "diff.external=", "-c", "diff.ignoreSubmodules=all", "-c", "core.quotePath=false"}
-	// No scope flag: it would turn includes off, and a driver can come from an included file or config.worktree.
-	keys, err := g.list(ctx, "config", "--name-only", "-z", "--get-regexp", `^(filter|diff)\..*\.`)
-	var exit *exec.ExitError
-	if err != nil && !(errors.As(err, &exit) && exit.ExitCode() == 1) {
-		return nil, err // fail closed: an unlisted driver could run
-	}
-	seen := map[string]bool{}
-	for _, k := range strings.Split(string(keys), "\x00") {
-		i := strings.LastIndex(k, ".")
-		if i < 0 || seen[k[:i]] {
-			continue
-		}
-		seen[k[:i]] = true
-		prefix := k[:i]
-		vars := []string{"textconv", "command"}
-		if strings.HasPrefix(prefix, "filter.") {
-			vars = []string{"clean", "smudge", "process"}
-		}
-		for _, v := range vars {
-			g.neutral = append(g.neutral, "-c", prefix+"."+v+"=")
-		}
-	}
-	return g, nil
-}
-
-// The prefixes are explicit so diff.noprefix and diff.mnemonicPrefix in the checkout's config cannot change the path headers the client reads.
-var safeDiffFlags = []string{"--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"}
-
-func (g *git) cmd(ctx context.Context, args ...string) *exec.Cmd {
-	full := append([]string{"--no-pager"}, g.neutral...)
-	full = append(full, args[0])
-	rest := args[1:]
-	if args[0] == "diff" {
-		full = append(full, safeDiffFlags...)
-	}
-	full = append(full, rest...)
-	c := exec.CommandContext(ctx, g.bin, full...)
-	c.Dir, c.Env = g.dir, g.env
-	c.WaitDelay = time.Second
-	return c
-}
-
-// list runs git and returns its whole output (at most maxListOut). git diff --no-index exits 1 on a difference.
-func (g *git) list(ctx context.Context, args ...string) ([]byte, error) {
-	out, cut, err := g.capped(ctx, maxListOut, args...)
-	if cut && err == nil {
-		return out, errors.New("git output too large")
-	}
-	return out, err
-}
-
-// capped reads at most limit bytes of the output, stops git when there is more, and cuts at a line end.
-func (g *git) capped(ctx context.Context, limit int, args ...string) ([]byte, bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, callTime)
-	defer cancel()
-	c := g.cmd(ctx, args...)
-	out, err := c.StdoutPipe()
-	if err != nil {
-		return nil, false, err
-	}
-	if err := c.Start(); err != nil {
-		return nil, false, err
-	}
-	buf, _ := io.ReadAll(io.LimitReader(out, int64(limit)+1))
-	cut := len(buf) > limit
-	if cut {
-		cancel()
-		buf = buf[:limit]
-		if i := bytes.LastIndexByte(buf, '\n'); i >= 0 {
-			buf = buf[:i+1]
-		} else {
-			buf = buf[:0]
-		}
-	}
-	err = c.Wait()
-	if cut {
-		return buf, true, nil
-	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() == 1 && len(args) > 1 && args[0] == "diff" {
-		err = nil // --no-index and --exit-code style: a difference
-	}
-	if err != nil {
-		return nil, false, err
-	}
-	return buf, false, nil
-}
-
 // baseRef is the repo's default branch: origin/HEAD, else main.
-func (g *git) baseRef(ctx context.Context) string {
-	if out, err := g.list(ctx, "symbolic-ref", "-q", "refs/remotes/origin/HEAD"); err == nil {
+func baseRef(ctx context.Context, g *neutralgit.Git) string {
+	if out, err := g.List(ctx, "symbolic-ref", "-q", "refs/remotes/origin/HEAD"); err == nil {
 		if ref := strings.TrimSpace(string(out)); strings.HasPrefix(ref, "refs/") {
-			if _, err := g.list(ctx, "rev-parse", "--verify", "-q", ref); err == nil {
+			if _, err := g.List(ctx, "rev-parse", "--verify", "-q", ref); err == nil {
 				return ref
 			}
 		}
 	}
 	for _, ref := range []string{"refs/heads/main", "refs/remotes/origin/main"} {
-		if _, err := g.list(ctx, "rev-parse", "--verify", "-q", ref); err == nil {
+		if _, err := g.List(ctx, "rev-parse", "--verify", "-q", ref); err == nil {
 			return ref
 		}
 	}

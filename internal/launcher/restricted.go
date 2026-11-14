@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/neutralgit"
+	"github.com/jbuffin/admiral/internal/promote"
 	"github.com/jbuffin/admiral/internal/standing"
 )
 
@@ -189,13 +192,54 @@ func (l *Launcher) shipCheckout(req Request, session string) (restrictedShip, st
 	} else if made.checkout, err = l.Checkouts.Make(l.Home, session, req.Dir); err != nil {
 		return restrictedShip{}, "", asError(err)
 	}
-	if !made.reused || req.EventText != "" {
+	if req.StartFrom == nil && (!made.reused || req.EventText != "") {
 		if err := writeEventFile(made.checkout, req.EventText); err != nil {
 			made.remove(home, session)
 			return restrictedShip{}, "", refuse(http.StatusInternalServerError, "%v", err)
 		}
 	}
 	return made, home, nil
+}
+
+// startFromSetup makes a promoted ship's own clone and puts the restricted ship's work in it, with neutral git.
+func (l *Launcher) startFromSetup(req Request, session string) (restrictedShip, error) {
+	var made restrictedShip
+	fail := func(err error) (restrictedShip, error) {
+		made.remove(l.Home, session)
+		return restrictedShip{}, refuse(http.StatusInternalServerError, "starting from %s: %v", req.StartFrom.Branch, err)
+	}
+	ctx := context.Background()
+	work, err := promote.Read(ctx, req.Dir, req.StartFrom.Clone, req.StartFrom.Branch)
+	if err != nil {
+		return fail(err)
+	}
+	made, _, err = l.shipCheckout(req, session)
+	if err != nil {
+		return made, err
+	}
+	g, err := neutralgit.New(ctx, made.checkout)
+	if err != nil {
+		return fail(err)
+	}
+	g.Env = append(g.Env, "GIT_WORK_TREE="+made.checkout)
+	if work.Kind == promote.Diff {
+		c := g.Cmd(ctx, "apply", "--binary", "--whitespace=nowarn")
+		c.Stdin = strings.NewReader(work.Patch)
+		if out, err := c.CombinedOutput(); err != nil {
+			return fail(fmt.Errorf("applying the diff: %v: %s", err, strings.TrimSpace(string(out))))
+		}
+		return made, nil
+	}
+	if _, err := g.List(ctx, "fetch", "--quiet", "--no-tags", "--", req.StartFrom.Clone, "refs/heads/"+req.StartFrom.Branch); err != nil {
+		return fail(err)
+	}
+	if got, err := g.List(ctx, "rev-parse", "--verify", "FETCH_HEAD^{commit}"); err != nil || strings.TrimSpace(string(got)) != work.Tip {
+		return fail(errors.New("the branch moved while it was fetched"))
+	}
+	if _, err := g.List(ctx, "reset", "--hard", "--quiet", work.Tip, "--"); err != nil {
+		return fail(err)
+	}
+	return made, nil
 }
 
 // eventPrompt is the template, the line that points at the event file, and the fleet's Guidance.

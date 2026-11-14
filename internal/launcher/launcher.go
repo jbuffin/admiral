@@ -370,7 +370,8 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	restricted := req.Restricted != ""
 	evented := req.eventShip()
-	if (restricted || evented) && l.Checkouts == nil {
+	promoted := req.StartFrom != nil
+	if (restricted || evented || promoted) && l.Checkouts == nil {
 		return nil, refuse(http.StatusServiceUnavailable, "event ships cannot be launched: no checkout maker is configured")
 	}
 	addPrompt := func(argv []string, prompt string) []string {
@@ -414,10 +415,12 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	opts[0][1] = name
 	launched := false
-	if restricted || evented {
+	if restricted || evented || promoted {
 		var made restrictedShip
 		if restricted {
 			argv, made, err = l.restrictedSetup(req, session, argv)
+		} else if promoted {
+			made, err = l.startFromSetup(req, session)
 		} else {
 			argv, made, err = l.eventSetup(req, session, skill, argv, flags, addPrompt)
 		}
