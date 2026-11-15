@@ -528,7 +528,9 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   const started = stackShip.ship ?? stackShip;
   expect(started.url).toBe(STACK.url);
 
-  // The stack row shows the ship in place of its arrow, and each layer shows the same ship.
+  // The launch opens the ship; back on Orders, the stack row shows the ship in place of its arrow, and each layer shows the same ship.
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  await press(tabNamed(page, /^Review requested/));
   const stackPill = (row: Locator) => row.getByRole('button', { name: new RegExp(`^${started.name}, .*Open ship$`) });
   await expect(stackPill(stackRow)).toBeVisible();
   await expect(launchStack).toHaveCount(0);
@@ -551,7 +553,9 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   const sentAgain = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships');
   await press(form.getByRole('button', { name: 'Launch', exact: true }));
   expect((await sentAgain).postDataJSON()).toMatchObject({ stack: true, anyway: true });
-  await page.keyboard.press('Escape');
+  // The launch opened the ship; the callers carry on from Orders with For you selected.
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  await expect(tabNamed(page, /^For you/)).toHaveAttribute('aria-selected', 'true');
 }
 
 /** On the phone, More lists the surfaces the bar has no tab for, and not Orders. */
