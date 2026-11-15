@@ -12,7 +12,7 @@ import (
 	"github.com/jbuffin/admiral/internal/promote"
 )
 
-func isOldSentinel(err error) bool {
+func isOneOfTheOtherRefusals(err error) bool {
 	for _, s := range []error{promote.ErrNothing, promote.ErrAdmiralPaths, promote.ErrAlternates, promote.ErrHarness, promote.ErrSymlink} {
 		if errors.Is(err, s) {
 			return true
@@ -68,8 +68,8 @@ func TestReadRefusesAGitCarrierAnywhereBelowTheRootAndNamesItsQuotedPath(t *test
 				if err == nil {
 					t.Fatal("Read accepted a clone with a planted " + c.kind)
 				}
-				if isOldSentinel(err) {
-					t.Errorf("err = %v, want a refusal of its own, not one of the five old sentinels", err)
+				if isOneOfTheOtherRefusals(err) {
+					t.Errorf("err = %v, want a refusal of its own, not one of the other refusals", err)
 				}
 				if want := strconv.Quote(c.rel); !strings.Contains(err.Error(), want) {
 					t.Errorf("err = %q, want it to name %s", err, want)
@@ -136,5 +136,33 @@ func TestReadRunsNoCleanFilterOfAPlantedSubmoduleAndRefusesIt(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Error("Read ran the submodule's clean filter")
+	}
+}
+
+func TestReadRefusesANestedRepoBehindARootGitThatIsNotAFolder(t *testing.T) {
+	for _, root := range []string{"link", "file"} {
+		t.Run(root, func(t *testing.T) {
+			w := newWorld(t)
+			commit(t, w.clone, "c.txt", "c\n")
+			real := filepath.Join(t.TempDir(), "real.git")
+			if err := os.Rename(filepath.Join(w.clone, ".git"), real); err != nil {
+				t.Fatal(err)
+			}
+			if root == "link" {
+				if err := os.Symlink(real, filepath.Join(w.clone, ".git")); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				write(t, filepath.Join(w.clone, ".git"), "gitdir: "+real+"\n")
+			}
+			plantCarrier(t, w.clone, "git folder", "src/sub/.git")
+			_, err := w.read(t)
+			if err == nil {
+				t.Fatal("Read accepted a clone whose root .git is not a folder")
+			}
+			if !errors.Is(err, promote.ErrGitCarrier) || !strings.Contains(err.Error(), `".git"`) && !strings.Contains(err.Error(), `src/sub/.git`) {
+				t.Errorf("err = %v, want a git carrier refusal naming a path", err)
+			}
+		})
 	}
 }

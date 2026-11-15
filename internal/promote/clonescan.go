@@ -33,24 +33,34 @@ func Carrier(reason, path string) error {
 }
 
 // ScanTree walks clone's work tree without following links and refuses a .git or .gitmodules below the root, which git
-// would treat as a nested repository or submodule. Names match case-insensitively because a checkout can sit on a case-folding disk.
+// would treat as a nested repository or submodule, and a root .git that is not a real folder. Names match case-insensitively
+// because a checkout can sit on a case-folding disk; only the exact root .git folder is skipped.
 func ScanTree(clone string) error {
 	return filepath.WalkDir(clone, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+		rel, relErr := filepath.Rel(clone, path)
+		if relErr != nil {
+			return relErr
 		}
-		rel, err := filepath.Rel(clone, path)
-		if err != nil || rel == "." {
-			return err
+		rel = filepath.ToSlash(rel)
+		if err != nil {
+			if rel == "." {
+				return errors.New("the clone's work tree cannot be read")
+			}
+			return Carrier("a path the scan could not read", rel)
+		}
+		if rel == "." {
+			return nil
 		}
 		name := d.Name()
 		switch {
-		case strings.EqualFold(name, ".git") && rel == name:
+		case rel == ".git" && d.IsDir():
 			return filepath.SkipDir
+		case strings.EqualFold(name, ".git") && rel == name:
+			return Carrier("a root .git that is not a folder", rel)
 		case strings.EqualFold(name, ".git"):
-			return Carrier("a nested git repository", filepath.ToSlash(rel))
+			return Carrier("a nested git repository", rel)
 		case strings.EqualFold(name, ".gitmodules") && rel != name:
-			return Carrier("a nested .gitmodules", filepath.ToSlash(rel))
+			return Carrier("a nested .gitmodules", rel)
 		}
 		return nil
 	})

@@ -50,6 +50,9 @@ var harnessPaths = []string{":(top,icase).claude", ":(top,icase).mcp.json", ":(t
 
 // Read reads the work in clone's branch against dir, refusing as the sentinels say.
 func Read(ctx context.Context, dir, clone, branch string) (Work, error) {
+	if err := ScanTree(clone); err != nil {
+		return Work{}, err
+	}
 	dg, err := neutralgit.New(ctx, dir)
 	if err != nil {
 		return Work{}, err
@@ -59,9 +62,6 @@ func Read(ctx context.Context, dir, clone, branch string) (Work, error) {
 		return Work{}, fmt.Errorf("reading %s: %w", dir, err)
 	}
 	if err := checkAlternates(clone, strings.TrimSpace(string(objects))); err != nil {
-		return Work{}, err
-	}
-	if err := ScanTree(clone); err != nil {
 		return Work{}, err
 	}
 	head, err := dg.List(ctx, "rev-parse", "--verify", "-q", "HEAD")
