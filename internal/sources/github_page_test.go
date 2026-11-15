@@ -114,15 +114,16 @@ func TestTheReposRouteListsWhatRoutesToTheSourcesFleet(t *testing.T) {
 	mkCheckout(t, filepath.Join(rootA, "tools"), "git@ghe.example.com:corp/tools.git")
 	mkCheckout(t, filepath.Join(rootB, "widgets-fork"), "https://github.com/acme/widgets.git")
 	mkCheckout(t, filepath.Join(rootB, "app"), "https://github.com/Bravo/App.git")
-	fleets := fmt.Sprintf(`"alpha":{"name":"Alpha","claude":{},"search_roots":[%q],"owners":["Globex"]},"bravo":{"name":"Bravo","claude":{},"search_roots":[%q]}`, rootA, rootB)
+	fleets := fmt.Sprintf(`"alpha":{"name":"Alpha","claude":{},"search_roots":[%q],"owners":["Globex"]},"bravo":{"name":"Bravo","claude":{},"search_roots":[%q]},"charlie":{"name":"Charlie","claude":{}}`, rootA, rootB)
 	f := newServiceFixture(t, ghConfig(fleets,
 		`"gha":{"plugin":"github","fleet":"alpha"},`+
 			`"ghe":{"plugin":"github","fleet":"alpha","settings":{"host":"ghe.example.com"}},`+
-			`"ghb":{"plugin":"github","fleet":"bravo"}`))
+			`"ghb":{"plugin":"github","fleet":"bravo"},`+
+			`"ghc":{"plugin":"github","fleet":"charlie"}`))
 	f.startSources()
 	f.waitView("ghb", "its runner", func(SourceView) bool { return true })
 
-	read := func(key string) map[string]any {
+	readAll := func(key string) map[string]any {
 		code, body := f.do(http.MethodGet, "/"+key+"/repos", nil)
 		if code != http.StatusOK {
 			t.Fatalf("GET %s/repos = %d %s", key, code, body)
@@ -133,6 +134,12 @@ func TestTheReposRouteListsWhatRoutesToTheSourcesFleet(t *testing.T) {
 		}
 		return out
 	}
+	// The other keys are checked below; the warnings have their own checks.
+	read := func(key string) map[string]any {
+		out := readAll(key)
+		delete(out, "warnings")
+		return out
+	}
 	if got := read("gha"); !reflect.DeepEqual(got, map[string]any{"repos": []any{"acme/widgets"}, "owners": []any{"globex"}, "default": true}) {
 		t.Errorf("alpha's repos = %v, want acme/widgets (checked out in both fleets, so the first has it), owner globex, default", got)
 	}
@@ -141,6 +148,15 @@ func TestTheReposRouteListsWhatRoutesToTheSourcesFleet(t *testing.T) {
 	}
 	if got := read("ghb"); !reflect.DeepEqual(got, map[string]any{"repos": []any{"bravo/app"}, "owners": []any{}, "default": false}) {
 		t.Errorf("bravo's repos = %v, want bravo/app, no owners as [], not the default", got)
+	}
+	for _, key := range []string{"gha", "ghb"} {
+		w, _ := readAll(key)["warnings"].([]any)
+		if len(w) != 1 || !strings.Contains(fmt.Sprint(w[0]), "acme/widgets is checked out in fleets") {
+			t.Errorf("%s warnings = %v, want the one routing warning for acme/widgets, checked out in alpha and bravo", key, w)
+		}
+	}
+	if got := readAll("ghc")["warnings"]; !reflect.DeepEqual(got, []any{}) {
+		t.Errorf("a fleet with no conflict has warnings %v, want [] and not null or absent", got)
 	}
 }
 

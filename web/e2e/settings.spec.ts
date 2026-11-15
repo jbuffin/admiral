@@ -219,6 +219,8 @@ test('a signed-out fleet says how to sign in with its views greyed, and turns Co
 
   // The views come alive: plain words, a count each, and the failing search's error with Edit search.
   await expect(viewRow(page, 'For you')).toContainText('Everything below that needs you now');
+  // For you has no count of its own, signed in or not.
+  await expect(viewRow(page, 'For you')).not.toContainText(/\d+ open/);
   await expect(viewRow(page, 'Review requested')).toContainText('Open PRs where you are a requested reviewer');
   await expect(viewRow(page, 'Review requested')).toContainText('9 open');
   await expect(viewRow(page, 'My PRs')).toContainText('Open PRs you wrote');
@@ -336,6 +338,22 @@ test('the priority labels and the check interval save at once', async ({ page, a
   await prefs.getByRole('radio', { name: '15 min', exact: true }).click();
   await expect.poll(() => config(admiral).sources.gh.settings.refreshMinutes).toBe(15);
   expect(config(admiral).sources.gh.settings.hotLabels).toEqual(['priority: high', 'P1', 'urgent', 'sev1']);
+});
+
+test('a repo checked out in two fleets shows its routing warning under Repos on both fleets\' pages', async ({ page, admiral }) => {
+  const roots = { zulu: join(admiral.home, 'rz'), alpha: join(admiral.home, 'ra') };
+  checkout(roots.zulu, 'widgets', 'acme/widgets');
+  checkout(roots.alpha, 'widgets-fork', 'acme/widgets');
+  seedWith(admiral, { gz: { plugin: 'github', fleet: 'zulu' }, ga: { plugin: 'github', fleet: 'alpha' } }, roots);
+  await admiral.start({ env: admiral.fakeGh().env });
+  await expect.poll(async () => (await apiSources(admiral)).map((s) => `${s.key}:${s.warnings.some((w) => w.includes('acme/widgets'))}`).sort()).toEqual(['ga:true', 'gz:true']);
+
+  for (const fleet of ['zulu', 'alpha']) {
+    await page.goto(githubPage(admiral, fleet));
+    const repos = page.getByRole('region', { name: 'Repos', exact: true });
+    await expect(repos).toContainText(/acme\/widgets is checked out in fleets (zulu and alpha|alpha and zulu); \w+ takes its items/);
+    await expect(repos).not.toContainText(/no other fleet claims/i);
+  }
 });
 
 test('a fleet with no GitHub source says so and offers nothing to add', async ({ page, admiral }) => {
