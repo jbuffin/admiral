@@ -179,27 +179,38 @@ func TestAStackBaseCheckThatCannotRunChangesNothing(t *testing.T) {
 	})
 }
 
-func TestTheStackBaseCheckRunsOnlyForAStackedOrChainedShipWhoseOpenLayersAreAllReady(t *testing.T) {
-	pending := readyAt("top-1")
-	pending.Checks, pending.MergeState = "PENDING", "BLOCKED"
+func TestTheStackBaseCheckRunsOnlyForAStackedOrChainedShipWhoseOpenLayersAreAllMergeable(t *testing.T) {
+	blockedOnReview := readyAt("top-1")
+	blockedOnReview.Review, blockedOnReview.MergeState = "REVIEW_REQUIRED", "BLOCKED"
+	behind := readyAt("h9")
+	behind.MergeState = "BEHIND"
+	conflicting := readyAt("h9")
+	conflicting.Mergeable, conflicting.MergeState = "CONFLICTING", "DIRTY"
+	unknown := readyAt("h9")
+	unknown.Mergeable, unknown.MergeState = "UNKNOWN", "UNKNOWN"
+	one := map[string]moor.Detail{layerURL(7): {Number: 7, URL: layerURL(7), Head: "layer-7", Base: "main", DefaultBranch: "main"}}
 	for name, c := range map[string]struct {
 		details map[string]moor.Detail
 		layers  []moor.Status
+		runs    bool
 	}{
-		"independent PRs":       {independentDetails(3), []moor.Status{readyAt("h7"), readyAt("h9"), readyAt("top-1")}},
-		"one PR":                {map[string]moor.Detail{layerURL(7): {Number: 7, URL: layerURL(7), Head: "layer-7", Base: "main", DefaultBranch: "main"}}, []moor.Status{readyAt("top-1")}},
-		"a layer not ready yet": {stackedDetails(3), []moor.Status{readyAt("h7"), readyAt("h9"), pending}},
+		"independent PRs": {independentDetails(3), []moor.Status{readyAt("h7"), readyAt("h9"), readyAt("top-1")}, false},
+		"one PR":          {one, []moor.Status{readyAt("top-1")}, false},
+		"the top mergeable but blocked on review": {stackedDetails(3), []moor.Status{readyAt("h7"), readyAt("h9"), blockedOnReview}, true},
+		"a mergeable layer that is behind":        {stackedDetails(3), []moor.Status{readyAt("h7"), behind, readyAt("top-1")}, true},
+		"a layer that conflicts on its own":       {stackedDetails(3), []moor.Status{readyAt("h7"), conflicting, readyAt("top-1")}, false},
+		"a layer whose mergeability is unknown":   {stackedDetails(3), []moor.Status{readyAt("h7"), unknown, readyAt("top-1")}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newStackBaseRig(t, c.details, c.layers...)
 
 			sh := r.poll(t)
 
-			if got := r.ck.requests(); len(got) != 0 {
-				t.Errorf("checks = %+v, want none", got)
+			if got := r.ck.requests(); (len(got) > 0) != c.runs {
+				t.Errorf("checks = %+v, want the check to run = %v", got, c.runs)
 			}
-			if want := name != "a layer not ready yet"; sh.StackReady != want {
-				t.Errorf("stack_ready = %v, want %v as today", sh.StackReady, want)
+			if want := name == "independent PRs" || name == "one PR"; sh.StackReady != want {
+				t.Errorf("stack_ready = %v, want %v", sh.StackReady, want)
 			}
 		})
 	}

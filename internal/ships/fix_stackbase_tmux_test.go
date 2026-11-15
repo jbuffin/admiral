@@ -112,3 +112,22 @@ func TestAStackBaseCheckThatCannotRunOffersNoFix(t *testing.T) {
 		t.Errorf("fix = %d %s, want 409", rec.Code, rec.Body)
 	}
 }
+
+func TestAMergeableStackBlockedOnReviewThatConflictsWithItsBaseIsStillOfferedFixStack(t *testing.T) {
+	a := newAnswerRig(t, 3)
+	a.baseConflicted(t, &fakeStackChecker{conflicts: true})
+	blocked := readyAt("top-1")
+	blocked.Review, blocked.MergeState = "REVIEW_REQUIRED", "BLOCKED"
+	a.gh.set(wakePR2, blocked)
+
+	a.s.PollMoored(context.Background())
+
+	fix, has := a.listedFix(t)
+	if !has || fix["pr"] != wakePR2 || fix["stack"] != true {
+		t.Fatalf("fix = %v, %v, want a stack round on %s: every layer is mergeable", fix, has, wakePR2)
+	}
+	problems, _ := fix["problems"].([]any)
+	if p, _ := problems[0].(map[string]any); len(problems) != 1 || p["conflicts_with_base"] != "main" {
+		t.Errorf("problems = %v, want conflicts_with_base main", problems)
+	}
+}
