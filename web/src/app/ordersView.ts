@@ -19,6 +19,8 @@ export interface OrderRow {
   inView: boolean;
   /** Whether a launch can find the order: some view of the source holds it. */
   launchable: boolean;
+  /** A stack row built from its layers: no action, and never "not in this view". */
+  stackRow?: boolean;
 }
 
 export interface ForYou {

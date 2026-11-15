@@ -18,6 +18,7 @@ interface Item {
   requested?: boolean;
   body?: string;
   parent?: { number: number; title: string; repo?: string };
+  stack?: { number: number; position: number; size: number };
 }
 
 // What the fake gh answers for each default view. The docs sweep and the rate limiter are in two views: For you shows each once.
@@ -30,9 +31,13 @@ const ASSIGNED: Item[] = [
   { number: 33, title: 'Port the table', repo: 'acme/web', author: 'bob', labels: ['ux'] },
   { number: 21, title: 'Raise the rate limiter', author: 'fake-viewer', pr: { review: 'CHANGES_REQUESTED', checks: 'SUCCESS', mergeable: 'MERGEABLE' } },
 ];
+// A GitHub stack of three review-requested PRs by another author, answered top first as the search does (most recently updated first).
+const STACK = { number: 7, url: 'https://github.com/acme/api/stack/7' };
+const STACK_LAYERS = ['Add the store', 'Wire the store to the API', 'Show the store in the page'];
 const REVIEW: Item[] = [
   { number: 11, title: 'Review the cache layer', author: 'alice', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' }, requested: true },
   { number: 12, title: 'Review the docs sweep', author: 'fake-viewer', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE', reviewed: true }, requested: true },
+  ...[3, 2, 1].map((position): Item => ({ number: 40 + position, title: STACK_LAYERS[position - 1], author: 'alice', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' }, requested: true, stack: { number: STACK.number, position, size: 3 } })),
 ];
 const MINE: Item[] = [
   { number: 21, title: 'Raise the rate limiter', author: 'fake-viewer', pr: { review: 'CHANGES_REQUESTED', checks: 'SUCCESS', mergeable: 'MERGEABLE' } },
@@ -42,7 +47,7 @@ const MINE: Item[] = [
 ];
 
 /** For you: Needs you holds the cache review, the rate limiter, the token lookups and the signing keys; the other four wait. */
-export const FOR_YOU = { needsYou: 4, waiting: 4, total: 8 };
+export const FOR_YOU = { needsYou: 7, waiting: 4, total: 11 };
 
 function node(i: Item) {
   const repo = i.repo ?? 'acme/api';
@@ -71,6 +76,10 @@ function node(i: Item) {
   if (i.parent) {
     const repo = i.parent.repo ?? 'acme/api';
     n.parent = { number: i.parent.number, title: i.parent.title, url: `https://github.com/${repo}/issues/${i.parent.number}`, repository: { nameWithOwner: repo, url: `https://github.com/${repo}` } };
+  }
+  if (i.stack) {
+    n.stack = { number: i.stack.number, size: i.stack.size };
+    n.stackEntry = { position: i.stack.position };
   }
   if (i.requested) {
     n.timelineItems = { nodes: [{ __typename: 'ReviewRequestedEvent', createdAt: ago(2 * H), requestedReviewer: { login: 'fake-viewer' } }] };
@@ -136,10 +145,10 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
 
   await page.goto(a.url + 'app/ships?fleet=zulu');
   // The sidebar and the tab bar carry For you's Needs you count.
-  const nav = link(page, /^Orders\s*4$/);
+  const nav = link(page, /^Orders\s*7$/);
   await expect(nav).toBeVisible();
   await expect(page.getByRole('navigation').getByRole('link').filter({ hasText: /^(Inbox|Chat|Ships|Orders)/ })).toHaveText(
-    phone ? [/^Inbox/, /^Chat/, /^Ships/, /^Orders\s*4$/] : [/^Inbox/, /^Ships/, /^Orders\s*4$/, /^Chat/],
+    phone ? [/^Inbox/, /^Chat/, /^Ships/, /^Orders\s*7$/] : [/^Inbox/, /^Ships/, /^Orders\s*7$/, /^Chat/],
   );
 
   await press(nav);
@@ -147,7 +156,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(page.getByRole('heading', { name: 'Orders', exact: true })).toBeVisible();
 
   // For you is first and selected; each view has a tab with its count of distinct orders.
-  await expect(page.getByRole('tab')).toHaveText([/^For you\s*8$/, /^Assigned to me\s*4$/, /^Review requested\s*2$/, /^My PRs\s*4$/, /^Orders: Orders\s*7$/]);
+  await expect(page.getByRole('tab')).toHaveText([/^For you\s*11$/, /^Assigned to me\s*4$/, /^Review requested\s*5$/, /^My PRs\s*4$/, /^Orders: Orders\s*7$/]);
   await expect(tabNamed(page, /^For you/)).toHaveAttribute('aria-selected', 'true');
 
   // The groups, each order once, though two sit in two views.
@@ -332,6 +341,58 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
     await expect(main.getByRole('listitem')).toHaveCount(3);
   }
 
+  // A GitHub stack in a PR tab: a collapsed group of its three layers, built like a parent group and acting on none of it.
+  await press(tabNamed(page, /^Review requested/));
+  await expect(tabNamed(page, /^Review requested/)).toHaveText(/^Review requested\s*5$/);
+  const stackTitle = `Stack #${STACK.number}`;
+  const stackRow = main.getByRole('listitem').filter({ hasText: stackTitle });
+  const stackToggle = (state: 'Expand' | 'Collapse') => page.getByRole('button', { name: `${state} ${stackTitle}`, exact: true });
+  const [bottom, middle, top] = STACK_LAYERS;
+  await expect(main.getByRole('listitem')).toHaveCount(3);
+  await expect(stackRow).toHaveCount(1);
+  await expect(stackRow).toContainText('3 PRs here');
+  await expect(stackRow).not.toContainText('not in this view');
+  await expect(stackRow.locator('.orow-toggle')).toHaveCount(1);
+  if (!phone) await expect(stackRow.locator('svg.orow-mark.stack')).toHaveCount(1);
+  await expect(stackToggle('Expand')).toHaveAttribute('aria-expanded', 'false');
+  await expectTouchTarget(stackToggle('Expand'), 44);
+  await expect(main.getByText(bottom, { exact: true })).toBeHidden();
+  // The stack row has no arrow and no ship pill in this unit; the stack launch decides when it shows one.
+  await expect(stackRow.getByRole('button', { name: /^Launch / })).toHaveCount(0);
+  await expect(stackRow.getByRole('button', { name: /Open ship$/ })).toHaveCount(0);
+
+  // Expanding shows the layers indented under it, bottom first, each with its own arrow; the tab count stays 5.
+  await press(stackToggle('Expand'));
+  await expect(stackToggle('Collapse')).toHaveAttribute('aria-expanded', 'true');
+  await expect(pane).toBeHidden();
+  await expect(main.getByRole('listitem')).toHaveCount(6);
+  await expect(main.locator('.orow-title').filter({ hasText: /^(Add the store|Wire the store to the API|Show the store in the page)$/ })).toHaveText([bottom, middle, top]);
+  const stackX = (await main.getByText(stackTitle, { exact: true }).boundingBox())!.x;
+  expect((await main.getByText(bottom, { exact: true }).boundingBox())!.x).toBeGreaterThan(stackX + 8);
+  await expect(rowOf(page, bottom)).toContainText(phone ? 'in stack #7' : 'in stack #7 · opened 3d ago · @alice');
+  await expect(tabNamed(page, /^Review requested/)).toHaveText(/^Review requested\s*5$/);
+
+  // A reload keeps it expanded; a layer's arrow opens the Launch dialog with that PR alone.
+  await page.reload();
+  await expect(tabNamed(page, /^Review requested/)).toHaveAttribute('aria-selected', 'true');
+  await expect(stackToggle('Collapse')).toHaveAttribute('aria-expanded', 'true');
+  await press(page.getByRole('button', { name: `Launch ${middle}`, exact: true }));
+  await expect(form).toBeVisible();
+  await expect(form).toContainText(middle);
+  await expect(form.getByLabel('Text')).toHaveValue('https://github.com/acme/api/pull/42');
+  await press(form.getByRole('button', { name: 'Cancel', exact: true }));
+  await expect(form).toBeHidden();
+
+  // Collapsing again is remembered too, and tapping the row opens a pane, not the Launch dialog.
+  await press(stackToggle('Collapse'));
+  await page.reload();
+  await expect(stackToggle('Expand')).toHaveAttribute('aria-expanded', 'false');
+  await expect(main.getByRole('listitem')).toHaveCount(3);
+  await press(body(stackTitle));
+  await expect(form).toBeHidden();
+  await expect(phone ? page.getByRole('dialog', { name: stackTitle }) : pane).toBeVisible();
+  await page.keyboard.press('Escape');
+
   // Refresh now asks the source to search again: the sources' answer time moves.
   await press(tabNamed(page, /^For you/));
   const before = await oldestAnswer(a);
@@ -410,9 +471,9 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
 
   // Ships lists no orders, only a quiet link to the ones that need you; it opens Orders.
   await page.goto(a.url + 'app/ships?fleet=zulu');
-  const forYouLink = main.getByRole('link', { name: /^4 for you/ });
+  const forYouLink = main.getByRole('link', { name: /^7 for you/ });
   await expect(forYouLink).toBeVisible();
-  await expect(forYouLink).toHaveText('4 for you →');
+  await expect(forYouLink).toHaveText('7 for you →');
   await expect(page.getByRole('region', { name: 'Orders' })).toHaveCount(0);
   await expect(main.getByText('Tighten the api limits')).toHaveCount(0);
   await expect(main.getByRole('button', { name: /^Launch / })).toHaveCount(0);
