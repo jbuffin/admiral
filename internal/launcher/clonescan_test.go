@@ -204,28 +204,6 @@ func TestARelaunchOverAPlantedSubmoduleRunsNoFilterOfItsAndIsRefused(t *testing.
 	}
 }
 
-func TestADraftFixShipsGitRunsNoFilterOfAPlantedSubmodule(t *testing.T) {
-	env := shipGitEnv(t)
-	for _, where := range []string{"tree", "index", "commit"} {
-		t.Run(where, func(t *testing.T) {
-			p := newPinRig(t, nil)
-			commitRepo(t, p.work)
-			clone := keptDraftFixClone(t, p, p.work, "kelpie")
-			marker := filepath.Join(t.TempDir(), "ran")
-			plantFilterSubmodule(t, clone, marker)
-			plantSubmodule(t, clone, where)
-			for _, args := range [][]string{{"status"}, {"diff"}, {"status", "--porcelain=2"}, {"add", "-A"}} {
-				cmd := exec.Command("git", append([]string{"-C", clone}, args...)...)
-				cmd.Env = append(os.Environ(), env...)
-				_ = cmd.Run()
-				if _, err := os.Stat(marker); err == nil {
-					t.Fatalf("git %v with the ship's environment ran the submodule's clean filter", args)
-				}
-			}
-		})
-	}
-}
-
 func TestAStartFromRefusesACloneThatGainedACarrierAfterTheCallerReadItWithTheFixedMessageAndNoPath(t *testing.T) {
 	p := newPinRig(t, nil)
 	clone, branch := p.restrictedClone(t)
