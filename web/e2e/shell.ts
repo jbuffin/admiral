@@ -1265,7 +1265,7 @@ function longPRDetail(a: Admiral) {
 /** With the tab scrolled to its top, the tab's one alert starts just under Merge, inside the viewport, with no PR section between them. */
 async function expectMergeErrorByTheButton(page: Page, panel: Locator) {
   await panel.evaluate((el) => {
-    for (let n: HTMLElement | null = el; n; n = n.parentElement) n.scrollTop = 0;
+    for (let n: Element | null = el; n; n = n.parentElement) (n as HTMLElement).scrollTop = 0;
     window.scrollTo(0, 0);
   });
   const alert = panel.getByRole('alert');

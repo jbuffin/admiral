@@ -10,8 +10,11 @@ import { go, shipPath } from './router';
 const STALE_TOKEN = 'Admiral restarted, reload to merge';
 
 /** Merge for a ready ship with the method it will use: the ship's one PR, its whole stack (`stack`), or with `pr` that independent PR alone. The caller shows it only when the ship is ready, and shows the error it reports. */
-export function MergeControl({ ship, pr, stack = false, onMerged, onError, locked = false, onBusy }: { ship: Ship; pr?: string; stack?: boolean; onMerged: () => void; onError: (e: string) => void; locked?: boolean; onBusy?: (busy: boolean) => void }) {
-  const [stale, setStale] = useState(false);
+export function MergeControl({ ship, pr, stack = false, onMerged, onError, onStale, locked = false, onBusy }: { ship: Ship; pr?: string; stack?: boolean; onMerged: () => void; onError: (e: string) => void; onStale?: (stale: boolean) => void; locked?: boolean; onBusy?: (busy: boolean) => void }) {
+  const [ownStale, setOwnStale] = useState(false);
+  // A caller that keeps the stale state shows Reload with the error, which outlives this control.
+  const setStale = onStale ?? setOwnStale;
+  const stale = !onStale && ownStale;
   const busy = useRef(false);
   const hint = mergeHint(ship.merge_method, stack);
   const merge = async () => {

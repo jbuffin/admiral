@@ -313,6 +313,8 @@ function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolea
 /** A ship's PRs: the stack bar, sub-tabs in stack order, the selected PR's header, chips and sections, and for a moored ship Merge and Don't follow reviews. */
 export function PRTab({ ship }: { ship: Ship }) {
   const [error, setError] = useState('');
+  const [mergeError, setMergeError] = useState('');
+  const [mergeStale, setMergeStale] = useState(false);
   const [merged, setMerged] = useState<Set<string>>(new Set());
   const [mergedAll, setMergedAll] = useState(false);
   const [acting, setActing] = useState(false);
@@ -344,6 +346,8 @@ export function PRTab({ ship }: { ship: Ship }) {
   const choice = mergeFor(shape, prs, current, !!ship.stack_ready);
   const justMerged = mergedAll || merged.has(current.url);
   const onMerged = () => {
+    setMergeError('');
+    setMergeStale(false);
     // The default PR is the first open one, so a merged PR would otherwise hand the view to the next.
     setPicked(current.url);
     if (choice.kind === 'pr') setMerged((m) => new Set(m).add(current.url));
@@ -404,7 +408,11 @@ export function PRTab({ ship }: { ship: Ship }) {
                   ›
                 </span>
               ) : null}
-              <button type="button" role="tab" aria-selected={p.url === current.url} class={`pr-subtab${p.state === 'MERGED' ? ' merged' : ''}`} onClick={() => setPicked(p.url)}>
+              <button type="button" role="tab" aria-selected={p.url === current.url} class={`pr-subtab${p.state === 'MERGED' ? ' merged' : ''}`} onClick={() => {
+                  setMergeError('');
+                  setMergeStale(false);
+                  setPicked(p.url);
+                }}>
                 <span class={`dot ${prDot(p)}`} />
                 <span class="num">#{prNumber(p.url)}</span>
                 {details[p.url] ? <span class="ttl">{details[p.url].title}</span> : null}
@@ -439,8 +447,14 @@ export function PRTab({ ship }: { ship: Ship }) {
                 <span class="merge-hint">{choice.note}</span>
               </div>
             ) : (
-              <MergeControl key={current.url} ship={ship} pr={choice.kind === 'pr' ? current.url : undefined} stack={choice.kind === 'stack'} onMerged={onMerged} onError={setError} locked={acting} onBusy={setActing} />
+              <MergeControl key={current.url} ship={ship} pr={choice.kind === 'pr' ? current.url : undefined} stack={choice.kind === 'stack'} onMerged={onMerged} onError={setMergeError} onStale={setMergeStale} locked={acting} onBusy={setActing} />
             )}
+          </div>
+        ) : null}
+        {moored && mergeError ? (
+          <div class="peek-form">
+            <Failure message={mergeError} />
+            {mergeStale ? <Button label="Reload" onClick={() => location.reload()} /> : null}
           </div>
         ) : null}
         {offersMoor(ship) ? <MoorRow ship={ship} locked={acting} onError={setError} onBusy={setActing} /> : null}
