@@ -13,6 +13,7 @@ import {
   groupChildren,
   hasUnreadable,
   keepSelectable,
+  labelsDisagree,
   overrideBody,
   safeHref,
   kindLabel,
@@ -32,6 +33,7 @@ import {
 } from './campaign';
 import { campaignList, endedOpen, followReference, noteCampaign, refreshCampaigns } from './campaignsLink';
 import { activeFleet, fleetPaint, fleets } from './fleets';
+import { Choice } from './Choice';
 import { Icon } from './Icon';
 import { IssueLabels } from './IssueLabels';
 import { LaunchForm } from './LaunchDialog';
@@ -184,18 +186,15 @@ export function CampaignsList({ phone, title }: { phone: boolean; title: boolean
 }
 
 function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { campaign: Campaign; node: CampaignNode; canStart: boolean; onClose: () => void; onLaunch: (anyway: boolean) => void; onSaved: (c: Campaign) => void }) {
-  const [mode, setMode] = useState<Mode | ''>(node.mode ?? '');
-  const [kind, setKind] = useState(node.skill?.kind || 'none');
-  const [name, setName] = useState(node.skill?.name ?? '');
-  const [args, setArgs] = useState(node.skill?.args ?? '');
   const [error, setError] = useState('');
-  const save = async (clear: boolean) => {
+  const [busy, setBusy] = useState(false);
+  const saveOverride = async (mode: Mode | null) => {
     setError('');
-    const body = clear ? { child_url: node.url, mode: '' } : overrideBody(node, mode || 'with-you', { kind, name: kind === 'skill' ? name : '', args: kind === 'none' ? '' : args });
-    const r = await call<Campaign>('PUT', `/campaigns/${campaign.id}/override`, body);
+    setBusy(true);
+    const r = await call<Campaign>('PUT', `/campaigns/${campaign.id}/override`, overrideBody(node, mode));
+    setBusy(false);
     if (!r.ok) return setError(r.error);
     onSaved(r.data);
-    onClose();
   };
   const status = node.status ?? 'ready';
   const canLaunch = canStart && !campaign.ended && (status === 'ready' || status === 'claimed-no-ship');
@@ -234,44 +233,26 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
           </div>
         ) : null}
         <p>
-          {modeLabel(node.mode ?? 'with-you')} · {skillLabel(node.skill)}
-          {node.overridden ? ' · overridden' : ''}
+          {modeLabel(node.mode ?? 'with-you')} · {skillLabel(node.default_skill)}
         </p>
         {status !== 'done' ? (
-          <details class="override">
-            <summary>Change mode or skill</summary>
-            <label class="field">
-              <span>Mode</span>
-              <select value={mode} onChange={(e) => setMode((e.target as HTMLSelectElement).value as Mode)}>
-                <option value="with-you">With you</option>
-                <option value="without-you">Without you</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Starts on</span>
-              <select value={kind} onChange={(e) => setKind((e.target as HTMLSelectElement).value as typeof kind)}>
-                <option value="commodore">Commodore</option>
-                <option value="skill">A skill</option>
-                <option value="none">Just launch</option>
-              </select>
-            </label>
-            {kind === 'skill' ? (
-              <label class="field">
-                <span>Skill name</span>
-                <input type="text" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
-              </label>
+          <>
+            <Choice
+              legend="Mode"
+              help="With you waits for you, one at a time per fleet. Without you can start on its own while AdmiralBot works the campaign."
+              values={['with-you', 'without-you'] as Mode[]}
+              value={node.mode ?? 'with-you'}
+              label={modeLabel}
+              disabled={busy}
+              onPick={saveOverride}
+            />
+            {labelsDisagree(node) ? (
+              <p class="note">
+                Labels say {modeLabel(labelsDisagree(node)!)}.{' '}
+                <Button variant="link" class="use-labels" label="Use labels" disabled={busy} onClick={() => saveOverride(null)} />
+              </p>
             ) : null}
-            {kind !== 'none' ? (
-              <label class="field">
-                <span>Arguments</span>
-                <input type="text" value={args} onInput={(e) => setArgs((e.target as HTMLInputElement).value)} />
-              </label>
-            ) : null}
-            <div class="actions">
-              <Button label="Save" pending={['campaign', campaign.id, 'override', node.url, 'save']} onClick={() => save(false)} />
-              {node.overridden ? <Button label="Reset" pending={['campaign', campaign.id, 'override', node.url, 'reset']} onClick={() => save(true)} /> : null}
-            </div>
-          </details>
+          </>
         ) : null}
         {error ? (
           <p class="alert" role="alert">

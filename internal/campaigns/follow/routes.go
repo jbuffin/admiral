@@ -250,9 +250,9 @@ func (s *Service) serveOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ChildURL string     `json:"child_url"`
-		Mode     string     `json:"mode"`
-		Skill    *skillView `json:"skill"`
+		ChildURL string          `json:"child_url"`
+		Mode     string          `json:"mode"`
+		Skill    json.RawMessage `json:"skill"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -263,19 +263,16 @@ func (s *Service) serveOverride(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "that issue is not in this campaign")
 		return
 	case n.Parent:
-		writeError(w, http.StatusBadRequest, "that issue is a parent; set a child's mode or skill")
+		writeError(w, http.StatusBadRequest, "that issue is a parent; set a child's mode")
+		return
+	case body.Skill != nil:
+		writeError(w, http.StatusBadRequest, "an override sets only the mode; pick a skill when you launch")
 		return
 	case body.Mode != "" && body.Mode != string(campaigns.WithYou) && body.Mode != string(campaigns.WithoutYou):
 		writeError(w, http.StatusBadRequest, `mode is "with-you" or "without-you"`)
 		return
 	}
 	o := campaigns.Override{Mode: campaigns.Mode(body.Mode)}
-	if sk := body.Skill; sk != nil {
-		if refuseSkillKind(w, sk.Kind) {
-			return
-		}
-		o.Skill = &campaigns.Skill{Kind: sk.Kind, Name: sk.Name, Args: sk.Args}
-	}
 	if err := s.Store.SetOverride(f.ID, n.URL, o); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -404,8 +401,8 @@ func (s *Service) launch(ctx context.Context, f Followed, childURL string, start
 	return got, nil
 }
 
-// sameSkill compares a picked skill with a child's resolved one; Commodore and Just launch ignore the name, since an
-// override may store one the form does not send.
+// sameSkill compares a picked skill with a child's resolved one; Commodore and Just launch ignore the name, which the
+// form does not send for them.
 func sameSkill(pick launcher.Skill, have campaigns.Skill) bool {
 	if pick.Kind != have.Kind {
 		return false

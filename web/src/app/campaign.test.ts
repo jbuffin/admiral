@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Ship } from './api';
-import { blockerLine, campaignMeta, canJoinSlice, keepSelectable, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, pasteHint, overrideBody, safeHref, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
+import { blockerLine, campaignMeta, canJoinSlice, keepSelectable, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, pasteHint, overrideBody, labelsDisagree, safeHref, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
 
 const url = (n: number) => `https://github.com/acme/widgets/issues/${n}`;
 const child = (n: number, status: CampaignNode['status'], mode: CampaignNode['mode'] = 'with-you', extra: Partial<CampaignNode> = {}): CampaignNode => ({
@@ -207,16 +207,22 @@ describe('nextPoll', () => {
 
 describe('overrideBody', () => {
   const node = child(21, 'ready', 'with-you', { default_mode: 'without-you', default_skill: { kind: 'commodore', name: '', args: '' } });
-  const same = { kind: 'commodore' as const, name: '', args: '' };
-  it('sends only the mode when the skill is the default', () => {
-    expect(overrideBody(node, 'with-you', same)).toEqual({ child_url: url(21), mode: 'with-you' });
+  it('sends only the mode, never a skill', () => {
+    expect(overrideBody(node, 'with-you')).toStrictEqual({ child_url: url(21), mode: 'with-you' });
   });
-  it('sends only the skill when the mode is the default', () => {
-    const skill = { kind: 'skill' as const, name: 'wayfinder', args: '' };
-    expect(overrideBody(node, 'without-you', skill)).toEqual({ child_url: url(21), mode: '', skill });
+  it('clears the override when the mode is the label default', () => {
+    expect(overrideBody(node, 'without-you')).toStrictEqual({ child_url: url(21), mode: '' });
   });
-  it('clears the override when nothing differs from the defaults', () => {
-    expect(overrideBody(node, 'without-you', same)).toEqual({ child_url: url(21), mode: '' });
+});
+
+describe('labelsDisagree', () => {
+  it('names the label default only when the mode differs from it', () => {
+    expect(labelsDisagree(child(21, 'ready', 'with-you', { default_mode: 'without-you' }))).toBe('without-you');
+    expect(labelsDisagree(child(21, 'ready', 'with-you', { default_mode: 'with-you', overridden: true }))).toBeNull();
+    expect(labelsDisagree(child(21, 'ready', 'with-you'))).toBeNull();
+  });
+  it('sends no mode to follow the labels again', () => {
+    expect(overrideBody(child(21, 'ready', 'with-you', { default_mode: 'without-you' }), null)).toStrictEqual({ child_url: url(21), mode: '' });
   });
 });
 

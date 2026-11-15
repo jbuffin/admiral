@@ -34,7 +34,7 @@ func TestStoreKeepsFollowedCampaignsAcrossRestarts(t *testing.T) {
 	home := t.TempDir()
 	s := openStore(t, home)
 	f := followed(t, s)
-	override := campaigns.Override{Mode: campaigns.WithYou, Skill: &campaigns.Skill{Kind: "none"}}
+	override := campaigns.Override{Mode: campaigns.WithYou}
 	tree := &github.TreeNode{Number: 20, Title: "Campaign", URL: parentURL, Repo: "acme/widgets"}
 	readAt := time.Unix(2000, 0).UTC()
 	for _, err := range []error{
@@ -52,7 +52,7 @@ func TestStoreKeepsFollowedCampaignsAcrossRestarts(t *testing.T) {
 		t.Fatalf("a reopened store lost campaign %s", f.ID)
 	}
 	o := got.Overrides["https://github.com/acme/widgets/issues/21"]
-	if got.URL != parentURL || got.Fleet != "work" || got.WorkRepo != "github.com/acme/work" || o.Mode != campaigns.WithYou || o.Skill == nil || o.Skill.Kind != "none" {
+	if got.URL != parentURL || got.Fleet != "work" || got.WorkRepo != "github.com/acme/work" || o.Mode != campaigns.WithYou {
 		t.Errorf("reopened campaign = %+v, want its url, fleet, work repo and override kept", got)
 	}
 	if got.Tree == nil || got.Tree.Number != 20 || !got.ReadAt.Equal(readAt) || got.Ended() {

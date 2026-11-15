@@ -19,7 +19,7 @@ The obvious way to stop two sessions taking the same child is to claim it by ass
   - A child assigned to someone with no live ship shows as "claimed, no ship", with *Start anyway*. Admiral can't tell a session outside Admiral from a stale claim, so it doesn't guess.
   - Nested parents (a sub-map, or a spec child with its own children) fold into the tree and are never launched. Their ready children join the campaign's ready set in tree order. A blocked parent blocks everything under it.
   - When a child isn't a sub-issue (past GitHub's 100-sub-issue limit), the reader also takes `Part of #n` and `Blocked by:` lines from issue bodies.
-- **With you or Without you.** Each child has a default mode and starting skill, which the engineer can override per campaign when following it or later:
+- **With you or Without you.** Each child has a default mode and starting skill, whose mode the engineer can override per campaign when following it or later (the skill is chosen at launch):
 
   | Child | Mode | Ship starts on |
   | --- | --- | --- |

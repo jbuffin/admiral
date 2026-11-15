@@ -1,10 +1,9 @@
-import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
 import { cancelCommitment, deleteNote, getCommitments, getInstructions, getNotes, promoteNote, saveFleet, saveInstructions, type ChatCommitment, type ChatNote, type Fleet } from './api';
 import { checkErrors, checkKey } from './capabilities';
 import { MissingCapability } from './MissingCapability';
-import { Flag } from './Flag';
+import { Choice } from './Choice';
 import { fleets } from './fleets';
 import { ships } from './shipsLink';
 import { safeHref } from './campaign';
@@ -12,40 +11,6 @@ import { campaignList } from './campaignsLink';
 import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, chatErrorMessage, actionWords, cancelErrorMessage, commitmentMarks, chatSaveBody, effortLabel, harnessLabel, instructionsCount, memoryNotRead, modelLabel, noteAge, readsMemory, switchHarness, thresholdLabel, triggerWords, type ChatSettings } from './chatSettings';
 
 const settingsOf = (f: Fleet): ChatSettings => ({ harness: f.chat.harness, model: f.chat.model, effort: f.chat.effort, context_threshold: f.chat.context_threshold });
-
-function Choice<T extends string | number>({ legend, help, values, value, label, disabled, unavailable, notes, onPick, flag }: {
-  legend: string;
-  help?: string;
-  values: T[];
-  value: T;
-  label: (v: T) => string;
-  disabled: boolean;
-  /** Values shown greyed out and not selectable. */
-  unavailable?: T[];
-  /** Why a value is unavailable, by value; shown inside the row under the chips and read with the chip. */
-  notes?: (v: T) => ComponentChildren;
-  onPick: (v: T) => void;
-  flag?: boolean;
-}) {
-  const id = `chat-${legend.toLowerCase().replace(/\W+/g, '-')}`;
-  return (
-    <div class="set choice-set">
-      <div class="t">
-        <span id={id}>{legend}</span>
-        {help ? <span>{help}</span> : null}
-      </div>
-      <div class="choice-group" role="radiogroup" aria-labelledby={id}>
-        {values.map((v) => (
-          <button key={String(v)} type="button" role="radio" class="chip" aria-checked={v === value} aria-describedby={unavailable?.includes(v) && notes ? `${id}-note-${v}` : undefined} disabled={disabled || !!unavailable?.includes(v)} onClick={() => onPick(v)}>
-            {flag ? <Flag harness={String(v)} size="row" /> : null}
-            {label(v)}
-          </button>
-        ))}
-      </div>
-      {notes ? unavailable?.map((v) => notes(v)) : null}
-    </div>
-  );
-}
 
 // The engineer's instructions and the notes AdmiralBot saved. Each acts at once and never rides on the settings Save.
 function Knows({ fleet, harness }: { fleet: string; harness: string }) {
@@ -253,6 +218,7 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
         {options.length > 0 ? (
           <>
             <Choice
+              id="chat-harness"
               legend="Harness"
               values={options.map((o) => o.harness)}
               unavailable={closed.map((o) => o.harness)}
