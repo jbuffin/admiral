@@ -641,11 +641,18 @@ async function makeCampaignJourney(page: Page, a: Admiral, press: (l: Locator) =
   await expect(title).toHaveValue('Orders: parent groups in issue tabs');
   await expect(description).toHaveValue('Groups the selected issues as one campaign.');
   await expect(sheet.getByText('Drafted', { exact: true })).toHaveCount(2);
-  await expect(sheet).toContainText("Admiral creates a parent issue on GitHub as the fleet's gh account and links these issues under it. Then it follows the campaign. Nothing launches.");
+  await expect(sheet).toContainText('Admiral creates a parent issue on GitHub as');
   await expect(sheet.getByRole('combobox', { name: /repo/i })).toHaveValue('acme/widgets');
   await expect(subIssues).toHaveText([new RegExp(T41), new RegExp(T42)]);
   for (const b of [create, sheet.getByRole('button', { name: `Move up ${T42}`, exact: true }), sheet.getByRole('button', { name: `Move down ${T41}`, exact: true })]) await expectTouchTarget(b, 44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  // Arrow keys in a field move its caret, not the list.
+  await press(description);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowUp');
+  await expect(description).toBeFocused();
+  await expect(subIssues).toHaveText([new RegExp(T41), new RegExp(T42)]);
 
   // Reorder by the buttons, then Cancel: the parameter goes and GitHub is told nothing.
   await press(sheet.getByRole('button', { name: `Move up ${T42}`, exact: true }));

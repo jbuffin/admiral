@@ -80,3 +80,23 @@ export function campaignNote(account: string | undefined): string {
 }
 
 export const safeHref = (url: string): string | undefined => (url.startsWith('https://') ? url : undefined);
+
+const DEFAULT_HOST = 'github.com';
+
+/** The host of the first issue; the server refuses a mix of hosts. */
+export function issuesHost(urls: string[]): string {
+  const m = /^https:\/\/([^/]+)\//.exec(urls[0] ?? '');
+  return m ? m[1].toLowerCase() : DEFAULT_HOST;
+}
+
+export interface SourceSettings {
+  key: string;
+  settings: Record<string, unknown>;
+}
+
+/** The account of the fleet's GitHub source for the issues' host, which is the one that writes; none when no source matches. */
+export function accountForHost(sources: SourceSettings[], host: string): { key: string; account: string } | undefined {
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const found = sources.find((s) => (text(s.settings.host).toLowerCase() || DEFAULT_HOST) === host.toLowerCase());
+  return found && { key: found.key, account: text(found.settings.account) };
+}

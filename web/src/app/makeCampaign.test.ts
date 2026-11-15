@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Order } from './api';
-import { campaignNote, createBody, createFailure, moveIssue, repoChoices, safeHref, sheetIssues } from './makeCampaign';
+import { accountForHost, campaignNote, createBody, createFailure, issuesHost, moveIssue, repoChoices, safeHref, sheetIssues } from './makeCampaign';
 import type { OrderRow } from './ordersView';
 
 const row = (url: string, title: string): OrderRow => ({
@@ -128,5 +128,25 @@ describe('a link in the sheet', () => {
   it('is a link only for an https url', () => {
     expect(safeHref('https://github.com/acme/widgets/issues/50')).toBe('https://github.com/acme/widgets/issues/50');
     for (const bad of ['javascript:alert(1)', 'http://github.com/a/b/issues/1', 'data:text/html,x', '//evil.example/x', 'acme/widgets#1']) expect(safeHref(bad)).toBeUndefined();
+  });
+});
+
+describe('the source that writes the parent', () => {
+  const src = (key: string, settings: Record<string, unknown>) => ({ key, settings });
+
+  it('takes the issues host from the first issue', () => {
+    expect(issuesHost([u('acme/widgets', 1)])).toBe('github.com');
+    expect(issuesHost(['https://GHE.example.com/acme/api/issues/3'])).toBe('ghe.example.com');
+  });
+
+  it('picks the source whose host matches, github.com when a source sets none', () => {
+    const list = [src('ghe', { host: 'ghe.example.com', account: 'ghe-bot' }), src('dotcom', { account: 'work-bot' })];
+    expect(accountForHost(list, 'github.com')).toEqual({ key: 'dotcom', account: 'work-bot' });
+    expect(accountForHost(list, 'ghe.example.com')).toEqual({ key: 'ghe', account: 'ghe-bot' });
+  });
+
+  it('answers none when no source matches, and an empty account for a source with none', () => {
+    expect(accountForHost([src('ghe', { host: 'ghe.example.com' })], 'github.com')).toBeUndefined();
+    expect(accountForHost([src('a', { account: 3 })], 'github.com')).toEqual({ key: 'a', account: '' });
   });
 });

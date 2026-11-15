@@ -420,7 +420,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
         </Sheet>
       ) : null}
       {refs.length > 0 && fleet ? (
-        <MakeCampaignSheet key={refs.join(',')} fleet={fleet.key} sourceKey={list.find((s) => s.plugin === 'github')?.key} issues={sheetIssues(refs, campaignRows)} projects={[]} onClose={closeCampaign} />
+        <MakeCampaignSheet key={refs.join(',')} fleet={fleet.key} sourceKeys={list.filter((s) => s.plugin === 'github').map((s) => s.key)} issues={sheetIssues(refs, campaignRows)} projects={[]} onClose={closeCampaign} />
       ) : null}
       {again?.kind === 'rereview' ? <ReReviewSheet ship={again.ship} sendUrl={again.url} onClose={() => setAgain(null)} /> : null}
       {again?.kind === 'fix' ? <FixSheet ship={again.ship} onClose={() => setAgain(null)} onBusy={() => {}} /> : null}

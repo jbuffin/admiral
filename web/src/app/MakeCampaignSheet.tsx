@@ -1,18 +1,16 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, fetchSettings, SLOW_TIMEOUT_MS } from './api';
 import { Button } from './Button';
 import type { Campaign } from './campaign';
-import { noteCampaign } from './campaignsLink';
-import { rememberFleet } from './fleets';
+import { openCampaign } from './campaignsLink';
 import { Icon } from './Icon';
-import { campaignNote, createBody, createFailure, moveIssue, repoChoices, safeHref, type SheetIssue } from './makeCampaign';
-import { campaignPath, go } from './router';
+import { accountForHost, campaignNote, createBody, createFailure, issuesHost, moveIssue, repoChoices, safeHref, type SheetIssue } from './makeCampaign';
 import { Sheet } from './Sheet';
 
 interface Props {
   fleet: string;
-  /** The key of the fleet's GitHub source, whose account creates the parent issue. */
-  sourceKey?: string;
+  /** The keys of the fleet's GitHub sources; the one for the issues' host names the account that writes. */
+  sourceKeys: string[];
   issues: SheetIssue[];
   /** The fleet's projects; the choices are the issues' own repos when this is empty. */
   projects: string[];
@@ -24,7 +22,7 @@ interface Draft {
   body: string;
 }
 
-export function MakeCampaignSheet({ fleet, sourceKey, issues: given, projects, onClose }: Props) {
+export function MakeCampaignSheet({ fleet, sourceKeys, issues: given, projects, onClose }: Props) {
   const [order, setOrder] = useState(given.map((i) => i.url));
   // Titles follow the loaded orders, which may arrive after a deep link opens the sheet; only the order is the engineer's.
   const byUrl = new Map(given.map((i) => [i.url, i]));
@@ -41,6 +39,10 @@ export function MakeCampaignSheet({ fleet, sourceKey, issues: given, projects, o
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [dragging, setDragging] = useState(-1);
+  const alive = useRef(true);
+  const typed = useRef({ title: false, body: false });
+  const host = issuesHost(given.map((i) => i.url));
+  useEffect(() => () => void (alive.current = false), []);
   const [parentMade, setParentMade] = useState<{ parent: string; linked: string[] } | null>(null);
 
   useEffect(() => {
@@ -50,9 +52,9 @@ export function MakeCampaignSheet({ fleet, sourceKey, issues: given, projects, o
       if (!live) return;
       setDrafting(false);
       if (!r.ok) return setNote(`Couldn't draft a title and description: ${r.error}. Write your own.`);
-      setTitle((t) => t || r.data.title);
-      setBody((b) => b || r.data.body);
-      setDrafted({ title: true, body: true });
+      if (!typed.current.title) setTitle(r.data.title);
+      if (!typed.current.body) setBody(r.data.body);
+      setDrafted({ title: !typed.current.title, body: !typed.current.body });
     })();
     return () => {
       live = false;
@@ -60,27 +62,26 @@ export function MakeCampaignSheet({ fleet, sourceKey, issues: given, projects, o
   }, []);
 
   useEffect(() => {
-    if (!sourceKey) return;
     let live = true;
-    void fetchSettings(sourceKey).then((r) => {
-      const a = r.ok ? r.data.settings.account : undefined;
-      if (live && typeof a === 'string') setAccount(a.trim());
+    void Promise.all(sourceKeys.map(async (key) => ({ key, r: await fetchSettings(key) }))).then((all) => {
+      const found = accountForHost(
+        all.flatMap(({ key, r }) => (r.ok ? [{ key, settings: r.data.settings }] : [])),
+        host,
+      );
+      if (live) setAccount(found?.account);
     });
     return () => {
       live = false;
     };
-  }, [sourceKey]);
+  }, [sourceKeys.join(','), host]);
 
   const create = async () => {
-    if (creating || !title.trim()) return;
+    if (creating || parentMade || !title.trim()) return;
     setCreating(true);
     setError('');
     const r = await call<Campaign>('POST', '/campaigns/create', createBody(repo, title, body, issues), undefined, { timeoutMs: SLOW_TIMEOUT_MS });
-    if (r.ok) {
-      noteCampaign(r.data);
-      rememberFleet(r.data.fleet);
-      return go(campaignPath(r.data.id), `?fleet=${encodeURIComponent(r.data.fleet)}`);
-    }
+    if (!alive.current) return;
+    if (r.ok) return openCampaign(r.data);
     setCreating(false);
     setParentMade(r.parent ? { parent: r.parent, linked: r.linked ?? [] } : null);
     setError(r.parent ? createFailure({ error: r.error, parent: r.parent, linked: r.linked }) : r.error);
@@ -103,7 +104,9 @@ export function MakeCampaignSheet({ fleet, sourceKey, issues: given, projects, o
         <p class="sheet-sub">{campaignNote(account)}</p>
         <div class="campaign-body">
           <label class="field">
-            <span>Repo for the parent issue</span>
+            <span>
+              Repo for the parent issue {host !== 'github.com' ? <span class="mono">on {host}</span> : null}
+            </span>
             <select aria-label="Repo for the parent issue" value={repo} onChange={(e) => setRepo(e.currentTarget.value)}>
               {choices.map((c) => (
                 <option key={c} value={c}>
@@ -123,6 +126,7 @@ export function MakeCampaignSheet({ fleet, sourceKey, issues: given, projects, o
               placeholder={drafting ? 'Drafting a title…' : ''}
               aria-busy={drafting}
               onInput={(e) => {
+                typed.current.title = true;
                 setTitle(e.currentTarget.value);
                 setDrafted((d) => ({ ...d, title: false }));
               }}
@@ -139,6 +143,7 @@ export function MakeCampaignSheet({ fleet, sourceKey, issues: given, projects, o
               placeholder={drafting ? 'Drafting a description…' : ''}
               aria-busy={drafting}
               onInput={(e) => {
+                typed.current.body = true;
                 setBody(e.currentTarget.value);
                 setDrafted((d) => ({ ...d, body: false }));
               }}
@@ -202,7 +207,7 @@ export function MakeCampaignSheet({ fleet, sourceKey, issues: given, projects, o
           <Button label="Cancel" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" label="Create campaign" busyLabel="Creating campaign" busy={creating} disabled={!title.trim() || creating} onClick={create}>
+          <Button variant="primary" label="Create campaign" busyLabel="Creating campaign" busy={creating} disabled={!title.trim() || creating || !!parentMade} onClick={create}>
             Create campaign
           </Button>
         </div>
