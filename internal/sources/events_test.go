@@ -30,7 +30,7 @@ func (c *catalogConn) kill()                   {}
 func (c *catalogConn) exited() <-chan struct{} { return nil }
 func (c *catalogConn) exitReason() string      { return "" }
 
-const catalogJSON = `[{"kind":"review_requested","title":"Review requested"},{"kind":"new_in_view","title":"New in a view","panel":"mine"}]`
+const catalogJSON = `[{"kind":"review_requested","title":"Review requested"},{"kind":"commented","title":"Commented in a view","panel":"mine"}]`
 
 func catalogRunner(t *testing.T, res string, err error) *runner {
 	t.Helper()
@@ -121,11 +121,29 @@ func TestAnEventTheCatalogCannotVouchForIsDropped(t *testing.T) {
 
 func TestAPanelKindNeedsItsPanelToExist(t *testing.T) {
 	r, s := withCatalog(t)
-	send(r, "new_in_view", "https://example.com/1", `,"panel":"other"`)
-	send(r, "new_in_view", "https://example.com/2", "")
-	send(r, "new_in_view", "https://example.com/3", `,"panel":"mine"`)
+	send(r, "commented", "https://example.com/1", `,"panel":"other"`)
+	send(r, "commented", "https://example.com/2", "")
+	send(r, "commented", "https://example.com/3", `,"panel":"mine"`)
 	if s.n() != 1 || s.got[0].Panel != "mine" {
 		t.Errorf("delivered %+v, want only the event for panel mine", s.got)
+	}
+}
+
+func TestAPluginCatalogListingTheRetiredViewKindKeepsItsOtherKindsAndDropsTheSend(t *testing.T) {
+	r := catalogRunner(t, `[{"kind":"new_in_view","title":"New in a view","panel":"mine"},{"kind":"review_requested","title":"Review requested"}]`, nil)
+	s := &sink{}
+	r.onEvent = s.add
+	kinds, ok := r.Events()
+	if !ok || len(kinds) != 1 || kinds[0].Kind != "review_requested" {
+		t.Errorf("Events = %+v, %v, want only review_requested kept", kinds, ok)
+	}
+	send(r, "new_in_view", "https://example.com/1", `,"panel":"mine"`)
+	if s.n() != 0 {
+		t.Errorf("%d new_in_view events delivered, want 0", s.n())
+	}
+	send(r, "review_requested", "https://example.com/2", "")
+	if s.n() != 1 {
+		t.Errorf("%d events after a review_requested send, want 1", s.n())
 	}
 }
 
@@ -187,7 +205,7 @@ func TestValidEventsAroundAnInvalidOneAreBothDelivered(t *testing.T) {
 	}
 }
 
-func TestTheBuiltInGitHubSourceEmitsOnlyItemsNewToAViewAndFillsTheViewer(t *testing.T) {
+func TestTheBuiltInGitHubSourceEmitsNoEventWhenAViewGainsAnItem(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
 	sources := `"gh":{"plugin":"github","fleet":"alpha","settings":{"views":[{"id":"mine","title":"Mine","query":"is:open Q1"}]}}`
@@ -198,37 +216,16 @@ func TestTheBuiltInGitHubSourceEmitsOnlyItemsNewToAViewAndFillsTheViewer(t *test
 	g.write("viewer", "eng\n")
 	f.startSources()
 	f.waitView("gh", "item 1", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
-	if s.n() != 0 {
-		t.Fatalf("%d events from the baseline poll, want 0: %+v", s.n(), s.got)
-	}
 	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
 	g.searchMore("mine", "acme/api", 2, "two", "bob")
 	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
 	f.waitView("gh", "item 2", func(v SourceView) bool { return len(v.orders("mine")) == 2 })
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(time.Second)
 	for s.n() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if s.n() != 1 {
-		t.Fatalf("%d events after item 2 appeared, want exactly 1: %+v", s.n(), s.got)
-	}
-	ev := s.got[0]
-	if ev.Kind != "new_in_view" || ev.Panel != "mine" || !strings.HasSuffix(ev.Ref, "/issues/2") || ev.Author != "bob" || ev.Viewer != "eng" || !ev.Verified {
-		t.Errorf("event = %+v, want new_in_view on mine for issue 2, author bob, viewer eng, verified", ev)
-	}
-	// leaving the view and coming back is new to it again
-	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
-	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
-	f.waitView("gh", "item 2 gone", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
-	g.searchMore("mine", "acme/api", 2, "two", "bob")
-	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
-	f.waitView("gh", "item 2 back", func(v SourceView) bool { return len(v.orders("mine")) == 2 })
-	deadline = time.Now().Add(5 * time.Second)
-	for s.n() < 2 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if s.n() != 2 {
-		t.Errorf("%d events after item 2 left and came back, want 2 in all", s.n())
+	if s.n() != 0 {
+		t.Errorf("%d events after item 2 appeared, want 0: %+v", s.n(), s.got)
 	}
 }
 
@@ -376,6 +373,60 @@ func TestAReviewRequestStampedBeforeThePollByASlowGitHubClockIsStillDeliveredOnc
 	}
 	if len(refs) != 2 || refs["6"] != 1 || refs["7"] != 1 {
 		t.Fatalf("review_requested events per item = %v, want one each for pulls 6 and 7", refs)
+	}
+}
+
+// assignedBy is an item whose timeline has one assignment of assignee by assigner.
+func assignedBy(repo string, n int, title, author, assigner, assignee string) string {
+	at := soon
+	if n < 6 {
+		at = "2020-01-01T00:00:00Z"
+	}
+	item := authored(repo, n, title, author)
+	return strings.TrimSuffix(item, "}") + fmt.Sprintf(`,"timelineItems":{"nodes":[{"__typename":"AssignedEvent","createdAt":%q,"actor":{"login":%q},"assignee":{"login":%q}}]}}`, at, assigner, assignee)
+}
+
+func TestAnAssignedEventNamesTheAssignerAsActorAndTheOpenerAsAuthor(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	sources := `"gh":{"plugin":"github","fleet":"alpha","settings":{"views":[{"id":"mine","title":"Mine","query":"is:open Q1"}]}}`
+	f := newServiceFixture(t, ghConfig(`"alpha":{"name":"Alpha","claude":{}}`, sources))
+	s := &sink{}
+	f.Svc.Sup.OnEvent = func(_ string, ev Event) { s.add(ev) }
+	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
+	assigning := func(withSecond bool) {
+		nodes := assignedBy("acme/api", 5, "five", "amy", "bob", "eng")
+		if withSecond {
+			nodes += "," + assignedBy("acme/api", 6, "six", "amy", "bob", "eng")
+		}
+		g.write("search/as.match", "assignee:@me")
+		g.write("search/as.json", `{"data":{"search":{"nodes":[`+nodes+`]}}}`)
+	}
+	g.write("viewer", "eng\n")
+	assigning(false)
+	f.startSources()
+	f.waitView("gh", "item 1", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
+	time.Sleep(200 * time.Millisecond)
+	assigning(true)
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	var got []Event
+	deadline := time.Now().Add(5 * time.Second)
+	for len(got) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		s.mu.Lock()
+		for _, ev := range s.got {
+			if ev.Kind == "assigned" {
+				got = append(got, ev)
+			}
+		}
+		s.mu.Unlock()
+	}
+	if len(got) != 1 {
+		t.Fatalf("%d assigned events, want exactly the one for issue 6: %+v", len(got), s.got)
+	}
+	ev := got[0]
+	if !strings.HasSuffix(ev.Ref, "/issues/6") || ev.Actor != "bob" || ev.Author != "amy" || ev.Viewer != "eng" || !ev.Verified {
+		t.Errorf("event = %+v, want assigned for 6 by bob on amy's item, viewer eng, verified", ev)
 	}
 }
 

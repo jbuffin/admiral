@@ -6,10 +6,8 @@ vi.hoisted(() => {
 });
 
 import type { Dock, FleetCapabilities } from './api';
-import { automateSearch } from './router';
 import {
   autopilotDocks,
-  automateDraft,
   breakerTripped,
   errorField,
   formOfRoutine,
@@ -21,7 +19,6 @@ import {
   errorText,
   lastRunText,
   launchOnDock,
-  noticeEntryLinks,
   runTime,
   routineBody,
   runLine,
@@ -179,29 +176,6 @@ describe('the Hold fire banner', () => {
   });
 });
 
-describe('Automate… drafts a scheduled routine for a view', () => {
-  const view = { sourceKey: 'gh', sourceName: 'GitHub', viewTitle: 'Review requested' };
-
-  it('is a weekday-morning launch of Commodore that asks first, and is not saved', () => {
-    const f = automateDraft(view, { harness: 'claude', dir: '/repo', commodore: true });
-    expect(f.name).toBe('Automate Review requested');
-    expect(f.when).toBe('30 8 * * 1-5');
-    expect(f.before).toBe('ask_first');
-    expect(f.mode).toBe('launch');
-    expect(f.launch.harness).toBe('claude');
-    expect(f.launch.skill).toEqual({ kind: 'commodore' });
-    expect(f.launch.text).toContain('GitHub');
-    expect(f.launch.text).toContain('Review requested');
-    expect(automateDraft(view, { harness: 'claude', dir: '/repo', commodore: false }).launch.skill).toEqual({ kind: 'none' });
-  });
-
-  it('is an AdmiralBot prompt when no dock qualifies', () => {
-    const f = automateDraft(view, { harness: null, dir: '', commodore: false });
-    expect(f.mode).toBe('prompt');
-    expect(f.prompt).toContain('Review requested');
-  });
-});
-
 describe('the form and the request body', () => {
   const stored: Routine = {
     id: 'r1',
@@ -237,22 +211,6 @@ describe('the form and the request body', () => {
   });
 });
 
-describe('the migration notice links to Automate…', () => {
-  it('has one link for each migrated entry, naming the source and opening the editor for its view', () => {
-    const links = noticeEntryLinks({ body: 'x', entries: [{ key: 'gh', name: 'GitHub', panel: 'mine' }, { key: 'notes', name: 'Notes', panel: 'orders' }] });
-    expect(links).toHaveLength(2);
-    expect(links[0].label).toContain('GitHub');
-    expect(links[0].path.startsWith('/app/routines/new')).toBe(true);
-    expect(links[0].path.endsWith(automateSearch('gh', 'mine'))).toBe(true);
-    expect(links[1].label).toContain('Notes');
-  });
-
-  it('has none on a plain note', () => {
-    expect(noticeEntryLinks({ body: 'plain' })).toEqual([]);
-    expect(noticeEntryLinks(undefined)).toEqual([]);
-  });
-});
-
 describe('the list row and the run time', () => {
   const now = new Date(2026, 10, 12, 10, 0);
   it('says how long ago a routine ran, or Never', () => {
@@ -271,10 +229,6 @@ describe('the list row and the run time', () => {
     expect(moved).toMatchObject({ harness: 'codex', dir: '', model: '' });
     expect(moved.effort).toBe('');
     expect(launchOnDock({ ...l, effort: 'high' }, 'claude').effort).toBe('high');
-  });
-  it('carries the entry\'s fleet in a notice link', () => {
-    const [l] = noticeEntryLinks({ entries: [{ key: 'gh', name: 'GitHub', panel: 'mine', fleet: 'work' }] });
-    expect(l.path).toContain('fleet=work');
   });
 });
 

@@ -5,7 +5,7 @@ vi.hoisted(() => {
   vi.stubGlobal('addEventListener', () => {});
 });
 
-import { noEventsNote, blankForm, errorField, eventHref, formOfRoutine, routineBody, runCost, runLine, spendNotice, type Routine, type RoutineRun } from './routines';
+import { eventChoices, triggerRemoved, noEventsNote, blankForm, errorField, eventHref, formOfRoutine, routineBody, runCost, runLine, spendNotice, type Routine, type RoutineRun } from './routines';
 
 const on = { source: 'gh', kind: 'review_requested' };
 const eventRoutine: Routine = {
@@ -28,8 +28,8 @@ describe('an event routine through the editor form', () => {
   });
 
   it('keeps a panel the kind takes', () => {
-    const withPanel = { ...eventRoutine, on: { source: 'gh', kind: 'new_in_view', panel: 'bugs' } };
-    expect(routineBody(formOfRoutine(withPanel)).on).toEqual({ source: 'gh', kind: 'new_in_view', panel: 'bugs' });
+    const withPanel = { ...eventRoutine, on: { source: 'gh', kind: 'commented', panel: 'bugs' } };
+    expect(routineBody(formOfRoutine(withPanel)).on).toEqual({ source: 'gh', kind: 'commented', panel: 'bugs' });
   });
 
   it('saves a schedule with its when and no on', () => {
@@ -115,5 +115,31 @@ describe('the empty event picker', () => {
   it('tells a fleet with no source from a source that has not listed its events', () => {
     expect(noEventsNote([], 'work')).toContain('no source');
     expect(noEventsNote([src], 'work')).toContain("hasn't listed");
+  });
+});
+
+describe('the event picker and the retired view trigger', () => {
+  const src = { key: 'gh', name: 'GitHub', plugin: 'github', fleet: 'work', icon_url: '', has_schema: false, state: 'running', error: null, warnings: [], views: [] };
+  const withEvents = {
+    ...src,
+    events: [
+      { kind: 'review_requested', title: 'Review requested' },
+      { kind: 'new_in_view', title: 'New in Bugs', panel: 'bugs' },
+      { kind: 'commented', title: 'Commented in Bugs', panel: 'bugs' },
+    ],
+  };
+
+  it('offers no new_in_view entry even when a source lists one, and keeps the other kinds', () => {
+    const choices = eventChoices([withEvents], 'work');
+    expect(choices.map((c) => c.on.kind)).toEqual(['review_requested', 'commented']);
+    expect(choices.some((c) => /new in a view/i.test(c.group))).toBe(false);
+  });
+
+  it('says a routine whose trigger is new_in_view, from any source, names a removed trigger', () => {
+    expect(triggerRemoved({ source: 'gh', kind: 'new_in_view', panel: 'bugs' })).toBe(true);
+    expect(triggerRemoved({ source: 'a-plugin', kind: 'new_in_view' })).toBe(true);
+    expect(triggerRemoved({ source: 'gh', kind: 'review_requested' })).toBe(false);
+    expect(triggerRemoved({ source: 'gh', kind: 'commented', panel: 'bugs' })).toBe(false);
+    expect(triggerRemoved(undefined)).toBe(false);
   });
 });

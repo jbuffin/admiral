@@ -41,9 +41,6 @@ func TestSourcesListCarriesAGitHubSourcesEventCatalogOnceItHasOne(t *testing.T) 
 		t.Fatalf("events: %v", err)
 	}
 	want := []EventKind{{Kind: "review_requested", Title: "Review requested of you"}, {Kind: "assigned", Title: "Assigned to you"}, {Kind: "mentioned", Title: "You are mentioned"}}
-	for _, p := range v.Views {
-		want = append(want, EventKind{Kind: "new_in_view", Title: "New in " + p.Title, Panel: p.ID})
-	}
 	if len(v.Views) < 2 {
 		t.Fatalf("the source's views = %+v, want the two the settings name", v.Views)
 	}

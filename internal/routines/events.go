@@ -54,11 +54,14 @@ type Cost struct {
 // and no allowlist's.
 const UnknownLogin = "(unknown)"
 
+// RetiredViewKind is the event kind of a removed trigger: a routine naming it never fires and can't be saved.
+const RetiredViewKind = "new_in_view"
+
 func unattributed(login string) bool { return login == "" || login == UnknownLogin }
 
 // TierOf is the less trusted of the actor's and the author's tiers, so a stranger's item the engineer touched stays T3.
 // A login the event doesn't carry, or can't attribute, is a stranger's for its own term, so T1 needs both logins to be
-// the viewer's. GitHub names no actor for an item entering a view, so that event is T2 at best, by its author.
+// the viewer's.
 func TierOf(ev Event, limits standing.Limits) standing.Tier {
 	tier := func(login string) standing.Tier {
 		switch {
@@ -67,12 +70,6 @@ func TierOf(ev Event, limits standing.Limits) standing.Tier {
 		case ev.Verified && ev.Viewer != "" && strings.EqualFold(login, ev.Viewer):
 			return standing.T1
 		case limits.SenderAllowed(login):
-			return standing.T2
-		}
-		return standing.T3
-	}
-	if ev.Verified && ev.Kind == "new_in_view" {
-		if !unattributed(ev.Author) && limits.SenderAllowed(ev.Author) {
 			return standing.T2
 		}
 		return standing.T3
@@ -345,7 +342,7 @@ func (s *Scheduler) eventRoutines(ev Event) []Routine {
 	}
 	var out []Routine
 	for _, r := range list {
-		if r.Enabled && r.On != nil && r.Do.Launch != nil && r.Do.Prompt == "" && r.On.Source == ev.Source && r.On.Kind == ev.Kind && r.On.Panel == ev.Panel {
+		if r.Enabled && r.On != nil && r.On.Kind != RetiredViewKind && r.Do.Launch != nil && r.Do.Prompt == "" && r.On.Source == ev.Source && r.On.Kind == ev.Kind && r.On.Panel == ev.Panel {
 			out = append(out, r)
 		}
 	}

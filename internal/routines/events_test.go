@@ -394,7 +394,7 @@ func (r *rig) catalog() {
 		if fleet != "work" || source != "gh" {
 			return nil, false
 		}
-		return []routines.EventKind{{Kind: "review_requested", Title: "Review requested"}, {Kind: "new_in_view", Title: "New in a view", Panel: "mine"}}, true
+		return []routines.EventKind{{Kind: "review_requested", Title: "Review requested"}, {Kind: "commented", Title: "Commented in a view", Panel: "mine"}}, true
 	}
 }
 
@@ -458,8 +458,8 @@ func TestAnEventRoutineNamesASourceAndKindTheFleetHas(t *testing.T) {
 	for name, on := range map[string]routines.On{
 		"unknown source":          {Source: "nope", Kind: "review_requested"},
 		"unknown kind":            {Source: "gh", Kind: "starred"},
-		"a panel kind with none":  {Source: "gh", Kind: "new_in_view"},
-		"a panel kind, wrong one": {Source: "gh", Kind: "new_in_view", Panel: "other"},
+		"a panel kind with none":  {Source: "gh", Kind: "commented"},
+		"a panel kind, wrong one": {Source: "gh", Kind: "commented", Panel: "other"},
 		"a panel on a plain kind": {Source: "gh", Kind: "review_requested", Panel: "mine"},
 		"empty source":            {Kind: "review_requested"},
 		"empty kind":              {Source: "gh"},
@@ -471,7 +471,7 @@ func TestAnEventRoutineNamesASourceAndKindTheFleetHas(t *testing.T) {
 		}
 	}
 	in := validOn()
-	in.On = &routines.On{Source: "gh", Kind: "new_in_view", Panel: "mine"}
+	in.On = &routines.On{Source: "gh", Kind: "commented", Panel: "mine"}
 	r.create("work", in)
 }
 
@@ -561,11 +561,11 @@ func TestAnEventOnlyReachesTheEnabledRoutinesItMatches(t *testing.T) {
 	h := newHarness(t)
 	h.withEvents(standing.PresetLimits(standing.Home))
 	match := h.onRoutine(routines.AskFirst, nil)
-	viewRoutine := h.onRoutine(routines.AskFirst, func(r *routines.Routine) { r.On = &routines.On{Source: "gh", Kind: "new_in_view", Panel: "mine"} })
+	viewRoutine := h.onRoutine(routines.AskFirst, func(r *routines.Routine) { r.On = &routines.On{Source: "gh", Kind: "commented", Panel: "mine"} })
 	off := h.onRoutine(routines.AskFirst, func(r *routines.Routine) { r.Enabled = false })
 	cron := h.act(nil)
 	for _, ev := range []routines.Event{
-		{Fleet: "work", Source: "gh", Kind: "new_in_view", Panel: "other", Ref: "https://github.com/acme/api/issues/1", Actor: "Eng", Author: "Eng", Viewer: "Eng", Verified: true},
+		{Fleet: "work", Source: "gh", Kind: "commented", Panel: "other", Ref: "https://github.com/acme/api/issues/1", Actor: "Eng", Author: "Eng", Viewer: "Eng", Verified: true},
 		{Fleet: "work", Source: "other", Kind: "review_requested", Ref: "https://github.com/acme/api/pull/8", Actor: "Eng", Author: "Eng", Viewer: "Eng", Verified: true},
 		{Fleet: "play", Source: "gh", Kind: "review_requested", Ref: "https://github.com/acme/api/pull/9", Actor: "Eng", Author: "Eng", Viewer: "Eng", Verified: true},
 	} {
@@ -793,47 +793,6 @@ func TestAnEventWhoseActorIsNoLoginReadsAsAStrangersEvenOnTheEngineersItem(t *te
 	}
 }
 
-func TestAnEventSaysWhoSentItAndANewInViewEventIsAtBestAnAllowlistedAuthorsT2(t *testing.T) {
-	limits := standing.Limits{SenderAllowlist: []string{"Alice"}}
-	view := func(author string) routines.Event {
-		return routines.Event{Kind: "new_in_view", Panel: "mine", Author: author, Viewer: "Eng", Verified: true}
-	}
-	for name, c := range map[string]struct {
-		ev   routines.Event
-		want standing.Tier
-	}{
-		"a stranger's item entering the view":       {view("stranger"), standing.T3},
-		"the engineer's own item entering the view": {view("Eng"), standing.T3},
-		"an allowlisted author's item":              {view("alice"), standing.T2},
-		"a ghost author's item":                     {view(""), standing.T3},
-		"an unattributable author's item":           {view("(unknown)"), standing.T3},
-		"a plugin's new_in_view with no actor":      {routines.Event{Kind: "new_in_view", Author: "alice"}, standing.T3},
-	} {
-		if got := routines.TierOf(c.ev, limits); got != c.want {
-			t.Errorf("%s: tier = T%d, want T%d", name, got, c.want)
-		}
-	}
-}
-
-func TestANewInViewRecordNamesTheItemsAuthorAndASenderSkipMatchesIt(t *testing.T) {
-	h := newHarness(t)
-	limits := standing.PresetLimits(standing.Home)
-	h.withEvents(limits)
-	r := h.onRoutine(routines.AskFirst, func(r *routines.Routine) { r.On = &routines.On{Source: "gh", Kind: "new_in_view", Panel: "mine"} })
-	view := routines.Event{Fleet: "work", Source: "gh", Kind: "new_in_view", Panel: "mine", Ref: "https://github.com/acme/api/pull/9",
-		Author: "stranger", Viewer: "Eng", Verified: true}
-	h.sched.HandleEvent(view)
-	if rec := h.latest(r); rec.Sender != "stranger" || rec.Tier != "T3" {
-		t.Fatalf("record = %+v, want sender stranger at T3", rec)
-	}
-	limits.Skip.Senders = []standing.Scoped{{Routine: r.ID, Value: "stranger"}}
-	h.withEvents(limits)
-	h.sched.HandleEvent(view)
-	if rec := h.latest(r); rec.Outcome != routines.Skipped || !strings.Contains(rec.Reason, routines.ReasonSkipFilter) {
-		t.Errorf("record = %+v, want skipped by the sender filter", rec)
-	}
-}
-
 func TestAnUnattributedActorFallsBackToTheAuthorAsSenderElseUnknown(t *testing.T) {
 	h := newHarness(t)
 	h.withEvents(standing.PresetLimits(standing.Home))
@@ -1004,8 +963,63 @@ func TestAnEventRoutineUpdatesWhileItsSourceHasNoCatalogIfItsOnIsUnchanged(t *te
 	if _, err := r.store.Update("work", saved.ID, saved); err != nil {
 		t.Errorf("Update with the same on and no catalog = %v, want ok", err)
 	}
-	saved.On = &routines.On{Source: "gh", Kind: "new_in_view", Panel: "mine"}
+	saved.On = &routines.On{Source: "gh", Kind: "commented", Panel: "mine"}
 	if _, err := r.store.Update("work", saved.ID, saved); !errors.Is(err, routines.ErrInvalid) {
 		t.Errorf("Update with a changed on and no catalog = %v, want ErrInvalid", err)
+	}
+}
+
+// seedViewTrigger rewrites a stored routine's trigger on disk to the retired new_in_view kind.
+func seedViewTrigger(t *testing.T, home string) {
+	t.Helper()
+	path := filepath.Join(home, "routines", "work", "routines.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(b), "review_requested", "new_in_view", 1)
+	if edited == string(b) {
+		t.Fatalf("no review_requested trigger in %s to rewrite", path)
+	}
+	if err := os.WriteFile(path, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAStoredRoutineOnTheRetiredViewTriggerNeverFires(t *testing.T) {
+	h := newHarness(t)
+	h.withEvents(standing.PresetLimits(standing.Home))
+	stored := h.onRoutine(routines.Act, nil)
+	seedViewTrigger(t, h.home)
+	control := h.onRoutine(routines.AskFirst, nil)
+	h.sched.HandleEvent(routines.Event{Fleet: "work", Source: "gh", Kind: "new_in_view", Ref: "https://github.com/acme/api/issues/1",
+		Actor: "Eng", Author: "Eng", Viewer: "Eng", Verified: true})
+	h.wantLaunches(0)
+	if recs := h.records(stored); len(recs) != 0 {
+		t.Errorf("the new_in_view routine has records %+v, want none", recs)
+	}
+	h.sched.HandleEvent(evFrom("Eng")) // so a scheduler that records nothing cannot pass
+	if n := len(h.records(control)); n != 1 {
+		t.Errorf("the review_requested routine has %d records, want 1", n)
+	}
+}
+
+func TestASaveNamingTheRetiredViewTriggerIsRefusedAndSaysItWasRemoved(t *testing.T) {
+	r := newRig(t)
+	r.catalog()
+	saved := r.create("work", validOn())
+	seedViewTrigger(t, r.home)
+	viewOn := &routines.On{Source: "gh", Kind: "new_in_view"}
+
+	in := validOn()
+	in.On = viewOn
+	if _, err := r.store.Create("work", in); !errors.Is(err, routines.ErrInvalid) || !strings.Contains(err.Error(), "removed") {
+		t.Errorf("Create naming new_in_view = %v, want ErrInvalid saying the trigger was removed", err)
+	}
+
+	saved.Name = "renamed"
+	saved.On = viewOn
+	if _, err := r.store.Update("work", saved.ID, saved); !errors.Is(err, routines.ErrInvalid) || !strings.Contains(err.Error(), "removed") {
+		t.Errorf("Update keeping new_in_view (a rename) = %v, want ErrInvalid saying the trigger was removed", err)
 	}
 }

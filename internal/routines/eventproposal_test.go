@@ -201,3 +201,12 @@ func TestEventShipsSkipAShipLaunchedFromAnAcceptedProposal(t *testing.T) {
 		t.Errorf("EventShips = %v, want none: the engineer launched alpha from a proposal, so no cap, wall clock or Stop all applies", got)
 	}
 }
+
+func TestAnOpenProposalOfARoutineOnTheRetiredViewTriggerCannotBeLaunched(t *testing.T) {
+	h, r, rec := proposed(t)
+	seedViewTrigger(t, h.home)
+	if _, err := h.sched.LaunchProposed(context.Background(), "work", r.ID, rec.ID); !errors.Is(err, routines.ErrNotIssued) {
+		t.Errorf("LaunchProposed = %v, want ErrNotIssued", err)
+	}
+	h.wantLaunches(0)
+}

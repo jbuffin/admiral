@@ -16,7 +16,7 @@ type NoticeEntry struct {
 	Key   string `json:"key"`
 	Name  string `json:"name"`
 	Panel string `json:"panel"`
-	// Fleet is the fleet the source fed, so Automate… opens in it.
+	// Fleet is the fleet the source fed, a note on disk may carry it.
 	Fleet string `json:"fleet,omitempty"`
 }
 

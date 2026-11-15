@@ -696,6 +696,9 @@ func (s *Store) validateOn(f config.Fleet, r Routine, onKept bool) error {
 	if on.Source == "" || on.Kind == "" {
 		return invalidf("on needs a source and a kind")
 	}
+	if on.Kind == RetiredViewKind {
+		return invalidf("on: the trigger %q was removed; pick another event or a schedule", on.Kind)
+	}
 	if onKept {
 		return nil
 	}
