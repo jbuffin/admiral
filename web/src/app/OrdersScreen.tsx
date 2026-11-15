@@ -1,3 +1,4 @@
+import { Button } from './Button';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetSearch } from './fleets';
 import { Icon } from './Icon';
@@ -72,9 +73,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain }: RowProp
     ) : (
       <>
         {act.again ? (
-          <button type="button" class="btn orow-again" onClick={() => onAgain(act.ship, act.again!)}>
-            {act.again.kind === 'rereview' ? 'Re-review' : 'Wake'}
-          </button>
+          <Button class="orow-again" label={act.again.kind === 'rereview' ? 'Re-review' : 'Wake'} onClick={() => onAgain(act.ship, act.again!)} />
         ) : null}
         <button type="button" class={`orow-pill${act.needsYou ? ' needs' : ''}`} aria-label={`${act.ship.name}, ${act.word}. Open ship`} onClick={() => go(shipPath(act.ship.session), fleetSearch.value)}>
           <span class="orow-pill-name">{act.ship.name}</span>
