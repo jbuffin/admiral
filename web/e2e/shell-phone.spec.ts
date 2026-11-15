@@ -7,6 +7,8 @@ import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubC
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
 test('on the phone, the tab bar and More reach every surface, the Ships tab lists the fleet\'s ships and the Fleets sheet switches fleets', { tag: '@critical' }, async ({ page, admiral }) => {
+  // The whole launch journey runs in here, past 30 s on the macOS runner.
+  test.setTimeout(150_000);
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);

@@ -18,6 +18,8 @@ const row = (page: Page, ship: { name: string }) => page.getByRole('main').getBy
 const switcher = (page: Page, fleet: string) => page.getByRole('navigation').getByRole('button', { name: fleet, exact: true });
 
 test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and scopes them to that fleet', { tag: '@critical' }, async ({ page, admiral }) => {
+  // The whole launch journey runs in here, past 30 s on the macOS runner.
+  test.setTimeout(150_000);
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
