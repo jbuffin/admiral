@@ -199,6 +199,7 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
       <>
         <EmptyState surface={surface} title={title}>
           {launch}
+          {forYouLink}
         </EmptyState>
         {form}
       </>
