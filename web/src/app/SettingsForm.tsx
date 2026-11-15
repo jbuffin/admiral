@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { Button } from './Button';
 import { fetchSchema, fetchSettings, saveSource, type Source } from './api';
-import { DEFAULT_VIEWS, UNCHANGED, buildSettings, fieldKinds, jsonText, parseWholeJson, replacedDefault, type Prop, type Schema, type Settings } from './sourceSettings';
+import { DEFAULT_VIEWS, UNCHANGED, buildSettings, fieldKinds, jsonText, parseWholeJson, type Prop, type Schema, type Settings } from './sourceSettings';
 
 type Row = Record<string, unknown>;
 
@@ -97,10 +97,12 @@ function ViewsEditor({ rows, onRows }: { rows: Row[]; onRows: (r: Row[]) => void
       </ul>
       <h4>Custom views</h4>
       {rows.map((r, i) => {
-        const replaced = replacedDefault(String(r.title ?? ''));
+        // A row with an id is a built-in entry: kept as it is, in its place.
+        if (typeof r.id === 'string') return null;
+        const n = rows.slice(0, i).filter((x) => typeof x.id !== 'string').length + 1;
         return (
           <fieldset class="view" key={i}>
-            <legend>{`Custom view ${i + 1}`}</legend>
+            <legend>{`Custom view ${n}`}</legend>
             <label class="row-field">
               <span>Title</span>
               <input type="text" autocomplete="off" value={String(r.title ?? '')} onInput={(e) => setRow(i, 'title', (e.target as HTMLInputElement).value)} />
@@ -109,11 +111,6 @@ function ViewsEditor({ rows, onRows }: { rows: Row[]; onRows: (r: Row[]) => void
               <span>Query</span>
               <input type="text" autocomplete="off" value={String(r.query ?? '')} onInput={(e) => setRow(i, 'query', (e.target as HTMLInputElement).value)} />
             </label>
-            {replaced ? (
-              <p class="note" role="status">
-                Replaces the default view {replaced.title}.
-              </p>
-            ) : null}
             <Button label="Remove view" onClick={() => onRows(rows.filter((_, j) => j !== i))} />
           </fieldset>
         );

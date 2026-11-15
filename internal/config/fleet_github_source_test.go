@@ -16,7 +16,7 @@ const newFleetBase = `{"version":1,"x_future":{"keep":[1,{"deep":true}]},"max_sh
 "sources":{"other":{"plugin":"jira","name":"Jira","fleet":"a","settings":{"token":"fake-token-work-2"}}%s}}`
 
 const ghSource = `,"gha":{"plugin":"github","name":"Work GitHub","fleet":"a","panel_order":["assigned","reviews"],
-"settings":{"views":[{"id":"mine","name":"Mine"}],"host":"ghe.example.com","account":"work","hotLabels":["urgent"],"refreshMinutes":7,"token":"fake-token-work-2"}}`
+"settings":{"views":[` + builtinEntries + `,{"id":"mine","name":"Mine"}],"host":"ghe.example.com","account":"work","hotLabels":["urgent"],"refreshMinutes":7,"token":"fake-token-work-2"}}`
 
 func fleetsWith(t *testing.T, dir string, add ...string) json.RawMessage {
 	t.Helper()
@@ -55,7 +55,7 @@ func writtenSources(t *testing.T, dir string) map[string]map[string]any {
 func TestNewFleetGetsGitHubSourceCopiedFromTheFirstGitHubSource(t *testing.T) {
 	// The template key sorts after the other GitHub source's, so only config order picks it.
 	first := strings.Replace(ghSource, `"gha"`, `"ghz"`, 1)
-	dir := migrateDir(t, fmt.Sprintf(newFleetBase, first+`,"gha":{"plugin":"github","name":"Second","fleet":"a","settings":{"views":[],"account":"other"}}`))
+	dir := migrateDir(t, fmt.Sprintf(newFleetBase, first+`,"gha":{"plugin":"github","name":"Second","fleet":"a","settings":{"views":[`+builtinEntries+`],"account":"other"}}`))
 	if err := config.SetFleets(dir, fleetsWith(t, dir, "b")); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestNewFleetGetsGitHubSourceCopiedFromTheFirstGitHubSource(t *testing.T) {
 		t.Fatalf("sources = %v, want github-b", keysOfSources(srcs))
 	}
 	wantJSON(t, "github-b", got, `{"plugin":"github","name":"Work GitHub","fleet":"b","panel_order":["assigned","reviews"],
-"settings":{"views":[{"id":"mine","name":"Mine"}],"host":"ghe.example.com","account":"work","hotLabels":["urgent"],"refreshMinutes":7}}`)
+"settings":{"views":[`+builtinEntries+`,{"id":"mine","name":"Mine"}],"host":"ghe.example.com","account":"work","hotLabels":["urgent"],"refreshMinutes":7}}`)
 	wantJSON(t, "other source", srcs["other"], `{"plugin":"jira","name":"Jira","fleet":"a","settings":{"token":"fake-token-work-2"}}`)
 	if len(srcs) != 4 {
 		t.Errorf("sources = %v, want the three old ones and github-b", keysOfSources(srcs))
@@ -78,7 +78,7 @@ func TestNewFleetWithNoGitHubSourceGetsTheDefaultViews(t *testing.T) {
 		t.Fatal(err)
 	}
 	srcs := writtenSources(t, dir)
-	wantJSON(t, "github-b", srcs["github-b"], `{"plugin":"github","fleet":"b","settings":{"views":[]}}`)
+	wantJSON(t, "github-b", srcs["github-b"], `{"plugin":"github","fleet":"b","settings":{"views":[`+builtinEntries+`]}}`)
 	wantJSON(t, "other source", srcs["other"], `{"plugin":"jira","name":"Jira","fleet":"a","settings":{"token":"fake-token-work-2"}}`)
 }
 

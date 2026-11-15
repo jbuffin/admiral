@@ -118,7 +118,7 @@ func TestU12_S2_FleetAddAndEditKeepWhatTheyDoNotTouch(t *testing.T) {
 
 	// cmdWorld holds no GitHub source, so the new fleet's gets the defaults and no name.
 	srcs := c.sources(t)
-	if len(srcs) != 1 || !sameJSON(t, srcs["github-bravo"], `{"plugin":"github","fleet":"bravo","settings":{"views":[]}}`) {
+	if len(srcs) != 1 || !sameJSON(t, srcs["github-bravo"], `{"plugin":"github","fleet":"bravo","settings":{"views":[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]}}`) {
 		t.Errorf("sources after fleet add = %s, want only github-bravo with the default views", c.top["sources"])
 	}
 

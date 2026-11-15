@@ -9,23 +9,24 @@ import (
 // Each old autopilot part alone is enough to need a migration, whatever else the file holds.
 func TestNeedsMigrationForTheEnginesConfigKeys(t *testing.T) {
 	const fleets = `"fleets":{"work":{"name":"Work","claude":{}}}`
+	const builtins = `[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]`
 	const entry = `{"enabled":true,"fleet":"work","harness":"claude","skill":{"kind":"none"}}`
 	cases := []struct {
 		name, file string
 		want       bool
 	}{
 		{"autopilot.max_ships, sources already in fleets",
-			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]}}},"autopilot":{"max_ships":4}}`, true},
+			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":` + builtins + `}}},"autopilot":{"max_ships":4}}`, true},
 		{"autopilot.max_ships and no sources key",
 			`{"version":1,` + fleets + `,"autopilot":{"max_ships":4}}`, true},
 		{"autopilot.resume_source alone",
-			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]}}},"autopilot":{"resume_source":{"source":"gh","panel":"p"}}}`, true},
+			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":` + builtins + `}}},"autopilot":{"resume_source":{"source":"gh","panel":"p"}}}`, true},
 		{"a panel entry, sources already in fleets",
-			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]},"autopilot":{"prs":` + entry + `}}}}`, true},
+			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":` + builtins + `},"autopilot":{"prs":` + entry + `}}}}`, true},
 		{"top-level max_ships and no autopilot anywhere",
-			`{"version":1,` + fleets + `,"max_ships":4,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]}}}}`, false},
+			`{"version":1,` + fleets + `,"max_ships":4,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":` + builtins + `}}}}`, false},
 		{"nothing old",
-			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]}}}}`, false},
+			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":` + builtins + `}}}}`, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
