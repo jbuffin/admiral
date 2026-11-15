@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { MooredPR, Order, OrderView, Ship, Source } from './api';
 import { selectedRow, withSelectedOrder } from './orderDetail';
 import { parseExpanded } from './expandedParents';
-import { filterRows, forYou, headerTime, launchRef, orderRef, refreshedLine, refreshTarget, repoOptions, tabs, viewGroups, viewRows } from './ordersView';
+import { filterRows, forYou, headerTime, launchRef, orderRef, parentNote, refreshedLine, refreshTarget, repoName, repoOptions, tabs, viewGroups, viewRows, withoutParentNote } from './ordersView';
 
 const NOW = Date.parse('2026-11-14T12:00:00Z');
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -656,6 +656,151 @@ describe('parent groups in a view tab', () => {
       expect(row?.order).toMatchObject({ title: 'Epic 30', url: issueUrl(30) });
       expect(row?.inView).toBe(false);
       expect(row?.launchable).toBe(false);
+    });
+  });
+});
+
+describe('stack groups in a view tab', () => {
+  const stackUrl = (n: number, repo = 'acme/api') => `https://github.com/${repo}/stack/${n}`;
+  const S = stackUrl(7);
+  const layer = (n: number, position: number, over: Partial<Order> = {}, stackN = 7): Order =>
+    order(`acme/api#${n}`, { pr: pr(), stack: { number: stackN, url: stackUrl(stackN), position, size: 3 }, author: 'alice', ...over });
+  const loose = (n: number, over: Partial<Order> = {}): Order => order(`acme/api#${n}`, { pr: pr(), ...over });
+  const review = (orders: Order[], more: OrderView[] = []) => [gh([view('review-requested', 'Review requested', orders), ...more])];
+  const groups = (orders: Order[], ships: Ship[] = [], f = {}) => viewGroups(review(orders), 'gh/review-requested', NOW, ships, f);
+  const shape = (g: ReturnType<typeof groups>) => g.map((x) => [x.row.order.id, ...x.children.map((c) => c.order.id)]);
+  const ship = (over: Partial<Ship> = {}): Ship => ({ session: 's1', name: 'otter', status: 'underway', ...over }) as Ship;
+  const three = [layer(41, 1), layer(42, 2), layer(43, 3)];
+
+  it('puts the layers under a Stack #N row keyed by the stack URL, with the layers\' repo', () => {
+    const [g] = groups(three);
+    expect(shape([g])).toEqual([[S, 'acme/api#41', 'acme/api#42', 'acme/api#43']]);
+    expect(g.row.order).toMatchObject({ id: S, url: S, title: 'Stack #7' });
+    expect(repoName(g.row.order)).toBe('acme/api');
+    expect(g.row.key).toBe(`gh/${S}`);
+    expect(orderRef(g.row.order)).toBe('acme/api');
+    expect(g.row.source).toBe('gh');
+  });
+
+  it('marks the row as a stack row that never says not in this view, and leaves the layers actionable', () => {
+    const [g] = groups(three);
+    expect(g.row.stackRow).toBe(true);
+    expect(g.row.reason).not.toContain('not in this view');
+    expect(g.children.every((c) => !c.stackRow && c.launchable)).toBe(true);
+    expect(groups([loose(50)])[0].row.stackRow).toBeFalsy();
+  });
+
+  it('is not counted in the tab and leaves the repo options to the orders', () => {
+    const src = review([...three, loose(50)]);
+    expect(viewGroups(src, 'gh/review-requested', NOW, [], {}).map((x) => x.row.order.id)).toEqual([S, 'acme/api#50']);
+    expect(tabs(src).find((t) => t.id === 'gh/review-requested')?.count).toBe(4);
+    expect(repoOptions(viewRows(src, 'gh/review-requested', NOW))).toEqual(['acme/api']);
+  });
+
+  it('finds the stack row by its key for the detail pane', () => {
+    const row = selectedRow(review(three), 'gh/review-requested', withSelectedOrder('', `gh/${S}`), NOW);
+    expect(row?.order).toMatchObject({ id: S, title: 'Stack #7' });
+  });
+
+  it('lists the layers bottom first whatever order the answer gives', () => {
+    expect(shape(groups([layer(43, 3), layer(41, 1), layer(42, 2)]))).toEqual([[S, 'acme/api#41', 'acme/api#42', 'acme/api#43']]);
+  });
+
+  it('hides merged layers, still shows a closed one, and counts only the shown layers', () => {
+    const g = groups([layer(41, 1, { pr: pr({ state: 'MERGED' }) }), layer(42, 2, { pr: pr({ state: 'CLOSED' }) }), layer(43, 3)]);
+    expect(shape(g)).toEqual([[S, 'acme/api#42', 'acme/api#43']]);
+  });
+
+  it('lists only the layers the view holds and still groups a lone one', () => {
+    expect(shape(groups([layer(42, 2)]))).toEqual([[S, 'acme/api#42']]);
+  });
+
+  it('shows no group when every layer is merged or filtered out', () => {
+    const merged = [layer(41, 1, { pr: pr({ state: 'MERGED' }) }), layer(42, 2, { pr: pr({ state: 'MERGED' }) })];
+    expect(shape(groups([...merged, loose(50)]))).toEqual([['acme/api#50']]);
+    expect(groups(three, [], { query: 'nothing matches' })).toEqual([]);
+  });
+
+  it('lists only the layers the filter matches', () => {
+    const orders = [layer(41, 1, { title: 'Add the store' }), layer(42, 2, { title: 'Wire the API' }), layer(43, 3, { title: 'Store page' })];
+    expect(shape(groups(orders, [], { query: 'store' }))).toEqual([[S, 'acme/api#41', 'acme/api#43']]);
+  });
+
+  it('groups a view\'s issues by parent and its PRs by stack, and leaves PRs without a stack loose', () => {
+    const kid = order('acme/api#31', { url: 'https://github.com/acme/api/issues/31', parent: { id: 'acme/api#30', title: 'Epic', url: 'https://github.com/acme/api/issues/30', repo: 'acme/api' } });
+    const src = [gh([view('custom', 'Custom', [layer(42, 2), kid, loose(50), layer(41, 1)])])];
+    const g = viewGroups(src, 'gh/custom', NOW, [], {});
+    expect(shape(g)).toEqual([[S, 'acme/api#41', 'acme/api#42'], ['acme/api#30', 'acme/api#31'], ['acme/api#50']]);
+  });
+
+  it('keeps two stacks apart by their URL', () => {
+    const g = groups([layer(41, 1), layer(61, 1, {}, 8), layer(42, 2)]);
+    expect(shape(g)).toEqual([[S, 'acme/api#41', 'acme/api#42'], [stackUrl(8), 'acme/api#61']]);
+  });
+
+  describe('the order', () => {
+    it('places a stack where its first shown layer sits and keeps loose PRs where they are', () => {
+      expect(shape(groups([loose(50), layer(43, 3), loose(51), layer(41, 1)])).map((x) => x[0])).toEqual(['acme/api#50', S, 'acme/api#51']);
+      expect(shape(groups([layer(43, 3), loose(50), layer(41, 1)])).map((x) => x[0])).toEqual([S, 'acme/api#50']);
+    });
+
+    it('does not let a hidden first layer hold the stack\'s place', () => {
+      const g = groups([layer(41, 1, { pr: pr({ state: 'MERGED' }) }), loose(50), layer(42, 2)]);
+      expect(shape(g).map((x) => x[0])).toEqual(['acme/api#50', S]);
+    });
+  });
+
+  describe('For you and the reason lines', () => {
+    it('says in stack #N where an issue says in #N', () => {
+      expect(parentNote(layer(41, 1))).toBe('in stack #7');
+    });
+
+    it('keeps For you flat with the note on each layer', () => {
+      const src = review(three);
+      const flat = viewGroups(src, 'for-you', NOW, [], {});
+      expect(flat.map((x) => x.children.length)).toEqual([0, 0, 0]);
+      expect(flat.every((x) => x.row.reason.startsWith('in stack #7 · '))).toBe(true);
+      expect(forYou(src, NOW).needsYou.every((r) => r.reason.startsWith('in stack #7 · '))).toBe(true);
+    });
+
+    it('reads a layer under its stack row as in stack #N then its view reason', () => {
+      const [g] = groups([layer(41, 1, { opened_at: ago(3 * D) })]);
+      expect(g.children[0].reason).toBe('in stack #7 · opened 3d ago · @alice');
+    });
+
+    it('strips the note from a For you reason', () => {
+      expect(withoutParentNote('in stack #7 · review requested 2h ago · @alice')).toBe('review requested 2h ago · @alice');
+      expect(withoutParentNote('in stack #7')).toBe('');
+    });
+
+    it('counts each layer of a review-requested stack once in Needs you', () => {
+      const g = forYou(review(three), NOW);
+      expect(g.needsYou).toHaveLength(3);
+      expect(g.count).toBe(3);
+      expect(g.needsYou.every((r) => r.reason.startsWith('in stack #7'))).toBe(true);
+    });
+  });
+
+  describe('the collapsed summary', () => {
+    const on = (url: string, over: Partial<Ship> = {}) => ship({ url, ...over });
+    const count = (ships: Ship[]) => groups(three, ships)[0].ships;
+
+    it('carries High when a shown layer is hot and not otherwise', () => {
+      expect(groups([layer(41, 1), layer(42, 2, { hot: true })])[0].high).toBe(true);
+      expect(groups(three)[0].high).toBe(false);
+    });
+
+    it('counts a ship whose url is the stack URL and that has no prs yet', () => {
+      expect(count([on(S)])).toBe(1);
+    });
+
+    it('counts a ship on the stack that also holds layers once, and ships on layers each once', () => {
+      expect(count([on(S, { prs: [{ url: 'https://github.com/acme/api/pull/41' }, { url: 'https://github.com/acme/api/pull/42' }] as Ship['prs'] })])).toBe(1);
+      expect(count([on('https://github.com/acme/api/pull/41', { session: 'a' }), on(S, { session: 'b' })])).toBe(2);
+    });
+
+    it('does not count a ship on another stack or one that is not carrying', () => {
+      expect(count([on(S), on(stackUrl(8), { session: 'b' }), on(S, { session: 'c', status: 'anchored' })])).toBe(1);
     });
   });
 });

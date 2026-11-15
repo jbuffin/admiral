@@ -1,5 +1,5 @@
 import type { Order, OrderView, Ship, Source } from './api';
-import { needsYouAgain } from './moored';
+import { isStackUrl, needsYouAgain } from './moored';
 import { shipAge } from './shipList';
 
 export const FOR_YOU = 'for-you';
@@ -19,6 +19,8 @@ export interface OrderRow {
   inView: boolean;
   /** Whether a launch can find the order: some view of the source holds it. */
   launchable: boolean;
+  /** A stack row built from its layers: no action, and never "not in this view". */
+  stackRow?: boolean;
 }
 
 export interface ForYou {
@@ -60,15 +62,16 @@ function stateWord(o: Order, inReview: boolean): string {
 
 const join = (...parts: (string | undefined | false)[]) => parts.filter(Boolean).join(' · ');
 
-/** `in #n` for an order with a parent, never naming the parent's repo. */
+/** `in #n` for an order with a parent, `in stack #n` for a PR in a GitHub stack, never naming the parent's repo. */
 export function parentNote(o: Order): string {
+  if (o.pr && o.stack) return `in stack #${o.stack.number}`;
   const p = o.parent;
   const num = p && (/#(\d+)$/.exec(p.id)?.[1] ?? /\/(\d+)\/?$/.exec(p.url)?.[1]);
   return num ? `in #${num}` : '';
 }
 
-/** A For you reason without its `in #n` lead. */
-export const withoutParentNote = (reason: string) => reason.replace(/^in #\d+(?: · |$)/, '');
+/** A For you reason without its `in #n` or `in stack #n` lead. */
+export const withoutParentNote = (reason: string) => reason.replace(/^in (?:stack )?#\d+(?: · |$)/, '');
 const author = (o: Order) => (o.author ? `@${o.author}` : '');
 const ageOf = (iso: string | undefined, now: number) => (iso ? shipAge(iso, now) : '');
 
@@ -210,8 +213,8 @@ export interface ViewGroup {
 const urlKey = (u: string) => u.replace(/\/+$/, '').toLowerCase();
 const CARRYING = ['underway', 'needs_you', 'moored'];
 
-function shipCount(ships: Ship[], children: OrderRow[]): number {
-  const urls = new Set(children.map((c) => c.order.url).filter((u): u is string => !!u).map(urlKey));
+function shipCount(ships: Ship[], children: OrderRow[], groupUrl?: string): number {
+  const urls = new Set([...children.map((c) => c.order.url), groupUrl].filter((u): u is string => !!u).map(urlKey));
   if (urls.size === 0) return 0;
   return ships.filter((s) => CARRYING.includes(s.status) && [s.url, s.link, ...(s.issues ?? []), ...(s.prs ?? []).map((p) => p.url)].some((u) => !!u && urls.has(urlKey(u)))).length;
 }
@@ -223,7 +226,14 @@ function parentRow(src: Source, p: NonNullable<Order['parent']>): OrderRow {
   return { key: `${src.key}/${p.id}`, source: src.key, order, reason: 'not in this view', state: '', needsYou: false, inView: false, launchable: !!held };
 }
 
-/** A view tab's rows with children placed under their parent's row; For you stays flat. */
+const stackOf = (r: OrderRow) => (r.order.pr ? r.order.stack : undefined);
+
+function stackRow(src: Source, layer: OrderRow, s: NonNullable<Order['stack']>): OrderRow {
+  const order: Order = { id: s.url, title: `Stack #${s.number}`, url: s.url, repo: repoName(layer.order) };
+  return { key: `${src.key}/${s.url}`, source: src.key, order, reason: '', state: '', needsYou: false, inView: false, launchable: false, stackRow: true };
+}
+
+/** A view tab's rows with children placed under their parent's row and PRs under their GitHub stack's row; For you stays flat. */
 export function viewGroups(sources: Source[], id: string, now: number, ships: Ship[], filter: Filter = {}): ViewGroup[] {
   const all = viewRows(sources, id, now, ships);
   const shown = filterRows(all, filter);
@@ -238,7 +248,17 @@ export function viewGroups(sources: Source[], id: string, now: number, ships: Sh
   const groups = new Map<string, ViewGroup>();
   const out: ViewGroup[] = [];
   for (const r of shown) {
-    if (isChild(r)) {
+    const stack = stackOf(r);
+    if (stack) {
+      if (r.order.pr!.state === 'MERGED') continue;
+      let g = groups.get(stack.url);
+      if (!g) {
+        g = { row: stackRow(hit.src, r, stack), children: [], high: false, ships: 0 };
+        groups.set(stack.url, g);
+        out.push(g);
+      }
+      g.children.push({ ...r, reason: join(parentNote(r.order), r.reason) });
+    } else if (isChild(r)) {
       const p = r.order.parent!;
       let g = groups.get(p.id);
       if (!g) {
@@ -250,8 +270,9 @@ export function viewGroups(sources: Source[], id: string, now: number, ships: Sh
     } else if (!shownParents.has(r.order.id)) out.push(flat(r));
   }
   for (const g of groups.values()) {
+    if (g.row.stackRow) g.children.sort((a, b) => stackOf(a)!.position - stackOf(b)!.position);
     g.high = g.children.some((c) => !!c.order.hot);
-    g.ships = shipCount(ships, g.children);
+    g.ships = shipCount(ships, g.children, g.row.stackRow ? g.row.order.url : undefined);
   }
   return out;
 }
@@ -293,6 +314,8 @@ export function repoName(o: Order): string {
 }
 
 export function orderRef(o: Order): string {
+  // A GitHub stack's number is its title; the reference names only the repo.
+  if (isStackUrl(o.url)) return repoName(o);
   const num = /#(\d+)$/.exec(o.id)?.[1] ?? /\/(\d+)\/?$/.exec(o.url ?? '')?.[1];
   const repo = repoName(o);
   return repo && num ? `${repo} #${num}` : repo || o.id;
