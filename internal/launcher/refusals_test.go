@@ -44,3 +44,32 @@ func TestLaunchRefusals(t *testing.T) {
 		}
 	}
 }
+
+func TestLaunchRefusesAConversationToResumeItCannotKeep(t *testing.T) {
+	work := t.TempDir()
+	const id = "0f8fad5b-d9cb-469f-a165-70867728950e"
+	cfg := &config.Config{Fleets: []config.Fleet{
+		{Key: "work", Name: "Work", SearchRoots: []string{work}, Harnesses: []config.Harness{
+			{Name: "claude", Executable: "/bin/sh", Found: true},
+			{Name: "copilot", Executable: "/bin/sh", Found: true},
+		}},
+		{Key: "continued", Name: "Continued", SearchRoots: []string{work}, Harnesses: []config.Harness{
+			{Name: "claude", Executable: "/bin/sh", Found: true, Args: []string{"--continue"}},
+		}},
+		{Key: "forked", Name: "Forked", SearchRoots: []string{work}, Harnesses: []config.Harness{
+			{Name: "claude", Executable: "/bin/sh", Found: true, Args: []string{"--fork-session"}},
+		}},
+	}}
+	l := &Launcher{Config: func() *config.Config { return cfg }, Home: t.TempDir(), Tmux: "tmux"}
+	for _, c := range []struct{ name, fleet, harness, resume, msg string }{
+		{"a Copilot launch", "work", "copilot", id, "claude"},
+		{"an id that is not a version 4 uuid", "work", "claude", "not-a-uuid", "conversation"},
+		{"a dock that chooses a session", "continued", "claude", id, "session"},
+		{"a dock that forks the session", "forked", "claude", id, "fork"},
+	} {
+		_, err := l.Launch(Request{Fleet: c.fleet, Harness: c.harness, Dir: work, Skill: Skill{Kind: "none"}, ResumeConversation: c.resume})
+		if le, ok := err.(*Error); !ok || le.Status != http.StatusBadRequest || !strings.Contains(le.Msg, c.msg) {
+			t.Errorf("%s: Launch = %v, want 400 naming %q", c.name, err, c.msg)
+		}
+	}
+}

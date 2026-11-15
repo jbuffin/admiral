@@ -71,7 +71,9 @@ type Request struct {
 	// the feedback round it starts.
 	Name    string `json:"-"`
 	Session string `json:"-"`
-	Round   int    `json:"-"`
+	// ResumeConversation is a stub: the Claude conversation id to resume.
+	ResumeConversation string `json:"-"`
+	Round              int    `json:"-"`
 	// Prompt, when set, is the harness's prompt verbatim: a wake's resume text already carries its skill invocation.
 	Prompt string `json:"-"`
 	// Bare makes Prompt the harness's prompt even when empty, with no skill invocation: a wake with no resume text.
