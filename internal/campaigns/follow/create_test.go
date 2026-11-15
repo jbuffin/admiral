@@ -147,6 +147,21 @@ func TestCreateRefusesAChildThatAlreadyHasAParentAndWritesNothing(t *testing.T) 
 	}
 }
 
+func TestCreateRefusesAPullRequestPassedAsAnIssueRefAndWritesNothing(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	r.gh.child("acme/widgets", 31, "")
+	r.gh.respondREST("GET", issueEndpoint("acme/widgets", 32), "", fmt.Sprintf(`{"id":%d,"number":32,"parent_issue_url":null,"pull_request":{"url":"x"}}`, restID(32)))
+	r.gh.parentReady(31, 32)
+
+	code, body := r.create(createBody("acme/widgets#31", "acme/widgets#32"))
+	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "acme/widgets/issues/32") {
+		t.Errorf("create = %d %s; want 422 naming the pull request", code, body)
+	}
+	if w := posts(r.gh.restCalls()); len(w) != 0 {
+		t.Errorf("writes = %+v; a pull request must stop the run before any write", w)
+	}
+}
+
 func TestCreateAnswers502AndWritesNothingWhenAChildCannotBeRead(t *testing.T) {
 	r := newRig(t, fixtureTree())
 	r.gh.child("acme/widgets", 31, "")
@@ -184,6 +199,9 @@ func TestCreateRefusesABadRequestBeforeAnyGhCall(t *testing.T) {
 		{"a pull request ref", "", createBody("https://github.com/acme/widgets/pull/31"), 400},
 		{"hosts that differ", "", createBody("acme/widgets#31", "https://ghe.example.com/acme/widgets/issues/32"), 422},
 		{"a repo no fleet routes", "", map[string]any{"repo": "nobody/nothing", "title": "T", "issues": []string{"nobody/nothing#1"}}, 422},
+		{"a repo with a path in its name", "", map[string]any{"repo": "acme/widgets/../x", "title": "T", "issues": []string{"acme/widgets#31"}}, 400},
+		{"a repo named dot-dot", "", map[string]any{"repo": "acme/..", "title": "T", "issues": []string{"acme/widgets#31"}}, 400},
+		{"a repo with a query in its name", "", map[string]any{"repo": "acme/widgets?x=1", "title": "T", "issues": []string{"acme/widgets#31"}}, 400},
 		{"a child owned by another owner", "", createBody("acme/widgets#31", "rival/widgets#32"), 422},
 	}
 	for _, c := range cases {

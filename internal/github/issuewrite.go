@@ -11,8 +11,9 @@ import (
 
 // IssueRecord is what GitHub's REST "get an issue" says about an issue that Admiral needs to link it.
 type IssueRecord struct {
-	RESTID    int64 // the REST id, which is neither the issue number nor Item.ID
-	ParentURL string
+	RESTID      int64 // the REST id, which is neither the issue number nor Item.ID
+	ParentURL   string
+	PullRequest bool // GitHub's issue endpoint also answers for a pull request
 }
 
 // CreatedIssue is an issue GitHub just created.
@@ -30,11 +31,12 @@ func (c *Client) IssueRecord(ctx context.Context, owner, repo string, number int
 	var got struct {
 		ID     int64   `json:"id"`
 		Parent *string `json:"parent_issue_url"`
+		PR     any     `json:"pull_request"`
 	}
 	if json.Unmarshal(out, &got) != nil || got.ID == 0 {
 		return IssueRecord{}, errors.New("GitHub's answer was not an issue")
 	}
-	rec := IssueRecord{RESTID: got.ID}
+	rec := IssueRecord{RESTID: got.ID, PullRequest: got.PR != nil}
 	if got.Parent != nil {
 		rec.ParentURL = *got.Parent
 	}

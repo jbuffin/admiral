@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/jbuffin/admiral/internal/ships"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -462,6 +463,8 @@ func (s *Service) launchSlice(ctx context.Context, f Followed, issues []string, 
 
 const maxCreateIssues = 50
 
+var repoPart = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+
 // createTimeout bounds the writes and the follow after them, which run even if the engineer's browser hangs up.
 const createTimeout = 2 * time.Minute
 
@@ -493,7 +496,7 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	owner, repoName, ok := strings.Cut(strings.TrimSpace(body.Repo), "/")
-	if !ok || owner == "" || repoName == "" || strings.Contains(repoName, "/") {
+	if !ok || !repoPart.MatchString(owner) || !repoPart.MatchString(repoName) || owner == "." || owner == ".." || repoName == "." || repoName == ".." {
 		writeError(w, http.StatusBadRequest, "repo: write owner/name")
 		return
 	}
@@ -557,6 +560,10 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 		rec, err := client.IssueRecord(ctx, k.ref.Owner, k.ref.Repo, k.ref.Number)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, fmt.Sprintf("Could not read %s, so nothing was created: %v", k.url, err))
+			return
+		}
+		if rec.PullRequest {
+			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s is a pull request, not an issue, so nothing was created", k.url))
 			return
 		}
 		if rec.ParentURL != "" {
