@@ -29,7 +29,10 @@ test('on the phone, a person follows a campaign from the Campaigns surface, read
   expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
 
   await main.getByRole('listitem').filter({ hasText: T.survey }).getByRole('button').first().tap();
-  await page.getByRole('dialog', { name: new RegExp(T.survey) }).getByRole('button', { name: /^Launch/ }).tap();
+  const sheet = page.getByRole('dialog', { name: new RegExp(T.survey) });
+  for (const chip of await sheet.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio').all()) expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await expect(sheet.getByRole('radio')).toHaveCount(2);
+  await sheet.getByRole('button', { name: /^Launch/ }).tap();
   const form = page.getByRole('dialog', { name: 'Launch', exact: true });
   await expect(form.getByLabel('Checkout')).toHaveValue(join(admiral.home, 'widgets'));
   // The picker starts at the child's skill, and a tap on Just launch replaces it for this launch.

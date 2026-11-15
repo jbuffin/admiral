@@ -127,18 +127,32 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(form).toBeVisible();
   await press(form.getByRole('button', { name: 'Cancel', exact: true }));
 
-  // A child's mode is changed in its sheet: the row moves groups and is marked overridden; Reset sends it back.
+  // A child's mode is changed with the chips in its sheet: a tap applies at once, the sheet stays open and says what the labels say; Use labels sends it back.
   const survey = () => page.getByRole('dialog', { name: new RegExp(T.survey) });
+  const mode = () => survey().getByRole('radiogroup', { name: 'Mode' });
   await press(row(T.survey).getByRole('button').first());
-  await press(survey().getByText('Change mode or skill'));
-  await survey().getByLabel('Mode').selectOption('with-you');
-  await press(survey().getByRole('button', { name: 'Save' }));
+  await expect(survey()).toContainText(/Without you · \/wayfinder/);
+  await expect(survey()).not.toContainText('overridden');
+  await expect(survey().getByText('Change mode or skill')).toHaveCount(0);
+  await expect(survey().getByRole('button', { name: /^(Save|Reset)$/ })).toHaveCount(0);
+  await expect(survey().getByLabel(/Starts on|Skill name|Arguments/)).toHaveCount(0);
+  await expect(mode().getByRole('radio', { name: 'Without you', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await expect(survey().getByText('Labels say')).toHaveCount(0);
+  const applied = page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === `/api/v1/campaigns/${id}/override`);
+  await press(mode().getByRole('radio', { name: 'With you', exact: true }));
+  expect(((await applied).postDataJSON() as Record<string, unknown>)).toEqual({ child_url: issueUrl(22), mode: 'with-you' });
+  await expect(survey()).toBeVisible();
+  await expect(mode().getByRole('radio', { name: 'With you', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await expect(survey()).toContainText('Labels say Without you.');
+  await expect(survey()).toContainText(/With you · \/wayfinder/);
+  await page.keyboard.press('Escape');
   await expect(group('Ready, with you').getByRole('listitem').filter({ hasText: T.survey })).toBeVisible();
   await expect(group('Ready, without you')).toHaveCount(0);
   await press(row(T.survey).getByRole('button').first());
-  await expect(survey()).toContainText('overridden');
-  await press(survey().getByText('Change mode or skill'));
-  await press(survey().getByRole('button', { name: 'Reset' }));
+  await press(survey().getByRole('button', { name: 'Use labels' }));
+  await expect(survey().getByText('Labels say')).toHaveCount(0);
+  await expect(mode().getByRole('radio', { name: 'Without you', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
   await expect(group('Ready, without you').getByRole('listitem').filter({ hasText: T.survey })).toBeVisible();
 
   // The work repo: a good value shows in the pill, a bad one is refused with the server's message.
@@ -161,11 +175,11 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await press(nav.getByRole('button', { name: /^Ended/ }));
   await press(main.getByText(T.map));
   await expect(main).toContainText('Ended');
-  // Launching is closed to an ended campaign; its override and work repo are not.
+  // Launching is closed to an ended campaign; its mode and work repo are not.
   await press(row(T.survey).getByRole('button').first());
   await expect(survey()).toBeVisible();
   await expect(survey().getByRole('button', { name: /Start anyway|^Launch/ })).toHaveCount(0);
-  await expect(survey().getByText('Change mode or skill')).toBeVisible();
+  await expect(survey().getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'With you', exact: true })).toBeEnabled();
   await press(survey().getByRole('button', { name: 'Close' }));
   await expect(main.getByRole('button', { name: 'github.com/acme/widgets' })).toBeVisible();
 

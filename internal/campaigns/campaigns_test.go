@@ -242,24 +242,19 @@ func TestLiveClaimMakesAChildUnderway(t *testing.T) {
 }
 
 func TestOverridesWinOverDefaults(t *testing.T) {
-	wayfinder := Skill{Kind: "skill", Name: "wayfinder", Args: "pick the next ticket"}
 	c := Build(Input{Tree: recordedTree(t), Overrides: map[string]Override{
 		u(2):    {Mode: WithYou},
-		u(4):    {Skill: &Skill{Kind: "commodore"}},
-		u(14):   {Mode: WithoutYou, Skill: &wayfinder},
+		u(14):   {Mode: WithoutYou},
 		u(6):    {Mode: WithYou},
 		other40: {},
 	}})
-	if n := mustNode(t, c, u(2)); n.Mode != WithYou || n.Skill != (Skill{Kind: "commodore"}) {
+	if n := mustNode(t, c, u(2)); n.Mode != WithYou || n.Skill != (Skill{Kind: "commodore"}) || !n.Overridden {
 		t.Errorf("mode override keeps the default skill: %+v", n)
 	}
-	if n := mustNode(t, c, u(4)); n.Mode != WithYou || n.Skill != (Skill{Kind: "commodore"}) {
-		t.Errorf("skill override keeps the default mode: %+v", n)
+	if n := mustNode(t, c, u(14)); n.Mode != WithoutYou || n.Skill != n.DefaultSkill || !n.Overridden {
+		t.Errorf("mode override keeps the default skill: %+v", n)
 	}
-	if n := mustNode(t, c, u(14)); n.Mode != WithoutYou || n.Skill != wayfinder {
-		t.Errorf("both overridden: %+v", n)
-	}
-	if n := mustNode(t, c, other40); n.Mode != WithYou || n.Skill.Kind != "none" {
+	if n := mustNode(t, c, other40); n.Mode != WithYou || n.Skill.Kind != "none" || n.Overridden {
 		t.Errorf("an empty override changes nothing: %+v", n)
 	}
 	if n := mustNode(t, c, u(6)); n.Status != ClaimedNoShip {

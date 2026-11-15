@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"github.com/jbuffin/admiral/internal/github"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -120,7 +122,7 @@ func TestUnfollowEndsTheCampaignAndKeepsItReadable(t *testing.T) {
 func TestOverrideAndWorkRepoRoutesChangeWhatTheCampaignShows(t *testing.T) {
 	r := newRig(t, fixtureTree())
 	c := r.follow(rootURL)
-	body := map[string]any{"child_url": issURL(21), "mode": "with-you", "skill": map[string]string{"kind": "none"}}
+	body := map[string]any{"child_url": issURL(21), "mode": "with-you"}
 	if code, b := r.do("PUT", "/api/campaigns/"+c.ID+"/override", body); code != http.StatusOK {
 		t.Fatalf("override = %d %s", code, b)
 	}
@@ -128,8 +130,8 @@ func TestOverrideAndWorkRepoRoutesChangeWhatTheCampaignShows(t *testing.T) {
 		t.Fatalf("work-repo = %d %s", code, b)
 	}
 	got := r.get(c.ID)
-	if n := got.Root.find(21); n.Mode != "with-you" || n.Skill.Kind != "none" {
-		t.Errorf("child 21 after override = %+v, want with-you + none", n)
+	if n := got.Root.find(21); n.Mode != "with-you" || n.Skill.Kind != "commodore" {
+		t.Errorf("child 21 after override = %+v, want with-you on its label skill, Commodore", n)
 	}
 	if got.WorkRepo != "https://github.com/acme/work" {
 		t.Errorf("work repo = %q, want the one set", got.WorkRepo)
@@ -477,15 +479,18 @@ func TestTheSameChildInTwoCampaignsLaunchesWithEachCampaignsOwnChoices(t *testin
 	b := r.follow(issURL(30))
 	r.do("PUT", "/api/campaigns/"+a.ID+"/work-repo", map[string]string{"repo": "https://github.com/acme/worka"})
 	r.do("PUT", "/api/campaigns/"+b.ID+"/work-repo", map[string]string{"repo": "https://github.com/acme/workb"})
-	r.do("PUT", "/api/campaigns/"+b.ID+"/override", map[string]any{"child_url": issURL(21), "mode": "with-you", "skill": map[string]string{"kind": "none"}})
+	r.do("PUT", "/api/campaigns/"+b.ID+"/override", map[string]any{"child_url": issURL(21), "mode": "with-you"})
+	if a21, b21 := r.get(a.ID).Root.find(21), r.get(b.ID).Root.find(21); a21.Mode != "without-you" || b21.Mode != "with-you" {
+		t.Errorf("child 21 modes = %q in A and %q in B, want without-you and with-you", a21.Mode, b21.Mode)
+	}
 
-	for id, want := range map[string]struct{ kind, repo string }{a.ID: {"commodore", "https://github.com/acme/worka"}, b.ID: {"none", "https://github.com/acme/workb"}} {
+	for id, want := range map[string]struct{ kind, repo string }{a.ID: {"commodore", "https://github.com/acme/worka"}, b.ID: {"commodore", "https://github.com/acme/workb"}} {
 		text, _, repo, _, panel, err := r.svc.Order(SourceKey, OrderID(id, issURL(21)))
 		if err != nil || repo != want.repo || panel != id {
 			t.Errorf("Order in campaign %s = repo %q panel %q err %v, want repo %q and its own panel", id, repo, panel, err, want.repo)
 		}
 		if (want.kind == "none") != strings.HasPrefix(text, "Issue 21 ") {
-			t.Errorf("Order in campaign %s text = %q, want the title and URL only when the campaign's override has no skill", id, text)
+			t.Errorf("Order in campaign %s text = %q, want the title and URL only when the label default has no skill", id, text)
 		}
 	}
 	if code, body := r.launch(a.ID, map[string]any{"child_url": issURL(21), "harness": "claude", "dir": "/work/x"}); code != http.StatusCreated {
@@ -567,7 +572,7 @@ func TestReadyChildrenAreCountedByResolvedMode(t *testing.T) {
 func TestNodesCarryLabelsAndTheirOverrideAgainstTheDefault(t *testing.T) {
 	r := newRig(t, fixtureTree())
 	c := r.follow(rootURL)
-	r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(21), "mode": "with-you", "skill": map[string]string{"kind": "none"}})
+	r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(21), "mode": "with-you"})
 	got := r.get(c.ID)
 	if l := got.Root.Labels; len(l) != 1 || l[0] != "wayfinder:map" {
 		t.Errorf("root labels = %v, want the root's kind", l)
@@ -576,8 +581,8 @@ func TestNodesCarryLabelsAndTheirOverrideAgainstTheDefault(t *testing.T) {
 		t.Errorf("child 24 labels = %v", l)
 	}
 	n := got.Root.find(21)
-	if !n.Overridden || n.Mode != "with-you" || n.Skill.Kind != "none" || n.DefaultMode != "without-you" || n.DefaultSkill.Kind != "commodore" {
-		t.Errorf("child 21 = %+v, want overridden to with-you/none over the default without-you/commodore", n)
+	if !n.Overridden || n.Mode != "with-you" || n.Skill.Kind != "commodore" || n.DefaultMode != "without-you" || n.DefaultSkill.Kind != "commodore" {
+		t.Errorf("child 21 = %+v, want overridden to with-you over the default without-you, still on Commodore", n)
 	}
 	if n := got.Root.find(24); n.Overridden || n.DefaultMode != "without-you" {
 		t.Errorf("child 24 = overridden %v default %q, want not overridden and its default mode", n.Overridden, n.DefaultMode)
@@ -739,12 +744,15 @@ func TestLaunchASliceClonesTheRepoOfItsChildren(t *testing.T) {
 	}
 }
 
-func TestLaunchASliceAcceptsAChildOverriddenToCommodoreWithoutYou(t *testing.T) {
+func TestLaunchASliceKeepsItsForcedCommodoreWhateverTheModeOverrides(t *testing.T) {
 	r := newRig(t, sliceTree())
 	c := r.follow(rootURL)
-	r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(37), "mode": "without-you", "skill": map[string]string{"kind": "commodore"}})
-	if code, msg := r.launch(c.ID, sliceBody(31, 37)); code != http.StatusCreated {
-		t.Errorf("slice with an overridden child = %d %s, want 201", code, msg)
+	r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(37), "mode": "without-you"})
+	if code, msg := r.launch(c.ID, sliceBody(31, 37)); code < 400 || code > 499 || !strings.Contains(msg, issURL(37)) {
+		t.Errorf("slice with a child on the label skill none = %d %s, want a 4xx naming %s", code, msg, issURL(37))
+	}
+	if got := r.launches(); len(got) != 0 {
+		t.Errorf("a refused slice still reached Launch: %v", got)
 	}
 }
 
@@ -847,7 +855,6 @@ func TestLaunchWithTheChildsOwnSkillKeepsItsSavedArgs(t *testing.T) {
 	if saved == "" {
 		t.Fatal("child 24 has no saved args, the fixture changed")
 	}
-	r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(21), "mode": "without-you", "skill": map[string]string{"kind": "commodore", "name": "x", "args": "do the thing"}})
 	for _, tc := range []struct {
 		name  string
 		child int
@@ -856,7 +863,6 @@ func TestLaunchWithTheChildsOwnSkillKeepsItsSavedArgs(t *testing.T) {
 	}{
 		{"its own skill, sent as the picker lists it", 24, map[string]string{"kind": "skill", "name": "wayfinder"}, saved},
 		{"its own skill with a leading slash", 24, map[string]string{"kind": "skill", "name": "/wayfinder"}, saved},
-		{"commodore over an override that stores a name", 21, map[string]string{"kind": "commodore"}, "do the thing"},
 	} {
 		if code, body := r.launch(c.ID, launchWith(tc.child, tc.skill)); code != http.StatusCreated {
 			t.Fatalf("%s: launch = %d %s", tc.name, code, body)
@@ -920,5 +926,95 @@ func TestLaunchRefusesABadSkillBeforeLaunching(t *testing.T) {
 	}
 	if got := r.launches(); len(got) != 0 {
 		t.Errorf("a refused launch still reached Launch: %v", got)
+	}
+}
+
+func TestOverrideRefusesASkillWhateverItHoldsAndStoresNothing(t *testing.T) {
+	for name, skill := range map[string]any{"a skill": map[string]string{"kind": "none"}, "an empty skill": map[string]string{}, "a null skill": nil} {
+		r := newRig(t, fixtureTree())
+		c := r.follow(rootURL)
+		code, b := r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(21), "mode": "with-you", "skill": skill})
+		if code != http.StatusBadRequest || !strings.Contains(string(b), "skill") {
+			t.Errorf("%s: override = %d %s, want 400 naming skill", name, code, b)
+		}
+		if n := r.get(c.ID).Root.find(21); n.Overridden || n.Mode != "without-you" {
+			t.Errorf("%s: child 21 = %+v after the refusal, want its label default and no override", name, n)
+		}
+	}
+}
+
+func TestOverrideWithAModeSetsItAndAnEmptyModeClearsIt(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	path := "/api/campaigns/" + c.ID + "/override"
+	if code, b := r.do("PUT", path, map[string]any{"child_url": issURL(21), "mode": "with-you"}); code != http.StatusOK {
+		t.Fatalf("set = %d %s", code, b)
+	}
+	if n := r.get(c.ID).Root.find(21); !n.Overridden || n.Mode != "with-you" {
+		t.Errorf("child 21 = %+v, want overridden to with-you", n)
+	}
+	if code, b := r.do("PUT", path, map[string]any{"child_url": issURL(21), "mode": ""}); code != http.StatusOK {
+		t.Fatalf("clear = %d %s", code, b)
+	}
+	if n := r.get(c.ID).Root.find(21); n.Overridden || n.Mode != "without-you" {
+		t.Errorf("child 21 = %+v after an empty mode, want the label default without-you and no override", n)
+	}
+}
+
+// storeWithOldOverrides rewrites the campaign's store file as an earlier Admiral wrote it, with skills in overrides.
+func storeWithOldOverrides(t *testing.T, r *rig, id string, old map[string]any) {
+	t.Helper()
+	path := r.svc.Store.path
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file struct{ Campaigns []map[string]any }
+	if err := json.Unmarshal(b, &file); err != nil || len(file.Campaigns) != 1 {
+		t.Fatalf("store file = %s (%v), want one campaign", b, err)
+	}
+	file.Campaigns[0]["Overrides"] = old
+	out, _ := json.Marshal(file)
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenStore(filepath.Dir(path))
+	if err != nil {
+		t.Fatalf("a store holding an override with a skill failed to open: %v", err)
+	}
+	r.svc.Store = store
+}
+
+func TestAStoredOverrideThatStillCarriesASkillStartsTheChildOnItsLabelSkill(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	storeWithOldOverrides(t, r, c.ID, map[string]any{
+		issURL(21): map[string]any{"Mode": "with-you", "Skill": map[string]string{"Kind": "none"}},
+		issURL(24): map[string]any{"Mode": "", "Skill": map[string]string{"Kind": "commodore"}},
+	})
+	got := r.get(c.ID)
+	if n := got.Root.find(21); n.Mode != "with-you" || n.Skill.Kind != "commodore" || !n.Overridden {
+		t.Errorf("child 21 = %+v, want the stored mode with-you and its label skill Commodore", n)
+	}
+	if n := got.Root.find(24); n.Overridden || n.Skill.Kind != "skill" || n.Skill.Name != "wayfinder" {
+		t.Errorf("child 24 = %+v, want not overridden by a skill-only override, on its label skill wayfinder", n)
+	}
+	if code, body := r.launch(c.ID, launchWith(21, nil)); code != http.StatusCreated {
+		t.Fatalf("launch = %d %s", code, body)
+	}
+	if got := r.launches(); len(got) != 1 || got[0].Skill.Kind != "commodore" || got[0].Text != issURL(21) {
+		t.Errorf("launches = %+v, want Commodore with the ticket URL, not the stored none", got)
+	}
+}
+
+func TestTheNextWriteDropsAStoredSkill(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	storeWithOldOverrides(t, r, c.ID, map[string]any{issURL(21): map[string]any{"Mode": "with-you", "Skill": map[string]string{"Kind": "none"}}})
+	if code, b := r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(24), "mode": "with-you"}); code != http.StatusOK {
+		t.Fatalf("override = %d %s", code, b)
+	}
+	if b, _ := os.ReadFile(r.svc.Store.path); strings.Contains(string(b), `"Skill"`) {
+		t.Errorf("store file after a write still holds a skill: %s", b)
 	}
 }
