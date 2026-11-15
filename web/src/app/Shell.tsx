@@ -339,7 +339,7 @@ function Panel({ surface, title, phone }: { surface: Surface; title: boolean; ph
   if (surface.id === 'inbox') return <InboxPanel surface={surface} title={title} phone={!!phone} />;
   if (surface.id === 'chat') return <ChatPanel surface={surface} title={title} phone={!!phone} />;
   if (surface.id === 'ships') return <ShipsPanel surface={surface} title={title} />;
-  if (surface.id === 'orders' && activeFleet.value) return <OrdersPanel phone={!!phone} />;
+  if (surface.id === 'orders' && activeFleet.value) return <OrdersPanel key={activeFleet.value.key} phone={!!phone} title={title} />;
   if (surface.id === 'campaigns') {
     const id = campaignOf(loc.value.path);
     return id ? <CampaignPage key={id} id={id} title={title} /> : <CampaignsList phone={!!phone} title={title} />;

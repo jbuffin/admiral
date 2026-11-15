@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Order, OrderView, Source } from './api';
-import { filterRows, forYou, headerTime, orderRef, refreshTarget, repoOptions, tabs, viewRows } from './ordersView';
+import { filterRows, forYou, headerTime, orderRef, refreshedLine, refreshTarget, repoOptions, tabs, viewRows } from './ordersView';
 
 const NOW = Date.parse('2026-11-14T12:00:00Z');
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -308,10 +308,17 @@ describe('tabs', () => {
 describe('the header time', () => {
   const t = (s: number) => new Date(NOW - s * 60_000).toISOString();
 
-  it('is the oldest refreshed_at among the tab\'s views', () => {
+  it('is the tab\'s own view time for a plugin view tab', () => {
     const src = plugin('lin', 'Linear', [view('a', 'A', [], { refreshed_at: t(2) }), view('b', 'B', [], { refreshed_at: t(30) }), view('c', 'C', [])]);
-    const id = tabs([src])[1].id;
-    expect(headerTime([src], id)).toBe(t(30));
+    const [, a, b, c] = tabs([src]);
+    expect(headerTime([src], a.id)).toBe(t(2));
+    expect(headerTime([src], b.id)).toBe(t(30));
+    expect(headerTime([src], c.id)).toBeUndefined();
+  });
+
+  it('reads "just now" under a minute and an age with ago after', () => {
+    expect(refreshedLine(new Date(NOW - 20_000).toISOString(), NOW)).toBe('refreshed just now');
+    expect(refreshedLine(t(2), NOW)).toBe('refreshed 2m ago');
   });
 
   it('is a single view\'s time for a view tab', () => {
@@ -396,5 +403,18 @@ describe('the filters', () => {
 
   it('lists each repo present once', () => {
     expect([...repoOptions(rows)].sort()).toEqual(['acme/api', 'acme/web']);
+  });
+});
+
+describe('the repo of an order', () => {
+  it('reduces a GitHub repository URL to owner/repo', () => {
+    expect(orderRef(order('acme/api#3', { repo: 'https://github.com/acme/api' }))).toBe('acme/api #3');
+    expect(orderRef(order('x#4', { repo: undefined, url: 'https://github.com/acme/api/pull/4' }))).toBe('acme/api #4');
+  });
+
+  it('gives no repo for a Linear URL: the ref is the id and the repo filter lists nothing', () => {
+    const lin = order('ENG-12', { repo: undefined, url: 'https://linear.app/acme/issue/ENG-12/slug' });
+    expect(orderRef(lin)).toBe('ENG-12');
+    expect(repoOptions(viewRows([plugin('lin', 'Linear', [view('a', 'A', [lin])])], tabs([plugin('lin', 'Linear', [view('a', 'A', [lin])])])[1].id, NOW))).toEqual([]);
   });
 });

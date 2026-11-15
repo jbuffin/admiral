@@ -185,15 +185,17 @@ const oldest = (views: OrderView[]) =>
     return acc === undefined || Date.parse(v.refreshed_at) < Date.parse(acc) ? v.refreshed_at : acc;
   }, undefined);
 
-/**
- * The oldest answer among the tab's views, so a stale view isn't hidden. A plugin answers for the whole source, so its tab
- * reads every view of it; a GitHub view tab reads its own.
- */
+/** For you reads the oldest answer among GitHub's default views, so a stale one isn't hidden; a view tab reads its own view. */
 export function headerTime(sources: Source[], id: string): string | undefined {
   if (id === FOR_YOU) return oldest(sources.find(isGitHub)?.views.filter((v) => DEFAULT_VIEWS.includes(v.id)) ?? []);
   const hit = find(sources, id);
-  if (!hit) return undefined;
-  return oldest(isGitHub(hit.src) ? [hit.view] : hit.src.views);
+  return hit ? oldest([hit.view]) : undefined;
+}
+
+/** The header's time words; `shipAge` says "now" under a minute, which doesn't read with "ago". */
+export function refreshedLine(iso: string, now: number): string {
+  const age = shipAge(iso, now);
+  return age === 'now' ? 'refreshed just now' : `refreshed ${age} ago`;
 }
 
 /** The source name the header shows and Refresh now asks, if the tab's source can refresh. */
@@ -206,10 +208,11 @@ export function sourceName(sources: Source[], id: string): string {
   return (id === FOR_YOU ? sources.find(isGitHub) : find(sources, id)?.src)?.name ?? '';
 }
 
-// The GitHub source sends the repository's URL; plugins and tests send owner/repo.
+// The GitHub source sends the repository's URL; plugins and tests send owner/repo. Only a GitHub repository, pull or issue URL reduces to a repo.
 export function repoName(o: Order): string {
-  const fromUrl = (u: string) => /^https?:\/\/[^/]+\/([^/]+\/[^/]+?)(?:\/|$)/.exec(u)?.[1];
-  return (o.repo && (fromUrl(o.repo) ?? o.repo)) || fromUrl(o.url ?? '') || '';
+  const fromUrl = (u: string) => /^https:\/\/github\.com\/([^/]+\/[^/]+?)(?:\/(?:pull|issues)\/\d+)?\/?$/.exec(u)?.[1];
+  if (o.repo) return /^https?:\/\//.test(o.repo) ? (fromUrl(o.repo) ?? '') : o.repo;
+  return fromUrl(o.url ?? '') ?? '';
 }
 
 export function orderRef(o: Order): string {
@@ -242,5 +245,5 @@ export const launchRef = (r: OrderRow) => ({ source: r.source, id: r.order.id, t
 /** The error text of each view the tab lists, shown above its rows. */
 export function viewErrors(sources: Source[], id: string): string[] {
   const views = id === FOR_YOU ? (sources.find(isGitHub)?.views.filter((v) => DEFAULT_VIEWS.includes(v.id)) ?? []) : [find(sources, id)?.view];
-  return views.flatMap((v) => (v?.error ? [v.error] : []));
+  return [...new Set(views.flatMap((v) => (v?.error ? [v.error] : [])))];
 }

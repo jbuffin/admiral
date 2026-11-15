@@ -1,12 +1,12 @@
 import { useState } from 'preact/hooks';
-import { activeFleet, fleetPaint, fleetSearch } from './fleets';
+import { activeFleet, fleetSearch } from './fleets';
 import { Icon } from './Icon';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { FOR_YOU, filterRows, forYou, headerTime, launchRef, orderRef, refreshTarget, repoOptions, sourceName, tabs, viewErrors, viewRows, type OrderRow } from './ordersView';
+import { FOR_YOU, filterRows, forYou, headerTime, launchRef, orderRef, refreshedLine, refreshTarget, repoOptions, sourceName, tabs, viewErrors, viewRows, type OrderRow } from './ordersView';
 import { refreshSource } from './api';
 import { go, loc, shipPath } from './router';
-import { shipAge } from './shipList';
+import { emptyLine, surfaceById } from './surfaces';
 import { sources } from './shipsLink';
 import { useNow } from './useNow';
 
@@ -23,9 +23,9 @@ export function NeedsYouBadge() {
 
 const MARK_PR = <path d="M4 5.1v5.8M12 10.9V6.5a2 2 0 0 0-2-2H7.5M9 3 7.5 4.5 9 6" />;
 
-function Mark({ pr }: { pr: boolean }) {
+function Mark({ pr, needs }: { pr: boolean; needs: boolean }) {
   return (
-    <svg class="orow-mark" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+    <svg class={`orow-mark${needs ? (pr ? ' pr' : ' issue') : ''}`} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
       {pr ? (
         <>
           <circle cx="4" cy="3.5" r="1.6" />
@@ -68,7 +68,7 @@ function Row({ row, phone, muted, onLaunch }: { row: OrderRow; phone: boolean; m
   }
   return (
     <li class={`orow${muted ? ' muted' : ''}`}>
-      <Mark pr={!!o.pr} />
+      <Mark pr={!!o.pr} needs={row.needsYou} />
       <div class="orow-main">
         <span class="orow-title">{o.title}</span>
         <span class="orow-meta">
@@ -106,7 +106,7 @@ function Group({ id, title, rows, phone, muted, onLaunch }: { id: string; title:
 
 const tabOf = () => new URLSearchParams(loc.value.search).get('tab') ?? FOR_YOU;
 
-export function OrdersPanel({ phone }: { phone: boolean }) {
+export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }) {
   const now = useNow();
   const fleet = activeFleet.value;
   const [query, setQuery] = useState('');
@@ -142,15 +142,15 @@ export function OrdersPanel({ phone }: { phone: boolean }) {
   const needs = shown.filter((r) => r.needsYou);
   const waiting = shown.filter((r) => !r.needsYou);
   const onLaunch = (o: OrderRef) => setLaunching(o);
-  const age = time ? `refreshed ${shipAge(time, now)} ago` : '';
+  const age = time ? refreshedLine(time, now) : '';
   const name = sourceName(list, id);
   return (
     <>
       <main class="panel orders-screen">
         <header class="orders-head">
+          {title ? <h1>Orders</h1> : null}
           <div class="orders-line">
-            {phone && fleet ? <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" /> : null}
-            <span class="orders-source">{phone ? age : [name, age].filter(Boolean).join(' · ')}</span>
+                        <span class="orders-source">{phone ? age : [name, age].filter(Boolean).join(' · ')}</span>
             {target ? (
               <button type="button" class="orow-go" aria-label="Refresh now" aria-busy={busy} disabled={busy} onClick={refresh}>
                 <Icon name="refresh" size={16} />
@@ -204,7 +204,7 @@ export function OrdersPanel({ phone }: { phone: boolean }) {
             ))}
           </ul>
         )}
-        {shown.length === 0 ? <p class="line">Nothing here.</p> : null}
+        {shown.length === 0 ? <p class="line">{all.length === 1 && rows.length === 0 ? emptyLine(surfaceById('orders'), true, true) : 'Nothing here.'}</p> : null}
       </main>
       {launching && fleet ? <LaunchForm fleet={fleet} order={launching} onClose={() => setLaunching(null)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null}
     </>

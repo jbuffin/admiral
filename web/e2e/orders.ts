@@ -135,7 +135,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
 
   await press(nav);
   await expect(page).toHaveURL(/\/app\/orders(\?|$)/);
-  if (phone) await expect(page.getByRole('heading', { name: 'Orders', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Orders', exact: true })).toBeVisible();
 
   // For you is first and selected; each view has a tab with its count of distinct orders.
   await expect(page.getByRole('tab')).toHaveText([/^For you\s*8$/, /^Assigned to me\s*4$/, /^Review requested\s*2$/, /^My PRs\s*4$/, /^Orders: Orders\s*7$/]);
@@ -180,7 +180,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   const refresh = page.getByRole('button', { name: 'Refresh now', exact: true });
   await expect(refresh).toBeVisible();
   await expectTouchTarget(refresh, 44);
-  await expect(main).toContainText(/refreshed (now|\d+m) ago|(now|\d+m) ago/);
+  await expect(main).toContainText(/refreshed (just now|\d+m ago)/);
   if (!phone) await expect(main).toContainText('GitHub');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
@@ -210,6 +210,8 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
     await expect(page.getByRole('combobox')).toHaveCount(0);
   } else {
     const filter = page.getByPlaceholder('Filter by title, repo, label');
+    await expectTouchTarget(filter, 44);
+    await expectTouchTarget(page.getByRole('combobox', { name: /repo/i }), 44);
     await filter.fill('DOCS');
     await expect(main.getByRole('listitem')).toHaveCount(1);
     await expect(rowOf(page, 'Document the API')).toBeVisible();
@@ -232,7 +234,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await press(refresh);
   await asked;
   await expect.poll(() => oldestAnswer(a)).toBeGreaterThan(before);
-  await expect(main).toContainText(/(now|\d+m) ago/);
+  await expect(main).toContainText(/refreshed (just now|\d+m ago)/);
 
   // A refusal shows its text.
   await page.route('**/api/v1/sources/gh/refresh', (r) => r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'The source cannot refresh orders' }) }));

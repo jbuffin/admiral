@@ -997,7 +997,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .otabs { display: flex; gap: 4px; padding: 3px; max-width: 100%; overflow-x: auto; align-self: flex-start; border-radius: var(--shape-radius-md); background: var(--color-bg); }
 .otab { flex: none; display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: var(--shape-radius-sm); font-size: 13px; color: var(--color-text2); white-space: nowrap; }
 .otab[aria-selected='true'] { background: var(--color-panel); box-shadow: 0 0 0 1px var(--color-line2); color: var(--color-text); font-weight: 500; }
-@media (pointer: coarse) { .otab { min-height: var(--shape-min-touch-target); } }
+@media (pointer: coarse) { .otab, .orders-filter, .orders-repo { min-height: var(--shape-min-touch-target); } }
 .ogroup-head { display: flex; align-items: center; gap: 8px; margin: 0; height: 34px; padding: 0 20px; font-family: var(--font-body); font-size: var(--font-size-meta); font-weight: 600; color: var(--color-text2); background: var(--color-bg); border-bottom: 1px solid var(--color-line); }
 .dot.needs { width: 8px; height: 8px; background: var(--color-needs); }
 .orders-screen > .alert { margin: 8px 20px 0; }
@@ -1005,6 +1005,8 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .orow { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 12px 0 20px; border-bottom: 1px solid var(--color-line); }
 .orow.phone { min-height: 60px; padding: 0 4px 0 14px; }
 .orow-mark { flex: none; color: var(--color-muted); }
+.orow-mark.pr { color: var(--color-accent); }
+.orow-mark.issue { color: var(--fleet-0-light); }
 .orow-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 7px 0; }
 .orow-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .orow.phone .orow-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
