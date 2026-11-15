@@ -36,7 +36,7 @@ const ASSIGNED: Item[] = [
 // A GitHub stack of three review-requested PRs by another author, answered top first as the search does (most recently updated first).
 const STACK = { number: 7, url: 'https://github.com/acme/api/stack/7' };
 const STACK_LAYERS = ['Add the store', 'Wire the store to the API', 'Show the store in the page'];
-// An issue-only view in acme/widgets, the repo campaign.ts builds trees for. Its parent is in no view, so #43 sits in a collapsed group.
+// An issue-only view in acme/widgets, the repo campaign.ts builds trees for. Its parent is in no view, so its child sits in a collapsed group.
 const POOL_PARENT = { number: 40, title: 'Existing campaign', repo: 'acme/widgets' };
 const POOL: Item[] = [
   { number: 41, title: 'Pool the sensor logs', repo: 'acme/widgets', author: 'bob' },

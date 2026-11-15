@@ -56,7 +56,8 @@ describe('the sheet issues', () => {
   });
 
   it('reads an issue on another host the same way', () => {
-    expect(sheetIssues(['https://ghe.example.com/acme/api/issues/3'], [])[0].title).toBe('acme/api #3');
+    const n = 3;
+    expect(sheetIssues([`https://ghe.example.com/acme/api/issues/${n}`], [])[0].title).toBe(`acme/api #${n}`);
   });
 });
 
