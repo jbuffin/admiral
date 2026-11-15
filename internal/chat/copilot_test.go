@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -79,6 +80,58 @@ func TestACopilotClearRebindsTheReaderToTheNewSessionsTranscript(t *testing.T) {
 	got := servedFromFile(t, s, "b", b, "clear")
 	if slices.Contains(got, "user: first") || !slices.Contains(got, "user: second") {
 		t.Errorf("after /clear the chat serves %v, want only the new session's transcript", got)
+	}
+}
+
+func TestAClearOnTheSamePathServesWhatWasWrittenAfterTheSizeTheHookMeasured(t *testing.T) {
+	s := harnessService(t, copilotChatFleets, fakeProbes{})
+	path := writeAt(t, copilotSessionFile(copilotChatHome(t, s), copilotSessionA), copilotTranscript("first"))
+	turn := func(text, n string) []byte {
+		ids := strings.NewReplacer(`"e1"`, `"e1`+n+`"`, `"e2"`, `"e2`+n+`"`, `"e3"`, `"e3`+n+`"`, `"m1"`, `"m1`+n+`"`, `"m2"`, `"m2`+n+`"`)
+		return []byte(ids.Replace(string(copilotTranscript(text))))
+	}
+	appendTo := func(b []byte) int64 {
+		t.Helper()
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := f.Write(b); err != nil {
+			t.Fatal(err)
+		}
+		info, err := f.Stat()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return info.Size()
+	}
+	fc := s.chat("b")
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	served := func(raw string) []string {
+		t.Helper()
+		fc.transcriptChangedLocked(raw)
+		fc.followLocked()
+		var out []string
+		for _, m := range fc.st.served() {
+			out = append(out, m.Role+": "+m.Text)
+		}
+		return out
+	}
+	if got := served("1 startup " + path); !slices.Contains(got, "user: first") {
+		t.Fatalf("before the clear the chat serves %v, want the first turn", got)
+	}
+	// The hook measured the file at the clear; the next turn landed before Admiral read the option.
+	atClear := appendTo(nil)
+	appendTo(turn("second", "b"))
+	if got := served(fmt.Sprintf("2,%d clear %s", atClear, path)); slices.Contains(got, "user: first") || !slices.Contains(got, "user: second") {
+		t.Errorf("after a clear measured at %d bytes the chat serves %v, want only the turn written after it", atClear, got)
+	}
+	// A stamp with no size skips the whole file as it is when Admiral reads the option.
+	appendTo(turn("third", "c"))
+	if got := served("3 clear " + path); len(got) != 0 {
+		t.Errorf("after a clear with no size the chat serves %v, want nothing", got)
 	}
 }
 
