@@ -2959,6 +2959,10 @@ export async function fixStackFromThePRTab(page: Page, a: Admiral, opts: { phone
   await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Answer review' })).toHaveCount(0);
   if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+  await page.getByRole('tab', { name: /#8/ }).tap();
+  await expect(page.getByRole('tab', { name: /#8/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: 'Answer review' }), "the second PR's tab").toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
 
   readyToWake(a, ship);
   await fix.tap();
@@ -2988,6 +2992,13 @@ export async function fixFromTheOrdersRow(page: Page, a: Admiral, opts: { phone:
   const dialog = page.getByRole('dialog', { name: 'Fix PR' });
   await expect(dialog).toContainText('is behind its base');
   await expect(dialog).toContainText(command);
+
+  readyToWake(a, ship);
+  const sent = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/fix`);
+  await dialog.getByRole('button', { name: 'Fix PR', exact: true }).tap();
+  expect((await sent).status()).toBe(201);
+  expect(await wokenPrompt(a, ship)).toBe(command);
+  await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).not.toBe('moored');
 }
 
 /** The approved, green, mergeable own PR the Orders journey lists, which prMergeState puts behind its base. */
