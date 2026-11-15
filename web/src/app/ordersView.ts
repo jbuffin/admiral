@@ -80,7 +80,8 @@ function viewReason(src: Source, v: OrderView, o: Order, now: number): string {
     const age = ageOf(o.opened_at, now);
     return join(age && `opened ${age} ago`, author(o));
   }
-  return join(o.id, v.title);
+  // With no repo the row's ref already shows the id.
+  return join(repoName(o) && o.id, v.title);
 }
 
 interface Yours {

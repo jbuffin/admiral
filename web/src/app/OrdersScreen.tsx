@@ -53,7 +53,7 @@ function Row({ row, phone, muted, onLaunch }: { row: OrderRow; phone: boolean; m
   );
   if (phone) {
     return (
-      <li class="orow phone">
+      <li class="orow-phone">
         <div class="orow-main">
           <span class="orow-title">{o.title}</span>
           <span class="orow-meta">
@@ -67,7 +67,7 @@ function Row({ row, phone, muted, onLaunch }: { row: OrderRow; phone: boolean; m
     );
   }
   return (
-    <li class={`orow${muted ? ' muted' : ''}`}>
+    <li class={`orow${muted ? ' waiting' : ''}`}>
       <Mark pr={!!o.pr} needs={row.needsYou} />
       <div class="orow-main">
         <span class="orow-title">{o.title}</span>
@@ -144,13 +144,14 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const onLaunch = (o: OrderRef) => setLaunching(o);
   const age = time ? refreshedLine(time, now) : '';
   const name = sourceName(list, id);
+  const sourceLine = [name, age].filter(Boolean).join(' · ');
   return (
     <>
       <main class="panel orders-screen">
         <header class="orders-head">
-          {title ? <h1>Orders</h1> : null}
           <div class="orders-line">
-                        <span class="orders-source">{phone ? age : [name, age].filter(Boolean).join(' · ')}</span>
+            {title ? <h1>Orders</h1> : null}
+            <span class="orders-source">{phone ? age : sourceLine && `${title ? '· ' : ''}${sourceLine}`}</span>
             {target ? (
               <button type="button" class="orow-go" aria-label="Refresh now" aria-busy={busy} disabled={busy} onClick={refresh}>
                 <Icon name="refresh" size={16} />

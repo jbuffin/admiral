@@ -189,9 +189,14 @@ describe('the reason line', () => {
     expect(rows.map((r) => r.reason)).toEqual(['opened 3d ago · @carol', 'opened 3d ago', '@carol']);
   });
 
-  it('reads a plugin row as its reference and view name', () => {
-    const src = plugin('lin', 'Linear', [view('triage', 'Triage', [order('LIN-12', { url: undefined, repo: undefined })])]);
+  it('reads a plugin row with a repo as its id and view name', () => {
+    const src = plugin('lin', 'Linear', [view('triage', 'Triage', [order('LIN-12', { url: undefined, repo: 'acme/api' })])]);
     expect(viewRows([src], 'lin/triage', NOW)[0].reason).toBe('LIN-12 · Triage');
+  });
+
+  it('reads a plugin row with no repo as the view name alone, since its ref already shows the id', () => {
+    const src = plugin('lin', 'Linear', [view('triage', 'Triage', [order('LIN-12', { url: undefined, repo: undefined })])]);
+    expect(viewRows([src], 'lin/triage', NOW)[0].reason).toBe('Triage');
   });
 });
 
