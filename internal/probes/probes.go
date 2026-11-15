@@ -45,7 +45,9 @@ const (
 // Outcome is one probe's result.
 type Outcome struct {
 	Passed bool
-	Detail string
+	// Inconclusive is a probe that could not run every command and showed no failure on the ones it ran: it is not recorded, so a stored pass stays and a version never proven stays not checked.
+	Inconclusive bool
+	Detail       string
 }
 
 // Target is what a probe runs against.
@@ -69,6 +71,8 @@ type Line struct {
 	Label  string
 	Status capabilities.Status
 	Detail string
+	// Inconclusive is a probe of this run that could not conclude and stored nothing, so Status and the stored result are an earlier run's.
+	Inconclusive bool
 }
 
 // Report is what Run returns: the detected version and one line per table capability.
@@ -188,6 +192,7 @@ func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness, version s
 	}
 	target := Target{Home: r.home, Fleet: fleet, Harness: harness, Version: version}
 	skipped := map[capabilities.ID]string{}
+	unrecorded := map[capabilities.ID]string{}
 	for _, p := range r.probes {
 		if p.Harness != harness {
 			continue
@@ -200,6 +205,10 @@ func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness, version s
 		out := p.Run(ctx, target)
 		if cancelled(ctx) {
 			return Report{}, ctx.Err()
+		}
+		if out.Inconclusive {
+			unrecorded[p.Capability] = out.Detail
+			continue
 		}
 		res := capabilities.Result{Passed: out.Passed, At: time.Now(), Detail: out.Detail}
 		if err := r.store.Record(fleet.Key, harness, version, p.Capability, res); err != nil {
@@ -218,6 +227,13 @@ func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness, version s
 			l := Line{ID: c.ID, Label: c.Label, Status: st.Status, Detail: skipped[c.ID]}
 			if st.Result != nil {
 				l.Detail = st.Result.Detail
+			}
+			if d, ok := unrecorded[c.ID]; ok {
+				l.Inconclusive = true
+				if st.Status == capabilities.Failed && l.Detail != "" {
+					d += "; the stored failure: " + l.Detail
+				}
+				l.Detail = d
 			}
 			rep.Lines = append(rep.Lines, l)
 		}

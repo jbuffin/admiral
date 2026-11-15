@@ -170,8 +170,12 @@ func TestRestrictedProbeFailuresSayWhy(t *testing.T) {
 	})
 	t.Run("no tool calls", func(t *testing.T) {
 		r := runRestricted(t, "no-tool", "")
-		r.wantFailed(t, capabilities.RestrictedSandbox, "never ran")
-		r.wantFailed(t, capabilities.RestrictedAllow, "never ran")
+		for _, id := range []capabilities.ID{capabilities.RestrictedSandbox, capabilities.RestrictedAllow} {
+			l := r.line(t, id)
+			if l.Status != capabilities.NotChecked || !strings.Contains(l.Detail, "inconclusive") || !strings.Contains(l.Detail, "never ran") {
+				t.Errorf("%s = %+v, want not_checked and inconclusive: a model that made no tool call skipped every command", id, l)
+			}
+		}
 	})
 	t.Run("claude fails before its init record", func(t *testing.T) {
 		r := runRestricted(t, "pass", "error")
@@ -402,10 +406,120 @@ func TestTheSandboxResultSaysThatGitCommittedInTheClone(t *testing.T) {
 	}
 }
 
-func TestARunTheModelKeepsSkippingIsRetriedTwiceAndThenFails(t *testing.T) {
-	r := runRestricted(t, "skip-always", "", probes.ClaudeRestrictedSandbox())
-	r.wantFailed(t, capabilities.RestrictedSandbox, "never ran")
-	if n := r.runs(t); n != 9 {
-		t.Errorf("%d restricted runs, want 9: each of the three runs tried three times", n)
+func TestARunTheModelKeepsSkippingIsInconclusiveAndNeverFailsTheHarness(t *testing.T) {
+	r := runRestricted(t, "skip-always", "")
+	for _, id := range []capabilities.ID{capabilities.RestrictedSandbox, capabilities.RestrictedAllow} {
+		l := r.line(t, id)
+		if l.Status != capabilities.NotChecked {
+			t.Errorf("%s = %+v, want not_checked: a skipped command proves nothing either way", id, l)
+		}
+		for _, want := range []string{"inconclusive", "never ran"} {
+			if !strings.Contains(strings.ToLower(l.Detail), want) {
+				t.Errorf("%s detail = %q, want it to say %q", id, l.Detail, want)
+			}
+		}
+		if _, ok, _ := capabilities.Open(r.home).Result("work", "claude", id); ok {
+			t.Errorf("%s has a stored result after an inconclusive probe", id)
+		}
+	}
+}
+
+// inHome runs the restricted probes against a store that earlier runs already filled.
+func inHome(t *testing.T, h, mode, version string, ps ...probes.Probe) restrictedRun {
+	t.Helper()
+	r := restrictedRun{home: h, log: t.TempDir(), rec: filepath.Join(t.TempDir(), "rec")}
+	if len(ps) == 0 {
+		ps = []probes.Probe{probes.ClaudeRestrictedSandbox(), probes.ClaudeRestrictedNetwork()}
+	}
+	fleet := restrictedFleet(t, mode, "", r.log, r.rec)
+	fleet.Harnesses[0].Env["FAKE_VERSION"] = version
+	runner := probes.New(h, ps...)
+	runner.Timeout = 2 * time.Minute
+	r.report, r.err = runner.Run(context.Background(), fleet, "claude")
+	return r
+}
+
+func TestAHarnessAlreadyProvenStaysProvenWhenALaterProbeIsInconclusive(t *testing.T) {
+	h := home(t)
+	first := inHome(t, h, "pass", "2.1.300")
+	ids := []capabilities.ID{capabilities.RestrictedSandbox, capabilities.RestrictedAllow}
+	before := map[capabilities.ID]capabilities.Result{}
+	for _, id := range ids {
+		if l := first.line(t, id); l.Status != capabilities.Passed {
+			t.Fatalf("%s = %+v, want the first run to pass", id, l)
+		}
+		before[id], _, _ = capabilities.Open(h).Result("work", "claude", id)
+	}
+	again := inHome(t, h, "skip-always", "2.1.300")
+	for _, id := range ids {
+		l := again.line(t, id)
+		if l.Status != capabilities.Passed || !strings.Contains(strings.ToLower(l.Detail), "inconclusive") {
+			t.Errorf("%s = %+v, want passed, with a detail that reads as inconclusive", id, l)
+		}
+		if !capabilities.Open(h).Proven("work", "claude", id) {
+			t.Errorf("%s is no longer proven after an inconclusive run", id)
+		}
+		if got, _, _ := capabilities.Open(h).Result("work", "claude", id); got != before[id] {
+			t.Errorf("%s stored result = %+v, want it untouched: %+v", id, got, before[id])
+		}
+	}
+}
+
+func TestAPassForOneHarnessVersionNeverCarriesToANewOneThatIsInconclusive(t *testing.T) {
+	h := home(t)
+	inHome(t, h, "pass", "2.1.300").line(t, capabilities.RestrictedSandbox)
+	next := inHome(t, h, "skip-always", "2.1.301")
+	for _, id := range []capabilities.ID{capabilities.RestrictedSandbox, capabilities.RestrictedAllow} {
+		if l := next.line(t, id); l.Status != capabilities.NotChecked {
+			t.Errorf("%s = %+v, want not_checked on a version never proven", id, l)
+		}
+		if capabilities.Open(h).Proven("work", "claude", id) {
+			t.Errorf("%s is proven on a version whose probe was inconclusive", id)
+		}
+	}
+}
+
+func TestAConfinementFailureOnTheCommandsThatRanFailsAtOnceEvenWhenAnotherWasSkipped(t *testing.T) {
+	r := runRestricted(t, "skip-confine-fail", "", probes.ClaudeRestrictedSandbox())
+	r.wantFailed(t, capabilities.RestrictedSandbox, "did not refuse", "shell read")
+	if n := r.runs(t); n != 3 {
+		t.Errorf("%d restricted runs, want 3: a confinement failure is not retried", n)
+	}
+}
+
+func TestAConfinementFailureOverwritesAStoredPassEvenWhenACommandWasSkipped(t *testing.T) {
+	h := home(t)
+	inHome(t, h, "pass", "2.1.300", probes.ClaudeRestrictedSandbox()).line(t, capabilities.RestrictedSandbox)
+	r := inHome(t, h, "skip-confine-fail", "2.1.300", probes.ClaudeRestrictedSandbox())
+	if l := r.line(t, capabilities.RestrictedSandbox); l.Status != capabilities.Failed {
+		t.Errorf("sandbox = %+v, want failed", l)
+	}
+}
+
+func TestANetworkLeakOnTheCommandThatRanFailsAtOnceEvenWhenTheOtherWasSkipped(t *testing.T) {
+	r := runRestricted(t, "skip-net-leak", "", probes.ClaudeRestrictedNetwork())
+	r.wantFailed(t, capabilities.RestrictedAllow, "example.com")
+	if n := r.runs(t); n != 1 {
+		t.Errorf("%d restricted runs, want 1: a leak is not retried", n)
+	}
+}
+
+func TestTheRestrictedProbesWorstCaseFitsTheDefaultRunBudget(t *testing.T) {
+	r := runRestricted(t, "skip-always", "")
+	need := 4*time.Minute + 6*time.Minute + time.Duration(r.runs(t))*defaultRestrictedRun
+	if got := probes.NewDefault(home(t)).Timeout; got < need {
+		t.Errorf("default run timeout = %v, want at least %v: the guard and fence, four judge calls and the %d restricted runs a stubborn model costs", got, need, r.runs(t))
+	}
+}
+
+// defaultRestrictedRun is the time limit of one restricted run.
+const defaultRestrictedRun = 2 * time.Minute
+
+func TestAnInconclusiveCheckAfterAStoredFailureKeepsTheStoredFailureInItsDetail(t *testing.T) {
+	h := home(t)
+	inHome(t, h, "no-sandbox", "2.1.300", probes.ClaudeRestrictedSandbox()).line(t, capabilities.RestrictedSandbox)
+	l := inHome(t, h, "skip-always", "2.1.300", probes.ClaudeRestrictedSandbox()).line(t, capabilities.RestrictedSandbox)
+	if l.Status != capabilities.Failed || !strings.Contains(l.Detail, "inconclusive") || !strings.Contains(l.Detail, "outside") {
+		t.Errorf("sandbox = %+v, want still failed, with both this check's inconclusive reason and the stored failure", l)
 	}
 }

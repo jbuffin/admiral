@@ -234,6 +234,20 @@ func answered(calls map[string]*toolCall, cmds []string) string {
 	return ""
 }
 
+// ran is the call for a command the model ran and saw a result for, or nil.
+func ran(calls map[string]*toolCall, c string) *toolCall {
+	if tc := calls[c]; tc != nil && tc.Answered {
+		return tc
+	}
+	return nil
+}
+
+// unanswered is the outcome of a run that showed no leak and no confinement failure on the commands that ran but could not check them all: it says nothing either way.
+// A model that made no tool call at all skipped every command, so it lands here too.
+func unanswered(why string) Outcome {
+	return Outcome{Inconclusive: true, Detail: "inconclusive: " + why}
+}
+
 // refusedBy names the layer whose refusal a command's result shows: the sandbox says "Operation not permitted",
 // the permission layer says a rule denied it. A path the sandbox hides from git reads as "not a git repository".
 func refusedBy(tc *toolCall) string {
@@ -345,27 +359,30 @@ func runPrompt(cmds []string, extra string) string {
 }
 
 // runRestrictedSandbox runs the temp-dir and .git runs first so that the commands run last are the confinement ones.
+// A failure of any run fails the probe; otherwise a run left inconclusive makes the probe inconclusive.
 func runRestrictedSandbox(ctx context.Context, t Target) Outcome {
 	temp, git := retryUnanswered(ctx, t, runRestrictedTemp), retryUnanswered(ctx, t, runRestrictedGit)
 	out := retryUnanswered(ctx, t, runRestrictedConfinement)
-	if !out.Passed {
-		return out
+	runs := []Outcome{out, temp, git}
+	for _, o := range runs {
+		if !o.Passed && !o.Inconclusive {
+			return o
+		}
 	}
-	if !temp.Passed {
-		return temp
-	}
-	if !git.Passed {
-		return git
+	for _, o := range runs {
+		if o.Inconclusive {
+			return o
+		}
 	}
 	out.Detail += "; temp dir ok, shared temp dir and .git closed; " + git.Detail
 	return out
 }
 
-// retryUnanswered reruns a run up to twice when the model skipped a command: that says nothing about the sandbox, and a pass still needs every command run.
-// Each run checks what landed and what leaked before it asks whether every command ran, so a run that showed a leak is never retried.
+// retryUnanswered reruns a run up to twice while it is inconclusive: a pass still needs every command run.
+// A run that showed a leak or a confinement failure is never inconclusive, so it is never retried.
 func retryUnanswered(ctx context.Context, t Target, run func(context.Context, Target) Outcome) Outcome {
 	out := run(ctx, t)
-	for i := 0; i < 2 && !out.Passed && (strings.HasPrefix(out.Detail, "the model never ran ") || strings.HasPrefix(out.Detail, "the model never saw ")); i++ {
+	for i := 0; i < 2 && out.Inconclusive; i++ {
 		out = run(ctx, t)
 	}
 	return out
@@ -418,17 +435,22 @@ func runRestrictedConfinement(ctx context.Context, t Target) Outcome {
 		return Outcome{Detail: "git push to a remote outside the clone landed"}
 	}
 	calls := toolCalls(r.out)
-	if why := answered(calls, cmds); why != "" {
-		return Outcome{Detail: why}
-	}
 	// The inside write must come from Bash itself: a Write tool call could make the file while Bash is refused outright.
-	if ins := calls[cmds[0]]; ins.ResultIsError || !exists(inside) {
+	if ins := ran(calls, cmds[0]); ins != nil && (ins.ResultIsError || !exists(inside)) {
 		return Outcome{Detail: "a write inside the clone did not land, so the run could not do its work"}
 	}
-	for i, name := range map[int]string{4: "the shell read", 6: "git -C push"} {
-		if by := refusedBy(calls[cmds[i]]); by != "the sandbox" {
-			return Outcome{Detail: fmt.Sprintf("the sandbox did not refuse %s (%s did, or nothing): %s", name, by, strconv.Quote(shorten(firstLine(calls[cmds[i]].Result), 100)))}
+	for _, i := range []int{4, 6} {
+		name := map[int]string{4: "the shell read", 6: "git -C push"}[i]
+		tc := ran(calls, cmds[i])
+		if tc == nil {
+			continue
 		}
+		if by := refusedBy(tc); by != "the sandbox" {
+			return Outcome{Detail: fmt.Sprintf("the sandbox did not refuse %s (%s did, or nothing): %s", name, by, strconv.Quote(shorten(firstLine(tc.Result), 100)))}
+		}
+	}
+	if why := answered(calls, cmds); why != "" {
+		return unanswered(why)
 	}
 	hatch := "escape hatch unused"
 	if calls["touch "+escape].Unsandboxed {
@@ -489,17 +511,21 @@ func runRestrictedTemp(ctx context.Context, t Target) Outcome {
 		return Outcome{Detail: "a write into " + shared + " landed"}
 	}
 	calls := toolCalls(r.out)
-	if why := answered(calls, cmds); why != "" {
-		return Outcome{Detail: why}
-	}
 	ownReal, _ := filepath.EvalSymlinks(ownDir)
-	if calls[cmds[0]].ResultIsError || !strings.Contains(calls[cmds[0]].Result, "TMP="+ownDir) || !exists(filepath.Join(ownReal, "own-"+r.nonce)) {
-		return Outcome{Detail: "the ship's own temp dir did not work: $TMPDIR was not " + ownDir + " or a write there did not land: " + strconv.Quote(shorten(firstLine(calls[cmds[0]].Result), 100))}
+	if tc := ran(calls, cmds[0]); tc != nil && (tc.ResultIsError || !strings.Contains(tc.Result, "TMP="+ownDir) || !exists(filepath.Join(ownReal, "own-"+r.nonce))) {
+		return Outcome{Detail: "the ship's own temp dir did not work: $TMPDIR was not " + ownDir + " or a write there did not land: " + strconv.Quote(shorten(firstLine(tc.Result), 100))}
 	}
 	for _, c := range cmds[1:] {
-		if by := refusedBy(calls[c]); by != "the sandbox" {
-			return Outcome{Detail: fmt.Sprintf("the sandbox did not refuse %s (%s did, or nothing): %s", c, by, strconv.Quote(shorten(firstLine(calls[c].Result), 100)))}
+		tc := ran(calls, c)
+		if tc == nil {
+			continue
 		}
+		if by := refusedBy(tc); by != "the sandbox" {
+			return Outcome{Detail: fmt.Sprintf("the sandbox did not refuse %s (%s did, or nothing): %s", c, by, strconv.Quote(shorten(firstLine(tc.Result), 100)))}
+		}
+	}
+	if why := answered(calls, cmds); why != "" {
+		return unanswered(why)
 	}
 	return Outcome{Passed: true}
 }
@@ -552,31 +578,44 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 		return Outcome{Detail: "a Write changed .git/config (through a link, a hard link or a case variant)"}
 	}
 	calls := toolCalls(r.out)
-	if why := answered(calls, cmds); why != "" {
-		return Outcome{Detail: why}
-	}
+	// A write that failed for another reason (the file was not read first) never reached the deny, so the model did not run it.
+	var pending string
 	// The Write to the hard link's name replaces the link rather than writing through it, so only the config staying intact gates it.
 	for _, c := range cmds[:6] {
-		if strings.HasSuffix(c, "hard-"+r.nonce) {
+		tc := ran(calls, c)
+		if tc == nil || strings.HasSuffix(c, "hard-"+r.nonce) {
 			continue
 		}
-		switch by := refusedBy(calls[c]); by {
+		switch by := refusedBy(tc); by {
 		case "the sandbox", "the permission rules":
 		case "nothing":
 			return Outcome{Detail: "the Write tool did not report a refusal for " + strings.TrimPrefix(c, "WRITE: ")}
 		default:
-			// An error that is no denial (the file was not read first) never reached the deny, so the model did not run the write.
-			return Outcome{Detail: "the model never ran " + c + ": its write failed for another reason: " + strconv.Quote(shorten(firstLine(calls[c].Result), 100))}
+			if pending == "" {
+				pending = "the model never ran " + c + ": its write failed for another reason: " + strconv.Quote(shorten(firstLine(tc.Result), 100))
+			}
 		}
 	}
 	for _, c := range cmds[6:8] {
-		if by := refusedBy(calls[c]); by != "the sandbox" {
-			return Outcome{Detail: fmt.Sprintf("the sandbox did not refuse %s (%s did, or nothing): %s", c, by, strconv.Quote(shorten(firstLine(calls[c].Result), 100)))}
+		tc := ran(calls, c)
+		if tc == nil {
+			continue
+		}
+		if by := refusedBy(tc); by != "the sandbox" {
+			return Outcome{Detail: fmt.Sprintf("the sandbox did not refuse %s (%s did, or nothing): %s", c, by, strconv.Quote(shorten(firstLine(tc.Result), 100)))}
 		}
 	}
-	subject, err := exec.CommandContext(ctx, "git", "-C", r.clone, "log", "-1", "--format=%s").Output()
-	if err != nil || strings.TrimSpace(string(subject)) != "probe-"+r.nonce {
-		return Outcome{Detail: "git could not commit in the clone under the sandbox: " + strconv.Quote(shorten(firstLine(calls[cmds[8]].Result), 200))}
+	if tc := ran(calls, cmds[8]); tc != nil {
+		subject, err := exec.CommandContext(ctx, "git", "-C", r.clone, "log", "-1", "--format=%s").Output()
+		if err != nil || strings.TrimSpace(string(subject)) != "probe-"+r.nonce {
+			return Outcome{Detail: "git could not commit in the clone under the sandbox: " + strconv.Quote(shorten(firstLine(tc.Result), 200))}
+		}
+	}
+	if why := answered(calls, cmds); why != "" {
+		return unanswered(why)
+	}
+	if pending != "" {
+		return unanswered(pending)
 	}
 	return Outcome{Passed: true, Detail: "git committed in the clone"}
 }
@@ -596,14 +635,15 @@ func runRestrictedNetwork(ctx context.Context, t Target) Outcome {
 		return out
 	}
 	calls := toolCalls(r.out)
-	if why := answered(calls, []string{"curl -sS -f -o " + allowed + " https://registry.npmjs.org/", "curl -sS -f -o " + blocked + " https://example.com/"}); why != "" {
-		return Outcome{Detail: why}
-	}
-	switch {
-	case nonEmpty(blocked):
+	cmds := []string{"curl -sS -f -o " + allowed + " https://registry.npmjs.org/", "curl -sS -f -o " + blocked + " https://example.com/"}
+	if nonEmpty(blocked) {
 		return Outcome{Detail: "curl reached example.com, which is not on the allowlist"}
-	case !nonEmpty(allowed):
+	}
+	if ran(calls, cmds[0]) != nil && !nonEmpty(allowed) {
 		return Outcome{Detail: "curl could not reach registry.npmjs.org, so the run has no network"}
+	}
+	if why := answered(calls, cmds); why != "" {
+		return unanswered(why)
 	}
 	return Outcome{Passed: true, Detail: "curl reached registry.npmjs.org and was refused example.com"}
 }

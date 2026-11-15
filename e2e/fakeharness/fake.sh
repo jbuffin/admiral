@@ -28,7 +28,10 @@
 #                  fails), no-tool (init only), tmp-open (a touch under /tmp/claude-* lands), git-open (a
 #                  WRITE: to .git lands), no-commit (git commit is refused), skip-once (the first line of the
 #                  first run is left out), skip-leak (skip-once plus a landed write into /tmp/claude-*) or
-#                  unread-once (the first WRITE: fails as an unread file does, with no denial). A `WRITE: <path>`
+#                  unread-once (the first WRITE: fails as an unread file does, with no denial), skip-always (the
+#                  first line of every run is left out), skip-confine-fail (the first line of every confinement run
+#                  is left out and its shell read is not refused) or skip-net-leak (the first line of every network
+#                  run is left out and the blocked curl lands). A `WRITE: <path>`
 #                  line is a Write tool call. Each run appends a line to $FAKE_RECORD_DIR/restricted-runs.
 #
 #   codex exec --json
@@ -582,6 +585,8 @@ if [ -n "$restrictedrun" ]; then
   skipfirst="" leak=""
   case $mode in
   skip-always) skipfirst=1 ;;
+  skip-confine-fail) case $prompt in *dangerouslyDisableSandbox*) skipfirst=1 ;; esac ;;
+  skip-net-leak) case $prompt in *curl\ *) skipfirst=1 ;; esac ;;
   skip-once | skip-leak)
     if [ ! -e "$FAKE_RECORD_DIR/skipped" ]; then
       : >"$FAKE_RECORD_DIR/skipped"
@@ -638,6 +643,9 @@ if [ -n "$restrictedrun" ]; then
       ;;
     esac
     [ "$mode" = no-sandbox ] && blocked=""
+    # the shell read is let through but prints nothing, so only the refusal check can see it
+    [ "$mode" = skip-confine-fail ] && case $cmd in sh\ -c\ *) blocked="" ;; esac
+    [ "$mode" = skip-net-leak ] && case $cmd in *example.com*) blocked="" ;; esac
     if [ "$mode" = tmp-open ] || [ -n "$leak" ]; then case $path in /tmp/claude-*) blocked="" ;; esac; fi
     jq -cn --arg id "toolu_$n" --arg c "$cmd" --argjson u "$unsandboxed" \
       '{type: "assistant", message: {content: [{type: "tool_use", id: $id, name: "Bash", input: ({command: $c} + (if $u then {dangerouslyDisableSandbox: true} else {} end))}]}}'
@@ -658,6 +666,7 @@ if [ -n "$restrictedrun" ]; then
         done
         [ -n "$out" ] && echo '{}' >"$out"
         ;;
+      sh\ -c\ *) [ "$mode" = skip-confine-fail ] || result=$(sh -c "$cmd" 2>&1) ;;
       *) result=$(sh -c "$cmd" 2>&1) ;;
       esac
     fi
