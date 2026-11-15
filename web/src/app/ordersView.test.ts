@@ -678,6 +678,7 @@ describe('stack groups in a view tab', () => {
     expect(g.row.order).toMatchObject({ id: S, url: S, title: 'Stack #7' });
     expect(repoName(g.row.order)).toBe('acme/api');
     expect(g.row.key).toBe(`gh/${S}`);
+    expect(orderRef(g.row.order)).toBe('acme/api');
     expect(g.row.source).toBe('gh');
   });
 

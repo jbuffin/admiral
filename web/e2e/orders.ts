@@ -46,7 +46,7 @@ const MINE: Item[] = [
   { number: 12, title: 'Review the docs sweep', author: 'fake-viewer', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE', reviewed: true } },
 ];
 
-/** For you: Needs you holds the cache review, the rate limiter, the token lookups and the signing keys; the other four wait. */
+/** For you: Needs you holds the cache review, the rate limiter, the token lookups, the signing keys and the three layers of the review-requested stack; the other four wait. */
 export const FOR_YOU = { needsYou: 7, waiting: 4, total: 11 };
 
 function node(i: Item) {
@@ -352,12 +352,12 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(stackRow).toHaveCount(1);
   await expect(stackRow).toContainText('3 PRs here');
   await expect(stackRow).not.toContainText('not in this view');
+  await expect(stackRow).not.toContainText('acme/api #');
   await expect(stackRow.locator('.orow-toggle')).toHaveCount(1);
   if (!phone) await expect(stackRow.locator('svg.orow-mark.stack')).toHaveCount(1);
   await expect(stackToggle('Expand')).toHaveAttribute('aria-expanded', 'false');
   await expectTouchTarget(stackToggle('Expand'), 44);
   await expect(main.getByText(bottom, { exact: true })).toBeHidden();
-  // The stack row has no arrow and no ship pill in this unit; the stack launch decides when it shows one.
   await expect(stackRow.getByRole('button', { name: /^Launch / })).toHaveCount(0);
   await expect(stackRow.getByRole('button', { name: /Open ship$/ })).toHaveCount(0);
 

@@ -1,5 +1,5 @@
 import type { Order, OrderView, Ship, Source } from './api';
-import { needsYouAgain } from './moored';
+import { isStackUrl, needsYouAgain } from './moored';
 import { shipAge } from './shipList';
 
 export const FOR_YOU = 'for-you';
@@ -314,6 +314,8 @@ export function repoName(o: Order): string {
 }
 
 export function orderRef(o: Order): string {
+  // A GitHub stack's number is its title; the reference names only the repo.
+  if (isStackUrl(o.url)) return repoName(o);
   const num = /#(\d+)$/.exec(o.id)?.[1] ?? /\/(\d+)\/?$/.exec(o.url ?? '')?.[1];
   const repo = repoName(o);
   return repo && num ? `${repo} #${num}` : repo || o.id;
