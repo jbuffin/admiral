@@ -240,6 +240,7 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 			Repo: filepath.Base(r.Checkout), Status: StatusMoored,
 			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, Link: r.Link, Titled: true, Via: r.Via, Chat: r.Chat, Routine: r.Routine, Commitment: r.Commitment, Launched: r.Launched, PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, Waiting: polls[i].waiting, NoResume: !moor.ValidResume(r.Resume),
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}}
+		sh.Fix = polls[i].fix
 		sh.StackReady, sh.ReadyUpTo = moor.StackReady(prs[i])
 		sh.MergeMethod = methods[i]
 		if !polls[i].at.IsZero() {

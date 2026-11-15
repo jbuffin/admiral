@@ -55,8 +55,9 @@ func View(url string, st Status, found bool) PR {
 	if !found {
 		return PR{URL: url, State: "CLOSED"}
 	}
+	p, _ := ProblemsOf(url, st)
 	return PR{URL: url, State: st.State, Review: st.Review, Checks: st.Checks, Mergeable: st.Mergeable, Author: st.Author,
-		Conflicts: st.State == "OPEN" && st.Mergeable == "CONFLICTING", Ready: st.Ready()}
+		Conflicts: p.Conflicts, Behind: p.Behind, FailingChecks: p.FailingChecks, Ready: st.Ready()}
 }
 
 // Ready says GitHub would let the engineer press Merge now: GitHub's mergeStateStatus already holds the base's

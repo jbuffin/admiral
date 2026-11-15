@@ -71,6 +71,8 @@ type Ship struct {
 	// PRs are a moored ship's, or the ones a running ship carries; MooredAt is set only on a moored ship.
 	PRs      []moor.PR `json:"prs,omitempty"`
 	MooredAt string    `json:"moored_at,omitempty"`
+	// Fix is the Fix PR / Fix stack a moored ship is offered while a merge problem stands on a PR it authored.
+	Fix *FixOffer `json:"fix,omitempty"`
 	// PolledAt is the last poll that answered; Stale says the latest one failed.
 	PolledAt string `json:"polled_at,omitempty"`
 	Stale    bool   `json:"stale,omitempty"`
@@ -327,6 +329,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/unfollow", s.serveUnfollow)
 	mux.HandleFunc("POST /api/ships/{session}/wake", s.serveWake)
 	mux.HandleFunc("POST /api/ships/{session}/answer-review", s.serveAnswerReview)
+	mux.HandleFunc("POST /api/ships/{session}/fix", s.serveFix)
 	mux.HandleFunc("POST /api/ships/{session}/next", s.serveNext)
 	mux.HandleFunc("POST /api/ships/{session}/rereview", s.serveRereview)
 	mux.HandleFunc("GET /api/outcomes", s.serveOutcomes)
