@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { addGitHubSource, moorFromTheLivePRTab, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, noAnswerAllForUnstackedPRs, noAnswerAllWhenAPRHasNoFeedback, noAnswerReviewOnARunningShip, noAnswerReviewWithoutNewFeedback, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsOfferCommodoreOnAShiplessPR, wakeAndStopWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, stackMismatchInThePRTab, staleMergeTokenInThePRTab, unfollowFromThePRTab, wakeFromTheShell, wakeFromTheShipView, watchPage, moorRefusedWhenThePRClosed, plainReturnSheetStaysPlain, returnToPortCleansUp, returnToPortMoors, stopForGoodEnds, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, reviewedStackIsReReviewedFromPeek, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime, stackLinkFailsInThePRTab } from './shell';
+import { addGitHubSource, CONFLICTED_PR, fixFromTheOrdersRow, fixPRFromThePRTab, fixStackFromThePRTab, noFixForAMergeablePR, moorFromTheLivePRTab, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, noAnswerAllForUnstackedPRs, noAnswerAllWhenAPRHasNoFeedback, noAnswerReviewOnARunningShip, noAnswerReviewWithoutNewFeedback, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsOfferCommodoreOnAShiplessPR, wakeAndStopWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, stackMismatchInThePRTab, staleMergeTokenInThePRTab, unfollowFromThePRTab, wakeFromTheShell, wakeFromTheShipView, watchPage, moorRefusedWhenThePRClosed, plainReturnSheetStaysPlain, returnToPortCleansUp, returnToPortMoors, stopForGoodEnds, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, reviewedStackIsReReviewedFromPeek, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime, stackLinkFailsInThePRTab } from './shell';
 
 test('a moored ship shows in its own group with chips from the poll, and Don\'t follow reviews and Dismiss take it out', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -401,6 +401,61 @@ test('a live ship carrying a ready PR says on its PR tab that Merge needs a moor
   const watch = watchPage(page, admiral.url);
 
   await moorFromTheLivePRTab(page, admiral);
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('a moored ship whose PR conflicts shows Fix PR in its PR tab, and the sheet shows the command and relaunches the ship with it', { tag: '@critical' }, async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  addWakeReviewers(admiral, 'zulu', ['alice']);
+  await admiral.start({ env: answeringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await fixPRFromThePRTab(page, admiral, { phone: false });
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('a stack with a PR behind its base and one failing a check shows Fix stack in place of the answer buttons, and wakes the ship on the lowest PR', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  addWakeReviewers(admiral, 'zulu', ['alice']);
+  await admiral.start({ env: answeringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await fixStackFromThePRTab(page, admiral, { phone: false });
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('a conflicting PR a moored ship carries shows Fix PR on its Orders row, in Needs you', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  seedMyPRs(admiral, [CONFLICTED_PR]);
+  await admiral.start({ env: answeringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await fixFromTheOrdersRow(page, admiral, { phone: false });
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('a mergeable PR shows no Fix PR', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: answeringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await noFixForAMergeablePR(page, admiral);
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

@@ -1,4 +1,4 @@
-import type { MooredPR, PRStack, Ship, ShipStatus, StackShape } from './api';
+import type { FixOffer, MooredPR, PRStack, Ship, ShipStatus, StackShape } from './api';
 import { isStackUrl, prChips, type ChipTone } from './moored';
 
 export type DetailTone = ChipTone | 'rev';
@@ -91,7 +91,7 @@ export function chooseStackDetail(
 }
 
 /** Whether the stack bar offers Answer all reviews. The pushed list decides when feedback clears, ahead of the detail's refresh. */
-export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined, answerAll: string | undefined): boolean {
+export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined, answerAll: string | undefined, _fix?: FixOffer): boolean {
   const live = open(prs);
   return !!stack && !!answerAll && live.length > 1 && live.every((p) => (p.feedback ?? 0) > 0);
 }
@@ -146,3 +146,12 @@ export function tabOrder(carried: MooredPR[], shape: StackShape | null, stack: P
   }
   return orderPRs(carried, stack);
 }
+
+/** The Fix button's label: Fix PR for one open PR the ship opened, Fix stack for more than one. */
+export const fixLabel = (_ship: Pick<Ship, 'prs'>): 'Fix PR' | 'Fix stack' => 'Fix PR';
+
+/** The fix bar's line naming what keeps the PRs from merging, from the served offer; '' when there is none. */
+export const fixLine = (_fix: FixOffer | undefined): string => '';
+
+/** Whether a PR's feedback bar offers Answer review: the ship's Fix round takes the feedback with it, so Fix replaces it. */
+export const showAnswerReview = (pr: MooredPR, _fix: FixOffer | undefined): boolean => feedbackBarText(pr) !== '';

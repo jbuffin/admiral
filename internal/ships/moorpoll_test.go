@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -319,7 +320,7 @@ func TestPollMooredServesTheChipsOnTheShip(t *testing.T) {
 		{URL: prNine, State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", Ready: true},
 	}
 	for i, w := range want {
-		if sh.PRs[i] != w {
+		if !reflect.DeepEqual(sh.PRs[i], w) {
 			t.Errorf("PR %d = %+v, want %+v", i, sh.PRs[i], w)
 		}
 	}

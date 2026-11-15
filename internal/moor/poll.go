@@ -38,6 +38,9 @@ type PR struct {
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
 	Ready     bool   `json:"ready"`
+	// Behind and FailingChecks are the PR's merge problems besides a conflict.
+	Behind        bool     `json:"behind,omitempty"`
+	FailingChecks []string `json:"failing_checks,omitempty"`
 	// Feedback counts the PR's waking events past its cursor; Answer is the prompt Answer review sends for it.
 	Feedback  int    `json:"feedback,omitempty"`
 	Answer    string `json:"answer,omitempty"`

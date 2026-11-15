@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { MooredPR, Ship, StackShape } from './api';
-import { actingWhile, chooseStackDetail, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackedPRs, reviewMark, reviewStackBar, mergeFor, stackBarAction, stackBarLine, tabOrder } from './prTab';
+import type { FixOffer, MooredPR, Ship, StackShape } from './api';
+import { actingWhile, chooseStackDetail, fixLabel, fixLine, showAnswerReview, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackedPRs, reviewMark, reviewStackBar, mergeFor, stackBarAction, stackBarLine, tabOrder } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -455,5 +455,76 @@ describe('prSummary for a reviewing ship', () => {
 
   it('counts only open reviewed PRs', () => {
     expect(prSummary([rev(7, { state: 'MERGED' }), rev(8)])).toBe('Reviewing 1 PR by @dana · waiting on the author');
+  });
+});
+
+describe('fixLabel', () => {
+  it('is Fix PR for one open PR the ship opened', () => {
+    expect(fixLabel({ prs: [pr(7)] })).toBe('Fix PR');
+    expect(fixLabel({ prs: [pr(7), pr(8, { state: 'MERGED' })] })).toBe('Fix PR');
+  });
+
+  it('is Fix stack for more than one open PR the ship opened', () => {
+    expect(fixLabel({ prs: [pr(7), pr(8)] })).toBe('Fix stack');
+  });
+
+  it('does not count a PR the ship only reviews', () => {
+    expect(fixLabel({ prs: [pr(7), pr(8, { reviewing: true })] })).toBe('Fix PR');
+  });
+});
+
+describe('fixLine', () => {
+  const offer = (...problems: FixOffer['problems']): FixOffer => ({ pr: URL(7), command: '/commodore resume run-7 feedback round 1 on ' + URL(7), problems });
+
+  it('says what a single PR has, each problem in words', () => {
+    expect(fixLine(offer({ pr: URL(7), conflicts: true }))).toBe('This PR has merge conflicts.');
+    expect(fixLine(offer({ pr: URL(7), behind: true }))).toBe('This PR is behind its base.');
+    expect(fixLine(offer({ pr: URL(7), failing_checks: ['build'] }))).toBe('This PR has failing checks: build.');
+  });
+
+  it('lists failing checks by name and joins problems with commas and a final and', () => {
+    expect(fixLine(offer({ pr: URL(7), failing_checks: ['build', 'lint'] }))).toBe('This PR has failing checks: build, lint.');
+    expect(fixLine(offer({ pr: URL(7), conflicts: true, behind: true }))).toBe('This PR has merge conflicts and is behind its base.');
+    expect(fixLine(offer({ pr: URL(7), conflicts: true, behind: true, failing_checks: ['build'] }))).toBe('This PR has merge conflicts, is behind its base and has failing checks: build.');
+  });
+
+  it('names each PR of a stack with its problems, joined by a middle dot', () => {
+    expect(fixLine(offer({ pr: URL(7), behind: true }, { pr: URL(8), failing_checks: ['test'] }))).toBe('#7 is behind its base · #8 has failing checks: test');
+  });
+
+  it('is empty without an offer or without problems', () => {
+    expect(fixLine(undefined)).toBe('');
+    expect(fixLine(offer())).toBe('');
+  });
+});
+
+describe('showAnswerReview', () => {
+  const answerable = pr(7, { feedback: 1, answer: '/commodore answer' });
+  const fix: FixOffer = { pr: URL(7), command: 'c', problems: [{ pr: URL(7), conflicts: true }] };
+
+  it('shows for a PR with feedback while no Fix is offered', () => {
+    expect(showAnswerReview(answerable, undefined)).toBe(true);
+  });
+
+  it('hides while the ship offers Fix: the Fix round carries the feedback', () => {
+    expect(showAnswerReview(answerable, fix)).toBe(false);
+  });
+
+  it('hides for a PR with no feedback bar', () => {
+    expect(showAnswerReview(pr(7), undefined)).toBe(false);
+  });
+});
+
+describe('showAnswerAll with a Fix offer', () => {
+  const stack = { number: 12, size: 2, base: 'main', url: 'https://github.com/acme/api/stack/12', ...entries(7, 8) };
+  const fb = (n: number) => pr(n, { feedback: 1, answer: `a${n}` });
+  const fix: FixOffer = { pr: URL(7), command: 'c', problems: [{ pr: URL(7), behind: true }] };
+
+  it('hides while the ship offers Fix stack', () => {
+    expect(showAnswerAll([fb(7), fb(8)], stack, '/commodore stack', fix)).toBe(false);
+  });
+
+  it('still shows without a Fix offer', () => {
+    expect(showAnswerAll([fb(7), fb(8)], stack, '/commodore stack', undefined)).toBe(true);
   });
 });
