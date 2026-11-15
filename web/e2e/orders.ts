@@ -210,7 +210,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
     await expect(page.getByRole('combobox')).toHaveCount(0);
   } else {
     const filter = page.getByPlaceholder('Filter by title, repo, label');
-    await expectTouchTarget(filter, 44);
+    await expectTouchTarget(page.locator('label.orders-filter'), 44);
     await expectTouchTarget(page.getByRole('combobox', { name: /repo/i }), 44);
     await filter.fill('DOCS');
     await expect(main.getByRole('listitem')).toHaveCount(1);
