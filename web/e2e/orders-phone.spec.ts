@@ -10,7 +10,7 @@ test('on the phone, Orders is a tab with For you, view tabs and Refresh now, the
   await page.getByRole('tab', { name: /^For you/ }).tap();
   const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review the cache layer' });
   const rowBox = (await row.boundingBox())!;
-  const titleBox = (await row.locator('.orow-title').boundingBox())!;
+  const titleBox = (await row.locator('.orow-main').boundingBox())!;
   const arrowBox = (await row.getByRole('button', { name: /^Launch / }).boundingBox())!;
   const arrowMid = arrowBox.y + arrowBox.height / 2;
   expect(rowBox.height).toBeLessThan(80);
