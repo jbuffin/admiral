@@ -44,9 +44,11 @@ const Command = ({ name, url }: { name: string; url: string }) => (
   </>
 );
 
-/** The confirm sheet behind the PR tab's Re-review buttons. */
-export function ReReviewSheet({ ship, prUrl, onClose }: { ship: Ship; prUrl?: string; onClose: () => void }) {
-  const { url, label, line } = reReviewOf(ship, prUrl);
+/** The confirm sheet behind the PR tab's Re-review buttons; `sendUrl` is the URL the order row picked when no PR of the ship is responded. */
+export function ReReviewSheet({ ship, prUrl, sendUrl, onClose }: { ship: Ship; prUrl?: string; sendUrl?: string; onClose: () => void }) {
+  const of = reReviewOf(ship, prUrl);
+  const { label, line } = of;
+  const url = sendUrl ?? of.url;
   const rr = useReReview(ship, url, onClose);
   return (
     <Sheet label={label} kind="launch-backdrop stop-backdrop" onClose={() => !rr.busy && onClose()}>

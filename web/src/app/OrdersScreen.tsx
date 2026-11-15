@@ -3,6 +3,10 @@ import { activeFleet, fleetSearch } from './fleets';
 import { Icon } from './Icon';
 import { OrderPane } from './OrderPane';
 import { selectedRow, selectionGone, withSelectedOrder } from './orderDetail';
+import { AnswerReviewSheet } from './AnswerReview';
+import { orderRowAction, type RowAction } from './moored';
+import { ReReviewSheet } from './ReReview';
+import type { MooredPR, Ship } from './api';
 import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
@@ -10,13 +14,13 @@ import { FOR_YOU, filterRows, forYou, headerTime, launchRef, orderRef, refreshed
 import { refreshSource } from './api';
 import { go, loc, shipPath } from './router';
 import { emptyLine, surfaceById } from './surfaces';
-import { sources } from './shipsLink';
+import { ships, sources } from './shipsLink';
 import { useNow } from './useNow';
 
 /** The Needs you count the nav carries; zero for no fleet or no GitHub source. */
 export function needsYouCount(): number {
   const fleet = activeFleet.value;
-  return fleet ? forYou(sourcesForFleet(sources.value, fleet.key), Date.now()).needsYou.length : 0;
+  return fleet ? forYou(sourcesForFleet(sources.value, fleet.key), Date.now(), ships.value).needsYou.length : 0;
 }
 
 export function NeedsYouBadge() {
@@ -53,16 +57,31 @@ interface RowProps {
   selected: boolean;
   onOpen: (r: OrderRow) => void;
   onLaunch: (o: OrderRef) => void;
+  onAgain: (ship: Ship, again: NonNullable<Extract<RowAction, { kind: 'ship' }>['again']>) => void;
 }
 
-function Row({ row, phone, muted, selected, onOpen, onLaunch }: RowProps) {
+function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain }: RowProps) {
   const o = row.order;
+  const act = orderRowAction(ships.value, o);
   const state = row.state ? <span class={`orow-state${row.needsYou ? ' needs' : ''}`}>{row.state}</span> : null;
-  const arrow = (
-    <button type="button" class="orow-go" aria-label={`Launch ${o.title}`} onClick={() => onLaunch(launchRef(row))}>
-      <Icon name="arrow" size={18} />
-    </button>
-  );
+  const arrow =
+    act.kind === 'launch' ? (
+      <button type="button" class="orow-go" aria-label={`Launch ${o.title}`} onClick={() => onLaunch(launchRef(row))}>
+        <Icon name="arrow" size={18} />
+      </button>
+    ) : (
+      <>
+        {act.again ? (
+          <button type="button" class="btn orow-again" onClick={() => onAgain(act.ship, act.again!)}>
+            {act.again.kind === 'rereview' ? 'Re-review' : 'Wake'}
+          </button>
+        ) : null}
+        <button type="button" class={`orow-pill${act.needsYou ? ' needs' : ''}`} aria-label={`${act.ship.name}, ${act.word}. Open ship`} onClick={() => go(shipPath(act.ship.session), fleetSearch.value)}>
+          <span class="orow-pill-name">{act.ship.name}</span>
+          <span class="orow-pill-word">{act.word}</span>
+        </button>
+      </>
+    );
   if (phone) {
     return (
       <li class={`orow-phone${selected ? ' selected' : ''}`}>
@@ -103,7 +122,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch }: RowProps) {
   );
 }
 
-function Group({ id, title, rows, phone, muted, chosen, onOpen, onLaunch }: { id: string; title: string; rows: OrderRow[]; phone: boolean; muted: boolean; chosen?: string; onOpen: (r: OrderRow) => void; onLaunch: (o: OrderRef) => void }) {
+function Group({ id, title, rows, phone, muted, chosen, onOpen, onLaunch, onAgain }: { id: string; title: string; rows: OrderRow[]; phone: boolean; muted: boolean; chosen?: string; onOpen: (r: OrderRow) => void; onLaunch: (o: OrderRef) => void; onAgain: RowProps['onAgain'] }) {
   if (rows.length === 0) return null;
   return (
     <section class="ogroup" aria-labelledby={id}>
@@ -113,7 +132,7 @@ function Group({ id, title, rows, phone, muted, chosen, onOpen, onLaunch }: { id
       </h2>
       <ul class="ship-list">
         {rows.map((r) => (
-          <Row key={r.key} row={r} phone={phone} muted={muted} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} />
+          <Row key={r.key} row={r} phone={phone} muted={muted} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} />
         ))}
       </ul>
     </section>
@@ -130,6 +149,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [launching, setLaunching] = useState<OrderRef | null>(null);
+  const [again, setAgain] = useState<{ ship: Ship; kind: 'rereview'; url: string } | { ship: Ship; kind: 'wake'; pr: MooredPR } | null>(null);
   const list = fleet ? sourcesForFleet(sources.value, fleet.key) : [];
   const all = tabs(list);
   const id = all.some((t) => t.id === tabOf()) ? tabOf() : FOR_YOU;
@@ -151,7 +171,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
     setBusy(false);
     if (!r.ok) setError(r.error);
   };
-  const rows = viewRows(list, id, now);
+  const rows = viewRows(list, id, now, ships.value);
   const repos = repoOptions(rows);
   const shown = filterRows(rows, {
     query,
@@ -161,7 +181,12 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const needs = shown.filter((r) => r.needsYou);
   const waiting = shown.filter((r) => !r.needsYou);
   const onLaunch = (o: OrderRef) => setLaunching(o);
-  const selected = selectedRow(list, id, loc.value.search, now);
+  const onAgain: RowProps['onAgain'] = (ship, a) => {
+    if (a.kind === 'rereview') return setAgain({ ship, kind: 'rereview', url: a.url });
+    const pr = (ship.prs ?? []).find((p) => p.url === a.pr);
+    if (pr) setAgain({ ship, kind: 'wake', pr });
+  };
+  const selected = selectedRow(list, id, loc.value.search, now, ships.value);
   const chosen = selected?.key;
   const onOpen = (r: OrderRow) => go('/app/orders', withSelectedOrder(loc.value.search, r.key));
   const close = (restoreFocus = false) => {
@@ -171,7 +196,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
     row?.focus();
   };
   const pane = !!selected;
-  const gone = selectionGone(list, id, loc.value.search, now);
+  const gone = selectionGone(list, id, loc.value.search, now, ships.value);
   useEffect(() => {
     if (gone) close();
   }, [gone]);
@@ -250,13 +275,13 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
           ))}
           {id === FOR_YOU ? (
             <>
-              <Group id="g-needs" title="Needs you" rows={needs} phone={phone} muted={false} chosen={chosen} onOpen={onOpen} onLaunch={onLaunch} />
-              <Group id="g-waiting" title="Waiting on others" rows={waiting} phone={phone} muted chosen={chosen} onOpen={onOpen} onLaunch={onLaunch} />
+              <Group id="g-needs" title="Needs you" rows={needs} phone={phone} muted={false} chosen={chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} />
+              <Group id="g-waiting" title="Waiting on others" rows={waiting} phone={phone} muted chosen={chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} />
             </>
           ) : (
             <ul class="ship-list">
               {shown.map((r) => (
-                <Row key={r.key} row={r} phone={phone} muted={false} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} />
+                <Row key={r.key} row={r} phone={phone} muted={false} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} />
               ))}
             </ul>
           )}
@@ -273,6 +298,8 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
           <OrderPane key={selected.key} row={selected} sources={list} now={now} heading={false} onLaunch={onLaunch} />
         </Sheet>
       ) : null}
+      {again?.kind === 'rereview' ? <ReReviewSheet ship={again.ship} sendUrl={again.url} onClose={() => setAgain(null)} /> : null}
+      {again?.kind === 'wake' ? <AnswerReviewSheet ship={again.ship} pr={again.pr} onClose={() => setAgain(null)} onBusy={() => {}} /> : null}
       {launching && fleet ? <LaunchForm fleet={fleet} order={launching} onClose={() => setLaunching(null)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null}
     </>
   );

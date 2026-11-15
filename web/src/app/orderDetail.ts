@@ -1,4 +1,4 @@
-import type { Order, Source } from './api';
+import type { Order, Ship, Source } from './api';
 import type { Campaign } from './campaign';
 import { forYou, identity, orderRef, viewRows, type OrderRow } from './ordersView';
 import { shipAge } from './shipList';
@@ -60,12 +60,12 @@ export function withSelectedOrder(search: string, key: string | null): string {
 }
 
 /** The row the URL selects in the tab's view; undefined once a refresh removed it. */
-export function selectedRow(sources: Source[], tabId: string, search: string, now: number): OrderRow | undefined {
+export function selectedRow(sources: Source[], tabId: string, search: string, now: number, ships: Ship[] = []): OrderRow | undefined {
   const key = selectedOrderOf(search);
-  return key ? viewRows(sources, tabId, now).find((r) => r.key === key) : undefined;
+  return key ? viewRows(sources, tabId, now, ships).find((r) => r.key === key) : undefined;
 }
 
 /** True once sources have loaded and the URL's order is no longer in the tab; while they are still empty a reload keeps its selection. */
-export function selectionGone(sources: Source[], tabId: string, search: string, now: number): boolean {
-  return sources.length > 0 && selectedOrderOf(search) !== null && !selectedRow(sources, tabId, search, now);
+export function selectionGone(sources: Source[], tabId: string, search: string, now: number, ships: Ship[] = []): boolean {
+  return sources.length > 0 && selectedOrderOf(search) !== null && !selectedRow(sources, tabId, search, now, ships);
 }

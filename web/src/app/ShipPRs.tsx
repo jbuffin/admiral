@@ -9,6 +9,7 @@ import { Sheet, useCancelFocus } from './Sheet';
 import { OpenPRs } from './OpenPRs';
 import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, stackBarAction, stackBarLine, tabOrder } from './prTab';
 import { MOOR_LINE, moorSheetParts, offersMoor, reReviewPlace, reviews, staleNote } from './moored';
+import { AnswerReviewSheet } from './AnswerReview';
 import { ReReviewSheet } from './ReReview';
 import { PRSections } from './PRDetailSections';
 
@@ -188,51 +189,21 @@ function PRHeader({ ship, url, detail, failed }: { ship: Ship; url: string; deta
 /** The feedback bar of a moored PR with new feedback; Answer review shows the exact command in a sheet and starts the round on confirm. */
 function FeedbackBar({ ship, pr, locked, onBusy }: { ship: Ship; pr: MooredPR; locked: boolean; onBusy: (busy: boolean) => void }) {
   const [asking, setAsking] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
-  useCancelFocus(asking);
-  const run = async () => {
-    setSending(true);
-    onBusy(true);
-    setError('');
-    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/answer-review`, { pr: pr.url });
-    setSending(false);
-    if (!r.ok) {
-      onBusy(false);
-      return setError(r.error);
-    }
-    // The bar stays off until the ships push removes it, so a second tap cannot meet the live-ship error.
-    setSent(true);
-    setAsking(false);
-  };
+  const [busy, setBusy] = useState(false);
   return (
     <div class="feedback-bar">
       <span class="fb-text">{feedbackBarText(pr)}</span>
-      <Button
-        label="Answer review"
-        variant="primary"
-        pending={['ship', ship.session, 'answer-review', pr.url]}
-        disabled={locked || sent}
-        onClick={() => {
-          setError('');
-          setAsking(true);
-        }}
-      />
+      <Button label="Answer review" variant="primary" pending={['ship', ship.session, 'answer-review', pr.url]} disabled={locked || busy} onClick={() => setAsking(true)} />
       {asking ? (
-        <Sheet label="Answer review" kind="launch-backdrop stop-backdrop" onClose={() => !sending && setAsking(false)}>
-          <p class="line">Starts a feedback round on #{prNumber(pr.url)} in the same Commodore run.</p>
-          <p class="cmd-block mono">{pr.answer}</p>
-          {error ? (
-            <p class="launch-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <Actions class="launch-foot">
-            <Button label="Cancel" onClick={() => setAsking(false)} />
-            <Button label="Answer review" variant="primary" pending={['ship', ship.session, 'answer-review', pr.url]} onClick={run} />
-          </Actions>
-        </Sheet>
+        <AnswerReviewSheet
+          ship={ship}
+          pr={pr}
+          onClose={() => setAsking(false)}
+          onBusy={(b) => {
+            setBusy(b);
+            onBusy(b);
+          }}
+        />
       ) : null}
     </div>
   );

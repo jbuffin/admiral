@@ -1,4 +1,5 @@
-import type { Order, OrderView, Source } from './api';
+import type { Order, OrderView, Ship, Source } from './api';
+import { needsYouAgain } from './moored';
 import { shipAge } from './shipList';
 
 export const FOR_YOU = 'for-you';
@@ -91,7 +92,7 @@ interface Yours {
 }
 
 // One pass over the GitHub source's default views: each yours order once, with the reason from the view that puts it in Needs you.
-function collect(sources: Source[], now: number): Yours {
+function collect(sources: Source[], now: number, ships: Ship[]): Yours {
   const gh = sources.find(isGitHub);
   const out: Yours = { needsYou: new Map(), reviewing: new Set(), rows: [] };
   if (!gh) return out;
@@ -100,7 +101,7 @@ function collect(sources: Source[], now: number): Yours {
     for (const o of v.orders) {
       const id = identity(gh.key, o);
       if (v.id === 'review-requested') out.reviewing.add(id);
-      const hit = needs(v.id, o);
+      const hit = needs(v.id, o) || needsYouAgain(ships, o);
       if (hit) out.needsYou.set(id, true);
       const seen = byId.get(id);
       if (seen && (seen.reasonFromNeeds || !hit)) continue;
@@ -120,8 +121,8 @@ function collect(sources: Source[], now: number): Yours {
   return out;
 }
 
-export function forYou(sources: Source[], now: number): ForYou {
-  const rows = collect(sources, now).rows.map(({ reasonFromNeeds: _, ...r }: OrderRow & { reasonFromNeeds?: boolean }) => r);
+export function forYou(sources: Source[], now: number, ships: Ship[] = []): ForYou {
+  const rows = collect(sources, now, ships).rows.map(({ reasonFromNeeds: _, ...r }: OrderRow & { reasonFromNeeds?: boolean }) => r);
   const needsYou = rows.filter((r) => r.needsYou);
   return { needsYou, waiting: rows.filter((r) => !r.needsYou), count: rows.length };
 }
@@ -158,14 +159,14 @@ function find(sources: Source[], id: string): { src: Source; view: OrderView } |
   return undefined;
 }
 
-export function viewRows(sources: Source[], id: string, now: number): OrderRow[] {
+export function viewRows(sources: Source[], id: string, now: number, ships: Ship[] = []): OrderRow[] {
   if (id === FOR_YOU) {
-    const g = forYou(sources, now);
+    const g = forYou(sources, now, ships);
     return [...g.needsYou, ...g.waiting];
   }
   const hit = find(sources, id);
   if (!hit) return [];
-  const { needsYou, reviewing } = collect(sources, now);
+  const { needsYou, reviewing } = collect(sources, now, ships);
   const gh = isGitHub(hit.src);
   return distinct(hit.src.key, hit.view.orders).map((o) => {
     const ident = identity(hit.src.key, o);

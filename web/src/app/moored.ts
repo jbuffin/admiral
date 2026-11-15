@@ -1,6 +1,6 @@
-import type { MooredPR, Ship } from './api';
-import { prSummary } from './prTab';
-import { shipAge } from './shipList';
+import type { MooredPR, Order, Ship } from './api';
+import { feedbackBarText, prSummary } from './prTab';
+import { GROUP_TITLES, shipAge } from './shipList';
 
 export type ChipTone = 'ok' | 'err' | 'muted';
 export interface Chip {
@@ -65,12 +65,6 @@ export const mergeHint = (method?: string, stack = false): string => {
 
 const prKey = (url: string) => url.replace(/\/+$/, '').toLowerCase();
 
-/** The moored ship whose PRs include the order's URL, comparing case-insensitively and ignoring a trailing slash. */
-export function carryingShip(ships: Ship[], orderUrl: string): Ship | undefined {
-  const key = prKey(orderUrl);
-  return ships.find((s) => s.status === 'moored' && (s.prs ?? []).some((p) => prKey(p.url) === key));
-}
-
 /** What the first open PR that is not ready waits on: the first of conflicts, failing checks, requested changes, pending checks, a missing review. */
 function prStep(prs: MooredPR[]): string {
   // A merged or closed layer waits on nothing, so it is skipped.
@@ -130,3 +124,61 @@ export function nextStep(ship: Ship): { ready: boolean; text: string } {
   if (ship.stack_ready) return { ready: true, text: '' };
   return { ready: false, text: rowButtons(ship, false).note || prStep(ship.prs ?? []) };
 }
+
+const ON_ORDER: Ship['status'][] = ['underway', 'needs_you', 'moored'];
+
+const requestedAgain = (o: Order): boolean => !!o.review_requested_at && o.reviewed_since_push !== true;
+
+/** The own open PR a moored ship wakes on: the order's own when it has feedback, else the first with feedback. */
+function wakePR(ship: Ship, order: Order): MooredPR | undefined {
+  const key = prKey(order.url ?? '');
+  const open = ownOpenPRs(ship).filter((p) => feedbackBarText(p) !== '');
+  return open.find((p) => prKey(p.url) === key) ?? open[0];
+}
+
+/** The URL Re-review sends, exactly as the server serves it; null when nothing asks for a re-review. */
+function reReviewUrl(ship: Ship, order: Order): string | null {
+  const place = reReviewPlace(ship);
+  if (place) return place.url;
+  if (ship.status !== 'moored' || !reviews(ship) || !requestedAgain(order)) return null;
+  const key = prKey(order.url ?? '');
+  const matched = (ship.prs ?? []).find((p) => p.reviewing && prKey(p.url) === key);
+  if (matched) return matched.url;
+  if (isStackUrl(ship.url)) return ship.url!;
+  return (ship.prs ?? []).find((p) => p.reviewing)?.url ?? null;
+}
+
+export type RowAgain = { kind: 'rereview'; url: string } | { kind: 'wake'; pr: string } | null;
+
+function againOf(ship: Ship, order: Order): RowAgain {
+  if (ship.status !== 'moored') return null;
+  const url = reReviewUrl(ship, order);
+  if (url) return { kind: 'rereview', url };
+  const pr = wakePR(ship, order);
+  return pr ? { kind: 'wake', pr: pr.url } : null;
+}
+
+/** The live or moored ships on an order, the one its row shows first: a moored ship whose PR needs you again, then needs_you, underway, moored; newest launch first within each. */
+export function shipsOnOrder(ships: Ship[], order: Order): Ship[] {
+  if (!order.url) return [];
+  const key = prKey(order.url);
+  const hits = ships.filter((s) => ON_ORDER.includes(s.status) && [s.url, s.link, ...(s.issues ?? []), ...(s.prs ?? []).map((p) => p.url)].some((u) => !!u && prKey(u) === key));
+  const rank = (s: Ship) => (againOf(s, order) ? 0 : ({ needs_you: 1, underway: 2, moored: 3 })[s.status as 'moored']);
+  const at = (s: Ship) => Date.parse(s.launched) || 0;
+  return hits.sort((a, b) => rank(a) - rank(b) || at(b) - at(a));
+}
+
+export type RowAction = { kind: 'launch' } | { kind: 'ship'; ship: Ship; word: string; needsYou: boolean; again: RowAgain };
+
+/** What an order's row offers: the launch arrow, or its ship's pill with Re-review or Wake when a moored ship's PR needs you again. */
+export function orderRowAction(ships: Ship[], order: Order): RowAction {
+  const ship = shipsOnOrder(ships, order)[0];
+  if (!ship) return { kind: 'launch' };
+  return { kind: 'ship', ship, word: GROUP_TITLES[ship.status as keyof typeof GROUP_TITLES], needsYou: ship.status === 'needs_you', again: againOf(ship, order) };
+}
+
+/** Whether a moored ship on the order has its PR needing you again, which puts the order in Needs you. */
+export const needsYouAgain = (ships: Ship[], order: Order): boolean => {
+  const a = orderRowAction(ships, order);
+  return a.kind === 'ship' && a.again !== null;
+};
