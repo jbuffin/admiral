@@ -93,3 +93,49 @@ func TestStartSessionCarriesAnEnvironmentOfManyShortVariables(t *testing.T) {
 		t.Errorf("the harness saw %q, want the first and last variables", got)
 	}
 }
+
+// macOS sometimes fails to open a pty for a new pane under load; a launch tries again rather than failing the ship.
+func TestALaunchOutlastsTmuxFailingToOpenAPtyOnce(t *testing.T) {
+	tmux := needTmux(t)
+	tmp, err := os.MkdirTemp("/tmp", "sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(tmp, "tmux.sock")
+	t.Setenv("TMUX_TMPDIR", tmp)
+	t.Cleanup(func() {
+		_ = exec.Command(tmux, "-S", sock, "kill-server").Run()
+		_ = os.RemoveAll(tmp)
+	})
+	// The first respawn of each pane fails the way tmux reports macOS's ENXIO; every other call is the real tmux.
+	flaky := filepath.Join(tmp, "flaky-tmux")
+	script := `#!/bin/sh
+case " $* " in
+*" respawn-pane "*)
+	mark="` + tmp + `/failed-$(printf '%s' "$*" | cksum | cut -d' ' -f1)"
+	if [ ! -e "$mark" ]; then : > "$mark"; echo "respawn pane failed: fork failed: Device not configured" >&2; exit 1; fi;;
+esac
+exec ` + tmux + ` "$@"
+`
+	if err := os.WriteFile(flaky, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := NewServer(flaky, sock)
+	ran := func(name string) string { return filepath.Join(tmp, name) }
+	touch := func(name string) []string { return []string{"/bin/sh", "-c", `: > "$0"`, ran(name)} }
+	if err := s.StartSession(SessionSpec{Name: "ship", Dir: tmp, Argv: touch("ship"), Anchor: true}); err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	if err := s.StartCrew(CrewSpec{Session: "ship", Name: "scout", Harness: "claude", Dir: tmp, Command: touch("scout")}); err != nil {
+		t.Fatalf("StartCrew: %v", err)
+	}
+	for _, name := range []string{"ship", "scout"} {
+		deadline := time.Now().Add(10 * time.Second)
+		for _, err := os.Stat(ran(name)); err != nil; _, err = os.Stat(ran(name)) {
+			if time.Now().After(deadline) {
+				t.Fatalf("the %s harness never ran", name)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+}
