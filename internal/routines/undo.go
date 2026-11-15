@@ -79,7 +79,7 @@ func (s *Service) serveUndo(w http.ResponseWriter, r *http.Request) {
 		fail(w, invalidf("%q is not a name a ship can have", rec.Ship))
 		return
 	}
-	if s.Stop == nil {
+	if s.Stop == nil || s.Listed == nil {
 		writeError(w, http.StatusInternalServerError, "ships cannot be stopped from here")
 		return
 	}
@@ -113,9 +113,6 @@ func (s *Service) serveUndo(w http.ResponseWriter, r *http.Request) {
 // holdsShip reports whether the host lists rec's own ship, matched by the launch record it carries, and whether it lists any
 // ship of rec's session name at all. A newer launch that reused the name has its own record, so it never matches.
 func (s *Service) holdsShip(fleet string, rec Trigger) (own, held bool, err error) {
-	if s.Listed == nil {
-		return false, false, nil
-	}
 	recs, err := s.Store.Records(fleet)
 	if err != nil {
 		return false, false, err

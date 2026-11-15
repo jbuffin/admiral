@@ -400,6 +400,42 @@ func TestAnUndoNeverStopsOrDeletesTheCloneOfANewerShipThatReusedTheName(t *testi
 	}
 }
 
+func TestAnUndoNeverStopsOrDeletesTheCloneOfAScheduledLaunchOfTheSameRoutineThatReusedTheName(t *testing.T) {
+	u := newUndoRig(t)
+	older := u.launchAt("calm-otter", u.rig.now)
+	u.unhost("calm-otter")
+	later := u.rig.now.Add(time.Hour)
+	scheduled := u.record(routines.Trigger{Routine: u.routine.ID, Outcome: routines.Launched, Ship: "calm-otter", Tier: "T1", At: later})
+	u.host(scheduled)
+	clone := u.clone("calm-otter")
+	if code := u.undo(u.routine.ID, older.ID); code != http.StatusOK {
+		t.Fatalf("undo = %d, want 200", code)
+	}
+	if u.stop.n() != 0 {
+		t.Errorf("stop calls = %v, want none for the scheduled launch's ship", u.stop.calls)
+	}
+	if !exists(filepath.Join(clone, "work.txt")) {
+		t.Error("the undo deleted the clone of the scheduled launch's ship")
+	}
+}
+
+func TestAnUndoWithNoHostListFailsAndRemovesNothing(t *testing.T) {
+	u := newUndoRig(t)
+	rec := u.launch("calm-otter")
+	dir := u.clone("calm-otter")
+	mux := http.NewServeMux()
+	(&routines.Service{Store: u.rig.store, Stop: u.stop.stop}).Routes(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	u.srv = srv
+	if code := u.undo(u.routine.ID, rec.ID); code != http.StatusInternalServerError {
+		t.Fatalf("undo = %d, want 500", code)
+	}
+	if !exists(dir) || u.undone(rec.ID) {
+		t.Error("the undo removed the clone or marked the record")
+	}
+}
+
 func TestAnUndoLeavesAListedShipOfThatNameThatIsNotThisLaunchAlone(t *testing.T) {
 	at := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
 	cases := map[string]routines.ListedShip{

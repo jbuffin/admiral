@@ -126,14 +126,15 @@ func EventShips(fleet string, recs []Trigger, listed []ListedShip) []LiveShip {
 func EventLaunchedShips(fleet string, recs []Trigger, listed []ListedShip) []LiveShip {
 	newest := map[string]Trigger{}
 	for _, r := range recs {
-		if _, ok := newest[r.Ship]; !ok && r.Ship != "" && r.Event != "" {
+		if _, ok := newest[r.Ship]; !ok && r.Ship != "" {
 			newest[r.Ship] = r
 		}
 	}
 	var out []LiveShip
 	for _, sh := range listed {
 		rec, ok := newest[sh.Session]
-		if !ok || sh.Fleet != fleet || sh.Routine != routineKey(rec.Routine) {
+		// a newer launch of any kind that reused the name is not an event ship
+		if !ok || rec.Event == "" || sh.Fleet != fleet || sh.Routine != routineKey(rec.Routine) {
 			continue
 		}
 		// the wall clock starts from Admiral's own record, not from a time the ship's tmux session holds
