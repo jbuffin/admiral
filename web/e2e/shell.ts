@@ -317,7 +317,7 @@ async function listShips(a: Admiral): Promise<ShipJSON[]> {
 /** The cue makes the harness exit (0 sails off, 3 anchors); `cues` are cue lines the harness runs instead; without either it idles. */
 export async function launchShip(
   a: Admiral,
-  req: { fleet: 'zulu' | 'alpha'; harness: Harness; source?: string; order?: string; text?: string; exit?: 0 | 3; cue?: string; cues?: string[]; dir?: string; skill?: 'commodore' },
+  req: { fleet: 'zulu' | 'alpha'; harness: Harness; source?: string; order?: string; anyway?: boolean; text?: string; exit?: 0 | 3; cue?: string; cues?: string[]; dir?: string; skill?: 'commodore' },
 ): Promise<LaunchedShip> {
   const cue = join(a.home, 'cue');
   if (req.cue !== undefined) writeFileSync(cue, req.cue);
@@ -329,7 +329,7 @@ export async function launchShip(
     harness: req.harness,
     dir: req.dir ?? join(a.home, 'proj'),
     skill: { kind: req.skill ?? 'none' },
-    ...(req.order ? { source: req.source ?? 'orders', order_id: req.order } : { text: req.text ?? 'Go.' }),
+    ...(req.order ? { source: req.source ?? 'orders', order_id: req.order, ...(req.anyway && { anyway: true }) } : { text: req.text ?? 'Go.' }),
   };
   // Admiral answers 503 until it has read the tmux server's sessions.
   let ship!: LaunchedShip;

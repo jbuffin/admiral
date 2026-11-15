@@ -340,7 +340,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(docs.getByRole('button', { name: 'Launch Document the API', exact: true })).toBeVisible();
   await expect(docs.getByRole('button', { name: /Open ship$/ })).toHaveCount(0);
   // Launch another ship, from a second ship on the same order.
-  const second = await launchShip(a, { fleet: 'zulu', harness: 'claude', source: 'gh', order: 'acme/api#32', cue: 'wait go\nexit 3\n' });
+  const second = await launchShip(a, { fleet: 'zulu', harness: 'claude', source: 'gh', order: 'acme/api#32', anyway: true, cue: 'wait go\nexit 3\n' });
   expect(second.session).not.toBe(ship.session);
   await expect(docs.getByRole('button', { name: new RegExp(`^${second.name}, .*Open ship$`) })).toBeVisible();
   await press(body('Document the API'));
