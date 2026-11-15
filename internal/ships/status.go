@@ -60,7 +60,7 @@ func exit(s sessionhost.Session) (code *int, sig *string) {
 
 type OrderKey struct{ Source, OrderID string }
 
-// HiddenOrders counts ships of any status.
+// HiddenOrders is the orders that have a ship of any status; a launch from one is refused unless the engineer sends anyway.
 func HiddenOrders(list []Ship) map[OrderKey]bool {
 	out := map[OrderKey]bool{}
 	for _, sh := range list {

@@ -24,7 +24,7 @@ type Record struct {
 	Model    string `json:"model"`
 	Skill    Skill  `json:"skill"`
 	Checkout string `json:"checkout"`
-	// The order the ship was launched from, so its order stays hidden while it is moored.
+	// The order the ship was launched from, so the order's row shows its ship while it is moored.
 	Source  string   `json:"source"`
 	Panel   string   `json:"panel"`
 	OrderID string   `json:"order_id"`

@@ -984,6 +984,15 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .orders-line .orow-go { color: var(--color-muted); }
 .orow-go:hover { background: var(--color-hover); }
 .orow-go:disabled { opacity: 0.5; cursor: default; }
+.orow-pill { flex: none; display: inline-flex; flex-direction: column; justify-content: center; max-width: 140px; min-height: var(--shape-min-touch-target); padding: 0 10px; margin-right: 4px; border-radius: var(--shape-radius-md); text-align: left; font-size: var(--font-size-meta); color: var(--color-text2); }
+.orow-pill:hover { background: var(--color-hover); }
+.orow-pill-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text); }
+.orow-pill-word { color: var(--color-muted); white-space: nowrap; }
+.orow-pill.needs .orow-pill-word { color: var(--color-needs); }
+.orow-again { flex: none; min-height: var(--shape-min-touch-target); }
+.odetail-ships { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.odetail-ships li { display: flex; gap: 8px; align-items: center; justify-content: space-between; min-height: var(--shape-min-touch-target); }
+.odetail-ship { display: inline-flex; align-items: center; min-height: var(--shape-min-touch-target); color: var(--color-accent); }
 .phone .orders-screen { margin: 0 8px; padding: 0; }
 .phone .orders-head { padding: 8px 14px; }
 

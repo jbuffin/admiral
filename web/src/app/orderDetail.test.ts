@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Order, OrderView, Source } from './api';
+import type { Order, OrderView, Ship, Source } from './api';
 import type { Campaign } from './campaign';
 import { campaignAction, forYouLinkText, openedLine, selectedOrderOf, selectedRow, selectionGone, topLine, whyItsHere, withSelectedOrder } from './orderDetail';
 
@@ -195,5 +195,21 @@ describe('dropping a selection whose order is gone', () => {
   });
   it('has nothing to drop with no order in the URL', () => {
     expect(selectionGone([gh([])], 'for-you', '', NOW)).toBe(false);
+  });
+});
+
+describe('the selected row with ships', () => {
+  const PR = 'https://github.com/acme/api/pull/42';
+  const o = order('acme/api#42', { url: PR, pr: pr(), review_requested_at: ago(2 * H), reviewed_since_push: true });
+  const sources = [gh([view('review-requested', 'Review requested', [o])])];
+  const search = '?order=gh%2Facme%2Fapi%2342';
+  const sloop = {
+    session: 's-sloop', name: 'sloop', fleet: 'zulu', harness: 'claude', status: 'moored', order_id: '', title: '', tail: '', fleet_color: '', launched: '', crew_live: 0, dir: '', repo: '', exit_code: null, exit_signal: null, crew: [],
+    prs: [{ url: PR, state: 'OPEN', review: '', checks: '', mergeable: '', conflicts: false, reviewing: true, responded: true }],
+  } as Ship;
+
+  it('marks the selected row as needing you when its ship does', () => {
+    expect(selectedRow(sources, 'for-you', search, NOW, [sloop])?.needsYou).toBe(true);
+    expect(selectedRow(sources, 'for-you', search, NOW, [])?.needsYou).toBe(false);
   });
 });

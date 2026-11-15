@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { MooredPR, Ship } from './api';
-import { carryingShip, mergeHint, moorSheetParts, nextStep, offersMoor, prChips, prLabel, reReviewPlace, reviews, rowButtons, staleNote } from './moored';
+import type { MooredPR, Order, Ship } from './api';
+import { askedAgainLine, mergeHint, mooredShipOn, moorSheetParts, nextStep, offersMoor, orderRowAction, prChips, prLabel, reReviewPlace, reviews, rowButtons, shipsOnOrder, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -36,6 +36,8 @@ const ship = (over: Partial<Ship> = {}): Ship => ({
   prs: [],
   ...over,
 });
+
+const order = (over: Partial<Order> = {}): Order => ({ id: 'acme/api#5', title: 'An order', ...over });
 
 describe('the Moored group', () => {
   it('comes after Underway and before Anchored, titled Moored', () => {
@@ -162,37 +164,222 @@ describe('mergeHint', () => {
   });
 });
 
-describe('carryingShip', () => {
+describe('shipsOnOrder', () => {
   const url = 'https://github.com/acme/api/pull/7';
-  const moored = (name: string, ...urls: string[]) => ship({ name, session: `s-${name}`, prs: urls.map((u) => pr({ url: u })) });
+  const issue = 'https://github.com/acme/api/issues/5';
+  const on = (name: string, over: Partial<Ship> = {}) => ship({ name, session: `s-${name}`, status: 'underway', ...over });
+  const names = (ships: Ship[]) => ships.map((s) => s.name);
 
-  it('finds the moored ship whose PRs include the order URL', () => {
-    const list = [moored('other', 'https://github.com/acme/api/pull/8'), moored('mine', url)];
-    expect(carryingShip(list, url)?.name).toBe('mine');
+  it.each([
+    ['its url', { url: issue }],
+    ['one of its issues', { url: 'https://github.com/acme/api/issues/4', issues: ['https://github.com/acme/api/issues/4', issue] }],
+    ['one of its PRs', { prs: [pr({ url: 'https://github.com/acme/api/pull/6' }), pr({ url: issue })] }],
+    ['its link', { link: issue }],
+  ])('finds a ship by %s', (_how, over) => {
+    expect(names(shipsOnOrder([on('a', over)], order({ url: issue })))).toEqual(['a']);
   });
 
-  it('ignores case and a trailing slash', () => {
-    const list = [moored('mine', url)];
-    expect(carryingShip(list, 'https://GitHub.com/Acme/API/pull/7')?.name).toBe('mine');
-    expect(carryingShip(list, `${url}/`)?.name).toBe('mine');
-    expect(carryingShip([moored('mine', `${url}/`)], url)?.name).toBe('mine');
+  it.each([
+    ['case', 'https://GitHub.com/Acme/API/issues/5'],
+    ['a trailing slash', `${issue}/`],
+  ])('ignores %s in the order URL', (_how, u) => {
+    expect(names(shipsOnOrder([on('a', { url: issue })], order({ url: u })))).toEqual(['a']);
+  });
+
+  it('ignores case and a trailing slash in the ship URLs', () => {
+    expect(names(shipsOnOrder([on('a', { prs: [pr({ url: `${url.toUpperCase()}/` })] })], order({ url })))).toEqual(['a']);
   });
 
   it('finds the ship for any layer of its stack', () => {
-    const list = [moored('stacker', 'https://github.com/acme/api/pull/6', url)];
-    expect(carryingShip(list, 'https://github.com/acme/api/pull/6')?.name).toBe('stacker');
-    expect(carryingShip(list, url)?.name).toBe('stacker');
+    const stacker = on('stacker', { prs: [pr({ url: 'https://github.com/acme/api/pull/6' }), pr({ url })] });
+    expect(names(shipsOnOrder([stacker], order({ url: 'https://github.com/acme/api/pull/6' })))).toEqual(['stacker']);
+    expect(names(shipsOnOrder([stacker], order({ url })))).toEqual(['stacker']);
   });
 
-  it('does not count a live ship, even one that lists the PR', () => {
-    const live = ship({ name: 'live', status: 'underway', prs: [pr({ url })] });
-    expect(carryingShip([live], url)).toBeUndefined();
-    expect(carryingShip([live, moored('mine', url)], url)?.name).toBe('mine');
+  it.each(['underway', 'needs_you', 'moored'] as const)('counts a %s ship', (status) => {
+    expect(names(shipsOnOrder([on('a', { status, url: issue })], order({ url: issue })))).toEqual(['a']);
   });
 
-  it('finds nothing for a PR no ship carries', () => {
-    expect(carryingShip([moored('other', 'https://github.com/acme/api/pull/8'), ship()], url)).toBeUndefined();
-    expect(carryingShip([], url)).toBeUndefined();
+  it.each(['anchored', 'sailing_off'] as const)('does not count an %s ship', (status) => {
+    expect(shipsOnOrder([on('a', { status, url: issue, prs: [pr({ url: issue })], link: issue })], order({ url: issue }))).toEqual([]);
+  });
+
+  it('counts a ship of any fleet', () => {
+    expect(names(shipsOnOrder([on('a', { fleet: 'yankee', url: issue })], order({ url: issue })))).toEqual(['a']);
+  });
+
+  it('finds nothing for an order no ship is on, or an order with no URL', () => {
+    expect(shipsOnOrder([on('other', { url: 'https://github.com/acme/api/issues/6' }), ship()], order({ url: issue }))).toEqual([]);
+    expect(shipsOnOrder([], order({ url: issue }))).toEqual([]);
+    expect(shipsOnOrder([on('a', { url: issue })], order({ url: undefined }))).toEqual([]);
+  });
+
+  describe('which ship comes first', () => {
+    const base = { url: issue };
+    const mooredAgain = on('again', { ...base, status: 'moored', prs: [pr({ url: issue, reviewing: true, responded: true })] });
+    const needs = on('needs', { ...base, status: 'needs_you' });
+    const under = on('under', { ...base, status: 'underway' });
+    const moored = on('moored', { ...base, status: 'moored' });
+
+    it('puts a moored ship whose PR needs you again, then needs_you, then underway, then moored', () => {
+      expect(names(shipsOnOrder([moored, under, needs, mooredAgain], order({ url: issue })))).toEqual(['again', 'needs', 'under', 'moored']);
+    });
+
+    it('treats an own-PR ship with new feedback as needing you again', () => {
+      const wake = on('wake', { ...base, status: 'moored', prs: [pr({ url: issue, answer: '/commodore answer', feedback: 2 })] });
+      expect(names(shipsOnOrder([needs, wake], order({ url: issue })))).toEqual(['wake', 'needs']);
+    });
+
+    it('treats a moored reviewing ship as needing you again when the order is review-requested', () => {
+      const reviewing = on('reviewing', { ...base, status: 'moored', prs: [pr({ url: issue, reviewing: true })] });
+      const o = order({ url: issue, review_requested_at: '2026-11-14T10:00:00Z', reviewed_since_push: false });
+      expect(names(shipsOnOrder([needs, reviewing], o))).toEqual(['reviewing', 'needs']);
+      expect(names(shipsOnOrder([needs, reviewing], order({ url: issue })))).toEqual(['needs', 'reviewing']);
+    });
+
+    it('puts the newest launch first within a status', () => {
+      const older = on('older', { ...base, launched: '2026-11-14T08:00:00Z' });
+      const newer = on('newer', { ...base, launched: '2026-11-14T09:00:00Z' });
+      expect(names(shipsOnOrder([older, newer], order({ url: issue })))).toEqual(['newer', 'older']);
+      expect(names(shipsOnOrder([newer, older], order({ url: issue })))).toEqual(['newer', 'older']);
+    });
+  });
+});
+
+describe('orderRowAction', () => {
+  const url = 'https://github.com/acme/api/pull/42';
+  const issue = 'https://github.com/acme/api/issues/5';
+  const stack = 'https://github.com/acme/api/stack/3';
+  const requested = { review_requested_at: '2026-11-14T10:00:00Z', reviewed_since_push: false };
+  const on = (over: Partial<Ship> = {}) => ship({ name: 'sloop', session: 's-sloop', ...over });
+  const act = (ships: Ship[], o: Order) => orderRowAction(ships, o);
+  const shipAction = (a: ReturnType<typeof orderRowAction>) => {
+    if (a.kind !== 'ship') throw new Error(`expected a ship action, got ${a.kind}`);
+    return a;
+  };
+
+  it('is the launch arrow with no ship on the order, or only an anchored one', () => {
+    expect(act([], order({ url: issue }))).toEqual({ kind: 'launch' });
+    expect(act([on({ status: 'anchored', url: issue })], order({ url: issue }))).toEqual({ kind: 'launch' });
+    expect(act([on({ status: 'sailing_off', url: issue })], order({ url: issue }))).toEqual({ kind: 'launch' });
+  });
+
+  it('is a pill with the ship and its status word for an underway ship, with no further action', () => {
+    const s = on({ status: 'underway', url: issue });
+    const a = shipAction(act([s], order({ url: issue })));
+    expect(a).toMatchObject({ ship: s, word: 'Underway', needsYou: false, again: null });
+  });
+
+  it('colours the pill of a needs_you ship', () => {
+    const a = shipAction(act([on({ status: 'needs_you', url: issue })], order({ url: issue })));
+    expect(a).toMatchObject({ word: 'Needs you', needsYou: true, again: null });
+  });
+
+  it('is a pill alone for a moored ship that has nothing new', () => {
+    const own = on({ url: issue, prs: [pr({ url: issue, answer: '/commodore answer' })] });
+    expect(shipAction(act([own], order({ url: issue })))).toMatchObject({ word: 'Moored', needsYou: false, again: null });
+    const reviewing = on({ prs: [pr({ url, reviewing: true })] });
+    expect(shipAction(act([reviewing], order({ url, ...requested, reviewed_since_push: true }))).again).toBeNull();
+  });
+
+  describe('Re-review', () => {
+    it('shows for a reviewing ship whose PR is responded, with that PR url as served', () => {
+      const served = 'https://github.com/Acme/API/pull/42/';
+      const s = on({ prs: [pr({ url: served, reviewing: true, responded: true })] });
+      expect(shipAction(act([s], order({ url, reviewed_since_push: true }))).again).toEqual({ kind: 'rereview', url: served });
+    });
+
+    it('sends the stack url for a stack-url ship', () => {
+      const s = on({ url: stack, prs: [pr({ url, reviewing: true, responded: true }), pr({ url: 'https://github.com/acme/api/pull/43', reviewing: true })] });
+      expect(shipAction(act([s], order({ url, reviewed_since_push: true }))).again).toEqual({ kind: 'rereview', url: stack });
+    });
+
+    it('shows when the order is review-requested, with the matched PR url exactly as served, never the order url', () => {
+      const served = 'https://github.com/Acme/API/pull/42/';
+      const s = on({ prs: [pr({ url: 'https://github.com/acme/api/pull/41', reviewing: true }), pr({ url: served, reviewing: true })] });
+      const a = shipAction(act([s], order({ url, ...requested })));
+      expect(a.again).toEqual({ kind: 'rereview', url: served });
+      expect(a.again).not.toMatchObject({ url });
+    });
+
+    it('sends the ship url when the review-requested order is on a stack-url ship', () => {
+      const s = on({ url: stack, prs: [pr({ url, reviewing: true }), pr({ url: 'https://github.com/acme/api/pull/43', reviewing: true })] });
+      expect(shipAction(act([s], order({ url: stack, ...requested }))).again).toEqual({ kind: 'rereview', url: stack });
+    });
+
+    it('prefers the responded PR url over the matched one', () => {
+      const s = on({ prs: [pr({ url, reviewing: true }), pr({ url: 'https://github.com/acme/api/pull/43', reviewing: true, responded: true })] });
+      expect(shipAction(act([s], order({ url, ...requested }))).again).toEqual({ kind: 'rereview', url: 'https://github.com/acme/api/pull/43' });
+    });
+
+    it.each([
+      ['you reviewed since the push', { review_requested_at: '2026-11-14T10:00:00Z', reviewed_since_push: true }],
+      ['no review is requested', { reviewed_since_push: false }],
+    ])('does not show when %s and no PR is responded', (_why, over) => {
+      const s = on({ prs: [pr({ url, reviewing: true })] });
+      expect(shipAction(act([s], order({ url, ...over }))).again).toBeNull();
+    });
+
+    it('treats a missing reviewed_since_push as not reviewed', () => {
+      const s = on({ prs: [pr({ url, reviewing: true })] });
+      expect(shipAction(act([s], order({ url, review_requested_at: '2026-11-14T10:00:00Z' }))).again).toEqual({ kind: 'rereview', url });
+    });
+
+    it('does not show for a ship that opened its own PR', () => {
+      const s = on({ prs: [pr({ url })] });
+      expect(shipAction(act([s], order({ url, ...requested }))).again).toBeNull();
+    });
+
+    it('does not show for a live ship', () => {
+      const s = on({ status: 'underway', prs: [pr({ url, reviewing: true, responded: true })] });
+      expect(shipAction(act([s], order({ url, ...requested }))).again).toBeNull();
+    });
+  });
+
+  describe('Wake', () => {
+    const feedback = { answer: '/commodore answer', feedback: 1 };
+
+    it('shows for a moored ship with new feedback on its own open PR, sending that PR url as served', () => {
+      const served = 'https://github.com/Acme/API/pull/42/';
+      const s = on({ prs: [pr({ url: served, ...feedback })] });
+      expect(shipAction(act([s], order({ url }))).again).toEqual({ kind: 'wake', pr: served });
+    });
+
+    it('shows for an issue order whose ship owns the PR', () => {
+      const s = on({ url: issue, prs: [pr({ url, ...feedback })] });
+      expect(shipAction(act([s], order({ url: issue }))).again).toEqual({ kind: 'wake', pr: url });
+    });
+
+    it("prefers the order's PR when several have feedback", () => {
+      const s = on({ prs: [pr({ url: 'https://github.com/acme/api/pull/41', ...feedback }), pr({ url, ...feedback })] });
+      expect(shipAction(act([s], order({ url }))).again).toEqual({ kind: 'wake', pr: url });
+    });
+
+    it('falls back to the first own PR with feedback when the order names none of them', () => {
+      const s = on({ url: issue, prs: [pr({ url: 'https://github.com/acme/api/pull/41' }), pr({ url: 'https://github.com/acme/api/pull/43', ...feedback })] });
+      expect(shipAction(act([s], order({ url: issue }))).again).toEqual({ kind: 'wake', pr: 'https://github.com/acme/api/pull/43' });
+    });
+
+    it.each([
+      ['a merged PR', { state: 'MERGED' }],
+      ['a reviewed PR', { reviewing: true }],
+      ['no new feedback', { feedback: 0 }],
+      ['no answer command', { answer: '' }],
+    ])('does not show for %s', (_why, over) => {
+      const s = on({ prs: [pr({ url, ...feedback, ...over })] });
+      expect(shipAction(act([s], order({ url }))).again).toBeNull();
+    });
+
+    it('does not show for a live ship', () => {
+      const s = on({ status: 'underway', prs: [pr({ url, ...feedback })] });
+      expect(shipAction(act([s], order({ url }))).again).toBeNull();
+    });
+  });
+
+  it('acts on the ship that comes first', () => {
+    const under = on({ name: 'under', session: 's-under', status: 'underway', url: issue });
+    const needs = on({ name: 'needs', session: 's-needs', status: 'needs_you', url: issue });
+    expect(shipAction(act([under, needs], order({ url: issue }))).ship.name).toBe('needs');
   });
 });
 
@@ -332,5 +519,24 @@ describe('moorSheetParts', () => {
   it('says the turn is cut off only while the ship is underway', () => {
     expect(moorSheetParts(ship({ status: 'underway', name: 'kelp', prs: two })).explain).toContain('kelp is mid-turn: the turn is cut off.');
     expect(moorSheetParts(ship({ status: 'needs_you', prs: two })).explain).not.toMatch(/cut off/i);
+  });
+});
+
+describe('mooredShipOn', () => {
+  const issue = 'https://github.com/acme/api/issues/5';
+  it('finds the moored ship wherever it ranks', () => {
+    const live = ship({ name: 'live', session: 's-live', status: 'needs_you', url: issue });
+    const moored = ship({ name: 'moored', session: 's-moored', status: 'moored', url: issue });
+    expect(shipsOnOrder([live, moored], order({ url: issue }))[0].name).toBe('live');
+    expect(mooredShipOn([live, moored], order({ url: issue }))?.name).toBe('moored');
+    expect(mooredShipOn([live], order({ url: issue }))).toBeUndefined();
+  });
+});
+
+describe('askedAgainLine', () => {
+  it('names the PR, or the stack', () => {
+    const asked = `You were asked to review ${'#'}7 again.`;
+    expect(askedAgainLine('https:' + '/' + '/github.com/acme/api/pull/7')).toBe(asked);
+    expect(askedAgainLine('https://github.com/acme/api/stack/9')).toBe('You were asked to review the whole stack again.');
   });
 });

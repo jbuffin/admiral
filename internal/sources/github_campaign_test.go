@@ -3,8 +3,6 @@ package sources
 import (
 	"fmt"
 	"testing"
-
-	"github.com/jbuffin/admiral/internal/ships"
 )
 
 const campaignFleet = `"alpha":{"name":"Alpha","claude":{}}`
@@ -40,22 +38,6 @@ func TestGitHubOrdersCarryTheirSubIssueCount(t *testing.T) {
 	}
 }
 
-func TestViewHidesAnOrderWhoseIssueAShipHolds(t *testing.T) {
-	g := newFakeGH(t)
-	g.token("", "fake-token-default-1")
-	g.writeIssues([2]int{12, 0}, [2]int{13, 0})
-	f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
-	// A campaign ship carries the issue under its own source key, in another spelling of the URL.
-	f.Svc.Ships = func() []ships.Ship {
-		return []ships.Ship{{Name: "calm-otter", Status: ships.StatusUnderway, Source: "campaign", OrderID: "https://github.com/acme/widgets/issues/12", URL: "https://GitHub.com/acme/widgets/issues/12/"}}
-	}
-	f.startSources()
-	src := f.waitView("gha", "the bugs", func(s SourceView) bool { return len(s.orders("bugs")) > 0 })
-	if got := src.orders("bugs"); len(got) != 1 || got[0] != "acme/widgets#13" {
-		t.Errorf("bugs view = %v, want only acme/widgets#13: a ship holds the issue of #12", got)
-	}
-}
-
 func TestParseOrdersDropsASubIssueCountThatIsNotAPositiveInteger(t *testing.T) {
 	raw := `[{"id":"a","title":"A","text":"a","sub_issues":"3"},{"id":"b","title":"B","text":"b","sub_issues":2.5},` +
 		`{"id":"c","title":"C","text":"c","sub_issues":-1},{"id":"d","title":"D","text":"d","sub_issues":4}]`
@@ -68,21 +50,5 @@ func TestParseOrdersDropsASubIssueCountThatIsNotAPositiveInteger(t *testing.T) {
 		if o.SubIssues != want[i] {
 			t.Errorf("order %s sub-issues = %d, want %d", o.ID, o.SubIssues, want[i])
 		}
-	}
-}
-
-func TestViewHidesTheOrdersOfEveryIssueASliceShipHolds(t *testing.T) {
-	g := newFakeGH(t)
-	g.token("", "fake-token-default-1")
-	g.writeIssues([2]int{12, 0}, [2]int{13, 0}, [2]int{14, 0})
-	f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
-	f.Svc.Ships = func() []ships.Ship {
-		return []ships.Ship{{Name: "slice", Status: ships.StatusUnderway, URL: "https://github.com/acme/widgets/issues/12",
-			Issues: []string{"https://github.com/acme/widgets/issues/12", "https://github.com/acme/widgets/issues/13"}}}
-	}
-	f.startSources()
-	src := f.waitView("gha", "the bugs", func(s SourceView) bool { return len(s.orders("bugs")) > 0 })
-	if got := src.orders("bugs"); len(got) != 1 || got[0] != "acme/widgets#14" {
-		t.Errorf("bugs view = %v, want only acme/widgets#14: a slice ship holds #12 and #13", got)
 	}
 }

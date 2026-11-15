@@ -14,7 +14,6 @@ import (
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/github"
-	"github.com/jbuffin/admiral/internal/ships"
 )
 
 // The GitHub source runs inside Admiral, so it has no plugin folder.
@@ -189,7 +188,7 @@ func (g *githubConn) call(ctx context.Context, method string, params any, _ time
 			{Kind: "mentioned", Title: "You are mentioned"}}
 		g.mu.Unlock()
 		return json.Marshal(kinds)
-	case "orders.launched": // Admiral hides the order while its ship is at sea
+	case "orders.launched": // Admiral records the launch
 		return json.RawMessage("{}"), nil
 	}
 	return nil, &rpcError{Code: codeMethodNotFound, Message: "no such method: " + method}
@@ -479,8 +478,6 @@ func (g *githubConn) store(id string, orders []map[string]any, errMsg string) bo
 	g.mu.Unlock()
 	return !reflect.DeepEqual(old, next)
 }
-
-func claimKey(url string) string { k, _ := ships.ClaimKey(url); return k }
 
 // GitHubClient is the client of the first built-in GitHub source of a fleet, in config order, whose host is host
 // (compared ignoring case). It reads the client now, so a settings change is seen.

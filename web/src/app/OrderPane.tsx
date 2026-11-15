@@ -3,12 +3,14 @@ import { useState } from 'preact/hooks';
 import type { Source } from './api';
 import { Button } from './Button';
 import { campaignList, followReference } from './campaignsLink';
-import { carryingShip, reviews } from './moored';
+import { mooredShipOn, reviews, shipsOnOrder } from './moored';
 import { campaignAction, openedLine, topLine, whyItsHere } from './orderDetail';
 import { launchRef, type OrderRow } from './ordersView';
 import { Failure } from './PeekItem';
+import { GROUP_TITLES } from './shipList';
 import { ShipMerge } from './PeekMerge';
-import { campaignPath, go } from './router';
+import { campaignPath, go, shipPath } from './router';
+import { fleetSearch } from './fleets';
 import { ships } from './shipsLink';
 import { webUrl } from './ShipOrder';
 import type { OrderRef } from './LaunchDialog';
@@ -33,7 +35,8 @@ export function OrderPane({ row, sources, now, heading, onLaunch, onClose }: Pro
   const why = whyItsHere(sources, row.source, o, now);
   const opened = openedLine(o, now);
   const action = campaignAction(o, campaignList.value);
-  const ship = o.pr && o.url ? carryingShip(ships.value, o.url) : undefined;
+  const onOrder = shipsOnOrder(ships.value, o);
+  const ship = mooredShipOn(ships.value, o);
   const isMerged = merged.value.has(row.key);
   return (
     <div class="odetail">
@@ -119,10 +122,30 @@ export function OrderPane({ row, sources, now, heading, onLaunch, onClose }: Pro
         </p>
       ) : null}
       {o.excerpt ? <p class="odetail-excerpt">{o.excerpt}</p> : null}
+      {onOrder.length > 0 ? (
+        <ul class="odetail-ships" aria-label="Ships on this order">
+          {onOrder.map((s) => (
+            <li key={s.session}>
+              <a
+                class="odetail-ship"
+                href={`${shipPath(s.session)}${fleetSearch.value}`}
+                onClick={(e) => {
+                  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  e.preventDefault();
+                  go(shipPath(s.session), fleetSearch.value);
+                }}
+              >
+                {s.name}
+              </a>
+              <span class="orow-state">{GROUP_TITLES[s.status as keyof typeof GROUP_TITLES]}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div class="odetail-actions">
         {isMerged ? <p class="line">Merged</p> : ship?.stack_ready && !reviews(ship) ? <ShipMerge ship={ship} onMerged={() => (merged.value = new Set(merged.value).add(row.key))} onError={setError} /> : null}
         <Failure message={error} />
-        <Button variant="primary" class="odetail-launch" label="Launch ship" onClick={() => onLaunch(launchRef(row))} />
+        <Button variant="primary" class="odetail-launch" label={onOrder.length > 0 ? 'Launch another ship' : 'Launch ship'} onClick={() => onLaunch({ ...launchRef(row), anyway: onOrder.length > 0 })} />
       </div>
     </div>
   );

@@ -328,7 +328,7 @@ func TestLaunchFromCrashedSource(t *testing.T) {
 	w.mustTmux("kill-session", "-t", ship.Session)
 }
 
-func TestHiddenOrdersByShips(t *testing.T) {
+func TestOrdersStayListedWithShips(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
@@ -339,18 +339,17 @@ func TestHiddenOrdersByShips(t *testing.T) {
 	anchored := w.mustLaunchFrom("anch", "a", "o1")
 	w.in.waitShipsList(t, 10*time.Second, "an anchored ship", func(l []shipJSON) bool { return statusOf(l, anchored.Session) == "anchored" })
 	underway := w.mustLaunchFrom("stay", "a", "o2")
-	w.waitSource("a", 5*time.Second, "o1 and o2 hidden", func(s sourceJSON) bool { return reflect.DeepEqual(s.orderIDs(), []string{"o3"}) })
-	p.waitCall(3*time.Second, "orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o1" })
 	p.waitCall(3*time.Second, "orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o2" })
+	w.waitSource("a", 5*time.Second, "all three listed with two ships on them", func(s sourceJSON) bool { return reflect.DeepEqual(s.orderIDs(), []string{"o1", "o2", "o3"}) })
+	p.waitCall(3*time.Second, "orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o1" })
 
 	if code, body := w.launchFrom("stay", "a", "o1"); code != http.StatusConflict || !strings.Contains(body, "already has a ship") {
 		t.Errorf("a second launch of o1 = %d %s, want 409 saying the order already has a ship", code, body)
 	}
 
 	w.mustOK(send(t, http.MethodPost, w.in.LocalURL+"/api/ships/"+anchored.Session+"/dismiss", nil))
-	w.waitSource("a", 5*time.Second, "o1 shown again after Dismiss", func(s sourceJSON) bool { return s.hasOrder("o1") && !s.hasOrder("o2") })
 	w.mustTmux("kill-session", "-t", underway.Session)
-	w.waitSource("a", 10*time.Second, "o2 shown again once its ship is gone", func(s sourceJSON) bool { return s.hasOrder("o2") })
+	w.waitSource("a", 10*time.Second, "all three still listed once the ships are gone", func(s sourceJSON) bool { return len(s.orderIDs()) == 3 })
 }
 
 func TestSourceHungRequests(t *testing.T) {

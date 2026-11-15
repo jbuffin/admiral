@@ -99,12 +99,55 @@ func TestAnAnywayShipDoesNotHoldItsChatMessage(t *testing.T) {
 	r.wantHeld(t, chatKey("m7"), plain)
 }
 
-func TestAnywayNeverGetsPastAnOrderOrAnIssueAnotherShipHolds(t *testing.T) {
+func TestAnywayLaunchesASecondShipOnTheSameOrder(t *testing.T) {
+	r := newWakeRig(t, 0)
+	order := func(q *launcher.Request) { q.Source, q.OrderID = "s", "o1" }
+	first := r.mustLaunch(t, order)
+	r.wantHeld(t, order, first)
+	second := r.mustLaunch(t, func(q *launcher.Request) { order(q); q.Anyway = true })
+	if second.Session == first.Session || second.Source != "s" || second.OrderID != "o1" {
+		t.Errorf("second ship = %s on %s/%s, want another session on s/o1", second.Session, second.Source, second.OrderID)
+	}
+	r.wantHeld(t, order, first) // the extra ship doesn't open the order to a plain launch
+}
+
+func TestAnywayLaunchesASecondShipOnAnIssueAnotherShipHolds(t *testing.T) {
+	r := newWakeRig(t, 0)
+	first := r.mustLaunch(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} })
+	r.wantHeld(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} }, first)
+	second := r.mustLaunch(t, func(q *launcher.Request) { q.Issues, q.Anyway = []string{keyIssueA}, true })
+	if second.Session == first.Session {
+		t.Errorf("anyway on a held issue reused session %q, want a second ship", second.Session)
+	}
+	r.wantHeld(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} }, first)
+}
+
+func TestAnAnywayLaunchFromAnOrderWithNoShipStillWorks(t *testing.T) {
+	r := newWakeRig(t, 0)
+	r.mustLaunch(t, func(q *launcher.Request) { q.Source, q.OrderID, q.Anyway = "s", "fresh", true })
+}
+
+func TestAnActorsAnywayNeverGetsPastAnOrderOrAnIssueAnotherShipHolds(t *testing.T) {
 	r := newWakeRig(t, 0)
 	order := r.mustLaunch(t, func(q *launcher.Request) { q.Source, q.OrderID = "s", "o1" })
 	issue := r.mustLaunch(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} })
-	r.wantHeld(t, func(q *launcher.Request) { q.Source, q.OrderID, q.Anyway = "s", "o1", true }, order)
-	r.wantHeld(t, func(q *launcher.Request) { q.Issues, q.ChatMessage, q.Anyway = []string{keyIssueA}, "m1", true }, issue)
+	for _, c := range []struct {
+		what   string
+		mod    func(*launcher.Request)
+		holder Ship
+	}{
+		{"order", func(q *launcher.Request) { q.Source, q.OrderID, q.Anyway = "s", "o1", true }, order},
+		{"issue", func(q *launcher.Request) { q.Issues, q.Anyway = []string{keyIssueA}, true }, issue},
+	} {
+		before := len(r.s.List())
+		_, lerr := r.launchActing("work", c.mod)
+		if lerr == nil || lerr.Status != http.StatusConflict || !strings.Contains(lerr.Msg, c.holder.Name) {
+			t.Errorf("actor anyway launch on a held %s = %v, want a 409 naming %q", c.what, lerr, c.holder.Name)
+		}
+		if got := len(r.s.List()); got != before {
+			t.Errorf("%d ships after the actor's refused %s launch, want %d", got, c.what, before)
+		}
+	}
 }
 
 func TestAHandLaunchWithNoSourceIssuesOrChatMessageIsNeverRefusedForAKey(t *testing.T) {

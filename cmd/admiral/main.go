@@ -334,12 +334,11 @@ func serve(args []string) error {
 		fmt.Fprintln(os.Stderr, "admiral: could not remove a retired plugin:", err)
 	}
 	supervisor := &sources.Supervisor{Home: dir, Config: cfg}
-	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List}
+	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub}
 	// The view autopilot engine kept its state here.
 	_ = os.Remove(filepath.Join(dir, "autopilot.json"))
 	// A ship launched but not yet listed by the host counts as running.
 	allShips := func() []ships.Ship { return append(shipService.List(), shipService.Pending()...) }
-	sourceService.Ships = allShips
 	// A check, a lock or a reservation changing frees or fills a unit: the UI is told.
 	var resourceService *resources.Service
 	resourceSet := resources.New(resources.Options{Config: cfg.Current, Ships: allShips,
