@@ -13,9 +13,8 @@ func TestStartupLinesHaveNoToken(t *testing.T) {
 	t.Parallel()
 	home, port := newHome(t), freePort(t)
 	in := startAdmiral(t, home, "0.0.0.0:"+port)
-	if in.LANIP == "" {
-		lanUnavailable(t, "no LAN IPv4 address: second line was %q", in.LANLine)
-		return
+	if in.LANIP != fakeLAN {
+		t.Fatalf("line 2 must offer %s: %q", fakeLAN, in.LANLine)
 	}
 	got := []string{"Admiral is running at " + in.LocalURL + "/", in.LANLine, in.PairLine}
 	if !regexp.MustCompile(`^Admiral is running at http://127\.0\.0\.1:` + port + `/$`).MatchString(got[0]) {

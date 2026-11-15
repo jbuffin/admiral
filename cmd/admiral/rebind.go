@@ -101,7 +101,7 @@ func (l *listener) Move(want string) {
 	old, oldAddr := l.ln, l.addr
 	l.attempted = want
 	l.mu.Unlock()
-	nl, err := net.Listen("tcp", want)
+	nl, err := listenTCP(want)
 	if err == nil {
 		l.swap(nl, want, old)
 		return
@@ -109,7 +109,7 @@ func (l *listener) Move(want string) {
 	// A wider address can overlap the old one on some systems, so only then retry with the old one closed.
 	if errors.Is(err, syscall.EADDRINUSE) {
 		l.retire(old)
-		if nl, err = net.Listen("tcp", want); err == nil {
+		if nl, err = listenTCP(want); err == nil {
 			l.swap(nl, want, nil)
 			return
 		}
@@ -122,7 +122,7 @@ func (l *listener) Move(want string) {
 	if !retired {
 		return
 	}
-	restored, rerr := net.Listen("tcp", oldAddr)
+	restored, rerr := listenTCP(oldAddr)
 	if rerr != nil {
 		select {
 		case l.fatal <- fmt.Errorf("could not listen on %s again: %w", oldAddr, rerr):

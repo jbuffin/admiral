@@ -36,6 +36,7 @@ type instance struct {
 	LocalURL  string // first printed line's URL
 	LANLine   string // second printed line, verbatim
 	LANIP     string // empty when the second line says there is no LAN address
+	LANPort   string // the test build's stand-in for the LAN address: see lanEnv
 	PairLine  string // third printed line, which only a LAN address brings
 	Token     string // a paired device's token, set by requireLAN
 	cmd       *exec.Cmd
@@ -172,7 +173,8 @@ func startAdmiral(t *testing.T, home, listen string) *instance {
 	expectNoMigration(t, home)
 	bin := binaryPath(t)
 	cmd := exec.Command(bin, "--listen", listen)
-	cmd.Env = append(hermeticEnv(t), "ADMIRAL_HOME="+home)
+	lanPort := freePort(t)
+	cmd.Env = append(hermeticEnv(t), append(lanEnv(lanPort), "ADMIRAL_HOME="+home)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +184,7 @@ func startAdmiral(t *testing.T, home, listen string) *instance {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start %s: %v", bin, err)
 	}
-	in := &instance{Home: home, listen: listen, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
+	in := &instance{Home: home, listen: listen, LANPort: lanPort, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
 	go func() { _ = cmd.Wait(); close(in.done) }()
 	// Admiral starts a tmux server that outlives it; end this home's. Cleanups
 	// run last-registered-first, so this one is registered first to run after
@@ -271,9 +273,7 @@ func (in *instance) Restart(t *testing.T) *instance {
 	return again
 }
 
-// startLAN starts an instance on 0.0.0.0:<free port> and returns it with a
-// non-loopback IPv4 that reaches it. It skips when that address can't be
-// reached within 3 s (macOS firewall, no network), but fails under CI.
+// startLAN starts an instance on 0.0.0.0:<free port> with a device paired over the LAN.
 func startLAN(t *testing.T) *instance {
 	t.Helper()
 	in := startAdmiral(t, newHome(t), "0.0.0.0:"+freePort(t))
@@ -283,19 +283,9 @@ func startLAN(t *testing.T) *instance {
 
 func requireLAN(t *testing.T, in *instance) {
 	t.Helper()
-	if in.LANIP == "" {
-		lanUnavailable(t, "no LAN IPv4 address: second line was %q", in.LANLine)
-		return
+	if in.LANIP != fakeLAN {
+		t.Fatalf("Admiral did not offer the LAN address %s: second line was %q", fakeLAN, in.LANLine)
 	}
-	// A TCP connect is not enough: a firewall can accept it and then stall the
-	// request. Any HTTP answer (even 401) proves the address is reachable.
-	c := &http.Client{Transport: noProxy(), Timeout: 3 * time.Second}
-	resp, err := c.Get(in.lanURL() + "/")
-	if err != nil {
-		lanUnavailable(t, "no answer from %s within 3s (macOS firewall dialog? VPN?): %v", in.lanURL(), err)
-		return
-	}
-	resp.Body.Close()
 	if in.Token == "" {
 		in.Token = in.pair(t)
 	}
@@ -332,17 +322,20 @@ func (in *instance) pair(t *testing.T) string {
 	return paired.Token
 }
 
-func lanUnavailable(t *testing.T, format string, args ...any) {
-	t.Helper()
-	msg := fmt.Sprintf(format, args...)
-	if os.Getenv("CI") != "" {
-		t.Fatalf("non-local test cannot run on CI: %s", msg)
-	}
-	t.Skipf("non-local test skipped: %s", msg)
+// fakeLAN is the TEST-NET address Admiral offers other devices in these tests; nothing dials it.
+const fakeLAN = "192.0.2.10"
+
+// lanEnv gives the test build a LAN with no network: while Admiral listens on a wildcard address it also listens on
+// 127.0.0.1:lanPort, and treats those connections as a LAN peer reaching fakeLAN (cmd/admiral/listen_tcp_e2e.go).
+func lanEnv(lanPort string) []string {
+	return []string{"ADMIRAL_LAN_IP=" + fakeLAN, "ADMIRAL_E2E_LAN_PORT=" + lanPort}
 }
 
-// lanURL is the base URL a non-local client uses (peer address is not loopback).
-func (in *instance) lanURL() string { return "http://" + net.JoinHostPort(in.LANIP, in.Port) }
+// lanURL is the base URL a non-local client uses: Admiral sees its peer as a LAN address.
+func (in *instance) lanURL() string { return "http://127.0.0.1:" + in.LANPort }
+
+// advertisedLAN is the LAN URL Admiral gives other devices.
+func (in *instance) advertisedLAN() string { return "http://" + net.JoinHostPort(fakeLAN, in.Port) }
 
 func (in *instance) cookieName() string { return "admiral_token_" + in.Port }
 

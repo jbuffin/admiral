@@ -1,8 +1,6 @@
 import type { Page } from '@playwright/test';
-import { networkInterfaces } from 'node:os';
 import { expect, test, type Admiral } from './fixtures';
 
-const hasLan = Object.values(networkInterfaces()).some((l) => l?.some((i) => i.family === 'IPv4' && !i.internal));
 /** The desktop and iPad sidebar's Preferences, then Install app in the all-fleets group. */
 async function openInstallApp(page: Page) {
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Preferences' }).click();
@@ -29,8 +27,6 @@ const pagesDevice = async (admiral: Admiral) => {
 };
 
 test.describe('pairing an unpaired device', () => {
-  test.skip(!hasLan, 'needs a LAN address');
-
   test('an unpaired app opens on Pair this app, refuses a wrong code, pairs by typed code, and says signed out once revoked', { tag: '@critical' }, async ({ page, admiral }) => {
     await admiral.start({ lan: true });
     await page.goto(admiral.lanUrl + 'app/');

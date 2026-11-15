@@ -11,6 +11,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,7 +55,7 @@ export interface Admiral {
   fakeGh(): { dir: string; env: Record<string, string>; token(user: string, value: string): void };
   /** `lan` listens on 0.0.0.0, pairs a device and fills `lanUrl` and `token`; `env` wins over the server's environment. */
   start(opts?: { lan?: boolean; env?: Record<string, string> }): Promise<void>;
-  /** With `start({ lan: true })`: the Mac's non-loopback address (http://<ip>:<port>/) and the token of a device paired from that address. */
+  /** With `start({ lan: true })`: a URL Admiral sees as the LAN (http://127.0.0.1:<lan port>/) and the token of a device paired from it. */
   lanUrl: string;
   token: string;
   /** Stops the server process only: the home, the ships and their tmux server stay. */
@@ -62,6 +63,15 @@ export interface Admiral {
   resumeServer(): Promise<void>;
   restart(): Promise<void>;
 }
+
+const freePort = () =>
+  new Promise<string>((done, fail) => {
+    const s = createServer().listen(0, '127.0.0.1', () => {
+      const { port } = s.address() as { port: number };
+      s.close(() => done(String(port)));
+    });
+    s.once('error', fail);
+  });
 
 class Instance implements Admiral {
   home = mkdtempSync(join(tmpdir(), 'admiral-ui-'));
@@ -147,15 +157,16 @@ class Instance implements Admiral {
   token = '';
   private lan = false;
   private listen = '127.0.0.1:0';
+  private lanPort = '';
   private extraEnv: Record<string, string> = {};
 
-  start(opts: { lan?: boolean; env?: Record<string, string> } = {}) {
+  async start(opts: { lan?: boolean; env?: Record<string, string> } = {}) {
     this.lan = !!opts.lan;
     this.extraEnv = opts.env ?? {};
     this.listen = this.lan ? '0.0.0.0:0' : '127.0.0.1:0';
-    return this.resumeServer().then(async () => {
-      if (this.lan) this.token = await this.pairDevice();
-    });
+    if (this.lan) this.lanPort = await freePort();
+    await this.resumeServer();
+    if (this.lan) this.token = await this.pairDevice();
   }
 
   // Mints a code over loopback and redeems it from the LAN address, the way a second device does.
@@ -175,7 +186,9 @@ class Instance implements Admiral {
   resumeServer() {
     return new Promise<void>((done, fail) => {
       // A harness identity variable from the engineer's shell must not reach the server.
-      const env: NodeJS.ProcessEnv = { ...process.env, ...this.extraEnv, ADMIRAL_HOME: this.home };
+      // The test build's LAN needs no network: while on 0.0.0.0, Admiral also serves 127.0.0.1:<lanPort> as a LAN peer (cmd/admiral/listen_tcp_e2e.go).
+      const lan = this.lan ? { ADMIRAL_LAN_IP: '192.0.2.10', ADMIRAL_E2E_LAN_PORT: this.lanPort } : {};
+      const env: NodeJS.ProcessEnv = { ...process.env, ...lan, ...this.extraEnv, ADMIRAL_HOME: this.home };
       for (const v of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'COPILOT_HOME']) delete env[v];
       const proc = spawn(bin, ['--listen', this.listen], {
         env,
@@ -209,7 +222,7 @@ class Instance implements Admiral {
         this.url = m[1];
         // A restart comes back on the same port.
         this.listen = `${this.lan ? '0.0.0.0' : '127.0.0.1'}:${m[2]}`;
-        if (other) this.lanUrl = other[1];
+        if (other) this.lanUrl = `http://127.0.0.1:${this.lanPort}/`;
         done();
       });
       proc.stderr!.on('data', record);

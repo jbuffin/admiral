@@ -4,11 +4,18 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"os"
 )
 
 func bytesReader(b []byte) io.ReadSeeker { return bytes.NewReader(b) }
 
 func LANIPv4() (string, bool) {
+	// ADMIRAL_LAN_IP pins the address when the route picks the wrong network, and lets tests run with none.
+	if v := os.Getenv("ADMIRAL_LAN_IP"); v != "" {
+		if ip := net.ParseIP(v); ip != nil && usable(ip) {
+			return ip.To4().String(), true
+		}
+	}
 	// A UDP "connection" only selects a route; no packet is sent.
 	if c, err := net.Dial("udp4", "192.0.2.1:9"); err == nil {
 		defer c.Close()
