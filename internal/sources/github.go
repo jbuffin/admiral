@@ -71,6 +71,9 @@ type openArgs struct {
 	setWarnings func([]string)
 	// emit delivers an event this source saw itself; nil when nothing listens.
 	emit func(Event) bool
+	// conn is the last connection the source had, carried over a restart; setConn keeps a new one.
+	conn    *connState
+	setConn func(connState)
 }
 
 // A failed view keeps its last good orders next to the error.
@@ -105,6 +108,7 @@ type githubConn struct {
 	views    map[string]ghView
 	authMsg  string // the auth.required message in force
 	viewer   string // the signed-in account the last search ran as
+	conn     connState
 	stopped  bool
 	// kinds is, per event search, when it last answered and the latest event time already delivered or baselined per item.
 	kinds map[string]*kindPoll
@@ -127,6 +131,9 @@ func openGitHub(a openArgs) *githubConn {
 		g.env = f.Environ()
 	} else {
 		g.env = config.Fleet{}.Environ()
+	}
+	if a.conn != nil {
+		g.conn = *a.conn
 	}
 	return g
 }
@@ -314,37 +321,28 @@ func (g *githubConn) refresh() {
 	case g.ctx.Err() != nil:
 		return
 	case errors.As(err, &signIn):
-		g.mu.Lock()
-		fresh := g.authMsg != signIn.Message
-		g.authMsg = signIn.Message
-		g.mu.Unlock()
-		if fresh {
-			g.notify("auth.required", map[string]string{"message": signIn.Message})
-		}
+		g.signedOut(signIn)
 		return
 	case err != nil: // the token call hung: keep the sign-in state
+		g.record(ConnUnreachable, "", err.Error())
 		for _, v := range views {
 			changed = g.store(v.ID, nil, err.Error()) || changed
 		}
 		return
 	}
-	g.mu.Lock()
-	wasOut := g.authMsg != ""
-	g.authMsg = ""
-	g.mu.Unlock()
-	if wasOut {
-		g.notify("auth.ok", nil)
-	}
-	viewer := ""
+	g.signedIn()
+	viewer, answered, unreachable := "", false, false
 	for _, v := range views {
 		items, login, err := client.SearchViewer(g.ctx, token, v.Query)
 		if g.ctx.Err() != nil {
 			return
 		}
 		if err != nil {
+			unreachable = unreachable || github.IsUnreachable(err)
 			changed = g.store(v.ID, nil, err.Error()) || changed
 			continue
 		}
+		answered = true
 		if login != "" {
 			viewer = login
 		}
@@ -381,6 +379,18 @@ func (g *githubConn) refresh() {
 			orders = append(orders, order)
 		}
 		changed = g.store(v.ID, orders, "") || changed
+	}
+	if len(views) == 0 { // no search to carry the login
+		login, err := client.Viewer(g.ctx, token)
+		if g.ctx.Err() != nil {
+			return
+		}
+		unreachable, answered, viewer = github.IsUnreachable(err), err == nil, login
+	}
+	if unreachable && !answered {
+		g.record(ConnUnreachable, "", "Couldn't reach "+client.Host())
+	} else {
+		g.record(ConnConnected, viewer, "")
 	}
 	if viewer != "" {
 		g.mu.Lock()

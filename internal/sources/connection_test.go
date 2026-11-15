@@ -191,7 +191,7 @@ func TestUnreachableIsTheConnectionsStateButARefusedSearchIsTheViewsError(t *tes
 	if code, body := f.do(http.MethodPost, "/gh/refresh", map[string]any{}); code != http.StatusOK {
 		t.Fatalf("POST refresh = %d %s", code, body)
 	}
-	f.waitView("gh", "an error on Bugs", func(s SourceView) bool { return s.view("bugs").Error != "" })
+	f.waitView("gh", "an error on Bugs", func(s SourceView) bool { return strings.Contains(s.view("bugs").Error, "boom") })
 	if c := f.connectionOf("gh"); c["state"] != "connected" {
 		t.Errorf("connection after a refused search = %v, want connected", c)
 	}

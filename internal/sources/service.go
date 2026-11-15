@@ -44,6 +44,7 @@ type sourceState struct {
 	warnings  []string
 	hasSchema bool
 	viewer    string
+	conn      *connState
 }
 
 func (r *runner) snapshot() sourceState {
@@ -58,6 +59,10 @@ func (r *runner) snapshot() sourceState {
 		st.auth = &a
 	}
 	st.warnings = slices.Clone(r.warnings)
+	if r.conn != nil {
+		c := *r.conn
+		st.conn = &c
+	}
 	st.panels = make([]Panel, len(r.panels))
 	for i, p := range r.panels {
 		p.Orders = slices.Clone(p.Orders)
@@ -83,6 +88,8 @@ type SourceView struct {
 	// Warnings are the router's notes for the source's fleet; [] when none.
 	Warnings []string `json:"warnings"`
 	Views    []Panel  `json:"views"`
+	// Connection is a GitHub source's sign-in status; omitted for any other source.
+	Connection *Connection `json:"connection,omitempty"`
 	// Events is the source's event catalog, omitted until it has one.
 	Events []EventKind `json:"events,omitempty"`
 }
@@ -94,6 +101,7 @@ func (s *Service) View() []SourceView {
 		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Fleet: st.def.Fleet, Capabilities: st.caps, HasSchema: st.hasSchema,
 			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Viewer: st.viewer, Views: []Panel{}, Warnings: []string{}}
 		v.Warnings = append(v.Warnings, st.warnings...)
+		v.Connection = connectionOf(st)
 		if st.def.Plugin == builtinGitHub {
 			if v.Name == "" {
 				v.Name = "GitHub"
@@ -178,6 +186,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/sources/{key}", s.serveDelete)
 	mux.HandleFunc("POST /api/sources/{key}/restart", s.serveRestart)
 	mux.HandleFunc("POST /api/sources/{key}/refresh", s.serveRefresh)
+	mux.HandleFunc("POST /api/sources/{key}/connection/check", s.serveConnectionCheck)
+	mux.HandleFunc("POST /api/sources/{key}/search-count", s.serveSearchCount)
 	mux.HandleFunc("GET /api/sources/{key}/schema", s.serveSchema)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
@@ -674,8 +684,20 @@ func (s *Service) serveSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"name": name, "settings": settings})
 }
 
+// refuseGitHub answers 409 for a route that would remove or restart a GitHub source, which is always present.
+func (s *Service) refuseGitHub(w http.ResponseWriter, key, what string) bool {
+	if def, ok := s.Config.Current().Source(key); ok && def.Plugin == builtinGitHub {
+		writeError(w, http.StatusConflict, "The GitHub source is always present, so it can't be "+what)
+		return true
+	}
+	return false
+}
+
 func (s *Service) serveDelete(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
+	if s.refuseGitHub(w, key, "removed") {
+		return
+	}
 	s.mu.Lock()
 	cfg := s.Config.Current()
 	list := slices.DeleteFunc(slices.Clone(cfg.SourceList), func(d config.Source) bool { return d.Key == key })
@@ -768,6 +790,9 @@ func (s *Service) servePanelOrder(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) serveRestart(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
+	if s.refuseGitHub(w, key, "restarted") {
+		return
+	}
 	if !s.Sup.Restart(key) {
 		writeError(w, http.StatusNotFound, "source "+key+" not found")
 		return

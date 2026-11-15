@@ -60,8 +60,9 @@ type runner struct {
 	caps     []string
 	schema   json.RawMessage
 	panels   []Panel
-	warnings []string // the router's, for a built-in GitHub source
-	queue    []string // orders.launched not yet delivered
+	warnings []string   // the router's, for a built-in GitHub source
+	conn     *connState // a built-in GitHub source's last connection; it outlives the source's restarts
+	queue    []string   // orders.launched not yet delivered
 	pulls    pulls
 
 	catalog    []EventKind
@@ -270,8 +271,11 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 
 func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMessage)) (conn, error) {
 	if def.Plugin == builtinGitHub {
+		r.mu.Lock()
+		carried := r.conn
+		r.mu.Unlock()
 		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf, emit: r.emitFrom(sid),
-			setWarnings: func(w []string) { r.setWarnings(sid, w) }}), nil
+			setWarnings: func(w []string) { r.setWarnings(sid, w) }, conn: carried, setConn: func(c connState) { r.setConn(sid, c) }}), nil
 	}
 	m, dir, err := LoadManifest(r.home, def.Plugin)
 	if err != nil {
@@ -282,6 +286,18 @@ func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMe
 		env = f.Environ()
 	}
 	return startProc(r.key, m, dir, env, onNote)
+}
+
+// A stopped session's late check must not overwrite the current one's connection.
+func (r *runner) setConn(sid int, c connState) {
+	r.mu.Lock()
+	if sid != r.sid {
+		r.mu.Unlock()
+		return
+	}
+	r.conn = &c
+	r.mu.Unlock()
+	r.notify()
 }
 
 // A stopped session's late cycle must not overwrite the current one's warnings.
