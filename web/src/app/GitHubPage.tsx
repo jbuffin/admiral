@@ -4,6 +4,8 @@ import { checkConnection, countSearch, fetchRepos, fetchSettings, saveSource, ty
 import { Actions, Button } from './Button';
 import { addLabel, BUILTIN_VIEWS, checkedWords, editSearch, forSave, HOT_LABEL_DEFAULTS, inOrder, intervalLabel, intervalOptions, isBuiltin, isRemovable, needsSignIn, onKey, plainWords, removeLabel, removeView, renameView, searchOf, setHidden, titleOf, viewKey, type ViewEntry } from './githubViews';
 import { arranged, gripKey, pressGrip } from './gripReorder';
+import { NewViewCard } from './NewViewCard';
+import { addView } from './newView';
 import { fleetPath, go } from './router';
 import { copyOutcome } from './remoteTailscale';
 import { sources } from './shipsLink';
@@ -299,24 +301,51 @@ function ViewRow({ entry, k, keys, inert, count, error, edit, reorder }: { entry
   );
 }
 
-function ViewsSection({ views, inert, counts, errors, edit, reorder }: { views: ViewEntry[]; inert: boolean; counts: Record<string, Count>; errors: Record<string, string>; edit: (key: string, change: (list: ViewEntry[], i: number) => ViewEntry[]) => void; reorder: (order: string[]) => void }) {
+function ViewsSection({ sourceKey, views, inert, counts, errors, edit, reorder, onAdd }: { sourceKey: string; views: ViewEntry[]; inert: boolean; counts: Record<string, Count>; errors: Record<string, string>; edit: (key: string, change: (list: ViewEntry[], i: number) => ViewEntry[]) => void; reorder: (order: string[]) => void; onAdd: (title: string, query: string) => Promise<boolean> }) {
   const keys = views.map(viewKey);
   const shown = arranged('views', keys, (k) => k);
+  const [adding, setAdding] = useState(false);
+  const openButton = useRef<HTMLButtonElement>(null);
   return (
-    <section class="gh-section" aria-labelledby="gh-views">
-      <h2 class="h2" id="gh-views">
-        Views
-      </h2>
-      {inert ? <p class="note">They run once GitHub is connected.</p> : null}
-      <ul class="box list gh-views" aria-label="Views">
-        {shown.map((k) => {
-          const i = keys.indexOf(k);
-          const entry = views[i];
-          const q = searchOf(entry);
-          return <ViewRow key={k} entry={entry} k={k} keys={keys} inert={inert} count={q ? counts[q] : undefined} error={errors[k]} edit={edit} reorder={reorder} />;
-        })}
-      </ul>
-    </section>
+    <>
+      <section class="gh-section" aria-labelledby="gh-views">
+        <div class="gh-views-head">
+          <div class="gh-views-title">
+            <h2 class="h2" id="gh-views">
+              Views
+            </h2>
+            <p class="note">The tabs across the top of Orders, in this order. Drag to reorder, switch off to hide.</p>
+          </div>
+          <button ref={openButton} type="button" class="btn" disabled={inert} aria-expanded={adding} onClick={() => setAdding(true)}>
+            + New view
+          </button>
+        </div>
+        {inert ? <p class="note">They run once GitHub is connected.</p> : null}
+        <ul class="box list gh-views" aria-label="Views">
+          {shown.map((k) => {
+            const i = keys.indexOf(k);
+            const entry = views[i];
+            const q = searchOf(entry);
+            return <ViewRow key={k} entry={entry} k={k} keys={keys} inert={inert} count={q ? counts[q] : undefined} error={errors[k]} edit={edit} reorder={reorder} />;
+          })}
+        </ul>
+      </section>
+      {adding && !inert ? (
+        <NewViewCard
+          sourceKey={sourceKey}
+          error={errors['new-view']}
+          onAdd={async (title, query) => {
+            const ok = await onAdd(title, query);
+            if (ok) setAdding(false);
+            return ok;
+          }}
+          onCancel={() => {
+            setAdding(false);
+            setTimeout(() => openButton.current?.focus());
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -446,6 +475,17 @@ export function GitHubPage({ fleet }: { fleet: Fleet }) {
   const put = (area: string) => (patch: Record<string, unknown>) => enqueue(area, (s) => ({ ...s, settings: { ...s.settings, ...patch } }));
   const editView = (k: string, change: (list: ViewEntry[], i: number) => ViewEntry[]) => void enqueue(k, (s) => ({ ...s, views: onKey(s.views, k, (i) => change(s.views, i)) }));
   const reorder = (order: string[]) => void enqueue('views', (s) => ({ ...s, views: inOrder(s.views, order) }));
+  // The save answers the Source, not the settings, so the new entry has no id until the settings are read again.
+  const addNewView = async (title: string, query: string): Promise<boolean> => {
+    const ok = await enqueue('new-view', (s) => ({ ...s, views: addView(s.views, title, query) }));
+    if (!ok || !key) return ok;
+    const r = await fetchSettings(key);
+    if (alive.current && r.ok && r.data.settings.views) {
+      confirmed.current = { settings: r.data.settings, views: r.data.settings.views as ViewEntry[] };
+      redraw((n) => n + 1);
+    }
+    return ok;
+  };
 
   const connected = connectionFor(src)?.state === 'connected';
   const inert = needsSignIn(src && { connection: connectionFor(src) });
@@ -491,7 +531,7 @@ export function GitHubPage({ fleet }: { fleet: Fleet }) {
           <ReposSection fleet={fleet} src={src} />
           {shown ? (
             <>
-              <ViewsSection views={views} inert={inert} counts={counts} errors={errors} edit={editView} reorder={reorder} />
+              <ViewsSection sourceKey={src.key} views={views} inert={inert} counts={counts} errors={errors} edit={editView} reorder={reorder} onAdd={addNewView} />
               {errors.views ? (
                 <p class="note error" role="alert">
                   {errors.views}
