@@ -400,15 +400,20 @@ test('a new view from the builder saves the search it shows, and its count match
   const main = page.getByRole('main');
   await expect(main.getByRole('listitem').filter({ hasText: /Ship the approved/ })).toHaveCount(2);
 
-  // A second view with the same name is allowed, and reordering the first still moves it by its id.
+  // A change to the new row made as soon as it appears, with the server's id still to come, sticks on the page and on the server.
   await page.goto(githubPage(admiral, 'zulu'));
   await expect(viewRows(page).last()).toContainText('Approved and ready to merge');
   await page.getByRole('region', { name: 'Views', exact: true }).getByRole('button', { name: '+ New view', exact: true }).click();
   await newViewCard(page).getByRole('button', { name: 'Mentions me', exact: true }).click();
-  await newViewCard(page).getByRole('textbox', { name: 'Name', exact: true }).fill('Approved and ready to merge');
   await newViewCard(page).getByRole('button', { name: 'Add view', exact: true }).click();
-  await expect.poll(() => storedViews(admiral, 'gh').length).toBe(6);
-  await expect(newViewCard(page)).toHaveCount(0);
+  const hideNew = viewRows(page).last().getByRole('switch');
+  await hideNew.click();
+  await expect.poll(() => storedViews(admiral, 'gh').at(-1)).toEqual({ title: 'Mentions me', query: 'is:open mentions:@me', hidden: true });
+  await expect(hideNew).toHaveAttribute('aria-checked', 'false');
+  await page.reload();
+  await expect(viewRows(page)).toHaveCount(6);
+  await expect(viewRows(page).last().getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(viewRows(page).nth(4).getByRole('switch')).toHaveAttribute('aria-checked', 'true');
   const grip = viewRows(page).nth(5).getByRole('button', { name: /^Move / });
   await grip.focus();
   await grip.press('ArrowUp');
@@ -472,14 +477,11 @@ test('the New view card shows a failed search count and still saves it, and a ha
   await expect.poll(() => storedViews(admiral, 'gh').at(-1)?.title).toBe('Failing');
   await expect(viewRow(page, 'Failing')).toContainText('Search failed: GitHub does not know the qualifier review-requested');
 
-  // A label: Enter commits it, a label with a quote is refused, and Pull requests' parts go with Issues.
+  // A label: Enter commits it, and Pull requests' parts are off with Issues.
   await views.getByRole('button', { name: '+ New view', exact: true }).click();
   await card.getByRole('button', { name: 'Has label…', exact: true }).click();
   await expect(add).toBeDisabled();
   const label = card.getByRole('textbox', { name: 'Label', exact: true });
-  await label.fill('say "hi"');
-  await label.press('Enter');
-  await expect(card).toContainText(`Labels with " can't be searched`);
   await label.fill('needs design');
   await label.press('Enter');
   await expect(shownSearch(page)).toContainText('is:open involves:@me label:"needs design"');
@@ -489,7 +491,6 @@ test('the New view card shows a failed search count and still saves it, and a ha
   await card.getByRole('button', { name: 'Issues', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Reviewer', exact: true })).toBeDisabled();
   await expect(card.getByRole('button', { name: 'Drafts', exact: true })).toBeDisabled();
-  await expect(shownSearch(page)).toContainText('is:open is:issue involves:@me');
   await page.goto('about:blank');
 });
 

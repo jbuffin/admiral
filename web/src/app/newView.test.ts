@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { forSave, type ViewEntry } from './githubViews';
-import { MAX_SEARCH_BYTES, VIEW_PRESETS, addView, buildSearch, labelProblem, searchBytes, shownSearch, viewPreset, withHandEdit, withState, type BuilderState } from './newView';
+import { MAX_SEARCH_BYTES, VIEW_PRESETS, addView, buildSearch, canAdd, completeSearch, labelProblem, searchBytes, shownSearch, viewPreset, withHandEdit, withLabel, withState, type BuilderState } from './newView';
 
 const base: BuilderState = { show: 'pr', where: 'reviewer', drafts: true, approved: true, without: [] };
 const search = (patch: Partial<BuilderState>) => buildSearch({ ...base, ...patch });
@@ -146,5 +146,52 @@ describe('Add view', () => {
   it('allows a name another view already has', () => {
     const twice = addView(addView(list(), 'Mine', 'is:open'), 'Mine', 'is:open is:pr');
     expect(twice.filter((e) => e.title === 'Mine')).toHaveLength(2);
+  });
+});
+
+describe('Has label…', () => {
+  const asked = () => ({ state: viewPreset('has-label').state });
+
+  it('is not complete until it has a label, and a hand edit completes it', () => {
+    expect(completeSearch(asked(), 'has-label')).toBe(false);
+    expect(canAdd(asked(), 'has-label', 'bug')).toBe(false);
+    expect(completeSearch(withHandEdit(asked(), 'is:open label:"x"'), 'has-label')).toBe(true);
+    expect(completeSearch(asked(), undefined)).toBe(true);
+  });
+
+  it('gives the label to the Name while it is blank', () => {
+    const r = withLabel(asked(), '', 'bug');
+    expect(r.name).toBe('bug');
+    expect(buildSearch(r.draft.state)).toBe('is:open involves:@me label:"bug"');
+    expect(canAdd(r.draft, 'has-label', r.name)).toBe(true);
+  });
+
+  it('changes nothing when the same label is given again, keeping a renamed view and its hand edit', () => {
+    const first = withLabel(asked(), '', 'bug');
+    const edited = withHandEdit(first.draft, 'is:open label:"bug" is:pr');
+    const again = withLabel(edited, 'Bugs to fix', 'bug');
+    expect(again.draft).toBe(edited);
+    expect(again.name).toBe('Bugs to fix');
+  });
+
+  it('moves the Name to a new label only while the Name still reads as the old one', () => {
+    const first = withLabel(asked(), '', 'bug');
+    expect(withLabel(first.draft, 'bug', 'chore').name).toBe('chore');
+    expect(withLabel(first.draft, 'Bugs to fix', 'chore').name).toBe('Bugs to fix');
+    expect(buildSearch(withLabel(first.draft, 'bug', 'chore').draft.state)).toBe('is:open involves:@me label:"chore"');
+  });
+});
+
+describe('what can be added', () => {
+  const draft = { state: viewPreset('needs-my-review').state };
+
+  it('needs a name and a search', () => {
+    expect(canAdd(draft, 'needs-my-review', 'Mine')).toBe(true);
+    expect(canAdd(draft, 'needs-my-review', '  ')).toBe(false);
+    expect(canAdd(withHandEdit(draft, '  '), undefined, 'Mine')).toBe(false);
+  });
+
+  it('refuses a search over the length GitHub accepts', () => {
+    expect(completeSearch(withHandEdit(draft, `is:open ${'x'.repeat(MAX_SEARCH_BYTES)}`))).toBe(false);
   });
 });

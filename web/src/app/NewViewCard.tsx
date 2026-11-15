@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { countSearch } from './api';
 import { Actions, Button } from './Button';
-import { buildSearch, labelProblem, MAX_SEARCH_BYTES, searchBytes, shownSearch, viewPreset, VIEW_PRESETS, withHandEdit, withState, type BuilderState, type Draft, type Show, type Where } from './newView';
-
-type Count = 'counting' | { n: number } | { error: string };
+import { countOutcome, type Count } from './githubViews';
+import { canAdd as canAddView, completeSearch, labelProblem, MAX_SEARCH_BYTES, searchBytes, shownSearch, viewPreset, VIEW_PRESETS, withHandEdit, withLabel, withState, type BuilderState, type Draft, type Show, type Where } from './newView';
 
 const SHOWS: { show: Show; label: string }[] = [
   { show: 'pr', label: 'Pull requests' },
@@ -20,28 +19,27 @@ const WHERES: { where: Where; label: string }[] = [
 const COUNT_DELAY_MS = 400;
 
 /** The match count of a search, asked once it has held still; an answer for an older search never shows. */
-function useCount(sourceKey: string, search: string, ask: boolean): Count | undefined {
-  const [count, setCount] = useState<Count>();
+function useCount(sourceKey: string, search: string, ask: boolean): Count | 'counting' | undefined {
+  const [count, setCount] = useState<Count | 'counting'>();
   useEffect(() => {
     if (!ask) return setCount(undefined);
     setCount('counting');
-    let live = true;
+    const ctl = new AbortController();
     const timer = setTimeout(() => {
-      void countSearch(sourceKey, search).then((r) => {
-        if (!live) return;
-        if (r.ok) setCount({ n: r.data.count });
-        else setCount({ error: r.status === 422 && !r.error.startsWith('Search failed') ? `Search failed: ${r.error}` : r.error });
+      void countSearch(sourceKey, search, ctl.signal).then((r) => {
+        const outcome = countOutcome(r);
+        if (!ctl.signal.aborted && outcome) setCount(outcome);
       });
     }, COUNT_DELAY_MS);
     return () => {
-      live = false;
+      ctl.abort();
       clearTimeout(timer);
     };
   }, [sourceKey, search, ask]);
   return count;
 }
 
-const countWords = (c: Count | undefined): string => (c === 'counting' ? 'Counting…' : c && 'n' in c ? (c.n === 1 ? '1 match' : `${c.n} matches`) : c ? c.error : '');
+const countWords = (c: Count | 'counting' | undefined): string => (c === 'counting' ? 'Counting…' : c && 'n' in c ? (c.n === 1 ? '1 match' : `${c.n} matches`) : c ? c.error : '');
 
 /** A label field that commits on Enter, on blur and on its Add button, so a tap elsewhere keeps what was typed. */
 function LabelField({ name, addName, onCommit, autoFocus }: { name: string; addName: string; onCommit: (label: string) => void; autoFocus?: boolean }) {
@@ -95,10 +93,9 @@ export function NewViewCard({ sourceKey, error, onAdd, onCancel }: { sourceKey: 
   const state = draft.state;
   const pr = state.show === 'pr';
   const search = shownSearch(draft).trim();
-  const awaitingLabel = presetId === 'has-label' && !state.extra;
   const tooLong = searchBytes(search) > MAX_SEARCH_BYTES;
-  const count = useCount(sourceKey, search, !!search && !tooLong && !awaitingLabel);
-  const canAdd = !!name.trim() && !!search && !tooLong && !awaitingLabel;
+  const count = useCount(sourceKey, search, completeSearch(draft, presetId));
+  const canAdd = canAddView(draft, presetId, name);
 
   const choose = (id: string, label?: string) => {
     const p = viewPreset(id, label);
@@ -141,7 +138,11 @@ export function NewViewCard({ sourceKey, error, onAdd, onCancel }: { sourceKey: 
       {presetId === 'has-label' ? (
         <div class="nv-row">
           <span class="nv-key">Label</span>
-          <LabelField name="Label" addName="Use label" autoFocus onCommit={(label) => choose('has-label', label)} />
+          <LabelField name="Label" addName="Use label" autoFocus onCommit={(label) => {
+              const next = withLabel(draft, name, label);
+              setDraft(next.draft);
+              setName(next.name);
+            }} />
         </div>
       ) : null}
       <label class="nv-row">
@@ -217,9 +218,9 @@ export function NewViewCard({ sourceKey, error, onAdd, onCancel }: { sourceKey: 
         {draft.hand !== undefined ? <p class="note">Changing an option above rebuilds the search.</p> : null}
       </details>
       <div class="gh-search" role="group" aria-label="Search">
-        <code class="vquery">{search || buildSearch(state)}</code>
+        <code class="vquery">{search}</code>
         <span class={count && typeof count === 'object' && 'error' in count ? 'note warn' : 'note'} role="status">
-          {tooLong ? 'Too long for GitHub search' : countWords(count)}
+          {tooLong ? 'Too long for GitHub search' : !search ? 'Type a search' : countWords(count)}
         </span>
       </div>
       {error ? (

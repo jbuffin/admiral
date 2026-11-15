@@ -80,4 +80,22 @@ export const shownSearch = (d: Draft): string => d.hand ?? buildSearch(d.state);
 export const withHandEdit = (d: Draft, text: string): Draft => ({ ...d, hand: text });
 export const withState = (_d: Draft, state: BuilderState): Draft => ({ state });
 
+const labelOf = (extra?: string): string | undefined => /^label:"(.*)"$/.exec(extra ?? '')?.[1];
+
+/** A label given to Has label…: the same label changes nothing; a new one sets the Extra, and the Name only while it still reads as the old label. */
+export function withLabel(d: Draft, name: string, label: string): { draft: Draft; name: string } {
+  const was = labelOf(d.state.extra);
+  if (label === was) return { draft: d, name };
+  return { draft: withState(d, { ...d.state, extra: labelQualifier(label) }), name: !name.trim() || name === was ? label : name };
+}
+
+/** Whether the search can be asked about and saved: not empty, within GitHub's length, and not a label preset still waiting for its label. */
+export function completeSearch(d: Draft, presetId?: string): boolean {
+  const search = shownSearch(d).trim();
+  const awaitingLabel = !!PRESETS.find((p) => p.id === presetId)?.needsLabel && !d.state.extra && d.hand === undefined;
+  return !!search && searchBytes(search) <= MAX_SEARCH_BYTES && !awaitingLabel;
+}
+
+export const canAdd = (d: Draft, presetId: string | undefined, name: string): boolean => !!name.trim() && completeSearch(d, presetId);
+
 export const addView = (list: ViewEntry[], title: string, query: string): ViewEntry[] => [...list, { title: title.trim(), query: query.trim() }];

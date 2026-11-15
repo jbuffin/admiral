@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { checkConnection, countSearch, fetchRepos, fetchSettings, saveSource, type Connection, type Fleet, type Repos, type Source } from './api';
 import { Actions, Button } from './Button';
-import { addLabel, BUILTIN_VIEWS, checkedWords, editSearch, forSave, HOT_LABEL_DEFAULTS, inOrder, intervalLabel, intervalOptions, isBuiltin, isRemovable, needsSignIn, onKey, plainWords, removeLabel, removeView, renameView, searchOf, setHidden, titleOf, viewKey, type ViewEntry } from './githubViews';
+import { addLabel, BUILTIN_VIEWS, checkedWords, countOutcome, type Count, editSearch, forSave, HOT_LABEL_DEFAULTS, inOrder, intervalLabel, intervalOptions, isBuiltin, isRemovable, needsSignIn, onKey, plainWords, removeLabel, removeView, renameView, searchOf, setHidden, titleOf, viewKey, type ViewEntry } from './githubViews';
 import { arranged, gripKey, pressGrip } from './gripReorder';
 import { NewViewCard } from './NewViewCard';
 import { addView } from './newView';
@@ -205,8 +205,6 @@ function ReposSection({ fleet, src }: { fleet: Fleet; src: Source }) {
   );
 }
 
-type Count = { n: number } | { error: string };
-
 function ViewRow({ entry, k, keys, inert, count, error, edit, reorder }: { entry: ViewEntry; k: string; keys: string[]; inert: boolean; count?: Count; error?: string; edit: (key: string, change: (list: ViewEntry[], i: number) => ViewEntry[]) => void; reorder: (order: string[]) => void }) {
   const [renaming, setRenaming] = useState(false);
   const [editingSearch, setEditingSearch] = useState(false);
@@ -330,10 +328,10 @@ function ViewsSection({ sourceKey, views, inert, counts, errors, edit, reorder, 
           })}
         </ul>
       </section>
-      {adding && !inert ? (
+      {adding ? (
         <NewViewCard
           sourceKey={sourceKey}
-          error={errors['new-view']}
+          error={errors[NEW_VIEW_AREA]}
           onAdd={async (title, query) => {
             const ok = await onAdd(title, query);
             if (ok) setAdding(false);
@@ -413,6 +411,9 @@ function PrioritySection({ settings, put, error }: { settings: Record<string, un
   );
 }
 
+// No view's key (an id is a title slug) can start with +, so a row's error never lands in the card.
+const NEW_VIEW_AREA = '+new-view';
+
 type Snap = { settings: Record<string, unknown>; views: ViewEntry[] };
 type Op = { id: number; area: string; apply: (s: Snap) => Snap };
 
@@ -475,16 +476,10 @@ export function GitHubPage({ fleet }: { fleet: Fleet }) {
   const put = (area: string) => (patch: Record<string, unknown>) => enqueue(area, (s) => ({ ...s, settings: { ...s.settings, ...patch } }));
   const editView = (k: string, change: (list: ViewEntry[], i: number) => ViewEntry[]) => void enqueue(k, (s) => ({ ...s, views: onKey(s.views, k, (i) => change(s.views, i)) }));
   const reorder = (order: string[]) => void enqueue('views', (s) => ({ ...s, views: inOrder(s.views, order) }));
-  // The save answers the Source, not the settings, so the new entry has no id until the settings are read again.
-  const addNewView = async (title: string, query: string): Promise<boolean> => {
-    const ok = await enqueue('new-view', (s) => ({ ...s, views: addView(s.views, title, query) }));
-    if (!ok || !key) return ok;
-    const r = await fetchSettings(key);
-    if (alive.current && r.ok && r.data.settings.views) {
-      confirmed.current = { settings: r.data.settings, views: r.data.settings.views as ViewEntry[] };
-      redraw((n) => n + 1);
-    }
-    return ok;
+  // The row keeps a key of its own until the page is reloaded, so a change queued on it before the save lands still finds it.
+  const addNewView = (title: string, query: string): Promise<boolean> => {
+    const fresh = `+new-${++seq.current}`;
+    return enqueue(NEW_VIEW_AREA, (s) => ({ ...s, views: addView(s.views, title, query).map((e, i, all) => (i === all.length - 1 ? { ...e, fresh } : e)) }));
   };
 
   const connected = connectionFor(src)?.state === 'connected';
@@ -500,10 +495,10 @@ export function GitHubPage({ fleet }: { fleet: Fleet }) {
       asked.current.add(id);
       void countSearch(key, q).then((r) => {
         if (!alive.current) return;
-        if (r.ok) setCounts((c) => ({ ...c, [q]: { n: r.data.count } }));
-        else if (r.status === 422) setCounts((c) => ({ ...c, [q]: { error: r.error.startsWith('Search failed') ? r.error : `Search failed: ${r.error}` } }));
+        const outcome = countOutcome(r);
+        if (outcome && (r.ok || r.status === 422)) setCounts((c) => ({ ...c, [q]: outcome }));
         // A save restarts the source, and a count that lands in that gap is refused as not running yet: ask again shortly.
-        else if (r.status === 409 && (tries.current.get(id) ?? 0) < 5) {
+        else if (!r.ok && r.status === 409 && (tries.current.get(id) ?? 0) < 5) {
           tries.current.set(id, (tries.current.get(id) ?? 0) + 1);
           setTimeout(() => {
             if (!alive.current) return;

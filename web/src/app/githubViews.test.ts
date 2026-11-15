@@ -205,7 +205,19 @@ describe('every preset reads in plain words', () => {
     expect(plainWords(query)).toBe(words);
   });
 
+  it.each(['is:open is:issue review-requested:@me', 'is:open is:issue author:@me draft:false', 'is:open is:issue author:@me review:approved'])('shows %s as the search, since issues have no reviews', (query) => {
+    expect(plainWords(query)).toBe(query);
+  });
+
   it('shows the search itself when a qualifier is not covered, a quoted label included', () => {
     expect(plainWords('is:open label:"needs design" milestone:"v 2"')).toBe('is:open label:"needs design" milestone:"v 2"');
+  });
+});
+
+describe('a row added this session', () => {
+  it('keeps its own key and is saved without it', () => {
+    const e: ViewEntry = { title: 'Mine', query: 'is:open', fresh: '+new-1' };
+    expect(viewKey(e, 4)).toBe('+new-1');
+    expect(forSave([e])).toEqual([{ title: 'Mine', query: 'is:open' }]);
   });
 });
