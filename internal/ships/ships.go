@@ -125,6 +125,9 @@ type Service struct {
 	Orders     Orders
 	// OnChange must not block.
 	OnChange func()
+
+	// EventShip reports whether a ship was launched restricted or from an outside event; nil means it never was.
+	EventShip func(fleet, session string) (restricted, fromEvent bool)
 	// Tail gives a ship's conversation tail from a cache; it must not block.
 	Tail func(session string) string
 	// Candidates gives the PR URLs a ship and its crew boats printed in tool results, in order of first appearance.
@@ -349,6 +352,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/answer", s.serveAnswer)
 	mux.HandleFunc("POST /api/ships/{session}/stop", s.serveStop)
 	mux.HandleFunc("POST /api/ships/{session}/return", s.serveReturn)
+	mux.HandleFunc("POST /api/ships/{session}/commodore", s.serveHandoff)
 	mux.HandleFunc("GET /api/ships/{session}/pr", s.servePRDetail)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/messages", s.serveSendInput)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/interrupt", s.serveInterrupt)

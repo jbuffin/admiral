@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -458,4 +460,99 @@ func TestAnswerAllReviewsRelaunchesAMooredStackWithTheCommodoreCommand(t *testin
 	if e := lastOf(w.waitEvent(ship.Session, "woken", 1), "woken"); e["by"] != "hand" || e["round"] != float64(1) || e["pr"] != nil {
 		t.Errorf("woken event = %v, want by hand, round 1, on no PR", e)
 	}
+}
+
+func TestHandingALiveShipToCommodoreRelaunchesItsConversationUnderTheSameName(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.checkoutOf(w.work, "widgets", "acme/widgets")
+	w.cueFleets(map[string][]string{"f": {"record", "bracketedpaste", "hook working", "wait go", `event Stop {"background_tasks":[]}`}})
+	cfgDir := filepath.Join(w.root, "claude-cfg")
+	skill := filepath.Join(cfgDir, "skills", "commodore")
+	if err := os.MkdirAll(skill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\nname: commodore\ndescription: a fake skill\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(w.readFile(configPath(w.home))), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg["fleets"].(map[string]any)["f"].(map[string]any)["claude"].(map[string]any)["env"].(map[string]any)["CLAUDE_CONFIG_DIR"] = cfgDir
+	b, _ := json.Marshal(cfg)
+	writeConfig(t, w.home, string(b))
+	w.start()
+
+	ship := w.launchIn("f", "claude", "widgets")
+	first := w.record(ship.Session)
+	var id string
+	for i, a := range first.argv {
+		if a == "--session-id" && i+1 < len(first.argv) {
+			id = first.argv[i+1]
+		}
+	}
+	seedRound(t, cfgDir, first, "the earlier design talk")
+	pane := strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", "="+ship.Session+":0", "#{pane_id}"))
+	w.waitPaneWorking(pane)
+
+	code, body := send(t, http.MethodPost, w.shipURL(ship.Session, "/commodore"), map[string]any{"kind": "issue"})
+	if code != http.StatusAccepted {
+		t.Fatalf("POST /api/ships/%s/commodore = %d, want 202: %s", ship.Session, code, body)
+	}
+	w.touch(ship.Session, "go") // the ship's turn ends
+
+	refRe := regexp.MustCompile(regexp.QuoteMeta(w.home) + `/ships/` + regexp.QuoteMeta(ship.Session) + `/[\w.\-]+`)
+	var ref string
+	holdFor(t, "the prompt naming the ref file at the ship's terminal", func() bool {
+		ref = strings.TrimRight(refRe.FindString(w.inputOf(ship.Session, "")), ".,;:)\"'`")
+		return ref != ""
+	})
+	const issue = "https://github.com/acme/widgets/issues/9"
+	if err := os.MkdirAll(filepath.Dir(ref), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ref, []byte(issue+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.hookAt(pane, "Stop", hookStop) // the turn the prompt started ends
+
+	argvPath := filepath.Join(w.rec, ship.Session, "argv")
+	var argv []string
+	holdFor(t, "the ship relaunched with --resume", func() bool {
+		raw, _ := os.ReadFile(argvPath)
+		argv = strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
+		return slices.Contains(argv, "--resume")
+	})
+	if i := slices.Index(argv, "--resume"); i+1 >= len(argv) || argv[i+1] != id {
+		t.Errorf("relaunch argv = %q, want --resume %s, the id of the first launch", argv, id)
+	}
+	if slices.Contains(argv, "--session-id") {
+		t.Errorf("relaunch argv = %q, want no --session-id beside --resume", argv)
+	}
+	if got := argv[len(argv)-1]; got != "/commodore "+issue {
+		t.Errorf("relaunch prompt = %q, want the Commodore command with the issue URL", got)
+	}
+	holdFor(t, "the relaunch's 200k compact window", func() bool {
+		env, _ := os.ReadFile(filepath.Join(w.rec, ship.Session, "env"))
+		return strings.Contains(string(env), "CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000\n")
+	})
+	if cwd := strings.TrimSpace(w.readFile(filepath.Join(w.rec, ship.Session, "cwd"))); cwd != first.cwd {
+		t.Errorf("relaunch cwd = %q, want the first launch's %q", cwd, first.cwd)
+	}
+	list := w.in.waitShipsList(t, 20*time.Second, "the ship under its own name", func(l []shipJSON) bool {
+		s := byName(l)[ship.Name]
+		return s.Session == ship.Session && s.Status != "moored"
+	})
+	if len(list) != 1 {
+		t.Errorf("ships = %d, want the one ship under its name", len(list))
+	}
+	if e := lastOf(w.waitEvent(ship.Session, "stopped", 1), "stopped"); e["handed"] != true {
+		t.Errorf("stopped event = %v, want it marked handed", e)
+	}
+
+	holdFor(t, "the relaunched ship's conversation to show the earlier turn", func() bool {
+		code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/ships/"+ship.Session+"/conversation", nil)
+		return code == http.StatusOK && strings.Contains(body, `"u-1"`)
+	})
 }
