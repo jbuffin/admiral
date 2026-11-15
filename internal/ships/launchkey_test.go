@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -39,13 +40,17 @@ func (r *wakeRig) mustLaunch(t *testing.T, mod func(*launcher.Request)) Ship {
 	return got
 }
 
-// wantHeld asserts a 409 that names the holding ship, and that no second ship was started.
-func (r *wakeRig) wantHeld(t *testing.T, mod func(*launcher.Request), holder Ship) {
+// wantHeld asserts a 409 naming one of holders (once an anyway ship shares the key, either may be named), and no new ship.
+func (r *wakeRig) wantHeld(t *testing.T, mod func(*launcher.Request), holders ...Ship) {
 	t.Helper()
 	before := len(r.s.List())
 	_, lerr := r.s.Launch(context.Background(), r.keyReq(mod))
-	if lerr == nil || lerr.Status != http.StatusConflict || !strings.Contains(lerr.Msg, holder.Name) {
-		t.Fatalf("second Launch = %v, want a 409 naming %q", lerr, holder.Name)
+	names := make([]string, len(holders))
+	for i, h := range holders {
+		names[i] = h.Name
+	}
+	if lerr == nil || lerr.Status != http.StatusConflict || !slices.ContainsFunc(names, func(n string) bool { return strings.Contains(lerr.Msg, n) }) {
+		t.Fatalf("second Launch = %v, want a 409 naming one of %q", lerr, names)
 	}
 	if got := len(r.s.List()); got != before {
 		t.Errorf("%d ships after the refused launch, want %d: the first ship is untouched", got, before)
@@ -108,7 +113,7 @@ func TestAnywayLaunchesASecondShipOnTheSameOrder(t *testing.T) {
 	if second.Session == first.Session || second.Source != "s" || second.OrderID != "o1" {
 		t.Errorf("second ship = %s on %s/%s, want another session on s/o1", second.Session, second.Source, second.OrderID)
 	}
-	r.wantHeld(t, order, first) // the extra ship doesn't open the order to a plain launch
+	r.wantHeld(t, order, first, second) // the extra ship doesn't open the order to a plain launch
 }
 
 func TestAnywayLaunchesASecondShipOnAnIssueAnotherShipHolds(t *testing.T) {
@@ -119,7 +124,7 @@ func TestAnywayLaunchesASecondShipOnAnIssueAnotherShipHolds(t *testing.T) {
 	if second.Session == first.Session {
 		t.Errorf("anyway on a held issue reused session %q, want a second ship", second.Session)
 	}
-	r.wantHeld(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} }, first)
+	r.wantHeld(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} }, first, second)
 }
 
 func TestAnAnywayLaunchFromAnOrderWithNoShipStillWorks(t *testing.T) {

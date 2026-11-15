@@ -40,6 +40,9 @@ func FindTmux() (string, error) { return exec.LookPath("tmux") }
 // maxCommand keeps one invocation under the 16 KiB a tmux client message carries.
 const maxCommand = 12000
 
+// maxArgs keeps one invocation under the 1000 arguments tmux's server unpacks from a client.
+const maxArgs = 900
+
 // MaxMessage is what one tmux client message holds; the harness's command line
 // goes in a single one (respawn-pane), so a longer one cannot be launched.
 const MaxMessage = 15000
@@ -133,7 +136,7 @@ func batches(cmds [][]string) [][]string {
 	size := 0
 	for _, c := range cmds {
 		n := CommandSize(c)
-		if len(cur) > 0 && size+n > maxCommand {
+		if len(cur) > 0 && (size+n > maxCommand || len(cur)+1+len(c) > maxArgs) {
 			out = append(out, cur)
 			cur, size = nil, 0
 		}
