@@ -475,3 +475,29 @@ func TestEveryChatPromptSendsALayOutRequestToTheWayfinderSkillWithTheEngineersWo
 		}
 	}
 }
+
+func TestEveryChatPromptGivesTheMakeCampaignLinkInsteadOfATool(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		start := strings.Index(prompt, "/app/orders?fleet=")
+		if start < 0 {
+			t.Errorf("%s prompt never gives the /app/orders?fleet= link", harness)
+			continue
+		}
+		link := prompt[start:]
+		end := strings.Index(link, "newCampaign=")
+		if end < 0 {
+			t.Errorf("%s prompt's /app/orders?fleet= link has no newCampaign= parameter: %q", harness, link[:min(len(link), 200)])
+			continue
+		}
+		if strings.Contains(link[:end], "#") {
+			t.Errorf("%s prompt's link holds a raw #, which starts the fragment: %q", harness, link[:end])
+		}
+		if !strings.Contains(strings.ToLower(prompt[max(0, start-400):min(len(prompt), start+500)]), "full issue url") {
+			t.Errorf("%s prompt does not say to use full issue URLs in the link", harness)
+		}
+		if strings.Contains(prompt, "create_campaign") || strings.Contains(prompt, "make_campaign") {
+			t.Errorf("%s prompt names a tool for making a campaign; it gets a link only", harness)
+		}
+	}
+}

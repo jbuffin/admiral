@@ -31,6 +31,18 @@ describe('call on a draft refusal', () => {
     answer(409, { error: 'no judge harness', reason: 'claude has not passed the no-network check' });
     expect(await call('POST', '/x')).toEqual({ ok: false, status: 409, error: 'no judge harness', reason: 'claude has not passed the no-network check' });
   });
+  it('carries the parent a 502 made and the issues it linked, and ignores them when they are the wrong type', async () => {
+    answer(502, { error: 'link failed', parent: 'https://github.com/acme/widgets/issues/50', linked: ['https://github.com/acme/widgets/issues/41'] });
+    expect(await call('POST', '/campaigns/create', {})).toEqual({
+      ok: false,
+      status: 502,
+      error: 'link failed',
+      parent: 'https://github.com/acme/widgets/issues/50',
+      linked: ['https://github.com/acme/widgets/issues/41'],
+    });
+    answer(502, { error: 'no parent', parent: 4, linked: 'x' });
+    expect(await call('POST', '/campaigns/create', {})).toEqual({ ok: false, status: 502, error: 'no parent' });
+  });
   it('stops the request when the caller aborts it, and answers aborted', async () => {
     hangUntilAborted();
     const ctl = new AbortController();
