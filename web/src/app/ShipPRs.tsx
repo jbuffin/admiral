@@ -335,7 +335,7 @@ export function PRTab({ ship }: { ship: Ship }) {
   const place = reReviewPlace(ship);
   const respondedHere = moored && current.reviewing && current.responded && current.state === 'OPEN';
   const line = reviewBar ?? stackBarLine(shape);
-  const fixOn = moored && !!ship.fix && !reviews(ship);
+  const fixOn = moored && !!ship.fix;
   const fixStack = fixOn && fixLabel(ship) === 'Fix stack';
   const fixText = fixOn ? fixLine(ship.fix, fixStack) : '';
   const action = reviewBar ? 'none' : stackBarAction(shape, ship.status);
