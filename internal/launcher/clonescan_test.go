@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func errText(err error) string {
@@ -164,6 +165,12 @@ func plantFilterSubmodule(t *testing.T, clone, marker string) {
 	git(t, sub, "commit", "-q", "-m", "x")
 	git(t, sub, "config", "filter.evil.clean", "touch "+marker+" && cat")
 	if err := os.WriteFile(filepath.Join(sub, "x.txt"), []byte("two, modified\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// An index older than its entries makes git re-read them through the filter; otherwise that depends on whether
+	// the files and the commit's index fell in the same second.
+	old := time.Unix(946684800, 0)
+	if err := os.Chtimes(filepath.Join(sub, ".git", "index"), old, old); err != nil {
 		t.Fatal(err)
 	}
 	git(t, clone, "update-index", "--add", "--cacheinfo", "160000,"+git(t, sub, "rev-parse", "HEAD")+",sub")
