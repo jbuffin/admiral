@@ -178,7 +178,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const sourceLine = [name, age].filter(Boolean).join(' · ');
   return (
     <>
-      <div class="orders-split">
+      <div class={`orders-split${selected && !phone ? ' has-pane' : ''}`}>
         <main class="panel orders-screen">
           <header class="orders-head">
             <div class="orders-line">

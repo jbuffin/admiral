@@ -1041,3 +1041,10 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .orow.selected, .orow-phone.selected { background: var(--color-hover); box-shadow: inset 3px 0 0 var(--color-accent); }
 .for-you-link { display: inline-block; margin: 0 0 12px; color: var(--color-muted); font-size: var(--font-size-meta); }
 @media (pointer: coarse) { .for-you-link { min-height: var(--shape-min-touch-target); line-height: var(--shape-min-touch-target); } }
+/* Beside the 340px pane a narrow list keeps title and ref; labels, reason and state word are in the pane. */
+@media (max-width: 1100px) {
+  .orders-split.has-pane .orow-label, .orders-split.has-pane .orow-state, .orders-split.has-pane .orow-meta > span:not(.mono) { display: none; }
+  .orders-split.has-pane .orders-filter { width: auto; flex: 1 1 140px; min-width: 0; }
+  .orders-split.has-pane .orders-head { padding: 16px 14px 12px; }
+}
+@media (max-width: 900px) { .odetail-pane { width: 300px; } }
