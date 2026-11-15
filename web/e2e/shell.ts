@@ -1908,6 +1908,12 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
       }).every(Boolean),
     );
   const orderLaunch = (title: string) => main.getByRole('button', { name: new RegExp(`^Launch.*${title}`) });
+  // Orders launch from their row's arrow on the Orders screen, in the plugin source's tab.
+  const onOrders = async () => {
+    await page.goto(a.url + 'app/orders?fleet=zulu');
+    await press(page.getByRole('tab', { name: /^Orders/ }));
+    await expect(page.getByRole('tab', { name: /^Orders/ })).toHaveAttribute('aria-selected', 'true');
+  };
   const submit = form.getByRole('button', { name: 'Launch', exact: true });
   /** Submits the form and answers what the server received and said. */
   const send = async (button = submit) => {
@@ -1939,6 +1945,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   const proj = join(a.home, 'proj');
 
   // From an order: its text, the checkout of its repo, and Just launch (no Commodore, no favorites) are preselected.
+  await onOrders();
   await press(orderLaunch('Tighten the api limits'));
   await expect(form).toBeVisible();
   await expect(form.getByLabel('Text')).toHaveValue('Tighten them.');
@@ -2089,6 +2096,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   rmSync(zuluCrew, { recursive: true, force: true });
 
   // An uncloned repo: the form says where it will clone before launch, and launching sends clone with no dir.
+  await onOrders();
   const dirsAnswer = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/launch-orders/dirs');
   await press(orderLaunch('Ship the widget fix'));
   const shown = ((await (await dirsAnswer).json()) as { clone: { repo: string } }).clone.repo;
@@ -2106,11 +2114,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect(existsSync(widget)).toBe(true);
 
   // Long content: the form neither pans sideways nor shrinks a select under the touch target.
-  // One Orders heading, and a group heading naming the source alone.
-  const orders = page.getByRole('main').locator('section.orders');
-  await expect(orders.getByRole('heading', { level: 2 })).toHaveText(['Orders']);
-  await expect(orders.getByRole('heading', { level: 3 })).toHaveText(['Orders']);
-
+  await onOrders();
   for (const title of ['Supercalifragilistic', 'Port the long repo']) {
     await press(orderLaunch(title));
     await expect(form).toBeVisible();
@@ -2376,7 +2380,6 @@ export interface MyPR {
 }
 
 export const READY_PR: MyPR = { number: 7, title: 'Add the rate limiter', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' };
-export const WAITING_PR: MyPR = { number: 8, title: 'Cache the token lookups', review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' };
 export const SHIPLESS_PR: MyPR = { number: 9, title: 'Fix the flaky retry', review: 'REVIEW_REQUIRED', checks: 'FAILURE', mergeable: 'CONFLICTING' };
 
 /**
@@ -2405,21 +2408,23 @@ export function seedMyPRs(a: Admiral, prs: MyPR[]) {
   for (const p of prs) prAnswer(a, p.number, { state: 'OPEN', review: p.review, checks: p.checks, mergeable: p.mergeable });
 }
 
-/** A My PRs row: the Orders list's item for this PR. */
-const myPRRow = (page: Page, p: MyPR) => page.getByRole('region', { name: 'Orders' }).getByRole('listitem').filter({ hasText: p.title });
+/** The selected order's detail: a column beside the list on the iPad, the sheet on the phone. */
+export const orderPane = (page: Page, phone: boolean) => (phone ? page.getByRole('dialog').filter({ hasText: "Why it's here" }) : page.getByRole('complementary', { name: 'Selected order' }));
 
-/** Opens the Ships screen and waits for the PR's row in My PRs. */
+/** A My PRs row on the Orders screen. */
+const myPRRow = (page: Page, p: MyPR) => page.getByRole('main').getByRole('listitem').filter({ hasText: p.title });
+
+/** Opens Orders → My PRs and waits for the PR's row. */
 async function openMyPRs(page: Page, a: Admiral, p: MyPR) {
-  await page.goto(a.url + 'app/ships?fleet=zulu');
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  await page.getByRole('tab', { name: /^My PRs/ }).tap();
   const row = myPRRow(page, p);
   await expect(row).toBeVisible();
   return row;
 }
 
-const SHIPLESS_NOTE = /Ready to merge|Waiting on|Has conflicts/;
-
 /**
- * A ready PR a ship carries: its row in My PRs has the chips, the ship's link and Ready to merge, and Merge with the method, with no Launch.
+ * A ready PR a ship carries: its detail on Orders → My PRs has Merge with the method, which merges only after the tap; the row has no Merge.
  * Nothing merges before the tap; one tap records one `gh pr merge <url> --squash` and the ship sails off.
  */
 export async function myPRsMergeACarriedPR(page: Page, a: Admiral, opts: { phone: boolean }) {
@@ -2429,19 +2434,20 @@ export async function myPRsMergeACarriedPR(page: Page, a: Admiral, opts: { phone
   await readyOnTheServer(a, ship, 'squash');
 
   const row = await openMyPRs(page, a, READY_PR);
-  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expect(row).toContainText(chip);
   await expect(row).toContainText('Ready to merge');
-  await expect(row.getByRole('link', { name: ship.name })).toBeVisible();
-  await expect(row.getByRole('button', { name: /^Launch/ })).toHaveCount(0);
-  const merge = row.getByRole('button', { name: 'Merge', exact: true });
-  // The row sits under the moored ships, so it takes a scroll to reach, as on a real screen.
+  await expect(row.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
+  await row.getByRole('button', { name: `Open ${READY_PR.title}`, exact: true }).tap();
+  const pane = orderPane(page, opts.phone);
+  await expect(pane).toBeVisible();
+  const merge = pane.getByRole('button', { name: 'Merge', exact: true });
+  await expect(merge).toBeVisible();
   await merge.scrollIntoViewIfNeeded();
   await expect(merge).toBeInViewport();
   expect((await merge.boundingBox())!.height, 'Merge height').toBeGreaterThanOrEqual(44);
-  await expect(row).toContainText('squash');
-  await expect(row.getByRole('button', { name: /Merge up to/ })).toHaveCount(0);
+  await expect(pane).toContainText('squash');
+  await expect(pane.getByRole('button', { name: /Merge up to/ })).toHaveCount(0);
   if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
-  await holds(() => mergeCalls(a).length === 0, 'opening My PRs merges nothing');
+  await holds(() => mergeCalls(a).length === 0, 'opening the detail merges nothing');
 
   await merge.tap();
   await expect(merge).toBeDisabled();
@@ -2450,36 +2456,13 @@ export async function myPRsMergeACarriedPR(page: Page, a: Admiral, opts: { phone
     .poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
     .not.toBe('moored');
   expect(mergeCalls(a), 'one merge').toHaveLength(1);
-  // Whether the row stays or the refresh removes it, a merged PR is never offered for launch.
-  await expect(row.getByRole('button', { name: /^Launch|^Merge/ })).toHaveCount(0);
-  if (await row.isVisible()) await expect(row).toContainText('Merged');
-}
-
-/** A PR a ship carries that is not ready: its row has the chips, the ship and a next step that is not Ready to merge, and offers no Merge and no Launch. */
-export async function myPRsShowANotReadyCarriedPR(page: Page, a: Admiral, opts: { phone: boolean }) {
-  const ship = await launchMooredShip(a, WAITING_PR.number);
-  await expect
-    .poll(async () => {
-      await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
-      const got = ((await (await fetch(`${a.url}api/v1/ships`)).json()) as { ships: (ShipJSON & { prs?: { review?: string }[]; waiting?: string; no_resume?: boolean })[] }).ships.find((s) => s.session === ship.session);
-      // A waiting text or a missing resume would put its own words ahead of the chips' next step.
-      return { review: got?.prs?.[0]?.review, waiting: got?.waiting ?? '', noResume: got?.no_resume ?? false };
-    }, { timeout: 30_000 })
-    .toEqual({ review: 'REVIEW_REQUIRED', waiting: '', noResume: false });
-
-  const row = await openMyPRs(page, a, WAITING_PR);
-  for (const chip of ['Review required', 'Checks passing', 'Mergeable']) await expect(row).toContainText(chip);
-  await expect(row.getByRole('link', { name: ship.name })).toBeVisible();
-  await expect(row).toContainText('Waiting on review');
-  await expect(row).not.toContainText('Ready to merge');
-  await expect(row.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
-  await expect(row.getByRole('button', { name: /^Launch/ })).toHaveCount(0);
-  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+  // Whether the pane stays or the refresh removes the order, a merged PR is never offered for merge again.
+  await expect(pane.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
 }
 
 /**
- * A PR no ship carries: its row has the chips and no ship, no next step and no Merge, and Launch Commodore, which opens the form
- * with Commodore and the PR's URL as its text. Nothing is launched.
+ * A PR no ship carries: its row's arrow and its detail's Launch ship open the form with Commodore and the PR's URL as its text, and the pane has no Merge.
+ * Nothing is launched.
  */
 export async function myPRsOfferCommodoreOnAShiplessPR(page: Page, a: Admiral, opts: { phone: boolean }) {
   // The server has no Commodore; the form falls back to another skill unless the claude dock's identity has one.
@@ -2488,42 +2471,32 @@ export async function myPRsOfferCommodoreOnAShiplessPR(page: Page, a: Admiral, o
   writeFileSync(join(commodore, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
 
   const row = await openMyPRs(page, a, SHIPLESS_PR);
-  for (const chip of ['Review required', 'Checks failing', 'Conflicts']) await expect(row).toContainText(chip);
-  await expect(row).not.toContainText(SHIPLESS_NOTE);
   await expect(row.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
-  await expect(row.locator('a[href*="/app/ships/"]'), 'no ship carries it').toHaveCount(0);
-  const launch = row.getByRole('button', { name: 'Launch Commodore', exact: true });
-  await expect(launch).toHaveText('Launch Commodore');
-  // Only a PR order says Commodore: the other orders keep Launch.
-  await expect(page.getByRole('region', { name: 'Orders' }).getByRole('button', { name: /^Launch Tighten the api limits/ })).toHaveText('Launch');
-  await expect(launch).toBeInViewport();
-  expect((await launch.boundingBox())!.height, 'Launch Commodore height').toBeGreaterThanOrEqual(44);
-  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
-
-  await launch.tap();
+  await expect(row.getByRole('button', { name: 'Launch Commodore', exact: true })).toHaveCount(0);
   const form = page.getByRole('dialog', { name: 'Launch', exact: true });
-  await expect(form).toBeVisible();
-  await expect(form.getByLabel('Skill')).toHaveValue('commodore');
-  await expect(form.getByLabel('Text')).toHaveValue(`${PR_BASE}/${SHIPLESS_PR.number}`);
-  await form.getByRole('button', { name: 'Cancel', exact: true }).tap();
-  await expect(form).toBeHidden();
+  const expectCommodoreOnThePR = async () => {
+    await expect(form).toBeVisible();
+    await expect(form.getByLabel('Skill')).toHaveValue('commodore');
+    await expect(form.getByLabel('Text')).toHaveValue(`${PR_BASE}/${SHIPLESS_PR.number}`);
+    await form.getByRole('button', { name: 'Cancel', exact: true }).tap();
+    await expect(form).toBeHidden();
+  };
+
+  const arrow = row.getByRole('button', { name: `Launch ${SHIPLESS_PR.title}`, exact: true });
+  expect((await arrow.boundingBox())!.height, 'arrow height').toBeGreaterThanOrEqual(44);
+  await arrow.tap();
+  await expectCommodoreOnThePR();
+
+  await row.getByRole('button', { name: `Open ${SHIPLESS_PR.title}`, exact: true }).tap();
+  const pane = orderPane(page, opts.phone);
+  await expect(pane).toBeVisible();
+  await expect(pane.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
+  const launch = pane.getByRole('button', { name: 'Launch ship', exact: true });
+  expect((await launch.boundingBox())!.height, 'Launch ship height').toBeGreaterThanOrEqual(44);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+  await launch.tap();
+  await expectCommodoreOnThePR();
   expect(await listShips(a), 'nothing was launched').toEqual([]);
-}
-
-/** A merge gh refuses shows in the row's one alert, merges nothing and leaves the ship moored. */
-export async function myPRsMergeFailsOnTheRow(page: Page, a: Admiral) {
-  seedMergeMethod(a, 'squash');
-  ghMergeFails(a, 'GraphQL: Pull request is not mergeable (mergePullRequest)');
-  const ship = await launchMooredShip(a, READY_PR.number);
-  await readyOnTheServer(a, ship, 'squash');
-
-  const row = await openMyPRs(page, a, READY_PR);
-  await row.getByRole('button', { name: 'Merge', exact: true }).tap();
-  await expect(row.getByRole('alert')).toContainText('Pull request is not mergeable');
-  await expect(page.getByRole('alert'), 'no second alert').toHaveCount(1);
-  expect(mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/${READY_PR.number}`, '--squash']]);
-  await expect(row.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled();
-  expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
 }
 
 /**

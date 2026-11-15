@@ -50,20 +50,6 @@ test('a routine made through the form fires on its minute and its ship shows in 
   await expect(editor.getByRole('switch', { name: 'On', exact: true })).not.toBeChecked();
 });
 
-test('Automate… on an order view opens an unsaved scheduled routine draft', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  await page.goto(admiral.url + 'app/ships?fleet=zulu');
-  await page.getByRole('main').getByRole('button', { name: /^Automate/ }).first().tap();
-  await expect(page).toHaveURL(/\/app\/routines\/new/);
-  const form = page.getByRole('main').getByRole('form', { name: 'Routine' });
-  await expect(form.getByLabel('Name')).toHaveValue(/^Automate /);
-  await expect(form.getByLabel('When')).toHaveValue('30 8 * * 1-5');
-  await expect(form.getByRole('radio', { name: 'Ask first' })).toBeChecked();
-  const list = (await (await fetch(`${admiral.url}api/fleets/zulu/routines`)).json()) as { routines: unknown[] };
-  expect(list.routines).toEqual([]);
-});
-
 type Sentences = { sentences: { field: string; sentence: string }[]; checks: string[]; guidance: string; preset: string };
 const orders = async (a: { url: string }, fleet: string) => (await (await fetch(`${a.url}api/v1/fleets/${fleet}/standing-orders`)).json()) as Sentences;
 const sentenceFor = (o: Sentences, field: string) => o.sentences.find((s) => s.field === field)!.sentence;

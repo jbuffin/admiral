@@ -126,19 +126,44 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await press(main.getByRole('link', { name: grillShip.name, exact: true }));
   await expect(main.getByRole('heading', { name: grillShip.name })).toBeVisible();
   await expect(main.getByRole('link', { name: `#21 ${T.grill}` })).toHaveAttribute('href', issueUrl(21));
-  // An order's title opens its issue too.
-  await page.goto(admiral.url + 'app/ships?fleet=zulu');
-  await expect(row(T.annex).getByRole('link', { name: T.annex, exact: true })).toHaveAttribute('href', issueUrl(ANNEX));
-
-  // Follow on an order that has sub-issues; one without them offers none. Following launches nothing.
+  // An order's detail opens its issue; Follow as campaign (only with sub-issues) opens the campaign, and the detail then offers Open campaign.
+  await page.goto(admiral.url + 'app/orders?fleet=zulu');
+  await press(page.getByRole('tab', { name: /^Orders: Orders/ }));
+  const pane = page.getByRole('complementary', { name: 'Selected order' });
+  const detail = (title: string) => press(main.getByRole('button', { name: `Open ${title}`, exact: true }));
   const ships = async () => ((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: unknown[] }).ships.length;
   const before = await ships();
-  await expect(row(T.hangar)).toBeVisible();
-  await expect(row(T.hangar).getByRole('button', { name: /^Follow/ })).toHaveCount(0);
-  await press(row(T.annex).getByRole('button', { name: /^Follow/ }));
+
+  await detail(T.annex);
+  await expect(pane.getByRole('heading', { name: T.annex })).toBeVisible();
+  const issueOnGitHub = pane.getByRole('link', { name: 'Open on GitHub', exact: true });
+  await expect(issueOnGitHub).toHaveAttribute('href', issueUrl(ANNEX));
+  await expect(issueOnGitHub).toHaveAttribute('target', '_blank');
+  await expect(issueOnGitHub).toHaveAttribute('rel', /noopener/);
+  await expect(issueOnGitHub).toHaveAttribute('rel', /noreferrer/);
+
+  // One without sub-issues offers no campaign action.
+  await detail(T.hangar);
+  await expect(pane.getByRole('heading', { name: T.hangar })).toBeVisible();
+  await expect(pane.getByRole('button', { name: 'Follow as campaign' })).toHaveCount(0);
+  await expect(pane.getByRole('link', { name: 'Open campaign' })).toHaveCount(0);
+
+  // Following launches nothing.
+  await detail(T.annex);
+  await press(pane.getByRole('button', { name: 'Follow as campaign', exact: true }));
   await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
   await expect(main.getByRole('heading', { name: T.annex })).toBeVisible();
   expect(await ships()).toBe(before);
+
+  // Back on Orders, the followed order offers Open campaign in place of Follow.
+  const annexCampaign = campaignIdOf(page);
+  await page.goto(admiral.url + 'app/orders?fleet=zulu');
+  await press(page.getByRole('tab', { name: /^Orders: Orders/ }));
+  await detail(T.annex);
+  await expect(pane.getByRole('button', { name: 'Follow as campaign' })).toHaveCount(0);
+  await press(pane.getByRole('link', { name: 'Open campaign', exact: true }));
+  await expect(page).toHaveURL(new RegExp(`/app/campaigns/${annexCampaign}`));
+  await expect(main.getByRole('heading', { name: T.annex })).toBeVisible();
 
   // A slice: children that can join carry a checkbox named by their title; checking one opens nothing.
   const annexId = campaignIdOf(page);
