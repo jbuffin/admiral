@@ -474,7 +474,7 @@ func TestAStackThatConflictsWithItsBaseIsAFixRoundOnItsTopPR(t *testing.T) {
 	if want := []PRProblems{{PR: wpr3, ConflictsWithBase: "main"}}; !reflect.DeepEqual(got.Problems, want) {
 		t.Errorf("problems = %+v, want %+v", got.Problems, want)
 	}
-	if !strings.Contains(got.Feedback, "Feedback on "+wpr3+"\n") || !strings.Contains(got.Feedback, "main") || !strings.Contains(got.Feedback, "rebase") {
+	if !strings.Contains(got.Feedback, "Feedback on "+wpr3+"\n") || !strings.Contains(got.Feedback, "main") || !strings.Contains(strings.ToLower(got.Feedback), "rebase") {
 		t.Errorf("feedback does not tell the ship the stack conflicts with main and to rebase it:\n%s", got.Feedback)
 	}
 }

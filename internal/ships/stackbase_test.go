@@ -46,28 +46,27 @@ func readyAt(head string) moor.Status {
 	return st
 }
 
-// stackedDetails is GitHub's answer for layers 7, 9 and 11 as one GitHub stack on main.
-func stackedDetails(heads ...string) map[string]moor.Detail {
-	st := &moor.DetailStack{Number: 4, Size: len(heads), Base: "main"}
-	for i := range heads {
-		n := []int{7, 9, 11}[i]
-		st.Entries = append(st.Entries, moor.DetailStackEntry{Position: i + 1, Number: n, URL: layerURL(n), State: "OPEN", Head: heads[i]})
+// stackedDetails is GitHub's answer for the first n of layers 7, 9 and 11 as one GitHub stack on main; their head branches are layer-N, never a SHA.
+func stackedDetails(n int) map[string]moor.Detail {
+	nums := []int{7, 9, 11}[:n]
+	st := &moor.DetailStack{Number: 4, Size: n, Base: "main"}
+	for i, num := range nums {
+		st.Entries = append(st.Entries, moor.DetailStackEntry{Position: i + 1, Number: num, URL: layerURL(num), State: "OPEN", Head: "layer-" + strconv.Itoa(num)})
 	}
 	out := map[string]moor.Detail{}
-	for i := range heads {
-		n := []int{7, 9, 11}[i]
+	for i, num := range nums {
 		base := "main"
 		if i > 0 {
-			base = heads[i-1]
+			base = "layer-" + strconv.Itoa(nums[i-1])
 		}
-		out[layerURL(n)] = moor.Detail{Number: n, URL: layerURL(n), Head: heads[i], Base: base, DefaultBranch: "main", Stack: st}
+		out[layerURL(num)] = moor.Detail{Number: num, URL: layerURL(num), Head: "layer-" + strconv.Itoa(num), Base: base, DefaultBranch: "main", Stack: st}
 	}
 	return out
 }
 
 // chainedDetails is the same layers chained by branch names, in no GitHub stack.
-func chainedDetails(heads ...string) map[string]moor.Detail {
-	out := stackedDetails(heads...)
+func chainedDetails(n int) map[string]moor.Detail {
+	out := stackedDetails(n)
 	for u, d := range out {
 		d.Stack = nil
 		out[u] = d
@@ -76,8 +75,8 @@ func chainedDetails(heads ...string) map[string]moor.Detail {
 }
 
 // independentDetails has every layer based on main.
-func independentDetails(heads ...string) map[string]moor.Detail {
-	out := chainedDetails(heads...)
+func independentDetails(n int) map[string]moor.Detail {
+	out := chainedDetails(n)
 	for u, d := range out {
 		d.Base = "main"
 		out[u] = d
@@ -117,8 +116,8 @@ func (r *stackBaseRig) poll(t *testing.T) Ship {
 
 func TestAStackThatConflictsWithItsBaseAsAWholeIsNotReadyWhileEachLayerStaysReady(t *testing.T) {
 	for name, details := range map[string]map[string]moor.Detail{
-		"a GitHub stack":      stackedDetails("h7", "h9", "top-1"),
-		"a chain of branches": chainedDetails("h7", "h9", "top-1"),
+		"a GitHub stack":      stackedDetails(3),
+		"a chain of branches": chainedDetails(3),
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newStackBaseRig(t, details, readyAt("h7"), readyAt("h9"), readyAt("top-1"))
@@ -142,7 +141,7 @@ func TestAStackThatConflictsWithItsBaseAsAWholeIsNotReadyWhileEachLayerStaysRead
 }
 
 func TestAStackThatMergesCleanlyIntoItsBaseStaysReady(t *testing.T) {
-	r := newStackBaseRig(t, stackedDetails("h7", "h9", "top-1"), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
+	r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
 	r.ck.set(false, nil)
 
 	sh := r.poll(t)
@@ -157,7 +156,7 @@ func TestAStackThatMergesCleanlyIntoItsBaseStaysReady(t *testing.T) {
 
 func TestAStackBaseCheckThatCannotRunChangesNothing(t *testing.T) {
 	t.Run("the checker fails", func(t *testing.T) {
-		r := newStackBaseRig(t, stackedDetails("h7", "h9", "top-1"), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
+		r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
 		r.ck.set(false, errors.New("no gh auth"))
 
 		if sh := r.poll(t); !sh.StackReady {
@@ -168,7 +167,7 @@ func TestAStackBaseCheckThatCannotRunChangesNothing(t *testing.T) {
 		}
 	})
 	t.Run("the shape cannot be read", func(t *testing.T) {
-		r := newStackBaseRig(t, stackedDetails("h7", "h9", "top-1"), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
+		r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
 		r.g.detailErr = errors.New("GitHub is down")
 
 		if sh := r.poll(t); !sh.StackReady {
@@ -187,9 +186,9 @@ func TestTheStackBaseCheckRunsOnlyForAStackedOrChainedShipWhoseOpenLayersAreAllR
 		details map[string]moor.Detail
 		layers  []moor.Status
 	}{
-		"independent PRs":       {independentDetails("h7", "h9", "top-1"), []moor.Status{readyAt("h7"), readyAt("h9"), readyAt("top-1")}},
-		"one PR":                {map[string]moor.Detail{layerURL(7): {Number: 7, URL: layerURL(7), Head: "top-1", Base: "main", DefaultBranch: "main"}}, []moor.Status{readyAt("top-1")}},
-		"a layer not ready yet": {stackedDetails("h7", "h9", "top-1"), []moor.Status{readyAt("h7"), readyAt("h9"), pending}},
+		"independent PRs":       {independentDetails(3), []moor.Status{readyAt("h7"), readyAt("h9"), readyAt("top-1")}},
+		"one PR":                {map[string]moor.Detail{layerURL(7): {Number: 7, URL: layerURL(7), Head: "layer-7", Base: "main", DefaultBranch: "main"}}, []moor.Status{readyAt("top-1")}},
+		"a layer not ready yet": {stackedDetails(3), []moor.Status{readyAt("h7"), readyAt("h9"), pending}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newStackBaseRig(t, c.details, c.layers...)
@@ -207,7 +206,7 @@ func TestTheStackBaseCheckRunsOnlyForAStackedOrChainedShipWhoseOpenLayersAreAllR
 }
 
 func TestTheStackShapeIsReadOnceUntilALayersHeadMoves(t *testing.T) {
-	r := newStackBaseRig(t, stackedDetails("h7", "h9", "top-1"), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
+	r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
 	r.poll(t)
 	first := len(r.g.detailLog())
 	if first == 0 {
@@ -219,10 +218,7 @@ func TestTheStackShapeIsReadOnceUntilALayersHeadMoves(t *testing.T) {
 	if got := len(r.g.detailLog()); got != first {
 		t.Errorf("detail reads = %d after a second poll with the same heads, want still %d", got, first)
 	}
-	r.g.set(layerURL(11), readyAt("top-2"))
-	r.g.mu.Lock()
-	r.g.detail = stackedDetails("h7", "h9", "top-2")
-	r.g.mu.Unlock()
+	r.g.set(layerURL(11), readyAt("top-2")) // a push moves the head SHA; the branch name stays
 	r.poll(t)
 	if got := len(r.g.detailLog()); got <= first {
 		t.Errorf("detail reads = %d after the top head moved, want the shape read again", got)
@@ -234,7 +230,7 @@ func TestTheStackShapeIsReadOnceUntilALayersHeadMoves(t *testing.T) {
 }
 
 func TestMergeComesBackOnTheNextPollOnceTheConflictIsGone(t *testing.T) {
-	r := newStackBaseRig(t, stackedDetails("h7", "h9", "top-1"), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
+	r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
 	if sh := r.poll(t); sh.StackReady {
 		t.Fatal("the premise fails: the conflicting stack is ready")
 	}

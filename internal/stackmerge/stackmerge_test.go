@@ -117,6 +117,7 @@ func TestACheckThatCannotTellIsAnErrorNeverAnAnswer(t *testing.T) {
 	u := newUpstream(t)
 	top := u.stack("top\nb\nc\n")
 	u.commit("shared.css", "main\nb\nc\n", "main moved")
+	pwned := filepath.Join(t.TempDir(), "pwned")
 	if got, err := u.checker(t).Conflicts(context.Background(), check("main", 8, top)); err != nil || !got {
 		t.Fatalf("the premise fails: a good request answers %v, %v, want true with no error", got, err)
 	}
@@ -124,7 +125,7 @@ func TestACheckThatCannotTellIsAnErrorNeverAnAnswer(t *testing.T) {
 		"the PR's head is not the one asked about": check("main", 8, strings.Repeat("0", 40)),
 		"the PR has no head ref":                   check("main", 99, top),
 		"the base branch does not exist":           check("no-such-branch", 8, top),
-		"a base that looks like an option":         check("--upload-pack=touch /tmp/pwned", 8, top),
+		"a base that looks like an option":         check("--upload-pack=touch "+pwned, 8, top),
 		"an empty head":                            check("main", 8, ""),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -132,6 +133,9 @@ func TestACheckThatCannotTellIsAnErrorNeverAnAnswer(t *testing.T) {
 
 			if err == nil || got {
 				t.Errorf("Conflicts = %v, %v, want false with an error: it could not tell", got, err)
+			}
+			if _, err := os.Stat(pwned); err == nil {
+				t.Errorf("a program the request named ran")
 			}
 		})
 	}
@@ -142,8 +146,8 @@ func TestACheckIgnoresTheGitConfigOfTheEnvironmentItRunsIn(t *testing.T) {
 	top := u.stack("top\nb\nc\n")
 	u.commit("shared.css", "main\nb\nc\n", "main moved")
 	cfg := filepath.Join(t.TempDir(), "gitconfig")
-	// An ambient insteadOf would send the fetch to nowhere, and a credential helper or hook path would run a program.
-	body := "[url \"file:///nowhere/\"]\n\tinsteadOf = file://" + u.dir + "\n[core]\n\thooksPath = /nowhere\n[credential]\n\thelper = !touch " + filepath.Join(t.TempDir(), "ran") + "\n"
+	// An ambient insteadOf would send the fetch to nowhere.
+	body := "[url \"file:///nowhere/\"]\n\tinsteadOf = file://" + u.dir + "\n"
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -21,8 +21,8 @@ func (a *answerRig) baseConflicted(t *testing.T, ck *fakeStackChecker) {
 	a.gh.set(wakePR2, readyAt("top-1"))
 	a.gh.mu.Lock()
 	a.gh.detail = map[string]moor.Detail{
-		wakePR:  {Number: 7, URL: wakePR, Head: "h7", Base: "main", DefaultBranch: "main", Stack: baseStack()},
-		wakePR2: {Number: 8, URL: wakePR2, Head: "top-1", Base: "h7", DefaultBranch: "main", Stack: baseStack()},
+		wakePR:  {Number: 7, URL: wakePR, Head: "layer-7", Base: "main", DefaultBranch: "main", Stack: baseStack()},
+		wakePR2: {Number: 8, URL: wakePR2, Head: "layer-8", Base: "layer-7", DefaultBranch: "main", Stack: baseStack()},
 	}
 	a.gh.mu.Unlock()
 	a.mooredStack(t, 2, "/commodore resume run-7", 30*time.Minute)
@@ -34,7 +34,7 @@ func (a *answerRig) baseConflicted(t *testing.T, ck *fakeStackChecker) {
 
 func baseStack() *moor.DetailStack {
 	return &moor.DetailStack{Number: 12, Size: 2, Base: "main", URL: wakeStack, Entries: []moor.DetailStackEntry{
-		{Position: 1, Number: 7, URL: wakePR, State: "OPEN", Head: "h7"}, {Position: 2, Number: 8, URL: wakePR2, State: "OPEN", Head: "top-1"}}}
+		{Position: 1, Number: 7, URL: wakePR, State: "OPEN", Head: "layer-7"}, {Position: 2, Number: 8, URL: wakePR2, State: "OPEN", Head: "layer-8"}}}
 }
 
 func TestAStackThatConflictsWithItsBaseServesAFixStackOfferOnItsTopPR(t *testing.T) {
@@ -72,7 +72,7 @@ func TestFixOnAStackThatConflictsWithItsBaseWakesTheShipAndTellsItToRebaseOntoTh
 		t.Errorf("prompt = %q, want %q", got, want)
 	}
 	b, _ := os.ReadFile(filepath.Join(a.checkout, ".admiral", "untrusted", "feedback-3.md"))
-	if !strings.Contains(string(b), wakePR2) || !strings.Contains(string(b), "main") || !strings.Contains(string(b), "rebase") {
+	if !strings.Contains(string(b), wakePR2) || !strings.Contains(string(b), "main") || !strings.Contains(strings.ToLower(string(b)), "rebase") {
 		t.Errorf("feedback-3.md = %q, want it to say the stack conflicts with main and to rebase onto it", b)
 	}
 }
