@@ -69,7 +69,7 @@ func (s *Service) servePromote(w http.ResponseWriter, r *http.Request) {
 	work, err := promote.Read(r.Context(), l.Dir, clone, branch)
 	if err != nil {
 		if errors.Is(err, promote.ErrNothing) || errors.Is(err, promote.ErrAdmiralPaths) || errors.Is(err, promote.ErrAlternates) ||
-			errors.Is(err, promote.ErrHarness) || errors.Is(err, promote.ErrSymlink) {
+			errors.Is(err, promote.ErrHarness) || errors.Is(err, promote.ErrSymlink) || errors.Is(err, promote.ErrGitCarrier) {
 			fail(w, invalidf("%v", err))
 			return
 		}

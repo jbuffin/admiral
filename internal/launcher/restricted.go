@@ -477,10 +477,10 @@ func safeGit(dir string, args ...string) (string, error) {
 	return string(out), err
 }
 
-// gitmodulesID is the blob id of .gitmodules in an ls-files -s or ls-tree listing, or "" when it has none.
+// gitmodulesID is the blob id of .gitmodules in an ls-files -s -z or ls-tree -z listing, or "" when it has none.
 func gitmodulesID(listing string) string {
-	for _, line := range strings.Split(listing, "\n") {
-		if meta, path, ok := strings.Cut(line, "\t"); ok && path == ".gitmodules" {
+	for _, entry := range strings.Split(listing, "\x00") {
+		if meta, path, ok := strings.Cut(entry, "\t"); ok && path == ".gitmodules" {
 			if f := strings.Fields(meta); len(f) >= 3 && f[1] == "blob" {
 				return f[2]
 			} else if len(f) >= 2 {
@@ -491,31 +491,33 @@ func gitmodulesID(listing string) string {
 	return ""
 }
 
-// checkClonedSubmodules refuses a kept clone holding a gitlink or a .gitmodules other than dir's own: git
-// treats the pair as a submodule, enters whatever git directory a ship put under it, and runs its config.
+// checkClonedSubmodules refuses a kept clone holding a gitlink, a .git below the root or a .gitmodules other than dir's own: git
+// treats a gitlink and .gitmodules as a submodule, enters whatever git directory a ship put under it, and runs its config.
+// The work tree is walked in Go first, so no git runs over a tree that holds a planted repository.
 func checkClonedSubmodules(checkout, dir string) error {
 	if fi, err := os.Lstat(filepath.Join(checkout, ".git")); err != nil || !fi.IsDir() {
 		return errors.New("the kept clone's .git is not a directory")
 	}
-	want, err := safeGit(dir, "ls-tree", "HEAD", "--", ".gitmodules")
+	if err := promote.ScanTree(checkout); err != nil {
+		return err
+	}
+	want, err := safeGit(dir, "ls-tree", "-z", "HEAD", "--", ".gitmodules")
 	if err != nil {
 		return fmt.Errorf("could not read .gitmodules from the routine's repository: %v", err)
 	}
 	wantID := gitmodulesID(want)
-	index, err := safeGit(checkout, "ls-files", "-s")
+	index, err := safeGit(checkout, "ls-files", "-s", "-z")
 	if err != nil {
 		return fmt.Errorf("could not list the kept clone's index: %v", err)
 	}
-	head, err := safeGit(checkout, "ls-tree", "-r", "HEAD")
+	head, err := safeGit(checkout, "ls-tree", "-r", "-z", "HEAD")
 	if err != nil {
 		return fmt.Errorf("could not list the kept clone's HEAD: %v", err)
 	}
 	for _, listing := range []string{index, head} {
-		for _, line := range strings.Split(listing, "\n") {
-			// git calls any entry whose mode masks to 0160000 a gitlink and reads the index mode raw, so only the three plain modes pass.
-			if mode, _, ok := strings.Cut(line, " "); ok && mode != "100644" && mode != "100755" && mode != "120000" {
-				return fmt.Errorf("the kept clone holds an entry of mode %s, which git may treat as a submodule", mode)
-			}
+		// git calls any entry whose mode masks to 0160000 a gitlink and reads the index mode raw, so only the three plain modes pass.
+		if err := promote.CheckModes([]byte(listing)); err != nil {
+			return err
 		}
 		if id := gitmodulesID(listing); id != wantID {
 			return errors.New("the kept clone's .gitmodules differs from the routine's repository")
