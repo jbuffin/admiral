@@ -81,6 +81,8 @@ test('no order view offers Automate…, the Routines editor offers no New in vie
 
   await page.goto(admiral.url + 'app/orders?fleet=zulu');
   const main = page.getByRole('main');
+  // GitHub's own tabs come first; the plugin source's orders have a tab of their own.
+  await main.getByRole('tab', { name: /^Orders: Orders/ }).tap();
   await expect(main.getByText('Fix the login redirect')).toBeVisible();
   await expect(main.getByRole('button', { name: /Automate/ })).toHaveCount(0);
   await expect(main.getByRole('link', { name: /Automate/ })).toHaveCount(0);

@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -300,9 +301,10 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   setState(admiral, done, 'needs_you');
   await expect.poll(() => outcomeEvents(admiral, done)).toEqual(['launched', 'ended', 'stopped']);
 
-  // A ship launched in a folder names that folder as its repo, on its row and in the boarded ship's header.
+  // A ship launched in a checkout names its folder as its repo, on its row and in the boarded ship's header.
   const repo = join(admiral.home, 'harbor-web');
   mkdirSync(repo, { recursive: true });
+  spawnSync('git', ['init', '-q'], { cwd: repo });
   const dev = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', dir: repo, cues: ['bracketedpaste'] });
   setState(admiral, dev, 'working');
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
