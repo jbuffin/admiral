@@ -23,13 +23,18 @@ export function noteCampaign(c: Campaign) {
   campaignList.value = at < 0 ? [...campaignList.value, summary] : campaignList.value.map((x, i) => (i === at ? summary : x));
 }
 
+/** Puts a campaign into the list and opens its page, in the campaign's own fleet. */
+export function openCampaign(c: Campaign) {
+  noteCampaign(c);
+  rememberFleet(c.fleet);
+  go(campaignPath(c.id), `?fleet=${encodeURIComponent(c.fleet)}`);
+}
+
 /** Follows an issue and opens its page, in the campaign's own fleet; answers the refusal, or null. */
 export async function followReference(reference: string): Promise<string | null> {
   const r = await call<Campaign>('POST', '/campaigns', { reference });
   if (!r.ok) return r.error;
-  noteCampaign(r.data);
-  rememberFleet(r.data.fleet);
-  go(campaignPath(r.data.id), `?fleet=${encodeURIComponent(r.data.fleet)}`);
+  openCampaign(r.data);
   return null;
 }
 

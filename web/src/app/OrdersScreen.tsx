@@ -12,10 +12,12 @@ import { fixLabel } from './prTab';
 import { orderRowAction, type RowAction } from './moored';
 import { ReReviewSheet } from './ReReview';
 import type { MooredPR, Ship } from './api';
+import { MakeCampaignSheet } from './MakeCampaignSheet';
+import { sheetIssues } from './makeCampaign';
 import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { boxState, type BoxState, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, launchRef, newCampaignSearch, selectableRows, selectAfterChoose, selection, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
+import { boxState, type BoxState, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, launchRef, newCampaignRefs, newCampaignSearch, selectableRows, selectAfterChoose, selection, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
 import { refreshSource } from './api';
 import { go, loc, shipPath } from './router';
 import { emptyLine, surfaceById } from './surfaces';
@@ -257,6 +259,9 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   };
   const boxFor = (r: OrderRow): RowProps['box'] => (selecting ? { checked: checked.has(r.key), onToggle: () => toggle(r.key), box: boxState(r, checked) } : undefined);
   const makeCampaign = () => go('/app/orders', newCampaignSearch(loc.value.search, checkedUrls(poolRows, checked)));
+  const refs = newCampaignRefs(loc.value.search);
+  const campaignRows = refs.length > 0 ? all.flatMap((t) => viewRows(list, t.id, now, ships.value)) : [];
+  const closeCampaign = () => go('/app/orders', newCampaignSearch(loc.value.search, []), true);
   const errors = viewErrors(list, id);
   const needs = shown.map((g) => g.row).filter((r) => r.needsYou);
   const waiting = shown.map((g) => g.row).filter((r) => !r.needsYou);
@@ -413,6 +418,9 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
         <Sheet label={selected.order.title} kind="order-sheet" onClose={() => !launching && !formHadEscape.current && close()}>
           <OrderPane key={selected.key} row={selected} group={selectedGroup} viewer={selectedViewer} sources={list} now={now} heading={false} onLaunch={onLaunch} />
         </Sheet>
+      ) : null}
+      {refs.length > 0 && fleet ? (
+        <MakeCampaignSheet key={refs.join(',')} fleet={fleet.key} sourceKeys={list.filter((s) => s.plugin === 'github').map((s) => s.key)} issues={sheetIssues(refs, campaignRows)} projects={[]} onClose={closeCampaign} />
       ) : null}
       {again?.kind === 'rereview' ? <ReReviewSheet ship={again.ship} sendUrl={again.url} onClose={() => setAgain(null)} /> : null}
       {again?.kind === 'fix' ? <FixSheet ship={again.ship} onClose={() => setAgain(null)} onBusy={() => {}} /> : null}

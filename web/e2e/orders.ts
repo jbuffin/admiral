@@ -1,6 +1,8 @@
 import { expect, type Locator, type Page } from '@playwright/test';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fakeGhTrees, issueNode } from './campaign';
+import { proveJudge } from './crew';
 import type { Admiral } from './fixtures';
 import { addGitHubSource, launchShip, orderPane, seedFleets, stackAnswer } from './shell';
 
@@ -34,6 +36,16 @@ const ASSIGNED: Item[] = [
 // A GitHub stack of three review-requested PRs by another author, answered top first as the search does (most recently updated first).
 const STACK = { number: 7, url: 'https://github.com/acme/api/stack/7' };
 const STACK_LAYERS = ['Add the store', 'Wire the store to the API', 'Show the store in the page'];
+// An issue-only view in acme/widgets, the repo campaign.ts builds trees for. Its parent is in no view, so its child sits in a collapsed group.
+const POOL_PARENT = { number: 40, title: 'Existing campaign', repo: 'acme/widgets' };
+const POOL: Item[] = [
+  { number: 41, title: 'Pool the sensor logs', repo: 'acme/widgets', author: 'bob' },
+  { number: 42, title: 'Add a retry budget', repo: 'acme/widgets', author: 'bob' },
+  { number: 43, title: 'Trim the build cache', repo: 'acme/widgets', author: 'bob', parent: POOL_PARENT },
+];
+const POOL_VIEW = { title: 'Open issues', query: 'is:open is:issue label:pool' };
+const NEW_PARENT = { number: 50, title: 'Pool: sensor and retry work' };
+const REST_IDS: Record<number, number> = { 41: 9041, 42: 9042 };
 const REVIEW: Item[] = [
   { number: 11, title: 'Review the cache layer', author: 'alice', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' }, requested: true },
   { number: 12, title: 'Review the docs sweep', author: 'fake-viewer', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE', reviewed: true }, requested: true },
@@ -97,6 +109,7 @@ export function seedOrders(a: Admiral) {
   const path = join(a.home, 'config.json');
   const config = JSON.parse(readFileSync(path, 'utf8'));
   config.fleets.zulu.owners = ['acme'];
+  config.sources.gh.settings.views = [POOL_VIEW];
   a.writeConfig(config);
   const dir = join(a.fakeGh().dir, 'search');
   mkdirSync(dir, { recursive: true });
@@ -109,7 +122,35 @@ export function seedOrders(a: Admiral) {
   canned('a-assigned', 'assignee:@me', ASSIGNED);
   canned('b-review', 'review-requested:@me', REVIEW);
   canned('c-mine', 'author:@me', MINE);
+  canned('p-pool', 'label:pool', POOL);
   canned('z-rest', 'is:open', []);
+  seedCampaignCreate(a);
+}
+
+/** The fake gh's REST answers for creating a campaign: each child's id, the new parent, the link call, and the new parent's tree for following it. */
+function seedCampaignCreate(a: Admiral) {
+  const rest = join(a.fakeGh().dir, 'rest');
+  const answer = (key: string, method: string, endpoint: string, body: unknown) => {
+    writeFileSync(join(rest, `${key}.endpoint`), endpoint);
+    writeFileSync(join(rest, `${key}.method`), method);
+    writeFileSync(join(rest, `${key}.json`), JSON.stringify(body));
+  };
+  for (const [n, id] of Object.entries(REST_IDS)) answer(`child${n}`, 'GET', `repos/acme/widgets/issues/${n}`, { id, number: Number(n), parent_issue_url: null });
+  answer('create', 'POST', 'repos/acme/widgets/issues', { number: NEW_PARENT.number, html_url: `https://github.com/acme/widgets/issues/${NEW_PARENT.number}` });
+  answer('link', 'POST', `repos/acme/widgets/issues/${NEW_PARENT.number}/sub_issues`, {});
+  const kids = POOL.slice(0, 2).map((i) => issueNode(i.number, i.title));
+  fakeGhTrees(a).campaign(issueNode(NEW_PARENT.number, NEW_PARENT.title, { kids }));
+}
+
+/** Every REST write the fake gh recorded, oldest first (the fake names call dirs at random, so the order is their creation time). */
+function ghWrites(a: Admiral): { method: string; endpoint: string; host: string; stdin: unknown }[] {
+  const dir = join(a.fakeGh().dir, 'calls');
+  if (!existsSync(dir)) return [];
+  const read = (d: string, f: string) => (existsSync(join(dir, d, f)) ? readFileSync(join(dir, d, f), 'utf8').trim() : '');
+  return readdirSync(dir)
+    .sort((x, y) => statSync(join(dir, x)).birthtimeMs - statSync(join(dir, y)).birthtimeMs)
+    .filter((d) => read(d, 'method') === 'POST')
+    .map((d) => ({ method: 'POST', endpoint: read(d, 'endpoint'), host: read(d, 'host'), stdin: JSON.parse(read(d, 'stdin') || 'null') }));
 }
 
 const link = (page: Page, name: RegExp) => page.getByRole('navigation').getByRole('link', { name });
@@ -143,6 +184,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   const main = page.getByRole('main');
   const rowMin = phone ? 60 : 52;
 
+  await proveJudge(page, a.url);
   await page.goto(a.url + 'app/ships?fleet=zulu');
   // The sidebar and the tab bar carry For you's Needs you count.
   const nav = link(page, /^Orders\s*7$/);
@@ -156,7 +198,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(page.getByRole('heading', { name: 'Orders', exact: true })).toBeVisible();
 
   // For you is first and selected; each view has a tab with its count of distinct orders.
-  await expect(page.getByRole('tab')).toHaveText([/^For you\s*11$/, /^Assigned to me\s*4$/, /^Review requested\s*5$/, /^My PRs\s*4$/, /^Orders: Orders\s*7$/]);
+  await expect(page.getByRole('tab')).toHaveText([/^For you\s*11$/, /^Assigned to me\s*4$/, /^Review requested\s*5$/, /^My PRs\s*4$/, /^Open issues\s*3$/, /^Orders: Orders\s*7$/]);
   await expect(tabNamed(page, /^For you/)).toHaveAttribute('aria-selected', 'true');
 
   // The groups, each order once, though two sit in two views.
@@ -483,7 +525,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(page).toHaveURL(/fleet=zulu/);
   await expect(tabNamed(page, /^For you/)).toHaveAttribute('aria-selected', 'true');
 
-  // A review ship on the GitHub stack, launched from the stack row. Last, so the counts above are untouched.
+  // A review ship on the GitHub stack, launched from the stack row. After the counts above, so they are untouched.
   stackAnswer(a, STACK.number, [41, 42, 43].map((number) => ({ number, state: 'open' as const })));
   await page.goto(a.url + 'app/orders?fleet=zulu');
   await press(tabNamed(page, /^Review requested/));
@@ -560,6 +602,89 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   // The launch opened the ship; the callers carry on from Orders with For you selected.
   await page.goto(a.url + 'app/orders?fleet=zulu');
   await expect(tabNamed(page, /^For you/)).toHaveAttribute('aria-selected', 'true');
+
+  await makeCampaignJourney(page, a, press);
+}
+
+/**
+ * Select two issues on an issue-only view, open Make campaign, reorder and Cancel (nothing is written), open it again from the
+ * deep link, reorder, edit the title and Create: the parent is made, the issues are linked in the chosen order and the new campaign opens.
+ */
+async function makeCampaignJourney(page: Page, a: Admiral, press: (l: Locator) => Promise<void>) {
+  const main = page.getByRole('main');
+  const url = (n: number) => `https://github.com/acme/widgets/issues/${n}`;
+  const T41 = 'Pool the sensor logs';
+  const T42 = 'Add a retry budget';
+  const sheet = page.getByRole('dialog', { name: 'Make campaign', exact: true });
+  const subIssues = sheet.getByRole('list', { name: 'Sub-issues' }).getByRole('listitem');
+  const title = sheet.getByRole('textbox', { name: 'Title', exact: true });
+  const description = sheet.getByRole('textbox', { name: 'Description', exact: true });
+  const create = sheet.getByRole('button', { name: 'Create campaign', exact: true });
+
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  await press(tabNamed(page, /^Open issues/));
+  await expect(tabNamed(page, /^Open issues/)).toHaveAttribute('aria-selected', 'true');
+  await press(page.getByRole('button', { name: 'Select', exact: true }));
+
+  // An issue with a parent has a disabled box and says whose child it is.
+  await press(page.getByRole('button', { name: `Expand ${POOL_PARENT.title}`, exact: true }));
+  await expect(page.getByRole('checkbox', { name: 'acme/widgets #43 already has a parent', exact: true })).toBeDisabled();
+  await expect(rowOf(page, 'Trim the build cache')).toContainText('in #40');
+
+  await press(page.getByRole('checkbox', { name: 'Select acme/widgets #41', exact: true }));
+  await press(page.getByRole('checkbox', { name: 'Select acme/widgets #42', exact: true }));
+  await press(page.getByRole('button', { name: 'Make campaign', exact: true }));
+
+  // The sheet opens from the URL, drafted by the judge, with the issues in the order they were listed.
+  await expect(page).toHaveURL(/newCampaign=/);
+  await expect(sheet).toBeVisible();
+  await expect(title).toHaveValue('Orders: parent groups in issue tabs');
+  await expect(description).toHaveValue('Groups the selected issues as one campaign.');
+  await expect(sheet.getByText('Drafted', { exact: true })).toHaveCount(2);
+  await expect(sheet).toContainText('Admiral creates a parent issue on GitHub as');
+  await expect(sheet.getByRole('combobox', { name: /repo/i })).toHaveValue('acme/widgets');
+  await expect(subIssues).toHaveText([new RegExp(T41), new RegExp(T42)]);
+  for (const b of [create, sheet.getByRole('button', { name: `Move up ${T42}`, exact: true }), sheet.getByRole('button', { name: `Move down ${T41}`, exact: true })]) await expectTouchTarget(b, 44);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  // Arrow keys in a field move its caret, not the list.
+  await press(description);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowUp');
+  await expect(description).toBeFocused();
+  await expect(subIssues).toHaveText([new RegExp(T41), new RegExp(T42)]);
+
+  // Reorder by the buttons, then Cancel: the parameter goes and GitHub is told nothing.
+  await press(sheet.getByRole('button', { name: `Move up ${T42}`, exact: true }));
+  await expect(subIssues).toHaveText([new RegExp(T42), new RegExp(T41)]);
+  await press(sheet.getByRole('button', { name: 'Cancel', exact: true }));
+  await expect(sheet).toBeHidden();
+  await expect(page).not.toHaveURL(/newCampaign=/);
+  expect(ghWrites(a)).toEqual([]);
+
+  // The deep link opens the sheet again, listed in the order of the link; the engineer edits the title and creates.
+  await page.goto(`${a.url}app/orders?fleet=zulu&newCampaign=${url(41)},${url(42)}`);
+  await expect(sheet).toBeVisible();
+  await expect(subIssues).toHaveText([new RegExp(T41), new RegExp(T42)]);
+  await expect(title).toHaveValue('Orders: parent groups in issue tabs');
+  await press(sheet.getByRole('button', { name: `Move up ${T42}`, exact: true }));
+  await expect(subIssues).toHaveText([new RegExp(T42), new RegExp(T41)]);
+  await title.fill(NEW_PARENT.title);
+  await expect(sheet.getByText('Drafted', { exact: true })).toHaveCount(1);
+  await press(create);
+
+  await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
+  await expect(page).toHaveURL(/fleet=zulu/);
+  await expect(main.getByRole('heading', { name: NEW_PARENT.title })).toBeVisible();
+  // The parent is made first, then each issue is linked by its REST id in the chosen order.
+  expect(ghWrites(a)).toEqual([
+    { method: 'POST', endpoint: 'repos/acme/widgets/issues', host: 'github.com', stdin: { title: NEW_PARENT.title, body: 'Groups the selected issues as one campaign.' } },
+    { method: 'POST', endpoint: `repos/acme/widgets/issues/${NEW_PARENT.number}/sub_issues`, host: 'github.com', stdin: { sub_issue_id: REST_IDS[42] } },
+    { method: 'POST', endpoint: `repos/acme/widgets/issues/${NEW_PARENT.number}/sub_issues`, host: 'github.com', stdin: { sub_issue_id: REST_IDS[41] } },
+  ]);
+
+  // The callers go on from the Orders screen.
+  await page.goto(a.url + 'app/orders?fleet=zulu');
 }
 
 /** On the phone, More lists the surfaces the bar has no tab for, and not Orders. */
