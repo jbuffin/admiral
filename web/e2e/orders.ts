@@ -675,6 +675,9 @@ async function makeCampaignJourney(page: Page, a: Admiral, press: (l: Locator) =
     { method: 'POST', endpoint: `repos/acme/widgets/issues/${NEW_PARENT.number}/sub_issues`, host: 'github.com', stdin: { sub_issue_id: REST_IDS[42] } },
     { method: 'POST', endpoint: `repos/acme/widgets/issues/${NEW_PARENT.number}/sub_issues`, host: 'github.com', stdin: { sub_issue_id: REST_IDS[41] } },
   ]);
+
+  // The callers go on from the Orders screen.
+  await page.goto(a.url + 'app/orders?fleet=zulu');
 }
 
 /** On the phone, More lists the surfaces the bar has no tab for, and not Orders. */
