@@ -265,7 +265,8 @@ export function viewGroups(sources: Source[], id: string, now: number, ships: Sh
       const p = r.order.parent!;
       let g = groups.get(p.id);
       if (!g) {
-        g = { row: inView.get(p.id) ?? parentRow(hit.src, p), children: [], high: false, ships: 0 };
+        const head = inView.get(p.id);
+        g = { row: head ? { ...head, reason: join(parentNote(head.order), head.reason) } : parentRow(hit.src, p), children: [], high: false, ships: 0 };
         groups.set(p.id, g);
         out.push(g);
       }
@@ -387,8 +388,12 @@ export function stackLaunchRef(g: ViewGroup, ships: Ship[], viewer: string | und
 
 export const MAX_CHECKED = 50;
 
-export function isIssueTab(_sources: Source[], _tabId: string): boolean {
-  return true;
+/** A GitHub view tab whose orders are all issues, at least one. */
+export function isIssueTab(sources: Source[], tabId: string): boolean {
+  const hit = tabId === FOR_YOU ? undefined : find(sources, tabId);
+  if (!hit || !isGitHub(hit.src)) return false;
+  const orders = hit.view.orders;
+  return orders.length > 0 && orders.every((o) => !o.pr);
 }
 
 export interface BoxState {
@@ -397,12 +402,20 @@ export interface BoxState {
   note: string;
 }
 
-export function boxState(_row: OrderRow, _checked: ReadonlySet<string>): BoxState {
-  return { disabled: false, label: '', note: '' };
+// A synthesized parent row never shows its own parent, so it stays checkable; the create route refuses one that has a parent.
+const checkable = (r: OrderRow) => !!r.order.url && !r.order.parent;
+
+export function boxState(row: OrderRow, checked: ReadonlySet<string>): BoxState {
+  const ref = orderRef(row.order);
+  if (row.order.parent) return { disabled: true, label: `${ref} already has a parent`, note: parentNote(row.order) };
+  const full = checked.size >= MAX_CHECKED && !checked.has(row.key);
+  return { disabled: !row.order.url || full, label: `Select ${ref}`, note: '' };
 }
 
-export function keepChecked(checked: ReadonlySet<string>, _rows: OrderRow[]): Set<string> {
-  return new Set(checked);
+/** The checked keys that a refreshed list still holds and can still check. */
+export function keepChecked(checked: ReadonlySet<string>, rows: OrderRow[]): Set<string> {
+  const ok = new Set(rows.filter(checkable).map((r) => r.key));
+  return new Set([...checked].filter((k) => ok.has(k)));
 }
 
 export interface SelectState {
@@ -412,22 +425,33 @@ export interface SelectState {
   checked: ReadonlySet<string>;
 }
 
-export function selectAfterChoose(state: SelectState, _tab: string, _fleet: string): SelectState {
-  return state;
+export function selectAfterChoose(state: SelectState, tab: string, fleet: string): SelectState {
+  if (state.tab === tab && state.fleet === fleet) return state;
+  return { fleet, tab, on: false, checked: new Set() };
 }
 
-export function checkedUrls(_rows: OrderRow[], _checked: ReadonlySet<string>): string[] {
-  return [];
+export function checkedUrls(rows: OrderRow[], checked: ReadonlySet<string>): string[] {
+  return rows.filter((r) => checked.has(r.key) && r.order.url).map((r) => r.order.url!);
 }
 
-export function issuesLabel(_n: number): string {
-  return '';
+export const issuesLabel = (n: number) => `${n} ${n === 1 ? 'issue' : 'issues'}`;
+
+export function newCampaignSearch(search: string, urls: string[]): string {
+  const q = new URLSearchParams(search);
+  q.delete('newCampaign');
+  if (urls.length > 0) q.set('newCampaign', urls.join(','));
+  return q.size ? `?${q}` : '';
 }
 
-export function newCampaignSearch(search: string, _urls: string[]): string {
-  return search;
-}
-
-export function newCampaignRefs(_search: string): string[] {
-  return [];
+/** The issue urls the parameter names; `owner/repo#n` reads as a github.com issue. */
+export function newCampaignRefs(search: string): string[] {
+  const raw = new URLSearchParams(search).get('newCampaign') ?? '';
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      const m = /^([^/\s#]+\/[^/\s#]+)#(\d+)$/.exec(s);
+      return m ? `https://github.com/${m[1]}/issues/${m[2]}` : s;
+    });
 }

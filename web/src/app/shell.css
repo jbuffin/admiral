@@ -953,6 +953,15 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .orders-line h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; color: var(--color-text); }
 .orders-source { flex: none; white-space: nowrap; }
 .orders-spacer { flex: 1; }
+.orders-select { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; color: var(--color-text2); }
+.orow-box { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--shape-min-touch-target); height: var(--shape-min-touch-target); margin-left: -8px; cursor: pointer; }
+.orow-box input { width: 18px; height: 18px; margin: 0; accent-color: var(--color-accent); }
+.orow-box input:disabled { cursor: not-allowed; }
+.ship-list.has-bar { padding-bottom: 88px; }
+.orders-bar { position: sticky; bottom: 12px; z-index: 2; display: flex; align-items: center; gap: 8px; margin: 0 12px 12px auto; width: max-content; max-width: calc(100% - 24px); padding: 8px 8px 8px 16px; background: var(--color-panel); border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); box-shadow: 0 6px 20px var(--color-shadow); }
+.orders-bar-count { font-weight: 600; color: var(--color-text); white-space: nowrap; }
+.orders-bar .btn { min-height: var(--shape-min-touch-target); }
+.phone .orders-bar { margin: 0 8px 8px; width: auto; max-width: none; justify-content: space-between; }
 .orders-filter { display: flex; align-items: center; gap: 8px; width: 220px; height: var(--shape-button-height); padding: 0 10px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); color: var(--color-muted); }
 .orders-filter input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font: inherit; font-size: 13px; color: var(--color-text); }
 .orders-repo { width: 140px; height: var(--shape-button-height); padding: 0 10px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); font: inherit; font-size: 13px; color: var(--color-text); }

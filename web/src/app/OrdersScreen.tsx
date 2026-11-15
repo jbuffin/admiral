@@ -15,7 +15,7 @@ import type { MooredPR, Ship } from './api';
 import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { FOR_YOU, forYou, headerTime, groupRowActions, launchRef, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type ViewGroup } from './ordersView';
+import { boxState, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, keepChecked, launchRef, newCampaignSearch, selectAfterChoose, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
 import { refreshSource } from './api';
 import { go, loc, shipPath } from './router';
 import { emptyLine, surfaceById } from './surfaces';
@@ -80,12 +80,14 @@ interface RowProps {
   note?: boolean;
   /** A view tab's loose row, spaced as wide as a parent row's toggle. */
   spaced?: boolean;
+  /** Set while selecting issues: the row's checkbox. */
+  box?: { checked: boolean; onToggle: () => void; cap: ReturnType<typeof boxState> };
 }
 
 const join = (...p: string[]) => p.filter(Boolean).join(' · ');
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, viewer, parentGroup, child, note, spaced }: RowProps) {
+function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, viewer, parentGroup, child, note, spaced, box }: RowProps) {
   const o = row.order;
   const g = parentGroup?.group;
   const act = action ?? orderRowAction(ships.value, o);
@@ -111,6 +113,11 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
       <Icon name="chevron" size={16} />
     </Button>
   ) : null;
+  const tick = box ? (
+    <label class="orow-box">
+      <input type="checkbox" aria-label={box.cap.label} checked={box.checked} disabled={box.cap.disabled} onChange={box.onToggle} />
+    </label>
+  ) : null;
   const spacer = spaced ? <span class="orow-spacer" aria-hidden="true" /> : null;
   const arrow = !act ? null : act.kind === 'launch' ? (
       row.launchable ? (
@@ -132,6 +139,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
   if (phone) {
     return (
       <li class={`orow-phone${child ? ' child' : ''}${selected ? ' selected' : ''}`}>
+        {tick}
         {toggle ?? spacer}
         <button type="button" class="orow-open" aria-label={`Open ${o.title}`} aria-pressed={selected} onClick={() => onOpen(row)}>
           <span class="orow-main">
@@ -153,6 +161,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
   }
   return (
     <li class={`orow${muted ? ' waiting' : ''}${child ? ' child' : ''}${selected ? ' selected' : ''}`}>
+      {tick}
       {toggle ?? spacer}
       <button type="button" class="orow-open" aria-label={`Open ${o.title}`} aria-pressed={selected} onClick={() => onOpen(row)}>
         <Mark pr={!!o.pr} needs={row.needsYou} stack={row.stackRow} />
@@ -202,6 +211,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const [repo, setRepo] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [pick, setPick] = useState<SelectState>({ fleet: '', tab: '', on: false, checked: new Set() });
   const [launching, setLaunching] = useState<OrderRef | null>(null);
   const [again, setAgain] = useState<{ ship: Ship; kind: 'rereview'; url: string } | { ship: Ship; kind: 'fix' } | { ship: Ship; kind: 'wake'; pr?: MooredPR; stack?: string } | null>(null);
   const list = fleet ? sourcesForFleet(sources.value, fleet.key) : [];
@@ -213,6 +223,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
     setQuery('');
     setRepo('');
     setError('');
+    setPick(selectAfterChoose(pick, next, fleet?.key ?? ''));
     go('/app/orders', q.size ? `?${q}` : '', true);
   };
   const time = headerTime(list, id);
@@ -231,6 +242,23 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
     query,
     repo: repos.includes(repo) ? repo : '',
   });
+  const issueTab = isIssueTab(list, id);
+  // A tab or fleet change reached by Back or a link ends Select mode too.
+  const cur = selectAfterChoose(pick, id, fleet?.key ?? '');
+  const selecting = issueTab && cur.on;
+  const pool = viewGroups(list, id, now, ships.value, {}).flatMap((g) => [g.row, ...g.children]);
+  const poolRows = [...rows, ...pool.filter((r) => !r.inView)];
+  const checked = selecting ? keepChecked(cur.checked, poolRows) : new Set<string>();
+  useEffect(() => {
+    if (checked.size !== cur.checked.size) setPick({ ...cur, checked });
+  }, [checked.size, cur.checked.size]);
+  const toggle = (key: string) => {
+    const next = new Set(checked);
+    if (!next.delete(key)) next.add(key);
+    setPick({ ...cur, checked: next });
+  };
+  const boxFor = (r: OrderRow): RowProps['box'] => (selecting ? { checked: checked.has(r.key), onToggle: () => toggle(r.key), cap: boxState(r, checked) } : undefined);
+  const makeCampaign = () => go('/app/orders', newCampaignSearch(loc.value.search, checkedUrls(poolRows, checked)));
   const errors = viewErrors(list, id);
   const needs = shown.map((g) => g.row).filter((r) => r.needsYou);
   const waiting = shown.map((g) => g.row).filter((r) => !r.needsYou);
@@ -295,6 +323,18 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
                   <Icon name="refresh" size={16} />
                 </button>
               ) : null}
+              {issueTab ? (
+                <span class="orders-select">
+                  {selecting ? <span aria-live="polite">{checked.size} selected</span> : null}
+                  <Button
+                    variant="quiet"
+                    label={selecting ? 'Done' : 'Select'}
+                    onClick={() => setPick(selecting ? { ...cur, on: false, checked: new Set() } : { ...cur, on: true })}
+                  >
+                    {selecting ? 'Done' : 'Select'}
+                  </Button>
+                </span>
+              ) : null}
               {phone ? null : (
                 <>
                   <span class="orders-spacer" />
@@ -337,7 +377,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
               <Group id="g-waiting" title="Waiting on others" rows={waiting} phone={phone} muted chosen={chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} />
             </>
           ) : (
-            <ul class="ship-list">
+            <ul class={`ship-list${checked.size > 0 ? ' has-bar' : ''}`}>
               {shown.map((g) => {
                 const parent = g.children.length > 0;
                 const isOpen = parent && isExpanded(id, g.row.order.id);
@@ -345,14 +385,25 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
                 const acts = groupRowActions(ships.value, g, viewer);
                 return (
                   <Fragment key={g.row.key}>
-                    <Row row={g.row} phone={phone} muted={false} selected={g.row.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} action={acts.row} viewer={viewer} spaced={!parent} parentGroup={parent ? { group: g, open: isOpen, onToggle: () => toggleExpanded(id, g.row.order.id) } : undefined} />
-                    {isOpen ? g.children.map((c, i) => <Row key={c.key} action={acts.children[i]} row={c} phone={phone} muted={false} selected={c.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} child note />) : null}
+                    <Row row={g.row} phone={phone} muted={false} selected={g.row.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} action={acts.row} viewer={viewer} spaced={!parent} box={boxFor(g.row)} note={!!g.row.order.parent} parentGroup={parent ? { group: g, open: isOpen, onToggle: () => toggleExpanded(id, g.row.order.id) } : undefined} />
+                    {isOpen ? g.children.map((c, i) => <Row key={c.key} action={acts.children[i]} row={c} phone={phone} muted={false} selected={c.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} child note box={boxFor(c)} />) : null}
                   </Fragment>
                 );
               })}
             </ul>
           )}
           {shown.length === 0 ? <p class="line">{all.length === 1 && rows.length === 0 ? emptyLine(surfaceById('orders'), true, true) : 'Nothing here.'}</p> : null}
+          {checked.size > 0 ? (
+            <section class="orders-bar" aria-label="Selection">
+              <span class="orders-bar-count">{issuesLabel(checked.size)}</span>
+              <Button variant="quiet" label="Clear" onClick={() => setPick({ ...cur, checked: new Set() })}>
+                Clear
+              </Button>
+              <Button variant="primary" label="Make campaign" onClick={makeCampaign}>
+                Make campaign
+              </Button>
+            </section>
+          ) : null}
         </main>
         {selected && !phone ? (
           <aside class="odetail-pane" aria-label="Selected order">
