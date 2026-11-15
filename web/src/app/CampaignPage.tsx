@@ -249,7 +249,7 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
             {labelsDisagree(node) ? (
               <p class="note">
                 Labels say {modeLabel(labelsDisagree(node)!)}.{' '}
-                <Button variant="link" label="Use labels" disabled={busy} onClick={() => saveOverride(null)} />
+                <Button variant="link" class="use-labels" label="Use labels" disabled={busy} onClick={() => saveOverride(null)} />
               </p>
             ) : null}
           </>
