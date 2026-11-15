@@ -245,7 +245,13 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   // A plugin tab lists its own orders with their reference and view name; its source lists no `refresh`, so none is offered.
   await press(tabNamed(page, /^Orders: Orders/));
   await expect(main.getByRole('listitem')).toHaveCount(7);
-  if (!phone) await expect(rowOf(page, 'Fix the login redirect')).toContainText('ord-login · Orders');
+  // The id shows once: the reference slot carries it, and the reason line is the view name.
+  if (!phone) {
+    const login = rowOf(page, 'Fix the login redirect');
+    await expect(login).toContainText('ord-login');
+    await expect(login).toContainText('Orders');
+    expect(await login.innerText()).not.toMatch(/ord-login[\s\S]*ord-login/);
+  }
   await expect(page.getByRole('button', { name: 'Launch Fix the login redirect', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh now', exact: true })).toHaveCount(0);
 

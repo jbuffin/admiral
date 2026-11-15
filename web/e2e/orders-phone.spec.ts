@@ -7,6 +7,7 @@ test('on the phone, Orders is a tab with For you, view tabs and Refresh now, the
   await admiral.start({ env: withFakeGh(admiral) });
   await ordersJourney(page, admiral, (l) => l.tap(), { phone: true });
   // A row is a line of text with the arrow beside it, not a column with the arrow below.
+  await page.getByRole('tab', { name: /^For you/ }).tap();
   const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review the cache layer' });
   const rowBox = (await row.boundingBox())!;
   const titleBox = (await row.locator('.orow-title').boundingBox())!;
