@@ -2,7 +2,6 @@ import { signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { checkConnection, countSearch, fetchRepos, fetchSettings, saveSource, type Connection, type Fleet, type Repos, type Source } from './api';
 import { Actions, Button } from './Button';
-import { fleetSearch } from './fleets';
 import { addLabel, BUILTIN_VIEWS, forSave, HOT_LABEL_DEFAULTS, intervalLabel, intervalOptions, isRemovable, moveView, plainWords, removeLabel, removeView, renameView, setHidden, type ViewEntry } from './githubViews';
 import { arranged, gripKey, pressGrip } from './gripReorder';
 import { fleetPath, go } from './router';
@@ -164,7 +163,7 @@ function ReposSection({ fleet, src, version }: { fleet: Fleet; src: Source; vers
           onClick={(e) => {
             if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
-            go(fleetPath(fleet.key), fleetSearch.value);
+            go(fleetPath(fleet.key), '');
           }}
         >
           Edit in Fleet
