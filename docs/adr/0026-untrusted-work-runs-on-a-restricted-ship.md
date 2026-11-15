@@ -1,6 +1,6 @@
 # 26. Work from untrusted text runs on a restricted ship that cannot push
 
-Status: accepted
+Status: accepted, amended by [ADR 0038](0038-a-restricted-clone-is-scanned-for-planted-git-before-admiral-runs-git-in-it.md) (a kept clone is scanned for a git carrier at any depth, and Promote refuses one)
 
 ## Context
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -479,5 +480,26 @@ func TestUndoOfAPromotedRecordIsRefusedAndLeavesTheCloneAndTheRecord(t *testing.
 	}
 	if got := p.get(rec.ID); got["undone"] == true {
 		t.Errorf("record = %v, want it not undone", got)
+	}
+}
+
+func TestPromoteRefusesAClonesPlantedGitCarrierWith400NamingItsPathBeforeStoppingTheShip(t *testing.T) {
+	for _, c := range []struct{ kind, rel string }{{"folder", "src/deep/.git"}, {"file", "one/.git"}, {"gitmodules", "src/deep/.gitmodules"}} {
+		t.Run(c.kind, func(t *testing.T) {
+			p := newPromoRig(t, true)
+			rec, clone, _ := p.ready()
+			path := filepath.Join(clone, filepath.FromSlash(c.rel))
+			switch c.kind {
+			case "folder":
+				promoGit(t, clone, "init", "-q", "--bare", path)
+			default:
+				promoWrite(t, path, "gitdir: ../evil\n")
+			}
+			code, body := p.promote(p.routine.ID, rec.ID)
+			p.wantRefused(code, body, http.StatusBadRequest, strconv.Quote(c.rel))
+			if got := p.seams.calls(); len(got) != 0 {
+				t.Errorf("calls = %v, want none: the work is read before the ship is stopped", got)
+			}
+		})
 	}
 }

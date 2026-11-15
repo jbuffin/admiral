@@ -50,6 +50,9 @@ var harnessPaths = []string{":(top,icase).claude", ":(top,icase).mcp.json", ":(t
 
 // Read reads the work in clone's branch against dir, refusing as the sentinels say.
 func Read(ctx context.Context, dir, clone, branch string) (Work, error) {
+	if err := ScanTree(clone); err != nil {
+		return Work{}, err
+	}
 	dg, err := neutralgit.New(ctx, dir)
 	if err != nil {
 		return Work{}, err
@@ -75,6 +78,9 @@ func Read(ctx context.Context, dir, clone, branch string) (Work, error) {
 		return Work{}, fmt.Errorf("the clone has no branch %s", branch)
 	}
 	tip := strings.TrimSpace(string(tipOut))
+	if err := checkModes(ctx, clone, cg, tip); err != nil {
+		return Work{}, err
+	}
 	baseOut, err := cg.List(ctx, "merge-base", tip, strings.TrimSpace(string(head)))
 	if err != nil {
 		return Work{}, fmt.Errorf("the branch shares no history with %s", dir)
