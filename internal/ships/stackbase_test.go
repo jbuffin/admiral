@@ -193,13 +193,14 @@ func TestTheStackBaseCheckRunsOnlyForAStackedOrChainedShipWhoseOpenLayersAreAllM
 		details map[string]moor.Detail
 		layers  []moor.Status
 		runs    bool
+		ready   bool
 	}{
-		"independent PRs": {independentDetails(3), []moor.Status{readyAt("h7"), readyAt("h9"), readyAt("top-1")}, false},
-		"one PR":          {one, []moor.Status{readyAt("top-1")}, false},
-		"the top mergeable but blocked on review": {stackedDetails(3), []moor.Status{readyAt("h7"), readyAt("h9"), blockedOnReview}, true},
-		"a mergeable layer that is behind":        {stackedDetails(3), []moor.Status{readyAt("h7"), behind, readyAt("top-1")}, true},
-		"a layer that conflicts on its own":       {stackedDetails(3), []moor.Status{readyAt("h7"), conflicting, readyAt("top-1")}, false},
-		"a layer whose mergeability is unknown":   {stackedDetails(3), []moor.Status{readyAt("h7"), unknown, readyAt("top-1")}, false},
+		"independent PRs": {independentDetails(3), []moor.Status{readyAt("h7"), readyAt("h9"), readyAt("top-1")}, false, true},
+		"one PR":          {one, []moor.Status{readyAt("top-1")}, false, true},
+		"the top mergeable but blocked on review": {stackedDetails(3), []moor.Status{readyAt("h7"), readyAt("h9"), blockedOnReview}, true, false},
+		"a mergeable layer that is behind":        {stackedDetails(3), []moor.Status{readyAt("h7"), behind, readyAt("top-1")}, true, false},
+		"a layer that conflicts on its own":       {stackedDetails(3), []moor.Status{readyAt("h7"), conflicting, readyAt("top-1")}, false, false},
+		"a layer whose mergeability is unknown":   {stackedDetails(3), []moor.Status{readyAt("h7"), unknown, readyAt("top-1")}, false, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newStackBaseRig(t, c.details, c.layers...)
@@ -209,8 +210,8 @@ func TestTheStackBaseCheckRunsOnlyForAStackedOrChainedShipWhoseOpenLayersAreAllM
 			if got := r.ck.requests(); (len(got) > 0) != c.runs {
 				t.Errorf("checks = %+v, want the check to run = %v", got, c.runs)
 			}
-			if want := name == "independent PRs" || name == "one PR"; sh.StackReady != want {
-				t.Errorf("stack_ready = %v, want %v", sh.StackReady, want)
+			if sh.StackReady != c.ready {
+				t.Errorf("stack_ready = %v, want %v", sh.StackReady, c.ready)
 			}
 		})
 	}
@@ -250,5 +251,56 @@ func TestMergeComesBackOnTheNextPollOnceTheConflictIsGone(t *testing.T) {
 
 	if sh := r.poll(t); !sh.StackReady {
 		t.Errorf("stack_ready = false on the poll after the conflict went, want true")
+	}
+}
+
+func TestAStackWhoseLowerLayerMergedIsCheckedFromItsOpenLayers(t *testing.T) {
+	merged := readyAt("h7")
+	merged.State = "MERGED"
+	details := stackedDetails(3)
+	retargeted := details[layerURL(9)]
+	retargeted.Base = "main" // GitHub retargets the next layer when the one below merges
+	details[layerURL(9)] = retargeted
+	r := newStackBaseRig(t, details, merged, readyAt("h9"), readyAt("top-1"))
+
+	sh := r.poll(t)
+
+	want := moor.StackCheck{Fleet: "work", Host: "github.com", Repo: "acme/widgets", Base: "main", PR: 11, Head: "top-1"}
+	if got := r.ck.requests(); len(got) != 1 || got[0] != want {
+		t.Errorf("checks = %+v, want one of %+v: the top open layer against the lowest open layer's base", got, want)
+	}
+	if sh.StackReady {
+		t.Errorf("stack_ready = true, want false: the open layers conflict with main")
+	}
+}
+
+func TestOneOpenLayerOnTopOfMergedOnesIsLeftToGitHub(t *testing.T) {
+	merged := readyAt("h7")
+	merged.State = "MERGED"
+	r := newStackBaseRig(t, stackedDetails(3), merged, merged, readyAt("top-1"))
+
+	sh := r.poll(t)
+
+	if got := r.ck.requests(); len(got) != 0 {
+		t.Errorf("checks = %+v, want none for a lone open PR", got)
+	}
+	if !sh.StackReady {
+		t.Errorf("stack_ready = false, want true: GitHub's answer for the lone PR stands")
+	}
+}
+
+func TestAReviewedShipsStackIsNotChecked(t *testing.T) {
+	g := &pollGitHub{detail: stackedDetails(2)}
+	g.set(layerURL(7), readyAt("h7"))
+	g.set(layerURL(9), readyAt("top-1"))
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	ck := &fakeStackChecker{conflicts: true}
+	f.s.StackChecker = ck
+	f.moorReviewing(t, "Nelson", "work", []string{layerURL(9)}, layerURL(7), layerURL(9))
+
+	f.s.PollMoored(context.Background())
+
+	if got := ck.requests(); len(got) != 0 {
+		t.Errorf("checks = %+v, want none: Admiral never offers Merge or Fix for a reviewed PR", got)
 	}
 }

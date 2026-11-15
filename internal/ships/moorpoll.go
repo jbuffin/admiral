@@ -376,6 +376,7 @@ func (s *Service) prsOf(r moor.Record) []moor.PR {
 		if ok && p.status != nil {
 			st, found := p.status[u]
 			pr = moor.View(u, st, found)
+			pr.ConflictsWithBase = st.ConflictsWithBase
 		}
 		if n := p.feedback[u]; ok && n > 0 && pr.State == "OPEN" {
 			pr.Feedback = n

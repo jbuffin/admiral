@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,23 +30,35 @@ type stackBaseState struct {
 	logged map[string]string
 }
 
-// checkStackBase asks whether a stacked or chained ship's top PR merges into the stack's base, which GitHub does not
+// checkStackBase asks whether a stacked or chained ship's top open PR merges into the stack's base, which GitHub does not
 // answer per layer, and marks the top PR's status when it does not. It only adds a problem: when it cannot run, the answers stay as GitHub gave them.
+// Merged and closed layers are left out; with fewer than two open layers GitHub's own answer for the lone PR against its base stands.
 func (s *Service) checkStackBase(ctx context.Context, fleet string, gh moor.GitHub, r moor.Record, answers map[string]moor.Status) {
-	if s.StackChecker == nil || len(r.PRs) < 2 {
+	if s.StackChecker == nil || len(r.Reviewing) > 0 {
 		return
 	}
+	var open []string
 	var key strings.Builder
 	for _, u := range r.PRs {
 		st, ok := answers[u]
-		if !ok || st.State != "OPEN" || st.Mergeable != "MERGEABLE" {
+		if !ok {
 			return
 		}
+		if st.State != "OPEN" {
+			continue
+		}
+		if st.Mergeable != "MERGEABLE" {
+			return
+		}
+		open = append(open, u)
 		key.WriteString(u + "@" + st.Head + "\n")
+	}
+	if len(open) < 2 {
+		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, stackBaseTimeout)
 	defer cancel()
-	conflicts, top, base, err := s.stackConflicts(ctx, fleet, gh, r, key.String(), answers)
+	conflicts, top, base, err := s.stackConflicts(ctx, fleet, gh, r.Session, r.PRs, open, key.String(), answers)
 	s.stackBaseLog(r.Session, err)
 	if err != nil || !conflicts {
 		return
@@ -55,31 +68,39 @@ func (s *Service) checkStackBase(ctx context.Context, fleet string, gh moor.GitH
 	answers[top] = st
 }
 
-func (s *Service) stackConflicts(ctx context.Context, fleet string, gh moor.GitHub, r moor.Record, key string, answers map[string]moor.Status) (conflicts bool, top, base string, err error) {
-	sh, ok := s.cachedStackShape(r.Session, key)
+func (s *Service) stackConflicts(ctx context.Context, fleet string, gh moor.GitHub, session string, all, open []string, key string, answers map[string]moor.Status) (conflicts bool, top, base string, err error) {
+	sh, ok := s.cachedStackShape(session, key)
 	if !ok {
-		shape, err := moor.ReadShape(ctx, gh, r.PRs)
+		// The shape is of all the ship's PRs, since GitHub's stack lists its merged layers too; the check is of the open ones.
+		shape, err := moor.ReadShape(ctx, gh, all)
 		if err != nil {
 			return false, "", "", err
 		}
-		base = shape.Base
-		switch shape.Kind {
-		case moor.ShapeChained:
-		case moor.ShapeStacked:
-			d, err := gh.PullRequestDetail(ctx, shape.PRs[0])
+		var live []string
+		for _, u := range shape.PRs {
+			if slices.Contains(open, u) {
+				live = append(live, u)
+			}
+		}
+		switch {
+		case (shape.Kind != moor.ShapeStacked && shape.Kind != moor.ShapeChained) || len(live) < 2:
+			base = "" // kept, so a ship with nothing to check is not read again until a head moves
+		case shape.Kind == moor.ShapeChained && live[0] == shape.PRs[0]:
+			base = shape.Base
+		default:
+			d, err := gh.PullRequestDetail(ctx, live[0])
 			if err != nil {
 				return false, "", "", err
 			}
 			base = d.Base
-		default:
-			base = "" // kept, so a ship with nothing to check is not read again until a head moves
 		}
+		shape.PRs = live
 		sh = stackShape{key: key, shape: shape, base: base}
 		s.stackBase.mu.Lock()
 		if s.stackBase.shapes == nil {
 			s.stackBase.shapes = map[string]stackShape{}
 		}
-		s.stackBase.shapes[r.Session] = sh
+		s.stackBase.shapes[session] = sh
 		s.stackBase.mu.Unlock()
 	}
 	if sh.base == "" || len(sh.shape.PRs) == 0 {

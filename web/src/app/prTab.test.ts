@@ -33,6 +33,13 @@ describe('prSummary', () => {
     expect(prSummary([ready(7), ready(8)])).toBe('2 PRs · Ready to merge');
   });
 
+  it('says a stack that conflicts with its base as a whole is not ready, naming the problem', () => {
+    const fix = { pr: 'https://github.com/o/r/pull/8', stack: true, problems: [{ pr: 'https://github.com/o/r/pull/8', conflicts_with_base: 'main' }] } as FixOffer;
+    expect(prSummary([ready(7), ready(8)], { stack_ready: false, fix })).toBe('2 PRs · #8 conflicts with main');
+    expect(prSummary([ready(7), ready(8)], { stack_ready: false })).toBe('2 PRs · Not ready to merge');
+    expect(prSummary([ready(7), ready(8)], { stack_ready: true })).toBe('2 PRs · Ready to merge');
+  });
+
   it("goes by the server's ready flag, not by the chips", () => {
     expect(prSummary([pr(7, { ready: true })])).toBe('1 PR · Ready to merge');
   });

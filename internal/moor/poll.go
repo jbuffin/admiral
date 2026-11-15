@@ -48,6 +48,8 @@ type PR struct {
 	Author    string `json:"author,omitempty"`
 	Reviewing bool   `json:"reviewing,omitempty"`
 	Responded bool   `json:"responded,omitempty"`
+	// ConflictsWithBase is the branch the stack as a whole conflicts with, set on the stack's top PR only; it never serves.
+	ConflictsWithBase string `json:"-"`
 }
 
 // View is the PR to serve. NOT_FOUND counts as closed, and a PR that is not open
@@ -118,7 +120,7 @@ func (e *Unanswered) Error() string { return "GitHub could not look up " + strin
 
 // StackReady says whether the stack has an open PR and every open PR (lowest layer first) is ready, and the URL of
 // the last ready open PR before the first open one that is not; merged and closed PRs are skipped, and upTo is
-// empty when the lowest open PR is not ready.
+// empty when the lowest open PR is not ready. A stack that conflicts with its base is not ready, whatever its layers say.
 func StackReady(prs []PR) (ready bool, upTo string) {
 	ready = false
 	open := false
@@ -127,7 +129,7 @@ func StackReady(prs []PR) (ready bool, upTo string) {
 			continue
 		}
 		open = true
-		if !p.Ready {
+		if !p.Ready || p.ConflictsWithBase != "" {
 			return false, upTo
 		}
 		upTo = p.URL

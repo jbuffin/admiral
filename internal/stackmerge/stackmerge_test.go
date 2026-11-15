@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/moor"
 )
@@ -158,5 +159,45 @@ func TestACheckIgnoresTheGitConfigOfTheEnvironmentItRunsIn(t *testing.T) {
 
 	if err != nil || !got {
 		t.Errorf("Conflicts = %v, %v, want true with no error: the ambient config must not reach git", got, err)
+	}
+}
+
+func TestARepositoryThatCannotBeReachedIsNotAskedAgainUntilItsBackoffEnds(t *testing.T) {
+	calls := 0
+	g := New(t.TempDir(), func(moor.StackCheck) string { calls++; return "file://" + filepath.Join(t.TempDir(), "missing.git") })
+	now := time.Now()
+	g.now = func() time.Time { return now }
+	c := check("main", 8, strings.Repeat("a", 40))
+
+	_, err := g.Conflicts(context.Background(), c)
+	if err == nil {
+		t.Fatal("Conflicts = nil error, want the failure of an unreachable repository")
+	}
+	_, again := g.Conflicts(context.Background(), c)
+	if calls != 1 || again == nil || !strings.Contains(again.Error(), "backing off") {
+		t.Errorf("calls = %d, err = %v, want the repository left alone while it backs off", calls, again)
+	}
+
+	now = now.Add(31 * time.Second)
+	_, _ = g.Conflicts(context.Background(), c)
+	if calls != 2 {
+		t.Errorf("calls = %d, want the repository asked again after 30s", calls)
+	}
+}
+
+func TestAnUnchangedStackIsAnsweredWithoutAFetch(t *testing.T) {
+	u := newUpstream(t)
+	top := u.stack("top\nb\nc\n")
+	u.commit("shared.css", "main\nb\nc\n", "main moved")
+	g := u.checker(t)
+	if got, err := g.Conflicts(context.Background(), check("main", 8, top)); err != nil || !got {
+		t.Fatalf("Conflicts = %v, %v, want true", got, err)
+	}
+	u.git("update-ref", "-d", "refs/pull/8/head") // a fetch would now fail
+
+	got, err := g.Conflicts(context.Background(), check("main", 8, top))
+
+	if err != nil || !got {
+		t.Errorf("Conflicts = %v, %v, want the cached answer, with no fetch", got, err)
 	}
 }

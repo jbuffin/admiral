@@ -375,7 +375,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const box = useComposer(target, conv);
   useSeenOnLeave(ship);
   const moored = ship.status === 'moored';
-  const summary = prSummary(ship.prs);
+  const summary = prSummary(ship.prs, ship);
   const count = openCount(ship.prs);
   const Heading = title ? 'h1' : 'h2';
   const mooredCard = (
