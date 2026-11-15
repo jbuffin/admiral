@@ -160,6 +160,7 @@ function problemWords(p: FixOffer['problems'][number]): string {
   if (p.conflicts) parts.push('has merge conflicts');
   if (p.behind) parts.push('is behind its base');
   if (p.failing_checks?.length) parts.push(`has failing checks: ${p.failing_checks.join(', ')}`);
+  if (p.conflicts_with_base) parts.push(`conflicts with ${p.conflicts_with_base}`);
   return joinAnd(parts);
 }
 

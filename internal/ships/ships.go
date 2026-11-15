@@ -156,6 +156,7 @@ type Service struct {
 	GitHub func(fleet string) moor.GitHub
 	// StackChecker says whether a stack's top conflicts with its base; nil means the check never runs.
 	StackChecker moor.StackChecker
+	stackBase    stackBaseState
 	// CaptureResume keeps the answered items' resume text before a report is deleted.
 	CaptureResume func(session string)
 

@@ -182,6 +182,7 @@ func (s *Service) PollMoored(ctx context.Context) {
 					st[u] = v
 				}
 			}
+			s.checkStackBase(ctx, fleet, gh, r, st)
 			prs, ok := s.storePoll(r, polled{status: st, at: time.Now().UTC().Truncate(time.Second)})
 			if !ok {
 				continue

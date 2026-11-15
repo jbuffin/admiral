@@ -27,7 +27,8 @@ func ProblemsOf(url string, st Status) (PRProblems, bool) {
 			p.FailingChecks = append(p.FailingChecks, c.Name)
 		}
 	}
-	return p, p.Conflicts || p.Behind || len(p.FailingChecks) > 0
+	p.ConflictsWithBase = st.ConflictsWithBase
+	return p, p.Conflicts || p.Behind || len(p.FailingChecks) > 0 || p.ConflictsWithBase != ""
 }
 
 // FixRound is the whole-ship feedback round Fix PR and Fix stack start.
@@ -102,6 +103,10 @@ func conditionEvents(pr string, p PRProblems, at time.Time) []Event {
 	}
 	if p.Behind {
 		out = append(out, Event{Kind: EventBehindBase, PR: pr, At: at, URL: pr, Body: behindBody})
+	}
+	if p.ConflictsWithBase != "" {
+		body := "the stack merges cleanly layer by layer but conflicts with " + p.ConflictsWithBase + " as a whole; rebase the stack onto " + p.ConflictsWithBase + " and resolve the conflicts"
+		out = append(out, Event{Kind: EventConflict, PR: pr, At: at, URL: pr, Body: body})
 	}
 	for _, n := range p.FailingChecks {
 		out = append(out, Event{Kind: EventCheckFailed, PR: pr, At: at, URL: pr, Name: n, Body: "the check is failing"})

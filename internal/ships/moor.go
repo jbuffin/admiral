@@ -242,6 +242,11 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}}
 		sh.Fix = polls[i].fix
 		sh.StackReady, sh.ReadyUpTo = moor.StackReady(prs[i])
+		for _, st := range polls[i].status {
+			if st.ConflictsWithBase != "" {
+				sh.StackReady = false
+			}
+		}
 		sh.MergeMethod = methods[i]
 		if !polls[i].at.IsZero() {
 			sh.PolledAt = polls[i].at.Format(time.RFC3339)
