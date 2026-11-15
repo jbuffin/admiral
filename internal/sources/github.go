@@ -76,6 +76,14 @@ type openArgs struct {
 type ghView struct {
 	orders []map[string]any
 	err    string
+	// answered is when the last successful search finished; zero before the first.
+	answered time.Time
+}
+
+func (g *githubConn) answeredAt(panel string) time.Time {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.views[panel].answered
 }
 
 // githubConn answers the plugin protocol in memory, so a runner drives it like a plugin.
@@ -353,8 +361,22 @@ func (g *githubConn) refresh() {
 			routed = append(routed, it)
 			order := map[string]any{"id": it.ID, "title": it.Title, "text": it.Text, "url": it.URL,
 				"repo": it.RepoURL, "hot": it.Hot, "labels": it.Labels, "sub_issues": it.SubIssues}
+			if it.Author != "" {
+				order["author"] = it.Author
+			}
+			if !it.OpenedAt.IsZero() {
+				order["opened_at"] = it.OpenedAt.UTC().Format(time.RFC3339)
+			}
+			if it.Excerpt != "" {
+				order["excerpt"] = it.Excerpt
+			}
 			if p := it.PR; p != nil {
-				order["pr"] = OrderPR{State: p.State, Review: p.Review, Checks: p.Checks, Mergeable: p.Mergeable, Conflicts: p.Conflicts, Ready: p.Ready}
+				order["pr"] = OrderPR{State: p.State, Review: p.Review, Checks: p.Checks, Mergeable: p.Mergeable, Conflicts: p.Conflicts, Ready: p.Ready,
+					FailingCheckCount: it.FailingChecks}
+				order["reviewed_since_push"] = it.ReviewedSincePush
+				if !it.ReviewRequestedAt.IsZero() {
+					order["review_requested_at"] = it.ReviewRequestedAt.UTC().Format(time.RFC3339)
+				}
 			}
 			orders = append(orders, order)
 		}
@@ -495,12 +517,16 @@ func (g *githubConn) unsee(key, url string) {
 	g.mu.Unlock()
 }
 
+// store keeps a view's answer; a nil orders is a failed search, which keeps the last orders and time. It reports a
+// change, and a successful search is one even when the orders are the same, since its time moved.
 func (g *githubConn) store(id string, orders []map[string]any, errMsg string) bool {
 	g.mu.Lock()
 	old := g.views[id]
-	next := ghView{orders: orders, err: errMsg}
+	next := ghView{orders: orders, err: errMsg, answered: old.answered}
 	if orders == nil {
 		next.orders = old.orders
+	} else {
+		next.answered = time.Now()
 	}
 	g.views[id] = next
 	g.mu.Unlock()

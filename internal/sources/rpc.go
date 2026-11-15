@@ -54,6 +54,10 @@ type conn interface {
 	exitReason() string
 }
 
+// answerer is a conn that knows when a panel's orders were last answered, which may be before this pull: the built-in
+// GitHub source's search runs on its own schedule. The zero time means it has not answered yet.
+type answerer interface{ answeredAt(panel string) time.Time }
+
 type proc struct {
 	key    string
 	cmd    *exec.Cmd

@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
 
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/repofinder"
 )
 
@@ -29,6 +33,14 @@ type Order struct {
 	SubIssues int `json:"sub_issues,omitempty"`
 	// PR is a pull request's state, as a ship's prs[] entry gives it; nil for any other order.
 	PR *OrderPR `json:"pr,omitempty"`
+	// Author is who opened it, OpenedAt when (RFC 3339) and Excerpt the start of its body as one line.
+	Author   string `json:"author,omitempty"`
+	OpenedAt string `json:"opened_at,omitempty"`
+	Excerpt  string `json:"excerpt,omitempty"`
+	// ReviewRequestedAt is when the viewer was last asked to review a pull request. ReviewedSincePush says their latest
+	// submitted review is on its head; nil when unknown.
+	ReviewRequestedAt string `json:"review_requested_at,omitempty"`
+	ReviewedSincePush *bool  `json:"reviewed_since_push,omitempty"`
 }
 
 // OrderPR is moor.PR without its url, which is the order's own.
@@ -39,14 +51,17 @@ type OrderPR struct {
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
 	Ready     bool   `json:"ready"`
+	// FailingCheckCount is how many checks fail; left out when none.
+	FailingCheckCount int `json:"failing_check_count,omitempty"`
 }
 
 type Panel struct {
 	ID     string  `json:"id"`
 	Title  string  `json:"title"`
 	Orders []Order `json:"orders"`
-	// Admiral sets Error, never the plugin.
-	Error string `json:"error,omitempty"`
+	// Admiral sets Error and RefreshedAt, never the plugin. RefreshedAt is the time of the view's last successful answer.
+	Error       string    `json:"error,omitempty"`
+	RefreshedAt time.Time `json:"refreshed_at,omitzero"`
 }
 
 type Auth struct {
@@ -157,6 +172,12 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		// Sub-issues is the count a GitHub issue has, read by the built-in source only.
 		SubIssues json.RawMessage `json:"sub_issues"` // anything but a positive integer is dropped
 		PR        json.RawMessage `json:"pr"`         // anything but a well-formed object is dropped
+		// A field of the wrong type or that fails its check is dropped and the order kept.
+		Author            json.RawMessage `json:"author"`
+		OpenedAt          json.RawMessage `json:"opened_at"`
+		Excerpt           json.RawMessage `json:"excerpt"`
+		ReviewRequestedAt json.RawMessage `json:"review_requested_at"`
+		ReviewedSincePush json.RawMessage `json:"reviewed_since_push"`
 	}
 	if err := decodeInto(raw, &items); err != nil {
 		return nil, fmt.Errorf("orders.list: %w", err)
@@ -213,13 +234,71 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		if n := positiveInt(it.SubIssues); n > 0 {
 			o.SubIssues = n
 		}
-		var pr OrderPR
-		if len(it.PR) > 0 && it.PR[0] == '{' && json.Unmarshal(it.PR, &pr) == nil {
-			o.PR = &pr
+		o.PR = parseOrderPR(it.PR)
+		if a, ok := rawString(it.Author); ok && !hasControl(a) && !hasInvisible(a) && utf8.RuneCountInString(a) <= maxAuthor && strings.TrimSpace(a) != "" {
+			o.Author = a
+		}
+		o.OpenedAt = rfc3339(it.OpenedAt)
+		o.ReviewRequestedAt = rfc3339(it.ReviewRequestedAt)
+		if e, ok := rawString(it.Excerpt); ok {
+			o.Excerpt = github.Excerpt(e)
+		}
+		var seen bool
+		if json.Unmarshal(it.ReviewedSincePush, &seen) == nil && len(it.ReviewedSincePush) > 0 && it.ReviewedSincePush[0] != 'n' {
+			o.ReviewedSincePush = &seen
 		}
 		out = append(out, o)
 	}
 	return out, nil
+}
+
+const maxAuthor = 100
+
+// rawString is raw as a JSON string; false for any other type, null or nothing.
+func rawString(raw json.RawMessage) (string, bool) {
+	var s string
+	if len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &s) != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// hasInvisible reports a C1 control or a Unicode format character (zero-width, bidi override or isolate, BOM), which
+// show nothing or reorder what is around them.
+func hasInvisible(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) >= 0
+}
+
+// rfc3339 is raw as a UTC RFC 3339 time, or "" when it is not a string holding one.
+func rfc3339(raw json.RawMessage) string {
+	s, ok := rawString(raw)
+	if !ok {
+		return ""
+	}
+	at, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return ""
+	}
+	return at.UTC().Format(time.RFC3339Nano)
+}
+
+// parseOrderPR reads a plugin's pr object; anything but a well-formed object is dropped, and a bad failing_check_count
+// only costs that count.
+func parseOrderPR(raw json.RawMessage) *OrderPR {
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil
+	}
+	// The outer field shadows OrderPR's own, so a bad count costs only the count, whatever its key's case.
+	var in struct {
+		OrderPR
+		FailingCheckCount json.RawMessage `json:"failing_check_count"`
+	}
+	if json.Unmarshal(raw, &in) != nil {
+		return nil
+	}
+	pr := in.OrderPR
+	pr.FailingCheckCount = positiveInt(in.FailingCheckCount)
+	return &pr
 }
 
 func parseAuth(raw json.RawMessage) (*Auth, error) {

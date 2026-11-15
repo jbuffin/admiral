@@ -343,6 +343,7 @@ func (r *runner) mergePanels(fresh []Panel) {
 			if old.ID == pn.ID {
 				fresh[i].Orders = old.Orders
 				fresh[i].Error = old.Error
+				fresh[i].RefreshedAt = old.RefreshedAt
 			}
 		}
 	}
@@ -350,6 +351,11 @@ func (r *runner) mergePanels(fresh []Panel) {
 }
 
 func (r *runner) pullOrders(ctx context.Context, p conn, panel string) {
+	// Read before the list: a search landing between the two leaves a stamp older than the orders, never newer.
+	stamp := time.Now()
+	if a, ok := p.(answerer); ok {
+		stamp = a.answeredAt(panel)
+	}
 	res, err := p.call(ctx, "orders.list", map[string]any{"panel": panel}, callTimeout)
 	if err != nil {
 		r.logf("orders.list for panel %q failed: %v", panel, err)
@@ -368,11 +374,17 @@ func (r *runner) pullOrders(ctx context.Context, p conn, panel string) {
 		r.logf("protocol error: %v", err)
 		return
 	}
+	if _, ok := p.(answerer); ok && stamp.IsZero() {
+		return // no search has answered yet: the empty list isn't news, and a Restart's carried orders stay until one does
+	}
 	r.mu.Lock()
 	for i := range r.panels {
 		if r.panels[i].ID == panel {
 			r.panels[i].Orders = orders
 			r.panels[i].Error = ""
+			if !stamp.IsZero() {
+				r.panels[i].RefreshedAt = stamp
+			}
 		}
 	}
 	r.mu.Unlock()

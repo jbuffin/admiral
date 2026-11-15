@@ -179,6 +179,11 @@ type nodes[T any] struct {
 	Nodes []T `json:"nodes"`
 }
 
+type stateCount struct {
+	State string `json:"state"`
+	Count int    `json:"count"`
+}
+
 type prNode struct {
 	State             string    `json:"state"`
 	Author            *gqlActor `json:"author"`
@@ -188,8 +193,19 @@ type prNode struct {
 	MergeStateStatus  string    `json:"mergeStateStatus"`
 	HeadRefOid        string    `json:"headRefOid"`
 	StatusCheckRollup *struct {
-		State string `json:"state"`
+		State    string `json:"state"`
+		Contexts *struct {
+			CheckRuns      []stateCount `json:"checkRunCountsByState"`
+			StatusContexts []stateCount `json:"statusContextCountsByState"`
+		} `json:"contexts"`
 	} `json:"statusCheckRollup"`
+	BodyText           string `json:"bodyText"`
+	ViewerLatestReview *struct {
+		State  string `json:"state"`
+		Commit *struct {
+			Oid string `json:"oid"`
+		} `json:"commit"`
+	} `json:"viewerLatestReview"`
 	BaseRef *struct {
 		BranchProtectionRule *struct {
 			RequiresStrictStatusChecks bool `json:"requiresStrictStatusChecks"`

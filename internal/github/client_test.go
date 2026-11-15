@@ -666,7 +666,8 @@ func TestSearchAsksForOnlyThePullRequestFieldsTheChipsRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	q := strings.Join(f.only(t, "api").argv, " ")
-	for _, want := range []string{"reviewDecision", "mergeable", "mergeStateStatus", "statusCheckRollup"} {
+	for _, want := range []string{"reviewDecision", "mergeable", "mergeStateStatus", "statusCheckRollup",
+		"createdAt", "bodyText", "headRefOid", "viewerLatestReview", "checkRunCountsByState", "statusContextCountsByState", "REVIEW_REQUESTED_EVENT"} {
 		if !strings.Contains(q, want) {
 			t.Errorf("the search asks for no %s: %s", want, q)
 		}
