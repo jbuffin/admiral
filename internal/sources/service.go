@@ -83,12 +83,8 @@ type SourceView struct {
 	Events []EventKind `json:"events,omitempty"`
 }
 
-// View is every source in config order, without the orders that have a ship.
+// View is every source in config order, with every order its panels return; a ship on an order doesn't hide it.
 func (s *Service) View() []SourceView {
-	list := s.Ships()
-	hidden := ships.HiddenOrders(list)
-	carried := mooredOn(list)
-	held := ships.ClaimsOf(list) // an issue a ship holds is hidden whichever source launched it
 	out := []SourceView{}
 	for _, st := range s.Sup.snapshot() {
 		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Fleet: st.def.Fleet, Capabilities: st.caps, HasSchema: st.hasSchema,
@@ -115,13 +111,6 @@ func (s *Service) View() []SourceView {
 			v.Error = &msg
 		}
 		for _, p := range st.panels {
-			orders := make([]Order, 0, len(p.Orders))
-			for _, o := range p.Orders {
-				if (!hidden[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}] || (o.PR != nil && carried[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}][prKey(o.URL)])) && !(held[claimKey(o.URL)] != "") {
-					orders = append(orders, o)
-				}
-			}
-			p.Orders = orders
 			v.Views = append(v.Views, p)
 		}
 		SortPanels(v.Views, st.def.PanelOrder)
@@ -132,27 +121,6 @@ func (s *Service) View() []SourceView {
 	}
 	return out
 }
-
-// mooredOn lists, per launched order, the PRs a moored ship carries: its row stays while the ship is moored on it.
-func mooredOn(list []ships.Ship) map[ships.OrderKey]map[string]bool {
-	out := map[ships.OrderKey]map[string]bool{}
-	for _, sh := range list {
-		if sh.Status != ships.StatusMoored || sh.Source == "" || sh.OrderID == "" {
-			continue
-		}
-		k := ships.OrderKey{Source: sh.Source, OrderID: sh.OrderID}
-		if out[k] == nil {
-			out[k] = map[string]bool{}
-		}
-		for _, p := range sh.PRs {
-			out[k][prKey(p.URL)] = true
-		}
-	}
-	return out
-}
-
-// prKey makes two spellings of a PR's URL equal.
-func prKey(u string) string { return strings.ToLower(strings.TrimRight(u, "/")) }
 
 // SortPanels puts the panels that order names first, in its order; the rest
 // keep the plugin's order after them.

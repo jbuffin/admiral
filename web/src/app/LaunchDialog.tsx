@@ -25,6 +25,8 @@ export interface OrderRef {
   id: string;
   title: string;
   text: string;
+  /** Launch another ship on an order that already has one. */
+  anyway?: boolean;
 }
 
 /** A campaign child launched by hand: the server picks its skill, text and autopilot. */
@@ -223,6 +225,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
       resources: held,
       source: order?.source,
       orderId: order?.id,
+      anyway: order?.anyway,
       crew,
       member: as ? member : undefined,
       memberHarness: as?.harness,

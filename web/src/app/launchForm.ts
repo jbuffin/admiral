@@ -22,6 +22,8 @@ export interface LaunchFormState {
   resources: string[];
   source?: string;
   orderId?: string;
+  /** A second ship on an order that already has one. */
+  anyway?: boolean;
   crew?: string[];
   // The "Launch as" member and the harness it is locked to, if any.
   member?: string;
@@ -101,6 +103,7 @@ export function launchBody(form: LaunchFormState): Record<string, unknown> {
     ...(effort && { effort }),
     ...(form.source && { source: form.source }),
     ...(form.orderId && { order_id: form.orderId }),
+    ...(form.anyway && { anyway: true }),
     ...(form.skill.kind === 'commodore' && form.crew?.length && { crew: form.crew }),
     ...(member && { member }),
   };

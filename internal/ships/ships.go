@@ -655,12 +655,14 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	if req.Round == 0 && (req.Source != "" || len(req.Issues) > 0 || chat != "" || req.RoutineKey != "" || req.CommitmentKey != "") && !s.Host.Known() {
 		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg, Wait: WaitHost, Cause: launcher.CauseHost}
 	}
+	// A hand launch's anyway opens a second ship on a held order or issue; AdmiralBot's never does.
+	another := req.Anyway && req.ByFleet == ""
 	if req.Source != "" && req.Round == 0 {
 		if !s.lockOrder(key) {
 			return Ship{}, s.orderRefused(req, key)
 		}
 		defer s.unlockOrder(key)
-		if HiddenOrders(s.List())[key] {
+		if !another && HiddenOrders(s.List())[key] {
 			return Ship{}, s.orderRefused(req, key)
 		}
 		var lerr *launcher.Error
@@ -681,7 +683,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		defer s.unlockIssues(issues)
 		claims := claimingShips(append(s.List(), s.Pending()...))
 		for _, u := range issues {
-			if sh, held := claims[claimKeyOf(u)]; held && cmpName(sh.Name, sh.Session) != self {
+			if sh, held := claims[claimKeyOf(u)]; held && !another && cmpName(sh.Name, sh.Session) != self {
 				return Ship{}, issueHeld(holderOf(req, sh))
 			}
 		}

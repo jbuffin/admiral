@@ -59,6 +59,8 @@ describe('launchBody', () => {
   });
   it('sends the order a launch came from', () => {
     expect(launchBody({ ...form, source: 'orders', orderId: 'o1' })).toMatchObject({ source: 'orders', order_id: 'o1' });
+    expect(launchBody({ ...form, source: 'orders', orderId: 'o1' })).not.toHaveProperty('anyway');
+    expect(launchBody({ ...form, source: 'orders', orderId: 'o1', anyway: true })).toMatchObject({ anyway: true });
   });
   it('sends clone: true and no dir when the clone is chosen', () => {
     const body = launchBody({ ...form, clone: true, cloneRepo: 'github.com/acme/widget' });
