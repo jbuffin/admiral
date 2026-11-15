@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { campaignLaunch, campaignOrder, type CampaignLaunchState, sliceOrder, type CrewMemberView, crewOptions, defaultSkill, effortsFor, type LaunchFormState, launchBody, memberRun, sourcesForFleet, togglePin } from './launchForm';
+import { campaignLaunch, campaignOrder, type CampaignLaunchState, sliceOrder, type CrewMemberView, crewOptions, defaultSkill, effortsFor, keepSkill, type LaunchFormState, launchBody, memberRun, pickWarning, skillOptions, type SkillsAnswer, sourcesForFleet, startSkill, togglePin, typedSkill } from './launchForm';
 
 describe('sourcesForFleet', () => {
   it('keeps the sources of the active fleet only', () => {
@@ -114,7 +114,7 @@ describe('campaignLaunch', () => {
     expect(path).toBe('/campaigns/3f9c0a41b7d2e8a5/launch');
     expect(body).toEqual({ child_url: form.childUrl, harness: 'claude', dir: '/code/widgets', model: 'opus', effort: 'high' });
   });
-  it('sends no skill, text, autopilot, resources or order: the server picks them', () => {
+  it('sends no skill unless one is picked, and no text, autopilot, resources or order: the server picks them', () => {
     const { body } = campaignLaunch(form);
     for (const field of ['skill', 'text', 'autopilot', 'resources', 'fleet', 'source', 'order_id']) expect(body).not.toHaveProperty(field);
   });
@@ -255,5 +255,157 @@ describe('launching as a member', () => {
     const base = { ...form, skill: { kind: 'none' } as const, model: 'opus', effort: 'max' };
     expect(launchBody({ ...base, member: 'scout', memberHarness: null })).toMatchObject({ model: 'opus', effort: 'max' });
     expect(launchBody({ ...base, member: 'scout', memberHarness: 'claude' })).toMatchObject({ model: 'opus', effort: 'max' });
+  });
+});
+
+describe('campaignLaunch with a picked skill', () => {
+  const child: CampaignLaunchState = {
+    campaignId: '3f9c0a41b7d2e8a5',
+    childUrl: 'https://github.com/acme/widgets/issues/21',
+    harness: 'claude',
+    dir: '/code/widgets',
+    clone: false,
+    startAnyway: false,
+    model: '',
+    effort: '',
+  };
+
+  it('sends a child the skill picked, for this launch', () => {
+    const { body } = campaignLaunch({ ...child, skill: { kind: 'skill', name: 'tdd' } });
+    expect(body).toMatchObject({ child_url: child.childUrl, skill: { kind: 'skill', name: 'tdd' } });
+  });
+  it('sends Commodore and Just launch as their kind alone', () => {
+    expect(campaignLaunch({ ...child, skill: { kind: 'commodore' } }).body).toMatchObject({ skill: { kind: 'commodore' } });
+    expect(campaignLaunch({ ...child, skill: { kind: 'none' } }).body).toMatchObject({ skill: { kind: 'none' } });
+  });
+});
+
+describe('the launch skill picker', () => {
+  const answer = (over: Partial<SkillsAnswer> = {}): SkillsAnswer => ({
+    mark: '/',
+    commodore: { found: true, name: 'commodore' },
+    skills: [
+      { name: 'grill', description: 'Grill the plan', favorite: true },
+      { name: 'tdd', description: 'Test-driven development', favorite: false },
+      { name: 'diagnose', description: 'Find the bug', favorite: false },
+      { name: 'wayfinder', description: 'Map the work', favorite: true },
+    ],
+    ...over,
+  });
+  const names = (rows: ReturnType<typeof skillOptions>) => rows.map((r) => (r.choice.kind === 'skill' ? r.choice.name : r.choice.kind));
+
+  describe('skillOptions', () => {
+    it('offers Commodore, then the favorites, then Just launch before anything is typed', () => {
+      expect(names(skillOptions(answer(), ''))).toEqual(['commodore', 'grill', 'wayfinder', 'none']);
+    });
+    it('treats a lone mark as nothing typed', () => {
+      expect(names(skillOptions(answer(), '/'))).toEqual(['commodore', 'grill', 'wayfinder', 'none']);
+      expect(names(skillOptions(answer({ mark: '$' }), '$'))).toEqual(['commodore', 'grill', 'wayfinder', 'none']);
+    });
+    it('shows Commodore as not found, and not pickable, when the dock has none', () => {
+      const rows = skillOptions(answer({ commodore: { found: false, name: '' } }), '');
+      const commodore = rows.find((r) => r.choice.kind === 'commodore');
+      expect(commodore).toMatchObject({ disabled: true });
+      expect(commodore?.description).toMatch(/not found/i);
+      expect(rows.filter((r) => r.choice.kind !== 'commodore').every((r) => !r.disabled)).toBe(true);
+    });
+    it('filters the installed skills with matchSkills ranking once something is typed', () => {
+      // A name that starts with the text comes before one that only holds it.
+      const many = answer({
+        skills: [
+          { name: 'my-tdd', description: '', favorite: false },
+          { name: 'tdd', description: 'Test-driven development', favorite: false },
+          { name: 'grill', description: '', favorite: true },
+        ],
+      });
+      expect(names(skillOptions(many, 'td'))).toEqual(['tdd', 'my-tdd']);
+    });
+    it('lists only matching skills while typing: no Commodore, no Just launch', () => {
+      expect(names(skillOptions(answer(), 'di'))).toEqual(['diagnose']);
+    });
+    it('ignores one leading mark the engineer typed', () => {
+      expect(names(skillOptions(answer(), '/tdd'))).toEqual(['tdd']);
+      expect(names(skillOptions(answer({ mark: '$' }), '$tdd'))).toEqual(['tdd']);
+    });
+    it('gives each skill row its mark, name and description', () => {
+      const [row] = skillOptions(answer(), 'tdd');
+      expect(row).toMatchObject({ mark: '/', label: 'tdd', description: 'Test-driven development', choice: { kind: 'skill', name: 'tdd' } });
+      const [codex] = skillOptions(answer({ mark: '$' }), 'tdd');
+      expect(codex?.mark).toBe('$');
+    });
+    it('answers no rows when nothing matches', () => {
+      expect(skillOptions(answer(), 'zzz')).toEqual([]);
+    });
+    it('answers no skill rows for a dock with no skills, and still offers Commodore and Just launch', () => {
+      expect(names(skillOptions(answer({ skills: [] }), ''))).toEqual(['commodore', 'none']);
+    });
+  });
+
+  describe('typedSkill', () => {
+    it('accepts the exact name of an installed skill', () => {
+      expect(typedSkill(answer(), 'tdd', 'claude')).toEqual({ choice: { kind: 'skill', name: 'tdd' } });
+    });
+    it('accepts the name after dropping one leading mark', () => {
+      expect(typedSkill(answer(), '/tdd', 'claude')).toEqual({ choice: { kind: 'skill', name: 'tdd' } });
+      expect(typedSkill(answer({ mark: '$' }), '$tdd', 'codex')).toEqual({ choice: { kind: 'skill', name: 'tdd' } });
+    });
+    it('refuses a name that is only part of an installed one', () => {
+      expect(typedSkill(answer(), 'td', 'claude')).toEqual({ warning: 'not installed on claude' });
+    });
+    it('refuses a name that is not installed, saying which harness lacks it', () => {
+      expect(typedSkill(answer(), 'nope', 'claude')).toEqual({ warning: 'not installed on claude' });
+      expect(typedSkill(answer(), '/nope', 'codex')).toEqual({ warning: 'not installed on codex' });
+    });
+    it('drops only one mark', () => {
+      expect(typedSkill(answer(), '//tdd', 'claude')).toEqual({ warning: 'not installed on claude' });
+    });
+  });
+
+  describe('keepSkill: the pick after the dock or checkout changes', () => {
+    it('keeps an installed skill that is not a favorite', () => {
+      expect(keepSkill(answer(), { kind: 'skill', name: 'tdd' })).toEqual({ kind: 'skill', name: 'tdd' });
+    });
+    it('keeps a favorite', () => {
+      expect(keepSkill(answer(), { kind: 'skill', name: 'grill' })).toEqual({ kind: 'skill', name: 'grill' });
+    });
+    it('falls back to the default when the skill is not installed for the new dock', () => {
+      expect(keepSkill(answer(), { kind: 'skill', name: 'gone' })).toEqual({ kind: 'commodore' });
+      expect(keepSkill(answer({ commodore: { found: false, name: '' } }), { kind: 'skill', name: 'gone' })).toEqual({ kind: 'skill', name: 'grill' });
+    });
+    it('falls back to the default when Commodore is not on the new dock', () => {
+      expect(keepSkill(answer({ commodore: { found: false, name: '' } }), { kind: 'commodore' })).toEqual({ kind: 'skill', name: 'grill' });
+    });
+    it('keeps Just launch and a found Commodore', () => {
+      expect(keepSkill(answer(), { kind: 'none' })).toEqual({ kind: 'none' });
+      expect(keepSkill(answer(), { kind: 'commodore' })).toEqual({ kind: 'commodore' });
+    });
+  });
+
+  describe('startSkill: where a campaign child\'s picker starts', () => {
+    it('starts at the child\'s resolved skill when it is installed', () => {
+      expect(startSkill(answer(), { kind: 'skill', name: 'wayfinder', args: 'map 12' })).toEqual({ kind: 'skill', name: 'wayfinder' });
+      expect(startSkill(answer(), { kind: 'commodore', name: '', args: '' })).toEqual({ kind: 'commodore' });
+      expect(startSkill(answer(), { kind: 'none', name: '', args: '' })).toEqual({ kind: 'none' });
+    });
+    it('starts at the default when the skill has no kind', () => {
+      expect(startSkill(answer(), { kind: '', name: '', args: '' })).toEqual({ kind: 'commodore' });
+      expect(startSkill(answer(), undefined)).toEqual({ kind: 'commodore' });
+    });
+    it('starts at the resolved skill even when the dock does not offer it, so the form can warn', () => {
+      expect(startSkill(answer(), { kind: 'skill', name: 'gone', args: '' })).toEqual({ kind: 'skill', name: 'gone' });
+    });
+  });
+
+  describe('pickWarning: a pick this dock does not offer', () => {
+    it('warns for a skill that is not installed, with the dock named', () => {
+      expect(pickWarning(answer(), { kind: 'skill', name: 'gone' }, 'codex')).toBe('not installed on codex');
+      expect(pickWarning(answer(), { kind: 'skill', name: 'tdd' }, 'codex')).toBeNull();
+    });
+    it('warns for Commodore when the dock has none, and never for Just launch', () => {
+      const none: SkillsAnswer = { ...answer(), commodore: { found: false, name: '' } };
+      expect(pickWarning(none, { kind: 'commodore' }, 'claude')).toBe('not installed on claude');
+      expect(pickWarning(none, { kind: 'none' }, 'claude')).toBeNull();
+      expect(pickWarning(answer(), { kind: 'commodore' }, 'claude')).toBeNull();
+    });
   });
 });

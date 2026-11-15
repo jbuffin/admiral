@@ -1,11 +1,17 @@
+import { skillWarning } from './crewSkills';
+import { matchSkills } from './skillMenu';
+import type { SkillView } from './campaign';
+
 export interface SourceView {
   key: string;
   fleet: string;
 }
 export type SkillChoice = { kind: 'commodore' | 'none' } | { kind: 'skill'; name: string };
 export interface SkillsAnswer {
+  /** What the dock's harness types before a skill name: / for Claude Code and Copilot, $ for Codex. */
+  mark: string;
   commodore: { found: boolean; name: string };
-  skills: { name: string; favorite: boolean }[];
+  skills: { name: string; description: string; favorite: boolean }[];
 }
 export interface LaunchFormState {
   fleet: string;
@@ -80,7 +86,7 @@ export function sourcesForFleet<T extends SourceView>(sources: T[], fleet: strin
   return sources.filter((s) => s.fleet === fleet);
 }
 
-export function defaultSkill(answer: SkillsAnswer): SkillChoice {
+export function defaultSkill(answer: Pick<SkillsAnswer, 'commodore'> & { skills: { name: string; favorite: boolean }[] }): SkillChoice {
   if (answer.commodore.found) return { kind: 'commodore' };
   const favorite = answer.skills.find((s) => s.favorite);
   return favorite ? { kind: 'skill', name: favorite.name } : { kind: 'none' };
@@ -124,6 +130,8 @@ export interface CampaignLaunchState {
   startAnyway: boolean;
   model: string;
   effort: string;
+  /** The skill picked for this launch only; a child takes it, a slice never does. */
+  skill?: SkillChoice;
 }
 
 /** The order the dirs call names for a campaign child: source `campaign`, id `<campaign id>/<child URL>`. */
@@ -139,12 +147,12 @@ export function sliceOrder(campaignId: string, urls: string[]): { source: string
   return campaignOrder(campaignId, [first, ...rest].join(','));
 }
 
-/** The route and body of a campaign child's launch; the server picks skill, text and autopilot. */
+/** The route and body of a campaign child's launch; the server picks text and autopilot, and the skill unless one is sent. */
 export function campaignLaunch(form: CampaignLaunchState): { path: string; body: Record<string, unknown> } {
   return {
     path: `/campaigns/${form.campaignId}/launch`,
     body: {
-      ...(form.issues ? { issues: form.issues } : { child_url: form.childUrl }),
+      ...(form.issues ? { issues: form.issues } : { child_url: form.childUrl, ...(form.skill && { skill: form.skill }) }),
       harness: form.harness,
       ...(form.clone ? { clone: true, ...(form.cloneRepo && { clone_repo: form.cloneRepo }) } : { dir: form.dir }),
       ...(form.startAnyway && { start_anyway: true }),
@@ -162,3 +170,58 @@ export function effortsFor(harness: string): string[] {
 export const CLAUDE_MODELS = ['sonnet', 'opus', 'haiku'];
 
 export const bareSkillName = (typed: string) => typed.trim().replace(/^[/$]/, '');
+
+export interface SkillOption {
+  choice: SkillChoice;
+  label: string;
+  description: string;
+  /** What the harness types before the name; empty for Commodore and Just launch. */
+  mark: string;
+  disabled?: boolean;
+}
+
+export const sameChoice = (a: SkillChoice, b: SkillChoice) => a.kind === b.kind && (a.kind !== 'skill' || (b.kind === 'skill' && a.name === b.name));
+
+/** The rows of the picker's list: Commodore, the favorites and Just launch until something is typed, then the installed skills that match. */
+export function skillOptions(answer: SkillsAnswer, typed: string): SkillOption[] {
+  const query = bareSkillName(typed);
+  const row = (s: SkillsAnswer['skills'][number]): SkillOption => ({ choice: { kind: 'skill', name: s.name }, label: s.name, description: s.description, mark: answer.mark });
+  if (query) return matchSkills(answer.skills, query).map(row);
+  const { found } = answer.commodore;
+  return [
+    { choice: { kind: 'commodore' }, label: 'Commodore', description: found ? '' : 'not found', mark: '', ...(!found && { disabled: true }) },
+    ...answer.skills.filter((s) => s.favorite).map(row),
+    { choice: { kind: 'none' }, label: 'Just launch', description: '', mark: '' },
+  ];
+}
+
+/** What a typed name stands for: the installed skill it names exactly (one leading mark dropped), else the crew picker's warning. */
+export function typedSkill(answer: SkillsAnswer, typed: string, harness: string): { choice: SkillChoice } | { warning: string } {
+  const name = bareSkillName(typed);
+  const warning = skillWarning(name, answer.skills, harness);
+  return warning ? { warning } : { choice: { kind: 'skill', name } };
+}
+
+/** The pick after the dock or checkout changes: kept when this dock still offers it, else the default. */
+export function keepSkill(answer: SkillsAnswer, current: SkillChoice): SkillChoice {
+  const offered = current.kind === 'commodore' ? answer.commodore.found : current.kind === 'skill' ? answer.skills.some((s) => s.name === current.name) : true;
+  return offered ? current : defaultSkill(answer);
+}
+
+/** Where a campaign child's picker starts: its resolved skill whether or not this dock offers it (the form then warns), else the default. */
+export function startSkill(answer: SkillsAnswer, view: SkillView | undefined): SkillChoice {
+  return viewChoice(view) ?? defaultSkill(answer);
+}
+
+/** The pick a campaign child's resolved skill stands for; null when it has none. */
+export function viewChoice(view: SkillView | undefined): SkillChoice | null {
+  if (!view || view.kind === '') return null;
+  return view.kind === 'skill' ? { kind: 'skill', name: bareSkillName(view.name) } : { kind: view.kind };
+}
+
+/** The warning for a pick this dock doesn't offer, else null. */
+export function pickWarning(answer: SkillsAnswer, choice: SkillChoice, harness: string): string | null {
+  if (choice.kind === 'skill') return skillWarning(choice.name, answer.skills, harness);
+  if (choice.kind === 'commodore' && !answer.commodore.found) return harness ? `not installed on ${harness}` : 'not found';
+  return null;
+}

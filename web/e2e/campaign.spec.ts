@@ -1,8 +1,8 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import { ANNEX, T, campaignIdOf, closeAnnexChild, followByPaste, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, proposalJourney, seedChatCampaignFleet, seedCampaignFleet } from './campaign';
-import { watchPage, withFakeGh } from './shell';
+import { skillPicker, watchPage, withFakeGh } from './shell';
 
 test('on the iPad, a person follows a campaign by pasting it, sees each child\'s status and mode, launches a ready child, is refused a second launch, unfollows it and finds it under Ended; Follow on an order opens its campaign', async ({ page, admiral }) => {
   seedCampaignFleet(admiral);
@@ -57,8 +57,15 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   const form = page.getByRole('dialog', { name: 'Launch', exact: true });
   await expect(form.getByLabel('Checkout')).toHaveValue(join(admiral.home, 'widgets'));
   await expect(form.getByRole('list', { name: 'GitHub labels' })).toHaveText('wayfinder:grilling');
-  await expect(form.getByLabel('Skill')).toHaveCount(0);
+  // The picker starts at the child's skill from its labels; the read-only line keeps the mode and no longer says the skill.
+  const picker = skillPicker(page, form, press);
+  await expect(picker.box).toHaveValue(/wayfinder/);
+  await expect(form.locator('.note', { hasText: 'With you' })).toBeVisible();
+  await expect(form.locator('.note', { hasText: '·' })).toHaveCount(0);
   await expect(form.getByRole('checkbox', { name: /autopilot/i })).toHaveCount(0);
+  // The engineer finds another skill by typing and picks it; the form stays open and nothing is saved.
+  await picker.pick('tdd');
+  await expect(form).toBeVisible();
   const sent = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/campaigns/${id}/launch`);
   // Held, the launch spins in place and keeps its name, Cancel is unavailable, and a second tap and an Enter send nothing.
   let launchPosts = 0;
@@ -85,14 +92,30 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(form).toBeVisible();
   release();
   const body = (await sent).postDataJSON() as Record<string, unknown>;
-  expect(body).toMatchObject({ child_url: issueUrl(21), harness: 'claude', dir: join(admiral.home, 'widgets') });
-  for (const f of ['skill', 'text', 'autopilot', 'resources']) expect(body).not.toHaveProperty(f);
+  expect(body).toMatchObject({ child_url: issueUrl(21), harness: 'claude', dir: join(admiral.home, 'widgets'), skill: { kind: 'skill', name: 'tdd' } });
+  for (const f of ['text', 'autopilot', 'resources']) expect(body).not.toHaveProperty(f);
   await expect(form).toBeHidden();
   expect(launchPosts).toBe(1);
+  // The ship runs the picked skill on the ticket, not the labels' wayfinder.
+  const shipsOf = async () => ((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: { session: string }[] }).ships;
+  await expect.poll(async () => (await shipsOf()).length).toBe(1);
+  const started = await shipsOf();
+  const argv = join(admiral.home, 'rec', started[0]!.session, 'argv');
+  await expect.poll(() => existsSync(argv)).toBe(true);
+  expect(readFileSync(argv, 'utf8')).toContain('/tdd');
+  expect(readFileSync(argv, 'utf8')).toContain(issueUrl(21));
+  expect(readFileSync(argv, 'utf8')).not.toContain('wayfinder');
   // The child is underway in its Ready group, with its ship's name and how long the ship has been going.
   await expect(group('Ready, with you').getByRole('listitem').filter({ hasText: T.grill })).toContainText(/Underway · .+ · (<1m|\d+m)/);
   // Its number opens the issue on GitHub; the row itself still opens its sheet.
   await expect(row(T.grill).getByRole('link', { name: 'Open issue #21 on GitHub' })).toHaveAttribute('href', issueUrl(21));
+  // The pick was for that launch only: the child's skill is still the labels' and it is not marked overridden.
+  await press(row(T.grill).getByRole('button').first());
+  const grill = page.getByRole('dialog', { name: new RegExp(T.grill) });
+  await expect(grill).toContainText('/wayfinder');
+  await expect(grill).not.toContainText('overridden');
+  await expect(grill).not.toContainText('/tdd');
+  await page.keyboard.press('Escape');
 
   // A second launch of a child someone else started meanwhile is refused with the server's message, which names the ship.
   await press(row(T.rover).getByRole('button').first());

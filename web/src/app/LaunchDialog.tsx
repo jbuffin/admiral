@@ -11,14 +11,20 @@ import {
   crewOptions,
   defaultSkill,
   effortsFor,
+  keepSkill,
   launchBody,
   memberRun,
   type SkillChoice,
   type SkillsAnswer,
+  pickWarning,
+  startSkill,
   togglePin,
+  typedSkill,
+  viewChoice,
 } from './launchForm';
 import { IssueLabels } from './IssueLabels';
-import { CheckoutSelect, CLONE, DockPicker, ModelEffortPair, NO_DIR, ResourcesPicker, SkillSelect, skillValue } from './LaunchPickers';
+import { CheckoutSelect, CLONE, DockPicker, ModelEffortPair, NO_DIR, ResourcesPicker } from './LaunchPickers';
+import { LaunchSkillPicker } from './LaunchSkillPicker';
 
 export interface OrderRef {
   source: string;
@@ -47,7 +53,6 @@ export interface CampaignChildRef {
 }
 
 const NONE = NO_DIR;
-const toValue = skillValue;
 
 export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched }: { fleet: Fleet; order?: OrderRef; campaign?: CampaignChildRef; onClose: () => void; onLaunched?: (session: string) => void }) {
   const order: OrderRef | undefined = campaign ? { ...(campaign.issues ? sliceOrder(campaign.campaignId, campaign.issues) : campaignOrder(campaign.campaignId, campaign.url)), title: campaign.title, text: '' } : given;
@@ -56,10 +61,12 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const [dir, setDir] = useState(NONE);
   const picked = useRef(false);
   const [text, setText] = useState(order?.text ?? '');
-  const [skills, setSkills] = useState<SkillsAnswer | null>(null);
-  const [skill, setSkill] = useState('none');
+  // The answer carries the dock and checkout it was read for, so one read for another dock never counts.
+  const [read, setRead] = useState<{ key: string; answer?: SkillsAnswer; error?: string } | null>(null);
+  const [skill, setSkill] = useState<SkillChoice>((!campaign?.issues && viewChoice(campaign?.skill)) || { kind: 'none' });
+  // What the engineer typed in the skill box, or null while it shows the pick.
+  const [typed, setTyped] = useState<string | null>(null);
   const skillPicked = useRef(false);
-  const [custom, setCustom] = useState('');
   const [models, setModels] = useState<Record<string, string>>({});
   const [effort, setEffort] = useState('');
   const [crewAnswer, setCrewAnswer] = useState<CrewAnswer | null>(null);
@@ -78,6 +85,8 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const dirsError = useRef('');
   const skillNow = useRef(skill);
   skillNow.current = skill;
+  const typedNow = useRef(typed);
+  typedNow.current = typed;
 
   // The preselection: an order's repo, else a URL in the text, else the dock's last directory; a freeform text is asked again as it changes.
   useEffect(() => {
@@ -108,20 +117,28 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   }, [harness, order ? '' : text]);
 
   const dirForSkills = dir && dir !== CLONE ? dir : (dirs?.entries[0]?.path ?? '');
+  const readKey = `${harness}\n${dirForSkills}`;
+  const skills = read?.key === readKey ? (read.answer ?? null) : null;
+  const skillsError = read?.key === readKey ? read.error : undefined;
+  const readNow = useRef(read);
+  readNow.current = read;
   useEffect(() => {
-    if (!dirForSkills || campaign) return;
+    if (!dirForSkills || campaign?.issues) return;
     let live = true;
     const q = new URLSearchParams({ fleet: fleet.key, harness, dir: dirForSkills });
     void call<SkillsAnswer>('GET', `/launch-orders/skills?${q}`).then((r) => {
-      if (!live || !r.ok) return;
-      setSkills(r.data);
-      // A pick this dock doesn't offer falls back to the default, so the select shows what is sent.
+      if (!live) return;
+      if (!r.ok) return setRead({ key: readKey, error: r.error });
+      // Text that named a skill of the last list is that pick, which this list may keep or replace; other text stays and is still refused.
+      const was = readNow.current?.answer;
+      if (typedNow.current !== null && was && 'choice' in typedSkill(was, typedNow.current, harness)) setTyped(null);
+      setRead({ key: readKey, answer: r.data });
+      // A pick this dock doesn't offer falls back to the start, so the box shows what is sent.
+      const start = campaign ? startSkill(r.data, campaign.skill) : defaultSkill(r.data);
       const cur = skillNow.current;
-      const offered = cur === 'commodore' ? r.data.commodore.found : !cur.startsWith('skill:') || r.data.skills.some((s) => s.favorite && `skill:${s.name}` === cur);
-      if (!skillPicked.current || !offered) {
-        skillPicked.current = false;
-        setSkill(toValue(defaultSkill(r.data)));
-      }
+      const kept = skillPicked.current ? keepSkill(r.data, cur) : start;
+      if (skillPicked.current && kept !== cur) skillPicked.current = false;
+      setSkill(skillPicked.current ? kept : start);
     });
     return () => {
       live = false;
@@ -130,7 +147,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
 
   // A clone launch has no repo yet, so it offers the built-in and fleet members only.
   const crewDir = dir && dir !== CLONE ? dir : '';
-  const pinning = skill === 'commodore';
+  const pinning = !campaign && skill.kind === 'commodore';
   useEffect(() => {
     if (!pinning) return;
     let live = true;
@@ -146,7 +163,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   }, [pinning, harness, crewDir]);
 
   // Launch as lists the members of a Just launch, with its own fetch.
-  const launchingAs = skill === 'none';
+  const launchingAs = !campaign && skill.kind === 'none';
   useEffect(() => {
     if (!launchingAs) return;
     let live = true;
@@ -180,12 +197,23 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const crew = pinned.filter((n) => crewOffered.some((o) => o.name === n));
   const memberViews = membersAnswer?.members ?? [];
   const as = launchingAs ? memberRun(memberViews, harness, member) : null;
-  const favorites = (skills?.skills ?? []).filter((s) => s.favorite);
-
-  const chosen = (): SkillChoice | string => {
-    if (skill === 'commodore' || skill === 'none') return { kind: skill };
-    if (skill === 'custom') return /\s/.test(custom) ? 'Skill names have no spaces.' : bareSkillName(custom) ? { kind: 'skill', name: custom } : 'Type a skill name, or pick another.';
-    return { kind: 'skill', name: skill.slice(6) };
+  const refusal = typed !== null && skills && bareSkillName(typed) ? typedSkill(skills, typed, harness) : null;
+  const warning = refusal ? ('warning' in refusal ? refusal.warning : null) : typed === null && skills && !campaign?.issues ? pickWarning(skills, skill, harness) : null;
+  // Without an answer for this dock and checkout, a skill name or typed text can't be checked, so it can't launch.
+  const unchecked = !skills && !campaign?.issues && (typed !== null || (skill.kind === 'skill' && (!campaign || skillPicked.current)));
+  const stop = !!warning || unchecked || (typed !== null && !bareSkillName(typed));
+  const type = (text: string | null) => {
+    setTyped(text);
+    const named = text !== null && skills && bareSkillName(text) ? typedSkill(skills, text, harness) : null;
+    if (named && 'choice' in named) {
+      skillPicked.current = true;
+      setSkill(named.choice);
+    }
+  };
+  const pick = (c: SkillChoice) => {
+    skillPicked.current = true;
+    setTyped(null);
+    setSkill(c);
   };
 
   const keys = (e: KeyboardEvent) => {
@@ -203,18 +231,18 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const submit = (e: Event) => {
     e.preventDefault();
     if (busy) return;
+    if (stop) return;
     setVia('form');
-    void launch(campaign ? { kind: 'none' } : chosen());
+    void launch(skill);
   };
 
-  const launch = async (s: SkillChoice | string) => {
+  const launch = async (s: SkillChoice) => {
     if (busy) return;
-    if (typeof s === 'string') return setError(s);
     setBusy(true);
     setError('');
     const effortNow = efforts.includes(effort) ? effort : '';
     const sent = campaign
-      ? campaignLaunch({ campaignId: campaign.campaignId, ...(campaign.issues ? { issues: campaign.issues } : { childUrl: campaign.url }), harness, dir: cloning ? '' : dir, clone: cloning, cloneRepo: cloning ? clone!.repo : undefined, startAnyway: campaign.startAnyway, model, effort: effortNow })
+      ? campaignLaunch({ campaignId: campaign.campaignId, ...(campaign.issues ? { issues: campaign.issues } : { childUrl: campaign.url }), harness, dir: cloning ? '' : dir, clone: cloning, cloneRepo: cloning ? clone!.repo : undefined, startAnyway: campaign.startAnyway, model, effort: effortNow, ...(skills && { skill: s }) })
       : { path: '/ships', body: launchBody({
       fleet: fleet.key,
       harness,
@@ -284,27 +312,11 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
 
           {campaign ? (
             <>
-              <p class="note">
-                {modeLabel(campaign.mode)} · {skillLabel(campaign.skill)}
-              </p>
+              <p class="note">{campaign.issues ? `${modeLabel(campaign.mode)} · ${skillLabel(campaign.skill)}` : modeLabel(campaign.mode)}</p>
               <IssueLabels labels={campaign.labels} />
             </>
-          ) : (
-          <SkillSelect
-            value={skill}
-            skills={skills}
-            onChange={(v) => {
-              skillPicked.current = true;
-              setSkill(v);
-            }}
-          />
-          )}
-          {!campaign && skill === 'custom' ? (
-            <label class="field">
-              <span>Skill name</span>
-              <input type="text" autocomplete="off" autocapitalize="off" spellcheck={false} value={custom} onInput={(e) => setCustom((e.target as HTMLInputElement).value)} />
-            </label>
           ) : null}
+          {campaign?.issues ? null : <LaunchSkillPicker answer={skills} value={skill} blank={!skills && !!campaign && !viewChoice(campaign.skill)} typed={typed} warning={warning} failure={skillsError ? `Couldn't load skills: ${skillsError}` : null} onType={type} onPick={pick} />}
 
           {launchingAs && membersFailed ? <p class="note warn">Couldn't load crew members</p> : null}
           {launchingAs && memberViews.length > 0 ? (
@@ -363,7 +375,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
             setVia('just');
             return launch({ kind: 'none' });
           }} />}
-          <Button type="submit" variant="primary" label="Launch" busy={busy && via === 'form'} disabled={!cloning && !dir} />
+          <Button type="submit" variant="primary" label="Launch" busy={busy && via === 'form'} disabled={(!cloning && !dir) || stop} />
         </Actions>
       </form>
       </div>
