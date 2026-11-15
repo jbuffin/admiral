@@ -313,6 +313,8 @@ function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolea
 /** A ship's PRs: the stack bar, sub-tabs in stack order, the selected PR's header, chips and sections, and for a moored ship Merge and Don't follow reviews. */
 export function PRTab({ ship }: { ship: Ship }) {
   const [error, setError] = useState('');
+  const [mergeError, setMergeError] = useState('');
+  const [mergeStale, setMergeStale] = useState(false);
   const [merged, setMerged] = useState<Set<string>>(new Set());
   const [mergedAll, setMergedAll] = useState(false);
   const [acting, setActing] = useState(false);
@@ -330,6 +332,12 @@ export function PRTab({ ship }: { ship: Ship }) {
   const prs = tabOrder(carried, shape, stack);
   const moored = ship.status === 'moored';
   useEffect(() => setActing((a) => actingWhile(a, moored)), [moored]);
+  const shownUrl = (prs.find((p) => p.url === picked) ?? defaultPR(prs))?.url;
+  // A merge error belongs to the PR it failed on and to the mooring, which a poll can change under it.
+  useEffect(() => {
+    setMergeError('');
+    setMergeStale(false);
+  }, [shownUrl, moored]);
   if (prs.length === 0) return <p class="line">No pull request yet. A PR shows here as soon as the ship or its crew opens one.</p>;
   const current = prs.find((p) => p.url === picked) ?? defaultPR(prs)!;
   const reviewBar = reviewStackBar(ship);
@@ -343,7 +351,19 @@ export function PRTab({ ship }: { ship: Ship }) {
   const action = reviewBar ? 'none' : stackBarAction(shape, ship.status);
   const choice = mergeFor(shape, prs, current, !!ship.stack_ready);
   const justMerged = mergedAll || merged.has(current.url);
+  // One error on the tab at a time: starting or failing either action drops the other's.
+  const failMerge = (e: string) => {
+    setMergeError(e);
+    setError('');
+  };
+  const failAction = (e: string) => {
+    setError(e);
+    setMergeError('');
+    setMergeStale(false);
+  };
   const onMerged = () => {
+    setMergeError('');
+    setMergeStale(false);
     // The default PR is the first open one, so a merged PR would otherwise hand the view to the next.
     setPicked(current.url);
     if (choice.kind === 'pr') setMerged((m) => new Set(m).add(current.url));
@@ -404,7 +424,11 @@ export function PRTab({ ship }: { ship: Ship }) {
                   ›
                 </span>
               ) : null}
-              <button type="button" role="tab" aria-selected={p.url === current.url} class={`pr-subtab${p.state === 'MERGED' ? ' merged' : ''}`} onClick={() => setPicked(p.url)}>
+              <button type="button" role="tab" aria-selected={p.url === current.url} class={`pr-subtab${p.state === 'MERGED' ? ' merged' : ''}`} onClick={() => {
+                  setMergeError('');
+                  setMergeStale(false);
+                  setPicked(p.url);
+                }}>
                 <span class={`dot ${prDot(p)}`} />
                 <span class="num">#{prNumber(p.url)}</span>
                 {details[p.url] ? <span class="ttl">{details[p.url].title}</span> : null}
@@ -430,17 +454,23 @@ export function PRTab({ ship }: { ship: Ship }) {
           </div>
         ) : null}
         {moored && !current.reviewing && showAnswerReview(current, ship.fix) ? <FeedbackBar key={current.url} ship={ship} pr={current} locked={acting} onBusy={setActing} /> : null}
-        {moored && !reviews(ship) && (justMerged || choice.kind !== 'none' || choice.note) ? (
+        {moored && (mergeError || (!reviews(ship) && (justMerged || choice.kind !== 'none' || choice.note))) ? (
           <div class="peek-form">
-            {justMerged ? (
+            {reviews(ship) ? null : justMerged ? (
               current.state === 'MERGED' ? null : <p class="line">Merged</p>
             ) : choice.kind === 'none' ? (
               <div class="peek-merge">
                 <span class="merge-hint">{choice.note}</span>
               </div>
             ) : (
-              <MergeControl key={current.url} ship={ship} pr={choice.kind === 'pr' ? current.url : undefined} stack={choice.kind === 'stack'} onMerged={onMerged} onError={setError} locked={acting} onBusy={setActing} />
+              <MergeControl key={current.url} ship={ship} pr={choice.kind === 'pr' ? current.url : undefined} stack={choice.kind === 'stack'} onMerged={onMerged} onError={failMerge} stale={mergeStale} onStale={setMergeStale} locked={acting} onBusy={setActing} />
             )}
+            {mergeStale && (reviews(ship) || justMerged || choice.kind === 'none') ? (
+              <div class="peek-merge">
+                <Button label="Reload" onClick={() => location.reload()} />
+              </div>
+            ) : null}
+            <Failure message={mergeError} />
           </div>
         ) : null}
         {offersMoor(ship) ? <MoorRow ship={ship} locked={acting} onError={setError} onBusy={setActing} /> : null}
@@ -452,7 +482,7 @@ export function PRTab({ ship }: { ship: Ship }) {
         {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : <PRLoading failed={failed.has(current.url)} />}
         {moored && (!mergedAll || error) ? (
           <div class="peek-form">
-            {mergedAll || reviews(ship) ? null : <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />}
+            {mergedAll || reviews(ship) ? null : <MooredActions ship={ship} tab onError={failAction} locked={acting} onBusy={setActing} />}
             <Failure message={error} />
           </div>
         ) : null}

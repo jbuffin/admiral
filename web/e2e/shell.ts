@@ -1257,17 +1257,42 @@ export async function unfollowFromThePRTab(page: Page, a: Admiral) {
   expect(mergeCalls(a)).toEqual([]);
 }
 
-/** A merge gh refuses shows its message in the tab's one alert, and the ship stays moored with both actions enabled. */
+/** A PR whose long description pushes Checks well below the Merge row, so an error drawn under the PR sections is off screen. */
+function longPRDetail(a: Admiral) {
+  prDetail(a, 7, { title: 'Cache tokens', head: 'feat/cache', base: 'main', checks: 'SUCCESS', body: Array.from({ length: 24 }, (_, i) => `Line ${i + 1} of the notes.`).join('\n\n') });
+}
+
+/** With the tab scrolled to its top, the tab's one alert starts just under Merge, inside the viewport, with no PR section between them. */
+async function expectMergeErrorByTheButton(page: Page, panel: Locator) {
+  await panel.evaluate((el) => {
+    for (let n: Element | null = el; n; n = n.parentElement) (n as HTMLElement).scrollTop = 0;
+    window.scrollTo(0, 0);
+  });
+  const alert = panel.getByRole('alert');
+  const merge = panel.getByRole('button', { name: 'Merge', exact: true });
+  await expect(prSection(panel, 'Checks'), 'the PR sections are drawn, so the old spot is below the fold').toBeVisible();
+  const [m, al] = [await merge.boundingBox(), await alert.boundingBox()];
+  const viewport = page.viewportSize()!;
+  expect(al!.y, 'the error is under Merge').toBeGreaterThanOrEqual(m!.y + m!.height - 1);
+  expect(al!.y - (m!.y + m!.height), 'the error starts right under Merge').toBeLessThanOrEqual(48);
+  expect(al!.y + al!.height, 'the error is inside the viewport').toBeLessThanOrEqual(viewport.height);
+  const sectionBetween = await alert.evaluate((el) => [...document.querySelectorAll('section.pr-section')].some((s) => !(el.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING)));
+  expect(sectionBetween, 'no PR section is drawn before the error').toBe(false);
+}
+
+/** A merge gh refuses shows its message in the tab's one alert right under Merge, and the ship stays moored with both actions enabled. */
 export async function mergeFailsInThePRTab(page: Page, a: Admiral) {
   seedMergeMethod(a, 'squash');
   ghMergeFails(a, 'GraphQL: Pull request is not mergeable (mergePullRequest)');
   prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  longPRDetail(a);
   const ship = await launchMooredShip(a, 7);
   await readyOnTheServer(a, ship, 'squash');
 
   const panel = await openPRTab(page, a, ship);
   await panel.getByRole('button', { name: 'Merge', exact: true }).tap();
   await expect(panel.getByRole('alert')).toContainText('Pull request is not mergeable');
+  await expectMergeErrorByTheButton(page, panel);
   await expect(page.getByRole('alert'), 'the head shows no second alert').toHaveCount(1);
   expect(mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
   await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled();
@@ -1275,10 +1300,11 @@ export async function mergeFailsInThePRTab(page: Page, a: Admiral) {
   expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
 }
 
-/** A Merge the server answers 403 says to reload in the tab, and the ship is not merged. */
+/** A Merge the server answers 403 says to reload right under Merge, and the ship is not merged. */
 export async function staleMergeTokenInThePRTab(page: Page, a: Admiral) {
   seedMergeMethod(a, 'squash');
   prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  longPRDetail(a);
   const ship = await launchMooredShip(a, 7);
   await readyOnTheServer(a, ship, 'squash');
 
@@ -1287,6 +1313,9 @@ export async function staleMergeTokenInThePRTab(page: Page, a: Admiral) {
   await panel.getByRole('button', { name: 'Merge', exact: true }).tap();
   await expect(panel.getByRole('alert')).toContainText('Admiral restarted, reload to merge');
   await expect(panel.getByRole('button', { name: /reload/i })).toBeVisible();
+  await expectMergeErrorByTheButton(page, panel);
+  const [merge, reload] = [await panel.getByRole('button', { name: 'Merge', exact: true }).boundingBox(), await panel.getByRole('button', { name: /reload/i }).boundingBox()];
+  expect(Math.abs(reload!.y - merge!.y), 'Reload sits on the Merge row').toBeLessThanOrEqual(4);
   await expect(page.getByRole('alert')).toHaveCount(1);
   expect(mergeCalls(a)).toEqual([]);
 }
