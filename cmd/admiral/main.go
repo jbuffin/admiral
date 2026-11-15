@@ -49,6 +49,7 @@ import (
 	"github.com/jbuffin/admiral/internal/shipconv"
 	"github.com/jbuffin/admiral/internal/ships"
 	"github.com/jbuffin/admiral/internal/sources"
+	"github.com/jbuffin/admiral/internal/stackmerge"
 	"github.com/jbuffin/admiral/internal/standing"
 	"github.com/jbuffin/admiral/internal/state"
 	"github.com/jbuffin/admiral/internal/tailscale"
@@ -420,6 +421,16 @@ func serve(args []string) error {
 		}
 		return nil
 	}
+	stackCheck := stackmerge.New(dir, func(c moor.StackCheck) string { return "https://" + c.Host + "/" + c.Repo + ".git" })
+	// The fleet's own gh token, never Admiral's ambient login: FleetGitHub builds the client from the fleet's environment.
+	stackCheck.Token = func(ctx context.Context, c moor.StackCheck) (string, error) {
+		gh := sources.FleetGitHub(cfg.Current(), c.Fleet)
+		if gh == nil || gh.Host() != c.Host {
+			return "", fmt.Errorf("fleet %s has no GitHub access on %s", c.Fleet, c.Host)
+		}
+		return gh.Token(ctx)
+	}
+	shipService.StackChecker = stackCheck
 	changed := supervisor.OnChange
 	supervisor.OnChange = func() { changed(); inboxService.KickResume() }
 	followStore, err := follow.OpenStore(dir)

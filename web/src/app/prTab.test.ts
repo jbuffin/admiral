@@ -33,6 +33,13 @@ describe('prSummary', () => {
     expect(prSummary([ready(7), ready(8)])).toBe('2 PRs · Ready to merge');
   });
 
+  it('says a stack that conflicts with its base as a whole is not ready, naming the problem', () => {
+    const fix = { pr: 'https://github.com/o/r/pull/8', stack: true, problems: [{ pr: 'https://github.com/o/r/pull/8', conflicts_with_base: 'main' }] } as FixOffer;
+    expect(prSummary([ready(7), ready(8)], { stack_ready: false, fix })).toBe('2 PRs · #8 conflicts with main');
+    expect(prSummary([ready(7), ready(8)], { stack_ready: false })).toBe('2 PRs · Not ready to merge');
+    expect(prSummary([ready(7), ready(8)], { stack_ready: true })).toBe('2 PRs · Ready to merge');
+  });
+
   it("goes by the server's ready flag, not by the chips", () => {
     expect(prSummary([pr(7, { ready: true })])).toBe('1 PR · Ready to merge');
   });
@@ -503,6 +510,16 @@ describe('fixLine', () => {
 
   it('names the PR when a stack round has a problem on only one', () => {
     expect(fixLine({ ...offer({ pr: URL(8), failing_checks: ['test'] }), stack: true })).toBe('#8 has failing checks: test');
+  });
+
+  it('words a stack that conflicts with its base on its top PR, naming the base', () => {
+    const stack = { ...offer({ pr: URL(9), conflicts_with_base: 'main' }), pr: URL(9), stack: true };
+    expect(fixLine(stack)).toBe('#9 conflicts with main');
+    expect(fixLine(offer({ pr: URL(9), conflicts_with_base: 'release/2' }))).toBe('This PR conflicts with release/2.');
+  });
+
+  it('joins a base conflict with the PR\'s other problems', () => {
+    expect(fixLine(offer({ pr: URL(9), behind: true, conflicts_with_base: 'main' }))).toBe('This PR is behind its base and conflicts with main.');
   });
 
   it('is empty without an offer or without problems', () => {

@@ -15,15 +15,18 @@ export const openCount = (prs: MooredPR[] | undefined): number => open(prs).leng
 const by = (author: string | undefined) => (author ? ` by @${author}` : '');
 const plural = (n: number) => (n === 1 ? '1 PR' : `${n} PRs`);
 
-/** The ship view's one line about its open PRs, or '' when none is open. The server's `ready` decides; a reviewed PR never reads as ready to merge, since Admiral doesn't merge it. */
-export function prSummary(prs: MooredPR[] | undefined): string {
+/** The ship view's one line about its open PRs, or '' when none is open. The server's `ready` and `stack_ready` decide; a reviewed PR never reads as ready to merge, since Admiral doesn't merge it. */
+export function prSummary(prs: MooredPR[] | undefined, stack?: { stack_ready?: boolean; fix?: FixOffer }): string {
   const live = open(prs);
   if (live.length === 0) return '';
   const reviewed = live.filter((p) => p.reviewing);
   if (reviewed.length > 0) return `Reviewing ${plural(reviewed.length)}${by(reviewed[0].author)} · ${reviewed.some((p) => p.responded) ? 'author responded' : 'waiting on the author'}`;
   const n = plural(live.length);
   const blocked = live.find((p) => !p.ready);
-  if (!blocked) return `${n} · Ready to merge`;
+  if (!blocked) {
+    const why = stack?.stack_ready === false ? fixItems(stack.fix).join(' \u00b7 ') : '';
+    return why ? `${n} · ${why}` : stack?.stack_ready === false ? `${n} · Not ready to merge` : `${n} · Ready to merge`;
+  }
   const why = blocked.review === 'CHANGES_REQUESTED' ? 'changes requested' : blocked.checks === 'FAILURE' || blocked.checks === 'ERROR' ? 'checks failing' : 'waiting on review';
   return `${n} · #${prNumber(blocked.url)} ${why}`;
 }
@@ -160,6 +163,7 @@ function problemWords(p: FixOffer['problems'][number]): string {
   if (p.conflicts) parts.push('has merge conflicts');
   if (p.behind) parts.push('is behind its base');
   if (p.failing_checks?.length) parts.push(`has failing checks: ${p.failing_checks.join(', ')}`);
+  if (p.conflicts_with_base) parts.push(`conflicts with ${p.conflicts_with_base}`);
   return joinAnd(parts);
 }
 
