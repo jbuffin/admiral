@@ -84,7 +84,7 @@ func TestParseOrdersKeepsAGoodPRAndDropsAMalformedOneWithoutFailingTheList(t *te
 	}
 }
 
-func TestViewKeepsAnOrderVisibleWhileItsShipIsMooredOnThatPRAndHidesItWhileTheShipIsLive(t *testing.T) {
+func TestViewKeepsAnOrderListedWhateverItsShipIsDoing(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
 	g.writePRs()
@@ -99,6 +99,8 @@ func TestViewKeepsAnOrderVisibleWhileItsShipIsMooredOnThatPRAndHidesItWhileTheSh
 	}
 	live := launched
 	live.Status = ships.StatusUnderway
+	anchored := launched
+	anchored.Status = ships.StatusAnchored
 
 	for _, c := range []struct {
 		name    string
@@ -107,8 +109,9 @@ func TestViewKeepsAnOrderVisibleWhileItsShipIsMooredOnThatPRAndHidesItWhileTheSh
 	}{
 		{"moored on the PR", moored(prURL), true},
 		{"moored on the PR in another spelling", moored("https://GitHub.com/acme/widgets/pull/20/"), true},
-		{"moored on another PR only", moored("https://github.com/acme/widgets/pull/99"), false},
-		{"underway", live, false},
+		{"moored on another PR only", moored("https://github.com/acme/widgets/pull/99"), true},
+		{"underway", live, true},
+		{"anchored", anchored, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
@@ -133,7 +136,7 @@ func TestViewKeepsAnOrderVisibleWhileItsShipIsMooredOnThatPRAndHidesItWhileTheSh
 	}
 }
 
-func TestViewKeepsHidingAnOrderWithNoPRStateEvenWhileItsShipIsMooredOnItsURL(t *testing.T) {
+func TestViewListsAnOrderWithNoPRStateWhileItsShipIsMoored(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
 	const bare = "https://github.com/acme/widgets/pull/21"
@@ -148,9 +151,11 @@ func TestViewKeepsHidingAnOrderWithNoPRStateEvenWhileItsShipIsMooredOnItsURL(t *
 	f.Svc.Ships = func() []ships.Ship { return []ships.Ship{ship} }
 	f.startSources()
 	src := f.waitView("gha", "the issue", func(s SourceView) bool { return len(s.orders("bugs")) > 0 })
+	has := false
 	for _, id := range src.orders("bugs") {
-		if id == "acme/widgets#21" {
-			t.Errorf("bugs view = %v: an order with no pr stays hidden while its ship is moored", src.orders("bugs"))
-		}
+		has = has || id == "acme/widgets#21"
+	}
+	if !has {
+		t.Errorf("bugs view = %v, want acme/widgets#21 listed while its ship is moored", src.orders("bugs"))
 	}
 }

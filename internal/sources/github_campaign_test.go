@@ -40,7 +40,7 @@ func TestGitHubOrdersCarryTheirSubIssueCount(t *testing.T) {
 	}
 }
 
-func TestViewHidesAnOrderWhoseIssueAShipHolds(t *testing.T) {
+func TestViewListsAnOrderWhoseIssueAShipHolds(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
 	g.writeIssues([2]int{12, 0}, [2]int{13, 0})
@@ -51,8 +51,8 @@ func TestViewHidesAnOrderWhoseIssueAShipHolds(t *testing.T) {
 	}
 	f.startSources()
 	src := f.waitView("gha", "the bugs", func(s SourceView) bool { return len(s.orders("bugs")) > 0 })
-	if got := src.orders("bugs"); len(got) != 1 || got[0] != "acme/widgets#13" {
-		t.Errorf("bugs view = %v, want only acme/widgets#13: a ship holds the issue of #12", got)
+	if got := src.orders("bugs"); len(got) != 2 {
+		t.Errorf("bugs view = %v, want #12 and #13 both listed: a ship holding the issue of #12 doesn't hide it", got)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestParseOrdersDropsASubIssueCountThatIsNotAPositiveInteger(t *testing.T) {
 	}
 }
 
-func TestViewHidesTheOrdersOfEveryIssueASliceShipHolds(t *testing.T) {
+func TestViewListsTheOrdersOfEveryIssueASliceShipHolds(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
 	g.writeIssues([2]int{12, 0}, [2]int{13, 0}, [2]int{14, 0})
@@ -82,7 +82,7 @@ func TestViewHidesTheOrdersOfEveryIssueASliceShipHolds(t *testing.T) {
 	}
 	f.startSources()
 	src := f.waitView("gha", "the bugs", func(s SourceView) bool { return len(s.orders("bugs")) > 0 })
-	if got := src.orders("bugs"); len(got) != 1 || got[0] != "acme/widgets#14" {
-		t.Errorf("bugs view = %v, want only acme/widgets#14: a slice ship holds #12 and #13", got)
+	if got := src.orders("bugs"); len(got) != 3 {
+		t.Errorf("bugs view = %v, want #12, #13 and #14 listed: a slice ship holding #12 and #13 doesn't hide them", got)
 	}
 }

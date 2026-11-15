@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Admiral } from './fixtures';
-import { addGitHubSource, orderPane, seedFleets } from './shell';
+import { addGitHubSource, launchShip, orderPane, seedFleets } from './shell';
 
 const H = 3600_000;
 const D = 24 * H;
@@ -321,6 +321,41 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await press(page.getByRole('button', { name: 'Launch Tighten the api limits', exact: true }));
   await expect(form.getByLabel('Text')).toHaveValue('Tighten them.');
   await press(form.getByRole('button', { name: 'Cancel', exact: true }));
+
+  // A ship on an order: its pill replaces the arrow and opens the ship; once it anchors the arrow is back; Launch another ship starts a second.
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  const docs = rowOf(page, 'Document the API');
+  await expect(docs.getByRole('button', { name: 'Launch Document the API', exact: true })).toBeVisible();
+  const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', source: 'gh', order: 'acme/api#32', cue: 'wait go\nexit 3\n' });
+  const pill = docs.getByRole('button', { name: new RegExp(`^${ship.name}, .*Open ship$`) });
+  await expect(pill).toBeVisible();
+  await expect(pill).toContainText(ship.name);
+  await expectTouchTarget(pill, 44);
+  await expect(docs.getByRole('button', { name: 'Launch Document the API', exact: true })).toHaveCount(0);
+  await expect(group(page, 'Waiting on others').getByRole('listitem')).toHaveCount(FOR_YOU.waiting);
+  await press(pill);
+  await expect(page).toHaveURL(new RegExp(`/app/ships/${ship.session}`));
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  writeFileSync(join(a.home, 'rec', ship.session, 'go'), '');
+  await expect(docs.getByRole('button', { name: 'Launch Document the API', exact: true })).toBeVisible();
+  await expect(docs.getByRole('button', { name: /Open ship$/ })).toHaveCount(0);
+  // Launch another ship, from a second ship on the same order.
+  const second = await launchShip(a, { fleet: 'zulu', harness: 'claude', source: 'gh', order: 'acme/api#32', cue: 'wait go\nexit 3\n' });
+  expect(second.session).not.toBe(ship.session);
+  await expect(docs.getByRole('button', { name: new RegExp(`^${second.name}, .*Open ship$`) })).toBeVisible();
+  await press(body('Document the API'));
+  await expect(pane.getByRole('link', { name: second.name })).toBeVisible();
+  await expect(pane.getByRole('button', { name: 'Launch ship', exact: true })).toHaveCount(0);
+  const another = pane.getByRole('button', { name: 'Launch another ship', exact: true });
+  await expectTouchTarget(another, 44);
+  await press(another);
+  await expect(form).toBeVisible();
+  const sent = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships');
+  await press(form.getByRole('button', { name: 'Launch', exact: true }));
+  expect((await sent).status()).toBe(201);
+  await page.goto(a.url + 'app/orders?fleet=zulu&order=gh%2Facme%2Fapi%2332');
+  await expect(pane.locator('.odetail-ships li')).toHaveCount(2);
+  await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: 'Document the API' })).toHaveCount(1);
 
   // Ships lists no orders, only a quiet link to the ones that need you; it opens Orders.
   await page.goto(a.url + 'app/ships?fleet=zulu');
