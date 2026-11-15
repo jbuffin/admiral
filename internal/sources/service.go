@@ -43,12 +43,16 @@ type sourceState struct {
 	panels    []Panel
 	warnings  []string
 	hasSchema bool
+	viewer    string
 }
 
 func (r *runner) snapshot() sourceState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	st := sourceState{def: r.def, state: r.state, readOnly: r.readOnly, errMsg: r.errMsg, caps: slices.Clone(r.caps), hasSchema: r.schema != nil}
+	if g, ok := r.p.(*githubConn); ok {
+		st.viewer = g.Viewer()
+	}
 	if r.auth != nil {
 		a := *r.auth
 		st.auth = &a
@@ -74,6 +78,8 @@ type SourceView struct {
 	ReadOnly     bool     `json:"read_only"`
 	Error        *string  `json:"error"`
 	Auth         *Auth    `json:"auth"`
+	// Viewer is the signed-in GitHub login of a built-in GitHub source, omitted for a plugin and before its first answer.
+	Viewer string `json:"viewer,omitempty"`
 	// Warnings are the router's notes for the source's fleet; [] when none.
 	Warnings []string `json:"warnings"`
 	Views    []Panel  `json:"views"`
@@ -86,7 +92,7 @@ func (s *Service) View() []SourceView {
 	out := []SourceView{}
 	for _, st := range s.Sup.snapshot() {
 		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Fleet: st.def.Fleet, Capabilities: st.caps, HasSchema: st.hasSchema,
-			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Views: []Panel{}, Warnings: []string{}}
+			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Viewer: st.viewer, Views: []Panel{}, Warnings: []string{}}
 		v.Warnings = append(v.Warnings, st.warnings...)
 		if st.def.Plugin == builtinGitHub {
 			if v.Name == "" {
@@ -1002,6 +1008,24 @@ func (s *Service) Order(source, id string) (text, title, repo, url, panel string
 		}
 	}
 	return "", "", "", "", "", &launcher.Error{Status: http.StatusNotFound, Msg: "order " + strconv.Quote(id) + " not found in source " + source}
+}
+
+// Stack is the GitHub stack the order sits in; ok is false for an order in none or one not found.
+func (s *Service) Stack(source, id string) (number int, url string, ok bool) {
+	rn := s.Sup.runner(source)
+	if rn == nil {
+		return 0, "", false
+	}
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+	for _, p := range rn.panels {
+		for _, o := range p.Orders {
+			if o.ID == id && o.Stack != nil {
+				return o.Stack.Number, o.Stack.URL, true
+			}
+		}
+	}
+	return 0, "", false
 }
 
 func (s *Service) Launched(source, id string) {

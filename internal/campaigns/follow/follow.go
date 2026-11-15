@@ -513,6 +513,14 @@ func orderError(status int, msg string) *launcher.Error {
 	return &launcher.Error{Status: status, Msg: msg}
 }
 
+// Stack hands every order to Next: a campaign child sits in no GitHub stack.
+func (s *Service) Stack(source, id string) (number int, url string, ok bool) {
+	if source == SourceKey || s.Next == nil {
+		return 0, "", false
+	}
+	return s.Next.Stack(source, id)
+}
+
 // Order answers for a campaign child (source SourceKey, id from OrderID) and hands the rest to Next.
 func (s *Service) Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error) {
 	if source != SourceKey {

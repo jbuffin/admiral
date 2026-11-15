@@ -20,6 +20,8 @@ type oneOrder struct{}
 func (oneOrder) Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error) {
 	return "text", "title", "", "", "p", nil
 }
+func (oneOrder) Stack(source, id string) (int, string, bool) { return 0, "", false }
+
 func (oneOrder) Launched(source, id string) {}
 
 // An empty ship list before the host's first poll says nothing about which
@@ -56,6 +58,8 @@ type sliceOrders struct{}
 func (sliceOrders) Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error) {
 	return "text", "title", "", sliceA, "p", nil
 }
+func (sliceOrders) Stack(source, id string) (int, string, bool) { return 0, "", false }
+
 func (sliceOrders) Launched(source, id string) {}
 
 // sliceService is a service on a real host: LaunchOrder of an order waits for the first read of the ships.

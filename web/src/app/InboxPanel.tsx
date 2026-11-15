@@ -12,6 +12,7 @@ import { peekKey } from './peekLink';
 import { entryAge, fleetLabel, rowShip, rowVerb } from './inboxRow';
 import { go, loc, peekOf, peekPath, type PeekTarget, shipPath, surfacePath } from './router';
 import { inboxItems, inboxLoaded, ships, shipsLoaded } from './shipsLink';
+import { orderLabel } from './moored';
 import { emptyLine, type Surface } from './surfaces';
 
 const ANSWER = new Set(['question', 'stop']);
@@ -60,7 +61,7 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
           <span class="ship-name">{rowShip(e)}</span> <span class="inbox-verb">{rowVerb(e)}</span>
         </span>
         {title ? <span class="inbox-title">{title} </span> : null}
-        {ship?.order_id ? <span class="ship-order mono">{ship.order_id} </span> : null}
+        {ship?.order_id ? <span class="ship-order mono">{orderLabel(ship.order_id)} </span> : null}
         {fleet ? (
           <span class="inbox-fleet">
             {phone ? null : <span class="dot" style={{ background: fleet.fill }} aria-hidden="true" />}

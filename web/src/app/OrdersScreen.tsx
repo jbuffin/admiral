@@ -15,7 +15,7 @@ import type { MooredPR, Ship } from './api';
 import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { FOR_YOU, forYou, headerTime, launchRef, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type ViewGroup } from './ordersView';
+import { FOR_YOU, forYou, headerTime, groupRowActions, launchRef, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type ViewGroup } from './ordersView';
 import { refreshSource } from './api';
 import { go, loc, shipPath } from './router';
 import { emptyLine, surfaceById } from './surfaces';
@@ -69,6 +69,10 @@ interface RowProps {
   onOpen: (r: OrderRow) => void;
   onLaunch: (o: OrderRef) => void;
   onAgain: (ship: Ship, again: NonNullable<Extract<RowAction, { kind: 'ship' }>['again']>) => void;
+  /** The row's action when its group worked it out, as a stack's rows do together; else the row's own order decides. */
+  action?: RowAction;
+  /** The fleet's login on the row's source, which tells a GitHub stack's own layers from the ones it reviews. */
+  viewer?: string;
   /** Set on a row that heads a parent group. */
   parentGroup?: { group: ViewGroup; open: boolean; onToggle: () => void };
   child?: boolean;
@@ -81,11 +85,10 @@ interface RowProps {
 const join = (...p: string[]) => p.filter(Boolean).join(' · ');
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, parentGroup, child, note, spaced }: RowProps) {
+function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, viewer, parentGroup, child, note, spaced }: RowProps) {
   const o = row.order;
-  // A stack row has no action: a ship on its URL would otherwise show a pill.
-  const act = row.stackRow ? null : orderRowAction(ships.value, o);
   const g = parentGroup?.group;
+  const act = action ?? orderRowAction(ships.value, o);
   const folded = !!g && !parentGroup.open;
   const here = g ? `${plural(g.children.length, row.stackRow ? 'PR' : 'sub-issue')} here` : '';
   const state = row.state ? <span class={`orow-state${row.needsYou ? ' needs' : ''}`}>{row.state}</span> : null;
@@ -111,14 +114,14 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, parentGro
   const spacer = spaced ? <span class="orow-spacer" aria-hidden="true" /> : null;
   const arrow = !act ? null : act.kind === 'launch' ? (
       row.launchable ? (
-        <button type="button" class="orow-go" aria-label={`Launch ${o.title}`} onClick={() => onLaunch(launchRef(row))}>
+        <button type="button" class="orow-go" aria-label={`Launch ${o.title}`} onClick={() => onLaunch(row.stackRow && g ? stackLaunchRef(g, ships.value, viewer) : launchRef(row))}>
           <Icon name="arrow" size={18} />
         </button>
       ) : null
     ) : (
       <>
         {act.again ? (
-          <Button class="orow-again" label={act.again.kind === 'rereview' ? 'Re-review' : act.again.kind === 'fix' ? fixLabel(act.ship) : 'Wake'} onClick={() => onAgain(act.ship, act.again!)} />
+          <Button class="orow-again" label={act.again.kind === 'rereview' ? (row.stackRow ? 'Re-review stack' : 'Re-review') : act.again.kind === 'fix' ? fixLabel(act.ship) : 'Wake'} onClick={() => onAgain(act.ship, act.again!)} />
         ) : null}
         <button type="button" class={`orow-pill${act.needsYou ? ' needs' : ''}`} aria-label={`${act.ship.name}, ${act.word}. Open ship`} onClick={() => go(shipPath(act.ship.session), fleetSearch.value)}>
           <span class="orow-pill-name">{act.ship.name}</span>
@@ -200,7 +203,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [launching, setLaunching] = useState<OrderRef | null>(null);
-  const [again, setAgain] = useState<{ ship: Ship; kind: 'rereview'; url: string } | { ship: Ship; kind: 'fix' } | { ship: Ship; kind: 'wake'; pr: MooredPR } | null>(null);
+  const [again, setAgain] = useState<{ ship: Ship; kind: 'rereview'; url: string } | { ship: Ship; kind: 'fix' } | { ship: Ship; kind: 'wake'; pr?: MooredPR; stack?: string } | null>(null);
   const list = fleet ? sourcesForFleet(sources.value, fleet.key) : [];
   const all = tabs(list);
   const id = all.some((t) => t.id === tabOf()) ? tabOf() : FOR_YOU;
@@ -235,11 +238,14 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const onAgain: RowProps['onAgain'] = (ship, a) => {
     if (a.kind === 'rereview') return setAgain({ ship, kind: 'rereview', url: a.url });
     if (a.kind === 'fix') return setAgain({ ship, kind: 'fix' });
+    if ('stack' in a) return setAgain({ ship, kind: 'wake', stack: a.stack });
     const pr = (ship.prs ?? []).find((p) => p.url === a.pr);
     if (pr) setAgain({ ship, kind: 'wake', pr });
   };
   const selected = selectedRow(list, id, loc.value.search, now, ships.value);
   const chosen = selected?.key;
+  const selectedGroup = selected?.stackRow ? viewGroups(list, id, now, ships.value).find((g) => g.row.key === selected.key) : undefined;
+  const selectedViewer = list.find((src) => src.key === selected?.source)?.viewer;
   const onOpen = (r: OrderRow) => go('/app/orders', withSelectedOrder(loc.value.search, r.key));
   const close = (restoreFocus = false) => {
     // The pane unmounts with the focus in it; the row's button is the same element before and after.
@@ -335,10 +341,12 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
               {shown.map((g) => {
                 const parent = g.children.length > 0;
                 const isOpen = parent && isExpanded(id, g.row.order.id);
+                const viewer = list.find((src) => src.key === g.row.source)?.viewer;
+                const acts = groupRowActions(ships.value, g, viewer);
                 return (
                   <Fragment key={g.row.key}>
-                    <Row row={g.row} phone={phone} muted={false} selected={g.row.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} spaced={!parent} parentGroup={parent ? { group: g, open: isOpen, onToggle: () => toggleExpanded(id, g.row.order.id) } : undefined} />
-                    {isOpen ? g.children.map((c) => <Row key={c.key} row={c} phone={phone} muted={false} selected={c.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} child note />) : null}
+                    <Row row={g.row} phone={phone} muted={false} selected={g.row.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} action={acts.row} viewer={viewer} spaced={!parent} parentGroup={parent ? { group: g, open: isOpen, onToggle: () => toggleExpanded(id, g.row.order.id) } : undefined} />
+                    {isOpen ? g.children.map((c, i) => <Row key={c.key} action={acts.children[i]} row={c} phone={phone} muted={false} selected={c.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} child note />) : null}
                   </Fragment>
                 );
               })}
@@ -348,18 +356,18 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
         </main>
         {selected && !phone ? (
           <aside class="odetail-pane" aria-label="Selected order">
-            <OrderPane key={selected.key} row={selected} sources={list} now={now} heading onLaunch={onLaunch} onClose={() => close(true)} />
+            <OrderPane key={selected.key} row={selected} group={selectedGroup} viewer={selectedViewer} sources={list} now={now} heading onLaunch={onLaunch} onClose={() => close(true)} />
           </aside>
         ) : null}
       </div>
       {selected && phone ? (
         <Sheet label={selected.order.title} kind="order-sheet" onClose={() => !launching && !formHadEscape.current && close()}>
-          <OrderPane key={selected.key} row={selected} sources={list} now={now} heading={false} onLaunch={onLaunch} />
+          <OrderPane key={selected.key} row={selected} group={selectedGroup} viewer={selectedViewer} sources={list} now={now} heading={false} onLaunch={onLaunch} />
         </Sheet>
       ) : null}
       {again?.kind === 'rereview' ? <ReReviewSheet ship={again.ship} sendUrl={again.url} onClose={() => setAgain(null)} /> : null}
       {again?.kind === 'fix' ? <FixSheet ship={again.ship} onClose={() => setAgain(null)} onBusy={() => {}} /> : null}
-      {again?.kind === 'wake' ? <AnswerReviewSheet ship={again.ship} pr={again.pr} onClose={() => setAgain(null)} onBusy={() => {}} /> : null}
+      {again?.kind === 'wake' ? <AnswerReviewSheet ship={again.ship} pr={again.pr} stack={again.stack} onClose={() => setAgain(null)} onBusy={() => {}} /> : null}
       {launching && fleet ? <LaunchForm fleet={fleet} order={launching} onClose={() => setLaunching(null)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null}
     </>
   );

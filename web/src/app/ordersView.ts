@@ -1,5 +1,6 @@
 import type { Order, OrderView, Ship, Source } from './api';
-import { isStackUrl, needsYouAgain, orderRowAction, type RowAction } from './moored';
+import type { OrderRef } from './LaunchDialog';
+import { isStackUrl, needsYouAgain, orderRowAction, shipsOnOrder, stackRowActions, type RowAction } from './moored';
 import { shipAge } from './shipList';
 
 export const FOR_YOU = 'for-you';
@@ -21,6 +22,8 @@ export interface OrderRow {
   launchable: boolean;
   /** A stack row built from its layers: no action, and never "not in this view". */
   stackRow?: boolean;
+  /** A stack row's launch lands on this layer's order: the bottom open shown layer. */
+  stackLayer?: string;
 }
 
 export interface ForYou {
@@ -272,6 +275,10 @@ export function viewGroups(sources: Source[], id: string, now: number, ships: Sh
   for (const g of groups.values()) {
     if (g.row.stackRow) g.children.sort((a, b) => stackOf(a)!.position - stackOf(b)!.position);
     g.high = g.children.some((c) => !!c.order.hot);
+    if (g.row.stackRow) {
+      const bottom = g.children.find((c) => open(c.order));
+      g.row = { ...g.row, launchable: !!bottom, stackLayer: bottom?.order.id };
+    }
     g.ships = shipCount(ships, g.children, g.row.stackRow ? g.row.order.url : undefined);
   }
   return out;
@@ -340,7 +347,10 @@ export function repoOptions(rows: OrderRow[]): string[] {
 }
 
 /** The Launch dialog's order for a row's arrow. */
-export const launchRef = (r: OrderRow) => ({ source: r.source, id: r.order.id, title: r.order.title, text: r.order.text || r.order.title });
+export const launchRef = (r: OrderRow) =>
+  r.stackRow
+    ? { source: r.source, id: r.stackLayer ?? '', title: r.order.title, text: r.order.url ?? '', stack: true }
+    : { source: r.source, id: r.order.id, title: r.order.title, text: r.order.text || r.order.title };
 
 /** The error text of each view the tab lists, shown above its rows. */
 export function viewErrors(sources: Source[], id: string): string[] {
@@ -349,11 +359,25 @@ export function viewErrors(sources: Source[], id: string): string[] {
 }
 
 /** The lines the Launch dialog shows under a GitHub stack's title: who is being reviewed, then each layer that already has a ship. */
-export function stackLaunchLines(_g: ViewGroup, _ships: Ship[], _viewer: string | undefined): string[] {
-  return [];
+export function stackLaunchLines(g: ViewGroup, ships: Ship[], viewer: string | undefined): string[] {
+  const layers = g.children.filter((c) => open(c.order));
+  const theirs = layers.filter((c) => !viewer || c.order.author !== viewer).length;
+  const lines = theirs > 0 ? [`Reviewing stack #${/\/stack\/(\d+)/.exec(g.row.order.url ?? '')?.[1] ?? ''} · ${theirs} ${theirs === 1 ? 'PR' : 'PRs'}`] : [];
+  for (const c of layers) {
+    const held = shipsOnOrder(ships, c.order)[0];
+    if (held) lines.push(`PR #${/#(\d+)$/.exec(c.order.id)?.[1] ?? /\/(\d+)\/?$/.exec(c.order.url ?? '')?.[1] ?? ''} already has ship ${held.name}`);
+  }
+  return lines;
 }
 
 /** The action of a group's row and of each child, in order; one ship holding a GitHub stack's every open layer takes the stack row. */
-export function groupRowActions(ships: Ship[], g: ViewGroup, _viewer: string | undefined): { row: RowAction; children: RowAction[] } {
-  return { row: { kind: 'launch' }, children: g.children.map((c) => orderRowAction(ships, c.order)) };
+export function groupRowActions(ships: Ship[], g: ViewGroup, viewer: string | undefined): { row: RowAction; children: RowAction[] } {
+  if (g.row.stackRow) return stackRowActions(ships, g.children.map((c) => c.order), viewer);
+  return { row: orderRowAction(ships, g.row.order), children: g.children.map((c) => orderRowAction(ships, c.order)) };
+}
+
+/** The Launch dialog's order for a GitHub stack: its lines, and `anyway` when a layer already has a ship so the launch goes ahead on confirm. */
+export function stackLaunchRef(g: ViewGroup, ships: Ship[], viewer: string | undefined): OrderRef {
+  const notes = stackLaunchLines(g, ships, viewer);
+  return { ...launchRef(g.row), ...(notes.length > 0 && { notes }), ...(notes.some((n) => n.includes(' already has ship ')) && { anyway: true }) };
 }

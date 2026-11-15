@@ -16,6 +16,8 @@ type repoOrder struct{ repo string }
 func (o repoOrder) Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error) {
 	return "", "title", o.repo, "", "p", nil
 }
+func (repoOrder) Stack(source, id string) (int, string, bool) { return 0, "", false }
+
 func (repoOrder) Launched(source, id string) {}
 
 func cloneService(t *testing.T, root, orderRepo string) *Service {

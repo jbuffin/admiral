@@ -5,7 +5,7 @@ import { Button } from './Button';
 import { campaignList, followReference } from './campaignsLink';
 import { mooredShipOn, reviews, shipsOnOrder } from './moored';
 import { campaignAction, openedLine, topLine, whyItsHere } from './orderDetail';
-import { launchRef, type OrderRow } from './ordersView';
+import { launchRef, orderRef, stackLaunchRef, type OrderRow, type ViewGroup } from './ordersView';
 import { Failure } from './PeekItem';
 import { GROUP_TITLES } from './shipList';
 import { ShipMerge } from './PeekMerge';
@@ -20,6 +20,10 @@ const merged = signal<ReadonlySet<string>>(new Set());
 
 interface Props {
   row: OrderRow;
+  /** A GitHub stack row's group: its layers, shown in the pane in place of the order's own facts. */
+  group?: ViewGroup;
+  /** The fleet's login on the row's source. */
+  viewer?: string;
   sources: Source[];
   now: number;
   /** The sheet already shows the title as its heading. */
@@ -28,15 +32,16 @@ interface Props {
   onClose?: () => void;
 }
 
-export function OrderPane({ row, sources, now, heading, onLaunch, onClose }: Props) {
+export function OrderPane({ row, group, viewer, sources, now, heading, onLaunch, onClose }: Props) {
   const o = row.order;
   const [error, setError] = useState('');
   const [followError, setFollowError] = useState('');
-  const why = whyItsHere(sources, row.source, o, now);
-  const opened = openedLine(o, now);
+  const stack = row.stackRow ? group : undefined;
+  const why = stack ? '' : whyItsHere(sources, row.source, o, now);
+  const opened = stack ? '' : openedLine(o, now);
   const action = campaignAction(o, campaignList.value);
-  const onOrder = shipsOnOrder(ships.value, o);
-  const ship = mooredShipOn(ships.value, o);
+  const onOrder = stack ? [...new Map([o, ...stack.children.map((c) => c.order)].flatMap((l) => shipsOnOrder(ships.value, l)).map((s) => [s.session, s])).values()] : shipsOnOrder(ships.value, o);
+  const ship = stack ? undefined : mooredShipOn(ships.value, o);
   const isMerged = merged.value.has(row.key);
   return (
     <div class="odetail">
@@ -121,6 +126,18 @@ export function OrderPane({ row, sources, now, heading, onLaunch, onClose }: Pro
           {followError}
         </p>
       ) : null}
+      {stack ? (
+        <ol class="odetail-ships" aria-label="Layers">
+          {stack.children.map((c) => (
+            <li key={c.key}>
+              <span>
+                <span class="mono">{orderRef(c.order)}</span> {c.order.title}
+              </span>
+              {c.state ? <span class="orow-state">{c.state}</span> : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
       {o.excerpt ? <p class="odetail-excerpt">{o.excerpt}</p> : null}
       {onOrder.length > 0 ? (
         <ul class="odetail-ships" aria-label="Ships on this order">
@@ -145,7 +162,14 @@ export function OrderPane({ row, sources, now, heading, onLaunch, onClose }: Pro
       <div class="odetail-actions">
         {isMerged ? <p class="line">Merged</p> : ship?.stack_ready && !reviews(ship) ? <ShipMerge ship={ship} onMerged={() => (merged.value = new Set(merged.value).add(row.key))} onError={setError} /> : null}
         <Failure message={error} />
-        {row.launchable ? <Button variant="primary" class="odetail-launch" label={onOrder.length > 0 ? 'Launch another ship' : 'Launch ship'} onClick={() => onLaunch({ ...launchRef(row), anyway: onOrder.length > 0 })} /> : null}
+        {row.launchable ? (
+          <Button
+            variant="primary"
+            class="odetail-launch"
+            label={onOrder.length > 0 ? 'Launch another ship' : stack ? 'Launch ship on stack' : 'Launch ship'}
+            onClick={() => onLaunch(stack ? { ...stackLaunchRef(stack, ships.value, viewer), ...(onOrder.length > 0 && { anyway: true }) } : { ...launchRef(row), anyway: onOrder.length > 0 })}
+          />
+        ) : null}
       </div>
     </div>
   );

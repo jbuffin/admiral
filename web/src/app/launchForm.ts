@@ -106,6 +106,7 @@ export function launchBody(form: LaunchFormState): Record<string, unknown> {
     ...(form.source && { source: form.source }),
     ...(form.orderId && { order_id: form.orderId }),
     ...(form.anyway && { anyway: true }),
+    ...(form.stack && { stack: true }),
     ...(form.skill.kind === 'commodore' && form.crew?.length && { crew: form.crew }),
     ...(member && { member }),
   };
