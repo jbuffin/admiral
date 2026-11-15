@@ -15,6 +15,10 @@ export interface OrderRow {
   state: string;
   /** In For you's Needs you group; the state word is coloured only then. */
   needsYou: boolean;
+  /** False for a parent row built from a child's `parent`: no view of the source lists it. */
+  inView: boolean;
+  /** Whether a launch can find the order: some view of the source holds it. */
+  launchable: boolean;
 }
 
 export interface ForYou {
@@ -55,6 +59,16 @@ function stateWord(o: Order, inReview: boolean): string {
 }
 
 const join = (...parts: (string | undefined | false)[]) => parts.filter(Boolean).join(' · ');
+
+/** `in #n` for an order with a parent, never naming the parent's repo. */
+export function parentNote(o: Order): string {
+  const p = o.parent;
+  const num = p && (/#(\d+)$/.exec(p.id)?.[1] ?? /\/(\d+)\/?$/.exec(p.url)?.[1]);
+  return num ? `in #${num}` : '';
+}
+
+/** A For you reason without its `in #n` lead. */
+export const withoutParentNote = (reason: string) => reason.replace(/^in #\d+(?: · |$)/, '');
 const author = (o: Order) => (o.author ? `@${o.author}` : '');
 const ageOf = (iso: string | undefined, now: number) => (iso ? shipAge(iso, now) : '');
 
@@ -105,7 +119,7 @@ function collect(sources: Source[], now: number, ships: Ship[]): Yours {
       if (hit) out.needsYou.set(id, true);
       const seen = byId.get(id);
       if (seen && (seen.reasonFromNeeds || !hit)) continue;
-      const row = { key: `${gh.key}/${o.id}`, source: gh.key, order: o, reason: forYouReason(v.id, o, now), state: '', needsYou: false, reasonFromNeeds: hit };
+      const row = { key: `${gh.key}/${o.id}`, source: gh.key, order: o, reason: join(parentNote(o), forYouReason(v.id, o, now)), state: '', needsYou: false, inView: true, launchable: true, reasonFromNeeds: hit };
       if (seen) Object.assign(seen, row);
       else {
         byId.set(id, row);
@@ -177,8 +191,69 @@ export function viewRows(sources: Source[], id: string, now: number, ships: Ship
       reason: viewReason(hit.src, hit.view, o, now),
       state: stateWord(o, gh && reviewing.has(ident)),
       needsYou: gh && needsYou.has(ident),
+      inView: true,
+      launchable: true,
     };
   });
+}
+
+export interface ViewGroup {
+  row: OrderRow;
+  /** The children shown under the row; empty for a loose row and in For you. */
+  children: OrderRow[];
+  /** Any shown child is High. */
+  high: boolean;
+  /** Live or moored ships carrying a shown child, each once. */
+  ships: number;
+}
+
+const urlKey = (u: string) => u.replace(/\/+$/, '').toLowerCase();
+const CARRYING = ['underway', 'needs_you', 'moored'];
+
+function shipCount(ships: Ship[], children: OrderRow[]): number {
+  const urls = new Set(children.map((c) => c.order.url).filter((u): u is string => !!u).map(urlKey));
+  if (urls.size === 0) return 0;
+  return ships.filter((s) => CARRYING.includes(s.status) && [s.url, s.link, ...(s.issues ?? []), ...(s.prs ?? []).map((p) => p.url)].some((u) => !!u && urls.has(urlKey(u)))).length;
+}
+
+function parentRow(src: Source, p: NonNullable<Order['parent']>): OrderRow {
+  const held = src.views.flatMap((v) => v.orders).find((o) => o.id === p.id);
+  // The held order's text is what a launch from this row sends; its labels stay off a row not in this view.
+  const order: Order = { id: p.id, title: p.title, url: p.url, ...(p.repo ? { repo: p.repo } : {}), ...(held?.text ? { text: held.text } : {}) };
+  return { key: `${src.key}/${p.id}`, source: src.key, order, reason: 'not in this view', state: '', needsYou: false, inView: false, launchable: !!held };
+}
+
+/** A view tab's rows with children placed under their parent's row; For you stays flat. */
+export function viewGroups(sources: Source[], id: string, now: number, ships: Ship[], filter: Filter = {}): ViewGroup[] {
+  const all = viewRows(sources, id, now, ships);
+  const shown = filterRows(all, filter);
+  const flat = (r: OrderRow): ViewGroup => ({ row: r, children: [], high: false, ships: 0 });
+  const hit = find(sources, id);
+  if (id === FOR_YOU || !hit) return shown.map(flat);
+  const candidates = all.filter((r) => !r.order.pr && r.order.parent?.id && r.order.parent.id !== r.order.id);
+  const parentIds = new Set(candidates.map((r) => r.order.parent!.id));
+  const isChild = (r: OrderRow) => candidates.includes(r) && !parentIds.has(r.order.id);
+  const inView = new Map(all.map((r) => [r.order.id, r]));
+  const shownParents = new Set(shown.filter(isChild).map((r) => r.order.parent!.id));
+  const groups = new Map<string, ViewGroup>();
+  const out: ViewGroup[] = [];
+  for (const r of shown) {
+    if (isChild(r)) {
+      const p = r.order.parent!;
+      let g = groups.get(p.id);
+      if (!g) {
+        g = { row: inView.get(p.id) ?? parentRow(hit.src, p), children: [], high: false, ships: 0 };
+        groups.set(p.id, g);
+        out.push(g);
+      }
+      g.children.push({ ...r, reason: join(parentNote(r.order), r.reason) });
+    } else if (!shownParents.has(r.order.id)) out.push(flat(r));
+  }
+  for (const g of groups.values()) {
+    g.high = g.children.some((c) => !!c.order.hot);
+    g.ships = shipCount(ships, g.children);
+  }
+  return out;
 }
 
 const oldest = (views: OrderView[]) =>

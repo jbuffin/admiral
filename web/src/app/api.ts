@@ -510,6 +510,8 @@ export interface Order {
   repo?: string;
   url?: string;
   sub_issues?: number;
+  /** An issue's GitHub parent; `id` has the form of an order's id. Never on a pull request. */
+  parent?: { id: string; title: string; url: string; repo?: string };
   labels?: string[];
   hot?: boolean;
   author?: string;

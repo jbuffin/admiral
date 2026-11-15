@@ -145,7 +145,7 @@ export function OrderPane({ row, sources, now, heading, onLaunch, onClose }: Pro
       <div class="odetail-actions">
         {isMerged ? <p class="line">Merged</p> : ship?.stack_ready && !reviews(ship) ? <ShipMerge ship={ship} onMerged={() => (merged.value = new Set(merged.value).add(row.key))} onError={setError} /> : null}
         <Failure message={error} />
-        <Button variant="primary" class="odetail-launch" label={onOrder.length > 0 ? 'Launch another ship' : 'Launch ship'} onClick={() => onLaunch({ ...launchRef(row), anyway: onOrder.length > 0 })} />
+        {row.launchable ? <Button variant="primary" class="odetail-launch" label={onOrder.length > 0 ? 'Launch another ship' : 'Launch ship'} onClick={() => onLaunch({ ...launchRef(row), anyway: onOrder.length > 0 })} /> : null}
       </div>
     </div>
   );

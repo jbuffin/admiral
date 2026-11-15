@@ -1,5 +1,7 @@
-import { Button } from './Button';
+import { Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Button } from './Button';
+import { isExpanded, toggleExpanded } from './expandedParents';
 import { activeFleet, fleetSearch } from './fleets';
 import { Icon } from './Icon';
 import { OrderPane } from './OrderPane';
@@ -11,7 +13,7 @@ import type { MooredPR, Ship } from './api';
 import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { FOR_YOU, filterRows, forYou, headerTime, launchRef, orderRef, refreshedLine, refreshTarget, repoOptions, sourceName, tabs, viewErrors, viewRows, type OrderRow } from './ordersView';
+import { FOR_YOU, forYou, headerTime, launchRef, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type ViewGroup } from './ordersView';
 import { refreshSource } from './api';
 import { go, loc, shipPath } from './router';
 import { emptyLine, surfaceById } from './surfaces';
@@ -59,17 +61,52 @@ interface RowProps {
   onOpen: (r: OrderRow) => void;
   onLaunch: (o: OrderRef) => void;
   onAgain: (ship: Ship, again: NonNullable<Extract<RowAction, { kind: 'ship' }>['again']>) => void;
+  /** Set on a row that heads a parent group. */
+  parentGroup?: { group: ViewGroup; open: boolean; onToggle: () => void };
+  child?: boolean;
+  /** Says `in #n` on the phone line: a child, or a For you row. */
+  note?: boolean;
+  /** A view tab's loose row, spaced as wide as a parent row's toggle. */
+  spaced?: boolean;
 }
 
-function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain }: RowProps) {
+const join = (...p: string[]) => p.filter(Boolean).join(' · ');
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, parentGroup, child, note, spaced }: RowProps) {
   const o = row.order;
   const act = orderRowAction(ships.value, o);
+  const g = parentGroup?.group;
+  const folded = !!g && !parentGroup.open;
+  const here = g ? `${plural(g.children.length, 'sub-issue')} here` : '';
   const state = row.state ? <span class={`orow-state${row.needsYou ? ' needs' : ''}`}>{row.state}</span> : null;
+  // A collapsed parent carries what its hidden children would show.
+  const summary = folded ? (
+    <>
+      {g.high && row.state !== 'High' ? <span class="orow-state high">High</span> : null}
+      {g.ships > 0 ? <span class="orow-state">{plural(g.ships, 'ship')}</span> : null}
+    </>
+  ) : null;
+  const toggle = g ? (
+    <Button
+      icon
+      variant="quiet"
+      class="orow-toggle"
+      label={`${parentGroup.open ? 'Collapse' : 'Expand'} ${o.title}`}
+      expanded={parentGroup.open}
+      onClick={parentGroup.onToggle}
+    >
+      <Icon name="chevron" size={16} />
+    </Button>
+  ) : null;
+  const spacer = spaced ? <span class="orow-spacer" aria-hidden="true" /> : null;
   const arrow =
     act.kind === 'launch' ? (
-      <button type="button" class="orow-go" aria-label={`Launch ${o.title}`} onClick={() => onLaunch(launchRef(row))}>
-        <Icon name="arrow" size={18} />
-      </button>
+      row.launchable ? (
+        <button type="button" class="orow-go" aria-label={`Launch ${o.title}`} onClick={() => onLaunch(launchRef(row))}>
+          <Icon name="arrow" size={18} />
+        </button>
+      ) : null
     ) : (
       <>
         {act.again ? (
@@ -83,14 +120,19 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain }: RowProp
     );
   if (phone) {
     return (
-      <li class={`orow-phone${selected ? ' selected' : ''}`}>
+      <li class={`orow-phone${child ? ' child' : ''}${selected ? ' selected' : ''}`}>
+        {toggle ?? spacer}
         <button type="button" class="orow-open" aria-label={`Open ${o.title}`} aria-pressed={selected} onClick={() => onOpen(row)}>
           <span class="orow-main">
             <span class="orow-title">{o.title}</span>
             <span class="orow-meta">
               <span class="mono">{orderRef(o)}</span>
+              {note && parentNote(o) ? <span>{` · ${parentNote(o)}`}</span> : null}
+              {!row.inView ? <span>{' · not in this view'}</span> : null}
+              {g ? <span>{` · ${here}`}</span> : null}
               {row.state ? <span>{' · '}</span> : null}
               {state}
+              {summary}
             </span>
           </span>
         </button>
@@ -99,14 +141,15 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain }: RowProp
     );
   }
   return (
-    <li class={`orow${muted ? ' waiting' : ''}${selected ? ' selected' : ''}`}>
+    <li class={`orow${muted ? ' waiting' : ''}${child ? ' child' : ''}${selected ? ' selected' : ''}`}>
+      {toggle ?? spacer}
       <button type="button" class="orow-open" aria-label={`Open ${o.title}`} aria-pressed={selected} onClick={() => onOpen(row)}>
         <Mark pr={!!o.pr} needs={row.needsYou} />
         <span class="orow-main">
           <span class="orow-title">{o.title}</span>
           <span class="orow-meta">
             <span class="mono">{orderRef(o)}</span>
-            {row.reason ? <span>{row.reason}</span> : null}
+            {row.reason || here ? <span>{join(row.reason, here)}</span> : null}
           </span>
         </span>
         {(o.labels ?? []).map((l) => (
@@ -115,6 +158,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain }: RowProp
           </span>
         ))}
         {state}
+        {summary}
       </button>
       {arrow}
     </li>
@@ -131,7 +175,7 @@ function Group({ id, title, rows, phone, muted, chosen, onOpen, onLaunch, onAgai
       </h2>
       <ul class="ship-list">
         {rows.map((r) => (
-          <Row key={r.key} row={r} phone={phone} muted={muted} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} />
+          <Row key={r.key} row={r} phone={phone} muted={muted} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} note />
         ))}
       </ul>
     </section>
@@ -172,13 +216,13 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   };
   const rows = viewRows(list, id, now, ships.value);
   const repos = repoOptions(rows);
-  const shown = filterRows(rows, {
+  const shown = viewGroups(list, id, now, ships.value, {
     query,
     repo: repos.includes(repo) ? repo : '',
   });
   const errors = viewErrors(list, id);
-  const needs = shown.filter((r) => r.needsYou);
-  const waiting = shown.filter((r) => !r.needsYou);
+  const needs = shown.map((g) => g.row).filter((r) => r.needsYou);
+  const waiting = shown.map((g) => g.row).filter((r) => !r.needsYou);
   const onLaunch = (o: OrderRef) => setLaunching(o);
   const onAgain: RowProps['onAgain'] = (ship, a) => {
     if (a.kind === 'rereview') return setAgain({ ship, kind: 'rereview', url: a.url });
@@ -279,9 +323,16 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
             </>
           ) : (
             <ul class="ship-list">
-              {shown.map((r) => (
-                <Row key={r.key} row={r} phone={phone} muted={false} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} />
-              ))}
+              {shown.map((g) => {
+                const parent = g.children.length > 0;
+                const isOpen = parent && isExpanded(id, g.row.order.id);
+                return (
+                  <Fragment key={g.row.key}>
+                    <Row row={g.row} phone={phone} muted={false} selected={g.row.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} spaced={!parent} parentGroup={parent ? { group: g, open: isOpen, onToggle: () => toggleExpanded(id, g.row.order.id) } : undefined} />
+                    {isOpen ? g.children.map((c) => <Row key={c.key} row={c} phone={phone} muted={false} selected={c.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} child note />) : null}
+                  </Fragment>
+                );
+              })}
             </ul>
           )}
           {shown.length === 0 ? <p class="line">{all.length === 1 && rows.length === 0 ? emptyLine(surfaceById('orders'), true, true) : 'Nothing here.'}</p> : null}
