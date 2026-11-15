@@ -2,9 +2,11 @@ package sessionhost
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -54,5 +56,40 @@ func TestStartSessionPassesDirAndArgsLiterally(t *testing.T) {
 	}
 	if rows, _ := s.SessionRows(); len(rows) != 1 {
 		t.Errorf("sessions after the refusal = %v, want only the first ship", rows)
+	}
+}
+
+// tmux's server takes at most 1000 arguments in one message, and each variable is a command of its own.
+func TestStartSessionCarriesAnEnvironmentOfManyShortVariables(t *testing.T) {
+	tmux := needTmux(t)
+	tmp, err := os.MkdirTemp("/tmp", "sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(tmp, "tmux.sock")
+	t.Setenv("TMUX_TMPDIR", tmp)
+	t.Cleanup(func() {
+		_ = exec.Command(tmux, "-S", sock, "kill-server").Run()
+		_ = os.RemoveAll(tmp)
+	})
+	env := map[string]string{}
+	for i := range 400 {
+		env[fmt.Sprintf("SHORT_%03d", i)] = "v" + strconv.Itoa(i)
+	}
+	out := filepath.Join(tmp, "out")
+	script := `printf '%s %s\n' "$SHORT_000" "$SHORT_399" > "$0.tmp"; mv "$0.tmp" "$0"`
+	if err := NewServer(tmux, sock).StartSession(SessionSpec{Name: "ship", Dir: tmp, Env: env, Argv: []string{"/bin/sh", "-c", script, out}, Anchor: true}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	var got []byte
+	for got, err = os.ReadFile(out); err != nil; got, err = os.ReadFile(out) {
+		if time.Now().After(deadline) {
+			t.Fatal("the harness never ran")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if string(got) != "v0 v399\n" {
+		t.Errorf("the harness saw %q, want the first and last variables", got)
 	}
 }
