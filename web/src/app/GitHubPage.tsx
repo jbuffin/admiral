@@ -394,6 +394,7 @@ export function GitHubPage({ fleet }: { fleet: Fleet }) {
   const [counts, setCounts] = useState<Record<string, Count>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [round, setRound] = useState(0);
+  const [retry, setRetry] = useState(0);
   // What the server holds, and the changes still on their way; the page shows the first with the second laid over it.
   const confirmed = useRef<Snap | null>(null);
   const pending = useRef<Op[]>([]);
@@ -401,6 +402,7 @@ export function GitHubPage({ fleet }: { fleet: Fleet }) {
   const seq = useRef(0);
   const alive = useRef(true);
   const asked = useRef(new Set<string>());
+  const tries = useRef(new Map<string, number>());
   useEffect(() => () => void (alive.current = false), []);
 
   const fail = (area: string, message: string) => setErrors((e) => ({ ...e, [area]: message }));
@@ -460,9 +462,18 @@ export function GitHubPage({ fleet }: { fleet: Fleet }) {
         if (!alive.current) return;
         if (r.ok) setCounts((c) => ({ ...c, [q]: { n: r.data.count } }));
         else if (r.status === 422) setCounts((c) => ({ ...c, [q]: { error: r.error.startsWith('Search failed') ? r.error : `Search failed: ${r.error}` } }));
+        // A save restarts the source, and a count that lands in that gap is refused as not running yet: ask again shortly.
+        else if (r.status === 409 && (tries.current.get(id) ?? 0) < 5) {
+          tries.current.set(id, (tries.current.get(id) ?? 0) + 1);
+          setTimeout(() => {
+            if (!alive.current) return;
+            asked.current.delete(id);
+            setRetry((n) => n + 1);
+          }, 500);
+        }
       });
     }
-  }, [key, connected, wanted, round, src?.views.length]);
+  }, [key, connected, wanted, round, retry, src?.views.length]);
 
   return (
     <>
