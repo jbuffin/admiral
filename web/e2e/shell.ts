@@ -245,6 +245,9 @@ export function watchPage(page: Page, server: string) {
     const refusable = { GET: /^\/api\/v1\/(ships\/[^/]+\/(pr|stack)|launch-orders\/skills)$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|rereview|stack|wake)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
     const path = new URL(r.url()).pathname;
     if (refusable?.test(path) && r.status() >= 400) refusedLaunches++;
+    // A search GitHub cannot run is a 422 on its count, and a host that is not a hostname is a 400 on the source's save; each row or field shows its own.
+    if (r.request().method() === 'POST' && /^\/api\/v1\/sources\/[^/]+\/search-count$/.test(path) && r.status() === 422) refusedLaunches++;
+    if (r.request().method() === 'PUT' && /^\/api\/v1\/sources\/[^/]+$/.test(path) && r.status() === 400) refusedLaunches++;
     // Moor's refusal is a 409; any other status on an ending stays an error.
     if (r.request().method() === 'POST' && /^\/api\/v1\/ships\/[^/]+\/(stop|return)$/.test(path) && r.status() === 409) refusedLaunches++;
   });

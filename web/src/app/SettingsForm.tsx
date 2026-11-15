@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { Button } from './Button';
 import { fetchSchema, fetchSettings, saveSource, type Source } from './api';
-import { DEFAULT_VIEWS, UNCHANGED, buildSettings, fieldKinds, jsonText, parseWholeJson, type Prop, type Schema, type Settings } from './sourceSettings';
+import { UNCHANGED, buildSettings, fieldKinds, jsonText, parseWholeJson, type Prop, type Schema, type Settings } from './sourceSettings';
 
 type Row = Record<string, unknown>;
 
@@ -74,56 +74,6 @@ function RowFields({ label, prop, rows, onRows }: { label: string; prop: Prop; r
   );
 }
 
-function ViewsEditor({ rows, onRows }: { rows: Row[]; onRows: (r: Row[]) => void }) {
-  const setRow = (i: number, k: 'title' | 'query', v: string) =>
-    onRows(
-      rows.map((r, j) => {
-        if (j !== i) return r;
-        const next = { ...r, [k]: v };
-        if (v === '') delete next[k];
-        return next;
-      }),
-    );
-  return (
-    <div class="views">
-      <h4>Default views</h4>
-      <ul class="defaults" aria-label="Default views">
-        {DEFAULT_VIEWS.map((d) => (
-          <li key={d.id}>
-            <b>{d.title}</b>
-            <code>{d.query}</code>
-          </li>
-        ))}
-      </ul>
-      <h4>Custom views</h4>
-      {rows.map((r, i) => {
-        // A row with an id is a built-in entry: kept as it is, in its place.
-        if (typeof r.id === 'string') return null;
-        const n = rows.slice(0, i).filter((x) => typeof x.id !== 'string').length + 1;
-        return (
-          <fieldset class="view" key={i}>
-            <legend>{`Custom view ${n}`}</legend>
-            <label class="row-field">
-              <span>Title</span>
-              <input type="text" autocomplete="off" value={String(r.title ?? '')} onInput={(e) => setRow(i, 'title', (e.target as HTMLInputElement).value)} />
-            </label>
-            <label class="row-field">
-              <span>Query</span>
-              <input type="text" autocomplete="off" value={String(r.query ?? '')} onInput={(e) => setRow(i, 'query', (e.target as HTMLInputElement).value)} />
-            </label>
-            <Button label="Remove view" onClick={() => onRows(rows.filter((_, j) => j !== i))} />
-          </fieldset>
-        );
-      })}
-      <Button label="Add view" onClick={() => onRows([...rows, {}])} />
-    </div>
-  );
-}
-
-const GITHUB_DEFAULTS: Record<string, string> = { host: 'github.com' };
-
-const isRow = (r: unknown): r is Row => typeof r === 'object' && r !== null && !Array.isArray(r);
-
 export function SettingsForm({ source, version, onSaved }: { source: Source; version: number; onSaved: () => void }) {
   const starting = source.state === 'starting';
   const [schema, setSchema] = useState<Schema | undefined>();
@@ -179,7 +129,6 @@ export function SettingsForm({ source, version, onSaved }: { source: Source; ver
     } else setError(r.error);
   };
 
-  const github = source.plugin === 'github';
   const fid = (k: string) => `${source.key}-${k}`;
 
   return (
@@ -196,10 +145,6 @@ export function SettingsForm({ source, version, onSaved }: { source: Source; ver
               const { kind, stored: kept } = kinds[k];
               const id = fid(k);
               const value = edited(k);
-              if (github && k === 'views' && kind === 'objects') {
-                const rows = (Array.isArray(value) ? value : []).filter(isRow);
-                return <ViewsEditor key={k} rows={rows} onRows={(r) => touch(k, r)} />;
-              }
               if (kind === 'enum') {
                 return (
                   <Field key={k} id={id} label={label} hint={p.description}>
@@ -242,8 +187,7 @@ export function SettingsForm({ source, version, onSaved }: { source: Source; ver
               }
               if (kind === 'text') {
                 const secret = p.format?.toLowerCase() === 'password' || p.writeOnly === true || kept;
-                // The built-in source's own default, shown so the field is not a blank that means github.com.
-                const shown = value === undefined && github ? GITHUB_DEFAULTS[k] : value;
+                const shown = value;
                 const cleared = kept && k in edits && edits[k] === undefined;
                 return (
                   <Field key={k} id={id} label={label} hint={p.description}>

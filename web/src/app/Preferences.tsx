@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
 import { InstallPage } from './InstallPrompts';
-import { capabilitiesPath, chatSettingsPath, fleetPath, go, installPath, limitsPath, loc, notificationsPath, preferencesBare, preferencesFleet, preferencesPath, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
+import { capabilitiesPath, chatSettingsPath, fleetPath, githubPath, go, installPath, limitsPath, loc, notificationsPath, preferencesBare, preferencesFleet, preferencesPath, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
 import { AllUsagePage, FleetUsagePage } from './UsagePage';
 import { NotificationsPage } from './NotificationsPage';
 import { RemoteAccess } from './RemoteAccessPage';
@@ -10,10 +10,12 @@ import { FleetPage } from './FleetPage';
 import { HarnessCapabilities } from './HarnessCapabilities';
 import { LimitsPage } from './LimitsPage';
 import { OrderSources } from './OrderSources';
+import { GitHubPage, githubSource } from './GitHubPage';
+import { needsSignIn } from './githubViews';
 
-const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', admiralbot: 'AdmiralBot', sources: 'Order sources', capabilities: 'Harness capabilities', usage: 'Usage', 'all-usage': 'Usage', remote: 'Remote access', install: 'Install app', notifications: 'Notifications', limits: 'Limits and quiet hours' };
+const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', admiralbot: 'AdmiralBot', github: 'GitHub', sources: 'Plugin sources', capabilities: 'Harness capabilities', usage: 'Usage', 'all-usage': 'Usage', remote: 'Remote access', install: 'Install app', notifications: 'Notifications', limits: 'Limits and quiet hours' };
 
-function NavLink({ path, current, children }: { path: string; current: boolean; children: string }) {
+function NavLink({ path, current, children, dot }: { path: string; current: boolean; children: string; dot?: { label: string } }) {
   const search = fleetSearch.value;
   return (
     <a
@@ -27,6 +29,7 @@ function NavLink({ path, current, children }: { path: string; current: boolean; 
       }}
     >
       {children}
+      {dot ? <span class="dot err" role="img" aria-label={dot.label} /> : null}
     </a>
   );
 }
@@ -63,8 +66,11 @@ function PreferencesNav({ current, page }: { current: string; page: PreferencesP
           <NavLink path={chatSettingsPath(f.key)} current={f.key === current && page === 'admiralbot'}>
             AdmiralBot
           </NavLink>
+          <NavLink path={githubPath(f.key)} current={f.key === current && page === 'github'} dot={needsSignIn(githubSource(f.key)) ? { label: 'not signed in' } : undefined}>
+            GitHub
+          </NavLink>
           <NavLink path={sourcesPath(f.key)} current={f.key === current && page === 'sources'}>
-            Order sources
+            Plugin sources
           </NavLink>
           <NavLink path={capabilitiesPath(f.key)} current={f.key === current && page === 'capabilities'}>
             Harness capabilities
@@ -143,7 +149,7 @@ export function Preferences({ phone }: { phone: boolean }) {
                 <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
                 {fleet.name} fleet
               </p>
-              {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'admiralbot' ? <ChatSettingsPage key={fleet.key} fleet={fleet} /> : page === 'usage' ? <FleetUsagePage key={fleet.key} fleetKey={fleet.key} phone={phone} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : page === 'limits' ? <LimitsPage key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
+              {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'admiralbot' ? <ChatSettingsPage key={fleet.key} fleet={fleet} /> : page === 'usage' ? <FleetUsagePage key={fleet.key} fleetKey={fleet.key} phone={phone} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : page === 'limits' ? <LimitsPage key={fleet.key} fleet={fleet} /> : page === 'github' ? <GitHubPage key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
             </>
           ) : null}
         </div>

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
 )
@@ -90,8 +92,27 @@ type SourceView struct {
 	Views    []Panel  `json:"views"`
 	// Connection is a GitHub source's sign-in status; omitted for any other source.
 	Connection *Connection `json:"connection,omitempty"`
+	// Tabs are a GitHub source's visible views in stored order, For you included; omitted for any other source.
+	Tabs *[]Tab `json:"tabs,omitempty"`
 	// Events is the source's event catalog, omitted until it has one.
 	Events []EventKind `json:"events,omitempty"`
+}
+
+// Tab is one tab of the Orders screen a GitHub source draws.
+type Tab struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// githubTabs lists the views the Orders tabs show: the visible ones, in the stored order, under their effective titles.
+func githubTabs(raw json.RawMessage) *[]Tab {
+	tabs := []Tab{}
+	for _, v := range githubSettings(raw).Views {
+		if !v.Hidden {
+			tabs = append(tabs, Tab{ID: v.ID, Title: v.Title})
+		}
+	}
+	return &tabs
 }
 
 // View is every source in config order, with every order its panels return; a ship on an order doesn't hide it.
@@ -107,6 +128,7 @@ func (s *Service) View() []SourceView {
 				v.Name = "GitHub"
 			}
 			v.IconURL = iconURL(builtinGitHub)
+			v.Tabs = githubTabs(st.def.Settings)
 		} else if m, dir, err := LoadManifest(s.Home, st.def.Plugin); err == nil {
 			if v.Name == "" {
 				v.Name = m.Name
@@ -190,6 +212,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/search-count", s.serveSearchCount)
 	mux.HandleFunc("GET /api/sources/{key}/schema", s.serveSchema)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
+	mux.HandleFunc("GET /api/sources/{key}/repos", s.serveRepos)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
 	mux.HandleFunc("PUT /api/sources/{key}/orders/{id}", s.serveEditOrder)
 	mux.HandleFunc("DELETE /api/sources/{key}/orders/{id}", s.serveRemoveOrder)
@@ -369,6 +392,24 @@ func (s *Service) serveAdd(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, v)
 }
 
+// dropBuiltinMarks removes the served builtin mark from each views entry, so a settings body read back from GET stores only what the user chose.
+func dropBuiltinMarks(settings json.RawMessage) json.RawMessage {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(settings, &m) != nil || m == nil {
+		return settings
+	}
+	var views []map[string]json.RawMessage
+	if json.Unmarshal(m["views"], &views) != nil {
+		return settings
+	}
+	for _, v := range views {
+		delete(v, "builtin")
+	}
+	m["views"], _ = json.Marshal(views)
+	out, _ := json.Marshal(m)
+	return out
+}
+
 func withViews(settings json.RawMessage) json.RawMessage {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(settings, &m) != nil || m == nil {
@@ -453,7 +494,12 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 		list[i].Settings = kept
 	}
 	if list[i].Plugin == builtinGitHub {
-		list[i].Settings = withViews(list[i].Settings)
+		if err := checkGitHubHost(list[i].Settings); err != nil {
+			s.mu.Unlock()
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		list[i].Settings = withViews(dropBuiltinMarks(list[i].Settings))
 	}
 	gen := s.Sup.Generation(key)
 	err := s.write(list)
@@ -653,6 +699,18 @@ func restoreSecrets(in, old any) (any, error) {
 	return in, nil
 }
 
+var hostPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$`)
+
+// checkGitHubHost refuses a host that isn't a hostname with an optional port, because the page shows it inside commands to copy.
+func checkGitHubHost(settings json.RawMessage) error {
+	m, _ := decodeValue(settings).(map[string]any)
+	host, _ := m["host"].(string)
+	if host = strings.TrimSpace(host); host != "" && !hostPattern.MatchString(host) {
+		return fmt.Errorf("host %q is not a hostname: use letters, digits, dots and dashes, with an optional :port", host)
+	}
+	return nil
+}
+
 func keepSecrets(stored, incoming json.RawMessage) (json.RawMessage, error) {
 	v, err := restoreSecrets(decodeValue(incoming), decodeValue(stored))
 	if err != nil {
@@ -674,6 +732,9 @@ func (s *Service) serveSettings(w http.ResponseWriter, r *http.Request) {
 	if settings == nil {
 		settings = map[string]any{}
 	}
+	if m, ok := settings.(map[string]any); ok && def.Plugin == builtinGitHub {
+		withViewIDs(m)
+	}
 	name := def.Name
 	if name == "" {
 		if v, ok := s.view(key); ok {
@@ -682,6 +743,46 @@ func (s *Service) serveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"name": name, "settings": settings})
+}
+
+// withViewIDs gives each views entry that is a view the id the server serves it under, so the page need not work out slugs.
+func withViewIDs(settings map[string]any) {
+	list, _ := settings["views"].([]any)
+	entries := make([]config.ViewEntry, len(list))
+	for i, e := range list {
+		m, _ := e.(map[string]any)
+		entries[i].ID, _ = m["id"].(string)
+		entries[i].Title, _ = m["title"].(string)
+		entries[i].Query, _ = m["query"].(string)
+	}
+	for i, id := range config.ViewEntryIDs(entries) {
+		if m, ok := list[i].(map[string]any); ok && id != "" {
+			m["id"] = id
+			if slices.Contains(config.GitHubBuiltinViews, id) {
+				m["builtin"] = true
+			}
+		}
+	}
+}
+
+// serveRepos lists what routes to the source's fleet, so the page and the routing read the same claims.
+func (s *Service) serveRepos(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	cfg := s.Config.Current()
+	def, ok := cfg.Source(key)
+	switch {
+	case !ok:
+		writeError(w, http.StatusNotFound, "source "+key+" not found")
+		return
+	case def.Plugin != builtinGitHub:
+		writeError(w, http.StatusBadRequest, "source "+key+" is not a GitHub source")
+		return
+	}
+	router := github.RouterFromFleets(cfg.Fleets)
+	c := router.Claims(def.Fleet, githubSettings(def.Settings).Host)
+	warnings := append([]string{}, router.Warnings(def.Fleet)...)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"repos": c.Repos, "owners": c.Owners, "default": c.Default, "warnings": warnings})
 }
 
 // refuseGitHub answers 409 for a route that would remove or restart a GitHub source, which is always present.

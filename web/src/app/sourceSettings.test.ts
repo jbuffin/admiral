@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VIEWS, UNCHANGED, buildSettings, fieldKinds, jsonText, parseWholeJson } from './sourceSettings';
+import { UNCHANGED, buildSettings, fieldKinds, jsonText, parseWholeJson } from './sourceSettings';
 
 const schema = {
   type: 'object',
@@ -128,12 +128,5 @@ describe('parseWholeJson', () => {
     expect(parseWholeJson('[1]').ok).toBe(false);
     expect(parseWholeJson('null').ok).toBe(false);
     expect(parseWholeJson('{nope').ok).toBe(false);
-  });
-});
-
-describe('default views', () => {
-  it('lists the three the GitHub source always has', () => {
-    expect(DEFAULT_VIEWS.map((v) => v.title)).toEqual(['Assigned to me', 'Review requested', 'My PRs']);
-    expect(DEFAULT_VIEWS.map((v) => v.query)).toEqual(['is:open assignee:@me', 'is:open is:pr review-requested:@me', 'is:open is:pr author:@me']);
   });
 });
