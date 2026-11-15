@@ -313,7 +313,7 @@ func parseOrderParent(raw json.RawMessage) *OrderParent {
 		return nil
 	}
 	if in.Title != nil {
-		p.Title = oneLine(strings.NewReplacer("\r", " ", "\n", " ").Replace(*in.Title))
+		p.Title = oneLine(*in.Title)
 	}
 	if p.Title == "" {
 		p.Title = p.ID

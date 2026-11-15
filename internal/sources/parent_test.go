@@ -89,9 +89,9 @@ func parseOne(t *testing.T, order obj) obj {
 func TestParseOrdersKeepsAValidParent(t *testing.T) {
 	m := parseOne(t, obj{"id": "child", "title": "C", "parent": obj{"id": "jbuffin/admiral#188", "title": "Par\nent", "url": "https://github.com/jbuffin/admiral/issues/188",
 		"repo": "https://github.com/jbuffin/admiral"}})
-	want := mustJSON(t, obj{"id": "jbuffin/admiral#188", "title": "Par ent", "url": "https://github.com/jbuffin/admiral/issues/188", "repo": "https://github.com/jbuffin/admiral"})
+	want := mustJSON(t, obj{"id": "jbuffin/admiral#188", "title": "Par", "url": "https://github.com/jbuffin/admiral/issues/188", "repo": "https://github.com/jbuffin/admiral"})
 	if got := mustJSON(t, m["parent"]); got != want {
-		t.Errorf("parent = %s, want %s (title on one line)", got, want)
+		t.Errorf("parent = %s, want %s (first line of the title)", got, want)
 	}
 }
 
