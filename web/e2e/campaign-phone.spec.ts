@@ -32,6 +32,20 @@ test('on the phone, a person follows a campaign from the Campaigns surface, read
   const sheet = page.getByRole('dialog', { name: new RegExp(T.survey) });
   for (const chip of await sheet.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio').all()) expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await expect(sheet.getByRole('radio')).toHaveCount(2);
+  // A mode that differs from the labels shows Use labels: a 44px touch target that stays clear of the chips and keeps the note's line short.
+  const mode = sheet.getByRole('radiogroup', { name: 'Mode' });
+  await mode.getByRole('radio', { name: 'With you', exact: true }).tap();
+  await expect(sheet).toContainText('Labels say Without you.');
+  const useLabels = sheet.getByRole('button', { name: 'Use labels' });
+  const chips = await mode.getByRole('radio').all();
+  const lastChip = (await chips[chips.length - 1].boundingBox())!;
+  const useBox = (await useLabels.boundingBox())!;
+  expect(useBox.height).toBeGreaterThanOrEqual(44);
+  expect(useBox.y).toBeGreaterThanOrEqual(lastChip.y + lastChip.height);
+  expect((await sheet.getByText('Labels say').boundingBox())!.height).toBeLessThan(44);
+  await useLabels.tap();
+  await expect(sheet.getByText('Labels say')).toHaveCount(0);
+  await expect(mode.getByRole('radio', { name: 'Without you', exact: true })).toHaveAttribute('aria-checked', 'true');
   await sheet.getByRole('button', { name: /^Launch/ }).tap();
   const form = page.getByRole('dialog', { name: 'Launch', exact: true });
   await expect(form.getByLabel('Checkout')).toHaveValue(join(admiral.home, 'widgets'));
