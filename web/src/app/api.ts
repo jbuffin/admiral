@@ -531,6 +531,8 @@ export interface Order {
   sub_issues?: number;
   /** An issue's GitHub parent; `id` has the form of an order's id. Never on a pull request. */
   parent?: { id: string; title: string; url: string; repo?: string };
+  /** A pull request's GitHub stack; `position` sorts layers ascending from the bottom and `size` is GitHub's own count. Never on an issue. */
+  stack?: { number: number; url: string; position: number; size: number };
   labels?: string[];
   hot?: boolean;
   author?: string;

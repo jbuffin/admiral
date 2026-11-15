@@ -354,6 +354,9 @@ func (g *githubConn) refresh() {
 			if p := it.Parent; p != nil {
 				order["parent"] = map[string]any{"id": p.ID, "title": p.Title, "url": p.URL, "repo": p.RepoURL}
 			}
+			if st := it.Stack; st != nil {
+				order["stack"] = map[string]any{"number": st.Number, "url": st.URL, "position": st.Position, "size": st.Size}
+			}
 			if it.Author != "" {
 				order["author"] = it.Author
 			}

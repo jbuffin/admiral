@@ -45,7 +45,7 @@ const reviewRequests = " timelineItems(last: 10, itemTypes: [REVIEW_REQUESTED_EV
 
 func searchQueryWith(issueExtra, prExtra string) string {
 	return fmt.Sprintf("query($q: String!) { viewer { login } search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { "+
-		"... on Issue { %s subIssuesSummary { total } parent { number title url repository { nameWithOwner url } }%s } ... on PullRequest { %s%s%s } } } }", MaxItems, itemFields, issueExtra, itemFields, prStateFields, prExtra)
+		"... on Issue { %s subIssuesSummary { total } parent { number title url repository { nameWithOwner url } }%s } ... on PullRequest { %s%s stack { number size } stackEntry { position }%s } } } }", MaxItems, itemFields, issueExtra, itemFields, prStateFields, prExtra)
 }
 
 // unreachable lists what gh prints when the network, not GitHub, failed. It
@@ -72,6 +72,8 @@ type Item struct {
 	SubIssues int
 	// Parent is an issue's GitHub parent; nil for no parent, one the viewer can't read, and a pull request.
 	Parent *Parent
+	// Stack is a pull request's GitHub stack; nil for no stack, one the viewer can't read, and an issue.
+	Stack *Stack
 	// PR is a pull request's state as the poll would serve it; nil for an issue.
 	PR *moor.PR
 	// OpenedAt is when it was opened, Excerpt its body as one short line.
@@ -96,6 +98,14 @@ type Parent struct {
 	Title   string
 	URL     string
 	RepoURL string
+}
+
+// Stack is the GitHub stack a pull request sits in: its number, its URL, the pull request's layer and the stack's size.
+type Stack struct {
+	Number   int
+	URL      string
+	Position int
+	Size     int
 }
 
 // SignInError means gh is missing or signed out, as opposed to a search that failed.
@@ -184,7 +194,7 @@ func (c *Client) search(ctx context.Context, token, query, gql, actorKind string
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, errTimeout) {
 		return nil, "", c.unreachableErr()
 	}
-	if err != nil && !onlyParentErrors(out) {
+	if err != nil && !onlyOptionalErrors(out) {
 		msg := redact(strings.TrimSpace(stderr), token)
 		for _, m := range unreachable {
 			if strings.Contains(msg, m) {
@@ -207,7 +217,7 @@ func (c *Client) search(ctx context.Context, token, query, gql, actorKind string
 	if obj == nil {
 		return nil, "", errNotUnderstood
 	}
-	if errs, _ := obj["errors"].([]any); len(errs) > 0 && !onlyParentErrors(out) {
+	if errs, _ := obj["errors"].([]any); len(errs) > 0 && !onlyOptionalErrors(out) {
 		first, _ := errs[0].(map[string]any)
 		msg, _ := first["message"].(string)
 		if msg == "" {
@@ -276,6 +286,13 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 				URL           *string `json:"url"`
 			} `json:"repository"`
 		} `json:"parent"`
+		Stack *struct {
+			Number *int `json:"number"`
+			Size   *int `json:"size"`
+		} `json:"stack"`
+		StackEntry *struct {
+			Position *int `json:"position"`
+		} `json:"stackEntry"`
 		Author        *struct{ Login string } `json:"author"`
 		TimelineItems *struct {
 			Nodes []struct {
@@ -342,6 +359,11 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 		it.FailingChecks = n.failingChecks()
 		it.ReviewedSincePush = n.reviewedSincePush()
 	}
+	if s, e := n.Stack, n.StackEntry; s != nil && e != nil && s.Number != nil && s.Size != nil && e.Position != nil && n.State != "" {
+		if host, repo, _, ok := moor.ParsePR(it.URL); ok {
+			it.Stack = &Stack{Number: *s.Number, URL: fmt.Sprintf("https://%s/%s/stack/%d", host, repo, *s.Number), Position: *e.Position, Size: *s.Size}
+		}
+	}
 	for _, l := range *n.Labels.Nodes {
 		if l.Name == nil {
 			return Item{}, false
@@ -356,10 +378,10 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 	return it, true
 }
 
-// onlyParentErrors reports an answer that carries data and whose every error is on a parent field: GitHub answers a
-// parent the token can't read with null and an error, and gh may exit non-zero for it, so the issue has no parent
-// and the rest of the answer stands.
-func onlyParentErrors(out string) bool {
+// onlyOptionalErrors reports an answer that carries data and whose every error is on a parent or GitHub stack field:
+// GitHub answers one the token can't read with null and an error, and gh may exit non-zero for it, so the item has
+// none and the rest of the answer stands.
+func onlyOptionalErrors(out string) bool {
 	var body struct {
 		Data   map[string]any `json:"data"`
 		Errors []struct {
@@ -370,11 +392,20 @@ func onlyParentErrors(out string) bool {
 		return false
 	}
 	for _, e := range body.Errors {
-		if len(e.Path) == 0 || e.Path[len(e.Path)-1] != "parent" {
+		if !optionalPath(e.Path) {
 			return false
 		}
 	}
 	return true
+}
+
+func optionalPath(path []any) bool {
+	for _, p := range path {
+		if p == "parent" || p == "stack" || p == "stackEntry" {
+			return true
+		}
+	}
+	return false
 }
 
 // itemID is an issue's or pull request's id, the form Item.ID and Parent.ID share.
