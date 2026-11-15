@@ -553,6 +553,6 @@ func TestHandingALiveShipToCommodoreRelaunchesItsConversationUnderTheSameName(t 
 
 	holdFor(t, "the relaunched ship's conversation to show the earlier turn", func() bool {
 		code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/ships/"+ship.Session+"/conversation", nil)
-		return code == http.StatusOK && strings.Contains(body, `"u-1"`)
+		return code == http.StatusOK && strings.Contains(body, "the earlier design talk")
 	})
 }
