@@ -489,8 +489,8 @@ func TestTheSameChildInTwoCampaignsLaunchesWithEachCampaignsOwnChoices(t *testin
 		if err != nil || repo != want.repo || panel != id {
 			t.Errorf("Order in campaign %s = repo %q panel %q err %v, want repo %q and its own panel", id, repo, panel, err, want.repo)
 		}
-		if (want.kind == "none") != strings.HasPrefix(text, "Issue 21 ") {
-			t.Errorf("Order in campaign %s text = %q, want the title and URL only when the label default has no skill", id, text)
+		if strings.HasPrefix(text, "Issue 21 ") {
+			t.Errorf("Order in campaign %s text = %q, want no title and URL when the label default has a skill", id, text)
 		}
 	}
 	if code, body := r.launch(a.ID, map[string]any{"child_url": issURL(21), "harness": "claude", "dir": "/work/x"}); code != http.StatusCreated {

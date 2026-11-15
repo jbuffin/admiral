@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Ship } from './api';
-import { blockerLine, campaignMeta, canJoinSlice, keepSelectable, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, pasteHint, overrideBody, safeHref, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
+import { blockerLine, campaignMeta, canJoinSlice, keepSelectable, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, pasteHint, overrideBody, labelsDisagree, safeHref, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
 
 const url = (n: number) => `https://github.com/acme/widgets/issues/${n}`;
 const child = (n: number, status: CampaignNode['status'], mode: CampaignNode['mode'] = 'with-you', extra: Partial<CampaignNode> = {}): CampaignNode => ({
@@ -212,6 +212,17 @@ describe('overrideBody', () => {
   });
   it('clears the override when the mode is the label default', () => {
     expect(overrideBody(node, 'without-you')).toStrictEqual({ child_url: url(21), mode: '' });
+  });
+});
+
+describe('labelsDisagree', () => {
+  it('names the label default only when the mode differs from it', () => {
+    expect(labelsDisagree(child(21, 'ready', 'with-you', { default_mode: 'without-you' }))).toBe('without-you');
+    expect(labelsDisagree(child(21, 'ready', 'with-you', { default_mode: 'with-you', overridden: true }))).toBeNull();
+    expect(labelsDisagree(child(21, 'ready', 'with-you'))).toBeNull();
+  });
+  it('sends no mode to follow the labels again', () => {
+    expect(overrideBody(child(21, 'ready', 'with-you', { default_mode: 'without-you' }), null)).toStrictEqual({ child_url: url(21), mode: '' });
   });
 });
 

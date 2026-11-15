@@ -13,6 +13,7 @@ import {
   groupChildren,
   hasUnreadable,
   keepSelectable,
+  labelsDisagree,
   overrideBody,
   safeHref,
   kindLabel,
@@ -187,10 +188,10 @@ export function CampaignsList({ phone, title }: { phone: boolean; title: boolean
 function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { campaign: Campaign; node: CampaignNode; canStart: boolean; onClose: () => void; onLaunch: (anyway: boolean) => void; onSaved: (c: Campaign) => void }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const setMode = async (body: { child_url: string; mode: Mode | '' }) => {
+  const saveOverride = async (mode: Mode | null) => {
     setError('');
     setBusy(true);
-    const r = await call<Campaign>('PUT', `/campaigns/${campaign.id}/override`, body);
+    const r = await call<Campaign>('PUT', `/campaigns/${campaign.id}/override`, overrideBody(node, mode));
     setBusy(false);
     if (!r.ok) return setError(r.error);
     onSaved(r.data);
@@ -243,12 +244,12 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
               value={node.mode ?? 'with-you'}
               label={modeLabel}
               disabled={busy}
-              onPick={(m) => setMode(overrideBody(node, m))}
+              onPick={saveOverride}
             />
-            {node.overridden && node.default_mode ? (
+            {labelsDisagree(node) ? (
               <p class="note">
-                Labels say {modeLabel(node.default_mode)}.{' '}
-                <Button variant="link" label="Use labels" disabled={busy} onClick={() => setMode({ child_url: node.url, mode: '' })} />
+                Labels say {modeLabel(labelsDisagree(node)!)}.{' '}
+                <Button variant="link" label="Use labels" disabled={busy} onClick={() => saveOverride(null)} />
               </p>
             ) : null}
           </>

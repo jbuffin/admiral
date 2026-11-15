@@ -218,6 +218,7 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
         {options.length > 0 ? (
           <>
             <Choice
+              id="chat-harness"
               legend="Harness"
               values={options.map((o) => o.harness)}
               unavailable={closed.map((o) => o.harness)}

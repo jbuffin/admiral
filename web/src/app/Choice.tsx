@@ -1,7 +1,8 @@
 import type { ComponentChildren } from 'preact';
+import { useId } from 'preact/hooks';
 import { Flag } from './Flag';
 
-export function Choice<T extends string | number>({ legend, help, values, value, label, disabled, unavailable, notes, onPick, flag }: {
+export function Choice<T extends string | number>({ legend, help, values, value, label, disabled, unavailable, notes, onPick, flag, id: given }: {
   legend: string;
   help?: string;
   values: T[];
@@ -14,8 +15,11 @@ export function Choice<T extends string | number>({ legend, help, values, value,
   notes?: (v: T) => ComponentChildren;
   onPick: (v: T) => void;
   flag?: boolean;
+  /** Prefix of the ids a caller refers to, such as a note's; defaults to a generated one. */
+  id?: string;
 }) {
-  const id = `chat-${legend.toLowerCase().replace(/\W+/g, '-')}`;
+  const generated = useId();
+  const id = given ?? generated;
   return (
     <div class="set choice-set">
       <div class="t">

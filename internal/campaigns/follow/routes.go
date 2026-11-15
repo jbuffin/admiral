@@ -401,8 +401,8 @@ func (s *Service) launch(ctx context.Context, f Followed, childURL string, start
 	return got, nil
 }
 
-// sameSkill compares a picked skill with a child's resolved one; Commodore and Just launch ignore the name, since an
-// override may store one the form does not send.
+// sameSkill compares a picked skill with a child's resolved one; Commodore and Just launch ignore the name, which the
+// form does not send for them.
 func sameSkill(pick launcher.Skill, have campaigns.Skill) bool {
 	if pick.Kind != have.Kind {
 		return false
