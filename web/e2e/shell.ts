@@ -2172,11 +2172,12 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await expect(picker.option('fable-codex')).toHaveCount(0);
   await picker.box.press('Escape');
   // A skill installed on both docks and not a favorite stays picked across the change.
+  // The label takes each dock's mark once its skills answer, so the next step types into a box that is settled.
   await picker.pick('fable-both');
   await form.getByRole('radio', { name: /codex/i }).check();
-  await expect(picker.box).toHaveValue(/fable-both/);
+  await expect(picker.box).toHaveValue('$fable-both');
   await form.getByRole('radio', { name: /claude/i }).check();
-  await expect(picker.box).toHaveValue(/fable-both/);
+  await expect(picker.box).toHaveValue('/fable-both');
   // A dock whose skills have not answered, or failed, can't launch the last dock's pick: Launch stays off and nothing is sent.
   await picker.pick('fable-claude');
   const skillsRead = '**/launch-orders/skills?*harness=codex*';
