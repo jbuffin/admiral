@@ -99,6 +99,8 @@ func (f *chatDock) waitSession(d time.Duration, what string, pred func(chatSessi
 
 func (f *chatDock) newChat() {
 	f.t.Helper()
+	// New chat is refused until the harness's SessionStart is recorded, which the chat's error says.
+	f.waitSession(10*time.Second, "the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
 	if code, body := send(f.t, http.MethodPost, f.url("new"), nil); code != http.StatusOK {
 		f.t.Fatalf("POST /api/chat/%s/new = %d, want 200: %s", f.fleet, code, body)
 	}
