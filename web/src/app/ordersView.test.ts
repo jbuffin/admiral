@@ -941,6 +941,14 @@ describe('launching and showing ships on a GitHub stack', () => {
         expect(a.children.map((c) => pill(c).again)).toEqual([null, null, null]);
       });
 
+      it('shows Wake with the GitHub stack URL for a ship that holds the layers through its PRs under another url', () => {
+        const own = three.map((o) => ({ ...o, author: 'fake-viewer', review_requested_at: undefined }));
+        const mine = prs([41, 42, 43], { answer: '/commodore answer', feedback: 2 });
+        const a = rowOf([ship({ url: 'https://github.com/acme/api/issues/9', prs: mine })], own);
+        expect(pill(a.row).again).toEqual({ kind: 'wake', stack: S });
+        expect(a.children.map((c) => pill(c).again)).toEqual([null, null, null]);
+      });
+
       it('shows no Wake on your own stack when no layer has feedback', () => {
         const own = three.map((o) => ({ ...o, author: 'fake-viewer', review_requested_at: undefined }));
         expect(pill(rowOf([ship({ url: S, prs: prs([41, 42, 43], { answer: '/commodore answer' }) })], own).row).again).toBeNull();

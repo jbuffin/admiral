@@ -71,6 +71,7 @@ export function OrderPane({ row, group, viewer, sources, now, heading, onLaunch,
           ))}
         </div>
       ) : null}
+      {why || opened || (o.sub_issues ?? 0) > 0 ? (
       <dl class="odetail-facts">
         {why ? (
           <>
@@ -121,11 +122,13 @@ export function OrderPane({ row, group, viewer, sources, now, heading, onLaunch,
           </>
         ) : null}
       </dl>
+      ) : null}
       {followError ? (
         <p class="alert" role="alert">
           {followError}
         </p>
       ) : null}
+      {stack ? <h3 class="odetail-sub">Layers</h3> : null}
       {stack ? (
         <ol class="odetail-ships" aria-label="Layers">
           {stack.children.map((c) => (
@@ -139,8 +142,9 @@ export function OrderPane({ row, group, viewer, sources, now, heading, onLaunch,
         </ol>
       ) : null}
       {o.excerpt ? <p class="odetail-excerpt">{o.excerpt}</p> : null}
+      {stack && onOrder.length > 0 ? <h3 class="odetail-sub">Ships on this stack</h3> : null}
       {onOrder.length > 0 ? (
-        <ul class="odetail-ships" aria-label="Ships on this order">
+        <ul class="odetail-ships" aria-label={stack ? 'Ships on this stack' : 'Ships on this order'}>
           {onOrder.map((s) => (
             <li key={s.session}>
               <a

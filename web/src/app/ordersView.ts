@@ -20,7 +20,7 @@ export interface OrderRow {
   inView: boolean;
   /** Whether a launch can find the order: some view of the source holds it. */
   launchable: boolean;
-  /** A stack row built from its layers: no action, and never "not in this view". */
+  /** A stack row built from its layers, never "not in this view". */
   stackRow?: boolean;
   /** A stack row's launch lands on this layer's order: the bottom open shown layer. */
   stackLayer?: string;
@@ -363,12 +363,15 @@ export function stackLaunchLines(g: ViewGroup, ships: Ship[], viewer: string | u
   const layers = g.children.filter((c) => open(c.order));
   const theirs = layers.filter((c) => !viewer || c.order.author !== viewer).length;
   const lines = theirs > 0 ? [`Reviewing stack #${/\/stack\/(\d+)/.exec(g.row.order.url ?? '')?.[1] ?? ''} · ${theirs} ${theirs === 1 ? 'PR' : 'PRs'}`] : [];
-  for (const c of layers) {
-    const held = shipsOnOrder(ships, c.order)[0];
-    if (held) lines.push(`PR #${/#(\d+)$/.exec(c.order.id)?.[1] ?? /\/(\d+)\/?$/.exec(c.order.url ?? '')?.[1] ?? ''} already has ship ${held.name}`);
-  }
+  for (const { c, held } of heldLayers(g, ships)) lines.push(`PR #${/#(\d+)$/.exec(c.order.id)?.[1] ?? /\/(\d+)\/?$/.exec(c.order.url ?? '')?.[1] ?? ''} already has ship ${held.name}`);
   return lines;
 }
+
+const heldLayers = (g: ViewGroup, ships: Ship[]): { c: OrderRow; held: Ship }[] =>
+  g.children.filter((c) => open(c.order)).flatMap((c) => {
+    const held = shipsOnOrder(ships, c.order)[0];
+    return held ? [{ c, held }] : [];
+  });
 
 /** The action of a group's row and of each child, in order; one ship holding a GitHub stack's every open layer takes the stack row. */
 export function groupRowActions(ships: Ship[], g: ViewGroup, viewer: string | undefined): { row: RowAction; children: RowAction[] } {
@@ -379,5 +382,5 @@ export function groupRowActions(ships: Ship[], g: ViewGroup, viewer: string | un
 /** The Launch dialog's order for a GitHub stack: its lines, and `anyway` when a layer already has a ship so the launch goes ahead on confirm. */
 export function stackLaunchRef(g: ViewGroup, ships: Ship[], viewer: string | undefined): OrderRef {
   const notes = stackLaunchLines(g, ships, viewer);
-  return { ...launchRef(g.row), ...(notes.length > 0 && { notes }), ...(notes.some((n) => n.includes(' already has ship ')) && { anyway: true }) };
+  return { ...launchRef(g.row), ...(notes.length > 0 && { notes }), ...(heldLayers(g, ships).length > 0 && { anyway: true }) };
 }

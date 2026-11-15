@@ -1,7 +1,6 @@
 package ships
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"sync"
@@ -58,24 +57,15 @@ func TestAStackLaunchTakesTheStackURLTitleAndTextFromTheLayersServedStack(t *tes
 	}
 }
 
-func TestAStackLaunchOnAPRInNoGitHubStackIsRefused(t *testing.T) {
-	r := newWakeRig(t, 0)
-	r.s.Orders = &stackOrders{}
-	_, lerr := r.s.Launch(context.Background(), r.keyReq(stackLaunch("l50", false)))
-	if lerr == nil || lerr.Status != http.StatusBadRequest {
-		t.Fatalf("Launch of a stack on a layer with none = %v, want a 400", lerr)
-	}
-	if got := len(r.s.List()); got != 0 {
-		t.Errorf("%d ships after the refusal, want none", got)
-	}
-}
-
-func TestTheStackFieldOfTheLaunchBodyReachesTheLaunch(t *testing.T) {
+func TestAStackLaunchOnAPRInNoGitHubStackIsRefusedAndListsNoShip(t *testing.T) {
 	r := newWakeRig(t, 0)
 	r.s.Orders = &stackOrders{}
 	body := `{"fleet":"work","harness":"claude","dir":"` + r.checkout + `","skill":{"kind":"none"},"source":"s","order_id":"l50","stack":true}`
 	if rec := launchPost(t, r.s, body); rec.Code != http.StatusBadRequest {
 		t.Errorf("POST /api/ships with stack on a layer with no GitHub stack = %d %s, want 400", rec.Code, rec.Body)
+	}
+	if got := len(r.s.List()); got != 0 {
+		t.Errorf("%d ships after the refusal, want none", got)
 	}
 }
 

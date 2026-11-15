@@ -244,7 +244,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   };
   const selected = selectedRow(list, id, loc.value.search, now, ships.value);
   const chosen = selected?.key;
-  const selectedGroup = selected?.stackRow ? viewGroups(list, id, now, ships.value).find((g) => g.row.key === selected.key) : undefined;
+  const selectedGroup = selected?.stackRow ? shown.find((g) => g.row.key === selected.key) : undefined;
   const selectedViewer = list.find((src) => src.key === selected?.source)?.viewer;
   const onOpen = (r: OrderRow) => go('/app/orders', withSelectedOrder(loc.value.search, r.key));
   const close = (restoreFocus = false) => {

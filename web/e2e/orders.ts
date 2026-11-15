@@ -497,6 +497,8 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   const at = STACK_LAYERS.map((t) => text.indexOf(t));
   expect(at.every((i) => i >= 0) && at[0] < at[1] && at[1] < at[2]).toBe(true);
   for (const t of STACK_LAYERS) await expect(stackPane.getByRole('listitem').filter({ hasText: t })).toContainText('Review requested');
+  await expect(stackPane.getByRole('heading', { name: 'Layers', exact: true })).toBeVisible();
+  await expect(stackPane.getByRole('heading', { name: 'Ships on this stack' })).toHaveCount(0);
   await expect(stackPane.getByRole('link', { name: 'Open on GitHub', exact: true })).toHaveAttribute('href', STACK.url);
   await expect(stackPane.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
   await expect(stackPane.getByRole('button', { name: 'Launch another ship', exact: true })).toHaveCount(0);
@@ -540,6 +542,8 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
 
   // The pane lists the ship and offers Launch another ship in place of Launch ship on stack.
   await press(body(`Stack #${STACK.number}`));
+  await expect(stackPane.getByRole('heading', { name: 'Layers', exact: true })).toBeVisible();
+  await expect(stackPane.getByRole('heading', { name: 'Ships on this stack', exact: true })).toBeVisible();
   await expect(stackPane.getByRole('link', { name: started.name })).toBeVisible();
   await expect(stackPane.getByRole('button', { name: 'Launch ship on stack', exact: true })).toHaveCount(0);
   await expect(stackPane.getByRole('button', { name: /^Merge/ })).toHaveCount(0);

@@ -174,7 +174,8 @@ function stackAgainOf(ship: Ship, layers: Order[], viewer: string | undefined): 
     return asked && isStackUrl(ship.url) ? { kind: 'rereview', url: ship.url! } : null;
   }
   const mine = !!viewer && layers.every((l) => l.author === viewer);
-  return mine && isStackUrl(ship.url) && ownOpenPRs(ship).some((p) => feedbackBarText(p) !== '') ? { kind: 'wake', stack: ship.url! } : null;
+  const stack = layers.find((l) => l.stack)?.stack?.url;
+  return mine && stack && ownOpenPRs(ship).some((p) => feedbackBarText(p) !== '') ? { kind: 'wake', stack } : null;
 }
 
 /** The live or moored ships on an order, the one its row shows first: a moored ship whose PR needs you again, then needs_you, underway, moored; newest launch first within each. */
