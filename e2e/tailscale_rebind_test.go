@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -29,18 +31,25 @@ func lanIPv4(t *testing.T) string {
 	return ""
 }
 
+// fakeLAN is a TEST-NET address Admiral is told is its LAN address, for tests that read it but never dial it.
+const fakeLAN = "192.0.2.10"
+
 // startDerived runs Admiral with no --listen, so its address follows the mode, on this rig's port.
 func (r *tsRig) startDerived(mode bool) *tsProc {
+	return r.startDerivedAt(mode, lanIPv4(r.t))
+}
+
+// startDerivedAt runs it with lan as its LAN address; fakeLAN needs no network.
+func (r *tsRig) startDerivedAt(mode bool, lan string) *tsProc {
 	t := r.t
 	t.Helper()
-	lan := lanIPv4(t)
 	r.writeConfig(mode)
 	fakeDir, err := filepath.Abs(filepath.Join("testdata", "faketailscale"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(binaryPath(t))
-	cmd.Env = append(hermeticEnv(t), "ADMIRAL_HOME="+r.home, "ADMIRAL_PORT="+r.port, "FAKETS_DIR="+r.dir, "PATH="+fakeDir+":"+os.Getenv("PATH"))
+	cmd.Env = append(hermeticEnv(t), "ADMIRAL_LAN_IP="+lan, "ADMIRAL_HOME="+r.home, "ADMIRAL_PORT="+r.port, "FAKETS_DIR="+r.dir, "PATH="+fakeDir+":"+os.Getenv("PATH"))
 	out := &syncBuffer{}
 	cmd.Stdout, cmd.Stderr = out, out
 	if err := cmd.Start(); err != nil {
@@ -135,6 +144,18 @@ func (p *tsProc) shipsAnswer(t *testing.T) bool {
 
 func pidOf(p *tsProc) int { return p.cmd.Process.Pid }
 
+// listensOn is the address Admiral's process listens on for its port, as lsof prints it ("*:7420", "127.0.0.1:7420").
+func (p *tsProc) listensOn(t *testing.T) string {
+	t.Helper()
+	out, _ := exec.Command("lsof", "-nP", "-a", "-p", strconv.Itoa(pidOf(p)), "-iTCP:"+p.Port, "-sTCP:LISTEN", "-Fn").Output()
+	for _, line := range strings.Split(string(out), "\n") {
+		if name, ok := strings.CutPrefix(line, "n"); ok {
+			return name
+		}
+	}
+	return ""
+}
+
 // Mode on takes Admiral off the LAN with no restart: the LAN browser is sent to the tailnet URL before its socket
 // closes, loopback keeps answering with its socket open, and the ships stay listed.
 func TestModeOnMovesAdmiralOffTheLAN(t *testing.T) {
@@ -176,17 +197,21 @@ func TestModeOnMovesAdmiralOffTheLAN(t *testing.T) {
 	}
 }
 
-// Mode off sends the tailnet browser to the LAN address before its socket is cut, then Admiral answers on the LAN again.
+// Mode off sends the tailnet browser to the LAN address before its socket is cut, then Admiral listens on every
+// interface again. It needs no network: the LAN address is pinned and only read, and the bind is read with lsof.
 func TestModeOffMovesTailnetBrowsersToTheLAN(t *testing.T) {
 	t.Parallel()
 	r := newTSRig(t)
-	p := r.startDerived(true)
+	p := r.startDerivedAt(true, fakeLAN)
 	if !p.otherDevicesBound(t) {
 		return
 	}
 	token := p.pairOverTailnet(t, tsLogin)
 	tail := dialShips(t, p.base(), http.Header{"Authorization": {"Bearer " + token}, "Tailscale-User-Login": {tsLogin}, "X-Forwarded-For": {"100.64.0.9"}})
 	pid := pidOf(p)
+	if got := p.listensOn(t); got != "127.0.0.1:"+p.Port {
+		t.Fatalf("with the mode on Admiral listens on %q, want loopback only", got)
+	}
 
 	if code, body := p.post(t, "/api/remote/off", `{"confirm":true}`); code != http.StatusOK {
 		t.Fatalf("Turn off: %d %s", code, body)
@@ -195,7 +220,7 @@ func TestModeOffMovesTailnetBrowsersToTheLAN(t *testing.T) {
 	if got, want := awaitMove(t, tail), p.lanURL(); got != want {
 		t.Errorf("the tailnet browser was sent to %q, want the LAN form %q", got, want)
 	}
-	waitUntil(t, "Admiral answers on the LAN again", func() bool { return p.answers(p.lanURL()) })
+	waitUntil(t, "Admiral listens on every interface again", func() bool { return p.listensOn(t) == "*:"+p.Port })
 	if p.exited() || pidOf(p) != pid || !p.shipsAnswer(t) {
 		t.Error("Admiral restarted to move, or lost its ships")
 	}
