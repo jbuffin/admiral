@@ -196,6 +196,15 @@ describe('shipsOnOrder', () => {
     expect(names(shipsOnOrder([stacker], order({ url })))).toEqual(['stacker']);
   });
 
+  it('finds a ship launched on the stack URL, with no PRs, on the layer it sits in', () => {
+    const stack = 'https://github.com/acme/api/stack/3';
+    const layer = order({ url, stack: { number: 3, url: stack, position: 2, size: 4 } });
+    expect(names(shipsOnOrder([on('stacker', { url: stack, prs: [] })], layer))).toEqual(['stacker']);
+    expect(names(shipsOnOrder([on('stacker', { url: `${stack.toUpperCase()}/`, prs: [] })], layer)), 'case and a trailing slash').toEqual(['stacker']);
+    expect(shipsOnOrder([on('other', { url: 'https://github.com/acme/api/stack/4', prs: [] })], layer)).toEqual([]);
+    expect(shipsOnOrder([on('stacker', { url: stack, prs: [] })], order({ url })), 'an order with no stack').toEqual([]);
+  });
+
   it.each(['underway', 'needs_you', 'moored'] as const)('counts a %s ship', (status) => {
     expect(names(shipsOnOrder([on('a', { status, url: issue })], order({ url: issue })))).toEqual(['a']);
   });

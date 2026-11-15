@@ -72,6 +72,8 @@ type Item struct {
 	SubIssues int
 	// Parent is an issue's GitHub parent; nil for no parent, one the viewer can't read, and a pull request.
 	Parent *Parent
+	// Stack is a pull request's GitHub stack; nil for no stack, one the viewer can't read, and an issue.
+	Stack *Stack
 	// PR is a pull request's state as the poll would serve it; nil for an issue.
 	PR *moor.PR
 	// OpenedAt is when it was opened, Excerpt its body as one short line.
@@ -96,6 +98,14 @@ type Parent struct {
 	Title   string
 	URL     string
 	RepoURL string
+}
+
+// Stack is the GitHub stack a pull request sits in: its number, its URL, the pull request's layer and the stack's size.
+type Stack struct {
+	Number   int
+	URL      string
+	Position int
+	Size     int
 }
 
 // SignInError means gh is missing or signed out, as opposed to a search that failed.
