@@ -190,3 +190,34 @@ describe('checkedWords', () => {
     expect(checkedWords(undefined, now)).toBe('');
   });
 });
+
+describe('every preset reads in plain words', () => {
+  it.each([
+    ['is:open is:pr review-requested:@me draft:false -review:approved', 'Open PRs where you are a requested reviewer, not drafts, not yet approved'],
+    ['is:open is:pr author:@me draft:false -review:approved', 'Open PRs you wrote, not drafts, not yet approved'],
+    ['is:open is:pr author:@me draft:false review:approved', 'Open PRs you wrote, not drafts, approved'],
+    ['is:open is:issue assignee:@me', 'Open issues assigned to you'],
+    ['is:open mentions:@me', 'Open issues and PRs that mention you'],
+    ['is:open involves:@me label:"bug"', 'Open issues and PRs you are involved in, labelled "bug"'],
+    ['is:open involves:@me label:"needs design"', 'Open issues and PRs you are involved in, labelled "needs design"'],
+    ['is:open author:@me -label:"wip"', 'Open issues and PRs you wrote, not labelled "wip"'],
+  ])('says %s as "%s"', (query, words) => {
+    expect(plainWords(query)).toBe(words);
+  });
+
+  it.each(['is:open is:issue review-requested:@me', 'is:open is:issue author:@me draft:false', 'is:open is:issue author:@me review:approved'])('shows %s as the search, since issues have no reviews', (query) => {
+    expect(plainWords(query)).toBe(query);
+  });
+
+  it('shows the search itself when a qualifier is not covered, a quoted label included', () => {
+    expect(plainWords('is:open label:"needs design" milestone:"v 2"')).toBe('is:open label:"needs design" milestone:"v 2"');
+  });
+});
+
+describe('a row added this session', () => {
+  it('keeps its own key and is saved without it', () => {
+    const e: ViewEntry = { title: 'Mine', query: 'is:open', fresh: '+new-1' };
+    expect(viewKey(e, 4)).toBe('+new-1');
+    expect(forSave([e])).toEqual([{ title: 'Mine', query: 'is:open' }]);
+  });
+});

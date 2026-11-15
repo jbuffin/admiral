@@ -4,7 +4,7 @@ import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { seedOrders } from './orders';
+import { cannedSearch, seedOrders } from './orders';
 import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, seedFleets, setRemote, stubClipboard, watchPage, withFakeGh } from './shell';
 
 // The fleets are `zulu` (Westwind) and `alpha` (Homeport); zulu is the active fleet until one is chosen.
@@ -157,6 +157,12 @@ function checkout(root: string, dir: string, repo: string) {
 
 const githubPage = (a: Admiral, fleet: string) => `${a.url}app/preferences/${fleet}/github`;
 type StoredView = { id?: string; title?: string; query?: string; hidden?: boolean };
+// The shared seed adds a custom view; a journey about the built-in four starts without it.
+function dropSeededViews(a: Admiral) {
+  const seeded = config(a);
+  delete seeded.sources.gh.settings.views;
+  a.writeConfig(seeded);
+}
 const storedViews = (a: Admiral, key: string) => (config(a).sources[key].settings.views ?? []) as StoredView[];
 const viewRows = (page: Page) => page.getByRole('list', { name: 'Views' }).getByRole('listitem');
 const viewRow = (page: Page, title: string) => viewRows(page).filter({ has: page.getByRole('button', { name: title, exact: true }) });
@@ -262,10 +268,7 @@ test('a signed-out fleet says how to sign in with its views greyed, and turns Co
 
 test('hiding, renaming and moving views changes the Orders tabs and survives a restart', async ({ page, admiral }) => {
   seedOrders(admiral);
-  // The shared seed adds a custom view; this journey is about the built-in four.
-  const seeded = config(admiral);
-  delete seeded.sources.gh.settings.views;
-  admiral.writeConfig(seeded);
+  dropSeededViews(admiral);
   admiral.fakeGh().count('z-open', 'is:open', 3);
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
@@ -341,6 +344,159 @@ test('hiding, renaming and moving views changes the Orders tabs and survives a r
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
   expect(watch.errors).toEqual([]);
+});
+
+const newViewCard = (page: Page) => page.getByRole('region', { name: 'New view', exact: true });
+const shownSearch = (page: Page) => newViewCard(page).getByRole('group', { name: 'Search', exact: true });
+
+test('a new view from the builder saves the search it shows, and its count matches what Orders lists', async ({ page, admiral }) => {
+  seedOrders(admiral);
+  dropSeededViews(admiral);
+  const gh = admiral.fakeGh();
+  gh.count('z-open', 'is:open', 3);
+  // Both in this fleet's repos, none held by a ship; the keys sort before seedOrders' own.
+  const item = (number: number, title: string) => ({ number, title, author: 'fake-viewer', pr: { review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' } });
+  gh.count('0-new', 'author:@me review:approved', 2);
+  cannedSearch(admiral, '0-new', 'author:@me review:approved', [item(41, 'Ship the approved cache change'), item(42, 'Ship the approved retry fix')]);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+  await expect.poll(() => storedViews(admiral, 'gh').map((v) => v.id)).toEqual(['for-you', 'assigned-to-me', 'review-requested', 'my-prs']);
+
+  await page.goto(githubPage(admiral, 'zulu'));
+  await expect(page.getByRole('region', { name: 'Connection', exact: true })).toContainText('Connected');
+  const views = page.getByRole('region', { name: 'Views', exact: true });
+  await expect(views).toContainText('The tabs across the top of Orders, in this order. Drag to reorder, switch off to hide.');
+  const open = views.getByRole('button', { name: '+ New view', exact: true });
+  await open.click();
+
+  const card = newViewCard(page);
+  await expect(card).toContainText('Start from a preset or build one. No search syntax needed.');
+  await expect(card.getByRole('button', { name: 'Needs my review', exact: true })).toBeFocused();
+  await expect(card.getByRole('button', { name: 'Needs my review', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(shownSearch(page)).toContainText('is:open is:pr review-requested:@me draft:false -review:approved');
+  await expect(card.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Needs my review');
+
+  // A preset sets the Name and the search; one control then leaves no preset pressed and keeps the Name.
+  await card.getByRole('button', { name: 'Approved and ready to merge', exact: true }).click();
+  await expect(card.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Approved and ready to merge');
+  await expect(shownSearch(page)).toContainText('is:open is:pr author:@me draft:false review:approved');
+  await card.getByRole('button', { name: 'Drafts', exact: true }).click();
+  await expect(shownSearch(page)).toContainText('is:open is:pr author:@me review:approved');
+  await expect(shownSearch(page)).not.toContainText('draft:false');
+  for (const p of await card.getByRole('button', { name: /^(Needs my review|My PRs awaiting review|Approved and ready to merge|Assigned issues|Has label…|Mentions me)$/ }).all()) {
+    await expect(p).toHaveAttribute('aria-pressed', 'false');
+  }
+  await expect(card.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Approved and ready to merge');
+  await expect(shownSearch(page)).toContainText('2 matches');
+
+  await card.getByRole('button', { name: 'Add view', exact: true }).click();
+  await expect(card).toHaveCount(0);
+  await expect.poll(() => storedViews(admiral, 'gh').at(-1)).toEqual({ title: 'Approved and ready to merge', query: 'is:open is:pr author:@me review:approved' });
+  await expect(viewRows(page).last()).toContainText('Approved and ready to merge');
+  await expect(viewRows(page).last()).toContainText('Open PRs you wrote');
+
+  // The new view is the last tab, and lists as many rows as the count said.
+  await page.getByRole('navigation').getByRole('link', { name: /^Orders/ }).click();
+  const tab = page.getByRole('tab', { name: /^Approved and ready to merge/ });
+  await expect(tab).toBeVisible();
+  await expect(page.getByRole('tab').nth(-2)).toHaveText(/^Approved and ready to merge/);
+  await tab.click();
+  const main = page.getByRole('main');
+  await expect(main.getByRole('listitem').filter({ hasText: /Ship the approved/ })).toHaveCount(2);
+
+  // A change to the new row made as soon as it appears, with the server's id still to come, sticks on the page and on the server.
+  await page.goto(githubPage(admiral, 'zulu'));
+  await expect(viewRows(page).last()).toContainText('Approved and ready to merge');
+  await page.getByRole('region', { name: 'Views', exact: true }).getByRole('button', { name: '+ New view', exact: true }).click();
+  await newViewCard(page).getByRole('button', { name: 'Mentions me', exact: true }).click();
+  await newViewCard(page).getByRole('button', { name: 'Add view', exact: true }).click();
+  const hideNew = viewRows(page).last().getByRole('switch');
+  await hideNew.click();
+  await expect.poll(() => storedViews(admiral, 'gh').at(-1)).toEqual({ title: 'Mentions me', query: 'is:open mentions:@me', hidden: true });
+  await expect(hideNew).toHaveAttribute('aria-checked', 'false');
+  await page.reload();
+  await expect(viewRows(page)).toHaveCount(6);
+  await expect(viewRows(page).last().getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(viewRows(page).nth(4).getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+  const grip = viewRows(page).nth(5).getByRole('button', { name: /^Move / });
+  await grip.focus();
+  await grip.press('ArrowUp');
+  await expect.poll(() => storedViews(admiral, 'gh').slice(3).map((v) => v.query ?? v.id)).toEqual(['my-prs', 'is:open mentions:@me', 'is:open is:pr author:@me review:approved']);
+  await page.goto('about:blank');
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('the New view card shows a failed search count and still saves it, and a hand edit changes what is saved', async ({ page, admiral }) => {
+  seedOrders(admiral);
+  dropSeededViews(admiral);
+  const gh = admiral.fakeGh();
+  gh.count('z-open', 'is:open', 3);
+  gh.count('0-broken', 'review-requested:@me draft:false', { fail: 'GitHub does not know the qualifier review-requested' });
+  gh.count('0-hand', 'label:"by hand"', 1);
+  await admiral.start({ env: withFakeGh(admiral) });
+  await expect.poll(() => storedViews(admiral, 'gh').length).toBe(4);
+  await page.goto(githubPage(admiral, 'zulu'));
+  await expect(page.getByRole('region', { name: 'Connection', exact: true })).toContainText('Connected');
+
+  const views = page.getByRole('region', { name: 'Views', exact: true });
+  await views.getByRole('button', { name: '+ New view', exact: true }).click();
+  const card = newViewCard(page);
+  await expect(shownSearch(page)).toContainText('Search failed: GitHub does not know the qualifier review-requested');
+
+  // Cancel closes the card and returns to the button.
+  await card.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(card).toHaveCount(0);
+  await expect(views.getByRole('button', { name: '+ New view', exact: true })).toBeFocused();
+  await views.getByRole('button', { name: '+ New view', exact: true }).click();
+
+  // Blank name: Add view waits. Enter in the Name doesn't submit.
+  const name = card.getByRole('textbox', { name: 'Name', exact: true });
+  const add = card.getByRole('button', { name: 'Add view', exact: true });
+  await name.fill('');
+  await expect(add).toBeDisabled();
+  await name.fill('Broken but mine');
+  await expect(add).toBeEnabled();
+
+  // A hand edit is the search, with the line that says a control rebuilds it, and the rebuild drops it.
+  await card.getByText('Edit as a GitHub search', { exact: true }).click();
+  const field = card.getByRole('textbox', { name: 'GitHub search', exact: true });
+  await field.fill('is:open is:pr label:"by hand"');
+  await expect(card).toContainText('Changing an option above rebuilds the search.');
+  await expect(shownSearch(page)).toContainText('1 match');
+  await card.getByRole('button', { name: 'Author', exact: true }).click();
+  await expect(field).toHaveValue('is:open is:pr author:@me draft:false -review:approved');
+  await expect(card).not.toContainText('Changing an option above rebuilds the search.');
+  await field.fill('is:open is:pr label:"by hand"');
+  await add.click();
+  await expect(card).toHaveCount(0);
+  await expect.poll(() => storedViews(admiral, 'gh').at(-1)).toEqual({ title: 'Broken but mine', query: 'is:open is:pr label:"by hand"' });
+
+  // A search that fails to count still saves.
+  await views.getByRole('button', { name: '+ New view', exact: true }).click();
+  await expect(shownSearch(page)).toContainText('Search failed');
+  await card.getByRole('textbox', { name: 'Name', exact: true }).fill('Failing');
+  await card.getByRole('button', { name: 'Add view', exact: true }).click();
+  await expect.poll(() => storedViews(admiral, 'gh').at(-1)?.title).toBe('Failing');
+  await expect(viewRow(page, 'Failing')).toContainText('Search failed: GitHub does not know the qualifier review-requested');
+
+  // A label: Enter commits it, and Pull requests' parts are off with Issues.
+  await views.getByRole('button', { name: '+ New view', exact: true }).click();
+  await card.getByRole('button', { name: 'Has label…', exact: true }).click();
+  await expect(add).toBeDisabled();
+  const label = card.getByRole('textbox', { name: 'Label', exact: true });
+  await label.fill('needs design');
+  await label.press('Enter');
+  await expect(shownSearch(page)).toContainText('is:open involves:@me label:"needs design"');
+  await expect(card.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('needs design');
+  await expect(add).toBeEnabled();
+  await card.getByRole('button', { name: 'Needs my review', exact: true }).click();
+  await card.getByRole('button', { name: 'Issues', exact: true }).click();
+  await expect(card.getByRole('button', { name: 'Reviewer', exact: true })).toBeDisabled();
+  await expect(card.getByRole('button', { name: 'Drafts', exact: true })).toBeDisabled();
+  await page.goto('about:blank');
 });
 
 test('the priority labels and the check interval save at once', async ({ page, admiral }) => {

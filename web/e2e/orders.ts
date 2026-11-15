@@ -10,7 +10,7 @@ const H = 3600_000;
 const D = 24 * H;
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
-interface Item {
+export interface Item {
   number: number;
   title: string;
   repo?: string;
@@ -151,6 +151,14 @@ function ghWrites(a: Admiral): { method: string; endpoint: string; host: string;
     .sort((x, y) => statSync(join(dir, x)).birthtimeMs - statSync(join(dir, y)).birthtimeMs)
     .filter((d) => read(d, 'method') === 'POST')
     .map((d) => ({ method: 'POST', endpoint: read(d, 'endpoint'), host: read(d, 'host'), stdin: JSON.parse(read(d, 'stdin') || 'null') }));
+}
+
+/** A canned search for one more view, answering with `items` in this fleet's repos: the first key, in name order, whose needle is in the query answers, so name it to sort before `a-assigned`. Call before `start`. */
+export function cannedSearch(a: Admiral, key: string, needle: string, items: Item[]) {
+  const dir = join(a.fakeGh().dir, 'search');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${key}.match`), needle);
+  writeFileSync(join(dir, `${key}.json`), JSON.stringify({ data: { search: { issueCount: items.length, nodes: items.map(node) } } }));
 }
 
 const link = (page: Page, name: RegExp) => page.getByRole('navigation').getByRole('link', { name });

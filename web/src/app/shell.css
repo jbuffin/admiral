@@ -528,7 +528,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .flotilla { display: flex; gap: 8px; overflow-x: auto; padding: 0 0 10px; }
 .chip { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: var(--shape-min-touch-target); max-width: 100%; padding: 0 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); color: var(--color-text2); }
 .chip:disabled { color: var(--color-muted); cursor: default; }
-.chip[aria-checked='true'] { border-color: var(--color-accent); color: var(--color-text); font-weight: 600; background: var(--color-sel); }
+.chip[aria-checked='true'], .chip[aria-pressed='true'] { border-color: var(--color-accent); color: var(--color-text); font-weight: 600; background: var(--color-sel); }
 .chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-name, .chip-state { font-size: var(--font-size-meta); font-weight: 400; color: var(--color-muted); white-space: nowrap; }
 .chip.error .chip-state { color: var(--color-err); }
@@ -1162,3 +1162,26 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .gh-labels .chip { padding-right: 0; }
 .chip-x { min-width: var(--shape-min-touch-target); min-height: var(--shape-min-touch-target); padding: 0; border: 0; background: none; color: var(--color-muted); font: inherit; cursor: pointer; }
 body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+
+.gh-views-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin-bottom: 8px; }
+.gh-views-title { flex: 1 1 16rem; display: flex; flex-direction: column; gap: 2px; }
+.gh-views-title .h2 { margin: 0; }
+.gh-newview { padding: 16px; margin-bottom: 18px; display: flex; flex-direction: column; gap: 12px; border-color: var(--color-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 12%, transparent); }
+.nv-head { display: flex; flex-direction: column; gap: 2px; }
+.nv-head .h2 { margin: 0; }
+.nv-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.nv-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.nv-key { flex: none; min-width: 5.5rem; color: var(--color-muted); font-size: var(--font-size-meta); }
+.nv-name { flex: 1 1 14rem; min-width: 0; }
+.nv-seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.nv-seg .seg-opt { cursor: pointer; background: var(--color-panel); color: var(--color-text2); font: inherit; }
+.nv-seg .seg-opt.on { background: var(--color-sel); border-color: var(--color-accent); color: var(--color-text); font-weight: 600; }
+.nv-seg .seg-opt:disabled { color: var(--color-muted); cursor: default; }
+.nv-label-field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.nv-label-field .note { flex-basis: 100%; }
+.nv-hand { color: var(--color-muted); font-size: var(--font-size-meta); }
+.nv-hand summary { display: flex; align-items: center; min-height: var(--shape-min-touch-target); background: none; border: 0; }
+.nv-search { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: var(--font-size-mono); }
+.gh-search { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; border-radius: var(--shape-radius-md); background: var(--color-sel); }
+.gh-search .vquery { flex: 1 1 14rem; min-width: 0; color: var(--color-text2); }
+.nv-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }

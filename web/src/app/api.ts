@@ -417,7 +417,7 @@ export const refreshSource = (key: string) => call<unknown>('POST', `${src(key)}
 /** Asks GitHub now whether gh is signed in; a refusal with no `connection` (the source isn't running) keeps the last one. */
 export const checkConnection = (key: string) => call<Connection>('POST', `${src(key)}/connection/check`);
 /** How many results a search has, as GitHub counts them. */
-export const countSearch = (key: string, query: string) => call<{ count: number }>('POST', `${src(key)}/search-count`, { query });
+export const countSearch = (key: string, query: string, signal?: AbortSignal) => call<{ count: number }>('POST', `${src(key)}/search-count`, { query }, undefined, { signal });
 export const fetchRepos = (key: string) => call<Repos>('GET', `${src(key)}/repos`);
 export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
 export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });

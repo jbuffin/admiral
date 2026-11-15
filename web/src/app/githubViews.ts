@@ -7,6 +7,8 @@ export interface ViewEntry {
   title?: string;
   query?: string;
   hidden?: boolean;
+  /** Names a row added this session, so its key holds still while the server's id and the saves queued on it catch up; never saved. */
+  fresh?: string;
 }
 
 export interface BuiltinView {
@@ -27,7 +29,7 @@ export const BUILTIN_VIEWS: BuiltinView[] = [
 export const isBuiltin = (e: ViewEntry) => e.builtin === true;
 
 /** A row's key: the server's id for the view, which holds still while rows move. */
-export const viewKey = (e: ViewEntry, i: number): string => e.id ?? `view-${i}`;
+export const viewKey = (e: ViewEntry, i: number): string => e.fresh ?? e.id ?? `view-${i}`;
 
 /** Runs a list change on the entry that holds `key` now, so a change made on a row still lands on it after another change moved it. */
 export const onKey = (list: ViewEntry[], key: string, change: (i: number) => ViewEntry[]): ViewEntry[] => {
@@ -60,23 +62,45 @@ const PLAIN: Record<string, string> = {
   'is:open is:pr': 'Open PRs',
 };
 
+export type Count = { n: number } | { error: string };
+
+/** What a search-count answer says; a 422 reads as a failed search, any other refusal as its own text. An aborted request says nothing. */
+export function countOutcome(r: { ok: true; data: { count: number } } | { ok: false; error: string; status?: number; aborted?: boolean }): Count | undefined {
+  if (r.ok) return { n: r.data.count };
+  if (r.aborted) return undefined;
+  return { error: r.status === 422 && !r.error.startsWith('Search failed') ? `Search failed: ${r.error}` : r.error };
+}
+
+const ROLES: Record<string, string> = {
+  'author:@me': 'you wrote',
+  'assignee:@me': 'assigned to you',
+  'mentions:@me': 'that mention you',
+  'involves:@me': 'you are involved in',
+};
+const SUFFIX: Record<string, string> = { 'draft:false': 'not drafts', '-review:approved': 'not yet approved', 'review:approved': 'approved' };
+const LABEL = /^(-?)label:"([^"]*)"$/;
+
 /** A search in plain words; the search itself when it holds a qualifier these words don't cover. */
 export function plainWords(query: string): string {
-  const q = query.trim().split(/\s+/).filter(Boolean);
-  const has = (t: string) => q.includes(t);
-  const known = new Set(['is:open', 'is:pr', 'author:@me', 'assignee:@me', 'review-requested:@me', 'draft:false', '-review:approved']);
-  if (q.length === 0 || q.some((t) => !known.has(t))) return query;
-  const open = has('is:open');
-  const pr = has('is:pr');
-  let words: string;
-  if (has('review-requested:@me')) {
-    words = `${open ? 'Open ' : ''}PRs where you are a requested reviewer`;
-    if (has('draft:false')) words += ', not drafts';
-    if (has('-review:approved')) words += ', not yet approved';
-  } else if (has('author:@me')) words = `${open ? 'Open ' : ''}${pr ? 'PRs' : 'issues and PRs'} you wrote`;
-  else if (has('assignee:@me')) words = `${open ? 'Open ' : ''}${pr ? 'PRs' : 'issues and PRs'} assigned to you`;
-  else return PLAIN[q.join(' ')] ?? query;
-  return words;
+  const q: string[] = query.trim().match(/(?:[^\s"]|"[^"]*")+/g) ?? [];
+  const roles = q.filter((t) => t === 'review-requested:@me' || t in ROLES);
+  const rest = q.filter((t) => !roles.includes(t) && !t.startsWith('is:'));
+  if (q.length === 0 || roles.length > 1 || q.some((t) => t.startsWith('is:') && !['is:open', 'is:pr', 'is:issue'].includes(t))) return query;
+  const open = q.includes('is:open');
+  const pr = q.includes('is:pr');
+  if (q.includes('is:issue') && q.some((t) => t === 'review-requested:@me' || t === 'draft:false' || t.endsWith('review:approved'))) return query;
+  if (pr && q.includes('is:issue')) return query;
+  const subject = pr ? 'PRs' : q.includes('is:issue') ? 'issues' : 'issues and PRs';
+  if (roles.length === 0) return rest.length === 0 ? (PLAIN[q.join(' ')] ?? query) : query;
+  const suffixes: string[] = [];
+  for (const t of rest) {
+    const label = LABEL.exec(t);
+    if (SUFFIX[t]) suffixes.push(SUFFIX[t]);
+    else if (label) suffixes.push(`${label[1] ? 'not ' : ''}labelled "${label[2]}"`);
+    else return query;
+  }
+  const lead = roles[0] === 'review-requested:@me' ? 'PRs where you are a requested reviewer' : `${subject} ${ROLES[roles[0]]}`;
+  return [`${open ? 'Open ' : ''}${lead}`, ...suffixes].join(', ');
 }
 
 export function moveView(list: ViewEntry[], from: number, to: number): ViewEntry[] {
@@ -108,7 +132,7 @@ export function forSave(list: ViewEntry[]): ViewEntry[] {
       const { query: _q, ...entry } = rest;
       return entry;
     }
-    const { id: _id, ...entry } = rest;
+    const { id: _id, fresh: _f, ...entry } = rest;
     return entry;
   });
 }
