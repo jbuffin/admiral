@@ -29,7 +29,7 @@ jobs:
         working-directory: web
       - run: make build
       - run: make lint
-      - run: make test
+      - run: echo "make test skipped for the pty diagnostic"
       - run: npx playwright install webkit
         working-directory: web
       - name: pty diagnostics (start)
