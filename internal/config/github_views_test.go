@@ -30,9 +30,8 @@ func TestMigrateReadsAnOldPanelOrderThroughTheIDsThatMoved(t *testing.T) {
 		t.Errorf("ViewMoves = %+v, want %+v", m.ViewMoves, want)
 	}
 
-	m.RoutinesMoved = 2
-	if _, body := m.Notice(); !strings.Contains(body, "2 routine(s)") {
-		t.Errorf("the notice does not count the routines it pointed at the new id:\n%s", body)
+	if _, body := m.Notice(); !strings.Contains(body, "got a new id") {
+		t.Errorf("the notice does not say a custom view got a new id:\n%s", body)
 	}
 }
 

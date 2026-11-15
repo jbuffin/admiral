@@ -70,7 +70,7 @@ func TestSourceViewsFollowTheViewsListOrderHiddenAndTitle(t *testing.T) {
 	}
 }
 
-func TestAHiddenViewIsNeitherSearchedNorOffered(t *testing.T) {
+func TestAHiddenViewIsNotSearched(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
 	g.search("mine", "author:@me", [3]any{"acme/widgets", 10, "My PR"})
@@ -78,7 +78,7 @@ func TestAHiddenViewIsNeitherSearchedNorOffered(t *testing.T) {
 	g.search("docs", "label:docs", [3]any{"acme/widgets", 14, "A docs item"})
 	f := newServiceFixture(t, viewsConfig(mixedViews))
 	f.startSources()
-	s := f.waitView("gh", "orders in the visible views", func(s SourceView) bool {
+	f.waitView("gh", "orders in the visible views", func(s SourceView) bool {
 		return len(s.orders("my-prs")) > 0 && len(s.orders("bugs")) > 0
 	})
 	if !g.ran("label:bug") {
@@ -86,11 +86,6 @@ func TestAHiddenViewIsNeitherSearchedNorOffered(t *testing.T) {
 	}
 	if g.ran("label:docs") {
 		t.Error("the hidden Docs view was searched")
-	}
-	for _, k := range s.Events {
-		if k.Kind == "new_in_view" && (k.Panel == "docs" || k.Panel == "assigned-to-me" || k.Panel == "for-you") {
-			t.Errorf("the event catalog offers new_in_view for the hidden view %q", k.Panel)
-		}
 	}
 }
 

@@ -42,13 +42,10 @@ type Migration struct {
 	// AutopilotObject is set when the top-level autopilot object went (its
 	// max_ships moved to the top level).
 	AutopilotObject bool
-	GitHub          bool // an old GitHub plugin source became built in, on every fleet
-	GitHubCustom    bool // and it had custom views, which the default views now sit beside
-	GitHubViews     bool // a GitHub source's views list gained the built-in views
-	// ViewMoves are the custom views whose ids changed with it; the caller points routines at the new ids.
-	ViewMoves []ViewIDMove
-	// RoutinesMoved is how many routines the caller pointed at a new id, for the notice.
-	RoutinesMoved int
+	GitHub          bool         // an old GitHub plugin source became built in, on every fleet
+	GitHubCustom    bool         // and it had custom views, which the default views now sit beside
+	GitHubViews     bool         // a GitHub source's views list gained the built-in views
+	ViewMoves       []ViewIDMove // the custom views whose ids changed with it
 	// Chat is set when the top-level chat key went. ChatFleet is the fleet whose own chat
 	// settings it went onto, empty when nothing moved: ChatUnreadable says the key could
 	// not be read, else the file had no fleet to take it.
@@ -551,9 +548,6 @@ func (m *Migration) Notice() (title, body string) {
 		b.WriteString("\n- GitHub's built-in views are now in its views list, where you can hide, rename and reorder them.")
 		if len(m.ViewMoves) > 0 {
 			b.WriteString(" A custom view named like a built-in one got a new id, so it sits beside the built-in.")
-			if m.RoutinesMoved > 0 {
-				fmt.Fprintf(&b, " %d routine(s) that watched such a view now watch it under its new id.", m.RoutinesMoved)
-			}
 		}
 	}
 	if m.Chat {
