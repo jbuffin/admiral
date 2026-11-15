@@ -1105,3 +1105,23 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .fix-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--color-needs-line); background: var(--color-needs-bg); border-radius: var(--shape-radius-md); }
 .fix-bar .fb-text { flex: 1 1 220px; min-width: 0; font-size: var(--font-size-meta); color: var(--color-text); }
 .stack-bar .fix-line { flex: 1 1 220px; min-width: 0; color: var(--color-text); }
+
+/* Make campaign sheet: a dialog on iPad, a bottom sheet on the phone. */
+.campaign-backdrop { justify-content: center; }
+.campaign-backdrop .sheet { display: flex; flex-direction: column; max-height: 92dvh; max-width: 100%; box-sizing: border-box; overflow: hidden; }
+.campaign-sheet { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.campaign-body { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 2px 2px 8px; }
+.campaign-body > * { min-width: 0; max-width: 100%; }
+.campaign-tag { margin-left: 6px; font-style: normal; font-size: var(--font-size-meta); color: var(--color-text2); }
+.campaign-subs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.campaign-subs li { display: flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); padding: 0 4px 0 8px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
+.campaign-subs li.dragging { opacity: 0.5; }
+.campaign-grip { color: var(--color-muted); cursor: grab; }
+.campaign-sub { display: flex; flex-direction: column; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.campaign-sub .mono { color: var(--color-muted); font-size: var(--font-size-meta); }
+.campaign-up { display: inline-flex; transform: rotate(180deg); }
+.campaign-backdrop .launch-foot .btn { min-height: var(--shape-min-touch-target); }
+@media (min-width: 641px) {
+  .campaign-backdrop { align-items: center; }
+  .campaign-backdrop .sheet { width: 600px; border-radius: var(--shape-radius-lg); }
+}

@@ -3,6 +3,9 @@ import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 
 const ITEMS = '[role="menuitemradio"], [role="menuitem"], a';
 
+// An arrow key in a field moves its caret or option, so the list keys leave it.
+const EDITABLE = 'input, textarea, select, [contenteditable]';
+
 export function useListKeys(ref: RefObject<HTMLElement | null>, active: boolean, onEscape: () => void) {
   useLayoutEffect(() => {
     if (!active) return;
@@ -11,6 +14,7 @@ export function useListKeys(ref: RefObject<HTMLElement | null>, active: boolean,
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') return onEscape();
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      if ((e.target as Element | null)?.closest?.(EDITABLE)) return;
       e.preventDefault();
       const list = items();
       const i = list.indexOf(document.activeElement as HTMLElement);
