@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetSearch } from './fleets';
 import { Icon } from './Icon';
 import { OrderPane } from './OrderPane';
-import { selectedRow, withSelectedOrder } from './orderDetail';
+import { selectedRow, selectionGone, withSelectedOrder } from './orderDetail';
 import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
@@ -164,15 +164,38 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const selected = selectedRow(list, id, loc.value.search, now);
   const chosen = selected?.key;
   const onOpen = (r: OrderRow) => go('/app/orders', withSelectedOrder(loc.value.search, r.key));
-  const close = () => go('/app/orders', withSelectedOrder(loc.value.search, null), true);
+  const close = (restoreFocus = false) => {
+    // The pane unmounts with the focus in it; the row's button is the same element before and after.
+    const row = restoreFocus ? document.querySelector<HTMLElement>('.orow-open[aria-pressed="true"]') : null;
+    go('/app/orders', withSelectedOrder(loc.value.search, null), true);
+    row?.focus();
+  };
   const pane = !!selected;
-  // Escape belongs to the Launch form while it is open; reading the DOM at the keypress avoids a gap before an effect catches up with the form closing.
+  const gone = selectionGone(list, id, loc.value.search, now);
   useEffect(() => {
-    if (!pane || phone) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !document.querySelector('[aria-modal="true"]') && close();
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [pane, phone]);
+    if (gone) close();
+  }, [gone]);
+  // The listener lives as long as the panel and reads refs, so it is there the moment the pane renders, before any effect could attach it.
+  // It listens in the capture phase: the Launch form's own Escape closes it and re-renders before a bubbling listener would run, so the flag would already be clear.
+  const state = useRef({ pane: false, launching: false });
+  state.current = { pane: pane && !phone, launching: !!launching };
+  // Whether the Escape being handled began with the Launch form open; the phone sheet reads it, as it closes on the same key after the form is gone.
+  const formHadEscape = useRef(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      formHadEscape.current = e.key === 'Escape' && state.current.launching;
+      if (e.key !== 'Escape' || e.defaultPrevented || !state.current.pane || state.current.launching) return;
+      if (e.target instanceof Element && e.target.closest('[aria-modal="true"], [role="menu"]')) return;
+      close(true);
+    };
+    const onKeyUp = () => (formHadEscape.current = false);
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('keyup', onKeyUp, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('keyup', onKeyUp, true);
+    };
+  }, []);
   const age = time ? refreshedLine(time, now) : '';
   const name = sourceName(list, id);
   const sourceLine = [name, age].filter(Boolean).join(' · ');
@@ -241,12 +264,12 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
         </main>
         {selected && !phone ? (
           <aside class="odetail-pane" aria-label="Selected order">
-            <OrderPane key={selected.key} row={selected} sources={list} now={now} heading onLaunch={onLaunch} onClose={close} />
+            <OrderPane key={selected.key} row={selected} sources={list} now={now} heading onLaunch={onLaunch} onClose={() => close(true)} />
           </aside>
         ) : null}
       </div>
       {selected && phone ? (
-        <Sheet label={selected.order.title} kind="order-sheet" onClose={() => !launching && close()}>
+        <Sheet label={selected.order.title} kind="order-sheet" onClose={() => !launching && !formHadEscape.current && close()}>
           <OrderPane key={selected.key} row={selected} sources={list} now={now} heading={false} onLaunch={onLaunch} />
         </Sheet>
       ) : null}

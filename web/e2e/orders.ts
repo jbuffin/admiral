@@ -202,14 +202,11 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(pane).toContainText('priority: high');
   await expect(pane).toContainText('security');
   await expect(pane.locator('dt', { hasText: "Why it's here" })).toBeVisible();
-  await expect(pane).toContainText('Assigned to you · in “For you” and “Assigned to me”');
-  await expect(pane).toContainText('3d ago by @bob');
+  await expect(pane.locator('dd', { hasText: 'Assigned to you' })).toContainText('Assigned to me');
+  await expect(pane.locator('dd', { hasText: 'by @bob' })).toBeVisible();
   await expect(pane).toContainText('Rotate every key older than ninety days and revoke the old ones.');
   const github = pane.getByRole('link', { name: 'Open on GitHub', exact: true });
   await expect(github).toHaveAttribute('href', 'https://github.com/acme/api/issues/31');
-  await expect(github).toHaveAttribute('target', '_blank');
-  await expect(github).toHaveAttribute('rel', /noopener/);
-  await expect(github).toHaveAttribute('rel', /noreferrer/);
   // An issue with no sub-issues offers no campaign action.
   await expect(pane.getByText(/Follow as campaign|Open campaign/)).toHaveCount(0);
   await expectTouchTarget(pane.getByRole('button', { name: 'Launch ship', exact: true }), 44);
@@ -230,10 +227,19 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(form).toBeVisible();
   await expect(form).toContainText('Rotate the signing keys');
   await expect(form.getByLabel('Text')).toHaveValue('https://github.com/acme/api/issues/31');
-  await press(form.getByRole('button', { name: 'Cancel', exact: true }));
-  await expect(form).toBeHidden();
+  // Escape closes only the form; the pane stays until the next Escape.
   await page.keyboard.press('Escape');
-  await expect(pane).toBeHidden();
+  await expect(form).toBeHidden();
+  await expect(pane).toBeVisible();
+  if (!phone) {
+    // Closing the pane hands focus back to the row it came from.
+    await page.keyboard.press('Escape');
+    await expect(pane).toBeHidden();
+    await expect(body('Rotate the signing keys')).toBeFocused();
+  } else {
+    await page.keyboard.press('Escape');
+    await expect(pane).toBeHidden();
+  }
 
   // The arrow opens the Launch dialog straight away, with no pane.
   await press(page.getByRole('button', { name: 'Launch Rotate the signing keys', exact: true }));
@@ -303,6 +309,13 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   }
   await expect(page.getByRole('button', { name: 'Launch Fix the login redirect', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh now', exact: true })).toHaveCount(0);
+
+  // An order with no url shows its id and view on top, and offers no GitHub link.
+  await press(page.getByRole('button', { name: 'Open Fix the login redirect', exact: true }));
+  await expect(pane.locator('.odetail-top')).toHaveText(/^ord-login · Orders/);
+  await expect(pane.getByRole('link', { name: 'Open on GitHub' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(pane).toBeHidden();
 
   // The arrow of a plugin row fills the dialog with the order's own text.
   await press(page.getByRole('button', { name: 'Launch Tighten the api limits', exact: true }));

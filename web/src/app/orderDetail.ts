@@ -1,6 +1,6 @@
 import type { Order, Source } from './api';
 import type { Campaign } from './campaign';
-import { forYou, identity, viewRows, type OrderRow } from './ordersView';
+import { forYou, identity, orderRef, viewRows, type OrderRow } from './ordersView';
 import { shipAge } from './shipList';
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -37,10 +37,17 @@ export function campaignAction(order: Order, campaigns: Campaign[]): CampaignAct
   return hit ? { kind: 'open', id: hit.id, fleet: hit.fleet } : { kind: 'follow', url: order.url };
 }
 
-/** The Ships link's words; empty when nothing needs you. */
-export function forYouLinkText(sources: Source[], now: number): string {
-  const n = forYou(sources, now).needsYou.length;
-  return n > 0 ? `${n} for you →` : '';
+/** The pane's top line: the repo reference for an order with a url, else its id and the view it came from. */
+export function topLine(sources: Source[], source: string, order: Order): string {
+  if (order.url) return orderRef(order);
+  const id = identity(source, order);
+  const view = sources.flatMap((s) => s.views.filter((v) => v.orders.some((o) => identity(s.key, o) === id))).at(0);
+  return [order.id, view?.title].filter(Boolean).join(' · ');
+}
+
+/** The Ships link's words for a Needs you count; empty when nothing needs you. */
+export function forYouLinkText(needsYou: number): string {
+  return needsYou > 0 ? `${needsYou} for you →` : '';
 }
 
 export const selectedOrderOf = (search: string): string | null => new URLSearchParams(search).get('order') || null;
@@ -56,4 +63,9 @@ export function withSelectedOrder(search: string, key: string | null): string {
 export function selectedRow(sources: Source[], tabId: string, search: string, now: number): OrderRow | undefined {
   const key = selectedOrderOf(search);
   return key ? viewRows(sources, tabId, now).find((r) => r.key === key) : undefined;
+}
+
+/** True once sources have loaded and the URL's order is no longer in the tab; while they are still empty a reload keeps its selection. */
+export function selectionGone(sources: Source[], tabId: string, search: string, now: number): boolean {
+  return sources.length > 0 && selectedOrderOf(search) !== null && !selectedRow(sources, tabId, search, now);
 }

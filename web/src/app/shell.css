@@ -1034,16 +1034,17 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .odetail-launch { min-height: var(--shape-min-touch-target); justify-content: center; }
 .odetail-act { padding: 0; border: 0; background: none; font: inherit; color: var(--color-accent); cursor: pointer; text-decoration: underline; }
 .odetail-close { width: 32px; height: 32px; font-size: 20px; color: var(--color-muted); }
-@media (pointer: coarse) { .odetail-act { display: inline-flex; align-items: center; min-height: var(--shape-min-touch-target); } .odetail-close { width: var(--shape-min-touch-target); height: var(--shape-min-touch-target); } }
+/* The 44px hit area of an inline action spills over the row's gap instead of growing the row, so it stays level with its label. */
+@media (pointer: coarse) { .odetail-act { display: inline-flex; align-items: center; min-height: var(--shape-min-touch-target); } .odetail-facts .odetail-act { margin-block: -13px; vertical-align: baseline; } .odetail-close { width: var(--shape-min-touch-target); height: var(--shape-min-touch-target); } }
 .order-sheet .sheet { max-height: 85dvh; overflow: auto; box-sizing: border-box; }
 .order-sheet .odetail { padding: 8px 10px; min-height: 0; }
 .orow-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; align-self: stretch; text-align: left; color: inherit; font: inherit; }
 .orow.selected, .orow-phone.selected { background: var(--color-hover); box-shadow: inset 3px 0 0 var(--color-accent); }
 .for-you-link { display: inline-block; margin: 0 0 12px; color: var(--color-muted); font-size: var(--font-size-meta); }
 @media (pointer: coarse) { .for-you-link { min-height: var(--shape-min-touch-target); line-height: var(--shape-min-touch-target); } }
-/* Beside the 340px pane a narrow list keeps title and ref; labels, reason and state word are in the pane. */
+/* Beside the 340px pane a narrow list keeps title, ref and state word; labels and reason are in the pane. */
 @media (max-width: 1100px) {
-  .orders-split.has-pane .orow-label, .orders-split.has-pane .orow-state, .orders-split.has-pane .orow-meta > span:not(.mono) { display: none; }
+  .orders-split.has-pane .orow-label, .orders-split.has-pane .orow-meta > span:not(.mono) { display: none; }
   .orders-split.has-pane .orders-filter { width: auto; flex: 1 1 140px; min-width: 0; }
   .orders-split.has-pane .orders-head { padding: 16px 14px 12px; }
 }

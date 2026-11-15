@@ -13,7 +13,6 @@ import { MooredActions } from './MooredActions';
 import { MooredPRs } from './MooredPRs';
 import { LaunchForm } from './LaunchDialog';
 import { forYouLinkText } from './orderDetail';
-import { sourcesForFleet } from './launchForm';
 import { watchPresence } from './presence';
 import { ToastRegion } from './ToastRegion';
 import { ships, shipsLink, shipsLoaded, sources } from './shipsLink';
@@ -33,7 +32,7 @@ import { holdFireBanner } from './routines';
 import { campaignOf, crewOf, go, loc, routineCreating, routineOf, shipPath, shipSession, standingOrdersTab, surfaceOf, surfacePath } from './router';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
 import { ChatPanel } from './ChatPanel';
-import { NeedsYouBadge, OrdersPanel } from './OrdersScreen';
+import { NeedsYouBadge, OrdersPanel, needsYouCount } from './OrdersScreen';
 import { InboxPanel } from './InboxPanel';
 import { watchAttention } from './attention';
 import { watchPush } from './pushLink';
@@ -180,7 +179,7 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
     </button>
   ) : null;
   const form = launching && fleet ? <LaunchForm fleet={fleet} onClose={() => setLaunching(false)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null;
-  const forYouText = fleet ? forYouLinkText(sourcesForFleet(sources.value, fleet.key), Date.now()) : '';
+  const forYouText = forYouLinkText(needsYouCount());
   const forYouLink = forYouText ? (
     <a
       class="for-you-link"

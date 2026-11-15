@@ -2456,7 +2456,8 @@ export async function myPRsMergeACarriedPR(page: Page, a: Admiral, opts: { phone
     .poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
     .not.toBe('moored');
   expect(mergeCalls(a), 'one merge').toHaveLength(1);
-  // Whether the pane stays or the refresh removes the order, a merged PR is never offered for merge again.
+  // The fake source still lists the PR, so the pane stays and says it merged, with no Merge offered again.
+  await expect(pane.getByText('Merged', { exact: true })).toBeVisible();
   await expect(pane.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Order, OrderView, Source } from './api';
 import type { Campaign } from './campaign';
-import { campaignAction, forYouLinkText, openedLine, selectedOrderOf, selectedRow, whyItsHere, withSelectedOrder } from './orderDetail';
+import { campaignAction, forYouLinkText, openedLine, selectedOrderOf, selectedRow, selectionGone, topLine, whyItsHere, withSelectedOrder } from './orderDetail';
 
 const NOW = Date.parse('2026-11-14T12:00:00Z');
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -114,19 +114,25 @@ describe('the campaign action', () => {
 });
 
 describe('the "N for you →" link', () => {
-  const needsYou = (n: number) => Array.from({ length: n }, (_, i) => order(`acme/api#${i + 1}`, { pr: pr(), reviewed_since_push: false, author: 'alice' }));
+  it('says the count', () => {
+    expect(forYouLinkText(3)).toBe('3 for you →');
+  });
+  it('is absent at zero', () => {
+    expect(forYouLinkText(0)).toBe('');
+  });
+});
 
-  it('counts For you\'s Needs you', () => {
-    expect(forYouLinkText([gh([view('review-requested', 'Review requested', needsYou(3))])], NOW)).toBe('3 for you →');
+describe('the pane\'s top line', () => {
+  it('is the repo reference for an order with a url', () => {
+    const o = order('acme/api#31');
+    expect(topLine([gh([view('assigned-to-me', 'Assigned to me', [o])])], 'gh', o)).toBe('acme/api #31');
   });
-  it('does not count Waiting on others', () => {
-    const waiting = order('acme/api#9', { pr: pr(), reviewed_since_push: true });
-    expect(forYouLinkText([gh([view('review-requested', 'Review requested', [...needsYou(2), waiting])])], NOW)).toBe('2 for you →');
+  it('is the id and the view for an order with no url, even when it has a repo', () => {
+    const o = order('ACME-7', { url: undefined, repo: 'acme/api' });
+    expect(topLine([plugin([view('mine', 'My tasks', [o])])], 'orders', o)).toBe('ACME-7 · My tasks');
   });
-  it('is absent at zero, with no GitHub source or nothing that needs you', () => {
-    expect(forYouLinkText([], NOW)).toBe('');
-    expect(forYouLinkText([plugin([view('open', 'Open', needsYou(2))])], NOW)).toBe('');
-    expect(forYouLinkText([gh([view('review-requested', 'Review requested', [])])], NOW)).toBe('');
+  it('is the id alone when no view lists it', () => {
+    expect(topLine([plugin([])], 'orders', order('ACME-7', { url: undefined }))).toBe('ACME-7');
   });
 });
 
@@ -170,5 +176,24 @@ describe('the selected row', () => {
   });
   it('is undefined with no order in the URL', () => {
     expect(selectedRow(sources, 'for-you', '', NOW)).toBeUndefined();
+  });
+});
+
+describe('dropping a selection whose order is gone', () => {
+  const o = order('acme/api#31', { hot: true });
+  const loaded = [gh([view('assigned-to-me', 'Assigned to me', [o])])];
+  const search = '?order=gh%2Facme%2Fapi%2331';
+
+  it('keeps it while the order is listed', () => {
+    expect(selectionGone(loaded, 'for-you', search, NOW)).toBe(false);
+  });
+  it('drops it once sources have loaded and the order is gone', () => {
+    expect(selectionGone([gh([view('assigned-to-me', 'Assigned to me', [])])], 'for-you', search, NOW)).toBe(true);
+  });
+  it('keeps it while sources are still empty on first load, so a reload keeps the selection', () => {
+    expect(selectionGone([], 'for-you', search, NOW)).toBe(false);
+  });
+  it('has nothing to drop with no order in the URL', () => {
+    expect(selectionGone([gh([])], 'for-you', '', NOW)).toBe(false);
   });
 });

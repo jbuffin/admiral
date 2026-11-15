@@ -3,8 +3,8 @@ import { useState } from 'preact/hooks';
 import type { Source } from './api';
 import { campaignList, followReference } from './campaignsLink';
 import { carryingShip, reviews } from './moored';
-import { campaignAction, openedLine, whyItsHere } from './orderDetail';
-import { launchRef, orderRef, type OrderRow } from './ordersView';
+import { campaignAction, openedLine, topLine, whyItsHere } from './orderDetail';
+import { launchRef, type OrderRow } from './ordersView';
 import { Failure } from './PeekItem';
 import { ShipMerge } from './PeekMerge';
 import { campaignPath, go } from './router';
@@ -38,7 +38,7 @@ export function OrderPane({ row, sources, now, heading, onLaunch, onClose }: Pro
     <div class="odetail">
       <div class="odetail-top">
         <span class="orow-meta">
-          <span class="mono">{orderRef(o)}</span>
+          <span class="mono">{topLine(sources, row.source, o)}</span>
         </span>
         <span class="orders-spacer" />
         {webUrl(o.url) ? (
