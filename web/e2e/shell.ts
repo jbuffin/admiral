@@ -2179,9 +2179,11 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   const skillsRead = '**/launch-orders/skills?*harness=codex*';
   let answer!: () => void;
   const answered = new Promise<void>((r) => (answer = r));
-  await page.route(skillsRead, async (route) => {
-    await answered;
-    await route.continue();
+  const continued: Promise<void>[] = [];
+  await page.route(skillsRead, (route) => {
+    const go = answered.then(() => route.continue());
+    continued.push(go);
+    return go;
   });
   const held = shipPosts;
   await form.getByRole('radio', { name: /codex/i }).check();
@@ -2189,6 +2191,8 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await picker.box.press('Enter');
   expect(shipPosts, 'a pick of the last dock sends nothing while the new dock has not answered').toBe(held);
   answer();
+  // An unroute that lands before the held request goes on releases it in WebKit, and the late continue throws.
+  await Promise.all(continued);
   await page.unroute(skillsRead);
   await expect(submit).toBeEnabled();
   await expect(picker.box).toHaveValue(/^(Commodore|Just launch)$/);
