@@ -254,11 +254,10 @@ test('a GitHub source keeps its host, account and custom views, names its fleet 
   await expect(other.getByLabel(`${HOME} fleet`).first()).toBeVisible();
   await expect(other.getByRole('status').filter({ hasText: 'acme/widgets' })).toBeVisible();
   await expect(other.getByLabel('Move to fleet')).toHaveCount(0);
-  // Removing a GitHub source asks first and says this shell can't add it back.
-  await other.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(other.getByRole('group', { name: 'Remove GitHub' })).toContainText(/can.t add it back/);
-  await other.getByRole('button', { name: 'Cancel' }).click();
-  await expect(other.getByRole('group', { name: 'Remove GitHub' })).toHaveCount(0);
+  // GitHub is always present: no Restart, no Remove.
+  await expect(other.getByRole('button', { name: 'Save' })).toBeVisible();
+  await expect(other.getByRole('button', { name: 'Restart', exact: true })).toHaveCount(0);
+  await expect(other.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
   // Looking at another fleet's page leaves the shell's active fleet alone.
   expect(new URL(page.url()).search).not.toContain('fleet=alpha');
 

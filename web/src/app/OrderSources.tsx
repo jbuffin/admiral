@@ -74,19 +74,23 @@ function SourceCard({ source, version, reload, bump, restart }: { source: Source
             })} />
           </div>
         ) : null}
-        <Button label="Restart" pending={['source', source.key, 'restart']} onClick={() => run(() => restart(source.key))} />
-        {confirming ? (
-          <div class="confirm" role="group" aria-label={`Remove ${source.name || source.key}`}>
-            <span>{github ? 'Remove this GitHub source? This shell can’t add it back yet.' : 'Remove this source?'}</span>
-            <Button label="Remove source" variant="danger" pending={['source', source.key, 'remove']} onClick={async () => (await run(async () => {
-              const r = await removeSource(source.key);
-              if (r.ok) await reload();
-              return r;
-            })) || setConfirming(false)} />
-            <Button label="Cancel" onClick={() => setConfirming(false)} />
-          </div>
-        ) : (
-          <Button label="Remove" onClick={() => setConfirming(true)} />
+        {github ? null : (
+          <>
+            <Button label="Restart" pending={['source', source.key, 'restart']} onClick={() => run(() => restart(source.key))} />
+            {confirming ? (
+              <div class="confirm" role="group" aria-label={`Remove ${source.name || source.key}`}>
+                <span>Remove this source?</span>
+                <Button label="Remove source" variant="danger" pending={['source', source.key, 'remove']} onClick={async () => (await run(async () => {
+                  const r = await removeSource(source.key);
+                  if (r.ok) await reload();
+                  return r;
+                })) || setConfirming(false)} />
+                <Button label="Cancel" onClick={() => setConfirming(false)} />
+              </div>
+            ) : (
+              <Button label="Remove" onClick={() => setConfirming(true)} />
+            )}
+          </>
         )}
       </Actions>
       {error ? (

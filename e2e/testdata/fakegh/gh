@@ -12,7 +12,7 @@
 #                NAME=value lines; a variable that was not set has no line
 #   cwd          the working directory the call ran in
 #
-# It answers twelve kinds of call and nothing else (anything else exits 2):
+# It answers fourteen kinds of call and nothing else (anything else exits 2):
 #
 #   gh --version
 #
@@ -142,6 +142,19 @@
 #     NOT_FOUND, "gh: Could not resolve ..." on stderr, exit 1. With
 #     $FAKEGH_DIR/pr_batch.fail the whole call fails: that file's content on
 #     stderr, nothing on stdout, exit 1.
+#
+#   gh api graphql ...   (a bare viewer query)
+#     A query whose query= argument asks for viewer and has no search( answers
+#     {"data":{"viewer":{"login":"<$FAKEGH_DIR/viewer, default fake-viewer>"}}}.
+#     With $FAKEGH_DIR/viewer.fail it fails instead: that file's content on
+#     stderr, exit 1.
+#
+#   gh api graphql ...   (a search count)
+#     A query= argument that asks for issueCount is answered from
+#     $FAKEGH_DIR/count/ before any search/ key: a <key>.match file holds a
+#     string, and the first key (in name order) whose string appears in any
+#     argument answers with <key>.fail (stderr, exit <key>.exit, default 1) or
+#     <key>.json, printed whole. No key matches: stderr says so, exit 1.
 #
 #   gh api graphql ...   (the search)
 #     Looks for a canned search in $FAKEGH_DIR/search/: a <key>.match file
@@ -573,6 +586,46 @@ EOF2
 		fi
 		printf '{"data":{%s}}\n' "$data"
 		exit 0
+	fi
+	iscount= isviewer=
+	for a in "$@"; do
+		case "$a" in
+		query=*issueCount*) iscount=1 ;;
+		query=*viewer*) case "$a" in *"search("*) ;; *) isviewer=1 ;; esac ;;
+		esac
+	done
+	if [ -n "$isviewer" ]; then
+		if [ -e "$FAKEGH_DIR/viewer.fail" ]; then
+			cat "$FAKEGH_DIR/viewer.fail" >&2
+			exit 1
+		fi
+		viewer=fake-viewer
+		[ -s "$FAKEGH_DIR/viewer" ] && viewer=$(cat "$FAKEGH_DIR/viewer")
+		printf '{"data":{"viewer":{"login":"%s"}}}\n' "$viewer"
+		exit 0
+	fi
+	if [ -n "$iscount" ]; then
+		for m in "$FAKEGH_DIR"/count/*.match; do
+			[ -e "$m" ] || continue
+			key=${m%.match}
+			needle=$(cat "$m")
+			for a in "$@"; do
+				case "$a" in
+				*"$needle"*)
+					if [ -e "$key.fail" ]; then
+						cat "$key.fail" >&2
+						code=1
+						[ -s "$key.exit" ] && code=$(cat "$key.exit")
+						exit "$code"
+					fi
+					cat "$key.json"
+					exit 0
+					;;
+				esac
+			done
+		done
+		echo "fakegh: no canned count matches this call" >&2
+		exit 1
 	fi
 	for m in "$FAKEGH_DIR"/search/*.match; do
 		[ -e "$m" ] || continue

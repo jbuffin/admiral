@@ -108,8 +108,17 @@ type Stack struct {
 	Size     int
 }
 
+// The two ways a SignInError can come about.
+const (
+	KindSignedOut = "signed_out"
+	KindGHMissing = "gh_missing"
+)
+
 // SignInError means gh is missing or signed out, as opposed to a search that failed.
-type SignInError struct{ Message string }
+type SignInError struct {
+	Message string
+	Kind    string // KindSignedOut or KindGHMissing
+}
 
 func (e *SignInError) Error() string { return e.Message }
 
@@ -150,7 +159,7 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 	var token string
 	switch {
 	case errors.Is(err, exec.ErrNotFound):
-		return "", &SignInError{"Install the GitHub CLI (brew install gh), then run gh auth login"}
+		return "", &SignInError{Message: "Install the GitHub CLI (brew install gh), then run gh auth login", Kind: KindGHMissing}
 	case ctx.Err() != nil: // the caller gave up: neither a sign-out nor a failure
 		return "", ctx.Err()
 	case errors.Is(err, errTimeout): // a locked keychain, say: not a sign-out
@@ -159,7 +168,7 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 		token = strings.TrimSpace(out)
 	}
 	if token == "" {
-		return "", &SignInError{"Run gh auth login -h " + c.host}
+		return "", &SignInError{Message: "Run gh auth login -h " + c.host, Kind: KindSignedOut}
 	}
 	return token, nil
 }
@@ -187,45 +196,10 @@ func (c *Client) search(ctx context.Context, token, query, gql, actorKind string
 	if !hasSort.MatchString(query) {
 		query += " sort:updated-desc"
 	}
-	out, stderr, err := c.gh(ctx, []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + gql, "-f", "q=" + query}, c.tokenVar(), token)
-	if err != nil && ctx.Err() != nil {
-		return nil, "", ctx.Err()
+	data, err := c.runQuery(ctx, token, gql, true, "q="+query)
+	if err != nil {
+		return nil, "", err
 	}
-	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, errTimeout) {
-		return nil, "", c.unreachableErr()
-	}
-	if err != nil && !onlyOptionalErrors(out) {
-		msg := redact(strings.TrimSpace(stderr), token)
-		for _, m := range unreachable {
-			if strings.Contains(msg, m) {
-				return nil, "", c.unreachableErr()
-			}
-		}
-		if msg = strings.TrimPrefix(msg, "gh: "); msg == "" {
-			msg = "gh exited"
-			if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
-				msg = fmt.Sprintf("gh exited with status %d", ee.ExitCode())
-			}
-		}
-		return nil, "", fmt.Errorf("Search failed: %s", msg)
-	}
-	var body any
-	if json.Unmarshal([]byte(out), &body) != nil {
-		return nil, "", errors.New("Search failed: GitHub's answer was not JSON")
-	}
-	obj, _ := body.(map[string]any)
-	if obj == nil {
-		return nil, "", errNotUnderstood
-	}
-	if errs, _ := obj["errors"].([]any); len(errs) > 0 && !onlyOptionalErrors(out) {
-		first, _ := errs[0].(map[string]any)
-		msg, _ := first["message"].(string)
-		if msg == "" {
-			msg = "unknown error"
-		}
-		return nil, "", fmt.Errorf("Search failed: %s", redact(msg, token))
-	}
-	data, _ := obj["data"].(map[string]any)
 	search, _ := data["search"].(map[string]any)
 	nodes, ok := search["nodes"].([]any)
 	if !ok {
@@ -245,9 +219,119 @@ func (c *Client) search(ctx context.Context, token, query, gql, actorKind string
 	return items, login, nil
 }
 
+const countQuery = "query($q: String!) { search(query: $q, type: ISSUE_ADVANCED, first: 1) { issueCount } }"
+
+// Count is GitHub's total for a search (its issueCount), not the capped list Search returns.
+func (c *Client) Count(ctx context.Context, token, query string) (int, error) {
+	data, err := c.runQuery(ctx, token, countQuery, false, "q="+query)
+	if err != nil {
+		return 0, err
+	}
+	search, _ := data["search"].(map[string]any)
+	n, ok := search["issueCount"].(float64)
+	if !ok {
+		return 0, errNotUnderstood
+	}
+	return int(n), nil
+}
+
+// Viewer is who the token signs in as, asked without a search.
+func (c *Client) Viewer(ctx context.Context, token string) (string, error) {
+	data, err := c.runQuery(ctx, token, "query { viewer { login } }", false)
+	if err != nil {
+		return "", err
+	}
+	viewerObj, _ := data["viewer"].(map[string]any)
+	login, _ := viewerObj["login"].(string)
+	if login == "" {
+		return "", errNotUnderstood
+	}
+	return login, nil
+}
+
+// runQuery runs one query with gh and returns its data object. fields are further -f name=value pairs.
+func (c *Client) runQuery(ctx context.Context, token, gql string, optional bool, fields ...string) (map[string]any, error) {
+	args := []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + gql}
+	for _, f := range fields {
+		args = append(args, "-f", f)
+	}
+	out, stderr, err := c.gh(ctx, args, c.tokenVar(), token)
+	if err != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, errTimeout) {
+		return nil, c.unreachableErr()
+	}
+	if err != nil && !(optional && onlyOptionalErrors(out)) {
+		msg := redact(strings.TrimSpace(stderr), token)
+		for _, m := range unreachable {
+			if strings.Contains(msg, m) {
+				return nil, c.unreachableErr()
+			}
+		}
+		if msg = strings.TrimPrefix(msg, "gh: "); msg == "" {
+			msg = "gh exited"
+			if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
+				msg = fmt.Sprintf("gh exited with status %d", ee.ExitCode())
+			}
+		}
+		return nil, refusal(msg)
+	}
+	var body any
+	if json.Unmarshal([]byte(out), &body) != nil {
+		return nil, errors.New("Search failed: GitHub's answer was not JSON")
+	}
+	obj, _ := body.(map[string]any)
+	if obj == nil {
+		return nil, errNotUnderstood
+	}
+	if errs, _ := obj["errors"].([]any); len(errs) > 0 && !(optional && onlyOptionalErrors(out)) {
+		first, _ := errs[0].(map[string]any)
+		msg, _ := first["message"].(string)
+		if msg == "" {
+			msg = "unknown error"
+		}
+		return nil, refusal(redact(msg, token))
+	}
+	data, _ := obj["data"].(map[string]any)
+	if data == nil {
+		return nil, errNotUnderstood
+	}
+	return data, nil
+}
+
+// refusalError is GitHub or gh turning a query down; BadCredentials is a 401, a token GitHub no longer accepts.
+type refusalError struct {
+	msg            string
+	badCredentials bool
+}
+
+func (e *refusalError) Error() string { return e.msg }
+
+func refusal(msg string) error {
+	low := strings.ToLower(msg)
+	return &refusalError{"Search failed: " + msg, strings.Contains(low, "bad credentials") || strings.Contains(low, "http 401")}
+}
+
+// IsBadCredentials says GitHub refused the token itself, as a revoked or expired one is.
+func IsBadCredentials(err error) bool {
+	var r *refusalError
+	return errors.As(err, &r) && r.badCredentials
+}
+
 var errNotUnderstood = errors.New("Search failed: GitHub's answer was not understood")
 
-func (c *Client) unreachableErr() error { return fmt.Errorf("Couldn't reach %s", c.host) }
+type unreachableError struct{ host string }
+
+func (e *unreachableError) Error() string { return "Couldn't reach " + e.host }
+
+// IsUnreachable says err is a call that failed on the network or a timeout, not a refusal or a sign-out.
+func IsUnreachable(err error) bool {
+	var u *unreachableError
+	return errors.As(err, &u)
+}
+
+func (c *Client) unreachableErr() error { return &unreachableError{c.host} }
 
 // redact hides token in text that may reach the screen.
 func redact(text, token string) string {
