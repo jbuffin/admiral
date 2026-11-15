@@ -477,3 +477,57 @@ func TestShipSkillsComeFromItsOwnHarnessAndCheckout(t *testing.T) {
 		}
 	}
 }
+
+func TestLaunchSkillsAnswerDescriptionsAndTheDocksMark(t *testing.T) {
+	f := newFixture(t)
+	ids := t.TempDir()
+	t.Setenv("HOME", filepath.Join(ids, "home"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(ids, "claude"))
+	t.Setenv("CODEX_HOME", filepath.Join(ids, "codex"))
+	full := f.repo("full")
+	for _, root := range []string{filepath.Join(ids, "claude", "skills"), filepath.Join(ids, "codex", "skills")} {
+		writeSkillMD(t, root, "tdd", "Test-driven development.")
+		if err := os.MkdirAll(filepath.Join(root, "bare"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "bare", "SKILL.md"), []byte("# bare\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type answer struct {
+		Mark   string           `json:"mark"`
+		Skills []map[string]any `json:"skills"`
+	}
+	get := func(harness, dir string) (int, string, answer) {
+		code, body := f.do(http.MethodGet, "/api/launch-orders/skills?"+url.Values{"fleet": {"work"}, "harness": {harness}, "dir": {dir}}.Encode(), nil)
+		var a answer
+		_ = json.Unmarshal([]byte(body), &a)
+		return code, body, a
+	}
+	if code, body := f.do(http.MethodPut, "/api/favorites", map[string]any{"skills": []string{"tdd"}}); code != http.StatusOK {
+		t.Fatalf("PUT favorites = %d %s", code, body)
+	}
+	for harness, mark := range map[string]string{"claude": "/", "codex": "$"} {
+		code, body, a := get(harness, full)
+		if code != http.StatusOK || a.Mark != mark {
+			t.Errorf("%s dock: %d %s, want mark %q", harness, code, body, mark)
+		}
+		want := []map[string]any{{"name": "bare", "description": "", "favorite": false}, {"name": "tdd", "description": "Test-driven development.", "favorite": true}}
+		if !reflect.DeepEqual(a.Skills, want) {
+			t.Errorf("%s dock skills = %v, want %v", harness, a.Skills, want)
+		}
+	}
+}
+
+func TestLaunchSkillsOnADirWithNoSkillsAnswersAnEmptyList(t *testing.T) {
+	f := newFixture(t)
+	ids := t.TempDir()
+	t.Setenv("HOME", filepath.Join(ids, "home"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(ids, "claude"))
+	t.Setenv("CODEX_HOME", filepath.Join(ids, "codex"))
+	dir := f.repo("none")
+	code, body := f.do(http.MethodGet, "/api/launch-orders/skills?"+url.Values{"fleet": {"work"}, "harness": {"claude"}, "dir": {dir}}.Encode(), nil)
+	if code != http.StatusOK || !strings.Contains(body, `"skills":[]`) || !strings.Contains(body, `"mark":"/"`) {
+		t.Errorf("skills on a dir with none = %d %s, want \"skills\":[] and mark /", code, body)
+	}
+}

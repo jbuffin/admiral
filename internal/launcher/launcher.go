@@ -625,6 +625,14 @@ func CheckSkill(s Skill) error {
 	return err
 }
 
+// TrimSkillMark drops one leading / or $ from a typed skill name, not both.
+func TrimSkillMark(name string) string {
+	if strings.HasPrefix(name, "/") || strings.HasPrefix(name, "$") {
+		return name[1:]
+	}
+	return name
+}
+
 // skillName is the skill's name without its / or $ prefix; "" for Just launch
 // and for Commodore, whose name Launch looks up in the skill index.
 func skillName(s Skill) (string, error) {
@@ -632,10 +640,7 @@ func skillName(s Skill) (string, error) {
 	case "commodore", "none":
 		return "", nil
 	case "skill":
-		name := s.Name
-		if strings.HasPrefix(name, "/") || strings.HasPrefix(name, "$") {
-			name = name[1:] // one prefix, not both
-		}
+		name := TrimSkillMark(s.Name)
 		if name == "" {
 			return "", refuse(http.StatusBadRequest, "skill name is empty")
 		}

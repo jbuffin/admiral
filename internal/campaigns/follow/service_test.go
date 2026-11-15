@@ -815,3 +815,110 @@ func TestLaunchASliceAlreadyHeldByAShipIsRefusedNamingTheShip(t *testing.T) {
 		t.Errorf("Launch called %d times, want only the first slice", len(got))
 	}
 }
+
+func launchWith(child int, skill any) map[string]any {
+	b := map[string]any{"child_url": issURL(child), "harness": "claude", "dir": "/work/x"}
+	if skill != nil {
+		b["skill"] = skill
+	}
+	return b
+}
+
+func TestLaunchWithAPickedSkillRunsItForThatLaunchOnly(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	if code, body := r.launch(c.ID, launchWith(21, map[string]string{"kind": "skill", "name": "tdd"})); code != http.StatusCreated {
+		t.Fatalf("launch = %d %s, want 201", code, body)
+	}
+	got := r.launches()
+	if len(got) != 1 || got[0].Skill.Kind != "skill" || got[0].Skill.Name != "tdd" || got[0].Text != issURL(21) {
+		t.Fatalf("launches = %+v, want one on skill tdd with the ticket URL as text", got)
+	}
+	n := r.get(c.ID).Root.find(21)
+	if n.Skill.Kind != "commodore" || n.Overridden {
+		t.Errorf("child 21 after the launch = skill %+v overridden %v, want Commodore and no override saved", n.Skill, n.Overridden)
+	}
+}
+
+func TestLaunchWithTheChildsOwnSkillKeepsItsSavedArgs(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	saved := r.get(c.ID).Root.find(24).Skill.Args
+	if saved == "" {
+		t.Fatal("child 24 has no saved args, the fixture changed")
+	}
+	r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(21), "mode": "without-you", "skill": map[string]string{"kind": "commodore", "name": "x", "args": "do the thing"}})
+	for _, tc := range []struct {
+		name  string
+		child int
+		skill map[string]string
+		text  string
+	}{
+		{"its own skill, sent as the picker lists it", 24, map[string]string{"kind": "skill", "name": "wayfinder"}, saved},
+		{"its own skill with a leading slash", 24, map[string]string{"kind": "skill", "name": "/wayfinder"}, saved},
+		{"commodore over an override that stores a name", 21, map[string]string{"kind": "commodore"}, "do the thing"},
+	} {
+		if code, body := r.launch(c.ID, launchWith(tc.child, tc.skill)); code != http.StatusCreated {
+			t.Fatalf("%s: launch = %d %s", tc.name, code, body)
+		}
+		got := r.launches()
+		if last := got[len(got)-1]; last.Text != tc.text {
+			t.Errorf("%s: text = %q, want %q", tc.name, last.Text, tc.text)
+		}
+	}
+}
+
+func TestLaunchWithAnotherSkillDropsTheSavedArgs(t *testing.T) {
+	for _, name := range []string{"tdd", "/$wayfinder"} {
+		r := newRig(t, fixtureTree())
+		c := r.follow(rootURL)
+		if code, body := r.launch(c.ID, launchWith(24, map[string]string{"kind": "skill", "name": name})); code != http.StatusCreated {
+			t.Fatalf("%s: launch = %d %s", name, code, body)
+		}
+		got := r.launches()
+		if len(got) != 1 || got[0].Skill.Name != name || got[0].Text != issURL(24) {
+			t.Errorf("%s: launches = %+v, want that skill with only the ticket URL, not the wayfinder args", name, got)
+		}
+	}
+}
+
+func TestLaunchWithNoSkillIsJustLaunch(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	if code, body := r.launch(c.ID, launchWith(21, map[string]string{"kind": "none"})); code != http.StatusCreated {
+		t.Fatalf("launch = %d %s", code, body)
+	}
+	got := r.launches()
+	if len(got) != 1 || got[0].Skill.Kind != "none" || got[0].Text != "Issue 21 "+issURL(21) {
+		t.Errorf("launches = %+v, want skill none with the title and URL as text", got)
+	}
+}
+
+func TestLaunchRefusesABadSkillBeforeLaunching(t *testing.T) {
+	r := newRig(t, sliceTree())
+	c := r.follow(rootURL)
+	slice := sliceBody(31, 32)
+	slice["skill"] = map[string]string{"kind": "commodore"}
+	for _, tc := range []struct {
+		name string
+		body map[string]any
+		msg  string
+	}{
+		{"unknown kind", launchWith(31, map[string]string{"kind": "bogus"}), `skill kind is "commodore", "skill" or "none"`},
+		{"empty kind", launchWith(31, map[string]string{"kind": ""}), `skill kind is "commodore", "skill" or "none"`},
+		{"skill with no name", launchWith(31, map[string]string{"kind": "skill"}), ""},
+		{"skill with a blank name", launchWith(31, map[string]string{"kind": "skill", "name": "  "}), ""},
+		{"skill name with a space", launchWith(31, map[string]string{"kind": "skill", "name": "two words"}), ""},
+		{"skill name with a newline", launchWith(31, map[string]string{"kind": "skill", "name": "a\nb"}), ""},
+		{"a slice with a skill", slice, "a slice runs on the Commodore skill; send skill only with child_url"},
+	} {
+		code, msg := r.launch(c.ID, tc.body)
+		msg = strings.ReplaceAll(msg, `\"`, `"`) // the body is JSON, which escapes the quotes
+		if code != http.StatusBadRequest || !strings.Contains(msg, tc.msg) || strings.TrimSpace(msg) == "" {
+			t.Errorf("%s: launch = %d %s, want 400 %q", tc.name, code, msg, tc.msg)
+		}
+	}
+	if got := r.launches(); len(got) != 0 {
+		t.Errorf("a refused launch still reached Launch: %v", got)
+	}
+}

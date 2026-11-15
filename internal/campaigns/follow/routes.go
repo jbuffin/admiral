@@ -271,8 +271,7 @@ func (s *Service) serveOverride(w http.ResponseWriter, r *http.Request) {
 	}
 	o := campaigns.Override{Mode: campaigns.Mode(body.Mode)}
 	if sk := body.Skill; sk != nil {
-		if sk.Kind != "commodore" && sk.Kind != "skill" && sk.Kind != "none" {
-			writeError(w, http.StatusBadRequest, `skill kind is "commodore", "skill" or "none"`)
+		if refuseSkillKind(w, sk.Kind) {
 			return
 		}
 		o.Skill = &campaigns.Skill{Kind: sk.Kind, Name: sk.Name, Args: sk.Args}
@@ -328,6 +327,10 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		StartAnyway bool     `json:"start_anyway"`
 		Model       string   `json:"model"`
 		Effort      string   `json:"effort"`
+		Skill       *struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		} `json:"skill"` // for this launch only; the child's saved skill is not changed
 	}
 	if !decode(w, r, &body) {
 		return
@@ -335,6 +338,21 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	if f.Ended() {
 		writeError(w, http.StatusConflict, "this campaign has ended")
 		return
+	}
+	var pick *launcher.Skill
+	if sk := body.Skill; sk != nil {
+		if body.Issues != nil {
+			writeError(w, http.StatusBadRequest, "a slice runs on the Commodore skill; send skill only with child_url")
+			return
+		}
+		if refuseSkillKind(w, sk.Kind) {
+			return
+		}
+		pick = &launcher.Skill{Kind: sk.Kind, Name: sk.Name}
+		if err := launcher.CheckSkill(*pick); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	if body.Issues != nil && body.ChildURL != "" {
 		writeError(w, http.StatusBadRequest, "send child_url or issues, not both")
@@ -347,7 +365,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	if body.Issues != nil {
 		got, lerr = s.launchSlice(r.Context(), f, body.Issues, req)
 	} else {
-		got, lerr = s.launch(r.Context(), f, body.ChildURL, body.StartAnyway, req)
+		got, lerr = s.launch(r.Context(), f, body.ChildURL, body.StartAnyway, pick, req)
 	}
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
@@ -356,7 +374,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
 }
 
-func (s *Service) launch(ctx context.Context, f Followed, childURL string, startAnyway bool, req launcher.Request) (any, *launcher.Error) {
+func (s *Service) launch(ctx context.Context, f Followed, childURL string, startAnyway bool, pick *launcher.Skill, req launcher.Request) (any, *launcher.Error) {
 	// the page's statuses are those of the last read, so a stale read is renewed first; a failed renewal keeps the last
 	_ = s.rereadIfOlder(ctx, f.ID, launchFresh)
 	f, _ = s.Store.Get(f.ID)
@@ -367,6 +385,13 @@ func (s *Service) launch(ctx context.Context, f Followed, childURL string, start
 	req.Source, req.OrderID = SourceKey, OrderID(f.ID, n.URL)
 	req.Skill = launcher.Skill{Kind: n.Skill.Kind, Name: n.Skill.Name}
 	req.Text = launchText(n)
+	if pick != nil {
+		req.Skill = *pick
+		if !sameSkill(*pick, n.Skill) {
+			// the saved args belong to the saved skill
+			req.Text = launchText(&campaigns.Node{Title: n.Title, URL: n.URL, Skill: campaigns.Skill{Kind: pick.Kind}})
+		}
+	}
 	req.Autopilot = false
 	// the launcher compares clone_repo with the repo's host/owner/repo identity
 	if req.Clone && req.CloneRepo == "" {
@@ -377,6 +402,27 @@ func (s *Service) launch(ctx context.Context, f Followed, childURL string, start
 		return nil, lerr
 	}
 	return got, nil
+}
+
+// sameSkill compares a picked skill with a child's resolved one; Commodore and Just launch ignore the name, since an
+// override may store one the form does not send.
+func sameSkill(pick launcher.Skill, have campaigns.Skill) bool {
+	if pick.Kind != have.Kind {
+		return false
+	}
+	if pick.Kind != "skill" {
+		return true
+	}
+	return launcher.TrimSkillMark(pick.Name) == launcher.TrimSkillMark(have.Name)
+}
+
+// refuseSkillKind answers 400 and reports true when kind is not one a skill can have.
+func refuseSkillKind(w http.ResponseWriter, kind string) bool {
+	if kind == "commodore" || kind == "skill" || kind == "none" {
+		return false
+	}
+	writeError(w, http.StatusBadRequest, `skill kind is "commodore", "skill" or "none"`)
+	return true
 }
 
 // launchable is the refusal for a child that cannot be launched now; what names the child in the message.
