@@ -262,6 +262,10 @@ test('a signed-out fleet says how to sign in with its views greyed, and turns Co
 
 test('hiding, renaming and moving views changes the Orders tabs and survives a restart', async ({ page, admiral }) => {
   seedOrders(admiral);
+  // The shared seed adds a custom view; this journey is about the built-in four.
+  const seeded = config(admiral);
+  delete seeded.sources.gh.settings.views;
+  admiral.writeConfig(seeded);
   admiral.fakeGh().count('z-open', 'is:open', 3);
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
