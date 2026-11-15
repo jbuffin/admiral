@@ -1,6 +1,9 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetSearch } from './fleets';
 import { Icon } from './Icon';
+import { OrderPane } from './OrderPane';
+import { selectedRow, selectionGone, withSelectedOrder } from './orderDetail';
+import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
 import { FOR_YOU, filterRows, forYou, headerTime, launchRef, orderRef, refreshedLine, refreshTarget, repoOptions, sourceName, tabs, viewErrors, viewRows, type OrderRow } from './ordersView';
@@ -43,7 +46,16 @@ function Mark({ pr, needs }: { pr: boolean; needs: boolean }) {
   );
 }
 
-function Row({ row, phone, muted, onLaunch }: { row: OrderRow; phone: boolean; muted: boolean; onLaunch: (o: OrderRef) => void }) {
+interface RowProps {
+  row: OrderRow;
+  phone: boolean;
+  muted: boolean;
+  selected: boolean;
+  onOpen: (r: OrderRow) => void;
+  onLaunch: (o: OrderRef) => void;
+}
+
+function Row({ row, phone, muted, selected, onOpen, onLaunch }: RowProps) {
   const o = row.order;
   const state = row.state ? <span class={`orow-state${row.needsYou ? ' needs' : ''}`}>{row.state}</span> : null;
   const arrow = (
@@ -53,41 +65,45 @@ function Row({ row, phone, muted, onLaunch }: { row: OrderRow; phone: boolean; m
   );
   if (phone) {
     return (
-      <li class="orow-phone">
-        <div class="orow-main">
-          <span class="orow-title">{o.title}</span>
-          <span class="orow-meta">
-            <span class="mono">{orderRef(o)}</span>
-            {row.state ? <span>{' · '}</span> : null}
-            {state}
+      <li class={`orow-phone${selected ? ' selected' : ''}`}>
+        <button type="button" class="orow-open" aria-label={`Open ${o.title}`} aria-pressed={selected} onClick={() => onOpen(row)}>
+          <span class="orow-main">
+            <span class="orow-title">{o.title}</span>
+            <span class="orow-meta">
+              <span class="mono">{orderRef(o)}</span>
+              {row.state ? <span>{' · '}</span> : null}
+              {state}
+            </span>
           </span>
-        </div>
+        </button>
         {arrow}
       </li>
     );
   }
   return (
-    <li class={`orow${muted ? ' waiting' : ''}`}>
-      <Mark pr={!!o.pr} needs={row.needsYou} />
-      <div class="orow-main">
-        <span class="orow-title">{o.title}</span>
-        <span class="orow-meta">
-          <span class="mono">{orderRef(o)}</span>
-          {row.reason ? <span>{row.reason}</span> : null}
+    <li class={`orow${muted ? ' waiting' : ''}${selected ? ' selected' : ''}`}>
+      <button type="button" class="orow-open" aria-label={`Open ${o.title}`} aria-pressed={selected} onClick={() => onOpen(row)}>
+        <Mark pr={!!o.pr} needs={row.needsYou} />
+        <span class="orow-main">
+          <span class="orow-title">{o.title}</span>
+          <span class="orow-meta">
+            <span class="mono">{orderRef(o)}</span>
+            {row.reason ? <span>{row.reason}</span> : null}
+          </span>
         </span>
-      </div>
-      {(o.labels ?? []).map((l) => (
-        <span key={l} class="orow-label">
-          {l}
-        </span>
-      ))}
-      {state}
+        {(o.labels ?? []).map((l) => (
+          <span key={l} class="orow-label">
+            {l}
+          </span>
+        ))}
+        {state}
+      </button>
       {arrow}
     </li>
   );
 }
 
-function Group({ id, title, rows, phone, muted, onLaunch }: { id: string; title: string; rows: OrderRow[]; phone: boolean; muted: boolean; onLaunch: (o: OrderRef) => void }) {
+function Group({ id, title, rows, phone, muted, chosen, onOpen, onLaunch }: { id: string; title: string; rows: OrderRow[]; phone: boolean; muted: boolean; chosen?: string; onOpen: (r: OrderRow) => void; onLaunch: (o: OrderRef) => void }) {
   if (rows.length === 0) return null;
   return (
     <section class="ogroup" aria-labelledby={id}>
@@ -97,7 +113,7 @@ function Group({ id, title, rows, phone, muted, onLaunch }: { id: string; title:
       </h2>
       <ul class="ship-list">
         {rows.map((r) => (
-          <Row key={r.key} row={r} phone={phone} muted={muted} onLaunch={onLaunch} />
+          <Row key={r.key} row={r} phone={phone} muted={muted} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} />
         ))}
       </ul>
     </section>
@@ -137,76 +153,126 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   };
   const rows = viewRows(list, id, now);
   const repos = repoOptions(rows);
-  const shown = filterRows(rows, { query, repo: repos.includes(repo) ? repo : '' });
+  const shown = filterRows(rows, {
+    query,
+    repo: repos.includes(repo) ? repo : '',
+  });
   const errors = viewErrors(list, id);
   const needs = shown.filter((r) => r.needsYou);
   const waiting = shown.filter((r) => !r.needsYou);
   const onLaunch = (o: OrderRef) => setLaunching(o);
+  const selected = selectedRow(list, id, loc.value.search, now);
+  const chosen = selected?.key;
+  const onOpen = (r: OrderRow) => go('/app/orders', withSelectedOrder(loc.value.search, r.key));
+  const close = (restoreFocus = false) => {
+    // The pane unmounts with the focus in it; the row's button is the same element before and after.
+    const row = restoreFocus ? document.querySelector<HTMLElement>('.orow-open[aria-pressed="true"]') : null;
+    go('/app/orders', withSelectedOrder(loc.value.search, null), true);
+    row?.focus();
+  };
+  const pane = !!selected;
+  const gone = selectionGone(list, id, loc.value.search, now);
+  useEffect(() => {
+    if (gone) close();
+  }, [gone]);
+  // The listener lives as long as the panel and reads refs, so it is there the moment the pane renders, before any effect could attach it.
+  // It listens in the capture phase: the Launch form's own Escape closes it and re-renders before a bubbling listener would run, so the flag would already be clear.
+  const state = useRef({ pane: false, launching: false });
+  state.current = { pane: pane && !phone, launching: !!launching };
+  // Whether the Escape being handled began with the Launch form open; the phone sheet reads it, as it closes on the same key after the form is gone.
+  const formHadEscape = useRef(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      formHadEscape.current = e.key === 'Escape' && state.current.launching;
+      if (e.key !== 'Escape' || e.defaultPrevented || !state.current.pane || state.current.launching) return;
+      if (e.target instanceof Element && e.target.closest('[aria-modal="true"], [role="menu"]')) return;
+      close(true);
+    };
+    const onKeyUp = () => (formHadEscape.current = false);
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('keyup', onKeyUp, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('keyup', onKeyUp, true);
+    };
+  }, []);
   const age = time ? refreshedLine(time, now) : '';
   const name = sourceName(list, id);
   const sourceLine = [name, age].filter(Boolean).join(' · ');
   return (
     <>
-      <main class="panel orders-screen">
-        <header class="orders-head">
-          <div class="orders-line">
-            {title ? <h1>Orders</h1> : null}
-            <span class="orders-source">{phone ? age : sourceLine && `${title ? '· ' : ''}${sourceLine}`}</span>
-            {target ? (
-              <button type="button" class="orow-go" aria-label="Refresh now" aria-busy={busy} disabled={busy} onClick={refresh}>
-                <Icon name="refresh" size={16} />
-              </button>
-            ) : null}
-            {phone ? null : (
-              <>
-                <span class="orders-spacer" />
-                <label class="orders-filter">
-                  <Icon name="search" size={14} />
-                  <input type="search" placeholder="Filter by title, repo, label" value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
-                </label>
-                <select class="orders-repo" aria-label="Repo" value={repo} onChange={(e) => setRepo(e.currentTarget.value)}>
-                  <option value="">All repos</option>
-                  {repos.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-          </div>
-          <div class="otabs" role="tablist" aria-label="Views">
-            {all.map((t) => (
-              <button key={t.id} type="button" role="tab" class="otab" aria-selected={t.id === id} onClick={() => choose(t.id)}>
-                {t.title} <span class="count">{t.count}</span>
-              </button>
-            ))}
-          </div>
-        </header>
-        {error ? (
-          <p class="alert" role="alert">
-            {error}
-          </p>
+      <div class={`orders-split${selected && !phone ? ' has-pane' : ''}`}>
+        <main class="panel orders-screen">
+          <header class="orders-head">
+            <div class="orders-line">
+              {title ? <h1>Orders</h1> : null}
+              <span class="orders-source">{phone ? age : sourceLine && `${title ? '· ' : ''}${sourceLine}`}</span>
+              {target ? (
+                <button type="button" class="orow-go" aria-label="Refresh now" aria-busy={busy} disabled={busy} onClick={refresh}>
+                  <Icon name="refresh" size={16} />
+                </button>
+              ) : null}
+              {phone ? null : (
+                <>
+                  <span class="orders-spacer" />
+                  <label class="orders-filter">
+                    <Icon name="search" size={14} />
+                    <input type="search" placeholder="Filter by title, repo, label" value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
+                  </label>
+                  <select class="orders-repo" aria-label="Repo" value={repo} onChange={(e) => setRepo(e.currentTarget.value)}>
+                    <option value="">All repos</option>
+                    {repos.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </div>
+            <div class="otabs" role="tablist" aria-label="Views">
+              {all.map((t) => (
+                <button key={t.id} type="button" role="tab" class="otab" aria-selected={t.id === id} onClick={() => choose(t.id)}>
+                  {t.title} <span class="count">{t.count}</span>
+                </button>
+              ))}
+            </div>
+          </header>
+          {error ? (
+            <p class="alert" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {errors.map((e) => (
+            <p key={e} class="alert" role="alert">
+              {e}
+            </p>
+          ))}
+          {id === FOR_YOU ? (
+            <>
+              <Group id="g-needs" title="Needs you" rows={needs} phone={phone} muted={false} chosen={chosen} onOpen={onOpen} onLaunch={onLaunch} />
+              <Group id="g-waiting" title="Waiting on others" rows={waiting} phone={phone} muted chosen={chosen} onOpen={onOpen} onLaunch={onLaunch} />
+            </>
+          ) : (
+            <ul class="ship-list">
+              {shown.map((r) => (
+                <Row key={r.key} row={r} phone={phone} muted={false} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} />
+              ))}
+            </ul>
+          )}
+          {shown.length === 0 ? <p class="line">{all.length === 1 && rows.length === 0 ? emptyLine(surfaceById('orders'), true, true) : 'Nothing here.'}</p> : null}
+        </main>
+        {selected && !phone ? (
+          <aside class="odetail-pane" aria-label="Selected order">
+            <OrderPane key={selected.key} row={selected} sources={list} now={now} heading onLaunch={onLaunch} onClose={() => close(true)} />
+          </aside>
         ) : null}
-        {errors.map((e) => (
-          <p key={e} class="alert" role="alert">
-            {e}
-          </p>
-        ))}
-        {id === FOR_YOU ? (
-          <>
-            <Group id="g-needs" title="Needs you" rows={needs} phone={phone} muted={false} onLaunch={onLaunch} />
-            <Group id="g-waiting" title="Waiting on others" rows={waiting} phone={phone} muted onLaunch={onLaunch} />
-          </>
-        ) : (
-          <ul class="ship-list">
-            {shown.map((r) => (
-              <Row key={r.key} row={r} phone={phone} muted={false} onLaunch={onLaunch} />
-            ))}
-          </ul>
-        )}
-        {shown.length === 0 ? <p class="line">{all.length === 1 && rows.length === 0 ? emptyLine(surfaceById('orders'), true, true) : 'Nothing here.'}</p> : null}
-      </main>
+      </div>
+      {selected && phone ? (
+        <Sheet label={selected.order.title} kind="order-sheet" onClose={() => !launching && !formHadEscape.current && close()}>
+          <OrderPane key={selected.key} row={selected} sources={list} now={now} heading={false} onLaunch={onLaunch} />
+        </Sheet>
+      ) : null}
       {launching && fleet ? <LaunchForm fleet={fleet} order={launching} onClose={() => setLaunching(null)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null}
     </>
   );

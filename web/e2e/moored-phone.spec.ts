@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { addGitHubSource, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, wakeAndStopWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime } from './shell';
+import { addGitHubSource, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsOfferCommodoreOnAShiplessPR, wakeAndStopWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, unfollowFromThePRTab, wakeFromTheShell, wakeFromTheShipView, watchPage, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime } from './shell';
 
 test('on the phone, a moored ship shows in its own group with chips from the poll, and Don\'t follow reviews and Dismiss take it out by touch', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -134,7 +134,7 @@ test('on the phone, a merge that gh fails shows its message in the PR tab and th
   expect(watch.errors).toEqual([]);
 });
 
-test('on the phone, a ready PR a ship carries shows its chips, the ship and Ready to merge in My PRs, and Merge there merges only after the tap', async ({ page, admiral }) => {
+test('on the phone, a ready PR a ship carries shows Ready to merge in My PRs, and Merge in its detail merges only after the tap', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   addGitHubSource(admiral);
   seedMyPRs(admiral, [READY_PR]);
@@ -148,21 +148,7 @@ test('on the phone, a ready PR a ship carries shows its chips, the ship and Read
   expect(watch.errors).toEqual([]);
 });
 
-test('on the phone, a PR a ship carries that is not ready shows its chips, the ship and its next step in My PRs, with no Merge and no Launch', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  addGitHubSource(admiral);
-  seedMyPRs(admiral, [WAITING_PR]);
-  await admiral.start({ env: mooringEnv(admiral) });
-  const watch = watchPage(page, admiral.url);
-
-  await myPRsShowANotReadyCarriedPR(page, admiral, { phone: true });
-
-  expect(watch.unversioned()).toEqual([]);
-  expect(watch.foreign).toEqual([]);
-  expect(watch.errors).toEqual([]);
-});
-
-test('on the phone, a PR no ship carries shows its chips and Launch Commodore in My PRs, which opens the launch form on the PR', async ({ page, admiral }) => {
+test('on the phone, a PR no ship carries opens the launch form on the PR from the arrow on its row and from Launch ship in its detail', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   addGitHubSource(admiral);
   seedMyPRs(admiral, [SHIPLESS_PR]);
@@ -170,20 +156,6 @@ test('on the phone, a PR no ship carries shows its chips and Launch Commodore in
   const watch = watchPage(page, admiral.url);
 
   await myPRsOfferCommodoreOnAShiplessPR(page, admiral, { phone: true });
-
-  expect(watch.unversioned()).toEqual([]);
-  expect(watch.foreign).toEqual([]);
-  expect(watch.errors).toEqual([]);
-});
-
-test('on the phone, a merge gh refuses shows in the alert on the row in My PRs and the ship stays moored', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  addGitHubSource(admiral);
-  seedMyPRs(admiral, [READY_PR]);
-  await admiral.start({ env: mooringEnv(admiral) });
-  const watch = watchPage(page, admiral.url);
-
-  await myPRsMergeFailsOnTheRow(page, admiral);
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

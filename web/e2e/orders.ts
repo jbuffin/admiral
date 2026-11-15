@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Admiral } from './fixtures';
-import { addGitHubSource, seedFleets } from './shell';
+import { addGitHubSource, orderPane, seedFleets } from './shell';
 
 const H = 3600_000;
 const D = 24 * H;
@@ -16,11 +16,13 @@ interface Item {
   labels?: string[];
   pr?: { review: string; checks: string; mergeable: string; reviewed?: boolean };
   requested?: boolean;
+  body?: string;
 }
 
 // What the fake gh answers for each default view. The docs sweep and the rate limiter are in two views: For you shows each once.
+const SIGNING_BODY = 'Rotate every key older than ninety days and revoke the old ones.';
 const ASSIGNED: Item[] = [
-  { number: 31, title: 'Rotate the signing keys', author: 'bob', labels: ['priority: high', 'security'] },
+  { number: 31, title: 'Rotate the signing keys', author: 'bob', labels: ['priority: high', 'security'], body: SIGNING_BODY },
   { number: 32, title: 'Document the API', author: 'bob', labels: ['docs'] },
   { number: 33, title: 'Port the table', repo: 'acme/web', author: 'bob', labels: ['ux'] },
   { number: 21, title: 'Raise the rate limiter', author: 'fake-viewer', pr: { review: 'CHANGES_REQUESTED', checks: 'SUCCESS', mergeable: 'MERGEABLE' } },
@@ -46,7 +48,7 @@ function node(i: Item) {
     title: i.title,
     url: `https://github.com/${repo}/${i.pr ? 'pull' : 'issues'}/${i.number}`,
     createdAt: ago(3 * D),
-    bodyText: '',
+    bodyText: i.body ?? '',
     author: { login: i.author ?? 'bob' },
     repository: { nameWithOwner: repo, url: `https://github.com/${repo}` },
     labels: { nodes: (i.labels ?? []).map((name) => ({ name })) },
@@ -118,7 +120,7 @@ async function expectTouchTarget(l: Locator, min: number) {
 
 /**
  * The Orders journey on one device: open Orders from the nav, read For you and its Needs you count, switch to a view tab,
- * filter (wide only), press Refresh now, and launch from a row's arrow. `press` is the click or tap of the device.
+ * filter (wide only), press Refresh now, open a row's detail, launch from its arrow, and find Ships holding only a link back. `press` is the click or tap of the device.
  */
 export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) => Promise<void>, opts: { phone: boolean }) {
   const { phone } = opts;
@@ -184,12 +186,65 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   if (!phone) await expect(main).toContainText('GitHub');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
-  // The arrow opens the Launch dialog with the order filled in; tapping the row does not.
+  // Tapping a row's body opens its detail, not the Launch dialog: a column on the iPad, a sheet on the phone.
   const form = page.getByRole('dialog', { name: 'Launch', exact: true });
-  await press(hot);
+  const pane = orderPane(page, phone);
+  const body = (t: string) => page.getByRole('button', { name: `Open ${t}`, exact: true });
+  await expect(pane).toBeHidden();
+  await press(body('Rotate the signing keys'));
   await expect(form).toBeHidden();
+  await expect(pane).toBeVisible();
+  await expect(body('Rotate the signing keys')).toHaveAttribute('aria-pressed', 'true');
+  await expect(body('Review the cache layer')).not.toHaveAttribute('aria-pressed', 'true');
+  await expect(page).toHaveURL(/[?&]order=gh%2Facme%2Fapi%2331(&|$)/);
+  await expect(pane.getByRole('heading', { name: 'Rotate the signing keys' })).toBeVisible();
+  await expect(pane).toContainText('acme/api #31');
+  await expect(pane).toContainText('priority: high');
+  await expect(pane).toContainText('security');
+  await expect(pane.locator('dt', { hasText: "Why it's here" })).toBeVisible();
+  await expect(pane.locator('dd', { hasText: 'Assigned to you' })).toContainText('Assigned to me');
+  await expect(pane.locator('dd', { hasText: 'by @bob' })).toBeVisible();
+  await expect(pane).toContainText('Rotate every key older than ninety days and revoke the old ones.');
+  const github = pane.getByRole('link', { name: 'Open on GitHub', exact: true });
+  await expect(github).toHaveAttribute('href', 'https://github.com/acme/api/issues/31');
+  // An issue with no sub-issues offers no campaign action.
+  await expect(pane.getByText(/Follow as campaign|Open campaign/)).toHaveCount(0);
+  await expectTouchTarget(pane.getByRole('button', { name: 'Launch ship', exact: true }), 44);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  // A reload keeps the selection; Escape closes the pane and clears it.
+  await page.reload();
+  await expect(pane).toBeVisible();
+  await expect(pane.getByRole('heading', { name: 'Rotate the signing keys' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(pane).toBeHidden();
+  await expect(page).not.toHaveURL(/order=/);
+  await expect(body('Rotate the signing keys')).not.toHaveAttribute('aria-pressed', 'true');
+
+  // The pane's Launch ship opens the Launch dialog with the order filled in.
+  await press(body('Rotate the signing keys'));
+  await press(pane.getByRole('button', { name: 'Launch ship', exact: true }));
+  await expect(form).toBeVisible();
+  await expect(form).toContainText('Rotate the signing keys');
+  await expect(form.getByLabel('Text')).toHaveValue('https://github.com/acme/api/issues/31');
+  // Escape closes only the form; the pane stays until the next Escape.
+  await page.keyboard.press('Escape');
+  await expect(form).toBeHidden();
+  await expect(pane).toBeVisible();
+  if (!phone) {
+    // Closing the pane hands focus back to the row it came from.
+    await page.keyboard.press('Escape');
+    await expect(pane).toBeHidden();
+    await expect(body('Rotate the signing keys')).toBeFocused();
+  } else {
+    await page.keyboard.press('Escape');
+    await expect(pane).toBeHidden();
+  }
+
+  // The arrow opens the Launch dialog straight away, with no pane.
   await press(page.getByRole('button', { name: 'Launch Rotate the signing keys', exact: true }));
   await expect(form).toBeVisible();
+  await expect(pane).toBeHidden();
   await expect(form).toContainText('Rotate the signing keys');
   await expect(form.getByLabel('Text')).toHaveValue('https://github.com/acme/api/issues/31');
   await press(form.getByRole('button', { name: 'Cancel', exact: true }));
@@ -255,10 +310,30 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(page.getByRole('button', { name: 'Launch Fix the login redirect', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh now', exact: true })).toHaveCount(0);
 
+  // An order with no url shows its id and view on top, and offers no GitHub link.
+  await press(page.getByRole('button', { name: 'Open Fix the login redirect', exact: true }));
+  await expect(pane.locator('.odetail-top')).toHaveText(/^ord-login · Orders/);
+  await expect(pane.getByRole('link', { name: 'Open on GitHub' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(pane).toBeHidden();
+
   // The arrow of a plugin row fills the dialog with the order's own text.
   await press(page.getByRole('button', { name: 'Launch Tighten the api limits', exact: true }));
   await expect(form.getByLabel('Text')).toHaveValue('Tighten them.');
   await press(form.getByRole('button', { name: 'Cancel', exact: true }));
+
+  // Ships lists no orders, only a quiet link to the ones that need you; it opens Orders.
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  const forYouLink = main.getByRole('link', { name: /^4 for you/ });
+  await expect(forYouLink).toBeVisible();
+  await expect(forYouLink).toHaveText('4 for you →');
+  await expect(page.getByRole('region', { name: 'Orders' })).toHaveCount(0);
+  await expect(main.getByText('Tighten the api limits')).toHaveCount(0);
+  await expect(main.getByRole('button', { name: /^Launch / })).toHaveCount(0);
+  await press(forYouLink);
+  await expect(page).toHaveURL(/\/app\/orders(\?|$)/);
+  await expect(page).toHaveURL(/fleet=zulu/);
+  await expect(tabNamed(page, /^For you/)).toHaveAttribute('aria-selected', 'true');
 }
 
 /** On the phone, More lists the surfaces the bar has no tab for, and not Orders. */
