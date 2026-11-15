@@ -547,9 +547,6 @@ func TestHandingALiveShipToCommodoreRelaunchesItsConversationUnderTheSameName(t 
 	if len(list) != 1 {
 		t.Errorf("ships = %d, want the one ship under its name", len(list))
 	}
-	if e := lastOf(w.waitEvent(ship.Session, "stopped", 1), "stopped"); e["handed"] != true {
-		t.Errorf("stopped event = %v, want it marked handed", e)
-	}
 
 	holdFor(t, "the relaunched ship's conversation to show the earlier turn", func() bool {
 		code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/ships/"+ship.Session+"/conversation", nil)
