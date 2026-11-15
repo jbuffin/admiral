@@ -384,3 +384,50 @@ export function stackLaunchRef(g: ViewGroup, ships: Ship[], viewer: string | und
   const notes = stackLaunchLines(g, ships, viewer);
   return { ...launchRef(g.row), ...(notes.length > 0 && { notes }), ...(heldLayers(g, ships).length > 0 && { anyway: true }) };
 }
+
+export const MAX_CHECKED = 50;
+
+export function isIssueTab(_sources: Source[], _tabId: string): boolean {
+  return true;
+}
+
+export interface BoxState {
+  disabled: boolean;
+  label: string;
+  note: string;
+}
+
+export function boxState(_row: OrderRow, _checked: ReadonlySet<string>): BoxState {
+  return { disabled: false, label: '', note: '' };
+}
+
+export function keepChecked(checked: ReadonlySet<string>, _rows: OrderRow[]): Set<string> {
+  return new Set(checked);
+}
+
+export interface SelectState {
+  fleet: string;
+  tab: string;
+  on: boolean;
+  checked: ReadonlySet<string>;
+}
+
+export function selectAfterChoose(state: SelectState, _tab: string, _fleet: string): SelectState {
+  return state;
+}
+
+export function checkedUrls(_rows: OrderRow[], _checked: ReadonlySet<string>): string[] {
+  return [];
+}
+
+export function issuesLabel(_n: number): string {
+  return '';
+}
+
+export function newCampaignSearch(search: string, _urls: string[]): string {
+  return search;
+}
+
+export function newCampaignRefs(_search: string): string[] {
+  return [];
+}
