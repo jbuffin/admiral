@@ -1314,8 +1314,8 @@ export async function staleMergeTokenInThePRTab(page: Page, a: Admiral) {
   await expect(panel.getByRole('alert')).toContainText('Admiral restarted, reload to merge');
   await expect(panel.getByRole('button', { name: /reload/i })).toBeVisible();
   await expectMergeErrorByTheButton(page, panel);
-  const [al, reload] = [await panel.getByRole('alert').boundingBox(), await panel.getByRole('button', { name: /reload/i }).boundingBox()];
-  expect(Math.abs(reload!.y - al!.y), 'Reload stays with the error').toBeLessThanOrEqual(80);
+  const [merge, reload] = [await panel.getByRole('button', { name: 'Merge', exact: true }).boundingBox(), await panel.getByRole('button', { name: /reload/i }).boundingBox()];
+  expect(Math.abs(reload!.y - merge!.y), 'Reload sits on the Merge row').toBeLessThanOrEqual(4);
   await expect(page.getByRole('alert')).toHaveCount(1);
   expect(mergeCalls(a)).toEqual([]);
 }
