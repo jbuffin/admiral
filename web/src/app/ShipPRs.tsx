@@ -7,7 +7,7 @@ import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet, useCancelFocus } from './Sheet';
 import { OpenPRs } from './OpenPRs';
-import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, fixLabel, fixLine, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, showAnswerReview, stackBarAction, stackBarLine, tabOrder } from './prTab';
+import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, fixLine, fixStackInBar, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, showAnswerReview, stackBarAction, stackBarLine, tabOrder } from './prTab';
 import { MOOR_LINE, moorSheetParts, offersMoor, reReviewPlace, reviews, staleNote } from './moored';
 import { AnswerReviewSheet } from './AnswerReview';
 import { FixButton } from './Fix';
@@ -336,8 +336,9 @@ export function PRTab({ ship }: { ship: Ship }) {
   const respondedHere = moored && current.reviewing && current.responded && current.state === 'OPEN';
   const line = reviewBar ?? stackBarLine(shape);
   const fixOn = moored && !!ship.fix;
-  const fixStack = fixOn && fixLabel(ship) === 'Fix stack';
-  const fixText = fixOn ? fixLine(ship.fix, fixStack) : '';
+  const fixStack = fixOn && !!ship.fix?.stack;
+  const fixText = fixOn ? fixLine(ship.fix) : '';
+  const fixInBar = fixStack && fixStackInBar(!!line, !!reviewBar && place?.place === 'stack');
   const action = reviewBar ? 'none' : stackBarAction(shape, ship.status);
   const choice = mergeFor(shape, prs, current, !!ship.stack_ready);
   const justMerged = mergedAll || merged.has(current.url);
@@ -358,12 +359,12 @@ export function PRTab({ ship }: { ship: Ship }) {
           </span>
           {reviewBar && place?.place === 'stack' ? (
             <Button label="Re-review stack" variant="primary" onClick={() => setReReview('')} />
-          ) : fixStack ? (
+          ) : fixInBar ? (
             <>
               <span class="fix-line">{fixText}</span>
               <FixButton ship={ship} locked={acting} onBusy={setActing} />
             </>
-          ) : moored && chosen && showAnswerAll(carried, stack, chosen.answerAll) ? (
+          ) : moored && chosen && showAnswerAll(carried, stack, chosen.answerAll, ship.fix) ? (
             <AnswerAll ship={ship} stackUrl={stack!.url} command={chosen.answerAll!} locked={acting} onBusy={setActing} />
           ) : null}
           {action === 'stack' ? (
@@ -373,7 +374,7 @@ export function PRTab({ ship }: { ship: Ship }) {
           {unseen && shape?.shape === 'chained' ? <span>GitHub hasn't shown the stack yet. It shows on the next refresh.</span> : null}
         </div>
       ) : null}
-      {fixStack && !line ? (
+      {fixStack && !fixInBar ? (
         <div class="fix-bar">
           <span class="fb-text">{fixText}</span>
           <FixButton ship={ship} locked={acting} onBusy={setActing} />

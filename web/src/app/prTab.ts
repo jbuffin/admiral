@@ -147,8 +147,11 @@ export function tabOrder(carried: MooredPR[], shape: StackShape | null, stack: P
   return orderPRs(carried, stack);
 }
 
-/** The Fix button's label: Fix PR for one open PR the ship opened, Fix stack for more than one. */
-export const fixLabel = (ship: Pick<Ship, 'prs'>): 'Fix PR' | 'Fix stack' => ((ship.prs ?? []).filter((p) => p.state === 'OPEN' && !p.reviewing).length > 1 ? 'Fix stack' : 'Fix PR');
+/** The Fix button's label: Fix stack when the server's round covers more than one PR, else Fix PR. */
+export const fixLabel = (ship: Pick<Ship, 'fix'>): 'Fix PR' | 'Fix stack' => (ship.fix?.stack ? 'Fix stack' : 'Fix PR');
+
+/** Whether Fix stack sits in the stack bar, where Answer all reviews would, or in a bar of its own: the bar's own Re-review stack takes its place, so the Fix bar stands alone. */
+export const fixStackInBar = (hasBar: boolean, reReviewsStack: boolean): boolean => hasBar && !reReviewsStack;
 
 const joinAnd = (parts: string[]): string => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
 
@@ -163,11 +166,11 @@ function problemWords(p: FixOffer['problems'][number]): string {
 /** One entry per PR with problems, `#N` and its problems in words, for the Fix sheet's list and the stack's line. */
 export const fixItems = (fix: FixOffer | undefined): string[] => (fix?.problems ?? []).map((p) => `#${prNumber(p.pr)} ${problemWords(p)}`);
 
-/** The fix bar's line naming what keeps the PRs from merging, from the served offer; '' when there is none. `stack` is true for a ship with more than one open PR it opened, so one PR's problems still name the PR. */
-export function fixLine(fix: FixOffer | undefined, stack = false): string {
+/** The fix bar's line naming what keeps the PRs from merging, from the served offer; '' when there is none. A stack round names each PR even when one has problems. */
+export function fixLine(fix: FixOffer | undefined): string {
   const problems = fix?.problems ?? [];
   if (problems.length === 0) return '';
-  if (problems.length === 1 && !stack) return `This PR ${problemWords(problems[0])}.`;
+  if (problems.length === 1 && !fix?.stack) return `This PR ${problemWords(problems[0])}.`;
   return fixItems(fix).join(' \u00b7 ');
 }
 

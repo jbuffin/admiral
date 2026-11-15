@@ -130,6 +130,8 @@ export interface PRProblems {
 /** The Fix PR / Fix stack offer on a moored ship: the PR the round is on, the command it sends and every PR's problems. */
 export interface FixOffer {
   pr: string;
+  /** The round covers more than one PR. */
+  stack?: boolean;
   command: string;
   problems: PRProblems[];
 }

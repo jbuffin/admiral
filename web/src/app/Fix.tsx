@@ -24,7 +24,7 @@ export function FixSheet({ ship, onClose, onBusy }: { ship: Ship; onClose: () =>
   };
   return (
     <Sheet label={label} kind="launch-backdrop stop-backdrop" onClose={() => !busy && onClose()}>
-      <p class="line">Wakes {ship.name} under its name to clear what keeps {label === 'Fix PR' ? 'the PR' : 'the PRs'} from merging. It answers any feedback waiting on its PRs in the same round.</p>
+      <p class="line">Wakes {ship.name} under its name to clear what keeps {ship.fix?.stack ? 'the PRs' : 'the PR'} from merging. It answers any feedback waiting on its PRs in the same round.</p>
       <ul class="line">
         {fixItems(ship.fix).map((t) => (
           <li key={t}>{t}</li>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FixOffer, MooredPR, Ship, StackShape } from './api';
-import { actingWhile, chooseStackDetail, fixLabel, fixLine, showAnswerReview, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackedPRs, reviewMark, reviewStackBar, mergeFor, stackBarAction, stackBarLine, tabOrder } from './prTab';
+import { actingWhile, chooseStackDetail, fixLabel, fixLine, fixStackInBar, showAnswerReview, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackedPRs, reviewMark, reviewStackBar, mergeFor, stackBarAction, stackBarLine, tabOrder } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -459,17 +459,26 @@ describe('prSummary for a reviewing ship', () => {
 });
 
 describe('fixLabel', () => {
-  it('is Fix PR for one open PR the ship opened', () => {
-    expect(fixLabel({ prs: [pr(7)] })).toBe('Fix PR');
-    expect(fixLabel({ prs: [pr(7), pr(8, { state: 'MERGED' })] })).toBe('Fix PR');
+  const fix = (stack?: boolean): FixOffer => ({ pr: URL(7), stack, command: 'c', problems: [{ pr: URL(7), conflicts: true }] });
+
+  it('is Fix PR for a round on one PR', () => {
+    expect(fixLabel({ fix: fix() })).toBe('Fix PR');
+    expect(fixLabel({ fix: fix(false) })).toBe('Fix PR');
   });
 
-  it('is Fix stack for more than one open PR the ship opened', () => {
-    expect(fixLabel({ prs: [pr(7), pr(8)] })).toBe('Fix stack');
+  it('is Fix stack when the server says the round covers more than one PR', () => {
+    expect(fixLabel({ fix: fix(true) })).toBe('Fix stack');
+  });
+});
+
+describe('fixStackInBar', () => {
+  it('sits in the stack bar where Answer all reviews would', () => {
+    expect(fixStackInBar(true, false)).toBe(true);
   });
 
-  it('does not count a PR the ship only reviews', () => {
-    expect(fixLabel({ prs: [pr(7), pr(8, { reviewing: true })] })).toBe('Fix PR');
+  it('gets a bar of its own with no stack bar, or when the bar is a review stack with Re-review stack', () => {
+    expect(fixStackInBar(false, false)).toBe(false);
+    expect(fixStackInBar(true, true)).toBe(false);
   });
 });
 
@@ -489,7 +498,11 @@ describe('fixLine', () => {
   });
 
   it('names each PR of a stack with its problems, joined by a middle dot', () => {
-    expect(fixLine(offer({ pr: URL(7), behind: true }, { pr: URL(8), failing_checks: ['test'] }))).toBe('#7 is behind its base · #8 has failing checks: test');
+    expect(fixLine({ ...offer({ pr: URL(7), behind: true }, { pr: URL(8), failing_checks: ['test'] }), stack: true })).toBe('#7 is behind its base · #8 has failing checks: test');
+  });
+
+  it('names the PR when a stack round has a problem on only one', () => {
+    expect(fixLine({ ...offer({ pr: URL(8), failing_checks: ['test'] }), stack: true })).toBe('#8 has failing checks: test');
   });
 
   it('is empty without an offer or without problems', () => {
