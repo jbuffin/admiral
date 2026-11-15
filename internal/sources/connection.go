@@ -50,17 +50,23 @@ func connectionOf(st sourceState) *Connection {
 		c.State, c.Login, c.Message = cs.state, cs.login, cs.message
 		c.CheckedAt = cs.checkedAt.UTC().Format(time.RFC3339Nano)
 	}
-	switch c.State {
-	case ConnSignedOut:
-		c.Fix = []string{"gh auth login -h " + s.Host}
-	case ConnGHMissing:
-		c.Fix = []string{"brew install gh", "gh auth login -h " + s.Host}
-	}
+	c.Fix = fixFor(c.State, s.Host)
 	return c
 }
 
+// fixFor is the commands that turn a sign-in state into a connected one.
+func fixFor(state, host string) []string {
+	switch state {
+	case ConnSignedOut:
+		return []string{"gh auth login -h " + host}
+	case ConnGHMissing:
+		return []string{"brew install gh", "gh auth login -h " + host}
+	}
+	return []string{}
+}
+
 // record keeps a check's outcome. Who gh is signed in as is kept across a check that can't tell, and dropped on a sign-out.
-func (g *githubConn) record(state, login, message string) {
+func (g *githubConn) record(state, login, message string) connState {
 	cs := connState{state: state, login: login, message: message, checkedAt: time.Now()}
 	g.mu.Lock()
 	switch {
@@ -72,15 +78,16 @@ func (g *githubConn) record(state, login, message string) {
 	g.conn = cs
 	g.mu.Unlock()
 	g.setConn(cs)
+	return cs
 }
 
 // signedOut records a sign-in error and tells the runner, once per message.
-func (g *githubConn) signedOut(si *github.SignInError) {
+func (g *githubConn) signedOut(si *github.SignInError) connState {
 	state := ConnSignedOut
 	if si.Kind == github.KindGHMissing {
 		state = ConnGHMissing
 	}
-	g.record(state, "", si.Message)
+	cs := g.record(state, "", si.Message)
 	g.mu.Lock()
 	fresh := g.authMsg != si.Message
 	g.authMsg = si.Message
@@ -88,6 +95,7 @@ func (g *githubConn) signedOut(si *github.SignInError) {
 	if fresh {
 		g.notify("auth.required", map[string]string{"message": si.Message})
 	}
+	return cs
 }
 
 // signedIn clears the sign-in card a sign-out raised.
@@ -101,29 +109,80 @@ func (g *githubConn) signedIn() {
 	}
 }
 
+// settle turns a token result and a query result into the connection state and records it; it reports false, recording nothing, when ctx ended.
+// A query that answered is the only thing that says connected. A refusal that isn't about the token leaves the state as it was,
+// and note puts its text in the message for a Check again to show.
+func (g *githubConn) settle(ctx context.Context, tokenErr, queryErr error, login string, note bool) (connState, bool) {
+	if ctx.Err() != nil {
+		return g.currentConn(), false
+	}
+	var si *github.SignInError
+	switch {
+	case errors.As(tokenErr, &si):
+		return g.signedOut(si), true
+	case tokenErr != nil:
+		return g.record(ConnUnreachable, "", tokenErr.Error()), true
+	case queryErr == nil:
+		g.signedIn()
+		return g.record(ConnConnected, login, ""), true
+	case github.IsUnreachable(queryErr):
+		return g.record(ConnUnreachable, "", queryErr.Error()), true
+	case github.IsBadCredentials(queryErr):
+		return g.signedOut(&github.SignInError{Message: queryErr.Error(), Kind: github.KindSignedOut}), true
+	case note:
+		return g.noteMessage(queryErr.Error()), true
+	}
+	return g.currentConn(), true
+}
+
+// noteMessage keeps the last state and says why a check found nothing better.
+func (g *githubConn) noteMessage(msg string) connState {
+	g.mu.Lock()
+	if g.conn.state == "" {
+		g.mu.Unlock()
+		return g.conn
+	}
+	g.conn.message = msg
+	cs := g.conn
+	g.mu.Unlock()
+	g.setConn(cs)
+	return cs
+}
+
 // check runs the token check and a viewer query now and records what they found.
-func (g *githubConn) check(ctx context.Context) connState {
+func (g *githubConn) check(ctx context.Context) (connState, bool) {
 	g.mu.Lock()
 	client := g.client
 	g.mu.Unlock()
 	token, err := client.Token(ctx)
-	var si *github.SignInError
-	switch {
-	case errors.As(err, &si):
-		g.signedOut(si)
-	case err != nil:
-		g.record(ConnUnreachable, "", err.Error())
-	default:
-		login, err := client.Viewer(ctx, token)
-		if github.IsUnreachable(err) {
-			g.record(ConnUnreachable, "", err.Error())
-			break
-		}
-		g.signedIn()
-		g.record(ConnConnected, login, "")
+	var login string
+	var qerr error
+	if err == nil {
+		login, qerr = client.Viewer(ctx, token)
+	}
+	cs, ok := g.settle(ctx, err, qerr, login, true)
+	if ok && cs.state == ConnConnected {
 		g.refreshNow()
 	}
-	return g.currentConn()
+	return cs, ok
+}
+
+// count asks GitHub how many results a query has. A good count says the token works; a sign-in problem is the error.
+func (g *githubConn) count(ctx context.Context, query string) (int, error) {
+	g.mu.Lock()
+	client := g.client
+	g.mu.Unlock()
+	token, err := client.Token(ctx)
+	var n int
+	var qerr error
+	if err == nil {
+		n, qerr = client.Count(ctx, token, query)
+	}
+	g.settle(ctx, err, qerr, "", false)
+	if err != nil {
+		return 0, err
+	}
+	return n, qerr
 }
 
 func (g *githubConn) currentConn() connState {
@@ -164,8 +223,14 @@ func (s *Service) serveConnectionCheck(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	g.check(r.Context())
-	writeJSON(w, http.StatusOK, connectionOf(rn.snapshot()))
+	cs, ok := g.check(r.Context())
+	if !ok {
+		return
+	}
+	c := connectionOf(rn.snapshot())
+	c.State, c.Login, c.Message, c.CheckedAt = cs.state, cs.login, cs.message, cs.checkedAt.UTC().Format(time.RFC3339Nano)
+	c.Fix = fixFor(cs.state, c.Host)
+	writeJSON(w, http.StatusOK, c)
 }
 
 func (s *Service) serveSearchCount(w http.ResponseWriter, r *http.Request) {
@@ -200,24 +265,15 @@ func (s *Service) serveSearchCount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "A query can hold at most 1024 bytes")
 		return
 	}
-	g.mu.Lock()
-	client := g.client
-	g.mu.Unlock()
-	token, err := client.Token(r.Context())
+	n, err := g.count(r.Context(), query)
 	var si *github.SignInError
-	if errors.As(err, &si) {
-		g.signedOut(si)
-		writeJSON(w, http.StatusConflict, map[string]any{"error": si.Message, "connection": connectionOf(rn.snapshot())})
-		return
-	}
-	var n int
-	if err == nil {
-		n, err = client.Count(r.Context(), token, query)
-	}
 	switch {
+	case r.Context().Err() != nil:
 	case err == nil:
 		writeJSON(w, http.StatusOK, map[string]int{"count": n})
-	case github.IsUnreachable(err) || r.Context().Err() != nil:
+	case errors.As(err, &si), github.IsBadCredentials(err):
+		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "connection": connectionOf(rn.snapshot())})
+	case github.IsUnreachable(err):
 		writeError(w, http.StatusBadGateway, err.Error())
 	default:
 		writeError(w, http.StatusUnprocessableEntity, err.Error())

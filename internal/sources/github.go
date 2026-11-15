@@ -321,24 +321,23 @@ func (g *githubConn) refresh() {
 	case g.ctx.Err() != nil:
 		return
 	case errors.As(err, &signIn):
-		g.signedOut(signIn)
+		g.settle(g.ctx, err, nil, "", false)
 		return
 	case err != nil: // the token call hung: keep the sign-in state
-		g.record(ConnUnreachable, "", err.Error())
+		g.settle(g.ctx, err, nil, "", false)
 		for _, v := range views {
 			changed = g.store(v.ID, nil, err.Error()) || changed
 		}
 		return
 	}
-	g.signedIn()
-	viewer, answered, unreachable := "", false, false
+	viewer, answered, worst := "", false, error(nil)
 	for _, v := range views {
 		items, login, err := client.SearchViewer(g.ctx, token, v.Query)
 		if g.ctx.Err() != nil {
 			return
 		}
 		if err != nil {
-			unreachable = unreachable || github.IsUnreachable(err)
+			worst = worseRefusal(worst, err)
 			changed = g.store(v.ID, nil, err.Error()) || changed
 			continue
 		}
@@ -385,12 +384,13 @@ func (g *githubConn) refresh() {
 		if g.ctx.Err() != nil {
 			return
 		}
-		unreachable, answered, viewer = github.IsUnreachable(err), err == nil, login
+		answered, worst, viewer = err == nil, err, login
 	}
-	if unreachable && !answered {
-		g.record(ConnUnreachable, "", "Couldn't reach "+client.Host())
-	} else {
-		g.record(ConnConnected, viewer, "")
+	if answered {
+		worst = nil
+	}
+	if _, ok := g.settle(g.ctx, nil, worst, viewer, false); !ok || github.IsBadCredentials(worst) {
+		return
 	}
 	if viewer != "" {
 		g.mu.Lock()
@@ -398,6 +398,19 @@ func (g *githubConn) refresh() {
 		g.mu.Unlock()
 	}
 	g.pollEvents(client, token, router, viewer)
+}
+
+// worseRefusal picks the refusal that says most about the connection: a rejected token, then a network failure, then any other.
+func worseRefusal(have, err error) error {
+	switch {
+	case have == nil || github.IsBadCredentials(err):
+		return err
+	case github.IsBadCredentials(have):
+		return have
+	case github.IsUnreachable(err):
+		return err
+	}
+	return have
 }
 
 // eventSearches are the searches behind the events that need no view.

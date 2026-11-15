@@ -275,7 +275,7 @@ func (c *Client) runQuery(ctx context.Context, token, gql string, optional bool,
 				msg = fmt.Sprintf("gh exited with status %d", ee.ExitCode())
 			}
 		}
-		return nil, fmt.Errorf("Search failed: %s", msg)
+		return nil, refusal(msg)
 	}
 	var body any
 	if json.Unmarshal([]byte(out), &body) != nil {
@@ -291,13 +291,32 @@ func (c *Client) runQuery(ctx context.Context, token, gql string, optional bool,
 		if msg == "" {
 			msg = "unknown error"
 		}
-		return nil, fmt.Errorf("Search failed: %s", redact(msg, token))
+		return nil, refusal(redact(msg, token))
 	}
 	data, _ := obj["data"].(map[string]any)
 	if data == nil {
 		return nil, errNotUnderstood
 	}
 	return data, nil
+}
+
+// refusalError is GitHub or gh turning a query down; BadCredentials is a 401, a token GitHub no longer accepts.
+type refusalError struct {
+	msg            string
+	badCredentials bool
+}
+
+func (e *refusalError) Error() string { return e.msg }
+
+func refusal(msg string) error {
+	low := strings.ToLower(msg)
+	return &refusalError{"Search failed: " + msg, strings.Contains(low, "bad credentials") || strings.Contains(low, "http 401")}
+}
+
+// IsBadCredentials says GitHub refused the token itself, as a revoked or expired one is.
+func IsBadCredentials(err error) bool {
+	var r *refusalError
+	return errors.As(err, &r) && r.badCredentials
 }
 
 var errNotUnderstood = errors.New("Search failed: GitHub's answer was not understood")

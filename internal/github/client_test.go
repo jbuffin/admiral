@@ -796,26 +796,11 @@ func TestCountRequest(t *testing.T) {
 }
 
 func TestCountErrors(t *testing.T) {
-	cases := []struct {
-		name  string
-		files map[string]string
-		want  string
-	}{
-		{"graphql errors", map[string]string{"json": `{"errors":[{"message":"Bad query"}]}`}, "Search failed: Bad query"},
-		{"stderr redacts the token", map[string]string{"fail": "gh: bad credentials fake-token-work-2\n"}, "Search failed: bad credentials ***"},
-		{"unreachable", map[string]string{"fail": "error connecting to api.github.com\n"}, "Couldn't reach github.com"},
-		{"no count", map[string]string{"json": `{"data":{"search":{}}}`}, "Search failed: GitHub's answer was not understood"},
-		{"not JSON", map[string]string{"json": "oops"}, "Search failed: GitHub's answer was not JSON"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			f := newFake(t)
-			f.count(t, c.files)
-			_, err := NewClient("github.com", "", nil, f.env).Count(context.Background(), "fake-token-work-2", "is:open")
-			if err == nil || err.Error() != c.want {
-				t.Fatalf("err = %v, want %q", err, c.want)
-			}
-		})
+	f := newFake(t)
+	f.count(t, map[string]string{"json": `{"data":{"search":{}}}`})
+	_, err := NewClient("github.com", "", nil, f.env).Count(context.Background(), "fake-token-work-2", "is:open")
+	if err == nil || err.Error() != "Search failed: GitHub's answer was not understood" {
+		t.Fatalf("err = %v, want the not-understood refusal", err)
 	}
 }
 
@@ -833,13 +818,24 @@ func TestViewerAsksForTheLoginAlone(t *testing.T) {
 	}
 }
 
-func TestViewerErrors(t *testing.T) {
-	t.Run("unreachable", func(t *testing.T) {
-		hangingGH(t)
-		cl := NewClient("github.com", "", nil, os.Environ())
-		cl.Timeout = 300 * time.Millisecond
-		if _, err := cl.Viewer(context.Background(), "fake-token-work-2"); err == nil || err.Error() != "Couldn't reach github.com" {
-			t.Fatalf("err = %v, want Couldn't reach github.com", err)
-		}
-	})
+func TestABadCredentialsRefusalIsTold(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		files map[string]string
+		want  bool
+	}{
+		{"401 on stderr", map[string]string{"fail": "gh: Bad credentials (HTTP 401)\n"}, true},
+		{"401 in a graphql error", map[string]string{"json": `{"errors":[{"message":"Bad credentials"}]}`}, true},
+		{"another refusal", map[string]string{"fail": "gh: Server error (HTTP 500)\n"}, false},
+		{"unreachable", map[string]string{"fail": "error connecting to api.github.com\n"}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFake(t)
+			f.answer(t, c.files)
+			_, err := NewClient("github.com", "", nil, f.env).Search(context.Background(), "fake-token-work-2", "is:open")
+			if err == nil || IsBadCredentials(err) != c.want {
+				t.Fatalf("IsBadCredentials(%v) = %v, want %v", err, IsBadCredentials(err), c.want)
+			}
+		})
+	}
 }

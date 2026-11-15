@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -192,8 +193,21 @@ func TestUnreachableIsTheConnectionsStateButARefusedSearchIsTheViewsError(t *tes
 		t.Fatalf("POST refresh = %d %s", code, body)
 	}
 	f.waitView("gh", "an error on Bugs", func(s SourceView) bool { return strings.Contains(s.view("bugs").Error, "boom") })
-	if c := f.connectionOf("gh"); c["state"] != "connected" {
-		t.Errorf("connection after a refused search = %v, want connected", c)
+	holdFor(t, "a refused search changed the connection", func() bool {
+		n := f.connectionOf("gh")
+		return n["state"] == "unreachable" && n["checked_at"] == c["checked_at"]
+	})
+}
+
+// holdFor polls check over a short hold, to show that something does not happen.
+func holdFor(t *testing.T, msg string, check func() bool) {
+	t.Helper()
+	end := time.Now().Add(time.Second)
+	for time.Now().Before(end) {
+		if !check() {
+			t.Fatal(msg)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -260,10 +274,10 @@ func TestConnectionSurvivesARestartOfTheSource(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	time.Sleep(400 * time.Millisecond) // the new process is still waiting on its slow first search
-	if c := f.connectionOf("gh"); c["state"] != "connected" || c["login"] != "octocat" {
-		t.Errorf("connection during the restart = %v, want the last one kept", c)
-	}
+	holdFor(t, "the connection left the last one during the restart", func() bool {
+		c := f.connectionOf("gh")
+		return c["state"] == "connected" && c["login"] == "octocat"
+	})
 }
 
 func TestCheckAgainRefusals(t *testing.T) {
@@ -389,20 +403,102 @@ func TestGitHubSourceCannotBeDeletedOrRestartedThroughTheRoutes(t *testing.T) {
 	if code, body := f.do(http.MethodPost, "/gh/restart", nil); code != http.StatusConflict || !strings.Contains(body, "error") {
 		t.Errorf("restart = %d %s, want 409 with an error", code, body)
 	}
-	time.Sleep(300 * time.Millisecond)
-	if f.file() != before || f.Svc.Sup.runner("gh") == nil || sid() != s0 {
-		t.Error("a refused Remove or Restart changed the config or the runner")
-	}
+	holdFor(t, "a refused Remove or Restart changed the config or the runner", func() bool {
+		return f.file() == before && f.Svc.Sup.runner("gh") != nil && sid() == s0
+	})
 }
 
 func TestAPluginSourceKeepsRemoveAndRestart(t *testing.T) {
 	f := newServiceFixture(t, moveConfig)
 	f.startSources()
 	f.waitView("pw", "its runner", func(SourceView) bool { return true })
-	if code, body := f.do(http.MethodPost, "/pw/restart", nil); code == http.StatusConflict && strings.Contains(body, "GitHub") {
-		t.Errorf("restart of a plugin source = %d %s, want it allowed", code, body)
+	if code, body := f.do(http.MethodPost, "/pw/restart", nil); code != http.StatusOK {
+		t.Errorf("restart of a plugin source = %d %s, want 200", code, body)
 	}
 	if code, body := f.do(http.MethodDelete, "/pw", nil); code != http.StatusOK {
 		t.Errorf("DELETE of a plugin source = %d %s, want 200", code, body)
+	}
+}
+
+const badCredentials = "gh: Bad credentials (HTTP 401)\n"
+
+func TestARevokedTokenReadsAsSignedOutAndOtherRefusalsKeepTheLastState(t *testing.T) {
+	f, g := liveGH(t, bugsView)
+	was := f.connectionOf("gh")
+
+	g.write("viewer.fail", "gh: Something odd (HTTP 500)\n")
+	code, body := f.do(http.MethodPost, "/gh/connection/check", map[string]any{})
+	var got map[string]any
+	_ = json.Unmarshal([]byte(body), &got)
+	if code != http.StatusOK || got["state"] != "connected" || got["checked_at"] != was["checked_at"] || !strings.Contains(got["message"].(string), "Something odd") {
+		t.Errorf("check after another refusal = %d %v, want the last connected state with the refusal as its message", code, got)
+	}
+
+	g.write("viewer.fail", badCredentials)
+	code, body = f.do(http.MethodPost, "/gh/connection/check", map[string]any{})
+	got = nil
+	_ = json.Unmarshal([]byte(body), &got)
+	if code != http.StatusOK || got["state"] != "signed_out" || !strings.Contains(got["message"].(string), "Bad credentials") ||
+		!reflect.DeepEqual(fixOf(got), []string{"gh auth login -h github.com"}) {
+		t.Errorf("check after a revoked token = %d %v, want signed_out with the login command", code, got)
+	}
+}
+
+func TestASearchTheTokenIsRefusedOnIsSignedOutButAnotherRefusalLeavesTheConnection(t *testing.T) {
+	f, g := liveGH(t, bugsView)
+	g.write("search/bugs.fail", "gh: Something odd (HTTP 500)\n")
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	f.waitView("gh", "an error on Bugs", func(s SourceView) bool { return strings.Contains(s.view("bugs").Error, "Something odd") })
+	if c := f.connectionOf("gh"); c["state"] != "connected" {
+		t.Errorf("connection after a refused search = %v, want connected kept", c)
+	}
+	g.write("search/bugs.fail", badCredentials)
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	f.waitConnection("gh", "signed out", func(c map[string]any) bool { return c["state"] == "signed_out" })
+}
+
+func TestACountTheTokenIsRefusedOnIsAConflictThatSignsTheSourceOut(t *testing.T) {
+	f, g := liveGH(t, bugsView)
+	g.countFail("all", "q=", badCredentials)
+	code, body := f.do(http.MethodPost, "/gh/search-count", map[string]any{"query": "is:open"})
+	if code != http.StatusConflict || !strings.Contains(body, "signed_out") {
+		t.Errorf("count with a revoked token = %d %s, want 409 with a signed_out connection", code, body)
+	}
+}
+
+func TestAGoodCountConnectsASignedOutSourceAndAnotherRefusalDoesNot(t *testing.T) {
+	g := newFakeGH(t)
+	g.count("all", "q=", 7)
+	f := newServiceFixture(t, ghConfig(campaignFleet, connSource))
+	f.startSources()
+	f.waitConnection("gh", "signed out", func(c map[string]any) bool { return c["state"] == "signed_out" })
+	g.token("", "fake-token-default-1")
+	if code, body := f.do(http.MethodPost, "/gh/search-count", map[string]any{"query": "is:open"}); code != http.StatusOK {
+		t.Fatalf("count = %d %s", code, body)
+	}
+	f.waitConnection("gh", "connected", func(c map[string]any) bool { return c["state"] == "connected" })
+	g.countFail("all", "q=", "gh: Validation failed (HTTP 422)\n")
+	if code, _ := f.do(http.MethodPost, "/gh/search-count", map[string]any{"query": "is:open"}); code != http.StatusUnprocessableEntity {
+		t.Errorf("a refused count = %d, want 422", code)
+	}
+	if c := f.connectionOf("gh"); c["state"] != "connected" {
+		t.Errorf("connection after a refused count = %v, want connected", c)
+	}
+}
+
+func TestACancelledCheckRecordsNothing(t *testing.T) {
+	f, _ := liveGH(t, bugsView)
+	was := f.connectionOf("gh")
+	g := f.Svc.Sup.runner("gh").p.(*githubConn)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, ok := g.check(ctx); ok {
+		t.Error("a cancelled check reported a result")
+	}
+	if _, err := g.count(ctx, "is:open"); err == nil {
+		t.Error("a cancelled count answered")
+	}
+	if now := f.connectionOf("gh"); now["state"] != "connected" || now["checked_at"] != was["checked_at"] {
+		t.Errorf("connection after a cancelled check = %v, want %v", now, was)
 	}
 }
