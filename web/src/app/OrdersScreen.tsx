@@ -218,7 +218,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const [again, setAgain] = useState<{ ship: Ship; kind: 'rereview'; url: string } | { ship: Ship; kind: 'fix' } | { ship: Ship; kind: 'wake'; pr?: MooredPR; stack?: string } | null>(null);
   const list = fleet ? sourcesForFleet(sources.value, fleet.key) : [];
   const all = tabs(list);
-  const id = all.some((t) => t.id === tabOf()) ? tabOf() : FOR_YOU;
+  const id = all.some((t) => t.id === tabOf()) ? tabOf() : (all[0]?.id ?? FOR_YOU);
   const choose = (next: string) => {
     const q = new URLSearchParams(fleetSearch.value);
     if (next !== FOR_YOU) q.set('tab', next);

@@ -47,11 +47,21 @@ func connectionOf(st sourceState) *Connection {
 	s := githubSettings(st.def.Settings)
 	c := &Connection{State: ConnChecking, Host: s.Host, Account: s.Account, Fix: []string{}}
 	if cs := st.conn; cs != nil {
-		c.State, c.Login, c.Message = cs.state, cs.login, cs.message
+		c.settled(*cs)
+	}
+	return c
+}
+
+// settled puts a recorded check into the connection; a check that has recorded nothing reads as checking, with no time.
+func (c *Connection) settled(cs connState) {
+	c.State, c.Login, c.Message, c.CheckedAt = cs.state, cs.login, cs.message, ""
+	if c.State == "" {
+		c.State = ConnChecking
+	}
+	if !cs.checkedAt.IsZero() {
 		c.CheckedAt = cs.checkedAt.UTC().Format(time.RFC3339Nano)
 	}
-	c.Fix = fixFor(c.State, s.Host)
-	return c
+	c.Fix = fixFor(c.State, c.Host)
 }
 
 // fixFor is the commands that turn a sign-in state into a connected one.
@@ -140,7 +150,7 @@ func (g *githubConn) noteMessage(msg string) connState {
 	g.mu.Lock()
 	if g.conn.state == "" {
 		g.mu.Unlock()
-		return g.conn
+		return connState{state: ConnChecking}
 	}
 	g.conn.message = msg
 	cs := g.conn
@@ -168,7 +178,7 @@ func (g *githubConn) check(ctx context.Context) (connState, bool) {
 }
 
 // count asks GitHub how many results a query has. A good count says the token works; a sign-in problem is the error.
-func (g *githubConn) count(ctx context.Context, query string) (int, error) {
+func (g *githubConn) count(ctx context.Context, query string) (int, connState, error) {
 	g.mu.Lock()
 	client := g.client
 	g.mu.Unlock()
@@ -178,11 +188,11 @@ func (g *githubConn) count(ctx context.Context, query string) (int, error) {
 	if err == nil {
 		n, qerr = client.Count(ctx, token, query)
 	}
-	g.settle(ctx, err, qerr, "", false)
+	cs, _ := g.settle(ctx, err, qerr, "", false)
 	if err != nil {
-		return 0, err
+		return 0, cs, err
 	}
-	return n, qerr
+	return n, cs, qerr
 }
 
 func (g *githubConn) currentConn() connState {
@@ -228,8 +238,7 @@ func (s *Service) serveConnectionCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := connectionOf(rn.snapshot())
-	c.State, c.Login, c.Message, c.CheckedAt = cs.state, cs.login, cs.message, cs.checkedAt.UTC().Format(time.RFC3339Nano)
-	c.Fix = fixFor(cs.state, c.Host)
+	c.settled(cs)
 	writeJSON(w, http.StatusOK, c)
 }
 
@@ -265,14 +274,16 @@ func (s *Service) serveSearchCount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "A query can hold at most 1024 bytes")
 		return
 	}
-	n, err := g.count(r.Context(), query)
+	n, cs, err := g.count(r.Context(), query)
 	var si *github.SignInError
 	switch {
 	case r.Context().Err() != nil:
 	case err == nil:
 		writeJSON(w, http.StatusOK, map[string]int{"count": n})
 	case errors.As(err, &si), github.IsBadCredentials(err):
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "connection": connectionOf(rn.snapshot())})
+		c := connectionOf(rn.snapshot())
+		c.settled(cs)
+		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "connection": c})
 	case github.IsUnreachable(err):
 		writeError(w, http.StatusBadGateway, err.Error())
 	default:

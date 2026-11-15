@@ -3,6 +3,7 @@ package github
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -120,3 +121,29 @@ func (r *Router) Route(host, nameWithOwner string) string {
 
 // Warnings returns the conflict warnings that fleet shows.
 func (r *Router) Warnings(fleetKey string) []string { return r.warnings[fleetKey] }
+
+// FleetClaims is what routes to one fleet by claim, on one host.
+type FleetClaims struct {
+	Repos   []string // owner/name, lowercase, sorted
+	Owners  []string // lowercase, sorted
+	Default bool     // the fleet that also gets what nobody claims
+}
+
+// Claims lists the repos and owners that fleetKey wins, built from the same maps Route reads.
+func (r *Router) Claims(fleetKey, host string) FleetClaims {
+	c := FleetClaims{Repos: []string{}, Owners: []string{}, Default: fleetKey == r.def}
+	prefix := strings.ToLower(host) + "/"
+	for id, k := range r.repoFor {
+		if k == fleetKey && strings.HasPrefix(id, prefix) {
+			c.Repos = append(c.Repos, strings.TrimPrefix(id, prefix))
+		}
+	}
+	for o, k := range r.ownerFor {
+		if k == fleetKey {
+			c.Owners = append(c.Owners, o)
+		}
+	}
+	sort.Strings(c.Repos)
+	sort.Strings(c.Owners)
+	return c
+}

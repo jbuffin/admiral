@@ -17,7 +17,6 @@ function Badge({ source }: { source: Source }) {
 }
 
 function SourceCard({ source, version, reload, bump, restart }: { source: Source; version: number; reload: () => Promise<void>; bump: (key: string) => void; restart: (key: string) => Promise<{ ok: boolean; error?: string }> }) {
-  const github = source.plugin === 'github';
   const fleet = fleets.value.find((f) => f.key === source.fleet);
   const others = fleets.value.filter((f) => f.key !== source.fleet);
   const [target, setTarget] = useState(others[0]?.key ?? '');
@@ -39,7 +38,7 @@ function SourceCard({ source, version, reload, bump, restart }: { source: Source
         <div class="source-id">
           <h2 id={titleId}>{source.name || source.key}</h2>
           <span class="source-meta">
-            {github ? 'built in' : 'plugin'} · {source.state}
+            plugin · {source.state}
           </span>
         </div>
         {fleet ? (
@@ -57,7 +56,7 @@ function SourceCard({ source, version, reload, bump, restart }: { source: Source
       ))}
       <SettingsForm source={source} version={version} onSaved={() => (bump(source.key), void reload())} />
       <Actions class="source-actions">
-        {!github && others.length > 0 ? (
+        {others.length > 0 ? (
           <div class="move">
             <label for={`${titleId}-move`}>Move to fleet</label>
             <select id={`${titleId}-move`} value={target} onChange={(e) => setTarget((e.target as HTMLSelectElement).value)}>
@@ -74,8 +73,6 @@ function SourceCard({ source, version, reload, bump, restart }: { source: Source
             })} />
           </div>
         ) : null}
-        {github ? null : (
-          <>
             <Button label="Restart" pending={['source', source.key, 'restart']} onClick={() => run(() => restart(source.key))} />
             {confirming ? (
               <div class="confirm" role="group" aria-label={`Remove ${source.name || source.key}`}>
@@ -90,8 +87,6 @@ function SourceCard({ source, version, reload, bump, restart }: { source: Source
             ) : (
               <Button label="Remove" onClick={() => setConfirming(true)} />
             )}
-          </>
-        )}
       </Actions>
       {error ? (
         <p class="note error" role="alert">
@@ -203,7 +198,7 @@ export function OrderSources({ fleet }: { fleet: Fleet }) {
     return { ok: true };
   };
 
-  const mine = sources?.filter((s) => s.fleet === fleet.key);
+  const mine = sources?.filter((s) => s.fleet === fleet.key && s.plugin !== 'github');
   return (
     <>
       {error ? (
@@ -211,7 +206,7 @@ export function OrderSources({ fleet }: { fleet: Fleet }) {
           {error}
         </p>
       ) : null}
-      {mine?.length === 0 ? <p class="line">{fleet.name} has no order sources.</p> : null}
+      {mine?.length === 0 ? <p class="line">{fleet.name} has no plugin sources.</p> : null}
       {mine?.map((s) => (
         <SourceCard key={s.key} source={s} version={versions[s.key] ?? 0} reload={reload} bump={bump} restart={restart} />
       ))}

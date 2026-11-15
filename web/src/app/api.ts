@@ -369,6 +369,26 @@ export interface Source {
   warnings: string[];
   /** The kinds of event the source raises; absent until it has listed them. */
   events?: { kind: string; title: string; panel?: string }[];
+  /** A GitHub source's sign-in status; absent for any other source. */
+  connection?: Connection;
+}
+export type ConnectionState = 'checking' | 'connected' | 'signed_out' | 'gh_missing' | 'unreachable';
+export interface Connection {
+  state: ConnectionState;
+  host: string;
+  account?: string;
+  login?: string;
+  /** RFC 3339; absent until a check has run. */
+  checked_at?: string;
+  /** The commands that turn a signed-out or gh-missing state into a connected one, in order. */
+  fix: string[];
+  message?: string;
+}
+export interface Repos {
+  repos: string[];
+  owners: string[];
+  default: boolean;
+  warnings: string[];
 }
 export interface PluginInfo {
   name: string;
@@ -394,6 +414,11 @@ export const saveSource = (key: string, body: { name?: string; fleet?: string; s
 export const restartSource = (key: string) => call<unknown>('POST', `${src(key)}/restart`);
 /** Asks the source to search again now; the new answer arrives with the usual stream. */
 export const refreshSource = (key: string) => call<unknown>('POST', `${src(key)}/refresh`);
+/** Asks GitHub now whether gh is signed in; a refusal with no `connection` (the source isn't running) keeps the last one. */
+export const checkConnection = (key: string) => call<Connection>('POST', `${src(key)}/connection/check`);
+/** How many results a search has, as GitHub counts them. */
+export const countSearch = (key: string, query: string) => call<{ count: number }>('POST', `${src(key)}/search-count`, { query });
+export const fetchRepos = (key: string) => call<Repos>('GET', `${src(key)}/repos`);
 export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
 export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });
 
@@ -565,6 +590,8 @@ export interface Source {
   /** The login the source's account has on its service; only the GitHub source serves it, so a plugin's layers count as not yours. */
   viewer?: string;
   views: OrderView[];
+  /** A GitHub source's visible views in tab order, For you included. */
+  tabs?: { id: string; title: string }[];
 }
 export interface Resource {
   name: string;

@@ -103,7 +103,7 @@ export function chatTerminalOf(path: string): string | null {
   }
 }
 
-const PREFERENCES_PAGES = ['fleet', 'admiralbot', 'sources', 'capabilities', 'usage', 'limits', 'all-usage', 'remote', 'install', 'notifications'] as const;
+const PREFERENCES_PAGES = ['fleet', 'admiralbot', 'github', 'sources', 'capabilities', 'usage', 'limits', 'all-usage', 'remote', 'install', 'notifications'] as const;
 
 const GLOBAL_PAGES: string[] = ['remote', 'all-usage', 'install', 'notifications'];
 
@@ -121,6 +121,8 @@ export const installPath = '/app/preferences/admiral/install';
 export type PreferencesPage = (typeof PREFERENCES_PAGES)[number];
 
 export const sourcesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/sources`;
+
+export const githubPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/github`;
 
 export const fleetPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/fleet`;
 

@@ -364,7 +364,7 @@ test('a fleet with no GitHub source says so and offers nothing to add', async ({
   await page.goto(githubPage(admiral, 'alpha'));
   await expect(page.getByRole('heading', { name: 'GitHub', exact: true })).toBeVisible();
   await expect(page.getByRole('main')).toContainText(`${HOME} has no GitHub source.`);
-  await expect(page.getByRole('button', { name: /^Add/ })).toHaveCount(0);
+  await expect(page.getByRole('main').getByRole('button', { name: /^Add/ })).toHaveCount(0);
   await expect(githubNavLink(page, HOME)).toBeVisible();
 });
 

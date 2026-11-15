@@ -25,18 +25,6 @@ export interface FieldKind {
 export type Settings = Record<string, unknown>;
 export type Built = { ok: true; settings: Settings } | { ok: false; error: string };
 
-export interface DefaultView {
-  id: string;
-  title: string;
-  query: string;
-}
-// The GitHub source's built-in views (internal/github/settings.go).
-export const DEFAULT_VIEWS: DefaultView[] = [
-  { id: 'assigned-to-me', title: 'Assigned to me', query: 'is:open assignee:@me' },
-  { id: 'review-requested', title: 'Review requested', query: 'is:open is:pr review-requested:@me' },
-  { id: 'my-prs', title: 'My PRs', query: 'is:open is:pr author:@me' },
-];
-
 const scalar = (p: Prop) => ['string', 'number', 'integer', 'boolean'].includes(p.type ?? '');
 const flaggedSecret = (p: Prop) => p.format?.toLowerCase() === 'password' || p.writeOnly === true;
 // A row field cannot tell a kept secret from a cleared one, so lists of secrets stay JSON.

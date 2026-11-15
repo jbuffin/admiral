@@ -162,10 +162,23 @@ function distinct(source: string, orders: Order[]): Order[] {
 export function tabs(sources: Source[]): Tab[] {
   const ordered = [...sources.filter(isGitHub), ...sources.filter((s) => !isGitHub(s))];
   const prefix = sources.length >= 2;
-  const out: Tab[] = [{ id: FOR_YOU, title: 'For you', count: forYou(sources, 0).count }];
+  const gh = sources.find(isGitHub);
+  const forYouTab = (title: string): Tab => ({ id: FOR_YOU, title, count: forYou(sources, 0).count });
+  const out: Tab[] = gh?.tabs ? [] : [forYouTab('For you')];
   for (const s of ordered) {
-    for (const v of s.views) {
-      out.push({ id: tabId(s, v), title: prefix && !isGitHub(s) ? `${s.name}: ${v.title}` : v.title, count: distinct(s.key, v.orders).length });
+    const arranged = s === gh ? s.tabs : undefined;
+    if (!arranged) {
+      for (const v of s.views) {
+        out.push({ id: tabId(s, v), title: prefix && !isGitHub(s) ? `${s.name}: ${v.title}` : v.title, count: distinct(s.key, v.orders).length });
+      }
+      continue;
+    }
+    for (const t of arranged) {
+      if (t.id === FOR_YOU) out.push(forYouTab(t.title));
+      else {
+        const v = s.views.find((x) => x.id === t.id);
+        if (v) out.push({ id: tabId(s, v), title: t.title, count: distinct(s.key, v.orders).length });
+      }
     }
   }
   return out;

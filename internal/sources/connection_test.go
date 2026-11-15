@@ -495,7 +495,7 @@ func TestACancelledCheckRecordsNothing(t *testing.T) {
 	if _, ok := g.check(ctx); ok {
 		t.Error("a cancelled check reported a result")
 	}
-	if _, err := g.count(ctx, "is:open"); err == nil {
+	if _, _, err := g.count(ctx, "is:open"); err == nil {
 		t.Error("a cancelled count answered")
 	}
 	if now := f.connectionOf("gh"); now["state"] != "connected" || now["checked_at"] != was["checked_at"] {

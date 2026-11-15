@@ -387,6 +387,7 @@ test('on the phone, the GitHub page hides a view with a tap and moves one with a
   const rows = page.getByRole('list', { name: 'Views' }).getByRole('listitem');
   const row = (title: string) => rows.filter({ has: page.getByRole('button', { name: title, exact: true }) });
   const sw = row('Review requested').getByRole('switch');
+  await sw.scrollIntoViewIfNeeded();
   await expectReachable(page, sw);
   const size = (await sw.boundingBox())!;
   expect(size.height).toBeGreaterThanOrEqual(44);
@@ -407,6 +408,6 @@ test('on the phone, the GitHub page hides a view with a tap and moves one with a
   await touch('pointerup', rowHeight * 1.1, 0);
   await expect.poll(() => stored().map((v) => v.id)).toEqual(['assigned-to-me', 'for-you', 'review-requested', 'my-prs']);
 
-  await tab(page, 'Orders').tap();
+  await page.getByRole('navigation').getByRole('link', { name: /^Orders/ }).tap();
   await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^For you/, /^My PRs/, /^Orders: Orders/]);
 });
