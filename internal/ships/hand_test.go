@@ -11,8 +11,10 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/moor"
 )
 
 const handIssue = "https://github.com/acme/widgets/issues/3"
@@ -78,7 +80,7 @@ func (r *handRig) refPath(t *testing.T) string {
 func (r *handRig) endTurn(t *testing.T) {
 	t.Helper()
 	r.turn(t, "needs_you", "stop")
-	r.s.advanceHandoffs()
+	r.s.advanceHands()
 	r.s.settleWG.Wait()
 }
 
@@ -89,7 +91,7 @@ func (r *handRig) queue(t *testing.T, body string) string {
 	if rec := r.hand("saltpaw", body); rec.Code != http.StatusAccepted || strings.TrimSpace(rec.Body.String()) != `{"handing":true}` {
 		t.Fatalf("hand = %d %s, want 202 {\"handing\":true}", rec.Code, rec.Body)
 	}
-	r.s.advanceHandoffs()
+	r.s.advanceHands()
 	r.s.settleWG.Wait()
 	if strings.Contains(r.fullPane(t), "/ships/saltpaw/") {
 		t.Fatal("the prompt reached a ship mid-turn")
@@ -121,7 +123,7 @@ func (r *handRig) setPaneOption(t *testing.T, name, value string) {
 func (r *handRig) wantRefusedBeforeAnySideEffect(t *testing.T, rec *httptest.ResponseRecorder, status int) string {
 	t.Helper()
 	msg := wantError(t, rec, status, "hand")
-	r.s.advanceHandoffs()
+	r.s.advanceHands()
 	r.s.settleWG.Wait()
 	if strings.Contains(r.fullPane(t), "/ships/saltpaw/") {
 		t.Error("a refused hand still typed its prompt")
@@ -233,14 +235,14 @@ func TestHandToCommodoreRefusesWhatCannotBeHanded(t *testing.T) {
 	t.Run("a restricted ship", func(t *testing.T) {
 		r := newHandRig(t)
 		r.turn(t, "needs_you", "stop")
-		r.s.EventShip = func(fleet, session string) (bool, bool) { return session == "saltpaw", false }
+		r.s.EventShip = func(fleet, session string) (bool, bool, error) { return session == "saltpaw", false, nil }
 		note(t, "restricted", r.wantRefusedBeforeAnySideEffect(t, r.hand("saltpaw", `{"kind":"issue"}`), http.StatusConflict))
 	})
 
 	t.Run("a ship an outside event launched", func(t *testing.T) {
 		r := newHandRig(t)
 		r.turn(t, "needs_you", "stop")
-		r.s.EventShip = func(fleet, session string) (bool, bool) { return false, session == "saltpaw" }
+		r.s.EventShip = func(fleet, session string) (bool, bool, error) { return false, session == "saltpaw", nil }
 		note(t, "event", r.wantRefusedBeforeAnySideEffect(t, r.hand("saltpaw", `{"kind":"issue"}`), http.StatusConflict))
 	})
 }
@@ -311,8 +313,14 @@ func TestHandToCommodoreAcceptsAnOtherBriefUnderTheShipsRefDirectory(t *testing.
 
 	r.started(t, 2)
 	waitUntil(t, "the ship relaunched as Commodore", func() bool { return r.options(t, "saltpaw")["skill-kind"] == "commodore" })
-	if got := outcomeLines(t, r.home, "saltpaw", "handed"); len(got) != 1 || got[0]["ref"] != brief {
-		t.Errorf("handed records = %v, want one naming %s", got, brief)
+	// the ref given to Commodore is the resolved path
+	want, err := filepath.EvalSymlinks(brief)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, "the handed record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "handed")) > 0 })
+	if got := outcomeLines(t, r.home, "saltpaw", "handed"); len(got) != 1 || got[0]["ref"] != want {
+		t.Errorf("handed records = %v, want one naming %s", got, want)
 	}
 }
 
@@ -357,6 +365,7 @@ func TestHandToCommodoreLeavesTheShipRunningOnABadRef(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(r.rec, "argv-2")); err == nil {
 				t.Error("the ship was relaunched on a bad ref")
 			}
+			waitUntil(t, "the handing_failed record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "handing_failed")) > 0 })
 			got := outcomeLines(t, r.home, "saltpaw", "handing_failed")
 			if len(got) != 1 || got[0]["reason"] == nil || got[0]["reason"] == "" {
 				t.Errorf("handing_failed records = %v, want one with a reason", got)
@@ -403,4 +412,107 @@ func mustArgv(t *testing.T, r *handRig, n int) []string {
 	t.Helper()
 	argv, _ := r.started(t, n)
 	return argv
+}
+
+func TestHandToCommodoreFailsWhenAPaneOptionChangesDuringThePromptedTurn(t *testing.T) {
+	for _, c := range []struct{ option, value, field string }{
+		{"@admiral-fleet", "personal", "fleet"},
+		{"@admiral-dir", "/tmp", "dir"},
+	} {
+		t.Run(c.field, func(t *testing.T) {
+			r := newHandRig(t)
+			ref := r.queue(t, `{"kind":"issue"}`)
+			r.setPaneOption(t, c.option, c.value)
+			writeRef(t, ref, handIssue+"\n")
+			r.endTurn(t)
+
+			waitUntil(t, "the handing_failed record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "handing_failed")) > 0 })
+			got := outcomeLines(t, r.home, "saltpaw", "handing_failed")
+			if reason, _ := got[0]["reason"].(string); len(got) != 1 || !strings.Contains(reason, c.field) {
+				t.Errorf("handing_failed records = %v, want one naming %q", got, c.field)
+			}
+			if !r.afloat() {
+				t.Error("the ship was stopped though a pane option changed")
+			}
+			if _, err := os.Stat(filepath.Join(r.rec, "argv-2")); err == nil {
+				t.Error("the ship was relaunched though a pane option changed")
+			}
+		})
+	}
+}
+
+func TestAHandingMarkAdmiralHoldsNoEntryForIsClearedAndFails(t *testing.T) {
+	r := newHandRig(t)
+	r.turn(t, "working", "")
+	r.setPaneOption(t, "@admiral-handing", "sent")
+	r.s.advanceHands()
+	r.s.settleWG.Wait()
+
+	waitUntil(t, "the handing_failed record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "handing_failed")) > 0 })
+	got := outcomeLines(t, r.home, "saltpaw", "handing_failed")
+	if reason, _ := got[0]["reason"].(string); len(got) != 1 || !strings.Contains(reason, "restarted") {
+		t.Errorf("handing_failed records = %v, want one saying Admiral restarted", got)
+	}
+	if mark := r.options(t, "saltpaw")["handing"]; mark != "" {
+		t.Errorf("handing mark = %q, want it cleared", mark)
+	}
+	if !r.afloat() {
+		t.Error("the ship was stopped for a mark nothing held")
+	}
+}
+
+func TestStoppingAShipDuringAHandFailsTheHandAndLeavesNoHandedRecord(t *testing.T) {
+	r := newHandRig(t)
+	r.turn(t, "working", "")
+	if rec := r.hand("saltpaw", `{"kind":"issue"}`); rec.Code != http.StatusAccepted {
+		t.Fatalf("hand = %d %s", rec.Code, rec.Body)
+	}
+	r.stopShip(t, "saltpaw")
+
+	waitUntil(t, "the handing_failed record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "handing_failed")) > 0 })
+	if got := outcomeLines(t, r.home, "saltpaw", "handing_failed"); len(got) != 1 {
+		t.Errorf("handing_failed records = %v, want one", got)
+	}
+	r.s.advanceHands()
+	r.s.settleWG.Wait()
+	if got := outcomeLines(t, r.home, "saltpaw", "handing_failed"); len(got) != 1 {
+		t.Errorf("handing_failed records after another pass = %v, want still one", got)
+	}
+	if got := outcomeLines(t, r.home, "saltpaw", "handed"); len(got) != 0 {
+		t.Errorf("handed records = %v, want none", got)
+	}
+}
+
+func TestAShipBeingHandedCannotReturnToPort(t *testing.T) {
+	r := newHandRig(t)
+	r.turn(t, "working", "")
+	if rec := r.hand("saltpaw", `{"kind":"issue"}`); rec.Code != http.StatusAccepted {
+		t.Fatalf("hand = %d %s", rec.Code, rec.Body)
+	}
+	if rec := r.returnToPort("saltpaw"); rec.Code != http.StatusConflict {
+		t.Errorf("return = %d %s, want 409", rec.Code, rec.Body)
+	}
+	if sh, _ := r.s.find("saltpaw"); sh.Options["returning"] != "" {
+		t.Error("the refused return still marked the ship")
+	}
+}
+
+func TestAShipBeingHandedIsNotMooredAtTheEndOfItsTurnForADoneReportWithAnOpenPR(t *testing.T) {
+	h := newHandRig(t)
+	r := &liveRig{nextRig: h.nextRig, gh: &openGH{open: map[string]bool{livePR7: true}}, stamp: time.Now()}
+	r.s.GitHub = func(string) moor.GitHub { return r.gh }
+	r.s.baselineAll()
+	go r.s.Run(r.ctx)
+	r.turn(t, "working", "")
+	r.writeReport(t, "done", livePR7)
+	waitUntil(t, "GitHub to confirm the PR", func() bool { s, _, _ := r.wire(t); return len(s.OpenPRs) == 1 })
+	if rec := h.hand("saltpaw", `{"kind":"issue"}`); rec.Code != http.StatusAccepted {
+		t.Fatalf("hand = %d %s", rec.Code, rec.Body)
+	}
+	r.turn(t, "needs_you", "stop")
+	holdsFor(t, 1500*time.Millisecond, "the ship moored while it was being handed", func() bool {
+		s, _, _ := r.wire(t)
+		_, err := os.Stat(r.mooredFile())
+		return s.Status != "moored" && err != nil && r.live(t)
+	})
 }

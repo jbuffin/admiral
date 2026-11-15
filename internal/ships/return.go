@@ -47,6 +47,9 @@ func (s *Service) serveReturn(w http.ResponseWriter, r *http.Request) {
 	case sess.Options[sessionhost.OptReturning] != "":
 		writeJSON(w, http.StatusOK, map[string]any{"returning": true})
 		return
+	case s.beingHanded(sess):
+		writeError(w, http.StatusConflict, "ship "+session+" is being handed to Commodore: it cannot also return to port")
+		return
 	case s.carriesPRs(sess):
 		writeError(w, http.StatusConflict, "ship "+session+" carries a PR: it returns to port once its PRs are merged")
 		return

@@ -163,6 +163,7 @@ func (s *Service) stopShip(session string, fields map[string]any) error {
 	if !ok {
 		return ErrNotFound
 	}
+	s.endHand(session, "the ship was stopped before the hand did")
 	switch status(sess, time.Now()) {
 	case StatusAnchored, StatusSailingOff:
 		s.observe(ctx) // the ship's `ended` goes into the log before `stopped`
