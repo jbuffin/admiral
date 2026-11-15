@@ -1,4 +1,4 @@
-# 27. Campaigns are read from GitHub's issue tree; Admiral never writes to it
+# 27. Campaigns are read from GitHub's issue tree; Admiral creates a parent but never edits a tree
 
 Status: accepted
 
@@ -10,10 +10,11 @@ The obvious way to stop two sessions taking the same child is to claim it by ass
 
 ## Decision
 
-**A campaign is a GitHub issue tree that Admiral reads, shows and launches from, and never writes to. AdmiralBot launches the campaign's children and keeps it moving.**
+**A campaign is a GitHub issue tree that Admiral reads, shows and launches from, and never edits. Admiral may create a campaign's parent issue, on the engineer's confirm. AdmiralBot launches the campaign's children and keeps it moving, and cannot create one.**
 
 - **GitHub only.** Trees come from the fleet's built-in GitHub client ([ADR 0006](0006-order-sources-are-subprocess-plugins.md)), and the whole tree routes to one fleet like any GitHub item: project, then owner, then default fleet.
-- **Never writes.** Admiral assigns, labels, closes and creates nothing in the tree. Its claim on a child is server-side only ([#222](https://github.com/jbuffin/admiral/issues/222)). Claiming on GitHub, closing tickets and graduating fog belong to the skill the ship runs. When AdmiralBot lays out a campaign, it launches a ship that runs the wayfinder skill to chart the map.
+- **Never edits.** Admiral assigns, labels and closes nothing in the tree, and never moves, removes or reorders a sub-issue (no `replace_parent`, no remove, no reprioritize). Its claim on a child is server-side only ([#222](https://github.com/jbuffin/admiral/issues/222)). Claiming on GitHub, closing tickets and graduating fog belong to the skill the ship runs. When AdmiralBot lays out a campaign, it launches a ship that runs the wayfinder skill to chart the map.
+- **Creating a parent.** The one write is making a campaign from issues the engineer selected: Admiral files the parent issue, links each chosen issue under it as a sub-issue in the selected order, then follows it. It happens only on the engineer's confirm in Admiral (T0), and only with the fleet's own GitHub account. A chosen issue that already has a parent is refused and nothing is written. If a step fails after the parent exists, Admiral stops and reports the parent and what it linked; it deletes and retries nothing. AdmiralBot has no tool for it and its token is refused the route. Every chosen issue must route to the same fleet as the parent's repo and be owned by the parent's owner, stricter than the whole-tree rule above, so one fleet account does every read and write.
 - **Ready.** A child is ready when it is open, every blocker is closed (blockers outside the campaign included), nobody is assigned to it, and no live ship holds Admiral's claim on it. Ready children keep sub-issue order.
   - A child assigned to someone with no live ship shows as "claimed, no ship", with *Start anyway*. Admiral can't tell a session outside Admiral from a stale claim, so it doesn't guess.
   - Nested parents (a sub-map, or a spec child with its own children) fold into the tree and are never launched. Their ready children join the campaign's ready set in tree order. A blocked parent blocks everything under it.
@@ -47,5 +48,6 @@ The obvious way to stop two sessions taking the same child is to claim it by ass
 - A child someone assigned on GitHub is never ready, even when nobody is working on it. "Claimed, no ship" and *Start anyway* are the way through.
 - Admiral's claims live only on the server, so two Admirals on different machines can start the same child.
 - Amends [ADR 0009](0009-ships-run-in-a-checkout-picked-from-the-fleets-search-roots.md): a campaign's work repo comes first in the checkout preselect, before the order's repo.
+- Amended 2026-11-15: Admiral may create a campaign's parent issue and link the chosen issues under it, on the engineer's confirm. It still never edits an existing tree.
 - Amends [ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md): AdmiralBot reads campaigns, and "work on a campaign" is a ledger commitment with the rules above.
 - Amends [ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md), from [skills#195](https://github.com/jbuffin/skills/issues/195): the launch tool gains `issues` (two or more make a slice; Admiral claims every child, and the idempotency key is the sorted URL set) and `crew` (members pinned by name). Commodore ships AdmiralBot launches run in autopilot mode by default, with no auto-merge.

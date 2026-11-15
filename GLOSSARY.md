@@ -100,7 +100,7 @@ A named list of orders from one source, such as GitHub's Assigned to me, Review 
 _Avoid_: panel, column, list
 
 **Campaign**:
-A parent GitHub issue Admiral follows as one effort through its tree of children. Admiral reads the tree and launches from it, and never writes to it.
+A parent GitHub issue Admiral follows as one effort through its tree of children. Admiral reads the tree and launches from it and never edits it. It may create the parent issue from issues the engineer selects, on their confirm; AdmiralBot cannot.
 
 **Ready**:
 A campaign child that can start now: open, with every blocker closed, nobody assigned and no live ship holding Admiral's claim on it.

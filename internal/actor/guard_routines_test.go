@@ -50,6 +50,7 @@ func TestAnActorMayReadItsOwnFleetsStandingOrdersAndNothingElseAboutThem(t *test
 		{"POST", "/api/fleets/work/standing-orders/copy", "copying standing orders"},
 		{"POST", "/api/fleets/work/standing-orders/draft", "the standing orders drafter"},
 		{"POST", "/api/fleets/work/routines/draft", "the routine drafter"},
+		{"POST", "/api/fleets/work/campaigns/draft", "the campaign drafter"},
 		{"PUT", "/api/fleets/work", "saving the fleet and its Limits"},
 		{"DELETE", "/api/fleets/work/standing-orders", "deleting standing orders"},
 	} {

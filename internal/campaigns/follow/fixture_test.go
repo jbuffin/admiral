@@ -23,6 +23,25 @@ const ghScript = `#!/bin/sh
 d="$FAKEGH_DIR"
 mkdir -p "$d/calls"
 printf '%s\0' "$@" > "$d/calls/$$.argv"
+if [ "$1" = api ] && [ "$2" = --method ]; then
+	method=$3 host= endpoint= input= prev=
+	for a in "$@"; do
+		[ "$prev" = --hostname ] && host=$a
+		[ "$prev" = --input ] && input=$a
+		prev=$a endpoint=$a
+	done
+	stdin=
+	[ -n "$input" ] && stdin=$(cat)
+	printf '%s\t%s\t%s\t%s\t%s\n' "$method" "$host" "$endpoint" "$stdin" "$*" >> "$d/rest.log"
+	key=rest_${method}_$(printf %s "$endpoint" | tr / _)
+	digits=$(printf %s "$stdin" | tr -cd 0-9)
+	for k in "${key}_${digits}" "$key"; do
+		if [ -e "$d/resp/$k.fail" ]; then cat "$d/resp/$k.fail" >&2; exit 1; fi
+		if [ -e "$d/resp/$k.json" ]; then cat "$d/resp/$k.json"; exit 0; fi
+	done
+	echo "no canned answer for $key" >&2
+	exit 1
+fi
 owner= repo= number= after= q=
 for a in "$@"; do
 	case "$a" in
@@ -143,6 +162,47 @@ func (g *fakeGH) set(i iss) {
 	for _, k := range i.kids {
 		g.set(k)
 	}
+}
+
+// restKey names the answer file of a REST call; withID picks the call whose body holds those digits (a sub-issue's REST id).
+func restKey(method, endpoint, withID string) string {
+	k := "rest_" + method + "_" + strings.ReplaceAll(endpoint, "/", "_")
+	if withID != "" {
+		k += "_" + withID
+	}
+	return k
+}
+
+func (g *fakeGH) respondREST(method, endpoint, withID, body string) {
+	g.respond(restKey(method, endpoint, withID), body)
+}
+
+func (g *fakeGH) failREST(method, endpoint, withID, stderr string) {
+	if err := os.WriteFile(filepath.Join(g.dir, "resp", restKey(method, endpoint, withID)+".fail"), []byte(stderr), 0o644); err != nil {
+		panic(err)
+	}
+}
+
+// restCall is one gh api --method call, as the fake gh saw it.
+type restCall struct{ Method, Host, Endpoint, Stdin, Args string }
+
+func (g *fakeGH) restCalls() []restCall {
+	raw, _ := os.ReadFile(filepath.Join(g.dir, "rest.log"))
+	var out []restCall
+	for _, line := range strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		f := strings.SplitN(line, "\t", 5)
+		out = append(out, restCall{f[0], f[1], strings.TrimPrefix(f[2], "/"), f[3], f[4]})
+	}
+	return out
+}
+
+// ghCalls counts every gh run so far, tokens included.
+func (g *fakeGH) ghCalls() int {
+	files, _ := filepath.Glob(filepath.Join(g.dir, "calls", "*.argv"))
+	return len(files)
 }
 
 func (g *fakeGH) delay(d time.Duration) {

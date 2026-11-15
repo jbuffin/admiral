@@ -3,8 +3,10 @@ package follow
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/jbuffin/admiral/internal/ships"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +22,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/campaigns", s.serveList)
 	mux.HandleFunc("POST /api/campaigns", s.serveFollow)
 	mux.HandleFunc("GET /api/campaigns/{id}", s.serveGet)
+	mux.HandleFunc("POST /api/campaigns/create", s.serveCreate)
 	mux.HandleFunc("POST /api/campaigns/{id}/unfollow", s.serveUnfollow)
 	mux.HandleFunc("PUT /api/campaigns/{id}/override", s.serveOverride)
 	mux.HandleFunc("PUT /api/campaigns/{id}/work-repo", s.serveWorkRepo)
@@ -456,4 +459,142 @@ func (s *Service) launchSlice(ctx context.Context, f Followed, issues []string, 
 		return nil, lerr
 	}
 	return got, nil
+}
+
+const maxCreateIssues = 50
+
+var repoPart = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+
+// createTimeout bounds the writes and the follow after them, which run even if the engineer's browser hangs up.
+const createTimeout = 2 * time.Minute
+
+type createdFailure struct {
+	Error  string   `json:"error"`
+	Parent string   `json:"parent"`
+	Linked []string `json:"linked"`
+}
+
+// serveCreate files a campaign's parent issue, links the chosen issues under it in order and follows it.
+// It never edits an existing tree: a child that already has a parent is refused, not moved.
+func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Repo   string   `json:"repo"`
+		Title  string   `json:"title"`
+		Body   string   `json:"body"`
+		Issues []string `json:"issues"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	title := strings.TrimSpace(body.Title)
+	switch {
+	case title == "":
+		writeError(w, http.StatusBadRequest, "title: write a title for the campaign")
+		return
+	case len(body.Issues) == 0 || len(body.Issues) > maxCreateIssues:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("issues: pick 1 to %d", maxCreateIssues))
+		return
+	}
+	owner, repoName, ok := strings.Cut(strings.TrimSpace(body.Repo), "/")
+	if !ok || !repoPart.MatchString(owner) || !repoPart.MatchString(repoName) || owner == "." || owner == ".." || repoName == "." || repoName == ".." {
+		writeError(w, http.StatusBadRequest, "repo: write owner/name")
+		return
+	}
+	type child struct {
+		ref campaigns.IssueRef
+		url string
+	}
+	var kids []child
+	seen := map[string]bool{}
+	for _, raw := range body.Issues {
+		ref, err := campaigns.ParseIssueRef(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, raw+": "+err.Error())
+			return
+		}
+		url := fmt.Sprintf("https://%s/%s/%s/issues/%d", hostOf(ref), ref.Owner, ref.Repo, ref.Number)
+		key := strings.ToLower(url)
+		if seen[key] {
+			writeError(w, http.StatusBadRequest, "issues: "+url+" is listed twice")
+			return
+		}
+		seen[key] = true
+		kids = append(kids, child{ref, url})
+	}
+	host := hostOf(kids[0].ref)
+	fleet := ""
+	if s.Route != nil {
+		fleet = s.Route(host, owner+"/"+repoName)
+	}
+	if fleet == "" {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("No fleet owns %s/%s, so Admiral can't file the campaign there", owner, repoName))
+		return
+	}
+	for _, k := range kids {
+		switch {
+		case hostOf(k.ref) != host:
+			writeError(w, http.StatusUnprocessableEntity, "issues: every issue must be on the same GitHub host")
+			return
+		case !strings.EqualFold(k.ref.Owner, owner):
+			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s is not owned by %s, so it can't be linked under a parent in %s/%s", k.url, owner, owner, repoName))
+			return
+		case s.Route(host, k.ref.Owner+"/"+k.ref.Repo) != fleet:
+			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s belongs to another fleet than %s/%s", k.url, owner, repoName))
+			return
+		}
+	}
+	client, ok := s.Clients(fleet, host)
+	switch {
+	case !ok:
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("fleet %s has no GitHub source for %s", fleet, host))
+		return
+	case !strings.EqualFold(client.Host(), host):
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("the GitHub source of fleet %s reads %s, not %s", fleet, client.Host(), host))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
+	defer cancel()
+	ids := make([]int64, len(kids))
+	for i, k := range kids {
+		rec, err := client.IssueRecord(ctx, k.ref.Owner, k.ref.Repo, k.ref.Number)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Sprintf("Could not read %s, so nothing was created: %v", k.url, err))
+			return
+		}
+		if rec.PullRequest {
+			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s is a pull request, not an issue, so nothing was created", k.url))
+			return
+		}
+		if rec.ParentURL != "" {
+			writeError(w, http.StatusConflict, fmt.Sprintf("%s already has a parent, and Admiral never moves an issue, so nothing was created", k.url))
+			return
+		}
+		ids[i] = rec.RESTID
+	}
+
+	wctx, wcancel := context.WithTimeout(context.WithoutCancel(r.Context()), createTimeout)
+	defer wcancel()
+	parent, err := client.CreateIssue(wctx, owner, repoName, title, body.Body)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Could not create the parent issue, so nothing was linked: %v", err))
+		return
+	}
+	linked := []string{}
+	fail := func(msg string) {
+		writeJSON(w, http.StatusBadGateway, createdFailure{Error: msg, Parent: parent.URL, Linked: linked})
+	}
+	for i, k := range kids {
+		if err := client.AddSubIssue(wctx, owner, repoName, parent.Number, ids[i]); err != nil {
+			fail(fmt.Sprintf("Created %s but could not link %s: %v", parent.URL, k.url, err))
+			return
+		}
+		linked = append(linked, k.url)
+	}
+	got, _, lerr := s.Follow(wctx, parent.URL)
+	if lerr != nil {
+		fail(fmt.Sprintf("Created and linked %s but could not follow it: %s", parent.URL, lerr.Msg))
+		return
+	}
+	writeJSON(w, http.StatusCreated, s.json(got))
 }

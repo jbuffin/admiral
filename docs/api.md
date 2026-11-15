@@ -322,7 +322,7 @@ Serves the `make_commitment` tool and needs an actor token: any other caller is 
 
 ### `POST /api/chat/campaign-commitments` (AdmiralBot only)
 
-Serves the `work_on_campaign` tool and needs an actor token: any other caller is `403`. The fleet is the token's. The body is `{"reference", "harness"}`: the campaign's parent issue as a URL or `owner/repo#n` (a bare `#n` is refused), and the harness its children run on (`claude` when absent). The route follows the campaign as `POST /api/campaigns` does, so its `400` and `422` pass through; a campaign that belongs to another fleet is `403`, and `422` when autopilot is not proven for the harness with its advisor (answered in the chat, with no Inbox notice). It records one commitment: trigger `campaign` (the subject is the campaign's id), action `work`, `harness`. `201` for a new one, `200` with the open one when the campaign already has it. Admiral never writes to the issue tree. The generic `POST /api/chat/commitments` refuses trigger `campaign`, and a launch from source `campaign` is refused there too.
+Serves the `work_on_campaign` tool and needs an actor token: any other caller is `403`. The fleet is the token's. The body is `{"reference", "harness"}`: the campaign's parent issue as a URL or `owner/repo#n` (a bare `#n` is refused), and the harness its children run on (`claude` when absent). The route follows the campaign as `POST /api/campaigns` does, so its `400` and `422` pass through; a campaign that belongs to another fleet is `403`, and `422` when autopilot is not proven for the harness with its advisor (answered in the chat, with no Inbox notice). It records one commitment: trigger `campaign` (the subject is the campaign's id), action `work`, `harness`. `201` for a new one, `200` with the open one when the campaign already has it. Admiral never edits the issue tree, and AdmiralBot cannot create one. The generic `POST /api/chat/commitments` refuses trigger `campaign`, and a launch from source `campaign` is refused there too.
 
 A campaign commitment stays open across its children and closes only when the campaign ends (every issue closed, or unfollowed: `ended` card) or the engineer cancels. On each tick it launches the campaign's ready Without-you children in autopilot with `Decide`'s rules (autopilot mode: ADR 0034), one launch key `commitment:<id>:<child url>` each, and records a child event per child: `child_launched`, `child_waiting`, `child_declined` or `child_failed`, with `url`, plus `ship` on `child_launched` and `reason` on `child_failed` (the commitment's `harness` is on its first event). A commitment lists as `{..., "harness", "children": [{"url","state","ship","reason"}], "launched", "waiting_children"}`, one entry per child URL with its last state. At most 200 child events are kept for a commitment; a launch can record two, so it launches no more once fewer than two remain, and posts one `too_large` card. A campaign missing from the follow store ends the commitment ("stopped following").
 
@@ -430,7 +430,7 @@ The response is 200 with the member's notes after the change, in GET's `notes` s
 
 ## Campaigns
 
-A campaign is a GitHub issue with sub-issues, followed. Admiral reads the tree through the fleet's GitHub source and never writes to GitHub (ADR 0027). All routes are also served under `/api/v1/`. Errors are `{"error": "..."}`.
+A campaign is a GitHub issue with sub-issues, followed. Admiral reads the tree through the fleet's GitHub source and never edits it; the one write is creating a campaign's parent on the engineer's confirm (ADR 0027). All routes are also served under `/api/v1/`. Errors are `{"error": "..."}`.
 
 A campaign is:
 
@@ -461,6 +461,17 @@ Each node carries `labels` (names, `[]` when none; a parent's too, so the root's
 ### `POST /api/campaigns`
 
 Body `{"reference": "<issue URL or owner/repo#n>"}`. `owner/repo#n` means github.com. Reads the tree, stores the campaign and launches nothing. `201` with the campaign; `200` with the campaign already followed for that issue, ended included. `400` for a reference that is not an issue (the message says what to paste); `422` when no fleet owns the repo, the fleet has no GitHub source for the issue's host (a host is compared ignoring case and must be the source's own), or the read failed.
+
+### `POST /api/campaigns/create`
+
+The engineer's confirm to make a campaign from issues. Needs a browser or CLI token: an actor token is `403`. Body `{"repo": "owner/name", "title": "…", "body": "…", "issues": ["<issue URL or owner/repo#n>", …]}`: 1 to 50 distinct issues in the order to link them, all on one host (`owner/repo#n` means github.com), the title not blank. Using the fleet that owns `repo`, it reads every issue first, creates the parent in `repo`, links each issue under it with one call each in the given order, then follows the parent as `POST /api/campaigns` does. Nothing launches. `201` with the campaign.
+
+- `400`: the body is not JSON, `repo` is not a plain `owner/name`, the title is blank, there are no issues or more than 50, a ref is repeated or can't be read. Nothing is written.
+- `422`: the hosts differ, no fleet owns `repo`, an issue routes to another fleet or is owned by someone other than `repo`'s owner, or the fleet has no GitHub source for the host. Nothing is written.
+- `409`: an issue already has a parent; the error names it. Admiral never moves an issue. Nothing is written.
+- `422` too: an issue is a pull request (named in the error).
+- `502` before the parent exists: an issue could not be read, or the parent could not be created. Nothing is written.
+- `502` after it: `{"error": "…", "parent": "<parent URL>", "linked": ["<issue URL>", …]}`, when a link or the follow fails. `linked` holds the issues linked so far in order. Admiral deletes, retries and edits nothing, so the engineer can finish the links on GitHub.
 
 ### `GET /api/campaigns/<id>`
 
@@ -699,6 +710,10 @@ A Check or the Guidance that the prose does not hold (compared after whitespace 
 ### `POST /api/fleets/<key>/routines/draft`
 
 `{"prose": "…"}`. The same judge call, for a routine: `{"draft": {"name", "enabled", "when", "do": {"prompt": "…"}, "before_acting", "notify"}, "problems": [{"field": "name|when|before_acting|do", "message": "…"}]}`. The draft is a prompt routine and is checked as a save would be; it is not stored. The 400, 409 and 502 answers are the standing-orders draft's.
+
+### `POST /api/fleets/<key>/campaigns/draft`
+
+`{"issues": [{"url": "…", "title": "…"}, …]}` (1 to 50). The same judge call, for the parent issue of a campaign that groups them: `{"title": "…", "body": "…"}`. Nothing is saved or written to GitHub. `409` and `502` are the other drafters'; a reply without a title and a body is `502`.
 
 ## Harness capabilities
 

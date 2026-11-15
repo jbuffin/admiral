@@ -354,7 +354,7 @@ var mcpTools = []mcpTool{
 				"resources":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "the configured resources the ship needs while it runs"},
 			}},
 		}), makeCommitment},
-	{"work_on_campaign", "Work on a campaign (a GitHub issue tree) for the engineer: Admiral follows it and launches each Without-you child ship unattended in autopilot, until the campaign ends. Use it only when the engineer tells you to work on an issue in this chat; then quote it back with its id. Admiral never writes to the issue tree. You cannot cancel it: only the engineer cancels, on Preferences.",
+	{"work_on_campaign", "Work on a campaign (a GitHub issue tree) for the engineer: Admiral follows it and launches each Without-you child ship unattended in autopilot, until the campaign ends. Use it only when the engineer tells you to work on an issue in this chat; then quote it back with its id. Admiral never edits the issue tree, and you cannot create a campaign. You cannot cancel it: only the engineer cancels, on Preferences.",
 		obj([]string{"reference"}, map[string]any{
 			"reference": str("the campaign's parent issue: a URL or owner/repo#n"),
 			"harness":   str("the harness the children run on: claude, codex or copilot"),
@@ -532,7 +532,7 @@ func workOnCampaign(c *mcpClient, raw json.RawMessage) (string, error) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil || got.ID == "" {
 		return out, nil
 	}
-	return fmt.Sprintf("Recorded commitment %s: %q (%s). Admiral launches each Without-you child in autopilot until the campaign ends and never writes to the issue tree. Quote this back to the engineer; only the engineer can cancel it, on Preferences.", got.ID, got.Text, a.Reference), nil
+	return fmt.Sprintf("Recorded commitment %s: %q (%s). Admiral launches each Without-you child in autopilot until the campaign ends and never edits the issue tree. Quote this back to the engineer; only the engineer can cancel it, on Preferences.", got.ID, got.Text, a.Reference), nil
 }
 
 func askQuestion(c *mcpClient, raw json.RawMessage) (string, error) {
