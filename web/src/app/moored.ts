@@ -162,7 +162,8 @@ function againOf(ship: Ship, order: Order): RowAgain {
 export function shipsOnOrder(ships: Ship[], order: Order): Ship[] {
   if (!order.url) return [];
   const key = prKey(order.url);
-  const hits = ships.filter((s) => ON_ORDER.includes(s.status) && [s.url, s.link, ...(s.issues ?? []), ...(s.prs ?? []).map((p) => p.url)].some((u) => !!u && prKey(u) === key));
+  const stackKey = order.stack ? prKey(order.stack.url) : '';
+  const hits = ships.filter((s) => ON_ORDER.includes(s.status) && [s.url, s.link, ...(s.issues ?? []), ...(s.prs ?? []).map((p) => p.url)].some((u) => !!u && (prKey(u) === key || prKey(u) === stackKey)));
   const rank = (s: Ship) => (againOf(s, order) ? 0 : ({ needs_you: 1, underway: 2, moored: 3 })[s.status as 'moored']);
   const at = (s: Ship) => Date.parse(s.launched) || 0;
   return hits.sort((a, b) => rank(a) - rank(b) || at(b) - at(a));
