@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { checkConnection, countSearch, fetchRepos, fetchSettings, saveSource, type Connection, type Fleet, type Repos, type Source } from './api';
 import { Actions, Button } from './Button';
-import { addLabel, BUILTIN_VIEWS, forSave, HOT_LABEL_DEFAULTS, intervalLabel, intervalOptions, isRemovable, moveView, plainWords, removeLabel, removeView, renameView, setHidden, type ViewEntry } from './githubViews';
+import { addLabel, BUILTIN_VIEWS, checkedWords, editSearch, forSave, HOT_LABEL_DEFAULTS, inOrder, intervalLabel, intervalOptions, isBuiltin, isRemovable, needsSignIn, onKey, plainWords, removeLabel, removeView, renameView, searchOf, setHidden, titleOf, viewKey, type ViewEntry } from './githubViews';
 import { arranged, gripKey, pressGrip } from './gripReorder';
 import { fleetPath, go } from './router';
 import { copyOutcome } from './remoteTailscale';
@@ -50,16 +50,23 @@ function CopyCommand({ command }: { command: string }) {
   );
 }
 
-function ConnectionSection({ src, onCheck }: { src: Source; onCheck: () => Promise<void> }) {
+function ConnectionSection({ fleet, src, settings, put, error, onCheck }: { fleet: Fleet; src: Source; settings: Record<string, unknown> | null; put: (patch: Record<string, unknown>) => Promise<boolean>; error?: string; onCheck: () => void }) {
   const c = connectionFor(src);
   const [switching, setSwitching] = useState(false);
-  const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [checkError, setCheckError] = useState('');
+  const hostField = useRef<HTMLInputElement>(null);
+  const accountField = useRef<HTMLInputElement>(null);
   const check = async () => {
-    setError('');
+    setCheckError('');
     const r = await checkConnection(src.key);
     if (r.ok) checked.value = { ...checked.value, [src.key]: r.data };
-    else setError(r.error);
-    await onCheck();
+    else setCheckError(r.error);
+    onCheck();
+  };
+  const saveFields = async () => {
+    const ok = await put({ host: hostField.current?.value.trim() ?? '', account: accountField.current?.value.trim() ?? '' });
+    if (ok) setEditing(false);
   };
   const host = c?.host ?? 'github.com';
   const signedOut = c?.state === 'signed_out' || c?.state === 'gh_missing';
@@ -75,6 +82,7 @@ function ConnectionSection({ src, onCheck }: { src: Source; onCheck: () => Promi
             <p class="gh-status">
               <span class="dot err" aria-hidden="true" /> Not signed in to {host}
             </p>
+            <p class="note">Orders is empty for {fleet.name}.</p>
             <p class="note">Run this in a terminal on the Mac, then check again.</p>
             {c.fix.map((cmd) => (
               <CopyCommand key={cmd} command={cmd} />
@@ -97,7 +105,7 @@ function ConnectionSection({ src, onCheck }: { src: Source; onCheck: () => Promi
               <span class="chip chip-ok">Connected</span>
             </p>
             <p class="note">
-              {host} · through the gh CLI · token checked {c.checked_at ? new Date(c.checked_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}
+              {host} · through the gh CLI · token checked {checkedWords(c.checked_at, Date.now())}
             </p>
             {switching ? <CopyCommand command={`gh auth switch -h ${host}`} /> : null}
           </>
@@ -107,28 +115,50 @@ function ConnectionSection({ src, onCheck }: { src: Source; onCheck: () => Promi
             <span class="dot wait" aria-hidden="true" /> Couldn't reach {host}
           </p>
         ) : null}
-        {c?.message && c.state !== 'connected' && c.state !== 'checking' ? <p class="note">{c.message}</p> : null}
-        {error ? (
+        {c?.message && c.state !== 'checking' ? <p class="note">{c.message}</p> : null}
+        {checkError ? (
           <p class="note error" role="alert">
-            {error}
+            {checkError}
           </p>
+        ) : null}
+        {editing ? (
+          <div class="gh-fields">
+            <label class="gh-field">
+              <span class="note">Host</span>
+              <input ref={hostField} type="text" class="vname" aria-label="Host" defaultValue={(settings?.host as string | undefined) ?? ''} placeholder="github.com" />
+            </label>
+            <label class="gh-field">
+              <span class="note">Account</span>
+              <input ref={accountField} type="text" class="vname" aria-label="Account" defaultValue={(settings?.account as string | undefined) ?? ''} placeholder="the active account" />
+            </label>
+            {error ? (
+              <p class="note error" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <Actions class="gh-actions">
+              <Button label="Save host and account" variant="primary" onClick={saveFields} />
+              <Button label="Cancel" variant="quiet" onClick={() => setEditing(false)} />
+            </Actions>
+          </div>
         ) : null}
         <Actions class="gh-actions">
           <Button label="Check again" onClick={check} />
           {c?.state === 'connected' && !switching ? <Button label="Switch account" onClick={() => setSwitching(true)} /> : null}
+          {settings && !editing ? <Button label="Edit host and account" variant="quiet" onClick={() => setEditing(true)} /> : null}
         </Actions>
       </div>
     </section>
   );
 }
 
-function ReposSection({ fleet, src, version }: { fleet: Fleet; src: Source; version: number }) {
+function ReposSection({ fleet, src }: { fleet: Fleet; src: Source }) {
   const [repos, setRepos] = useState<Repos | null>(null);
   useEffect(() => {
     let live = true;
     void fetchRepos(src.key).then((r) => live && r.ok && setRepos(r.data));
     return () => void (live = false);
-  }, [src.key, version]);
+  }, [src.key]);
   return (
     <section class="gh-section" aria-labelledby="gh-repos">
       <h2 class="h2" id="gh-repos">
@@ -146,7 +176,7 @@ function ReposSection({ fleet, src, version }: { fleet: Fleet; src: Source; vers
                 <li key={r}>{r}</li>
               ))}
             </ul>
-            {repos.owners.length === 0 && repos.repos.length === 0 ? <p class="note">Nothing is checked out or listed for {fleet.name} yet.</p> : null}
+            {repos.owners.length === 0 && repos.repos.length === 0 ? <p class="note">No repos yet. Add a search root or an owner in Fleet.</p> : null}
             {repos.default ? <p class="note">Anything no other fleet claims goes here too.</p> : null}
             {repos.warnings.map((w) => (
               <p class="note warning" key={w}>
@@ -174,25 +204,26 @@ function ReposSection({ fleet, src, version }: { fleet: Fleet; src: Source; vers
 }
 
 type Count = { n: number } | { error: string };
-const queryOf = (e: ViewEntry) => e.query ?? BUILTIN_VIEWS.find((b) => b.id === e.id)?.query;
-const titleOf = (e: ViewEntry) => e.title || BUILTIN_VIEWS.find((b) => b.id === e.id)?.title || '';
 
-function ViewRow({ entry, i, keys, connected, count, commit }: { entry: ViewEntry; i: number; keys: string[]; connected: boolean; count?: Count; commit: (next: (list: ViewEntry[]) => ViewEntry[]) => void }) {
+function ViewRow({ entry, k, keys, inert, count, error, edit, reorder }: { entry: ViewEntry; k: string; keys: string[]; inert: boolean; count?: Count; error?: string; edit: (key: string, change: (list: ViewEntry[], i: number) => ViewEntry[]) => void; reorder: (order: string[]) => void }) {
   const [renaming, setRenaming] = useState(false);
   const [editingSearch, setEditingSearch] = useState(false);
   const cancelled = useRef(false);
   const title = titleOf(entry);
-  const query = queryOf(entry);
-  const builtin = BUILTIN_VIEWS.find((b) => b.id === entry.id && entry.query === undefined);
+  const query = searchOf(entry);
+  const builtin = isBuiltin(entry);
+  const plain = BUILTIN_VIEWS.find((b) => b.id === entry.id);
+  const titleField = useRef<HTMLInputElement>(null);
+  const queryField = useRef<HTMLInputElement>(null);
+  const saveSearch = () => {
+    setEditingSearch(false);
+    const t = titleField.current?.value ?? '';
+    const q = queryField.current?.value ?? '';
+    if ((t.trim() && t.trim() !== title) || (q.trim() && q.trim() !== query)) edit(k, (list, i) => editSearch(list, i, t, q));
+  };
   return (
-    <li class="vrow" data-reorder="views" data-key={String(i)}>
-      <button
-        type="button"
-        class="grip"
-        aria-label={`Move ${title}`}
-        onPointerDown={(e) => pressGrip(e, 'views', String(i), keys, (order) => commit((list) => order.map((k) => list[Number(k)])))}
-        onKeyDown={(e) => gripKey(e, String(i), keys, (order) => commit((list) => order.map((k) => list[Number(k)])))}
-      >
+    <li class={inert ? 'vrow inert' : 'vrow'} data-reorder="views" data-key={k}>
+      <button type="button" class="grip" aria-label={`Move ${title}`} disabled={inert} onPointerDown={(e) => pressGrip(e, 'views', k, keys, reorder)} onKeyDown={(e) => gripKey(e, k, keys, reorder)}>
         ⋮⋮
       </button>
       <div class="vmain">
@@ -213,32 +244,33 @@ function ViewRow({ entry, i, keys, connected, count, commit }: { entry: ViewEntr
             onBlur={(e) => {
               const name = (e.target as HTMLInputElement).value;
               setRenaming(false);
-              if (!cancelled.current && name.trim() !== title) commit((list) => renameView(list, i, name));
+              if (!cancelled.current && name.trim() !== title) edit(k, (list, i) => renameView(list, i, name));
               cancelled.current = false;
             }}
           />
         ) : (
-          <button type="button" class="vtitle" onClick={() => setRenaming(true)}>
-            {title}
-          </button>
+          <span class="vheading">
+            <button type="button" class="vtitle" disabled={inert} onClick={() => setRenaming(true)}>
+              {title}
+            </button>
+            {builtin ? <span class="chip">Built in</span> : null}
+          </span>
         )}
-        <span class="note">{builtin ? builtin.plain : plainWords(query ?? '')}</span>
+        <span class="note">{plain && builtin && entry.query === undefined ? plain.plain : plainWords(query ?? '')}</span>
         {editingSearch ? (
-          <input
-            class="vname"
-            type="text"
-            aria-label={`Search of ${title}`}
-            defaultValue={query}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const q = (e.target as HTMLInputElement).value.trim();
-                setEditingSearch(false);
-                if (q && q !== query) commit((list) => list.map((x, j) => (j === i ? { ...x, query: q } : x)));
-              } else if (e.key === 'Escape') setEditingSearch(false);
+          <div
+            class="vedit"
+            onFocusOut={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) saveSearch();
             }}
-            onBlur={() => setEditingSearch(false)}
-          />
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveSearch();
+              else if (e.key === 'Escape') setEditingSearch(false);
+            }}
+          >
+            <input ref={titleField} class="vname" type="text" aria-label={`Title of ${title}`} defaultValue={title} autoFocus />
+            <input ref={queryField} class="vname" type="text" aria-label={`Search of ${title}`} defaultValue={query} />
+          </div>
         ) : !builtin && query ? (
           <code class="vquery">{query}</code>
         ) : null}
@@ -247,40 +279,48 @@ function ViewRow({ entry, i, keys, connected, count, commit }: { entry: ViewEntr
             {count.error}
           </span>
         ) : null}
+        {error ? (
+          <span class="note error" role="alert">
+            {error}
+          </span>
+        ) : null}
       </div>
-      <span class="vcount note">{!connected ? '—' : builtin && !query ? '' : count && 'n' in count ? `${count.n} open` : '—'}</span>
-      {!builtin && count && 'error' in count ? (
-        <Button label="Edit search" onClick={() => setEditingSearch(true)} />
+      <span class="vcount note">{entry.hidden ? '' : inert ? '—' : builtin && !query ? '' : count && 'n' in count ? `${count.n} open` : '—'}</span>
+      {!builtin && !editingSearch && count && 'error' in count ? <Button label="Edit search" disabled={inert} onClick={() => setEditingSearch(true)} /> : null}
+      {isRemovable(entry) ? (
+        <Button label={`Remove view ${title}`} variant="quiet" disabled={inert} onClick={() => edit(k, (list, i) => removeView(list, i))}>
+          Remove
+        </Button>
       ) : null}
-      {isRemovable(entry) ? <Button label={`Remove view ${title}`} variant="quiet" onClick={() => commit((list) => removeView(list, i))}>Remove</Button> : null}
-      <button type="button" class="switch" role="switch" aria-checked={!entry.hidden} aria-label={`Show ${title} in Orders`} disabled={!connected} onClick={() => commit((list) => setHidden(list, i, !entry.hidden))}>
+      <button type="button" class="switch" role="switch" aria-checked={!entry.hidden} aria-label={`Show ${title} in Orders`} disabled={inert} onClick={() => edit(k, (list, i) => setHidden(list, i, !entry.hidden))}>
         <span class="track" aria-hidden="true" />
       </button>
     </li>
   );
 }
 
-function ViewsSection({ views, connected, counts, edit }: { views: ViewEntry[]; connected: boolean; counts: Record<string, Count>; edit: (next: (list: ViewEntry[]) => ViewEntry[]) => void }) {
-  const keys = views.map((_, i) => String(i));
+function ViewsSection({ views, inert, counts, errors, edit, reorder }: { views: ViewEntry[]; inert: boolean; counts: Record<string, Count>; errors: Record<string, string>; edit: (key: string, change: (list: ViewEntry[], i: number) => ViewEntry[]) => void; reorder: (order: string[]) => void }) {
+  const keys = views.map(viewKey);
   const shown = arranged('views', keys, (k) => k);
   return (
     <section class="gh-section" aria-labelledby="gh-views">
       <h2 class="h2" id="gh-views">
         Views
       </h2>
-      {connected ? null : <p class="note">They run once GitHub is connected.</p>}
+      {inert ? <p class="note">They run once GitHub is connected.</p> : null}
       <ul class="box list gh-views" aria-label="Views">
         {shown.map((k) => {
-          const entry = views[Number(k)];
-          const q = queryOf(entry);
-          return <ViewRow key={k} entry={entry} i={Number(k)} keys={keys} connected={connected} count={q ? counts[q] : undefined} commit={edit} />;
+          const i = keys.indexOf(k);
+          const entry = views[i];
+          const q = searchOf(entry);
+          return <ViewRow key={k} entry={entry} k={k} keys={keys} inert={inert} count={q ? counts[q] : undefined} error={errors[k]} edit={edit} reorder={reorder} />;
         })}
       </ul>
     </section>
   );
 }
 
-function PrioritySection({ settings, put }: { settings: Record<string, unknown>; put: (patch: Record<string, unknown>) => void }) {
+function PrioritySection({ settings, put, error }: { settings: Record<string, unknown>; put: (patch: Record<string, unknown>) => Promise<boolean>; error?: string }) {
   const labels = (settings.hotLabels as string[] | undefined) ?? HOT_LABEL_DEFAULTS;
   const { options, selected } = intervalOptions(settings.refreshMinutes as number | undefined);
   const [adding, setAdding] = useState(false);
@@ -334,78 +374,95 @@ function PrioritySection({ settings, put }: { settings: Record<string, unknown>;
             </label>
           ))}
         </fieldset>
+        {error ? (
+          <p class="note error" role="alert">
+            {error}
+          </p>
+        ) : null}
       </div>
     </section>
   );
 }
 
+type Snap = { settings: Record<string, unknown>; views: ViewEntry[] };
+type Op = { id: number; area: string; apply: (s: Snap) => Snap };
+
 export function GitHubPage({ fleet }: { fleet: Fleet }) {
   const src = githubSource(fleet.key);
   const key = src?.key;
-  const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
-  const [views, setViews] = useState<ViewEntry[]>([]);
+  const [, redraw] = useState(0);
   const [counts, setCounts] = useState<Record<string, Count>>({});
-  const [error, setError] = useState('');
-  const [version, setVersion] = useState(0);
-  const latest = useRef<{ settings: Record<string, unknown>; views: ViewEntry[] } | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [round, setRound] = useState(0);
+  // What the server holds, and the changes still on their way; the page shows the first with the second laid over it.
+  const confirmed = useRef<Snap | null>(null);
+  const pending = useRef<Op[]>([]);
+  const chain = useRef<Promise<unknown>>(Promise.resolve());
+  const seq = useRef(0);
   const alive = useRef(true);
+  const asked = useRef(new Set<string>());
   useEffect(() => () => void (alive.current = false), []);
+
+  const fail = (area: string, message: string) => setErrors((e) => ({ ...e, [area]: message }));
 
   useEffect(() => {
     if (!key) return;
     void fetchSettings(key).then((r) => {
       if (!alive.current) return;
-      if (!r.ok) return setError(r.error);
-      const list = (r.data.settings.views as ViewEntry[] | undefined) ?? BUILTIN_VIEWS.map((b) => ({ id: b.id, hidden: false }));
-      latest.current = { settings: r.data.settings, views: list };
-      setSettings(r.data.settings);
-      setViews(list);
+      if (!r.ok) return fail('page', r.error);
+      const views = (r.data.settings.views as ViewEntry[] | undefined) ?? BUILTIN_VIEWS.map((b) => ({ id: b.id, builtin: true, hidden: false }));
+      confirmed.current = { settings: r.data.settings, views };
+      redraw((n) => n + 1);
     });
   }, [key]);
 
-  // Each change saves the whole settings at once and shows at once; a refusal puts back what the server has.
-  const write = async (nextSettings: Record<string, unknown>, nextViews: ViewEntry[]) => {
-    if (!key) return;
-    const before = latest.current;
-    latest.current = { settings: nextSettings, views: nextViews };
-    setSettings(nextSettings);
-    setViews(nextViews);
-    setError('');
-    const r = await saveSource(key, { settings: { ...nextSettings, views: forSave(nextViews) } });
-    if (!alive.current) return;
-    if (r.ok) return setVersion((v) => v + 1);
-    setError(r.error);
-    if (before) {
-      latest.current = before;
-      setSettings(before.settings);
-      setViews(before.views);
-    }
-  };
-  const editViews = (next: (list: ViewEntry[]) => ViewEntry[]) => {
-    const cur = latest.current;
-    if (cur) void write(cur.settings, next(cur.views));
-  };
-  const put = (patch: Record<string, unknown>) => {
-    const cur = latest.current;
-    if (cur) void write({ ...cur.settings, ...patch }, cur.views);
-  };
+  const shown = confirmed.current ? pending.current.reduce((s, o) => o.apply(s), confirmed.current) : null;
 
-  const connected = src?.connection?.state === 'connected';
-  const queries = [...new Set(views.map(queryOf).filter((q): q is string => !!q))];
-  const asked = queries.join('\n');
+  // Saves go one at a time, each as the confirmed settings plus that one change, so a refused change drops out alone and the later ones still save.
+  const enqueue = (area: string, apply: (s: Snap) => Snap): Promise<boolean> => {
+    const op: Op = { id: ++seq.current, area, apply };
+    pending.current = [...pending.current, op];
+    setErrors((e) => {
+      const { [area]: _gone, ...rest } = e;
+      return rest;
+    });
+    redraw((n) => n + 1);
+    const run = chain.current.then(async () => {
+      if (!alive.current || !key || !confirmed.current) return false;
+      const body = op.apply(confirmed.current);
+      const r = await saveSource(key, { settings: { ...body.settings, views: forSave(body.views) } });
+      if (!alive.current) return false;
+      pending.current = pending.current.filter((o) => o.id !== op.id);
+      if (r.ok && confirmed.current) confirmed.current = op.apply(confirmed.current);
+      else if (!r.ok) fail(area, r.error);
+      redraw((n) => n + 1);
+      return r.ok;
+    });
+    chain.current = run;
+    return run;
+  };
+  const put = (area: string) => (patch: Record<string, unknown>) => enqueue(area, (s) => ({ ...s, settings: { ...s.settings, ...patch } }));
+  const editView = (k: string, change: (list: ViewEntry[], i: number) => ViewEntry[]) => void enqueue(k, (s) => ({ ...s, views: onKey(s.views, k, (i) => change(s.views, i)) }));
+  const reorder = (order: string[]) => void enqueue('views', (s) => ({ ...s, views: inOrder(s.views, order) }));
+
+  const connected = connectionFor(src)?.state === 'connected';
+  const inert = needsSignIn(src && { connection: connectionFor(src) });
+  const views = shown?.views ?? [];
+  const queries = [...new Set(views.filter((v) => !v.hidden).map(searchOf).filter((q): q is string => !!q))];
+  const wanted = queries.join('\n');
   useEffect(() => {
     if (!key || !connected) return;
-    let live = true;
     for (const q of queries) {
-      if (q in counts) continue;
+      const id = `${round}\n${q}`;
+      if (asked.current.has(id)) continue;
+      asked.current.add(id);
       void countSearch(key, q).then((r) => {
-        if (!live) return;
+        if (!alive.current) return;
         if (r.ok) setCounts((c) => ({ ...c, [q]: { n: r.data.count } }));
         else if (r.status === 422) setCounts((c) => ({ ...c, [q]: { error: r.error.startsWith('Search failed') ? r.error : `Search failed: ${r.error}` } }));
       });
     }
-    return () => void (live = false);
-  }, [key, connected, asked, src?.views.length]);
+  }, [key, connected, wanted, round, src?.views.length]);
 
   return (
     <>
@@ -414,17 +471,22 @@ export function GitHubPage({ fleet }: { fleet: Fleet }) {
       ) : (
         <>
           <p class="line">{fleet.name}'s issues and pull requests. They show in Orders, and routines can watch them.</p>
-          {error ? (
+          {errors.page ? (
             <p class="note error" role="alert">
-              {error}
+              {errors.page}
             </p>
           ) : null}
-          <ConnectionSection src={src} onCheck={async () => setCounts({})} />
-          <ReposSection fleet={fleet} src={src} version={version} />
-          {settings ? (
+          <ConnectionSection fleet={fleet} src={src} settings={shown?.settings ?? null} put={put('connection')} error={errors.connection} onCheck={() => setRound((n) => n + 1)} />
+          <ReposSection fleet={fleet} src={src} />
+          {shown ? (
             <>
-              <ViewsSection views={views} connected={connected} counts={counts} edit={editViews} />
-              <PrioritySection settings={settings} put={put} />
+              <ViewsSection views={views} inert={inert} counts={counts} errors={errors} edit={editView} reorder={reorder} />
+              {errors.views ? (
+                <p class="note error" role="alert">
+                  {errors.views}
+                </p>
+              ) : null}
+              <PrioritySection settings={shown.settings} put={put('priority')} error={errors.priority} />
             </>
           ) : null}
         </>

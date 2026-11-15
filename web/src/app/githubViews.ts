@@ -1,6 +1,9 @@
-/** A GitHub source's stored view entry: a built-in is {id, hidden, title?}; a custom view is {title, query, hidden?} and carries the id the server gives it. */
+import { shipAge } from './shipList';
+
+/** A GitHub source's stored view entry: a built-in is {id, hidden, title?}; a custom view is {title, query, hidden?}. The settings GET adds each view's id and marks a built-in with `builtin`; neither is saved back for a custom view. */
 export interface ViewEntry {
   id?: string;
+  builtin?: boolean;
   title?: string;
   query?: string;
   hidden?: boolean;
@@ -21,7 +24,33 @@ export const BUILTIN_VIEWS: BuiltinView[] = [
   { id: 'my-prs', title: 'My PRs', query: 'is:open is:pr author:@me', plain: 'Open PRs you wrote' },
 ];
 
-const isBuiltin = (e: ViewEntry) => !!e.id && BUILTIN_VIEWS.some((b) => b.id === e.id) && e.query === undefined;
+export const isBuiltin = (e: ViewEntry) => e.builtin === true;
+
+/** A row's key: the server's id for the view, which holds still while rows move. */
+export const viewKey = (e: ViewEntry, i: number): string => e.id ?? `view-${i}`;
+
+/** Runs a list change on the entry that holds `key` now, so a change made on a row still lands on it after another change moved it. */
+export const onKey = (list: ViewEntry[], key: string, change: (i: number) => ViewEntry[]): ViewEntry[] => {
+  const i = list.findIndex((e, j) => viewKey(e, j) === key);
+  return i < 0 ? list : change(i);
+};
+
+/** The list in the order of `keys`; an entry no key names keeps its place at the end. */
+export function inOrder(list: ViewEntry[], keys: string[]): ViewEntry[] {
+  const keyed = list.map((e, i) => ({ e, k: viewKey(e, i) }));
+  const named = keys.flatMap((k) => keyed.filter((x) => x.k === k));
+  return [...named, ...keyed.filter((x) => !keys.includes(x.k))].map((x) => x.e);
+}
+
+/** "just now", then "2m ago", "3h ago", "2d ago". */
+export function checkedWords(iso: string | undefined, now: number): string {
+  const age = iso ? shipAge(iso, now) : '';
+  return age === 'now' ? 'just now' : age && `${age} ago`;
+}
+
+/** What GitHub shows for a view under its row: nothing for For you, and nothing for a hidden or unasked one. */
+export const searchOf = (e: ViewEntry): string | undefined => e.query ?? BUILTIN_VIEWS.find((b) => b.id === e.id)?.query;
+export const titleOf = (e: ViewEntry): string => e.title || BUILTIN_VIEWS.find((b) => b.id === e.id)?.title || '';
 
 export const isRemovable = (e: ViewEntry): boolean => !isBuiltin(e);
 
@@ -74,14 +103,19 @@ export const removeView = (list: ViewEntry[], i: number): ViewEntry[] => (isRemo
 
 export function forSave(list: ViewEntry[]): ViewEntry[] {
   return list.map((e) => {
+    const { builtin: _b, ...rest } = e;
     if (isBuiltin(e)) {
-      const { query: _q, ...rest } = e;
-      return rest;
+      const { query: _q, ...entry } = rest;
+      return entry;
     }
-    const { id: _id, ...rest } = e;
-    return rest;
+    const { id: _id, ...entry } = rest;
+    return entry;
   });
 }
+
+/** A view's query and title changed together, as Edit search saves them; an empty field keeps what the view had. */
+export const editSearch = (list: ViewEntry[], i: number, title: string, query: string): ViewEntry[] =>
+  list.map((e, j) => (j === i ? { ...e, title: title.trim() || e.title, query: query.trim() || e.query } : e));
 
 export const HOT_LABEL_DEFAULTS = ['priority: high', 'P0', 'P1', 'urgent'];
 

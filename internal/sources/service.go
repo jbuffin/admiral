@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -391,6 +392,24 @@ func (s *Service) serveAdd(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, v)
 }
 
+// dropBuiltinMarks removes the served builtin mark from each views entry, so a settings body read back from GET stores only what the user chose.
+func dropBuiltinMarks(settings json.RawMessage) json.RawMessage {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(settings, &m) != nil || m == nil {
+		return settings
+	}
+	var views []map[string]json.RawMessage
+	if json.Unmarshal(m["views"], &views) != nil {
+		return settings
+	}
+	for _, v := range views {
+		delete(v, "builtin")
+	}
+	m["views"], _ = json.Marshal(views)
+	out, _ := json.Marshal(m)
+	return out
+}
+
 func withViews(settings json.RawMessage) json.RawMessage {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(settings, &m) != nil || m == nil {
@@ -475,7 +494,12 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 		list[i].Settings = kept
 	}
 	if list[i].Plugin == builtinGitHub {
-		list[i].Settings = withViews(list[i].Settings)
+		if err := checkGitHubHost(list[i].Settings); err != nil {
+			s.mu.Unlock()
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		list[i].Settings = withViews(dropBuiltinMarks(list[i].Settings))
 	}
 	gen := s.Sup.Generation(key)
 	err := s.write(list)
@@ -675,6 +699,18 @@ func restoreSecrets(in, old any) (any, error) {
 	return in, nil
 }
 
+var hostPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$`)
+
+// checkGitHubHost refuses a host that isn't a hostname with an optional port, because the page shows it inside commands to copy.
+func checkGitHubHost(settings json.RawMessage) error {
+	m, _ := decodeValue(settings).(map[string]any)
+	host, _ := m["host"].(string)
+	if host = strings.TrimSpace(host); host != "" && !hostPattern.MatchString(host) {
+		return fmt.Errorf("host %q is not a hostname: use letters, digits, dots and dashes, with an optional :port", host)
+	}
+	return nil
+}
+
 func keepSecrets(stored, incoming json.RawMessage) (json.RawMessage, error) {
 	v, err := restoreSecrets(decodeValue(incoming), decodeValue(stored))
 	if err != nil {
@@ -722,6 +758,9 @@ func withViewIDs(settings map[string]any) {
 	for i, id := range config.ViewEntryIDs(entries) {
 		if m, ok := list[i].(map[string]any); ok && id != "" {
 			m["id"] = id
+			if slices.Contains(config.GitHubBuiltinViews, id) {
+				m["builtin"] = true
+			}
 		}
 	}
 }

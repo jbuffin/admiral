@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { BUILTIN_VIEWS, HOT_LABEL_DEFAULTS, addLabel, forSave, intervalLabel, intervalOptions, isRemovable, moveView, needsSignIn, plainWords, removeLabel, removeView, renameView, setHidden, type ViewEntry } from './githubViews';
+import { BUILTIN_VIEWS, HOT_LABEL_DEFAULTS, addLabel, checkedWords, editSearch, forSave, inOrder, intervalLabel, intervalOptions, isRemovable, moveView, needsSignIn, onKey, plainWords, removeLabel, removeView, renameView, setHidden, viewKey, type ViewEntry } from './githubViews';
 
 const goSettings = readFileSync(fileURLToPath(new URL('../../../internal/github/settings.go', import.meta.url)), 'utf8');
 
@@ -35,10 +35,10 @@ describe('a search in plain words', () => {
 
 describe('the views list', () => {
   const list = (): ViewEntry[] => [
-    { id: 'for-you', hidden: false },
-    { id: 'assigned-to-me', hidden: false, title: 'My plate' },
-    { id: 'review-requested', hidden: true },
-    { id: 'my-prs', hidden: false },
+    { id: 'for-you', builtin: true, hidden: false },
+    { id: 'assigned-to-me', builtin: true, hidden: false, title: 'My plate' },
+    { id: 'review-requested', builtin: true, hidden: true },
+    { id: 'my-prs', builtin: true, hidden: false },
     { id: 'bugs', title: 'Bugs', query: 'is:open label:bug' },
     { id: 'docs', title: 'Docs', query: 'is:open label:docs', hidden: true },
   ];
@@ -58,9 +58,9 @@ describe('the views list', () => {
   });
 
   it('renames a built-in by setting its title, and clears the title when the name is emptied', () => {
-    expect(renameView(list(), 3, 'Mine')[3]).toEqual({ id: 'my-prs', hidden: false, title: 'Mine' });
+    expect(renameView(list(), 3, 'Mine')[3]).toEqual({ id: 'my-prs', builtin: true, hidden: false, title: 'Mine' });
     const cleared = renameView(list(), 1, '  ')[1];
-    expect(cleared).toEqual({ id: 'assigned-to-me', hidden: false });
+    expect(cleared).toEqual({ id: 'assigned-to-me', builtin: true, hidden: false });
     expect('title' in cleared).toBe(false);
   });
 
@@ -91,7 +91,7 @@ describe('the views list', () => {
     expect(before).toEqual(frozen);
   });
 
-  it('saves without the ids the server added to custom views, and without a search on a built-in', () => {
+  it('saves without the ids and marks the server added, and without a search on a built-in', () => {
     const saved = forSave(list());
     expect(saved).toEqual([
       { id: 'for-you', hidden: false },
@@ -103,6 +103,24 @@ describe('the views list', () => {
     ]);
     for (const e of saved.slice(0, 4)) expect('query' in e).toBe(false);
     for (const e of saved.slice(4)) expect('id' in e).toBe(false);
+    for (const e of saved) expect('builtin' in e).toBe(false);
+  });
+
+  it('finds a row by its id, so a change made on it lands after the list moved', () => {
+    const moved = moveView(list(), 0, 1);
+    expect(viewKey(moved[0], 0)).toBe('assigned-to-me');
+    const renamed = onKey(moved, 'for-you', (i) => renameView(moved, i, 'First'));
+    expect(renamed.map((e) => e.title)).toEqual(['My plate', 'First', undefined, undefined, 'Bugs', 'Docs']);
+    expect(onKey(moved, 'gone', () => [])).toBe(moved);
+  });
+
+  it('puts the list in the order of the keys, and keeps an entry no key names at the end', () => {
+    expect(inOrder(list(), ['my-prs', 'for-you']).map((e) => e.id)).toEqual(['my-prs', 'for-you', 'assigned-to-me', 'review-requested', 'bugs', 'docs']);
+  });
+
+  it('edits a custom view\'s title and search together, keeping what an empty field had', () => {
+    expect(editSearch(list(), 4, ' Defects ', ' is:open label:defect ')[4]).toMatchObject({ title: 'Defects', query: 'is:open label:defect' });
+    expect(editSearch(list(), 4, '', '')[4]).toMatchObject({ title: 'Bugs', query: 'is:open label:bug' });
   });
 });
 
@@ -161,5 +179,14 @@ describe('the dot on the GitHub settings item', () => {
     expect(needsSignIn(undefined)).toBe(false);
     expect(needsSignIn(null)).toBe(false);
     expect(needsSignIn({})).toBe(false);
+  });
+});
+
+describe('checkedWords', () => {
+  const now = Date.parse('2026-01-01T12:00:00Z');
+  it('says how long ago the token was checked', () => {
+    expect(checkedWords('2026-01-01T11:58:00Z', now)).toBe('2m ago');
+    expect(checkedWords('2026-01-01T11:59:59Z', now)).toBe('just now');
+    expect(checkedWords(undefined, now)).toBe('');
   });
 });

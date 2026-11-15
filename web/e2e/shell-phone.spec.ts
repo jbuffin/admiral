@@ -372,11 +372,17 @@ test("on the phone, a chat held before its first SessionStart opens its terminal
 
 test('on the phone, the GitHub page hides a view with a tap and moves one with a touch drag, and Orders follows', async ({ page, admiral }) => {
   seedOrders(admiral);
-  admiral.fakeGh().count('z-open', 'is:open', 3);
+  const gh = admiral.fakeGh();
+  gh.count('z-open', 'is:open', 3);
+  gh.count('a-broken', 'reviews:approved', { fail: 'GitHub does not know the qualifier reviews:approved, so this long explanation has to wrap inside the row' });
+  const cfg = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
+  cfg.sources.gh.settings.views = [...['for-you', 'assigned-to-me', 'review-requested', 'my-prs'].map((id) => ({ id, hidden: false })), { title: 'A custom view with a rather long title', query: 'is:open reviews:approved label:one label:two label:three' }];
+  admiral.writeConfig(cfg);
   await admiral.start({ env: withFakeGh(admiral) });
   const stored = () =>
     (JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).sources.gh.settings.views ?? []) as { id?: string; hidden?: boolean }[];
-  await expect.poll(() => stored().map((v) => v.id)).toEqual(['for-you', 'assigned-to-me', 'review-requested', 'my-prs']);
+  const builtIns = () => stored().slice(0, 4);
+  await expect.poll(() => builtIns().map((v) => v.id)).toEqual(['for-you', 'assigned-to-me', 'review-requested', 'my-prs']);
 
   await page.goto(admiral.url + 'app/');
   await openPreferences(page, { fleet: WORK, section: 'GitHub' });
@@ -386,6 +392,18 @@ test('on the phone, the GitHub page hides a view with a tap and moves one with a
 
   const rows = page.getByRole('list', { name: 'Views' }).getByRole('listitem');
   const row = (title: string) => rows.filter({ has: page.getByRole('button', { name: title, exact: true }) });
+  // A custom row whose search fails keeps its error, Edit search and Remove inside the screen.
+  const failing = row('A custom view with a rather long title');
+  await expect(failing).toContainText('Search failed: GitHub does not know the qualifier');
+  await failing.scrollIntoViewIfNeeded();
+  const viewport = page.viewportSize()!;
+  for (const part of [failing, failing.getByRole('button', { name: 'Edit search', exact: true }), failing.getByRole('button', { name: /^Remove view/ }), failing.getByRole('switch')]) {
+    const box = (await part.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
   const sw = row('Review requested').getByRole('switch');
   await sw.scrollIntoViewIfNeeded();
   await expectReachable(page, sw);
@@ -406,8 +424,8 @@ test('on the phone, the GitHub page hides a view with a tap and moves one with a
   await touch('pointerdown', 0, 1);
   for (const step of [0.25, 0.6, 1.1]) await touch('pointermove', rowHeight * step, 1);
   await touch('pointerup', rowHeight * 1.1, 0);
-  await expect.poll(() => stored().map((v) => v.id)).toEqual(['assigned-to-me', 'for-you', 'review-requested', 'my-prs']);
+  await expect.poll(() => builtIns().map((v) => v.id)).toEqual(['assigned-to-me', 'for-you', 'review-requested', 'my-prs']);
 
   await page.getByRole('navigation').getByRole('link', { name: /^Orders/ }).tap();
-  await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^For you/, /^My PRs/, /^Orders: Orders/]);
+  await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^For you/, /^My PRs/, /^A custom view/, /^Orders: Orders/]);
 });

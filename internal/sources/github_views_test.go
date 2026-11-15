@@ -142,8 +142,11 @@ func TestSettingsReturnTheViewsListUnmaskedAndASaveRoundTripsIt(t *testing.T) {
 	_ = json.Unmarshal([]byte(mixedViews), &want)
 	want[1].(map[string]any)["id"] = "bugs"
 	want[5].(map[string]any)["id"] = "docs"
+	for _, i := range []int{0, 2, 3, 4} {
+		want[i].(map[string]any)["builtin"] = true
+	}
 	if !reflect.DeepEqual(got.Settings.Views, want) {
-		t.Fatalf("views = %v, want %v: the custom views carry the id the server gives them", got.Settings.Views, want)
+		t.Fatalf("views = %v, want %v: the custom views carry the id the server gives them and the built-ins say so", got.Settings.Views, want)
 	}
 	// The page sends back the entries without a custom view's id.
 	var back map[string]any
@@ -218,6 +221,7 @@ func TestHidingRenamingAndReorderingViewsSurvivesARestart(t *testing.T) {
 	var after []map[string]any
 	_ = json.Unmarshal(got.Settings.Views, &after)
 	for _, e := range after {
+		delete(e, "builtin")
 		if e["query"] != nil {
 			delete(e, "id")
 		}
