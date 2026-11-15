@@ -166,13 +166,13 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const onOpen = (r: OrderRow) => go('/app/orders', withSelectedOrder(loc.value.search, r.key));
   const close = () => go('/app/orders', withSelectedOrder(loc.value.search, null), true);
   const pane = !!selected;
-  // Escape belongs to the Launch form while it is open.
+  // Escape belongs to the Launch form while it is open; reading the DOM at the keypress avoids a gap before an effect catches up with the form closing.
   useEffect(() => {
-    if (!pane || phone || launching) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    if (!pane || phone) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !document.querySelector('[aria-modal="true"]') && close();
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [pane, phone, launching]);
+  }, [pane, phone]);
   const age = time ? refreshedLine(time, now) : '';
   const name = sourceName(list, id);
   const sourceLine = [name, age].filter(Boolean).join(' · ');
