@@ -2949,8 +2949,23 @@ export async function fixStackFromThePRTab(page: Page, a: Admiral, opts: { phone
   prMergeState(a, 8, { failing: ['build'] });
   const ship = await mooredPair(a, { stacked: true, feedbackOn: [7, 8] });
 
+  // The stack's line is held back, so Fix stack is tapped from its own bar and must stay open when the line moves it into the stack bar.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(new RegExp(`/api/(v1/)?ships/${ship.session}/stack$`), async (route) => {
+    await held;
+    await route.continue();
+  });
   await openPRTab(page, a, ship);
+  const early = viewPanel(page).locator('.fix-bar').getByRole('button', { name: 'Fix stack', exact: true });
+  await early.tap();
+  await expect(page.getByRole('dialog', { name: 'Fix stack' })).toBeVisible();
+  release();
   const bar = pageStackBar(page);
+  await expect(bar).toContainText('#7 is behind its base');
+  await expect(page.getByRole('dialog', { name: 'Fix stack' }), 'the sheet survives the button moving into the stack bar').toBeVisible();
+  await page.getByRole('dialog', { name: 'Fix stack' }).getByRole('button', { name: 'Cancel' }).tap();
+  await expect(page.getByRole('dialog', { name: 'Fix stack' })).toHaveCount(0);
   const fix = bar.getByRole('button', { name: 'Fix stack', exact: true });
   await expect(fix).toBeVisible();
   expect((await fix.boundingBox())!.height, 'Fix stack height').toBeGreaterThanOrEqual(44);

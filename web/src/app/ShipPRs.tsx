@@ -10,7 +10,7 @@ import { OpenPRs } from './OpenPRs';
 import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, fixLine, fixStackInBar, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, showAnswerReview, stackBarAction, stackBarLine, tabOrder } from './prTab';
 import { MOOR_LINE, moorSheetParts, offersMoor, reReviewPlace, reviews, staleNote } from './moored';
 import { AnswerReviewSheet } from './AnswerReview';
-import { FixButton } from './Fix';
+import { FixButton, FixSheet } from './Fix';
 import { ReReviewSheet } from './ReReview';
 import { PRSections } from './PRDetailSections';
 
@@ -320,6 +320,7 @@ export function PRTab({ ship }: { ship: Ship }) {
   // The URL of the Re-review sheet that's open: a PR's, or '' for the stack.
   const [reReview, setReReview] = useState<string | null>(null);
   const [stacking, setStacking] = useState(false);
+  const [fixing, setFixing] = useState(false);
   const [unseen, setUnseen] = useState(false);
   const carried = ship.prs ?? [];
   const { details, failed } = useDetails(ship.session, carried.map((p) => p.url));
@@ -362,7 +363,7 @@ export function PRTab({ ship }: { ship: Ship }) {
           ) : fixInBar ? (
             <>
               <span class="fix-line">{fixText}</span>
-              <FixButton ship={ship} locked={acting} onBusy={setActing} />
+              <FixButton ship={ship} locked={acting} onAsk={() => setFixing(true)} />
             </>
           ) : moored && chosen && showAnswerAll(carried, stack, chosen.answerAll, ship.fix) ? (
             <AnswerAll ship={ship} stackUrl={stack!.url} command={chosen.answerAll!} locked={acting} onBusy={setActing} />
@@ -377,9 +378,10 @@ export function PRTab({ ship }: { ship: Ship }) {
       {fixStack && !fixInBar ? (
         <div class="fix-bar">
           <span class="fb-text">{fixText}</span>
-          <FixButton ship={ship} locked={acting} onBusy={setActing} />
+          <FixButton ship={ship} locked={acting} onAsk={() => setFixing(true)} />
         </div>
       ) : null}
+      {fixing && fixOn ? <FixSheet ship={ship} onClose={() => setFixing(false)} onBusy={setActing} /> : null}
       {stacking ? (
         <StackSheet
           session={ship.session}
@@ -424,7 +426,7 @@ export function PRTab({ ship }: { ship: Ship }) {
         {fixOn && !fixStack && current.state === 'OPEN' && !current.reviewing ? (
           <div class="fix-bar">
             <span class="fb-text">{fixText}</span>
-            <FixButton ship={ship} locked={acting} onBusy={setActing} />
+            <FixButton ship={ship} locked={acting} onAsk={() => setFixing(true)} />
           </div>
         ) : null}
         {moored && !current.reviewing && showAnswerReview(current, ship.fix) ? <FeedbackBar key={current.url} ship={ship} pr={current} locked={acting} onBusy={setActing} /> : null}

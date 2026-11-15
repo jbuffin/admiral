@@ -44,23 +44,7 @@ export function FixSheet({ ship, onClose, onBusy }: { ship: Ship; onClose: () =>
   );
 }
 
-/** The Fix PR / Fix stack button of a ship with a fix on offer, and the sheet it opens. */
-export function FixButton({ ship, locked, onBusy }: { ship: Ship; locked: boolean; onBusy: (busy: boolean) => void }) {
-  const [asking, setAsking] = useState(false);
-  const [busy, setBusy] = useState(false);
-  return (
-    <>
-      <Button label={fixLabel(ship)} variant="primary" pending={['ship', ship.session, 'fix']} disabled={locked || busy} onClick={() => setAsking(true)} />
-      {asking ? (
-        <FixSheet
-          ship={ship}
-          onClose={() => setAsking(false)}
-          onBusy={(b) => {
-            setBusy(b);
-            onBusy(b);
-          }}
-        />
-      ) : null}
-    </>
-  );
+/** The Fix PR / Fix stack button of a ship with a fix on offer; its sheet lives in the PR tab, so the button can move between bars without closing it. */
+export function FixButton({ ship, locked, onAsk }: { ship: Ship; locked: boolean; onAsk: () => void }) {
+  return <Button label={fixLabel(ship)} variant="primary" pending={['ship', ship.session, 'fix']} disabled={locked} onClick={onAsk} />;
 }
