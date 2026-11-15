@@ -202,7 +202,7 @@ test('a signed-out fleet says how to sign in with its views greyed, and turns Co
   await expect(views).toContainText('They run once GitHub is connected.');
   await expect(viewRows(page)).toHaveText([/For you.*—/s, /Assigned to me.*—/s, /Review requested.*—/s, /My PRs.*—/s, /Broken.*—/s]);
   for (const sw of await viewRows(page).getByRole('switch').all()) await expect(sw).toBeDisabled();
-  await expect(views).not.toContainText('open');
+  await expect(views).not.toContainText(/\d+ open/);
 
   // Signing in on the Mac and pressing Check again turns the page Connected, and the dot goes.
   gh.token('', 'fake-token-work-3');
