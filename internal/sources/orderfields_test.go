@@ -435,8 +435,8 @@ func TestGitHubViewKeepsItsOrdersAndTimeAcrossARestartUntilTheNewSearchAnswers(t
 	before := sid()
 	writeSearch(t, g, "bugs", "label:bug", searchNode("issues", 14, obj{"subIssuesSummary": obj{"total": 0}}))
 	g.write("slow", "1")
-	if code, body := f.do(http.MethodPost, "/gha/restart", nil); code != http.StatusOK {
-		t.Fatalf("POST restart = %d %s", code, body)
+	if !f.Svc.Sup.Restart("gha") {
+		t.Fatal("Restart found no runner")
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for sid() == before {

@@ -129,7 +129,7 @@ func TestTokenErrors(t *testing.T) {
 		f := newFake(t)
 		_, err := NewClient("ghe.example.com", "", nil, f.env).Token(context.Background())
 		var si *SignInError
-		if !errors.As(err, &si) || err.Error() != "Run gh auth login -h ghe.example.com" {
+		if !errors.As(err, &si) || si.Kind != KindSignedOut || err.Error() != "Run gh auth login -h ghe.example.com" {
 			t.Fatalf("err = %v, want a SignInError saying Run gh auth login -h ghe.example.com", err)
 		}
 	})
@@ -137,7 +137,7 @@ func TestTokenErrors(t *testing.T) {
 		t.Setenv("PATH", t.TempDir())
 		_, err := NewClient("github.com", "", nil, os.Environ()).Token(context.Background())
 		var si *SignInError
-		if !errors.As(err, &si) || !strings.Contains(err.Error(), "Install the GitHub CLI") || !strings.Contains(err.Error(), "gh auth login") {
+		if !errors.As(err, &si) || si.Kind != KindGHMissing || !strings.Contains(err.Error(), "Install the GitHub CLI") || !strings.Contains(err.Error(), "gh auth login") {
 			t.Fatalf("err = %v, want a SignInError telling to install gh and run gh auth login", err)
 		}
 	})
@@ -760,4 +760,86 @@ func TestSearchAsksForOnlyThePullRequestFieldsTheChipsRead(t *testing.T) {
 			t.Errorf("the search asks for %s: it would make every search heavy", heavy)
 		}
 	}
+}
+
+// count answers every count call with the given files (json, fail, exit).
+func (f *fakeGH) count(t *testing.T, files map[string]string) {
+	t.Helper()
+	f.write(t, "count/all.match", "q=")
+	for ext, body := range files {
+		f.write(t, "count/all."+ext, body)
+	}
+}
+
+func TestCountRequest(t *testing.T) {
+	f := newFake(t)
+	f.count(t, map[string]string{"json": `{"data":{"search":{"issueCount":4321}}}`})
+	n, err := NewClient("acme.ghe.com", "", nil, f.env).Count(context.Background(), "fake-token-work-2", "is:open label:bug assignee:@me")
+	if err != nil || n != 4321 {
+		t.Fatalf("Count = %d, %v; want 4321", n, err)
+	}
+	c := f.only(t, "api")
+	if got := strings.Join(c.argv[:4], " "); got != "api graphql --hostname acme.ghe.com" {
+		t.Errorf("argv starts %q", got)
+	}
+	if c.argv[4] != "-f" || !strings.HasPrefix(c.argv[5], "query=") || c.argv[6] != "-f" || c.argv[7] != "q=is:open label:bug assignee:@me" || len(c.argv) != 8 {
+		t.Errorf("argv = %q, want the query as one -f q= value with no sort:", c.argv)
+	}
+	for _, want := range []string{"issueCount", "first: 1"} {
+		if !strings.Contains(c.argv[5], want) {
+			t.Errorf("graphql %q lacks %q", c.argv[5], want)
+		}
+	}
+	if strings.Contains(strings.Join(c.argv, " "), "fake-token-work-2") {
+		t.Errorf("argv carries the token: %q", c.argv)
+	}
+}
+
+func TestCountErrors(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{"graphql errors", map[string]string{"json": `{"errors":[{"message":"Bad query"}]}`}, "Search failed: Bad query"},
+		{"stderr redacts the token", map[string]string{"fail": "gh: bad credentials fake-token-work-2\n"}, "Search failed: bad credentials ***"},
+		{"unreachable", map[string]string{"fail": "error connecting to api.github.com\n"}, "Couldn't reach github.com"},
+		{"no count", map[string]string{"json": `{"data":{"search":{}}}`}, "Search failed: GitHub's answer was not understood"},
+		{"not JSON", map[string]string{"json": "oops"}, "Search failed: GitHub's answer was not JSON"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFake(t)
+			f.count(t, c.files)
+			_, err := NewClient("github.com", "", nil, f.env).Count(context.Background(), "fake-token-work-2", "is:open")
+			if err == nil || err.Error() != c.want {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+}
+
+func TestViewerAsksForTheLoginAlone(t *testing.T) {
+	f := newFake(t)
+	f.write(t, "viewer", "octocat")
+	login, err := NewClient("github.com", "", nil, f.env).Viewer(context.Background(), "fake-token-work-2")
+	if err != nil || login != "octocat" {
+		t.Fatalf("Viewer = %q, %v; want octocat", login, err)
+	}
+	c := f.only(t, "api")
+	joined := strings.Join(c.argv, " ")
+	if !strings.Contains(joined, "viewer") || !strings.Contains(joined, "login") || strings.Contains(joined, "search(") || strings.Contains(joined, "q=") {
+		t.Errorf("argv = %q, want a bare viewer { login } query", c.argv)
+	}
+}
+
+func TestViewerErrors(t *testing.T) {
+	t.Run("unreachable", func(t *testing.T) {
+		hangingGH(t)
+		cl := NewClient("github.com", "", nil, os.Environ())
+		cl.Timeout = 300 * time.Millisecond
+		if _, err := cl.Viewer(context.Background(), "fake-token-work-2"); err == nil || err.Error() != "Couldn't reach github.com" {
+			t.Fatalf("err = %v, want Couldn't reach github.com", err)
+		}
+	})
 }
