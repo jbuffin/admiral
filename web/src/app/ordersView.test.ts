@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Order, OrderView, Source } from './api';
+import type { MooredPR, Order, OrderView, Ship, Source } from './api';
 import { filterRows, forYou, headerTime, orderRef, refreshedLine, refreshTarget, repoOptions, tabs, viewRows } from './ordersView';
 
 const NOW = Date.parse('2026-11-14T12:00:00Z');
@@ -423,5 +423,69 @@ describe('the repo of an order', () => {
     const lin = order('ENG-12', { repo: undefined, url: 'https://linear.app/acme/issue/ENG-12/slug' });
     expect(orderRef(lin)).toBe('ENG-12');
     expect(repoOptions(viewRows([plugin('lin', 'Linear', [view('a', 'A', [lin])])], tabs([plugin('lin', 'Linear', [view('a', 'A', [lin])])])[1].id, NOW))).toEqual([]);
+  });
+});
+
+describe('Needs you with ships on the orders', () => {
+  const PR = 'https://github.com/acme/api/pull/42';
+  const mooredPR = (over: Partial<MooredPR> = {}): MooredPR => ({ url: PR, state: 'OPEN', review: '', checks: '', mergeable: '', conflicts: false, ...over });
+  const ship = (over: Partial<Ship> = {}): Ship => ({
+    session: 's-sloop',
+    name: 'sloop',
+    fleet: 'zulu',
+    harness: 'claude',
+    status: 'moored',
+    order_id: '',
+    title: '',
+    tail: '',
+    fleet_color: '',
+    launched: '',
+    crew_live: 0,
+    dir: '',
+    repo: '',
+    exit_code: null,
+    exit_signal: null,
+    crew: [],
+    prs: [],
+    ...over,
+  });
+  const requested = (over: Partial<Order> = {}) => order('acme/api#42', { pr: pr(), review_requested_at: ago(2 * H), reviewed_since_push: true, ...over });
+  const reviewing = (over: Partial<MooredPR> = {}) => ship({ prs: [mooredPR({ reviewing: true, ...over })] });
+  const rr = (o: Order) => [gh([view('review-requested', 'Review requested', [o])])];
+
+  it('moves it to Needs you when its moored reviewing ship sees the PR responded, not before', () => {
+    expect(ids(forYou(rr(requested()), NOW, [reviewing()]).waiting)).toEqual(['acme/api#42']);
+    const g = forYou(rr(requested()), NOW, [reviewing({ responded: true })]);
+    expect(ids(g.needsYou)).toEqual(['acme/api#42']);
+    expect(g.waiting).toEqual([]);
+    expect(g.count).toBe(1);
+  });
+
+  it('moves your own PR to Needs you when its moored ship has new feedback', () => {
+    const mine = order('acme/api#42', { pr: pr({ review: 'APPROVED', ready: true }) });
+    const sources = [gh([view('my-prs', 'My PRs', [mine])])];
+    expect(ids(forYou(sources, NOW, []).waiting)).toEqual(['acme/api#42']);
+    const g = forYou(sources, NOW, [ship({ prs: [mooredPR({ answer: '/commodore answer', feedback: 1 })] })]);
+    expect(ids(g.needsYou)).toEqual(['acme/api#42']);
+  });
+
+  it('does not move an order for a ship that is live, since its pill alone does not', () => {
+    const live = ship({ status: 'needs_you', prs: [mooredPR({ reviewing: true, responded: true })] });
+    const g = forYou(rr(requested()), NOW, [live, reviewing({ responded: true, url: 'https://github.com/acme/api/pull/9' })]);
+    expect(ids(g.waiting)).toEqual(['acme/api#42']);
+    expect(forYou(rr(requested()), NOW, [live, reviewing({ responded: true })]).needsYou).toHaveLength(1);
+  });
+
+  it('counts each order in Needs you once, with or without a ship', () => {
+    const other = requested({ id: 'acme/api#43', url: 'https://github.com/acme/api/pull/43' });
+    const g = forYou([gh([view('review-requested', 'Review requested', [requested(), other])])], NOW, [reviewing({ responded: true })]);
+    expect(ids(g.needsYou)).toEqual(['acme/api#42']);
+    expect(ids(g.waiting)).toEqual(['acme/api#43']);
+  });
+
+  it('marks the row in a view tab the same way', () => {
+    const rows = viewRows(rr(requested()), 'gh/review-requested', NOW, [reviewing({ responded: true })]);
+    expect(rows.map((r) => r.needsYou)).toEqual([true]);
+    expect(viewRows(rr(requested()), 'gh/review-requested', NOW, [reviewing()]).map((r) => r.needsYou)).toEqual([false]);
   });
 });

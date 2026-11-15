@@ -317,7 +317,7 @@ async function listShips(a: Admiral): Promise<ShipJSON[]> {
 /** The cue makes the harness exit (0 sails off, 3 anchors); `cues` are cue lines the harness runs instead; without either it idles. */
 export async function launchShip(
   a: Admiral,
-  req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; exit?: 0 | 3; cue?: string; cues?: string[]; dir?: string; skill?: 'commodore' },
+  req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; text?: string; exit?: 0 | 3; cue?: string; cues?: string[]; dir?: string; skill?: 'commodore' },
 ): Promise<LaunchedShip> {
   const cue = join(a.home, 'cue');
   if (req.cue !== undefined) writeFileSync(cue, req.cue);
@@ -329,7 +329,7 @@ export async function launchShip(
     harness: req.harness,
     dir: req.dir ?? join(a.home, 'proj'),
     skill: { kind: req.skill ?? 'none' },
-    ...(req.order ? { source: 'orders', order_id: req.order } : { text: 'Go.' }),
+    ...(req.order ? { source: 'orders', order_id: req.order } : { text: req.text ?? 'Go.' }),
   };
   // Admiral answers 503 until it has read the tmux server's sessions.
   let ship!: LaunchedShip;
@@ -421,6 +421,42 @@ export function seedReview(a: Admiral) {
   const commodore = join(a.home, 'identity', 'zulu-claude', 'skills', 'commodore');
   mkdirSync(commodore, { recursive: true });
   writeFileSync(join(commodore, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
+}
+
+/** What the GitHub source's Review requested view answers for PR 42: the fleet user was asked to review it, reviewed commit `reviewed`, and its head is `head`; moving `head` is the author pushing. Call after seedFleets, addGitHubSource and seedReview. */
+export function seedReviewRequestView(a: Admiral, p: { head: string; reviewed: string }) {
+  const dir = join(a.fakeGh().dir, 'search');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(a.fakeGh().dir, 'viewer'), 'fake-viewer\n');
+  const config = JSON.parse(readFileSync(join(a.home, 'config.json'), 'utf8'));
+  config.fleets.zulu.owners = ['acme'];
+  a.writeConfig(config);
+  const node = {
+    number: REVIEWED_PR,
+    title: 'Review the limiter',
+    url: `${PR_BASE}/${REVIEWED_PR}`,
+    createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+    bodyText: '',
+    author: { login: REVIEW_AUTHOR },
+    repository: { nameWithOwner: 'acme/api', url: 'https://github.com/acme/api' },
+    labels: { nodes: [] },
+    state: 'OPEN',
+    reviewDecision: 'REVIEW_REQUIRED',
+    mergeable: 'MERGEABLE',
+    mergeStateStatus: 'BLOCKED',
+    statusCheckRollup: { state: 'SUCCESS' },
+    headRefOid: p.head,
+    viewerLatestReview: { state: 'COMMENTED', commit: { oid: p.reviewed } },
+    timelineItems: { nodes: [{ __typename: 'ReviewRequestedEvent', createdAt: new Date(Date.now() - 7_200_000).toISOString(), requestedReviewer: { login: 'fake-viewer' } }] },
+  };
+  const canned = (key: string, needle: string, nodes: unknown[]) => {
+    writeFileSync(join(dir, `${key}.match`), needle);
+    writeFileSync(join(dir, `${key}.json`), JSON.stringify({ data: { search: { nodes } } }));
+  };
+  canned('a-assigned', 'assignee:@me', []);
+  canned('b-review', 'review-requested:@me', [node]);
+  canned('c-mine', 'author:@me', []);
+  canned('z-rest', 'is:open', []);
 }
 
 /** Launches a Commodore ship on a review order, ends its turn with a done report naming `prs` (none for a stack, which the order's URL resolves), and waits for it to moor. */
@@ -3017,8 +3053,23 @@ export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { pho
   prAnswer(a, REVIEWED_PR, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
   prDetail(a, REVIEWED_PR, { title: 'Add the limiter', head: 'feat/limiter', base: 'main', checks: 'SUCCESS', reviews: [{ author: { login: 'carol' }, state: 'APPROVED' }] });
   prReviewedBy(a, REVIEWED_PR, { reviewed: REVIEWED_SHA, head: REVIEWED_SHA });
+  seedReviewRequestView(a, { head: REVIEWED_SHA, reviewed: REVIEWED_SHA });
   const ship = await launchMooredReview(a, 'ord-review', [REVIEWED_PR]);
   await reviewingOnTheServer(a, ship, false);
+
+  // On Orders the PR waits on the author, with its ship's pill and no launch arrow or Re-review.
+  const orderRow = () => page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review the limiter' });
+  const orderGroup = (title: string) => page.getByRole('main').getByRole('region', { name: new RegExp(`^${title}`) });
+  const refreshOrders = async () => {
+    await page.getByRole('button', { name: 'Refresh now', exact: true }).tap();
+    await expect(page.getByRole('button', { name: 'Refresh now', exact: true })).toBeEnabled();
+  };
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  await expect(orderGroup('Waiting on others').getByRole('listitem').filter({ hasText: 'Review the limiter' })).toHaveCount(1);
+  await expect(orderRow()).toContainText(ship.name);
+  await expect(orderRow()).toContainText('Moored');
+  await expect(orderRow().getByRole('button', { name: /^Launch / })).toHaveCount(0);
+  await expect(orderRow().getByRole('button', { name: 'Re-review', exact: true })).toHaveCount(0);
 
   const panel = await openPRTab(page, a, ship);
   await expect(panel).toContainText(`Reviewing · by @${REVIEW_AUTHOR}`);
@@ -3039,6 +3090,16 @@ export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { pho
   const row = inboxRow(page, ship);
   await expect(row).toContainText(`@${REVIEW_AUTHOR} responded on #${REVIEWED_PR}`);
   await expect(row).not.toContainText('ready to merge');
+
+  // The same push moves the order to Needs you, with Re-review beside the ship's pill.
+  seedReviewRequestView(a, { head: PUSHED_SHA, reviewed: REVIEWED_SHA });
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  await refreshOrders();
+  await expect(orderGroup('Needs you').getByRole('listitem').filter({ hasText: 'Review the limiter' })).toHaveCount(1);
+  await expect(orderRow()).toContainText(ship.name);
+  const orderReReview = orderRow().getByRole('button', { name: 'Re-review', exact: true });
+  expect((await orderReReview.boundingBox())!.height, 'Re-review height on Orders').toBeGreaterThanOrEqual(44);
+  await expect(orderRow().getByRole('button', { name: /^Launch / })).toHaveCount(0);
 
   const tab = await openPRTab(page, a, ship);
   await expect(feedbackBar(tab)).toBeVisible();
@@ -3064,11 +3125,38 @@ export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { pho
   await expect(rereviewSheet(page)).toBeVisible();
   await staysMoored(a, ship, 'a refused Re-review leaves the ship moored');
   await page.unroute(/\/api\/(v1\/)?ships\/[^/]+\/rereview$/);
-  await refused.confirm.tap();
+  await refused.sheet.getByRole('button', { name: 'Cancel' }).tap();
   await expect(rereviewSheet(page)).toHaveCount(0);
+
+  // Re-review on the order's row opens the same sheet, and its confirm wakes the ship under its own name.
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  await expect(orderGroup('Needs you').getByRole('listitem').filter({ hasText: 'Review the limiter' })).toHaveCount(1);
+  await orderRow().getByRole('button', { name: 'Re-review', exact: true }).tap();
+  const fromOrders = await expectRereviewSheet(page, `/commodore ${url}`, 'Re-review', opts);
+  await fromOrders.confirm.tap();
   await expect(rereviewSheet(page)).toHaveCount(0);
   await expectWokenWith(page, a, ship, url);
-  await expect(reReview).toHaveCount(0);
+  expect((await listShips(a)).filter((s) => s.name === ship.name)).toHaveLength(1);
+
+  // The woken ship is live on the order: tapping its pill opens the ship, and the pane offers Launch another ship.
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  await expect(orderRow().getByRole('button', { name: /^Launch / })).toHaveCount(0);
+  await orderRow().getByText(ship.name).tap();
+  await expect(page).toHaveURL(new RegExp(`/app/ships/${ship.session}`));
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  await page.getByRole('button', { name: 'Open Review the limiter', exact: true }).tap();
+  const pane = orderPane(page, (page.viewportSize()?.width ?? 1024) < 700);
+  await expect(pane.getByRole('link', { name: ship.name })).toHaveAttribute('href', new RegExp(`/app/ships/${ship.session}`));
+  await expect(pane.getByRole('button', { name: 'Launch ship', exact: true })).toHaveCount(0);
+  const another = pane.getByRole('button', { name: 'Launch another ship', exact: true });
+  expect((await another.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await another.tap();
+  const launchForm = page.getByRole('dialog', { name: 'Launch', exact: true });
+  await expect(launchForm).toBeVisible();
+  const sent = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships');
+  await launchForm.getByRole('button', { name: 'Launch', exact: true }).tap();
+  expect((await sent).status()).toBe(201);
+  await expect.poll(async () => (await listShips(a)).length).toBe(2);
 }
 
 /**
