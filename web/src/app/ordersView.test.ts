@@ -3,7 +3,8 @@ import type { MooredPR, Order, OrderView, Ship, Source } from './api';
 import type { RowAction } from './moored';
 import { selectedRow, withSelectedOrder } from './orderDetail';
 import { parseExpanded } from './expandedParents';
-import { filterRows, forYou, groupRowActions, headerTime, launchRef, orderRef, parentNote, refreshedLine, refreshTarget, repoName, repoOptions, stackLaunchLines, tabs, viewGroups, viewRows, withoutParentNote } from './ordersView';
+import { boxState, checkedUrls, filterRows, forYou, groupRowActions, headerTime, isIssueTab, issuesLabel, keepChecked, launchRef, newCampaignRefs, newCampaignSearch, orderRef, parentNote, refreshedLine, refreshTarget, repoName, repoOptions, selectableRows, selectAfterChoose, selection, stackLaunchLines, tabs, viewGroups, viewRows, withoutParentNote } from './ordersView';
+import type { OrderRow, SelectState } from './ordersView';
 
 const NOW = Date.parse('2026-11-14T12:00:00Z');
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -964,5 +965,268 @@ describe('the stored expanded parents', () => {
 
   it('reads nothing as collapsed, without throwing', () => {
     for (const raw of [null, '', 'not json', '[]', '7', 'null']) expect(parseExpanded(raw)).toEqual({});
+  });
+});
+
+describe('Select on an issue tab', () => {
+  const issueUrl = (n: number, repo = 'acme/api') => `https://github.com/${repo}/issues/${n}`;
+  const issue = (n: number, over: Partial<Order> = {}): Order => order(`acme/api#${n}`, { url: issueUrl(n), ...over });
+  const parentOf = (n: number, repo = 'acme/api') => ({ id: `${repo}#${n}`, title: `Epic ${n}`, url: issueUrl(n, repo), repo });
+  const kid = (n: number, parent: number, over: Partial<Order> = {}) => issue(n, { parent: parentOf(parent), ...over });
+  const prOrder = (n: number, over: Partial<Order> = {}): Order => order(`acme/api#${n}`, { url: `https://github.com/acme/api/pull/${n}`, pr: pr(), ...over });
+  const TAB = 'gh/assigned-to-me';
+  const ghOf = (orders: Order[]) => [gh([view('assigned-to-me', 'Assigned to me', orders)])];
+  const rowsOf = (orders: Order[]) => viewGroups(ghOf(orders), TAB, NOW, [], {}).flatMap((g) => [g.row, ...g.children]);
+  const rowOf = (orders: Order[], id: string): OrderRow => rowsOf(orders).find((r) => r.order.id === id)!;
+  const none = new Set<string>();
+
+  describe('which tabs offer it', () => {
+    it('offers it on a GitHub tab of issues', () => {
+      expect(isIssueTab(ghOf([issue(1), issue(2)]), TAB)).toBe(true);
+    });
+
+    it('does not offer it on a tab of pull requests', () => {
+      expect(isIssueTab(ghOf([prOrder(1), prOrder(2)]), TAB)).toBe(false);
+    });
+
+    it('does not offer it on a tab that mixes issues and pull requests', () => {
+      expect(isIssueTab(ghOf([issue(1), prOrder(2)]), TAB)).toBe(false);
+    });
+
+    it('does not offer it on For you, even when every order there is an issue', () => {
+      expect(isIssueTab(ghOf([issue(1)]), 'for-you')).toBe(false);
+    });
+
+    it('does not offer it on an empty tab or an unknown tab', () => {
+      expect(isIssueTab(ghOf([]), TAB)).toBe(false);
+      expect(isIssueTab(ghOf([issue(1)]), 'gh/nope')).toBe(false);
+    });
+
+    it('does not offer it on another plugin\'s tab of issue-shaped orders', () => {
+      const src = [plugin('jira', 'Jira', [view('mine', 'Mine', [issue(1)])])];
+      expect(isIssueTab(src, 'jira/mine')).toBe(false);
+    });
+  });
+
+  describe('which rows can be checked', () => {
+    it('checks a loose issue with a url, named by its repo and number', () => {
+      expect(boxState(rowOf([issue(5)], 'acme/api#5'), none)).toEqual({ disabled: false, label: 'Select acme/api #5' });
+    });
+
+    it('disables a child row inside a group and names why', () => {
+      const orders = [kid(31, 30)];
+      expect(boxState(rowOf(orders, 'acme/api#31'), none)).toEqual({ disabled: true, label: 'acme/api #31 already has a parent' });
+    });
+
+    it('disables a group head that has a parent of its own', () => {
+      const orders = [kid(30, 20), kid(31, 30)];
+      expect(boxState(rowOf(orders, 'acme/api#30'), none)).toMatchObject({ disabled: true, label: 'acme/api #30 already has a parent' });
+    });
+
+    it('says in #n on a parented head the filter turns into a loose row', () => {
+      const [g] = viewGroups(ghOf([kid(30, 20), kid(31, 30)]), TAB, NOW, [], { query: kid(30, 20).title });
+      expect(g.children).toEqual([]);
+      expect(g.row.reason).toMatch(/^in #20(?: · |$)/);
+    });
+
+    it('says in #n on a group head that has a parent, in its reason', () => {
+      const head = viewGroups(ghOf([kid(30, 20), kid(31, 30)]), TAB, NOW, [], {})[0];
+      expect(head.row.reason).toMatch(/^in #20(?: · |$)/);
+    });
+
+    it('does not check an order with no url', () => {
+      const noUrl = order('acme/api#6', { url: undefined });
+      expect(boxState(rowOf([noUrl], 'acme/api#6'), none).disabled).toBe(true);
+    });
+
+    it('checks a group head that no view lists, since its own parent is unknown here', () => {
+      const [g] = viewGroups(ghOf([kid(31, 30)]), TAB, NOW, [], {});
+      expect(g.row.inView).toBe(false);
+      expect(boxState(g.row, none)).toEqual({ disabled: false, label: 'Select acme/api #30' });
+    });
+
+    it('checks a group head that is in the view and has no parent', () => {
+      expect(boxState(rowOf([issue(30), kid(31, 30)], 'acme/api#30'), none).disabled).toBe(false);
+    });
+
+    it('tells two repos\' issues of one number apart in the label', () => {
+      const other = order('acme/web#5', { url: issueUrl(5, 'acme/web'), repo: 'acme/web' });
+      expect(boxState(rowOf([issue(5), other], 'acme/web#5'), none).label).toBe('Select acme/web #5');
+    });
+
+    describe('the cap of 50', () => {
+      const many = Array.from({ length: 52 }, (_, i) => issue(i + 1));
+      const rows = rowsOf(many);
+      const first50 = new Set(rows.slice(0, 50).map((r) => r.key));
+
+      it('leaves every box open below the cap', () => {
+        const checked = new Set(rows.slice(0, 49).map((r) => r.key));
+        expect(rows.every((r) => !boxState(r, checked).disabled)).toBe(true);
+      });
+
+      it('disables the unchecked boxes at 50 and keeps the checked ones open to uncheck', () => {
+        expect(boxState(rows[50], first50).disabled).toBe(true);
+        expect(boxState(rows[51], first50).disabled).toBe(true);
+        expect(boxState(rows[0], first50).disabled).toBe(false);
+        expect(boxState(rows[49], first50).disabled).toBe(false);
+      });
+    });
+  });
+
+  describe('the checked set', () => {
+    it('drops an order a refresh removed and keeps the rest', () => {
+      const rows = rowsOf([issue(1), issue(2), issue(3)]);
+      const checked = new Set(rows.map((r) => r.key));
+      const after = keepChecked(checked, rowsOf([issue(1), issue(3)]));
+      expect([...after].sort()).toEqual(['gh/acme/api#1', 'gh/acme/api#3']);
+    });
+
+    it('drops an order a refresh gave a parent', () => {
+      const checked = new Set(['gh/acme/api#2']);
+      expect([...keepChecked(checked, rowsOf([kid(2, 9)]))]).toEqual([]);
+    });
+
+    it('keeps a row the filter hides, so the count still includes it', () => {
+      const orders = [issue(1, { title: 'alpha' }), issue(2, { title: 'beta' })];
+      const hidden = filterRows(viewRows(ghOf(orders), TAB, NOW), { query: 'alpha' });
+      expect(ids(hidden)).toEqual(['acme/api#1']);
+      const all = rowsOf(orders);
+      const checked = new Set(['gh/acme/api#2']);
+      expect([...keepChecked(checked, all)]).toEqual(['gh/acme/api#2']);
+    });
+
+    describe('selection, the effective state a render stores', () => {
+      const rowsA = rowsOf([issue(1), issue(2)]);
+      const on: SelectState = { fleet: 'zulu', tab: TAB, on: true, checked: new Set(['gh/acme/api#1']) };
+      const ctx = { tab: TAB, fleet: 'zulu', rows: rowsA, issueTab: true };
+
+      it('returns the same state when nothing changed', () => {
+        expect(selection(on, ctx)).toBe(on);
+      });
+
+      it('ends Select mode when the tab changed without choose, and does not bring it back on return', () => {
+        const away = selection(on, { ...ctx, tab: 'for-you', issueTab: false });
+        expect(away).toMatchObject({ on: false, tab: 'for-you' });
+        const back = selection(away, ctx);
+        expect(back.on).toBe(false);
+        expect([...back.checked]).toEqual([]);
+      });
+
+      it('ends Select mode on a fleet round trip that drops the tab', () => {
+        const other = selection(on, { ...ctx, fleet: 'yankee', tab: 'for-you', issueTab: false });
+        const back = selection(other, ctx);
+        expect(back).toMatchObject({ on: false, fleet: 'zulu', tab: TAB });
+        expect([...back.checked]).toEqual([]);
+      });
+
+      it('turns Select off when the tab stops being an issue tab, and stays off when it regains it', () => {
+        const lost = selection(on, { ...ctx, issueTab: false });
+        expect(lost).toMatchObject({ on: false });
+        expect([...lost.checked]).toEqual([]);
+        expect(selection(lost, ctx).on).toBe(false);
+      });
+
+      it('prunes a check whose order a refresh removed', () => {
+        const next = selection(on, { ...ctx, rows: rowsOf([issue(2)]) });
+        expect(next.on).toBe(true);
+        expect([...next.checked]).toEqual([]);
+      });
+    });
+
+    describe('selectableRows', () => {
+      it('lists the tab\'s rows with a synthesized parent just above its first child', () => {
+        const rows = selectableRows(ghOf([issue(1), kid(31, 30), issue(2), kid(32, 30)]), TAB, NOW, []);
+        expect(rows.map((r) => r.order.id)).toEqual(['acme/api#1', 'acme/api#30', 'acme/api#31', 'acme/api#2', 'acme/api#32']);
+        expect(rows[1].inView).toBe(false);
+      });
+
+      it('lists an in-view parent once, in the tab\'s order', () => {
+        const rows = selectableRows(ghOf([issue(2), issue(30), kid(31, 30)]), TAB, NOW, []);
+        expect(rows.map((r) => r.order.id)).toEqual(['acme/api#2', 'acme/api#30', 'acme/api#31']);
+      });
+    });
+
+    describe('switching tab or fleet', () => {
+      const on: SelectState = { fleet: 'zulu', tab: TAB, on: true, checked: new Set(['gh/acme/api#1']) };
+
+      it('keeps Select mode and the checks when nothing changed', () => {
+        const same = selectAfterChoose(on, TAB, 'zulu');
+        expect(same.on).toBe(true);
+        expect([...same.checked]).toEqual(['gh/acme/api#1']);
+      });
+
+      it('ends Select mode and clears the checks on another tab', () => {
+        const next = selectAfterChoose(on, 'gh/my-prs', 'zulu');
+        expect(next).toMatchObject({ on: false, tab: 'gh/my-prs', fleet: 'zulu' });
+        expect([...next.checked]).toEqual([]);
+      });
+
+      it('ends Select mode and clears the checks on another fleet', () => {
+        const next = selectAfterChoose(on, TAB, 'yankee');
+        expect(next).toMatchObject({ on: false, tab: TAB, fleet: 'yankee' });
+        expect([...next.checked]).toEqual([]);
+      });
+    });
+  });
+
+  describe('the bar', () => {
+    it('counts issues, singular for one', () => {
+      expect(issuesLabel(1)).toBe('1 issue');
+      expect(issuesLabel(2)).toBe('2 issues');
+      expect(issuesLabel(50)).toBe('50 issues');
+    });
+
+    it('lists the checked orders\' urls in the tab\'s row order, whatever order they were checked in', () => {
+      const orders = [issue(3), issue(1), issue(2)];
+      const checked = new Set(['gh/acme/api#2', 'gh/acme/api#3']);
+      expect(checkedUrls(viewRows(ghOf(orders), TAB, NOW), checked)).toEqual([issueUrl(3), issueUrl(2)]);
+    });
+
+    it('lists nothing when nothing is checked', () => {
+      expect(checkedUrls(viewRows(ghOf([issue(1)]), TAB, NOW), none)).toEqual([]);
+    });
+  });
+
+  describe('the newCampaign parameter', () => {
+    const refs = (search: string) => newCampaignRefs(search);
+
+    it('round trips full urls, comma-separated into one parameter', () => {
+      const urls = [issueUrl(1), issueUrl(2, 'acme/web')];
+      expect(refs(newCampaignSearch('', urls))).toEqual(urls);
+      expect(new URLSearchParams(newCampaignSearch('', urls)).get('newCampaign')).toBe(urls.join(','));
+    });
+
+    it('keeps a GitHub Enterprise host', () => {
+      const urls = ['https://ghe.example.com/acme/api/issues/7'];
+      expect(refs(newCampaignSearch('', urls))).toEqual(urls);
+    });
+
+    it('keeps the other parameters and replaces an earlier newCampaign', () => {
+      const search = newCampaignSearch('?order=gh%2Facme%2Fapi%231&newCampaign=old', [issueUrl(4)]);
+      const q = new URLSearchParams(search);
+      expect(q.get('order')).toBe('gh/acme/api#1');
+      expect(q.getAll('newCampaign')).toEqual([issueUrl(4)]);
+    });
+
+    it('reads the short owner/repo#n form as a github.com issue url', () => {
+      expect(refs('?newCampaign=acme%2Fapi%237,acme%2Fweb%2318')).toEqual([issueUrl(7), issueUrl(18, 'acme/web')]);
+    });
+
+    it('drops every ref that is not an issue url or owner/repo#n', () => {
+      const bad = ['javascript:alert(1)', 'https://evil.example/x', 'https://github.com/a/b/pull/3', 'https://github.com/a/b/issues/x', 'http://github.com/a/b/issues/3', 'a/b#x'];
+      expect(refs(`?newCampaign=${encodeURIComponent([...bad, issueUrl(9)].join(','))}`)).toEqual([issueUrl(9)]);
+    });
+
+    it('reads nothing from a search without the parameter or with an empty one', () => {
+      expect(refs('')).toEqual([]);
+      expect(refs('?order=x')).toEqual([]);
+      expect(refs('?newCampaign=')).toEqual([]);
+    });
+
+    it('survives a reload: the search built for the url parses to the same refs', () => {
+      const urls = [issueUrl(1), 'https://ghe.example.com/acme/api/issues/7'];
+      const reloaded = new URL(`http://x/app/orders${newCampaignSearch('?order=k', urls)}`).search;
+      expect(refs(reloaded)).toEqual(urls);
+    });
   });
 });
