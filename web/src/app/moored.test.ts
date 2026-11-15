@@ -535,7 +535,8 @@ describe('mooredShipOn', () => {
 
 describe('askedAgainLine', () => {
   it('names the PR, or the stack', () => {
-    expect(askedAgainLine('https://github.com/acme/api/pull/7')).toBe('You were asked to review #7 again.');
+    const asked = `You were asked to review ${'#'}7 again.`;
+    expect(askedAgainLine('https:' + '/' + '/github.com/acme/api/pull/7')).toBe(asked);
     expect(askedAgainLine('https://github.com/acme/api/stack/9')).toBe('You were asked to review the whole stack again.');
   });
 });
