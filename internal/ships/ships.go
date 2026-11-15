@@ -116,10 +116,12 @@ type Service struct {
 	answering sync.Map
 	// returning holds the ships a Return to port step is running for.
 	returning sync.Map
-	Host      *sessionhost.Host
-	Launcher  *launcher.Launcher
-	State     *state.Store
-	Hub       *server.Hub
+	// handing holds the ships a Hand to Commodore step is running for.
+	handing  sync.Map
+	Host     *sessionhost.Host
+	Launcher *launcher.Launcher
+	State    *state.Store
+	Hub      *server.Hub
 	// MergeGuard wraps the Merge route with its token check; with none the route refuses everything.
 	MergeGuard func(http.Handler) http.Handler
 	Orders     Orders
@@ -418,6 +420,7 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		s.observe(ctx)
 		s.advanceReturns()
+		s.advanceHandoffs()
 		s.refreshOpenPRs(ctx)
 		s.autoMoor(ctx)
 		s.sailOff(ctx, sailing)

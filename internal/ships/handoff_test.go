@@ -34,7 +34,7 @@ func newHandRig(t *testing.T) *handRig {
 	run("init", "-q")
 	run("remote", "add", "origin", "https://github.com/acme/widgets.git")
 	_, lerr := r.s.LaunchOrder(launcher.Request{Fleet: "work", Harness: "claude", Dir: r.checkout, Model: "opus", Name: "Saltpaw",
-		Session: "saltpaw", Prompt: "go", Skill: launcher.Skill{Kind: "none"}, URL: handIssue, Resources: []string{"phone"}})
+		Session: "saltpaw", Prompt: "go", Skill: launcher.Skill{Kind: "none"}, Issues: []string{handIssue}, Resources: []string{"phone"}})
 	if lerr != nil {
 		t.Fatalf("LaunchOrder = %v", lerr)
 	}
@@ -388,7 +388,9 @@ func TestHandToCommodoreRecordsWhyAndLeavesTheShipStoppedWhenTheRelaunchFails(t 
 	r.endTurn(t)
 
 	waitUntil(t, "the ship to be stopped", func() bool { return !r.afloat() })
-	got := outcomeLines(t, r.home, "saltpaw", "handing_failed")
+	var got []map[string]any
+	waitUntil(t, "the failure to be recorded", func() bool { got = outcomeLines(t, r.home, "saltpaw", "handing_failed"); return len(got) > 0 })
+	waitUntil(t, "the stopped ship's usage record, which would otherwise outlive the test", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "usage")) > 0 })
 	if len(got) != 1 || !strings.Contains(fmt.Sprint(got[0]["reason"]), "phone") || got[0]["conversation"] != sessionID {
 		t.Errorf("handing_failed records = %v, want the reason and conversation %s", got, sessionID)
 	}
