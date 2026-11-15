@@ -9,6 +9,9 @@ import (
 
 var startedWith = regexp.MustCompile(`--session-id["']?\s+["']?([0-9a-f-]{36})`)
 
+// A resumed Claude ship keeps its conversation id, so --resume names it as --session-id does.
+var resumedWith = regexp.MustCompile(`--resume["']?\s+["']?([0-9a-f-]{36})`)
+
 // Bind reads a ship's @admiral-transcript value against the command its pane started with and answers the path and session id they agree on.
 func Bind(raw, startCmd string) (path, id string, ok bool) { return BindFor("claude", raw, startCmd) }
 
@@ -21,7 +24,11 @@ func BindFor(harness, raw, startCmd string) (path, id string, ok bool) {
 	}
 	id, valid := SessionIDFor(harness, parts[2])
 	// The option is writable from the pane and the start command is not, so the id the launch gave the harness decides.
-	if m := startedWith.FindStringSubmatch(startCmd); !valid || m == nil || m[1] != id {
+	m := startedWith.FindStringSubmatch(startCmd)
+	if m == nil && harness == "claude" {
+		m = resumedWith.FindStringSubmatch(startCmd)
+	}
+	if !valid || m == nil || m[1] != id {
 		return "", "", false
 	}
 	return parts[2], id, true

@@ -15,7 +15,7 @@ func TestStartedSessionIgnoresAnOrdersText(t *testing.T) {
 		"only in an order":  {"'/bin/copilot' '--interactive=fix --session-id " + other + "'", ""},
 		"after the order's": {"copilot -i 'a' --session-id " + sid, sid},
 	} {
-		if got := startedSession(c.cmd); got != c.want {
+		if got := startedSession("claude", c.cmd); got != c.want {
 			t.Errorf("%s: startedSession = %q, want %q", name, got, c.want)
 		}
 	}

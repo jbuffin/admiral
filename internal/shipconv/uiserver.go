@@ -99,8 +99,12 @@ func startFlag(cmd, name string) (value string, present bool) {
 var sessionUUID = regexp.MustCompile(`^[0-9a-f-]{36}$`)
 
 // startedSession is the session id the launch gave the harness, read from the start command.
-func startedSession(cmd string) string {
+func startedSession(harness, cmd string) string {
 	if v, ok := startFlag(cmd, "--session-id"); ok && sessionUUID.MatchString(v) {
+		return v
+	}
+	// A resumed Claude ship keeps its conversation id.
+	if v, ok := startFlag(cmd, "--resume"); ok && harness == "claude" && sessionUUID.MatchString(v) {
 		return v
 	}
 	return ""
