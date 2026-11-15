@@ -277,7 +277,7 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
-	ln, err := net.Listen("tcp", listenOn)
+	ln, err := listenTCP(listenOn)
 	if err != nil {
 		return err
 	}

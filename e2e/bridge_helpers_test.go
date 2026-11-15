@@ -391,9 +391,7 @@ func (w *world) release(session, name string) {
 	}
 }
 
-// startLAN starts Admiral on 0.0.0.0 with the world's environment and pairs a
-// device. It skips (fails on CI) when the
-// Mac's address does not answer.
+// startLAN starts Admiral on 0.0.0.0 with the world's environment and pairs a device over the LAN.
 func (w *world) startLAN(t *testing.T) *fleetInst {
 	t.Helper()
 	if _, err := os.Stat(configPath(w.home)); err != nil {

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -213,7 +214,8 @@ func launchAdmiral(t *testing.T, home, listen string, env []string) *fleetInst {
 	t.Helper()
 	expectNoMigration(t, home)
 	cmd := exec.Command(binaryPath(t), "--listen", listen)
-	cmd.Env = env
+	lanPort := freePort(t)
+	cmd.Env = append(slices.Clone(env), lanEnv(lanPort)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +225,7 @@ func launchAdmiral(t *testing.T, home, listen string, env []string) *fleetInst {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start admiral: %v", err)
 	}
-	in := &instance{Home: home, listen: listen, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
+	in := &instance{Home: home, listen: listen, LANPort: lanPort, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
 	go func() { _ = cmd.Wait(); close(in.done) }()
 	t.Cleanup(in.Stop)
 	lines := make(chan string, 8)

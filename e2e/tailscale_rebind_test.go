@@ -10,37 +10,16 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
-
-	"github.com/jbuffin/admiral/internal/server"
 )
 
 // Turning Tailscale mode on or off moves Admiral's listener without a restart and tells the browsers it leaves behind.
 
-// lanIPv4 asks the server's own picker, so a link-local adapter can't make the test expect a different address.
-func lanIPv4(t *testing.T) string {
-	t.Helper()
-	if ip, ok := server.LANIPv4(); ok {
-		return ip
-	}
-	lanUnavailable(t, "no LAN IPv4 address")
-	return ""
-}
-
-// fakeLAN is a TEST-NET address Admiral is told is its LAN address, for tests that read it but never dial it.
-const fakeLAN = "192.0.2.10"
-
 // startDerived runs Admiral with no --listen, so its address follows the mode, on this rig's port.
 func (r *tsRig) startDerived(mode bool) *tsProc {
-	return r.startDerivedAt(mode, lanIPv4(r.t))
-}
-
-// startDerivedAt runs it with lan as its LAN address; fakeLAN needs no network.
-func (r *tsRig) startDerivedAt(mode bool, lan string) *tsProc {
 	t := r.t
 	t.Helper()
 	r.writeConfig(mode)
@@ -49,13 +28,14 @@ func (r *tsRig) startDerivedAt(mode bool, lan string) *tsProc {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(binaryPath(t))
-	cmd.Env = append(hermeticEnv(t), "ADMIRAL_LAN_IP="+lan, "ADMIRAL_HOME="+r.home, "ADMIRAL_PORT="+r.port, "FAKETS_DIR="+r.dir, "PATH="+fakeDir+":"+os.Getenv("PATH"))
+	lanPort := freePort(t)
+	cmd.Env = append(append(hermeticEnv(t), lanEnv(lanPort)...), "ADMIRAL_HOME="+r.home, "ADMIRAL_PORT="+r.port, "FAKETS_DIR="+r.dir, "PATH="+fakeDir+":"+os.Getenv("PATH"))
 	out := &syncBuffer{}
 	cmd.Stdout, cmd.Stderr = out, out
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	in := &instance{Home: r.home, Port: r.port, LocalURL: "http://127.0.0.1:" + r.port, LANIP: lan, cmd: cmd, done: make(chan struct{}), stderrBuf: out}
+	in := &instance{Home: r.home, Port: r.port, LocalURL: "http://127.0.0.1:" + r.port, LANIP: fakeLAN, LANPort: lanPort, cmd: cmd, done: make(chan struct{}), stderrBuf: out}
 	go func() { _ = cmd.Wait(); close(in.done) }()
 	t.Cleanup(func() { killTmux(filepath.Join(r.home, "tmux.sock")) })
 	t.Cleanup(in.Stop)
@@ -135,8 +115,6 @@ func (r *tsRig) lanBearer(t *testing.T, p *tsProc) http.Header {
 	return http.Header{"Authorization": {"Bearer " + p.pair(t)}}
 }
 
-func (p *tsProc) lanURL() string { return "http://" + net.JoinHostPort(p.LANIP, p.Port) }
-
 func (p *tsProc) shipsAnswer(t *testing.T) bool {
 	code, _ := p.call(t, http.MethodGet, "/api/ships")
 	return code == http.StatusOK
@@ -164,9 +142,6 @@ func TestModeOnMovesAdmiralOffTheLAN(t *testing.T) {
 	r.writeServe(r.serve(443, false))
 	p := r.startDerived(false)
 	pid := pidOf(p)
-	if !p.answers(p.lanURL()) {
-		lanUnavailable(t, "no answer from %s", p.lanURL())
-	}
 	lan := dialShips(t, p.lanURL(), r.lanBearer(t, p))
 	local := dialShips(t, p.LocalURL, nil)
 	go func() { // a Ping needs a reader to receive its pong
@@ -198,11 +173,11 @@ func TestModeOnMovesAdmiralOffTheLAN(t *testing.T) {
 }
 
 // Mode off sends the tailnet browser to the LAN address before its socket is cut, then Admiral listens on every
-// interface again. It needs no network: the LAN address is pinned and only read, and the bind is read with lsof.
+// interface again.
 func TestModeOffMovesTailnetBrowsersToTheLAN(t *testing.T) {
 	t.Parallel()
 	r := newTSRig(t)
-	p := r.startDerivedAt(true, fakeLAN)
+	p := r.startDerived(true)
 	if !p.otherDevicesBound(t) {
 		return
 	}
@@ -217,10 +192,11 @@ func TestModeOffMovesTailnetBrowsersToTheLAN(t *testing.T) {
 		t.Fatalf("Turn off: %d %s", code, body)
 	}
 
-	if got, want := awaitMove(t, tail), p.lanURL(); got != want {
+	if got, want := awaitMove(t, tail), p.advertisedLAN(); got != want {
 		t.Errorf("the tailnet browser was sent to %q, want the LAN form %q", got, want)
 	}
 	waitUntil(t, "Admiral listens on every interface again", func() bool { return p.listensOn(t) == "*:"+p.Port })
+	waitUntil(t, "Admiral answers on the LAN again", func() bool { return p.answers(p.lanURL()) })
 	if p.exited() || pidOf(p) != pid || !p.shipsAnswer(t) {
 		t.Error("Admiral restarted to move, or lost its ships")
 	}
@@ -302,19 +278,12 @@ func TestFailedRebindKeepsTheOldListener(t *testing.T) {
 	r := newTSRig(t)
 	r.writeServe(r.serve(443, false))
 	p := r.startDerived(true)
-	// The LAN address on Admiral's port, held without SO_REUSEADDR, so a bind of 0.0.0.0 on that port fails.
-	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
-		return c.Control(func(fd uintptr) { _ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 0) })
-	}}
-	blocker, err := lc.Listen(context.Background(), "tcp", net.JoinHostPort(p.LANIP, p.Port))
+	// Holding the test build's LAN port fails the bind that would bring the LAN back.
+	blocker, err := net.Listen("tcp", "127.0.0.1:"+p.LANPort)
 	if err != nil {
-		lanUnavailable(t, "cannot hold %s: %v", p.LANIP, err)
+		t.Fatal(err)
 	}
 	defer blocker.Close()
-	// macOS lets a wildcard bind overlap that one, so it needs the wildcard address held too; where that fails the first still blocks.
-	if wild, err := net.Listen("tcp", "0.0.0.0:"+p.Port); err == nil {
-		defer wild.Close()
-	}
 
 	r.writeConfig(false)
 
