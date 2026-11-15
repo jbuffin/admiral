@@ -47,13 +47,11 @@ jobs:
       - name: go e2e with timings
         run: |
           make build
-          for par in 4 1; do
-            n=3; [ $par = 1 ] && n=2
-            echo "== crew tests only, -parallel $par -count=$n"
-            go test -json -count=$n -parallel $par -tags packaging ./e2e/ -run '^TestCrew' > /tmp/ptydiag/crew-p$par.json || true
-            grep '"Action":"fail"' /tmp/ptydiag/crew-p$par.json | grep -o '"Test":"[^"]*"' | sort | uniq -c
-            grep -c 'Device not configured' /tmp/ptydiag/crew-p$par.json || true
-          done
+          go test -json -count=6 -parallel 4 -tags packaging ./e2e/ -run '^TestCrew' > /tmp/ptydiag/crew.json || true
+          echo "crew x6 failures:"; grep '"Action":"fail"' /tmp/ptydiag/crew.json | grep -o '"Test":"[^"]*"' | sort | uniq -c
+          go test -json -count=1 -parallel 4 -tags packaging ./e2e/... > /tmp/ptydiag/e2e.json || true
+          echo "full e2e failures:"; grep '"Action":"fail"' /tmp/ptydiag/e2e.json | grep -o '"Test":"[^"]*"' | sort | uniq -c
+          echo "retries:"; sort /tmp/ptydiag/retries.log 2>/dev/null | awk '{print $3}' | sort | uniq -c; wc -l /tmp/ptydiag/retries.log 2>/dev/null || echo "no retries"
           grep -E '"Action":"fail"' /tmp/ptydiag/e2e.json | head -40
       - name: pty diagnostics (end)
         if: always()

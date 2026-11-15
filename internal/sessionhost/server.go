@@ -147,6 +147,10 @@ func (s Server) runSpawn(c call) (string, error) {
 			return out, err
 		}
 		log.Printf("admiral: tmux could not open a terminal for a pane (try %d of %d): %s", try, spawnTries, strings.TrimSpace(out))
+		if f, ferr := os.OpenFile("/tmp/ptydiag/retries.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); ferr == nil {
+			fmt.Fprintf(f, "%s try %d\n", time.Now().Format("15:04:05.000"), try)
+			f.Close()
+		}
 		time.Sleep(time.Duration(try) * 100 * time.Millisecond)
 	}
 }
