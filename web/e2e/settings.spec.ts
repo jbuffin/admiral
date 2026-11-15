@@ -157,6 +157,12 @@ function checkout(root: string, dir: string, repo: string) {
 
 const githubPage = (a: Admiral, fleet: string) => `${a.url}app/preferences/${fleet}/github`;
 type StoredView = { id?: string; title?: string; query?: string; hidden?: boolean };
+// The shared seed adds a custom view; a journey about the built-in four starts without it.
+function dropSeededViews(a: Admiral) {
+  const seeded = config(a);
+  delete seeded.sources.gh.settings.views;
+  a.writeConfig(seeded);
+}
 const storedViews = (a: Admiral, key: string) => (config(a).sources[key].settings.views ?? []) as StoredView[];
 const viewRows = (page: Page) => page.getByRole('list', { name: 'Views' }).getByRole('listitem');
 const viewRow = (page: Page, title: string) => viewRows(page).filter({ has: page.getByRole('button', { name: title, exact: true }) });
@@ -262,10 +268,7 @@ test('a signed-out fleet says how to sign in with its views greyed, and turns Co
 
 test('hiding, renaming and moving views changes the Orders tabs and survives a restart', async ({ page, admiral }) => {
   seedOrders(admiral);
-  // The shared seed adds a custom view; this journey is about the built-in four.
-  const seeded = config(admiral);
-  delete seeded.sources.gh.settings.views;
-  admiral.writeConfig(seeded);
+  dropSeededViews(admiral);
   admiral.fakeGh().count('z-open', 'is:open', 3);
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
@@ -348,6 +351,7 @@ const shownSearch = (page: Page) => newViewCard(page).getByRole('group', { name:
 
 test('a new view from the builder saves the search it shows, and its count matches what Orders lists', async ({ page, admiral }) => {
   seedOrders(admiral);
+  dropSeededViews(admiral);
   const gh = admiral.fakeGh();
   gh.count('z-open', 'is:open', 3);
   // Both in this fleet's repos, none held by a ship; the keys sort before seedOrders' own.
@@ -427,6 +431,7 @@ test('a new view from the builder saves the search it shows, and its count match
 
 test('the New view card shows a failed search count and still saves it, and a hand edit changes what is saved', async ({ page, admiral }) => {
   seedOrders(admiral);
+  dropSeededViews(admiral);
   const gh = admiral.fakeGh();
   gh.count('z-open', 'is:open', 3);
   gh.count('0-broken', 'review-requested:@me draft:false', { fail: 'GitHub does not know the qualifier review-requested' });
