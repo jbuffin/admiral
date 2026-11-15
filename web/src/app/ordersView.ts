@@ -236,6 +236,8 @@ function stackRow(src: Source, layer: OrderRow, s: NonNullable<Order['stack']>):
   return { key: `${src.key}/${s.url}`, source: src.key, order, reason: '', state: '', needsYou: false, inView: false, launchable: false, stackRow: true };
 }
 
+const withNote = (r: OrderRow): OrderRow => (parentNote(r.order) ? { ...r, reason: join(parentNote(r.order), r.reason) } : r);
+
 /** A view tab's rows with children placed under their parent's row and PRs under their GitHub stack's row; For you stays flat. */
 export function viewGroups(sources: Source[], id: string, now: number, ships: Ship[], filter: Filter = {}): ViewGroup[] {
   const all = viewRows(sources, id, now, ships);
@@ -266,12 +268,12 @@ export function viewGroups(sources: Source[], id: string, now: number, ships: Sh
       let g = groups.get(p.id);
       if (!g) {
         const head = inView.get(p.id);
-        g = { row: head ? { ...head, reason: join(parentNote(head.order), head.reason) } : parentRow(hit.src, p), children: [], high: false, ships: 0 };
+        g = { row: head ? withNote(head) : parentRow(hit.src, p), children: [], high: false, ships: 0 };
         groups.set(p.id, g);
         out.push(g);
       }
       g.children.push({ ...r, reason: join(parentNote(r.order), r.reason) });
-    } else if (!shownParents.has(r.order.id)) out.push(flat(r));
+    } else if (!shownParents.has(r.order.id)) out.push(flat(withNote(r)));
   }
   for (const g of groups.values()) {
     if (g.row.stackRow) g.children.sort((a, b) => stackOf(a)!.position - stackOf(b)!.position);
@@ -399,7 +401,6 @@ export function isIssueTab(sources: Source[], tabId: string): boolean {
 export interface BoxState {
   disabled: boolean;
   label: string;
-  note: string;
 }
 
 // A synthesized parent row never shows its own parent, so it stays checkable; the create route refuses one that has a parent.
@@ -407,9 +408,29 @@ const checkable = (r: OrderRow) => !!r.order.url && !r.order.parent;
 
 export function boxState(row: OrderRow, checked: ReadonlySet<string>): BoxState {
   const ref = orderRef(row.order);
-  if (row.order.parent) return { disabled: true, label: `${ref} already has a parent`, note: parentNote(row.order) };
+  if (row.order.parent) return { disabled: true, label: `${ref} already has a parent` };
   const full = checked.size >= MAX_CHECKED && !checked.has(row.key);
-  return { disabled: !row.order.url || full, label: `Select ${ref}`, note: '' };
+  return { disabled: !row.order.url || full, label: `Select ${ref}` };
+}
+
+/** The tab's rows in order, with a parent no view lists placed just above its first child. */
+export function selectableRows(sources: Source[], tabId: string, now: number, ships: Ship[]): OrderRow[] {
+  const rows = viewRows(sources, tabId, now, ships);
+  const hit = find(sources, tabId);
+  if (!hit) return rows;
+  const candidates = rows.filter((r) => !r.order.pr && r.order.parent?.id && r.order.parent.id !== r.order.id);
+  const parentIds = new Set(candidates.map((r) => r.order.parent!.id));
+  const held = new Set(rows.map((r) => r.order.id));
+  const out: OrderRow[] = [];
+  for (const r of rows) {
+    const p = r.order.parent;
+    if (p && candidates.includes(r) && !parentIds.has(r.order.id) && !held.has(p.id)) {
+      held.add(p.id);
+      out.push(parentRow(hit.src, p));
+    }
+    out.push(r);
+  }
+  return out;
 }
 
 /** The checked keys that a refreshed list still holds and can still check. */
@@ -430,6 +451,15 @@ export function selectAfterChoose(state: SelectState, tab: string, fleet: string
   return { fleet, tab, on: false, checked: new Set() };
 }
 
+/** The state a render stores: it ends with a tab or fleet change or a tab that isn't an issue tab, and drops checks a refresh removed. */
+export function selection(state: SelectState, ctx: { tab: string; fleet: string; rows: OrderRow[]; issueTab: boolean }): SelectState {
+  const next = selectAfterChoose(state, ctx.tab, ctx.fleet);
+  if (next !== state) return next;
+  if (!ctx.issueTab) return state.on || state.checked.size > 0 ? { ...state, on: false, checked: new Set() } : state;
+  const kept = keepChecked(state.checked, ctx.rows);
+  return kept.size === state.checked.size ? state : { ...state, checked: kept };
+}
+
 export function checkedUrls(rows: OrderRow[], checked: ReadonlySet<string>): string[] {
   return rows.filter((r) => checked.has(r.key) && r.order.url).map((r) => r.order.url!);
 }
@@ -443,15 +473,16 @@ export function newCampaignSearch(search: string, urls: string[]): string {
   return q.size ? `?${q}` : '';
 }
 
-/** The issue urls the parameter names; `owner/repo#n` reads as a github.com issue. */
+/** The issue urls the parameter names, dropping anything else; `owner/repo#n` reads as a github.com issue. */
 export function newCampaignRefs(search: string): string[] {
   const raw = new URLSearchParams(search).get('newCampaign') ?? '';
   return raw
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
-    .map((s) => {
-      const m = /^([^/\s#]+\/[^/\s#]+)#(\d+)$/.exec(s);
-      return m ? `https://github.com/${m[1]}/issues/${m[2]}` : s;
+    .flatMap((s) => {
+      const short = /^([^/\s#]+\/[^/\s#]+)#(\d+)$/.exec(s);
+      if (short) return [`https://github.com/${short[1]}/issues/${short[2]}`];
+      return /^https:\/\/[^/\s?#]+\/[^/\s?#]+\/[^/\s?#]+\/issues\/\d+$/.test(s) ? [s] : [];
     });
 }

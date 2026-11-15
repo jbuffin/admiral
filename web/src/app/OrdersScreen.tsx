@@ -15,7 +15,7 @@ import type { MooredPR, Ship } from './api';
 import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { boxState, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, keepChecked, launchRef, newCampaignSearch, selectAfterChoose, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
+import { boxState, type BoxState, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, launchRef, newCampaignSearch, selectableRows, selectAfterChoose, selection, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
 import { refreshSource } from './api';
 import { go, loc, shipPath } from './router';
 import { emptyLine, surfaceById } from './surfaces';
@@ -81,7 +81,7 @@ interface RowProps {
   /** A view tab's loose row, spaced as wide as a parent row's toggle. */
   spaced?: boolean;
   /** Set while selecting issues: the row's checkbox. */
-  box?: { checked: boolean; onToggle: () => void; cap: ReturnType<typeof boxState> };
+  box?: { checked: boolean; onToggle: () => void; box: BoxState };
 }
 
 const join = (...p: string[]) => p.filter(Boolean).join(' · ');
@@ -115,7 +115,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
   ) : null;
   const tick = box ? (
     <label class="orow-box">
-      <input type="checkbox" aria-label={box.cap.label} checked={box.checked} disabled={box.cap.disabled} onChange={box.onToggle} />
+      <input type="checkbox" aria-label={box.box.label} checked={box.checked} disabled={box.box.disabled} onChange={box.onToggle} />
     </label>
   ) : null;
   const spacer = spaced ? <span class="orow-spacer" aria-hidden="true" /> : null;
@@ -243,21 +243,19 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
     repo: repos.includes(repo) ? repo : '',
   });
   const issueTab = isIssueTab(list, id);
-  // A tab or fleet change reached by Back or a link ends Select mode too.
-  const cur = selectAfterChoose(pick, id, fleet?.key ?? '');
-  const selecting = issueTab && cur.on;
-  const pool = viewGroups(list, id, now, ships.value, {}).flatMap((g) => [g.row, ...g.children]);
-  const poolRows = [...rows, ...pool.filter((r) => !r.inView)];
-  const checked = selecting ? keepChecked(cur.checked, poolRows) : new Set<string>();
+  const poolRows = selectableRows(list, id, now, ships.value);
+  const cur = selection(pick, { tab: id, fleet: fleet?.key ?? '', rows: poolRows, issueTab });
   useEffect(() => {
-    if (checked.size !== cur.checked.size) setPick({ ...cur, checked });
-  }, [checked.size, cur.checked.size]);
+    if (cur !== pick) setPick(cur);
+  }, [cur]);
+  const selecting = cur.on;
+  const checked = cur.checked;
   const toggle = (key: string) => {
     const next = new Set(checked);
     if (!next.delete(key)) next.add(key);
     setPick({ ...cur, checked: next });
   };
-  const boxFor = (r: OrderRow): RowProps['box'] => (selecting ? { checked: checked.has(r.key), onToggle: () => toggle(r.key), cap: boxState(r, checked) } : undefined);
+  const boxFor = (r: OrderRow): RowProps['box'] => (selecting ? { checked: checked.has(r.key), onToggle: () => toggle(r.key), box: boxState(r, checked) } : undefined);
   const makeCampaign = () => go('/app/orders', newCampaignSearch(loc.value.search, checkedUrls(poolRows, checked)));
   const errors = viewErrors(list, id);
   const needs = shown.map((g) => g.row).filter((r) => r.needsYou);
