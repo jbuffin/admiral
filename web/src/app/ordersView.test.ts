@@ -408,7 +408,8 @@ describe('the filters', () => {
 
 describe('the repo of an order', () => {
   it('reduces a GitHub repository URL to owner/repo', () => {
-    expect(orderRef(order('acme/api#3', { repo: 'https://github.com/acme/api' }))).toBe('acme/api #3');
+    const byRepo = order('acme/api#3', { repo: 'https://github.com/acme/api' });
+    expect(orderRef(byRepo)).toBe('acme/api #3');
     const byUrl = order('x#4', { repo: undefined, url: 'https://github.com/acme/api/pull/4' });
     expect(orderRef(byUrl)).toBe('acme/api #4');
   });
