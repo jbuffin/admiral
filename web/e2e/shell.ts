@@ -2808,6 +2808,7 @@ export function prMergeState(a: Admiral, number: number, m: { behind?: boolean; 
   const checks = (m.failing ?? []).map((name, i) => ({ __typename: 'CheckRun', name, conclusion: 'FAILURE', isRequired: false, checkSuite: { app: { slug: 'github-actions' }, workflowRun: { id: `${number}${i}` } } }));
   const merged = {
     ...events,
+    headRefOid: `head-${number}`,
     ...(m.behind ? { mergeStateStatus: 'BEHIND', baseRef: { branchProtectionRule: { requiresStrictStatusChecks: true } } } : {}),
     commits: { nodes: [{ commit: { oid: `head-${number}`, statusCheckRollup: { contexts: { nodes: checks } } } }] },
   };
@@ -2847,6 +2848,7 @@ export async function answerReviewFromThePRTab(page: Page, a: Admiral, opts: { p
   await expect(answer).toHaveClass(/\bprimary\b/);
   expect((await answer.boundingBox())!.height, 'Answer review height').toBeGreaterThanOrEqual(44);
   await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Fix (PR|stack)$/ }), 'a mergeable PR offers no Fix').toHaveCount(0);
 
   await answer.tap();
   const dialog = page.getByRole('dialog', { name: 'Answer review' });
@@ -2880,18 +2882,16 @@ export async function answerReviewFromThePRTab(page: Page, a: Admiral, opts: { p
 
 const fixBar = (page: Page) => viewPanel(page).locator('.fix-bar');
 
-/** Waits until the server lists a Fix offer on the moored ship, and returns it. */
-async function fixOnTheServer(a: Admiral, ship: LaunchedShip): Promise<{ pr: string; command: string; problems: unknown[] }> {
-  let fix: { pr: string; command: string; problems: unknown[] } | undefined;
+/** Waits until the server lists the moored ship's PR with the poll's answer, the state the Fix offer is built from. */
+async function pollOnTheServer(a: Admiral, ship: LaunchedShip, number: number) {
   await expect
     .poll(async () => {
       await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
       const res = await fetch(`${a.url}api/v1/ships`);
-      fix = ((await res.json()) as { ships: { session: string; fix?: typeof fix }[] }).ships.find((s) => s.session === ship.session)?.fix;
-      return fix !== undefined;
-    }, { timeout: 30_000 })
-    .toBe(true);
-  return fix!;
+      const got = ((await res.json()) as { ships: { session: string; prs?: { url: string; review: string }[] }[] }).ships.find((x) => x.session === ship.session);
+      return got?.prs?.find((p) => p.url === `${PR_BASE}/${number}`)?.review ?? '';
+    }, { timeout: 20_000 })
+    .not.toBe('');
 }
 
 /**
@@ -2901,7 +2901,7 @@ async function fixOnTheServer(a: Admiral, ship: LaunchedShip): Promise<{ pr: str
 export async function fixPRFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
   prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'CONFLICTING' });
   const ship = await launchMooredShip(a, 7);
-  await fixOnTheServer(a, ship);
+  await pollOnTheServer(a, ship, 7);
   const command = `${RESUME} feedback round 1 on ${PR_BASE}/7`;
 
   await openPRTab(page, a, ship);
@@ -2936,7 +2936,7 @@ export async function fixPRFromThePRTab(page: Page, a: Admiral, opts: { phone: b
   const sent = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/fix`);
   await dialog.getByRole('button', { name: 'Fix PR', exact: true }).tap();
   const res = await sent;
-  expect(res.request().postData() ?? '', 'the page sends no fields').toBe('');
+  expect(Object.keys(JSON.parse(res.request().postData() || '{}')), 'the page sends no fields').toEqual([]);
   expect(res.status()).toBe(201);
   expect(await wokenPrompt(a, ship)).toBe(command);
   await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).not.toBe('moored');
@@ -2948,7 +2948,6 @@ export async function fixStackFromThePRTab(page: Page, a: Admiral, opts: { phone
   prMergeState(a, 7, { behind: true });
   prMergeState(a, 8, { failing: ['build'] });
   const ship = await mooredPair(a, { stacked: true, feedbackOn: [7, 8] });
-  await fixOnTheServer(a, ship);
 
   await openPRTab(page, a, ship);
   const bar = pageStackBar(page);
@@ -2970,39 +2969,29 @@ export async function fixStackFromThePRTab(page: Page, a: Admiral, opts: { phone
   await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).not.toBe('moored');
 }
 
-/** A moored ship whose own PR conflicts: its Orders row shows Fix PR, sits in Needs you, and the sheet is the PR tab's. */
+/** A moored ship whose own PR is behind a strict base, which no order view counts as Needs you by itself: its Orders row shows Fix PR, moves to Needs you, and the sheet is the PR tab's. */
 export async function fixFromTheOrdersRow(page: Page, a: Admiral, opts: { phone: boolean }) {
-  const ship = await launchMooredShip(a, CONFLICTED_PR.number);
-  await fixOnTheServer(a, ship);
-  const command = `${RESUME} feedback round 1 on ${PR_BASE}/${CONFLICTED_PR.number}`;
+  const ship = await launchMooredShip(a, BEHIND_PR.number);
+  await pollOnTheServer(a, ship, BEHIND_PR.number);
+  const command = `${RESUME} feedback round 1 on ${PR_BASE}/${BEHIND_PR.number}`;
 
   await page.goto(a.url + 'app/orders?fleet=zulu');
-  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: CONFLICTED_PR.title });
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: BEHIND_PR.title });
   await expect(row).toContainText(ship.name);
   const fix = row.getByRole('button', { name: 'Fix PR', exact: true });
   await expect(fix).toBeVisible();
-  await expect(page.getByRole('main').getByRole('region', { name: /^Needs you/ }).getByRole('listitem').filter({ hasText: CONFLICTED_PR.title })).toHaveCount(1);
+  await expect(page.getByRole('main').getByRole('region', { name: /^Needs you/ }).getByRole('listitem').filter({ hasText: BEHIND_PR.title })).toHaveCount(1);
   expect((await fix.boundingBox())!.height, 'Fix PR height').toBeGreaterThanOrEqual(44);
   if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
 
   await fix.tap();
   const dialog = page.getByRole('dialog', { name: 'Fix PR' });
-  await expect(dialog).toContainText('has merge conflicts');
+  await expect(dialog).toContainText('is behind its base');
   await expect(dialog).toContainText(command);
 }
 
-/** A mergeable PR shows no Fix PR in its PR tab. */
-export async function noFixForAMergeablePR(page: Page, a: Admiral) {
-  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
-  const ship = await launchMooredShip(a, 7);
-  const panel = await openPRTab(page, a, ship);
-  await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toBeVisible();
-  await expect(fixBar(page)).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /^Fix (PR|stack)$/ })).toHaveCount(0);
-}
-
-/** The conflicting own PR the Orders journey lists under My PRs. */
-export const CONFLICTED_PR: MyPR = { number: 31, title: 'Conflicting change', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'CONFLICTING' };
+/** The approved, green, mergeable own PR the Orders journey lists, which prMergeState puts behind its base. */
+export const BEHIND_PR: MyPR = { number: 31, title: 'Behind its base', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' };
 
 /** A moored PR whose only new event is a stranger's review, which the fleet does not wake on, shows no feedback bar. */
 export async function noAnswerReviewWithoutNewFeedback(page: Page, a: Admiral) {
