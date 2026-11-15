@@ -9,6 +9,12 @@ const P: Record<string, preact.ComponentChildren> = {
       <path d="M11 4.5 17.5 12H11z" />
     </>
   ),
+  orders: (
+    <>
+      <rect x="5" y="3" width="14" height="18" rx="2" />
+      <path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" />
+    </>
+  ),
   chat: <path d="M4 5h16v11H9l-5 4z" />,
   campaigns: <path d="M5 21V4M5 5h13l-3 4 3 4H5" />,
   routines: (
@@ -27,10 +33,18 @@ const P: Record<string, preact.ComponentChildren> = {
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
   plus: <path d="M12 5v14M5 12h14" />,
   chevron: <path d="M7 10l5 5 5-5" />,
+  refresh: <path d="M19 12a7 7 0 1 1-2.1-5M19 4.5V8h-3.5" />,
+  arrow: <path d="M5 12h13M13 6.5 18.5 12 13 17.5" />,
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M16 16l4 4" />
+    </>
+  ),
   send: <path d="M12 19V5M6 11l6-6 6 6" />,
 };
 
-export function Icon({ name, size = 15 }: { name: SurfaceId | 'more' | 'chevron' | 'plus' | 'send'; size?: number }) {
+export function Icon({ name, size = 15 }: { name: SurfaceId | 'more' | 'chevron' | 'plus' | 'send' | 'refresh' | 'arrow' | 'search'; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       {P[name]}

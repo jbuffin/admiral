@@ -1,4 +1,4 @@
-export type SurfaceId = 'inbox' | 'ships' | 'chat' | 'campaigns' | 'routines' | 'crew' | 'preferences';
+export type SurfaceId = 'inbox' | 'ships' | 'orders' | 'chat' | 'campaigns' | 'routines' | 'crew' | 'preferences';
 
 export interface Surface {
   id: SurfaceId;
@@ -12,6 +12,7 @@ export interface Surface {
 export const SURFACES: Surface[] = [
   { id: 'inbox', title: 'Inbox', scoped: false, line: 'Whatever needs you, from every fleet, will land here.' },
   { id: 'ships', title: 'Ships', scoped: true, line: 'The ships sailing from this fleet will appear here.' },
+  { id: 'orders', title: 'Orders', scoped: true, line: 'The orders this fleet\'s sources list will appear here.' },
   { id: 'chat', title: 'Chat', scoped: true, line: "This fleet's AdmiralBot will live here." },
   { id: 'campaigns', title: 'Campaigns', scoped: true, line: 'Campaigns for this fleet will be planned and followed here.' },
   { id: 'routines', title: 'Routines', scoped: true, line: 'The routines this fleet runs on a schedule will live here.' },
@@ -19,7 +20,7 @@ export const SURFACES: Surface[] = [
   { id: 'preferences', title: 'Preferences', scoped: false, line: 'Settings for each fleet.' },
 ];
 
-export const PHONE_TABS: SurfaceId[] = ['inbox', 'chat', 'ships'];
+export const PHONE_TABS: SurfaceId[] = ['inbox', 'chat', 'ships', 'orders'];
 export const MORE: SurfaceId[] = ['campaigns', 'routines', 'crew', 'preferences'];
 export const surfaceById = (id: SurfaceId) => SURFACES.find((s) => s.id === id)!;
 

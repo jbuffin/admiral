@@ -22,7 +22,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
 
   await page.goto(admiral.url + 'app/');
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
-  await expect(page.getByRole('navigation').getByRole('link')).toHaveText(['Inbox', 'Chat', 'Ships']);
+  await expect(page.getByRole('navigation').getByRole('link')).toHaveText(['Inbox', 'Chat', 'Ships', 'Orders']);
 
   await tab(page, 'Ships').tap();
   await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
