@@ -386,6 +386,7 @@ func (w *world) waitStdin(t *testing.T, session, want string) {
 // release lets a fake that is blocked in a `wait <name>` cue go on.
 func (w *world) release(session, name string) {
 	w.t.Helper()
+	w.waitFile(session, "recorded") // the record directory is the harness's to make
 	if err := os.WriteFile(filepath.Join(w.rec, session, name), nil, 0o600); err != nil {
 		w.t.Fatal(err)
 	}
