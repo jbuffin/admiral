@@ -54,6 +54,8 @@ type Request struct {
 	ChatMessage string `json:"chat_message"`
 	// Anyway gives a chat launch a fresh key so the same message can launch twice; on the engineer's order or issue launch it also allows a second ship on one a ship holds.
 	Anyway bool `json:"anyway"`
+	// Stack launches on the GitHub stack OrderID's layer sits in, not on the layer.
+	Stack bool `json:"stack"`
 	// ChatKey is a woken ship's stored chat key, which a wake carries over as it is.
 	ChatKey string `json:"-"`
 	// ByFleet is the fleet AdmiralBot launches for; empty for the engineer. It shapes a refusal's wording only.

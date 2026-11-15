@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Order, OrderView, Ship, Source } from './api';
+import type { RowAction } from './moored';
 import { selectedRow, withSelectedOrder } from './orderDetail';
 import { parseExpanded } from './expandedParents';
-import { filterRows, forYou, headerTime, launchRef, orderRef, parentNote, refreshedLine, refreshTarget, repoName, repoOptions, tabs, viewGroups, viewRows, withoutParentNote } from './ordersView';
+import { filterRows, forYou, groupRowActions, headerTime, launchRef, orderRef, parentNote, refreshedLine, refreshTarget, repoName, repoOptions, stackLaunchLines, tabs, viewGroups, viewRows, withoutParentNote } from './ordersView';
 
 const NOW = Date.parse('2026-11-14T12:00:00Z');
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -801,6 +802,149 @@ describe('stack groups in a view tab', () => {
 
     it('does not count a ship on another stack or one that is not carrying', () => {
       expect(count([on(S), on(stackUrl(8), { session: 'b' }), on(S, { session: 'c', status: 'anchored' })])).toBe(1);
+    });
+  });
+});
+
+describe('launching and showing ships on a GitHub stack', () => {
+  const S = 'https://github.com/acme/api/stack/7';
+  const prUrl = (n: number) => `https://github.com/acme/api/pull/${n}`;
+  const layer = (n: number, position: number, over: Partial<Order> = {}): Order =>
+    order(`acme/api#${n}`, { pr: pr(), stack: { number: 7, url: S, position, size: 3 }, author: 'alice', review_requested_at: ago(2 * H), reviewed_since_push: false, ...over });
+  const three = [layer(41, 1), layer(42, 2), layer(43, 3)];
+  const groupOf = (orders: Order[], ships: Ship[] = [], f = {}) => viewGroups([gh([view('review-requested', 'Review requested', orders)])], 'gh/review-requested', NOW, ships, f)[0];
+  const ship = (over: Partial<Ship> = {}): Ship => ({ session: 's1', name: 'otter', status: 'moored', launched: ago(H), ...over }) as Ship;
+  const prs = (urls: number[], over: Partial<MooredPR> = {}): MooredPR[] => urls.map((n) => ({ url: prUrl(n), state: 'OPEN', review: '', checks: '', mergeable: '', conflicts: false, ...over }));
+
+  describe("the stack row's launch", () => {
+    it('is the stack on the bottom open shown layer, titled Stack #N and filled with the stack URL', () => {
+      const g = groupOf([layer(41, 1, { pr: pr({ state: 'CLOSED' }) }), layer(43, 3), layer(42, 2)]);
+      expect(g.row.launchable).toBe(true);
+      expect(launchRef(g.row)).toEqual({ source: 'gh', id: 'acme/api#42', title: 'Stack #7', text: S, stack: true });
+    });
+
+    it('skips a bottom layer the filter hides', () => {
+      const g = groupOf(three, [], { query: 'acme/api#43' });
+      expect(launchRef(g.row)).toMatchObject({ id: 'acme/api#43', stack: true });
+    });
+
+    it("sends the stack launch from the row and leaves a layer's own launch on that PR alone", () => {
+      const g = groupOf(three);
+      expect(launchRef(g.row)).toMatchObject({ stack: true });
+      expect(launchRef(g.children[1])).toMatchObject({ source: 'gh', id: 'acme/api#42', title: 'Title of acme/api#42' });
+      expect(launchRef(g.children[1])).not.toHaveProperty('stack');
+    });
+  });
+
+  describe("the dialog's lines", () => {
+    it('says Reviewing stack #7 · 3 PRs when the layers are not the viewer\'s', () => {
+      expect(stackLaunchLines(groupOf(three), [], 'fake-viewer')).toEqual(['Reviewing stack #7 · 3 PRs']);
+    });
+
+    it("counts only the open shown layers the viewer didn't author", () => {
+      const g = groupOf([layer(41, 1, { pr: pr({ state: 'CLOSED' }) }), layer(42, 2, { author: 'fake-viewer' }), layer(43, 3), layer(44, 4)]);
+      expect(stackLaunchLines(g, [], 'fake-viewer')).toEqual(['Reviewing stack #7 · 2 PRs']);
+    });
+
+    it("says nothing about reviewing a stack of the viewer's own PRs", () => {
+      const own = three.map((o) => ({ ...o, author: 'fake-viewer' }));
+      expect(stackLaunchLines(groupOf(own), [], 'fake-viewer')).toEqual([]);
+      expect(stackLaunchLines(groupOf(three), [], 'fake-viewer')).toHaveLength(1);
+    });
+
+    it('counts every layer as not yours when the source serves no viewer', () => {
+      expect(stackLaunchLines(groupOf(three), [], undefined)).toEqual(['Reviewing stack #7 · 3 PRs']);
+    });
+
+    it('warns once per layer that has a ship, naming the PR and the ship, bottom first', () => {
+      const ships = [ship({ name: 'otter', session: 'a', url: prUrl(43) }), ship({ name: 'heron', session: 'b', url: prUrl(42) })];
+      expect(stackLaunchLines(groupOf(three, ships), ships, 'fake-viewer')).toEqual(['Reviewing stack #7 · 3 PRs', 'PR #42 already has ship heron', 'PR #43 already has ship otter']);
+    });
+
+    it('warns for every layer a ship on the stack URL holds, and for none an anchored ship held', () => {
+      const lines = stackLaunchLines(groupOf(three, [ship({ url: S })]), [ship({ url: S })], 'alice');
+      expect(lines).toEqual(['PR #41 already has ship otter', 'PR #42 already has ship otter', 'PR #43 already has ship otter']);
+      const gone = [ship({ url: S, status: 'anchored' })];
+      expect(stackLaunchLines(groupOf(three, gone), gone, 'alice')).toEqual([]);
+    });
+  });
+
+  describe("the stack row's ship", () => {
+    const rowOf = (ships: Ship[], orders = three, viewer = 'fake-viewer') => groupRowActions(ships, groupOf(orders, ships), viewer);
+    const pill = (a: RowAction) => {
+      if (a.kind !== 'ship') throw new Error(`expected a ship pill, got ${a.kind}`);
+      return a;
+    };
+
+    it('is the launch arrow when no ship holds the layers, and the ship once one does', () => {
+      expect(rowOf([]).row).toEqual({ kind: 'launch' });
+      expect(pill(rowOf([ship({ url: S })]).row).ship.name).toBe('otter');
+    });
+
+    it('is the ship\'s pill when its url is the stack URL, and each layer shows the same ship', () => {
+      const s = ship({ url: S, status: 'underway' });
+      const a = rowOf([s]);
+      expect(pill(a.row)).toMatchObject({ ship: s, word: 'Underway', again: null });
+      expect(a.children.map((c) => pill(c).ship)).toEqual([s, s, s]);
+    });
+
+    it('is the ship\'s pill when it carries every open layer one by one', () => {
+      const s = ship({ url: prUrl(41), status: 'underway', prs: prs([41, 42, 43]) });
+      expect(pill(rowOf([s]).row).ship).toBe(s);
+    });
+
+    it('stays the launch arrow while no one ship holds every open layer', () => {
+      const a = ship({ session: 'a', url: prUrl(41), status: 'underway' });
+      const b = ship({ session: 'b', url: prUrl(42), status: 'underway' });
+      const some = ship({ session: 'c', url: prUrl(41), status: 'underway', prs: prs([41, 42]) });
+      expect(rowOf([a, b]).row).toEqual({ kind: 'launch' });
+      expect(rowOf([some]).row).toEqual({ kind: 'launch' });
+      expect(pill(rowOf([ship({ url: S })]).row).ship.name).toBe('otter');
+    });
+
+    it('needs only the open shown layers: a closed layer the ship lacks does not stop the pill', () => {
+      const orders = [layer(41, 1, { pr: pr({ state: 'CLOSED' }) }), layer(42, 2), layer(43, 3)];
+      const s = ship({ url: prUrl(42), status: 'underway', prs: prs([42, 43]) });
+      expect(pill(rowOf([s], orders).row).ship).toBe(s);
+    });
+
+    describe('when a layer needs you again', () => {
+      const responded = [...prs([41], { reviewing: true }), ...prs([42], { reviewing: true, responded: true }), ...prs([43], { reviewing: true })];
+
+      it('shows Re-review stack on the stack row with the stack URL, and none on the layers, for a reviewing ship', () => {
+        const a = rowOf([ship({ url: S, prs: responded })]);
+        expect(pill(a.row).again).toEqual({ kind: 'rereview', url: S });
+        expect(a.children.map((c) => pill(c).again)).toEqual([null, null, null]);
+      });
+
+      it('shows Re-review stack when the layers are requested again and none is responded', () => {
+        const a = rowOf([ship({ url: S, prs: prs([41, 42, 43], { reviewing: true }) })]);
+        expect(pill(a.row).again).toEqual({ kind: 'rereview', url: S });
+        expect(a.children.map((c) => pill(c).again)).toEqual([null, null, null]);
+      });
+
+      it('shows nothing for a ship that is not moored', () => {
+        const a = rowOf([ship({ url: S, status: 'needs_you', prs: responded })]);
+        expect(pill(a.row).again).toBeNull();
+      });
+
+      it('shows nothing when you reviewed since every push', () => {
+        const done = three.map((o) => ({ ...o, reviewed_since_push: true }));
+        expect(pill(rowOf([ship({ url: S, prs: prs([41, 42, 43], { reviewing: true }) })], done).row).again).toBeNull();
+      });
+
+      it('shows Wake for your own stack, on the stack row alone', () => {
+        const own = three.map((o) => ({ ...o, author: 'fake-viewer', review_requested_at: undefined }));
+        const mine = prs([41, 42, 43], { answer: '/commodore answer', feedback: 2 });
+        const a = rowOf([ship({ url: S, prs: mine })], own);
+        expect(pill(a.row).again).toEqual({ kind: 'wake', stack: S });
+        expect(a.children.map((c) => pill(c).again)).toEqual([null, null, null]);
+      });
+
+      it('shows no Wake on your own stack when no layer has feedback', () => {
+        const own = three.map((o) => ({ ...o, author: 'fake-viewer', review_requested_at: undefined }));
+        expect(pill(rowOf([ship({ url: S, prs: prs([41, 42, 43], { answer: '/commodore answer' }) })], own).row).again).toBeNull();
+      });
     });
   });
 });

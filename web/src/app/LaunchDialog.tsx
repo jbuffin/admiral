@@ -27,6 +27,8 @@ export interface OrderRef {
   text: string;
   /** Launch another ship on an order that already has one. */
   anyway?: boolean;
+  /** Launch on the GitHub stack the order's layer sits in. */
+  stack?: boolean;
 }
 
 /** A campaign child launched by hand: the server picks its skill, text and autopilot. */

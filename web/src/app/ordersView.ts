@@ -1,5 +1,5 @@
 import type { Order, OrderView, Ship, Source } from './api';
-import { isStackUrl, needsYouAgain } from './moored';
+import { isStackUrl, needsYouAgain, orderRowAction, type RowAction } from './moored';
 import { shipAge } from './shipList';
 
 export const FOR_YOU = 'for-you';
@@ -346,4 +346,14 @@ export const launchRef = (r: OrderRow) => ({ source: r.source, id: r.order.id, t
 export function viewErrors(sources: Source[], id: string): string[] {
   const views = id === FOR_YOU ? (sources.find(isGitHub)?.views.filter((v) => DEFAULT_VIEWS.includes(v.id)) ?? []) : [find(sources, id)?.view];
   return [...new Set(views.flatMap((v) => (v?.error ? [v.error] : [])))];
+}
+
+/** The lines the Launch dialog shows under a GitHub stack's title: who is being reviewed, then each layer that already has a ship. */
+export function stackLaunchLines(_g: ViewGroup, _ships: Ship[], _viewer: string | undefined): string[] {
+  return [];
+}
+
+/** The action of a group's row and of each child, in order; one ship holding a GitHub stack's every open layer takes the stack row. */
+export function groupRowActions(ships: Ship[], g: ViewGroup, _viewer: string | undefined): { row: RowAction; children: RowAction[] } {
+  return { row: { kind: 'launch' }, children: g.children.map((c) => orderRowAction(ships, c.order)) };
 }

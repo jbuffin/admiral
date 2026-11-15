@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Admiral } from './fixtures';
-import { addGitHubSource, launchShip, orderPane, seedFleets } from './shell';
+import { addGitHubSource, launchShip, orderPane, seedFleets, stackAnswer } from './shell';
 
 const H = 3600_000;
 const D = 24 * H;
@@ -358,7 +358,8 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(stackToggle('Expand')).toHaveAttribute('aria-expanded', 'false');
   await expectTouchTarget(stackToggle('Expand'), 44);
   await expect(main.getByText(bottom, { exact: true })).toBeHidden();
-  await expect(stackRow.getByRole('button', { name: /^Launch / })).toHaveCount(0);
+  // The stack row has a launch arrow for the GitHub stack and no ship pill while no ship is on it.
+  await expect(stackRow.getByRole('button', { name: `Launch ${stackTitle}`, exact: true })).toBeVisible();
   await expect(stackRow.getByRole('button', { name: /Open ship$/ })).toHaveCount(0);
 
   // Expanding shows the layers indented under it, bottom first, each with its own arrow; the tab count stays 5.
@@ -481,6 +482,76 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(page).toHaveURL(/\/app\/orders(\?|$)/);
   await expect(page).toHaveURL(/fleet=zulu/);
   await expect(tabNamed(page, /^For you/)).toHaveAttribute('aria-selected', 'true');
+
+  // A review ship on the GitHub stack, launched from the stack row. Last, so the counts above are untouched.
+  stackAnswer(a, STACK.number, [41, 42, 43].map((number) => ({ number, state: 'open' as const })));
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  await press(tabNamed(page, /^Review requested/));
+  const launchStack = stackRow.getByRole('button', { name: `Launch Stack #${STACK.number}`, exact: true });
+
+  // The stack pane before any ship: layers bottom to top with their state word, a link to GitHub, no Merge, and Launch ship on stack.
+  await press(body(`Stack #${STACK.number}`));
+  const stackPane = phone ? page.getByRole('dialog', { name: `Stack #${STACK.number}` }) : pane;
+  await expect(stackPane).toBeVisible();
+  const text = await stackPane.innerText();
+  const at = STACK_LAYERS.map((t) => text.indexOf(t));
+  expect(at.every((i) => i >= 0) && at[0] < at[1] && at[1] < at[2]).toBe(true);
+  for (const t of STACK_LAYERS) await expect(stackPane.getByRole('listitem').filter({ hasText: t })).toContainText('Review requested');
+  await expect(stackPane.getByRole('link', { name: 'Open on GitHub', exact: true })).toHaveAttribute('href', STACK.url);
+  await expect(stackPane.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
+  await expect(stackPane.getByRole('button', { name: 'Launch another ship', exact: true })).toHaveCount(0);
+  await press(stackPane.getByRole('button', { name: 'Launch ship on stack', exact: true }));
+  await expect(form).toBeVisible();
+  await expect(form).toContainText(`Reviewing stack #${STACK.number} · 3 PRs`);
+  await press(form.getByRole('button', { name: 'Cancel', exact: true }));
+  await expect(form).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(stackPane).toBeHidden();
+
+  // The row's arrow opens the same dialog; the launch sends the bottom layer's order id and stack: true.
+  writeFileSync(join(a.home, 'cue'), 'wait go\n');
+  await expect(launchStack).toBeVisible();
+  await expectTouchTarget(launchStack, 44);
+  await press(launchStack);
+  await expect(form).toBeVisible();
+  await expect(form).toContainText(`Reviewing stack #${STACK.number} · 3 PRs`);
+  await expect(form).not.toContainText('already has ship');
+  await expect(form.getByLabel('Text')).toHaveValue(STACK.url);
+  const sentStack = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships');
+  await press(form.getByRole('button', { name: 'Launch', exact: true }));
+  const launched = await sentStack;
+  const body1 = launched.request().postDataJSON() as Record<string, unknown>;
+  expect(body1).toMatchObject({ source: 'gh', order_id: 'acme/api#41', stack: true });
+  expect(body1).not.toHaveProperty('anyway');
+  expect(launched.status()).toBe(201);
+  const stackShip = ((await launched.json()) as { ship?: { name: string; url?: string }; name: string; url?: string });
+  const started = stackShip.ship ?? stackShip;
+  expect(started.url).toBe(STACK.url);
+
+  // The stack row shows the ship in place of its arrow, and each layer shows the same ship.
+  const stackPill = (row: Locator) => row.getByRole('button', { name: new RegExp(`^${started.name}, .*Open ship$`) });
+  await expect(stackPill(stackRow)).toBeVisible();
+  await expect(launchStack).toHaveCount(0);
+  await press(stackToggle('Expand'));
+  for (const title of STACK_LAYERS) await expect(stackPill(rowOf(page, title))).toBeVisible();
+  await press(stackToggle('Collapse'));
+
+  // The pane lists the ship and offers Launch another ship in place of Launch ship on stack.
+  await press(body(`Stack #${STACK.number}`));
+  await expect(stackPane.getByRole('link', { name: started.name })).toBeVisible();
+  await expect(stackPane.getByRole('button', { name: 'Launch ship on stack', exact: true })).toHaveCount(0);
+  await expect(stackPane.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
+
+  // Launch another ship warns per layer that already has a ship, and still launches with anyway.
+  const anotherOnStack = stackPane.getByRole('button', { name: 'Launch another ship', exact: true });
+  await expectTouchTarget(anotherOnStack, 44);
+  await press(anotherOnStack);
+  await expect(form).toBeVisible();
+  for (const n of [41, 42, 43]) await expect(form).toContainText(`PR #${n} already has ship ${started.name}`);
+  const sentAgain = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships');
+  await press(form.getByRole('button', { name: 'Launch', exact: true }));
+  expect((await sentAgain).postDataJSON()).toMatchObject({ stack: true, anyway: true });
+  await page.keyboard.press('Escape');
 }
 
 /** On the phone, More lists the surfaces the bar has no tab for, and not Orders. */

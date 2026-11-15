@@ -24,6 +24,8 @@ export interface LaunchFormState {
   orderId?: string;
   /** A second ship on an order that already has one. */
   anyway?: boolean;
+  /** Launch on the GitHub stack `orderId`'s layer sits in. */
+  stack?: boolean;
   crew?: string[];
   // The "Launch as" member and the harness it is locked to, if any.
   member?: string;
