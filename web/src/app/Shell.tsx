@@ -1,4 +1,3 @@
-import { signal } from '@preact/signals';
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, loaded } from './fleets';
@@ -9,10 +8,11 @@ import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { GROUP_TITLES, groupShips, shipRowAge } from './shipList';
 import { useNow } from './useNow';
-import { carryingShip, nextStep, prChips, reviews, rowButtons } from './moored';
+import { rowButtons } from './moored';
 import { MooredActions } from './MooredActions';
 import { MooredPRs } from './MooredPRs';
-import { LaunchForm, type OrderRef } from './LaunchDialog';
+import { LaunchForm } from './LaunchDialog';
+import { forYouLinkText } from './orderDetail';
 import { sourcesForFleet } from './launchForm';
 import { watchPresence } from './presence';
 import { ToastRegion } from './ToastRegion';
@@ -23,23 +23,20 @@ import { PairScreen } from './PairScreen';
 import { InstallSheet } from './InstallPrompts';
 import { gateOf } from './pairing';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
-import { call, type Order, type Ship } from './api';
-import { ShipOrder, ShipRepo, webUrl } from './ShipOrder';
+import { call, type Ship } from './api';
+import { ShipOrder, ShipRepo } from './ShipOrder';
 import { CrewPage } from './CrewPage';
 import { RoutinesPage } from './RoutinesPage';
 import { StandingOrdersPage } from './StandingOrdersPage';
 import { holdFire } from './holdFireLink';
 import { holdFireBanner } from './routines';
-import { automateSearch, campaignOf, crewOf, go, loc, routineNewPath, routineCreating, routineOf, shipPath, shipSession, standingOrdersTab, surfaceOf, surfacePath } from './router';
+import { campaignOf, crewOf, go, loc, routineCreating, routineOf, shipPath, shipSession, standingOrdersTab, surfaceOf, surfacePath } from './router';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
-import { followReference } from './campaignsLink';
 import { ChatPanel } from './ChatPanel';
 import { NeedsYouBadge, OrdersPanel } from './OrdersScreen';
 import { InboxPanel } from './InboxPanel';
 import { watchAttention } from './attention';
 import { watchPush } from './pushLink';
-import { ShipMerge } from './PeekMerge';
-import { Failure } from './PeekItem';
 import { parseBuildStamp } from './buildCheck';
 import { ShipView } from './ShipView';
 import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
@@ -167,110 +164,6 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
   );
 }
 
-// Outside the row, since the row remounts when its ship leaves the list while the source still lists the PR.
-const mergedOrders = signal<ReadonlySet<string>>(new Set());
-
-function OrderRow({ order: o, source, onLaunch, onFollowError }: { order: Order; source: string; onLaunch: (o: OrderRef) => void; onFollowError: (e: string) => void }) {
-  const [error, setError] = useState('');
-  const mergedKey = `${source}/${o.id}`;
-  const merged = mergedOrders.value.has(mergedKey);
-  const ship = o.pr && o.url ? carryingShip(ships.value, o.url) : undefined;
-  const step = ship ? nextStep(ship) : undefined;
-  const launch = () => onLaunch({ source, id: o.id, title: o.title, text: o.text || o.title });
-  return (
-    <li class="order-row">
-      <span class="mono order-id">{o.id}</span>
-      {webUrl(o.url) ? (
-        <a class="order-title issue-link" href={o.url} target="_blank" rel="noopener noreferrer">
-          {o.title}
-        </a>
-      ) : (
-        <span class="order-title">{o.title}</span>
-      )}
-      {ship || merged ? null : (
-        <button type="button" class="btn" aria-label={o.pr ? undefined : `Launch ${o.title}`} onClick={launch}>
-          {o.pr ? 'Launch Commodore' : 'Launch'}
-        </button>
-      )}
-      {o.url && (o.sub_issues ?? 0) > 0 ? (
-        <button type="button" class="btn" aria-label={`Follow ${o.title}`} onClick={async () => onFollowError((await followReference(o.url!)) ?? '')}>
-          Follow
-        </button>
-      ) : null}
-      {o.pr ? (
-        <div class="order-state">
-          {prChips(o.pr).map((c) => (
-            <span key={c.text} class={`chip chip-${c.tone}`}>
-              {c.text}
-            </span>
-          ))}
-          {ship ? (
-            <>
-              <a
-                class="ship-name-link"
-                href={shipPath(ship.session) + fleetSearch.value}
-                onClick={(e) => {
-                  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                  e.preventDefault();
-                  go(shipPath(ship.session), fleetSearch.value);
-                }}
-              >
-                {ship.name}
-              </a>
-              {step?.ready ? <ReadyToMerge ship={ship} /> : step?.text ? <span class="ship-tail">{step.text}</span> : null}
-            </>
-          ) : null}
-        </div>
-      ) : null}
-      {merged ? (
-        <p class="line">Merged</p>
-      ) : ship?.stack_ready && !reviews(ship) ? (
-        <ShipMerge ship={ship} onMerged={() => (mergedOrders.value = new Set(mergedOrders.value).add(mergedKey))} onError={setError} />
-      ) : null}
-      <Failure message={error} />
-    </li>
-  );
-}
-
-function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: OrderRef) => void }) {
-  const [followError, setFollowError] = useState('');
-  const groups = sourcesForFleet(sources.value, fleetKey)
-    .map((src) => ({ src, orders: src.views.flatMap((v) => v.orders) }))
-    .filter((g) => g.orders.length > 0);
-  if (groups.length === 0) return null;
-  return (
-    <section class="orders" aria-labelledby="orders-head">
-      <h2 id="orders-head" class="group-head">
-        Orders
-      </h2>
-      {followError ? (
-        <p class="alert" role="alert">
-          {followError}
-        </p>
-      ) : null}
-      {groups.map(({ src }) =>
-        src.views
-          .filter((v) => v.orders.length > 0)
-          .map((v) => (
-            <div key={`${src.key}/${v.id}`} class="order-view">
-              <div class="order-view-bar">
-                <h3 class="order-view-head">{src.views.length > 1 ? `${src.name}: ${v.title}` : src.name}</h3>
-                <button type="button" class="btn" onClick={() => go(routineNewPath, automateSearch(src.key, v.id, fleetKey))}>
-                  Automate…
-                </button>
-              </div>
-              <ul class="ship-list">
-                {v.orders.map((o) => (
-                  <OrderRow key={o.id} order={o} source={src.key} onLaunch={onLaunch} onFollowError={setFollowError} />
-                ))}
-              </ul>
-            </div>
-          )),
-      )}
-    </section>
-  );
-}
-
 function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
   const now = useNow();
   const fleet = activeFleet.value;
@@ -280,20 +173,32 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
   useEffect(() => {
     if (fleetKey) void call('POST', '/moored/refresh');
   }, [fleetKey]);
-  const [launching, setLaunching] = useState<{ order?: OrderRef } | null>(null);
+  const [launching, setLaunching] = useState(false);
   const launch = fleet && fleet.docks.length > 0 ? (
-    <button type="button" class="btn primary launch-open" onClick={() => setLaunching({})}>
+    <button type="button" class="btn primary launch-open" onClick={() => setLaunching(true)}>
       Launch
     </button>
   ) : null;
-  const form = launching && fleet ? <LaunchForm fleet={fleet} order={launching.order} onClose={() => setLaunching(null)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null;
-  const orders = fleet ? <OrdersList fleetKey={fleet.key} onLaunch={(order) => setLaunching({ order })} /> : null;
+  const form = launching && fleet ? <LaunchForm fleet={fleet} onClose={() => setLaunching(false)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null;
+  const forYouText = fleet ? forYouLinkText(sourcesForFleet(sources.value, fleet.key), Date.now()) : '';
+  const forYouLink = forYouText ? (
+    <a
+      class="for-you-link"
+      href={'/app/orders' + fleetSearch.value}
+      onClick={(e) => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        go('/app/orders', fleetSearch.value);
+      }}
+    >
+      {forYouText}
+    </a>
+  ) : null;
   if (shipsLoaded.value && groups.length === 0) {
     return (
       <>
         <EmptyState surface={surface} title={title}>
           {launch}
-          {orders}
         </EmptyState>
         {form}
       </>
@@ -312,6 +217,7 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
             {fleet.name}
           </p>
         ) : null}
+        {forYouLink}
         {groups.map((g) => (
           <section key={g.status} class="ship-group" aria-labelledby={`group-${g.status}`}>
             <h2 id={`group-${g.status}`} class={`group-head group-${g.status}`}>
@@ -326,7 +232,6 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
             </ul>
           </section>
         ))}
-        {orders}
       </main>
       {form}
     </>

@@ -29,7 +29,7 @@ export interface Tab {
 }
 
 const isGitHub = (s: Source) => s.plugin === 'github';
-const identity = (source: string, o: Order) => o.url || `${source}/${o.id}`;
+export const identity = (source: string, o: Order) => o.url || `${source}/${o.id}`;
 const open = (o: Order) => !!o.pr && (o.pr.state ?? 'OPEN') === 'OPEN';
 const failing = (o: Order) => (o.pr?.failing_check_count ?? 0) > 0 || o.pr?.checks === 'FAILURE' || o.pr?.checks === 'ERROR';
 const conflicts = (o: Order) => !!o.pr?.conflicts || o.pr?.mergeable === 'CONFLICTING';
