@@ -51,8 +51,15 @@ export interface Admiral {
   /** The test-only orders source as a config `sources` entry; `extra` sits beside its settings. */
   ordersSource(key?: string, name?: string, extra?: Record<string, unknown>): Record<string, unknown>;
   flags(label: string): Flags;
-  /** The fake `gh` (e2e/testdata/fakegh) for the built-in GitHub source: pass `env` to `start`; `token` signs an account in ('' is the host's active one). */
-  fakeGh(): { dir: string; env: Record<string, string>; token(user: string, value: string): void };
+  /** The fake `gh` (e2e/testdata/fakegh) for the built-in GitHub source: pass `env` to `start`; `token` signs an account in ('' is the host's active one), `signOut` takes it away, `viewer` names the login, `count` canns a search count. */
+  fakeGh(): {
+    dir: string;
+    env: Record<string, string>;
+    token(user: string, value: string): void;
+    signOut(user?: string): void;
+    viewer(login: string): void;
+    count(key: string, needle: string, answer: number | { fail: string }): void;
+  };
   /** `lan` listens on 0.0.0.0, pairs a device and fills `lanUrl` and `token`; `env` wins over the server's environment. */
   start(opts?: { lan?: boolean; env?: Record<string, string> }): Promise<void>;
   /** With `start({ lan: true })`: a URL Admiral sees as the LAN (http://127.0.0.1:<lan port>/) and the token of a device paired from it. */
@@ -150,6 +157,20 @@ class Instance implements Admiral {
       dir,
       env: { FAKEGH_DIR: dir, PATH: `${fakeGhDir}:${process.env.PATH ?? ''}` },
       token: (user: string, value: string) => writeFileSync(join(dir, user === '' ? 'token' : `token-${user}`), value + '\n'),
+      /** gh has no account for the host again. */
+      signOut: (user = '') => rmSync(join(dir, user === '' ? 'token' : `token-${user}`), { force: true }),
+      viewer: (login: string) => writeFileSync(join(dir, 'viewer'), login + '\n'),
+      /** A canned search count: the first key, in name order, whose needle is in the query answers with the total or the failure's text. */
+      count: (key: string, needle: string, answer: number | { fail: string }) => {
+        mkdirSync(join(dir, 'count'), { recursive: true });
+        writeFileSync(join(dir, 'count', `${key}.match`), needle);
+        if (typeof answer === 'number') {
+          rmSync(join(dir, 'count', `${key}.fail`), { force: true });
+          writeFileSync(join(dir, 'count', `${key}.json`), JSON.stringify({ data: { search: { issueCount: answer } } }));
+        } else {
+          writeFileSync(join(dir, 'count', `${key}.fail`), answer.fail);
+        }
+      },
     };
   }
 

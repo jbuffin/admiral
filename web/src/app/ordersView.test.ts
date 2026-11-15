@@ -306,6 +306,49 @@ describe('tabs', () => {
     expect(tabs([dup]).find((t) => t.title === 'V')?.count).toBe(2);
   });
 
+  describe('as the GitHub settings page arranged them', () => {
+    const withTabs = (t: { id: string; title: string }[]) => ({ ...ghSrc, tabs: t });
+    const titles = (srcs: Source[]) => tabs(srcs).map((x) => x.title);
+
+    it('puts For you where the list puts it', () => {
+      const src = withTabs([{ id: 'assigned-to-me', title: 'Assigned to me' }, { id: 'for-you', title: 'For you' }, { id: 'my-prs', title: 'My PRs' }, { id: 'custom', title: 'Custom' }]);
+      expect(titles([src])).toEqual(['Assigned to me', 'For you', 'My PRs', 'Custom']);
+      expect(tabs([src])[1].count).toBe(2);
+    });
+
+    it('keeps the For you tab id when it is renamed', () => {
+      const src = withTabs([{ id: 'for-you', title: 'Inbox' }, { id: 'assigned-to-me', title: 'Assigned to me' }, { id: 'my-prs', title: 'My PRs' }, { id: 'custom', title: 'Custom' }]);
+      expect(titles([src])[0]).toBe('Inbox');
+      expect(tabs([src])[0].id).toBe(tabs([ghSrc])[0].id);
+    });
+
+    it('drops For you when it is hidden', () => {
+      const src = withTabs([{ id: 'assigned-to-me', title: 'Assigned to me' }, { id: 'my-prs', title: 'My PRs' }, { id: 'custom', title: 'Custom' }]);
+      expect(titles([src])).toEqual(['Assigned to me', 'My PRs', 'Custom']);
+    });
+
+    it('drops a hidden search view, and shows a renamed one under its new title', () => {
+      const src = withTabs([{ id: 'for-you', title: 'For you' }, { id: 'assigned-to-me', title: 'My plate' }, { id: 'custom', title: 'Custom' }]);
+      expect(titles([src])).toEqual(['For you', 'My plate', 'Custom']);
+      expect(tabs([src]).find((x) => x.title === 'My plate')?.count).toBe(1);
+    });
+
+    it('still puts plugin views after the GitHub ones', () => {
+      const src = withTabs([{ id: 'my-prs', title: 'My PRs' }, { id: 'for-you', title: 'For you' }]);
+      expect(titles([lin, src])).toEqual(['My PRs', 'For you', 'Linear: Triage', 'Linear: Mine']);
+    });
+
+    it('reads a source with no tabs list as every view, For you first', () => {
+      expect(titles([ghSrc])).toEqual(['For you', 'Assigned to me', 'My PRs', 'Custom']);
+    });
+
+    it('still counts For you from the default views when it is hidden', () => {
+      const src = withTabs([{ id: 'assigned-to-me', title: 'Assigned to me' }]);
+      expect(forYou([src], NOW).count).toBe(forYou([ghSrc], NOW).count);
+      expect(forYou([src], NOW).count).toBe(2);
+    });
+  });
+
   it('gives each tab an id that viewRows reads back', () => {
     const t = tabs([ghSrc, lin]);
     expect(new Set(t.map((x) => x.id)).size).toBe(t.length);

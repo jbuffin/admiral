@@ -15,7 +15,7 @@ const page = vi.hoisted(() => {
   return l;
 });
 
-import { limitsFieldOf, limitsPath, standingOrdersPath, standingOrdersTab, routineCreating, installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, routineNewPath, routineOf, routinePath } from './router';
+import { githubPath, limitsFieldOf, limitsPath, standingOrdersPath, standingOrdersTab, routineCreating, installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, routineNewPath, routineOf, routinePath } from './router';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -70,6 +70,15 @@ describe('standing orders paths', () => {
     expect(limitsPath('work', 'ceilings.t1')).toBe('/app/preferences/work/limits?field=ceilings.t1');
     expect(limitsFieldOf('?fleet=work&field=ceilings.t1')).toBe('ceilings.t1');
     expect(limitsFieldOf('?fleet=work')).toBeNull();
+  });
+  it('puts the GitHub page below a fleet in Preferences, beside Plugin sources', () => {
+    expect(githubPath('work')).toBe('/app/preferences/work/github');
+    expect(githubPath('a b')).toBe('/app/preferences/a%20b/github');
+    expect(surfaceOf('/app/preferences/work/github')?.id).toBe('preferences');
+    expect(preferencesPage('/app/preferences/work/github')).toBe('github');
+    expect(preferencesFleet('/app/preferences/work/github')).toBe('work');
+    expect(preferencesPage('/app/preferences/work/sources')).toBe('sources');
+    expect(preferencesPage('/app/preferences/work/nonsense')).toBe('sources');
   });
   it('keeps limits a page of a fleet keyed admiral too, not a global page', () => {
     expect(surfaceOf('/app/preferences/admiral/limits')?.id).toBe('preferences');

@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { seedOrders } from './orders';
 import { join } from 'node:path';
 import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, chip, expectSeededTurn, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
 
@@ -91,7 +92,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Preferences', exact: true }).tap();
   await expect(page).toHaveURL(/\/app\/preferences\?(.*&)?fleet=alpha/);
   await expect(page.getByRole('navigation', { name: 'Preferences' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Order sources', exact: true })).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Plugin sources', exact: true })).toBeHidden();
 
   // Back in Westwind, the launch form is usable at the phone's width.
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
@@ -178,10 +179,10 @@ test('on the phone, Preferences lists its pages, each page opens fully on screen
   await expect(heading('Fleet')).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole('textbox', { name: 'Search root 1' })).toBeInViewport({ ratio: 1 });
 
-  // Harborlight has no order source, so its page offers Add source.
-  await openPreferences(page, { fleet: 'Harborlight', section: 'Order sources' });
+  // Harborlight has no plugin source, so its page offers Add source.
+  await openPreferences(page, { fleet: 'Harborlight', section: 'Plugin sources' });
   await expect(page).toHaveURL(/\/app\/preferences\/harbor\/sources/);
-  await expect(heading('Order sources')).toBeInViewport({ ratio: 1 });
+  await expect(heading('Plugin sources')).toBeInViewport({ ratio: 1 });
   const add = page.getByRole('button', { name: 'Add source', exact: true });
   await expectReachable(page, add);
   await touchTap(page, add);
@@ -367,4 +368,45 @@ test("on the phone, a chat held before its first SessionStart opens its terminal
   await main.getByRole('textbox', { name: 'Message AdmiralBot' }).fill('Now that it started');
   await main.getByRole('button', { name: 'Send', exact: true }).tap();
   await expect.poll(() => chatReceived(admiral, 'lagoon')).toContain('Now that it started');
+});
+
+test('on the phone, the GitHub page hides a view with a tap and moves one with a touch drag, and Orders follows', async ({ page, admiral }) => {
+  seedOrders(admiral);
+  admiral.fakeGh().count('z-open', 'is:open', 3);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const stored = () =>
+    (JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).sources.gh.settings.views ?? []) as { id?: string; hidden?: boolean }[];
+  await expect.poll(() => stored().map((v) => v.id)).toEqual(['for-you', 'assigned-to-me', 'review-requested', 'my-prs']);
+
+  await page.goto(admiral.url + 'app/');
+  await openPreferences(page, { fleet: WORK, section: 'GitHub' });
+  await expect(page).toHaveURL(/\/app\/preferences\/zulu\/github/);
+  await expect(page.getByRole('heading', { name: 'GitHub', exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('region', { name: 'Connection', exact: true })).toContainText('Connected');
+
+  const rows = page.getByRole('list', { name: 'Views' }).getByRole('listitem');
+  const row = (title: string) => rows.filter({ has: page.getByRole('button', { name: title, exact: true }) });
+  const sw = row('Review requested').getByRole('switch');
+  await expectReachable(page, sw);
+  const size = (await sw.boundingBox())!;
+  expect(size.height).toBeGreaterThanOrEqual(44);
+  await touchTap(page, sw);
+  await expect.poll(() => stored().find((v) => v.id === 'review-requested')?.hidden).toBe(true);
+
+  // A finger on the grip drags the row: Pointer Events with a touch pointer, as Safari sends them.
+  const grip = row('For you').getByRole('button', { name: 'Move For you', exact: true });
+  await grip.scrollIntoViewIfNeeded();
+  const g = (await grip.boundingBox())!;
+  const x = g.x + g.width / 2;
+  const y = g.y + g.height / 2;
+  const rowHeight = (await rows.first().boundingBox())!.height;
+  const touch = (type: string, dy: number, buttons: number) =>
+    grip.dispatchEvent(type, { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y + dy, buttons, bubbles: true, cancelable: true });
+  await touch('pointerdown', 0, 1);
+  for (const step of [0.25, 0.6, 1.1]) await touch('pointermove', rowHeight * step, 1);
+  await touch('pointerup', rowHeight * 1.1, 0);
+  await expect.poll(() => stored().map((v) => v.id)).toEqual(['assigned-to-me', 'for-you', 'review-requested', 'my-prs']);
+
+  await tab(page, 'Orders').tap();
+  await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^For you/, /^My PRs/, /^Orders: Orders/]);
 });

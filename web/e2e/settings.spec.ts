@@ -4,7 +4,8 @@ import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, seedFleets, setRemote, stubClipboard, watchPage } from './shell';
+import { seedOrders } from './orders';
+import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, seedFleets, setRemote, stubClipboard, watchPage, withFakeGh } from './shell';
 
 // The fleets are `zulu` (Westwind) and `alpha` (Homeport); zulu is the active fleet until one is chosen.
 const sourcesPage = (a: Admiral, fleet: string) => `${a.url}app/preferences/${fleet}/sources`;
@@ -58,8 +59,8 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
   // Bare /app/preferences opens the active fleet's sources; the fleet shows in the URL of the page.
   await page.goto(admiral.url + 'app/preferences');
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/sources/);
-  await expect(page.getByRole('heading', { name: 'Order sources', exact: true })).toBeVisible();
-  await expect(prefsNav(page).getByRole('group', { name: `${WORK} fleet` }).getByRole('link', { name: 'Order sources' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plugin sources', exact: true })).toBeVisible();
+  await expect(prefsNav(page).getByRole('group', { name: `${WORK} fleet` }).getByRole('link', { name: 'Plugin sources' })).toBeVisible();
   await expect(prefsNav(page).getByRole('group', { name: `${HOME} fleet` })).toBeVisible();
 
   const orders = source(page, 'Orders');
@@ -154,116 +155,197 @@ function checkout(root: string, dir: string, repo: string) {
   }
 }
 
-// The entries the startup migration adds ahead of a source's custom views.
-const BUILT_IN_VIEWS = ['for-you', 'assigned-to-me', 'review-requested', 'my-prs'].map((id) => ({ id, hidden: false }));
+const githubPage = (a: Admiral, fleet: string) => `${a.url}app/preferences/${fleet}/github`;
+type StoredView = { id?: string; title?: string; query?: string; hidden?: boolean };
+const storedViews = (a: Admiral, key: string) => (config(a).sources[key].settings.views ?? []) as StoredView[];
+const viewRows = (page: Page) => page.getByRole('list', { name: 'Views' }).getByRole('listitem');
+const viewRow = (page: Page, title: string) => viewRows(page).filter({ has: page.getByRole('button', { name: title, exact: true }) });
+const githubNavLink = (page: Page, fleet: string) => prefsNav(page).getByRole('group', { name: `${fleet} fleet` }).getByRole('link', { name: /^GitHub/ });
 
-test('a GitHub source keeps its host, account and custom views, names its fleet and shows routing warnings', async ({ page, admiral }) => {
+test('a signed-out fleet says how to sign in with its views greyed, and turns Connected once gh is signed in', async ({ page, admiral }) => {
   const gh = admiral.fakeGh();
-  gh.token('', 'fake-token-default-1');
-  gh.token('work', 'fake-token-work-2');
-  // Both fleets have acme/widgets checked out, so each source's fleet gets a routing warning.
-  const roots = { zulu: join(admiral.home, 'rz'), alpha: join(admiral.home, 'ra') };
-  checkout(roots.zulu, 'widgets', 'acme/widgets');
-  checkout(roots.alpha, 'widgets-fork', 'acme/widgets');
+  gh.viewer('jbuffin-work');
+  gh.count('a-broken', 'reviews:approved', { fail: 'GitHub does not know the qualifier reviews:approved' });
+  gh.count('z-open', 'is:open', 9);
   writeFileSync(join(gh.dir, 'search', 'any.match'), 'is:open');
   writeFileSync(join(gh.dir, 'search', 'any.json'), JSON.stringify({ data: { search: { issueCount: 0, nodes: [] } } }));
-  seedWith(
-    admiral,
-    {
-      gz: { plugin: 'github', fleet: 'zulu', settings: { account: 'work', views: [{ title: 'Newbie', query: 'is:open label:newbie' }] } },
-      ga: { plugin: 'github', fleet: 'alpha', settings: { views: [] } },
-    },
-    roots,
-  );
+  const roots = { zulu: join(admiral.home, 'rz'), alpha: join(admiral.home, 'ra') };
+  checkout(roots.zulu, 'widgets', 'acme/widgets');
+  seedWith(admiral, { gz: { plugin: 'github', fleet: 'zulu', settings: { views: [{ title: 'Broken', query: 'is:open reviews:approved' }] } } }, roots);
+  const cfg = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
+  cfg.fleets.zulu.owners = ['acme'];
+  admiral.writeConfig(cfg);
+  const copied = await stubClipboard(page);
   await admiral.start({ env: gh.env });
   const watch = watchPage(page, admiral.url);
-  page.on('dialog', (d) => {
-    watch.errors.push(`a browser dialog opened: ${d.message()}`);
-    void d.dismiss();
-  });
-  await expect
-    .poll(async () => {
-      const list = await apiSources(admiral);
-      return list.map((s) => `${s.key}:${s.state}:${s.warnings.some((w) => w.includes('acme/widgets'))}`).sort();
-    })
-    .toEqual(['ga:ok:true', 'gz:ok:true']);
+  await expect.poll(async () => (await apiSources(admiral)).find((s) => s.key === 'gz')?.state).toBe('ok');
 
+  await page.goto(githubPage(admiral, 'zulu'));
+  await expect(page.getByRole('heading', { name: 'GitHub', exact: true })).toBeVisible();
+  await expect(page.getByRole('main')).toContainText(`${WORK}'s issues and pull requests. They show in Orders, and routines can watch them.`);
+  await expect(githubNavLink(page, WORK)).toHaveAttribute('aria-current', 'page');
+
+  // Signed out: what to run, with Copy, and the views greyed under the board's line.
+  const connection = page.getByRole('region', { name: 'Connection', exact: true });
+  await expect(connection).toContainText('Not signed in to github.com');
+  await expect(connection).toContainText('Run this in a terminal on the Mac, then check again');
+  await expect(connection).toContainText('brew install gh');
+  const login = connection.getByRole('group', { name: 'gh auth login -h github.com' });
+  await expect(login).toBeVisible();
+  await login.getByRole('button', { name: 'Copy', exact: true }).click();
+  await expect.poll(copied).toBe('gh auth login -h github.com');
+  const dot = githubNavLink(page, WORK).getByRole('img', { name: 'not signed in' });
+  await expect(dot).toBeVisible();
+  await expect(prefsNav(page).getByRole('group', { name: `${WORK} fleet` }).getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'GitHub', 'Plugin sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours']);
+
+  const views = page.getByRole('region', { name: 'Views', exact: true });
+  await expect(views).toContainText('They run once GitHub is connected.');
+  await expect(viewRows(page)).toHaveText([/For you.*—/s, /Assigned to me.*—/s, /Review requested.*—/s, /My PRs.*—/s, /Broken.*—/s]);
+  for (const sw of await viewRows(page).getByRole('switch').all()) await expect(sw).toBeDisabled();
+  await expect(views).not.toContainText('open');
+
+  // Signing in on the Mac and pressing Check again turns the page Connected, and the dot goes.
+  gh.token('', 'fake-token-work-3');
+  await connection.getByRole('button', { name: 'Check again', exact: true }).click();
+  await expect(connection).toContainText('Signed in as');
+  await expect(connection).toContainText('@jbuffin-work');
+  await expect(connection).toContainText('Connected');
+  await expect(connection).toContainText('github.com · through the gh CLI · token checked');
+  await expect(connection).not.toContainText('Not signed in');
+  await expect(dot).toHaveCount(0);
+  await expect(githubNavLink(page, WORK)).toHaveText('GitHub');
+  await connection.getByRole('button', { name: 'Switch account', exact: true }).click();
+  await expect(connection.getByRole('group', { name: 'gh auth switch -h github.com' })).toBeVisible();
+
+  // The views come alive: plain words, a count each, and the failing search's error with Edit search.
+  await expect(viewRow(page, 'For you')).toContainText('Everything below that needs you now');
+  await expect(viewRow(page, 'Review requested')).toContainText('Open PRs where you are a requested reviewer');
+  await expect(viewRow(page, 'Review requested')).toContainText('9 open');
+  await expect(viewRow(page, 'My PRs')).toContainText('Open PRs you wrote');
+  await expect(viewRow(page, 'My PRs')).toContainText('9 open');
+  await expect(viewRow(page, 'Broken')).toContainText('is:open reviews:approved');
+  await expect(viewRow(page, 'Broken')).toContainText('Search failed: GitHub does not know the qualifier reviews:approved');
+  await expect(viewRow(page, 'Broken').getByRole('button', { name: 'Edit search', exact: true })).toBeVisible();
+  await expect(viewRow(page, 'My PRs').getByRole('button', { name: 'Edit search', exact: true })).toHaveCount(0);
+  await expect(viewRows(page).getByRole('switch').first()).toBeEnabled();
+
+  // Repos: what routes to this fleet, read-only, with the way to edit it.
+  const repos = page.getByRole('region', { name: 'Repos', exact: true });
+  await expect(repos).toContainText('org: acme');
+  await expect(repos).toContainText('acme/widgets');
+  await expect(repos).toContainText(/no other fleet claims/i);
+  await expect(repos.getByRole('link', { name: 'Edit in Fleet' })).toHaveAttribute('href', /\/app\/preferences\/zulu\/fleet$/);
+
+  // AC5: GitHub is always present: nothing here removes or restarts it, and a custom view's remove has its own name.
+  await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Restart', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Move to fleet')).toHaveCount(0);
+  await expect(viewRow(page, 'Broken').getByRole('button', { name: 'Remove view Broken', exact: true })).toBeVisible();
+  await expect(viewRow(page, 'My PRs').getByRole('button', { name: /^Remove view/ })).toHaveCount(0);
+
+  // Plugin sources no longer holds a GitHub card.
   await page.goto(sourcesPage(admiral, 'zulu'));
-  const github = source(page, 'GitHub');
-  await expect(github).toBeVisible();
-  await expect(github).toContainText('built in');
-  // Told apart by fleet: through the accessible name, so a colour dot with a label counts.
-  await expect(github.getByLabel(`${WORK} fleet`).first()).toBeVisible();
-  const warning = github.getByRole('status').filter({ hasText: 'acme/widgets' });
-  await expect(warning).toBeVisible();
-  await expect(github.getByRole('alert')).toHaveCount(0);
-
-  const defaults = github.getByRole('list', { name: 'Default views' }).getByRole('listitem');
-  await expect(defaults).toHaveText([/Assigned to me/, /Review requested/, /My PRs/]);
-  const form = github.getByRole('form', { name: 'Settings' });
-  await expect(form.getByLabel('Host')).toHaveValue('github.com');
-  await expect(form.getByLabel('Account')).toHaveValue('work');
-  const custom1 = form.getByRole('group', { name: 'Custom view 1' });
-  await expect(custom1.getByLabel('Title')).toHaveValue('Newbie');
-  await expect(custom1.getByLabel('Query')).toHaveValue('is:open label:newbie');
-  // iOS Safari zooms the page when a focused field is under 16px.
-  expect(await custom1.getByLabel('Title').evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
-
-  // A custom view that shares a built-in's title sits beside it: nothing is replaced, so nothing is said.
-  await form.getByRole('button', { name: 'Add view' }).click();
-  const custom2 = form.getByRole('group', { name: 'Custom view 2' });
-  await custom2.getByLabel('Title').fill('My PRs');
-  await custom2.getByLabel('Query').fill('is:open is:pr author:@me label:ready');
-  await expect(custom2.getByRole('status')).toHaveCount(0);
-  await custom2.getByLabel('Title').fill('Bugs');
-  await custom2.getByLabel('Query').fill('is:open label:bug');
-  await expect(custom2.getByRole('status')).toHaveCount(0);
-
-  await form.getByLabel('Host').fill('ghe.example.test');
-  await form.getByLabel('Account').fill('default');
-  await custom1.getByLabel('Title').fill('Newbies');
-  await form.getByRole('button', { name: 'Save' }).click();
-  await expect
-    .poll(() => config(admiral).sources.gz.settings)
-    .toMatchObject({
-      host: 'ghe.example.test',
-      account: 'default',
-      views: [
-        ...BUILT_IN_VIEWS,
-        { title: 'Newbies', query: 'is:open label:newbie' },
-        { title: 'Bugs', query: 'is:open label:bug' },
-      ],
-    });
-
-  await page.reload();
-  await expect(source(page, 'GitHub').getByRole('form', { name: 'Settings' }).getByLabel('Account')).toHaveValue('default');
-  const again = source(page, 'GitHub').getByRole('form', { name: 'Settings' });
-  await expect(again.getByLabel('Host')).toHaveValue('ghe.example.test');
-  await expect(again.getByRole('group', { name: 'Custom view 2' }).getByLabel('Title')).toHaveValue('Bugs');
-
-  // Delete a custom view.
-  await again.getByRole('group', { name: 'Custom view 1' }).getByRole('button', { name: 'Remove view' }).click();
-  await again.getByRole('button', { name: 'Save' }).click();
-  await expect.poll(() => (config(admiral).sources.gz.settings.views as unknown[]).length).toBe(BUILT_IN_VIEWS.length + 1);
-  expect(config(admiral).sources.gz.settings.views).toEqual([...BUILT_IN_VIEWS, { title: 'Bugs', query: 'is:open label:bug' }]);
-  expect(Object.keys(config(admiral).sources)).toContain('gz');
-
-  // The other fleet's GitHub source names that fleet, and a GitHub source has no move control.
-  await page.goto(sourcesPage(admiral, 'alpha'));
-  const other = source(page, 'GitHub');
-  await expect(other.getByLabel(`${HOME} fleet`).first()).toBeVisible();
-  await expect(other.getByRole('status').filter({ hasText: 'acme/widgets' })).toBeVisible();
-  await expect(other.getByLabel('Move to fleet')).toHaveCount(0);
-  // GitHub is always present: no Restart, no Remove.
-  await expect(other.getByRole('button', { name: 'Save' })).toBeVisible();
-  await expect(other.getByRole('button', { name: 'Restart', exact: true })).toHaveCount(0);
-  await expect(other.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
-  // Looking at another fleet's page leaves the shell's active fleet alone.
-  expect(new URL(page.url()).search).not.toContain('fleet=alpha');
+  await expect(page.getByRole('heading', { name: 'Plugin sources', exact: true })).toBeVisible();
+  await expect(source(page, 'GitHub')).toHaveCount(0);
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
   expect(watch.errors).toEqual([]);
+});
+
+test('hiding, renaming and moving views changes the Orders tabs and survives a restart', async ({ page, admiral }) => {
+  seedOrders(admiral);
+  admiral.fakeGh().count('z-open', 'is:open', 3);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+  await expect.poll(() => storedViews(admiral, 'gh').map((v) => v.id)).toEqual(['for-you', 'assigned-to-me', 'review-requested', 'my-prs']);
+
+  await page.goto(githubPage(admiral, 'zulu'));
+  await expect(page.getByRole('region', { name: 'Connection', exact: true })).toContainText('Connected');
+  await expect(viewRows(page)).toHaveText([/For you/, /Assigned to me/, /Review requested/, /My PRs/]);
+
+  // Each change saves at once; wait for the file before the next.
+  const hideReview = viewRow(page, 'Review requested').getByRole('switch');
+  await expect(hideReview).toHaveAttribute('aria-checked', 'true');
+  await hideReview.click();
+  await expect(hideReview).toHaveAttribute('aria-checked', 'false');
+  await expect.poll(() => storedViews(admiral, 'gh').find((v) => v.id === 'review-requested')?.hidden).toBe(true);
+
+  await viewRow(page, 'My PRs').getByRole('button', { name: 'My PRs', exact: true }).click();
+  const name = page.getByRole('textbox', { name: 'Name of My PRs' });
+  await name.fill('Mine');
+  await name.press('Enter');
+  await expect.poll(() => storedViews(admiral, 'gh').find((v) => v.id === 'my-prs')?.title).toBe('Mine');
+  // A rename never gives the built-in a search of its own.
+  expect(storedViews(admiral, 'gh').find((v) => v.id === 'my-prs')).toEqual({ id: 'my-prs', hidden: false, title: 'Mine' });
+
+  const grip = viewRow(page, 'For you').getByRole('button', { name: 'Move For you', exact: true });
+  await grip.focus();
+  await grip.press('ArrowDown');
+  await expect.poll(() => storedViews(admiral, 'gh').map((v) => v.id)).toEqual(['assigned-to-me', 'for-you', 'review-requested', 'my-prs']);
+
+  const orderTabs = async () => {
+    await page.getByRole('navigation').getByRole('link', { name: /^Orders/ }).click();
+    await expect(page.getByRole('tab').first()).toBeVisible();
+  };
+  await orderTabs();
+  await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^For you/, /^Mine/, /^Orders: Orders/]);
+
+  await admiral.restart();
+  await page.goto(githubPage(admiral, 'zulu'));
+  await expect(viewRows(page)).toHaveText([/Assigned to me/, /For you/, /Review requested/, /Mine/]);
+  await expect(viewRow(page, 'Review requested').getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(viewRow(page, 'Mine').getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+  await orderTabs();
+  await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^For you/, /^Mine/, /^Orders: Orders/]);
+
+  // With For you hidden, Orders opens on the first tab that is left.
+  await page.goto(githubPage(admiral, 'zulu'));
+  await viewRow(page, 'For you').getByRole('switch').click();
+  await expect.poll(() => storedViews(admiral, 'gh').find((v) => v.id === 'for-you')?.hidden).toBe(true);
+  await orderTabs();
+  await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^Mine/, /^Orders: Orders/]);
+  await expect(page.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('the priority labels and the check interval save at once', async ({ page, admiral }) => {
+  seedOrders(admiral);
+  admiral.fakeGh().count('z-open', 'is:open', 3);
+  await admiral.start({ env: withFakeGh(admiral) });
+  await page.goto(githubPage(admiral, 'zulu'));
+  const prefs = page.getByRole('region', { name: 'Priority and refresh', exact: true });
+  await expect(prefs).toContainText('P0');
+  await expect(prefs.getByRole('radio', { name: '5 min', exact: true })).toBeChecked();
+
+  // The first change writes the whole list, defaults included.
+  await prefs.getByRole('button', { name: 'Add label', exact: true }).click();
+  await prefs.getByRole('textbox', { name: 'Label', exact: true }).fill('sev1');
+  await prefs.getByRole('textbox', { name: 'Label', exact: true }).press('Enter');
+  await expect.poll(() => config(admiral).sources.gh.settings.hotLabels).toEqual(['priority: high', 'P0', 'P1', 'urgent', 'sev1']);
+  await prefs.getByRole('button', { name: 'Remove label P0', exact: true }).click();
+  await expect.poll(() => config(admiral).sources.gh.settings.hotLabels).toEqual(['priority: high', 'P1', 'urgent', 'sev1']);
+  await prefs.getByRole('button', { name: 'Add label', exact: true }).click();
+  await prefs.getByRole('textbox', { name: 'Label', exact: true }).fill('URGENT');
+  await prefs.getByRole('textbox', { name: 'Label', exact: true }).press('Enter');
+  await expect(prefs.getByRole('button', { name: /^Remove label urgent$/i })).toHaveCount(1);
+
+  await prefs.getByRole('radio', { name: '15 min', exact: true }).click();
+  await expect.poll(() => config(admiral).sources.gh.settings.refreshMinutes).toBe(15);
+  expect(config(admiral).sources.gh.settings.hotLabels).toEqual(['priority: high', 'P1', 'urgent', 'sev1']);
+});
+
+test('a fleet with no GitHub source says so and offers nothing to add', async ({ page, admiral }) => {
+  seedWith(admiral, { gz: { plugin: 'github', fleet: 'zulu', settings: { views: [] } } });
+  await admiral.start({ env: admiral.fakeGh().env });
+  await page.goto(githubPage(admiral, 'alpha'));
+  await expect(page.getByRole('heading', { name: 'GitHub', exact: true })).toBeVisible();
+  await expect(page.getByRole('main')).toContainText(`${HOME} has no GitHub source.`);
+  await expect(page.getByRole('button', { name: /^Add/ })).toHaveCount(0);
+  await expect(githubNavLink(page, HOME)).toBeVisible();
 });
 
 const zulu = (a: Admiral) => JSON.parse(readFileSync(join(a.home, 'config.json'), 'utf8')).fleets.zulu as Record<string, unknown>;
@@ -286,9 +368,9 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/fleet/);
   await expect(page.getByRole('heading', { name: 'Fleet', exact: true })).toBeVisible();
   const group = prefsNav(page).getByRole('group', { name: `${WORK} fleet` });
-  await expect(group.getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'Order sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours']);
+  await expect(group.getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'GitHub', 'Plugin sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours']);
   await expect(group.getByRole('link', { name: 'Fleet', exact: true })).toHaveAttribute('aria-current', 'page');
-  await group.getByRole('link', { name: 'Order sources' }).click();
+  await group.getByRole('link', { name: 'Plugin sources' }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/sources/);
   await page.goBack();
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/fleet/);
@@ -642,7 +724,7 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
 
   await page.goto(admiral.url + 'app/preferences/zulu/sources');
   const group = prefsNav(page).getByRole('group', { name: 'Harborlight fleet' });
-  await expect(group.getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'Order sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours']);
+  await expect(group.getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'GitHub', 'Plugin sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours']);
   await group.getByRole('link', { name: 'AdmiralBot', exact: true }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/harbor\/admiralbot/);
   await expect(page.getByRole('heading', { name: 'AdmiralBot', exact: true })).toBeVisible();
