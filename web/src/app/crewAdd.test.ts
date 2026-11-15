@@ -19,14 +19,25 @@ const draftReply = {
 };
 
 describe('draftCrew', () => {
-  it('posts the description to the fleet, with no harness query, and hands fetch the signal', async () => {
+  it('posts the description to the fleet, with no harness query', async () => {
     answer(200, draftReply);
     const ctl = new AbortController();
     await draftCrew('zulu', 'A quartermaster.', ctl.signal);
     expect(fetched[0].url).toMatch(/\/fleets\/zulu\/crew\/draft$/);
     expect(fetched[0].init.method).toBe('POST');
     expect(JSON.parse(String(fetched[0].init.body))).toEqual({ description: 'A quartermaster.' });
-    expect(fetched[0].init.signal).toBe(ctl.signal);
+  });
+
+  it('stops the request when the caller aborts', async () => {
+    vi.stubGlobal(
+      'fetch',
+      (_url: string, init: RequestInit) =>
+        new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))),
+    );
+    const ctl = new AbortController();
+    const pending = draftCrew('zulu', 'A quartermaster.', ctl.signal);
+    ctl.abort();
+    expect(await pending).toMatchObject({ ok: false, aborted: true });
   });
 });
 

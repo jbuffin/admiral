@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call, probeShipList, type CrewBoat, type Ship } from './api';
+import { call, probeShipList, SLOW_TIMEOUT_MS, type CrewBoat, type Ship } from './api';
 import { isRunning, runningFor } from './shipList';
 import { useNow } from './useNow';
 import { ShipOrder, ShipRepo } from './ShipOrder';
@@ -77,7 +77,7 @@ function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActi
   const run = async (moored = false) => {
     setBusy(true);
     setError('');
-    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/${action}`, moored ? { moor: true } : undefined);
+    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/${action}`, moored ? { moor: true } : undefined, undefined, moored ? { timeoutMs: SLOW_TIMEOUT_MS } : undefined);
     setBusy(false);
     if (!r.ok) return setError(r.error);
     setAsking(false);

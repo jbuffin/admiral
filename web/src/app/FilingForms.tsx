@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call, saveFleet, type Fleet } from './api';
+import { call, saveFleet, SLOW_TIMEOUT_MS, type Fleet } from './api';
 import { capabilities, loadCapabilities } from './capabilities';
 import { confirmFailure, confirmLabel, confirmOrdersBody, draftedCheckIndex, draftFailure, draftingOff, fieldWords, loosenedLines, joinGuidance, keptLimits, proseError, remainingLoosens, routineProblem, type Kept, type OrdersDraft } from './filing';
 import { fleets, loadFleets } from './fleets';
@@ -70,7 +70,7 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
     const key = fleet.key;
     setBusy(true);
     setError('');
-    const r = await call<OrdersAnswer>('POST', draftPath(key, 'standing-orders'), { prose });
+    const r = await call<OrdersAnswer>('POST', draftPath(key, 'standing-orders'), { prose }, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     // A late answer belongs to the fleet it was asked for.
     if (!live.current || key !== fleet.key) return;
     setBusy(false);
@@ -410,7 +410,7 @@ export function DescribeRoutine({ fleet, onDrafted }: { fleet: Fleet; onDrafted:
     const key = fleet.key;
     setBusy(true);
     setError('');
-    const r = await call<{ draft: Omit<Routine, 'id'>; problems: { field: string; message: string }[] | null }>('POST', draftPath(key, 'routines'), { prose });
+    const r = await call<{ draft: Omit<Routine, 'id'>; problems: { field: string; message: string }[] | null }>('POST', draftPath(key, 'routines'), { prose }, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     if (!live.current || key !== fleet.key) return;
     setBusy(false);
     if (!r.ok) {

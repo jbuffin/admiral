@@ -1,4 +1,4 @@
-import { call, type Dock, type Result } from './api';
+import { call, SLOW_TIMEOUT_MS, type Dock, type Result } from './api';
 
 export const CUSTOM_ROLE = '__custom__';
 export const ROLES = ['implementer', 'test-writer', 'reviewer', 'security-reviewer', 'brief-checker', 'triager', 'target-steward', 'scribe', 'fix-checker'];
@@ -223,7 +223,7 @@ export interface Draft {
   problems: DraftProblem[];
 }
 
-export const draftCrew = (fleet: string, description: string, signal?: AbortSignal) => call<unknown>('POST', crewApi(fleet, '', '/draft'), { description }, undefined, signal);
+export const draftCrew = (fleet: string, description: string, signal?: AbortSignal) => call<unknown>('POST', crewApi(fleet, '', '/draft'), { description }, undefined, { signal, timeoutMs: SLOW_TIMEOUT_MS });
 
 /** The editor's form from the draft route's answer; the draft is model output, so every field is read defensively. */
 export function readDraft(raw: unknown): Draft {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call as post, shipUrl, type Item } from './api';
+import { call as post, shipUrl, SLOW_TIMEOUT_MS, type Item } from './api';
 import type { AnswerCard, CardQuestion } from './answerCard';
 import { renderRestrictedInline, renderRestrictedMarkdown } from './markdown';
 import { questionCallView, type QuestionView } from './questionView';
@@ -74,7 +74,7 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
     if (sending.current) return;
     sending.current = true;
     setBusy(true);
-    const res = await post('POST', `${shipUrl(session, crew)}/answer`, { card: 'question', reason: card.reason, item: card.item, ...body });
+    const res = await post('POST', `${shipUrl(session, crew)}/answer`, { card: 'question', reason: card.reason, item: card.item, ...body }, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     if (!res.ok) setRefused(res.error);
   };
   // After the last question the card shows what will be sent, as Claude's own review screen does, so Submit is a confirmation.

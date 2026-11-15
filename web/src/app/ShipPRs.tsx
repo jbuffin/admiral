@@ -1,6 +1,6 @@
 import { Fragment } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { call, fetchPRDetail, fetchStackShape, linkStack, type MooredPR, type PRDetail, type Ship, type StackShape } from './api';
+import { call, fetchPRDetail, fetchStackShape, linkStack, SLOW_TIMEOUT_MS, type MooredPR, type PRDetail, type Ship, type StackShape } from './api';
 import { MergeControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
@@ -324,7 +324,7 @@ function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolea
     setBusy(true);
     onBusy(true);
     onError('');
-    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/stop`, { moor: true });
+    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/stop`, { moor: true }, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     setAsking(false);
     // The tab's lock must be free when the ship moors, or Merge arrives disabled.
     onBusy(false);
