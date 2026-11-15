@@ -436,7 +436,7 @@ test('on the phone, the New view card fits the screen, its controls are tall eno
   gh.count('z-open', 'is:open', 3);
   await admiral.start({ env: withFakeGh(admiral) });
   const stored = () => (JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).sources.gh.settings.views ?? []) as { title?: string; query?: string }[];
-  await expect.poll(() => stored().length).toBe(4);
+  await expect.poll(() => stored().length).toBe(5);
 
   await page.goto(admiral.url + 'app/');
   await openPreferences(page, { fleet: WORK, section: 'GitHub' });
