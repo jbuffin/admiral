@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { editLogins, fetchDevices, fetchRemote, runTailscaleSetup, turnOffTailscale, mintPairingCode, renameDevice, revokeAllDevices, revokeDevice, type Device, type PairingCode, type RemoteCheck, type RemoteView, type Result } from './api';
+import { Actions, Button } from './Button';
+import { runPending } from './busy';
 import { qrMatrix } from './qr';
 import { checkLogin, copyOutcome, removingOwnLogin } from './remoteTailscale';
 import { expiryState, formatCode, routeOf, signedOutLine, thisDeviceMark } from './remoteAccess';
@@ -23,12 +25,9 @@ function Pairing({ onResult }: { onResult: (r: Result<unknown>) => void }) {
   const [code, setCode] = useState<PairingCode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [busy, setBusy] = useState(false);
 
   const mint = async () => {
-    setBusy(true);
     const r = await mintPairingCode();
-    setBusy(false);
     onResult(r);
     if (r.ok) {
       setCode(r.data);
@@ -39,7 +38,7 @@ function Pairing({ onResult }: { onResult: (r: Result<unknown>) => void }) {
       setError(r.error);
     }
   };
-  useEffect(() => void mint(), []);
+  useEffect(() => void runPending(['pairing', 'mint'], mint), []);
   useEffect(() => {
     if (!code) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -71,9 +70,7 @@ function Pairing({ onResult }: { onResult: (r: Result<unknown>) => void }) {
         ) : (
           <p class="line">Making a code…</p>
         )}
-        <button type="button" class="btn" disabled={busy} onClick={() => void mint()}>
-          New code
-        </button>
+        <Button label="New code" pending={['pairing', 'mint']} onClick={mint} />
       </div>
     </section>
   );
@@ -118,19 +115,15 @@ function DeviceRow({ device, reload, onResult }: { device: Device; reload: () =>
         {confirming ? (
           <div class="confirm" role="group" aria-label={`Revoke ${device.name}`}>
             <span>Revoke {device.name}? It will need a new code to pair again.</span>
-            <button type="button" class="btn danger" onClick={() => void revokeDevice(device.id).then(act)}>
-              Revoke device
-            </button>
-            <button type="button" class="btn" onClick={() => setConfirming(false)}>
-              Cancel
-            </button>
+            <Actions class="confirm-actions">
+              <Button label="Revoke device" variant="danger" pending={['device', device.id, 'revoke']} onClick={() => revokeDevice(device.id).then(act)} />
+              <Button label="Cancel" onClick={() => setConfirming(false)} />
+            </Actions>
           </div>
         ) : null}
       </div>
       {confirming ? null : (
-        <button type="button" class="btn" onClick={() => setConfirming(true)}>
-          Revoke
-        </button>
+        <Button label="Revoke" onClick={() => setConfirming(true)} />
       )}
     </li>
   );
@@ -168,7 +161,6 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
   const [askingOff, setAskingOff] = useState(false);
   // Kept from the Turn off answer until the page reloads, since the off view no longer runs the CLI.
   const [stopServe, setStopServe] = useState('');
-  const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<RemoteCheck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [turnedOn, setTurnedOn] = useState(false);
@@ -177,30 +169,32 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
   const urlEl = useRef<HTMLElement>(null);
 
   const setUp = async () => {
-    setAsking(false);
-    setBusy(true);
     setError(null);
     setTurnedOn(false);
     setServed('');
-    const r = await runTailscaleSetup();
-    setBusy(false);
-    onResult(r);
-    if (!r.ok) return setError(r.error);
-    setRows(r.data.ok ? null : r.data.checks);
-    setServed(r.data.ok ? (r.data.checks.find((c) => c.id === 'serve')?.detail ?? '') : '');
-    setTurnedOn(r.data.ok);
-    await reload();
+    try {
+      const r = await runTailscaleSetup();
+      onResult(r);
+      if (!r.ok) return setError(r.error);
+      setRows(r.data.ok ? null : r.data.checks);
+      setServed(r.data.ok ? (r.data.checks.find((c) => c.id === 'serve')?.detail ?? '') : '');
+      setTurnedOn(r.data.ok);
+      await reload();
+    } finally {
+      setAsking(false);
+    }
   };
   const turnOff = async () => {
-    setAskingOff(false);
-    setBusy(true);
     setError(null);
-    const r = await turnOffTailscale();
-    setBusy(false);
-    onResult(r);
-    if (!r.ok) return setError(r.error);
-    setStopServe(r.data.serveOff);
-    await reload();
+    try {
+      const r = await turnOffTailscale();
+      onResult(r);
+      if (!r.ok) return setError(r.error);
+      setStopServe(r.data.serveOff);
+      await reload();
+    } finally {
+      setAskingOff(false);
+    }
   };
   const copyUrl = async (url: string) => {
     const outcome = await copyOutcome(url, navigator.clipboard);
@@ -232,18 +226,14 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
                 <code ref={urlEl} class="pair-url">
                   {view.url}
                 </code>
-                <button type="button" class="btn" onClick={() => void copyUrl(view.url)}>
-                  Copy
-                </button>
+                <Button label="Copy" onClick={() => void copyUrl(view.url)} />
                 <span class="note" role="status">
                   {copy === 'copied' ? 'Copied.' : copy === 'select' ? 'Select the address and copy it.' : ''}
                 </span>
               </div>
             ) : null}
             {askingOff ? null : (
-              <button type="button" class="btn" disabled={busy || !local} onClick={() => (setAskingOff(true), setError(null))}>
-                Turn off
-              </button>
+              <Button label="Turn off" disabled={!local} onClick={() => (setAskingOff(true), setError(null))} />
             )}
             {remote ? <p class="note">Turn off runs on the Mac that runs Admiral.</p> : null}
           </>
@@ -258,9 +248,7 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
             {view.listenExplicit ? <ListenNote /> : null}
             {rows ? <CheckRows rows={rows} /> : null}
             {asking ? null : (
-              <button type="button" class="btn" disabled={busy || !local} onClick={() => (setAsking(true), setRows(null), setError(null))}>
-                Set up
-              </button>
+              <Button label="Set up" disabled={!local} onClick={() => (setAsking(true), setRows(null), setError(null))} />
             )}
             {remote ? <p class="note">Run Set up on the Mac that runs Admiral, or run admiral setup there.</p> : null}
           </>
@@ -277,12 +265,10 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
           <span>
             Turn off stops Admiral from answering tailnet devices{view?.listenExplicit ? '' : ' and moves it back onto this network'}. Allowed logins and tailscale serve stay as they are.
           </span>
-          <button type="button" class="btn danger" disabled={busy} onClick={() => void turnOff()}>
-            Turn off Tailscale mode
-          </button>
-          <button type="button" class="btn" onClick={() => setAskingOff(false)}>
-            Cancel
-          </button>
+          <Actions class="confirm-actions">
+            <Button label="Turn off Tailscale mode" variant="danger" pending={['tailscale', 'turn-off']} onClick={turnOff} />
+            <Button label="Cancel" onClick={() => setAskingOff(false)} />
+          </Actions>
         </div>
       ) : null}
       {asking ? (
@@ -291,12 +277,10 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
             Set up checks Tailscale, runs one tailscale serve command and turns Tailscale mode on. The HTTPS certificate publishes this Mac's ts.net name in
             public Certificate Transparency logs.
           </span>
-          <button type="button" class="btn" disabled={busy} onClick={() => void setUp()}>
-            Turn on Tailscale mode
-          </button>
-          <button type="button" class="btn" onClick={() => setAsking(false)}>
-            Cancel
-          </button>
+          <Actions class="confirm-actions">
+            <Button label="Turn on Tailscale mode" pending={['tailscale', 'set-up']} onClick={setUp} />
+            <Button label="Cancel" onClick={() => setAsking(false)} />
+          </Actions>
         </div>
       ) : null}
     </>
@@ -308,6 +292,7 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
   if (!view) return null;
 
   const act = async (change: { add: string } | { remove: string }) => {
@@ -325,7 +310,10 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
     e.preventDefault();
     const c = checkLogin(text, view.allowedLogins);
     if (!c.ok) return setError(c.error);
-    if (await act({ add: c.login })) setText('');
+    setAdding(true);
+    const ok = await act({ add: c.login });
+    setAdding(false);
+    if (ok) setText('');
   };
 
   return (
@@ -342,28 +330,24 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
               {removing === l ? (
                 <div class="confirm" role="group" aria-label={`Remove ${l}?`}>
                   <span>This device came in on {l}, so removing it signs this device out.</span>
-                  <button type="button" class="btn danger" disabled={busy} onClick={() => void act({ remove: l })}>
-                    Remove and sign out
-                  </button>
-                  <button type="button" class="btn" onClick={() => setRemoving(null)}>
-                    Cancel
-                  </button>
+                  <Actions class="confirm-actions">
+                    <Button label="Remove and sign out" variant="danger" pending={['login', l, 'remove']} onClick={() => act({ remove: l })} />
+                    <Button label="Cancel" onClick={() => setRemoving(null)} />
+                  </Actions>
                 </div>
               ) : null}
             </div>
             {removing === l ? null : (
-              <button type="button" class="btn" disabled={busy} aria-label={`Remove ${l}`} onClick={() => (removingOwnLogin(l, devices) ? setRemoving(l) : void act({ remove: l }))}>
+              <Button label={`Remove ${l}`} disabled={busy} pending={['login', l, 'remove']} onClick={() => (removingOwnLogin(l, devices) ? setRemoving(l) : act({ remove: l }))}>
                 Remove
-              </button>
+              </Button>
             )}
           </li>
         ))}
       </ul>
       <form class="set-add" onSubmit={(e) => void add(e)}>
         <input type="text" aria-label="Allowed login" placeholder="name@example.com" value={text} onInput={(e) => setText(e.currentTarget.value)} />
-        <button type="submit" class="btn" disabled={busy}>
-          Add login
-        </button>
+        <Button label="Add login" type="submit" busy={adding} disabled={busy && !adding} />
       </form>
       {error ? (
         <p class="note error-text" role="alert">
@@ -459,17 +443,13 @@ export function RemoteAccess() {
       {confirmAll ? (
         <div class="confirm" role="group" aria-label="Sign out all devices">
           <span>Sign out every paired device? Each needs a new code to pair again.</span>
-          <button type="button" class="btn danger" onClick={() => void signOutAll()}>
-            Sign out all
-          </button>
-          <button type="button" class="btn" onClick={() => setConfirmAll(false)}>
-            Cancel
-          </button>
+          <Actions class="confirm-actions">
+            <Button label="Sign out all" variant="danger" pending={['devices', 'sign-out-all']} onClick={signOutAll} />
+            <Button label="Cancel" onClick={() => setConfirmAll(false)} />
+          </Actions>
         </div>
       ) : (
-        <button type="button" class="btn danger" onClick={() => (setNote(''), setError(null), setConfirmAll(true))}>
-          Sign out all devices
-        </button>
+        <Button label="Sign out all devices" variant="danger" onClick={() => (setNote(''), setError(null), setConfirmAll(true))} />
       )}
     </>
   );

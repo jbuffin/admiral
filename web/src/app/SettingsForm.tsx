@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { Button } from './Button';
 import { fetchSchema, fetchSettings, saveSource, type Source } from './api';
 import { DEFAULT_VIEWS, UNCHANGED, buildSettings, fieldKinds, jsonText, parseWholeJson, replacedDefault, type Prop, type Schema, type Settings } from './sourceSettings';
 
@@ -61,14 +62,14 @@ function RowFields({ label, prop, rows, onRows }: { label: string; prop: Prop; r
               );
             })
           )}
-          <button type="button" class="btn" aria-label={`Remove ${label} ${i + 1}`} onClick={() => onRows(rows.filter((_, j) => j !== i))}>
+          <Button label={`Remove ${label} ${i + 1}`} onClick={() => onRows(rows.filter((_, j) => j !== i))}>
             Remove
-          </button>
+          </Button>
         </div>
       ))}
-      <button type="button" class="btn" aria-label={`Add ${label}`} onClick={() => onRows([...rows, strings ? '' : {}])}>
+      <Button label={`Add ${label}`} onClick={() => onRows([...rows, strings ? '' : {}])}>
         Add
-      </button>
+      </Button>
     </fieldset>
   );
 }
@@ -113,15 +114,11 @@ function ViewsEditor({ rows, onRows }: { rows: Row[]; onRows: (r: Row[]) => void
                 Replaces the default view {replaced.title}.
               </p>
             ) : null}
-            <button type="button" class="btn" onClick={() => onRows(rows.filter((_, j) => j !== i))}>
-              Remove view
-            </button>
+            <Button label="Remove view" onClick={() => onRows(rows.filter((_, j) => j !== i))} />
           </fieldset>
         );
       })}
-      <button type="button" class="btn" onClick={() => onRows([...rows, {}])}>
-        Add view
-      </button>
+      <Button label="Add view" onClick={() => onRows([...rows, {}])} />
     </div>
   );
 }
@@ -265,9 +262,9 @@ export function SettingsForm({ source, version, onSaved }: { source: Source; ver
                       />
                       {kept ? <small>{cleared ? 'Saved without a value.' : 'A value is stored. Leave empty to keep it.'}</small> : null}
                       {kept && !cleared ? (
-                        <button type="button" class="btn" aria-label={`Clear ${label}`} onClick={() => touch(k, undefined)}>
+                        <Button label={`Clear ${label}`} onClick={() => touch(k, undefined)}>
                           Clear
-                        </button>
+                        </Button>
                       ) : null}
                     </div>
                   </Field>
@@ -302,9 +299,7 @@ export function SettingsForm({ source, version, onSaved }: { source: Source; ver
         </p>
       ) : null}
       <div class="set actions">
-        <button type="submit" class="btn primary" disabled={!loaded || saving}>
-          Save
-        </button>
+        <Button label="Save" variant="primary" type="submit" disabled={!loaded} busy={saving} />
       </div>
     </form>
   );

@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { saveFleet, type Fleet } from './api';
+import { Button } from './Button';
 import { Flag } from './Flag';
 import { fleetPaint, fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage, saveBody, type FleetFields } from './fleetSettings';
@@ -34,9 +35,9 @@ function ListField({ id, legend, item, add, values, errors, disabled, onChange }
               aria-describedby={err ? `${id}-${i}-err` : undefined}
               onInput={(e) => onChange(values.map((x, j) => (j === i ? (e.target as HTMLInputElement).value : x)))}
             />
-            <button type="button" class="btn" disabled={disabled} aria-label={`Remove ${item.toLowerCase()} ${i + 1}`} onClick={() => onChange(values.filter((_, j) => j !== i))}>
+            <Button label={`Remove ${item.toLowerCase()} ${i + 1}`} disabled={disabled} onClick={() => onChange(values.filter((_, j) => j !== i))}>
               Remove
-            </button>
+            </Button>
             {err ? (
               <p class="note error" role="alert" id={`${id}-${i}-err`}>
                 {err}
@@ -45,9 +46,7 @@ function ListField({ id, legend, item, add, values, errors, disabled, onChange }
           </div>
         );
       })}
-      <button type="button" class="btn" disabled={disabled} onClick={() => onChange([...values, ''])}>
-        {add}
-      </button>
+      <Button label={add} disabled={disabled} onClick={() => onChange([...values, ''])} />
     </div>
   );
 }
@@ -76,16 +75,13 @@ function NotifySwitch({ fleet, onReload }: { fleet: Fleet; onReload: () => Promi
             {error.status === 409 ? 'The config file changed or is invalid, so nothing was saved. ' : ''}
             {error.message}{' '}
             {error.status === 409 ? (
-              <button
-                type="button"
-                class="btn"
+              <Button
+                label="Reload"
                 onClick={() => {
                   setError(null);
                   void onReload();
                 }}
-              >
-                Reload
-              </button>
+              />
             ) : null}
           </p>
         ) : null}
@@ -152,9 +148,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
           {topError.status === 409 ? 'The config file changed or is invalid, so nothing was saved. ' : ''}
           {topError.message}{' '}
           {topError.status === 409 ? (
-            <button type="button" class="btn" onClick={() => void reload()}>
-              Reload
-            </button>
+            <Button label="Reload" onClick={() => void reload()} />
           ) : null}
         </p>
       ) : null}
@@ -207,9 +201,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
               style={edited.color === '' ? undefined : { background: edited.color === shown.color ? fleetPaint(fleet).fill : edited.color }}
             />
             <input id="fleet-color" type="color" value={edited.color || shown.color} disabled={busy} aria-describedby={colorError ? 'fleet-color-err' : undefined} onInput={(e) => set({ color: (e.target as HTMLInputElement).value })} />
-            <button type="button" class="btn" disabled={busy} onClick={() => set({ color: '' })}>
-              Use default
-            </button>
+            <Button label="Use default" disabled={busy} onClick={() => set({ color: '' })} />
             {colorError ? (
               <p class="note error" role="alert" id="fleet-color-err">
                 {colorError}
@@ -218,9 +210,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
           </div>
         </div>
         <div class="set actions">
-          <button type="button" class="btn primary" disabled={busy || Object.keys(body).length === 0} onClick={() => void save()}>
-            Save
-          </button>
+          <Button label="Save" variant="primary" disabled={Object.keys(body).length === 0} pending={['fleet', fleet.key, 'save']} onClick={save} />
         </div>
       </div>
 

@@ -160,6 +160,7 @@ test('on the phone, Preferences lists its pages, each page opens fully on screen
   const code = page.locator('.pair-code');
   const first = await code.textContent();
   expect(first).toBeTruthy();
+  await expect(newCode).not.toHaveAttribute('aria-busy', 'true');
   await touchTap(page, newCode);
   await expect.poll(() => code.textContent()).not.toBe(first);
 

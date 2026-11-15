@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, type DirsAnswer, type Fleet, type FleetCapabilities } from './api';
+import { Actions, Button } from './Button';
 import { capabilities, capabilitiesFailed, loadCapabilities } from './capabilities';
 import { cronSentence } from './cron';
 import { DescribeRoutine } from './FilingForms';
@@ -69,10 +70,10 @@ function HoldFireToggles({ fleet }: { fleet: Fleet }) {
   const [confirming, setConfirming] = useState<'' | 'fleet' | 'all'>('');
   const stop = async (scope: 'fleet' | 'all') => {
     setBusy(true);
-    setConfirming('');
     stopResult.value = '';
     setError(await stopWorkerShips(fleet.key, scope));
     setBusy(false);
+    setConfirming('');
   };
   const flip = async (scope: 'fleet' | 'all') => {
     if (!state) return;
@@ -93,21 +94,17 @@ function HoldFireToggles({ fleet }: { fleet: Fleet }) {
               busy={busy || !state}
               onToggle={() => void flip(scope)}
             />
-            <button type="button" class="btn" disabled={busy || disabled} onClick={() => setConfirming(scope)}>
-              {label}
-            </button>
+            <Button label={label} disabled={busy || disabled} onClick={() => setConfirming(scope)} />
           </span>
         );
       })}
       {confirming ? (
         <div class="confirm" role="group" aria-label="Stop all worker-launched">
           <p class="line">{stopAllConfirm(confirming)}</p>
-          <button type="button" class="btn danger" disabled={busy} onClick={() => void stop(confirming)}>
-            Confirm stop
-          </button>
-          <button type="button" class="btn" onClick={() => setConfirming('')}>
-            Cancel
-          </button>
+          <Actions class="confirm-actions">
+            <Button label="Confirm stop" variant="danger" pending={['fleet', fleet.key, 'stop-workers', confirming]} onClick={() => stop(confirming)} />
+            <Button label="Cancel" onClick={() => setConfirming('')} />
+          </Actions>
         </div>
       ) : null}
       {stopResult.value ? <p class="line" role="status">{stopResult.value}</p> : null}
@@ -176,6 +173,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
   const lastEvent = useRef(initial.on);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [dirs, setDirs] = useState<DirsAnswer | null>(null);
   const [skills, setSkills] = useState<SkillsAnswer | null>(null);
@@ -235,9 +233,11 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
   const save = async (e: Event) => {
     e.preventDefault();
     setBusy(true);
+    setSaving(true);
     setError('');
     const r = routine ? await call<Routine>('PUT', api(fleet.key, `/${encodeURIComponent(routine.id)}`), routineBody({ ...form, enabled: routine.enabled })) : await call<Routine>('POST', api(fleet.key), routineBody(form));
     setBusy(false);
+    setSaving(false);
     if (!r.ok) return setError(r.error);
     onSaved(r.data);
   };
@@ -401,25 +401,21 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
       </div>
 
       {err?.field === 'form' ? <p class="alert" role="alert">{err.text}</p> : null}
-      <div class="routine-actions">
-        <button type="submit" class="btn primary" disabled={busy}>
-          Save
-        </button>
+      <Actions class="routine-actions">
+        <Button label="Save" variant="primary" type="submit" busy={saving} disabled={busy && !saving} />
         {routine ? (
-          <button
-            type="button"
-            class="btn danger"
-            disabled={busy}
+          <Button
+            label={confirming ? 'Delete routine?' : 'Delete'}
+            variant="danger"
+            pending={['routine', routine.id, 'delete']}
             onClick={() => {
-              if (confirming) void remove();
-              else setConfirming(true);
+              if (confirming) return remove();
+              setConfirming(true);
             }}
             onBlur={() => setConfirming(false)}
-          >
-            {confirming ? 'Delete routine?' : 'Delete'}
-          </button>
+          />
         ) : null}
-      </div>
+      </Actions>
     </form>
   );
 }
@@ -524,9 +520,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
             <p class="alert" role="alert">
               {failed}
             </p>
-            <button type="button" class="btn" onClick={() => void load()}>
-              Try again
-            </button>
+            <Button label="Try again" onClick={() => void load()} />
           </>
         ) : (
           <p class="line">Loading…</p>
@@ -570,8 +564,8 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
               />
             )}
             <div class="crew-toolbar">
-              <a
-                class="btn"
+              <Button
+                label="New routine"
                 href={routineNewPath + search}
                 onClick={(e) => {
                   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -579,9 +573,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                   setDrafted(null);
                   go(routineNewPath, search);
                 }}
-              >
-                New routine
-              </a>
+              />
             </div>
             {list.length === 0 ? <p class="line">No routines yet. A routine launches a ship or sends AdmiralBot a prompt on a schedule.</p> : null}
             <ul class="routine-list">
@@ -644,9 +636,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
             {capsError ? (
               <p class="alert" role="alert">
                 {capsError}{' '}
-                <button type="button" class="btn" onClick={loadCaps}>
-                  Try again
-                </button>
+                <Button label="Try again" onClick={() => void loadCaps()} />
               </p>
             ) : null}
             {creating ? (

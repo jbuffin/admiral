@@ -111,9 +111,20 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
   // Restart re-reads the source until its state settles.
   const moved = source(page, 'Orders');
   const starts = admiral.flags('orders').starts();
-  await moved.getByRole('button', { name: 'Restart', exact: true }).click();
+  const restart = moved.getByRole('button', { name: 'Restart', exact: true });
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/v1/sources/orders/restart', async (route) => {
+    await held;
+    await route.continue();
+  });
+  await restart.click();
+  // A held restart spins under its own label instead of swapping the text.
+  await expect(restart).toHaveAttribute('aria-busy', 'true');
+  await expect(restart).toHaveText('Restart');
+  release();
   await expect.poll(() => admiral.flags('orders').starts()).toBeGreaterThan(starts);
-  await expect(moved.getByRole('button', { name: 'Restart', exact: true })).toBeEnabled();
+  await expect(restart).not.toHaveAttribute('aria-busy', 'true');
   await expect(moved).toContainText(/plugin · ok/);
 
   // Add source offers the test plugin and not GitHub, and adds to this page's fleet.
@@ -337,6 +348,7 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
   // Typing the ~/ form back is a list change too; after it, a colour-only save leaves that stored form alone.
   await roots.getByRole('textbox', { name: 'Search root 1' }).fill(stored);
   await roots.getByRole('button', { name: 'Remove search root 2' }).click();
+  await expect(save).not.toHaveAttribute('aria-busy', 'true');
   await save.click();
   await expect.poll(() => zulu(admiral).search_roots).toEqual([stored]);
   await page.reload();
@@ -359,6 +371,7 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
 
   // A clone root the server refuses shows its message at the field, and the file keeps the old value.
   await cloneRoot.fill('relative/x');
+  await expect(save).not.toHaveAttribute('aria-busy', 'true');
   await save.click();
   await expect(cloneRoot).toHaveAccessibleDescription(/must be an absolute path or start with ~\//);
   expect(zulu(admiral).clone_root).toBe(clones);
@@ -509,7 +522,9 @@ test('Settings shows the Tailscale checks, copies the URL, edits the allowed log
   // With the check fixed, Set up runs serve once on Admiral's own port, turns the mode on and allows the Mac's login.
   ts.status();
   await section.getByRole('button', { name: 'Set up', exact: true }).click();
-  await page.getByRole('group', { name: 'Set up Tailscale mode' }).getByRole('button', { name: 'Turn on Tailscale mode' }).click();
+  const turnOn = page.getByRole('group', { name: 'Set up Tailscale mode' }).getByRole('button', { name: 'Turn on Tailscale mode' });
+  await expect(turnOn).not.toHaveAttribute('aria-busy', 'true');
+  await turnOn.click();
   await expect.poll(async () => (await remote()).tailscale).toBe(true);
   expect(ts.serveCalls()).toEqual([`serve --bg --https=443 http://127.0.0.1:${port}`]);
   expect((await remote()).allowedLogins).toEqual([TS_LOGIN]);
@@ -667,6 +682,7 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
     route.request().method() === 'PUT' ? route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'fleets.harbor.chat.model: "haiku" is refused for this test' }) }) : route.fallback(),
   );
   await pick('Model', 'Haiku').click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).not.toHaveAttribute('aria-busy', 'true');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('"haiku" is refused for this test');
   await expect(pick('Model', 'Haiku')).toBeChecked();

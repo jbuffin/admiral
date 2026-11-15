@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Button } from './Button';
 import { cancelCommitment, deleteNote, getCommitments, getInstructions, getNotes, promoteNote, saveFleet, saveInstructions, type ChatCommitment, type ChatNote, type Fleet } from './api';
 import { checkErrors, checkKey } from './capabilities';
 import { MissingCapability } from './MissingCapability';
@@ -121,9 +122,7 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
           </div>
         </div>
         <div class="set actions">
-          <button type="button" class="btn primary" disabled={busy || !canSaveInstructions(saved, text)} onClick={() => void act(() => saveInstructions(fleet, text))}>
-            Save instructions
-          </button>
+          <Button label="Save instructions" variant="primary" disabled={busy || !canSaveInstructions(saved, text)} pending={['fleet', fleet, 'save-instructions']} onClick={() => act(() => saveInstructions(fleet, text))} />
         </div>
         <div class="set">
           <div class="t">
@@ -146,12 +145,8 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
                   <span>{noteAge(n.ts, now)}</span>
                 </div>
                 <div class="note-actions">
-                  <button type="button" class="btn" disabled={busy || dirty} onClick={() => void act(() => promoteNote(fleet, n.id))}>
-                    Move to instructions
-                  </button>
-                  <button type="button" class="btn" disabled={busy} onClick={() => void act(() => deleteNote(fleet, n.id))}>
-                    Delete
-                  </button>
+                  <Button label="Move to instructions" disabled={busy || dirty} pending={['note', n.id, 'promote']} onClick={() => act(() => promoteNote(fleet, n.id))} />
+                  <Button label="Delete" disabled={busy} pending={['note', n.id, 'delete']} onClick={() => act(() => deleteNote(fleet, n.id))} />
                 </div>
               </li>
             ))}
@@ -200,9 +195,7 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
                     </span>
                   </div>
                   <div class="note-actions">
-                    <button type="button" class="btn" disabled={busy} onClick={() => void cancel(c.id)}>
-                      Cancel
-                    </button>
+                    <Button label="Cancel" disabled={busy} pending={['commitment', c.id, 'cancel']} onClick={() => cancel(c.id)} />
                   </div>
                 </li>
               );
@@ -303,9 +296,7 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
           />
         ) : null}
         <div class="set actions">
-          <button type="button" class="btn primary" disabled={busy || !body} onClick={() => void save()}>
-            Save
-          </button>
+          <Button label="Save" variant="primary" disabled={!body} pending={['fleet', fleet.key, 'save-chat']} onClick={save} />
         </div>
       </div>
       <Knows fleet={fleet.key} harness={edited.harness} />

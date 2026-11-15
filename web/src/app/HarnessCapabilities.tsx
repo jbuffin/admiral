@@ -1,4 +1,5 @@
 import { useEffect } from 'preact/hooks';
+import { Button } from './Button';
 import { Flag } from './Flag';
 import { harnessName } from './harnessName';
 import { MissingCapability } from './MissingCapability';
@@ -19,9 +20,9 @@ function HarnessBox({ fleet, h }: { fleet: string; h: Harness }) {
         <h2 id={id}>{harnessName(h.harness)}</h2>
         <span class="muted">{h.version ? `version ${h.version}` : 'version not detected'}</span>
         <span class="muted" aria-live="polite">{busy ? 'Checking…' : ''}</span>
-        <button type="button" class="btn" disabled={busy} aria-label={`Check again ${harnessName(h.harness)}`} onClick={() => void recheck(fleet, h.harness)}>
+        <Button label={`Check again ${harnessName(h.harness)}`} busy={busy} onClick={() => void recheck(fleet, h.harness)}>
           Check again
-        </button>
+        </Button>
       </div>
       {error ? <p class="alert" role="alert">{error}</p> : null}
       {h.features.map((f) => (

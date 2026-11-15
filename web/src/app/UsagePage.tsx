@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { Button } from './Button';
 import { fleetPaint, fleets } from './fleets';
 import { Icon } from './Icon';
 import { fleetRows, heldLine, quotaCards, usagePeriods, type FleetUsage, type HarnessLine, type PeriodId } from './fleetUsage';
@@ -115,9 +116,7 @@ export function AllUsagePage({ phone }: { phone: boolean }) {
     <div class="usage">
       <div class="usage-periods" role="group" aria-label="Period">
         {PERIODS.map((p) => (
-          <button key={p.id} type="button" class="btn" aria-pressed={period === p.id} onClick={() => setPeriod(p.id)}>
-            {p.label}
-          </button>
+          <Button key={p.id} label={p.label} pressed={period === p.id} onClick={() => setPeriod(p.id)} />
         ))}
       </div>
       {rows.map((r, i) => {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { addSource, fetchPlugins, fetchSources, iconSrc, removeSource, restartSource, saveSource, type PluginInfo, type Source } from './api';
+import { Actions, Button } from './Button';
 import { fleetPaint, fleets } from './fleets';
 import type { Fleet } from './api';
 import { SettingsForm } from './SettingsForm';
@@ -20,17 +21,14 @@ function SourceCard({ source, version, reload, bump, restart }: { source: Source
   const fleet = fleets.value.find((f) => f.key === source.fleet);
   const others = fleets.value.filter((f) => f.key !== source.fleet);
   const [target, setTarget] = useState(others[0]?.key ?? '');
-  const [busy, setBusy] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleId = `source-${source.key}`;
 
-  const run = async (what: string, act: () => Promise<{ ok: boolean; error?: string }>) => {
-    setBusy(what);
+  const run = async (act: () => Promise<{ ok: boolean; error?: string }>) => {
     setError(null);
     const r = await act();
     if (!r.ok) setError(r.error ?? 'The request failed.');
-    setBusy('');
     return r.ok;
   };
 
@@ -58,7 +56,7 @@ function SourceCard({ source, version, reload, bump, restart }: { source: Source
         </p>
       ))}
       <SettingsForm source={source} version={version} onSaved={() => (bump(source.key), void reload())} />
-      <div class="source-actions">
+      <Actions class="source-actions">
         {!github && others.length > 0 ? (
           <div class="move">
             <label for={`${titleId}-move`}>Move to fleet</label>
@@ -69,38 +67,28 @@ function SourceCard({ source, version, reload, bump, restart }: { source: Source
                 </option>
               ))}
             </select>
-            <button type="button" class="btn" disabled={!target || busy !== ''} onClick={() => run('move', async () => {
+            <Button label="Move" disabled={!target} pending={['source', source.key, 'move']} onClick={() => run(async () => {
               const r = await saveSource(source.key, { fleet: target });
               if (r.ok) await reload();
               return r;
-            })}>
-              Move
-            </button>
+            })} />
           </div>
         ) : null}
-        <button type="button" class="btn" disabled={busy !== ''} onClick={() => run('restart', () => restart(source.key))}>
-          {busy === 'restart' ? 'Restarting…' : 'Restart'}
-        </button>
+        <Button label="Restart" pending={['source', source.key, 'restart']} onClick={() => run(() => restart(source.key))} />
         {confirming ? (
           <div class="confirm" role="group" aria-label={`Remove ${source.name || source.key}`}>
             <span>{github ? 'Remove this GitHub source? This shell can’t add it back yet.' : 'Remove this source?'}</span>
-            <button type="button" class="btn danger" disabled={busy !== ''} onClick={async () => (await run('remove', async () => {
+            <Button label="Remove source" variant="danger" pending={['source', source.key, 'remove']} onClick={async () => (await run(async () => {
               const r = await removeSource(source.key);
               if (r.ok) await reload();
               return r;
-            })) || setConfirming(false)}>
-              Remove source
-            </button>
-            <button type="button" class="btn" onClick={() => setConfirming(false)}>
-              Cancel
-            </button>
+            })) || setConfirming(false)} />
+            <Button label="Cancel" onClick={() => setConfirming(false)} />
           </div>
         ) : (
-          <button type="button" class="btn" onClick={() => setConfirming(true)}>
-            Remove
-          </button>
+          <Button label="Remove" onClick={() => setConfirming(true)} />
         )}
-      </div>
+      </Actions>
       {error ? (
         <p class="note error" role="alert">
           {error}
@@ -129,13 +117,12 @@ function AddSource({ fleet, onAdded }: { fleet: Fleet; onAdded: () => Promise<vo
 
   if (!open) {
     return (
-      <button type="button" class="btn" onClick={show}>
-        Add source
-      </button>
+      <Button label="Add source" onClick={() => void show()} />
     );
   }
   return (
     <div class="add box" role="group" aria-label="Add source">
+      <Actions class="confirm-actions">
       {plugins === null && !error ? <p class="note">Loading…</p> : null}
       {plugins && plugins.length === 0 ? <p class="note">No plugins are installed.</p> : null}
       {plugins && plugins.length > 0 ? (
@@ -148,14 +135,12 @@ function AddSource({ fleet, onAdded }: { fleet: Fleet; onAdded: () => Promise<vo
               </option>
             ))}
           </select>
-          <button type="button" class="btn primary" disabled={!pick} onClick={async () => {
+          <Button label={`Add to ${fleet.name}`} variant="primary" disabled={!pick} pending={['source', 'add', fleet.key]} onClick={async () => {
             const r = await addSource(pick, fleet.key);
             if (!r.ok) return setError(r.error);
             setOpen(false);
             await onAdded();
-          }}>
-            Add to {fleet.name}
-          </button>
+          }} />
         </div>
       ) : null}
       {error ? (
@@ -163,9 +148,8 @@ function AddSource({ fleet, onAdded }: { fleet: Fleet; onAdded: () => Promise<vo
           {error}
         </p>
       ) : null}
-      <button type="button" class="btn" onClick={() => setOpen(false)}>
-        Cancel
-      </button>
+      <Button label="Cancel" onClick={() => setOpen(false)} />
+      </Actions>
     </div>
   );
 }
