@@ -98,6 +98,8 @@ func EventLink(ref string) string {
 type LiveShip struct {
 	Session, DedupeKey string
 	Ended              bool
+	// Proposal is a ship an accepted event proposal launched: it holds its dedupe_key, but is no worker ship.
+	Proposal bool
 	// Trigger is the id of the launch record, and Launched when the ship started.
 	Trigger  string
 	Launched time.Time
@@ -107,9 +109,21 @@ type LiveShip struct {
 type ListedShip struct{ Session, Fleet, Routine, Launched, Status string }
 
 // EventShips picks the listed ships of fleet that an event launch started on its own, not from an accepted
-// proposal. recs is newest first, so the first record per session is the
-// current launch; session names are reused, so the ship must still hold that record's routine key and not predate the record.
+// proposal: the worker view of the cap, the wall clock and Stop all.
 func EventShips(fleet string, recs []Trigger, listed []ListedShip) []LiveShip {
+	var out []LiveShip
+	for _, sh := range EventLaunchedShips(fleet, recs, listed) {
+		if !sh.Proposal {
+			out = append(out, sh)
+		}
+	}
+	return out
+}
+
+// EventLaunchedShips is EventShips with the ships of accepted proposals, flagged Proposal: the dedupe view. recs is newest
+// first, so the first record per session is the current launch; session names are reused, so the ship must still hold that
+// record's routine key and not predate the record.
+func EventLaunchedShips(fleet string, recs []Trigger, listed []ListedShip) []LiveShip {
 	newest := map[string]Trigger{}
 	for _, r := range recs {
 		if _, ok := newest[r.Ship]; !ok && r.Ship != "" && r.Event != "" {
@@ -119,19 +133,19 @@ func EventShips(fleet string, recs []Trigger, listed []ListedShip) []LiveShip {
 	var out []LiveShip
 	for _, sh := range listed {
 		rec, ok := newest[sh.Session]
-		if !ok || rec.Via == ViaProposal || sh.Fleet != fleet || sh.Routine != routineKey(rec.Routine) {
+		if !ok || sh.Fleet != fleet || sh.Routine != routineKey(rec.Routine) {
 			continue
 		}
 		// the wall clock starts from Admiral's own record, not from a time the ship's tmux session holds
 		if at, err := time.Parse(time.RFC3339, sh.Launched); err == nil && at.Before(rec.At.Truncate(time.Second)) {
 			continue
 		}
-		out = append(out, LiveShip{Session: sh.Session, DedupeKey: rec.DedupeKey, Ended: !isLiveStatus(sh.Status), Trigger: rec.ID, Launched: rec.At})
+		out = append(out, LiveShip{Session: sh.Session, DedupeKey: rec.DedupeKey, Ended: !isLiveStatus(sh.Status), Trigger: rec.ID, Launched: rec.At, Proposal: rec.Via == ViaProposal})
 	}
 	return out
 }
 
-// EventLive is the EventLoad over the listed event-launched ships. When Listed is set, Load reads them against records the
+// EventLive is the EventLoad over the listed event-launched ships, proposal ships included: they hold dedupe_keys but never count as worker ships. When Listed is set, Load reads them against records the
 // caller already holds, so one event reads the trigger log once; Ships answers the other callers.
 type EventLive struct {
 	Ships  func(fleet string) []LiveShip
@@ -146,7 +160,7 @@ func (l EventLive) Load(fleet string, recs []Trigger) (int, []string) {
 
 func (l EventLive) live(fleet string, recs []Trigger) []LiveShip {
 	if l.Listed != nil {
-		return EventShips(fleet, recs, l.Listed())
+		return EventLaunchedShips(fleet, recs, l.Listed())
 	}
 	return l.Ships(fleet)
 }
@@ -158,7 +172,7 @@ func isLiveStatus(status string) bool { return status == "underway" || status ==
 func countWorking(ships []LiveShip) int {
 	n := 0
 	for _, sh := range ships {
-		if !sh.Ended {
+		if !sh.Ended && !sh.Proposal {
 			n++
 		}
 	}

@@ -83,19 +83,23 @@ func (s *Service) serveUndo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "ships cannot be stopped from here")
 		return
 	}
-	// The launcher holds a name only while its clone exists, so a listed ship of that name with no clone is a newer one.
-	if exists, err := cloneExists(s.Store.Home, rec.Ship); err != nil {
-		writeError(w, http.StatusInternalServerError, "could not read the ship's clone: "+err.Error())
+	own, held, err := s.holdsShip(fleet, rec)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read the trigger log: "+err.Error())
 		return
-	} else if exists {
+	}
+	if own {
 		if err := s.Stop(rec.Ship); err != nil && !errors.Is(err, ErrShipNotListed) {
 			writeError(w, http.StatusInternalServerError, "could not stop the ship: "+err.Error())
 			return
 		}
 	}
-	if err := removeClone(s.Store.Home, rec.Ship); err != nil {
-		writeError(w, http.StatusInternalServerError, "could not remove the ship's clone: "+err.Error())
-		return
+	// A listed ship of that name that is not this launch's is a newer one, and its clone is the one on disk.
+	if own || !held {
+		if err := removeClone(s.Store.Home, rec.Ship); err != nil {
+			writeError(w, http.StatusInternalServerError, "could not remove the ship's clone: "+err.Error())
+			return
+		}
 	}
 	if err := s.Store.Undo(fleet, rec.ID); err != nil {
 		fail(w, err)
@@ -104,6 +108,30 @@ func (s *Service) serveUndo(w http.ResponseWriter, r *http.Request) {
 	s.changed()
 	rec.Undone = true
 	writeJSON(w, http.StatusOK, rec)
+}
+
+// holdsShip reports whether the host lists rec's own ship, matched by the launch record it carries, and whether it lists any
+// ship of rec's session name at all. A newer launch that reused the name has its own record, so it never matches.
+func (s *Service) holdsShip(fleet string, rec Trigger) (own, held bool, err error) {
+	if s.Listed == nil {
+		return false, false, nil
+	}
+	recs, err := s.Store.Records(fleet)
+	if err != nil {
+		return false, false, err
+	}
+	listed := s.Listed()
+	for _, sh := range EventLaunchedShips(fleet, recs, listed) {
+		if sh.Session == rec.Ship && sh.Trigger == rec.ID {
+			return true, true, nil
+		}
+	}
+	for _, sh := range listed {
+		if sh.Session == rec.Ship {
+			held = true
+		}
+	}
+	return false, held, nil
 }
 
 // cloneDir is the ship's clone path inside root, and whether anything is there; a checkouts that is not a real
