@@ -220,7 +220,7 @@ func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]
 	s.setFeedback(r, moor.FeedbackCounts(moor.WakeInput{Record: wr, State: state, Answers: answers, Reviewers: reviewers, Now: now}))
 	var fix *FixOffer
 	if round, ok := s.fixRound(wr, state, answers); ok && moor.ValidResume(r.Resume) {
-		fix = &FixOffer{PR: round.PR, Command: answerPrompt(r, round.PR), Problems: round.Problems}
+		fix = &FixOffer{PR: round.PR, Stack: round.Stack, Command: answerPrompt(r, round.PR), Problems: round.Problems}
 	}
 	s.setFix(r, fix)
 	if !moor.ValidResume(r.Resume) || len(wr.PRs) == 0 {

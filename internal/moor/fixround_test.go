@@ -450,3 +450,14 @@ func TestAFixRoundLeavesItsInputsStateAlone(t *testing.T) {
 		t.Errorf("the input's cursor IDs backing array was written: %q", spare[:2][1])
 	}
 }
+
+func TestAFixRoundIsAStackWhenItCoversMoreThanOnePR(t *testing.T) {
+	one, ok := DecideFixRound(fixInput(conflicting()))
+	if !ok || one.Stack {
+		t.Fatalf("one PR: ok=%v stack=%v, want a round that is not a stack", ok, one.Stack)
+	}
+	two, ok := DecideFixRound(fixInput(wOpen(), conflicting()))
+	if !ok || !two.Stack {
+		t.Fatalf("two PRs, one with a problem: ok=%v stack=%v, want a stack: the round covers both", ok, two.Stack)
+	}
+}

@@ -58,6 +58,16 @@ const (
 	EventBehindBase    EventKind = "behind_base"
 )
 
+// isCondition is true for an event that reports a state of the PR, not something a person wrote.
+func (k EventKind) isCondition() bool {
+	return k == EventCheckFailed || k == EventConflict || k == EventBehindBase
+}
+
+const (
+	conflictBody = "the PR has merge conflicts with its base"
+	behindBody   = "the PR is behind its base, which requires up-to-date branches"
+)
+
 // Event is one thing that happened on a PR. A condition event (check, conflict, behind) has no author and takes the time of the first poll that saw it.
 type Event struct {
 	Kind   EventKind
@@ -284,10 +294,10 @@ func collect(pr string, rec Record, ps PRWake, st Status, allow []string, now ti
 		}
 	}
 	if st.Mergeable == "CONFLICTING" && !ps.Snapshot.Conflicting {
-		condition("conflict", Event{Kind: EventConflict, URL: pr, Body: "the PR has merge conflicts with its base"})
+		condition("conflict", Event{Kind: EventConflict, URL: pr, Body: conflictBody})
 	}
 	if behind(st) && !ps.Snapshot.Behind {
-		condition("behind", Event{Kind: EventBehindBase, URL: pr, Body: "the PR is behind its base, which requires up-to-date branches"})
+		condition("behind", Event{Kind: EventBehindBase, URL: pr, Body: behindBody})
 	}
 	out.waking = append(out.waking, out.cond...)
 	return out
@@ -403,24 +413,28 @@ func openRound(in WakeInput, found map[string]prEvents, next WakeState, chosen s
 		if _, ok := found[pr]; !ok {
 			continue
 		}
-		ps := next.PRs[pr]
 		if next.PRs == nil {
 			next.PRs = map[string]PRWake{}
 		}
-		if ps.Cursor.At.IsZero() {
-			ps.Cursor = Cursor{At: in.Record.MooredAt}
-		}
-		ps.RoundStart = in.Now
-		ps.Dropped = found[pr].dropped
-		if pr == chosen {
-			ps.Cursor = advance(ps.Cursor, events)
-			st := in.Answers[pr]
-			ps.Snapshot = Snapshot{Head: st.Head, Failing: found[pr].failed, Conflicting: st.Mergeable == "CONFLICTING", Behind: behind(st)}
-			ps.Seen = nil
-		}
-		next.PRs[pr] = ps
+		next.PRs[pr] = openWindow(in, pr, next.PRs[pr], found[pr], events, pr == chosen)
 	}
 	return events, next
+}
+
+// openWindow opens a PR's wake window for a round: the cursor defaults to the mooring, the round starts now, and a PR the round hands feedback for moves its cursor past `handed` and snapshots the conditions the round carries, so the automatic wake does not fire for them again. Both hand rounds share it.
+func openWindow(in WakeInput, pr string, ps PRWake, ev prEvents, handed []Event, handles bool) PRWake {
+	if ps.Cursor.At.IsZero() {
+		ps.Cursor = Cursor{At: in.Record.MooredAt}
+	}
+	ps.RoundStart = in.Now
+	ps.Dropped = ev.dropped
+	if handles {
+		ps.Cursor = advance(ps.Cursor, handed)
+		st := in.Answers[pr]
+		ps.Snapshot = Snapshot{Head: st.Head, Failing: ev.failed, Conflicting: st.Mergeable == "CONFLICTING", Behind: behind(st)}
+		ps.Seen = nil
+	}
+	return ps
 }
 
 // DecideWake is pure: the same input gives the same Decision.
@@ -442,7 +456,7 @@ func DecideWake(in WakeInput) Decision {
 
 func advance(c Cursor, handed []Event) Cursor {
 	for _, e := range handed {
-		if e.Kind == EventCheckFailed || e.Kind == EventConflict || e.Kind == EventBehindBase {
+		if e.Kind.isCondition() {
 			continue
 		}
 		switch {

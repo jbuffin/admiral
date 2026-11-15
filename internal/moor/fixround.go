@@ -33,6 +33,7 @@ func ProblemsOf(url string, st Status) (PRProblems, bool) {
 type FixRound struct {
 	PR       string // the lowest covered PR with a merge problem
 	Problems []PRProblems
+	Stack    bool // the round covers more than one PR
 	Feedback string
 	Next     WakeState
 }
@@ -65,7 +66,7 @@ func DecideFixRound(in WakeInput) (FixRound, bool) {
 		}
 		var waiting []Event
 		for _, e := range ev.waking {
-			if e.Kind != EventCheckFailed && e.Kind != EventConflict && e.Kind != EventBehindBase {
+			if !e.Kind.isCondition() {
 				waiting = append(waiting, e)
 			}
 		}
@@ -75,25 +76,16 @@ func DecideFixRound(in WakeInput) (FixRound, bool) {
 			sections = append(sections, FeedbackText(pr, events))
 		}
 
-		ps := next.PRs[pr]
 		if next.PRs == nil {
 			next.PRs = map[string]PRWake{}
 		}
-		if ps.Cursor.At.IsZero() {
-			ps.Cursor = Cursor{At: in.Record.MooredAt}
-		}
-		ps.RoundStart = in.Now
-		ps.Dropped = ev.dropped
-		ps.Cursor = advance(ps.Cursor, waiting)
-		st := in.Answers[pr]
-		ps.Snapshot = Snapshot{Head: st.Head, Failing: ev.failed, Conflicting: st.Mergeable == "CONFLICTING", Behind: behind(st)}
-		ps.Seen = nil
-		next.PRs[pr] = ps
+		next.PRs[pr] = openWindow(in, pr, next.PRs[pr], ev, waiting, true)
 	}
 	if out.PR == "" {
 		return FixRound{}, false
 	}
-	if len(covered) > 1 {
+	out.Stack = len(covered) > 1
+	if out.Stack {
 		sections = append([]string{"Feedback on the ship's PRs: " + strings.Join(covered, ", ") + "\n"}, sections...)
 	}
 	out.Feedback = strings.Join(sections, "\n")
@@ -105,10 +97,10 @@ func DecideFixRound(in WakeInput) (FixRound, bool) {
 func conditionEvents(pr string, p PRProblems, at time.Time) []Event {
 	var out []Event
 	if p.Conflicts {
-		out = append(out, Event{Kind: EventConflict, PR: pr, At: at, URL: pr, Body: "the PR has merge conflicts with its base"})
+		out = append(out, Event{Kind: EventConflict, PR: pr, At: at, URL: pr, Body: conflictBody})
 	}
 	if p.Behind {
-		out = append(out, Event{Kind: EventBehindBase, PR: pr, At: at, URL: pr, Body: "the PR is behind its base, which requires up-to-date branches"})
+		out = append(out, Event{Kind: EventBehindBase, PR: pr, At: at, URL: pr, Body: behindBody})
 	}
 	for _, n := range p.FailingChecks {
 		out = append(out, Event{Kind: EventCheckFailed, PR: pr, At: at, URL: pr, Name: n, Body: "the check is failing"})

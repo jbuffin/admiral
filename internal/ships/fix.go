@@ -13,6 +13,7 @@ import (
 // FixOffer is the Fix PR / Fix stack a moored ship is offered: the round's PR, the command the wake sends and each PR's merge problems.
 type FixOffer struct {
 	PR       string            `json:"pr"`
+	Stack    bool              `json:"stack,omitempty"`
 	Command  string            `json:"command"`
 	Problems []moor.PRProblems `json:"problems"`
 }
