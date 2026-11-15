@@ -39,10 +39,6 @@ jobs:
           mkdir -p /tmp/ptydiag
           nohup bash -c 'while true; do echo "$(date +%T.%N | cut -c1-12) ptys=$(ls /dev/ttys* 2>/dev/null | wc -l | tr -d " ") procs=$(ps -A | wc -l | tr -d " ") files=$(sysctl -n kern.num_files) tmux=$(pgrep -x tmux | wc -l | tr -d " ")" >> /tmp/ptydiag/samples.log; sleep 0.2; done' >/dev/null 2>&1 &
           nohup log stream --level debug --predicate 'process == "kernel" OR process == "tmux"' > /tmp/ptydiag/kernel.log 2>&1 &
-      - name: respawn stress
-        run: |
-          for n in 1 2 3; do echo "== pass $n (2400 respawns)"; scripts/respawn-stress.sh 300 | sort | uniq -c; done
-          echo "== pass under e2e-like load"; (for i in 1 2 3; do yes >/dev/null & done; scripts/respawn-stress.sh 300 | sort | uniq -c; pkill -x yes) || true
       - name: who runs EndpointSecurity
         run: |
           systemextensionsctl list || true
@@ -51,7 +47,13 @@ jobs:
       - name: go e2e with timings
         run: |
           make build
-          echo skipped > /tmp/ptydiag/e2e.json
+          for par in 4 1; do
+            n=3; [ $par = 1 ] && n=2
+            echo "== crew tests only, -parallel $par -count=$n"
+            go test -json -count=$n -parallel $par -tags packaging ./e2e/ -run '^TestCrew' > /tmp/ptydiag/crew-p$par.json || true
+            grep '"Action":"fail"' /tmp/ptydiag/crew-p$par.json | grep -o '"Test":"[^"]*"' | sort | uniq -c
+            grep -c 'Device not configured' /tmp/ptydiag/crew-p$par.json || true
+          done
           grep -E '"Action":"fail"' /tmp/ptydiag/e2e.json | head -40
       - name: pty diagnostics (end)
         if: always()
