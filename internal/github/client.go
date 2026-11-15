@@ -45,7 +45,7 @@ const reviewRequests = " timelineItems(last: 10, itemTypes: [REVIEW_REQUESTED_EV
 
 func searchQueryWith(issueExtra, prExtra string) string {
 	return fmt.Sprintf("query($q: String!) { viewer { login } search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { "+
-		"... on Issue { %s subIssuesSummary { total }%s } ... on PullRequest { %s%s%s } } } }", MaxItems, itemFields, issueExtra, itemFields, prStateFields, prExtra)
+		"... on Issue { %s subIssuesSummary { total } parent { number title url repository { nameWithOwner url } }%s } ... on PullRequest { %s%s%s } } } }", MaxItems, itemFields, issueExtra, itemFields, prStateFields, prExtra)
 }
 
 // unreachable lists what gh prints when the network, not GitHub, failed. It
@@ -70,6 +70,8 @@ type Item struct {
 	Hot     bool
 	// SubIssues is how many sub-issues an issue has; 0 for a pull request.
 	SubIssues int
+	// Parent is an issue's GitHub parent; nil for no parent, one the viewer can't read, and a pull request.
+	Parent *Parent
 	// PR is a pull request's state as the poll would serve it; nil for an issue.
 	PR *moor.PR
 	// OpenedAt is when it was opened, Excerpt its body as one short line.
@@ -86,6 +88,14 @@ type Item struct {
 	Author  string
 	Actor   string
 	EventAt time.Time
+}
+
+// Parent is the issue an issue sits under, with the same id form as Item.ID.
+type Parent struct {
+	ID      string
+	Title   string
+	URL     string
+	RepoURL string
 }
 
 // SignInError means gh is missing or signed out, as opposed to a search that failed.
@@ -257,6 +267,15 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 		SubIssuesSummary *struct {
 			Total int `json:"total"`
 		} `json:"subIssuesSummary"`
+		Parent *struct {
+			Number     *int    `json:"number"`
+			Title      *string `json:"title"`
+			URL        *string `json:"url"`
+			Repository *struct {
+				NameWithOwner *string `json:"nameWithOwner"`
+				URL           *string `json:"url"`
+			} `json:"repository"`
+		} `json:"parent"`
 		Author        *struct{ Login string } `json:"author"`
 		TimelineItems *struct {
 			Nodes []struct {
@@ -312,6 +331,10 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 	}
 	if n.SubIssuesSummary != nil {
 		it.SubIssues = n.SubIssuesSummary.Total
+	}
+	if p := n.Parent; p != nil && n.State == "" && p.Number != nil && p.Title != nil && p.URL != nil &&
+		p.Repository != nil && p.Repository.NameWithOwner != nil && p.Repository.URL != nil {
+		it.Parent = &Parent{ID: fmt.Sprintf("%s#%d", *p.Repository.NameWithOwner, *p.Number), Title: *p.Title, URL: *p.URL, RepoURL: *p.Repository.URL}
 	}
 	if n.State != "" { // only the pull request fragment asks for state
 		pr := moor.View(it.URL, n.status(), true)

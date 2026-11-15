@@ -33,6 +33,8 @@ type Order struct {
 	SubIssues int `json:"sub_issues,omitempty"`
 	// PR is a pull request's state, as a ship's prs[] entry gives it; nil for any other order.
 	PR *OrderPR `json:"pr,omitempty"`
+	// Parent is an issue's GitHub parent, matched to an order by id; never set on a pull request.
+	Parent *OrderParent `json:"parent,omitempty"`
 	// Author is who opened it, OpenedAt when (RFC 3339) and Excerpt the start of its body as one line.
 	Author   string `json:"author,omitempty"`
 	OpenedAt string `json:"opened_at,omitempty"`
@@ -44,6 +46,13 @@ type Order struct {
 }
 
 // OrderPR is moor.PR without its url, which is the order's own.
+type OrderParent struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
+	Repo  string `json:"repo,omitempty"`
+}
+
 type OrderPR struct {
 	State     string `json:"state"`
 	Review    string `json:"review"`
@@ -172,6 +181,7 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		// Sub-issues is the count a GitHub issue has, read by the built-in source only.
 		SubIssues json.RawMessage `json:"sub_issues"` // anything but a positive integer is dropped
 		PR        json.RawMessage `json:"pr"`         // anything but a well-formed object is dropped
+		Parent    json.RawMessage `json:"parent"`     // a bad parent is dropped and the order kept
 		// A field of the wrong type or that fails its check is dropped and the order kept.
 		Author            json.RawMessage `json:"author"`
 		OpenedAt          json.RawMessage `json:"opened_at"`
@@ -234,7 +244,9 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		if n := positiveInt(it.SubIssues); n > 0 {
 			o.SubIssues = n
 		}
-		o.PR = parseOrderPR(it.PR)
+		if o.PR = parseOrderPR(it.PR); o.PR == nil {
+			o.Parent = parseOrderParent(it.Parent)
+		}
 		if a, ok := rawString(it.Author); ok && !hasControl(a) && !hasInvisible(a) && utf8.RuneCountInString(a) <= maxAuthor && strings.TrimSpace(a) != "" {
 			o.Author = a
 		}
@@ -280,6 +292,38 @@ func rfc3339(raw json.RawMessage) string {
 		return ""
 	}
 	return at.UTC().Format(time.RFC3339Nano)
+}
+
+// parseOrderParent reads a parent object; one that isn't well-formed is dropped, and a bad repo costs only the repo.
+func parseOrderParent(raw json.RawMessage) *OrderParent {
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil
+	}
+	var in struct {
+		ID    *string         `json:"id"`
+		Title *string         `json:"title"`
+		URL   *string         `json:"url"`
+		Repo  json.RawMessage `json:"repo"`
+	}
+	if json.Unmarshal(raw, &in) != nil || in.ID == nil || *in.ID == "" || hasControl(*in.ID) || in.URL == nil {
+		return nil
+	}
+	p := &OrderParent{ID: *in.ID, URL: safeURL(*in.URL)}
+	if p.URL == "" {
+		return nil
+	}
+	if in.Title != nil {
+		p.Title = oneLine(strings.NewReplacer("\r", " ", "\n", " ").Replace(*in.Title))
+	}
+	if p.Title == "" {
+		p.Title = p.ID
+	}
+	if repo, ok := rawString(in.Repo); ok {
+		if _, ok := repofinder.Identity(repo); ok {
+			p.Repo = strings.TrimSpace(repo)
+		}
+	}
+	return p
 }
 
 // parseOrderPR reads a plugin's pr object; anything but a well-formed object is dropped, and a bad failing_check_count
