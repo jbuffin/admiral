@@ -25,7 +25,11 @@ interface Draft {
 }
 
 export function MakeCampaignSheet({ fleet, sourceKey, issues: given, projects, onClose }: Props) {
-  const [issues, setIssues] = useState(given);
+  const [order, setOrder] = useState(given.map((i) => i.url));
+  // Titles follow the loaded orders, which may arrive after a deep link opens the sheet; only the order is the engineer's.
+  const byUrl = new Map(given.map((i) => [i.url, i]));
+  const issues = order.flatMap((u) => byUrl.get(u) ?? []);
+  const setIssues = (next: SheetIssue[]) => setOrder(next.map((i) => i.url));
   const { choices, initial } = repoChoices(given.map((i) => i.url), projects);
   const [repo, setRepo] = useState(initial);
   const [title, setTitle] = useState('');
