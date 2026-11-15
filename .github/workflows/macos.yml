@@ -41,7 +41,16 @@ jobs:
           mkdir -p /tmp/ptydiag
           nohup bash -c 'while true; do echo "$(date +%T.%N | cut -c1-12) ptys=$(ls /dev/ttys* 2>/dev/null | wc -l | tr -d " ") procs=$(ps -A | wc -l | tr -d " ") files=$(sysctl -n kern.num_files) tmux=$(pgrep -x tmux | wc -l | tr -d " ")" >> /tmp/ptydiag/samples.log; sleep 0.2; done' >/dev/null 2>&1 &
           nohup log stream --level debug --predicate 'process == "kernel" OR process == "tmux"' > /tmp/ptydiag/kernel.log 2>&1 &
-      - run: make e2e-critical
+      - name: who runs EndpointSecurity
+        run: |
+          systemextensionsctl list || true
+          ps -Ao pid,user,command | grep -iE "endpoint|xprotect|syspolicy|falcon|sentinel|santa|osquery|esf|eslogger|mdatp|jamf|security" | grep -v grep || true
+          sudo launchctl list | grep -iE "xprotect|endpoint|security|santa|falcon" || true
+      - name: go e2e with timings
+        run: |
+          make build
+          go test -json -count=1 -parallel 4 -tags packaging ./e2e/... > /tmp/ptydiag/e2e.json || true
+          grep -E '"Action":"fail"' /tmp/ptydiag/e2e.json | head -40
       - name: pty diagnostics (end)
         if: always()
         run: |
