@@ -348,11 +348,13 @@ test('a repo checked out in two fleets shows its routing warning under Repos on 
   await admiral.start({ env: admiral.fakeGh().env });
   await expect.poll(async () => (await apiSources(admiral)).map((s) => `${s.key}:${s.warnings.some((w) => w.includes('acme/widgets'))}`).sort()).toEqual(['ga:true', 'gz:true']);
 
-  for (const fleet of ['zulu', 'alpha']) {
+  // zulu is first in the config, so it is the default fleet; the default line does not depend on the warning.
+  for (const [fleet, isDefault] of [['zulu', true], ['alpha', false]] as const) {
     await page.goto(githubPage(admiral, fleet));
     const repos = page.getByRole('region', { name: 'Repos', exact: true });
     await expect(repos).toContainText(/acme\/widgets is checked out in fleets (zulu and alpha|alpha and zulu); \w+ takes its items/);
-    await expect(repos).not.toContainText(/no other fleet claims/i);
+    if (isDefault) await expect(repos).toContainText(/no other fleet claims/i);
+    else await expect(repos).not.toContainText(/no other fleet claims/i);
   }
 });
 
