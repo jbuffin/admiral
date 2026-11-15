@@ -21,7 +21,7 @@ export function skillQuery(text: string, caret: number, mark: string): string | 
 }
 
 /** The skills that match what is typed, case aside: a name that starts with it, then a plugin skill whose own part does, then a name that holds it. */
-export function matchSkills(skills: Skill[], query: string): Skill[] {
+export function matchSkills<T extends Skill>(skills: T[], query: string): T[] {
   const q = query.toLowerCase();
   const rank = (name: string) => {
     const n = name.toLowerCase();

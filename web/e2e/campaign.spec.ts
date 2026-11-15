@@ -97,8 +97,9 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(form).toBeHidden();
   expect(launchPosts).toBe(1);
   // The ship runs the picked skill on the ticket, not the labels' wayfinder.
-  const started = ((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: { session: string }[] }).ships;
-  expect(started).toHaveLength(1);
+  const shipsOf = async () => ((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: { session: string }[] }).ships;
+  await expect.poll(async () => (await shipsOf()).length).toBe(1);
+  const started = await shipsOf();
   const argv = join(admiral.home, 'rec', started[0]!.session, 'argv');
   await expect.poll(() => existsSync(argv)).toBe(true);
   expect(readFileSync(argv, 'utf8')).toContain('/tdd');

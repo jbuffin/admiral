@@ -186,7 +186,7 @@ export const sameChoice = (a: SkillChoice, b: SkillChoice) => a.kind === b.kind 
 export function skillOptions(answer: SkillsAnswer, typed: string): SkillOption[] {
   const query = bareSkillName(typed);
   const row = (s: SkillsAnswer['skills'][number]): SkillOption => ({ choice: { kind: 'skill', name: s.name }, label: s.name, description: s.description, mark: answer.mark });
-  if (query) return matchSkills(answer.skills, query).map((s) => row(s as SkillsAnswer['skills'][number]));
+  if (query) return matchSkills(answer.skills, query).map(row);
   const { found } = answer.commodore;
   return [
     { choice: { kind: 'commodore' }, label: 'Commodore', description: found ? '' : 'not found', mark: '', ...(!found && { disabled: true }) },
@@ -208,8 +208,20 @@ export function keepSkill(answer: SkillsAnswer, current: SkillChoice): SkillChoi
   return offered ? current : defaultSkill(answer);
 }
 
-/** Where a campaign child's picker starts: its resolved skill when this dock offers it, else the default. */
+/** Where a campaign child's picker starts: its resolved skill whether or not this dock offers it (the form then warns), else the default. */
 export function startSkill(answer: SkillsAnswer, view: SkillView | undefined): SkillChoice {
-  if (!view || view.kind === '') return defaultSkill(answer);
-  return keepSkill(answer, view.kind === 'skill' ? { kind: 'skill', name: bareSkillName(view.name) } : { kind: view.kind });
+  return viewChoice(view) ?? defaultSkill(answer);
+}
+
+/** The pick a campaign child's resolved skill stands for; null when it has none. */
+export function viewChoice(view: SkillView | undefined): SkillChoice | null {
+  if (!view || view.kind === '') return null;
+  return view.kind === 'skill' ? { kind: 'skill', name: bareSkillName(view.name) } : { kind: view.kind };
+}
+
+/** The warning for a pick this dock doesn't offer, else null. */
+export function pickWarning(answer: SkillsAnswer, choice: SkillChoice, harness: string): string | null {
+  if (choice.kind === 'skill') return skillWarning(choice.name, answer.skills, harness);
+  if (choice.kind === 'commodore' && !answer.commodore.found) return harness ? `not installed on ${harness}` : 'not found';
+  return null;
 }

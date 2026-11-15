@@ -238,11 +238,11 @@ export function watchPage(page: Page, server: string) {
   const paths: string[] = [];
   const foreign: string[] = [];
   const errors: string[] = [];
-  // The browser logs each refused launch, ending, merge, Re-review or work-repo save, and each PR detail or stack shape GitHub cannot give, as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
+  // The browser logs each refused launch, ending, merge, Re-review or work-repo save, and each PR detail or stack shape GitHub cannot give, and each skills read a journey fails on purpose, as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
   const failedLoads: string[] = [];
   let refusedLaunches = 0;
   page.on('response', (r) => {
-    const refusable = { GET: /^\/api\/v1\/ships\/[^/]+\/(pr|stack)$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|rereview|stack|wake)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
+    const refusable = { GET: /^\/api\/v1\/(ships\/[^/]+\/(pr|stack)|launch-orders\/skills)$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|rereview|stack|wake)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
     const path = new URL(r.url()).pathname;
     if (refusable?.test(path) && r.status() >= 400) refusedLaunches++;
     // Moor's refusal is a 409; any other status on an ending stays an error.
@@ -2136,6 +2136,18 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await picker.box.press('Escape');
   await expect(picker.list).toBeHidden();
   await expect(form).toBeVisible();
+  // The form is anchored to the bottom, so the warning line going away as the name completes moves the box; the open list follows it and never covers it.
+  await picker.type('fable-claud');
+  await expect(form).toContainText('not installed on claude');
+  await picker.box.press('e');
+  await expect(form).not.toContainText('not installed on');
+  await expect(picker.option('fable-claude')).toBeVisible();
+  await expect(async () => {
+    const list = (await picker.list.boundingBox())!;
+    const input = (await picker.box.boundingBox())!;
+    expect(list.y >= input.y + input.height - 1 || list.y + list.height <= input.y + 1).toBe(true);
+  }).toPass({ timeout: 3000 });
+  await picker.box.press('Escape');
   await form.getByLabel('Text').fill('  look at the parser  ');
   await form.getByLabel('Model').selectOption('opus');
   // An effort the harness does not offer is not offered.
@@ -2162,6 +2174,35 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await expect(picker.box).toHaveValue(/fable-both/);
   await form.getByRole('radio', { name: /claude/i }).check();
   await expect(picker.box).toHaveValue(/fable-both/);
+  // A dock whose skills have not answered, or failed, can't launch the last dock's pick: Launch stays off and nothing is sent.
+  await picker.pick('fable-claude');
+  const skillsRead = '**/launch-orders/skills?*harness=codex*';
+  let answer!: () => void;
+  const answered = new Promise<void>((r) => (answer = r));
+  await page.route(skillsRead, async (route) => {
+    await answered;
+    await route.continue();
+  });
+  const held = shipPosts;
+  await form.getByRole('radio', { name: /codex/i }).check();
+  await expect(submit).toBeDisabled();
+  await picker.box.press('Enter');
+  expect(shipPosts, 'a pick of the last dock sends nothing while the new dock has not answered').toBe(held);
+  answer();
+  await page.unroute(skillsRead);
+  await expect(submit).toBeEnabled();
+  await expect(picker.box).toHaveValue(/^(Commodore|Just launch)$/);
+  await form.getByRole('radio', { name: /claude/i }).check();
+  await picker.pick('fable-claude');
+  await page.route(skillsRead, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'skills are down' }) }));
+  await form.getByRole('radio', { name: /codex/i }).check();
+  await expect(form).toContainText("Couldn't load skills");
+  await expect(form).toContainText('skills are down');
+  await expect(submit).toBeDisabled();
+  await page.unroute(skillsRead);
+  await form.getByRole('radio', { name: /claude/i }).check();
+  await expect(form).not.toContainText("Couldn't load skills");
+  await expect(submit).toBeEnabled();
   await picker.pick('review');
   await form.getByLabel('Effort').selectOption({ label: 'High' });
   await form.getByRole('checkbox', { name: 'db' }).check();

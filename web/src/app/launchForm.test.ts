@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { campaignLaunch, campaignOrder, type CampaignLaunchState, sliceOrder, type CrewMemberView, crewOptions, defaultSkill, effortsFor, keepSkill, type LaunchFormState, launchBody, memberRun, skillOptions, type SkillsAnswer, sourcesForFleet, startSkill, togglePin, typedSkill } from './launchForm';
+import { campaignLaunch, campaignOrder, type CampaignLaunchState, sliceOrder, type CrewMemberView, crewOptions, defaultSkill, effortsFor, keepSkill, type LaunchFormState, launchBody, memberRun, pickWarning, skillOptions, type SkillsAnswer, sourcesForFleet, startSkill, togglePin, typedSkill } from './launchForm';
 
 describe('sourcesForFleet', () => {
   it('keeps the sources of the active fleet only', () => {
@@ -391,8 +391,21 @@ describe('the launch skill picker', () => {
       expect(startSkill(answer(), { kind: '', name: '', args: '' })).toEqual({ kind: 'commodore' });
       expect(startSkill(answer(), undefined)).toEqual({ kind: 'commodore' });
     });
-    it('starts at the default when the resolved skill is not installed for the dock', () => {
-      expect(startSkill(answer(), { kind: 'skill', name: 'gone', args: '' })).toEqual({ kind: 'commodore' });
+    it('starts at the resolved skill even when the dock does not offer it, so the form can warn', () => {
+      expect(startSkill(answer(), { kind: 'skill', name: 'gone', args: '' })).toEqual({ kind: 'skill', name: 'gone' });
+    });
+  });
+
+  describe('pickWarning: a pick this dock does not offer', () => {
+    it('warns for a skill that is not installed, with the dock named', () => {
+      expect(pickWarning(answer(), { kind: 'skill', name: 'gone' }, 'codex')).toBe('not installed on codex');
+      expect(pickWarning(answer(), { kind: 'skill', name: 'tdd' }, 'codex')).toBeNull();
+    });
+    it('warns for Commodore when the dock has none, and never for Just launch', () => {
+      const none: SkillsAnswer = { ...answer(), commodore: { found: false, name: '' } };
+      expect(pickWarning(none, { kind: 'commodore' }, 'claude')).toBe('not installed on claude');
+      expect(pickWarning(none, { kind: 'none' }, 'claude')).toBeNull();
+      expect(pickWarning(answer(), { kind: 'commodore' }, 'claude')).toBeNull();
     });
   });
 });

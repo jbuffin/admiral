@@ -16,9 +16,11 @@ import {
   memberRun,
   type SkillChoice,
   type SkillsAnswer,
+  pickWarning,
   startSkill,
   togglePin,
   typedSkill,
+  viewChoice,
 } from './launchForm';
 import { IssueLabels } from './IssueLabels';
 import { CheckoutSelect, CLONE, DockPicker, ModelEffortPair, NO_DIR, ResourcesPicker } from './LaunchPickers';
@@ -59,8 +61,9 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const [dir, setDir] = useState(NONE);
   const picked = useRef(false);
   const [text, setText] = useState(order?.text ?? '');
-  const [skills, setSkills] = useState<SkillsAnswer | null>(null);
-  const [skill, setSkill] = useState<SkillChoice>({ kind: 'none' });
+  // The answer carries the dock and checkout it was read for, so one read for another dock never counts.
+  const [read, setRead] = useState<{ key: string; answer?: SkillsAnswer; error?: string } | null>(null);
+  const [skill, setSkill] = useState<SkillChoice>((!campaign?.issues && viewChoice(campaign?.skill)) || { kind: 'none' });
   // What the engineer typed in the skill box, or null while it shows the pick.
   const [typed, setTyped] = useState<string | null>(null);
   const skillPicked = useRef(false);
@@ -84,8 +87,6 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   skillNow.current = skill;
   const typedNow = useRef(typed);
   typedNow.current = typed;
-  const skillsNow = useRef(skills);
-  skillsNow.current = skills;
 
   // The preselection: an order's repo, else a URL in the text, else the dock's last directory; a freeform text is asked again as it changes.
   useEffect(() => {
@@ -116,16 +117,22 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   }, [harness, order ? '' : text]);
 
   const dirForSkills = dir && dir !== CLONE ? dir : (dirs?.entries[0]?.path ?? '');
+  const readKey = `${harness}\n${dirForSkills}`;
+  const skills = read?.key === readKey ? (read.answer ?? null) : null;
+  const skillsError = read?.key === readKey ? read.error : undefined;
+  const readNow = useRef(read);
+  readNow.current = read;
   useEffect(() => {
     if (!dirForSkills || campaign?.issues) return;
     let live = true;
     const q = new URLSearchParams({ fleet: fleet.key, harness, dir: dirForSkills });
     void call<SkillsAnswer>('GET', `/launch-orders/skills?${q}`).then((r) => {
-      if (!live || !r.ok) return;
+      if (!live) return;
+      if (!r.ok) return setRead({ key: readKey, error: r.error });
       // Text that named a skill of the last list is that pick, which this list may keep or replace; other text stays and is still refused.
-      const was = skillsNow.current;
+      const was = readNow.current?.answer;
       if (typedNow.current !== null && was && 'choice' in typedSkill(was, typedNow.current, harness)) setTyped(null);
-      setSkills(r.data);
+      setRead({ key: readKey, answer: r.data });
       // A pick this dock doesn't offer falls back to the start, so the box shows what is sent.
       const start = campaign ? startSkill(r.data, campaign.skill) : defaultSkill(r.data);
       const cur = skillNow.current;
@@ -191,8 +198,10 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const memberViews = membersAnswer?.members ?? [];
   const as = launchingAs ? memberRun(memberViews, harness, member) : null;
   const refusal = typed !== null && skills && bareSkillName(typed) ? typedSkill(skills, typed, harness) : null;
-  const warning = refusal && 'warning' in refusal ? refusal.warning : null;
-
+  const warning = refusal ? ('warning' in refusal ? refusal.warning : null) : typed === null && skills && !campaign?.issues ? pickWarning(skills, skill, harness) : null;
+  // Without an answer for this dock and checkout, a skill name or typed text can't be checked, so it can't launch.
+  const unchecked = !skills && !campaign?.issues && (typed !== null || (skill.kind === 'skill' && (!campaign || skillPicked.current)));
+  const stop = !!warning || unchecked || (typed !== null && !bareSkillName(typed));
   const type = (text: string | null) => {
     setTyped(text);
     const named = text !== null && skills && bareSkillName(text) ? typedSkill(skills, text, harness) : null;
@@ -222,7 +231,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const submit = (e: Event) => {
     e.preventDefault();
     if (busy) return;
-    if (warning) return;
+    if (stop) return;
     setVia('form');
     void launch(skill);
   };
@@ -307,7 +316,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
               <IssueLabels labels={campaign.labels} />
             </>
           ) : null}
-          {campaign?.issues ? null : <LaunchSkillPicker answer={skills} harness={harness} value={skill} typed={typed} warning={warning} onType={type} onPick={pick} />}
+          {campaign?.issues ? null : <LaunchSkillPicker answer={skills} value={skill} blank={!skills && !!campaign && !viewChoice(campaign.skill)} typed={typed} warning={warning} failure={skillsError ? `Couldn't load skills: ${skillsError}` : null} onType={type} onPick={pick} />}
 
           {launchingAs && membersFailed ? <p class="note warn">Couldn't load crew members</p> : null}
           {launchingAs && memberViews.length > 0 ? (
@@ -366,7 +375,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
             setVia('just');
             return launch({ kind: 'none' });
           }} />}
-          <Button type="submit" variant="primary" label="Launch" busy={busy && via === 'form'} disabled={(!cloning && !dir) || !!warning} />
+          <Button type="submit" variant="primary" label="Launch" busy={busy && via === 'form'} disabled={(!cloning && !dir) || stop} />
         </Actions>
       </form>
       </div>

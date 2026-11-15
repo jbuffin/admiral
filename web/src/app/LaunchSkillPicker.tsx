@@ -30,20 +30,24 @@ function place(input: HTMLElement, rows: number): Placement {
     : { ...base, bottom: document.documentElement.clientHeight - r.top + GAP, maxHeight: Math.min(LIST_MAX, above) };
 }
 
+const same = (a: Placement | null, b: Placement) => (a && a.left === b.left && a.width === b.width && a.maxHeight === b.maxHeight && a.top === b.top && a.bottom === b.bottom ? a : b);
+
 export const choiceLabel = (c: SkillChoice, mark: string) => (c.kind === 'skill' ? `${mark}${c.name}` : c.kind === 'commodore' ? 'Commodore' : 'Just launch');
 
 interface Props {
   answer: SkillsAnswer | null;
-  harness: string;
+  /** The box has no pick to show yet. */
+  blank?: boolean;
   value: SkillChoice;
   /** What the engineer typed, or null while the box shows the pick. */
   typed: string | null;
   warning: string | null;
+  failure?: string | null;
   onType: (text: string | null) => void;
   onPick: (choice: SkillChoice) => void;
 }
 
-export function LaunchSkillPicker({ answer, value, typed, warning, onType, onPick }: Props) {
+export function LaunchSkillPicker({ answer, value, blank, typed, warning, failure, onType, onPick }: Props) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -61,7 +65,7 @@ export function LaunchSkillPicker({ answer, value, typed, warning, onType, onPic
   useLayoutEffect(() => {
     if (!shown || !input.current) return;
     const el = input.current;
-    const measure = () => setAt(place(el, rows.length));
+    const measure = () => setAt((cur) => same(cur, place(el, rows.length)));
     measure();
     const vv = window.visualViewport;
     vv?.addEventListener('resize', measure);
@@ -75,6 +79,11 @@ export function LaunchSkillPicker({ answer, value, typed, warning, onType, onPic
       document.removeEventListener('scroll', measure, true);
     };
   }, [shown, rows.length]);
+
+  // The sheet is bottom-anchored, so a line mounting or unmounting below the box moves it with no resize event: measure after every render while open.
+  useLayoutEffect(() => {
+    if (shown && input.current) setAt((cur) => same(cur, place(input.current!, rows.length)));
+  });
 
   useEffect(() => {
     if (!shown) return;
@@ -92,6 +101,7 @@ export function LaunchSkillPicker({ answer, value, typed, warning, onType, onPic
     if (e.key === 'Escape') {
       if (!open) return;
       e.stopPropagation();
+      if (typed !== null && !bareSkillName(typed)) onType(null);
       return setOpen(false);
     }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -108,7 +118,7 @@ export function LaunchSkillPicker({ answer, value, typed, warning, onType, onPic
 
   return (
     <div class="field skill-field">
-      <label for={`${id}-box`}>
+      <label class="skill-label" for={`${id}-box`}>
         <span>Skill</span>
       </label>
       <input
@@ -125,7 +135,8 @@ export function LaunchSkillPicker({ answer, value, typed, warning, onType, onPic
         autocomplete="off"
         autocapitalize="off"
         spellcheck={false}
-        value={typed ?? choiceLabel(value, answer?.mark ?? '')}
+        value={typed ?? (blank ? '' : choiceLabel(value, answer?.mark ?? ''))}
+        placeholder={blank ? 'Loading skills' : undefined}
         onFocus={(e) => {
           (e.currentTarget as HTMLInputElement).select();
           (e.currentTarget as HTMLInputElement).scrollIntoView?.({ block: 'nearest' });
@@ -147,6 +158,7 @@ export function LaunchSkillPicker({ answer, value, typed, warning, onType, onPic
           {warning}
         </p>
       ) : null}
+      {failure ? <p class="note warn">{failure}</p> : null}
       {shown ? (
         <ul
           class="skill-options skill-drop"
