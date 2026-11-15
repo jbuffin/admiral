@@ -1036,3 +1036,56 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
   .orders-split.has-pane .orders-head { padding: 16px 14px 12px; }
 }
 @media (max-width: 900px) { .odetail-pane { width: 300px; } }
+
+/* Button: the one definition; it follows the older .btn rules above so unmigrated screens keep working. */
+:root { --press-shade: #000; }
+@media (prefers-color-scheme: dark) { :root { --press-shade: #fff; } }
+.btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: var(--shape-button-height); padding: 0 14px; margin: 0;
+  border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md);
+  background: var(--color-panel); color: var(--color-text);
+  font: 500 var(--font-size-body)/1 var(--font-body); white-space: nowrap; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none;
+  transition: background-color .12s, border-color .12s, transform .08s, box-shadow .12s;
+}
+@media (pointer: coarse) { .btn { min-height: var(--shape-min-touch-target); } }
+.btn:focus { outline: none; }
+.btn:focus-visible { box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-accent); }
+@media (hover: hover) { .btn:hover:not(:disabled):not([aria-busy="true"]) { background: color-mix(in srgb, var(--color-panel), var(--color-text) 5%); } }
+.btn:active:not(:disabled):not([aria-busy="true"]) { transform: scale(.97); background: color-mix(in srgb, var(--color-panel), var(--color-text) 10%); }
+
+.btn.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); font-weight: 600; }
+@media (hover: hover) { .btn.primary:hover:not(:disabled):not([aria-busy="true"]) { background: color-mix(in srgb, var(--color-accent), var(--press-shade) 8%); } }
+.btn.primary:active:not(:disabled):not([aria-busy="true"]) { background: color-mix(in srgb, var(--color-accent), var(--press-shade) 18%); }
+
+.btn.danger { border-color: var(--color-needs); color: var(--color-needs); }
+@media (hover: hover) { .btn.danger:hover:not(:disabled):not([aria-busy="true"]) { background: var(--color-needs-bg); } }
+.btn.danger:active:not(:disabled):not([aria-busy="true"]) { background: color-mix(in srgb, var(--color-needs), transparent 80%); }
+
+.btn.quiet { background: transparent; border-color: transparent; color: var(--color-text2); }
+@media (hover: hover) { .btn.quiet:hover:not(:disabled):not([aria-busy="true"]) { background: var(--color-hover); } }
+.btn.quiet:active:not(:disabled):not([aria-busy="true"]) { background: var(--color-sel); }
+
+.btn.icon { width: var(--shape-button-height); padding: 0; }
+@media (pointer: coarse) { .btn.icon { width: var(--shape-min-touch-target); } }
+.btn.icon svg { width: 16px; height: 16px; }
+
+.btn.link { min-height: 0; padding: 2px 0; border: 0; background: transparent; color: var(--color-accent); font-weight: 600; border-radius: 3px; }
+.btn.link:hover { background: transparent; text-decoration: underline; }
+.btn.link:active:not(:disabled):not([aria-busy="true"]) { background: transparent; transform: none; opacity: .7; }
+
+.btn[aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-sel); color: var(--color-text); font-weight: 600; }
+
+.btn:disabled { opacity: .5; cursor: default; transform: none; }
+
+/* Busy: the label stays in the layout so the width holds; the spinner sits over it. */
+.btn .label { display: inline-flex; align-items: center; gap: 6px; }
+.btn .spinner { position: absolute; inset: 0; margin: auto; width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; opacity: 0; animation: spin .7s linear infinite; pointer-events: none; }
+.btn.link .spinner { width: 13px; height: 13px; }
+.btn[aria-busy="true"] { cursor: progress; }
+.btn[aria-busy="true"] .label { visibility: hidden; }
+.btn[aria-busy="true"] .spinner { opacity: 1; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:active { transform: none; } .btn .spinner { animation-duration: 1.6s; } }
+.btn.round { border-radius: 50%; }
