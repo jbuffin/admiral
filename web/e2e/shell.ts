@@ -2144,7 +2144,8 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   // Changing the dock re-reads the skills: a skill only Claude Code has is gone, so the pick falls back to Just launch, and the Codex one is offered.
   await picker.pick('fable-claude');
   await form.getByRole('radio', { name: /codex/i }).check();
-  await expect(picker.box).toHaveValue(/Just launch/i);
+  // Codex reads the engineer's own ~/.agents/skills, which may hold a Commodore, so the default there is Commodore or Just launch.
+  await expect(picker.box).toHaveValue(/^(Commodore|Just launch)$/);
   await picker.type('fable-');
   await expect(picker.option('fable-codex')).toBeVisible();
   await expect(picker.option('fable-claude')).toHaveCount(0);
@@ -2166,7 +2167,9 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await form.getByRole('checkbox', { name: 'db' }).check();
   if (opts.phone) expect(await fits()).toBe(true);
   // A name no dock has is refused in the form: the crew picker's warning shows, Launch is off, and Enter sends nothing.
-  await picker.type('not-a-skill');
+  // Nothing matches, so no list opens: the warning is what shows.
+  await picker.box.fill('not-a-skill');
+  await expect(picker.list).toBeHidden();
   await expect(form).toContainText('not installed on claude');
   await expect(submit).toBeDisabled();
   const before = shipPosts;
@@ -2174,7 +2177,11 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await expect(form).toBeVisible();
   await form.getByRole('radio', { name: /codex/i }).check();
   await expect(form).toContainText('not installed on codex');
-  await form.getByRole('radio', { name: /claude/i }).check();
+  // The sheet is anchored to the bottom, so it moves as the dock's answers land: tap again until the tap hits the radio.
+  await expect(async () => {
+    await form.getByRole('radio', { name: /claude/i }).click({ timeout: 2000 });
+    await expect(form.getByRole('radio', { name: /claude/i })).toBeChecked({ timeout: 1000 });
+  }).toPass();
   expect(shipPosts, 'a refused name sends no launch').toBe(before);
   // Picking a listed skill lifts the refusal.
   await picker.pick('review');

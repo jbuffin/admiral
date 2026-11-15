@@ -22,10 +22,13 @@ const SKILL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 // Words that say nothing about what a skill is for: pick-me-when lines all begin "Pick for…".
 const IGNORED_WORDS = new Set(['pick', 'for', 'when']);
 
-const namesOf = (s: SkillEntry) => s.aliases ?? [s.name];
+// The part of an entry the installed check reads, so a launch answer (which has no harnesses) can use it too.
+type Named = Pick<SkillEntry, 'name' | 'aliases'>;
+
+const namesOf = (s: Named) => s.aliases ?? [s.name];
 
 /** The listed skill a saved name stands for. */
-export const entryOf = (listed: SkillEntry[], name: string) => listed.find((s) => s.name === name || namesOf(s).includes(name));
+export const entryOf = <T extends Named>(listed: T[], name: string) => listed.find((s) => s.name === name || namesOf(s).includes(name));
 
 /** Whether the list's skill is already among the chosen names, under any of its names. */
 export const isChosen = (chosen: string[], s: SkillEntry) => namesOf(s).some((n) => chosen.includes(n));
@@ -83,7 +86,7 @@ export function typeSkill(chosen: string[], typed: string, listed: SkillEntry[] 
 }
 
 /** What a pill says when the list it is checked against lacks the skill. */
-export function skillWarning(name: string, listed: SkillEntry[], harness: string): string | null {
+export function skillWarning(name: string, listed: Named[], harness: string): string | null {
   if (entryOf(listed, name)) return null;
   return harness ? `not installed on ${harness}` : 'not found';
 }
