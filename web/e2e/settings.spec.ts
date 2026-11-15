@@ -350,6 +350,10 @@ test('the priority labels and the check interval save at once', async ({ page, a
   await page.goto(githubPage(admiral, 'zulu'));
   const prefs = page.getByRole('region', { name: 'Priority and refresh', exact: true });
 
+  // The counts landing moves this section, and a click aimed before that can miss its button.
+  await expect(viewRow(page, 'My PRs')).toContainText('3 open');
+  await expect(viewRows(page).getByText('—', { exact: true })).toHaveCount(0);
+
   // The first change writes the whole list, defaults included.
   await prefs.getByRole('button', { name: 'Add label', exact: true }).click();
   await prefs.getByRole('textbox', { name: 'Label', exact: true }).fill('sev1');
