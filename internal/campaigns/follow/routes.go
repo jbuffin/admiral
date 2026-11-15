@@ -20,6 +20,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/campaigns", s.serveList)
 	mux.HandleFunc("POST /api/campaigns", s.serveFollow)
 	mux.HandleFunc("GET /api/campaigns/{id}", s.serveGet)
+	mux.HandleFunc("POST /api/campaigns/create", s.serveCreate)
 	mux.HandleFunc("POST /api/campaigns/{id}/unfollow", s.serveUnfollow)
 	mux.HandleFunc("PUT /api/campaigns/{id}/override", s.serveOverride)
 	mux.HandleFunc("PUT /api/campaigns/{id}/work-repo", s.serveWorkRepo)
@@ -456,4 +457,8 @@ func (s *Service) launchSlice(ctx context.Context, f Followed, issues []string, 
 		return nil, lerr
 	}
 	return got, nil
+}
+
+func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "not implemented")
 }

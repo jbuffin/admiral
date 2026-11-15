@@ -68,6 +68,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/fleets/{key}/standing-orders/copy", s.serveOrdersCopy)
 	mux.HandleFunc("POST /api/fleets/{key}/standing-orders/draft", s.serveOrdersDraft)
 	mux.HandleFunc("POST /api/fleets/{key}/routines/draft", s.serveRoutineDraft)
+	mux.HandleFunc("POST /api/fleets/{key}/campaigns/draft", s.serveCampaignDraft)
 	mux.HandleFunc("POST /api/fleets/{key}/worker-ships/stop", s.serveStopWorkerShips)
 	mux.HandleFunc("POST /api/worker-ships/stop", s.serveStopWorkerShips)
 	mux.HandleFunc("GET /api/hold-fire", s.serveGlobalHold)

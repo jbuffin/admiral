@@ -367,3 +367,7 @@ func (s *Service) serveRoutineDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"draft": d, "problems": problems})
 }
+
+func (s *Service) serveCampaignDraft(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "not implemented")
+}
