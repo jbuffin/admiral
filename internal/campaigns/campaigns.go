@@ -42,10 +42,9 @@ type Skill struct {
 	Args string // the text after the skill name
 }
 
-// Override replaces a child's default mode, skill or both; a zero field keeps the default.
+// Override replaces a child's default mode; a zero Mode keeps the default.
 type Override struct {
-	Mode  Mode
-	Skill *Skill
+	Mode Mode
 }
 
 // Input is a read tree with what Admiral knows about it.
@@ -144,10 +143,7 @@ func (b *builder) fold(n *github.TreeNode, above []github.Blocker, parent *githu
 		if o.Mode != "" {
 			out.Mode = o.Mode
 		}
-		if o.Skill != nil {
-			out.Skill = *o.Skill
-		}
-		out.Overridden = o.Mode != "" || o.Skill != nil
+		out.Overridden = o.Mode != ""
 	}
 	if out.Status == Ready {
 		b.c.Ready = append(b.c.Ready, out)

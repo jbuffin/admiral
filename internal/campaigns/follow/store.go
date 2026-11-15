@@ -199,7 +199,7 @@ func (s *Store) End(id string, at time.Time) error {
 // SetOverride stores o for the child; a zero override removes it.
 func (s *Store) SetOverride(id, childURL string, o campaigns.Override) error {
 	return s.update(id, func(f *Followed) {
-		if o.Mode == "" && o.Skill == nil {
+		if o.Mode == "" {
 			delete(f.Overrides, childURL)
 			return
 		}
