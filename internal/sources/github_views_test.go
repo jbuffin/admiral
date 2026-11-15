@@ -140,11 +140,19 @@ func TestSettingsReturnTheViewsListUnmaskedAndASaveRoundTripsIt(t *testing.T) {
 	}
 	var want []any
 	_ = json.Unmarshal([]byte(mixedViews), &want)
+	want[1].(map[string]any)["id"] = "bugs"
+	want[5].(map[string]any)["id"] = "docs"
 	if !reflect.DeepEqual(got.Settings.Views, want) {
-		t.Fatalf("views = %v, want %v", got.Settings.Views, want)
+		t.Fatalf("views = %v, want %v: the custom views carry the id the server gives them", got.Settings.Views, want)
 	}
+	// The page sends back the entries without a custom view's id.
 	var back map[string]any
 	_ = json.Unmarshal([]byte(body), &back)
+	for _, v := range back["settings"].(map[string]any)["views"].([]any) {
+		if e := v.(map[string]any); e["query"] != nil {
+			delete(e, "id")
+		}
+	}
 	if code, b := f.do(http.MethodPut, "/gh", map[string]any{"settings": back["settings"]}); code != http.StatusOK {
 		t.Fatalf("PUT = %d %s", code, b)
 	}
@@ -207,5 +215,13 @@ func TestHidingRenamingAndReorderingViewsSurvivesARestart(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &got); code != http.StatusOK || err != nil {
 		t.Fatalf("GET settings after the restart = %d %s", code, body)
 	}
-	sameJSON(t, "views after the restart", string(got.Settings.Views), mixedViews)
+	var after []map[string]any
+	_ = json.Unmarshal(got.Settings.Views, &after)
+	for _, e := range after {
+		if e["query"] != nil {
+			delete(e, "id")
+		}
+	}
+	b, _ := json.Marshal(after)
+	sameJSON(t, "views after the restart", string(b), mixedViews)
 }
