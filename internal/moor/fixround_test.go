@@ -461,3 +461,32 @@ func TestAFixRoundIsAStackWhenItCoversMoreThanOnePR(t *testing.T) {
 		t.Fatalf("two PRs, one with a problem: ok=%v stack=%v, want a stack: the round covers both", ok, two.Stack)
 	}
 }
+
+func TestAStackThatConflictsWithItsBaseIsAFixRoundOnItsTopPR(t *testing.T) {
+	top := wOpen()
+	top.ConflictsWithBase = "main"
+
+	got, ok := DecideFixRound(fixInput(wOpen(), wOpen(), top))
+
+	if !ok || got.PR != wpr3 || !got.Stack {
+		t.Fatalf("fix round = %+v, %v, want a stack round on the top PR %s", got, ok, wpr3)
+	}
+	if want := []PRProblems{{PR: wpr3, ConflictsWithBase: "main"}}; !reflect.DeepEqual(got.Problems, want) {
+		t.Errorf("problems = %+v, want %+v", got.Problems, want)
+	}
+	if !strings.Contains(got.Feedback, "Feedback on "+wpr3+"\n") || !strings.Contains(got.Feedback, "main") || !strings.Contains(got.Feedback, "rebase") {
+		t.Errorf("feedback does not tell the ship the stack conflicts with main and to rebase it:\n%s", got.Feedback)
+	}
+}
+
+func TestAPRAnsweredAsConflictingWithItsStacksBaseServesTheProblemUnderTheNameTheAPIDocuments(t *testing.T) {
+	top := wOpen()
+	top.ConflictsWithBase = "main"
+
+	p, any := ProblemsOf(wpr3, top)
+
+	b, err := json.Marshal(p)
+	if !any || err != nil || string(b) != `{"pr":"`+wpr3+`","conflicts_with_base":"main"}` {
+		t.Errorf("ProblemsOf = %s, %v, %v, want the base conflict alone as conflicts_with_base", b, any, err)
+	}
+}

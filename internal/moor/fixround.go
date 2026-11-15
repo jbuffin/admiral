@@ -9,10 +9,11 @@ import (
 
 // PRProblems is what keeps one open PR from merging that its ship can fix.
 type PRProblems struct {
-	PR            string   `json:"pr"`
-	Conflicts     bool     `json:"conflicts,omitempty"`
-	Behind        bool     `json:"behind,omitempty"`
-	FailingChecks []string `json:"failing_checks,omitempty"`
+	PR                string   `json:"pr"`
+	Conflicts         bool     `json:"conflicts,omitempty"`
+	Behind            bool     `json:"behind,omitempty"`
+	FailingChecks     []string `json:"failing_checks,omitempty"`
+	ConflictsWithBase string   `json:"conflicts_with_base,omitempty"`
 }
 
 // ProblemsOf reports the merge problems of an open PR from its last answer: by state now, whether or not a wake event was seen.

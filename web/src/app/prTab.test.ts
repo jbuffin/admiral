@@ -505,6 +505,16 @@ describe('fixLine', () => {
     expect(fixLine({ ...offer({ pr: URL(8), failing_checks: ['test'] }), stack: true })).toBe('#8 has failing checks: test');
   });
 
+  it('words a stack that conflicts with its base on its top PR, naming the base', () => {
+    const stack = { ...offer({ pr: URL(9), conflicts_with_base: 'main' }), pr: URL(9), stack: true };
+    expect(fixLine(stack)).toBe('#9 conflicts with main');
+    expect(fixLine(offer({ pr: URL(9), conflicts_with_base: 'release/2' }))).toBe('This PR conflicts with release/2.');
+  });
+
+  it('joins a base conflict with the PR\'s other problems', () => {
+    expect(fixLine(offer({ pr: URL(9), behind: true, conflicts_with_base: 'main' }))).toBe('This PR is behind its base and conflicts with main.');
+  });
+
   it('is empty without an offer or without problems', () => {
     expect(fixLine(undefined)).toBe('');
     expect(fixLine(offer())).toBe('');

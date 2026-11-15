@@ -126,6 +126,8 @@ export interface PRProblems {
   conflicts?: boolean;
   behind?: boolean;
   failing_checks?: string[];
+  /** The branch the whole stack conflicts with, set on its top PR. */
+  conflicts_with_base?: string;
 }
 /** The Fix PR / Fix stack offer on a moored ship: the PR the round is on, the command it sends and every PR's problems. */
 export interface FixOffer {
