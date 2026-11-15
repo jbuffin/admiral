@@ -62,6 +62,10 @@ describe('launchBody', () => {
     expect(launchBody({ ...form, source: 'orders', orderId: 'o1' })).not.toHaveProperty('anyway');
     expect(launchBody({ ...form, source: 'orders', orderId: 'o1', anyway: true })).toMatchObject({ anyway: true });
   });
+  it('sends stack: true for a GitHub stack launch and no stack field otherwise', () => {
+    expect(launchBody({ ...form, source: 'orders', orderId: 'o1', stack: true })).toMatchObject({ source: 'orders', order_id: 'o1', stack: true });
+    expect(launchBody({ ...form, source: 'orders', orderId: 'o1' })).not.toHaveProperty('stack');
+  });
   it('sends clone: true and no dir when the clone is chosen', () => {
     const body = launchBody({ ...form, clone: true, cloneRepo: 'github.com/acme/widget' });
     expect(body.clone).toBe(true);

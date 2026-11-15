@@ -26,6 +26,8 @@ type urlOrder struct{ url string }
 func (o urlOrder) Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error) {
 	return "review it", "Review it", "", o.url, "p", nil
 }
+func (urlOrder) Stack(source, id string) (int, string, bool) { return 0, "", false }
+
 func (urlOrder) Launched(source, id string) {}
 
 // newReviewingRig is a live ship, saltpaw, launched on orderURL as a source's order; "" launches it from free text.

@@ -1019,6 +1019,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .odetail-facts { margin: 0; display: grid; grid-template-columns: 96px 1fr; gap: 8px 10px; font-size: 12.5px; }
 .odetail-facts dt { color: var(--color-muted); }
 .odetail-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.odetail-sub { margin: 0; font-size: 12.5px; font-weight: 400; color: var(--color-muted); }
 .odetail-excerpt { margin: 0; font-size: 13px; line-height: 1.55; color: var(--color-text2); overflow-wrap: anywhere; }
 .odetail-actions { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--color-line); }
 .odetail-launch { min-height: var(--shape-min-touch-target); justify-content: center; }

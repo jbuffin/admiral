@@ -106,6 +106,8 @@ type Ship struct {
 
 type Orders interface {
 	Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error)
+	// Stack is the GitHub stack the order sits in; ok is false when it sits in none.
+	Stack(source, id string) (number int, url string, ok bool)
 	Launched(source, id string)
 }
 
@@ -626,6 +628,15 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 // cannot drift. A source's order launches with the source's text, whatever the request holds.
 func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	var panel string
+	stack := req.Stack && req.Source != "" && req.Round == 0
+	layer, stackTitle := req.OrderID, ""
+	if stack { // the order becomes the GitHub stack's URL before the held-order check, so any layer's launch meets the same hold
+		number, url, ok := s.Orders.Stack(req.Source, layer)
+		if !ok {
+			return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "that order is in no GitHub stack"}
+		}
+		stackTitle, req.URL, req.OrderID = "Stack #"+strconv.Itoa(number), url, url
+	}
 	key := OrderKey{req.Source, req.OrderID}
 	if req.Source == "" && req.Round == 0 { // only a source's order sets a title and URL, so a client's never stand
 		req.Title, req.URL = "", ""
@@ -669,7 +680,13 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 			return Ship{}, s.orderRefused(req, key)
 		}
 		var lerr *launcher.Error
-		if req.Text, req.Title, _, req.URL, panel, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
+		if stack {
+			url := req.URL
+			if _, _, _, _, panel, lerr = s.Orders.Order(req.Source, layer); lerr != nil {
+				return Ship{}, lerr
+			}
+			req.Text, req.Title, req.URL = url, stackTitle, url
+		} else if req.Text, req.Title, _, req.URL, panel, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
 			return Ship{}, lerr
 		}
 		if req.Panel == "" {
@@ -737,7 +754,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	}
 	s.State.SetLastDir(req.Fleet, req.Harness, got.Options["dir"]) // the cleaned path the launch used
 	s.launched(req, got, req.Panel)
-	if req.Source != "" && req.Round == 0 {
+	if req.Source != "" && req.Round == 0 && !stack {
 		s.Orders.Launched(req.Source, req.OrderID)
 	}
 	// Not the request's context: a client that hangs up must not abandon the read.

@@ -1,4 +1,5 @@
 import type { Ship } from './api';
+import { orderLabel } from './moored';
 
 export const webUrl = (u?: string): u is string => !!u && /^https?:\/\//i.test(u);
 
@@ -12,7 +13,7 @@ export function ShipOrder({ ship }: { ship: Ship }) {
   const href = webUrl(ship.url) ? ship.url : webUrl(ship.link) ? ship.link : undefined;
   const n = href ? issueNumber(href) : undefined;
   // A campaign's order id is its id and the issue URL, which the link already carries.
-  const id = n ? `#${n}` : ship.source === 'campaign' ? '' : ship.order_id;
+  const id = n ? `#${n}` : ship.source === 'campaign' ? '' : orderLabel(ship.order_id ?? '');
   if (href) {
     return (
       <span class="ship-order">
@@ -26,7 +27,7 @@ export function ShipOrder({ ship }: { ship: Ship }) {
   if (!ship.order_id && !ship.title && !ship.titling) return null;
   return (
     <span class="ship-order">
-      {ship.order_id ? <span class="mono">{ship.order_id}</span> : null} {ship.title}
+      {ship.order_id ? <span class="mono">{orderLabel(ship.order_id)}</span> : null} {ship.title}
       <Titling on={ship.titling} />
     </span>
   );

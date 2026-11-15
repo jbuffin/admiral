@@ -170,6 +170,8 @@ func (o *recordingOrders) Order(source, id string) (text, title, repo, url, pane
 	o.last = source + " " + id
 	return "", "", "", "", "", nil
 }
+func (*recordingOrders) Stack(source, id string) (int, string, bool) { return 0, "", false }
+
 func (o *recordingOrders) Launched(source, id string) {}
 
 func TestOrderPrefersTheWorkRepoThenTheChildsOwn(t *testing.T) {

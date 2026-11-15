@@ -24,6 +24,8 @@ export interface LaunchFormState {
   orderId?: string;
   /** A second ship on an order that already has one. */
   anyway?: boolean;
+  /** Launch on the GitHub stack `orderId`'s layer sits in. */
+  stack?: boolean;
   crew?: string[];
   // The "Launch as" member and the harness it is locked to, if any.
   member?: string;
@@ -104,6 +106,7 @@ export function launchBody(form: LaunchFormState): Record<string, unknown> {
     ...(form.source && { source: form.source }),
     ...(form.orderId && { order_id: form.orderId }),
     ...(form.anyway && { anyway: true }),
+    ...(form.stack && { stack: true }),
     ...(form.skill.kind === 'commodore' && form.crew?.length && { crew: form.crew }),
     ...(member && { member }),
   };

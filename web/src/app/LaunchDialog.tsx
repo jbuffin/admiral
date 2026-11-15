@@ -27,6 +27,10 @@ export interface OrderRef {
   text: string;
   /** Launch another ship on an order that already has one. */
   anyway?: boolean;
+  /** Launch on the GitHub stack the order's layer sits in. */
+  stack?: boolean;
+  /** Lines the dialog shows under the title: who a GitHub stack launch reviews, and the layers that already have a ship. */
+  notes?: string[];
 }
 
 /** A campaign child launched by hand: the server picks its skill, text and autopilot. */
@@ -226,6 +230,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
       source: order?.source,
       orderId: order?.id,
       anyway: order?.anyway,
+      stack: order?.stack,
       crew,
       member: as ? member : undefined,
       memberHarness: as?.harness,
@@ -243,6 +248,11 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
       <form class="launch-inner" onSubmit={submit}>
         <h2 class="sheet-title">Launch</h2>
         {order ? <p class="launch-order">{order.title}</p> : null}
+        {order?.notes?.map((n) => (
+          <p class="launch-note" key={n}>
+            {n}
+          </p>
+        ))}
         <div class="launch-body">
           <DockPicker docks={fleet.docks} harness={harness} onChange={setHarness} />
 

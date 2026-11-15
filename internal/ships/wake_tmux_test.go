@@ -127,6 +127,8 @@ type stubOrder struct{}
 func (stubOrder) Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error) {
 	return "ORDER-TEXT-MARKER", "title", "", "", "p", nil
 }
+func (stubOrder) Stack(source, id string) (int, string, bool) { return 0, "", false }
+
 func (stubOrder) Launched(source, id string) {}
 
 func (r *wakeRig) moored(t *testing.T, round int) {

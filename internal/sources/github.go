@@ -102,6 +102,7 @@ type githubConn struct {
 	client   *github.Client
 	views    map[string]ghView
 	authMsg  string // the auth.required message in force
+	viewer   string // the signed-in account the last search ran as
 	stopped  bool
 	// kinds is, per event search, when it last answered and the latest event time already delivered or baselined per item.
 	kinds map[string]*kindPoll
@@ -378,6 +379,11 @@ func (g *githubConn) refresh() {
 		}
 		changed = g.store(v.ID, orders, "") || changed
 	}
+	if viewer != "" {
+		g.mu.Lock()
+		g.viewer = viewer
+		g.mu.Unlock()
+	}
 	g.pollEvents(client, token, router, viewer)
 }
 
@@ -512,4 +518,11 @@ func (s *Supervisor) GitHubClient(fleet, host string) (*github.Client, bool) {
 		}
 	}
 	return nil, false
+}
+
+// Viewer is the login the built-in GitHub source's searches ran as; empty before its first answer.
+func (g *githubConn) Viewer() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.viewer
 }

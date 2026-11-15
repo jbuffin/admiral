@@ -81,6 +81,12 @@ function prStep(prs: MooredPR[]): string {
 /** A GitHub stack URL, `https://<host>/<owner>/<repo>/stack/<N>`. */
 export const isStackUrl = (url: string | undefined): boolean => /\/stack\/\d+\/?$/.test(url ?? '');
 
+/** An order id as a ship's row shows it: a GitHub stack URL reads `stack #N`, anything else as it is. */
+export const orderLabel = (id: string): string => {
+  const n = isStackUrl(id) ? /\/stack\/(\d+)\/?$/.exec(id)?.[1] : undefined;
+  return n ? `stack #${n}` : id;
+};
+
 /** Whether the ship carries a PR it reviews rather than one it opened. */
 export const reviews = (ship: Pick<Ship, 'prs'>): boolean => (ship.prs ?? []).some((p) => p.reviewing);
 
@@ -147,7 +153,7 @@ function reReviewUrl(ship: Ship, order: Order): string | null {
   return isStackUrl(ship.url) ? ship.url! : null;
 }
 
-export type RowAgain = { kind: 'rereview'; url: string } | { kind: 'fix'; pr: string } | { kind: 'wake'; pr: string } | null;
+export type RowAgain = { kind: 'rereview'; url: string } | { kind: 'fix'; pr: string } | { kind: 'wake'; pr: string } | { kind: 'wake'; stack: string } | null;
 
 function againOf(ship: Ship, order: Order): RowAgain {
   if (ship.status !== 'moored') return null;
@@ -156,6 +162,20 @@ function againOf(ship: Ship, order: Order): RowAgain {
   if (ship.fix) return { kind: 'fix', pr: ship.fix.pr };
   const pr = wakePR(ship, order);
   return pr ? { kind: 'wake', pr: pr.url } : null;
+}
+
+const openLayer = (o: Order): boolean => !!o.pr && (o.pr.state ?? 'OPEN') === 'OPEN';
+
+/** What a moored ship on a whole GitHub stack asks of its row: Re-review stack when a reviewed layer needs you again, Wake when every open layer is yours and one has feedback. */
+function stackAgainOf(ship: Ship, layers: Order[], viewer: string | undefined): RowAgain {
+  if (ship.status !== 'moored') return null;
+  if (reviews(ship)) {
+    const asked = reReviewPlace(ship) !== null || layers.some(requestedAgain);
+    return asked && isStackUrl(ship.url) ? { kind: 'rereview', url: ship.url! } : null;
+  }
+  const mine = !!viewer && layers.every((l) => l.author === viewer);
+  const stack = layers.find((l) => l.stack)?.stack?.url;
+  return mine && stack && ownOpenPRs(ship).some((p) => feedbackBarText(p) !== '') ? { kind: 'wake', stack } : null;
 }
 
 /** The live or moored ships on an order, the one its row shows first: a moored ship whose PR needs you again, then needs_you, underway, moored; newest launch first within each. */
@@ -192,3 +212,20 @@ export const needsYouAgain = (ships: Ship[], order: Order): boolean => {
   const a = orderRowAction(ships, order);
   return a.kind === 'ship' && a.again !== null;
 };
+
+/** A GitHub stack row's action: the pill of the one ship that holds every open layer, else the launch arrow. A layer's own action goes null where the ship's again moved to the stack row. */
+export function stackRowActions(ships: Ship[], layers: Order[], viewer: string | undefined): { row: RowAction; children: RowAction[] } {
+  const open = layers.filter(openLayer);
+  const holders = open.length === 0 ? [] : ships.filter((s) => ON_ORDER.includes(s.status) && open.every((l) => shipsOnOrder([s], l).length > 0));
+  const again = new Map(holders.map((s) => [s, stackAgainOf(s, open, viewer)]));
+  const rank = (s: Ship) => (again.get(s) ? 0 : ({ needs_you: 1, underway: 2, moored: 3 })[s.status as 'moored']);
+  const at = (s: Ship) => Date.parse(s.launched) || 0;
+  const ship = holders.sort((a, b) => rank(a) - rank(b) || at(b) - at(a))[0];
+  const children = layers.map((l) => orderRowAction(ships, l));
+  if (!ship) return { row: { kind: 'launch' }, children };
+  const stackAgain = again.get(ship) ?? null;
+  return {
+    row: { kind: 'ship', ship, word: GROUP_TITLES[ship.status as keyof typeof GROUP_TITLES], needsYou: ship.status === 'needs_you', again: stackAgain },
+    children: children.map((c) => (stackAgain && c.kind === 'ship' && c.ship === ship ? { ...c, again: null } : c)),
+  };
+}
