@@ -7,20 +7,6 @@ import (
 	"testing"
 )
 
-func TestStartedSessionIgnoresAnOrdersText(t *testing.T) {
-	other := "11111111-2222-4333-8444-555555555555"
-	for name, c := range map[string]struct{ cmd, want string }{
-		"flag":              {"'/bin/copilot' '--session-id' '" + sid + "' '--' 'go'", sid},
-		"in an order":       {"'/bin/copilot' '--interactive=fix --session-id " + other + "' '--session-id' '" + sid + "'", sid},
-		"only in an order":  {"'/bin/copilot' '--interactive=fix --session-id " + other + "'", ""},
-		"after the order's": {"copilot -i 'a' --session-id " + sid, sid},
-	} {
-		if got := startedSession("claude", c.cmd); got != c.want {
-			t.Errorf("%s: startedSession = %q, want %q", name, got, c.want)
-		}
-	}
-}
-
 func TestDescendsFrom(t *testing.T) {
 	parents := map[int]int{30: 20, 20: 10, 10: 2, 99: 98, 98: 2}
 	parent := func(p int) (int, bool) { n, ok := parents[p]; return n, ok }

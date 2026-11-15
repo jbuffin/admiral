@@ -257,7 +257,7 @@ func (s *Service) locateShip(sh ships.Ship, crew string) (w where, ok, none bool
 	}
 	id, valid := transcriptfs.SessionIDFor(sh.Harness, parts[2])
 	// The option is writable from the pane and the start command is not, so the id the launch gave the harness decides.
-	if started := startedSession(sh.Harness, startCmd); !valid || started == "" || started != id {
+	if started, found := transcriptfs.StartedSession(sh.Harness, startCmd); !valid || !found || started != id {
 		return w, true, true
 	}
 	if sh.Harness == "copilot" {

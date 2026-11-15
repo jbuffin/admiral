@@ -43,3 +43,33 @@ func TestBindForResumedClaudeShip(t *testing.T) {
 		t.Error("BindFor(copilot) bound a --resume launch, want it refused")
 	}
 }
+
+func TestStartedSessionIgnoresAnOrdersText(t *testing.T) {
+	other := "11111111-2222-4333-8444-555555555555"
+	for name, c := range map[string]struct{ harness, cmd, want string }{
+		"flag":              {"copilot", "'/bin/copilot' '--session-id' '" + bindID + "' '--' 'go'", bindID},
+		"in an order":       {"copilot", "'/bin/copilot' '--interactive=fix --session-id " + other + "' '--session-id' '" + bindID + "'", bindID},
+		"only in an order":  {"copilot", "'/bin/copilot' '--interactive=fix --session-id " + other + "'", ""},
+		"after the order's": {"copilot", "copilot -i 'a' --session-id " + bindID, bindID},
+		"resumed":           {"claude", "'/bin/claude' '--resume' '" + bindID + "' '--' 'fix --session-id " + other + "'", bindID},
+		"a prompt's flag":   {"claude", "'/bin/claude' '--session-id' '" + bindID + "' '--' 'fix --session-id " + other + "'", bindID},
+	} {
+		if got, _ := StartedSession(c.harness, c.cmd); got != c.want {
+			t.Errorf("%s: StartedSession = %q, want %q", name, got, c.want)
+		}
+	}
+}
+
+func TestBindIgnoresASessionFlagInThePrompt(t *testing.T) {
+	const other = "11111111-2222-4333-8444-555555555555"
+	otherPath := "/cfg/projects/zz/" + other + ".jsonl"
+	for _, flag := range []string{"--resume", "--session-id"} {
+		cmd := "'/bin/claude' '" + flag + "' '" + bindID + "' '--' 'file it; --session-id " + other + "'"
+		if _, _, ok := BindFor("claude", "1 launch "+otherPath, cmd); ok {
+			t.Errorf("%s: bound the session id written in the prompt", flag)
+		}
+		if path, id, ok := BindFor("claude", "1 launch "+bindPath, cmd); !ok || path != bindPath || id != bindID {
+			t.Errorf("%s: BindFor = %q, %q, %v; want %q, %q, true", flag, path, id, ok, bindPath, bindID)
+		}
+	}
+}

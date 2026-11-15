@@ -81,7 +81,17 @@ func checkResume(req Request, dock config.Harness) *Error {
 			}
 		}
 	}
+	if req.Restricted != "" || req.eventShip() || req.StartFrom != nil {
+		return refuse(http.StatusBadRequest, "a restricted, event or promoted launch works in its own checkout, so it cannot resume a conversation")
+	}
+	if !sessionhost.ValidTranscriptPath(claudeTranscript(req, dock, req.ResumeConversation)) {
+		return refuse(http.StatusBadRequest, "the conversation to resume has no usable transcript path under the dock's Claude config")
+	}
 	return nil
+}
+
+func claudeTranscript(req Request, dock config.Harness, id string) string {
+	return filepath.Join(config.IdentityDir("claude", dock.Env), "projects", ProjectSlug(req.Dir), id+".jsonl")
 }
 
 // conversationAnchor names a new Claude Code or Copilot session so the transcript is known before the first hook.
@@ -98,7 +108,7 @@ func conversationAnchor(req Request, dock config.Harness, now time.Time) (flags 
 		}
 		flag = "--session-id"
 	}
-	path := filepath.Join(config.IdentityDir("claude", dock.Env), "projects", ProjectSlug(req.Dir), id+".jsonl")
+	path := claudeTranscript(req, dock, id)
 	if req.Harness == "copilot" {
 		path = filepath.Join(config.IdentityDir("copilot", dock.Env), "session-state", id, "events.jsonl")
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/standing"
 )
 
 func TestLaunchRefusals(t *testing.T) {
@@ -56,18 +57,26 @@ func TestLaunchRefusesAConversationToResumeItCannotKeep(t *testing.T) {
 		{Key: "continued", Name: "Continued", SearchRoots: []string{work}, Harnesses: []config.Harness{
 			{Name: "claude", Executable: "/bin/sh", Found: true, Args: []string{"--continue"}},
 		}},
+		{Key: "relative", Name: "Relative", SearchRoots: []string{work}, Harnesses: []config.Harness{
+			{Name: "claude", Executable: "/bin/sh", Found: true, Env: map[string]string{"CLAUDE_CONFIG_DIR": "relative/claude"}},
+		}},
 		{Key: "forked", Name: "Forked", SearchRoots: []string{work}, Harnesses: []config.Harness{
 			{Name: "claude", Executable: "/bin/sh", Found: true, Args: []string{"--fork-session"}},
 		}},
 	}}
 	l := &Launcher{Config: func() *config.Config { return cfg }, Home: t.TempDir(), Tmux: "tmux"}
-	for _, c := range []struct{ name, fleet, harness, resume, msg string }{
-		{"a Copilot launch", "work", "copilot", id, "claude"},
-		{"an id that is not a version 4 uuid", "work", "claude", "not-a-uuid", "conversation"},
-		{"a dock that chooses a session", "continued", "claude", id, "session"},
-		{"a dock that forks the session", "forked", "claude", id, "fork"},
+	for _, c := range []struct {
+		name, fleet, harness, resume, msg string
+		restricted                        standing.Restricted
+	}{
+		{"a Copilot launch", "work", "copilot", id, "claude", ""},
+		{"an id that is not a version 4 uuid", "work", "claude", "not-a-uuid", "conversation", ""},
+		{"a dock that chooses a session", "continued", "claude", id, "session", ""},
+		{"a dock that forks the session", "forked", "claude", id, "fork", ""},
+		{"a Claude config dir that is not absolute", "relative", "claude", id, "transcript", ""},
+		{"a restricted launch", "work", "claude", id, "checkout", standing.Investigate},
 	} {
-		_, err := l.Launch(Request{Fleet: c.fleet, Harness: c.harness, Dir: work, Skill: Skill{Kind: "none"}, ResumeConversation: c.resume})
+		_, err := l.Launch(Request{Fleet: c.fleet, Harness: c.harness, Dir: work, Skill: Skill{Kind: "none"}, ResumeConversation: c.resume, Restricted: c.restricted})
 		if le, ok := err.(*Error); !ok || le.Status != http.StatusBadRequest || !strings.Contains(le.Msg, c.msg) {
 			t.Errorf("%s: Launch = %v, want 400 naming %q", c.name, err, c.msg)
 		}
