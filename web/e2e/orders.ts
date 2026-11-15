@@ -17,13 +17,16 @@ interface Item {
   pr?: { review: string; checks: string; mergeable: string; reviewed?: boolean };
   requested?: boolean;
   body?: string;
+  parent?: { number: number; title: string; repo?: string };
 }
 
 // What the fake gh answers for each default view. The docs sweep and the rate limiter are in two views: For you shows each once.
 const SIGNING_BODY = 'Rotate every key older than ninety days and revoke the old ones.';
+// The parent of the two assigned issues: in no view, so its row is built from their `parent`.
+const EPIC = { number: 30, title: 'Roll out key rotation' };
 const ASSIGNED: Item[] = [
-  { number: 31, title: 'Rotate the signing keys', author: 'bob', labels: ['priority: high', 'security'], body: SIGNING_BODY },
-  { number: 32, title: 'Document the API', author: 'bob', labels: ['docs'] },
+  { number: 31, title: 'Rotate the signing keys', author: 'bob', labels: ['priority: high', 'security'], body: SIGNING_BODY, parent: EPIC },
+  { number: 32, title: 'Document the API', author: 'bob', labels: ['docs'], parent: EPIC },
   { number: 33, title: 'Port the table', repo: 'acme/web', author: 'bob', labels: ['ux'] },
   { number: 21, title: 'Raise the rate limiter', author: 'fake-viewer', pr: { review: 'CHANGES_REQUESTED', checks: 'SUCCESS', mergeable: 'MERGEABLE' } },
 ];
@@ -64,6 +67,10 @@ function node(i: Item) {
       headRefOid: oid,
       viewerLatestReview: i.pr.reviewed ? { state: 'APPROVED', commit: { oid } } : null,
     });
+  }
+  if (i.parent) {
+    const repo = i.parent.repo ?? 'acme/api';
+    n.parent = { number: i.parent.number, title: i.parent.title, url: `https://github.com/${repo}/issues/${i.parent.number}`, repository: { nameWithOwner: repo, url: `https://github.com/${repo}` } };
   }
   if (i.requested) {
     n.timelineItems = { nodes: [{ __typename: 'ReviewRequestedEvent', createdAt: ago(2 * H), requestedReviewer: { login: 'fake-viewer' } }] };
@@ -167,12 +174,14 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
     // The phone row is the title and `repo #number · state word`: no reason line, no labels.
     await expect(review).toContainText('acme/api #11 · Review requested');
     await expect(review).not.toContainText('review requested 2h ago');
+    await expect(hot).toContainText('acme/api #31 · in #30 · High');
     await expect(hot).not.toContainText('priority: high');
   } else {
     await expect(review).toContainText('review requested 2h ago · @alice');
     await expect(mine).toContainText('your PR · checks failing');
     await expect(rowOf(page, 'Raise the rate limiter')).toContainText('your PR · changes requested');
     await expect(hot).toContainText('assigned');
+    await expect(hot).toContainText('in #30');
     await expect(hot).toContainText('priority: high');
   }
   // Every row has the 44px arrow, named for its title, PRs included.
@@ -250,14 +259,54 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await press(form.getByRole('button', { name: 'Cancel', exact: true }));
   await expect(form).toBeHidden();
 
-  // A view tab: its own distinct count and rows, kept by a reload.
+  // A view tab: its own distinct count and rows, kept by a reload. The two sub-issues sit in a collapsed parent group whose parent is in no view.
   await press(tabNamed(page, /^Assigned to me/));
   await expect(tabNamed(page, /^Assigned to me/)).toHaveAttribute('aria-selected', 'true');
-  await expect(main.getByRole('listitem')).toHaveCount(4);
-  if (!phone) await expect(rowOf(page, 'Rotate the signing keys')).toContainText('opened 3d ago · @bob');
+  await expect(main.getByRole('listitem')).toHaveCount(3);
+  await expect(tabNamed(page, /^Assigned to me/)).toHaveText(/^Assigned to me\s*4$/);
+  const epic = main.getByRole('listitem').filter({ hasText: EPIC.title });
+  const epicToggle = (state: 'Expand' | 'Collapse') => page.getByRole('button', { name: `${state} ${EPIC.title}`, exact: true });
+  const child = main.getByText('Rotate the signing keys', { exact: true });
+  await expect(epic).toHaveCount(1);
+  await expect(epic).toContainText('not in this view');
+  await expect(epic).toContainText(/2 sub-issues here/);
+  await expect(epic).toContainText('High');
+  await expect(epicToggle('Expand')).toHaveAttribute('aria-expanded', 'false');
+  await expect(child).toBeHidden();
+  await expect(page.getByRole('button', { name: `Launch ${EPIC.title}`, exact: true })).toHaveCount(0);
+  await expectTouchTarget(epicToggle('Expand'), 44);
+
+  // Pressing the toggle shows the children, indented, and opens nothing.
+  await press(epicToggle('Expand'));
+  await expect(epicToggle('Collapse')).toHaveAttribute('aria-expanded', 'true');
+  await expect(pane).toBeHidden();
+  await expect(child).toBeVisible();
+  await expect(main.getByText('Document the API', { exact: true })).toBeVisible();
+  const parentX = (await main.getByText(EPIC.title, { exact: true }).boundingBox())!.x;
+  expect((await child.boundingBox())!.x).toBeGreaterThan(parentX + 8);
+  const childRow = main.getByRole('listitem').filter({ hasText: 'Rotate the signing keys' }).last();
+  await expect(childRow).toContainText(phone ? 'acme/api #31 · in #30' : 'in #30 · opened 3d ago · @bob');
+  await expect(tabNamed(page, /^Assigned to me/)).toHaveText(/^Assigned to me\s*4$/);
+
+  // A reload keeps it expanded; pressing again collapses it.
   await page.reload();
   await expect(tabNamed(page, /^Assigned to me/)).toHaveAttribute('aria-selected', 'true');
-  await expect(main.getByRole('listitem')).toHaveCount(4);
+  await expect(epicToggle('Collapse')).toHaveAttribute('aria-expanded', 'true');
+  await expect(child).toBeVisible();
+  await press(epicToggle('Collapse'));
+  await expect(epicToggle('Expand')).toHaveAttribute('aria-expanded', 'false');
+  await expect(child).toBeHidden();
+  await expect(main.getByRole('listitem')).toHaveCount(3);
+
+  // A parent in no view opens its pane from its row, with a link to GitHub and no Launch ship.
+  await press(body(EPIC.title));
+  // Such a parent has no Why it's here line, so the phone sheet is found by its name.
+  const epicPane = phone ? page.getByRole('dialog', { name: EPIC.title }) : pane;
+  await expect(epicPane.getByRole('heading', { name: EPIC.title })).toBeVisible();
+  await expect(epicPane.getByRole('link', { name: 'Open on GitHub', exact: true })).toHaveAttribute('href', 'https://github.com/acme/api/issues/30');
+  await expect(epicPane.getByRole('button', { name: 'Launch ship', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(epicPane).toBeHidden();
 
   if (phone) {
     // No filter and no repo filter on the phone.
@@ -267,18 +316,20 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
     const filter = page.getByPlaceholder('Filter by title, repo, label');
     await expectTouchTarget(page.locator('label.orders-filter'), 44);
     await expectTouchTarget(page.getByRole('combobox', { name: /repo/i }), 44);
+    // A shown child brings its parent, which stays collapsed.
     await filter.fill('DOCS');
     await expect(main.getByRole('listitem')).toHaveCount(1);
-    await expect(rowOf(page, 'Document the API')).toBeVisible();
+    await expect(epic).toBeVisible();
+    await expect(epic).toContainText(/1 sub-issues? here/);
     await filter.fill('ACME/WEB');
     await expect(main.getByRole('listitem')).toHaveCount(1);
     await expect(rowOf(page, 'Port the table')).toBeVisible();
     await filter.fill('');
-    await expect(main.getByRole('listitem')).toHaveCount(4);
+    await expect(main.getByRole('listitem')).toHaveCount(3);
     await page.getByRole('combobox', { name: /repo/i }).selectOption('acme/web');
     await expect(main.getByRole('listitem')).toHaveCount(1);
     await page.getByRole('combobox', { name: /repo/i }).selectOption({ label: 'All repos' });
-    await expect(main.getByRole('listitem')).toHaveCount(4);
+    await expect(main.getByRole('listitem')).toHaveCount(3);
   }
 
   // Refresh now asks the source to search again: the sources' answer time moves.

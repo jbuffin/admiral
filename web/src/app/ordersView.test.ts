@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Order, OrderView, Ship, Source } from './api';
-import { filterRows, forYou, headerTime, orderRef, refreshedLine, refreshTarget, repoOptions, tabs, viewRows } from './ordersView';
+import { selectedRow, withSelectedOrder } from './orderDetail';
+import { parseExpanded } from './expandedParents';
+import { filterRows, forYou, headerTime, launchRef, orderRef, refreshedLine, refreshTarget, repoOptions, tabs, viewGroups, viewRows } from './ordersView';
 
 const NOW = Date.parse('2026-11-14T12:00:00Z');
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -487,5 +489,183 @@ describe('Needs you with ships on the orders', () => {
     const rows = viewRows(rr(requested()), 'gh/review-requested', NOW, [reviewing({ responded: true })]);
     expect(rows.map((r) => r.needsYou)).toEqual([true]);
     expect(viewRows(rr(requested()), 'gh/review-requested', NOW, [reviewing()]).map((r) => r.needsYou)).toEqual([false]);
+  });
+});
+
+describe('parent groups in a view tab', () => {
+  const issueUrl = (n: number, repo = 'acme/api') => `https://github.com/${repo}/issues/${n}`;
+  const issue = (n: number, over: Partial<Order> = {}): Order => order(`acme/api#${n}`, { url: issueUrl(n), ...over });
+  const parentOf = (n: number, repo = 'acme/api') => ({ id: `${repo}#${n}`, title: `Epic ${n}`, url: issueUrl(n, repo), repo });
+  const kid = (n: number, parent: number, over: Partial<Order> = {}) => issue(n, { parent: parentOf(parent), ...over });
+  const assigned = (orders: Order[], more: OrderView[] = []) => [gh([view('assigned-to-me', 'Assigned to me', orders), ...more])];
+  const groups = (orders: Order[], ships: Ship[] = [], f = {}) => viewGroups(assigned(orders), 'gh/assigned-to-me', NOW, ships, f);
+  const shape = (g: ReturnType<typeof groups>) => g.map((x) => [x.row.order.id, ...x.children.map((c) => c.order.id)]);
+  const ship = (over: Partial<Ship> = {}): Ship => ({ session: 's1', name: 'otter', status: 'underway', ...over }) as Ship;
+
+  it('puts children under a parent that is not in the view and builds its row from the parent field', () => {
+    const [g] = groups([kid(31, 30), kid(32, 30)]);
+    expect(shape([g])).toEqual([['acme/api#30', 'acme/api#31', 'acme/api#32']]);
+    expect(g.row.order).toMatchObject({ id: 'acme/api#30', title: 'Epic 30', url: issueUrl(30) });
+    expect(orderRef(g.row.order)).toBe('acme/api #30');
+    expect(g.row.key).toBe('gh/acme/api#30');
+    expect(g.row.inView).toBe(false);
+    expect(g.row.reason).toBe('not in this view');
+    expect(g.row.order.labels ?? []).toEqual([]);
+  });
+
+  it('shows a parent that is in the view once, as its own order, heading the group and leaving its position', () => {
+    const parent = issue(30, { labels: ['epic'], author: 'carol', opened_at: ago(3 * D) });
+    const g = groups([issue(40), kid(31, 30), parent, issue(41)]);
+    expect(shape(g)).toEqual([['acme/api#40'], ['acme/api#30', 'acme/api#31'], ['acme/api#41']]);
+    expect(g[1].row.order).toMatchObject({ labels: ['epic'] });
+    expect(g[1].row.inView).toBe(true);
+    expect(g[1].row.reason).toBe('opened 3d ago · @carol');
+  });
+
+  it('gives a group the position of its first child and keeps the children in the answer\'s order', () => {
+    expect(shape(groups([kid(31, 30), issue(33), kid(32, 30)]))).toEqual([['acme/api#30', 'acme/api#31', 'acme/api#32'], ['acme/api#33']]);
+    expect(shape(groups([issue(33), kid(32, 30), kid(31, 30)]))).toEqual([['acme/api#33'], ['acme/api#30', 'acme/api#32', 'acme/api#31']]);
+  });
+
+  it('moves a group up when the view\'s answer puts a child first', () => {
+    expect(shape(groups([issue(33), kid(31, 30)])).map((x) => x[0])).toEqual(['acme/api#33', 'acme/api#30']);
+    expect(shape(groups([kid(31, 30), issue(33)])).map((x) => x[0])).toEqual(['acme/api#30', 'acme/api#33']);
+  });
+
+  it('lets an issue that is both a parent here and a child head its own group and ignores its own parent', () => {
+    const g = groups([kid(30, 20), kid(31, 30)]);
+    expect(shape(g)).toEqual([['acme/api#30', 'acme/api#31']]);
+  });
+
+  it('reads a child as in #n then its view reason, never naming the parent\'s repo', () => {
+    const [g] = groups([kid(31, 30, { opened_at: ago(3 * D), author: 'carol' })]);
+    expect(g.children[0].reason).toBe('in #30 · opened 3d ago · @carol');
+    const across = viewGroups(assigned([issue(31, { parent: parentOf(7, 'acme/web') })]), 'gh/assigned-to-me', NOW, [], {});
+    expect(across[0].children[0].reason).toMatch(/^in #7(?: · |$)/);
+    expect(across[0].children[0].reason).not.toContain('acme/web');
+  });
+
+  it('keeps For you flat and says in #n, without the repo', () => {
+    const src = assigned([kid(31, 30), issue(33, { parent: parentOf(7, 'acme/web') })]);
+    const flat = viewGroups(src, 'for-you', NOW, [], {});
+    expect(flat.map((x) => [x.row.order.id, x.children.length])).toEqual([['acme/api#31', 0], ['acme/api#33', 0]]);
+    expect(flat[0].row.reason).toContain('in #30');
+    expect(flat[1].row.reason).toContain('in #7');
+    expect(flat[1].row.reason).not.toContain('acme/web');
+    expect(forYou(src, NOW).waiting[0].reason).toContain('in #30');
+  });
+
+  it('does not group a pull request that names a parent', () => {
+    const g = groups([issue(31, { pr: pr(), parent: parentOf(30) }), issue(32)]);
+    expect(shape(g)).toEqual([['acme/api#31'], ['acme/api#32']]);
+  });
+
+  it('leaves the tab count and the repo options to the view\'s own orders', () => {
+    const src = assigned([kid(31, 30), issue(32, { parent: parentOf(7, 'acme/web') }), issue(30), kid(33, 30)]);
+    expect(tabs(src).find((t) => t.id === 'gh/assigned-to-me')?.count).toBe(4);
+    const rows = viewRows(src, 'gh/assigned-to-me', NOW);
+    expect(ids(rows)).toEqual(['acme/api#31', 'acme/api#32', 'acme/api#30', 'acme/api#33']);
+    expect(repoOptions(rows)).toEqual(['acme/api']);
+    const lone = assigned([kid(31, 30)]);
+    expect(viewGroups(lone, 'gh/assigned-to-me', NOW, [], {})[0].row.order.id).toBe('acme/api#30');
+    expect(tabs(lone).find((t) => t.id === 'gh/assigned-to-me')?.count).toBe(1);
+  });
+
+  it('carries High when a child is hot and not otherwise', () => {
+    expect(groups([kid(31, 30), kid(32, 30, { hot: true })])[0].high).toBe(true);
+    expect(groups([kid(31, 30), kid(32, 30)])[0].high).toBe(false);
+  });
+
+  describe('the ship count', () => {
+    const live = (over: Partial<Ship>) => ship({ url: issueUrl(31), ...over });
+    const count = (ships: Ship[]) => groups([kid(31, 30), kid(32, 30)], ships)[0].ships;
+
+    it('counts a ship by its url, an issue, a pr or its link, once each', () => {
+      expect(count([ship({ url: issueUrl(31) })])).toBe(1);
+      expect(count([ship({ session: 'a', url: issueUrl(31) }), ship({ session: 'b', url: 'https://github.com/acme/api/issues/9', issues: [issueUrl(9), issueUrl(32)] })])).toBe(2);
+      expect(count([ship({ prs: [{ url: issueUrl(31) }] as Ship['prs'] })])).toBe(1);
+      expect(count([ship({ link: issueUrl(32) })])).toBe(1);
+    });
+
+    it('counts a ship that holds two children once', () => {
+      expect(count([ship({ url: issueUrl(31), issues: [issueUrl(31), issueUrl(32)] })])).toBe(1);
+    });
+
+    it('compares urls lower-case and without a trailing slash', () => {
+      expect(count([ship({ url: `${issueUrl(31).toUpperCase()}/` })])).toBe(1);
+    });
+
+    it.each(['underway', 'needs_you', 'moored'])('counts a %s ship', (status) => {
+      expect(count([live({ status: status as Ship['status'] })])).toBe(1);
+    });
+
+    it.each(['anchored', 'sailing_off'])('does not count a %s ship', (status) => {
+      expect(count([live({ status: status as Ship['status'] })])).toBe(0);
+    });
+
+    it('does not count a ship on another url', () => {
+      expect(count([ship({ url: issueUrl(99) })])).toBe(0);
+    });
+  });
+
+  describe('the filters', () => {
+    const orders = [kid(31, 30, { title: 'Rotate keys', labels: ['docs'] }), kid(32, 30, { title: 'Port table' }), issue(30, { title: 'Epic umbrella' }), issue(33, { title: 'Docs loose' })];
+
+    it('brings the parent of a shown child even when the parent does not match', () => {
+      const g = groups(orders, [], { query: 'rotate' });
+      expect(shape(g)).toEqual([['acme/api#30', 'acme/api#31']]);
+    });
+
+    it('counts only the shown children', () => {
+      expect(groups(orders, [], { query: 'docs' }).map((x) => x.children.length)).toEqual([1, 0]);
+    });
+
+    it('shows a parent that matches but has no shown child as a loose row', () => {
+      const g = groups(orders, [], { query: 'umbrella' });
+      expect(shape(g)).toEqual([['acme/api#30']]);
+      expect(g[0].children).toEqual([]);
+    });
+
+    it('brings a parent outside the view for a shown child, and never alone', () => {
+      const out = [kid(31, 20, { repo: 'acme/web' }), kid(32, 20)];
+      expect(shape(groups(out, [], { repo: 'acme/web' }))).toEqual([['acme/api#20', 'acme/api#31']]);
+      expect(groups(out, [], { query: 'Epic 20' })).toEqual([]);
+    });
+  });
+
+  describe('launching and selecting a parent', () => {
+    it('leaves the arrow off a parent no view of the source holds and keeps it where a view holds it', () => {
+      expect(groups([kid(31, 30)])[0].row.launchable).toBe(false);
+      const other = view('custom', 'Custom', [issue(30)]);
+      const held = viewGroups(assigned([kid(31, 30)], [other]), 'gh/assigned-to-me', NOW, [], {});
+      expect(held[0].row.launchable).toBe(true);
+      expect(groups([issue(30), kid(31, 30)])[0].row.launchable).toBe(true);
+      expect(groups([issue(33)])[0].row.launchable).toBe(true);
+    });
+
+    it('launches a held parent with the held order\'s text and still gives it no labels', () => {
+      const other = view('custom', 'Custom', [issue(30, { text: 'Roll out key rotation in full.', labels: ['epic'] })]);
+      const [g] = viewGroups(assigned([kid(31, 30)], [other]), 'gh/assigned-to-me', NOW, [], {});
+      expect(launchRef(g.row).text).toBe('Roll out key rotation in full.');
+      expect(g.row.order.labels ?? []).toEqual([]);
+    });
+
+    it('finds a parent outside the view by its key for the detail pane', () => {
+      const src = assigned([kid(31, 30)]);
+      const row = selectedRow(src, 'gh/assigned-to-me', withSelectedOrder('', 'gh/acme/api#30'), NOW);
+      expect(row?.order).toMatchObject({ title: 'Epic 30', url: issueUrl(30) });
+      expect(row?.inView).toBe(false);
+      expect(row?.launchable).toBe(false);
+    });
+  });
+});
+
+describe('the stored expanded parents', () => {
+  it('keeps tabs whose value is a list of strings and drops the rest', () => {
+    expect(parseExpanded(JSON.stringify({ a: ['x', 'y'], b: 'x', c: [1], d: null, e: { 0: 'x' } }))).toEqual({ a: ['x', 'y'] });
+  });
+
+  it('reads nothing as collapsed, without throwing', () => {
+    for (const raw of [null, '', 'not json', '[]', '7', 'null']) expect(parseExpanded(raw)).toEqual({});
   });
 });
