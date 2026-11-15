@@ -205,6 +205,10 @@ _Avoid_: kill, abort
 A ship ending once it is done, after it cleans up: Admiral tells it to clean up after itself, never how, and stops it like Stop ship when that turn ends. The engineer starts it from the bridge of a live ship once its turn ends; a moored ship starts it by itself once its PRs are merged. A live ship that carries a PR doesn't offer it. A ship with an open PR may moor instead, with no clean-up prompt.
 _Avoid_: clean up (for the action), dock, finish
 
+**Hand to Commodore**:
+An action on a live Claude ship that carries its settled design to Commodore. The engineer picks a GitHub issue (the default) or Other, free text. Once the ship's turn ends Admiral asks it to file the design as an issue in its repo, or to follow the Other text, and to write the issue URL or a file's path to the **ref file** Admiral names. When the next turn ends Admiral checks the ref, stops the ship and relaunches the same conversation under the same name and checkout as Commodore, with the ref as its order. A bad or missing ref leaves the ship running. Codex and Copilot ships, Commodore ships, restricted ships and ships an outside event launched don't offer it. It counts toward the cap like a hand Wake and is never blocked by it.
+_Avoid_: promote (the order-to-ship action), transfer, handoff (AdmiralBot's word)
+
 **Subagent**:
 A helper the harness runs inside a session, drawn as a small bot on its ship's deck. It has no terminal of its own, so it cannot be boarded; tapping the deck crew shows each subagent's type.
 _Avoid_: crew boat (for a subagent), mark
