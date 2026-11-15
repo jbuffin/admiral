@@ -7,6 +7,8 @@ import { Icon } from './Icon';
 import { OrderPane } from './OrderPane';
 import { selectedRow, selectionGone, withSelectedOrder } from './orderDetail';
 import { AnswerReviewSheet } from './AnswerReview';
+import { FixSheet } from './Fix';
+import { fixLabel } from './prTab';
 import { orderRowAction, type RowAction } from './moored';
 import { ReReviewSheet } from './ReReview';
 import type { MooredPR, Ship } from './api';
@@ -110,7 +112,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, parentGro
     ) : (
       <>
         {act.again ? (
-          <Button class="orow-again" label={act.again.kind === 'rereview' ? 'Re-review' : 'Wake'} onClick={() => onAgain(act.ship, act.again!)} />
+          <Button class="orow-again" label={act.again.kind === 'rereview' ? 'Re-review' : act.again.kind === 'fix' ? fixLabel(act.ship) : 'Wake'} onClick={() => onAgain(act.ship, act.again!)} />
         ) : null}
         <button type="button" class={`orow-pill${act.needsYou ? ' needs' : ''}`} aria-label={`${act.ship.name}, ${act.word}. Open ship`} onClick={() => go(shipPath(act.ship.session), fleetSearch.value)}>
           <span class="orow-pill-name">{act.ship.name}</span>
@@ -192,7 +194,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [launching, setLaunching] = useState<OrderRef | null>(null);
-  const [again, setAgain] = useState<{ ship: Ship; kind: 'rereview'; url: string } | { ship: Ship; kind: 'wake'; pr: MooredPR } | null>(null);
+  const [again, setAgain] = useState<{ ship: Ship; kind: 'rereview'; url: string } | { ship: Ship; kind: 'fix' } | { ship: Ship; kind: 'wake'; pr: MooredPR } | null>(null);
   const list = fleet ? sourcesForFleet(sources.value, fleet.key) : [];
   const all = tabs(list);
   const id = all.some((t) => t.id === tabOf()) ? tabOf() : FOR_YOU;
@@ -226,6 +228,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const onLaunch = (o: OrderRef) => setLaunching(o);
   const onAgain: RowProps['onAgain'] = (ship, a) => {
     if (a.kind === 'rereview') return setAgain({ ship, kind: 'rereview', url: a.url });
+    if (a.kind === 'fix') return setAgain({ ship, kind: 'fix' });
     const pr = (ship.prs ?? []).find((p) => p.url === a.pr);
     if (pr) setAgain({ ship, kind: 'wake', pr });
   };
@@ -349,6 +352,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
         </Sheet>
       ) : null}
       {again?.kind === 'rereview' ? <ReReviewSheet ship={again.ship} sendUrl={again.url} onClose={() => setAgain(null)} /> : null}
+      {again?.kind === 'fix' ? <FixSheet ship={again.ship} onClose={() => setAgain(null)} onBusy={() => {}} /> : null}
       {again?.kind === 'wake' ? <AnswerReviewSheet ship={again.ship} pr={again.pr} onClose={() => setAgain(null)} onBusy={() => {}} /> : null}
       {launching && fleet ? <LaunchForm fleet={fleet} order={launching} onClose={() => setLaunching(null)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null}
     </>

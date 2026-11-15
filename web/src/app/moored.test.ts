@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Order, Ship } from './api';
-import { askedAgainLine, mergeHint, mooredShipOn, moorSheetParts, nextStep, offersMoor, orderRowAction, prChips, prLabel, reReviewPlace, reviews, rowButtons, shipsOnOrder, staleNote } from './moored';
+import { askedAgainLine, mergeHint, mooredShipOn, moorSheetParts, needsYouAgain, nextStep, offersMoor, orderRowAction, prChips, prLabel, reReviewPlace, reviews, rowButtons, shipsOnOrder, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -373,6 +373,47 @@ describe('orderRowAction', () => {
     it('does not show for a live ship', () => {
       const s = on({ status: 'underway', prs: [pr({ url, ...feedback })] });
       expect(shipAction(act([s], order({ url }))).again).toBeNull();
+    });
+  });
+
+  describe('Fix', () => {
+    const fix = { pr: url, command: '/commodore resume run-7 feedback round 1 on ' + url, problems: [{ pr: url, conflicts: true }] };
+
+    it('shows for a moored ship offering a fix, sending the PR the round is on', () => {
+      const s = on({ prs: [pr({ url, mergeable: 'CONFLICTING', conflicts: true })], fix });
+      expect(shipAction(act([s], order({ url }))).again).toEqual({ kind: 'fix', pr: url });
+    });
+
+    it('shows for an issue order whose ship offers it', () => {
+      const s = on({ url: issue, prs: [pr({ url, conflicts: true })], fix });
+      expect(shipAction(act([s], order({ url: issue }))).again).toEqual({ kind: 'fix', pr: url });
+    });
+
+    it('comes before Wake when the PR also has feedback', () => {
+      const s = on({ prs: [pr({ url, conflicts: true, answer: '/commodore answer', feedback: 1 })], fix });
+      expect(shipAction(act([s], order({ url }))).again).toEqual({ kind: 'fix', pr: url });
+    });
+
+    it('comes after Re-review', () => {
+      const s = on({ prs: [pr({ url, reviewing: true, responded: true })], fix });
+      expect(shipAction(act([s], order({ url }))).again).toMatchObject({ kind: 'rereview' });
+    });
+
+    it('does not show for a live ship or a ship with no offer', () => {
+      expect(shipAction(act([on({ status: 'underway', prs: [pr({ url })], fix })], order({ url }))).again).toBeNull();
+      expect(shipAction(act([on({ prs: [pr({ url })] })], order({ url }))).again).toBeNull();
+    });
+
+    it('puts the order in Needs you', () => {
+      const s = on({ prs: [pr({ url, conflicts: true })], fix });
+      expect(needsYouAgain([s], order({ url }))).toBe(true);
+      expect(needsYouAgain([on({ prs: [pr({ url })] })], order({ url }))).toBe(false);
+    });
+
+    it('ranks the ship above a needs_you ship on the order', () => {
+      const needs = on({ name: 'needs', session: 's-needs', status: 'needs_you', url });
+      const fixing = on({ name: 'fixing', session: 's-fix', prs: [pr({ url, conflicts: true })], fix });
+      expect(shipsOnOrder([needs, fixing], order({ url })).map((s) => s.name)).toEqual(['fixing', 'needs']);
     });
   });
 

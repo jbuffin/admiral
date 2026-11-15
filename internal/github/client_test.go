@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -640,7 +641,7 @@ func TestSearchGivesAPullRequestTheStateThePollGivesForTheSameAnswer(t *testing.
 			}
 			got, want := *items[0].PR, moor.View(url, polled[url], true)
 			got.URL = url // the order carries its own url
-			if got != want {
+			if !reflect.DeepEqual(got, want) {
 				t.Errorf("search PR = %+v, the poll's = %+v: they must agree", got, want)
 			}
 		})

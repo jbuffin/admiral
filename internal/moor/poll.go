@@ -38,6 +38,9 @@ type PR struct {
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
 	Ready     bool   `json:"ready"`
+	// Behind and FailingChecks are the PR's merge problems besides a conflict.
+	Behind        bool     `json:"behind,omitempty"`
+	FailingChecks []string `json:"failing_checks,omitempty"`
 	// Feedback counts the PR's waking events past its cursor; Answer is the prompt Answer review sends for it.
 	Feedback  int    `json:"feedback,omitempty"`
 	Answer    string `json:"answer,omitempty"`
@@ -52,8 +55,9 @@ func View(url string, st Status, found bool) PR {
 	if !found {
 		return PR{URL: url, State: "CLOSED"}
 	}
+	p, _ := ProblemsOf(url, st)
 	return PR{URL: url, State: st.State, Review: st.Review, Checks: st.Checks, Mergeable: st.Mergeable, Author: st.Author,
-		Conflicts: st.State == "OPEN" && st.Mergeable == "CONFLICTING", Ready: st.Ready()}
+		Conflicts: p.Conflicts, Behind: p.Behind, FailingChecks: p.FailingChecks, Ready: st.Ready()}
 }
 
 // Ready says GitHub would let the engineer press Merge now: GitHub's mergeStateStatus already holds the base's

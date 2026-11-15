@@ -29,6 +29,8 @@ type polled struct {
 	waiting string
 	// feedback is each PR's count of waking events past its cursor, as the last decision found it
 	feedback map[string]int
+	// fix is the Fix PR / Fix stack on offer, as the last decision found it
+	fix *FixOffer
 }
 
 func (s *Service) kickChan() chan struct{} {
@@ -216,6 +218,11 @@ func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]
 	wr := r
 	wr.PRs = slices.DeleteFunc(slices.Clone(r.PRs), func(u string) bool { return slices.Contains(r.Reviewing, u) })
 	s.setFeedback(r, moor.FeedbackCounts(moor.WakeInput{Record: wr, State: state, Answers: answers, Reviewers: reviewers, Now: now}))
+	var fix *FixOffer
+	if round, ok := s.fixRound(wr, state, answers); ok && moor.ValidResume(r.Resume) {
+		fix = &FixOffer{PR: round.PR, Stack: round.Stack, Command: answerPrompt(r, round.PR), Problems: round.Problems}
+	}
+	s.setFix(r, fix)
 	if !moor.ValidResume(r.Resume) || len(wr.PRs) == 0 {
 		return
 	}
@@ -320,6 +327,7 @@ func (s *Service) storePoll(r moor.Record, p polled) ([]moor.PR, bool) {
 	if !s.stillMoored(r) {
 		return nil, false
 	}
+	p.fix = s.polls()[r.Session].fix
 	p.feedback = s.polls()[r.Session].feedback // until decide counts again, so the list does not drop the bar between the two
 	s.polls()[r.Session] = p
 	return s.prsOf(r), true

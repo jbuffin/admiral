@@ -1,4 +1,4 @@
-import type { MooredPR, PRStack, Ship, ShipStatus, StackShape } from './api';
+import type { FixOffer, MooredPR, PRStack, Ship, ShipStatus, StackShape } from './api';
 import { isStackUrl, prChips, type ChipTone } from './moored';
 
 export type DetailTone = ChipTone | 'rev';
@@ -91,9 +91,9 @@ export function chooseStackDetail(
 }
 
 /** Whether the stack bar offers Answer all reviews. The pushed list decides when feedback clears, ahead of the detail's refresh. */
-export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined, answerAll: string | undefined): boolean {
+export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined, answerAll: string | undefined, fix?: FixOffer): boolean {
   const live = open(prs);
-  return !!stack && !!answerAll && live.length > 1 && live.every((p) => (p.feedback ?? 0) > 0);
+  return !fix && !!stack && !!answerAll && live.length > 1 && live.every((p) => (p.feedback ?? 0) > 0);
 }
 
 /** Whether Merge and Don't follow reviews stay locked: a confirm locks them, and a ship that left its mooring is running its wake, so they are free when it moors again. */
@@ -146,3 +146,33 @@ export function tabOrder(carried: MooredPR[], shape: StackShape | null, stack: P
   }
   return orderPRs(carried, stack);
 }
+
+/** The Fix button's label: Fix stack when the server's round covers more than one PR, else Fix PR. */
+export const fixLabel = (ship: Pick<Ship, 'fix'>): 'Fix PR' | 'Fix stack' => (ship.fix?.stack ? 'Fix stack' : 'Fix PR');
+
+/** Whether Fix stack sits in the stack bar, where Answer all reviews would, or in a bar of its own: the bar's own Re-review stack takes its place, so the Fix bar stands alone. */
+export const fixStackInBar = (hasBar: boolean, reReviewsStack: boolean): boolean => hasBar && !reReviewsStack;
+
+const joinAnd = (parts: string[]): string => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
+
+function problemWords(p: FixOffer['problems'][number]): string {
+  const parts: string[] = [];
+  if (p.conflicts) parts.push('has merge conflicts');
+  if (p.behind) parts.push('is behind its base');
+  if (p.failing_checks?.length) parts.push(`has failing checks: ${p.failing_checks.join(', ')}`);
+  return joinAnd(parts);
+}
+
+/** One entry per PR with problems, `#N` and its problems in words, for the Fix sheet's list and the stack's line. */
+export const fixItems = (fix: FixOffer | undefined): string[] => (fix?.problems ?? []).map((p) => `#${prNumber(p.pr)} ${problemWords(p)}`);
+
+/** The fix bar's line naming what keeps the PRs from merging, from the served offer; '' when there is none. A stack round names each PR even when one has problems. */
+export function fixLine(fix: FixOffer | undefined): string {
+  const problems = fix?.problems ?? [];
+  if (problems.length === 0) return '';
+  if (problems.length === 1 && !fix?.stack) return `This PR ${problemWords(problems[0])}.`;
+  return fixItems(fix).join(' \u00b7 ');
+}
+
+/** Whether a PR's feedback bar offers Answer review: the ship's Fix round takes the feedback with it, so Fix replaces it. */
+export const showAnswerReview = (pr: MooredPR, fix: FixOffer | undefined): boolean => !fix && feedbackBarText(pr) !== '';

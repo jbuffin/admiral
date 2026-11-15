@@ -242,6 +242,10 @@ _Avoid_: parked, sleeping, docked, idle
 One wake of a moored ship, under the same name, to answer the feedback since the last round.
 _Avoid_: review round (Commodore's own review pass)
 
+**Merge problem**:
+Something on an open PR that its own ship can fix and that keeps it from merging: a merge conflict, a branch behind a base that requires up-to-date branches, or a failing CI check of its own.
+_Avoid_: not ready, not mergeable, blocked
+
 **Admiral report**:
 What a ship's skill leaves for Admiral at the end of every round, its first build and each feedback round: the result, its PRs and the issues each closes, the crew members it used, and the text that resumes it. Never the transcript.
 

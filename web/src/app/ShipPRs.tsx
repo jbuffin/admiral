@@ -7,9 +7,10 @@ import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet, useCancelFocus } from './Sheet';
 import { OpenPRs } from './OpenPRs';
-import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, stackBarAction, stackBarLine, tabOrder } from './prTab';
+import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, fixLine, fixStackInBar, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, showAnswerReview, stackBarAction, stackBarLine, tabOrder } from './prTab';
 import { MOOR_LINE, moorSheetParts, offersMoor, reReviewPlace, reviews, staleNote } from './moored';
 import { AnswerReviewSheet } from './AnswerReview';
+import { FixButton, FixSheet } from './Fix';
 import { ReReviewSheet } from './ReReview';
 import { PRSections } from './PRDetailSections';
 
@@ -319,6 +320,7 @@ export function PRTab({ ship }: { ship: Ship }) {
   // The URL of the Re-review sheet that's open: a PR's, or '' for the stack.
   const [reReview, setReReview] = useState<string | null>(null);
   const [stacking, setStacking] = useState(false);
+  const [fixing, setFixing] = useState(false);
   const [unseen, setUnseen] = useState(false);
   const carried = ship.prs ?? [];
   const { details, failed } = useDetails(ship.session, carried.map((p) => p.url));
@@ -334,6 +336,10 @@ export function PRTab({ ship }: { ship: Ship }) {
   const place = reReviewPlace(ship);
   const respondedHere = moored && current.reviewing && current.responded && current.state === 'OPEN';
   const line = reviewBar ?? stackBarLine(shape);
+  const fixOn = moored && !!ship.fix;
+  const fixStack = fixOn && !!ship.fix?.stack;
+  const fixText = fixOn ? fixLine(ship.fix) : '';
+  const fixInBar = fixStack && fixStackInBar(!!line, !!reviewBar && place?.place === 'stack');
   const action = reviewBar ? 'none' : stackBarAction(shape, ship.status);
   const choice = mergeFor(shape, prs, current, !!ship.stack_ready);
   const justMerged = mergedAll || merged.has(current.url);
@@ -354,7 +360,12 @@ export function PRTab({ ship }: { ship: Ship }) {
           </span>
           {reviewBar && place?.place === 'stack' ? (
             <Button label="Re-review stack" variant="primary" onClick={() => setReReview('')} />
-          ) : moored && chosen && showAnswerAll(carried, stack, chosen.answerAll) ? (
+          ) : fixInBar ? (
+            <>
+              <span class="fix-line">{fixText}</span>
+              <FixButton ship={ship} locked={acting} onAsk={() => setFixing(true)} />
+            </>
+          ) : moored && chosen && showAnswerAll(carried, stack, chosen.answerAll, ship.fix) ? (
             <AnswerAll ship={ship} stackUrl={stack!.url} command={chosen.answerAll!} locked={acting} onBusy={setActing} />
           ) : null}
           {action === 'stack' ? (
@@ -364,6 +375,13 @@ export function PRTab({ ship }: { ship: Ship }) {
           {unseen && shape?.shape === 'chained' ? <span>GitHub hasn't shown the stack yet. It shows on the next refresh.</span> : null}
         </div>
       ) : null}
+      {fixStack && !fixInBar ? (
+        <div class="fix-bar">
+          <span class="fb-text">{fixText}</span>
+          <FixButton ship={ship} locked={acting} onAsk={() => setFixing(true)} />
+        </div>
+      ) : null}
+      {fixing && fixOn ? <FixSheet ship={ship} onClose={() => setFixing(false)} onBusy={setActing} /> : null}
       {stacking ? (
         <StackSheet
           session={ship.session}
@@ -405,7 +423,13 @@ export function PRTab({ ship }: { ship: Ship }) {
             )}
           </div>
         ) : null}
-        {moored && !current.reviewing && feedbackBarText(current) ? <FeedbackBar key={current.url} ship={ship} pr={current} locked={acting} onBusy={setActing} /> : null}
+        {fixOn && !fixStack && current.state === 'OPEN' && !current.reviewing ? (
+          <div class="fix-bar">
+            <span class="fb-text">{fixText}</span>
+            <FixButton ship={ship} locked={acting} onAsk={() => setFixing(true)} />
+          </div>
+        ) : null}
+        {moored && !current.reviewing && showAnswerReview(current, ship.fix) ? <FeedbackBar key={current.url} ship={ship} pr={current} locked={acting} onBusy={setActing} /> : null}
         {moored && !reviews(ship) && (justMerged || choice.kind !== 'none' || choice.note) ? (
           <div class="peek-form">
             {justMerged ? (

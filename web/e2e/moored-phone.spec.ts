@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { addGitHubSource, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsOfferCommodoreOnAShiplessPR, wakeAndStopWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, unfollowFromThePRTab, wakeFromTheShell, wakeFromTheShipView, watchPage, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime } from './shell';
+import { addGitHubSource, fixPRFromThePRTab, fixStackFromThePRTab, addWakeReviewers, answeringEnv, answerAllReviewsFromThePRTab, answerReviewFromThePRTab, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsOfferCommodoreOnAShiplessPR, wakeAndStopWithoutResume, prTabOfARunningStack, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, unfollowFromThePRTab, wakeFromTheShell, wakeFromTheShipView, watchPage, stopShipMoors, withFakeGh, reviewedPRIsReReviewed, seedReview, chainedRunningShipWaitsToStack, independentPRsMergeOneAtATime } from './shell';
 
 test('on the phone, a moored ship shows in its own group with chips from the poll, and Don\'t follow reviews and Dismiss take it out by touch', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -224,6 +224,34 @@ test('on the phone, a reviewed PR\'s feedback bar and Re-review sheet work by ta
   const watch = watchPage(page, admiral.url);
 
   await reviewedPRIsReReviewed(page, admiral, { phone: true });
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('on the phone, the fix bar and the Fix PR sheet fit, with no sideways scroll', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  addWakeReviewers(admiral, 'zulu', ['alice']);
+  await admiral.start({ env: answeringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await fixPRFromThePRTab(page, admiral, { phone: true });
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('on the phone, Fix stack in the stack bar fits, with no sideways scroll', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  addWakeReviewers(admiral, 'zulu', ['alice']);
+  await admiral.start({ env: answeringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await fixStackFromThePRTab(page, admiral, { phone: true });
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

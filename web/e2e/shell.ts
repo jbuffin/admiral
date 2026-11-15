@@ -2799,6 +2799,22 @@ export function prReview(a: Admiral, number: number, r: { author: string; body: 
   writeFileSync(file, JSON.stringify({ ...events, reviews: { nodes: [node] } }) + '\n');
 }
 
+/** Adds a PR's merge state to the fake gh's pr_events: a base that needs the branch up to date and the PR behind it, and a failing own check on the head commit. Merges with what prReview already wrote. */
+export function prMergeState(a: Admiral, number: number, m: { behind?: boolean; failing?: string[] }) {
+  const dir = join(a.home, 'fakegh', 'pr_events');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${PR_BASE}/${number}`.replace(/[/:]/g, '_'));
+  const events = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+  const checks = (m.failing ?? []).map((name, i) => ({ __typename: 'CheckRun', name, conclusion: 'FAILURE', isRequired: false, checkSuite: { app: { slug: 'github-actions' }, workflowRun: { id: `${number}${i}` } } }));
+  const merged = {
+    ...events,
+    headRefOid: `head-${number}`,
+    ...(m.behind ? { mergeStateStatus: 'BEHIND', baseRef: { branchProtectionRule: { requiresStrictStatusChecks: true } } } : {}),
+    commits: { nodes: [{ commit: { oid: `head-${number}`, statusCheckRollup: { contexts: { nodes: checks } } } }] },
+  };
+  writeFileSync(file, JSON.stringify(merged) + '\n');
+}
+
 /** Waits until the server lists the moored ship's PR as polled, with the answer when `answered` is true and without it when false. */
 async function polledOnTheServer(a: Admiral, ship: LaunchedShip, number: number, answered: boolean) {
   await expect
@@ -2832,6 +2848,7 @@ export async function answerReviewFromThePRTab(page: Page, a: Admiral, opts: { p
   await expect(answer).toHaveClass(/\bprimary\b/);
   expect((await answer.boundingBox())!.height, 'Answer review height').toBeGreaterThanOrEqual(44);
   await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Fix (PR|stack)$/ }), 'a mergeable PR offers no Fix').toHaveCount(0);
 
   await answer.tap();
   const dialog = page.getByRole('dialog', { name: 'Answer review' });
@@ -2862,6 +2879,145 @@ export async function answerReviewFromThePRTab(page: Page, a: Admiral, opts: { p
   await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).not.toBe('moored');
   await expect(page.getByRole('alert')).toHaveCount(0);
 }
+
+const fixBar = (page: Page) => viewPanel(page).locator('.fix-bar');
+
+/** Waits until the server lists the moored ship's PR with the poll's answer, the state the Fix offer is built from. */
+async function pollOnTheServer(a: Admiral, ship: LaunchedShip, number: number) {
+  await expect
+    .poll(async () => {
+      await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
+      const res = await fetch(`${a.url}api/v1/ships`);
+      const got = ((await res.json()) as { ships: { session: string; prs?: { url: string; review: string }[] }[] }).ships.find((x) => x.session === ship.session);
+      return got?.prs?.find((p) => p.url === `${PR_BASE}/${number}`)?.review ?? '';
+    }, { timeout: 20_000 })
+    .not.toBe('');
+}
+
+/**
+ * A moored ship whose single PR conflicts shows the fix bar with its line and Fix PR (no Answer review); Fix PR opens a sheet with the exact
+ * command, Cancel sends nothing, and the confirm posts no fields and relaunches the ship with that command.
+ */
+export async function fixPRFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'CONFLICTING' });
+  const ship = await launchMooredShip(a, 7);
+  await pollOnTheServer(a, ship, 7);
+  const command = `${RESUME} feedback round 1 on ${PR_BASE}/7`;
+
+  await openPRTab(page, a, ship);
+  const bar = fixBar(page);
+  await expect(bar).toContainText('This PR has merge conflicts.');
+  const fix = bar.getByRole('button', { name: 'Fix PR', exact: true });
+  await expect(fix).toHaveClass(/\bprimary\b/);
+  expect((await fix.boundingBox())!.height, 'Fix PR height').toBeGreaterThanOrEqual(44);
+  await expect(page.getByRole('button', { name: 'Answer review' })).toHaveCount(0);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+
+  await fix.tap();
+  const dialog = page.getByRole('dialog', { name: 'Fix PR' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('has merge conflicts');
+  await expect(dialog).toContainText(command);
+  await expect(dialog.getByRole('button')).toHaveText(['Cancel', 'Fix PR']);
+  const box = (await dialog.getByText(command).boundingBox())!;
+  const frame = (await dialog.boundingBox())!;
+  expect(box.x + box.width, 'the command stays inside the sheet').toBeLessThanOrEqual(frame.x + frame.width + 1);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+
+  const posts: string[] = [];
+  page.on('request', (r) => r.method() === 'POST' && posts.push(new URL(r.url()).pathname));
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).tap();
+  await expect(dialog).toBeHidden();
+  expect(posts, 'Cancel sends nothing').toEqual([]);
+  expect((await listShips(a)).find((s) => s.session === ship.session)?.status, 'Cancel starts nothing').toBe('moored');
+
+  readyToWake(a, ship);
+  await fix.tap();
+  const sent = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/fix`);
+  await dialog.getByRole('button', { name: 'Fix PR', exact: true }).tap();
+  const res = await sent;
+  expect(Object.keys(JSON.parse(res.request().postData() || '{}')), 'the page sends no fields').toEqual([]);
+  expect(res.status()).toBe(201);
+  expect(await wokenPrompt(a, ship)).toBe(command);
+  await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).not.toBe('moored');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+}
+
+/** A stack of two own PRs, the lower behind a strict base and the upper failing a check, with review feedback on both, so Answer all reviews would show without Fix: Fix stack replaces Answer all reviews and Answer review, and its round is on the lowest PR. */
+export async function fixStackFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
+  prMergeState(a, 7, { behind: true });
+  prMergeState(a, 8, { failing: ['build'] });
+  const ship = await mooredPair(a, { stacked: true, feedbackOn: [7, 8] });
+
+  // The stack's line is held back, so Fix stack is tapped from its own bar and must stay open when the line moves it into the stack bar.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(new RegExp(`/api/(v1/)?ships/${ship.session}/stack$`), async (route) => {
+    await held;
+    await route.continue();
+  });
+  await openPRTab(page, a, ship);
+  const early = viewPanel(page).locator('.fix-bar').getByRole('button', { name: 'Fix stack', exact: true });
+  await early.tap();
+  await expect(page.getByRole('dialog', { name: 'Fix stack' })).toBeVisible();
+  release();
+  const bar = pageStackBar(page);
+  await expect(bar).toContainText('#7 is behind its base');
+  await expect(page.getByRole('dialog', { name: 'Fix stack' }), 'the sheet survives the button moving into the stack bar').toBeVisible();
+  await page.getByRole('dialog', { name: 'Fix stack' }).getByRole('button', { name: 'Cancel' }).tap();
+  await expect(page.getByRole('dialog', { name: 'Fix stack' })).toHaveCount(0);
+  const fix = bar.getByRole('button', { name: 'Fix stack', exact: true });
+  await expect(fix).toBeVisible();
+  expect((await fix.boundingBox())!.height, 'Fix stack height').toBeGreaterThanOrEqual(44);
+  await expect(bar).toContainText('#7 is behind its base');
+  await expect(bar).toContainText('#8 has failing checks: build');
+  await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Answer review' })).toHaveCount(0);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+  await page.getByRole('tab', { name: /#8/ }).tap();
+  await expect(page.getByRole('tab', { name: /#8/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: 'Answer review' }), "the second PR's tab").toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Answer all reviews' })).toHaveCount(0);
+
+  readyToWake(a, ship);
+  await fix.tap();
+  const dialog = page.getByRole('dialog', { name: 'Fix stack' });
+  await expect(dialog).toContainText(`${RESUME} feedback round 1 on ${PR_BASE}/7`);
+  await dialog.getByRole('button', { name: 'Fix stack', exact: true }).tap();
+  expect(await wokenPrompt(a, ship)).toBe(`${RESUME} feedback round 1 on ${PR_BASE}/7`);
+  await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).not.toBe('moored');
+}
+
+/** A moored ship whose own PR is behind a strict base, which no order view counts as Needs you by itself: its Orders row shows Fix PR, moves to Needs you, and the sheet is the PR tab's. */
+export async function fixFromTheOrdersRow(page: Page, a: Admiral, opts: { phone: boolean }) {
+  const ship = await launchMooredShip(a, BEHIND_PR.number);
+  await pollOnTheServer(a, ship, BEHIND_PR.number);
+  const command = `${RESUME} feedback round 1 on ${PR_BASE}/${BEHIND_PR.number}`;
+
+  await page.goto(a.url + 'app/orders?fleet=zulu');
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: BEHIND_PR.title });
+  await expect(row).toContainText(ship.name);
+  const fix = row.getByRole('button', { name: 'Fix PR', exact: true });
+  await expect(fix).toBeVisible();
+  await expect(page.getByRole('main').getByRole('region', { name: /^Needs you/ }).getByRole('listitem').filter({ hasText: BEHIND_PR.title })).toHaveCount(1);
+  expect((await fix.boundingBox())!.height, 'Fix PR height').toBeGreaterThanOrEqual(44);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+
+  await fix.tap();
+  const dialog = page.getByRole('dialog', { name: 'Fix PR' });
+  await expect(dialog).toContainText('is behind its base');
+  await expect(dialog).toContainText(command);
+
+  readyToWake(a, ship);
+  const sent = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/fix`);
+  await dialog.getByRole('button', { name: 'Fix PR', exact: true }).tap();
+  expect((await sent).status()).toBe(201);
+  expect(await wokenPrompt(a, ship)).toBe(command);
+  await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).not.toBe('moored');
+}
+
+/** The approved, green, mergeable own PR the Orders journey lists, which prMergeState puts behind its base. */
+export const BEHIND_PR: MyPR = { number: 31, title: 'Behind its base', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' };
 
 /** A moored PR whose only new event is a stranger's review, which the fleet does not wake on, shows no feedback bar. */
 export async function noAnswerReviewWithoutNewFeedback(page: Page, a: Admiral) {

@@ -116,6 +116,24 @@ export interface MooredPR {
   author?: string;
   reviewing?: boolean;
   responded?: boolean;
+  // Merge problems besides a conflict, on an open PR the ship opened.
+  behind?: boolean;
+  failing_checks?: string[];
+}
+/** What keeps one open PR from merging that its ship can fix. */
+export interface PRProblems {
+  pr: string;
+  conflicts?: boolean;
+  behind?: boolean;
+  failing_checks?: string[];
+}
+/** The Fix PR / Fix stack offer on a moored ship: the PR the round is on, the command it sends and every PR's problems. */
+export interface FixOffer {
+  pr: string;
+  /** The round covers more than one PR. */
+  stack?: boolean;
+  command: string;
+  problems: PRProblems[];
 }
 export interface Ship {
   session: string;
@@ -147,6 +165,7 @@ export interface Ship {
   no_resume?: boolean;
   waiting?: string;
   prs?: MooredPR[];
+  fix?: FixOffer;
   stack_ready?: boolean;
   ready_up_to?: string;
   merge_method?: 'merge' | 'squash' | 'rebase';
