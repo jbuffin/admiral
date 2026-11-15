@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { call as post, shipUrl, SLOW_TIMEOUT_MS, type Item } from './api';
 import type { AnswerCard } from './answerCard';
 import { hasConversationAdapter } from './conversationGate';
+import { Actions, Button } from './Button';
 import { Icon } from './Icon';
 import type { Conversation } from './conversation';
 import { renderMarkdown } from './markdown';
@@ -15,9 +16,7 @@ function Output({ text, error }: { text: string; error?: boolean }) {
     <div class={`tool-output${error ? ' error' : ''}`}>
       <pre>{shown.text}</pre>
       {shown.total !== undefined ? (
-        <button type="button" class="btn" onClick={() => setAll(true)}>
-          Show all {shown.total} lines
-        </button>
+        <Button label={`Show all ${shown.total} lines`} onClick={() => setAll(true)} />
       ) : null}
     </div>
   );
@@ -104,7 +103,8 @@ function Card({ title, children }: { title: string; children?: preact.ComponentC
 const cardKey = (c: AnswerCard) => (c.kind === 'permission' ? `p:${c.reason}:${c.call?.id ?? ''}` : c.kind === 'question' ? `q:${c.reason}:${c.item}` : c.kind);
 
 function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCard; session: string; crew?: string; openTerminal: () => void }) {
-  const [busy, setBusy] = useState(false);
+  // Which button was tapped; it stays busy until the card goes.
+  const [tapped, setTapped] = useState<string | null>(null);
   const [gone, setGone] = useState<string | null>(null);
   // Set before the first re-render, so a double tap sends once.
   const sending = useRef(false);
@@ -112,22 +112,20 @@ function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCar
   // A refused card must not hide the next prompt, which can share its key.
   useEffect(() => {
     sending.current = false;
-    setBusy(false);
+    setTapped(null);
     setGone(null);
   }, [key]);
   if (card.kind === 'none' || gone === key) return null;
   if (card.kind === 'terminal')
     return (
       <Card title="Answer this in the terminal">
-        <button type="button" class="btn" onClick={openTerminal}>
-          Open terminal
-        </button>
+        <Button label="Open terminal" onClick={openTerminal} />
       </Card>
     );
-  const send = async (body: object) => {
+  const send = async (choice: string, body: object) => {
     if (sending.current) return;
     sending.current = true;
-    setBusy(true);
+    setTapped(choice);
     const res = await post('POST', `${shipUrl(session, crew)}/answer`, body, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     if (!res.ok) setGone(key);
   };
@@ -138,14 +136,10 @@ function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCar
       <Card title={`${card.tool} needs your permission`}>
         {input ? <pre class="approve-input">{input}</pre> : null}
         {tool && (input ? tool.summary && tool.summary !== input : true) ? <p class="muted approve-note">{tool.summary ?? tool.name}</p> : null}
-        <div class="card-actions">
-          <button type="button" class="btn" disabled={busy} onClick={() => void send({ card: 'permission', reason: card.reason, choice: 'allow' })}>
-            Allow once
-          </button>
-          <button type="button" class="btn" disabled={busy} onClick={() => void send({ card: 'permission', reason: card.reason, choice: 'deny' })}>
-            Deny
-          </button>
-        </div>
+        <Actions class="card-actions">
+          <Button label="Allow once" busy={tapped === 'allow'} pending={['ship', session, 'allow', crew ?? '']} onClick={() => send('allow', { card: 'permission', reason: card.reason, choice: 'allow' })} />
+          <Button label="Deny" busy={tapped === 'deny'} pending={['ship', session, 'deny', crew ?? '']} onClick={() => send('deny', { card: 'permission', reason: card.reason, choice: 'deny' })} />
+        </Actions>
       </Card>
     );
   }
@@ -165,11 +159,7 @@ function ConversationBody({ conv, harness, anchored = false, working, noneTitle,
   }, [count, working, conv.state]);
 
   if (conv.state === 'loading') return <p class="line">Loading…</p>;
-  const terminal = (
-    <button type="button" class="btn" onClick={openTerminal}>
-      Open terminal
-    </button>
-  );
+  const terminal = <Button label="Open terminal" onClick={openTerminal} />;
   if (conv.state === 'none')
     return noneTitle ? (
       <Card title={noneTitle}>{terminal}</Card>
@@ -192,9 +182,7 @@ function ConversationBody({ conv, harness, anchored = false, working, noneTitle,
       }}
     >
       {conv.more ? (
-        <button type="button" class="btn convo-older" onClick={loadOlder}>
-          Load earlier messages
-        </button>
+        <Button label="Load earlier messages" class="convo-older" onClick={loadOlder} />
       ) : null}
       {blocks.length === 0 && !working ? <p class="line">No messages yet.</p> : null}
       {blocks.map((b, i) =>

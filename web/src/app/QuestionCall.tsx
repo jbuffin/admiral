@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call as post, shipUrl, SLOW_TIMEOUT_MS, type Item } from './api';
 import type { AnswerCard, CardQuestion } from './answerCard';
+import { Actions, Button } from './Button';
 import { renderRestrictedInline, renderRestrictedMarkdown } from './markdown';
 import { questionCallView, type QuestionView } from './questionView';
 
@@ -57,6 +58,8 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
   const [step, setStep] = useState(0);
   const [picks, setPicks] = useState<Pick[]>(() => qs.map(blank));
   const [busy, setBusy] = useState(false);
+  // Which button sent, so only it spins while the card waits to go.
+  const [from, setFrom] = useState('');
   const [refused, setRefused] = useState('');
   // Set before the first re-render, so a double tap sends once.
   const sending = useRef(false);
@@ -64,16 +67,18 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
   useEffect(() => {
     sending.current = false;
     setBusy(false);
+    setFrom('');
     setRefused('');
     setStep(0);
     setPicks(qs.map(blank));
   }, [key]);
   if (refused) return <Record views={views} note={refused} openTerminal={openTerminal} />;
   const body = () => ({ answers: qs.map((x, i) => ({ options: picks[i].picked, ...(picks[i].otherOn && picks[i].other.trim() ? { other: picks[i].other.trim() } : {}) })) });
-  const send = async (body: object) => {
+  const send = async (body: object, button = '') => {
     if (sending.current) return;
     sending.current = true;
     setBusy(true);
+    setFrom(button);
     const res = await post('POST', `${shipUrl(session, crew)}/answer`, { card: 'question', reason: card.reason, item: card.item, ...body }, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     if (!res.ok) setRefused(res.error);
   };
@@ -90,14 +95,10 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
             </li>
           ))}
         </ul>
-        <div class="card-actions">
-          <button type="button" class="btn" disabled={busy} onClick={() => setStep(step - 1)}>
-            Back
-          </button>
-          <button type="button" class="btn" disabled={busy} onClick={() => void send(body())}>
-            Submit answers
-          </button>
-        </div>
+        <Actions class="card-actions">
+          <Button label="Back" onClick={() => setStep(step - 1)} />
+          <Button label="Submit answers" busy={from === 'submit'} pending={['ship', session, 'answer-submit', crew ?? '']} onClick={() => send(body(), 'submit')} />
+        </Actions>
       </div>
     );
   }
@@ -149,25 +150,17 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
                 onInput={(e) => update({ ...pick, other: e.currentTarget.value, otherOn: e.currentTarget.value.trim() !== '', picked: q.multiSelect || e.currentTarget.value.trim() === '' ? pick.picked : [] })}
               />
               {direct ? (
-                <button type="button" class="btn" disabled={busy || !ready} onClick={() => void send(body())}>
-                  Send
-                </button>
+                <Button label="Send" busy={from === 'send'} disabled={busy || !ready} pending={['ship', session, 'answer-send', crew ?? '']} onClick={() => send(body(), 'send')} />
               ) : null}
             </div>
           ) : null}
         </div>
       </div>
       {!direct ? (
-        <div class="card-actions">
-          {step > 0 ? (
-            <button type="button" class="btn" disabled={busy} onClick={() => setStep(step - 1)}>
-              Back
-            </button>
-          ) : null}
-          <button type="button" class="btn" disabled={busy || !ready} onClick={() => setStep(step + 1)}>
-            Next
-          </button>
-        </div>
+        <Actions class="card-actions">
+          {step > 0 ? <Button label="Back" disabled={busy} onClick={() => setStep(step - 1)} /> : null}
+          <Button label="Next" disabled={busy || !ready} onClick={() => setStep(step + 1)} />
+        </Actions>
       ) : null}
     </div>
   );
@@ -184,9 +177,7 @@ function Record({ views, note, openTerminal }: { views: QuestionView[]; note?: s
           <p class="muted q-note" role="alert">
             {note}
           </p>
-          <button type="button" class="btn" onClick={openTerminal}>
-            Open terminal
-          </button>
+          <Button label="Open terminal" onClick={openTerminal} />
         </div>
       ) : null}
     </div>

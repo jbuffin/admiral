@@ -242,7 +242,7 @@ export function watchPage(page: Page, server: string) {
   const failedLoads: string[] = [];
   let refusedLaunches = 0;
   page.on('response', (r) => {
-    const refusable = { GET: /^\/api\/v1\/ships\/[^/]+\/(pr|stack)$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|rereview|stack)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
+    const refusable = { GET: /^\/api\/v1\/ships\/[^/]+\/(pr|stack)$/, POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|rereview|stack|wake)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
     const path = new URL(r.url()).pathname;
     if (refusable?.test(path) && r.status() >= 400) refusedLaunches++;
     // Moor's refusal is a 409; any other status on an ending stays an error.
@@ -519,9 +519,21 @@ export async function wakeFromTheShell(page: Page, a: Admiral, press: (l: Locato
   await expect(wake).toHaveText('Wake');
 
   readyToWake(a, ship);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route(`**/api/v1/ships/${ship.session}/wake`, async (route) => {
+    await gate;
+    await route.continue();
+  });
   const woke = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/wake`);
   await press(wake);
+  // The tapped Wake spins under its busy name while the request is out, and is never disabled.
+  const waking = row.filter({ hasText: ship.name }).getByRole('button', { name: 'Waking', exact: true });
+  await expect(waking).toHaveAttribute('aria-busy', 'true');
+  await expect(waking).toBeEnabled();
+  release();
   expect((await woke).status()).toBe(201);
+  await page.unroute(`**/api/v1/ships/${ship.session}/wake`);
 
   await expect(group).toHaveCount(0);
   await expect(rowLink(page, ship)).toBeVisible();
@@ -573,9 +585,17 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
   await messageBox(page).fill('   ');
   await expect(sendButton(page)).toBeDisabled();
 
+  // A refused wake keeps the text, shows the error and gives the box back.
+  await page.route(`**/api/v1/ships/${ship.session}/wake`, (route) => route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"ship is not moored"}' }), { times: 1 });
+  await messageBox(page).fill('Also check the docs');
+  await press(sendButton(page));
+  await expect(viewPanel(page).getByRole('alert')).toContainText('ship is not moored');
+  await expect(messageBox(page)).toHaveValue('Also check the docs');
+  await expect(messageBox(page)).toBeEditable();
+  await expect(sendButton(page)).not.toHaveAttribute('aria-busy', 'true');
+
   readyToWake(a, ship);
   const woke = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/wake`);
-  await messageBox(page).fill('Also check the docs');
   await press(sendButton(page));
   expect((await woke).postDataJSON()).toEqual({ text: 'Also check the docs' });
 
@@ -1097,7 +1117,8 @@ export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts:
   await holds(() => stackLinkCalls(a).length === 0, 'opening the sheet links nothing');
 
   await confirm.tap();
-  await expect(confirm).toBeDisabled();
+  await expect(confirm).toHaveAttribute('aria-busy', 'true');
+  await expect(sheet.getByRole('button', { name: 'Cancel' })).toBeDisabled();
   await expect.poll(() => stackLinkCalls(a)).toEqual([['stack', 'link', '--base', 'main', '7', '8']]);
   await expect(sheet).toHaveCount(0);
   await expect(stackBar(panel)).toContainText('Stacked on GitHub · stack #4 · 2 PRs, bottom to top. Merge takes the whole stack.');
@@ -2611,7 +2632,7 @@ export async function stopShipMoors(page: Page, a: Admiral, press: (l: Locator) 
   });
   const sent = endRequest(page, ship, 'stop');
   await press(dialog.getByRole('button', { name: 'Moor', exact: true }));
-  await expect(dialog.getByRole('button', { name: 'Moor', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Moor', exact: true })).toHaveAttribute('aria-busy', 'true');
   await expect(dialog.getByRole('button', { name: 'Stop for good', exact: true })).toBeDisabled();
   release();
   const res = await sent;
@@ -2664,7 +2685,7 @@ export async function returnToPortCleansUp(page: Page, a: Admiral, press: (l: Lo
   const res = await sent;
   expect(res.request().postData() ?? '').toBe('');
   expect(res.status()).toBe(200);
-  await expect(page.getByRole('button', { name: 'Returning to port' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Returning to port' })).toHaveAttribute('aria-busy', 'true');
   setReason(a, ship, 'stop');
   setState(a, ship, 'needs_you');
   await expect.poll(() => received(a, ship)).toContain('Return to port: this run is over');

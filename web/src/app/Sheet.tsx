@@ -1,5 +1,5 @@
 import type { ComponentChildren, RefObject } from 'preact';
-import { useLayoutEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 
 const ITEMS = '[role="menuitemradio"], [role="menuitem"], a';
 
@@ -33,4 +33,11 @@ export function Sheet({ label, onClose, wide, children, kind = '' }: { label: st
       </div>
     </div>
   );
+}
+
+/** Puts focus on the first button of an open confirmation sheet's foot, which is its Cancel. */
+export function useCancelFocus(open: boolean) {
+  useEffect(() => {
+    if (open) document.querySelector<HTMLElement>('.stop-backdrop .launch-foot button')?.focus();
+  }, [open]);
 }

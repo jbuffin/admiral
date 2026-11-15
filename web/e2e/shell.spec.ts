@@ -218,22 +218,27 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
     await gate;
     await route.continue();
   });
+  setState(admiral, chat, 'working');
+  await expect(interruptButton(page)).toBeEnabled();
   await messageBox(page).fill('Please rebase onto main');
   await sendButton(page).tap();
-  await expect(sentBubble(page, 'Please rebase onto main')).toBeVisible();
-  // A second message while the first is in flight gets its own bubble.
-  await messageBox(page).fill('And mind the lockfile');
-  await messageBox(page).press('Enter');
-  await expect(sentBubble(page, 'And mind the lockfile')).toBeVisible();
+  // While the send is out the box keeps its text read-only, Send spins and Interrupt waits; no bubble yet.
+  await expect(sendButton(page)).toHaveAttribute('aria-busy', 'true');
+  await expect(messageBox(page)).toHaveValue('Please rebase onto main');
+  await expect(messageBox(page)).not.toBeEditable();
+  await expect(interruptButton(page)).toBeDisabled();
+  await expect(sentBubble(page, 'Please rebase onto main')).toHaveCount(0);
   const accepted = page.waitForResponse((r) => r.url().includes('/messages') && r.status() === 200);
   release();
   await accepted;
+  await expect(messageBox(page)).toHaveValue('');
+  await expect(messageBox(page)).toBeEditable();
+  await expect(sendButton(page)).not.toHaveAttribute('aria-busy', 'true');
+  await expect(interruptButton(page)).toBeEnabled();
   // The harness records the message two seconds after the server accepted it: the bubble waits for the record, not the 200.
   await expect(sentBubble(page, 'Please rebase onto main')).toBeVisible();
   await expect(sentBubble(page, 'Please rebase onto main')).toHaveCount(0);
-  await expect(sentBubble(page, 'And mind the lockfile')).toHaveCount(0, { timeout: 15_000 });
   await expect(viewPanel(page).getByText('Please rebase onto main', { exact: true })).toHaveCount(1);
-  await expect(viewPanel(page).getByText('And mind the lockfile', { exact: true })).toHaveCount(1);
   await expect(viewPanel(page)).toContainText('Aye, rebasing now', { timeout: 15_000 });
   expect(received(admiral, chat)).toContain('Please rebase onto main');
   await page.unroute('**/api/v1/ships/*/messages');
@@ -254,7 +259,6 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await messageBox(page).fill('');
   await expect.poll(async () => (await messageBox(page).boundingBox())!.height).toBe(oneLine.height);
 
-  setState(admiral, chat, 'working');
   await expect(interruptButton(page)).toBeVisible();
   // Interrupt sits on the tabs' line, at its far right.
   const tabBox = (await viewTab(page, 'Conversation').boundingBox())!;
@@ -286,7 +290,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await rowLink(page, done).tap();
   await page.getByRole('button', { name: 'Return to port', exact: true }).tap();
   await page.getByRole('dialog', { name: 'Return to port' }).getByRole('button', { name: 'Return to port' }).tap();
-  await expect(page.getByRole('button', { name: 'Returning to port' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Returning to port' })).toHaveAttribute('aria-busy', 'true');
   setReason(admiral, done, 'stop');
   setState(admiral, done, 'needs_you');
   await expect.poll(() => received(admiral, done)).toContain('Return to port: this run is over');

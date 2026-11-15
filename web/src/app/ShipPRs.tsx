@@ -1,10 +1,11 @@
 import { Fragment } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { call, fetchPRDetail, fetchStackShape, linkStack, SLOW_TIMEOUT_MS, type MooredPR, type PRDetail, type Ship, type StackShape } from './api';
+import { Actions, Button } from './Button';
 import { MergeControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
-import { Sheet } from './Sheet';
+import { Sheet, useCancelFocus } from './Sheet';
 import { OpenPRs } from './OpenPRs';
 import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, stackBarAction, stackBarLine, tabOrder } from './prTab';
 import { MOOR_LINE, moorSheetParts, offersMoor, reReviewPlace, reviews, staleNote } from './moored';
@@ -94,7 +95,7 @@ function useShape(session: string, many: boolean): [StackShape | null, (s: Stack
 
 const STALE_LINK = 'Admiral restarted, reload to stack';
 
-/** The confirmation for Stack on GitHub: the PRs bottom to top, and one link call that keeps its button disabled while it runs. */
+/** The confirmation for Stack on GitHub: the PRs bottom to top, and one link call that keeps its button busy while it runs. */
 function StackSheet({ session, urls, details, onClose, onShape, read }: { session: string; urls: string[]; details: Record<string, PRDetail>; onClose: () => void; onShape: (s: StackShape) => void; read: () => Promise<StackShape | null> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -138,19 +139,11 @@ function StackSheet({ session, urls, details, onClose, onShape, read }: { sessio
         ))}
       </ul>
       <Failure message={error} />
-      <div class="launch-foot">
-        <button type="button" class="btn" disabled={busy} onClick={onClose}>
-          Cancel
-        </button>
-        {stale ? (
-          <button type="button" class="btn" onClick={() => location.reload()}>
-            Reload
-          </button>
-        ) : null}
-        <button type="button" class="btn primary" disabled={busy} onClick={() => void link()}>
-          Stack on GitHub
-        </button>
-      </div>
+      <Actions class="launch-foot">
+        <Button label="Cancel" onClick={onClose} />
+        {stale ? <Button label="Reload" onClick={() => location.reload()} /> : null}
+        <Button label="Stack on GitHub" variant="primary" pending={['ship', session, 'stack-link']} onClick={link} />
+      </Actions>
     </Sheet>
   );
 }
@@ -164,9 +157,7 @@ function PRHeader({ ship, url, detail, failed }: { ship: Ship; url: string; deta
         <div class="pr-title-row">
           {detail ? <h3 class="pr-title">{detail.title}</h3> : <h3 class="pr-title">#{prNumber(url)}</h3>}
           {detail ? (
-            <a class="btn" href={detail.url} target="_blank" rel="noreferrer">
-              Open on GitHub
-            </a>
+            <Button label="Open on GitHub" href={detail.url} external />
           ) : null}
         </div>
         <div class="pr-meta">
@@ -197,41 +188,39 @@ function PRHeader({ ship, url, detail, failed }: { ship: Ship; url: string; deta
 /** The feedback bar of a moored PR with new feedback; Answer review shows the exact command in a sheet and starts the round on confirm. */
 function FeedbackBar({ ship, pr, locked, onBusy }: { ship: Ship; pr: MooredPR; locked: boolean; onBusy: (busy: boolean) => void }) {
   const [asking, setAsking] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const cancel = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (asking) cancel.current?.focus();
-  }, [asking]);
+  useCancelFocus(asking);
   const run = async () => {
-    setBusy(true);
+    setSending(true);
     onBusy(true);
     setError('');
     const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/answer-review`, { pr: pr.url });
+    setSending(false);
     if (!r.ok) {
-      setBusy(false);
       onBusy(false);
       return setError(r.error);
     }
     // The bar stays off until the ships push removes it, so a second tap cannot meet the live-ship error.
+    setSent(true);
     setAsking(false);
   };
   return (
     <div class="feedback-bar">
       <span class="fb-text">{feedbackBarText(pr)}</span>
-      <button
-        type="button"
-        class="btn primary"
-        disabled={locked || busy}
+      <Button
+        label="Answer review"
+        variant="primary"
+        pending={['ship', ship.session, 'answer-review', pr.url]}
+        disabled={locked || sent}
         onClick={() => {
           setError('');
           setAsking(true);
         }}
-      >
-        Answer review
-      </button>
+      />
       {asking ? (
-        <Sheet label="Answer review" kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
+        <Sheet label="Answer review" kind="launch-backdrop stop-backdrop" onClose={() => !sending && setAsking(false)}>
           <p class="line">Starts a feedback round on #{prNumber(pr.url)} in the same Commodore run.</p>
           <p class="cmd-block mono">{pr.answer}</p>
           {error ? (
@@ -239,14 +228,10 @@ function FeedbackBar({ ship, pr, locked, onBusy }: { ship: Ship; pr: MooredPR; l
               {error}
             </p>
           ) : null}
-          <div class="launch-foot">
-            <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
-              Cancel
-            </button>
-            <button type="button" class="btn primary" disabled={busy} onClick={() => void run()}>
-              Answer review
-            </button>
-          </div>
+          <Actions class="launch-foot">
+            <Button label="Cancel" onClick={() => setAsking(false)} />
+            <Button label="Answer review" variant="primary" pending={['ship', ship.session, 'answer-review', pr.url]} onClick={run} />
+          </Actions>
         </Sheet>
       ) : null}
     </div>
@@ -256,39 +241,37 @@ function FeedbackBar({ ship, pr, locked, onBusy }: { ship: Ship; pr: MooredPR; l
 /** Answer all reviews in the stack bar: the sheet shows the server's command and posts the stack's URL on confirm. */
 function AnswerAll({ ship, stackUrl, command, locked, onBusy }: { ship: Ship; stackUrl: string; command: string; locked: boolean; onBusy: (busy: boolean) => void }) {
   const [asking, setAsking] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const cancel = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (asking) cancel.current?.focus();
-  }, [asking]);
+  useCancelFocus(asking);
   const run = async () => {
-    setBusy(true);
+    setSending(true);
     onBusy(true);
     setError('');
     const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/answer-review`, { stack: stackUrl });
+    setSending(false);
     if (!r.ok) {
-      setBusy(false);
       onBusy(false);
       return setError(r.error);
     }
+    setSent(true);
     setAsking(false);
   };
   return (
     <>
-      <button
-        type="button"
-        class="btn primary"
-        disabled={locked || busy}
+      <Button
+        label="Answer all reviews"
+        variant="primary"
+        pending={['ship', ship.session, 'answer-review', stackUrl]}
+        disabled={locked || sent}
         onClick={() => {
           setError('');
           setAsking(true);
         }}
-      >
-        Answer all reviews
-      </button>
+      />
       {asking ? (
-        <Sheet label="Answer all reviews" kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
+        <Sheet label="Answer all reviews" kind="launch-backdrop stop-backdrop" onClose={() => !sending && setAsking(false)}>
           <p class="line">One Commodore run answers the feedback on every PR in the stack.</p>
           <p class="cmd-block mono">{command}</p>
           {error ? (
@@ -296,14 +279,10 @@ function AnswerAll({ ship, stackUrl, command, locked, onBusy }: { ship: Ship; st
               {error}
             </p>
           ) : null}
-          <div class="launch-foot">
-            <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
-              Cancel
-            </button>
-            <button type="button" class="btn primary" disabled={busy} onClick={() => void run()}>
-              Answer all reviews
-            </button>
-          </div>
+          <Actions class="launch-foot">
+            <Button label="Cancel" onClick={() => setAsking(false)} />
+            <Button label="Answer all reviews" variant="primary" pending={['ship', ship.session, 'answer-review', stackUrl]} onClick={run} />
+          </Actions>
         </Sheet>
       ) : null}
     </>
@@ -314,12 +293,9 @@ function AnswerAll({ ship, stackUrl, command, locked, onBusy }: { ship: Ship; st
 function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolean; onError: (message: string) => void; onBusy: (busy: boolean) => void }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
-  const cancel = useRef<HTMLButtonElement>(null);
   // Frozen when the sheet opens, so a poll never changes the list under the tap.
   const [parts, setParts] = useState(() => moorSheetParts(ship));
-  useEffect(() => {
-    if (asking) cancel.current?.focus();
-  }, [asking]);
+  useCancelFocus(asking);
   const run = async () => {
     setBusy(true);
     onBusy(true);
@@ -336,32 +312,26 @@ function MoorRow({ ship, locked, onError, onBusy }: { ship: Ship; locked: boolea
   return (
     <div class="peek-form">
       <div class="peek-merge">
-        <button
-          type="button"
-          class="btn"
-          disabled={locked || busy}
+        <Button
+          label="Moor"
+          busy={busy}
+          disabled={locked}
           onClick={() => {
             onError('');
             setParts(moorSheetParts(ship));
             setAsking(true);
           }}
-        >
-          Moor
-        </button>
+        />
         <span class="merge-hint">{MOOR_LINE}</span>
       </div>
       {asking ? (
         <Sheet label="Moor" kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
           <OpenPRs name={ship.name} urls={parts.urls} />
           <p class="line">{parts.explain}</p>
-          <div class="launch-foot">
-            <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
-              Cancel
-            </button>
-            <button type="button" class="btn primary" disabled={busy} onClick={() => void run()}>
-              Moor
-            </button>
-          </div>
+          <Actions class="launch-foot">
+            <Button label="Cancel" onClick={() => setAsking(false)} />
+            <Button label="Moor" variant="primary" onClick={run} />
+          </Actions>
         </Sheet>
       ) : null}
     </div>
@@ -412,16 +382,12 @@ export function PRTab({ ship }: { ship: Ship }) {
             {line.rest}
           </span>
           {reviewBar && place?.place === 'stack' ? (
-            <button type="button" class="btn primary" onClick={() => setReReview('')}>
-              Re-review stack
-            </button>
+            <Button label="Re-review stack" variant="primary" onClick={() => setReReview('')} />
           ) : moored && chosen && showAnswerAll(carried, stack, chosen.answerAll) ? (
             <AnswerAll ship={ship} stackUrl={stack!.url} command={chosen.answerAll!} locked={acting} onBusy={setActing} />
           ) : null}
           {action === 'stack' ? (
-            <button type="button" class="btn" onClick={() => setStacking(true)}>
-              Stack on GitHub
-            </button>
+            <Button label="Stack on GitHub" onClick={() => setStacking(true)} />
           ) : null}
           {action === 'after-moor' ? <span class="merge-hint">Stack after the ship moors</span> : null}
           {unseen && shape?.shape === 'chained' ? <span>GitHub hasn't shown the stack yet. It shows on the next refresh.</span> : null}
@@ -464,9 +430,7 @@ export function PRTab({ ship }: { ship: Ship }) {
           <div class="feedback-bar">
             <span class="fb-text">{current.author ? `@${current.author}` : 'The author'} responded since your review.</span>
             {place?.place === 'stack' ? null : (
-              <button type="button" class="btn primary" onClick={() => setReReview(current.url)}>
-                Re-review
-              </button>
+              <Button label="Re-review" variant="primary" onClick={() => setReReview(current.url)} />
             )}
           </div>
         ) : null}
