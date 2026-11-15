@@ -35,10 +35,16 @@ export function NeedsYouBadge() {
 
 const MARK_PR = <path d="M4 5.1v5.8M12 10.9V6.5a2 2 0 0 0-2-2H7.5M9 3 7.5 4.5 9 6" />;
 
-function Mark({ pr, needs }: { pr: boolean; needs: boolean }) {
+function Mark({ pr, needs, stack }: { pr: boolean; needs: boolean; stack?: boolean }) {
   return (
-    <svg class={`orow-mark${needs ? (pr ? ' pr' : ' issue') : ''}`} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-      {pr ? (
+    <svg class={`orow-mark${stack ? ' stack' : needs ? (pr ? ' pr' : ' issue') : ''}`} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      {stack ? (
+        <>
+          <path d="M8 2 14 5 8 8 2 5Z" />
+          <path d="M2 8l6 3 6-3" />
+          <path d="M2 11l6 3 6-3" />
+        </>
+      ) : pr ? (
         <>
           <circle cx="4" cy="3.5" r="1.6" />
           <circle cx="4" cy="12.5" r="1.6" />
@@ -77,10 +83,11 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, parentGroup, child, note, spaced }: RowProps) {
   const o = row.order;
-  const act = orderRowAction(ships.value, o);
+  // A stack row has no action: a ship on its URL would otherwise show a pill.
+  const act = row.stackRow ? null : orderRowAction(ships.value, o);
   const g = parentGroup?.group;
   const folded = !!g && !parentGroup.open;
-  const here = g ? `${plural(g.children.length, 'sub-issue')} here` : '';
+  const here = g ? `${plural(g.children.length, row.stackRow ? 'PR' : 'sub-issue')} here` : '';
   const state = row.state ? <span class={`orow-state${row.needsYou ? ' needs' : ''}`}>{row.state}</span> : null;
   // A collapsed parent carries what its hidden children would show.
   const summary = folded ? (
@@ -102,8 +109,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, parentGro
     </Button>
   ) : null;
   const spacer = spaced ? <span class="orow-spacer" aria-hidden="true" /> : null;
-  const arrow =
-    act.kind === 'launch' ? (
+  const arrow = !act ? null : act.kind === 'launch' ? (
       row.launchable ? (
         <button type="button" class="orow-go" aria-label={`Launch ${o.title}`} onClick={() => onLaunch(launchRef(row))}>
           <Icon name="arrow" size={18} />
@@ -130,7 +136,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, parentGro
             <span class="orow-meta">
               <span class="mono">{orderRef(o)}</span>
               {note && parentNote(o) ? <span>{` · ${parentNote(o)}`}</span> : null}
-              {!row.inView ? <span>{' · not in this view'}</span> : null}
+              {!row.inView && !row.stackRow ? <span>{' · not in this view'}</span> : null}
               {g ? <span>{` · ${here}`}</span> : null}
               {row.state ? <span>{' · '}</span> : null}
               {state}
@@ -146,7 +152,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, parentGro
     <li class={`orow${muted ? ' waiting' : ''}${child ? ' child' : ''}${selected ? ' selected' : ''}`}>
       {toggle ?? spacer}
       <button type="button" class="orow-open" aria-label={`Open ${o.title}`} aria-pressed={selected} onClick={() => onOpen(row)}>
-        <Mark pr={!!o.pr} needs={row.needsYou} />
+        <Mark pr={!!o.pr} needs={row.needsYou} stack={row.stackRow} />
         <span class="orow-main">
           <span class="orow-title">{o.title}</span>
           <span class="orow-meta">
