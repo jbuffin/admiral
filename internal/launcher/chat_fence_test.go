@@ -451,7 +451,7 @@ func TestEveryChatPromptTeachesWorkOnAsAnInstructionOnlyAndItsLimits(t *testing.
 			continue
 		}
 		near := strings.ToLower(prompt[max(0, i-500):min(len(prompt), i+700)])
-		for _, want := range []string{"work on", "asks", "autopilot", "without-you", "never write"} {
+		for _, want := range []string{"work on", "asks", "autopilot", "without-you", "never edit"} {
 			if !strings.Contains(near, want) {
 				t.Errorf("%s prompt near work_on_campaign lacks %q: %q", harness, want, near)
 			}
