@@ -911,6 +911,7 @@ func TestLaunchRefusesABadSkillBeforeLaunching(t *testing.T) {
 		{"a slice with a skill", slice, "a slice runs on the Commodore skill; send skill only with child_url"},
 	} {
 		code, msg := r.launch(c.ID, tc.body)
+		msg = strings.ReplaceAll(msg, `\"`, `"`) // the body is JSON, which escapes the quotes
 		if code != http.StatusBadRequest || !strings.Contains(msg, tc.msg) || strings.TrimSpace(msg) == "" {
 			t.Errorf("%s: launch = %d %s, want 400 %q", tc.name, code, msg, tc.msg)
 		}

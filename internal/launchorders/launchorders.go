@@ -287,20 +287,21 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "directory "+q.Get("dir")+" is not a checkout or search root of fleet "+fleet.Name)
 		return
 	}
-	names := skillindex.Installed(dock.Name, dock.Environ(), dir)
+	found := skillindex.List(dock.Name, dock.Environ(), dir)
 	type skill struct {
-		Name     string `json:"name"`
-		Favorite bool   `json:"favorite"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Favorite    bool   `json:"favorite"`
 	}
-	list := make([]skill, len(names))
-	for i, n := range names {
-		list[i] = skill{n, slices.Contains(cfg.FavoriteSkills, n)}
+	list := make([]skill, len(found))
+	for i, sk := range found {
+		list[i] = skill{sk.Name, sk.Description, slices.Contains(cfg.FavoriteSkills, sk.Name)}
 	}
 	commodore := map[string]any{"found": false, "name": ""}
 	if n, ok := skillindex.FindCommodore(dock.Name, dock.Environ(), dir); ok {
 		commodore = map[string]any{"found": true, "name": n}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"skills": list, "commodore": commodore})
+	writeJSON(w, http.StatusOK, map[string]any{"mark": skillindex.Mark(dock.Name), "skills": list, "commodore": commodore})
 }
 
 // serveShipSkills lists the skills a ship's or boat's message box offers: its
