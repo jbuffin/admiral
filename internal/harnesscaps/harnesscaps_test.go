@@ -444,3 +444,49 @@ func TestListSaysWhichFleetsHaveAHarnessThatCanRunARestrictedShip(t *testing.T) 
 		}
 	}
 }
+
+func TestCheckSaysWhenAProbeCouldNotConcludeAndLeavesTheStoredResult(t *testing.T) {
+	home := t.TempDir()
+	h := script(t, "2.1.300 (test)")
+	mode := probes.Outcome{Passed: true, Detail: "confined"}
+	s := service(t, home, fleet("work", "Work", dock("claude", h)))
+	s.Runner = probes.New(home, probes.Probe{Harness: "claude", Capability: capabilities.RestrictedSandbox,
+		Run: func(context.Context, probes.Target) probes.Outcome { return mode }})
+	capDetail := func(rec *httptest.ResponseRecorder) (string, string) {
+		t.Helper()
+		var got harnessJSON
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("not JSON: %v\n%s", err, rec.Body)
+		}
+		for _, f := range got.Features {
+			for _, c := range f.Capabilities {
+				if c.ID == string(capabilities.RestrictedSandbox) {
+					return c.Status, c.Detail
+				}
+			}
+		}
+		t.Fatal("no restricted sandbox capability in the response")
+		return "", ""
+	}
+	check := func() (string, string) {
+		rec := do(t, s, "POST", "/api/harness-capabilities/check", `{"fleet":"work","harness":"claude"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("POST check = %d %s", rec.Code, rec.Body)
+		}
+		return capDetail(rec)
+	}
+	if st, d := check(); st != "passed" || d != "confined" {
+		t.Fatalf("first check = %s %q, want passed confined", st, d)
+	}
+	mode = probes.Outcome{Inconclusive: true, Detail: "inconclusive: the model never ran touch x"}
+	if st, d := check(); st != "passed" || !strings.Contains(d, "inconclusive: the model never ran touch x") {
+		t.Errorf("inconclusive check = %s %q, want the stored pass and a detail that says it did not conclude", st, d)
+	}
+	if res, _, _ := capabilities.Open(home).Result("work", "claude", capabilities.RestrictedSandbox); res.Detail != "confined" || !res.Passed {
+		t.Errorf("stored result = %+v, want it untouched", res)
+	}
+	rec := do(t, s, "GET", "/api/harness-capabilities", "")
+	if !strings.Contains(rec.Body.String(), `"confined"`) || strings.Contains(rec.Body.String(), "never ran") {
+		t.Errorf("a later GET = %s, want the stored detail again", rec.Body)
+	}
+}

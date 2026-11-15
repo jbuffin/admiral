@@ -102,7 +102,8 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-func (s *Service) harness(store *capabilities.Store, fleet config.Fleet, name string) harnessJSON {
+// harness reads the store; a check passes its report so a probe that could not conclude says so, though it stored nothing.
+func (s *Service) harness(store *capabilities.Store, fleet config.Fleet, name string, rep *probes.Report) harnessJSON {
 	snap, _ := store.Snapshot(fleet.Key, name) // an unreadable store reads as nothing checked
 	h := harnessJSON{Harness: name, Version: snap.Version}
 	if !snap.DetectedAt.IsZero() {
@@ -129,6 +130,13 @@ func (s *Service) harness(store *capabilities.Store, fleet config.Fleet, name st
 					cj.Detail = "version could not be detected"
 				}
 			}
+			if rep != nil {
+				for _, l := range rep.Lines {
+					if l.ID == c.ID && l.Inconclusive {
+						cj.Detail = l.Detail
+					}
+				}
+			}
 			f.Capabilities = append(f.Capabilities, cj)
 		}
 		h.Features = append(h.Features, f)
@@ -142,7 +150,7 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) {
 	for _, f := range s.Config().Fleets {
 		fj := fleetJSON{Key: f.Key, Name: f.Name, Harnesses: []harnessJSON{}, Judge: judgeOf(store, f), Restricted: autopilotgate.RestrictedCapable(s.Home, f)}
 		for _, h := range f.Harnesses {
-			fj.Harnesses = append(fj.Harnesses, s.harness(store, f, h.Name))
+			fj.Harnesses = append(fj.Harnesses, s.harness(store, f, h.Name, nil))
 		}
 		out = append(out, fj)
 	}
@@ -172,7 +180,8 @@ func (s *Service) check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The run is detached from this request: a closed tab neither cancels it nor records a failure.
-	if _, err := s.Runner.Run(r.Context(), fleet, req.Harness); err != nil {
+	rep, err := s.Runner.Run(r.Context(), fleet, req.Harness)
+	if err != nil {
 		if errors.Is(err, r.Context().Err()) && r.Context().Err() != nil {
 			return
 		}
@@ -181,7 +190,7 @@ func (s *Service) check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	store := capabilities.Open(s.Home)
-	h := s.harness(store, fleet, req.Harness)
+	h := s.harness(store, fleet, req.Harness, &rep)
 	h.Fleet = fleet.Key
 	writeJSON(w, http.StatusOK, checkJSON{harnessJSON: h, Judge: judgeOf(store, fleet)})
 }

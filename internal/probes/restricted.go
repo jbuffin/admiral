@@ -243,11 +243,8 @@ func ran(calls map[string]*toolCall, c string) *toolCall {
 }
 
 // unanswered is the outcome of a run that showed no leak and no confinement failure on the commands that ran but could not check them all: it says nothing either way.
-// A run with no tool call at all is a failure, since the harness's tools did not work.
-func unanswered(calls map[string]*toolCall, why string) Outcome {
-	if len(calls) == 0 {
-		return Outcome{Detail: why}
-	}
+// A model that made no tool call at all skipped every command, so it lands here too.
+func unanswered(why string) Outcome {
 	return Outcome{Inconclusive: true, Detail: "inconclusive: " + why}
 }
 
@@ -453,7 +450,7 @@ func runRestrictedConfinement(ctx context.Context, t Target) Outcome {
 		}
 	}
 	if why := answered(calls, cmds); why != "" {
-		return unanswered(calls, why)
+		return unanswered(why)
 	}
 	hatch := "escape hatch unused"
 	if calls["touch "+escape].Unsandboxed {
@@ -528,7 +525,7 @@ func runRestrictedTemp(ctx context.Context, t Target) Outcome {
 		}
 	}
 	if why := answered(calls, cmds); why != "" {
-		return unanswered(calls, why)
+		return unanswered(why)
 	}
 	return Outcome{Passed: true}
 }
@@ -615,10 +612,10 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 		}
 	}
 	if why := answered(calls, cmds); why != "" {
-		return unanswered(calls, why)
+		return unanswered(why)
 	}
 	if pending != "" {
-		return unanswered(calls, pending)
+		return unanswered(pending)
 	}
 	return Outcome{Passed: true, Detail: "git committed in the clone"}
 }
@@ -646,7 +643,7 @@ func runRestrictedNetwork(ctx context.Context, t Target) Outcome {
 		return Outcome{Detail: "curl could not reach registry.npmjs.org, so the run has no network"}
 	}
 	if why := answered(calls, cmds); why != "" {
-		return unanswered(calls, why)
+		return unanswered(why)
 	}
 	return Outcome{Passed: true, Detail: "curl reached registry.npmjs.org and was refused example.com"}
 }

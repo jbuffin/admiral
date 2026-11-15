@@ -170,8 +170,12 @@ func TestRestrictedProbeFailuresSayWhy(t *testing.T) {
 	})
 	t.Run("no tool calls", func(t *testing.T) {
 		r := runRestricted(t, "no-tool", "")
-		r.wantFailed(t, capabilities.RestrictedSandbox, "never ran")
-		r.wantFailed(t, capabilities.RestrictedAllow, "never ran")
+		for _, id := range []capabilities.ID{capabilities.RestrictedSandbox, capabilities.RestrictedAllow} {
+			l := r.line(t, id)
+			if l.Status != capabilities.NotChecked || !strings.Contains(l.Detail, "inconclusive") || !strings.Contains(l.Detail, "never ran") {
+				t.Errorf("%s = %+v, want not_checked and inconclusive: a model that made no tool call skipped every command", id, l)
+			}
+		}
 	})
 	t.Run("claude fails before its init record", func(t *testing.T) {
 		r := runRestricted(t, "pass", "error")
@@ -510,3 +514,12 @@ func TestTheRestrictedProbesWorstCaseFitsTheDefaultRunBudget(t *testing.T) {
 
 // defaultRestrictedRun is the time limit of one restricted run.
 const defaultRestrictedRun = 2 * time.Minute
+
+func TestAnInconclusiveCheckAfterAStoredFailureKeepsTheStoredFailureInItsDetail(t *testing.T) {
+	h := home(t)
+	inHome(t, h, "no-sandbox", "2.1.300", probes.ClaudeRestrictedSandbox()).line(t, capabilities.RestrictedSandbox)
+	l := inHome(t, h, "skip-always", "2.1.300", probes.ClaudeRestrictedSandbox()).line(t, capabilities.RestrictedSandbox)
+	if l.Status != capabilities.Failed || !strings.Contains(l.Detail, "inconclusive") || !strings.Contains(l.Detail, "outside") {
+		t.Errorf("sandbox = %+v, want still failed, with both this check's inconclusive reason and the stored failure", l)
+	}
+}

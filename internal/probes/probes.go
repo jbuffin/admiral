@@ -71,6 +71,8 @@ type Line struct {
 	Label  string
 	Status capabilities.Status
 	Detail string
+	// Inconclusive is a probe of this run that could not conclude and stored nothing, so Status and the stored result are an earlier run's.
+	Inconclusive bool
 }
 
 // Report is what Run returns: the detected version and one line per table capability.
@@ -227,6 +229,10 @@ func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness, version s
 				l.Detail = st.Result.Detail
 			}
 			if d, ok := unrecorded[c.ID]; ok {
+				l.Inconclusive = true
+				if st.Status == capabilities.Failed && l.Detail != "" {
+					d += "; the stored failure: " + l.Detail
+				}
 				l.Detail = d
 			}
 			rep.Lines = append(rep.Lines, l)
