@@ -147,12 +147,13 @@ function reReviewUrl(ship: Ship, order: Order): string | null {
   return isStackUrl(ship.url) ? ship.url! : null;
 }
 
-export type RowAgain = { kind: 'rereview'; url: string } | { kind: 'wake'; pr: string } | null;
+export type RowAgain = { kind: 'rereview'; url: string } | { kind: 'fix'; pr: string } | { kind: 'wake'; pr: string } | null;
 
 function againOf(ship: Ship, order: Order): RowAgain {
   if (ship.status !== 'moored') return null;
   const url = reReviewUrl(ship, order);
   if (url) return { kind: 'rereview', url };
+  if (ship.fix) return { kind: 'fix', pr: ship.fix.pr };
   const pr = wakePR(ship, order);
   return pr ? { kind: 'wake', pr: pr.url } : null;
 }
