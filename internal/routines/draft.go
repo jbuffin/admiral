@@ -30,6 +30,16 @@ var ordersWriter string
 //go:embed routinewriter.md
 var routineWriter string
 
+//go:embed campaignwriter.md
+var campaignWriter string
+
+const maxCampaignIssues = 50
+
+const campaignSchema = `{"type":"object","properties":{` +
+	`"title":{"type":"string","maxLength":200},` +
+	`"body":{"type":"string","maxLength":4000}` +
+	`},"required":["title","body"],"additionalProperties":false}`
+
 const ordersSchema = `{"type":"object","properties":{` +
 	`"limits":{"type":"object"},` +
 	`"checks":{"type":"array","items":{"type":"string","maxLength":300}},` +
@@ -86,8 +96,7 @@ func badGateway(w http.ResponseWriter, kind judge.FailureKind) {
 
 // draftCall reads the prose, picks the fleet's judge harness and runs one Strong call; ok is false once the answer is written.
 func (s *Service) draftCall(w http.ResponseWriter, r *http.Request, prompt func(prose string) string, schema string) (prose string, fields map[string]any, ok bool) {
-	key := r.PathValue("key")
-	f, err := s.Store.fleet(key)
+	f, err := s.Store.fleet(r.PathValue("key"))
 	if err != nil {
 		fail(w, err)
 		return "", nil, false
@@ -106,6 +115,12 @@ func (s *Service) draftCall(w http.ResponseWriter, r *http.Request, prompt func(
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("prose: at most %d characters", maxProseRunes))
 		return "", nil, false
 	}
+	fields, ok = s.judgeCall(w, r, f, prompt(req.Prose), schema)
+	return req.Prose, fields, ok
+}
+
+// judgeCall picks the fleet's judge harness and runs one Strong call; ok is false once the answer is written.
+func (s *Service) judgeCall(w http.ResponseWriter, r *http.Request, f config.Fleet, prompt, schema string) (fields map[string]any, ok bool) {
 	choice, err := judge.Choose(f, capabilities.Open(s.Store.Home))
 	if err != nil {
 		reason := "no judge harness is proven for this fleet"
@@ -114,13 +129,13 @@ func (s *Service) draftCall(w http.ResponseWriter, r *http.Request, prompt func(
 			reason = none.Reason
 		}
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "no harness is proven safe for judge calls", "reason": reason})
-		return "", nil, false
+		return nil, false
 	}
 	run := s.Judge
 	if run == nil {
 		run = judge.Run
 	}
-	reply, err := run(r.Context(), choice, judge.Call{Kind: judge.Strong, Prompt: prompt(req.Prose),
+	reply, err := run(r.Context(), choice, judge.Call{Kind: judge.Strong, Prompt: prompt,
 		Schema: []byte(schema), BudgetUSD: draftBudgetUSD, Timeout: draftTimeout})
 	if err != nil {
 		kind := judge.KindError
@@ -129,9 +144,9 @@ func (s *Service) draftCall(w http.ResponseWriter, r *http.Request, prompt func(
 			kind = jf.Kind
 		}
 		badGateway(w, kind)
-		return "", nil, false
+		return nil, false
 	}
-	return req.Prose, reply.Fields, true
+	return reply.Fields, true
 }
 
 // ordersPrompt names every Limit by the field path its sentence carries.
@@ -369,5 +384,37 @@ func (s *Service) serveRoutineDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) serveCampaignDraft(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented")
+	f, err := s.Store.fleet(r.PathValue("key"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	var req struct {
+		Issues []struct {
+			URL   string `json:"url"`
+			Title string `json:"title"`
+		} `json:"issues"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if len(req.Issues) == 0 || len(req.Issues) > maxCampaignIssues {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("issues: pick 1 to %d", maxCampaignIssues))
+		return
+	}
+	var list strings.Builder
+	for _, is := range req.Issues {
+		fmt.Fprintf(&list, "%s %s\n", is.URL, collapse(is.Title))
+	}
+	fields, ok := s.judgeCall(w, r, f, fencedPrompt(campaignWriter, "The issues, one per line as url then title:", strings.TrimSuffix(list.String(), "\n")), campaignSchema)
+	if !ok {
+		return
+	}
+	title, tok := fields["title"].(string)
+	body, bok := fields["body"].(string)
+	if !tok || !bok {
+		badGateway(w, judge.KindBadReply)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"title": title, "body": body})
 }
