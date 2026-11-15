@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/routines"
 	"github.com/jbuffin/admiral/internal/standing"
@@ -35,13 +37,35 @@ type undoRig struct {
 	stop    *fakeStop
 	routine routines.Routine
 	other   routines.Routine
+	mu      sync.Mutex
+	hosted  []routines.ListedShip // the ships the fake host lists
+}
+
+func (u *undoRig) list() []routines.ListedShip {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]routines.ListedShip(nil), u.hosted...)
+}
+
+// host lists rec's ship as the host would: under the record's routine key, launched when the record was made.
+func (u *undoRig) host(rec routines.Trigger) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.hosted = append(u.hosted, routines.ListedShip{Session: rec.Ship, Fleet: "work", Routine: "routine:" + rec.Routine,
+		Launched: rec.At.UTC().Format(time.RFC3339), Status: "underway"})
+}
+
+func (u *undoRig) unhost(session string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.hosted = slices.DeleteFunc(u.hosted, func(sh routines.ListedShip) bool { return sh.Session == session })
 }
 
 func newUndoRig(t *testing.T) *undoRig {
 	t.Helper()
 	u := &undoRig{api: &api{t: t, rig: newRig(t)}, stop: &fakeStop{}}
 	mux := http.NewServeMux()
-	(&routines.Service{Store: u.rig.store, Stop: u.stop.stop}).Routes(mux)
+	(&routines.Service{Store: u.rig.store, Stop: u.stop.stop, Listed: u.list}).Routes(mux)
 	u.srv = httptest.NewServer(mux)
 	t.Cleanup(u.srv.Close)
 	u.routine = u.rig.create("work", launchRoutine())
@@ -60,8 +84,16 @@ func (u *undoRig) record(t routines.Trigger) routines.Trigger {
 	return got
 }
 
+// launch is an event launch of ship the host lists.
 func (u *undoRig) launch(ship string) routines.Trigger {
-	return u.record(routines.Trigger{Routine: u.routine.ID, Outcome: routines.Launched, Ship: ship, WorkerLaunched: true, Restricted: standing.DraftFix, Tier: "T1"})
+	return u.launchAt(ship, u.rig.now)
+}
+
+func (u *undoRig) launchAt(ship string, at time.Time) routines.Trigger {
+	rec := u.record(routines.Trigger{Routine: u.routine.ID, Outcome: routines.Launched, Ship: ship, WorkerLaunched: true, Restricted: standing.DraftFix, Tier: "T1",
+		Event: "https://github.com/acme/api/pull/7", At: at})
+	u.host(rec)
+	return rec
 }
 
 func (u *undoRig) clone(ship string) string {
@@ -312,17 +344,124 @@ func TestAnUndoOfALaunchWhoseShipEndedFailedStopsItRemovesItsCloneAndMarksIt(t *
 	}
 }
 
-func TestAnUndoWhoseCloneIsGoneNeverStopsANewShipThatHoldsTheName(t *testing.T) {
+func TestAnUndoStopsTheLaunchesShipEvenWhenItDeletedItsOwnClone(t *testing.T) {
 	u := newUndoRig(t)
 	rec := u.launch("calm-otter")
 	if code := u.undo(u.routine.ID, rec.ID); code != http.StatusOK {
 		t.Fatalf("undo = %d, want 200", code)
 	}
-	if u.stop.n() != 0 {
-		t.Errorf("stop calls = %v, want none: a listed ship with no clone is not this launch's", u.stop.calls)
+	if u.stop.n() != 1 || u.stop.calls[0] != "calm-otter" {
+		t.Errorf("stop calls = %v, want one for calm-otter: the host lists the launch's ship, clone or no clone", u.stop.calls)
 	}
 	if !u.undone(rec.ID) {
 		t.Error("the record is not marked undone")
+	}
+}
+
+func TestAnUndoWhoseShipWillNotStopLeavesTheRecordUnmarkedWhenTheCloneIsGone(t *testing.T) {
+	u := newUndoRig(t)
+	u.stop.set(errors.New("the terminal host is down"))
+	rec := u.launch("calm-otter")
+	code, body := u.do("POST", "/api/fleets/work/routines/"+u.routine.ID+"/runs/"+rec.ID+"/undo", "")
+	wantError(t, code, body, http.StatusInternalServerError)
+	if u.undone(rec.ID) {
+		t.Error("the record is marked undone though its ship still runs")
+	}
+}
+
+func TestAnUndoNeverStopsANewerShipThatReusedTheName(t *testing.T) {
+	u := newUndoRig(t)
+	older := u.launchAt("calm-otter", u.rig.now)
+	u.unhost("calm-otter")
+	u.launchAt("calm-otter", u.rig.now.Add(time.Hour))
+	if code := u.undo(u.routine.ID, older.ID); code != http.StatusOK {
+		t.Fatalf("undo = %d, want 200", code)
+	}
+	if u.stop.n() != 0 {
+		t.Errorf("stop calls = %v, want none: the listed calm-otter belongs to the newer launch", u.stop.calls)
+	}
+	if !u.undone(older.ID) {
+		t.Error("the older record is not marked undone")
+	}
+}
+
+func TestAnUndoNeverStopsOrDeletesTheCloneOfANewerShipThatReusedTheName(t *testing.T) {
+	u := newUndoRig(t)
+	older := u.launchAt("calm-otter", u.rig.now)
+	u.unhost("calm-otter")
+	u.launchAt("calm-otter", u.rig.now.Add(time.Hour))
+	newer := u.clone("calm-otter")
+	u.undo(u.routine.ID, older.ID)
+	if u.stop.n() != 0 {
+		t.Errorf("stop calls = %v, want none for the newer ship", u.stop.calls)
+	}
+	if !exists(filepath.Join(newer, "work.txt")) {
+		t.Error("the undo of the older launch deleted the newer ship's clone")
+	}
+}
+
+func TestAnUndoNeverStopsOrDeletesTheCloneOfAScheduledLaunchOfTheSameRoutineThatReusedTheName(t *testing.T) {
+	u := newUndoRig(t)
+	older := u.launchAt("calm-otter", u.rig.now)
+	u.unhost("calm-otter")
+	later := u.rig.now.Add(time.Hour)
+	scheduled := u.record(routines.Trigger{Routine: u.routine.ID, Outcome: routines.Launched, Ship: "calm-otter", Tier: "T1", At: later})
+	u.host(scheduled)
+	clone := u.clone("calm-otter")
+	if code := u.undo(u.routine.ID, older.ID); code != http.StatusOK {
+		t.Fatalf("undo = %d, want 200", code)
+	}
+	if u.stop.n() != 0 {
+		t.Errorf("stop calls = %v, want none for the scheduled launch's ship", u.stop.calls)
+	}
+	if !exists(filepath.Join(clone, "work.txt")) {
+		t.Error("the undo deleted the clone of the scheduled launch's ship")
+	}
+}
+
+func TestAnUndoWithNoHostListFailsAndRemovesNothing(t *testing.T) {
+	u := newUndoRig(t)
+	rec := u.launch("calm-otter")
+	dir := u.clone("calm-otter")
+	mux := http.NewServeMux()
+	(&routines.Service{Store: u.rig.store, Stop: u.stop.stop}).Routes(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	u.srv = srv
+	if code := u.undo(u.routine.ID, rec.ID); code != http.StatusInternalServerError {
+		t.Fatalf("undo = %d, want 500", code)
+	}
+	if !exists(dir) || u.undone(rec.ID) {
+		t.Error("the undo removed the clone or marked the record")
+	}
+}
+
+func TestAnUndoLeavesAListedShipOfThatNameThatIsNotThisLaunchAlone(t *testing.T) {
+	at := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	cases := map[string]routines.ListedShip{
+		"a hand launch with no routine key": {Session: "calm-otter", Fleet: "work", Launched: at.Add(time.Hour).Format(time.RFC3339), Status: "underway"},
+		"another routine's ship":            {Session: "calm-otter", Fleet: "work", Routine: "routine:other", Launched: at.Format(time.RFC3339), Status: "underway"},
+		"another fleet's ship":              {Session: "calm-otter", Fleet: "play", Routine: "routine:", Launched: at.Format(time.RFC3339), Status: "underway"},
+		"a ship launched before the record": {Session: "calm-otter", Fleet: "work", Routine: "routine:", Launched: at.Add(-time.Hour).Format(time.RFC3339), Status: "underway"},
+	}
+	for name, sh := range cases {
+		t.Run(name, func(t *testing.T) {
+			u := newUndoRig(t)
+			rec := u.launchAt("calm-otter", at)
+			u.unhost("calm-otter")
+			if sh.Routine == "routine:" {
+				sh.Routine += u.routine.ID
+			}
+			u.mu.Lock()
+			u.hosted = append(u.hosted, sh)
+			u.mu.Unlock()
+			if code := u.undo(u.routine.ID, rec.ID); code != http.StatusOK {
+				t.Fatalf("undo = %d, want 200", code)
+			}
+			if u.stop.n() != 0 {
+				t.Errorf("stop calls = %v, want none", u.stop.calls)
+			}
+		})
 	}
 }
 

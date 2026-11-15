@@ -128,7 +128,7 @@ func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.
 		if err != nil {
 			recs = nil
 		}
-		return routines.EventShips(fleet, recs, listed())
+		return routines.EventLaunchedShips(fleet, recs, listed())
 	}}
 	store.Events = func(fleet, source string) ([]routines.EventKind, bool) {
 		kinds, ok := sup.Events(fleet, source)

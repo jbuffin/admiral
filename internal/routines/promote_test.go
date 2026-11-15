@@ -106,7 +106,7 @@ func newPromoRig(t *testing.T, withLaunch bool) *promoRig {
 	promoGit(t, p.dir, "add", "b.txt")
 	promoGit(t, p.dir, "commit", "-q", "-m", "b")
 	p.base = promoGit(t, p.dir, "rev-parse", "HEAD")
-	svc := &routines.Service{Store: p.rig.store, Stop: p.seams.stop}
+	svc := &routines.Service{Store: p.rig.store, Stop: p.seams.stop, Listed: func() []routines.ListedShip { return nil }}
 	if withLaunch {
 		svc.Launch = p.seams.launch
 	}

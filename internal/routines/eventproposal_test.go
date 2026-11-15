@@ -210,3 +210,54 @@ func TestAnOpenProposalOfARoutineOnTheRetiredViewTriggerCannotBeLaunched(t *test
 	}
 	h.wantLaunches(0)
 }
+
+// proposalShip is the record of a ship the engineer launched from an accepted proposal for the event at ref, and the host listing it.
+func proposalShip(at time.Time, routine, ref, key, status string) (routines.Trigger, routines.ListedShip) {
+	rec := routines.Trigger{ID: "prop-launch", Routine: routine, Outcome: routines.Launched, Tier: "T2", Via: routines.ViaProposal, Event: ref, DedupeKey: key, Ship: "proposed-1", At: at}
+	return rec, routines.ListedShip{Session: "proposed-1", Fleet: "work", Routine: "routine:" + routine, Launched: at.UTC().Format(time.RFC3339), Status: status}
+}
+
+func TestAnEventHeldByALiveProposalShipIsDedupedOnASecondRoutine(t *testing.T) {
+	h, first, second := twoRoutinesOnOneEvent(t, func(*standing.Limits) {})
+	rec, ship := proposalShip(h.clock.Now(), first.ID, "https://github.com/acme/api/pull/7", "gh:acme/api#7", "underway")
+	if _, err := h.store.AppendTrigger("work", rec); err != nil {
+		t.Fatal(err)
+	}
+	listed := func() []routines.ListedShip { return []routines.ListedShip{ship} }
+	h.sched.Listed = listed
+	h.sched.Live = routines.EventLive{Listed: listed}
+	h.sched.HandleEvent(evFrom("Eng"))
+	h.wantLaunches(0)
+	for _, r := range []routines.Routine{first, second} {
+		got := h.ofOutcome(r, routines.Proposed)
+		if len(got) != 1 || !strings.Contains(got[0].Reason, "dedupe") {
+			t.Errorf("routine %s proposals = %+v, want one held for dedupe", r.Name, got)
+		}
+	}
+}
+
+func TestLoadHoldsTheDedupeKeyOfAProposalShipWhetherItIsUnderwayOrNot(t *testing.T) {
+	at := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	for _, status := range []string{"underway", "needs_you", "anchored"} {
+		t.Run(status, func(t *testing.T) {
+			rec, ship := proposalShip(at, "rt", "https://github.com/acme/api/pull/7", "gh:acme/api#7", status)
+			live := routines.EventLive{Listed: func() []routines.ListedShip { return []routines.ListedShip{ship} }}
+			_, keys := live.Load("work", []routines.Trigger{rec})
+			if !slices.Equal(keys, []string{"gh:acme/api#7"}) {
+				t.Errorf("held keys = %v, want gh:acme/api#7", keys)
+			}
+		})
+	}
+}
+
+func TestLoadCountsNoWorkerShipForAProposalShip(t *testing.T) {
+	at := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	rec, ship := proposalShip(at, "rt", "https://github.com/acme/api/pull/7", "gh:acme/api#7", "underway")
+	event := routines.Trigger{ID: "ev", Routine: "rt", Outcome: routines.Launched, Event: "https://github.com/acme/api/pull/9", DedupeKey: "gh:acme/api#9", Ship: "event-1", At: at}
+	evShip := routines.ListedShip{Session: "event-1", Fleet: "work", Routine: "routine:rt", Launched: at.UTC().Format(time.RFC3339), Status: "underway"}
+	live := routines.EventLive{Listed: func() []routines.ListedShip { return []routines.ListedShip{ship, evShip} }}
+	workers, _ := live.Load("work", []routines.Trigger{rec, event})
+	if workers != 1 {
+		t.Errorf("worker ships = %d, want 1: the event ship, not the proposal ship", workers)
+	}
+}
