@@ -63,6 +63,12 @@ describe('button model', () => {
     expect(buttonModel({ label: 'a' }).ariaPressed).toBeUndefined();
   });
 
+  it('sets aria-expanded from expanded, true and false, and omits it otherwise', () => {
+    expect(buttonModel({ label: 'a', expanded: true }).ariaExpanded).toBe('true');
+    expect(buttonModel({ label: 'a', expanded: false }).ariaExpanded).toBe('false');
+    expect(buttonModel({ label: 'a' }).ariaExpanded).toBeUndefined();
+  });
+
   it('renders an anchor for href, with the same class, and never goes busy', () => {
     const m = buttonModel({ label: 'Open on GitHub', href: 'https://example.test/pr/1', busy: true });
     expect(m).toMatchObject({ tag: 'a', href: 'https://example.test/pr/1', class: 'btn' });

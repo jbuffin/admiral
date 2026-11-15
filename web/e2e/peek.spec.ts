@@ -128,6 +128,7 @@ test('a refused question item answer shows the error: 409 locks Send, 400 keeps 
   await send.tap();
   await expect(peek.getByRole('alert')).toContainText('that answer is not valid');
   await expect(send).toBeEnabled();
+  await expect(send).not.toHaveAttribute('aria-busy', 'true');
 
   status = 409;
   await send.tap();
@@ -261,11 +262,14 @@ test('a review action GitHub refuses shows the error and keeps the actions; one 
   await confirmed();
   await expect(peek.getByRole('alert')).toContainText('github said no');
   await expect(peek.getByRole('button', { name: 'Submit APPROVE' })).toBeEnabled();
+  await expect(peek.getByRole('button', { name: 'Submit APPROVE' })).not.toHaveAttribute('aria-busy', 'true');
+  await expect(peek.getByRole('button', { name: 'Change', exact: true })).toBeEnabled();
 
   refusal = { status: 409, error: 'another action on this item is still running' };
   await peek.getByRole('button', { name: 'Submit APPROVE' }).tap();
   await expect(peek.getByRole('alert')).toContainText('still running');
   await expect(peek.getByRole('button', { name: 'Submit APPROVE' })).toBeEnabled();
+  await expect(peek.getByRole('button', { name: 'Submit APPROVE' })).not.toHaveAttribute('aria-busy', 'true');
 
   refusal = { status: 409, error: 'inbox item is already answered' };
   await peek.getByRole('button', { name: 'Submit APPROVE' }).tap();
@@ -527,13 +531,16 @@ test('Peek answers a crew notes item: keep one note, edit another to repo scope,
   await text.fill('');
   await expect(card2.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await text.fill('Ada runs make check before anything');
-  await card2.getByRole('radio', { name: 'Repo', exact: true }).or(card2.getByRole('button', { name: 'Repo', exact: true })).tap();
+  await card2.getByRole('button', { name: 'Repo', exact: true }).tap();
+  await expect(card2.getByRole('button', { name: 'Repo', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(card2.getByRole('button', { name: 'Fleet', exact: true })).toHaveAttribute('aria-pressed', 'false');
   const repo = card2.getByRole('textbox', { name: /repo/i });
   await repo.fill('acme');
   await expect(card2.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await repo.fill('acme/api');
   await card2.getByRole('button', { name: 'Save', exact: true }).tap();
   await expect(peek).toContainText('2 of 2 decided');
+  await expect(card2.getByRole('button', { name: 'Edit', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(send).toBeEnabled();
 
   const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/inbox/_admiral/crew-n1/crew-notes');
@@ -762,8 +769,30 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
   const peek = peekOf(page);
   await expect(peek).toContainText('Held sweep');
   await expect(peek.getByRole('button', { name: 'Dismiss', exact: true })).toBeVisible();
-  await peek.getByRole('button', { name: 'Launch', exact: true }).tap();
+  let launchCalls = 0;
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/api/v1/inbox/*/*/launch', async (route) => {
+    launchCalls++;
+    await held;
+    await route.continue();
+  });
+  const launch = peek.getByRole('button', { name: 'Launch', exact: true });
+  await launch.tap();
+  await expect(launch).toHaveAttribute('aria-busy', 'true');
+  await expect(peek.getByRole('button', { name: 'Dismiss', exact: true })).toBeDisabled();
+  await launch.tap({ force: true });
+  expect(launchCalls).toBe(1);
+
+  // Leaving and reopening keeps the request busy; a reload would clear it.
+  await peek.getByRole('link', { name: 'Back', exact: true }).tap();
+  await expect(peekOf(page)).toHaveCount(0);
+  await row.getByRole('link').tap();
+  await expect(peekOf(page).getByRole('button', { name: 'Launch', exact: true })).toHaveAttribute('aria-busy', 'true');
+
+  release();
   await expect.poll(shipsNow, { timeout: 30_000 }).toBe(1);
+  expect(launchCalls).toBe(1);
   await expect(peekOf(page)).toHaveCount(0);
   await expect(row).toHaveCount(0, { timeout: 15_000 });
 

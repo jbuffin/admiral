@@ -848,7 +848,7 @@ export async function mergeFromPeek(page: Page, a: Admiral, opts: { phone: boole
     if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/moored/refresh') refreshes.push(r.url());
   });
   await merge.tap();
-  await expect(mergeButton(page)).toBeDisabled();
+  await expect(mergeButton(page)).toHaveAttribute('aria-busy', 'true');
   await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
   await expect(inboxRow(page, ship)).toContainText('Merged');
   await expect.poll(() => refreshes.length, 'a poll is asked for after the 202').toBeGreaterThan(0);
@@ -979,7 +979,7 @@ export async function readyStackMergesFromPeek(page: Page, a: Admiral) {
   await holds(() => mergeCalls(a).length === 0, 'a stack is merged only by the tap');
 
   await merge.tap();
-  await expect(merge).toBeDisabled();
+  await expect(merge).toHaveAttribute('aria-busy', 'true');
   await expectOneStackMerge(a);
   await expect(inboxRow(page, ship)).toContainText('Merged');
   await expect
@@ -1049,7 +1049,7 @@ export async function mergeFromThePRTab(page: Page, a: Admiral, opts: { phone: b
   await holds(() => mergeCalls(a).length === 0, 'no merge before the tap');
 
   await merge.tap();
-  await expect(merge).toBeDisabled();
+  await expect(merge).toHaveAttribute('aria-busy', 'true');
   await expect(unfollow).toBeDisabled();
   await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
   await expect
@@ -1111,7 +1111,7 @@ export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts:
   await holds(() => mergeCalls(a).length === 0, 'a stack is merged only by the tap');
 
   await merge.tap();
-  await expect(merge).toBeDisabled();
+  await expect(merge).toHaveAttribute('aria-busy', 'true');
   await expectOneStackMerge(a);
   await expect
     .poll(async () => (await (await fetch(`${a.url}api/v1/ships`)).json() as { ships: ShipJSON[] }).ships.find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
@@ -1164,7 +1164,7 @@ export async function independentPRsMergeOneAtATime(page: Page, a: Admiral, opts
   await holds(() => mergeCalls(a).length === 0, 'nothing merges before the tap');
 
   await merge.tap();
-  await expect(merge).toBeDisabled();
+  await expect(merge).toHaveAttribute('aria-busy', 'true');
   await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
   await expect(panel.locator('.pr-detail').getByText('Merged', { exact: true })).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
@@ -2407,7 +2407,7 @@ export async function myPRsMergeACarriedPR(page: Page, a: Admiral, opts: { phone
   await holds(() => mergeCalls(a).length === 0, 'opening the detail merges nothing');
 
   await merge.tap();
-  await expect(merge).toBeDisabled();
+  await expect(merge).toHaveAttribute('aria-busy', 'true');
   await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/${READY_PR.number}`, '--squash']]);
   await expect
     .poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })

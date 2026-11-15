@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, SLOW_TIMEOUT_MS } from './api';
+import { Actions, Button } from './Button';
 import type { Entry } from './inbox';
 import { prLink } from '../inbox';
 import { createDecisions, type Decisions, type FindingCard, readCards, type Verdict } from '../findings';
+import type { PendingKey } from './busy';
 import { REMOVED_FOLD } from './itemActions';
 import { MuteRule } from './MuteRule';
 import { ReviewerNoteView } from './ReviewerNoteView';
@@ -24,6 +26,9 @@ export const EVENTS: [string, string][] = [
   ['APPROVE', 'Approve the changes.'],
   ['REQUEST_CHANGES', 'Block the merge until changes are made.'],
 ];
+
+/** Names a request on an item for the busy store; item ids repeat across ships. */
+export const itemKey = (entry: Entry, verb: string): PendingKey => ['item', entry.session, entry.id!, verb];
 
 /** What an action on the open item is doing; `locked` is a refusal that cannot be retried. */
 export interface Acting {
@@ -69,21 +74,16 @@ function PrLine({ pr }: { pr: ReturnType<typeof prLink> }) {
 /** A held routine run: Launch runs it now, Dismiss lets it pass. */
 export function RoutineProposalBody({ entry, acting }: { entry: Entry; acting: Acting }) {
   const p = entry.item?.routine_proposal;
-  const off = acting.busy || acting.locked;
   const expires = p?.expires_at ? new Date(p.expires_at) : null;
   return (
     <div class="routine-proposal">
       {p?.action ? <p class="line">{p.action}</p> : null}
       {p?.reason ? <p class="line">{p.reason}</p> : null}
       {expires && !Number.isNaN(expires.getTime()) ? <p class="line">Open until {expires.toLocaleString()}</p> : null}
-      <div class="peek-actions">
-        <button type="button" class="btn primary" disabled={off} onClick={() => void acting.run('launch', {}, () => 'Launched')}>
-          Launch
-        </button>
-        <button type="button" class="btn" disabled={off} onClick={() => void acting.run('dismiss', {}, () => 'Dismissed')}>
-          Dismiss
-        </button>
-      </div>
+      <Actions class="peek-actions">
+        <Button label="Launch" variant="primary" pending={itemKey(entry, 'launch')} disabled={acting.locked} onClick={() => acting.run('launch', {}, () => 'Launched')} />
+        <Button label="Dismiss" pending={itemKey(entry, 'dismiss')} disabled={acting.locked} onClick={() => acting.run('dismiss', {}, () => 'Dismissed')} />
+      </Actions>
     </div>
   );
 }
@@ -133,14 +133,10 @@ export function EventProposalBody({ entry, acting }: { entry: Entry; acting: Act
         <p class="line">The event's text is no longer available.</p>
       ) : null}
       {expires && !Number.isNaN(expires.getTime()) ? <p class="line">Open until {expires.toLocaleString()}</p> : null}
-      <div class="peek-actions">
-        <button type="button" class="btn primary" disabled={off} onClick={() => void acting.run('launch', {}, () => 'Launched')}>
-          Launch
-        </button>
-        <button type="button" class="btn" disabled={off} onClick={() => void acting.run('dismiss', {}, () => 'Dismissed')}>
-          Dismiss
-        </button>
-      </div>
+      <Actions class="peek-actions">
+        <Button label="Launch" variant="primary" pending={itemKey(entry, 'launch')} disabled={acting.locked} onClick={() => acting.run('launch', {}, () => 'Launched')} />
+        <Button label="Dismiss" pending={itemKey(entry, 'dismiss')} disabled={acting.locked} onClick={() => acting.run('dismiss', {}, () => 'Dismissed')} />
+      </Actions>
       {detail && p?.fleet && p.routine ? <MuteRule disabled={off} target={{ fleet: p.fleet, routine: p.routine, sender: detail.sender, dedupe_key: detail.dedupe_key, mute_by: detail.mute_by }} /> : null}
     </div>
   );
@@ -154,7 +150,7 @@ export function Failure({ message }: { message: string }) {
   ) : null;
 }
 
-export function ReviewBody({ entry, ui, set, acting, submit, discard }: { entry: Entry; ui: ReviewUi; set: (p: Partial<ReviewUi>) => void; acting: Acting; submit: () => void; discard: () => void }) {
+export function ReviewBody({ entry, ui, set, acting, submit, discard }: { entry: Entry; ui: ReviewUi; set: (p: Partial<ReviewUi>) => void; acting: Acting; submit: () => unknown; discard: () => unknown }) {
   const r = entry.item?.review;
   const pr = prLink(r?.pr_url);
   const off = acting.busy || acting.locked;
@@ -174,17 +170,9 @@ export function ReviewBody({ entry, ui, set, acting, submit, discard }: { entry:
       </div>
       {(ui.step === 'idle' || acting.locked) && (
         <div class="inbox-send-row">
-          <button type="button" class="btn primary" disabled={off} onClick={() => go('choose')}>
-            Submit
-          </button>
-          {pr && (
-            <a class="btn" href={pr.files} target="_blank" rel="noopener noreferrer" onClick={() => set({ edited: true })}>
-              Edit ↗
-            </a>
-          )}
-          <button type="button" class="btn danger" disabled={off} onClick={() => go('discard')}>
-            Discard
-          </button>
+          <Button label="Submit" variant="primary" disabled={off} onClick={() => go('choose')} />
+          {pr && <Button label="Edit ↗" href={pr.files} external onClick={() => set({ edited: true })} />}
+          <Button label="Discard" variant="danger" disabled={off} onClick={() => go('discard')} />
         </div>
       )}
       {ui.step === 'choose' && (
@@ -197,9 +185,7 @@ export function ReviewBody({ entry, ui, set, acting, submit, discard }: { entry:
               </span>
             </button>
           ))}
-          <button type="button" class="btn" onClick={() => go('idle')}>
-            Cancel
-          </button>
+          <Button label="Cancel" onClick={() => go('idle')} />
         </div>
       )}
       {ui.step === 'confirm' && (
@@ -207,27 +193,19 @@ export function ReviewBody({ entry, ui, set, acting, submit, discard }: { entry:
           <p>
             Submit this review as <b>{ui.event}</b>? It is posted to the PR as you.
           </p>
-          <div class="inbox-send-row">
-            <button type="button" class="btn primary" disabled={off} onClick={submit}>
-              Submit {ui.event}
-            </button>
-            <button type="button" class="btn" disabled={off} onClick={() => go('choose')}>
-              Change
-            </button>
-          </div>
+          <Actions class="inbox-send-row">
+            <Button label={`Submit ${ui.event}`} variant="primary" pending={itemKey(entry, 'submit')} disabled={acting.locked} onClick={() => submit()} />
+            <Button label="Change" disabled={acting.locked} onClick={() => go('choose')} />
+          </Actions>
         </div>
       )}
       {ui.step === 'discard' && (
         <div class="inbox-ask discard">
           <p>Discard this pending review? The draft comments are deleted from GitHub.</p>
-          <div class="inbox-send-row">
-            <button type="button" class="btn danger" disabled={off} onClick={discard}>
-              Discard review
-            </button>
-            <button type="button" class="btn" disabled={off} onClick={() => go('idle')}>
-              Keep it
-            </button>
-          </div>
+          <Actions class="inbox-send-row">
+            <Button label="Discard review" variant="danger" pending={itemKey(entry, 'discard')} disabled={acting.locked} onClick={() => discard()} />
+            <Button label="Keep it" disabled={acting.locked} onClick={() => go('idle')} />
+          </Actions>
         </div>
       )}
       {acting.busy && (
@@ -285,21 +263,17 @@ function FindingCardView({ card, n, d, draft, setDraft, locked, changed }: CardP
             <>
               <textarea class="inbox-note" aria-label={`Edit the proposal for card ${n}`} rows={5} value={draft} readOnly={locked} onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)} />
               <div class="inbox-send-row">
-                <button
-                  type="button"
-                  class="btn primary"
+                <Button
+                  label="Save"
+                  variant="primary"
                   disabled={draft.trim() === '' || locked}
                   onClick={() => {
                     d.save(card.id, draft);
                     setDraft(undefined);
                     changed();
                   }}
-                >
-                  Save
-                </button>
-                <button type="button" class="btn" onClick={() => setDraft(undefined)}>
-                  Cancel
-                </button>
+                />
+                <Button label="Cancel" onClick={() => setDraft(undefined)} />
               </div>
             </>
           )}
@@ -315,9 +289,7 @@ function FindingCardView({ card, n, d, draft, setDraft, locked, changed }: CardP
       )}
       <div class="inbox-send-row" role="group" aria-label={`Decision for card ${n}`}>
         {DECISIONS.filter(([name]) => name !== 'Edit' || (shown && (shown.kind === 'diff' || shown.kind === 'reply'))).map(([name, value]) => (
-          <button key={name} type="button" class={`btn${dec === value ? ' primary' : ''}`} aria-pressed={dec === value} disabled={locked} onClick={() => press(name)}>
-            {name}
-          </button>
+          <Button key={name} label={name} pressed={dec === value} disabled={locked} onClick={() => press(name)} />
         ))}
       </div>
     </section>
@@ -346,7 +318,7 @@ export function FindingsBody({ entry, acting, state }: { entry: Entry; acting: A
   const send = () => {
     if (!d.canSend() || open) return;
     const summary = d.summary();
-    void acting.run('findings', d.payload(), () => summary);
+    return acting.run('findings', d.payload(), () => summary);
   };
   return (
     <>
@@ -371,9 +343,7 @@ export function FindingsBody({ entry, acting, state }: { entry: Entry; acting: A
         />
       ))}
       <div class="inbox-send-row">
-        <button type="button" class="btn primary" disabled={!d.canSend() || open || off} onClick={send}>
-          Send
-        </button>
+        <Button label="Send" variant="primary" pending={itemKey(entry, 'findings')} disabled={!d.canSend() || open || off} onClick={send} />
         <span class="inbox-progress">
           {decided} of {total} decided
         </span>
@@ -396,42 +366,34 @@ const removeCopy = (kind: string | undefined, review: boolean) =>
 export function RemoveRow({ entry, confirm, setConfirm, acting, fold = () => REMOVED_FOLD }: { entry: Entry; confirm: boolean; setConfirm: (on: boolean) => void; acting: Acting; fold?: (data: never) => string }) {
   const review = entry.item?.kind === 'review';
   const kind = entry.item?.kind;
-  const off = acting.busy;
   if (!confirm) {
     return (
       <div class="inbox-remove-row">
-        <button
-          type="button"
-          class="btn quiet"
+        <Button
+          label="Remove from inbox"
+          variant="quiet"
           onClick={() => {
             acting.clear();
             setConfirm(true);
           }}
-        >
-          Remove from inbox
-        </button>
+        />
       </div>
     );
   }
   return (
     <div class="inbox-ask discard">
       <p>{removeCopy(kind, review)}</p>
-      <div class="inbox-send-row">
-        <button type="button" class="btn danger" disabled={off} onClick={() => void acting.run('remove', undefined, fold)}>
-          Remove
-        </button>
-        <button
-          type="button"
-          class="btn"
-          disabled={off}
+      <Actions class="inbox-send-row">
+        <Button label="Remove" variant="danger" pending={itemKey(entry, 'remove')} disabled={acting.locked} onClick={() => acting.run('remove', undefined, fold)} />
+        <Button
+          label={kind === 'crew_notes' || kind === 'crew_member' ? 'Cancel' : 'Keep it'}
+          disabled={acting.locked}
           onClick={() => {
             acting.clear();
             setConfirm(false);
           }}
-        >
-          {kind === 'crew_notes' || kind === 'crew_member' ? 'Cancel' : 'Keep it'}
-        </button>
-      </div>
+        />
+      </Actions>
     </div>
   );
 }

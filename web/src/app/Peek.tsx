@@ -7,6 +7,7 @@ import { fleetSearch } from './fleets';
 import type { Entry } from './inbox';
 import { rowShip, rowVerb } from './inboxRow';
 import { discardFold, lockedBy, submitFold } from './itemActions';
+import { Button } from './Button';
 import { CrewMemberBody, CrewNotesBody, isCrewKind, type MemberStep, readCrew, useCrewNotes } from './PeekCrew';
 import { crewRemoveFold } from './crewItems';
 import { blankReview, EventProposalBody, FindingsBody, RoutineProposalBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
@@ -137,7 +138,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
     <div class="peek-form">
       {question ? (
         <>
-          <PeekQuestions questions={entry.item?.question?.questions ?? []} draft={draft} edit={(fn) => setDraft(fn)} onSend={(b) => void send(b)} locked={questionLocked || notice !== ''} />
+          <PeekQuestions pending={['item', entry.session, entry.id!, 'answer']} questions={entry.item?.question?.questions ?? []} draft={draft} edit={(fn) => setDraft(fn)} onSend={send} locked={questionLocked || notice !== ''} />
           {notice ? (
             <p class="line" role="alert">
               {notice}
@@ -150,8 +151,8 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
           ui={review}
           set={(p) => setReview((r) => ({ ...r, ...p }))}
           acting={acting}
-          submit={() => void acting.run('submit', { event: review.event, edited: review.edited }, (d) => submitFold(d, review.event))}
-          discard={() => void acting.run('discard', {}, discardFold)}
+          submit={() => acting.run('submit', { event: review.event, edited: review.edited }, (d) => submitFold(d, review.event))}
+          discard={() => acting.run('discard', {}, discardFold)}
         />
       ) : kind === 'findings' ? (
         <FindingsBody entry={entry} acting={acting} state={findings} />
@@ -160,9 +161,9 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
       ) : kind === 'event_proposal' ? (
         <EventProposalBody entry={entry} acting={acting} />
       ) : kind === 'crew_notes' ? (
-        <CrewNotesBody acting={acting} state={crewNotes} decided={() => setRemoving(false)} />
+        <CrewNotesBody entry={entry} acting={acting} state={crewNotes} decided={() => setRemoving(false)} />
       ) : kind === 'crew_member' ? (
-        <CrewMemberBody item={crew} step={member} setStep={setMember} acting={acting} decided={() => setRemoving(false)} />
+        <CrewMemberBody entry={entry} item={crew} step={member} setStep={setMember} acting={acting} decided={() => setRemoving(false)} />
       ) : null}
       {removable ? (
         <RemoveRow
@@ -204,17 +205,16 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
           ) : null}
         </div>
         {ship && !admiral ? (
-          <a
-            class="btn peek-bridge"
+          <Button
+            label="Open bridge"
+            class="peek-bridge"
             href={shipPath(ship.session) + bridgeSearch(fleetKey)}
             onClick={(e) => {
               if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
               e.preventDefault();
               go(shipPath(ship.session), bridgeSearch(fleetKey));
             }}
-          >
-            Open bridge
-          </a>
+          />
         ) : null}
       </div>
       <div class="peek-body">
