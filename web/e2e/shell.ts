@@ -2943,7 +2943,7 @@ export async function fixPRFromThePRTab(page: Page, a: Admiral, opts: { phone: b
   await expect(page.getByRole('alert')).toHaveCount(0);
 }
 
-/** A stack of two own PRs, #7 behind a strict base and #8 failing a check, with review feedback on both, so Answer all reviews would show without Fix: Fix stack replaces Answer all reviews and Answer review, and its round is on the lowest PR. */
+/** A stack of two own PRs, the lower behind a strict base and the upper failing a check, with review feedback on both, so Answer all reviews would show without Fix: Fix stack replaces Answer all reviews and Answer review, and its round is on the lowest PR. */
 export async function fixStackFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
   prMergeState(a, 7, { behind: true });
   prMergeState(a, 8, { failing: ['build'] });
