@@ -17,6 +17,17 @@ func scriptGH(t *testing.T, answer string) string {
 	return bin
 }
 
+// scriptGHExit is a gh that prints answer on stdout and exits 1, as gh api graphql does when the answer carries errors.
+func scriptGHExit(t *testing.T, answer string) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "gh")
+	script := "#!/bin/sh\nif [ \"$1\" = auth ]; then echo fake-token-work-2; exit 0; fi\nprintf '%s' '" + answer + "'\nexit 1\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
 func TestItemURL(t *testing.T) {
 	for in, want := range map[string]string{
 		"https://github.com/o/r/pull/7":              "https://github.com/o/r/pull/7",

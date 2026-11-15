@@ -102,6 +102,13 @@ func TestParseOrdersFallsBackToTheIdWhenTheParentTitleIsEmpty(t *testing.T) {
 	}
 }
 
+func TestParseOrdersFallsBackToTheIdWhenTheParentTitleIsNotAString(t *testing.T) {
+	m := parseOne(t, obj{"id": "child", "title": "C", "parent": obj{"id": "a/b#1", "title": 7, "url": "https://github.com/a/b/issues/1"}})
+	if p, _ := m["parent"].(obj); p == nil || p["title"] != "a/b#1" {
+		t.Errorf("parent = %v, want its title to fall back to the id a/b#1", m["parent"])
+	}
+}
+
 func TestParseOrdersDropsABadParentAndKeepsTheOrder(t *testing.T) {
 	url := "https://github.com/a/b/issues/1"
 	cases := map[string]any{

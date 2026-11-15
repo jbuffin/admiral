@@ -184,7 +184,7 @@ func (c *Client) search(ctx context.Context, token, query, gql, actorKind string
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, errTimeout) {
 		return nil, "", c.unreachableErr()
 	}
-	if err != nil {
+	if err != nil && !onlyParentErrors(out) {
 		msg := redact(strings.TrimSpace(stderr), token)
 		for _, m := range unreachable {
 			if strings.Contains(msg, m) {
@@ -207,7 +207,7 @@ func (c *Client) search(ctx context.Context, token, query, gql, actorKind string
 	if obj == nil {
 		return nil, "", errNotUnderstood
 	}
-	if errs, _ := obj["errors"].([]any); len(errs) > 0 {
+	if errs, _ := obj["errors"].([]any); len(errs) > 0 && !onlyParentErrors(out) {
 		first, _ := errs[0].(map[string]any)
 		msg, _ := first["message"].(string)
 		if msg == "" {
@@ -293,7 +293,7 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 		n.Labels == nil || n.Labels.Nodes == nil {
 		return Item{}, false
 	}
-	it := Item{ID: fmt.Sprintf("%s#%d", *n.Repository.NameWithOwner, *n.Number), Title: *n.Title,
+	it := Item{ID: itemID(*n.Repository.NameWithOwner, *n.Number), Title: *n.Title,
 		Text: *n.URL, URL: *n.URL, RepoURL: *n.Repository.URL, Repo: *n.Repository.NameWithOwner,
 		Labels: []string{}}
 	if n.Author != nil {
@@ -334,7 +334,7 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 	}
 	if p := n.Parent; p != nil && n.State == "" && p.Number != nil && p.Title != nil && p.URL != nil &&
 		p.Repository != nil && p.Repository.NameWithOwner != nil && p.Repository.URL != nil {
-		it.Parent = &Parent{ID: fmt.Sprintf("%s#%d", *p.Repository.NameWithOwner, *p.Number), Title: *p.Title, URL: *p.URL, RepoURL: *p.Repository.URL}
+		it.Parent = &Parent{ID: itemID(*p.Repository.NameWithOwner, *p.Number), Title: *p.Title, URL: *p.URL, RepoURL: *p.Repository.URL}
 	}
 	if n.State != "" { // only the pull request fragment asks for state
 		pr := moor.View(it.URL, n.status(), true)
@@ -354,6 +354,32 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 		}
 	}
 	return it, true
+}
+
+// onlyParentErrors reports an answer that carries data and whose every error is on a parent field: GitHub answers a
+// parent the token can't read with null and an error, and gh may exit non-zero for it, so the issue has no parent
+// and the rest of the answer stands.
+func onlyParentErrors(out string) bool {
+	var body struct {
+		Data   map[string]any `json:"data"`
+		Errors []struct {
+			Path []any `json:"path"`
+		} `json:"errors"`
+	}
+	if json.Unmarshal([]byte(out), &body) != nil || body.Data == nil || len(body.Errors) == 0 {
+		return false
+	}
+	for _, e := range body.Errors {
+		if len(e.Path) == 0 || e.Path[len(e.Path)-1] != "parent" {
+			return false
+		}
+	}
+	return true
+}
+
+// itemID is an issue's or pull request's id, the form Item.ID and Parent.ID share.
+func itemID(nameWithOwner string, number int) string {
+	return fmt.Sprintf("%s#%d", nameWithOwner, number)
 }
 
 // errTimeout means a gh call ran past the client's own limit.

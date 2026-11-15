@@ -46,13 +46,6 @@ type Order struct {
 }
 
 // OrderPR is moor.PR without its url, which is the order's own.
-type OrderParent struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	URL   string `json:"url"`
-	Repo  string `json:"repo,omitempty"`
-}
-
 type OrderPR struct {
 	State     string `json:"state"`
 	Review    string `json:"review"`
@@ -62,6 +55,14 @@ type OrderPR struct {
 	Ready     bool   `json:"ready"`
 	// FailingCheckCount is how many checks fail; left out when none.
 	FailingCheckCount int `json:"failing_check_count,omitempty"`
+}
+
+// OrderParent is an issue order's GitHub parent; ID is in the form of an order's own id.
+type OrderParent struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
+	Repo  string `json:"repo,omitempty"`
 }
 
 type Panel struct {
@@ -301,7 +302,7 @@ func parseOrderParent(raw json.RawMessage) *OrderParent {
 	}
 	var in struct {
 		ID    *string         `json:"id"`
-		Title *string         `json:"title"`
+		Title json.RawMessage `json:"title"`
 		URL   *string         `json:"url"`
 		Repo  json.RawMessage `json:"repo"`
 	}
@@ -312,8 +313,8 @@ func parseOrderParent(raw json.RawMessage) *OrderParent {
 	if p.URL == "" {
 		return nil
 	}
-	if in.Title != nil {
-		p.Title = oneLine(*in.Title)
+	if t, ok := rawString(in.Title); ok {
+		p.Title = oneLine(t)
 	}
 	if p.Title == "" {
 		p.Title = p.ID
