@@ -126,7 +126,7 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
               <button
                 key={i}
                 type="button"
-                class={`btn card-option${on ? ' on' : ''}`}
+                class={`card-option${on ? ' on' : ''}`}
                 role={q.multiSelect ? 'checkbox' : direct ? undefined : 'radio'}
                 aria-checked={q.multiSelect || !direct ? on : undefined}
                 disabled={busy}

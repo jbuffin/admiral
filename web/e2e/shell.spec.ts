@@ -1123,8 +1123,11 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   await page.getByRole('menu').getByRole('menuitemradio', { name: HOME }).click();
   await expect(main).toContainText(/no Claude Code dock/i);
   await expect(main.getByRole('textbox', { name: 'Message AdmiralBot' })).toHaveCount(0);
+  // Leaving before the page's loads land makes WebKit log each one as an error.
+  const loads = ['instructions', 'notes', 'commitments'].map((part) => page.waitForResponse((r) => new URL(r.url()).pathname === `/api/v1/chat/alpha/${part}`));
   await main.getByRole('link', { name: /AdmiralBot/ }).tap();
   await expect(page).toHaveURL(/\/app\/preferences\/alpha\/admiralbot/);
+  await Promise.all(loads);
 
   // A rail row opens the item in Peek beside the chat, without leaving it.
   await page.goto(admiral.url + 'app/chat?fleet=harbor');

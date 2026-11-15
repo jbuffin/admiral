@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Actions, Button } from './Button';
 import { call, LAUNCH_TIMEOUT_MS, type DirsAnswer, type Fleet } from './api';
 import { modeLabel, skillLabel, type Mode, type SkillView } from './campaign';
 import {
@@ -65,6 +66,8 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const [autopilot, setAutopilot] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Which control started the launch in flight, so only it spins.
+  const [via, setVia] = useState<'form' | 'just'>('form');
   const box = useRef<HTMLDivElement>(null);
   const dirsError = useRef('');
   const skillNow = useRef(skill);
@@ -158,6 +161,11 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
     return () => opener?.isConnected && opener.focus();
   }, []);
 
+  // Focus stays on the dialog box through a launch, which draws the global focus ring, so it moves to the busy button.
+  useEffect(() => {
+    if (busy) box.current?.querySelector<HTMLElement>('[aria-busy="true"]')?.focus();
+  }, [busy]);
+
   const efforts = effortsFor(harness);
   const model = models[harness] ?? '';
   const clone = dirs?.clone ?? null;
@@ -175,7 +183,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   };
 
   const keys = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') return onClose();
+    if (e.key === 'Escape') return busy ? undefined : onClose();
     if (e.key !== 'Tab' || !box.current) return;
     const items = [...box.current.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((i) => !(i as HTMLButtonElement).disabled && i.offsetParent !== null && !(i instanceof HTMLInputElement && i.type === 'radio' && !i.checked));
     if (items.length === 0) return;
@@ -188,10 +196,13 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
 
   const submit = (e: Event) => {
     e.preventDefault();
+    if (busy) return;
+    setVia('form');
     void launch(campaign ? { kind: 'none' } : chosen());
   };
 
   const launch = async (s: SkillChoice | string) => {
+    if (busy) return;
     if (typeof s === 'string') return setError(s);
     setBusy(true);
     setError('');
@@ -224,7 +235,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   };
 
   return (
-    <div class="backdrop launch-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div class="backdrop launch-backdrop" onClick={(e) => e.target === e.currentTarget && !busy && onClose()}>
       <div ref={box} class="sheet launch-form" role="dialog" aria-modal="true" aria-label="Launch" tabIndex={-1} onKeyDown={keys}>
       <form class="launch-inner" onSubmit={submit}>
         <h2 class="sheet-title">Launch</h2>
@@ -333,19 +344,14 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
           )}
           {error ? <p role="alert" class="launch-error">{error}</p> : null}
         </div>
-        <div class="launch-foot">
-          <button type="button" class="btn" onClick={onClose}>
-            Cancel
-          </button>
-          {campaign || launchingAs ? null : (
-            <button type="button" class="btn" disabled={busy || (!cloning && !dir)} onClick={() => void launch({ kind: 'none' })}>
-              Just launch
-            </button>
-          )}
-          <button type="submit" class="btn primary" disabled={busy || (!cloning && !dir)}>
-            Launch
-          </button>
-        </div>
+        <Actions class="launch-foot">
+          <Button label="Cancel" onClick={onClose} />
+          {campaign || launchingAs ? null : <Button label="Just launch" disabled={!cloning && !dir} onClick={() => {
+            setVia('just');
+            return launch({ kind: 'none' });
+          }} />}
+          <Button type="submit" variant="primary" label="Launch" busy={busy && via === 'form'} disabled={!cloning && !dir} />
+        </Actions>
       </form>
       </div>
     </div>

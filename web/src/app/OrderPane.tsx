@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals';
 import { useState } from 'preact/hooks';
 import type { Source } from './api';
+import { Button } from './Button';
 import { campaignList, followReference } from './campaignsLink';
 import { carryingShip, reviews } from './moored';
 import { campaignAction, openedLine, topLine, whyItsHere } from './orderDetail';
@@ -83,9 +84,13 @@ export function OrderPane({ row, sources, now, heading, onLaunch, onClose }: Pro
               {action?.kind === 'follow' ? (
                 <>
                   {' · '}
-                  <button type="button" class="odetail-act" onClick={async () => setFollowError((await followReference(action.url)) ?? '')}>
-                    Follow as campaign
-                  </button>
+                  <Button
+                    variant="link"
+                    class="odetail-act"
+                    label="Follow as campaign"
+                    pending={['order', row.source, row.order.id, 'follow']}
+                    onClick={async () => setFollowError((await followReference(action.url)) ?? '')}
+                  />
                 </>
               ) : null}
               {action?.kind === 'open' ? (
@@ -117,9 +122,7 @@ export function OrderPane({ row, sources, now, heading, onLaunch, onClose }: Pro
       <div class="odetail-actions">
         {isMerged ? <p class="line">Merged</p> : ship?.stack_ready && !reviews(ship) ? <ShipMerge ship={ship} onMerged={() => (merged.value = new Set(merged.value).add(row.key))} onError={setError} /> : null}
         <Failure message={error} />
-        <button type="button" class="btn primary odetail-launch" onClick={() => onLaunch(launchRef(row))}>
-          Launch ship
-        </button>
+        <Button variant="primary" class="odetail-launch" label="Launch ship" onClick={() => onLaunch(launchRef(row))} />
       </div>
     </div>
   );

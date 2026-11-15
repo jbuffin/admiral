@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { Button } from './Button';
 import { call } from './api';
 import { markPaired, pairHeading, wasPaired } from './pairing';
 
@@ -53,9 +54,7 @@ export function PairScreen() {
             {error}
           </p>
         ) : null}
-        <button type="submit" class="btn primary pair-go" disabled={busy}>
-          Pair
-        </button>
+        <Button type="submit" variant="primary" class="pair-go" label="Pair" busy={busy} />
       </form>
     </div>
   );

@@ -1,3 +1,4 @@
+import { Button } from './Button';
 import { retryShips } from './shipsLink';
 
 export function Unreachable() {
@@ -10,9 +11,7 @@ export function Unreachable() {
           <li>Mac awake?</li>
           <li>Admiral running?</li>
         </ul>
-        <button class="btn primary" onClick={retryShips}>
-          Retry
-        </button>
+        <Button variant="primary" label="Retry" onClick={retryShips} />
       </div>
     </div>
   );
