@@ -293,6 +293,8 @@ test('hiding, renaming and moving views changes the Orders tabs and survives a r
   await orderTabs();
   await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^For you/, /^Mine/, /^Orders: Orders/]);
 
+  // Leave the app first so the restart's dropped socket isn't logged by the open page.
+  await page.goto('about:blank');
   await admiral.restart();
   await page.goto(githubPage(admiral, 'zulu'));
   await expect(viewRows(page)).toHaveText([/Assigned to me/, /For you/, /Review requested/, /Mine/]);
