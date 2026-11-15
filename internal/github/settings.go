@@ -74,24 +74,29 @@ func textSetting(v any, def string) string {
 
 func readViews(v any) []View {
 	list, _ := v.([]any)
-	used := map[string]bool{}
+	entries := make([]config.ViewEntry, len(list))
+	for i, e := range list {
+		m, _ := e.(map[string]any)
+		entries[i].ID, _ = m["id"].(string)
+		entries[i].Title, _ = m["title"].(string)
+		entries[i].Query, _ = m["query"].(string)
+	}
+	ids := config.ViewEntryIDs(entries)
 	builtins := map[string]View{}
 	for _, d := range defaultViews {
-		used[d.ID] = true
 		builtins[d.ID] = d
 	}
 	var views []View
 	seen := map[string]bool{}
-	for _, e := range list {
+	for i, e := range list {
+		id := ids[i]
+		if id == "" {
+			continue
+		}
 		entry, _ := e.(map[string]any)
 		hidden, _ := entry["hidden"].(bool)
-		title, _ := entry["title"].(string)
-		title = strings.TrimSpace(title)
-		if id, _ := entry["id"].(string); builtins[id].Builtin {
-			if seen[id] {
-				continue
-			}
-			d := builtins[id]
+		title := strings.TrimSpace(entries[i].Title)
+		if d, ok := builtins[id]; ok {
 			seen[id] = true
 			if title != "" {
 				d.Title = title
@@ -100,18 +105,7 @@ func readViews(v any) []View {
 			views = append(views, d)
 			continue
 		}
-		query, _ := entry["query"].(string)
-		query = strings.TrimSpace(query)
-		if title == "" || query == "" {
-			continue
-		}
-		base := config.ViewSlug(title)
-		id := base
-		for n := 2; used[id]; n++ {
-			id = base + "-" + strconv.Itoa(n)
-		}
-		used[id] = true
-		views = append(views, View{ID: id, Title: title, Query: query, Hidden: hidden})
+		views = append(views, View{ID: id, Title: title, Query: strings.TrimSpace(entries[i].Query), Hidden: hidden})
 	}
 	// A built-in the list lacks comes back visible after the entries present.
 	var missing []View

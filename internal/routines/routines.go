@@ -722,3 +722,48 @@ func (s *Store) validateOn(f config.Fleet, r Routine, onKept bool) error {
 	}
 	return invalidf("on: the source %q lists no event kind %q", on.Source, on.Kind)
 }
+
+// RetargetViews points the new_in_view routines that watch a view under its old id at the new one,
+// for the custom views whose ids moved, and returns how many routines it changed. A routine is
+// changed only on the move's own fleet and source key.
+func (s *Store) RetargetViews(moves []config.ViewIDMove) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := 0
+	fleets := map[string]bool{}
+	for _, m := range moves {
+		fleets[m.Fleet] = true
+	}
+	for fleet := range fleets {
+		if fleet == "" || fleet != filepath.Base(fleet) {
+			continue
+		}
+		list, err := s.load(fleet)
+		if err != nil {
+			return changed, err
+		}
+		n := 0
+		for i, r := range list {
+			if r.On == nil || r.On.Kind != "new_in_view" {
+				continue
+			}
+			for _, m := range moves {
+				if m.Fleet == fleet && m.Source == r.On.Source && m.From == r.On.Panel {
+					on := *r.On
+					on.Panel = m.To
+					list[i].On = &on
+					n++
+					break
+				}
+			}
+		}
+		if n == 0 {
+			continue
+		}
+		if err := s.save(fleet, list); err != nil {
+			return changed, err
+		}
+		changed += n
+	}
+	return changed, nil
+}

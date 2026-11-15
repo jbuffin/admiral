@@ -45,6 +45,10 @@ type Migration struct {
 	GitHub          bool // an old GitHub plugin source became built in, on every fleet
 	GitHubCustom    bool // and it had custom views, which the default views now sit beside
 	GitHubViews     bool // a GitHub source's views list gained the built-in views
+	// ViewMoves are the custom views whose ids changed with it; the caller points routines at the new ids.
+	ViewMoves []ViewIDMove
+	// RoutinesMoved is how many routines the caller pointed at a new id, for the notice.
+	RoutinesMoved int
 	// Chat is set when the top-level chat key went. ChatFleet is the fleet whose own chat
 	// settings it went onto, empty when nothing moved: ChatUnreadable says the key could
 	// not be read, else the file had no fleet to take it.
@@ -63,6 +67,7 @@ type migrationPlan struct {
 	github  bool
 	custom  bool
 	views   bool
+	moves   []ViewIDMove
 	chat    *chatMove
 }
 
@@ -133,7 +138,9 @@ func planMigration(data []byte) *migrationPlan {
 			}
 		}
 		p.github, p.custom = migrateGitHub(top, sources)
-		p.views = migrateGitHubViews(sources)
+		var migrated []string
+		migrated, p.moves = migrateGitHubViews(sources)
+		p.views = len(migrated) > 0
 		top.Set("sources", sources.JSON())
 	}
 	// The top-level autopilot object: its cap moves up, the rest goes.
@@ -416,7 +423,7 @@ func Migrate(dir, version string) (*Migration, error) {
 	if err := replaceFile(path, p.out); err != nil {
 		return nil, err
 	}
-	m := &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, Entries: p.entries, AutopilotObject: p.object, GitHub: p.github, GitHubCustom: p.custom, GitHubViews: p.views}
+	m := &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, Entries: p.entries, AutopilotObject: p.object, GitHub: p.github, GitHubCustom: p.custom, GitHubViews: p.views, ViewMoves: p.moves}
 	if p.chat != nil {
 		m.Chat, m.ChatFleet, m.ChatFleetName, m.ChatUnreadable = true, p.chat.fleet, p.chat.name, p.chat.unreadable
 	}
@@ -542,6 +549,12 @@ func (m *Migration) Notice() (title, body string) {
 	}
 	if m.GitHubViews {
 		b.WriteString("\n- GitHub's built-in views are now in its views list, where you can hide, rename and reorder them.")
+		if len(m.ViewMoves) > 0 {
+			b.WriteString(" A custom view named like a built-in one got a new id, so it sits beside the built-in.")
+			if m.RoutinesMoved > 0 {
+				fmt.Fprintf(&b, " %d routine(s) that watched such a view now watch it under its new id.", m.RoutinesMoved)
+			}
+		}
 	}
 	if m.Chat {
 		switch {

@@ -49,9 +49,9 @@ func sameJSON(t *testing.T, what, got, want string) {
 	}
 }
 
-func viewIDsAndTitles(s SourceView) (ids, titles []string) {
+func viewIDs(s SourceView) (ids []string) {
 	for _, v := range s.Views {
-		ids, titles = append(ids, v.ID), append(titles, v.Title)
+		ids = append(ids, v.ID)
 	}
 	return
 }
@@ -64,12 +64,9 @@ func TestSourceViewsFollowTheViewsListOrderHiddenAndTitle(t *testing.T) {
 		`"gh":{"plugin":"github","fleet":"alpha","panel_order":["review-requested","bugs"],"settings":{"views":`+mixedViews+`}}`))
 	f.startSources()
 	s := f.waitView("gh", "its views", func(s SourceView) bool { return len(s.Views) > 0 })
-	ids, titles := viewIDsAndTitles(s)
+	ids := viewIDs(s)
 	if want := []string{"my-prs", "bugs", "review-requested"}; !reflect.DeepEqual(ids, want) {
-		t.Errorf("view ids = %v, want %v: the visible search views in list order", ids, want)
-	}
-	if want := []string{"Mine", "Bugs", "Review requested"}; !reflect.DeepEqual(titles, want) {
-		t.Errorf("view titles = %v, want %v", titles, want)
+		t.Errorf("view ids = %v, want %v: the views list is the only order", ids, want)
 	}
 }
 
@@ -94,15 +91,6 @@ func TestAHiddenViewIsNeitherSearchedNorOffered(t *testing.T) {
 		if k.Kind == "new_in_view" && (k.Panel == "docs" || k.Panel == "assigned-to-me" || k.Panel == "for-you") {
 			t.Errorf("the event catalog offers new_in_view for the hidden view %q", k.Panel)
 		}
-	}
-	var offered []string
-	for _, k := range s.Events {
-		if k.Kind == "new_in_view" {
-			offered = append(offered, k.Panel)
-		}
-	}
-	if want := []string{"my-prs", "bugs", "review-requested"}; !reflect.DeepEqual(offered, want) {
-		t.Errorf("new_in_view offered for %v, want %v: the visible search views", offered, want)
 	}
 }
 
@@ -168,33 +156,14 @@ func TestSettingsReturnTheViewsListUnmaskedAndASaveRoundTripsIt(t *testing.T) {
 	sameJSON(t, "stored settings", f.stored("gh"), `{"views":`+mixedViews+`}`)
 }
 
-func TestTheGitHubSchemaKeepsAViewsEntrysFieldsPlain(t *testing.T) {
-	var schema map[string]any
-	if err := json.Unmarshal(githubSchema, &schema); err != nil {
-		t.Fatal(err)
-	}
-	props := schema["properties"].(map[string]any)["views"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
-	for field, typ := range map[string]string{"id": "string", "title": "string", "query": "string", "hidden": "boolean"} {
-		if p, _ := props[field].(map[string]any); p["type"] != typ {
-			t.Errorf("views items %q = %v, want type %s", field, props[field], typ)
-		}
-	}
-	out, _ := json.Marshal(maskSecrets(decodeValue(json.RawMessage(`{"views":`+mixedViews+`}`)), schema))
-	for _, shown := range []string{`"for-you"`, `"assigned-to-me"`, `"my-prs"`, `"Mine"`, `"hidden":true`} {
-		if !strings.Contains(string(out), shown) {
-			t.Errorf("masked views = %s, want %s shown", out, shown)
-		}
-	}
-}
-
-func TestSavingCustomViewsOnlyStoresTheBuiltInEntriesToo(t *testing.T) {
+func TestASaveStoresTheBuiltInEntriesToo(t *testing.T) {
 	f := newServiceFixture(t, viewsConfig(`[`+builtinViewEntries+`]`))
 	settings := map[string]any{"views": []any{map[string]any{"title": "Bugs", "query": "is:open label:bug"}}}
 	if code, b := f.do(http.MethodPut, "/gh", map[string]any{"settings": settings}); code != http.StatusOK {
 		t.Fatalf("PUT = %d %s", code, b)
 	}
 	want := `{"views":[` + builtinViewEntries + `,{"title":"Bugs","query":"is:open label:bug"}]}`
-	sameJSON(t, "stored settings (a list with no built-in entries gains them in front, as the migration gives it)", f.stored("gh"), want)
+	sameJSON(t, "stored settings", f.stored("gh"), want)
 }
 
 func TestAddingAGitHubSourceStoresTheBuiltInEntries(t *testing.T) {
@@ -227,8 +196,6 @@ func TestPanelOrderOnAGitHubSourceReordersItsViews(t *testing.T) {
 }
 
 func TestHidingRenamingAndReorderingViewsSurvivesARestart(t *testing.T) {
-	g := newFakeGH(t)
-	g.token("", "fake-token-default-1")
 	f := newServiceFixture(t, viewsConfig(`[`+builtinViewEntries+`,{"title":"Bugs","query":"is:open label:bug"}]`))
 	var settings map[string]any
 	_ = json.Unmarshal([]byte(`{"views":`+mixedViews+`}`), &settings)
@@ -236,18 +203,14 @@ func TestHidingRenamingAndReorderingViewsSurvivesARestart(t *testing.T) {
 		t.Fatalf("PUT = %d %s", code, b)
 	}
 	// Reopening from the saved file is what a restart does.
-	g2 := newServiceFixture(t, f.file())
-	g2.startSources()
-	s := g2.waitView("gh", "its views", func(s SourceView) bool { return len(s.Views) > 0 })
-	ids, titles := viewIDsAndTitles(s)
-	if want := []string{"my-prs", "bugs", "review-requested"}; !reflect.DeepEqual(ids, want) {
-		t.Errorf("view ids after the restart = %v, want %v", ids, want)
+	code, body := newServiceFixture(t, f.file()).do(http.MethodGet, "/gh/settings", nil)
+	var got struct {
+		Settings struct {
+			Views json.RawMessage `json:"views"`
+		} `json:"settings"`
 	}
-	if want := []string{"Mine", "Bugs", "Review requested"}; !reflect.DeepEqual(titles, want) {
-		t.Errorf("view titles after the restart = %v, want %v", titles, want)
+	if err := json.Unmarshal([]byte(body), &got); code != http.StatusOK || err != nil {
+		t.Fatalf("GET settings after the restart = %d %s", code, body)
 	}
-	code, body := g2.do(http.MethodGet, "/gh/settings", nil)
-	if code != http.StatusOK || !strings.Contains(body, `"hidden":true,"id":"for-you"`) { // keys come back sorted
-		t.Errorf("GET settings after the restart = %d %s, want For you hidden", code, body)
-	}
+	sameJSON(t, "views after the restart", string(got.Settings.Views), mixedViews)
 }

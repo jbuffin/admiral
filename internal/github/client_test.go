@@ -485,6 +485,19 @@ func TestAMissingBuiltInIsAddedAfterTheEntriesPresentAndAnUnknownOneIsSkipped(t 
 	}
 }
 
+func TestAnEntryWithAnUnknownIDAndATitleAndQueryIsACustomViewNumberedByItsTitle(t *testing.T) {
+	s := settings(t, `{"views":[{"id":"x","title":"Bugs","query":"q1"},{"title":"Bugs","query":"q2"}]}`)
+	var customs []string
+	for _, v := range s.Views {
+		if !v.Builtin {
+			customs = append(customs, v.ID+"="+v.Query)
+		}
+	}
+	if got := strings.Join(customs, ","); got != "bugs=q1,bugs-2=q2" {
+		t.Errorf("custom views = %s, want bugs=q1,bugs-2=q2", got)
+	}
+}
+
 func TestSettingsScalars(t *testing.T) {
 	d := settings(t, `{}`)
 	if d.Host != "github.com" || d.Account != "" || d.RefreshMinutes != 5 {

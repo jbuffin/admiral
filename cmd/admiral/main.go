@@ -255,6 +255,14 @@ func serve(args []string) error {
 	if err != nil {
 		return fmt.Errorf("config migration: %w", err)
 	}
+	if migration != nil && len(migration.ViewMoves) > 0 {
+		// Before the routine store and scheduler start, so no event sees an old id.
+		n, err := (&routines.Store{Home: dir}).RetargetViews(migration.ViewMoves)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "admiral: could not point routines at the moved views:", err)
+		}
+		migration.RoutinesMoved = n
+	}
 	if migration != nil {
 		// Posted after the rewrite: a crash between the two loses the notice but never
 		// duplicates it, and the backup still holds the order texts.
