@@ -869,14 +869,16 @@ func TestLaunchWithTheChildsOwnSkillKeepsItsSavedArgs(t *testing.T) {
 }
 
 func TestLaunchWithAnotherSkillDropsTheSavedArgs(t *testing.T) {
-	r := newRig(t, fixtureTree())
-	c := r.follow(rootURL)
-	if code, body := r.launch(c.ID, launchWith(24, map[string]string{"kind": "skill", "name": "tdd"})); code != http.StatusCreated {
-		t.Fatalf("launch = %d %s", code, body)
-	}
-	got := r.launches()
-	if len(got) != 1 || got[0].Skill.Name != "tdd" || got[0].Text != issURL(24) {
-		t.Errorf("launches = %+v, want skill tdd with only the ticket URL, not the wayfinder args", got)
+	for _, name := range []string{"tdd", "/$wayfinder"} {
+		r := newRig(t, fixtureTree())
+		c := r.follow(rootURL)
+		if code, body := r.launch(c.ID, launchWith(24, map[string]string{"kind": "skill", "name": name})); code != http.StatusCreated {
+			t.Fatalf("%s: launch = %d %s", name, code, body)
+		}
+		got := r.launches()
+		if len(got) != 1 || got[0].Skill.Name != name || got[0].Text != issURL(24) {
+			t.Errorf("%s: launches = %+v, want that skill with only the ticket URL, not the wayfinder args", name, got)
+		}
 	}
 }
 

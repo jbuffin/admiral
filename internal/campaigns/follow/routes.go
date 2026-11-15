@@ -271,8 +271,7 @@ func (s *Service) serveOverride(w http.ResponseWriter, r *http.Request) {
 	}
 	o := campaigns.Override{Mode: campaigns.Mode(body.Mode)}
 	if sk := body.Skill; sk != nil {
-		if sk.Kind != "commodore" && sk.Kind != "skill" && sk.Kind != "none" {
-			writeError(w, http.StatusBadRequest, `skill kind is "commodore", "skill" or "none"`)
+		if refuseSkillKind(w, sk.Kind) {
 			return
 		}
 		o.Skill = &campaigns.Skill{Kind: sk.Kind, Name: sk.Name, Args: sk.Args}
@@ -342,12 +341,11 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	var pick *launcher.Skill
 	if sk := body.Skill; sk != nil {
-		switch {
-		case body.Issues != nil:
+		if body.Issues != nil {
 			writeError(w, http.StatusBadRequest, "a slice runs on the Commodore skill; send skill only with child_url")
 			return
-		case sk.Kind != "commodore" && sk.Kind != "skill" && sk.Kind != "none":
-			writeError(w, http.StatusBadRequest, `skill kind is "commodore", "skill" or "none"`)
+		}
+		if refuseSkillKind(w, sk.Kind) {
 			return
 		}
 		pick = &launcher.Skill{Kind: sk.Kind, Name: sk.Name}
@@ -415,7 +413,16 @@ func sameSkill(pick launcher.Skill, have campaigns.Skill) bool {
 	if pick.Kind != "skill" {
 		return true
 	}
-	return strings.TrimPrefix(strings.TrimPrefix(pick.Name, "/"), "$") == strings.TrimPrefix(strings.TrimPrefix(have.Name, "/"), "$")
+	return launcher.TrimSkillMark(pick.Name) == launcher.TrimSkillMark(have.Name)
+}
+
+// refuseSkillKind answers 400 and reports true when kind is not one a skill can have.
+func refuseSkillKind(w http.ResponseWriter, kind string) bool {
+	if kind == "commodore" || kind == "skill" || kind == "none" {
+		return false
+	}
+	writeError(w, http.StatusBadRequest, `skill kind is "commodore", "skill" or "none"`)
+	return true
 }
 
 // launchable is the refusal for a child that cannot be launched now; what names the child in the message.
