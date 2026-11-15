@@ -248,13 +248,16 @@ export function watchPage(page: Page, server: string) {
     // Moor's refusal is a 409; any other status on an ending stays an error.
     if (r.request().method() === 'POST' && /^\/api\/v1\/ships\/[^/]+\/(stop|return)$/.test(path) && r.status() === 409) refusedLaunches++;
   });
+  // WebKit logs a same-origin fetch cancelled by navigation as an access-control error, sometimes as a page error.
+  const cancelledFetch = (text: string) => /due to access control checks\.?$/.test(text) && text.includes(host);
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
-    // WebKit logs a same-origin fetch cancelled by navigation as an access-control error.
-    if (/due to access control checks\.?$/.test(m.text()) && m.text().includes(host)) return;
+    if (cancelledFetch(m.text())) return;
     (/^Failed to load resource: .* status of [45]\d\d/.test(m.text()) ? failedLoads : errors).push(m.text());
   });
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => {
+    if (!cancelledFetch(e.message)) errors.push(e.message);
+  });
   page.on('request', (r) => {
     const u = new URL(r.url());
     if (['data:', 'blob:', 'about:'].includes(u.protocol)) return;
