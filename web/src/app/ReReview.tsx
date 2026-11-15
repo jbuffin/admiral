@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { Actions, Button } from './Button';
 import { call, type Ship } from './api';
-import { reReviewPlace, respondedPRs } from './moored';
+import { askedAgainLine, reReviewPlace, respondedPRs } from './moored';
 import { Failure } from './PeekItem';
 import { Sheet } from './Sheet';
 import { prNumber } from './prTab';
@@ -47,8 +47,9 @@ const Command = ({ name, url }: { name: string; url: string }) => (
 /** The confirm sheet behind the PR tab's Re-review buttons; `sendUrl` is the URL the order row picked when no PR of the ship is responded. */
 export function ReReviewSheet({ ship, prUrl, sendUrl, onClose }: { ship: Ship; prUrl?: string; sendUrl?: string; onClose: () => void }) {
   const of = reReviewOf(ship, prUrl);
-  const { label, line } = of;
   const url = sendUrl ?? of.url;
+  const { label } = of;
+  const line = sendUrl && respondedPRs(ship).length === 0 ? askedAgainLine(sendUrl) : of.line;
   const rr = useReReview(ship, url, onClose);
   return (
     <Sheet label={label} kind="launch-backdrop stop-backdrop" onClose={() => !rr.busy && onClose()}>

@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/config"
-	"github.com/jbuffin/admiral/internal/ships"
 	"github.com/jbuffin/admiral/internal/state"
 )
 
@@ -43,7 +42,7 @@ func newServiceFixture(t *testing.T, cfg string) *serviceFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Service{Home: home, Config: m, Sup: &Supervisor{Home: home, Config: m}, Ships: func() []ships.Ship { return nil }}
+	s := &Service{Home: home, Config: m, Sup: &Supervisor{Home: home, Config: m}}
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	srv := httptest.NewServer(mux)

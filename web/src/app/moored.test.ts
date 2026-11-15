@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Order, Ship } from './api';
-import { mergeHint, moorSheetParts, nextStep, offersMoor, orderRowAction, prChips, prLabel, reReviewPlace, reviews, rowButtons, shipsOnOrder, staleNote } from './moored';
+import { askedAgainLine, mergeHint, mooredShipOn, moorSheetParts, nextStep, offersMoor, orderRowAction, prChips, prLabel, reReviewPlace, reviews, rowButtons, shipsOnOrder, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -519,5 +519,23 @@ describe('moorSheetParts', () => {
   it('says the turn is cut off only while the ship is underway', () => {
     expect(moorSheetParts(ship({ status: 'underway', name: 'kelp', prs: two })).explain).toContain('kelp is mid-turn: the turn is cut off.');
     expect(moorSheetParts(ship({ status: 'needs_you', prs: two })).explain).not.toMatch(/cut off/i);
+  });
+});
+
+describe('mooredShipOn', () => {
+  const issue = 'https://github.com/acme/api/issues/5';
+  it('finds the moored ship wherever it ranks', () => {
+    const live = ship({ name: 'live', session: 's-live', status: 'needs_you', url: issue });
+    const moored = ship({ name: 'moored', session: 's-moored', status: 'moored', url: issue });
+    expect(shipsOnOrder([live, moored], order({ url: issue }))[0].name).toBe('live');
+    expect(mooredShipOn([live, moored], order({ url: issue }))?.name).toBe('moored');
+    expect(mooredShipOn([live], order({ url: issue }))).toBeUndefined();
+  });
+});
+
+describe('askedAgainLine', () => {
+  it('names the PR, or the stack', () => {
+    expect(askedAgainLine('https://github.com/acme/api/pull/7')).toBe('You were asked to review #7 again.');
+    expect(askedAgainLine('https://github.com/acme/api/stack/9')).toBe('You were asked to review the whole stack again.');
   });
 });

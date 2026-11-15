@@ -144,8 +144,7 @@ function reReviewUrl(ship: Ship, order: Order): string | null {
   const key = prKey(order.url ?? '');
   const matched = (ship.prs ?? []).find((p) => p.reviewing && prKey(p.url) === key);
   if (matched) return matched.url;
-  if (isStackUrl(ship.url)) return ship.url!;
-  return (ship.prs ?? []).find((p) => p.reviewing)?.url ?? null;
+  return isStackUrl(ship.url) ? ship.url! : null;
 }
 
 export type RowAgain = { kind: 'rereview'; url: string } | { kind: 'wake'; pr: string } | null;
@@ -166,6 +165,15 @@ export function shipsOnOrder(ships: Ship[], order: Order): Ship[] {
   const rank = (s: Ship) => (againOf(s, order) ? 0 : ({ needs_you: 1, underway: 2, moored: 3 })[s.status as 'moored']);
   const at = (s: Ship) => Date.parse(s.launched) || 0;
   return hits.sort((a, b) => rank(a) - rank(b) || at(b) - at(a));
+}
+
+/** The moored ship on the order, wherever it ranks, so Merge doesn't hide behind a live ship. */
+export const mooredShipOn = (ships: Ship[], order: Order): Ship | undefined => shipsOnOrder(ships, order).find((s) => s.status === 'moored');
+
+/** The Re-review sheet's line when the order asks for the review and no PR of the ship is responded; `url` is what Re-review sends. */
+export function askedAgainLine(url: string): string {
+  const n = /\/pull\/(\d+)\/?$/.exec(url)?.[1];
+  return `You were asked to review ${isStackUrl(url) || !n ? 'the whole stack' : `#${n}`} again.`;
 }
 
 export type RowAction = { kind: 'launch' } | { kind: 'ship'; ship: Ship; word: string; needsYou: boolean; again: RowAgain };

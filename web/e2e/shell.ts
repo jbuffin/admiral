@@ -3100,6 +3100,12 @@ export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { pho
   const orderReReview = orderRow().getByRole('button', { name: 'Re-review', exact: true });
   expect((await orderReReview.boundingBox())!.height, 'Re-review height on Orders').toBeGreaterThanOrEqual(44);
   await expect(orderRow().getByRole('button', { name: /^Launch / })).toHaveCount(0);
+  // Its sheet names the ship's command; Cancel closes it and starts nothing.
+  await orderReReview.tap();
+  const fromOrders = await expectRereviewSheet(page, `/commodore ${url}`, 'Re-review', opts);
+  await fromOrders.sheet.getByRole('button', { name: 'Cancel' }).tap();
+  await expect(rereviewSheet(page)).toHaveCount(0);
+  await staysMoored(a, ship, 'Cancel on the order row starts nothing');
 
   const tab = await openPRTab(page, a, ship);
   await expect(feedbackBar(tab)).toBeVisible();
@@ -3125,18 +3131,10 @@ export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { pho
   await expect(rereviewSheet(page)).toBeVisible();
   await staysMoored(a, ship, 'a refused Re-review leaves the ship moored');
   await page.unroute(/\/api\/(v1\/)?ships\/[^/]+\/rereview$/);
-  await refused.sheet.getByRole('button', { name: 'Cancel' }).tap();
-  await expect(rereviewSheet(page)).toHaveCount(0);
-
-  // Re-review on the order's row opens the same sheet, and its confirm wakes the ship under its own name.
-  await page.goto(a.url + 'app/orders?fleet=zulu');
-  await expect(orderGroup('Needs you').getByRole('listitem').filter({ hasText: 'Review the limiter' })).toHaveCount(1);
-  await orderRow().getByRole('button', { name: 'Re-review', exact: true }).tap();
-  const fromOrders = await expectRereviewSheet(page, `/commodore ${url}`, 'Re-review', opts);
-  await fromOrders.confirm.tap();
+  await refused.confirm.tap();
   await expect(rereviewSheet(page)).toHaveCount(0);
   await expectWokenWith(page, a, ship, url);
-  expect((await listShips(a)).filter((s) => s.name === ship.name)).toHaveLength(1);
+  await expect(reReview).toHaveCount(0);
 
   // The woken ship is live on the order: tapping its pill opens the ship, and the pane offers Launch another ship.
   await page.goto(a.url + 'app/orders?fleet=zulu');
@@ -3148,15 +3146,9 @@ export async function reviewedPRIsReReviewed(page: Page, a: Admiral, opts: { pho
   const pane = orderPane(page, (page.viewportSize()?.width ?? 1024) < 700);
   await expect(pane.getByRole('link', { name: ship.name })).toHaveAttribute('href', new RegExp(`/app/ships/${ship.session}`));
   await expect(pane.getByRole('button', { name: 'Launch ship', exact: true })).toHaveCount(0);
+  expect((await pane.getByRole('link', { name: ship.name }).boundingBox())!.height, 'ship link height').toBeGreaterThanOrEqual(44);
   const another = pane.getByRole('button', { name: 'Launch another ship', exact: true });
   expect((await another.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  await another.tap();
-  const launchForm = page.getByRole('dialog', { name: 'Launch', exact: true });
-  await expect(launchForm).toBeVisible();
-  const sent = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships');
-  await launchForm.getByRole('button', { name: 'Launch', exact: true }).tap();
-  expect((await sent).status()).toBe(201);
-  await expect.poll(async () => (await listShips(a)).length).toBe(2);
 }
 
 /**

@@ -188,7 +188,7 @@ func (g *githubConn) call(ctx context.Context, method string, params any, _ time
 			{Kind: "mentioned", Title: "You are mentioned"}}
 		g.mu.Unlock()
 		return json.Marshal(kinds)
-	case "orders.launched": // Admiral hides the order while its ship is at sea
+	case "orders.launched": // Admiral records the launch
 		return json.RawMessage("{}"), nil
 	}
 	return nil, &rpcError{Code: codeMethodNotFound, Message: "no such method: " + method}

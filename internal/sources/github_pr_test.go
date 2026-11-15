@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
-
-	"github.com/jbuffin/admiral/internal/moor"
-	"github.com/jbuffin/admiral/internal/ships"
 )
 
 const prURL = "https://github.com/acme/widgets/pull/20"
@@ -81,81 +78,5 @@ func TestParseOrdersKeepsAGoodPRAndDropsAMalformedOneWithoutFailingTheList(t *te
 		if pr, ok := served(t, o)["pr"]; ok {
 			t.Errorf("order %s kept the malformed pr %s", o.ID, pr)
 		}
-	}
-}
-
-func TestViewKeepsAnOrderListedWhateverItsShipIsDoing(t *testing.T) {
-	g := newFakeGH(t)
-	g.token("", "fake-token-default-1")
-	g.writePRs()
-	launched := ships.Ship{Name: "calm-otter", Source: "gha", OrderID: "acme/widgets#20"}
-	moored := func(prs ...string) ships.Ship {
-		s := launched
-		s.Status = ships.StatusMoored
-		for _, u := range prs {
-			s.PRs = append(s.PRs, moor.PR{URL: u, State: "OPEN"})
-		}
-		return s
-	}
-	live := launched
-	live.Status = ships.StatusUnderway
-	anchored := launched
-	anchored.Status = ships.StatusAnchored
-
-	for _, c := range []struct {
-		name    string
-		ship    ships.Ship
-		visible bool
-	}{
-		{"moored on the PR", moored(prURL), true},
-		{"moored on the PR in another spelling", moored("https://GitHub.com/acme/widgets/pull/20/"), true},
-		{"moored on another PR only", moored("https://github.com/acme/widgets/pull/99"), true},
-		{"underway", live, true},
-		{"anchored", anchored, true},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
-			f.Svc.Ships = func() []ships.Ship { return []ships.Ship{c.ship} }
-			f.startSources()
-			src := f.waitView("gha", "the issue", func(s SourceView) bool {
-				for _, id := range s.orders("bugs") {
-					if id == "acme/widgets#13" {
-						return true
-					}
-				}
-				return false
-			})
-			has := false
-			for _, id := range src.orders("bugs") {
-				has = has || id == "acme/widgets#20"
-			}
-			if has != c.visible {
-				t.Errorf("bugs view = %v, order acme/widgets#20 visible = %v, want %v", src.orders("bugs"), has, c.visible)
-			}
-		})
-	}
-}
-
-func TestViewListsAnOrderWithNoPRStateWhileItsShipIsMoored(t *testing.T) {
-	g := newFakeGH(t)
-	g.token("", "fake-token-default-1")
-	const bare = "https://github.com/acme/widgets/pull/21"
-	// A pull request node without the state fields gives an order with no pr.
-	node := fmt.Sprintf(`{"number":21,"title":"Bare PR","url":%q,"repository":{"nameWithOwner":"acme/widgets","url":"https://github.com/acme/widgets"},"labels":{"nodes":[]}}`, bare)
-	issue := `{"number":13,"title":"An issue","url":"https://github.com/acme/widgets/issues/13","repository":{"nameWithOwner":"acme/widgets","url":"https://github.com/acme/widgets"},"labels":{"nodes":[]},"subIssuesSummary":{"total":0}}`
-	g.write("search/bugs.match", "label:bug")
-	g.write("search/bugs.json", `{"data":{"search":{"nodes":[`+node+`,`+issue+`]}}}`)
-	ship := ships.Ship{Name: "calm-otter", Source: "gha", OrderID: "acme/widgets#21", Status: ships.StatusMoored, PRs: []moor.PR{{URL: bare, State: "OPEN"}}}
-
-	f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
-	f.Svc.Ships = func() []ships.Ship { return []ships.Ship{ship} }
-	f.startSources()
-	src := f.waitView("gha", "the issue", func(s SourceView) bool { return len(s.orders("bugs")) > 0 })
-	has := false
-	for _, id := range src.orders("bugs") {
-		has = has || id == "acme/widgets#21"
-	}
-	if !has {
-		t.Errorf("bugs view = %v, want acme/widgets#21 listed while its ship is moored", src.orders("bugs"))
 	}
 }

@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 import type { Source } from './api';
 import { Button } from './Button';
 import { campaignList, followReference } from './campaignsLink';
-import { reviews, shipsOnOrder } from './moored';
+import { mooredShipOn, reviews, shipsOnOrder } from './moored';
 import { campaignAction, openedLine, topLine, whyItsHere } from './orderDetail';
 import { launchRef, type OrderRow } from './ordersView';
 import { Failure } from './PeekItem';
@@ -36,7 +36,7 @@ export function OrderPane({ row, sources, now, heading, onLaunch, onClose }: Pro
   const opened = openedLine(o, now);
   const action = campaignAction(o, campaignList.value);
   const onOrder = shipsOnOrder(ships.value, o);
-  const ship = onOrder[0]?.status === 'moored' ? onOrder[0] : undefined;
+  const ship = mooredShipOn(ships.value, o);
   const isMerged = merged.value.has(row.key);
   return (
     <div class="odetail">

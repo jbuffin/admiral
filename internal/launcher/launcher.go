@@ -52,7 +52,7 @@ type Request struct {
 	Panel  string   `json:"-"`
 	// ChatMessage is the id of the chat message the launch answers; it keys the launch as chat:<id>.
 	ChatMessage string `json:"chat_message"`
-	// Anyway gives a chat launch a fresh key so the same message can launch twice.
+	// Anyway gives a chat launch a fresh key so the same message can launch twice; on the engineer's order or issue launch it also allows a second ship on one a ship holds.
 	Anyway bool `json:"anyway"`
 	// ChatKey is a woken ship's stored chat key, which a wake carries over as it is.
 	ChatKey string `json:"-"`

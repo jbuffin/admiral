@@ -155,8 +155,8 @@ func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 	})
 }
 
-// Two launches of one order that overlap: the order is hidden only once its
-// ship exists, so the refusal must hold the order while a launch runs.
+// Two launches of one order that overlap: a ship holds its order only once it
+// exists, so the refusal must hold the order while a launch runs.
 func TestConcurrentLaunchesOfOneOrder(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
