@@ -1973,6 +1973,54 @@ export async function expectSeededTurn(page: Page) {
 
 type Post = Record<string, unknown>;
 
+/** Installs a skill for a dock: its SKILL.md in the dock's identity, which Claude Code and Codex both read as user skills. */
+export function installSkill(a: Admiral, fleet: string, harness: 'claude' | 'codex', name: string, description: string) {
+  const dir = join(a.home, 'identity', `${fleet}-${harness}`, 'skills', name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\n`);
+}
+
+async function put(url: string, body: unknown) {
+  const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  expect(res.status, `PUT ${url}`).toBe(200);
+}
+
+/** The launch form's Skill picker as a person finds it: a combobox labelled Skill and the options of its open list. */
+export function skillPicker(page: Page, form: Locator, press: (l: Locator) => Promise<void>) {
+  const box = form.getByRole('combobox', { name: 'Skill', exact: true });
+  const list = page.getByRole('listbox');
+  const option = (name: string) => page.getByRole('option', { name: new RegExp(`^[/$]?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`, 'i') });
+  const open = async () => {
+    if (!(await list.isVisible())) await press(box);
+    await expect(list).toBeVisible();
+  };
+  return {
+    box,
+    list,
+    option,
+    open,
+    /** Types part of a name, which opens the list of what matches. */
+    type: async (typed: string) => {
+      await box.fill(typed);
+      await expect(list).toBeVisible();
+    },
+    /** Types `typed` and taps the row named `name`. */
+    pick: async (name: string, typed = name) => {
+      await box.fill(typed);
+      await expect(list).toBeVisible();
+      await press(option(name));
+      await expect(list).toBeHidden();
+    },
+    /** Clears the box so the list offers Commodore, the favorites and Just launch, and taps one. */
+    pickListed: async (name: 'Commodore' | 'Just launch' | string) => {
+      await box.fill('');
+      await open();
+      await press(option(name));
+      await expect(list).toBeHidden();
+    },
+  };
+}
+
 /**
  * The launch journey on the Ships screen of the active fleet (Westwind): launching from an order and from the header with
  * freeform text, a skill, a model and effort, resources, autopilot, and the clone of an uncloned repo, each refusal showing
@@ -2026,6 +2074,20 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     await expect(form).toBeHidden();
   };
   const proj = join(a.home, 'proj');
+  const picker = skillPicker(page, form, press);
+  // A request the form must not send: counted from here on, so a refusal shows nothing went out.
+  let shipPosts = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships') shipPosts++;
+  });
+  // Installed for Claude Code: review and tdd (installed under both docks' names in the listing), and one skill only each dock has.
+  // Codex also reads the engineer's own ~/.agents/skills, so the dock-only names are ones nobody installs there.
+  installSkill(a, 'zulu', 'claude', 'review', 'Review the diff before it merges.');
+  installSkill(a, 'zulu', 'claude', 'tdd', 'Test first, then the code.');
+  installSkill(a, 'zulu', 'claude', 'fable-claude', 'Only Claude Code has this.');
+  installSkill(a, 'zulu', 'codex', 'fable-codex', 'Only Codex has this.');
+  installSkill(a, 'zulu', 'claude', 'fable-both', 'Both docks have this.');
+  installSkill(a, 'zulu', 'codex', 'fable-both', 'Both docks have this.');
 
   // From an order: its text, the checkout of its repo, and Just launch (no Commodore, no favorites) are preselected.
   await onOrders();
@@ -2033,33 +2095,91 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await expect(form).toBeVisible();
   await expect(form.getByLabel('Text')).toHaveValue('Tighten them.');
   await expect(form.getByLabel('Checkout')).toHaveValue(proj);
-  await expect(form.getByLabel('Skill')).toHaveValue(/none|Just launch/i);
+  await expect(picker.box).toHaveValue(/none|Just launch/i);
   await expect(form).not.toContainText('Clone ');
   if (opts.phone) expect(await fits()).toBe(true);
+  // The server has no Commodore here, so the list offers it as not found and Just launch beside it, and nothing is a favorite yet.
+  await picker.open();
+  await expect(picker.option('Commodore')).toContainText(/not found/i);
+  await expect(picker.option('Commodore')).toHaveAttribute('aria-disabled', 'true');
+  await expect(picker.option('Just launch')).toBeVisible();
+  // Typing finds an installed skill by part of its name and shows what it does; tapping it picks it, and the form stays open.
+  await picker.type('rev');
+  await expect(picker.option('review')).toContainText('Review the diff before it merges.');
+  await expect(picker.option('review')).toContainText('/review');
+  await expect(picker.option('tdd')).toHaveCount(0);
+  await press(picker.option('review'));
+  await expect(picker.list).toBeHidden();
+  await expect(form).toBeVisible();
+  await expect(picker.box).toHaveValue(/review/);
   const fromOrder = await send();
-  expect(fromOrder.body).toMatchObject({ fleet: 'zulu', harness: 'claude', source: 'orders', order_id: 'ord-api', dir: proj, skill: { kind: 'none' } });
+  expect(fromOrder.body).toMatchObject({ fleet: 'zulu', harness: 'claude', source: 'orders', order_id: 'ord-api', dir: proj, skill: { kind: 'skill', name: 'review' } });
   const apiShip = await launched(fromOrder);
   await boarded(apiShip, { waitsOnMessage: true });
   await expect(main.getByRole('listitem').filter({ hasText: apiShip.name })).toBeVisible();
   setState(a, apiShip, 'working');
 
-  // Freeform from the header, with a custom skill, a model, an effort and a resource.
+  // Freeform from the header, with a typed skill, a model, an effort and a resource.
   await press(main.getByRole('button', { name: 'Launch', exact: true }));
   await expect(form).toBeVisible();
   await form.getByLabel('Checkout').selectOption(proj);
-  await form.getByLabel('Skill').selectOption({ label: 'Custom' });
-  await form.getByLabel('Skill name').fill('review');
+  // The keyboard picks too: Arrow moves to a row, Enter takes it without sending the form, and a leading / is not part of the name.
+  await picker.type('/fable-cl');
+  await expect(picker.option('fable-claude')).toBeVisible();
+  await picker.box.press('ArrowDown');
+  await picker.box.press('Enter');
+  await expect(picker.list).toBeHidden();
+  await expect(form).toBeVisible();
+  await expect(picker.box).toHaveValue(/fable-claude/);
+  // Escape closes the list and leaves the form open.
+  await picker.type('re');
+  await picker.box.press('Escape');
+  await expect(picker.list).toBeHidden();
+  await expect(form).toBeVisible();
   await form.getByLabel('Text').fill('  look at the parser  ');
   await form.getByLabel('Model').selectOption('opus');
   // An effort the harness does not offer is not offered.
   const efforts = form.getByLabel('Effort');
   await expect(efforts.locator('option')).toContainText(['Low', 'Medium', 'High', 'Max'], { useInnerText: true });
+  // Changing the dock re-reads the skills: a skill only Claude Code has is gone, so the pick falls back to Just launch, and the Codex one is offered.
+  await picker.pick('fable-claude');
   await form.getByRole('radio', { name: /codex/i }).check();
+  await expect(picker.box).toHaveValue(/Just launch/i);
+  await picker.type('fable-');
+  await expect(picker.option('fable-codex')).toBeVisible();
+  await expect(picker.option('fable-claude')).toHaveCount(0);
+  await picker.box.press('Escape');
   await expect(efforts.locator('option', { hasText: 'Max' })).toHaveCount(0);
   await form.getByRole('radio', { name: /claude/i }).check();
+  await picker.type('fable-');
+  await expect(picker.option('fable-claude')).toBeVisible();
+  await expect(picker.option('fable-codex')).toHaveCount(0);
+  await picker.box.press('Escape');
+  // A skill installed on both docks and not a favorite stays picked across the change.
+  await picker.pick('fable-both');
+  await form.getByRole('radio', { name: /codex/i }).check();
+  await expect(picker.box).toHaveValue(/fable-both/);
+  await form.getByRole('radio', { name: /claude/i }).check();
+  await expect(picker.box).toHaveValue(/fable-both/);
+  await picker.pick('review');
   await form.getByLabel('Effort').selectOption({ label: 'High' });
   await form.getByRole('checkbox', { name: 'db' }).check();
   if (opts.phone) expect(await fits()).toBe(true);
+  // A name no dock has is refused in the form: the crew picker's warning shows, Launch is off, and Enter sends nothing.
+  await picker.type('not-a-skill');
+  await expect(form).toContainText('not installed on claude');
+  await expect(submit).toBeDisabled();
+  const before = shipPosts;
+  await picker.box.press('Enter');
+  await expect(form).toBeVisible();
+  await form.getByRole('radio', { name: /codex/i }).check();
+  await expect(form).toContainText('not installed on codex');
+  await form.getByRole('radio', { name: /claude/i }).check();
+  expect(shipPosts, 'a refused name sends no launch').toBe(before);
+  // Picking a listed skill lifts the refusal.
+  await picker.pick('review');
+  await expect(form).not.toContainText('not installed on');
+  await expect(submit).toBeEnabled();
   const freeform = await send();
   expect(freeform.body).toMatchObject({ fleet: 'zulu', harness: 'claude', dir: proj, skill: { kind: 'skill', name: 'review' }, model: 'opus', effort: 'high', resources: ['db'], autopilot: false });
   expect(freeform.body).not.toHaveProperty('order_id');
@@ -2109,17 +2229,17 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await press(main.getByRole('button', { name: 'Launch', exact: true }));
   await expect(form).toBeVisible();
   await form.getByLabel('Checkout').selectOption(proj);
-  await form.getByLabel('Skill').selectOption({ label: 'Commodore' });
+  await picker.pickListed('Commodore');
   const crewGroup = form.getByRole('group', { name: /crew/i });
   await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
   // Just launch takes no pins, so the control goes away and nothing is sent for them.
   const justLaunch = form.getByRole('button', { name: 'Just launch', exact: true });
-  await form.getByLabel('Skill').selectOption({ label: 'Just launch' });
+  await picker.pickListed('Just launch');
   await expect(crewGroup).toBeHidden();
   await expect(justLaunch).toBeHidden();
-  await form.getByLabel('Skill').selectOption({ label: 'Commodore' });
+  await picker.pickListed('Commodore');
   await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
-  // The Just launch button skips the Skill pick: whatever the select holds, it sends no skill and no pins.
+  // The Just launch button skips the Skill pick: whatever the picker holds, it sends no skill and no pins.
   await form.getByLabel('Text').fill('just launched');
   const plain = await send(justLaunch);
   expect(plain.body).toMatchObject({ skill: { kind: 'none' }, text: 'just launched' });
@@ -2130,7 +2250,17 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   setState(a, plainShip, 'working');
   await press(main.getByRole('button', { name: 'Launch', exact: true }));
   await expect(form).toBeVisible();
-  await expect(form.getByLabel('Skill')).toHaveValue('commodore');
+  await expect(picker.box).toHaveValue(/commodore/i);
+  // Before any typing the list offers Commodore first, then the favorites, then Just launch.
+  await put(`${a.url}api/v1/favorites`, { skills: ['review', 'tdd'] });
+  await cancel();
+  await press(main.getByRole('button', { name: 'Launch', exact: true }));
+  await expect(picker.box).toHaveValue(/commodore/i);
+  await picker.open();
+  await expect(picker.list.getByRole('option')).toHaveText([/^Commodore/, /^\/?review/, /^\/?tdd/, /^Just launch/]);
+  await expect(picker.option('Commodore')).not.toHaveAttribute('aria-disabled', 'true');
+  await picker.box.press('Escape');
+  await put(`${a.url}api/v1/favorites`, { skills: [] });
   await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
   await form.getByLabel('Text').fill('with a pinned scout');
   const pinned = await send();
@@ -2158,7 +2288,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await press(main.getByRole('button', { name: 'Launch', exact: true }));
   await expect(form).toBeVisible();
   await form.getByLabel('Checkout').selectOption(proj);
-  await form.getByLabel('Skill').selectOption({ label: 'Just launch' });
+  await picker.pickListed('Just launch');
   const launchAs = form.getByLabel('Launch as');
   await expect(launchAs).toHaveValue('');
   await launchAs.selectOption({ value: 'ada' });
@@ -2197,6 +2327,8 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect(existsSync(widget)).toBe(true);
 
   // Long content: the form neither pans sideways nor shrinks a select under the touch target.
+  // Enough skills that the open list outgrows the screen and scrolls.
+  for (let i = 1; i <= 12; i++) installSkill(a, 'zulu', 'claude', `filler-${i}`, 'A skill that only fills the list.');
   await onOrders();
   for (const title of ['Supercalifragilistic', 'Port the long repo']) {
     await press(orderLaunch(title));
@@ -2204,9 +2336,32 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     // The checkout list is in: its longest entry is what can widen the form.
     await expect(form.getByLabel('Checkout').locator('option')).not.toHaveCount(1);
     expect(await fits()).toBe(true);
-    for (const name of ['Checkout', 'Skill', 'Model', 'Effort']) {
+    for (const name of ['Checkout', 'Model', 'Effort']) {
       expect((await form.getByLabel(name).boundingBox())!.height, `${name} select height`).toBeGreaterThanOrEqual(44);
     }
+    expect((await picker.box.boundingBox())!.height, 'Skill height').toBeGreaterThanOrEqual(44);
+    // Skill keeps its place in the Tab order: right after Checkout.
+    await form.getByLabel('Checkout').focus();
+    await page.keyboard.press('Tab');
+    await expect(picker.box).toBeFocused();
+    // The open list: every row is 44px or taller and the list lies inside the visual viewport, with few rows and with many.
+    for (const typed of ['', 'e', 'filler']) {
+      await picker.box.fill(typed);
+      await expect(picker.list).toBeVisible();
+      const rows = picker.list.getByRole('option');
+      expect(await rows.count(), `rows for "${typed}"`).toBeGreaterThan(0);
+      for (const [i, row] of (await rows.all()).entries()) {
+        await row.scrollIntoViewIfNeeded();
+        expect((await row.boundingBox())!.height, `row ${i} for "${typed}"`).toBeGreaterThanOrEqual(44);
+      }
+      const inside = await picker.list.evaluate((l) => {
+        const r = l.getBoundingClientRect();
+        const v = window.visualViewport!;
+        return { top: r.top - v.offsetTop, left: r.left - v.offsetLeft, bottom: v.offsetTop + v.height - r.bottom, right: v.offsetLeft + v.width - r.right };
+      });
+      for (const [side, gap] of Object.entries(inside)) expect(gap, `list ${side} edge inside the visual viewport for "${typed}"`).toBeGreaterThanOrEqual(0);
+    }
+    await picker.box.press('Escape');
     // Tab and Shift+Tab ring through the dialog's controls and never reach the page behind it.
     for (const key of ['Tab', 'Shift+Tab']) {
       for (let i = 0; i < 30; i++) {
@@ -2520,7 +2675,13 @@ export async function myPRsOfferCommodoreOnAShiplessPR(page: Page, a: Admiral, o
   const form = page.getByRole('dialog', { name: 'Launch', exact: true });
   const expectCommodoreOnThePR = async () => {
     await expect(form).toBeVisible();
-    await expect(form.getByLabel('Skill')).toHaveValue('commodore');
+    const picker = skillPicker(page, form, (l) => l.tap());
+    await expect(picker.box).toHaveValue(/commodore/i);
+    await picker.open();
+    await expect(picker.option('Commodore')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(picker.list).toBeHidden();
+    await expect(form).toBeVisible();
     await expect(form.getByLabel('Text')).toHaveValue(`${PR_BASE}/${SHIPLESS_PR.number}`);
     await form.getByRole('button', { name: 'Cancel', exact: true }).tap();
     await expect(form).toBeHidden();

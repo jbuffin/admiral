@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import { T, campaignIdOf, followByPaste, githubReady, issueUrl, proposalJourney, seedChatCampaignFleet, seedCampaignFleet } from './campaign';
-import { watchPage, withFakeGh } from './shell';
+import { skillPicker, watchPage, withFakeGh } from './shell';
 
 test('on the phone, a person follows a campaign from the Campaigns surface, reads its page and launches one child', async ({ page, admiral }) => {
   seedCampaignFleet(admiral);
@@ -32,8 +32,14 @@ test('on the phone, a person follows a campaign from the Campaigns surface, read
   await page.getByRole('dialog', { name: new RegExp(T.survey) }).getByRole('button', { name: /^Launch/ }).tap();
   const form = page.getByRole('dialog', { name: 'Launch', exact: true });
   await expect(form.getByLabel('Checkout')).toHaveValue(join(admiral.home, 'widgets'));
+  // The picker starts at the child's skill, and a tap on Just launch replaces it for this launch.
+  const picker = skillPicker(page, form, (l) => l.tap());
+  await expect(picker.box).toHaveValue(/wayfinder/);
+  await picker.pickListed('Just launch');
+  const body = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/campaigns/${id}/launch`);
   const sent = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/campaigns/${id}/launch`);
   await form.getByRole('button', { name: 'Launch', exact: true }).tap();
+  expect(((await body).postDataJSON() as { skill: unknown }).skill).toEqual({ kind: 'none' });
   expect((await sent).status()).toBe(201);
   await expect(form).toBeHidden();
   await expect(group('Ready, without you').getByRole('listitem').filter({ hasText: T.survey })).toContainText(/Underway · /);

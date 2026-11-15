@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path';
 import { type Locator, type Page, expect } from '@playwright/test';
 import type { Admiral } from './fixtures';
-import { ORDERS, seedFleets } from './shell';
+import { ORDERS, installSkill, seedFleets } from './shell';
 
 export const issueUrl = (n: number) => `https://github.com/acme/widgets/issues/${n}`;
 
@@ -98,6 +98,9 @@ export function seedCampaignFleet(a: Admiral) {
   const commodore = join(a.home, 'identity', 'zulu-claude', 'skills', 'commodore');
   mkdirSync(commodore, { recursive: true });
   writeFileSync(join(commodore, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
+  // What the labels' default skill runs, and one more for a launch to pick instead.
+  installSkill(a, 'zulu', 'claude', 'wayfinder', 'Chart a map of tickets.');
+  installSkill(a, 'zulu', 'claude', 'tdd', 'Test first, then the code.');
   const file = join(a.home, 'config.json');
   const config = JSON.parse(readFileSync(file, 'utf8'));
   config.fleets.zulu.owners = ['acme'];
