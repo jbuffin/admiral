@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -495,10 +494,7 @@ func (s *Service) clearHandMark(name string) {
 	defer cancel()
 	_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptHanding: ""})
 	// a ship can set the mark on its own pane, which wins over the session's
-	if sess, ok := s.find(name); ok && sess.PaneID != "" {
-		args := append([]string{"-S", s.Launcher.Socket}, sessionhost.UnsetPaneCall(sess.PaneID, sessionhost.Prefix+sessionhost.OptHanding)...)
-		_ = exec.CommandContext(ctx, s.Launcher.Tmux, args...).Run()
-	}
+	_ = s.Host.UnsetPaneOption(ctx, name, sessionhost.OptHanding)
 	_ = s.Host.Sync(ctx)
 }
 
