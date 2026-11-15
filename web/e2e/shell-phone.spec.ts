@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
+import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, chip, expectSeededTurn, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -48,9 +48,6 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect(page).toHaveURL(shipViewUrl(admiral, login));
   await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
   await expectSeededTurn(page);
-  await viewTab(page, 'Changes').tap();
-  await expect(viewTab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
-  await expect(viewPanel(page)).toContainText('No git history to compare');
   await viewTab(page, 'PR').tap();
   await expect(viewPanel(page)).toContainText('No pull request yet. A PR shows here as soon as the ship or its crew opens one.');
   await viewTab(page, 'Conversation').tap();
@@ -67,23 +64,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect.poll(() => bridge.isClosed()).toBe(true);
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
-
-  // Changes in a checkout: the files and their diffs fit the screen, and a long line scrolls inside its diff, not the page. Reading them opens no bridge.
-  const bridgesBefore = bridges().length;
-  const dev = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', dir: gitCheckout(admiral, 'repo') });
-  await expect.poll(async () => (await changesOf(admiral, dev)).files.map((f) => `${f.path} ${f.status}`).sort()).toEqual(['a.txt modified', 'b.txt added', 'c.txt untracked']);
-  await rowLink(page, dev).tap();
-  await viewTab(page, 'Changes').tap();
-  await expect(changeFile(page, 'a.txt')).toContainText('modified');
-  await expect(changeFile(page, 'b.txt')).toContainText('added');
-  await expect(changeFile(page, 'c.txt')).toContainText('untracked');
-  await expect(diffOf(page, 'a.txt')).toContainText('TWO');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  expect(await diffOf(page, 'a.txt').evaluate((el) => [el, ...el.querySelectorAll('*')].some((e) => e.scrollWidth > e.clientWidth))).toBe(true);
-  await holds(() => bridges().length === bridgesBefore, 'reading Changes opens no bridge socket');
   expect(watch.unversioned()).toEqual([]);
-  await page.goBack();
-  await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
 
   await page.getByRole('banner').getByRole('button', { name: WORK, exact: true }).tap();
   const sheet = page.getByRole('dialog', { name: 'Fleets' });

@@ -1,10 +1,9 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call, probeShipList, type Changes, type CrewBoat, type Ship } from './api';
+import { call, probeShipList, type CrewBoat, type Ship } from './api';
 import { isRunning, runningFor } from './shipList';
 import { useNow } from './useNow';
 import { ShipOrder, ShipRepo } from './ShipOrder';
-import { splitDiff } from './changes';
 import { followConversation, type Conversation } from './conversation';
 import { cardFor } from './answerCard';
 import { ConversationView } from './ConversationView';
@@ -31,7 +30,7 @@ import { atSea } from '../crew';
 import { KEYS, touchKeyboard } from '../keys';
 
 
-const TABS = ['Conversation', 'Terminal', 'Changes', 'PR'] as const;
+const TABS = ['Conversation', 'Terminal', 'PR'] as const;
 type Tab = (typeof TABS)[number];
 
 const shipsSurface = SURFACES.find((s) => s.id === 'ships')!;
@@ -292,76 +291,6 @@ function UsageRow({ session }: { session: string }) {
   );
 }
 
-type Load = { state: 'loading' } | { state: 'error'; error: string } | { state: 'done'; changes: Changes };
-
-/** The ship's diff against its base, read each time the tab opens. It never joins the bridge. */
-function ChangesTab({ ship }: { ship: Ship }) {
-  const [load, setLoad] = useState<Load>({ state: 'loading' });
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    let live = true;
-    setLoad({ state: 'loading' });
-    void call<Changes>('GET', `/ships/${encodeURIComponent(ship.session)}/changes`).then((r) => {
-      if (live) setLoad(r.ok ? { state: 'done', changes: r.data } : { state: 'error', error: r.error });
-    });
-    return () => {
-      live = false;
-    };
-  }, [ship.session, attempt]);
-
-  if (load.state === 'loading') return <p class="line">Loading…</p>;
-  if (load.state === 'error')
-    return (
-      <div class="changes-error">
-        <p class="alert" role="alert">
-          {load.error}
-        </p>
-        <button type="button" class="btn" onClick={() => setAttempt(attempt + 1)}>
-          Retry
-        </button>
-      </div>
-    );
-  const { changes } = load;
-  if (changes.state === 'none') return <p class="line">No git history to compare</p>;
-  if (changes.files.length === 0) return <p class="line">No changes</p>;
-  const diffs = splitDiff(changes.diff);
-  return (
-    <div class="changes">
-      <ul class="change-files">
-        {changes.files.map((f) => (
-          <li key={f.path} class="change-file">
-            <span class="change-path">{f.path}</span>
-            <span class={`change-status ${f.status}`}>{f.status}</span>
-            <span class="change-add">+{f.added}</span>
-            <span class="change-del">−{f.removed}</span>
-          </li>
-        ))}
-      </ul>
-      {changes.truncated ? <p class="msg-note">The diff was cut: it is too large to show in full.</p> : null}
-      {diffs.map((d, n) => (
-        <section key={`${d.path}\0${n}`} class="diff" aria-labelledby={`diff-path-${n}`}>
-          <h3 class="diff-path" id={`diff-path-${n}`}>
-            {d.path}
-          </h3>
-          <pre class="diff-body">
-            {d.hunks.length === 0 ? <span class="diff-note">No text changes</span> : null}
-            {d.hunks.map((h, i) => (
-              <span key={i} class="diff-hunk">
-                <span class="diff-head">{h.header}</span>
-                {h.lines.map((l, n) => (
-                  <span key={n} class={l[0] === '+' ? 'diff-line add' : l[0] === '-' ? 'diff-line del' : 'diff-line'}>
-                    {l}
-                  </span>
-                ))}
-              </span>
-            ))}
-          </pre>
-        </section>
-      ))}
-    </div>
-  );
-}
-
 /** One chip for the ship and one per boat. A boat's chip stays after it exits and says how it ended. */
 function Flotilla({ ship, picked, pick }: { ship: Ship; picked: string | null; pick: (crew: string | null) => void }) {
   const chips = flotilla(ship);
@@ -542,8 +471,6 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
           </>
         ) : tab === 'Terminal' ? (
           <TerminalTab ship={ship} boat={boat} />
-        ) : tab === 'Changes' ? (
-          <ChangesTab ship={ship} />
         ) : (
           <PRTab ship={ship} />
         )}
@@ -552,7 +479,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   );
 }
 
-/** One ship: Conversation, Terminal, Changes and PR. The view opens on Conversation, or on Terminal or PR when the URL says `?tab=terminal` or `?tab=pr`. */
+/** One ship: Conversation, Terminal and PR. The view opens on Conversation, or on Terminal or PR when the URL says `?tab=terminal` or `?tab=pr`. */
 export function ShipView({ session, title }: { session: string; title: boolean }) {
   const ship = ships.value.find((s) => s.session === session);
   if (!ship) {

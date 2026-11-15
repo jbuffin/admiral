@@ -550,9 +550,6 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
   await viewTab(page, 'Terminal').click();
   await expect(viewPanel(page)).toContainText(/woken/i);
   await expect(page.getByRole('alert')).toHaveCount(0);
-  await viewTab(page, 'Changes').click();
-  await expect(viewPanel(page).getByText('Loading…')).toHaveCount(0);
-  await expect(page.getByRole('alert')).toHaveCount(0);
   await viewTab(page, 'PR').click();
   await expect(viewPanel(page)).toContainText('#7');
   // A moored ship that is not ready: the tab has Don't follow reviews and no Merge or Dismiss, and the head's Wake is the only one.
@@ -1865,7 +1862,7 @@ export async function holds(ok: () => boolean, what: string, ms = 1500) {
 }
 
 /** The ship view's tabs, and the link that opens the view from the ship's row. */
-export const viewTab = (page: Page, name: 'Conversation' | 'Terminal' | 'Changes' | 'PR') => page.getByRole('tab', { name: new RegExp(`^${name}(\\s*\\d+)?$`) });
+export const viewTab = (page: Page, name: 'Conversation' | 'Terminal' | 'PR') => page.getByRole('tab', { name: new RegExp(`^${name}(\\s*\\d+)?$`) });
 export const rowLink = (page: Page, ship: LaunchedShip) =>
   page.getByRole('main').getByRole('listitem').filter({ hasText: ship.name }).getByRole('link', { name: new RegExp(ship.name) });
 export const viewPanel = (page: Page) => page.getByRole('tabpanel');
@@ -2174,46 +2171,6 @@ export function outcomeEvents(a: Admiral, ship: LaunchedShip, keep = ['launched'
     // The log also notes each status change the server happened to see, which depends on how long a journey takes.
     .filter((e) => keep.includes(e));
 }
-
-const GIT = ['-c', 'user.name=Admiral Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false'];
-const LONG_LINE = 'a-very-long-line-in-the-working-copy-that-no-phone-screen-can-show-without-scrolling-sideways-' + 'x'.repeat(200);
-
-/**
- * A checkout (not `proj`, which has no commit) on a branch with its own commit, an uncommitted edit and an untracked file:
- * `a.txt` is modified (+2 −1, one line very long), `b.txt` is added on the branch and `c.txt` is untracked.
- * `clean` leaves it with the branch's commit only.
- */
-export function gitCheckout(a: Admiral, name: string, opts: { clean?: boolean } = {}): string {
-  const dir = join(a.home, name);
-  mkdirSync(dir, { recursive: true });
-  const git = (...args: string[]) => {
-    const r = spawnSync('git', [...GIT, ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
-    expect(r.status, `git ${args.join(' ')}: ${r.stderr}`).toBe(0);
-  };
-  git('init', '-q', '-b', 'main');
-  writeFileSync(join(dir, 'a.txt'), 'one\ntwo\nthree\n');
-  git('add', '.');
-  git('commit', '-q', '-m', 'first');
-  git('checkout', '-q', '-b', 'feature');
-  writeFileSync(join(dir, 'b.txt'), 'new one\nnew two\n');
-  git('add', '.');
-  git('commit', '-q', '-m', 'second');
-  if (!opts.clean) {
-    writeFileSync(join(dir, 'a.txt'), `one\nTWO\nthree\n${LONG_LINE}\n`);
-    writeFileSync(join(dir, 'c.txt'), 'loose\n');
-  }
-  return dir;
-}
-
-/** What GET /api/v1/ships/<ship>/changes answers. */
-export async function changesOf(a: Admiral, ship: LaunchedShip): Promise<{ state: string; files: { path: string; status: string }[] }> {
-  const res = await fetch(`${a.url}api/v1/ships/${encodeURIComponent(ship.session)}/changes`);
-  return (await res.json()) as { state: string; files: { path: string; status: string }[] };
-}
-
-/** The Changes tab: the file list, one entry per file, and the diff of a file as a region named for its path. */
-export const changeFile = (page: Page, path: string) => viewPanel(page).getByRole('listitem').filter({ hasText: path });
-export const diffOf = (page: Page, path: string) => viewPanel(page).getByRole('region', { name: new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
 
 /** The flotilla: one radio for the ship and one per crew boat, named by the ship's name, or the boat's role (Teammate when none) and name. */
 export const flotilla = (page: Page) => page.getByRole('main').getByRole('radiogroup');

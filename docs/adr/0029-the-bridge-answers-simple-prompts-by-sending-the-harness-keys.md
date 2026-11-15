@@ -1,6 +1,6 @@
 # 29. The bridge answers simple prompts by sending the harness's keys
 
-Status: accepted
+Status: accepted, amended 2026-11-14 (the Changes tab is removed; see below)
 
 ## Context
 
@@ -41,3 +41,5 @@ Today the bridge is the ship's terminal ([ADR 0011](0011-the-bridge-follows-the-
 - A harness release can change its menus. Each harness's key map gets one test against a recorded TUI, and a case the map doesn't cover goes to the terminal.
 - The structured view answers through keystrokes, which is surprising. The hook-state gate is what keeps a stale card from sending keys into a prompt the engineer never saw.
 - The conversation endpoints and the `conversation` WebSocket message belong in the API docs, not in `docs/bridge-protocol.md`.
+
+Amended 2026-11-14: the Changes tab is removed, with its route (`GET /api/v1/ships/<ship>/changes`) and the `changes` capability. It diffed one checkout against the base branch, which says little about a ship whose work spans several branches and becomes a stack, and the engineer reads code once it is a PR. The bridge's tabs are Conversation, Terminal and PR. A way to read a PR's code changes may come back under the PR tab; that is not decided here.

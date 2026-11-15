@@ -246,7 +246,7 @@ _Avoid_: review round (Commodore's own review pass)
 What a ship's skill leaves for Admiral at the end of every round, its first build and each feedback round: the result, its PRs and the issues each closes, the crew members it used, and the text that resumes it. Never the transcript.
 
 **Bridge**:
-The view that opens when the engineer boards a ship: its conversation, terminal, changes and PR in tabs, with the flotilla above them.
+The view that opens when the engineer boards a ship: its conversation, terminal and PR in tabs, with the flotilla above them.
 _Avoid_: modal, detail view
 
 **Conversation**:

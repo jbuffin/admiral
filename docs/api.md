@@ -503,26 +503,6 @@ A boat has no `--session-id` of ours to check the path against, and a boat write
 
 The ship's messages take an optional `crew` field naming the boat: `{"type": "conversation_open", "ship": "<ship>", "crew": "<name>"}` and `conversation_close` the same way. The server echoes `crew` on `conversation_opened` and on every `conversation` push for that boat; the ship's own messages have no `crew`. A boat counts toward the 16 open conversations, and its subscription ends with `conversation_close`, when the connection closes, or when the boat's window closes or the ship is dismissed.
 
-## A ship's changes
-
-`GET /api/version` lists the `changes` capability when the server has it.
-
-### `GET /api/v1/ships/<ship>/changes`
-
-```json
-{"state": "ok", "files": [{"path": "a.go", "status": "modified", "added": 3, "removed": 1}], "diff": "diff --git ...", "truncated": false}
-```
-
-Read-only: the ship's checkout (its `dir`; a moored ship's recorded checkout) against its merge-base with the base branch, committed, staged, unstaged and untracked work together.
-
-- The base branch is the repo's `origin/HEAD` branch, else `main` (`refs/heads/main`, then `origin/main`). With none of these, or when `git merge-base` fails (unrelated history, a shallow clone), the base is `HEAD`, so only uncommitted work shows.
-- `state` is `ok`, or `none` (with `files: []` and `diff: ""`) when no `.git` is found at `dir` or above it, `dir` is gone, or the repo has no commit yet. A ship in a subdirectory gets the whole repo's changes, with repo-relative paths. The work tree is the directory holding `.git`, whatever `core.worktree` says.
-- `status` is `added`, `modified`, `deleted`, `renamed` (`path` is the new name), `copied`, `typechange`, `unmerged` or `untracked`. `added` and `removed` count lines, `0` for a binary file.
-- `diff` is the unified diff of the tracked files, then one for each untracked file as a new file. It is cut at a line end after 2 MiB, and the list stops at 2000 files; `truncated` is `true` when either happened, and also when the 20 s budget runs short before every untracked file's diff is in (the list still has them).
-- An unknown ship is `404`. A git failure or a timeout (10 s a call, 20 s in all) is `500`.
-
-The checkout's `.git/config`, `.git/info/attributes` and `.gitattributes` are written by the ship, so git runs with `--no-ext-diff --no-textconv`, `core.fsmonitor` and hooks off, every `filter.*` and `diff.*` program named in the repo config (included files and `config.worktree` too) blanked, no optional locks and a fixed environment (no global or system config), and no user-controlled value reaches it as an option.
-
 ## Usage
 
 `GET /api/version` lists the `usage` capability when the server has these routes. Both are also served under `/api/v1/`. Figures come from the outcome log's `usage` and `advised` records (ADR 0015), read on each request, plus the live figures of ships still running. Nothing is written. Money is never added across harnesses, and there is no total across harnesses or fleets.
