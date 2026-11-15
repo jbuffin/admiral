@@ -429,3 +429,39 @@ test('on the phone, the GitHub page hides a view with a tap and moves one with a
   await page.getByRole('navigation').getByRole('link', { name: /^Orders/ }).tap();
   await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^For you/, /^My PRs/, /^A custom view/, /^Orders: Orders/]);
 });
+
+test('on the phone, the New view card fits the screen, its controls are tall enough to tap, and Add view saves', async ({ page, admiral }) => {
+  seedOrders(admiral);
+  const gh = admiral.fakeGh();
+  gh.count('z-open', 'is:open', 3);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const stored = () => (JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).sources.gh.settings.views ?? []) as { title?: string; query?: string }[];
+  await expect.poll(() => stored().length).toBe(4);
+
+  await page.goto(admiral.url + 'app/');
+  await openPreferences(page, { fleet: WORK, section: 'GitHub' });
+  await expect(page.getByRole('region', { name: 'Connection', exact: true })).toContainText('Connected');
+  const open = page.getByRole('button', { name: '+ New view', exact: true });
+  await open.scrollIntoViewIfNeeded();
+  await expectReachable(page, open);
+  await touchTap(page, open);
+
+  const card = page.getByRole('region', { name: 'New view', exact: true });
+  await expect(card).toBeVisible();
+  const viewport = page.viewportSize()!;
+  for (const control of await card.getByRole('button').all()) {
+    const box = (await control.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  }
+  await expect(card.getByRole('group', { name: 'Search', exact: true })).toContainText('is:open is:pr review-requested:@me draft:false -review:approved');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await touchTap(page, card.getByRole('button', { name: 'Assigned issues', exact: true }));
+  const add = card.getByRole('button', { name: 'Add view', exact: true });
+  await add.scrollIntoViewIfNeeded();
+  await expectReachable(page, add);
+  await touchTap(page, add);
+  await expect.poll(() => stored().at(-1)).toEqual({ title: 'Assigned issues', query: 'is:open is:issue assignee:@me' });
+});
