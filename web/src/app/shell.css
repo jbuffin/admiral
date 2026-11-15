@@ -997,7 +997,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .otabs { display: flex; gap: 4px; padding: 3px; max-width: 100%; overflow-x: auto; align-self: flex-start; border-radius: var(--shape-radius-md); background: var(--color-bg); }
 .otab { flex: none; display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: var(--shape-radius-sm); font-size: 13px; color: var(--color-text2); white-space: nowrap; }
 .otab[aria-selected='true'] { background: var(--color-panel); box-shadow: 0 0 0 1px var(--color-line2); color: var(--color-text); font-weight: 500; }
-@media (pointer: coarse) { .otab, .orders-filter, .orders-repo { min-height: var(--shape-min-touch-target); } }
+@media (pointer: coarse) { .otab, .orders-filter, .orders-repo { min-height: var(--shape-min-touch-target); } .orders-repo { height: var(--shape-min-touch-target); } }
 .ogroup-head { display: flex; align-items: center; gap: 8px; margin: 0; height: 34px; padding: 0 20px; font-family: var(--font-body); font-size: var(--font-size-meta); font-weight: 600; color: var(--color-text2); background: var(--color-bg); border-bottom: 1px solid var(--color-line); }
 .dot.needs { width: 8px; height: 8px; background: var(--color-needs); }
 .orders-screen > .alert { margin: 8px 20px 0; }
