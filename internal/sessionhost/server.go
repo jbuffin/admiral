@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"sort"
@@ -130,6 +131,26 @@ func (s Server) run(c call) (string, error) {
 	return out.String(), nil
 }
 
+// noPty is tmux's error when macOS fails to open a pty for a pane (ENXIO), which happens now and then on a loaded Mac
+// and passes.
+const noPty = "fork failed: Device not configured"
+
+// spawnTries is how often runSpawn runs a batch that spawns a pane before it gives up on a pty.
+const spawnTries = 4
+
+// runSpawn runs a batch that ends in a pane spawn, again when tmux could not open a pty for it. Every command in such a
+// batch can be run twice.
+func (s Server) runSpawn(c call) (string, error) {
+	for try := 1; ; try++ {
+		out, err := s.run(c)
+		if err == nil || !strings.Contains(out+Output(err), noPty) || try == spawnTries {
+			return out, err
+		}
+		log.Printf("admiral: tmux could not open a terminal for a pane (try %d of %d): %s", try, spawnTries, strings.TrimSpace(out))
+		time.Sleep(time.Duration(try) * 100 * time.Millisecond)
+	}
+}
+
 func batches(cmds [][]string) [][]string {
 	var out [][]string
 	var cur []string
@@ -227,13 +248,13 @@ func (s Server) StartSession(spec SessionSpec) error {
 
 	// The session is made on its own, so a failure here (the name taken, say)
 	// never kills a session that was not ours.
-	if out, err := s.run(call{args: append([]string{"new-session", "-d", "-s", spec.Name, "-c", cdir, "--"}, placeholder...)}); err != nil {
+	if out, err := s.runSpawn(call{args: append([]string{"new-session", "-d", "-s", spec.Name, "-c", cdir, "--"}, placeholder...)}); err != nil {
 		return fmt.Errorf("tmux could not create the ship's session: %s", strings.TrimSpace(out))
 	}
 	// A pane's PATH is the one of the tmux client that spawns it, whatever the
 	// session environment says, so that client runs with the ship's PATH.
 	for _, batch := range batches(cmds) {
-		if out, err := s.run(call{args: batch, path: spec.Env["PATH"]}); err != nil {
+		if out, err := s.runSpawn(call{args: batch, path: spec.Env["PATH"]}); err != nil {
 			_, _ = s.run(call{args: []string{"kill-session", "-t", target}})
 			return fmt.Errorf("tmux could not start the ship: %s", strings.TrimSpace(out))
 		}
@@ -275,7 +296,7 @@ type CrewSpec struct {
 func (s Server) StartCrew(spec CrewSpec) error {
 	target := "=" + spec.Session + ":"
 	cdir := literalDir(spec.Dir)
-	win, err := s.run(call{args: append([]string{"new-window", "-d", "-P", "-F", "#{window_id}", "-t", target, "-n", spec.Name, "-c", cdir, "--"}, placeholder...)})
+	win, err := s.runSpawn(call{args: append([]string{"new-window", "-d", "-P", "-F", "#{window_id}", "-t", target, "-n", spec.Name, "-c", cdir, "--"}, placeholder...)})
 	if err != nil {
 		return fmt.Errorf("tmux could not create the crew window: %s", strings.TrimSpace(win))
 	}
@@ -312,7 +333,7 @@ func (s Server) StartCrew(spec CrewSpec) error {
 	}
 	cmds = append(cmds, append(append(respawn, "--"), spec.Command...))
 	for _, batch := range batches(cmds) {
-		if out, err := s.run(call{args: batch, path: spec.ClientPath}); err != nil {
+		if out, err := s.runSpawn(call{args: batch, path: spec.ClientPath}); err != nil {
 			kill()
 			return fmt.Errorf("tmux could not start the crew boat: %s", strings.TrimSpace(out))
 		}
@@ -372,7 +393,7 @@ func (s Server) StartDetached(name string, cols, rows int, env, argv []string) e
 	for _, kv := range env {
 		args = append(args, "-e", kv)
 	}
-	_, err := s.run(call{args: append(append(args, "--"), argv...)})
+	_, err := s.runSpawn(call{args: append(append(args, "--"), argv...)})
 	return errors.Unwrap(err)
 }
 

@@ -19,9 +19,12 @@ func (r *wakeRig) polling() *pollGitHub {
 }
 
 // aliceReview is a review from the fleet's wake_reviewers, submitted fifteen minutes ago.
+// aliceAt is read once, so every aliceReview a test builds, to seed it or to check against, names the same instant.
+var aliceAt = time.Now().Add(-15 * time.Minute).UTC().Truncate(time.Second)
+
 func aliceReview() moor.Status {
 	return moor.Status{State: "OPEN", Reviews: []moor.Review{{ID: "R1", Author: moor.Actor{Type: "User", Login: "alice"},
-		State: "COMMENTED", Body: "rename the helper", SubmittedAt: time.Now().Add(-15 * time.Minute).UTC().Truncate(time.Second)}}}
+		State: "COMMENTED", Body: "rename the helper", SubmittedAt: aliceAt}}}
 }
 
 func (r *wakeRig) state(t *testing.T) moor.WakeState {
