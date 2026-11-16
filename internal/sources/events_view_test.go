@@ -30,7 +30,8 @@ func TestSourcesListCarriesAGitHubSourcesEventCatalogOnceItHasOne(t *testing.T) 
 	}
 
 	f.startSources()
-	v := f.waitView("gh", "its event catalog", func(s SourceView) bool { return len(s.Events) > 0 })
+	// The runner publishes the catalog before it merges the panels, so the events can be listed a moment before the views.
+	v := f.waitView("gh", "its event catalog and its two views", func(s SourceView) bool { return len(s.Events) > 0 && len(s.Views) >= 2 })
 	f.waitView("ghost", "listed", func(SourceView) bool { return true })
 
 	if _, has := list()["ghost"]["events"]; has {
