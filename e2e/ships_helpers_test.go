@@ -58,9 +58,9 @@ func fakeDir(t *testing.T) string {
 
 var reapOnce sync.Once
 
-// reapOrphanTmux ends the tmux servers a run that was killed (a timeout, an interrupt) left behind: each holds ptys
-// until the machine runs out of them, and the world that owned it, socket and all, is gone. It leaves any server whose socket exists, as
-// another run's tests may be using it.
+// reapOrphanTmux ends the tmux servers whose socket has been deleted while they ran, as when a world's directory goes before the
+// Admiral inside it has: each keeps its ptys and nothing can reach it again. It leaves any server whose socket exists, as another
+// run's tests may be using it.
 func reapOrphanTmux() {
 	out, err := exec.Command("ps", "-axo", "pid=,command=").Output()
 	if err != nil {

@@ -469,6 +469,10 @@ func TestExitSailsOffOrAnchors(t *testing.T) {
 		t.Errorf("session %s still exists after the ship sailed off", z.Session)
 	}
 	waitStateFile(t, statePath, func(s string) bool { return !strings.Contains(s, z.Session) })
+	// A later ship can draw the freed name, and the fake keys its recording by it: z's `go` would release that ship's wait.
+	if err := os.RemoveAll(filepath.Join(w.rec, z.Session)); err != nil {
+		t.Fatal(err)
+	}
 
 	// Exit 3.
 	a := w.launchIn("three", "claude", "s5three")
