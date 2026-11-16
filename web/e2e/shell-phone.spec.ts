@@ -3,7 +3,7 @@ import { expect, test } from './fixtures';
 import { existsSync, readFileSync } from 'node:fs';
 import { seedOrders } from './orders';
 import { join } from 'node:path';
-import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, chip, expectSeededTurn, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
+import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, chip, expectSeededTurn, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, launchAsAdmiralBot, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -311,6 +311,18 @@ test("on the phone, the Chat tab shows the fleet's AdmiralBot conversation and i
   await page.goto(admiral.url + 'app/chat?fleet=alpha');
   await expect(main).toContainText(/no Claude Code dock/i);
   await expect(main.getByRole('textbox', { name: 'Message AdmiralBot' })).toHaveCount(0);
+
+  // A ship AdmiralBot launched is a link in its reply, and tapping it opens the ship's screen in this page, as the installed app needs.
+  await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  const launched = await launchAsAdmiralBot(admiral, 'harbor');
+  chatSays(admiral, 'harbor', [line.assistant(`I launched **${launched.name}** to look at the harbour log.`)]);
+  const shipLink = main.locator('.msg.assistant').getByRole('link', { name: launched.name, exact: true });
+  await expect(shipLink).toHaveCount(1);
+  await expect(shipLink).not.toHaveAttribute('target', /.+/);
+  await touchTap(page, shipLink);
+  await expect(page).toHaveURL(new RegExp(`/app/ships/${encodeURIComponent(launched.session)}`));
+  await expect(page.getByRole('heading', { name: launched.name, exact: true })).toBeVisible();
+  expect(page.context().pages()).toHaveLength(1);
   expect(watch.errors).toEqual([]);
 });
 
