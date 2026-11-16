@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Ship } from './api';
 import { renderMarkdown, renderRestrictedMarkdown } from './markdown';
 
 describe('renderMarkdown', () => {
@@ -233,5 +234,89 @@ describe('renderRestrictedMarkdown', () => {
   it('still escapes raw HTML', () => {
     const html = renderRestrictedMarkdown('<script>alert(1)</script>');
     expect(html).not.toContain('<script');
+  });
+});
+
+// renderMarkdown(src, { ships, fleet, at, search }): `ships` is the live list, `fleet` the chat's fleet key, `at` the message's ISO time and `search` the query the card links carry.
+describe('renderMarkdown: ship links in AdmiralBot replies', () => {
+  const AT = '2026-11-15T10:00:00.250Z';
+  const ship = (over: Record<string, unknown>) =>
+    ({ session: 'gaff-gull', name: 'Gaff Gull', fleet: 'harbor', via: 'admiralbot', launched: '2026-11-15T09:00:00Z', ...over }) as unknown as Ship;
+  const render = (src: string, ships: Ship[], over: { fleet?: string; at?: string } = {}) =>
+    renderMarkdown(src, { ships, fleet: 'harbor', at: AT, search: '?fleet=harbor', ...over });
+  const anchors = (html: string) => html.match(/<a [^>]*>[\s\S]*?<\/a>/g) ?? [];
+
+  it('links the name of a ship AdmiralBot launched to its screen, inside bold, without opening a new tab', () => {
+    const html = render('I launched **Gaff Gull** for that.', [ship({})]);
+    expect(anchors(html)).toHaveLength(1);
+    expect(html).toMatch(/<strong>\s*<a [^>]*href="\/app\/ships\/gaff-gull\?fleet=harbor"[^>]*>Gaff Gull<\/a>\s*<\/strong>|<a [^>]*href="\/app\/ships\/gaff-gull\?fleet=harbor"[^>]*><strong>Gaff Gull<\/strong><\/a>/);
+    expect(anchors(html)[0]).not.toContain('target=');
+  });
+
+  it('links every occurrence, and the longer name wins over a name it begins', () => {
+    const ships = [ship({ session: 'saltpaw', name: 'Saltpaw' }), ship({ session: 'saltpaw-ii', name: 'Saltpaw II' })];
+    const html = render('Saltpaw II is on it, Saltpaw too, and Saltpaw again. Saltpawn is not a ship.', ships);
+    const hrefs = anchors(html).map((a) => /href="([^"]*)"/.exec(a)?.[1]);
+    expect(hrefs).toEqual(['/app/ships/saltpaw-ii?fleet=harbor', '/app/ships/saltpaw?fleet=harbor', '/app/ships/saltpaw?fleet=harbor']);
+    expect(html).toContain('Saltpawn is not a ship');
+  });
+
+  // A second, linkable ship in each of the next cases proves the renderer is linking at all, so a case cannot pass for want of the feature.
+  const control = ship({ session: 'saltpaw', name: 'Saltpaw' });
+  const internal = (html: string) => anchors(html).filter((a) => a.includes('/app/ships/'));
+
+  it('never links inside a code span, a code block or an existing link', () => {
+    const html = render('Saltpaw, `Gaff Gull`\n\n```\nGaff Gull\n```\n\n[see Gaff Gull](https://example.com/x)', [ship({}), control]);
+    expect(internal(html)).toHaveLength(1);
+    expect(internal(html)[0]).toContain('/app/ships/saltpaw');
+    expect(anchors(html).find((a) => a.includes('example.com'))).toContain('target="_blank"');
+  });
+
+  it('keeps an ordinary link opening in a new tab', () => {
+    const html = render('[docs](https://example.com) and Saltpaw', [control]);
+    expect(internal(html)).toHaveLength(1);
+    const docs = anchors(html).find((a) => a.includes('example.com'));
+    expect(docs).toContain('target="_blank"');
+    expect(docs).toMatch(/rel="[^"]*noopener[^"]*"/);
+  });
+
+  it.each([
+    ['a ship that ended and left the list', [] as Ship[], {}],
+    ['a ship the engineer launched', [ship({ via: undefined })], {}],
+    ['a ship another actor launched', [ship({ via: 'routine' })], {}],
+    ['a ship of another fleet', [ship({ fleet: 'lagoon' })], {}],
+    ['a ship first launched after the message', [ship({ launched: '2026-11-15T10:05:00Z', first_launched: '2026-11-15T10:05:00Z' })], {}],
+    ['a ship with no first launch stamp, launched after the message', [ship({ launched: '2026-11-15T10:05:00Z' })], {}],
+    ['a ship whose first launch is after the message though its launch stamp is not', [ship({ launched: '2026-11-15T09:00:00Z', first_launched: '2026-11-15T10:05:00Z' })], {}],
+  ])('leaves the name plain for %s', (_what, ships, over) => {
+    const html = render('Saltpaw launched Gaff Gull.', [control, ...ships], over);
+    expect(internal(html)).toHaveLength(1);
+    expect(internal(html)[0]).toContain('/app/ships/saltpaw');
+    expect(html).toContain('launched Gaff Gull.');
+  });
+
+  it('keeps the link of a woken or handed ship whose launch stamp is after the message but whose first launch is not', () => {
+    const html = render('I launched Gaff Gull.', [ship({ launched: '2026-11-15T10:30:00Z', first_launched: '2026-11-15T09:00:00Z' })]);
+    expect(html).toMatch(/<a [^>]*href="\/app\/ships\/gaff-gull\?fleet=harbor"[^>]*>Gaff Gull<\/a>/);
+  });
+
+  it('compares the message time with the launch stamp as instants, not as text', () => {
+    const html = render('I launched Gaff Gull.', [ship({ launched: '2026-11-15T10:00:00Z' })]);
+    expect(html).toContain('<a ');
+  });
+
+  it('escapes a ship name and session in the link', () => {
+    const html = render('Tom & "Jerry" is up', [ship({ session: 'x" onmouseover="y', name: 'Tom & "Jerry"' })]);
+    const [a] = anchors(html);
+    expect(a).toBeDefined();
+    expect(a).not.toMatch(/\sonmouseover=/);
+    expect(a).toContain('href="/app/ships/x%22%20onmouseover%3D%22y?fleet=harbor"');
+    expect(a).toMatch(/>Tom &amp; (&quot;|")Jerry(&quot;|")<\/a>/);
+  });
+
+  it('still escapes raw HTML in the reply', () => {
+    const html = render('<script>alert(1)</script> Gaff Gull', [ship({})]);
+    expect(html).not.toContain('<script');
+    expect(html).toContain('&lt;script&gt;');
   });
 });

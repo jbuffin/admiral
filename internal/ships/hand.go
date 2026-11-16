@@ -410,7 +410,7 @@ func handLaunch(sess sessionhost.Session, id string) launcher.Request {
 	return launcher.Request{Fleet: o["fleet"], Harness: o["harness"], Dir: o["dir"], Model: o["model"],
 		Skill: launcher.Skill{Kind: "commodore"}, Source: o["source"], OrderID: o["order"], Title: o["title"], URL: o["url"], Link: o["link"],
 		Issues: splitResources(o["issues"]), Panel: o["panel"], Resources: splitResources(o["resources"]), PRs: splitResources(o["prs"]),
-		Name: o["name"], Session: sess.Name, Round: round + 1, By: "hand", Via: o["via"],
+		Name: o["name"], Session: sess.Name, Round: round + 1, By: "hand", Via: o["via"], FirstLaunched: firstLaunched(o),
 		ChatKey: o["chat"], RoutineKey: o["routine"], CommitmentKey: o["commitment"], ResumeConversation: id}
 }
 

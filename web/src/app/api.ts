@@ -149,6 +149,10 @@ export interface Ship {
   fleet_name?: string;
   fleet_color: string;
   launched: string;
+  // The first launch's stamp: a wake or a hand relaunch moves `launched` but not this.
+  first_launched?: string;
+  // "admiralbot" for a ship AdmiralBot launched.
+  via?: string;
   // When a needs-you ship started waiting; omitted otherwise.
   stop_since?: string;
   // The engineer has looked at this stop; the ship still needs you, so its question can be answered.

@@ -359,6 +359,41 @@ export async function launchShip(
   return ship;
 }
 
+/** Launches a ship the way AdmiralBot does: with the chat's own actor token, read from the MCP config Admiral wrote when it started the chat, so the ship carries `via: admiralbot`. The fleet's only dock is the chat's, so for the launch the dock's cue file holds the ship's own cue (a SessionStart on a transcript of its own) and the chat's cue, which its running Claude has already read, is put back after. */
+export async function launchAsAdmiralBot(a: Admiral, fleet: ChatFleet, text = 'Look at the harbour log'): Promise<LaunchedShip> {
+  const dir = join(a.home, 'proj');
+  mkdirSync(dir, { recursive: true });
+  spawnSync('git', ['init', '-q'], { cwd: dir });
+  const mcp = join(a.home, 'chat', fleet, 'mcp.json');
+  await expect.poll(() => existsSync(mcp), { message: 'the chat has started and written its MCP config' }).toBe(true);
+  const servers = JSON.parse(readFileSync(mcp, 'utf8')).mcpServers as Record<string, { env: Record<string, string> }>;
+  const token = Object.values(servers)[0].env.ADMIRAL_ACTOR_TOKEN;
+  const cue = join(a.home, `chat-cue-${fleet}`);
+  const chatCue = readFileSync(cue, 'utf8');
+  const transcript = chatTranscriptPath(a, fleet, 'ship');
+  writeFileSync(transcript, '');
+  writeFileSync(cue, `event SessionStart ${JSON.stringify({ transcript_path: transcript, source: 'startup' })}\n`);
+  let ship!: LaunchedShip;
+  await expect
+    .poll(async () => {
+      const res = await fetch(`${a.url}api/v1/ships`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admiral-Actor': token },
+        body: JSON.stringify({ fleet, harness: 'claude', dir, skill: { kind: 'none' }, text }),
+      });
+      if (res.status === 201) {
+        const got = (await res.json()) as LaunchedShip & { ship?: LaunchedShip };
+        ship = got.ship ?? got;
+      }
+      return res.status === 503 ? 'not known yet' : `${res.status} ${ship ? 'launched' : await res.text()}`;
+    })
+    .toMatch(/^201 launched$/);
+  await expect.poll(() => existsSync(join(a.home, 'rec', ship.session, 'cues-done'))).toBe(true);
+  writeFileSync(cue, chatCue);
+  await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session) !== undefined).toBe(true);
+  return ship;
+}
+
 export const PR_BASE = 'https://github.com/acme/api/pull';
 
 /** What the fake gh's batched poll answers for a PR: any of the words may be '' for none. */

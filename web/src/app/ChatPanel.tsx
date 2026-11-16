@@ -1,9 +1,11 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Actions, Button } from './Button';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
 import { probeChatSession, type Fleet, type Result } from './api';
+import { computed } from '@preact/signals';
 import { ships, shipsLink } from './shipsLink';
+import { shipLinkSet, shipsOfLinkSet } from './shipLinkSet';
 import { fetchLaunchState, launchCardView, promoteLaunch, stopShip, undoLaunch } from './launchCard';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
@@ -191,6 +193,8 @@ function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'la
 function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working: boolean; chat: Chat; fleet: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const linkSet = useMemo(() => computed(() => shipLinkSet(ships.value, fleet)), [fleet]).value;
+  const linkShips = useMemo(() => shipsOfLinkSet(linkSet), [linkSet]);
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
@@ -199,6 +203,13 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
     <div
       class="convo"
       ref={scroller}
+      onClick={(e) => {
+        const a = (e.target as HTMLElement).closest?.('a[data-ship]');
+        if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        const [path, search] = (a.getAttribute('href') ?? '').split('?');
+        go(path, search ? `?${search}` : '');
+      }}
       onScroll={(e) => {
         const el = e.currentTarget;
         pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -223,7 +234,7 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
             {i.text}
           </div>
         ) : (
-          <div key={i.id} class="msg assistant md" dangerouslySetInnerHTML={{ __html: renderMarkdown(i.text) }} />
+          <div key={i.id} class="msg assistant md" dangerouslySetInnerHTML={{ __html: renderMarkdown(i.text, { ships: linkShips, fleet, at: i.at, search: fleetSearch.value }) }} />
         ),
       )}
       {working ? <p class="working">{workingLabel([], Date.now())}</p> : null}

@@ -203,7 +203,7 @@ func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Recor
 	req := launcher.Request{Fleet: rec.Fleet, Harness: rec.Harness, Dir: rec.Checkout, Model: rec.Model,
 		Skill: launcher.Skill{Kind: rec.Skill.Kind, Name: rec.Skill.Name}, Source: rec.Source, OrderID: rec.OrderID,
 		Title: rec.Title, URL: rec.URL, Link: rec.Link, Issues: rec.Issues, Panel: rec.Panel, Resources: rec.Resources, PRs: rec.PRs,
-		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Bare: opts.bare && !moor.ValidResume(rec.Resume), Text: opts.text, Autopilot: by == "feedback" || by == "proposal", Unattended: by == "feedback", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, ChatKey: rec.Chat, RoutineKey: rec.Routine, CommitmentKey: rec.Commitment}
+		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Bare: opts.bare && !moor.ValidResume(rec.Resume), Text: opts.text, Autopilot: by == "feedback" || by == "proposal", Unattended: by == "feedback", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, FirstLaunched: cmpFirst(rec.FirstLaunched, rec.Launched), ChatKey: rec.Chat, RoutineKey: rec.Routine, CommitmentKey: rec.Commitment}
 	var undo undoFunc
 	// The launcher runs this under its lock, just before it makes the session: a Dismiss or a merged PR that
 	// ended the mooring while this wake waited wins, and from here on an ending loses to the wake.
