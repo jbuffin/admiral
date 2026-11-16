@@ -162,6 +162,14 @@ func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.
 		}
 		return out, ok
 	}
+	store.SourcePlugin = func(fleet, source string) (string, bool) {
+		for _, def := range sup.Config.Current().SourceList {
+			if def.Key == source && def.Fleet == fleet {
+				return def.Plugin, true
+			}
+		}
+		return "", false
+	}
 	sched.Own = func(_, ref string) bool { return ships.OwnsRef(list(), ref) }
 	// one worker keeps events in order and off the source's read loop; a full queue drops the event
 	queue := make(chan routines.Event, 256)

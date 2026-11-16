@@ -624,6 +624,8 @@ export interface DirEntry {
   name: string;
   kind: string;
   ships_here: number;
+  /** Each remote's identity, host/owner/name. */
+  remotes: string[];
 }
 export interface DirsAnswer {
   entries: DirEntry[];

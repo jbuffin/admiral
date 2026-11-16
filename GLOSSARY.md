@@ -41,7 +41,7 @@ A named thing with a capacity, such as a phone for on-device checks, that a laun
 _Avoid_: device, lock (a lock is how a person holds a unit, not the resource), blocked
 
 **Routine**:
-The engineer's standing rule for one fleet: when a schedule or a source event fires, do an action, gated by **Before acting**. A scheduled run is the engineer's own act; a source event goes through the Lookout. It is never an order, a commitment or a standing order.
+The engineer's standing rule for one fleet: when a schedule or a source event fires, do an action, gated by **Before acting**. A scheduled run is the engineer's own act; a source event goes through the Lookout. An event routine on the built-in GitHub source fires only for events on a repository among its checkout's remotes. It is never an order, a commitment or a standing order.
 _Avoid_: schedule, automation, cron job
 
 **Worker spend**:
