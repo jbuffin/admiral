@@ -128,20 +128,6 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
   await expect(restart).not.toHaveAttribute('aria-busy', 'true');
   await expect(moved).toContainText(/plugin · ok/);
 
-  // Add source offers the test plugin and not GitHub, and adds to this page's fleet.
-  await page.getByRole('button', { name: 'Add source', exact: true }).click();
-  const add = page.getByRole('group', { name: 'Add source' });
-  await expect(add.getByLabel('Plugin').locator('option')).toHaveText(['testplug']);
-  await add.getByRole('button', { name: `Add to ${HOME}` }).click();
-  await expect.poll(async () => (await apiSources(admiral)).filter((s) => s.fleet === 'alpha').length).toBe(2);
-  await expect(page.getByRole('region')).toHaveCount(2);
-
-  // Remove asks inside the page, not with a browser dialog, and the source goes away.
-  await moved.getByRole('button', { name: 'Remove', exact: true }).click();
-  await moved.getByRole('group', { name: 'Remove Orders' }).getByRole('button', { name: 'Remove source' }).click();
-  await expect(page.getByRole('region')).toHaveCount(1);
-  await expect.poll(async () => (await apiSources(admiral)).some((s) => s.key === 'orders')).toBe(false);
-
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
   expect(watch.errors).toEqual([]);
@@ -556,7 +542,7 @@ const zulu = (a: Admiral) => JSON.parse(readFileSync(join(a.home, 'config.json')
 const viewOf = async (a: Admiral, key: string) =>
   ((await (await fetch(`${a.url}api/v1/config`)).json()) as { fleets: { key: string; search_roots: string[] }[] }).fleets.find((f) => f.key === key);
 
-test('a fleet page edits search roots, owners, clone root and colour, keeping what the person did not touch, and shows docks read-only', async ({ page, admiral }) => {
+test('a fleet page opens from the switcher, writes its owners and clone root to the file keeping the ~/ root, and New fleet… starts setup', async ({ page, admiral }) => {
   // The file stores zulu's search root as ~/…, the view shows it expanded.
   const stored = '~/admiral-u3-roots';
   const shownRoot = join(homedir(), 'admiral-u3-roots');
@@ -565,121 +551,32 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
   const watch = watchPage(page, admiral.url);
   await expect.poll(async () => (await viewOf(admiral, 'zulu'))?.search_roots).toEqual([shownRoot]);
 
-  // The switcher's "<fleet> fleet settings" item opens the page; the nav's Fleet link, reload and Back return to it.
   await page.goto(admiral.url + 'app/ships');
   await page.getByRole('navigation').getByRole('button', { name: WORK, exact: true }).click();
   await page.getByRole('menu').getByRole('menuitem', { name: `${WORK} fleet settings` }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/fleet/);
-  await expect(page.getByRole('heading', { name: 'Fleet', exact: true })).toBeVisible();
   const group = prefsNav(page).getByRole('group', { name: `${WORK} fleet` });
   await expect(group.getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'GitHub', 'Plugin sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours']);
-  await expect(group.getByRole('link', { name: 'Fleet', exact: true })).toHaveAttribute('aria-current', 'page');
   await group.getByRole('link', { name: 'Plugin sources' }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/sources/);
   await page.goBack();
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/fleet/);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Fleet', exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Search root 1' })).toHaveValue(shownRoot);
 
-  const roots = page.getByRole('group', { name: 'Search roots' });
-  const owners = page.getByRole('group', { name: 'Owners' });
-  const cloneRoot = page.getByRole('textbox', { name: 'Clone root' });
-  const save = page.getByRole('button', { name: 'Save', exact: true });
-  const put = () => page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/fleets/zulu');
-  await expect(roots.getByRole('textbox', { name: 'Search root 1' })).toHaveValue(shownRoot);
-
-  // Add an owner and an absolute clone root: only those two fields are sent, and the stored ~/ root stays.
   const clones = join(admiral.home, 'clones');
+  const owners = page.getByRole('group', { name: 'Owners' });
   await owners.getByRole('button', { name: 'Add owner' }).click();
   await owners.getByRole('textbox', { name: 'Owner 1' }).fill('acme');
-  await cloneRoot.fill(clones);
-  let sent = put();
-  await save.click();
-  expect((await sent).postDataJSON()).toEqual({ owners: ['acme'], clone_root: clones });
+  await page.getByRole('textbox', { name: 'Clone root' }).fill(clones);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => zulu(admiral).owners).toEqual(['acme']);
   expect(zulu(admiral)).toMatchObject({ clone_root: clones, search_roots: [stored] });
   await page.reload();
   await expect(owners.getByRole('textbox', { name: 'Owner 1' })).toHaveValue('acme');
-  await expect(cloneRoot).toHaveValue(clones);
 
-  // Reviewers who can wake a ship: a list saved alone, and still there after a reload.
-  const reviewers = page.getByRole('group', { name: 'Reviewers who can wake a ship' });
-  await reviewers.getByRole('button', { name: 'Add reviewer' }).click();
-  await reviewers.getByRole('textbox', { name: 'Reviewer 1' }).fill('Alice-Dev');
-  sent = put();
-  await save.click();
-  expect((await sent).postDataJSON()).toEqual({ wake_reviewers: ['Alice-Dev'] });
-  await expect.poll(() => zulu(admiral).wake_reviewers).toEqual(['Alice-Dev']);
-  await page.reload();
-  await expect(reviewers.getByRole('textbox', { name: 'Reviewer 1' })).toHaveValue('Alice-Dev');
-
-  // Notify is on until the person turns it off; the switch saves at once, sends only itself and survives a reload.
-  const notify = page.getByRole('switch', { name: 'Notify' });
-  await expect(notify).toBeChecked();
-  expect(zulu(admiral)).not.toHaveProperty('notify');
-  sent = put();
-  await notify.click();
-  expect((await sent).postDataJSON()).toEqual({ notify: false });
-  await expect.poll(() => zulu(admiral).notify).toBe(false);
-  await page.reload();
-  await expect(page.getByRole('switch', { name: 'Notify' })).not.toBeChecked();
+  // A touch target is at least 44px tall; the component test has no layout.
   expect((await page.getByRole('switch', { name: 'Notify' }).boundingBox())?.height).toBeGreaterThanOrEqual(44);
-
-  // Changing a list sends it whole, as shown.
-  const second = join(admiral.home, 'second');
-  await roots.getByRole('button', { name: 'Add search root' }).click();
-  await roots.getByRole('textbox', { name: 'Search root 2' }).fill(second);
-  sent = put();
-  await save.click();
-  expect((await sent).postDataJSON()).toEqual({ search_roots: [shownRoot, second] });
-  await expect.poll(() => zulu(admiral).search_roots).toEqual([shownRoot, second]);
-
-  // Typing the ~/ form back is a list change too; after it, a colour-only save leaves that stored form alone.
-  await roots.getByRole('textbox', { name: 'Search root 1' }).fill(stored);
-  await roots.getByRole('button', { name: 'Remove search root 2' }).click();
-  await expect(save).not.toHaveAttribute('aria-busy', 'true');
-  await save.click();
-  await expect.poll(() => zulu(admiral).search_roots).toEqual([stored]);
-  await page.reload();
-  sent = put();
-  await page.getByLabel('Color', { exact: true }).fill('#1a2b3c');
-  await save.click();
-  expect((await sent).postDataJSON()).toEqual({ color: '#1a2b3c' });
-  await expect.poll(() => zulu(admiral).color).toBe('#1a2b3c');
-  await expect(page.getByRole('img', { name: 'Fleet colour' })).toHaveCSS('background-color', 'rgb(26, 43, 60)');
-  expect(zulu(admiral).search_roots).toEqual([stored]);
-
-  // "Use default" sends an empty colour and the file drops the key.
-  await page.reload();
-  sent = put();
-  await page.getByRole('button', { name: 'Use default' }).click();
-  await expect(page.getByRole('img', { name: 'Default colour' })).toBeVisible();
-  await save.click();
-  expect((await sent).postDataJSON()).toEqual({ color: '' });
-  await expect.poll(() => 'color' in zulu(admiral)).toBe(false);
-
-  // A clone root the server refuses shows its message at the field, and the file keeps the old value.
-  await cloneRoot.fill('relative/x');
-  await expect(save).not.toHaveAttribute('aria-busy', 'true');
-  await save.click();
-  await expect(cloneRoot).toHaveAccessibleDescription(/must be an absolute path or start with ~\//);
-  expect(zulu(admiral).clone_root).toBe(clones);
-
-  // Taking away every search root says the fleet then can't launch, before anything is saved.
-  await page.reload();
-  await roots.getByRole('button', { name: 'Remove search root 1' }).click();
-  await expect(page.getByRole('status').filter({ hasText: /launch/i })).toBeVisible();
-  expect(zulu(admiral).search_roots).toEqual([stored]);
-
-  // Docks: one row per harness, no field to edit, no env, and the way to change them.
-  const docks = page.getByRole('list', { name: 'Docks' });
-  await expect(docks.getByRole('listitem')).toHaveCount(2);
-  await expect(docks).toContainText('claude');
-  await expect(docks).toContainText('codex');
-  await expect(docks.getByRole('textbox')).toHaveCount(0);
-  await expect(page.getByRole('main')).toContainText('admiral setup');
-  await expect(page.getByRole('main')).not.toContainText('CLAUDE_CONFIG_DIR');
-  await expect(page.getByRole('main')).not.toContainText('identity/');
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
@@ -903,91 +800,47 @@ test('Turn off Tailscale mode asks first, keeps the logins and serve, names the 
 
 });
 
-test("a fleet's AdmiralBot page shows its harness, model, effort and refresh threshold, saves a change that survives a reload, shows a refusal and, for a fleet with no Claude Code dock, why its chat is off", async ({ page, admiral }) => {
+test("a fleet's AdmiralBot page writes its chat settings, instructions, notes and commitments to the files and proves Codex through Check again", async ({ page, admiral }) => {
   seedFleets(admiral, { chat: true, versioned: true });
-  // Notes AdmiralBot saved earlier, written before the start so the chat is live for them.
   const ledgerAt = (n: number) => `{"v":1,"ts":"2026-11-1${n}T09:00:00Z","event":"added","id":"n${n}","kind":"note","text":"%s","via":"admiralbot"}\n`;
   mkdirSync(join(admiral.home, 'chat', 'harbor'), { recursive: true });
   writeFileSync(
     join(admiral.home, 'chat', 'harbor', 'ledger.jsonl'),
     [
       ledgerAt(1).replace('%s', 'Deploys go out on Tuesdays.'),
-      ledgerAt(2).replace('%s', 'The staging box is flaky.'),
       ledgerAt(3).replace('%s', `Stale note to delete. ${'x'.repeat(300)}`),
-      // Commitments that stay open through the runner's first tick: a time far ahead, and an old no-trigger one already asked about.
-      '{"v":1,"ts":"2026-10-01T09:00:00Z","event":"added","id":"c1","kind":"commitment","text":"Ask me about the dock review.","via":"admiralbot","trigger":{"kind":"none"},"action":"remind"}\n',
       '{"v":1,"ts":"2026-11-05T09:00:00Z","event":"added","id":"c2","kind":"commitment","text":"Ring the bell at midsummer.","via":"admiralbot","trigger":{"kind":"time","subject":"2099-06-15T12:00:00Z"},"action":"remind"}\n',
-      '{"v":1,"ts":"2026-11-06T09:00:00Z","event":"shown","id":"c1"}\n',
     ].join(''),
   );
   await admiral.start();
-  await expect.poll(async () => ((await (await fetch(`${admiral.url}api/v1/chat/harbor/notes`)).json()) as { notes: unknown[] }).notes.length).toBe(3);
+  await expect.poll(async () => ((await (await fetch(`${admiral.url}api/v1/chat/harbor/notes`)).json()) as { notes: unknown[] }).notes.length).toBe(2);
   const watch = watchPage(page, admiral.url);
   const harbor = () => JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).fleets.harbor as { chat?: Record<string, unknown> };
   const pick = (g: string, name: string) => page.getByRole('radiogroup', { name: g }).getByRole('radio', { name, exact: true });
 
   await page.goto(admiral.url + 'app/preferences/zulu/sources');
-  const group = prefsNav(page).getByRole('group', { name: 'Harborlight fleet' });
-  await expect(group.getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'GitHub', 'Plugin sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours']);
-  await group.getByRole('link', { name: 'AdmiralBot', exact: true }).click();
+  await prefsNav(page).getByRole('group', { name: 'Harborlight fleet' }).getByRole('link', { name: 'AdmiralBot', exact: true }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/harbor\/admiralbot/);
-  await expect(page.getByRole('heading', { name: 'AdmiralBot', exact: true })).toBeVisible();
   const main = page.getByRole('main');
-  await expect(main).toContainText("Your chief of staff for the Harborlight fleet. It only sees this fleet's ships, orders, campaigns and logins.");
-  await expect(pick('Harness', 'Claude')).toBeChecked();
-  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveText(['Claude']);
-  await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio')).toHaveText(['Sonnet', 'Opus', 'Haiku']);
-  await expect(pick('Model', 'Sonnet')).toBeChecked();
-  await expect(page.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio')).toHaveText(['Default', 'Low', 'Medium', 'High']);
-  await expect(pick('Effort', 'Default')).toBeChecked();
-  await expect(page.getByRole('radiogroup', { name: 'Refresh context at' }).getByRole('radio')).toHaveText(['100K', '150K', '300K', 'Never']);
-  await expect(pick('Refresh context at', '150K')).toBeChecked();
-  // What this ticket does not build is not drawn.
-  for (const absent of ['Worker model', 'Also refresh after an idle hour', 'Acting for you', 'Guardrails']) await expect(main).not.toContainText(absent);
-  await expect(main).not.toContainText('ledger');
-  await expect(page.getByRole('heading', { name: 'What AdmiralBot knows', level: 2 })).toBeVisible();
 
-  // A change saves through the fleet, and a reload shows it. Only the chat object is sent.
+  // A change saves through the fleet; back to the default effort removes the key.
   await pick('Model', 'Opus').click();
   await pick('Effort', 'High').click();
   await pick('Refresh context at', '300K').click();
-  const put = page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/fleets/harbor');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  expect((await put).postDataJSON()).toEqual({ chat: { model: 'opus', effort: 'high', context_threshold: 300000 } });
   await expect.poll(() => harbor().chat).toMatchObject({ model: 'opus', effort: 'high', context_threshold: 300000 });
   await page.reload();
   await expect(pick('Model', 'Opus')).toBeChecked();
-  await expect(pick('Effort', 'High')).toBeChecked();
-  await expect(pick('Refresh context at', '300K')).toBeChecked();
-  // Back to the harness default effort removes the key.
   await pick('Effort', 'Default').click();
-  await pick('Refresh context at', 'Never').click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect.poll(() => harbor().chat).toMatchObject({ model: 'opus', context_threshold: 'never' });
+  await expect.poll(() => harbor().chat).toMatchObject({ model: 'opus' });
   expect(harbor().chat).not.toHaveProperty('effort');
 
-  // A refusal shows the server's error and keeps what the person picked.
-  await page.route('**/api/v1/fleets/harbor', (route) =>
-    route.request().method() === 'PUT' ? route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'fleets.harbor.chat.model: "haiku" is refused for this test' }) }) : route.fallback(),
-  );
-  await pick('Model', 'Haiku').click();
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).not.toHaveAttribute('aria-busy', 'true');
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('"haiku" is refused for this test');
-  await expect(pick('Model', 'Haiku')).toBeChecked();
-  await page.unroute('**/api/v1/fleets/harbor');
-
-  // What AdmiralBot knows: the instructions are the engineer's, and the notes AdmiralBot saved can be moved into them or deleted.
+  // Instructions and notes reach the file and the ledger.
   const instructions = page.getByRole('textbox', { name: 'Instructions' });
-  const saveInstructions = page.getByRole('button', { name: 'Save instructions', exact: true });
   const note = (text: string) => main.getByRole('listitem').filter({ hasText: text });
   const instructionsFile = () => (existsSync(join(admiral.home, 'chat', 'harbor', 'instructions.md')) ? readFileSync(join(admiral.home, 'chat', 'harbor', 'instructions.md'), 'utf8') : null);
-  await expect(main).toContainText('Plain words AdmiralBot follows every time. Only you can change them.');
-  await expect(instructions).toHaveValue('');
-  await expect(main).toContainText('0 / 2000');
-  await expect(saveInstructions).toBeDisabled();
-  await expect(main.getByRole('listitem').filter({ hasText: /Deploys go out|staging box|Stale note/ })).toHaveText([/Deploys go out on Tuesdays\./, /The staging box is flaky\./, /Stale note to delete\./]);
-  // A long unbroken note keeps its text column readable beside its actions, narrow or not.
+  // A long unbroken note keeps its text column readable beside touch-sized actions, narrow or not; the component test has no layout.
   const original = page.viewportSize()!;
   for (const [width, height] of [[834, 1194], [402, 800]]) {
     await page.setViewportSize({ width, height });
@@ -999,121 +852,35 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
     for (const b of cancels) expect(await b.evaluate((e) => e.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   }
   await page.setViewportSize(original);
-  await expect(main.getByRole('listitem').filter({ hasText: /Deploys go out|staging box|Stale note/ })).toHaveCount(3);
-  // Move to instructions: the text lands in the textarea, the note leaves the list and the file holds it.
   await note('Deploys go out').getByRole('button', { name: 'Move to instructions' }).click();
-  await expect(instructions).toHaveValue('Deploys go out on Tuesdays.');
-  await expect(note('Deploys go out').getByRole('button', { name: 'Move to instructions' })).toHaveCount(0);
   await expect.poll(instructionsFile).toBe('Deploys go out on Tuesdays.');
-  // An edit counts live, over the cap disables Save, and a save writes the file.
-  await instructions.fill('😀'.repeat(2001));
-  await expect(main).toContainText('2001 / 2000');
-  await expect(saveInstructions).toBeDisabled();
   await instructions.fill('Deploys go out on Tuesdays.\n\nBe terse.');
-  await expect(saveInstructions).toBeEnabled();
-  const saved = page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/chat/harbor/instructions');
-  await saveInstructions.click();
-  expect((await saved).postDataJSON()).toEqual({ text: 'Deploys go out on Tuesdays.\n\nBe terse.' });
+  await page.getByRole('button', { name: 'Save instructions', exact: true }).click();
   await expect.poll(instructionsFile).toBe('Deploys go out on Tuesdays.\n\nBe terse.');
-  await expect(saveInstructions).toBeDisabled();
-  // An unsaved draft survives Delete on a note, and Move to instructions waits for a save.
-  await instructions.fill('Deploys go out on Tuesdays.\n\nBe terse.\n\nA draft.');
-  await expect(note('Stale note').getByRole('button', { name: 'Move to instructions' })).toBeDisabled();
   await note('Stale note').getByRole('button', { name: 'Delete' }).click();
   await expect(note('Stale note')).toHaveCount(0);
-  await expect(instructions).toHaveValue('Deploys go out on Tuesdays.\n\nBe terse.\n\nA draft.');
-  await instructions.fill('Deploys go out on Tuesdays.\n\nBe terse.');
-  await expect(note('staging box').getByRole('button', { name: 'Move to instructions' })).toBeEnabled();
-  // Delete dropped a note, and the instructions stay.
-  await expect(note('staging box')).toHaveCount(1);
-  expect(instructionsFile()).toBe('Deploys go out on Tuesdays.\n\nBe terse.');
   await page.reload();
   await expect(instructions).toHaveValue('Deploys go out on Tuesdays.\n\nBe terse.');
-  await expect(main.getByRole('listitem').filter({ hasText: /Deploys go out|staging box|Stale note/ })).toHaveText([/The staging box is flaky\./]);
+  await expect(note('Stale note')).toHaveCount(0);
 
-  // Commitments: the open ones, oldest first with their marks; Cancel is the engineer's alone.
+  // Cancel on a commitment writes a cancelled event the engineer authored, and it stays gone after a reload.
   const list = main.getByRole('list', { name: 'Commitments' });
-  const commitment = (text: string) => list.getByRole('listitem').filter({ hasText: text });
-  const openIds = async () => ((await (await fetch(`${admiral.url}api/v1/chat/harbor/commitments`)).json()) as { commitments: { id: string }[] }).commitments.map((c) => c.id);
+  await list.getByRole('listitem').filter({ hasText: 'midsummer' }).getByRole('button', { name: 'Cancel' }).click();
+  await expect(list.getByRole('listitem').filter({ hasText: 'midsummer' })).toHaveCount(0);
   const ledgerEvents = () =>
     readFileSync(join(admiral.home, 'chat', 'harbor', 'ledger.jsonl'), 'utf8')
       .split('\n')
       .filter(Boolean)
       .map((l) => JSON.parse(l) as Record<string, unknown>);
-  // A launch can't stay waiting in this home, so the first read gets one more row.
-  let waitingAdded = false;
-  await page.route('**/api/v1/chat/harbor/commitments', async (route) => {
-    if (waitingAdded || route.request().method() !== 'GET') return route.fallback();
-    waitingAdded = true;
-    const res = await route.fetch();
-    const body = (await res.json()) as { commitments: unknown[] };
-    body.commitments.push({
-      id: 'w1',
-      text: 'Launch the quartz ferry.',
-      trigger: { kind: 'ship_sailed', subject: 'gone-session' },
-      action: 'launch',
-      launch: { prompt: 'SECRET LAUNCH PROMPT' },
-      ts: '2026-11-07T09:00:00Z',
-      via: 'admiralbot',
-      waiting: true,
-    });
-    await route.fulfill({ response: res, json: body });
-  });
-  await page.reload();
-  await expect(list.getByRole('listitem')).toHaveText([/Ask me about the dock review\./, /Ring the bell at midsummer\./, /Launch the quartz ferry\./]);
-  await expect(commitment('dock review')).toContainText(/no trigger/i);
-  await expect(commitment('dock review')).toContainText('Remind you');
-  await expect(commitment('dock review')).toContainText('Still want this?');
-  await expect(commitment('midsummer')).toContainText('2099');
-  await expect(commitment('midsummer')).toContainText('Remind you');
-  await expect(commitment('midsummer')).not.toContainText('Still want this?');
-  await expect(commitment('quartz ferry')).toContainText('gone-session');
-  await expect(commitment('quartz ferry')).toContainText(/waiting/i);
-  await expect(commitment('quartz ferry')).toContainText('Launch a ship');
-  await expect(main).not.toContainText('SECRET LAUNCH PROMPT');
-  await expect(main).not.toContainText(/ledger|promise/i);
-  await page.unroute('**/api/v1/chat/harbor/commitments');
+  await expect.poll(() => ledgerEvents().find((e) => e.event === 'cancelled' && e.id === 'c2')).toBeDefined();
+  expect(ledgerEvents().find((e) => e.event === 'cancelled' && e.id === 'c2')).not.toHaveProperty('via');
 
-  // Cancel removes the commitment, and it stays gone after a reload.
-  await commitment('midsummer').getByRole('button', { name: 'Cancel' }).click();
-  await expect(commitment('midsummer')).toHaveCount(0);
-  await expect.poll(openIds).toEqual(['c1']);
-  const cancelled = ledgerEvents().find((e) => e.event === 'cancelled' && e.id === 'c2');
-  expect(cancelled, 'the ledger holds a cancelled event for it').toBeDefined();
-  expect(cancelled).not.toHaveProperty('via');
-  await page.reload();
-  await expect(list.getByRole('listitem')).toHaveText([/Ask me about the dock review\./]);
-
-  // A commitment that closed since the page loaded answers 404: the error shows and the row leaves.
-  expect((await fetch(`${admiral.url}api/v1/chat/harbor/commitments/c1`, { method: 'DELETE' })).status).toBe(204);
-  await commitment('dock review').getByRole('button', { name: 'Cancel' }).click();
-  await expect(main.locator('.box').getByRole('alert')).toContainText('That commitment already closed.');
-  await expect(page.getByRole('alert')).toHaveCount(1);
-  await expect(commitment('dock review')).toHaveCount(0);
-  await expect(main).toContainText(/no open commitments/i);
-
-  // A fleet with no Claude Code dock: no harness to pick, the reason on top, the settings still editable.
-  await prefsNav(page).getByRole('group', { name: `${HOME} fleet` }).getByRole('link', { name: 'AdmiralBot', exact: true }).click();
-  await expect(page).toHaveURL(/\/app\/preferences\/alpha\/admiralbot/);
-  await expect(main).toContainText(/no Claude Code dock/i);
-  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveText(['Codex', 'Copilot']);
-  await expect(pick('Harness', 'Copilot')).toBeDisabled();
-  await expect(page.getByRole('radiogroup', { name: 'Model' })).toBeVisible();
-
-  // A fleet with a Codex dock lists it greyed out with why, until its probes pass; then it is selectable and brings its own models.
+  // Codex's probes run for real against the fake codex, so Check again proves it, and a save sends a model of that harness.
   await page.goto(admiral.url + 'app/preferences/zulu/admiralbot');
-  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveText(['Claude', 'Codex']);
   await expect(pick('Harness', 'Codex')).toBeDisabled();
-  await expect(main).toContainText(/Codex.*has not been checked/i);
-  await expect(main.getByRole('button', { name: /Check again.*Codex/ })).toBeVisible();
-  // Codex's probes run for real against the fake codex, so Check again proves it; it reads the fleets again, so the harness turns on without a reload.
   await main.getByRole('button', { name: /Check again.*Codex/ }).click();
   await expect(pick('Harness', 'Codex')).toBeEnabled();
-  await expect(main).not.toContainText(/Codex.*has not been checked/i);
   await pick('Harness', 'Codex').click();
-  await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio')).not.toContainText(['Sonnet']);
-  await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio', { checked: true })).toHaveCount(1);
-  // Switching the harness sends it with a model of that harness, never the old model alone.
   const putCodex = page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/fleets/zulu');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const sent = (await putCodex).postDataJSON() as { chat: { harness?: string; model?: string } };
@@ -1121,12 +888,5 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   expect(sent.chat.model).toMatch(/^gpt-/);
   const zulu = () => JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).fleets.zulu as { chat?: Record<string, unknown> };
   await expect.poll(() => zulu().chat).toMatchObject({ harness: 'codex' });
-
-  // Copilot takes no effort: once proven it offers only Default.
-  await page.goto(admiral.url + 'app/preferences/alpha/admiralbot');
-  await main.getByRole('button', { name: /Check again.*Copilot/ }).click();
-  await expect(pick('Harness', 'Copilot')).toBeEnabled();
-  await pick('Harness', 'Copilot').click();
-  await expect(page.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio')).toHaveText(['Default']);
   expect(watch.unversioned()).toEqual([]);
 });

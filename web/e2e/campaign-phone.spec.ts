@@ -1,9 +1,8 @@
-import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { T, campaignIdOf, followByPaste, githubReady, issueUrl, proposalJourney, seedChatCampaignFleet, seedCampaignFleet } from './campaign';
-import { skillPicker, watchPage, withFakeGh } from './shell';
+import { T, campaignIdOf, followByPaste, githubReady, issueUrl, seedCampaignFleet } from './campaign';
+import { watchPage, withFakeGh } from './shell';
 
-test('on the phone, a person follows a campaign from the Campaigns surface, reads its page and launches one child', async ({ page, admiral }) => {
+test('on the phone, the Campaigns page and a child sheet fit the screen and their controls are tall enough to tap', async ({ page, admiral }) => {
   seedCampaignFleet(admiral);
   await admiral.start({ env: withFakeGh(admiral) });
   await githubReady(admiral);
@@ -46,30 +45,8 @@ test('on the phone, a person follows a campaign from the Campaigns surface, read
   await useLabels.tap();
   await expect(sheet.getByText('Labels say')).toHaveCount(0);
   await expect(mode.getByRole('radio', { name: 'Without you', exact: true })).toHaveAttribute('aria-checked', 'true');
-  await sheet.getByRole('button', { name: /^Launch/ }).tap();
-  const form = page.getByRole('dialog', { name: 'Launch', exact: true });
-  await expect(form.getByLabel('Checkout')).toHaveValue(join(admiral.home, 'widgets'));
-  // The picker starts at the child's skill, and a tap on Just launch replaces it for this launch.
-  const picker = skillPicker(page, form, (l) => l.tap());
-  await expect(picker.box).toHaveValue(/wayfinder/);
-  await picker.pickListed('Just launch');
-  const body = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/campaigns/${id}/launch`);
-  const sent = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/campaigns/${id}/launch`);
-  await form.getByRole('button', { name: 'Launch', exact: true }).tap();
-  expect(((await body).postDataJSON() as { skill: unknown }).skill).toEqual({ kind: 'none' });
-  expect((await sent).status()).toBe(201);
-  await expect(form).toBeHidden();
-  await expect(group('Ready, without you').getByRole('listitem').filter({ hasText: T.survey })).toContainText(/Underway · /);
 
   expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
-});
-
-test('on the phone, Admiral asks in the chat whether to start the ready With-you child, Yes launches it, and the card links its ship', async ({ page, admiral }) => {
-  seedChatCampaignFleet(admiral);
-  await admiral.start({ env: withFakeGh(admiral) });
-  const watch = watchPage(page, admiral.url);
-  await proposalJourney(page, admiral, (l) => l.tap());
-  expect(watch.errors).toEqual([]);
 });

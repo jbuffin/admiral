@@ -237,7 +237,7 @@ function TerminalTab({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
 }
 
 /** The ship's tokens and money, read on open, every USAGE_POLL_MS and when the page becomes visible again. */
-function UsageRow({ session }: { session: string }) {
+export function UsageRow({ session }: { session: string }) {
   const [usage, setUsage] = useState<ShipUsage | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {

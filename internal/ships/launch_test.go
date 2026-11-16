@@ -101,8 +101,8 @@ func TestLaunchAPIRefusesWhatAutopilotModeMayNotClaim(t *testing.T) {
 	}
 
 	held++ // another ship holds the one unit
-	if rec := launchPost(t, s, `{`+base+`,"resources":["phone"]}`); rec.Code != http.StatusConflict {
-		t.Errorf("a busy resource = %d %s, want 409", rec.Code, rec.Body)
+	if rec := launchPost(t, s, `{`+base+`,"resources":["phone"]}`); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "phone") {
+		t.Errorf("a busy resource = %d %s, want 409 naming phone", rec.Code, rec.Body)
 	}
 	held--
 

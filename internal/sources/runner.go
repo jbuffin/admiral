@@ -96,6 +96,10 @@ func (r *runner) logf(format string, a ...any) {
 
 func (r *runner) restart() {
 	r.gen.Add(1)
+	// Not ready from this moment, so a request after the save that asked for the restart waits for the new session instead of landing on the old one as it ends.
+	r.mu.Lock()
+	r.ready, r.state = false, StateStarting
+	r.mu.Unlock()
 	select {
 	case r.restartCh <- struct{}{}:
 	default:

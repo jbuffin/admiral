@@ -40,3 +40,47 @@ test('a folded row shows only its confirmation', () => {
   expect(screen.getByRole('status').textContent).toBe('Removed from the inbox');
   expect(screen.queryByRole('button')).toBeNull();
 });
+
+const HOSTILE = '<img src=x onerror="window.__xss=1"> <script>window.__xss=1</script>';
+const homeport = { key: 'alpha', name: 'Homeport', color: '#2a9d8f' };
+const westwind = { key: 'zulu', name: 'Westwind', color: '#e76f51' };
+
+test('a question row names its ship, that it asked, the question and its fleet, and links to its item in Peek', () => {
+  const e = {
+    key: 'item:s-v/q-port',
+    type: 'item',
+    session: 's-v',
+    id: 'q-port',
+    folded: null,
+    since: 0,
+    fleet: homeport,
+    ship: { session: 's-v', name: 'Visitor' },
+    item: { id: 'q-port', kind: 'question', name: 'Visitor', title: 'Which port should the visitor use?' },
+  } as unknown as Entry;
+  row(e);
+  const li = screen.getByRole('listitem');
+  for (const t of ['Visitor', 'asked', 'Which port should the visitor use?', 'Homeport']) expect(li.textContent).toContain(t);
+  expect(screen.getByRole('link').getAttribute('href')).toBe('/app/inbox/s-v/item/q-port');
+});
+
+test('a stop row says what the ship wants and carries its own fleet, so two fleets read apart', () => {
+  const stop = (fleet: typeof homeport) =>
+    ({ key: `stop:${fleet.key}`, type: 'stop', session: `s-${fleet.key}`, folded: null, since: 0, fleet, ship: { session: `s-${fleet.key}`, name: `Ship ${fleet.key}`, status: 'needs_you', reason: 'permission:Bash' } }) as unknown as Entry;
+  row(stop(westwind));
+  const li = screen.getByRole('listitem');
+  expect(li.textContent).toContain('Ship zulu');
+  expect(li.textContent).toMatch(/wants to run bash/i);
+  expect(li.textContent).toContain('Westwind');
+  expect(li.textContent).not.toContain('Homeport');
+  expect(screen.getByRole('link').getAttribute('href')).toBe('/app/inbox/s-zulu');
+});
+
+test('a notice carries no fleet, and its body shows as text with nothing in it running', () => {
+  row(notice('n-hostile', { item: { id: 'n-hostile', kind: 'notice', title: 'Heads up', notice: { body: HOSTILE } } } as unknown as Partial<Entry>));
+  const li = screen.getByRole('listitem');
+  expect(li.textContent).not.toMatch(/Homeport|Westwind/);
+  fireEvent.click(screen.getByRole('button', { expanded: false }));
+  expect(li.textContent).toContain(HOSTILE);
+  expect(li.querySelector('img, script')).toBeNull();
+  expect((window as unknown as { __xss?: number }).__xss).toBeUndefined();
+});

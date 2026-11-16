@@ -782,10 +782,3 @@ async function chainedGroups(page: Page, a: Admiral, press: (l: Locator) => Prom
   await expect(chainGroupRows(page)).toHaveCount(1);
   expect(stackLinkCalls(a), 'one link, not one per tap or refresh').toHaveLength(1);
 }
-
-/** On the phone, More lists the surfaces the bar has no tab for, and not Orders. */
-export async function expectMoreWithoutOrders(page: Page, press: (l: Locator) => Promise<void>) {
-  await press(page.getByRole('navigation').getByRole('button', { name: 'More', exact: true }));
-  const more = page.getByRole('dialog', { name: 'More' });
-  await expect(more.getByRole('link')).toHaveText(['Campaigns', 'Routines', 'Crew', 'Preferences']);
-}

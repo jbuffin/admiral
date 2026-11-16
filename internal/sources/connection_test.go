@@ -466,6 +466,20 @@ func TestACountTheTokenIsRefusedOnIsAConflictThatSignsTheSourceOut(t *testing.T)
 	}
 }
 
+func TestACountAskedWhileTheSourceRestartsAfterASaveWaitsAndIsAnswered(t *testing.T) {
+	f, g := liveGH(t, bugsView)
+	g.count("all", "q=", 4)
+	for i := range 5 {
+		if code, body := f.do(http.MethodPut, "/gh", map[string]any{"settings": map[string]any{"views": []any{map[string]any{"title": "Bugs", "query": "is:open label:bug"}}, "refreshMinutes": 10 + i}}); code != http.StatusOK {
+			t.Fatalf("save = %d %s", code, body)
+		}
+		code, body := f.do(http.MethodPost, "/gh/search-count", map[string]any{"query": "is:open"})
+		if code != http.StatusOK || !strings.Contains(body, `"count":4`) {
+			t.Fatalf("count right after save %d = %d %s, want 200 with the count", i, code, body)
+		}
+	}
+}
+
 func TestAGoodCountConnectsASignedOutSourceAndAnotherRefusalDoesNot(t *testing.T) {
 	g := newFakeGH(t)
 	g.count("all", "q=", 7)
