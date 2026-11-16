@@ -199,6 +199,13 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
     <div
       class="convo"
       ref={scroller}
+      onClick={(e) => {
+        const a = (e.target as HTMLElement).closest?.('a[data-ship]');
+        if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        const [path, search] = (a.getAttribute('href') ?? '').split('?');
+        go(path, search ? `?${search}` : '');
+      }}
       onScroll={(e) => {
         const el = e.currentTarget;
         pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -223,7 +230,7 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
             {i.text}
           </div>
         ) : (
-          <div key={i.id} class="msg assistant md" dangerouslySetInnerHTML={{ __html: renderMarkdown(i.text) }} />
+          <div key={i.id} class="msg assistant md" dangerouslySetInnerHTML={{ __html: renderMarkdown(i.text, { ships: ships.value, fleet, at: i.at, search: fleetSearch.value }) }} />
         ),
       )}
       {working ? <p class="working">{workingLabel([], Date.now())}</p> : null}

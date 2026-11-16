@@ -87,6 +87,8 @@ type Request struct {
 	WokenVia string `json:"-"`
 	// Via is "admiralbot" when AdmiralBot made the launch, and the ship carries it.
 	Via string `json:"-"`
+	// FirstLaunched is the ship's first launch stamp, carried through a wake or a hand; empty on a fresh launch.
+	FirstLaunched string `json:"-"`
 	// RoutineKey is routine:<id>: a routine's ship holds it, so a second launch of the routine is refused while the ship is listed.
 	RoutineKey string `json:"-"`
 	// CommitmentKey is commitment:<id>: a commitment's ship holds it, so a second launch of the commitment is refused while the ship is listed.
@@ -251,9 +253,14 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	// The options are tmux's record of the ship, read back over the control
 	// connection one line each; a control character would break the framing.
 	// The name and the time are ours.
+	launched := time.Now().UTC().Format(time.RFC3339)
+	firstLaunched := req.FirstLaunched
+	if firstLaunched == "" {
+		firstLaunched = launched
+	}
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")},
+		{"order", req.OrderID}, {"launched", launched}, {"first-launched", firstLaunched}, {"title", orderTitle(req)}, {"url", req.URL}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")},
 		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
