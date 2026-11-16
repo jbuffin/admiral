@@ -118,6 +118,11 @@ func (s *Service) List() []Item {
 					items[i].Fleet, items[i].FleetName, items[i].FleetColor = f.Key, f.Name, f.Color
 				}
 			}
+			if o, ok := items[i].MissionObject(); ok && s.Fleet != nil {
+				if f, ok := s.Fleet(o.Fleet); ok {
+					items[i].Fleet, items[i].FleetName, items[i].FleetColor = f.Key, f.Name, f.Color
+				}
+			}
 		}
 	}
 	if s.Ship != nil {
@@ -231,7 +236,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	it, err := s.open(session, id)
 	if err == nil && it.Kind != KindQuestion {
-		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings", KindCrewNotes: "crew-notes", KindCrewMember: "crew-member", KindRoutineProposal: "launch or dismiss", KindEventProposal: "launch or dismiss", KindWakeProposal: "launch or dismiss"}[it.Kind])
+		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings", KindCrewNotes: "crew-notes", KindCrewMember: "crew-member", KindMission: "mission", KindRoutineProposal: "launch or dismiss", KindEventProposal: "launch or dismiss", KindWakeProposal: "launch or dismiss"}[it.Kind])
 	}
 	if err == nil {
 		var req QuestionRequest

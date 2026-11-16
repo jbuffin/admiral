@@ -30,6 +30,9 @@ func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 	if it.Kind == KindCrewNotes {
 		return ReviewResult{Forgotten: true}, s.dropCrewNotes(id)
 	}
+	if it.Kind == KindMission {
+		return ReviewResult{Forgotten: true}, s.answerMission(id, "drop", false)
+	}
 	if it.Kind == KindCrewMember {
 		gone, err := s.answerCrewMember(id, "drop", false)
 		return ReviewResult{Forgotten: true, FileRemoved: &gone}, err

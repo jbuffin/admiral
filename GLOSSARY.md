@@ -195,7 +195,7 @@ A named, reusable teammate definition in a fleet or repo: its role, skills, inst
 _Avoid_: agent, persona, crew type
 
 **Mission**:
-A saved Commodore mission file. The fleet's missions directory, `$ADMIRAL_HOME/fleets/<fleet key>/missions/`, holds them and every ship of the fleet sees it as `ADMIRAL_MISSIONS_DIR`. Commodore owns the format of the files; Admiral only keeps the directory.
+A saved Commodore mission file. The fleet's missions directory, `$ADMIRAL_HOME/fleets/<fleet key>/missions/`, holds them and every ship of the fleet sees it as `ADMIRAL_MISSIONS_DIR`. Commodore owns the format of the files; Admiral only keeps the directory. A ship's report can propose a mission; it waits in the Inbox, and Keep writes it there.
 
 **Stop ship**:
 The engineer ends a ship that is still running, from its conversation. Admiral kills the ship's session, crew boats included, and records `ended` with a `KILL` signal, then `stopped`. The ship leaves open water as after a dismissal. A ship with an open PR (one it carries, or its report lists) asks first: Moor ends it and keeps the PRs, the other button ends it and forgets them.

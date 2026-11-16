@@ -245,6 +245,7 @@ func WriteCrewItems(run CrewRun, report []byte) error {
 			KindCrewMember: CrewObject{Fleet: fleet.Key, Ship: run.Ship, RunDate: run.RunDate, Member: member, Role: adHocRole[member], AdHocRun: runID, Definition: def, Notes: notes},
 		}))
 	}
+	errs = append(errs, writeMissionItems(run, fleet, report, skip))
 	return errors.Join(errs...)
 }
 
