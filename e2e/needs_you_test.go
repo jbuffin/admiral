@@ -115,6 +115,22 @@ func (w *world) paneState(session string) string {
 	return out
 }
 
+// waitPaneState waits for the fake harness's hook to set the pane's @admiral-state, the step that gates the ship's status.
+func (w *world) waitPaneState(session, want string) {
+	w.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		out, _ := w.tmux("show-options", "-t", session, "-p", "-qv", "@admiral-state")
+		if out == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			w.t.Fatalf("within 10s the pane of %s never set @admiral-state %s (it is %q)", session, want, out)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 func (w *world) paneReason(session string) string {
 	w.t.Helper()
 	out, err := w.tmux("show-options", "-t", session, "-p", "-qv", "@admiral-reason")
@@ -488,6 +504,7 @@ func TestExitSailsOffOrAnchors(t *testing.T) {
 
 	// A ship that was waiting when it exited is anchored, not needs_you.
 	n3 := w.launchIn("waited", "claude", "s5wait")
+	w.waitPaneState(n3.Session, "needs_you") // a loaded runner starts the fake late; the 3 s is for Admiral's reading of it
 	waitStatus(t, ws, 3*time.Second, n3.Session, "needs_you")
 	w.waitFile(n3.Session, "recorded")
 	w.touch(n3.Session, "go")

@@ -17,8 +17,8 @@ import (
 
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	// No background maintenance: its maintenance.lock under .git would race the snapshots taken of it.
-	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "maintenance.auto=false"}, args...)...)
+	// No signing (a developer's global gpgsign would fail every commit) and no background maintenance: its maintenance.lock under .git would race the snapshots taken of it.
+	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "maintenance.auto=false", "-c", "commit.gpgsign=false"}, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
