@@ -288,6 +288,9 @@ test("on the phone, the Chat tab shows the fleet's AdmiralBot conversation and i
   await expect(main.getByText('Inbox · All fleets · oldest first')).toHaveCount(0);
 
   const box = main.getByRole('textbox', { name: 'Message AdmiralBot' });
+  const field = (await box.boundingBox())!;
+  const tabBar = (await page.getByRole('navigation', { name: 'Main' }).boundingBox())!;
+  expect(tabBar.y - (field.y + field.height), 'the box sits on the tab bar').toBeLessThanOrEqual(10);
   await box.fill('How many are underway?');
   const send = main.getByRole('button', { name: 'Send', exact: true });
   expect((await send.boundingBox())!.height).toBeGreaterThanOrEqual(44);

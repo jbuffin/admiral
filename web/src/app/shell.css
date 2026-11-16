@@ -1,5 +1,8 @@
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; }
+:root { --top-inset: env(safe-area-inset-top); --phone-top: calc(8px + var(--top-inset)); }
+/* An installed iPhone app reads a 0 top inset under a frosted status bar whose blur spills onto the page: https://bugs.webkit.org/show_bug.cgi?id=301994 */
+@media (display-mode: standalone) and (max-width: 640px) { :root { --top-inset: max(env(safe-area-inset-top), 24px); } }
 body {
   margin: 0;
   background: var(--color-bg);
@@ -73,7 +76,7 @@ a { color: inherit; text-decoration: none; }
 .phone { display: flex; flex-direction: column; }
 .phone-header {
   display: flex; align-items: center; gap: 12px;
-  padding: calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left));
+  padding: var(--phone-top) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left));
 }
 .phone-header .switcher { margin: 0; flex: none; max-width: 60%; }
 .phone-header h1 { margin: 0; }
@@ -764,7 +767,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .choice-set .missing { margin: 0; }
 .choice-set .note.error { margin: 6px 0 0; }
 
-.toasts { position: fixed; top: calc(12px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); z-index: 25; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 24px)); pointer-events: none; }
+.toasts { position: fixed; top: calc(12px + var(--top-inset)); right: calc(12px + env(safe-area-inset-right)); z-index: 25; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 24px)); pointer-events: none; }
 .toast { pointer-events: auto; display: flex; align-items: stretch; background: var(--color-panel); color: var(--color-text); border: 1px solid var(--color-line2); border-radius: var(--shape-radius-lg); box-shadow: 0 8px 24px var(--color-shadow); }
 .toast button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 .toast-body { flex: 1; min-width: 0; min-height: var(--shape-min-touch-target); display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; text-align: left; }
@@ -1185,3 +1188,25 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .gh-search { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; border-radius: var(--shape-radius-md); background: var(--color-sel); }
 .gh-search .vquery { flex: 1 1 14rem; min-width: 0; color: var(--color-text2); }
 .nv-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+/* Phone ship view: the ship's own head replaces the shell's, in two rows, so the conversation gets the screen. */
+.phone:has(.ship-main-view) > .phone-header { display: none; }
+.phone .panel.ship-main-view { margin-top: var(--phone-top); padding: 4px 14px 0; }
+.phone .ship-view-head { flex-wrap: wrap; gap: 0 10px; margin-bottom: 4px; }
+.phone .ship-view-head::after { content: ''; order: 4; flex-basis: 100%; }
+.phone .ship-view-head .back-link { order: 1; padding-right: 4px; }
+.phone .ship-view-head :is(h1, h2) { order: 2; flex: 1; max-width: none; }
+.phone .ship-view-head .ship-clock { order: 3; }
+.phone .ship-view-head .ship-repo { order: 5; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone .ship-view-head .ship-order { order: 6; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); color: var(--color-text2); }
+.phone .ship-view-head .ship-actions { order: 7; }
+/* The moored card in the conversation already says so. */
+.phone .ship-view:has(#tab-Conversation[aria-selected='true']) .moored-info > .line { display: none; }
+.phone .moored-info { margin-bottom: 0; }
+.phone .ship-usage { margin: 0; }
+.phone .flotilla { padding-bottom: 6px; }
+.phone .view-panel { padding-top: 8px; }
+
+/* On the phone a message box sits on the tab bar, which already clears the home indicator. */
+.phone .panel:has(.msg-box) { padding-bottom: 6px; }
+.phone .msg-box { padding-top: 8px; padding-bottom: 0; }
