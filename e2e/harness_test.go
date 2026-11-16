@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	homeid "github.com/jbuffin/admiral/internal/home"
 )
 
 var (
@@ -93,14 +94,7 @@ func freePort(t *testing.T) string {
 	portsMu.Lock()
 	defer portsMu.Unlock()
 	for {
-		// The wildcard address, the one Admiral binds for a LAN listen: a loopback
-		// probe says nothing about a socket another process holds on 0.0.0.0.
-		l, err := net.Listen("tcp", ":0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, port, _ := net.SplitHostPort(l.Addr().String())
-		l.Close()
+		port := drawPort(t)
 		if ports[port] == 0 {
 			ports[port] = picked
 			return port
@@ -108,11 +102,40 @@ func freePort(t *testing.T) string {
 	}
 }
 
+// drawPort is where a port comes from; a test of the harness's own port handling replaces it.
+var drawPort = func(t *testing.T) string {
+	// The wildcard address, the one Admiral binds for a LAN listen: a loopback
+	// probe says nothing about a socket another process holds on 0.0.0.0.
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, _ := net.SplitHostPort(l.Addr().String())
+	l.Close()
+	return port
+}
+
+// ownsLoopbackPort is whether the server answering on in's loopback port is the Admiral just started. A process
+// that holds 127.0.0.1:P while Admiral binds 0.0.0.0:P wins the loopback traffic (BSD lets the more specific
+// bind in), and no bind error says so; its answer carries another home id, or none.
+func ownsLoopbackPort(in *instance) bool {
+	c := &http.Client{Transport: noProxy(), Timeout: 5 * time.Second}
+	resp, err := c.Get(in.LocalURL + "/api/ships")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Home string `json:"home"`
+	}
+	return resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&body) == nil && body.Home == homeid.ID(in.Home)
+}
+
 const bindTries = 5
 
-// startWithRetry runs once until Admiral gets its ports. once reports true when
-// Admiral exited with "address already in use": the port freePort handed out
-// was taken before the bind, so a picked listen port and the LAN port are drawn again.
+// startWithRetry runs once until Admiral owns its ports. once reports true when Admiral exited with "address already
+// in use", or answered on its loopback port as another server: the port freePort handed out was taken before the
+// bind, so a picked listen port and the LAN port are drawn again.
 func startWithRetry[T any](t *testing.T, listen string, once func(listen string) (T, bool)) T {
 	t.Helper()
 	for try := 1; ; try++ {
@@ -314,6 +337,10 @@ func startAdmiralOnce(t *testing.T, home, listen string) (*instance, bool) {
 		in.LANIP = m[1]
 	} else if !strings.HasPrefix(got[1], "On other devices:") {
 		t.Fatalf("second line must start with `On other devices:`, got %q", got[1])
+	}
+	if !ownsLoopbackPort(in) {
+		in.Stop()
+		return nil, true
 	}
 	return in, false
 }

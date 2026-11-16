@@ -269,6 +269,10 @@ func launchAdmiralOnce(t *testing.T, home, listen string, env []string) (*fleetI
 	in.Port = m[1]
 	in.LocalURL = "http://127.0.0.1:" + in.Port
 	in.LANLine = got[1]
+	if !ownsLoopbackPort(in) {
+		in.Stop()
+		return nil, true
+	}
 	return &fleetInst{instance: in, env: env}, false
 }
 

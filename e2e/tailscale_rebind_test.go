@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -21,6 +23,10 @@ import (
 
 // startDerived runs Admiral with no --listen, so its address follows the mode, on this rig's port.
 func (r *tsRig) startDerived(mode bool) *tsProc {
+	return r.owned(func() *tsProc { return r.startDerivedOnce(mode) })
+}
+
+func (r *tsRig) startDerivedOnce(mode bool) *tsProc {
 	t := r.t
 	t.Helper()
 	r.writeConfig(mode)
@@ -40,9 +46,7 @@ func (r *tsRig) startDerived(mode bool) *tsProc {
 	go func() { _ = cmd.Wait(); close(in.done) }()
 	t.Cleanup(func() { killTmux(filepath.Join(r.home, "tmux.sock")) })
 	t.Cleanup(in.Stop)
-	p := &tsProc{instance: in, out: out}
-	waitUntil(t, "Admiral answers on loopback", func() bool { return p.answers(p.LocalURL) })
-	return p
+	return &tsProc{instance: in, out: out}
 }
 
 func (p *tsProc) answers(base string) bool {
@@ -289,6 +293,9 @@ func TestFailedRebindKeepsTheOldListener(t *testing.T) {
 	// A dial refused at any point means the old listener was closed, even if it came back.
 	// Several dialers, so one lands in the instant a closed listener would leave.
 	stop, refused := make(chan struct{}), make(chan error, 4)
+	var stopOnce sync.Once
+	stopDialers := func() { stopOnce.Do(func() { close(stop) }) }
+	defer stopDialers() // a failed waitUntil must not leave the dialers spinning
 	var dialers sync.WaitGroup
 	addr := net.JoinHostPort("127.0.0.1", p.Port)
 	for range 4 {
@@ -302,9 +309,13 @@ func TestFailedRebindKeepsTheOldListener(t *testing.T) {
 				default:
 				}
 				c, err := net.DialTimeout("tcp", addr, time.Second)
-				if err != nil {
+				if errors.Is(err, syscall.ECONNREFUSED) {
 					refused <- err
 					return
+				}
+				if err != nil { // a timeout or a full ephemeral range says nothing about the listener
+					time.Sleep(10 * time.Millisecond)
+					continue
 				}
 				_ = c.(*net.TCPConn).SetLinger(0) // a reset leaves no TIME_WAIT to use up the ports
 				c.Close()
@@ -321,7 +332,7 @@ func TestFailedRebindKeepsTheOldListener(t *testing.T) {
 		}
 		return false
 	})
-	close(stop)
+	stopDialers()
 	dialers.Wait()
 	select {
 	case err := <-refused:
