@@ -3,7 +3,6 @@ package inbox
 import (
 	"errors"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/crewapi"
@@ -13,29 +12,23 @@ import (
 // AnswerMission keeps or drops a proposed mission. fileWritten says whether this Keep created the file; one already
 // there with the same text counts as kept without a write.
 func (s *Service) AnswerMission(id, decision string) (fileWritten bool, err error) {
-	return fileWritten, s.answerMissionFile(id, decision, true, &fileWritten)
+	return s.answerMission(id, decision, true)
 }
 
-func (s *Service) answerMission(id, decision string, needFleet bool) error {
-	return s.answerMissionFile(id, decision, needFleet, new(bool))
-}
-
-func (s *Service) answerMissionFile(id, decision string, needFleet bool, written *bool) error {
+// answerMission asks for a configured fleet only to Keep, so Remove works with the fleet gone.
+func (s *Service) answerMission(id, decision string, needFleet bool) (fileWritten bool, err error) {
 	if decision != "keep" && decision != "drop" {
-		return invalid("decision is keep or drop")
+		return false, invalid("decision is keep or drop")
 	}
-	err := s.writeAnswered(AdmiralSession, id, KindMission, func(it Item) (any, []outcomes.Record, error) {
+	err = s.writeAnswered(AdmiralSession, id, KindMission, func(it Item) (any, []outcomes.Record, error) {
 		o, _ := it.MissionObject()
 		if decision == "keep" {
 			var fleet FleetInfo
 			if s.Fleet != nil {
 				fleet, _ = s.Fleet(o.Fleet)
 			}
-			switch {
-			case fleet.Key == "":
+			if fleet.Key == "" {
 				return nil, nil, &crewRefusedError{Msg: "fleet " + o.Fleet + " is no longer configured; nothing was changed"}
-			case slices.Contains(crewapi.BuiltInMissions, o.Name):
-				return nil, nil, &crewRefusedError{Msg: o.Name + " is a built-in mission; nothing was changed"}
 			}
 			w, err := crewapi.KeepMission(s.Home, fleet.Key, o.Name, o.Text)
 			var refused *crewapi.MissionRefusedError
@@ -45,7 +38,7 @@ func (s *Service) answerMissionFile(id, decision string, needFleet bool, written
 			case err != nil:
 				return nil, nil, err
 			}
-			*written = w
+			fileWritten = w
 		}
 		file := struct {
 			Version     int    `json:"version"`
@@ -54,13 +47,13 @@ func (s *Service) answerMissionFile(id, decision string, needFleet bool, written
 			Answered    string `json:"answered"`
 			Decision    string `json:"decision"`
 			FileWritten bool   `json:"file_written"`
-		}{1, id, KindMission, time.Now().UTC().Format(time.RFC3339), decision, *written}
+		}{1, id, KindMission, time.Now().UTC().Format(time.RFC3339), decision, fileWritten}
 		return file, []outcomes.Record{{Ship: o.Ship, Event: "mission_" + crewVerb[decision], Fields: map[string]any{"item": id, "kind": KindMission, "name": o.Name}}}, nil
 	})
 	if err == nil {
 		s.Refresh()
 	}
-	return err
+	return fileWritten, err
 }
 
 func (s *Service) serveMission(w http.ResponseWriter, r *http.Request) {

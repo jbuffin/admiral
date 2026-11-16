@@ -9,8 +9,11 @@ import (
 	"github.com/jbuffin/admiral/internal/crew"
 )
 
-// BuiltInMissions are the names Commodore ships its own missions under; a fleet mission never takes one.
-var BuiltInMissions = []string{"build", "pr-feedback", "review"}
+// builtInMissions are the names Commodore ships its own missions under; a fleet mission never takes one.
+var builtInMissions = []string{"build", "pr-feedback", "review"}
+
+// IsBuiltInMission says whether name is one of Commodore's built-in mission names.
+func IsBuiltInMission(name string) bool { return slices.Contains(builtInMissions, name) }
 
 // MissionRefusedError is a Keep that can't be applied, with nothing changed.
 type MissionRefusedError struct{ Msg string }
@@ -23,14 +26,14 @@ func KeepMission(home, key, name, text string) (written bool, err error) {
 	if !safeKey(key) || !crew.ValidName(name) {
 		return false, errors.New("not a mission name")
 	}
-	if slices.Contains(BuiltInMissions, name) {
+	if IsBuiltInMission(name) {
 		return false, &MissionRefusedError{name + " is a built-in mission; a fleet mission never replaces one"}
 	}
 	writeMu.Lock()
 	defer writeMu.Unlock()
 	dir, _, err := walk(home, true, "fleets", key, "missions")
 	if err != nil {
-		return false, err
+		return false, unsafePath(err)
 	}
 	dst := filepath.Join(dir, name+".md")
 	tmp, err := os.CreateTemp(dir, ".mission-*.tmp")
@@ -59,9 +62,17 @@ func KeepMission(home, key, name, text string) (written bool, err error) {
 	raw, found, rerr := readRegular(dst)
 	switch {
 	case rerr != nil:
-		return false, rerr
+		return false, unsafePath(rerr)
 	case found && string(raw) == text:
 		return false, nil
 	}
 	return false, &MissionRefusedError{"this fleet already has a mission " + name + " with other text; nothing was changed"}
+}
+
+// unsafePath turns a link, a non-directory or an unreadable file on the path into a refusal, so it is a conflict and not a server error.
+func unsafePath(err error) error {
+	if errors.Is(err, errLink) || errors.Is(err, errNotDir) || errors.Is(err, errUnreadable) {
+		return &MissionRefusedError{err.Error() + "; nothing was changed"}
+	}
+	return err
 }

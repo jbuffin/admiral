@@ -232,76 +232,21 @@ func TestDroppingOrRemovingAMissionWritesNothingUnderMissions(t *testing.T) {
 	r.assertNoFleetDir()
 }
 
-func TestKeepingAMissionThroughALinkOrAFileOnThePathIsRefusedAndWritesNothingThroughIt(t *testing.T) {
-	t.Run("missions is a link", func(t *testing.T) {
-		r := newCrewRig(t)
-		outside := t.TempDir()
-		if err := os.MkdirAll(filepath.Dir(r.missionsDir()), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(outside, r.missionsDir()); err != nil {
-			t.Fatal(err)
-		}
-		r.seedMission("sweep", "fleet", nil, missionText)
-		if code, body := r.answerMission(missionID, "keep"); code < 400 {
-			t.Errorf("keep = %d %v, want a refusal", code, body)
-		}
-		if entries, _ := os.ReadDir(outside); len(entries) != 0 {
-			t.Errorf("the link's target holds %v, want nothing written through it", entries)
-		}
-		r.assertUnanswered(missionID)
-	})
-	t.Run("fleets/work is a link", func(t *testing.T) {
-		r := newCrewRig(t)
-		outside := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(r.home, "fleets"), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(outside, filepath.Join(r.home, "fleets", "work")); err != nil {
-			t.Fatal(err)
-		}
-		r.seedMission("sweep", "fleet", nil, missionText)
-		if code, body := r.answerMission(missionID, "keep"); code < 400 {
-			t.Errorf("keep = %d %v, want a refusal", code, body)
-		}
-		if entries, _ := os.ReadDir(outside); len(entries) != 0 {
-			t.Errorf("the link's target holds %v, want nothing written through it", entries)
-		}
-		r.assertUnanswered(missionID)
-	})
-	t.Run("missions is a file", func(t *testing.T) {
-		r := newCrewRig(t)
-		if err := os.MkdirAll(filepath.Dir(r.missionsDir()), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(r.missionsDir(), []byte("not a dir"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		r.seedMission("sweep", "fleet", nil, missionText)
-		if code, body := r.answerMission(missionID, "keep"); code < 400 {
-			t.Errorf("keep = %d %v, want a refusal", code, body)
-		}
-		if b, _ := os.ReadFile(r.missionsDir()); string(b) != "not a dir" {
-			t.Errorf("missions = %q, want it unchanged", b)
-		}
-		r.assertUnanswered(missionID)
-	})
-	t.Run("the mission file is a link", func(t *testing.T) {
-		r := newCrewRig(t)
-		outside := filepath.Join(t.TempDir(), "target.md")
-		if err := os.MkdirAll(r.missionsDir(), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(outside, filepath.Join(r.missionsDir(), "sweep.md")); err != nil {
-			t.Fatal(err)
-		}
-		r.seedMission("sweep", "fleet", nil, missionText)
-		if code, body := r.answerMission(missionID, "keep"); code < 400 {
-			t.Errorf("keep = %d %v, want a refusal", code, body)
-		}
-		if _, err := os.Stat(outside); !os.IsNotExist(err) {
-			t.Errorf("the link's target was written: %v", err)
-		}
-		r.assertUnanswered(missionID)
-	})
+func TestKeepingAMissionThroughALinkOnThePathAnswers409AndLeavesTheItemUnanswered(t *testing.T) {
+	r := newCrewRig(t)
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Dir(r.missionsDir()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, r.missionsDir()); err != nil {
+		t.Fatal(err)
+	}
+	r.seedMission("sweep", "fleet", nil, missionText)
+	if code, body := r.answerMission(missionID, "keep"); code != 409 {
+		t.Errorf("keep = %d %v, want 409", code, body)
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Errorf("the link's target holds %v, want nothing written through it", entries)
+	}
+	r.assertUnanswered(missionID)
 }

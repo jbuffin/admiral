@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"slices"
-
 	"github.com/jbuffin/admiral/internal/crew"
 	"github.com/jbuffin/admiral/internal/crewapi"
 )
@@ -69,7 +67,7 @@ func writeMissionItems(run CrewRun, fleet FleetInfo, report []byte, skip func(st
 		if m.Scope == "repo" {
 			o.Repo = m.Repo
 		}
-		if !o.shapeOK() || slices.Contains(crewapi.BuiltInMissions, m.Name) {
+		if !o.shapeOK() || crewapi.IsBuiltInMission(m.Name) {
 			skip("mission %q is not valid", m.Name)
 			continue
 		}

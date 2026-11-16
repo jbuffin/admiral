@@ -205,6 +205,7 @@ func WriteCrewItems(run CrewRun, report []byte) error {
 		}
 	}
 
+	var errs []error
 	title := func(format string, args ...any) string { return fmt.Sprintf(format, args...) }
 	if len(shared) > 0 {
 		for i := range shared {
@@ -215,10 +216,9 @@ func WriteCrewItems(run CrewRun, report []byte) error {
 			KindCrewNotes: CrewObject{Fleet: fleet.Key, Ship: run.Ship, RunDate: run.RunDate, Notes: shared},
 		})
 		if err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	var errs []error
 	var builtIns []string
 	if run.BuiltIns != nil {
 		builtIns = run.BuiltIns(run.FleetKey)
