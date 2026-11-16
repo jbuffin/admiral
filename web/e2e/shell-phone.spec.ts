@@ -12,6 +12,8 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
 
+  // Ships that end are launched first: their cue file is read by any harness that starts while it is there.
+  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
   const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
   setState(admiral, login, 'needs_you');
   await say(admiral, login, 'Which branch should I rebase onto?');
@@ -19,7 +21,6 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   setState(admiral, billing, 'working');
   // A tail near the 200-character cap, to guard the no-scroll check below.
   await say(admiral, billing, 'Reading billing/export.go '.repeat(7).trim());
-  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
 
   await page.goto(admiral.url + 'app/');
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);

@@ -29,14 +29,16 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
 
+  // Ships that end are launched first: their cue file is read by any harness that starts while it is there.
+  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
+  const sailed = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', exit: 0 });
+
   const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
   setState(admiral, login, 'needs_you');
   await say(admiral, login, 'Which branch should I rebase onto?');
   const billing = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-billing' });
   setState(admiral, billing, 'working');
   await say(admiral, billing, 'Reading billing/export.go');
-  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
-  const sailed = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', exit: 0 });
   const visitor = await launchShip(admiral, { fleet: 'alpha', harness: 'codex' });
   setState(admiral, visitor, 'working');
   // After the last cue is cleared, so the idling crew boat cannot read an exit cue.
@@ -139,9 +141,10 @@ test('a ship\'s view opens on its conversation, follows the transcript live, joi
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
 
+  // Ships that end are launched first: their cue file is read by any harness that starts while it is there.
+  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
   const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
   setState(admiral, login, 'working');
-  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
 
   // The view opens on Conversation and shows its turn.
   await seedTurn(admiral, login);

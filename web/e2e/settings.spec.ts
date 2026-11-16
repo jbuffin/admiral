@@ -833,8 +833,8 @@ test("a fleet's AdmiralBot page writes its chat settings, instructions, notes an
   await expect(pick('Model', 'Opus')).toBeChecked();
   await pick('Effort', 'Default').click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect.poll(() => harbor().chat).toMatchObject({ model: 'opus' });
-  expect(harbor().chat).not.toHaveProperty('effort');
+  await expect.poll(() => harbor().chat?.effort).toBeUndefined();
+  expect(harbor().chat).toMatchObject({ model: 'opus' });
 
   // Instructions and notes reach the file and the ledger.
   const instructions = page.getByRole('textbox', { name: 'Instructions' });
