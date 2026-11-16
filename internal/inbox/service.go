@@ -184,6 +184,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/inbox/{session}/{id}/remove", s.serveRemove)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/crew-notes", s.serveCrewNotes)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/crew-member", s.serveCrewMember)
+	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/mission", s.serveMission)
 	mux.HandleFunc("GET /api/inbox/"+AdmiralSession+"/{id}/event", s.serveEventDetail)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/launch", s.serveLaunchProposal)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/dismiss", s.serveDismissProposal)
