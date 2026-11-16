@@ -17,8 +17,9 @@ import { sheetIssues } from './makeCampaign';
 import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { boxState, type BoxState, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, launchRef, newCampaignRefs, newCampaignSearch, selectableRows, selectAfterChoose, selection, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
-import { refreshSource } from './api';
+import { boxState, type BoxState, chainGroupCanStack, chainGroupLine, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, launchRef, newCampaignRefs, newCampaignSearch, selectableRows, selectAfterChoose, selection, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
+import { linkSourceStack, refreshSource } from './api';
+import { StackSheet } from './StackSheet';
 import { go, loc, shipPath } from './router';
 import { emptyLine, surfaceById } from './surfaces';
 import { ships, sources } from './shipsLink';
@@ -187,6 +188,25 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
   );
 }
 
+/** A chain group's header: its PRs build on each other by branch but GitHub has not stacked them, so it says so and, for the viewer's own chain, offers the stacking. */
+function ChainRow({ group, phone, open, onToggle, onStack }: { group: ViewGroup; phone: boolean; open: boolean; onToggle: () => void; onStack: () => void }) {
+  const line = chainGroupLine(group)!;
+  return (
+    <li class={phone ? 'orow-phone' : 'orow'}>
+      <Button icon variant="quiet" class="orow-toggle" label={`${open ? 'Collapse' : 'Expand'} ${group.row.order.title}`} expanded={open} onClick={onToggle}>
+        <Icon name="chevron" size={16} />
+      </Button>
+      <div class="stack-bar chain-bar">
+        <span class="stack-text">
+          <strong>{line.lead}</strong>
+          {line.rest}
+        </span>
+        {chainGroupCanStack(group) ? <Button label="Stack on GitHub" onClick={onStack}>Stack on GitHub</Button> : null}
+      </div>
+    </li>
+  );
+}
+
 function Group({ id, title, rows, phone, muted, chosen, onOpen, onLaunch, onAgain }: { id: string; title: string; rows: OrderRow[]; phone: boolean; muted: boolean; chosen?: string; onOpen: (r: OrderRow) => void; onLaunch: (o: OrderRef) => void; onAgain: RowProps['onAgain'] }) {
   if (rows.length === 0) return null;
   return (
@@ -215,6 +235,7 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
   const [error, setError] = useState('');
   const [pick, setPick] = useState<SelectState>({ fleet: '', tab: '', on: false, checked: new Set() });
   const [launching, setLaunching] = useState<OrderRef | null>(null);
+  const [stacking, setStacking] = useState<ViewGroup | null>(null);
   const [again, setAgain] = useState<{ ship: Ship; kind: 'rereview'; url: string } | { ship: Ship; kind: 'fix' } | { ship: Ship; kind: 'wake'; pr?: MooredPR; stack?: string } | null>(null);
   const list = fleet ? sourcesForFleet(sources.value, fleet.key) : [];
   const all = tabs(list);
@@ -388,7 +409,11 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
                 const acts = groupRowActions(ships.value, g, viewer);
                 return (
                   <Fragment key={g.row.key}>
-                    <Row row={g.row} phone={phone} muted={false} selected={g.row.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} action={acts.row} viewer={viewer} spaced={!parent} box={boxFor(g.row)} note={!!g.row.order.parent} parentGroup={parent ? { group: g, open: isOpen, onToggle: () => toggleExpanded(id, g.row.order.id) } : undefined} />
+                    {g.row.chainRow ? (
+                      <ChainRow group={g} phone={phone} open={isOpen} onToggle={() => toggleExpanded(id, g.row.order.id)} onStack={() => setStacking(g)} />
+                    ) : (
+                      <Row row={g.row} phone={phone} muted={false} selected={g.row.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} action={acts.row} viewer={viewer} spaced={!parent} box={boxFor(g.row)} note={!!g.row.order.parent} parentGroup={parent ? { group: g, open: isOpen, onToggle: () => toggleExpanded(id, g.row.order.id) } : undefined} />
+                    )}
                     {isOpen ? g.children.map((c, i) => <Row key={c.key} action={acts.children[i]} row={c} phone={phone} muted={false} selected={c.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} child note box={boxFor(c)} />) : null}
                   </Fragment>
                 );
@@ -425,6 +450,19 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
       {again?.kind === 'rereview' ? <ReReviewSheet ship={again.ship} sendUrl={again.url} onClose={() => setAgain(null)} /> : null}
       {again?.kind === 'fix' ? <FixSheet ship={again.ship} onClose={() => setAgain(null)} onBusy={() => {}} /> : null}
       {again?.kind === 'wake' ? <AnswerReviewSheet ship={again.ship} pr={again.pr} stack={again.stack} onClose={() => setAgain(null)} onBusy={() => {}} /> : null}
+      {stacking ? (
+        <StackSheet
+          lines={stacking.children.map((c) => ({ url: c.order.url ?? '', head: c.order.chain?.head, base: c.order.chain?.base }))}
+          pending={['source', stacking.row.source, 'stack-link']}
+          link={() => linkSourceStack(stacking.row.source, stacking.children.map((c) => c.order.url ?? ''))}
+          onClose={() => setStacking(null)}
+          onShape={() => {}}
+          failed={async () => {
+            await refreshSource(stacking.row.source);
+            return false;
+          }}
+        />
+      ) : null}
       {launching && fleet ? <LaunchForm fleet={fleet} order={launching} onClose={() => setLaunching(null)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null}
     </>
   );

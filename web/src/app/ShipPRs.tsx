@@ -6,6 +6,7 @@ import { MergeControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet, useCancelFocus } from './Sheet';
+import { StackSheet } from './StackSheet';
 import { OpenPRs } from './OpenPRs';
 import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, fixLine, fixStackInBar, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, showAnswerReview, stackBarAction, stackBarLine, tabOrder } from './prTab';
 import { MOOR_LINE, moorSheetParts, offersMoor, reReviewPlace, reviews, staleNote } from './moored';
@@ -93,61 +94,6 @@ function useShape(session: string, many: boolean): [StackShape | null, (s: Stack
     };
   }, [session, many]);
   return [shape, answer, read];
-}
-
-const STALE_LINK = 'Admiral restarted, reload to stack';
-
-/** The confirmation for Stack on GitHub: the PRs bottom to top, and one link call that keeps its button busy while it runs. */
-function StackSheet({ session, urls, details, onClose, onShape, read }: { session: string; urls: string[]; details: Record<string, PRDetail>; onClose: () => void; onShape: (s: StackShape) => void; read: () => Promise<StackShape | null> }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [stale, setStale] = useState(false);
-  const running = useRef(false);
-  const link = async () => {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    setError('');
-    const r = await linkStack(session);
-    if (r.ok) {
-      onShape(r.data);
-      return onClose();
-    }
-    if (r.status === 403) {
-      running.current = false;
-      setBusy(false);
-      setStale(true);
-      return setError(STALE_LINK);
-    }
-    // A 502 can come after GitHub took the link, so the shape decides whether it failed.
-    if ((await read())?.shape === 'stacked') return onClose();
-    running.current = false;
-    setBusy(false);
-    setError(r.error);
-  };
-  return (
-    <Sheet label="Stack on GitHub" kind="launch-backdrop stop-backdrop" onClose={() => !busy && onClose()}>
-      <p class="sheet-sub">Make these {urls.length} PRs one GitHub stack, bottom to top. Nothing is rebased or pushed; GitHub links the PRs so Merge can take them together.</p>
-      <ul class="sheet-prs">
-        {urls.map((u) => (
-          <li key={u}>
-            <span class="mono">#{prNumber(u)}</span>{' '}
-            {details[u] ? (
-              <span class="mono">
-                {details[u].head} → {details[u].base}
-              </span>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-      <Failure message={error} />
-      <Actions class="launch-foot">
-        <Button label="Cancel" onClick={onClose} />
-        {stale ? <Button label="Reload" onClick={() => location.reload()} /> : null}
-        <Button label="Stack on GitHub" variant="primary" pending={['ship', session, 'stack-link']} onClick={link} />
-      </Actions>
-    </Sheet>
-  );
 }
 
 function PRHeader({ ship, url, detail, failed }: { ship: Ship; url: string; detail: PRDetail | undefined; failed: boolean }) {
@@ -404,15 +350,15 @@ export function PRTab({ ship }: { ship: Ship }) {
       {fixing && fixOn ? <FixSheet ship={ship} onClose={() => setFixing(false)} onBusy={setActing} /> : null}
       {stacking ? (
         <StackSheet
-          session={ship.session}
-          urls={prs.map((p) => p.url)}
-          details={details}
+          lines={prs.map((p) => ({ url: p.url, head: details[p.url]?.head, base: details[p.url]?.base }))}
+          pending={['ship', ship.session, 'stack-link']}
+          link={() => linkStack(ship.session)}
           onClose={() => setStacking(false)}
           onShape={(s) => {
             setShape(s);
             setUnseen(s.shape === 'chained');
           }}
-          read={read}
+          failed={async () => (await read())?.shape === 'stacked'}
         />
       ) : null}
       {prs.length > 1 ? (

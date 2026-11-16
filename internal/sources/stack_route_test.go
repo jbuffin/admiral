@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/jbuffin/admiral/internal/github"
 )
 
 const testGuardHeader = "X-Test-Merge-Token"
@@ -227,4 +230,27 @@ func TestStackRouteAnswersBadGatewayWhenGitHubRefusesTheLink(t *testing.T) {
 	if !strings.Contains(body, "GitHub refused to link") {
 		t.Errorf("answer = %s, want GitHub's message", body)
 	}
+}
+
+func TestStackRouteOfASourceThatIsReadOnlyIsAConflictAndRunsNoGh(t *testing.T) {
+	f, g := stackFixture(t, true, "fake-viewer", "fake-viewer")
+	rn := f.Svc.Sup.runner("gha")
+	rn.mu.Lock()
+	rn.readOnly = true
+	rn.mu.Unlock()
+	code, body := f.stack("gha", "ok", widgets+"41", widgets+"42")
+	wantCode(t, "POST stack on a read-only source", http.StatusConflict, code, body)
+	if links := g.stackLinks(); len(links) != 0 {
+		t.Errorf("gh stack link ran: %v", links)
+	}
+}
+
+func TestStackRouteAnswersGatewayTimeoutWhenGhRunsPastItsLimit(t *testing.T) {
+	old := github.MergeTimeout
+	github.MergeTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { github.MergeTimeout = old })
+	f, g := stackFixture(t, true, "fake-viewer", "fake-viewer")
+	g.write("stack_link.sleep", "3\n")
+	code, body := f.stack("gha", "ok", widgets+"41", widgets+"42")
+	wantCode(t, "POST stack when gh runs past its limit", http.StatusGatewayTimeout, code, body)
 }

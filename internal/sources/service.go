@@ -32,6 +32,9 @@ type Service struct {
 	// MergeGuard wraps the stack route with its token check; with none the route refuses everything.
 	MergeGuard func(http.Handler) http.Handler
 
+	linkMu  sync.Mutex      // guards linking
+	linking map[string]bool // sources with a Stack on GitHub under way
+
 	mu     sync.Mutex // one config read-modify-write at a time
 	poke   chan struct{}
 	pokeMu sync.Once
@@ -218,7 +221,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
 	mux.HandleFunc("PUT /api/sources/{key}/orders/{id}", s.serveEditOrder)
 	mux.HandleFunc("DELETE /api/sources/{key}/orders/{id}", s.serveRemoveOrder)
-	mux.HandleFunc("POST /api/sources/{key}/stack", s.serveStack)
+	mux.Handle("POST /api/sources/{key}/stack", s.mergeGuarded(http.HandlerFunc(s.serveStack)))
 	mux.HandleFunc("GET /api/plugins", s.servePlugins)
 	mux.HandleFunc("GET /api/plugins/{name}/icon", s.serveIcon)
 }
@@ -229,11 +232,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-// serveStack is a stub: the implementer replaces it.
-func (s *Service) serveStack(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "stacking from orders is not built yet")
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

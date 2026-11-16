@@ -615,6 +615,7 @@ func serve(args []string) error {
 			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "usage"}}
 	shipService.MergeGuard = s.MergeGuard
+	sourceService.MergeGuard = s.MergeGuard
 	bg, stopBackground := context.WithCancel(context.Background())
 	// In the background: a harness that hangs on --version must not delay the server.
 	probeRunner.Refresh(bg, cfg.Current().Fleets)
