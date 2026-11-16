@@ -122,6 +122,14 @@ describe('answerCard: terminal', () => {
     expect(needs('permission:AskUserQuestion', conv).kind).toBe('terminal');
   });
 
+  it('sends a Claude multi-select, or a call holding one, with more than eight options to the terminal, where Other has no room', () => {
+    const labels = (n: number) => Array.from({ length: n }, (_, i) => `o${i}`);
+    expect(needs('question', ok(ask('q#0', labels(8), { multiSelect: true }))).kind).toBe('question');
+    expect(needs('question', ok(ask('q#0', labels(9), { multiSelect: true }))).kind).toBe('terminal');
+    expect(needs('question', ok(ask('c#0', labels(9)), ask('c#1', labels(2)))).kind).toBe('terminal');
+    expect(needs('question', ok(ask('q#0', labels(9)))).kind).toBe('question');
+  });
+
   it('sends ExitPlanMode to the terminal, never to a permission card', () => {
     expect(needs('permission:ExitPlanMode', ok(call('c1', 'ExitPlanMode', 'plan'))).kind).toBe('terminal');
   });
