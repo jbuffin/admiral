@@ -73,6 +73,9 @@ func TestAWakeOfARecordFromBeforeTheFieldFallsBackToItsLaunchStamp(t *testing.T)
 	r.s.mooredMu.Lock()
 	r.s.mooredLoaded = false
 	r.s.mooredMu.Unlock()
+	if got := r.s.mooredShips(nil); len(got) != 1 || shipJSON(t, got[0])["first_launched"] != oldStamp {
+		t.Errorf("moored ships = %+v, want one listed with first_launched %q", got, oldStamp)
+	}
 	if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {
 		t.Fatalf("Wake = %v", lerr)
 	}
