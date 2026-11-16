@@ -313,10 +313,13 @@ function PhoneShell({ surface }: { surface: Surface }) {
   };
   return (
     <div class="shell phone">
-      <header class="phone-header">
-        <FleetSwitcher sheet />
-        <h1>{surface.title}</h1>
-      </header>
+      {/* A ship view's own head, with Back, stands in for this one. */}
+      {shipSession(loc.value.path) ? null : (
+        <header class="phone-header">
+          <FleetSwitcher sheet />
+          <h1>{surface.title}</h1>
+        </header>
+      )}
       <Stage surface={surface} title={false} phone />
       <nav class="tabbar" aria-label="Main">
         {PHONE_TABS.map((id) => (

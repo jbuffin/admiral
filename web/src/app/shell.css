@@ -1189,9 +1189,8 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .gh-search .vquery { flex: 1 1 14rem; min-width: 0; color: var(--color-text2); }
 .nv-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
-/* Phone ship view: the ship's own head replaces the shell's, in two rows, so the conversation gets the screen. */
-.phone:has(.ship-main-view) > .phone-header { display: none; }
-.phone .panel.ship-main-view { margin-top: var(--phone-top); padding: 4px 14px 0; }
+/* Phone ship view: the ship's head, in two rows, so the conversation gets the screen. */
+.phone .panel.ship-main-view { margin-top: var(--phone-top); padding: 4px 14px 6px; }
 .phone .ship-view-head { flex-wrap: wrap; gap: 0 10px; margin-bottom: 4px; }
 .phone .ship-view-head::after { content: ''; order: 4; flex-basis: 100%; }
 .phone .ship-view-head .back-link { order: 1; padding-right: 4px; }
@@ -1201,12 +1200,12 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .phone .ship-view-head .ship-order { order: 6; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); color: var(--color-text2); }
 .phone .ship-view-head .ship-actions { order: 7; }
 /* The moored card in the conversation already says so. */
-.phone .ship-view:has(#tab-Conversation[aria-selected='true']) .moored-info > .line { display: none; }
+.phone .ship-view.on-conversation .moored-info > .line { display: none; }
 .phone .moored-info { margin-bottom: 0; }
 .phone .ship-usage { margin: 0; }
 .phone .flotilla { padding-bottom: 6px; }
 .phone .view-panel { padding-top: 8px; }
 
 /* On the phone a message box sits on the tab bar, which already clears the home indicator. */
-.phone .panel:has(.msg-box) { padding-bottom: 6px; }
+.phone :is(.chat-panel, .peek-panel) { padding-bottom: 6px; }
 .phone .msg-box { padding-top: 8px; padding-bottom: 0; }
