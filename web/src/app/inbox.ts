@@ -9,7 +9,7 @@ export interface InboxItem {
   version: number;
   id: string;
   session: string;
-  kind: 'question' | 'review' | 'findings' | 'notice' | 'wake_proposal' | 'routine_proposal' | 'event_proposal' | 'crew_notes' | 'crew_member';
+  kind: 'question' | 'review' | 'findings' | 'notice' | 'wake_proposal' | 'routine_proposal' | 'event_proposal' | 'crew_notes' | 'crew_member' | 'mission';
   created: string;
   title: string;
   name?: string;
@@ -26,6 +26,7 @@ export interface InboxItem {
   event_proposal?: { fleet?: string; routine?: string; routine_name?: string; trigger?: string; tier?: string; expires_at?: string };
   crew_notes?: unknown;
   crew_member?: unknown;
+  mission?: unknown;
 }
 
 export interface InboxQuestion {

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { crewNote, proveJudge, seedAdHocMember, seedCrew } from './crew';
+import { crewNote, proveJudge, seedAdHocMember, seedCrew, seedMission } from './crew';
 import { WORK, openPreferences, probeableClaude, addGitHubSource, appendLines, HOSTILE, launchShip, line, independentShipPointsPeekToThePRTab, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, seedReviewRequest, chatAnswerFile, chatAsks } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
@@ -614,6 +614,115 @@ test('a member Keep the server refuses shows its error and leaves the item', asy
   expect(existsSync(join(admiral.home, 'fleets', 'zulu', 'crew', 'deckhand.md'))).toBe(false);
   expect(existsSync(adHoc)).toBe(true);
   expect(existsSync(join(admiral.home, 'inbox', '_admiral', 'crew-m2.answer.json'))).toBe(false);
+});
+
+test('Peek shows a fleet mission whole, 1 asks to keep it, the confirm saves it for the fleet byte for byte, and the row folds', async ({ page, admiral }) => {
+  seedFleets(admiral);
+  const { text, path } = seedMission(admiral, 'docs-sweep', { id: 'mission-1', lines: 40 });
+  await admiral.start();
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  const row = itemRow(page, 'Keep mission docs-sweep?');
+  await expect(row).toContainText('from Dory');
+  await row.getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toContainText('from Dory, 2026-11-12');
+  await expect(peek).toContainText('docs-sweep');
+  await expect(peek).toContainText('Fleet');
+  await expect(peek).toContainText('Sweep the docs for docs-sweep.');
+  await expect(peek).toContainText('Last step of docs-sweep.');
+  await expect(peek).toContainText('Step 40 of docs-sweep.');
+  await expect(peek.getByRole('link', { name: 'Open bridge' })).toHaveCount(0);
+  expect(await peek.locator('pre').filter({ hasText: 'Sweep the docs for docs-sweep.' }).innerText()).toContain('name: docs-sweep');
+
+  let posts = 0;
+  page.on('request', (r) => r.method() === 'POST' && posts++);
+  await page.keyboard.press('1');
+  await expect(peek).toContainText('every later ship in the fleet');
+  expect(posts).toBe(0);
+  expect(existsSync(path)).toBe(false);
+  const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/inbox/_admiral/mission-1/mission');
+  await peek.getByRole('button', { name: 'Keep docs-sweep' }).tap();
+  expect((await posted).postDataJSON()).toEqual({ decision: 'keep' });
+  await expect(peekOf(page)).toHaveCount(0);
+  await expect(itemRow(page, 'Kept mission docs-sweep')).toBeVisible();
+  await expect(itemRow(page, 'Keep mission docs-sweep?')).toHaveCount(0, { timeout: 15_000 });
+  expect(readFileSync(path, 'utf8')).toBe(text);
+});
+
+test('a repo mission names its repo on the row and in Peek, marks hidden characters, and Keep saves it in the fleet missions directory', async ({ page, admiral }) => {
+  seedFleets(admiral);
+  const { text, path } = seedMission(admiral, 'api-sweep', { id: 'mission-2', scope: 'repo', repo: 'acme/api', hidden: true });
+  await admiral.start();
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  const row = itemRow(page, 'Keep mission api-sweep?');
+  await expect(row).toContainText('from Dory');
+  await expect(row).toContainText('acme/api');
+  await row.getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toContainText('Repo acme/api');
+  await expect(peek).toContainText('hidden character');
+  await expect(peek).toContainText('⟨U+200B⟩Second clause.');
+  await peek.getByRole('button', { name: 'Keep', exact: true }).tap();
+  await peek.getByRole('button', { name: 'Keep api-sweep' }).tap();
+  await expect(itemRow(page, 'Kept mission api-sweep')).toBeVisible();
+  expect(readFileSync(path, 'utf8')).toBe(text);
+  expect(path).toBe(join(admiral.home, 'fleets', 'zulu', 'missions', 'api-sweep.md'));
+});
+
+test('Keep on a mission already saved says so, and a Drop writes nothing', async ({ page, admiral }) => {
+  seedFleets(admiral);
+  const saved = seedMission(admiral, 'docs-sweep', { id: 'mission-3' });
+  const dropped = seedMission(admiral, 'tide-sweep', { id: 'mission-4' });
+  mkdirSync(dirname(saved.path), { recursive: true });
+  writeFileSync(saved.path, saved.text);
+  await admiral.start();
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await itemRow(page, 'Keep mission docs-sweep?').getByRole('link').tap();
+  await peekOf(page).getByRole('button', { name: 'Keep', exact: true }).tap();
+  await peekOf(page).getByRole('button', { name: 'Keep docs-sweep' }).tap();
+  await expect(itemRow(page, 'already saved')).toBeVisible();
+
+  await itemRow(page, 'Keep mission tide-sweep?').getByRole('link').tap();
+  await page.keyboard.press('2');
+  await expect(peekOf(page)).toContainText('nothing is saved');
+  const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/inbox/_admiral/mission-4/mission');
+  await peekOf(page).getByRole('button', { name: 'Drop tide-sweep' }).tap();
+  expect((await posted).postDataJSON()).toEqual({ decision: 'drop' });
+  await expect(itemRow(page, 'Dropped mission tide-sweep')).toBeVisible();
+  expect(existsSync(dropped.path)).toBe(false);
+});
+
+test('Remove from inbox on a mission says it counts as Drop, and writes nothing', async ({ page, admiral }) => {
+  seedFleets(admiral);
+  const { path } = seedMission(admiral, 'docs-sweep', { id: 'mission-5' });
+  await admiral.start();
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await itemRow(page, 'Keep mission docs-sweep?').getByRole('link').tap();
+  const peek = peekOf(page);
+  await peek.getByRole('button', { name: 'Remove from inbox' }).tap();
+  await expect(peek).toContainText('counts as Drop');
+  await expect(peek.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  await peek.getByRole('button', { name: 'Remove', exact: true }).tap();
+  await expect(itemRow(page, 'Keep mission docs-sweep?')).toHaveCount(0, { timeout: 15_000 });
+  expect(existsSync(path)).toBe(false);
+});
+
+test('a mission Keep the server refuses shows its error and leaves the item', async ({ page, admiral }) => {
+  seedFleets(admiral);
+  const { path } = seedMission(admiral, 'docs-sweep', { id: 'mission-6' });
+  mkdirSync(dirname(path), { recursive: true });
+  const other = '---\nname: docs-sweep\n---\n\nA different mission.\n';
+  writeFileSync(path, other);
+  await admiral.start();
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await itemRow(page, 'Keep mission docs-sweep?').getByRole('link').tap();
+  const peek = peekOf(page);
+  await peek.getByRole('button', { name: 'Keep', exact: true }).tap();
+  await peek.getByRole('button', { name: 'Keep docs-sweep' }).tap();
+  await expect(peek.getByRole('alert')).toBeVisible();
+  await expect(peek.getByRole('button', { name: 'Keep', exact: true }).or(peek.getByRole('button', { name: 'Keep docs-sweep' }))).toBeVisible();
+  expect(readFileSync(path, 'utf8')).toBe(other);
+  expect(existsSync(join(admiral.home, 'inbox', '_admiral', 'mission-6.answer.json'))).toBe(false);
 });
 
 test('a crew note the server cannot place shows its error on that note card and keeps the decisions', async ({ page, admiral }) => {
