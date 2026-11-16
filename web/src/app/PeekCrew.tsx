@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks';
 import type { Entry } from './inbox';
-import { createNoteDecisions, crewMemberFold, type CrewMemberItem, type CrewNote, type NoteEdit, markHidden, noteEditProblems, NOTE_MAX, readCrewMember, readCrewNotes } from './crewItems';
+import { createNoteDecisions, crewMemberFold, missionFold, type MissionItem, type CrewMemberItem, type CrewNote, type NoteEdit, markHidden, noteEditProblems, NOTE_MAX, readCrewMember, readCrewNotes } from './crewItems';
 import { Actions, Button } from './Button';
 import { type Acting, itemKey } from './PeekItem';
 
@@ -8,10 +8,10 @@ import { type Acting, itemKey } from './PeekItem';
 
 export type MemberStep = 'idle' | 'keep' | 'drop';
 
-export const isCrewKind = (kind: string | undefined) => kind === 'crew_notes' || kind === 'crew_member';
+export const isCrewKind = (kind: string | undefined) => kind === 'crew_notes' || kind === 'crew_member' || kind === 'mission';
 
 /** The item's crew object, which both kinds share the head fields of. */
-export const readCrew = (entry: Entry): CrewMemberItem => readCrewMember(entry.item?.kind === 'crew_member' ? entry.item.crew_member : entry.item?.crew_notes);
+export const readCrew = (entry: Entry): CrewMemberItem => readCrewMember(entry.item?.kind === 'crew_member' ? entry.item.crew_member : entry.item?.kind === 'mission' ? entry.item.mission : entry.item?.crew_notes);
 
 export function useCrewNotes(entry: Entry) {
   const item = useRef(readCrewNotes(entry.item?.kind === 'crew_notes' ? entry.item.crew_notes : undefined)).current;
@@ -206,6 +206,53 @@ export function CrewMemberBody({ entry, item, step, setStep, acting, decided }: 
           <p>{CONFIRM[step]}</p>
           <Actions class="inbox-send-row">
             <Button label={`${step === 'keep' ? 'Keep' : 'Drop'} ${item.member}`} variant={step === 'keep' ? 'primary' : 'danger'} pending={itemKey(entry, `crew-member:${step}`)} disabled={acting.locked} onClick={() => answer(step)} />
+            <Button label="Cancel" onClick={() => go('idle')} />
+          </Actions>
+        </div>
+      )}
+    </>
+  );
+}
+
+const MISSION_CONFIRM: Record<'keep' | 'drop', string> = {
+  keep: 'The mission is saved for every later ship in the fleet.',
+  drop: 'Nothing is saved.',
+};
+
+export function MissionBody({ entry, item, step, setStep, acting, decided }: { entry: Entry; item: MissionItem; step: MemberStep; setStep: (s: MemberStep) => void; acting: Acting; decided: () => void }) {
+  const off = acting.busy || acting.locked;
+  const go = (s: MemberStep) => {
+    acting.clear();
+    if (s !== 'idle') decided();
+    setStep(s);
+  };
+  const hidden = markHidden(item.text);
+  const answer = (decision: 'keep' | 'drop') => acting.run('mission', { decision }, (data) => missionFold(decision, item.name, data));
+  return (
+    <>
+      <div class="inbox-summary">
+        <span class="inbox-eyebrow">Mission</span>
+        <p class="inbox-summary-text">
+          <b>{item.name}</b>
+        </p>
+        <span class="inbox-hint">{scopeLine(item)}</span>
+      </div>
+      <div class="inbox-proposal">
+        <span class="inbox-eyebrow">Mission text</span>
+        {hidden.count > 0 && <span class="inbox-hint">This mission has {hidden.count} hidden characters, shown as ⟨U+…⟩.</span>}
+        <pre class="inbox-pre inbox-definition">{hidden.text}</pre>
+      </div>
+      {step === 'idle' && (
+        <div class="inbox-send-row">
+          <Button label="Keep" variant="primary" disabled={off} onClick={() => go('keep')} />
+          <Button label="Drop" variant="danger" disabled={off} onClick={() => go('drop')} />
+        </div>
+      )}
+      {step !== 'idle' && (
+        <div class={`inbox-ask confirm${step === 'drop' ? ' discard' : ''}`}>
+          <p>{MISSION_CONFIRM[step]}</p>
+          <Actions class="inbox-send-row">
+            <Button label={`${step === 'keep' ? 'Keep' : 'Drop'} ${item.name}`} variant={step === 'keep' ? 'primary' : 'danger'} pending={itemKey(entry, `mission:${step}`)} disabled={acting.locked} onClick={() => answer(step)} />
             <Button label="Cancel" onClick={() => go('idle')} />
           </Actions>
         </div>

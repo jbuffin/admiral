@@ -144,8 +144,10 @@ export interface MissionItem {
   text: string;
 }
 
-export function readMission(_raw: unknown): MissionItem {
-  return { fleet: '', ship: '', run_date: '', name: '', scope: 'fleet', repo: '', text: 'not implemented' };
+export function readMission(raw: unknown): MissionItem {
+  const o = obj(raw);
+  return { fleet: str(o.fleet), ship: str(o.ship), run_date: str(o.run_date), name: str(o.name), scope: o.scope === 'repo' ? 'repo' : 'fleet', repo: str(o.repo), text: str(o.text) };
 }
 
-export const missionFold = (_decision: 'keep' | 'drop', _name: string, _data: { file_written?: boolean }): string => '';
+export const missionFold = (decision: 'keep' | 'drop', name: string, data: { file_written?: boolean }): string =>
+  decision === 'drop' ? `Dropped mission ${name}` : data.file_written === false ? `Kept mission ${name}; it was already saved` : `Kept mission ${name}`;

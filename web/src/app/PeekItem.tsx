@@ -356,11 +356,13 @@ export function FindingsBody({ entry, acting, state }: { entry: Entry; acting: A
 const removeCopy = (kind: string | undefined, review: boolean) =>
   kind === 'crew_notes'
     ? 'Remove this item? It counts as Drop: its notes are discarded.'
-    : kind === 'crew_member'
-      ? 'Remove this item? It counts as Drop: its notes are discarded and the ad hoc file is deleted if unchanged.'
-      : review
-        ? 'Remove this review from the inbox? Nothing changes on GitHub: the pending review stays there.'
-        : 'Remove this item from the inbox? The ship never gets an answer from here.';
+    : kind === 'mission'
+      ? 'Remove this item? It counts as Drop: nothing is saved.'
+      : kind === 'crew_member'
+        ? 'Remove this item? It counts as Drop: its notes are discarded and the ad hoc file is deleted if unchanged.'
+        : review
+          ? 'Remove this review from the inbox? Nothing changes on GitHub: the pending review stays there.'
+          : 'Remove this item from the inbox? The ship never gets an answer from here.';
 
 /** Any item can leave the inbox unanswered; a review's draft stays on GitHub. */
 export function RemoveRow({ entry, confirm, setConfirm, acting, fold = () => REMOVED_FOLD }: { entry: Entry; confirm: boolean; setConfirm: (on: boolean) => void; acting: Acting; fold?: (data: never) => string }) {
@@ -386,7 +388,7 @@ export function RemoveRow({ entry, confirm, setConfirm, acting, fold = () => REM
       <Actions class="inbox-send-row">
         <Button label="Remove" variant="danger" pending={itemKey(entry, 'remove')} disabled={acting.locked} onClick={() => acting.run('remove', undefined, fold)} />
         <Button
-          label={kind === 'crew_notes' || kind === 'crew_member' ? 'Cancel' : 'Keep it'}
+          label={kind === 'crew_notes' || kind === 'crew_member' || kind === 'mission' ? 'Cancel' : 'Keep it'}
           disabled={acting.locked}
           onClick={() => {
             acting.clear();
