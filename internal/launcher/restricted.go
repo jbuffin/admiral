@@ -90,6 +90,9 @@ func checkRestricted(req Request, dock config.Harness) *Error {
 	return nil
 }
 
+// claudeDefaultWriteRoots are the places Claude Code's sandbox lets every command write, whatever the profile says.
+var claudeDefaultWriteRoots = []string{"/tmp/claude", "/private/tmp/claude", "~/.npm/_logs"}
+
 // sharedTempDirs are Claude Code's per-user temp dirs, where the engineer's other sessions keep their scratchpads. The
 // ship's own temp dir is elsewhere (see MakeRestrictedTemp), so the sandbox denies these whole.
 func sharedTempDirs() []any {
@@ -125,7 +128,7 @@ func restrictedSettings(level standing.Restricted, checkout, home, tempDir strin
 	deny := slices.Clone(restrictedDeniedTools)
 	switch level {
 	case standing.DraftFix:
-		allow = []any{"Edit(/" + checkout + "/**)", "Write(/" + checkout + "/**)"}
+		allow = []any{"Edit(/" + checkout + "/**)"}
 		// Unsandboxed git reads and runs what lives in these paths, and Edit and Write bypass the sandbox. They are denied one by one:
 		// Claude Code turns a deny on .git/** into a sandbox deny on all of .git, which stops git from writing the index, refs and locks.
 		gitDir := filepath.Join(checkout, ".git")
@@ -134,24 +137,43 @@ func restrictedSettings(level standing.Restricted, checkout, home, tempDir strin
 		var denyWrite []any
 		for _, f := range files {
 			denyWrite = append(denyWrite, filepath.Join(gitDir, f))
-			deny = append(deny, "Edit(/"+filepath.Join(gitDir, f)+")", "Write(/"+filepath.Join(gitDir, f)+")")
+			deny = append(deny, "Edit(/"+filepath.Join(gitDir, f)+")")
 		}
 		for _, d := range dirs {
 			denyWrite = append(denyWrite, filepath.Join(gitDir, d))
-			deny = append(deny, "Edit(/"+filepath.Join(gitDir, d)+"/**)", "Write(/"+filepath.Join(gitDir, d)+"/**)")
+			deny = append(deny, "Edit(/"+filepath.Join(gitDir, d)+"/**)")
 		}
 		// Project settings and servers are denied too: a relaunch in this clone would load what the ship planted.
 		gm := filepath.Join(checkout, ".gitmodules")
 		claude := filepath.Join(checkout, ".claude")
 		mcp := filepath.Join(checkout, ".mcp.json")
 		filesystem["denyWrite"] = append(denyWrite, gm, claude, mcp)
-		deny = append(deny, "Edit(/"+gm+")", "Write(/"+gm+")", "Edit(/"+claude+"/**)", "Write(/"+claude+"/**)", "Edit(/"+mcp+")", "Write(/"+mcp+")")
+		deny = append(deny, "Edit(/"+gm+")", "Edit(/"+claude+"/**)", "Edit(/"+mcp+")")
 	case standing.Investigate:
 		report := "/" + filepath.Join(checkout, ".admiral", "report.md")
-		allow = []any{"Write(" + report + ")", "Edit(" + report + ")"}
+		allow = []any{"Edit(" + report + ")"}
 		filesystem["denyWrite"] = []any{checkout}
 	}
 	filesystem["denyWrite"] = append(filesystem["denyWrite"].([]any), sharedTempDirs()...)
+	// A .git below a writable root would let a planted filter run in unsandboxed git, so each root gets a deny; a root added later needs
+	// the same. The roots are the checkout (Draft fix), the ship's temp dir and Claude Code's default write roots, which stay writable.
+	// Claude Code ignores Write rules, so only Edit rules are listed.
+	nested := []string{filepath.Join(tempDir, "**", ".git")}
+	for _, root := range claudeDefaultWriteRoots {
+		nested = append(nested, filepath.Join(root, "**", ".git"))
+	}
+	if level == standing.DraftFix {
+		// The root's own .git stays writable: a deny on it stops git from writing the index and locks.
+		nested = append(nested, filepath.Join(checkout, "*", "**", ".git"))
+	}
+	for _, g := range nested {
+		filesystem["denyWrite"] = append(filesystem["denyWrite"].([]any), g)
+		rule := "/" + g
+		if strings.HasPrefix(g, "~") {
+			rule = g
+		}
+		deny = append(deny, "Edit("+rule+")", "Edit("+rule+"/**)")
+	}
 	out["sandbox"] = map[string]any{"enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false,
 		// Under dontAsk a Bash call with no allow rule is denied, so sandboxed commands are allowed by this setting.
 		"autoAllowBashIfSandboxed": true, "network": network, "filesystem": filesystem}

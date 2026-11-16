@@ -373,15 +373,13 @@ func TestADraftFixShipsSandboxCannotWriteTheFilesGitReadsItsConfigurationFrom(t 
 	}
 	permDeny := strs(t, sub(t, got, "permissions")["deny"])
 	git := "/" + fc.madeFor + "/.git/"
-	for _, tool := range []string{"Edit", "Write"} {
-		for _, want := range []string{"config", "commondir", "config.worktree", "hooks/**", "info/**", "modules/**", "objects/info/**", "worktrees/**"} {
-			if !slices.Contains(permDeny, tool+"("+git+want+")") {
-				t.Errorf("permissions.deny = %q, want %s(%s%s)", permDeny, tool, git, want)
-			}
+	for _, want := range []string{"config", "commondir", "config.worktree", "hooks/**", "info/**", "modules/**", "objects/info/**", "worktrees/**"} {
+		if !slices.Contains(permDeny, "Edit("+git+want+")") {
+			t.Errorf("permissions.deny = %q, want Edit(%s%s)", permDeny, git, want)
 		}
-		if bad := tool + "(" + git + "**)"; slices.Contains(permDeny, bad) {
-			t.Errorf("permissions.deny holds %s, which Claude Code turns into a sandbox write deny on all of .git and stops git commit", bad)
-		}
+	}
+	if bad := "Edit(" + git + "**)"; slices.Contains(permDeny, bad) {
+		t.Errorf("permissions.deny holds %s, which Claude Code turns into a sandbox write deny on all of .git and stops git commit", bad)
 	}
 }
 
@@ -637,10 +635,8 @@ func TestADraftFixShipsSandboxAndToolsCannotWriteGitmodules(t *testing.T) {
 		t.Errorf("denyWrite = %q, want %s", deny, gm)
 	}
 	permDeny := strs(t, sub(t, got, "permissions")["deny"])
-	for _, tool := range []string{"Edit", "Write"} {
-		if want := tool + "(/" + gm + ")"; !slices.Contains(permDeny, want) {
-			t.Errorf("permissions.deny = %q, want %s", permDeny, want)
-		}
+	if want := "Edit(/" + gm + ")"; !slices.Contains(permDeny, want) {
+		t.Errorf("permissions.deny = %q, want %s", permDeny, want)
 	}
 }
 
@@ -790,8 +786,8 @@ func TestADraftFixShipCannotWriteProjectSettingsOrServersInItsCheckout(t *testin
 			t.Errorf("denyWrite = %q, want %s", deny, want)
 		}
 	}
-	for _, want := range []string{"Edit(/" + fc.madeFor + "/.claude/**)", "Write(/" + fc.madeFor + "/.claude/**)",
-		"Edit(/" + fc.madeFor + "/.mcp.json)", "Write(/" + fc.madeFor + "/.mcp.json)"} {
+	for _, want := range []string{"Edit(/" + fc.madeFor + "/.claude/**)",
+		"Edit(/" + fc.madeFor + "/.mcp.json)"} {
 		if !slices.Contains(rules, want) {
 			t.Errorf("permissions.deny = %q, want %s", rules, want)
 		}

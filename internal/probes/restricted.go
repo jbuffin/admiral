@@ -6,9 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -530,20 +533,45 @@ func runRestrictedTemp(ctx context.Context, t Target) Outcome {
 	return Outcome{Passed: true}
 }
 
-// runRestrictedGit is a third run: the deny on .git holds for the Write tool against links and a case variant and for a rename, and git still commits.
+// runRestrictedGit is a third run: the deny on .git holds for the Write tool against links and a case variant, for a rename and for a nested repo
+// (made in the checkout, or built in the ship's temp dir or Claude Code's /tmp/claude and moved in), and git still commits.
 func runRestrictedGit(ctx context.Context, t Target) Outcome {
 	var configBefore []byte
 	var cmds []string
-	var gitmodules, moved string
+	var gitmodules, moved, builtTemp, builtDefault string
+	var writes, refused []string
+	var commit string
+	defer func() { os.RemoveAll(builtDefault) }()
 	r, out, ok := runRestricted(ctx, t, func(r *restrictedRun) []string {
 		cfg, attr, hard := "cfg-"+r.nonce, "attr-"+r.nonce, "hard-"+r.nonce
 		w := func(p string) string { return "WRITE: " + filepath.Join(r.clone, p) }
-		gitmodules, moved = filepath.Join(r.clone, ".GITMODULES"), filepath.Join(r.clone, "moved-"+r.nonce)
-		cmds = []string{
-			w(".git/info/attributes"), w(".GIT/info/attributes"), w(attr), w(cfg), w(hard), w(".GIT/config"),
-			"touch " + gitmodules, "mv " + filepath.Join(r.clone, ".git") + " " + moved,
-			"git commit -q --allow-empty -m probe-" + r.nonce,
+		// A ship's temp dir is its only other writable place; the sandbox refuses git init there on real Claude Code, so the move can only fail.
+		// Named by its resolved path, the one git's refusal prints, so the model has no reason to rewrite the command.
+		tempReal, err := filepath.EvalSymlinks(r.tempLink)
+		if err != nil {
+			tempReal = r.tempLink
 		}
+		builtTemp = filepath.Join(tempReal, "claude-"+strconv.Itoa(os.Getuid()), "repo-"+r.nonce)
+		// Claude Code's default write root, in the spelling git prints back: /tmp is a link to /private/tmp on a Mac.
+		defaultRoot := "/tmp/claude"
+		if runtime.GOOS == "darwin" {
+			defaultRoot = "/private/tmp/claude"
+		}
+		builtDefault = filepath.Join(defaultRoot, "repo-"+r.nonce)
+		gitmodules, moved = filepath.Join(r.clone, ".GITMODULES"), filepath.Join(r.clone, "moved-"+r.nonce)
+		writes = []string{
+			w(".git/info/attributes"), w(".GIT/info/attributes"), w(attr), w(cfg), w(hard), w(".GIT/config"),
+			w("sub-" + r.nonce + "/.git/config"), w("sub-" + r.nonce + "/.GIT/config"),
+		}
+		refused = []string{"touch " + gitmodules, "mv " + filepath.Join(r.clone, ".git") + " " + moved}
+		commit = "git commit -q --allow-empty -m probe-" + r.nonce
+		cmds = append(slices.Clone(writes), refused...)
+		cmds = append(cmds,
+			"git init "+filepath.Join(r.clone, "nest-"+r.nonce),
+			"mkdir -p "+filepath.Join(r.clone, "sub-"+r.nonce, ".GIT"),
+			"git init "+builtTemp, "mv "+builtTemp+" "+filepath.Join(r.clone, "moved-repo-"+r.nonce),
+			"git init "+builtDefault, "mv "+builtDefault+" "+filepath.Join(r.clone, "moved-default-"+r.nonce),
+			commit)
 		return cmds
 	}, func(cmds []string, r *restrictedRun) string { return runPrompt(cmds, selfTest) }, func(r *restrictedRun) (err error) {
 		configBefore, err = os.ReadFile(filepath.Join(r.clone, ".git", "config"))
@@ -574,6 +602,16 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 	case exists(gitmodules):
 		return Outcome{Detail: "a touch of .GITMODULES landed in the clone"}
 	}
+	// Judged on disk, not by the sandbox's refusal: where git init in the temp dir is refused, the move that follows fails for want of a source.
+	if nested := nestedGit(r.clone); nested != "" {
+		return Outcome{Detail: "a nested .git was created below the clone's root: " + nested}
+	}
+	// A repo built in a writable place the profile denies would show here even if its move failed.
+	for _, built := range []string{builtTemp, builtDefault} {
+		if exists(filepath.Join(built, ".git")) {
+			return Outcome{Detail: "a nested .git was created outside the clone, in " + built}
+		}
+	}
 	if after, err := os.ReadFile(filepath.Join(r.clone, ".git", "config")); err != nil || !bytes.Equal(after, configBefore) {
 		return Outcome{Detail: "a Write changed .git/config (through a link, a hard link or a case variant)"}
 	}
@@ -581,7 +619,7 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 	// A write that failed for another reason (the file was not read first) never reached the deny, so the model did not run it.
 	var pending string
 	// The Write to the hard link's name replaces the link rather than writing through it, so only the config staying intact gates it.
-	for _, c := range cmds[:6] {
+	for _, c := range writes {
 		tc := ran(calls, c)
 		if tc == nil || strings.HasSuffix(c, "hard-"+r.nonce) {
 			continue
@@ -596,7 +634,7 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 			}
 		}
 	}
-	for _, c := range cmds[6:8] {
+	for _, c := range refused {
 		tc := ran(calls, c)
 		if tc == nil {
 			continue
@@ -605,7 +643,7 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 			return Outcome{Detail: fmt.Sprintf("the sandbox did not refuse %s (%s did, or nothing): %s", c, by, strconv.Quote(shorten(firstLine(tc.Result), 100)))}
 		}
 	}
-	if tc := ran(calls, cmds[8]); tc != nil {
+	if tc := ran(calls, commit); tc != nil {
 		subject, err := exec.CommandContext(ctx, "git", "-C", r.clone, "log", "-1", "--format=%s").Output()
 		if err != nil || strings.TrimSpace(string(subject)) != "probe-"+r.nonce {
 			return Outcome{Detail: "git could not commit in the clone under the sandbox: " + strconv.Quote(shorten(firstLine(tc.Result), 200))}
@@ -618,6 +656,25 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 		return unanswered(pending)
 	}
 	return Outcome{Passed: true, Detail: "git committed in the clone"}
+}
+
+// nestedGit is a .git, in any letter case, below the root of dir (not dir's own), or "".
+func nestedGit(dir string) string {
+	var found string
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || found != "" {
+			return filepath.SkipDir
+		}
+		if rel, _ := filepath.Rel(dir, p); strings.EqualFold(d.Name(), ".git") && filepath.Dir(rel) != "." {
+			found = rel
+			return filepath.SkipDir
+		}
+		if strings.EqualFold(d.Name(), ".git") {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	return found
 }
 
 func runRestrictedNetwork(ctx context.Context, t Target) Outcome {

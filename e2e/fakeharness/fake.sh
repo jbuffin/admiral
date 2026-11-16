@@ -22,7 +22,9 @@
 #                  a restricted probe run (claude): prints an init line, then for each `RUN: ` line of the
 #                  prompt a Bash tool_use and its tool_result (is_error when blocked), and leaves headless-runs
 #                  alone. It leaves the files the real sandbox would: a touch or cat of a path outside the
-#                  working directory, a git push and a curl to a host other than registry.npmjs.org are blocked.
+#                  working directory, a git push and a curl to a host other than registry.npmjs.org are blocked, and so
+#                  is a git init, mkdir or mv that would put a .git below the working directory's root, in the temp dir
+#                  or in Claude Code's default write roots (/tmp/claude, /private/tmp/claude, ~/.npm/_logs).
 #                  $FAKE_RESTRICTED_PROBE (process env) is pass (default), no-sandbox (nothing is blocked, so
 #                  the outside writes, the escape hatch and the blocked curl land), no-network (every curl
 #                  fails), no-tool (init only), tmp-open (a touch under /tmp/claude-* lands), git-open (a
@@ -31,7 +33,8 @@
 #                  unread-once (the first WRITE: fails as an unread file does, with no denial), skip-always (the
 #                  first line of every run is left out), skip-confine-fail (the first line of every confinement run
 #                  is left out and its shell read is not refused) or skip-net-leak (the first line of every network
-#                  run is left out and the blocked curl lands). A `WRITE: <path>`
+#                  run is left out and the blocked curl lands) or nest-open (a nested .git may be created, and a repo
+#                  moved in from the temp dir or those roots; the root's own .git and other mvs stay blocked). A `WRITE: <path>`
 #                  line is a Write tool call. Each run appends a line to $FAKE_RECORD_DIR/restricted-runs.
 #
 #   codex exec --json
@@ -577,6 +580,24 @@ fi
 if [ -n "$restrictedrun" ]; then
   mode=${FAKE_RESTRICTED_PROBE:-pass}
   cwd=$(pwd -P)
+  # The ship's temp dir is seen as the short link in CLAUDE_CODE_TMPDIR and, to the sandbox, as its resolved path.
+  tmplink="" tmpreal=""
+  if [ -n "$CLAUDE_CODE_TMPDIR" ]; then
+    tmplink=$CLAUDE_CODE_TMPDIR
+    tmpreal=$(cd "$CLAUDE_CODE_TMPDIR" 2>/dev/null && pwd -P)
+  fi
+  # intemp P: P is the ship's temp dir or Claude Code's default write roots, or below one.
+  intemp() {
+    case $1 in /tmp/claude | /tmp/claude/* | /private/tmp/claude | /private/tmp/claude/* | "$HOME"/.npm/_logs | "$HOME"/.npm/_logs/*) return 0 ;; esac
+    case $1 in "$tmplink" | "$tmplink"/*) [ -n "$tmplink" ] && return 0 ;; esac
+    case $1 in "$tmpreal" | "$tmpreal"/*) [ -n "$tmpreal" ] && return 0 ;; esac
+    return 1
+  }
+  # nestsgit P: a .git created inside directory P is below the checkout root or in the temp dir.
+  nestsgit() {
+    case $1 in "$cwd"/*) return 0 ;; esac
+    intemp "$1"
+  }
   echo '{"type":"system","subtype":"init","tools":["Bash","Edit","Write","Read"],"mcp_servers":[]}'
   [ "$mode" = no-tool ] && exit 0
   # Claude Code puts its per-user temp dir under CLAUDE_CODE_TMPDIR and gives a sandboxed shell that as $TMPDIR.
@@ -638,7 +659,19 @@ if [ -n "$restrictedrun" ]; then
       case $path in "$cwd"/*) ;; *) blocked=1 msg="Operation not permitted" ;; esac
       case $path in */.GITMODULES | */.gitmodules) blocked=1 msg="Operation not permitted" ;; esac
       ;;
-    mv\ *) blocked=1 msg="Operation not permitted" ;;
+    mv\ *)
+      blocked=1 msg="Operation not permitted"
+      # nest-open lets a repo built in the temp dir move in, and nothing else.
+      mvsrc=${cmd#mv }
+      mvsrc=${mvsrc%% *}
+      [ "$mode" = nest-open ] && intemp "$mvsrc" && blocked=""
+      ;;
+    git\ init\ *) nestsgit "${cmd##* }" && [ "$mode" != nest-open ] && blocked=1 msg="Operation not permitted" ;;
+    mkdir\ *)
+      last=${cmd##* }
+      base=$(basename "$last" | tr 'A-Z' 'a-z')
+      [ "$base" = .git ] && nestsgit "$(dirname "$last")" && [ "$mode" != nest-open ] && blocked=1 msg="Operation not permitted"
+      ;;
     git\ commit\ *) [ "$mode" = no-commit ] && blocked=1 msg="fatal: Unable to create '.git/index.lock': Operation not permitted" ;;
     git\ push\ *) blocked=1 msg="Permission to use Bash with command $cmd has been denied." ;;
     sh\ -c\ * | git\ -C\ *) blocked=1 msg="Operation not permitted" ;;

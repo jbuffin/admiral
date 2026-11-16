@@ -1,6 +1,6 @@
 # 26. Work from untrusted text runs on a restricted ship that cannot push
 
-Status: accepted, amended by [ADR 0038](0038-a-restricted-clone-is-scanned-for-planted-git-before-admiral-runs-git-in-it.md) (a kept clone is scanned for a git carrier at any depth, and Promote refuses one)
+Status: accepted, amended by [ADR 0038](0038-a-restricted-clone-is-scanned-for-planted-git-before-admiral-runs-git-in-it.md) (a kept clone is scanned for a git carrier at any depth, and Promote refuses one; the profile denies creating a `.git` below any writable root)
 
 ## Context
 
@@ -15,7 +15,7 @@ Status: accepted, amended by [ADR 0038](0038-a-restricted-clone-is-scanned-for-p
   - **Investigate**: read-only, ending in a report.
   - **Draft fix**: writes inside its worktree and commits locally only.
 - **No way out.** On both levels the network is limited to package registries, there is no GitHub token, and web tools, MCP, `git push` and `gh` writes are denied. The sandbox fails closed. A restricted ship never pushes, in any fleet, so Home has no draft PR either.
-- **Claude Code only, for now.** On Claude Code the profile is `--permission-mode dontAsk` with Edit and Write allowed in the worktree, `--setting-sources project`, a sandbox that fails if unavailable with no unsandboxed commands, `network.allowedDomains` limited to package registries, and `WebFetch`, `WebSearch`, `mcp__*`, `Bash(git push *)` and `gh` writes denied. Never `auto` or `bypassPermissions`. Codex comes once its `workspace-write` diff-only ending has been tried, a build task. Copilot stays out until a sandbox flag is confirmed.
+- **Claude Code only, for now.** On Claude Code the profile is `--permission-mode dontAsk` with Edit allowed in the worktree (Claude Code ignores `Write(...)` rules), `--setting-sources project`, a sandbox that fails if unavailable with no unsandboxed commands, `network.allowedDomains` limited to package registries, and `WebFetch`, `WebSearch`, `mcp__*`, `Bash(git push *)` and `gh` writes denied. Never `auto` or `bypassPermissions`. Codex comes once its `workspace-write` diff-only ending has been tried, a build task. Copilot stays out until a sandbox flag is confirmed.
 - **Autopilot mode too.** A restricted ship is an unattended launch, so it runs in autopilot mode ([ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md)) with the restricted profile on top: the guard and the advisor run, and every restriction above still holds. Decided by the engineer while this was recorded (2026-11-10).
 - **Without a capable harness.** Where no harness in the fleet can run a restricted ship, A3 drops to A1 (propose) and never rises to A4. A Draft fix routine shows as reduced to Propose ([#241](https://github.com/jbuffin/admiral/issues/241)).
 - **Promote** starts a new normal ship from the trigger-log record, and counts as a T0 act. It takes the restricted ship's local commits or diff as its starting point and never continues the tainted session. Pushing and PRs start here. The reviewer doesn't run on it.

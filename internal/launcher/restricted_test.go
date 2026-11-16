@@ -208,29 +208,25 @@ func TestTheRestrictedSettingsDenyTheWebMcpPushGhAndNotebookTools(t *testing.T) 
 	}
 }
 
-func TestADraftFixShipMayEditAndWriteOnlyInItsCheckout(t *testing.T) {
+func TestADraftFixShipMayEditOnlyInItsCheckout(t *testing.T) {
 	p := newPinRig(t, nil)
 	_, fc, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)
 	perms := sub(t, got, "permissions")
 	allow := strs(t, perms["allow"])
-	var edits, writes int
+	var edits int
 	for _, r := range allow {
 		tool, _, scoped := strings.Cut(r, "(")
-		switch tool {
-		case "Edit":
-			edits++
-		case "Write":
-			writes++
-		default:
+		if tool != "Edit" {
 			continue
 		}
+		edits++
 		if !scoped || !strings.Contains(r, fc.madeFor) || strings.Contains(r, p.work) {
 			t.Errorf("allow rule %q must be scoped to the checkout %s, not to %s", r, fc.madeFor, p.work)
 		}
 	}
-	if edits == 0 || writes == 0 {
-		t.Errorf("permissions.allow = %q, want Edit and Write rules for the checkout", allow)
+	if edits == 0 {
+		t.Errorf("permissions.allow = %q, want an Edit rule for the checkout", allow)
 	}
 	for _, r := range strs(t, perms["deny"]) {
 		if r == "Edit" || r == "Write" {

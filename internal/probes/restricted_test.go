@@ -138,6 +138,9 @@ func TestBothRestrictedProbesPassOnAConfinedRunAndAreStored(t *testing.T) {
 	if d := r.line(t, capabilities.RestrictedSandbox).Detail; !strings.Contains(d, "the sandbox refused the shell read and git -C push") {
 		t.Errorf("sandbox detail = %q, want it to name which layer refused", d)
 	}
+	if d := r.line(t, capabilities.RestrictedSandbox).Detail; !strings.Contains(d, "git committed") {
+		t.Errorf("sandbox detail = %q, want it to say git committed", d)
+	}
 	if _, err := os.Stat(filepath.Join(r.rec, "headless-runs")); err == nil {
 		t.Error("a restricted probe run appended to headless-runs: the setup tests count only guard runs")
 	}
@@ -156,6 +159,10 @@ func TestRestrictedProbeFailuresSayWhy(t *testing.T) {
 	t.Run("a write to .git lands", func(t *testing.T) {
 		r := runRestricted(t, "git-open", "")
 		r.wantFailed(t, capabilities.RestrictedSandbox, ".git")
+	})
+	t.Run("a nested repo is let through", func(t *testing.T) {
+		r := runRestricted(t, "nest-open", "")
+		r.wantFailed(t, capabilities.RestrictedSandbox, "nested")
 	})
 	t.Run("git cannot commit", func(t *testing.T) {
 		r := runRestricted(t, "no-commit", "")
