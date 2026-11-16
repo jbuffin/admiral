@@ -92,7 +92,10 @@ type Ship struct {
 	// Seen is set while the ship needs you for a stop the engineer has looked at but not answered.
 	Seen bool `json:"seen,omitempty"`
 	// Returning is set from Return to port until the ship is stopped.
-	Returning bool `json:"returning,omitempty"`
+	Returning   bool   `json:"returning,omitempty"`
+	Handing     bool   `json:"handing,omitempty"`
+	HandRefusal string `json:"hand_refusal,omitempty"`
+	HandFailed  string `json:"hand_failed,omitempty"`
 	// CarriesPRs is set on a live ship that carries a PR still open, which returns to port only once its PRs are merged.
 	CarriesPRs bool `json:"carries_prs,omitempty"`
 	// OpenPRs is the PRs a live ship carries that are open, then its report's that GitHub confirms open, each once.
