@@ -1194,6 +1194,7 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   await page.goto(admiral.url + 'app/chat?fleet=harbor');
   const launched = await launchAsAdmiralBot(admiral, 'harbor');
   chatSays(admiral, 'harbor', [line.assistant(`I launched **${launched.name}** to look at the harbour log.`)], true);
+  await expect(main).toContainText(`I launched ${launched.name} to look at the harbour log.`);
   const shipLink = main.locator('.msg.assistant').getByRole('link', { name: launched.name, exact: true });
   await expect(shipLink).toHaveCount(1);
   await expect(shipLink).not.toHaveAttribute('target', /.+/);
