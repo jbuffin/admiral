@@ -5,7 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -360,7 +362,19 @@ func TestU12_NoFleetsOffersSetupOnATerminal(t *testing.T) {
 		out, _ := cmd.CombinedOutput()
 		return string(out)
 	}
-	t.Cleanup(func() { tmux("kill-server") })
+	t.Cleanup(func() {
+		// kill-server only hangs up the pane; a live Admiral would start its tmux again once the world's cleanup ends it.
+		pids := paneTree(strings.TrimSpace(tmux("list-panes", "-a", "-F", "#{pane_pid}")))
+		tmux("kill-server")
+		for _, pid := range pids {
+			for i := 0; i < 50 && syscall.Kill(pid, 0) == nil; i++ {
+				time.Sleep(100 * time.Millisecond)
+			}
+			if syscall.Kill(pid, 0) == nil {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	})
 	tmux("new-session", "-d", "-x", "100", "-y", "30", binaryPath(t)+" --listen 127.0.0.1:0")
 
 	wait := func(want string) string {
@@ -382,4 +396,25 @@ func TestU12_NoFleetsOffersSetupOnATerminal(t *testing.T) {
 	}
 	tmux("send-keys", "-t", "=0:", "n", "Enter")
 	wait("Admiral is running at http://127.0.0.1:")
+}
+
+// paneTree is the pane's process and its descendants.
+func paneTree(pane string) []int {
+	root, err := strconv.Atoi(pane)
+	if err != nil {
+		return nil
+	}
+	out, _ := exec.Command("ps", "-axo", "pid=,ppid=").Output()
+	kids := map[int][]int{}
+	for _, l := range strings.Split(string(out), "\n") {
+		var pid, ppid int
+		if _, err := fmt.Sscan(l, &pid, &ppid); err == nil {
+			kids[ppid] = append(kids[ppid], pid)
+		}
+	}
+	all := []int{root}
+	for i := 0; i < len(all); i++ {
+		all = append(all, kids[all[i]]...)
+	}
+	return all
 }
