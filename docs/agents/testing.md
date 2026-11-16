@@ -42,7 +42,7 @@ Find elements by role and accessible name, as a person would, and assert what sh
 
 ### Playwright and E2E
 
-An E2E test is a journey a person takes that crosses the browser, the server and tmux or a harness, and that no lower layer can see. The Playwright journeys are a short list: the specs in `web/e2e/`, and the `@critical` ones in them are what Admiral cannot ship broken. A new E2E test needs a reason no lower layer works: say it in the PR. Extend the journey that already visits the screen before adding one, and move a check that only needs a component's state down to a component test.
+An E2E test is a journey a person takes that crosses the browser, the server and tmux or a harness, and that no lower layer can see. The Playwright journeys are a short list of what a person does with Admiral (set up, launch, board, answer, chat, reconnect), one spec each in `web/e2e/`, and the `@critical` tag marks the ones Admiral cannot ship broken. A new E2E test needs a reason no lower layer works, stated in the PR: extend the journey that already visits the screen first, and move a check that only needs a component's state down to a component test.
 
 An E2E test is reliable when:
 
@@ -50,11 +50,11 @@ An E2E test is reliable when:
 - it owns everything it touches: its own Admiral, `$ADMIRAL_HOME`, tmux socket and port, with no state shared with another test and no order it depends on;
 - it ends what it starts, in order: Admiral first, then `tmux -S <home>/tmux.sock kill-server` (`stop` in `web/e2e/fixtures.ts` does both);
 - its data is deterministic: fixed names and seeds, no random value a check depends on, and no real clock where a fake one will do;
-- it uses no real network and no real home (see below), and after it seeds state it waits for the change to show before reading it.
+- it uses no real network and no real home (see below), and waits after seeding state as AGENTS.md's "Running the tests on a Mac" says.
 
 A flaky test is a bug. Find the race and fix it. Never add a retry, a longer timeout or a skip to make it pass, and prove a fix with repeated runs.
 
-Playwright drives the new shell at `/app/` only; the old UI is frozen and has no browser tests. The journeys are a short list of what a person does with Admiral (set up, launch, board, answer, chat, reconnect). The `@critical` tag marks the ones Admiral cannot ship broken.
+Playwright drives the new shell at `/app/` only; the old UI is frozen and has no browser tests.
 
 ## How the tests are set up
 
