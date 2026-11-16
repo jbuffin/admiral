@@ -638,8 +638,11 @@ test('Peek shows a fleet mission whole, 1 asks to keep it, the confirm saves it 
   page.on('request', (r) => r.method() === 'POST' && posts++);
   await page.keyboard.press('1');
   await expect(peek).toContainText('every later ship in the fleet');
-  expect(posts).toBe(0);
-  expect(existsSync(path)).toBe(false);
+  for (let i = 0; i < 10; i++) {
+    expect(posts).toBe(0);
+    expect(existsSync(path)).toBe(false);
+    await page.waitForTimeout(100);
+  }
   const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/inbox/_admiral/mission-1/mission');
   await peek.getByRole('button', { name: 'Keep docs-sweep' }).tap();
   expect((await posted).postDataJSON()).toEqual({ decision: 'keep' });
@@ -683,6 +686,7 @@ test('Keep on a mission already saved says so, and a Drop writes nothing', async
   await expect(itemRow(page, 'already saved')).toBeVisible();
 
   await itemRow(page, 'Keep mission tide-sweep?').getByRole('link').tap();
+  await expect(peekOf(page)).toContainText('tide-sweep');
   await page.keyboard.press('2');
   await expect(peekOf(page)).toContainText('nothing is saved');
   const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/inbox/_admiral/mission-4/mission');
@@ -719,7 +723,7 @@ test('a mission Keep the server refuses shows its error and leaves the item', as
   const peek = peekOf(page);
   await peek.getByRole('button', { name: 'Keep', exact: true }).tap();
   await peek.getByRole('button', { name: 'Keep docs-sweep' }).tap();
-  await expect(peek.getByRole('alert')).toBeVisible();
+  await expect(peek.getByRole('alert')).toContainText('already has a mission docs-sweep with other text');
   await expect(peek.getByRole('button', { name: 'Keep', exact: true }).or(peek.getByRole('button', { name: 'Keep docs-sweep' }))).toBeVisible();
   expect(readFileSync(path, 'utf8')).toBe(other);
   expect(existsSync(join(admiral.home, 'inbox', '_admiral', 'mission-6.answer.json'))).toBe(false);
