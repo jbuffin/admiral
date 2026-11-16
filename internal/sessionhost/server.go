@@ -383,8 +383,13 @@ func (s Server) HasSession(ctx context.Context, name string) bool {
 	return err == nil
 }
 
+// KillSession ends the session. One that is already gone, or whose server went with its last
+// session, counts as done: the harness may exit on its own before the kill arrives.
 func (s Server) KillSession(ctx context.Context, name string) error {
 	_, err := s.run(call{ctx: ctx, args: []string{"kill-session", "-t", "=" + name}})
+	if err != nil && (IsNoSession(err) || strings.Contains(err.Error(), "no server running") || strings.Contains(err.Error(), "error connecting")) {
+		return nil
+	}
 	return err
 }
 
