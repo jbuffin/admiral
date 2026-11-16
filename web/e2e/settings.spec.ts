@@ -442,6 +442,9 @@ test('the New view card shows a failed search count and still saves it, and a ha
   // Blank name: Add view waits. Enter in the Name doesn't submit.
   const name = card.getByRole('textbox', { name: 'Name', exact: true });
   const add = card.getByRole('button', { name: 'Add view', exact: true });
+  // The reopened card starts from its preset; clearing the name only counts once the card shows it.
+  await expect(name).toHaveValue('Needs my review');
+  await expect(add).toBeEnabled();
   await name.fill('');
   await expect(add).toBeDisabled();
   await name.fill('Broken but mine');
