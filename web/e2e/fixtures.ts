@@ -185,8 +185,16 @@ class Instance implements Admiral {
     this.lan = !!opts.lan;
     this.extraEnv = opts.env ?? {};
     this.listen = this.lan ? '0.0.0.0:0' : '127.0.0.1:0';
-    if (this.lan) this.lanPort = await freePort();
-    await this.resumeServer();
+    // Admiral takes its own listen port (:0); only the LAN port is drawn here, and another process can take it before the bind.
+    for (let tries = 1; ; tries++) {
+      if (this.lan) this.lanPort = await freePort();
+      try {
+        await this.resumeServer();
+        break;
+      } catch (e) {
+        if (tries === 5 || !this.lan || !/address already in use/.test(String(e))) throw e;
+      }
+    }
     if (this.lan) this.token = await this.pairDevice();
   }
 
