@@ -52,6 +52,18 @@ func TestChainsSplitsAViewsPRsIntoChainsBottomToTop(t *testing.T) {
 			[]ChainPR{cpr(31, "b31", "main"), cpr(32, "b32", "b31"), cpr(33, "b33", "b31")},
 			nil,
 		},
+		"a PR branching off the middle leaves the longer run a chain": {
+			[]ChainPR{cpr(31, "b31", "main"), cpr(32, "b32", "b31"), cpr(33, "b33", "b32"), cpr(34, "b34", "b33"), cpr(40, "b40", "b32")},
+			[][]string{{pr(31), pr(32), pr(33), pr(34)}},
+		},
+		"an even fork above the bottom ends the chain below it": {
+			[]ChainPR{cpr(31, "b31", "main"), cpr(32, "b32", "b31"), cpr(33, "b33", "b32"), cpr(34, "b34", "b32")},
+			[][]string{{pr(31), pr(32)}},
+		},
+		"a branch loop ends the chain where it closes": {
+			[]ChainPR{cpr(31, "b31", "main"), cpr(32, "b32", "b31"), cpr(33, "b31", "b32")},
+			[][]string{{pr(31), pr(32), pr(33)}},
+		},
 		"a bottom off the default branch gives no chain": {
 			[]ChainPR{cpr(31, "b31", "develop"), cpr(32, "b32", "b31")},
 			nil,
