@@ -42,7 +42,7 @@ Find elements by role and accessible name, as a person would, and assert what sh
 
 ### Playwright and E2E
 
-An E2E test is a journey a person takes that crosses the browser, the server and tmux or a harness, and that no lower layer can see. The Playwright journeys are a short list of what a person does with Admiral (set up, launch, board, answer, chat, reconnect), one spec each in `web/e2e/`, and the `@critical` tag marks the ones Admiral cannot ship broken. A new E2E test needs a reason no lower layer works, stated in the PR: extend the journey that already visits the screen first, and move a check that only needs a component's state down to a component test.
+An E2E test is a journey a person takes that crosses the browser, the server and tmux or a harness, and that no lower layer can see. The Playwright journeys are the tests tagged `@critical`, a short list of flows Admiral cannot ship broken; find them with `grep -n '@critical' web/e2e/*.spec.ts` or `npm --prefix web run e2e -- --list --grep @critical`, and a journey missing from that list does not belong in Playwright. A new E2E test needs a reason no lower layer works, stated in the PR: extend the journey that already visits the screen first, and move a check that only needs a component's state down to a component test.
 
 An E2E test is reliable when:
 

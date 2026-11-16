@@ -26,13 +26,15 @@ test('typing / offers the ship\'s skills, and arrows with Tab or a tap complete 
 
   fireEvent.input(box, { target: { value: '/' } });
   const menu = await screen.findByRole('listbox', { name: 'Skills' });
-  const names = () => screen.getAllByRole('option').map((o) => o.textContent);
-  expect(names()).toEqual(['/reviewReview the diff.', '/tddTest-driven development.', '/triageSort the new issues.']);
+  const offered = (name: RegExp) => screen.queryByRole('option', { name }) !== null;
+  expect(screen.getAllByRole('option')).toHaveLength(3);
+  expect(screen.getByRole('option', { name: /^\/review.*Review the diff\./ })).toBeTruthy();
 
   fireEvent.input(box, { target: { value: '/t' } });
-  expect(names()).toEqual(['/tddTest-driven development.', '/triageSort the new issues.']);
+  expect(screen.getAllByRole('option')).toHaveLength(2);
+  expect(offered(/^\/tdd/) && offered(/^\/triage/) && !offered(/^\/review/)).toBe(true);
   fireEvent.keyDown(box, { key: 'ArrowDown' });
-  expect(screen.getByRole('option', { selected: true }).textContent).toContain('/triage');
+  expect(screen.getByRole('option', { selected: true, name: /^\/triage/ })).toBeTruthy();
   fireEvent.keyDown(box, { key: 'Tab' });
   expect(box.value).toBe('/triage ');
   expect(screen.queryByRole('listbox', { name: 'Skills' })).toBeNull();

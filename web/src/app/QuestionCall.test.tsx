@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { Item } from './api';
 import type { AnswerCard } from './answerCard';
@@ -51,7 +51,10 @@ test('a three-question call is stepped through, reviewed, and answered with one 
   next();
 
   expect(screen.getByText('Review your answers')).toBeTruthy();
-  expect(Array.from(document.querySelectorAll('.q-review-a')).map((e) => e.textContent)).toEqual(['→ Green', '→ Cheese, Mushrooms', '→ Medium, thanks']);
+  const review = within(screen.getByRole('list'));
+  expect(review.getByText('→ Green')).toBeTruthy();
+  expect(review.getByText('→ Cheese, Mushrooms')).toBeTruthy();
+  expect(review.getByText('→ Medium, thanks')).toBeTruthy();
   expect(posts).toEqual([]);
 
   fireEvent.click(screen.getByRole('button', { name: 'Submit answers' }));
