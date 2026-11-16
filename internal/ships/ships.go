@@ -97,6 +97,8 @@ type Ship struct {
 	Handing bool `json:"handing,omitempty"`
 	// HandRefusal is why the ship cannot be handed, when its own options say so.
 	HandRefusal string `json:"hand_refusal,omitempty"`
+	// SkillKind is `commodore` on a Commodore ship.
+	SkillKind string `json:"skill_kind,omitempty"`
 	// HandFailed is why the last hand failed on a ship that stayed live, until the next hand starts.
 	HandFailed string `json:"hand_failed,omitempty"`
 	// CarriesPRs is set on a live ship that carries a PR still open, which returns to port only once its PRs are merged.
@@ -284,7 +286,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
 		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "",
-		Handing: o[sessionhost.OptHanding] != "", HandRefusal: handNotClaude(session, o["harness"]), HandFailed: o[sessionhost.OptHandFailed]}
+		Handing: o[sessionhost.OptHanding] != "", HandRefusal: handNotClaude(session, o["harness"]), HandFailed: o[sessionhost.OptHandFailed], SkillKind: o["skill-kind"]}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if sh.Status == "anchored" {
 		sh.StoppedBy = o[sessionhost.OptStoppedBy]

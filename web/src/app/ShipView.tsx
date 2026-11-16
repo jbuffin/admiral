@@ -20,6 +20,8 @@ import { NO_RESUME_NOTE, reviews } from './moored';
 import { usageRow, watchUsage, type ShipUsage } from './shipUsage';
 import { boxState } from './messageBox';
 import { Sheet, useCancelFocus } from './Sheet';
+import { HandToCommodore } from './HandAction';
+import { handAction, handFailure } from './hand';
 import { OpenPRs } from './OpenPRs';
 import { fleetSearch } from './fleets';
 import { go, loc, surfacePath } from './router';
@@ -401,9 +403,14 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         ) : (
           <div class="ship-actions">
             {ship.status === 'anchored' || ship.status === 'sailing_off' || ship.carries_prs ? null : <ReturnToPort ship={ship} />}
+            <HandToCommodore ship={ship} />
             <StopShip ship={ship} />
           </div>
         )}
+        {!moored && handAction(ship).show && ship.hand_refusal ? <p class="note hand-note">{ship.hand_refusal}</p> : null}
+        {!moored && handFailure(ship) ? (
+          <p class="note warn hand-note">{`Not handed to Commodore: ${handFailure(ship)}`}</p>
+        ) : null}
       </div>
       <UsageRow session={ship.session} />
       {moored ? (

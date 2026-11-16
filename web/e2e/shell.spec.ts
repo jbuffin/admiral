@@ -656,7 +656,11 @@ test('a Copilot ship shows its conversation in the Conversation tab, shows a lin
   await handSheet.getByRole('radio', { name: 'Other' }).tap();
   await expect(handSheet.getByRole('button', { name: 'Hand to Commodore' })).toBeDisabled();
   await handSheet.getByRole('radio', { name: /GitHub issue/ }).tap();
+  expect((await page.request.post(admiral.url + `api/ships/${design.session}/commodore`, { data: { kind: 'issue' } })).status()).toBe(202);
   await handSheet.getByRole('button', { name: 'Hand to Commodore' }).tap();
+  await expect(handSheet.getByRole('alert')).toContainText('already being handed');
+  await handSheet.getByRole('button', { name: 'Cancel' }).tap();
+  await expect(handSheet).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Handing to Commodore' })).toHaveAttribute('aria-busy', 'true');
   setReason(admiral, design, 'stop');
   setState(admiral, design, 'needs_you');
