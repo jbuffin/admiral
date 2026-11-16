@@ -95,6 +95,35 @@ export async function mergeFromThePRTab(page: Page, a: Admiral, opts: { phone: b
 }
 
 /**
+ * On the phone the Fix PR sheet, the tallest of the five sheets, fits: no sideways scroll and the command wrapped inside it. The other sheets
+ * share its `Button` and sheet layout.
+ */
+export async function fixSheetFitsThePhone(page: Page, a: Admiral) {
+  prAnswer(a, 8, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'CONFLICTING' });
+  const ship = await launchMooredShip(a, 8);
+  await expect
+    .poll(async () => {
+      await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
+      const pr = (await listShips(a)).find((s) => s.session === ship.session)?.prs?.find((p) => p.url === `${PR_BASE}/8`);
+      return pr?.review ?? '';
+    }, { timeout: 30_000 })
+    .not.toBe('');
+  const command = `${RESUME} feedback round 1 on ${PR_BASE}/8`;
+
+  const panel = await openPRTab(page, a, ship, { phone: true });
+  const fix = panel.locator('.fix-bar').getByRole('button', { name: 'Fix PR', exact: true });
+  await expect(fix).toBeVisible();
+  expect(await noHorizontalScroll(page)).toBe(true);
+  await fix.tap();
+  const dialog = page.getByRole('dialog', { name: 'Fix PR' });
+  await expect(dialog).toContainText(command);
+  const box = (await dialog.getByText(command).boundingBox())!;
+  const frame = (await dialog.boundingBox())!;
+  expect(box.x + box.width, 'the command stays inside the sheet').toBeLessThanOrEqual(frame.x + frame.width + 1);
+  expect(await noHorizontalScroll(page)).toBe(true);
+}
+
+/**
  * A moored ship whose PR got a waking review shows the feedback bar in the PR tab. Answer review opens a sheet with the exact command, and
  * the confirm relaunches the ship with that command as its prompt.
  */

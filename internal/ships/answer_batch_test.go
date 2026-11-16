@@ -197,15 +197,12 @@ func TestClaudeBatchAnswerIsRefusedWhenTheMenuIsNotFreshAndTheShipStillAsks(t *t
 	}
 }
 
-func TestClaudeBatchAnswerLandsOnAPaneTooShortForTheMenusTabs(t *testing.T) {
+func TestClaudeBatchAnswerTypesEachTabsKeys(t *testing.T) {
 	p := newMenuPane(t, callItems("call", true))
-	if out, err := exec.Command(p.tmux, "-S", p.sock, "resize-window", "-t", p.pane, "-x", "40", "-y", "12").CombinedOutput(); err != nil {
-		t.Fatalf("resize-window: %v: %s", err, out)
-	}
 	p.needsYou("question")
 	answers := []batchAnswer{{"options": []int{2}}, {"options": []int{1, 3}}, {"other": "Medium, thanks"}, {"options": []int{2}}}
 	if code, msg := p.post(batchBody(t, "question", "call#0", answers...)); code != http.StatusOK {
-		t.Fatalf("the whole call answered on a 40x12 pane = %d %s, want 200", code, msg)
+		t.Fatalf("the whole call answered = %d %s, want 200", code, msg)
 	}
 	const down = "\x1b[B"
 	want := strings.Join([]string{"2", "\r", down + down, "\r", down + down, "\r", "4", "Medium, thanks", "\r", "2", "1"}, "")

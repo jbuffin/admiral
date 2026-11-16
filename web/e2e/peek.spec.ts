@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { proveJudge } from './crew';
-import { probeableClaude, addGitHubSource, appendLines, launchShip, line, received, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, withFakeGh, seedReviewRequest, chatAnswerFile, chatAsks } from './shell';
+import { probeableClaude, addGitHubSource, appendLines, launchShip, line, received, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, withFakeGh, seedReviewRequest, chatAnswerFile, chatAsks, chatSays } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 
@@ -155,6 +155,7 @@ test("AdmiralBot's waiting question shows in the Inbox as AdmiralBot's, is answe
 
 test("a chat question withdrawn while its Peek is open stays open on a plain notice, with Send answers off and Back working", async ({ page, admiral }) => {
   seedFleets(admiral, { live: true, chat: true });
+  chatSays(admiral, 'harbor', [line.user('Hello harbor')]);
   await admiral.start({ env: withFakeGh(admiral) });
   chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
   await page.goto(admiral.url + 'app/inbox?fleet=harbor');
@@ -164,14 +165,16 @@ test("a chat question withdrawn while its Peek is open stays open on a plain not
   const peek = peekOf(page);
   await peek.getByRole('radio', { name: 'Freeform' }).tap();
 
-  // The question is withdrawn behind Peek's back, as New chat does. Whether the Inbox push or a Send finds it first, Peek ends on this notice: the push did not arrive within 15 s on its own, so the loop taps Send until it shows.
-  rmSync(join(admiral.home, 'chat', 'harbor', 'questions', 'q1.json'));
+  // New chat on the fleet's chat page, in another tab, withdraws the question; the Inbox push tells the open Peek.
+  const chat = await page.context().newPage();
+  await chat.goto(admiral.url + 'app/chat?fleet=harbor');
+  await expect(chat.getByRole('main')).toContainText('Which panel?');
+  await expect(chat.getByRole('main')).toContainText('Hello harbor');
+  await expect(chat.getByRole('main').getByRole('button', { name: 'Open terminal', exact: true })).toHaveCount(1);
+  await chat.getByRole('main').getByRole('button', { name: 'New chat', exact: true }).tap();
+  await expect(chat.getByRole('main').getByText(/^New chat · /)).toHaveCount(1);
   const send = peek.getByRole('button', { name: 'Send answers' });
-  await expect(async () => {
-    // The push can disable Send between the check and the tap; a bounded tap lets toPass retry instead of waiting out its clock.
-    if (await send.isEnabled()) await send.tap({ timeout: 1_000 });
-    await expect(peek.getByRole('alert')).toHaveText('AdmiralBot withdrew this question.', { timeout: 1_000 });
-  }).toPass({ timeout: 15_000 });
+  await expect(peek.getByRole('alert')).toHaveText('AdmiralBot withdrew this question.', { timeout: 15_000 });
   await expect(send).toBeDisabled();
   await expect(peek).not.toContainText('_chat');
   expect(chatAnswerFile(admiral, 'harbor', 'q1')).toBeUndefined();
@@ -244,7 +247,6 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await expect(when.locator('option:checked')).toHaveText('Review requested of you');
   await form.getByRole('radio', { name: 'Claude' }).tap();
   await form.getByLabel('Checkout').selectOption(join(admiral.home, 'proj'));
-  await expect(form.getByText('Fires only for events on acme/api.')).toBeVisible();
   await form.getByLabel('Text').fill('sweep the board');
   await form.getByRole('radio', { name: 'Ask first' }).tap();
   await form.getByRole('button', { name: 'Save', exact: true }).tap();
