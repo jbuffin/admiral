@@ -948,7 +948,7 @@ func TestAPluginsEventNamesNoRepoSoANonEmptyRepoAllowlistSkipsItAndAnEmptyOneIsS
 		t.Errorf("a verified event on an allowlisted repo: record = %+v, want proposed", rec)
 	}
 	empty := evFrom("Eng")
-	empty.Ref = "https://example.com/x"
+	empty.Verified, empty.Ref = false, "https://example.com/x"
 	h.sched.HandleEvent(empty)
 	if rec := h.latest(r); rec.Outcome != routines.Skipped || !strings.Contains(rec.Reason, routines.ReasonRepo) {
 		t.Errorf("a verified event with no repo: record = %+v, want skipped", rec)

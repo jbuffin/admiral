@@ -354,7 +354,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
           {offered.length === 0 ? <p class="note warn">{docks.why || 'Loading docks…'}</p> : <DockPicker docks={offered.map((harness) => ({ harness }))} harness={l.harness} onChange={(harness) => { fixes('dock'); setForm((f) => ({ ...f, launch: launchOnDock(f.launch, harness) })); }} />}
           {err?.field === 'dock' ? <p class="note error" role="alert">{err.text}</p> : null}
           <CheckoutSelect dir={l.dir} dirs={dirsShown} allowClone={false} onChange={(dir) => setLaunch({ dir })} />
-          {scopeLine ? <p class="note">{scopeLine}</p> : null}
+          {scopeLine && err?.field !== 'checkout' ? <p class="note">{scopeLine}</p> : null}
           {err?.field === 'checkout' ? <p class="note error" role="alert">{err.text}</p> : null}
           <label class="field">
             <span>Text</span>

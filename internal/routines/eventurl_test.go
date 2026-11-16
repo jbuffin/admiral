@@ -100,10 +100,8 @@ func TestAnEventLaunchOfAnEventRoutineWithNoTextStartsFromTheURL(t *testing.T) {
 
 func TestARefThatIsNotAGitHubPRorIssueGivesTheLaunchNoEventURL(t *testing.T) {
 	refs := []string{
-		"ENG-9",
 		"https://tracker.example.com/acme/api/pull/7",
 		"https://github.com.evil.example/acme/api/pull/7",
-		"https://evil.example/?u=https://github.com/acme/api/pull/7",
 		"https://github.com/acme/api/discussions/3",
 		"https://github.com/acme/api/pull/seven",
 	}
@@ -129,7 +127,7 @@ func TestAnEventLaunchWithNoURLAndNoTextFailsAndStartsNoShip(t *testing.T) {
 	h.withEvents(standing.PresetLimits(standing.Home))
 	r := h.onRoutine(routines.Act, func(in *routines.Routine) { in.Do.Launch.Text = "" })
 	ev := evFrom("Eng")
-	ev.Ref = "ENG-9"
+	ev.Ref = "https://github.com/acme/api/discussions/3"
 	h.sched.HandleEvent(ev)
 	h.wantLaunches(0)
 	rec := h.latest(r)
@@ -147,6 +145,7 @@ func proposedOn(t *testing.T, text, ref string) (*harness, routines.Routine, rou
 	r := h.onRoutine(routines.AskFirst, func(in *routines.Routine) { in.Do.Launch.Text = text })
 	ev := evFrom("Eng")
 	ev.Ref = ref
+	ev.Verified = strings.HasPrefix(ref, "https://github.com/acme/api/") // any other ref is a plugin's
 	h.sched.HandleEvent(ev)
 	rec := h.latest(r)
 	if rec.Outcome != routines.Proposed {

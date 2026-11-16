@@ -110,3 +110,33 @@ func TestAPluginEventIsNotScopedWhateverItsRefLooksLike(t *testing.T) {
 		t.Fatalf("%d records, want 2: plugin events match as before", n)
 	}
 }
+
+func TestAVerifiedEventOnAnEnterpriseHostIsScopedByOwnerAndName(t *testing.T) {
+	h := scopeHarness(t)
+	r := h.onRoutine(routines.Act, inCheckout(sharedCheckout))
+	other := evFrom("Eng")
+	other.Ref = "https://ghe.example.com/acme/other/pull/3"
+	h.sched.HandleEvent(other)
+	if recs := h.records(r); len(recs) != 0 {
+		t.Fatalf("records = %+v, want none: the event is on acme/other, the checkout is acme/api", recs)
+	}
+	same := evFrom("Eng")
+	same.Ref = "https://ghe.example.com/acme/api/pull/3"
+	h.sched.HandleEvent(same)
+	if n := len(h.records(r)); n != 1 {
+		t.Fatalf("%d records, want 1: the host is ignored", n)
+	}
+}
+
+func TestAVerifiedEventWithNoRepoInItsRefDoesNothing(t *testing.T) {
+	h := scopeHarness(t)
+	r := h.onRoutine(routines.Act, inCheckout(sharedCheckout))
+	for _, ref := range []string{"", "not a url", "https://github.com/acme"} {
+		ev := evFrom("Eng")
+		ev.Ref = ref
+		h.sched.HandleEvent(ev)
+	}
+	if recs := h.records(r); len(recs) != 0 {
+		t.Fatalf("records = %+v, want none", recs)
+	}
+}

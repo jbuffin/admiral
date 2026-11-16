@@ -279,8 +279,8 @@ func (s *Store) validateLaunch(f config.Fleet, l Launch, on *On) error {
 			}
 		}
 	}
-	if on != nil && s.SourcePlugin != nil && len(repofinder.Remotes(l.Dir)) == 0 {
-		if plugin, ok := s.SourcePlugin(f.Key, on.Source); ok && plugin == BuiltinGitHubPlugin {
+	if on != nil && s.SourcePlugin != nil {
+		if plugin, ok := s.SourcePlugin(f.Key, on.Source); ok && plugin == BuiltinGitHubPlugin && len(repofinder.Remotes(l.Dir)) == 0 {
 			return invalidf("Checkout has no remote, so a GitHub event routine on it never fires")
 		}
 	}
