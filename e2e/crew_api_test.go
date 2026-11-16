@@ -474,11 +474,11 @@ func TestCrewAPI_InboxCountsCrew(t *testing.T) {
 	// A ship that needs you for its own reason keeps it. scout is not working
 	// (it needs you) and mate is anchored, so the lead's Stop is not held.
 	w.hookAt(scout.pane, "PermissionRequest", hookPerm)
+	w.waitShip(s.Session, "needs_you for scout again", func(x apiShip) bool { return x.Reason == "crew" && crewIs("scout", "needs_you")(x) })
 	w.hookAt(shipPane, "Stop", hookStop)
-	own := w.waitShip(s.Session, "the ship's own stop", func(x apiShip) bool { return x.Status == "needs_you" && crewIs("scout", "needs_you")(x) })
-	if own.Reason != "stop" {
-		t.Errorf("ship reason = %q while its own state is needs_you and scout also needs you, want stop", own.Reason)
-	}
+	w.waitShip(s.Session, "the ship's own stop over scout's crew reason", func(x apiShip) bool {
+		return x.Status == "needs_you" && x.Reason == "stop" && crewIs("scout", "needs_you")(x)
+	})
 	if st, r := w.opt(shipPane, "@admiral-state"), w.opt(shipPane, "@admiral-reason"); st != "needs_you" || r != "stop" {
 		t.Errorf("ship pane = %q %q, want needs_you stop", st, r)
 	}

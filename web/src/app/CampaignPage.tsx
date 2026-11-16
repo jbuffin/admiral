@@ -410,6 +410,16 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
     }
   };
 
+  const rootHref = safeHref(campaign.url);
+  const ref = `${campaign.repo.replace(/^https?:\/\//, '')}#${campaign.number}`;
+  const heading = rootHref ? (
+    <a class="issue-link" href={rootHref} target="_blank" rel="noopener noreferrer">
+      {campaign.title}
+    </a>
+  ) : (
+    campaign.title
+  );
+
   return (
     <main class="panel camp-page">
       <div class="camp-bar">
@@ -425,9 +435,13 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
         >
           Campaigns
         </a>
-        <span class="mono muted">
-          {campaign.repo.replace(/^https?:\/\//, '')}#{campaign.number}
-        </span>
+        {rootHref ? (
+          <a class="mono muted issue-link" href={rootHref} target="_blank" rel="noopener noreferrer">
+            {ref}
+          </a>
+        ) : (
+          <span class="mono muted">{ref}</span>
+        )}
         {fleet ? (
           <span class="pill">
             <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
@@ -441,7 +455,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
         )}
       </div>
       <p class="kind">{kind}</p>
-      {title ? <h1>{campaign.title}</h1> : <h2 class="camp-title">{campaign.title}</h2>}
+      {title ? <h1>{heading}</h1> : <h2 class="camp-title">{heading}</h2>}
       <div class="progress" role="img" aria-label={`${closed} of ${total} done`}>
         <span style={{ width: `${total > 0 ? (closed / total) * 100 : 0}%` }} />
       </div>

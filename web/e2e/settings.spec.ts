@@ -184,7 +184,8 @@ test('a signed-out fleet says how to sign in with its views greyed, and turns Co
   const copied = await stubClipboard(page);
   await admiral.start({ env: gh.env });
   const watch = watchPage(page, admiral.url);
-  await expect.poll(async () => (await apiSources(admiral)).find((s) => s.key === 'gz')?.state).toBe('ok');
+  // Signed out, the source rests at auth_required; ok is only the moment before its first token check.
+  await expect.poll(async () => (await apiSources(admiral)).find((s) => s.key === 'gz')?.state).toBe('auth_required');
 
   await page.goto(githubPage(admiral, 'zulu'));
   await expect(page.getByRole('heading', { name: 'GitHub', exact: true })).toBeVisible();
