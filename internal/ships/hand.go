@@ -113,8 +113,8 @@ func (s *Service) serveHand(w http.ResponseWriter, r *http.Request) {
 	case o[sessionhost.OptReturning] != "":
 		writeError(w, http.StatusConflict, "ship "+session+" is returning to port: it cannot also be handed to Commodore")
 		return
-	case o["harness"] != "claude":
-		writeError(w, http.StatusConflict, "ship "+session+" runs on "+o["harness"]+": only a Claude ship can be handed to Commodore")
+	case handNotClaude(session, o["harness"]) != "":
+		writeError(w, http.StatusConflict, handNotClaude(session, o["harness"]))
 		return
 	case o["skill-kind"] == "commodore":
 		writeError(w, http.StatusConflict, "ship "+session+" is already Commodore")
@@ -145,7 +145,7 @@ func (s *Service) serveHand(w http.ResponseWriter, r *http.Request) {
 	s.hands.Store(session, e)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := s.Host.SetOptions(ctx, session, map[string]string{sessionhost.OptHanding: "queued"}); err != nil {
+	if err := s.Host.SetOptions(ctx, session, map[string]string{sessionhost.OptHanding: "queued", sessionhost.OptHandFailed: ""}); err != nil {
 		s.hands.Delete(session)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -155,6 +155,14 @@ func (s *Service) serveHand(w http.ResponseWriter, r *http.Request) {
 	s.broadcast()
 	s.advanceHands()
 	writeJSON(w, http.StatusAccepted, map[string]any{"handing": true})
+}
+
+// handNotClaude is why a ship cannot be handed because of its harness, or "".
+func handNotClaude(session, harness string) string {
+	if harness == "claude" {
+		return ""
+	}
+	return "ship " + session + " runs on " + harness + ": only a Claude ship can be handed to Commodore"
 }
 
 // handBlocked says why a ship cannot be handed because of how it was launched, or "". It fails closed: a trigger log
@@ -503,8 +511,16 @@ func (s *Service) failHand(sess sessionhost.Session, e *handEntry, why string) {
 	s.hands.Delete(sess.Name)
 	s.removeHandRef(sess.Name)
 	s.clearHandMark(sess.Name)
+	s.setHandFailed(sess.Name, why)
 	s.recordHandFailure(sess.Name, e.id, why)
 	s.broadcast()
+}
+
+func (s *Service) setHandFailed(name, why string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptHandFailed: why})
+	_ = s.Host.Sync(ctx)
 }
 
 func (s *Service) recordHandFailure(name, id, why string) {
