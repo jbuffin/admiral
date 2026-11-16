@@ -36,6 +36,11 @@ test('on the phone, a moored row opens its ship view, and a message sent there w
 
   await wakeFromTheShipView(page, admiral, (l) => l.tap());
   expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
+  // The conversation and its box take most of the screen and sit on the tab bar.
+  const panel = (await page.getByRole('tabpanel').boundingBox())!;
+  const tabBar = (await page.getByRole('navigation', { name: 'Main' }).boundingBox())!;
+  expect(panel.height).toBeGreaterThan(page.viewportSize()!.height * 0.7);
+  expect(tabBar.y - (panel.y + panel.height)).toBeLessThanOrEqual(8);
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

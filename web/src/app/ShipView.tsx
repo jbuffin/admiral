@@ -386,7 +386,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   );
   const anchored = boat ? chipState(boat) !== 'running' : ship.status === 'anchored';
   return (
-    <section class="ship-view">
+    <section class={`ship-view on-${tab.toLowerCase()}`}>
       <div class="ship-view-head">
         <BackLink label="Back" />
         <Heading>{ship.name}</Heading>
