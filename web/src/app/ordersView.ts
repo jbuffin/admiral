@@ -1,6 +1,7 @@
 import type { Order, OrderView, Ship, Source } from './api';
 import type { OrderRef } from './LaunchDialog';
 import { isStackUrl, needsYouAgain, orderRowAction, shipsOnOrder, stackRowActions, type RowAction } from './moored';
+import { stackBarLine } from './prTab';
 import { shipAge } from './shipList';
 
 export const FOR_YOU = 'for-you';
@@ -24,6 +25,8 @@ export interface OrderRow {
   stackRow?: boolean;
   /** A stack row's launch lands on this layer's order: the bottom open shown layer. */
   stackLayer?: string;
+  /** A chain group's header row: not a GitHub stack, never launched or counted as one. */
+  chainRow?: boolean;
 }
 
 export interface ForYou {
@@ -249,6 +252,11 @@ function stackRow(src: Source, layer: OrderRow, s: NonNullable<Order['stack']>):
   return { key: `${src.key}/${s.url}`, source: src.key, order, reason: '', state: '', needsYou: false, inView: false, launchable: false, stackRow: true };
 }
 
+function chainRow(src: Source, chain: NonNullable<Order['chain']>, shown: number, layer: OrderRow): OrderRow {
+  const order: Order = { id: chain.id, title: `${shown} chained PRs`, url: '', repo: repoName(layer.order) };
+  return { key: `${src.key}/chain:${chain.id}`, source: src.key, order, reason: '', state: '', needsYou: false, inView: false, launchable: false, chainRow: true };
+}
+
 const withNote = (r: OrderRow): OrderRow => (parentNote(r.order) ? { ...r, reason: join(parentNote(r.order), r.reason) } : r);
 
 /** A view tab's rows with children placed under their parent's row and PRs under their GitHub stack's row; For you stays flat. */
@@ -265,9 +273,27 @@ export function viewGroups(sources: Source[], id: string, now: number, ships: Sh
   const shownParents = new Set(shown.filter(isChild).map((r) => r.order.parent!.id));
   const groups = new Map<string, ViewGroup>();
   const out: ViewGroup[] = [];
+  // The route links only a run of layers from the bottom up, so a filter that hides a middle layer leaves the layers above it as ordinary PRs.
+  const chainPositions = new Map<string, Set<number>>();
+  for (const r of shown) if (r.order.pr && !r.order.stack && r.order.chain) chainPositions.set(r.order.chain.id, (chainPositions.get(r.order.chain.id) ?? new Set()).add(r.order.chain.position));
+  const chainRun = new Map<string, number>();
+  for (const [cid, positions] of chainPositions) {
+    let k = 0;
+    while (positions.has(k + 1)) k++;
+    if (k >= 2) chainRun.set(cid, k);
+  }
   for (const r of shown) {
     const stack = stackOf(r);
-    if (stack) {
+    const chain = r.order.pr && !stack && r.order.chain && r.order.chain.position <= (chainRun.get(r.order.chain.id) ?? 0) ? r.order.chain : undefined;
+    if (chain) {
+      let g = groups.get(`chain:${chain.id}`);
+      if (!g) {
+        g = { row: chainRow(hit.src, chain, chainRun.get(chain.id)!, r), children: [], high: false, ships: 0 };
+        groups.set(`chain:${chain.id}`, g);
+        out.push(g);
+      }
+      g.children.push({ ...r, reason: join(parentNote(r.order), r.reason) });
+    } else if (stack) {
       if (r.order.pr!.state === 'MERGED') continue;
       let g = groups.get(stack.url);
       if (!g) {
@@ -290,6 +316,7 @@ export function viewGroups(sources: Source[], id: string, now: number, ships: Sh
   }
   for (const g of groups.values()) {
     if (g.row.stackRow) g.children.sort((a, b) => stackOf(a)!.position - stackOf(b)!.position);
+    if (g.row.chainRow) g.children.sort((a, b) => a.order.chain!.position - b.order.chain!.position);
     g.high = g.children.some((c) => !!c.order.hot);
     if (g.row.stackRow) {
       const bottom = g.children.find((c) => open(c.order));
@@ -498,4 +525,14 @@ export function newCampaignRefs(search: string): string[] {
       if (short) return [`https://github.com/${short[1]}/issues/${short[2]}`];
       return /^https:\/\/[^/\s?#]+\/[^/\s?#]+\/[^/\s?#]+\/issues\/\d+$/.test(s) ? [s] : [];
     });
+}
+
+/** The not-stacked line a chain group's header shows, in the PR tab's stack bar words, or null for any other row. */
+export function chainGroupLine(g: ViewGroup): { lead: string; rest: string } | null {
+  return g.row.chainRow ? stackBarLine({ shape: 'chained', prs: g.children.map((c) => c.order.url ?? '') }) : null;
+}
+
+/** Whether a chain group's header offers Stack on GitHub: only a chain every shown PR of which is the viewer's. */
+export function chainGroupCanStack(g: ViewGroup): boolean {
+  return !!g.row.chainRow && g.children.length >= 2 && g.children.every((c) => c.order.chain?.mine === true);
 }

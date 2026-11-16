@@ -14,6 +14,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/github"
+	"github.com/jbuffin/admiral/internal/moor"
 )
 
 // The GitHub source runs inside Admiral, so it has no plugin folder.
@@ -245,6 +246,9 @@ func (g *githubConn) initialize(params any) (json.RawMessage, error) {
 	_ = json.Unmarshal(b, &p)
 	s := githubSettings(p.Settings)
 	g.mu.Lock()
+	if g.settings.Account != s.Account || g.settings.Host != s.Host {
+		g.viewer = "" // the stack route must not check authorship against the old account's login
+	}
 	g.settings = s
 	g.client = github.NewClient(s.Host, s.Account, s.HotLabels, g.env)
 	for _, v := range s.SearchViews() {
@@ -346,6 +350,7 @@ func (g *githubConn) refresh() {
 			viewer = login
 		}
 		orders := []map[string]any{}
+		byURL := map[string]map[string]any{}
 		for _, it := range items {
 			if router.Route(client.Host(), it.Repo) != g.fleet {
 				continue
@@ -376,7 +381,9 @@ func (g *githubConn) refresh() {
 				}
 			}
 			orders = append(orders, order)
+			byURL[it.URL] = order
 		}
+		addChains(items, byURL, login)
 		changed = g.store(v.ID, orders, "") || changed
 	}
 	if len(views) == 0 { // no search to carry the login
@@ -551,4 +558,27 @@ func (g *githubConn) Viewer() string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.viewer
+}
+
+// addChains gives the view's pull requests that chain by branch a "chain" field; mine is true when every PR in the
+// chain is by login, the account this view's search ran as.
+func addChains(items []github.Item, orders map[string]map[string]any, login string) {
+	var prs []moor.ChainPR
+	authors := map[string]string{}
+	for _, it := range items {
+		if it.PR == nil || it.Head == "" || orders[it.URL] == nil {
+			continue
+		}
+		prs = append(prs, moor.ChainPR{URL: it.URL, State: it.PR.State, Head: it.Head, Base: it.Base, DefaultBranch: it.DefaultBranch, Stacked: it.Stack != nil})
+		authors[it.URL] = it.Author
+	}
+	for _, chain := range moor.Chains(prs) {
+		mine := login != ""
+		for _, p := range chain {
+			mine = mine && strings.EqualFold(authors[p.URL], login)
+		}
+		for i, p := range chain {
+			orders[p.URL]["chain"] = map[string]any{"id": chain[0].URL, "position": i + 1, "size": len(chain), "head": p.Head, "base": p.Base, "mine": mine}
+		}
+	}
 }

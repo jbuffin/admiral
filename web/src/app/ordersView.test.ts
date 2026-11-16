@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Order, OrderView, Ship, Source } from './api';
 import type { RowAction } from './moored';
+import { stackBarLine } from './prTab';
 import { selectedRow, withSelectedOrder } from './orderDetail';
 import { parseExpanded } from './expandedParents';
-import { boxState, checkedUrls, filterRows, forYou, groupRowActions, headerTime, isIssueTab, issuesLabel, keepChecked, launchRef, newCampaignRefs, newCampaignSearch, orderRef, parentNote, refreshedLine, refreshTarget, repoName, repoOptions, selectableRows, selectAfterChoose, selection, stackLaunchLines, tabs, viewGroups, viewRows, withoutParentNote } from './ordersView';
+import { boxState, chainGroupCanStack, chainGroupLine, checkedUrls, filterRows, forYou, groupRowActions, headerTime, isIssueTab, issuesLabel, keepChecked, launchRef, newCampaignRefs, newCampaignSearch, orderRef, parentNote, refreshedLine, refreshTarget, repoName, repoOptions, selectableRows, selectAfterChoose, selection, stackLaunchLines, tabs, viewGroups, viewRows, withoutParentNote } from './ordersView';
 import type { OrderRow, SelectState } from './ordersView';
 
 const NOW = Date.parse('2026-11-14T12:00:00Z');
@@ -1271,5 +1272,75 @@ describe('Select on an issue tab', () => {
       const reloaded = new URL(`http://x/app/orders${newCampaignSearch('?order=k', urls)}`).search;
       expect(refs(reloaded)).toEqual(urls);
     });
+  });
+});
+
+describe('chain groups in a view tab', () => {
+  const B = 'https://github.com/acme/api/pull/41';
+  const link = (n: number, position: number, mine = true, size = 3, over: Partial<Order> = {}): Order =>
+    order(`acme/api#${n}`, { pr: pr(), author: 'fake-viewer', chain: { id: B, position, size, head: `b${n}`, base: n === 41 ? 'main' : `b${n - 1}`, mine }, ...over });
+  const loose = (n: number): Order => order(`acme/api#${n}`, { pr: pr() });
+  const mine = [link(41, 1), link(42, 2), link(43, 3)];
+  const myPRs = (orders: Order[]) => [gh([view('my-prs', 'My PRs', orders)])];
+  const groups = (orders: Order[], ships: Ship[] = [], f = {}) => viewGroups(myPRs(orders), 'gh/my-prs', NOW, ships, f);
+  const shape = (g: ReturnType<typeof groups>) => g.map((x) => [x.row.order.id, ...x.children.map((c) => c.order.id)]);
+
+  it('puts chained PRs under one group row, bottom first whatever order the answer gives', () => {
+    const g = groups([link(43, 3), link(41, 1), link(42, 2), loose(50)]);
+    expect(g.map((x) => x.children.map((c) => c.order.id))).toEqual([['acme/api#41', 'acme/api#42', 'acme/api#43'], []]);
+    expect(g[0].row.chainRow).toBe(true);
+    expect(g[0].row.stackRow).toBeFalsy();
+    expect(g[1].row.order.id).toBe('acme/api#50');
+  });
+
+  it('keeps two chains apart by their id', () => {
+    const other = (n: number, position: number) => link(n, position, true, 2, { chain: { id: 'https://github.com/acme/api/pull/61', position, size: 2, head: `c${n}`, base: 'main', mine: true } });
+    expect(groups([...mine, other(61, 1), other(62, 2)]).map((x) => x.children.length)).toEqual([3, 2]);
+  });
+
+  it('says in the stack bar words that the PRs are not a GitHub stack', () => {
+    const [g] = groups(mine);
+    expect(chainGroupLine(g)).toEqual(stackBarLine({ shape: 'chained', prs: g.children.map((c) => c.order.url!) }));
+  });
+
+  it('counts the PRs it shows, so a filter that hides one changes the line', () => {
+    const named = mine.map((o, i) => ({ ...o, title: i === 2 ? 'other thing' : `fix ${i}` }));
+    const [g] = groups(named, [], { query: 'fix' });
+    expect(g.children).toHaveLength(2);
+    expect(chainGroupLine(g)).toEqual(stackBarLine({ shape: 'chained', prs: g.children.map((c) => c.order.url!) }));
+  });
+
+  it('shows the layers above a hidden middle layer as ordinary PRs, since only a run from the bottom can be linked', () => {
+    const named = mine.map((o, i) => ({ ...o, title: i === 1 ? 'other thing' : `fix ${i}` }));
+    const g = groups(named, [], { query: 'fix' });
+    expect(g.map((x) => x.row.chainRow)).toEqual([undefined, undefined]);
+    expect(g.map((x) => x.row.order.id)).toEqual(['acme/api#41', 'acme/api#43']);
+  });
+
+  it('offers Stack on GitHub only when every PR in the chain is the viewer\'s', () => {
+    expect(chainGroupCanStack(groups(mine)[0])).toBe(true);
+    const theirs = [link(41, 1, false), link(42, 2, false), link(43, 3, false)];
+    const [g] = groups(theirs);
+    expect(g.row.chainRow).toBe(true);
+    expect(chainGroupLine(g)).not.toBeNull();
+    expect(chainGroupCanStack(g)).toBe(false);
+  });
+
+  it('launches each layer as a single PR and never launches the group row', () => {
+    const [g] = groups(mine);
+    expect(g.row.launchable).toBe(false);
+    expect(launchRef(g.children[1])).toEqual({ source: 'gh', id: 'acme/api#42', title: 'Title of acme/api#42', text: 'Title of acme/api#42' });
+    expect(shape([g])[0].slice(1)).toEqual(['acme/api#41', 'acme/api#42', 'acme/api#43']);
+  });
+
+  it('does not count the group row as a ship carrier, only the layers', () => {
+    const [g] = groups(mine, [{ session: 's1', name: 'otter', status: 'moored', url: 'https://github.com/acme/api/pull/42' } as Ship]);
+    expect(g.ships).toBe(1);
+  });
+
+  it('leaves For you flat', () => {
+    const rows = forYou([gh([view('my-prs', 'My PRs', mine.map((o) => ({ ...o, pr: pr({ conflicts: true }) })))])], NOW).needsYou;
+    expect(rows.map((r) => r.order.id)).toEqual(['acme/api#41', 'acme/api#42', 'acme/api#43']);
+    expect(rows.some((r) => r.chainRow)).toBe(false);
   });
 });

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fakeGhTrees, issueNode } from './campaign';
 import { proveJudge } from './crew';
 import type { Admiral } from './fixtures';
-import { addGitHubSource, launchShip, orderPane, seedFleets, stackAnswer } from './shell';
+import { addGitHubSource, holds, launchShip, orderPane, seedFleets, stackAnswer, stackLinkCalls } from './shell';
 
 const H = 3600_000;
 const D = 24 * H;
@@ -21,6 +21,8 @@ export interface Item {
   body?: string;
   parent?: { number: number; title: string; repo?: string };
   stack?: { number: number; position: number; size: number };
+  /** A chained PR's branches; the node also carries the repository's default branch. */
+  branches?: { head: string; base: string };
 }
 
 // What the fake gh answers for each default view. The docs sweep and the rate limiter are in two views: For you shows each once.
@@ -44,6 +46,11 @@ const POOL: Item[] = [
   { number: 43, title: 'Trim the build cache', repo: 'acme/widgets', author: 'bob', parent: POOL_PARENT },
 ];
 const POOL_VIEW = { title: 'Open issues', query: 'is:open is:issue label:pool' };
+// A view of PRs that chain by branch without being stacked: three of the viewer's, and two by someone else.
+const CHAINS_VIEW = { title: 'Chained PRs', query: 'is:open is:pr label:chains' };
+const chained = (number: number, title: string, author: string, head: string, base: string): Item => ({ number, title, author, branches: { head, base }, pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' } });
+const OWN_CHAIN = [chained(63, 'Show the ledger', 'fake-viewer', 'ledger-ui', 'ledger-api'), chained(61, 'Store the ledger', 'fake-viewer', 'ledger-db', 'main'), chained(62, 'Serve the ledger', 'fake-viewer', 'ledger-api', 'ledger-db')];
+const THEIR_CHAIN = [chained(72, 'Report the audit', 'bob', 'audit-report', 'audit-log'), chained(71, 'Log the audit', 'bob', 'audit-log', 'main')];
 const NEW_PARENT = { number: 50, title: 'Pool: sensor and retry work' };
 const REST_IDS: Record<number, number> = { 41: 9041, 42: 9042 };
 const REVIEW: Item[] = [
@@ -89,6 +96,11 @@ function node(i: Item) {
     const repo = i.parent.repo ?? 'acme/api';
     n.parent = { number: i.parent.number, title: i.parent.title, url: `https://github.com/${repo}/issues/${i.parent.number}`, repository: { nameWithOwner: repo, url: `https://github.com/${repo}` } };
   }
+  if (i.branches) {
+    n.headRefName = i.branches.head;
+    n.baseRefName = i.branches.base;
+    (n.repository as Record<string, unknown>).defaultBranchRef = { name: 'main' };
+  }
   if (i.stack) {
     n.stack = { number: i.stack.number, size: i.stack.size };
     n.stackEntry = { position: i.stack.position };
@@ -109,7 +121,7 @@ export function seedOrders(a: Admiral) {
   const path = join(a.home, 'config.json');
   const config = JSON.parse(readFileSync(path, 'utf8'));
   config.fleets.zulu.owners = ['acme'];
-  config.sources.gh.settings.views = [POOL_VIEW];
+  config.sources.gh.settings.views = [POOL_VIEW, CHAINS_VIEW];
   a.writeConfig(config);
   const dir = join(a.fakeGh().dir, 'search');
   mkdirSync(dir, { recursive: true });
@@ -123,8 +135,19 @@ export function seedOrders(a: Admiral) {
   canned('b-review', 'review-requested:@me', REVIEW);
   canned('c-mine', 'author:@me', MINE);
   canned('p-pool', 'label:pool', POOL);
+  canned('q-chains', 'label:chains', [...OWN_CHAIN, ...THEIR_CHAIN]);
+  for (const i of [...OWN_CHAIN, ...THEIR_CHAIN]) chainDetail(a, i);
   canned('z-rest', 'is:open', []);
   seedCampaignCreate(a);
+}
+
+/** What `gh stack link` and the stack route read for one chained PR: its branches and author, in no stack yet. */
+function chainDetail(a: Admiral, i: Item) {
+  const url = `https://github.com/acme/api/pull/${i.number}`;
+  const detail = { number: i.number, url, title: i.title, body: '', state: 'OPEN', isDraft: false, author: { login: i.author }, headRefName: i.branches!.head, baseRefName: i.branches!.base, baseRepository: { defaultBranchRef: { name: 'main' } }, statusCheckRollup: null, commits: { nodes: [] }, reviews: { nodes: [] }, reviewRequests: { nodes: [] }, reviewThreads: { nodes: [] }, comments: { nodes: [] }, stack: null };
+  const dir = join(a.fakeGh().dir, 'pr_detail');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, url.replace(/[/:]/g, '_')), JSON.stringify(detail) + '\n');
 }
 
 /** The fake gh's REST answers for creating a campaign: each child's id, the new parent, the link call, and the new parent's tree for following it. */
@@ -206,7 +229,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(page.getByRole('heading', { name: 'Orders', exact: true })).toBeVisible();
 
   // For you is first and selected; each view has a tab with its count of distinct orders.
-  await expect(page.getByRole('tab')).toHaveText([/^For you\s*11$/, /^Assigned to me\s*4$/, /^Review requested\s*5$/, /^My PRs\s*4$/, /^Open issues\s*3$/, /^Orders: Orders\s*7$/]);
+  await expect(page.getByRole('tab')).toHaveText([/^For you\s*11$/, /^Assigned to me\s*4$/, /^Review requested\s*5$/, /^My PRs\s*4$/, /^Open issues\s*3$/, /^Chained PRs\s*5$/, /^Orders: Orders\s*7$/]);
   await expect(tabNamed(page, /^For you/)).toHaveAttribute('aria-selected', 'true');
 
   // The groups, each order once, though two sit in two views.
@@ -694,6 +717,57 @@ async function makeCampaignJourney(page: Page, a: Admiral, press: (l: Locator) =
 
   // The callers go on from the Orders screen.
   await page.goto(a.url + 'app/orders?fleet=zulu');
+  await chainedGroups(page, a, press);
+}
+
+// Keyed on the not-stacked mark, which is on the group row collapsed or expanded.
+const NOT_STACKED = /Not a GitHub stack/;
+const chainGroupRows = (page: Page) => page.getByRole('main').getByRole('listitem').filter({ hasText: NOT_STACKED });
+const stackButton = (l: Locator) => l.getByRole('button', { name: 'Stack on GitHub', exact: true });
+
+/**
+ * PRs that chain by branch group under a row that says they are not a GitHub stack. The viewer's own chain offers Stack on GitHub,
+ * which runs one `gh stack link` bottom to top and then shows as Stack #N; someone else's chain shows the mark and offers nothing.
+ */
+async function chainedGroups(page: Page, a: Admiral, press: (l: Locator) => Promise<void>) {
+  const main = page.getByRole('main');
+  await press(tabNamed(page, /^Chained PRs/));
+  await expect(tabNamed(page, /^Chained PRs/)).toHaveAttribute('aria-selected', 'true');
+  const rows = chainGroupRows(page);
+  const own = rows.filter({ has: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) });
+  const theirs = rows.filter({ hasNot: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) });
+  await expect(rows).toHaveCount(2);
+  await expect(own).toHaveCount(1);
+  await expect(theirs).toHaveCount(1);
+  await expect(stackButton(main)).toHaveCount(1);
+  await holds(() => stackLinkCalls(a).length === 0, 'a view of chained PRs links nothing');
+
+  // The layers sit under the group bottom first, each launching as a single PR.
+  const own3 = ['Store the ledger', 'Serve the ledger', 'Show the ledger'];
+  await press(own.getByRole('button', { name: /^Expand/ }));
+  const launches = main.getByRole('button', { name: /^Launch .* the ledger$/ });
+  await expect(launches).toHaveCount(3);
+  expect(await launches.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual(own3.map((t) => `Launch ${t}`));
+  await expect(main.getByRole('button', { name: 'Launch Store the ledger' })).toBeVisible();
+
+  // The sheet lists the PRs bottom first; Cancel links nothing; confirming runs the one link and the group comes back as Stack #N.
+  await press(stackButton(own));
+  const sheet = page.getByRole('dialog', { name: 'Stack on GitHub' });
+  await expect(sheet.getByRole('listitem')).toHaveText([/#61\s+ledger-db\s+→\s+main/, /#62\s+ledger-api\s+→\s+ledger-db/, /#63\s+ledger-ui\s+→\s+ledger-api/]);
+  await press(sheet.getByRole('button', { name: 'Cancel', exact: true }));
+  await expect(sheet).toHaveCount(0);
+  await holds(() => stackLinkCalls(a).length === 0, 'Cancel links nothing');
+
+  writeFileSync(join(a.fakeGh().dir, 'stack_link.number'), '5\n');
+  await press(stackButton(own));
+  await press(stackButton(sheet));
+  await expect.poll(() => stackLinkCalls(a)).toEqual([['stack', 'link', '--base', 'main', '61', '62', '63']]);
+  await expect(sheet).toHaveCount(0);
+  // The group was expanded, so the Stack #N row comes back expanded.
+  await expect(main.getByRole('button', { name: 'Collapse Stack #5' })).toHaveCount(1);
+  await expect(stackButton(main)).toHaveCount(0);
+  await expect(chainGroupRows(page)).toHaveCount(1);
+  expect(stackLinkCalls(a), 'one link, not one per tap or refresh').toHaveLength(1);
 }
 
 /** On the phone, More lists the surfaces the bar has no tab for, and not Orders. */

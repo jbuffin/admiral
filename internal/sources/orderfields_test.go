@@ -458,3 +458,17 @@ func TestGitHubViewKeepsItsOrdersAndTimeAcrossARestartUntilTheNewSearchAnswers(t
 		t.Errorf("after the new search orders = %v, want order 14", o)
 	}
 }
+
+func TestAPluginsOrdersNeverCarryAChain(t *testing.T) {
+	r := &runner{key: "k", notify: func() {}, panels: []Panel{{ID: "p", Title: "P", Orders: []Order{}}}}
+	chain := obj{"id": "https://github.com/a/b/pull/1", "position": 1, "size": 2, "head": "h", "base": "main", "mine": true}
+	raw, err := json.Marshal([]obj{{"id": "a", "title": "A", "pr": obj{"state": "OPEN"}, "chain": chain}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.pullOrders(t.Context(), &pullConn{res: raw}, "p")
+	r.mu.Lock()
+	got := asJSON(t, r.panels[0].Orders[0])
+	r.mu.Unlock()
+	absent(t, got, "a plugin's PR", "chain")
+}

@@ -38,16 +38,21 @@ func ReadShape(ctx context.Context, gh GitHub, prs []string) (Shape, error) {
 		}
 		details[i] = d
 	}
+	return ShapeOf(prs, details), nil
+}
+
+// ShapeOf says how prs relate given each one's detail, read fresh by the caller; details[i] is prs[i]'s.
+func ShapeOf(prs []string, details []Detail) Shape {
 	mixed := Shape{Kind: ShapeMixed}
 	if s, ok := stackedShape(prs, details); ok {
-		return s, nil
+		return s
 	}
 	anyStack := false
 	for _, d := range details {
 		anyStack = anyStack || d.Stack != nil
 	}
 	if anyStack {
-		return mixed, nil
+		return mixed
 	}
 
 	independent := true
@@ -55,31 +60,25 @@ func ReadShape(ctx context.Context, gh GitHub, prs []string) (Shape, error) {
 		independent = independent && d.Base == d.DefaultBranch
 	}
 	if independent {
-		return Shape{Kind: ShapeIndependent, PRs: slices.Clone(prs)}, nil
+		return Shape{Kind: ShapeIndependent, PRs: slices.Clone(prs)}
 	}
 	if !oneRepo(prs) {
-		return mixed, nil // branch names chain nothing across repositories
+		return mixed // branch names chain nothing across repositories
 	}
 
-	// A chain: the bottom is on the default branch and each next PR is based on the head of the one below.
-	byBase := map[string]int{}
+	chain := make([]ChainPR, len(details))
 	for i, d := range details {
-		if _, dup := byBase[d.Base]; dup {
-			return mixed, nil
-		}
-		byBase[d.Base] = i
+		chain[i] = ChainPR{URL: prs[i], Head: d.Head, Base: d.Base, DefaultBranch: d.DefaultBranch}
 	}
-	var ordered []string
-	base := details[0].DefaultBranch
-	for range details {
-		i, ok := byBase[base]
-		if !ok {
-			return mixed, nil
-		}
-		ordered = append(ordered, prs[i])
-		base = details[i].Head
+	order, ok := lineUp(chain)
+	if !ok {
+		return mixed
 	}
-	return Shape{Kind: ShapeChained, Base: details[0].DefaultBranch, PRs: ordered}, nil
+	ordered := make([]string, len(order))
+	for k, i := range order {
+		ordered[k] = prs[i]
+	}
+	return Shape{Kind: ShapeChained, Base: details[0].DefaultBranch, PRs: ordered}
 }
 
 // stackedShape is the shape when every PR sits in one GitHub stack whose entries are exactly the ship's PRs.

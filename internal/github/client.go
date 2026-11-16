@@ -43,9 +43,12 @@ const (
 // reviewRequests is the viewer's review requests on a pull request; the connection stays at 10 to keep the query's cost low.
 const reviewRequests = " timelineItems(last: 10, itemTypes: [REVIEW_REQUESTED_EVENT]) { nodes { __typename ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } } } } }"
 
+// prBranchFields are what chain detection reads: a pull request's branches and its repository's default branch.
+const prBranchFields = " headRefName baseRefName repository { defaultBranchRef { name } }"
+
 func searchQueryWith(issueExtra, prExtra string) string {
 	return fmt.Sprintf("query($q: String!) { viewer { login } search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { "+
-		"... on Issue { %s subIssuesSummary { total } parent { number title url repository { nameWithOwner url } }%s } ... on PullRequest { %s%s stack { number size } stackEntry { position }%s } } } }", MaxItems, itemFields, issueExtra, itemFields, prStateFields, prExtra)
+		"... on Issue { %s subIssuesSummary { total } parent { number title url repository { nameWithOwner url } }%s } ... on PullRequest { %s%s%s stack { number size } stackEntry { position }%s } } } }", MaxItems, itemFields, issueExtra, itemFields, prStateFields, prBranchFields, prExtra)
 }
 
 // unreachable lists what gh prints when the network, not GitHub, failed. It
@@ -74,6 +77,8 @@ type Item struct {
 	Parent *Parent
 	// Stack is a pull request's GitHub stack; nil for no stack, one the viewer can't read, and an issue.
 	Stack *Stack
+	// Head and Base are a pull request's branches and DefaultBranch its repository's; empty for an issue and when GitHub answered none.
+	Head, Base, DefaultBranch string
 	// PR is a pull request's state as the poll would serve it; nil for an issue.
 	PR *moor.PR
 	// OpenedAt is when it was opened, Excerpt its body as one short line.
@@ -350,10 +355,15 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 		Title      *string `json:"title"`
 		URL        *string `json:"url"`
 		Repository *struct {
-			NameWithOwner *string `json:"nameWithOwner"`
-			URL           *string `json:"url"`
+			NameWithOwner    *string `json:"nameWithOwner"`
+			URL              *string `json:"url"`
+			DefaultBranchRef *struct {
+				Name string `json:"name"`
+			} `json:"defaultBranchRef"`
 		} `json:"repository"`
-		Labels *struct {
+		HeadRefName *string `json:"headRefName"`
+		BaseRefName *string `json:"baseRefName"`
+		Labels      *struct {
 			Nodes *[]struct {
 				Name *string `json:"name"`
 			} `json:"nodes"`
@@ -440,6 +450,9 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 	if n.State != "" { // only the pull request fragment asks for state
 		pr := moor.View(it.URL, n.status(), true)
 		it.PR = &pr
+		if n.HeadRefName != nil && n.BaseRefName != nil && n.Repository.DefaultBranchRef != nil {
+			it.Head, it.Base, it.DefaultBranch = *n.HeadRefName, *n.BaseRefName, n.Repository.DefaultBranchRef.Name
+		}
 		it.FailingChecks = n.failingChecks()
 		it.ReviewedSincePush = n.reviewedSincePush()
 	}

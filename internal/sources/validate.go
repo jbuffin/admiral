@@ -37,6 +37,8 @@ type Order struct {
 	Parent *OrderParent `json:"parent,omitempty"`
 	// Stack is a pull request's GitHub stack; never set on an issue.
 	Stack *OrderStack `json:"stack,omitempty"`
+	// Chain is a pull request's place in a chain of PRs that link by branch and sit in no GitHub stack; never set on an issue.
+	Chain *OrderChain `json:"chain,omitempty"`
 	// Author is who opened it, OpenedAt when (RFC 3339) and Excerpt the start of its body as one line.
 	Author   string `json:"author,omitempty"`
 	OpenedAt string `json:"opened_at,omitempty"`
@@ -74,6 +76,17 @@ type OrderStack struct {
 	URL      string `json:"url"`
 	Position int    `json:"position"`
 	Size     int    `json:"size"`
+}
+
+// OrderChain is a pull request's place in a chain: Position counts from 1 at the bottom, ID is the bottom PR's URL,
+// Head and Base are this PR's own branches, and Mine says every PR in the chain is the viewer's.
+type OrderChain struct {
+	ID       string `json:"id"`
+	Position int    `json:"position"`
+	Size     int    `json:"size"`
+	Head     string `json:"head"`
+	Base     string `json:"base"`
+	Mine     bool   `json:"mine"`
 }
 
 type Panel struct {
@@ -195,6 +208,7 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		PR        json.RawMessage `json:"pr"`         // anything but a well-formed object is dropped
 		Parent    json.RawMessage `json:"parent"`     // a bad parent is dropped and the order kept
 		Stack     json.RawMessage `json:"stack"`      // a bad GitHub stack is dropped and the order kept
+		Chain     json.RawMessage `json:"chain"`      // so is a bad chain
 		// A field of the wrong type or that fails its check is dropped and the order kept.
 		Author            json.RawMessage `json:"author"`
 		OpenedAt          json.RawMessage `json:"opened_at"`
@@ -260,7 +274,9 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		if o.PR = parseOrderPR(it.PR); o.PR == nil {
 			o.Parent = parseOrderParent(it.Parent)
 		} else {
-			o.Stack = parseOrderStack(it.Stack)
+			if o.Stack = parseOrderStack(it.Stack); o.Stack == nil {
+				o.Chain = parseOrderChain(it.Chain)
+			}
 		}
 		if a, ok := rawString(it.Author); ok && !hasControl(a) && !hasInvisible(a) && utf8.RuneCountInString(a) <= maxAuthor && strings.TrimSpace(a) != "" {
 			o.Author = a
@@ -361,6 +377,31 @@ func parseOrderStack(raw json.RawMessage) *OrderStack {
 		return nil
 	}
 	return &OrderStack{Number: *in.Number, URL: u, Position: *in.Position, Size: *in.Size}
+}
+
+// parseOrderChain reads a chain object; one that isn't well-formed is dropped.
+func parseOrderChain(raw json.RawMessage) *OrderChain {
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil
+	}
+	var in struct {
+		ID       *string `json:"id"`
+		Position *int    `json:"position"`
+		Size     *int    `json:"size"`
+		Head     *string `json:"head"`
+		Base     *string `json:"base"`
+		Mine     *bool   `json:"mine"`
+	}
+	if json.Unmarshal(raw, &in) != nil || in.ID == nil || in.Position == nil || in.Size == nil || in.Head == nil || in.Base == nil || in.Mine == nil ||
+		*in.Size < 2 || *in.Position < 1 || *in.Position > *in.Size {
+		return nil
+	}
+	id := safeURL(*in.ID)
+	head, base := oneLine(*in.Head), oneLine(*in.Base)
+	if id == "" || head == "" || base == "" {
+		return nil
+	}
+	return &OrderChain{ID: id, Position: *in.Position, Size: *in.Size, Head: head, Base: base, Mine: *in.Mine}
 }
 
 // parseOrderPR reads a plugin's pr object; anything but a well-formed object is dropped, and a bad failing_check_count

@@ -360,6 +360,11 @@ export function linkStack(session: string): Promise<Result<StackShape>> {
   return call<StackShape>('POST', `/ships/${encodeURIComponent(session)}/stack`, undefined, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
+/** Links a source's chained PRs, bottom to top, into one GitHub stack and answers the shape it then reads. */
+export function linkSourceStack(source: string, prs: string[]): Promise<Result<StackShape>> {
+  return call<StackShape>('POST', `${src(source)}/stack`, { prs }, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
+}
+
 /** One PR a ship carries, read from GitHub: 404 when the ship doesn't carry it, 502 when GitHub fails. */
 export function fetchPRDetail(session: string, url: string): Promise<Result<PRDetail>> {
   return call<PRDetail>('GET', `/ships/${encodeURIComponent(session)}/pr?url=${encodeURIComponent(url)}`);
@@ -570,6 +575,8 @@ export interface Order {
   parent?: { id: string; title: string; url: string; repo?: string };
   /** A pull request's GitHub stack; `position` sorts layers ascending from the bottom and `size` is GitHub's own count. Never on an issue. */
   stack?: { number: number; url: string; position: number; size: number };
+  /** A pull request chained by branch to others in its view but not in a GitHub stack; `id` is the bottom PR's URL and `position` counts from 1 at the bottom. Never with `stack`. */
+  chain?: { id: string; position: number; size: number; head: string; base: string; mine: boolean };
   labels?: string[];
   hot?: boolean;
   author?: string;
