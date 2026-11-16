@@ -314,10 +314,14 @@ func TestCrewBridge(t *testing.T) {
 		// (every 500 ms) have read the new window: dial again until the new window's output arrives.
 		var nb *bridgeClient
 		for attempt := 1; nb == nil; attempt++ {
-			c, _ := w.dialCrew(t, ship.Session, "relay", 80, 24)
+			c := w.dialBridge(t, ship.Session+"/crew/relay")
+			c.send(map[string]any{"type": "join", "cols": 80, "rows": 24})
 			m := c.mark()
-			w.paneWriteID(fresh.pane, "RELAY-NEW-LIVE\r\n")
 			for end := time.Now().Add(time.Second); nb == nil && time.Now().Before(end); time.Sleep(15 * time.Millisecond) {
+				if len(c.texts(0, "join")) == 0 {
+					continue
+				}
+				w.paneWriteID(fresh.pane, "RELAY-NEW-LIVE\r\n")
 				if strings.Contains(c.output(m), "RELAY-NEW-LIVE") {
 					nb = c
 				}
