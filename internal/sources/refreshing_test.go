@@ -73,3 +73,18 @@ func TestGitHubSourceReportsRefreshingWhileACycleRuns(t *testing.T) {
 		t.Fatalf("after the cycle GET /api/sources refreshing = %v, want false", r)
 	}
 }
+
+func TestGitHubSourceStopsRefreshingWhenACycleFails(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	g.write("search/bugs.match", "label:bug")
+	g.write("search/bugs.json", "{}")
+	g.fail("bugs")
+	f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
+	f.startSources()
+
+	f.waitView("gha", "a failed pull that has ended", func(s SourceView) bool { return s.view("bugs").Error != "" && !s.Refreshing })
+	if r := refreshingOverHTTP(t, f, "gha"); r == nil || *r {
+		t.Fatalf("after a failed cycle GET /api/sources refreshing = %v, want false", r)
+	}
+}

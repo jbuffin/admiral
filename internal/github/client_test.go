@@ -148,8 +148,8 @@ func TestTokenErrors(t *testing.T) {
 		_ = dir
 		_, err := cl.Token(context.Background())
 		var si *SignInError
-		if err == nil || errors.As(err, &si) || err.Error() != "Couldn't reach github.com" {
-			t.Fatalf("err = %v, want plain \"Couldn't reach github.com\"", err)
+		if err == nil || errors.As(err, &si) || err.Error() != "GitHub took too long to answer" || IsUnreachable(err) {
+			t.Fatalf("err = %v, want plain \"GitHub took too long to answer\"", err)
 		}
 	})
 }
@@ -306,9 +306,15 @@ func TestSearchLimitsAreSeparateFromQuickCalls(t *testing.T) {
 	const slow = "is:open"
 	answer := map[string]string{"json": `{"data":{"search":{"nodes":[` + node("acme/widgets", 1) + `]}}}`}
 	run := map[string]func(*Client) error{
-		"Search":       func(c *Client) error { _, err := c.Search(context.Background(), "fake-token-work-2", slow); return err },
-		"SearchViewer": func(c *Client) error { _, _, err := c.SearchViewer(context.Background(), "fake-token-work-2", slow); return err },
-		"SearchActing": func(c *Client) error { _, _, err := c.SearchActing(context.Background(), "fake-token-work-2", slow, "review_request"); return err },
+		"Search": func(c *Client) error { _, err := c.Search(context.Background(), "fake-token-work-2", slow); return err },
+		"SearchViewer": func(c *Client) error {
+			_, _, err := c.SearchViewer(context.Background(), "fake-token-work-2", slow)
+			return err
+		},
+		"SearchActing": func(c *Client) error {
+			_, _, err := c.SearchActing(context.Background(), "fake-token-work-2", slow, "review_request")
+			return err
+		},
 	}
 	for name, call := range run {
 		t.Run(name+" slower than the quick limit but inside the search limit returns its items", func(t *testing.T) {

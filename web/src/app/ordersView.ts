@@ -352,6 +352,12 @@ export function refreshTarget(sources: Source[], id: string): string | undefined
   return src?.capabilities?.includes('refresh') ? src.key : undefined;
 }
 
+/** The Refresh control is a spinner while the tab's source refreshes, whoever asked, or while this page's own request is in flight. */
+export function refreshBusy(sources: Source[], tabId: string, posting: boolean): boolean {
+  const src = tabId === FOR_YOU ? sources.find(isGitHub) : find(sources, tabId)?.src;
+  return posting || !!src?.refreshing;
+}
+
 export function sourceName(sources: Source[], id: string): string {
   return (id === FOR_YOU ? sources.find(isGitHub) : find(sources, id)?.src)?.name ?? '';
 }

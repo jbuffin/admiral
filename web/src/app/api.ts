@@ -602,6 +602,8 @@ export interface Source {
   fleet: string;
   /** What the source can do, such as `refresh`. */
   capabilities?: string[];
+  /** True while the source pulls orders, asked for or on its timer; absent from an older server. */
+  refreshing?: boolean;
   /** The login the source's account has on its service; only the GitHub source serves it, so a plugin's layers count as not yours. */
   viewer?: string;
   views: OrderView[];

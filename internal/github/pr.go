@@ -27,7 +27,7 @@ func (c *Client) PRState(ctx context.Context, token, url string) (state string, 
 			return "", false, nil
 		}
 		if errors.Is(err, errTimeout) {
-			return "", false, c.unreachableErr()
+			return "", false, c.callFailed(err)
 		}
 		return "", false, fmt.Errorf("pull request lookup failed: %s", strings.TrimPrefix(msg, "gh: "))
 	}
@@ -362,7 +362,7 @@ func (c *Client) batchQuery(ctx context.Context, what, query string, aliases map
 	}
 	if json.Unmarshal([]byte(stdout), &body) != nil || body.Data == nil {
 		if errors.Is(err, errTimeout) || errors.Is(err, exec.ErrNotFound) {
-			return nil, nil, nil, c.unreachableErr()
+			return nil, nil, nil, c.callFailed(err)
 		}
 		msg := strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: ")
 		if msg == "" {

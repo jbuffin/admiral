@@ -52,6 +52,8 @@ type sourceState struct {
 	hasSchema bool
 	viewer    string
 	conn      *connState
+	// refreshing is a built-in GitHub source's cycle in flight; a plugin never sets it.
+	refreshing bool
 }
 
 func (r *runner) snapshot() sourceState {
@@ -60,6 +62,7 @@ func (r *runner) snapshot() sourceState {
 	st := sourceState{def: r.def, state: r.state, readOnly: r.readOnly, errMsg: r.errMsg, caps: slices.Clone(r.caps), hasSchema: r.schema != nil}
 	if g, ok := r.p.(*githubConn); ok {
 		st.viewer = g.Viewer()
+		st.refreshing = g.Refreshing()
 	}
 	if r.auth != nil {
 		a := *r.auth
@@ -92,6 +95,8 @@ type SourceView struct {
 	Auth         *Auth    `json:"auth"`
 	// Viewer is the signed-in GitHub login of a built-in GitHub source, omitted for a plugin and before its first answer.
 	Viewer string `json:"viewer,omitempty"`
+	// Refreshing is true while the source pulls orders, asked for or on its timer; always false for a plugin.
+	Refreshing bool `json:"refreshing"`
 	// Warnings are the router's notes for the source's fleet; [] when none.
 	Warnings []string `json:"warnings"`
 	Views    []Panel  `json:"views"`
@@ -125,7 +130,7 @@ func (s *Service) View() []SourceView {
 	out := []SourceView{}
 	for _, st := range s.Sup.snapshot() {
 		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Fleet: st.def.Fleet, Capabilities: st.caps, HasSchema: st.hasSchema,
-			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Viewer: st.viewer, Views: []Panel{}, Warnings: []string{}}
+			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Viewer: st.viewer, Refreshing: st.refreshing, Views: []Panel{}, Warnings: []string{}}
 		v.Warnings = append(v.Warnings, st.warnings...)
 		v.Connection = connectionOf(st)
 		if st.def.Plugin == builtinGitHub {

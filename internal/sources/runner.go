@@ -275,7 +275,8 @@ func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMe
 		carried := r.conn
 		r.mu.Unlock()
 		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf, emit: r.emitFrom(sid),
-			setWarnings: func(w []string) { r.setWarnings(sid, w) }, conn: carried, setConn: func(c connState) { r.setConn(sid, c) }}), nil
+			setWarnings: func(w []string) { r.setWarnings(sid, w) }, conn: carried, setConn: func(c connState) { r.setConn(sid, c) },
+			setRefreshing: r.notify}), nil
 	}
 	m, dir, err := LoadManifest(r.home, def.Plugin)
 	if err != nil {

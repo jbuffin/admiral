@@ -653,7 +653,7 @@ func TestTreeStopsDescendingAtTheDepthLimit(t *testing.T) {
 	}
 }
 
-func TestTreeTimeoutReadsAsUnreachable(t *testing.T) {
+func TestTreeTimeoutReadsAsSlow(t *testing.T) {
 	dir := t.TempDir()
 	gh := filepath.Join(dir, "gh")
 	if err := os.WriteFile(gh, []byte("#!/bin/sh\nexec sleep 5\n"), 0o755); err != nil {
@@ -663,7 +663,7 @@ func TestTreeTimeoutReadsAsUnreachable(t *testing.T) {
 	c.Gh = gh
 	c.Timeout = 300 * time.Millisecond
 	_, err := c.Tree(context.Background(), "fake-token-work-2", "acme", "campaign", 1)
-	if err == nil || !strings.Contains(err.Error(), "Couldn't reach github.com") {
-		t.Errorf("error = %v, want Couldn't reach github.com", err)
+	if err == nil || !strings.Contains(err.Error(), "GitHub took too long to answer") {
+		t.Errorf("error = %v, want GitHub took too long to answer", err)
 	}
 }
