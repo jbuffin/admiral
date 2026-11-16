@@ -158,10 +158,14 @@ func parseItem(b []byte, session, id string) (Item, error) {
 		if _, ok := it.CrewObject(); session != AdmiralSession || !ok {
 			return Item{}, errSkip
 		}
+	case KindMission:
+		if _, ok := it.MissionObject(); session != AdmiralSession || !ok {
+			return Item{}, errSkip
+		}
 	default:
 		return Item{}, errSkip
 	}
-	for _, k := range []string{KindQuestion, KindReview, KindFindings, KindNotice, KindWakeProposal, KindRoutineProposal, KindEventProposal, KindCrewNotes, KindCrewMember} { // only the kind's own object
+	for _, k := range []string{KindQuestion, KindReview, KindFindings, KindNotice, KindWakeProposal, KindRoutineProposal, KindEventProposal, KindCrewNotes, KindCrewMember, KindMission} { // only the kind's own object
 		if k != it.Kind {
 			delete(fields, k)
 		}
