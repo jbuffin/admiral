@@ -29,6 +29,9 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
   const id = campaignIdOf(page);
   await expect(main.getByRole('heading', { name: T.map })).toBeVisible();
+  // The title and the repo#number in the header both open the root issue on GitHub.
+  await expect(main.getByRole('heading', { name: T.map }).getByRole('link')).toHaveAttribute('href', issueUrl(MAP));
+  await expect(main.getByRole('link', { name: 'github.com/acme/widgets#20' })).toHaveAttribute('href', issueUrl(MAP));
   await expect(nav).toContainText(T.map);
   // Following launched nothing.
   expect(((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: unknown[] }).ships).toHaveLength(0);
