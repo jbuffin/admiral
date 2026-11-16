@@ -286,11 +286,60 @@ func TestSearchErrors(t *testing.T) {
 	})
 	t.Run("timeout", func(t *testing.T) {
 		hangingGH(t)
+		limitSearch(t, 300*time.Millisecond)
+		_, err := NewClient("github.com", "", nil, os.Environ()).Search(context.Background(), "fake-token-work-2", "is:open")
+		if err == nil || err.Error() != "GitHub took too long to answer" || IsUnreachable(err) {
+			t.Fatalf("err = %v, want \"GitHub took too long to answer\", not unreachable", err)
+		}
+	})
+}
+
+// limitSearch shortens the search limit for one test.
+func limitSearch(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := SearchTimeout
+	SearchTimeout = d
+	t.Cleanup(func() { SearchTimeout = old })
+}
+
+func TestSearchLimitsAreSeparateFromQuickCalls(t *testing.T) {
+	const slow = "is:open"
+	answer := map[string]string{"json": `{"data":{"search":{"nodes":[` + node("acme/widgets", 1) + `]}}}`}
+	run := map[string]func(*Client) error{
+		"Search":       func(c *Client) error { _, err := c.Search(context.Background(), "fake-token-work-2", slow); return err },
+		"SearchViewer": func(c *Client) error { _, _, err := c.SearchViewer(context.Background(), "fake-token-work-2", slow); return err },
+		"SearchActing": func(c *Client) error { _, _, err := c.SearchActing(context.Background(), "fake-token-work-2", slow, "review_request"); return err },
+	}
+	for name, call := range run {
+		t.Run(name+" slower than the quick limit but inside the search limit returns its items", func(t *testing.T) {
+			f := newFake(t)
+			f.answer(t, answer)
+			f.write(t, "search.sleep", "1")
+			limitSearch(t, 10*time.Second)
+			cl := NewClient("github.com", "", nil, f.env)
+			cl.Timeout = 300 * time.Millisecond
+			if err := call(cl); err != nil {
+				t.Fatalf("err = %v, want the items", err)
+			}
+		})
+		t.Run(name+" past the search limit says GitHub took too long", func(t *testing.T) {
+			f := newFake(t)
+			f.answer(t, answer)
+			f.write(t, "search.sleep", "5")
+			limitSearch(t, 300*time.Millisecond)
+			err := call(NewClient("github.com", "", nil, f.env))
+			if err == nil || err.Error() != "GitHub took too long to answer" || IsUnreachable(err) {
+				t.Fatalf("err = %v, want \"GitHub took too long to answer\", not unreachable", err)
+			}
+		})
+	}
+	t.Run("a quick call past its limit says the same", func(t *testing.T) {
+		hangingGH(t)
 		cl := NewClient("github.com", "", nil, os.Environ())
 		cl.Timeout = 300 * time.Millisecond
-		_, err := cl.Search(context.Background(), "fake-token-work-2", "is:open")
-		if err == nil || err.Error() != "Couldn't reach github.com" {
-			t.Fatalf("err = %v, want Couldn't reach github.com", err)
+		_, err := cl.Viewer(context.Background(), "fake-token-work-2")
+		if err == nil || err.Error() != "GitHub took too long to answer" || IsUnreachable(err) {
+			t.Fatalf("err = %v, want \"GitHub took too long to answer\", not unreachable", err)
 		}
 	})
 }
