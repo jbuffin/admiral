@@ -37,6 +37,8 @@ type Order struct {
 	Parent *OrderParent `json:"parent,omitempty"`
 	// Stack is a pull request's GitHub stack; never set on an issue.
 	Stack *OrderStack `json:"stack,omitempty"`
+	// Chain is a pull request's place in a chain of PRs that link by branch and sit in no GitHub stack; never set on an issue.
+	Chain *OrderChain `json:"chain,omitempty"`
 	// Author is who opened it, OpenedAt when (RFC 3339) and Excerpt the start of its body as one line.
 	Author   string `json:"author,omitempty"`
 	OpenedAt string `json:"opened_at,omitempty"`
@@ -74,6 +76,16 @@ type OrderStack struct {
 	URL      string `json:"url"`
 	Position int    `json:"position"`
 	Size     int    `json:"size"`
+}
+
+// OrderChain is a stub: the implementer fills and parses it.
+type OrderChain struct {
+	ID       string `json:"id"`
+	Position int    `json:"position"`
+	Size     int    `json:"size"`
+	Head     string `json:"head"`
+	Base     string `json:"base"`
+	Mine     bool   `json:"mine"`
 }
 
 type Panel struct {

@@ -24,6 +24,8 @@ export interface OrderRow {
   stackRow?: boolean;
   /** A stack row's launch lands on this layer's order: the bottom open shown layer. */
   stackLayer?: string;
+  /** A chain group's header row: not a GitHub stack, never launched or counted as one. */
+  chainRow?: boolean;
 }
 
 export interface ForYou {
@@ -498,4 +500,14 @@ export function newCampaignRefs(search: string): string[] {
       if (short) return [`https://github.com/${short[1]}/issues/${short[2]}`];
       return /^https:\/\/[^/\s?#]+\/[^/\s?#]+\/[^/\s?#]+\/issues\/\d+$/.test(s) ? [s] : [];
     });
+}
+
+/** Stub: the not-stacked line a chain group's header shows, or null for any other row. */
+export function chainGroupLine(_g: ViewGroup): { lead: string; rest: string } | null {
+  return null;
+}
+
+/** Stub: whether a chain group's header offers Stack on GitHub. */
+export function chainGroupCanStack(_g: ViewGroup): boolean {
+  return false;
 }

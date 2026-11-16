@@ -570,6 +570,8 @@ export interface Order {
   parent?: { id: string; title: string; url: string; repo?: string };
   /** A pull request's GitHub stack; `position` sorts layers ascending from the bottom and `size` is GitHub's own count. Never on an issue. */
   stack?: { number: number; url: string; position: number; size: number };
+  /** A pull request chained by branch to others in its view but not in a GitHub stack; `id` is the bottom PR's URL and `position` counts from 1 at the bottom. Never with `stack`. */
+  chain?: { id: string; position: number; size: number; head: string; base: string; mine: boolean };
   labels?: string[];
   hot?: boolean;
   author?: string;

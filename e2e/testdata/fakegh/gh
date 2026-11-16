@@ -88,7 +88,10 @@
 #     stack object, number first (the `stack merge` cue matches on it), then size
 #     and entries in argument order, each entry's position from 1 and its
 #     pullRequest holding number, url, headRefName, baseRefName and state as the
-#     fixture's own top-level fields give them, and exits 0. The stack's number is
+#     fixture's own top-level fields give them, and exits 0. It also rewrites
+#     every canned search/*.json: a node whose "url":"URL" is a listed PR gains
+#     "stack":{"number":N,"size":S} and "stackEntry":{"position":P}, so a
+#     refresh shows the stack. The stack's number is
 #     the content of $FAKEGH_DIR/stack_link.number, or 1 with no such file. With
 #     $FAKEGH_DIR/stack_link.fail it exits 1 and prints that file on stderr,
 #     linking nothing. With $FAKEGH_DIR/stack_link.sleep it sleeps that many
@@ -352,6 +355,16 @@ stack)
 		for n in $nums; do
 			f="$FAKEGH_DIR/pr_detail/$(printf '%s' "https://$GH_REPO/pull/$n" | tr '/:' '__')"
 			sed "s|\"stack\":null|\"stack\":$stack|" "$f" > "$call_dir/detail.tmp" && mv "$call_dir/detail.tmp" "$f"
+		done
+		# The canned searches show the link too: each listed PR's node gains its stack and position.
+		pos=0
+		for n in $nums; do
+			pos=$((pos + 1))
+			url="https://$GH_REPO/pull/$n"
+			for f in "$FAKEGH_DIR"/search/*.json; do
+				[ -e "$f" ] || continue
+				sed "s|\"url\":\"$url\"|\"url\":\"$url\",\"stack\":{\"number\":$number,\"size\":$#},\"stackEntry\":{\"position\":$pos}|g" "$f" > "$call_dir/search.tmp" && mv "$call_dir/search.tmp" "$f"
+			done
 		done
 		exit 0
 	fi
