@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -74,7 +76,8 @@ func binaryPath(t *testing.T) string {
 }
 
 // Parallel tests each pick a port and listen on it later, so a port is handed
-// out once per run.
+// out once per run, and from below every OS's ephemeral range (Linux starts at
+// 32768, macOS at 49152), where no :0 listener or outgoing connection can take it first.
 var (
 	portsMu sync.Mutex
 	ports   = map[string]bool{}
@@ -84,18 +87,25 @@ func freePort(t *testing.T) string {
 	t.Helper()
 	portsMu.Lock()
 	defer portsMu.Unlock()
-	for {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
+	for range 1000 {
+		port := strconv.Itoa(20000 + rand.IntN(12000))
+		if ports[port] || !canListen("0.0.0.0:"+port) || !canListen("127.0.0.1:"+port) {
+			continue
 		}
-		_, port, _ := net.SplitHostPort(l.Addr().String())
-		l.Close()
-		if !ports[port] {
-			ports[port] = true
-			return port
-		}
+		ports[port] = true
+		return port
 	}
+	t.Fatal("no free port in 20000-31999")
+	return ""
+}
+
+func canListen(addr string) bool {
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return false
+	}
+	l.Close()
+	return true
 }
 
 // hold is how long a test watches for something that must not happen: three
