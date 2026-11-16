@@ -11,8 +11,9 @@ import (
 // The startup line carries the plain LAN URL, a third line points at pairing, and no token is printed or written.
 func TestStartupLinesHaveNoToken(t *testing.T) {
 	t.Parallel()
-	home, port := newHome(t), freePort(t)
-	in := startAdmiral(t, home, "0.0.0.0:"+port)
+	home := newHome(t)
+	in := startAdmiral(t, home, "0.0.0.0:"+freePort(t))
+	port := in.Port
 	if in.LANIP != fakeLAN {
 		t.Fatalf("line 2 must offer %s: %q", fakeLAN, in.LANLine)
 	}
