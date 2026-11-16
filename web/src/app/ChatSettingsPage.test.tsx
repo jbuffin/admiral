@@ -120,7 +120,7 @@ test('a change sends only the chat object, Default effort drops the key, and a r
   expect(on(pick('Model', 'Haiku'))).toBe(true);
 });
 
-test('a harness not yet proven is listed greyed out with why, and a harness with no dock for Claude says why the chat is off', async () => {
+test('a harness not yet proven is listed greyed out with why and a way to check it again', async () => {
   render(<ChatSettingsPage fleet={stored} />);
   await screen.findByRole('heading', { name: 'What AdmiralBot knows' });
   expect(greyed(pick('Harness', 'Codex'))).toBe(true);
@@ -129,16 +129,12 @@ test('a harness not yet proven is listed greyed out with why, and a harness with
 });
 
 test('a fleet with no Claude Code dock lists the harnesses it has, greys the unproven one and says why its chat is off', () => {
-  view_off();
-});
-
-function view_off() {
   const off = { ...harbor, chat: chat({ on: false, off_reason: 'No Claude Code dock in this fleet.', harness: 'codex', harness_options: [{ ...codex, offered: true, reason: '' }, { ...claude, harness: 'copilot', offered: false, reason: 'Copilot is not proven', models: ['m'], efforts: [''] }] }) } as unknown as Fleet;
   render(<ChatSettingsPage fleet={off} />);
   expect(screen.getAllByText(/No Claude Code dock/i).length).toBeGreaterThan(0);
   expect(labels('Harness')).toEqual(['Codex', 'Copilot']);
   expect(greyed(pick('Harness', 'Copilot'))).toBe(true);
-}
+});
 
 test('instructions count live, are capped, save by themselves, and an unsaved draft survives Delete on a note and holds Move to instructions', async () => {
   render(<ChatSettingsPage fleet={stored} />);

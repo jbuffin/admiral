@@ -238,15 +238,16 @@ func awaitStart(ctx context.Context, rn *runner) {
 // githubSource finds a live GitHub source for a route, answering the refusal itself when there is none.
 func (s *Service) githubSource(ctx context.Context, w http.ResponseWriter, key string) (*runner, *githubConn, bool) {
 	def, ok := s.Config.Current().Source(key)
+	live := s.Sup.runner(key)
 	switch {
-	case !ok || s.Sup.runner(key) == nil:
+	case !ok || live == nil:
 		writeError(w, http.StatusNotFound, "source "+key+" not found")
 		return nil, nil, false
 	case def.Plugin != builtinGitHub:
 		writeError(w, http.StatusBadRequest, "source "+key+" is not a GitHub source")
 		return nil, nil, false
 	}
-	awaitStart(ctx, s.Sup.runner(key))
+	awaitStart(ctx, live)
 	rn, p, fail := s.mutableFor(key, "refresh")
 	if fail != nil {
 		writeError(w, fail.Status, fail.Msg)

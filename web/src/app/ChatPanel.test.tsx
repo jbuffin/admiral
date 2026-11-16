@@ -17,7 +17,16 @@ beforeEach(() => {
   );
   loc.value = { path: '/app/chat', search: '?fleet=alpha' };
 });
-afterEach(() => vi.unstubAllGlobals());
+const start = { loc: loc.value, fleets: fleets.value, items: inboxItems.value, ships: shipsLoaded.value, inbox: inboxLoaded.value };
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  loc.value = start.loc;
+  fleets.value = start.fleets;
+  inboxItems.value = start.items;
+  shipsLoaded.value = start.ships;
+  inboxLoaded.value = start.inbox;
+});
 
 test("a fleet whose chat is off shows the server's reason and a way to its settings, and has no Open terminal", () => {
   fleets.value = [fleet('alpha', 'Homeport', { on: false, off_reason: 'This fleet has no Claude Code dock, so AdmiralBot has nowhere to run.' })];

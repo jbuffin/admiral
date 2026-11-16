@@ -2,8 +2,15 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/pre
 import { afterEach, expect, test, vi } from 'vitest';
 import type { Fleet } from './api';
 import { CrewPage } from './CrewPage';
+import { loc } from './router';
 
-afterEach(() => vi.unstubAllGlobals());
+const start = { value: loc.value, url: location.href };
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  loc.value = start.value;
+  history.replaceState({}, '', start.url);
+});
 
 const fleet = { key: 'zulu', name: 'Zulu', docks: [{ harness: 'claude' }] } as unknown as Fleet;
 
@@ -119,7 +126,9 @@ test('Rename shows the server refusal in the sheet and keeps it open; Carry note
   const state = { members: [member('dory', 'Pick for small jobs.'), member('ada', 'Pick for parser work.')] };
   const calls = server(state, (c) => (c.body?.to === 'ada' ? new Response(JSON.stringify({ error: 'ada already exists' }), { status: 409 }) : undefined));
   page('dory');
-  fireEvent.click(await screen.findByRole('button', { name: 'Rename', exact: true } as never));
+  const open = await screen.findByRole('button', { name: 'Rename', exact: true } as never);
+  await whenIdle(open);
+  fireEvent.click(open);
   const sheet = await screen.findByRole('dialog', { name: /rename dory/i });
   const carry = within(sheet).getByRole('checkbox', { name: 'Carry notes' }) as HTMLInputElement;
   expect(carry.checked).toBe(false);
@@ -198,12 +207,12 @@ test('Add crew drafts from a description into a form and writes nothing until Sa
   const draft = { name: 'quartermaster', role: 'scribe', skills: ['tdd'], 'pick-me-when': 'Pick for stocking the galley.', instructions: 'Keep the ship stocked.' };
   const calls = server({ members: [member('ada', 'Pick for parser work.')] }, (c) => (c.path.endsWith('/draft') ? new Response(JSON.stringify({ draft, problems: [] })) : undefined));
   history.pushState({}, '', '/app/crew?add=1');
-  const { loc } = await import('./router');
   loc.value = { ...loc.value, path: '/app/crew', search: '?add=1' };
   page();
   const panel = await screen.findByRole('region', { name: 'Add crew' });
   const describe = within(panel).getByRole('textbox', { name: 'Describe the member' }) as HTMLTextAreaElement;
   fireEvent.input(describe, { target: { value: 'A quartermaster who keeps the ship stocked.' } });
+  await whenIdle(within(panel).getByRole('button', { name: 'Draft' }));
   fireEvent.click(within(panel).getByRole('button', { name: 'Draft' }));
   const form = await screen.findByRole('form', { name: 'New crew member' });
   expect((within(form).getByLabelText('Name') as HTMLInputElement).value).toBe('quartermaster');
@@ -220,7 +229,6 @@ test('a draft the resolver refuses shows its problem beside the field, and fixin
   const draft = { name: 'purser', role: 'accountant', 'based-on': 'nobody', skills: ['tdd'], 'pick-me-when': 'Pick for the accounts.', instructions: 'Keep the books.' };
   const problems = [{ field: 'based-on', message: 'based-on names no built-in role' }];
   const calls = server({ members: [member('ada', 'Pick for parser work.')] }, (c) => (c.path.endsWith('/draft') ? new Response(JSON.stringify({ draft, problems })) : c.path.endsWith('/members') ? new Response(JSON.stringify({ name: 'purser' })) : undefined));
-  const { loc } = await import('./router');
   loc.value = { ...loc.value, path: '/app/crew', search: '?add=1' };
   page();
   const panel = await screen.findByRole('region', { name: 'Add crew' });

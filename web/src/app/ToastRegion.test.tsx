@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/preact';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Ship } from './api';
 
 const h = vi.hoisted(() => ({ listener: null as null | ((m: { type: string; [k: string]: unknown }) => void), go: vi.fn(), chime: vi.fn() }));
@@ -29,6 +29,10 @@ beforeEach(() => {
   ships.value = [{ session: 's1', status: 'needs_you' } as Ship];
   // The queue is module-level, so every test uses its own tag and dismisses what it opened.
   n++;
+});
+
+afterEach(() => {
+  for (const b of screen.queryAllByRole('button', { name: 'Dismiss' })) fireEvent.click(b);
 });
 
 const arrive = async (over: Record<string, unknown> = {}) => {

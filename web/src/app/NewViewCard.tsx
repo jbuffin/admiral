@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { countSearch } from './api';
 import { Actions, Button } from './Button';
 import { countOutcome, type Count } from './githubViews';
@@ -88,7 +88,8 @@ export function NewViewCard({ sourceKey, error, onAdd, onCancel }: { sourceKey: 
   const [withoutOpen, setWithoutOpen] = useState(false);
   const first = useRef<HTMLButtonElement>(null);
   const saving = useRef(false);
-  useEffect(() => first.current?.focus(), []);
+  // Layout, not passive: a passive effect can land after the person has started typing in Name and pull focus off it.
+  useLayoutEffect(() => first.current?.focus(), []);
 
   const state = draft.state;
   const pr = state.show === 'pr';

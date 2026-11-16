@@ -480,6 +480,53 @@ func TestACountAskedWhileTheSourceRestartsAfterASaveWaitsAndIsAnswered(t *testin
 	}
 }
 
+// The restarted session is stood in for by a runner nobody runs, so it stays in Starting until the test says it is up.
+func TestARequestAfterASaveWaitsForTheNewSessionAndNeverReachesTheEndingOne(t *testing.T) {
+	f, g := liveGH(t, bugsView)
+	g.count("all", "q=", 4)
+	old := f.Svc.Sup.runner("gh")
+	rn := &runner{key: "gh", notify: func() {}, restartCh: make(chan struct{}, 1), caps: []string{"refresh"}}
+	rn.mu.Lock()
+	rn.p, rn.ready, rn.state = old.p, true, StateOK
+	rn.mu.Unlock()
+	f.Svc.Sup.mu.Lock()
+	f.Svc.Sup.runners["gh"] = rn
+	f.Svc.Sup.mu.Unlock()
+
+	rn.restart()
+
+	type answer struct {
+		code int
+		body string
+	}
+	counted := make(chan answer, 1)
+	go func() {
+		code, body := f.do(http.MethodPost, "/gh/search-count", map[string]any{"query": "is:open"})
+		counted <- answer{code, body}
+	}()
+	select {
+	case a := <-counted:
+		t.Fatalf("a count asked while the new session starts answered %d %s, want it held", a.code, a.body)
+	case <-time.After(200 * time.Millisecond):
+	}
+	// Add, edit and refresh are a person's own taps, so they are told to try again instead of held.
+	if code, body := f.do(http.MethodPost, "/gh/refresh", map[string]any{}); code != http.StatusConflict || !strings.Contains(body, "starting") {
+		t.Errorf("a refresh while the new session starts = %d %s, want 409 saying it is starting", code, body)
+	}
+
+	rn.mu.Lock()
+	rn.ready, rn.state = true, StateOK
+	rn.mu.Unlock()
+	select {
+	case a := <-counted:
+		if a.code != http.StatusOK || !strings.Contains(a.body, `"count":4`) {
+			t.Fatalf("the held count = %d %s, want 200 with the count", a.code, a.body)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the held count was never answered once the session was up")
+	}
+}
+
 func TestAGoodCountConnectsASignedOutSourceAndAnotherRefusalDoesNot(t *testing.T) {
 	g := newFakeGH(t)
 	g.count("all", "q=", 7)
