@@ -251,13 +251,16 @@ export function watchPage(page: Page, server: string) {
     // Moor's refusal is a 409; any other status on an ending stays an error.
     if (r.request().method() === 'POST' && /^\/api\/v1\/ships\/[^/]+\/(stop|return)$/.test(path) && r.status() === 409) refusedLaunches++;
   });
+  // WebKit logs a same-origin fetch cancelled by navigation as an access-control error, sometimes as a page error.
+  const cancelledFetch = (text: string) => /due to access control checks\.?$/.test(text) && text.includes(host);
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
-    // WebKit logs a same-origin fetch cancelled by navigation as an access-control error.
-    if (/due to access control checks\.?$/.test(m.text()) && m.text().includes(host)) return;
+    if (cancelledFetch(m.text())) return;
     (/^Failed to load resource: .* status of [45]\d\d/.test(m.text()) ? failedLoads : errors).push(m.text());
   });
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => {
+    if (!cancelledFetch(e.message)) errors.push(e.message);
+  });
   page.on('request', (r) => {
     const u = new URL(r.url());
     if (['data:', 'blob:', 'about:'].includes(u.protocol)) return;
@@ -2172,19 +2175,22 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await expect(picker.option('fable-codex')).toHaveCount(0);
   await picker.box.press('Escape');
   // A skill installed on both docks and not a favorite stays picked across the change.
+  // The label takes each dock's mark once its skills answer, so the next step types into a box that is settled.
   await picker.pick('fable-both');
   await form.getByRole('radio', { name: /codex/i }).check();
-  await expect(picker.box).toHaveValue(/fable-both/);
+  await expect(picker.box).toHaveValue('$fable-both');
   await form.getByRole('radio', { name: /claude/i }).check();
-  await expect(picker.box).toHaveValue(/fable-both/);
+  await expect(picker.box).toHaveValue('/fable-both');
   // A dock whose skills have not answered, or failed, can't launch the last dock's pick: Launch stays off and nothing is sent.
   await picker.pick('fable-claude');
   const skillsRead = '**/launch-orders/skills?*harness=codex*';
   let answer!: () => void;
   const answered = new Promise<void>((r) => (answer = r));
-  await page.route(skillsRead, async (route) => {
-    await answered;
-    await route.continue();
+  const continued: Promise<void>[] = [];
+  await page.route(skillsRead, (route) => {
+    const go = answered.then(() => route.continue());
+    continued.push(go);
+    return go;
   });
   const held = shipPosts;
   await form.getByRole('radio', { name: /codex/i }).check();
@@ -2192,6 +2198,8 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await picker.box.press('Enter');
   expect(shipPosts, 'a pick of the last dock sends nothing while the new dock has not answered').toBe(held);
   answer();
+  // An unroute that lands before the held request goes on releases it in WebKit, and the late continue throws.
+  await Promise.all(continued);
   await page.unroute(skillsRead);
   await expect(submit).toBeEnabled();
   await expect(picker.box).toHaveValue(/^(Commodore|Just launch)$/);

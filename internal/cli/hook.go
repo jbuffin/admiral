@@ -2,7 +2,9 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -374,7 +376,16 @@ func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
 	if source == "" {
 		source = "unknown"
 	}
-	return sessionhost.SetPaneCall(pane, sessionhost.TranscriptOption, strconv.FormatInt(now.UnixNano(), 10)+" "+source+" "+path)
+	stamp := strconv.FormatInt(now.UnixNano(), 10)
+	if source == "clear" {
+		// The size now is where the clear falls: by Admiral's next read the next message may be in the file.
+		if info, err := os.Stat(path); err == nil {
+			stamp += "," + strconv.FormatInt(info.Size(), 10)
+		} else if errors.Is(err, fs.ErrNotExist) {
+			stamp += ",0"
+		}
+	}
+	return sessionhost.SetPaneCall(pane, sessionhost.TranscriptOption, stamp+" "+source+" "+path)
 }
 
 var copilotSessionID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)

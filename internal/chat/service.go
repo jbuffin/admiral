@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -456,7 +457,7 @@ func (s *fleetChat) transcriptChangedLocked(raw string) {
 	st := &s.st
 	first := st.optRaw == ""
 	st.optRaw = raw
-	_, source, path, ok := parseTranscriptOption(raw)
+	stamp, source, path, ok := parseTranscriptOption(raw)
 	if !ok {
 		st.path, st.rd, st.unread, st.cleared = "", nil, false, false
 		return
@@ -467,8 +468,21 @@ func (s *fleetChat) transcriptChangedLocked(raw string) {
 		o.Harness = s.readHarnessLocked()
 		st.path, st.rd, st.unread, st.cleared = path, conversation.NewReader(o), false, false
 	case source == "clear" && !first:
-		s.clearLocked()
+		s.clearAtLocked(clearedAt(stamp))
 	}
+}
+
+// clearedAt is the transcript's size the hook measured at a clear ("<unix ns>,<bytes>"), or -1 when the stamp has none.
+func clearedAt(stamp string) int64 {
+	_, size, ok := strings.Cut(stamp, ",")
+	if !ok {
+		return -1
+	}
+	n, err := strconv.ParseInt(size, 10, 64)
+	if err != nil || n < 0 {
+		return -1
+	}
+	return n
 }
 
 func parseTranscriptOption(raw string) (stamp, source, path string, ok bool) {
@@ -934,7 +948,11 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 }
 
-func (s *fleetChat) clearLocked() {
+func (s *fleetChat) clearLocked() { s.clearAtLocked(-1) }
+
+// clearAtLocked skips what the transcript held at size at (the whole file when at is -1), never re-reading what was
+// already read.
+func (s *fleetChat) clearAtLocked(at int64) {
 	st := &s.st
 	if st.rd == nil {
 		return
@@ -951,6 +969,10 @@ func (s *fleetChat) clearLocked() {
 		return
 	}
 	f.Close()
-	st.rd.Clear(info.Size())
+	size := info.Size()
+	if at >= 0 && at < size {
+		size = max(at, st.rd.Offset())
+	}
+	st.rd.Clear(size)
 	st.cleared = false
 }

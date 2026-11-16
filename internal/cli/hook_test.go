@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -217,10 +219,21 @@ func TestTranscriptCall(t *testing.T) {
 		}
 		return transcriptCall("%1", event, p, now)
 	}
-	got := call("SessionStart", `{"transcript_path":"/h/.claude/projects/p/a.jsonl","source":"clear","cwd":"/x"}`)
-	want := []string{"set", "-p", "-t", "%1", sessionhost.TranscriptOption, "1700000000000000005 clear /h/.claude/projects/p/a.jsonl"}
+	got := call("SessionStart", `{"transcript_path":"/h/.claude/projects/p/a.jsonl","source":"startup","cwd":"/x"}`)
+	want := []string{"set", "-p", "-t", "%1", sessionhost.TranscriptOption, "1700000000000000005 startup /h/.claude/projects/p/a.jsonl"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("call = %q, want %q", got, want)
+	}
+	// A clear carries the transcript's size at the hook, 0 for one not written yet.
+	if got := call("SessionStart", `{"transcript_path":"/h/.claude/projects/p/a.jsonl","source":"clear"}`); got == nil || got[5] != "1700000000000000005,0 clear /h/.claude/projects/p/a.jsonl" {
+		t.Errorf("a clear of a missing transcript wrote %q, want the stamp ,0", got)
+	}
+	written := filepath.Join(t.TempDir(), "b.jsonl")
+	if err := os.WriteFile(written, []byte("{}\n{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := call("SessionStart", `{"transcript_path":"`+written+`","source":"clear"}`); got == nil || got[5] != "1700000000000000005,6 clear "+written {
+		t.Errorf("a clear of a 6-byte transcript wrote %q, want the stamp ,6", got)
 	}
 	if got := call("SessionStart", `{"transcript_path":"/p/a.jsonl","source":"a b"}`); got == nil || !strings.Contains(got[5], " unknown ") {
 		t.Errorf("a source that is not a safe token is stored as unknown, got %q", got)

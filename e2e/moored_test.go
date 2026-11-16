@@ -267,9 +267,8 @@ func TestMooredShipReturnsToPortWhenItsPRMerges(t *testing.T) {
 		_, ok := byName(l)[ship.Name]
 		return !ok
 	})
-	if exists(w.mooredFile(ship.Name)) {
-		t.Errorf("the record %s is still there, so the name is still reserved", w.mooredFile(ship.Name))
-	}
+	// The wake removes the record after its launch returns, and this ship can leave the list before that.
+	waitUntil(t, "the moored record removed, so the name is free again", func() bool { return !exists(w.mooredFile(ship.Name)) })
 	log := w.waitEvent(ship.Session, "unmoored", 1)
 	n := 0
 	for _, m := range log {

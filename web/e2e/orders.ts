@@ -499,6 +499,7 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await press(pill);
   await expect(page).toHaveURL(new RegExp(`/app/ships/${ship.session}`));
   await page.goto(a.url + 'app/orders?fleet=zulu');
+  await expect.poll(() => existsSync(join(a.home, 'rec', ship.session, 'recorded'))).toBe(true);
   writeFileSync(join(a.home, 'rec', ship.session, 'go'), '');
   await expect(docs.getByRole('button', { name: 'Launch Document the API', exact: true })).toBeVisible();
   await expect(docs.getByRole('button', { name: /Open ship$/ })).toHaveCount(0);
