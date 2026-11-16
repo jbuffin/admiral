@@ -22,9 +22,12 @@ import (
 	"github.com/jbuffin/admiral/internal/standing"
 )
 
+// clockSkew is how far ahead of the wall clock the routine scheduler runs; only the e2e build sets it.
+var clockSkew time.Duration
+
 type realClock struct{}
 
-func (realClock) Now() time.Time                         { return time.Now() }
+func (realClock) Now() time.Time                         { return time.Now().Add(clockSkew) }
 func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 // routineShips adapts the ship service to what the routines scheduler needs.
