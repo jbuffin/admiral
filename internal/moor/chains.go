@@ -39,8 +39,9 @@ func lineUp(prs []ChainPR) ([]int, bool) {
 }
 
 // Chains splits the open pull requests outside any GitHub stack into chains, each bottom to top and ordered by the
-// first appearance of its bottom PR in prs. A chain is two or more PRs of one repository that lineUp accepts; a fork
-// or a bottom off the default branch gives none.
+// first appearance of its bottom PR in prs. A chain starts at a PR on its repository's default branch and climbs
+// through the PRs based on the head below; where several are, it follows the strictly longest run and leaves the
+// rest out, and an even fork ends it. Two or more PRs make a chain; a bottom off the default branch gives none.
 func Chains(prs []ChainPR) [][]ChainPR {
 	var open []ChainPR
 	for _, p := range prs {
@@ -48,60 +49,54 @@ func Chains(prs []ChainPR) [][]ChainPR {
 			open = append(open, p)
 		}
 	}
-	// Union each PR with the one whose head is its base, within a repository.
-	parent := make([]int, len(open))
-	for i := range parent {
-		parent[i] = i
-	}
-	var find func(int) int
-	find = func(i int) int {
-		for parent[i] != i {
-			parent[i] = parent[parent[i]]
-			i = parent[i]
-		}
-		return i
-	}
+	above := make([][]int, len(open))
 	for i, p := range open {
 		for j, q := range open {
-			if i != j && p.Base == q.Head && sameRepo(p.URL, q.URL) {
-				parent[find(i)] = find(j)
+			if i != j && q.Base == p.Head && sameRepo(p.URL, q.URL) {
+				above[i] = append(above[i], j)
 			}
 		}
 	}
-	groups := map[int][]ChainPR{}
-	var roots []int
-	for i, p := range open {
-		r := find(i)
-		if _, seen := groups[r]; !seen {
-			roots = append(roots, r)
+	onPath := make([]bool, len(open))
+	var climb func(int) []int
+	climb = func(i int) []int {
+		onPath[i] = true
+		defer func() { onPath[i] = false }()
+		var best []int
+		tie := false
+		for _, j := range above[i] {
+			if onPath[j] {
+				continue
+			}
+			run := climb(j)
+			switch {
+			case len(run) > len(best):
+				best, tie = run, false
+			case len(run) == len(best):
+				tie = true
+			}
 		}
-		groups[r] = append(groups[r], p)
+		if tie {
+			best = nil
+		}
+		return append([]int{i}, best...)
 	}
-	type found struct {
-		bottom int
-		chain  []ChainPR
-	}
-	var all []found
-	for _, r := range roots {
-		g := groups[r]
-		if len(g) < 2 {
-			continue
-		}
-		order, ok := lineUp(g)
-		if !ok {
-			continue
-		}
-		chain := make([]ChainPR, len(order))
-		for k, i := range order {
-			chain[k] = g[i]
-		}
-		bottom := slices.IndexFunc(prs, func(p ChainPR) bool { return p.URL == chain[0].URL })
-		all = append(all, found{bottom, chain})
-	}
-	slices.SortFunc(all, func(a, b found) int { return a.bottom - b.bottom })
+	used := make([]bool, len(open))
 	var out [][]ChainPR
-	for _, f := range all {
-		out = append(out, f.chain)
+	for i, p := range open {
+		if p.Base != p.DefaultBranch {
+			continue
+		}
+		run := climb(i)
+		if len(run) < 2 || slices.ContainsFunc(run, func(k int) bool { return used[k] }) {
+			continue
+		}
+		chain := make([]ChainPR, len(run))
+		for k, j := range run {
+			chain[k] = open[j]
+			used[j] = true
+		}
+		out = append(out, chain)
 	}
 	return out
 }
