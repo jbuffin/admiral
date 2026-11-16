@@ -747,6 +747,9 @@ func (s *Scheduler) Accept(ctx context.Context, fleet, routineID, triggerID stri
 	if !r.Enabled {
 		return Trigger{}, ErrOff
 	}
+	if r.On != nil { // an event routine's proposal is accepted through LaunchProposed, which carries the event's link
+		return Trigger{}, ErrNotIssued
+	}
 	now := s.Clock.Now()
 	rec := Trigger{Routine: r.ID, Tier: "T0", At: now, Via: ViaProposal, Action: describe(r)}
 	if l := r.Do.Launch; l != nil {

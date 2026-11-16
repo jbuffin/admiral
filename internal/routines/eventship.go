@@ -99,7 +99,7 @@ func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, e
 		return fail(nothingToLaunch)
 	}
 	req := launcher.Request{
-		Fleet: fleet, Harness: l.Harness, Dir: l.Dir, Text: l.Text, Model: l.Model, Effort: l.Effort,
+		Fleet: fleet, Harness: l.Harness, Dir: l.Dir, Text: launcher.EventAsk(eventURL, l.Text), Model: l.Model, Effort: l.Effort,
 		Skill: skill, Resources: l.Resources, ExtraArgs: l.Args, Autopilot: true, Unattended: true,
 		RoutineKey: routineKey(r.ID), TriggerID: newID(), WorkerLaunched: true,
 		Template: l.Text, EventURL: eventURL, EventText: eventText(ev, en, sender),

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/campaigns"
 	"github.com/jbuffin/admiral/internal/github"
+	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 // EventProposalExpiry is how long an event proposal stays open.
@@ -68,12 +69,7 @@ func (s *Scheduler) LaunchProposed(ctx context.Context, fleet, routineID, trigge
 	}
 	spec := *l
 	link := s.eventURL(fleet, prop.Event)
-	if link != "" {
-		spec.Text = link
-		if text := strings.TrimSpace(l.Text); text != "" {
-			spec.Text = link + "\n\n" + text
-		}
-	}
+	spec.Text = launcher.EventAsk(link, l.Text)
 	rec := Trigger{Routine: r.ID, Tier: prop.Tier, At: now, Via: ViaProposal, ProposalOf: prop.ID, Event: prop.Event,
 		Sender: prop.Sender, DedupeKey: prop.DedupeKey, Action: describe(r)}
 	if err := s.launch(ctx, fleet, r, spec, rec, now, true, link); err != nil {

@@ -186,7 +186,10 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
   const groups = [...new Set(choices.map((c) => c.group))].map((g) => [g, choices.filter((c) => c.group === g)] as const);
   const [problem, setProblem] = useState(drafted);
   // A drafted problem goes with the first edit of the field it names.
-  const fixes = (field: RoutineField) => setProblem((p) => (p?.field === field ? undefined : p));
+  const fixes = (field: RoutineField) => {
+    setProblem((p) => (p?.field === field ? undefined : p));
+    setError((e) => (e && errorField(e) === field ? '' : e));
+  };
   const set = (patch: Partial<RoutineForm>) => {
     for (const [k, f] of [['name', 'name'], ['when', 'when'], ['before', 'before_acting'], ['mode', 'do'], ['prompt', 'do']] as const) if (k in patch) fixes(f);
     setForm((f) => ({ ...f, ...patch }));

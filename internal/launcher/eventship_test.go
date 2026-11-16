@@ -230,3 +230,18 @@ func TestAnEventShipWithAnEventURLWritesItAsTheShipsURLOption(t *testing.T) {
 		t.Errorf("url option = %q, want %q", got, eventPR)
 	}
 }
+
+func TestAnEventShipAskedOnlyForALinkIsTitledByIt(t *testing.T) {
+	p := newPinRig(t, nil)
+	req, fc := p.eventShip()
+	fc.t = t
+	req.Template, req.EventURL = "", eventPR
+	req.Text = EventAsk(req.EventURL, req.Template)
+	out, err := p.l.Launch(req)
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if got := out.Options["title"]; got != eventPR {
+		t.Errorf("title option = %q, want %q", got, eventPR)
+	}
+}

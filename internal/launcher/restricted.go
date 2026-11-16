@@ -309,8 +309,9 @@ func (l *Launcher) startFromSetup(req Request, session string) (restrictedShip, 
 	return made, nil
 }
 
-// withEventURL puts the event's link before the routine's Text.
-func withEventURL(url, text string) string {
+// EventAsk is what an event's ship is asked to do: the event's link, a blank line, then the routine's Text when it has any.
+// Without a link it is the Text as it is.
+func EventAsk(url, text string) string {
 	if url == "" {
 		return text
 	}
@@ -360,7 +361,7 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 		return fail(err)
 	}
 	argv = append(argv, RestrictedFlags(made.settings)...)
-	return appendPrompt(argv, l.eventPrompt(req, withEventURL(req.EventURL, req.Template)), false), made, nil
+	return appendPrompt(argv, l.eventPrompt(req, EventAsk(req.EventURL, req.Template)), false), made, nil
 }
 
 // eventSetup makes an event ship's clone and event file, and ends argv with the hook flags and the event prompt.
@@ -369,13 +370,8 @@ func (l *Launcher) eventSetup(req Request, session, skill string, argv, flags []
 	if err != nil {
 		return nil, made, err
 	}
-	template := promptFor(req.Harness, skill, req.Skill.Kind, "", req.Template)
-	if req.EventURL != "" {
-		template = promptFor(req.Harness, skill, req.Skill.Kind, "", req.EventURL)
-		if t := strings.TrimSpace(req.Template); t != "" {
-			template += "\n\n" + t
-		}
-	}
+	// the skill goes before the link, so a skill's prompt is built from the whole ask
+	template := promptFor(req.Harness, skill, req.Skill.Kind, "", EventAsk(req.EventURL, req.Template))
 	return addPrompt(append(argv, flags...), l.eventPrompt(req, template)), made, nil
 }
 

@@ -2,6 +2,7 @@ package routines_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -204,4 +205,32 @@ func TestAnEventOnAConfiguredEnterpriseHostGetsItsURLAndOtherHostsDoNot(t *testi
 			t.Errorf("ref %q: event URL %q, want %q", ref, got, want)
 		}
 	}
+}
+
+func TestAnEventLaunchTitlesTheShipFromTheURLThenTheText(t *testing.T) {
+	for _, c := range []struct{ text, want string }{{"", prURL}, {"sweep the board", prURL + "\n\nsweep the board"}} {
+		h := newHarness(t)
+		h.withEvents(standing.PresetLimits(standing.Home))
+		h.onRoutine(routines.Act, func(in *routines.Routine) { in.Do.Launch.Text = c.text })
+		h.sched.HandleEvent(evFrom("Eng"))
+		h.wantLaunches(1)
+		if got := h.ships.requests()[0].Text; got != c.want {
+			t.Errorf("text %q: request Text %q, want %q", c.text, got, c.want)
+		}
+	}
+}
+
+func TestAcceptRefusesAProposalOfARoutineThatBecameAnEventRoutine(t *testing.T) {
+	h := newHarness(t)
+	h.withEvents(standing.PresetLimits(standing.Home))
+	r, trig := h.proposed(nil)
+	in := validOn()
+	in.Do.Launch.Text = ""
+	if _, err := h.store.Update("work", r.ID, in); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if _, err := h.sched.Accept(context.Background(), "work", r.ID, trig.ID); !errors.Is(err, routines.ErrNotIssued) {
+		t.Fatalf("Accept = %v, want ErrNotIssued", err)
+	}
+	h.wantLaunches(0)
 }

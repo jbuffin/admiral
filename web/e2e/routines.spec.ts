@@ -27,6 +27,7 @@ test('a routine made through the form fires on its minute and its ship shows in 
   expect(alert!.y).toBeGreaterThanOrEqual(select!.y + select!.height - 1);
   expect(alert!.y + alert!.height).toBeLessThanOrEqual(text!.y + 1);
   await form.getByLabel('Checkout').selectOption(join(admiral.home, 'proj'));
+  await expect(missing).toHaveCount(0);
   await form.getByLabel('Text').fill('go');
   await form.getByRole('radio', { name: 'Act', exact: true }).tap();
   await form.getByRole('button', { name: 'Save', exact: true }).tap();
