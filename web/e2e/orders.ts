@@ -763,7 +763,8 @@ async function chainedGroups(page: Page, a: Admiral, press: (l: Locator) => Prom
   await press(stackButton(sheet));
   await expect.poll(() => stackLinkCalls(a)).toEqual([['stack', 'link', '--base', 'main', '61', '62', '63']]);
   await expect(sheet).toHaveCount(0);
-  await expect(main.getByRole('listitem').filter({ hasText: 'Stack #5' })).toHaveCount(1);
+  // The group was expanded, so the Stack #N row comes back expanded.
+  await expect(main.getByRole('button', { name: 'Collapse Stack #5' })).toHaveCount(1);
   await expect(stackButton(main)).toHaveCount(0);
   await expect(chainGroupRows(page)).toHaveCount(1);
   expect(stackLinkCalls(a), 'one link, not one per tap or refresh').toHaveLength(1);
