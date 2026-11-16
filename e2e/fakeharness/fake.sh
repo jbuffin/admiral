@@ -23,7 +23,8 @@
 #                  prompt a Bash tool_use and its tool_result (is_error when blocked), and leaves headless-runs
 #                  alone. It leaves the files the real sandbox would: a touch or cat of a path outside the
 #                  working directory, a git push and a curl to a host other than registry.npmjs.org are blocked, and so
-#                  is a git init, mkdir or mv that would put a .git below the working directory's root or in the temp dir.
+#                  is a git init, mkdir or mv that would put a .git below the working directory's root, in the temp dir
+#                  or in Claude Code's default write roots (/tmp/claude, /private/tmp/claude, ~/.npm/_logs).
 #                  $FAKE_RESTRICTED_PROBE (process env) is pass (default), no-sandbox (nothing is blocked, so
 #                  the outside writes, the escape hatch and the blocked curl land), no-network (every curl
 #                  fails), no-tool (init only), tmp-open (a touch under /tmp/claude-* lands), git-open (a
@@ -33,7 +34,7 @@
 #                  first line of every run is left out), skip-confine-fail (the first line of every confinement run
 #                  is left out and its shell read is not refused) or skip-net-leak (the first line of every network
 #                  run is left out and the blocked curl lands) or nest-open (a nested .git may be created, and a repo
-#                  moved in from the temp dir; the root's own .git and other mvs stay blocked). A `WRITE: <path>`
+#                  moved in from the temp dir or those roots; the root's own .git and other mvs stay blocked). A `WRITE: <path>`
 #                  line is a Write tool call. Each run appends a line to $FAKE_RECORD_DIR/restricted-runs.
 #
 #   codex exec --json
@@ -585,8 +586,9 @@ if [ -n "$restrictedrun" ]; then
     tmplink=$CLAUDE_CODE_TMPDIR
     tmpreal=$(cd "$CLAUDE_CODE_TMPDIR" 2>/dev/null && pwd -P)
   fi
-  # intemp P: P is the ship's temp dir or below it.
+  # intemp P: P is the ship's temp dir or Claude Code's default write roots, or below one.
   intemp() {
+    case $1 in /tmp/claude | /tmp/claude/* | /private/tmp/claude | /private/tmp/claude/* | "$HOME"/.npm/_logs | "$HOME"/.npm/_logs/*) return 0 ;; esac
     case $1 in "$tmplink" | "$tmplink"/*) [ -n "$tmplink" ] && return 0 ;; esac
     case $1 in "$tmpreal" | "$tmpreal"/*) [ -n "$tmpreal" ] && return 0 ;; esac
     return 1

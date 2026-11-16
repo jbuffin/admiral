@@ -90,6 +90,9 @@ func checkRestricted(req Request, dock config.Harness) *Error {
 	return nil
 }
 
+// claudeDefaultWriteRoots are the places Claude Code's sandbox lets every command write, whatever the profile says.
+var claudeDefaultWriteRoots = []string{"/tmp/claude", "/private/tmp/claude", "~/.npm/_logs"}
+
 // sharedTempDirs are Claude Code's per-user temp dirs, where the engineer's other sessions keep their scratchpads. The
 // ship's own temp dir is elsewhere (see MakeRestrictedTemp), so the sandbox denies these whole.
 func sharedTempDirs() []any {
@@ -152,16 +155,24 @@ func restrictedSettings(level standing.Restricted, checkout, home, tempDir strin
 		filesystem["denyWrite"] = []any{checkout}
 	}
 	filesystem["denyWrite"] = append(filesystem["denyWrite"].([]any), sharedTempDirs()...)
-	// A .git below a writable root would let a planted filter run in unsandboxed git. The writable roots are the checkout (Draft fix)
-	// and the temp dir; a root added later needs the same deny. Claude Code ignores Write rules, so only Edit rules are listed.
+	// A .git below a writable root would let a planted filter run in unsandboxed git, so each root gets a deny; a root added later needs
+	// the same. The roots are the checkout (Draft fix), the ship's temp dir and Claude Code's default write roots, which stay writable.
+	// Claude Code ignores Write rules, so only Edit rules are listed.
 	nested := []string{filepath.Join(tempDir, "**", ".git")}
+	for _, root := range claudeDefaultWriteRoots {
+		nested = append(nested, filepath.Join(root, "**", ".git"))
+	}
 	if level == standing.DraftFix {
 		// The root's own .git stays writable: a deny on it stops git from writing the index and locks.
 		nested = append(nested, filepath.Join(checkout, "*", "**", ".git"))
 	}
 	for _, g := range nested {
 		filesystem["denyWrite"] = append(filesystem["denyWrite"].([]any), g)
-		deny = append(deny, "Edit(/"+g+")", "Edit(/"+g+"/**)")
+		rule := "/" + g
+		if strings.HasPrefix(g, "~") {
+			rule = g
+		}
+		deny = append(deny, "Edit("+rule+")", "Edit("+rule+"/**)")
 	}
 	out["sandbox"] = map[string]any{"enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false,
 		// Under dontAsk a Bash call with no allow rule is denied, so sandboxed commands are allowed by this setting.

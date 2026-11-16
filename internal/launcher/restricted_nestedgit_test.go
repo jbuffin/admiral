@@ -1,6 +1,8 @@
 package launcher
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -52,7 +54,6 @@ func TestADraftFixShipsOwnGitStaysWritableAsAWhole(t *testing.T) {
 			t.Errorf("permissions.deny holds %s, which Claude Code turns into a sandbox deny on the root's own .git", bad)
 		}
 	}
-	wantAll(t, "denyWrite", denyWrite, root+"/config", root+"/hooks")
 }
 
 func TestAnInvestigateShipCannotCreateAGitBelowItsTempDir(t *testing.T) {
@@ -73,9 +74,42 @@ func TestARestrictedProfileHoldsNoWritePermissionRules(t *testing.T) {
 }
 
 func TestTheProfileDeniesTheResolvedTempDirNotTheShortLink(t *testing.T) {
-	link := t.TempDir()
+	target := t.TempDir()
+	link := filepath.Join(t.TempDir(), "adm-link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	real, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
 	got := RestrictedProfile(standing.DraftFix, nestCheckout, t.TempDir(), t.TempDir(), link)
 	denyWrite := strs(t, sub(t, got, "sandbox", "filesystem")["denyWrite"])
-	real := strs(t, sub(t, got, "sandbox", "filesystem")["allowRead"])[1]
+	permDeny := strs(t, sub(t, got, "permissions")["deny"])
 	wantAll(t, "denyWrite", denyWrite, real+"/**/.git")
+	wantAll(t, "permissions.deny", permDeny, "Edit(/"+real+"/**/.git)", "Edit(/"+real+"/**/.git/**)")
+	for _, bad := range []string{link + "/**/.git", "Edit(/" + link + "/**/.git)", "Edit(/" + link + "/**/.git/**)"} {
+		if slices.Contains(denyWrite, bad) || slices.Contains(permDeny, bad) {
+			t.Errorf("the profile denies %s, the short link, which the sandbox does not match", bad)
+		}
+	}
+}
+
+func TestEveryProfileDeniesAGitBelowClaudeCodesDefaultWriteRoots(t *testing.T) {
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		denyWrite, _, permDeny := nestedProfile(t, level)
+		for _, root := range []string{"/tmp/claude", "/private/tmp/claude", "~/.npm/_logs"} {
+			rule := "/" + root
+			if strings.HasPrefix(root, "~") {
+				rule = root
+			}
+			wantAll(t, "denyWrite", denyWrite, root+"/**/.git")
+			wantAll(t, "permissions.deny", permDeny, "Edit("+rule+"/**/.git)", "Edit("+rule+"/**/.git/**)")
+			for _, bad := range []string{root, "Edit(" + rule + "/**)", "Edit(" + rule + ")"} {
+				if slices.Contains(denyWrite, bad) || slices.Contains(permDeny, bad) {
+					t.Errorf("%v profile denies %s whole, but Claude Code writes there", level, bad)
+				}
+			}
+		}
+	}
 }

@@ -183,8 +183,17 @@ func TestAnInvestigateShipMayWriteOnlyItsReportFileAndItsSandboxDeniesTheCheckou
 	if !slices.Contains(tools, "Edit("+report+")") {
 		t.Errorf("permissions.allow = %q, want Edit(%s)", tools, report)
 	}
+	// The only Edit denies are the .git ones below the temp dir and Claude Code's default write roots, which do not touch the report.
+	nested := map[string]bool{}
+	for _, root := range append([]string{strs(t, sub(t, got, "sandbox", "filesystem")["allowRead"])[1]}, claudeDefaultWriteRoots...) {
+		prefix := "Edit(/"
+		if strings.HasPrefix(root, "~") {
+			prefix = "Edit("
+		}
+		nested[prefix+root+"/**/.git)"], nested[prefix+root+"/**/.git/**)"] = true, true
+	}
 	for _, r := range strs(t, perms["deny"]) {
-		if r == "Edit" || (strings.HasPrefix(r, "Edit(") && !strings.HasSuffix(r, "/.git)") && !strings.HasSuffix(r, "/.git/**)")) {
+		if r == "Edit" || (strings.HasPrefix(r, "Edit(") && !nested[r]) {
 			t.Errorf("permissions.deny holds %q, which would beat the report allow", r)
 		}
 	}
