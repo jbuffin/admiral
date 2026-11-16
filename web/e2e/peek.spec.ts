@@ -157,7 +157,13 @@ test("a chat question withdrawn while its Peek is open stays open on a plain not
   seedFleets(admiral, { live: true, chat: true });
   chatSays(admiral, 'harbor', [line.user('Hello harbor')]);
   await admiral.start({ env: withFakeGh(admiral) });
+  // Starting a chat withdraws the fleet's questions, so the chat is running before the question is asked.
+  const chat = await page.context().newPage();
+  await chat.goto(admiral.url + 'app/chat?fleet=harbor');
+  await expect(chat.getByRole('main')).toContainText('Hello harbor');
+  await expect(chat.getByRole('main').getByRole('button', { name: 'Open terminal', exact: true })).toHaveCount(1);
   chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
+  await expect(chat.getByRole('main')).toContainText('Which panel?');
   await page.goto(admiral.url + 'app/inbox?fleet=harbor');
   const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Which panel?' });
   await expect(row).toContainText('AdmiralBot', { timeout: 15_000 });
@@ -165,12 +171,7 @@ test("a chat question withdrawn while its Peek is open stays open on a plain not
   const peek = peekOf(page);
   await peek.getByRole('radio', { name: 'Freeform' }).tap();
 
-  // New chat on the fleet's chat page, in another tab, withdraws the question; the Inbox push tells the open Peek.
-  const chat = await page.context().newPage();
-  await chat.goto(admiral.url + 'app/chat?fleet=harbor');
-  await expect(chat.getByRole('main')).toContainText('Which panel?');
-  await expect(chat.getByRole('main')).toContainText('Hello harbor');
-  await expect(chat.getByRole('main').getByRole('button', { name: 'Open terminal', exact: true })).toHaveCount(1);
+  // New chat withdraws the question; the Inbox push tells the open Peek.
   await chat.getByRole('main').getByRole('button', { name: 'New chat', exact: true }).tap();
   await expect(chat.getByRole('main').getByText(/^New chat · /)).toHaveCount(1);
   const send = peek.getByRole('button', { name: 'Send answers' });
