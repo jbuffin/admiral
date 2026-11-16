@@ -793,6 +793,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .routine-form { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
 .routine-form fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .routine-form legend { padding: 0; margin-bottom: 6px; color: var(--color-text2); font-size: var(--font-size-meta); }
+.seg { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .seg-opt { display: inline-flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); padding: 0 14px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
 .seg-opt.on { background: var(--color-sel); }
 .routine-launch { display: flex; flex-direction: column; gap: 12px; }

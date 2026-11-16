@@ -271,6 +271,7 @@ func (s *Service) clearOrphanHand(name string) {
 		return
 	}
 	s.clearHandMark(name)
+	s.setHandFailed(name, "Admiral restarted during the hand")
 	s.recordHandFailure(name, "", "Admiral restarted during the hand")
 	s.broadcast()
 }
