@@ -194,6 +194,9 @@ _Avoid_: child, worker, sub-ship
 A named, reusable teammate definition in a fleet or repo: its role, skills, instructions, model, optional harness lock, and when to pick it. A fleet's own crew members live in its crew directory, `$ADMIRAL_HOME/fleets/<fleet key>/crew/`, which every ship of the fleet sees as `ADMIRAL_CREW_DIR`. A crew boat is a crew member at work, and a ship can also be launched as one. The engineer adds a crew member to a ship with **Add crew**, which asks the ship's lead to bring the member on.
 _Avoid_: agent, persona, crew type
 
+**Mission**:
+A saved Commodore mission file. The fleet's missions directory, `$ADMIRAL_HOME/fleets/<fleet key>/missions/`, holds them and every ship of the fleet sees it as `ADMIRAL_MISSIONS_DIR`. Commodore owns the format of the files; Admiral only keeps the directory.
+
 **Stop ship**:
 The engineer ends a ship that is still running, from its conversation. Admiral kills the ship's session, crew boats included, and records `ended` with a `KILL` signal, then `stopped`. The ship leaves open water as after a dismissal. A ship with an open PR (one it carries, or its report lists) asks first: Moor ends it and keeps the PRs, the other button ends it and forgets them.
 _Avoid_: kill, abort

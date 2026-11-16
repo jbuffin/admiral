@@ -745,6 +745,10 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 	if err != nil {
 		return err
 	}
+	missionsDir, err := fleetMissionsDir(home, fleetKey)
+	if err != nil {
+		return err
+	}
 	if err := removeRunCrew(home, session); err != nil {
 		return refuse(http.StatusInternalServerError, "could not clear the run layer of %s: %v", session, err)
 	}
@@ -759,6 +763,7 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 		}
 	}
 	env["ADMIRAL_CREW_DIR"] = crewDir
+	env["ADMIRAL_MISSIONS_DIR"] = missionsDir
 	env["ADMIRAL_SHIP"] = session
 	env["ADMIRAL_REPORT"] = report
 	env["ADMIRAL_INBOX"] = inbox + string(os.PathSeparator)
@@ -767,8 +772,17 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 
 // The fleet's crew directory outlives its ships.
 func fleetCrewDir(home, fleetKey string) (string, error) {
+	return fleetSubDir(home, fleetKey, "crew")
+}
+
+// The fleet's missions directory outlives its ships; Commodore owns what is in it.
+func fleetMissionsDir(home, fleetKey string) (string, error) {
+	return fleetSubDir(home, fleetKey, "missions")
+}
+
+func fleetSubDir(home, fleetKey, leaf string) (string, error) {
 	dir := home
-	for _, part := range []string{"fleets", fleetKey, "crew"} {
+	for _, part := range []string{"fleets", fleetKey, leaf} {
 		dir = filepath.Join(dir, part)
 		fi, err := os.Lstat(dir)
 		switch {
