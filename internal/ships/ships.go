@@ -116,15 +116,21 @@ type Service struct {
 	answering sync.Map
 	// returning holds the ships a Return to port step is running for.
 	returning sync.Map
-	Host      *sessionhost.Host
-	Launcher  *launcher.Launcher
-	State     *state.Store
-	Hub       *server.Hub
+	// handing holds the ships a Hand to Commodore step is running for; hands holds each hand's entry.
+	handing  sync.Map
+	hands    sync.Map
+	Host     *sessionhost.Host
+	Launcher *launcher.Launcher
+	State    *state.Store
+	Hub      *server.Hub
 	// MergeGuard wraps the Merge route with its token check; with none the route refuses everything.
 	MergeGuard func(http.Handler) http.Handler
 	Orders     Orders
 	// OnChange must not block.
 	OnChange func()
+
+	// EventShip reports whether a ship was launched restricted or from an outside event; nil means it never was.
+	EventShip func(fleet, session string) (restricted, fromEvent bool, err error)
 	// Tail gives a ship's conversation tail from a cache; it must not block.
 	Tail func(session string) string
 	// Candidates gives the PR URLs a ship and its crew boats printed in tool results, in order of first appearance.
@@ -349,6 +355,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/answer", s.serveAnswer)
 	mux.HandleFunc("POST /api/ships/{session}/stop", s.serveStop)
 	mux.HandleFunc("POST /api/ships/{session}/return", s.serveReturn)
+	mux.HandleFunc("POST /api/ships/{session}/commodore", s.serveHand)
 	mux.HandleFunc("GET /api/ships/{session}/pr", s.servePRDetail)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/messages", s.serveSendInput)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/interrupt", s.serveInterrupt)
@@ -414,6 +421,7 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		s.observe(ctx)
 		s.advanceReturns()
+		s.advanceHands()
 		s.refreshOpenPRs(ctx)
 		s.autoMoor(ctx)
 		s.sailOff(ctx, sailing)

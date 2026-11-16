@@ -52,6 +52,12 @@ func (h *Host) setPaneAt(ctx context.Context, pane, state, reason string) error 
 	return err
 }
 
+// UnsetPaneOption removes an Admiral option from a ship's own pane, which wins over the session's; a ship can set one there.
+func (h *Host) UnsetPaneOption(ctx context.Context, session, name string) error {
+	_, err := h.commandList(ctx, "set-option -p -u -q -t "+tmuxQuote(h.shipPane(session))+" "+Prefix+name)
+	return err
+}
+
 // "=session:" would be the current window's active pane, which can be a crew boat's.
 func (h *Host) shipPane(session string) string {
 	h.mu.Lock()

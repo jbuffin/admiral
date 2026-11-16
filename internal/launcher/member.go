@@ -89,7 +89,7 @@ func resolveMember(homeDir string, ask memberAsk) (*memberLaunch, *Error) {
 	if ask.RunDir != "" {
 		in.Layers[crew.LayerRun] = ask.RunDir
 	}
-	slug, hasOrigin := originSlug(ask.Dir)
+	slug, hasOrigin := OriginSlug(ask.Dir)
 	in.Repo = slug
 	if hasOrigin && slug == "" {
 		// Not an owner/name, so the resolver says no repo notes load.
@@ -194,9 +194,9 @@ func SetsModel(args []string) bool {
 	return false
 }
 
-// originSlug reads the dir's origin remote as crew.py does: no shell, a timeout, and no git location
+// OriginSlug reads the dir's origin remote as crew.py does: no shell, a timeout, and no git location
 // variables, so a failure of any kind means no repo notes.
-func originSlug(dir string) (string, bool) {
+func OriginSlug(dir string) (string, bool) {
 	if dir == "" {
 		return "", false
 	}

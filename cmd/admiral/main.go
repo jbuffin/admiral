@@ -567,6 +567,7 @@ func serve(args []string) error {
 	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop, Launch: routineShips{shipService}.Launch}
 	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
 	routineService.Listed = listedShips(allShips)
+	shipService.EventShip = eventShip(routineStore, listedShips(allShips))
 	routineScheduler.EndHarness = wallClockEnder(host)
 	lk := newLookout(absDir, cfg, fleetRepos(cfg), supervisor)
 	wireEvents(supervisor, routineStore, routineScheduler, allShips, lk, newReviewer(lk), lookoutActs)

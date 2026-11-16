@@ -190,7 +190,7 @@
 #                  message is the bytes up to the first CR, with LFs kept and the bracketed-paste
 #                  markers, other escape sequences (ESC [ ... and a lone ESC) removed. Per message it appends two lines to the
 #                  transcript $CLAUDE_CONFIG_DIR/projects/zz/<id>.jsonl, <id> being the
-#                  --session-id in its argv: a user line holding the message and an assistant
+#                  --session-id in its argv, or its --resume when it has none: a user line holding the message and an assistant
 #                  line holding <text>. Put `bracketedpaste` before it, or tmux pastes without
 #                  brackets. Every byte it reads is appended to `stdin` as well. With no
 #                  --session-id (or one holding "/") or no $CLAUDE_CONFIG_DIR it writes why to
@@ -222,7 +222,7 @@
 #                  write to it puts why in `usage-error` and exits 1.
 #   toolresult <text>
 #                  Claude only, needs jq: appends a completed Bash tool call to the transcript
-#                  $CLAUDE_CONFIG_DIR/projects/zz/<id>.jsonl, <id> being the --session-id in its argv: an
+#                  $CLAUDE_CONFIG_DIR/projects/zz/<id>.jsonl, <id> being the --session-id in its argv, or its --resume when it has none: an
 #                  assistant tool_use line and a user tool_result line holding <text>, as a `gh pr create`
 #                  that printed a URL would leave. Unlike `reply` it is not the last cue and answers nothing.
 #                  With no usable --session-id or no $CLAUDE_CONFIG_DIR it writes why to `toolresult-error`
@@ -747,6 +747,16 @@ printf '%s\n' "$firstw" >"$d/window-options"
 printf '%s\n' "$dirs" >"$d/dirs"
 : >"$d/recorded"
 
+# claude_sid prints the conversation id of a Claude launch: its --session-id, else the id a resumed one was given.
+claude_sid() {
+	_sid="" _res="" _prev=""
+	for _a in "$@"; do
+		[ "$_prev" = "--session-id" ] && _sid=$_a
+		[ "$_prev" = "--resume" ] && _res=$_a
+		_prev=$_a
+	done
+	printf '%s' "${_sid:-$_res}"
+}
 exec 3<&0 # the terminal, for a `record` cue: the loop below reads the cue file on fd 0
 if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 	while read -r cmd arg; do
@@ -998,14 +1008,9 @@ EOF5
 			echo "$ev" >>"$d/events-done"
 			;;
 		toolresult)
-			sid=""
-			prev=""
-			for a in "$@"; do
-				[ "$prev" = "--session-id" ] && sid=$a
-				prev=$a
-			done
+			sid=$(claude_sid "$@")
 			case "$sid" in
-			"" | */*) echo "toolresult cue: no usable --session-id in argv" | tee "$d/toolresult-error" >&2; exit 1 ;;
+			"" | */*) echo "toolresult cue: no usable --session-id or --resume in argv" | tee "$d/toolresult-error" >&2; exit 1 ;;
 			esac
 			if [ -z "$CLAUDE_CONFIG_DIR" ]; then
 				echo "toolresult cue: CLAUDE_CONFIG_DIR is unset" | tee "$d/toolresult-error" >&2
@@ -1017,15 +1022,10 @@ EOF5
   {uuid: "fake-tool-result", type: "user", timestamp: (now | todate), message: {role: "user", content: [{type: "tool_result", tool_use_id: "fake-tool", content: $r}]}}' >>"$CLAUDE_CONFIG_DIR/projects/zz/$sid.jsonl"
 			;;
 		reply)
-			sid=""
 			bad=""
-			prev=""
-			for a in "$@"; do
-				[ "$prev" = "--session-id" ] && sid=$a
-				prev=$a
-			done
+			sid=$(claude_sid "$@")
 			case "$sid" in
-			"" | */*) bad="reply cue: no usable --session-id in argv" ;;
+			"" | */*) bad="reply cue: no usable --session-id or --resume in argv" ;;
 			*) [ -n "$CLAUDE_CONFIG_DIR" ] || bad="reply cue: CLAUDE_CONFIG_DIR is unset" ;;
 			esac
 			if [ -n "$bad" ]; then

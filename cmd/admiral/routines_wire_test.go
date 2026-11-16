@@ -66,3 +66,46 @@ func TestTheRoutineProposerCarriesTheTriggersReasonOntoTheInboxProposal(t *testi
 	}
 	t.Fatal("no routine proposal in the Inbox")
 }
+
+func TestEventShipTellsRestrictedAndOutsideEventShipsAndFailsClosedOnAnUnreadableLog(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, config.FileName), []byte(`{"version":1,"fleets":{"work":{"name":"Work"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := config.Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	store := &routines.Store{Home: home, Fleets: func(k string) (config.Fleet, bool) { return m.Current().Fleet(k) },
+		ResourceKnown: func(string) bool { return false }}
+	now := time.Now()
+	for _, rec := range []routines.Trigger{
+		{ID: "t-open", At: now, Routine: "r1", Event: "issue.opened", Ship: "outside", Outcome: routines.Outcome("launched")},
+		{ID: "t-locked", At: now, Routine: "r2", Event: "issue.opened", Ship: "locked", Restricted: "no-network", Outcome: routines.Outcome("launched")},
+	} {
+		if _, err := store.AppendTrigger("work", rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listed := func() []routines.ListedShip {
+		return []routines.ListedShip{
+			{Session: "outside", Fleet: "work", Routine: "routine:r1", Status: "working"},
+			{Session: "locked", Fleet: "work", Routine: "routine:r2", Status: "working"},
+			{Session: "own", Fleet: "work", Status: "working"},
+		}
+	}
+	ask := eventShip(store, listed)
+	for _, c := range []struct {
+		session            string
+		restricted, fromEv bool
+	}{{"outside", false, true}, {"locked", true, true}, {"own", false, false}} {
+		restricted, fromEv, err := ask("work", c.session)
+		if err != nil || restricted != c.restricted || fromEv != c.fromEv {
+			t.Errorf("%s: restricted=%v fromEvent=%v err=%v; want %v %v", c.session, restricted, fromEv, err, c.restricted, c.fromEv)
+		}
+	}
+	if _, _, err := ask("nowhere", "own"); err == nil {
+		t.Error("an unreadable trigger log answered without an error; want a refusal")
+	}
+}
