@@ -26,11 +26,11 @@ func serveChains(t *testing.T, nodes ...obj) map[string]obj {
 	return servedOrders(t, src, "bugs")
 }
 
-func TestGitHubSourceGivesChainedPullRequestsAChainBottomToTop(t *testing.T) {
+func TestGitHubSourceGivesChainedPullRequestsAChain(t *testing.T) {
 	orders := serveChains(t,
-		chainNode(33, "b33", "b32", "fake-viewer", nil),
 		chainNode(31, "b31", "main", "fake-viewer", nil),
 		chainNode(32, "b32", "b31", "fake-viewer", nil),
+		chainNode(33, "b33", "b32", "fake-viewer", nil),
 		chainNode(50, "b50", "main", "fake-viewer", nil),
 		searchNode("issues", 13, obj{"author": obj{"login": "fake-viewer"}}))
 

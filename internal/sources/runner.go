@@ -390,6 +390,12 @@ func (r *runner) pullOrders(ctx context.Context, p conn, panel string) {
 		r.logf("protocol error: %v", err)
 		return
 	}
+	if _, ok := p.(*githubConn); !ok {
+		// Only the GitHub source finds chains, and its stack route is the only thing that acts on one.
+		for i := range orders {
+			orders[i].Chain = nil
+		}
+	}
 	if _, ok := p.(answerer); ok && stamp.IsZero() {
 		return // no search has answered yet: the empty list isn't news, and a Restart's carried orders stay until one does
 	}

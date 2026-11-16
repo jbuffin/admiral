@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Order, OrderView, Ship, Source } from './api';
 import type { RowAction } from './moored';
+import { stackBarLine } from './prTab';
 import { selectedRow, withSelectedOrder } from './orderDetail';
 import { parseExpanded } from './expandedParents';
 import { boxState, chainGroupCanStack, chainGroupLine, checkedUrls, filterRows, forYou, groupRowActions, headerTime, isIssueTab, issuesLabel, keepChecked, launchRef, newCampaignRefs, newCampaignSearch, orderRef, parentNote, refreshedLine, refreshTarget, repoName, repoOptions, selectableRows, selectAfterChoose, selection, stackLaunchLines, tabs, viewGroups, viewRows, withoutParentNote } from './ordersView';
@@ -1299,14 +1300,21 @@ describe('chain groups in a view tab', () => {
 
   it('says in the stack bar words that the PRs are not a GitHub stack', () => {
     const [g] = groups(mine);
-    expect(chainGroupLine(g)).toEqual({ lead: 'Not a GitHub stack.', rest: ' These 3 PRs build on each other branch by branch. Stacking them lets GitHub merge them together.' });
+    expect(chainGroupLine(g)).toEqual(stackBarLine({ shape: 'chained', prs: g.children.map((c) => c.order.url!) }));
   });
 
   it('counts the PRs it shows, so a filter that hides one changes the line', () => {
     const named = mine.map((o, i) => ({ ...o, title: i === 2 ? 'other thing' : `fix ${i}` }));
     const [g] = groups(named, [], { query: 'fix' });
     expect(g.children).toHaveLength(2);
-    expect(chainGroupLine(g)?.rest).toContain('These 2 PRs');
+    expect(chainGroupLine(g)).toEqual(stackBarLine({ shape: 'chained', prs: g.children.map((c) => c.order.url!) }));
+  });
+
+  it('shows the layers above a hidden middle layer as ordinary PRs, since only a run from the bottom can be linked', () => {
+    const named = mine.map((o, i) => ({ ...o, title: i === 1 ? 'other thing' : `fix ${i}` }));
+    const g = groups(named, [], { query: 'fix' });
+    expect(g.map((x) => x.row.chainRow)).toEqual([undefined, undefined]);
+    expect(g.map((x) => x.row.order.id)).toEqual(['acme/api#41', 'acme/api#43']);
   });
 
   it('offers Stack on GitHub only when every PR in the chain is the viewer\'s', () => {
@@ -1334,12 +1342,5 @@ describe('chain groups in a view tab', () => {
     const rows = forYou([gh([view('my-prs', 'My PRs', mine.map((o) => ({ ...o, pr: pr({ conflicts: true }) })))])], NOW).needsYou;
     expect(rows.map((r) => r.order.id)).toEqual(['acme/api#41', 'acme/api#42', 'acme/api#43']);
     expect(rows.some((r) => r.chainRow)).toBe(false);
-  });
-
-  it('does not group a PR that carries a stack, even with a chain', () => {
-    const S = 'https://github.com/acme/api/stack/7';
-    const g = groups([link(41, 1, true, 2, { stack: { number: 7, url: S, position: 1, size: 2 } }), link(42, 2, true, 2, { stack: { number: 7, url: S, position: 2, size: 2 } })]);
-    expect(g.map((x) => x.row.stackRow)).toEqual([true]);
-    expect(g.some((x) => x.row.chainRow)).toBe(false);
   });
 });

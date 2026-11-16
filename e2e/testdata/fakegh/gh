@@ -361,9 +361,10 @@ stack)
 		for n in $nums; do
 			pos=$((pos + 1))
 			url="https://$GH_REPO/pull/$n"
+			pat=$(printf '%s' "$url" | sed 's/[][\.*^$|]/\\&/g')
 			for f in "$FAKEGH_DIR"/search/*.json; do
 				[ -e "$f" ] || continue
-				sed "s|\"url\":\"$url\"|\"url\":\"$url\",\"stack\":{\"number\":$number,\"size\":$#},\"stackEntry\":{\"position\":$pos}|g" "$f" > "$call_dir/search.tmp" && mv "$call_dir/search.tmp" "$f"
+				sed "s|\"url\":\"$pat\"|\"url\":\"$url\",\"stack\":{\"number\":$number,\"size\":$#},\"stackEntry\":{\"position\":$pos}|g" "$f" > "$call_dir/search.tmp" && mv "$call_dir/search.tmp" "$f"
 			done
 		done
 		exit 0

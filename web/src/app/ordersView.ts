@@ -273,16 +273,22 @@ export function viewGroups(sources: Source[], id: string, now: number, ships: Sh
   const shownParents = new Set(shown.filter(isChild).map((r) => r.order.parent!.id));
   const groups = new Map<string, ViewGroup>();
   const out: ViewGroup[] = [];
-  // A chain group needs two shown layers; a filter that leaves one shows it as an ordinary PR.
-  const chainShown = new Map<string, number>();
-  for (const r of shown) if (r.order.pr && !r.order.stack && r.order.chain) chainShown.set(r.order.chain.id, (chainShown.get(r.order.chain.id) ?? 0) + 1);
+  // The route links only a run of layers from the bottom up, so a filter that hides a middle layer leaves the layers above it as ordinary PRs.
+  const chainPositions = new Map<string, Set<number>>();
+  for (const r of shown) if (r.order.pr && !r.order.stack && r.order.chain) chainPositions.set(r.order.chain.id, (chainPositions.get(r.order.chain.id) ?? new Set()).add(r.order.chain.position));
+  const chainRun = new Map<string, number>();
+  for (const [cid, positions] of chainPositions) {
+    let k = 0;
+    while (positions.has(k + 1)) k++;
+    if (k >= 2) chainRun.set(cid, k);
+  }
   for (const r of shown) {
     const stack = stackOf(r);
-    const chain = r.order.pr && !stack && (chainShown.get(r.order.chain?.id ?? '') ?? 0) >= 2 ? r.order.chain : undefined;
+    const chain = r.order.pr && !stack && r.order.chain && r.order.chain.position <= (chainRun.get(r.order.chain.id) ?? 0) ? r.order.chain : undefined;
     if (chain) {
       let g = groups.get(`chain:${chain.id}`);
       if (!g) {
-        g = { row: chainRow(hit.src, chain, chainShown.get(chain.id)!, r), children: [], high: false, ships: 0 };
+        g = { row: chainRow(hit.src, chain, chainRun.get(chain.id)!, r), children: [], high: false, ships: 0 };
         groups.set(`chain:${chain.id}`, g);
         out.push(g);
       }

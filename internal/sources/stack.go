@@ -13,7 +13,7 @@ import (
 )
 
 // readTimeout keeps a slow GitHub from holding the stack request open.
-const readTimeout = 15 * time.Second
+var readTimeout = 15 * time.Second
 
 // mergeGuarded looks the guard up per request, since main wires it after the routes are registered.
 func (s *Service) mergeGuarded(h http.Handler) http.Handler {
@@ -122,6 +122,10 @@ func (s *Service) serveStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, d := range details {
+		if d.State != "OPEN" {
+			writeError(w, http.StatusConflict, "a pull request in this chain is not open, so it is not stacked")
+			return
+		}
 		if !strings.EqualFold(d.Author.Login, viewer) {
 			writeError(w, http.StatusConflict, "a pull request in this chain is not yours, so it is not stacked")
 			return
@@ -149,7 +153,10 @@ func (s *Service) serveStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.refreshNow()
-	after, err := moor.ReadShape(ctx, gh, shape.PRs)
+	// The link may have used the first read's whole allowance, so the read after it has its own.
+	afterCtx, cancelAfter := context.WithTimeout(r.Context(), readTimeout)
+	defer cancelAfter()
+	after, err := moor.ReadShape(afterCtx, gh, shape.PRs)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "the pull requests were linked, but GitHub did not answer after: "+err.Error())
 		return

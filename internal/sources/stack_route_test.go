@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -149,6 +148,18 @@ func TestStackRouteOfASourceThatIsNotThereIsNotFound(t *testing.T) {
 	}
 }
 
+// closePR makes GitHub answer that the pull request is merged.
+func closePR(url string) func(g *fakeGH) {
+	return func(g *fakeGH) {
+		name := "pr_detail/" + strings.NewReplacer("/", "_", ":", "_").Replace(url)
+		b, err := os.ReadFile(filepath.Join(g.dir, name))
+		if err != nil {
+			g.t.Fatal(err)
+		}
+		g.write(name, strings.Replace(string(b), `"state":"OPEN"`, `"state":"MERGED"`, 1))
+	}
+}
+
 func TestStackRouteRefusesWhatIsNotTheViewersChainBeforeAnyLink(t *testing.T) {
 	for name, c := range map[string]struct {
 		authors []string
@@ -157,6 +168,7 @@ func TestStackRouteRefusesWhatIsNotTheViewersChainBeforeAnyLink(t *testing.T) {
 	}{
 		"a PR by someone else":    {[]string{"fake-viewer", "someone-else"}, []string{widgets + "41", widgets + "42"}, nil},
 		"PRs that do not chain":   {[]string{"fake-viewer", "fake-viewer"}, []string{widgets + "41", widgets + "42"}, func(g *fakeGH) { g.prDetail(widgets+"42", 42, "b42", "main", "fake-viewer") }},
+		"a closed PR":             {[]string{"fake-viewer", "fake-viewer"}, []string{widgets + "41", widgets + "42"}, closePR(widgets + "42")},
 		"one PR alone":            {[]string{"fake-viewer", "fake-viewer"}, []string{widgets + "41"}, nil},
 		"PRs in two repositories": {[]string{"fake-viewer", "fake-viewer"}, []string{widgets + "41", "https://github.com/acme/gadgets/pull/42"}, nil},
 	} {
@@ -203,23 +215,35 @@ func TestStackRouteLinksTheViewersChainBottomToTopOnTheBottomPRsBase(t *testing.
 func TestStackRouteLinksOneChainAtATimePerSource(t *testing.T) {
 	f, g := stackFixture(t, true, "fake-viewer", "fake-viewer")
 	g.write("stack_link.sleep", "2\n")
-	codes := make([]int, 2)
-	var wg sync.WaitGroup
-	for i := range codes {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			codes[i], _ = f.stack("gha", "ok", widgets+"41", widgets+"42")
-		}()
+	first := make(chan int, 1)
+	go func() {
+		code, _ := f.stack("gha", "ok", widgets+"41", widgets+"42")
+		first <- code
+	}()
+	// The second POST goes only once the first's gh stack link is running, so the two always overlap.
+	deadline := time.Now().Add(10 * time.Second)
+	for len(g.stackLinks()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the first POST never ran gh stack link")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	wg.Wait()
-	slices.Sort(codes)
-	if !slices.Equal(codes, []int{http.StatusOK, http.StatusConflict}) {
-		t.Errorf("two overlapping POSTs answered %v, want one 200 and one 409", codes)
-	}
+	code, body := f.stack("gha", "ok", widgets+"41", widgets+"42")
+	wantCode(t, "a second POST while a link is under way", http.StatusConflict, code, body)
+	wantCode(t, "the first POST", http.StatusOK, <-first, "")
 	if n := len(g.stackLinks()); n != 1 {
 		t.Errorf("gh stack link ran %d times, want once", n)
 	}
+}
+
+func TestStackRouteAnswersOKWhenTheLinkTakesLongerThanTheReadAllowance(t *testing.T) {
+	old := readTimeout
+	readTimeout = 700 * time.Millisecond
+	t.Cleanup(func() { readTimeout = old })
+	f, g := stackFixture(t, true, "fake-viewer", "fake-viewer")
+	g.write("stack_link.sleep", "1\n")
+	code, body := f.stack("gha", "ok", widgets+"41", widgets+"42")
+	wantCode(t, "POST stack when the link outlasts the read allowance", http.StatusOK, code, body)
 }
 
 func TestStackRouteAnswersBadGatewayWhenGitHubRefusesTheLink(t *testing.T) {

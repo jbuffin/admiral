@@ -720,9 +720,10 @@ async function makeCampaignJourney(page: Page, a: Admiral, press: (l: Locator) =
   await chainedGroups(page, a, press);
 }
 
-// Keyed on the not-stacked line, which is on the group row collapsed or expanded.
-const chainGroupRow = (page: Page, count: number) => page.getByRole('main').getByRole('listitem').filter({ hasText: `These ${count} PRs build on each other` });
-const NOT_STACKED = /Not a GitHub stack\. These \d PRs build on each other branch by branch\. Stacking them lets GitHub merge them together\./;
+// Keyed on the not-stacked mark, which is on the group row collapsed or expanded.
+const NOT_STACKED = /Not a GitHub stack/;
+const chainGroupRows = (page: Page) => page.getByRole('main').getByRole('listitem').filter({ hasText: NOT_STACKED });
+const stackButton = (l: Locator) => l.getByRole('button', { name: 'Stack on GitHub', exact: true });
 
 /**
  * PRs that chain by branch group under a row that says they are not a GitHub stack. The viewer's own chain offers Stack on GitHub,
@@ -732,40 +733,39 @@ async function chainedGroups(page: Page, a: Admiral, press: (l: Locator) => Prom
   const main = page.getByRole('main');
   await press(tabNamed(page, /^Chained PRs/));
   await expect(tabNamed(page, /^Chained PRs/)).toHaveAttribute('aria-selected', 'true');
-  const own = chainGroupRow(page, 3);
-  const theirs = chainGroupRow(page, 2);
+  const rows = chainGroupRows(page);
+  const own = rows.filter({ has: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) });
+  const theirs = rows.filter({ hasNot: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) });
+  await expect(rows).toHaveCount(2);
   await expect(own).toHaveCount(1);
   await expect(theirs).toHaveCount(1);
-  await expect(own).toContainText(NOT_STACKED);
-  await expect(theirs).toContainText(NOT_STACKED);
-  await expect(main.getByRole('button', { name: 'Stack on GitHub', exact: true })).toHaveCount(1);
-  await expect(own.getByRole('button', { name: 'Stack on GitHub', exact: true })).toBeVisible();
-  await expect(theirs.getByRole('button', { name: 'Stack on GitHub', exact: true })).toHaveCount(0);
+  await expect(stackButton(main)).toHaveCount(1);
   await holds(() => stackLinkCalls(a).length === 0, 'a view of chained PRs links nothing');
 
   // The layers sit under the group bottom first, each launching as a single PR.
   const own3 = ['Store the ledger', 'Serve the ledger', 'Show the ledger'];
   await press(own.getByRole('button', { name: /^Expand/ }));
-  await expect(main.locator('.orow-title').filter({ hasText: /ledger$/ })).toHaveText(own3);
+  const launches = main.getByRole('button', { name: /^Launch .* the ledger$/ });
+  await expect(launches).toHaveCount(3);
+  expect(await launches.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual(own3.map((t) => `Launch ${t}`));
   await expect(main.getByRole('button', { name: 'Launch Store the ledger' })).toBeVisible();
 
   // The sheet lists the PRs bottom first; Cancel links nothing; confirming runs the one link and the group comes back as Stack #N.
-  await press(own.getByRole('button', { name: 'Stack on GitHub', exact: true }));
+  await press(stackButton(own));
   const sheet = page.getByRole('dialog', { name: 'Stack on GitHub' });
-  await expect(sheet.locator('.sheet-prs li')).toHaveText([/#61\s+ledger-db\s+→\s+main/, /#62\s+ledger-api\s+→\s+ledger-db/, /#63\s+ledger-ui\s+→\s+ledger-api/]);
+  await expect(sheet.getByRole('listitem')).toHaveText([/#61\s+ledger-db\s+→\s+main/, /#62\s+ledger-api\s+→\s+ledger-db/, /#63\s+ledger-ui\s+→\s+ledger-api/]);
   await press(sheet.getByRole('button', { name: 'Cancel', exact: true }));
   await expect(sheet).toHaveCount(0);
   await holds(() => stackLinkCalls(a).length === 0, 'Cancel links nothing');
 
   writeFileSync(join(a.fakeGh().dir, 'stack_link.number'), '5\n');
-  await press(own.getByRole('button', { name: 'Stack on GitHub', exact: true }));
-  await press(sheet.getByRole('button', { name: 'Stack on GitHub', exact: true }));
+  await press(stackButton(own));
+  await press(stackButton(sheet));
   await expect.poll(() => stackLinkCalls(a)).toEqual([['stack', 'link', '--base', 'main', '61', '62', '63']]);
   await expect(sheet).toHaveCount(0);
   await expect(main.getByRole('listitem').filter({ hasText: 'Stack #5' })).toHaveCount(1);
-  await expect(main.getByRole('button', { name: 'Stack on GitHub', exact: true })).toHaveCount(0);
-  await expect(chainGroupRow(page, 3)).toHaveCount(0);
-  await expect(theirs).toContainText(NOT_STACKED);
+  await expect(stackButton(main)).toHaveCount(0);
+  await expect(chainGroupRows(page)).toHaveCount(1);
   expect(stackLinkCalls(a), 'one link, not one per tap or refresh').toHaveLength(1);
 }
 

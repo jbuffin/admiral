@@ -456,7 +456,12 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
           pending={['source', stacking.row.source, 'stack-link']}
           link={() => linkSourceStack(stacking.row.source, stacking.children.map((c) => c.order.url ?? ''))}
           onClose={() => setStacking(null)}
-          onShape={() => {}}
+          onShape={(r) => {
+            // The group comes back as Stack #N; keep it open if the chain was.
+            const first = stacking.children[0]?.order.url ?? '';
+            const url = r.stack_number ? first.replace(/\/pull\/\d+$/, `/stack/${r.stack_number}`) : '';
+            if (url && isExpanded(id, stacking.row.order.id) && !isExpanded(id, url)) toggleExpanded(id, url);
+          }}
           failed={async () => {
             await refreshSource(stacking.row.source);
             return false;

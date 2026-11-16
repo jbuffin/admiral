@@ -246,6 +246,9 @@ func (g *githubConn) initialize(params any) (json.RawMessage, error) {
 	_ = json.Unmarshal(b, &p)
 	s := githubSettings(p.Settings)
 	g.mu.Lock()
+	if g.settings.Account != s.Account || g.settings.Host != s.Host {
+		g.viewer = "" // the stack route must not check authorship against the old account's login
+	}
 	g.settings = s
 	g.client = github.NewClient(s.Host, s.Account, s.HotLabels, g.env)
 	for _, v := range s.SearchViews() {
