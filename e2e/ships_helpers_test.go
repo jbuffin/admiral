@@ -213,6 +213,11 @@ func (w *world) restart() *fleetInst {
 func launchAdmiral(t *testing.T, home, listen string, env []string) *fleetInst {
 	t.Helper()
 	expectNoMigration(t, home)
+	return startWithRetry(t, listen, func(listen string) (*fleetInst, bool) { return launchAdmiralOnce(t, home, listen, env) })
+}
+
+func launchAdmiralOnce(t *testing.T, home, listen string, env []string) (*fleetInst, bool) {
+	t.Helper()
 	cmd := exec.Command(binaryPath(t), "--listen", listen)
 	lanPort := freePort(t)
 	cmd.Env = append(slices.Clone(env), lanEnv(lanPort)...)
@@ -242,6 +247,10 @@ func launchAdmiral(t *testing.T, home, listen string, env []string) *fleetInst {
 		select {
 		case l, ok := <-lines:
 			if !ok {
+				<-in.done
+				if strings.Contains(stderr.String(), "address already in use") {
+					return nil, true
+				}
 				t.Fatalf("admiral exited before printing two URL lines (got %q); stderr: %s", got, stderr.String())
 			}
 			got = append(got, l)
@@ -260,7 +269,7 @@ func launchAdmiral(t *testing.T, home, listen string, env []string) *fleetInst {
 	in.Port = m[1]
 	in.LocalURL = "http://127.0.0.1:" + in.Port
 	in.LANLine = got[1]
-	return &fleetInst{instance: in, env: env}
+	return &fleetInst{instance: in, env: env}, false
 }
 
 // checkout makes a git checkout in the search root, since a launch is refused

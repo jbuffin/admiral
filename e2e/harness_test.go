@@ -74,10 +74,18 @@ func binaryPath(t *testing.T) string {
 }
 
 // Parallel tests each pick a port and listen on it later, so a port is handed
-// out once per run.
+// out once per run. A port stays picked until an Admiral has bound it: until
+// then another process on the machine can take it, and startWithRetry picks again.
 var (
 	portsMu sync.Mutex
-	ports   = map[string]bool{}
+	ports   = map[string]portState{}
+)
+
+type portState int
+
+const (
+	picked portState = iota + 1
+	bound
 )
 
 func freePort(t *testing.T) string {
@@ -85,15 +93,49 @@ func freePort(t *testing.T) string {
 	portsMu.Lock()
 	defer portsMu.Unlock()
 	for {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
+		// The wildcard address, the one Admiral binds for a LAN listen: a loopback
+		// probe says nothing about a socket another process holds on 0.0.0.0.
+		l, err := net.Listen("tcp", ":0")
 		if err != nil {
 			t.Fatal(err)
 		}
 		_, port, _ := net.SplitHostPort(l.Addr().String())
 		l.Close()
-		if !ports[port] {
-			ports[port] = true
+		if ports[port] == 0 {
+			ports[port] = picked
 			return port
+		}
+	}
+}
+
+const bindTries = 5
+
+// startWithRetry runs once until Admiral gets its ports. once reports true when
+// Admiral exited with "address already in use": the port freePort handed out
+// was taken before the bind, so a picked listen port and the LAN port are drawn again.
+func startWithRetry[T any](t *testing.T, listen string, once func(listen string) (T, bool)) T {
+	t.Helper()
+	for try := 1; ; try++ {
+		in, inUse := once(listen)
+		if !inUse {
+			if _, port, err := net.SplitHostPort(listen); err == nil {
+				portsMu.Lock()
+				if ports[port] == picked {
+					ports[port] = bound
+				}
+				portsMu.Unlock()
+			}
+			return in
+		}
+		if try == bindTries {
+			t.Fatalf("admiral could not bind its ports in %d tries", bindTries)
+		}
+		host, port, err := net.SplitHostPort(listen)
+		portsMu.Lock()
+		again := err == nil && ports[port] == picked
+		portsMu.Unlock()
+		if again {
+			listen = net.JoinHostPort(host, freePort(t))
 		}
 	}
 }
@@ -171,6 +213,11 @@ func hermeticEnv(t *testing.T) []string {
 func startAdmiral(t *testing.T, home, listen string) *instance {
 	t.Helper()
 	expectNoMigration(t, home)
+	return startWithRetry(t, listen, func(listen string) (*instance, bool) { return startAdmiralOnce(t, home, listen) })
+}
+
+func startAdmiralOnce(t *testing.T, home, listen string) (*instance, bool) {
+	t.Helper()
 	bin := binaryPath(t)
 	cmd := exec.Command(bin, "--listen", listen)
 	lanPort := freePort(t)
@@ -206,6 +253,10 @@ func startAdmiral(t *testing.T, home, listen string) *instance {
 		select {
 		case l, ok := <-lines:
 			if !ok {
+				<-in.done
+				if strings.Contains(stderr.String(), "address already in use") {
+					return nil, true
+				}
 				t.Fatalf("admiral exited before printing two URL lines (got %q); stderr: %s", got, stderr.String())
 			}
 			got = append(got, l)
@@ -243,7 +294,7 @@ func startAdmiral(t *testing.T, home, listen string) *instance {
 	} else if !strings.HasPrefix(got[1], "On other devices:") {
 		t.Fatalf("second line must start with `On other devices:`, got %q", got[1])
 	}
-	return in
+	return in, false
 }
 
 // Stop is safe to repeat.
