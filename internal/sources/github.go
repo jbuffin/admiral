@@ -75,6 +75,8 @@ type openArgs struct {
 	// conn is the last connection the source had, carried over a restart; setConn keeps a new one.
 	conn    *connState
 	setConn func(connState)
+	// setRefreshing tells the runner the refreshing flag flipped so it can push; nil when nothing listens.
+	setRefreshing func()
 }
 
 // A failed view keeps its last good orders next to the error.
@@ -111,6 +113,8 @@ type githubConn struct {
 	viewer   string // the signed-in account the last search ran as
 	conn     connState
 	stopped  bool
+	// refreshing is true from a requested or started cycle until one ends with no wake queued.
+	refreshing bool
 	// kinds is, per event search, when it last answered and the latest event time already delivered or baselined per item.
 	kinds map[string]*kindPoll
 }
@@ -206,10 +210,18 @@ func (g *githubConn) call(ctx context.Context, method string, params any, _ time
 	return nil, &rpcError{Code: codeMethodNotFound, Message: "no such method: " + method}
 }
 
+// refreshNow raises the flag and queues the wake under one lock, so work never clears the flag while a wake is queued.
 func (g *githubConn) refreshNow() {
+	g.mu.Lock()
+	changed := !g.refreshing
+	g.refreshing = true
 	select {
 	case g.wake <- struct{}{}:
 	default:
+	}
+	g.mu.Unlock()
+	if changed {
+		g.flipped()
 	}
 }
 
@@ -266,12 +278,50 @@ func (g *githubConn) notify(method string, params any) {
 	g.onNote(method, raw)
 }
 
+// Refreshing says a refresh is requested or running.
+func (g *githubConn) Refreshing() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.refreshing
+}
+
+func (g *githubConn) setRefreshing(on bool) {
+	g.mu.Lock()
+	changed := g.refreshing != on
+	g.refreshing = on
+	g.mu.Unlock()
+	if changed {
+		g.flipped()
+	}
+}
+
+func (g *githubConn) flipped() {
+	if g.openArgs.setRefreshing != nil {
+		g.openArgs.setRefreshing()
+	}
+}
+
+// endRefreshing clears the flag unless a wake is queued, which runs one more cycle with the flag still up.
+func (g *githubConn) endRefreshing() {
+	g.mu.Lock()
+	changed := g.refreshing && len(g.wake) == 0
+	if changed {
+		g.refreshing = false
+	}
+	g.mu.Unlock()
+	if changed {
+		g.flipped()
+	}
+}
+
 func (g *githubConn) work() {
 	g.mu.Lock()
 	every := time.Duration(g.settings.RefreshMinutes) * time.Minute
 	g.mu.Unlock()
 	for {
+		g.setRefreshing(true)
 		g.cycle()
+		g.endRefreshing()
 		timer := time.NewTimer(every)
 		select {
 		case <-timer.C:

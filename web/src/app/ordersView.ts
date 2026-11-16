@@ -346,14 +346,24 @@ export function refreshedLine(iso: string, now: number): string {
   return age === 'now' ? 'refreshed just now' : `refreshed ${age} ago`;
 }
 
+/** The source behind a tab: For you reads the GitHub source. */
+function tabSource(sources: Source[], id: string): Source | undefined {
+  return id === FOR_YOU ? sources.find(isGitHub) : find(sources, id)?.src;
+}
+
 /** The source name the header shows and Refresh now asks, if the tab's source can refresh. */
 export function refreshTarget(sources: Source[], id: string): string | undefined {
-  const src = id === FOR_YOU ? sources.find(isGitHub) : find(sources, id)?.src;
+  const src = tabSource(sources, id);
   return src?.capabilities?.includes('refresh') ? src.key : undefined;
 }
 
+/** The Refresh control is a spinner while the tab's source refreshes, whoever asked, or while this page's own request is in flight. */
+export function refreshBusy(sources: Source[], tabId: string, posting: boolean): boolean {
+  return posting || !!tabSource(sources, tabId)?.refreshing;
+}
+
 export function sourceName(sources: Source[], id: string): string {
-  return (id === FOR_YOU ? sources.find(isGitHub) : find(sources, id)?.src)?.name ?? '';
+  return tabSource(sources, id)?.name ?? '';
 }
 
 // The GitHub source sends the repository's URL; plugins and tests send owner/repo. Only a GitHub repository, pull or issue URL reduces to a repo.

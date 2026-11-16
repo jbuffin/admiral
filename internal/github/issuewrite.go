@@ -89,7 +89,7 @@ func (c *Client) rest(ctx context.Context, method, endpoint string, body any) ([
 	case ctx.Err() != nil:
 		return nil, ctx.Err()
 	case errors.Is(err, exec.ErrNotFound), errors.Is(err, errTimeout):
-		return nil, c.unreachableErr()
+		return nil, c.callFailed(err)
 	}
 	msg := strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: ")
 	if msg == "" {

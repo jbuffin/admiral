@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fakeGhTrees, issueNode } from './campaign';
 import { proveJudge } from './crew';
@@ -471,13 +471,26 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await press(tabNamed(page, /^For you/));
   const before = await oldestAnswer(a);
   expect(before).toBeGreaterThan(0);
+  // The control is a spinner for as long as the search is held, and the button again once it is released.
+  const hold = join(a.fakeGh().dir, 'search.hold');
+  writeFileSync(hold, '');
   const asked = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/sources/gh/refresh');
   await press(refresh);
   await asked;
+  const spinner = page.getByRole('button', { name: 'Refreshing', exact: true });
+  await expect(spinner).toBeVisible();
+  await expect(spinner).toHaveAttribute('aria-busy', 'true');
+  await expectTouchTarget(spinner, 44);
+  await expect(refresh).toHaveCount(0);
+  expect(await oldestAnswer(a)).toBe(before);
+  rmSync(hold);
+  await expect(refresh).toBeVisible();
+  await expect(spinner).toHaveCount(0);
   await expect.poll(() => oldestAnswer(a)).toBeGreaterThan(before);
   await expect(main).toContainText(/refreshed (just now|\d+m ago)/);
 
   // A refusal shows its text.
+  await expect(refresh).toBeVisible();
   await page.route('**/api/v1/sources/gh/refresh', (r) => r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'The source cannot refresh orders' }) }));
   await press(refresh);
   await expect(main).toContainText('The source cannot refresh orders');

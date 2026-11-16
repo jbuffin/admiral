@@ -25,6 +25,9 @@ const MaxItems = 50
 // ghTimeout is the default limit for one gh call; Admiral gives a request 10 seconds.
 const ghTimeout = 8 * time.Second
 
+// SearchTimeout is the limit for a background search, which reads up to MaxItems items with their rollups and timelines.
+var SearchTimeout = 60 * time.Second
+
 const itemFields = "number title url createdAt bodyText author { login } repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
 
 // prStateFields are the PullRequest fields the chips and ready read, the poll's own and no more, so a search stays light.
@@ -154,7 +157,7 @@ func NewClient(host, account string, hotLabels, env []string) *Client {
 func (c *Client) Host() string { return c.host }
 
 // Token runs `gh auth token`. Errors: *SignInError when gh is missing or
-// signed out; "Couldn't reach <host>" (not a *SignInError) on a timeout.
+// signed out; "GitHub took too long to answer" (not a *SignInError) on a timeout.
 func (c *Client) Token(ctx context.Context) (string, error) {
 	args := []string{"auth", "token", "-h", c.host}
 	if c.account != "" {
@@ -168,7 +171,7 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 	case ctx.Err() != nil: // the caller gave up: neither a sign-out nor a failure
 		return "", ctx.Err()
 	case errors.Is(err, errTimeout): // a locked keychain, say: not a sign-out
-		return "", c.unreachableErr()
+		return "", errSlow
 	case err == nil:
 		token = strings.TrimSpace(out)
 	}
@@ -201,7 +204,7 @@ func (c *Client) search(ctx context.Context, token, query, gql, actorKind string
 	if !hasSort.MatchString(query) {
 		query += " sort:updated-desc"
 	}
-	data, err := c.runQuery(ctx, token, gql, true, "q="+query)
+	data, err := c.runQuery(ctx, token, gql, true, SearchTimeout, "q="+query)
 	if err != nil {
 		return nil, "", err
 	}
@@ -228,7 +231,7 @@ const countQuery = "query($q: String!) { search(query: $q, type: ISSUE_ADVANCED,
 
 // Count is GitHub's total for a search (its issueCount), not the capped list Search returns.
 func (c *Client) Count(ctx context.Context, token, query string) (int, error) {
-	data, err := c.runQuery(ctx, token, countQuery, false, "q="+query)
+	data, err := c.runQuery(ctx, token, countQuery, false, 0, "q="+query)
 	if err != nil {
 		return 0, err
 	}
@@ -242,7 +245,7 @@ func (c *Client) Count(ctx context.Context, token, query string) (int, error) {
 
 // Viewer is who the token signs in as, asked without a search.
 func (c *Client) Viewer(ctx context.Context, token string) (string, error) {
-	data, err := c.runQuery(ctx, token, "query { viewer { login } }", false)
+	data, err := c.runQuery(ctx, token, "query { viewer { login } }", false, 0)
 	if err != nil {
 		return "", err
 	}
@@ -254,18 +257,24 @@ func (c *Client) Viewer(ctx context.Context, token string) (string, error) {
 	return login, nil
 }
 
-// runQuery runs one query with gh and returns its data object. fields are further -f name=value pairs.
-func (c *Client) runQuery(ctx context.Context, token, gql string, optional bool, fields ...string) (map[string]any, error) {
+// runQuery runs one query with gh and returns its data object. limit is the call's time limit; zero means the client's quick-call limit. fields are further -f name=value pairs.
+func (c *Client) runQuery(ctx context.Context, token, gql string, optional bool, limit time.Duration, fields ...string) (map[string]any, error) {
 	args := []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + gql}
 	for _, f := range fields {
 		args = append(args, "-f", f)
 	}
-	out, stderr, err := c.gh(ctx, args, c.tokenVar(), token)
+	var out, stderr string
+	var err error
+	if limit > 0 {
+		out, stderr, err = c.ghWithin(ctx, limit, "", nil, args, c.tokenVar(), token)
+	} else {
+		out, stderr, err = c.gh(ctx, args, c.tokenVar(), token)
+	}
 	if err != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, errTimeout) {
-		return nil, c.unreachableErr()
+		return nil, c.callFailed(err)
 	}
 	if err != nil && !(optional && onlyOptionalErrors(out)) {
 		msg := redact(strings.TrimSpace(stderr), token)
@@ -330,7 +339,21 @@ type unreachableError struct{ host string }
 
 func (e *unreachableError) Error() string { return "Couldn't reach " + e.host }
 
-// IsUnreachable says err is a call that failed on the network or a timeout, not a refusal or a sign-out.
+// errSlow is a gh call that ran past its limit: GitHub or gh was slow, which says nothing about the network.
+var errSlow = errors.New("GitHub took too long to answer")
+
+// callFailed is the error for a gh call that did not run to the end: gh missing reads as unreachable, a call past its limit as slow.
+func (c *Client) callFailed(err error) error {
+	if errors.Is(err, errTimeout) {
+		return errSlow
+	}
+	return c.unreachableErr()
+}
+
+// IsSlow says err is a call that ran out of time.
+func IsSlow(err error) bool { return errors.Is(err, errSlow) }
+
+// IsUnreachable says err is a call that failed on the network, not a refusal, a sign-out or a call that ran out of time.
 func IsUnreachable(err error) bool {
 	var u *unreachableError
 	return errors.As(err, &u)

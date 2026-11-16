@@ -34,7 +34,7 @@ func (c *Client) DefaultMergeMethod(ctx context.Context, nameWithOwner string) (
 			return "", ctx.Err()
 		}
 		if errors.Is(err, errTimeout) || errors.Is(err, exec.ErrNotFound) {
-			return "", c.unreachableErr()
+			return "", c.callFailed(err)
 		}
 		return "", fmt.Errorf("default merge method lookup failed: %s", strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: "))
 	}
@@ -148,7 +148,7 @@ func (c *Client) StackOpenPRs(ctx context.Context, owner, repo string, number in
 		case ctx.Err() != nil:
 			return nil, false, ctx.Err()
 		case errors.Is(err, errTimeout), errors.Is(err, exec.ErrNotFound):
-			return nil, false, c.unreachableErr()
+			return nil, false, c.callFailed(err)
 		}
 		msg := strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: ")
 		if strings.Contains(msg, "HTTP 404") {

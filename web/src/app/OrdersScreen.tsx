@@ -17,7 +17,7 @@ import { sheetIssues } from './makeCampaign';
 import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { boxState, type BoxState, chainGroupCanStack, chainGroupLine, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, launchRef, newCampaignRefs, newCampaignSearch, selectableRows, selectAfterChoose, selection, orderRef, parentNote, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
+import { boxState, type BoxState, chainGroupCanStack, chainGroupLine, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, launchRef, newCampaignRefs, newCampaignSearch, selectableRows, selectAfterChoose, selection, orderRef, parentNote, refreshBusy, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
 import { linkSourceStack, refreshSource } from './api';
 import { StackSheet } from './StackSheet';
 import { go, loc, shipPath } from './router';
@@ -343,9 +343,9 @@ export function OrdersPanel({ phone, title }: { phone: boolean; title: boolean }
               {title ? <h1>Orders</h1> : null}
               <span class="orders-source">{phone ? age : sourceLine && `${title ? '· ' : ''}${sourceLine}`}</span>
               {target ? (
-                <button type="button" class="orow-go" aria-label="Refresh now" aria-busy={busy} disabled={busy} onClick={refresh}>
+                <Button variant="quiet" icon class="orders-refresh" label="Refresh now" busyLabel="Refreshing" busy={refreshBusy(list, id, busy)} onClick={refresh}>
                   <Icon name="refresh" size={16} />
-                </button>
+                </Button>
               ) : null}
               {issueTab ? (
                 <span class="orders-select">

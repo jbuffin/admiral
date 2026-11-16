@@ -498,7 +498,7 @@ func (c *Client) graphql(ctx context.Context, token, ref string, vars []string) 
 		return nil, ctx.Err()
 	}
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, errTimeout) {
-		return nil, c.unreachableErr()
+		return nil, c.callFailed(err)
 	}
 	if err != nil {
 		msg := redact(strings.TrimSpace(stderr), token)
