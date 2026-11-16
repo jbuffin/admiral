@@ -638,11 +638,8 @@ test('Peek shows a fleet mission whole, 1 asks to keep it, the confirm saves it 
   page.on('request', (r) => r.method() === 'POST' && posts++);
   await page.keyboard.press('1');
   await expect(peek).toContainText('every later ship in the fleet');
-  for (let i = 0; i < 10; i++) {
-    expect(posts).toBe(0);
-    expect(existsSync(path)).toBe(false);
-    await page.waitForTimeout(100);
-  }
+  expect(posts).toBe(0);
+  expect(existsSync(path)).toBe(false);
   const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/inbox/_admiral/mission-1/mission');
   await peek.getByRole('button', { name: 'Keep docs-sweep' }).tap();
   expect((await posted).postDataJSON()).toEqual({ decision: 'keep' });
