@@ -10,8 +10,9 @@ Each behavior gets one test, at the lowest layer that can see it:
 | --- | --- |
 | Validation, parsing, config shape and migration, state logic, masking secrets | Go unit test in the package |
 | What a route returns for a request | Go `httptest` against the handler |
-| The new shell's UI state logic (stores, ordering, protocol replay) | Vitest |
-| A journey that crosses browser, server and tmux or a harness | E2E: Go `e2e/` for server and tmux, Playwright for the page |
+| The new shell's UI state logic (stores, ordering, protocol replay) | Vitest (`*.test.ts`, Node) |
+| What one component shows for a state, and what a click or key changes on screen when the server's answer is stubbed | Component test (`*.test.tsx`, Vitest with happy-dom) |
+| A journey that crosses browser, server and tmux or a harness, and that no lower layer can see | E2E: Go `e2e/` for server and tmux, Playwright for the page |
 
 A test earns its place when it would catch a bug a person could hit:
 
@@ -20,9 +21,38 @@ A test earns its place when it would catch a bug a person could hit:
 - Pick one case per distinct rule. Spelling variants of one flag, every bidi code point, every way to write the same argument: one representative each.
 - Test the inputs real callers send. The boundary validates; test it there, and trust the code behind it.
 - Mock only what Admiral doesn't control: `gh`, the network, the clock. Use the real binary, tmux and the fake harness for the rest.
-- Wait on a condition (a file, an API state, a locator), never on a fixed sleep. To show that something does not happen, poll it with `holdThat` for `hold` (`e2e/harness_test.go`) after the test has seen what it starts from.
+- Wait on a condition (a file, an API state, a locator), never on a fixed sleep. To show that something does not happen, poll it for its whole window after the test has seen what it starts from: `holdThat` for `hold`, `holdWindow` for a window of the test's own, or `holdClean` when the check returns the reason it failed (`e2e/harness_test.go`). A negative check that passes after one look proves nothing.
 - A red test describes the behavior it expects. Once the code exists, the test file carries no header spelling out the interface it assumed.
 - Text, class names, colors, layout and focus order are the designs' job. A Playwright test finds elements by role and accessible name, and asserts what the person sees happen.
+
+### Component tests
+
+A component test renders one component of the new shell in Node, under happy-dom with `@testing-library/preact`, and runs in `make check` with no browser. Write one for:
+
+- what a component shows for a given state, including its empty and error states;
+- a form's validation, and what enables or disables a control;
+- what a click or key changes on screen, with `fetch` stubbed (`vi.stubGlobal('fetch', …)`) so the test also sees the request body.
+
+Find elements by role and accessible name, as a person would, and assert what shows. Start from `src/app/Composer.test.tsx` and `src/app/QuestionCall.test.tsx`.
+
+- Stub `fetch` or mock `./api` in every test. happy-dom's `fetch` is real, and no test touches a network.
+- Module-level state (the skills cache, global signals) persists within a file. Reset it with `vi.resetModules` or give each test its own inputs, so no test depends on order.
+- Never import `src/app/main.tsx` (CSS, router, WebSockets, the service worker). A component that reads a global store or opens a WebSocket (`Shell`, `ShipView`, `ConversationView`) is covered by E2E or by its view model in Vitest.
+- happy-dom has no layout and no real touch. Whether a thing fits, scrolls sideways, sits under a sheet or takes a tap stays in Playwright.
+
+### Playwright and E2E
+
+An E2E test is a journey a person takes that crosses the browser, the server and tmux or a harness, and that no lower layer can see. The Playwright journeys are a short list: the specs in `web/e2e/`, and the `@critical` ones in them are what Admiral cannot ship broken. A new E2E test needs a reason no lower layer works: say it in the PR. Extend the journey that already visits the screen before adding one, and move a check that only needs a component's state down to a component test.
+
+An E2E test is reliable when:
+
+- it waits on a condition (a locator, an API state, a file), never a fixed sleep, and a negative check holds for its whole window (see above);
+- it owns everything it touches: its own Admiral, `$ADMIRAL_HOME`, tmux socket and port, with no state shared with another test and no order it depends on;
+- it ends what it starts, in order: Admiral first, then `tmux -S <home>/tmux.sock kill-server` (`stop` in `web/e2e/fixtures.ts` does both);
+- its data is deterministic: fixed names and seeds, no random value a check depends on, and no real clock where a fake one will do;
+- it uses no real network and no real home (see below), and after it seeds state it waits for the change to show before reading it.
+
+A flaky test is a bug. Find the race and fix it. Never add a retry, a longer timeout or a skip to make it pass, and prove a fix with repeated runs.
 
 Playwright drives the new shell at `/app/` only; the old UI is frozen and has no browser tests. The journeys are a short list of what a person does with Admiral (set up, launch, board, answer, chat, reconnect). The `@critical` tag marks the ones Admiral cannot ship broken.
 
@@ -45,7 +75,7 @@ The e2e harness shortens Admiral's production delays through environment variabl
 
 A test sets its own value through `world.extra`.
 
-Tests sit at two seams. `e2e/` (Go) starts `bin/admiral` and drives it over HTTP and WebSocket. Its packaging checks (the release tarball, the install script, the formula and the service) carry the `packaging` build tag: `make e2e` leaves them out and the release runs them (see [releasing](releasing.md)). `web/e2e/` (Playwright, WebKit, touch) loads the new shell at `/app/` in two projects: `ipad-landscape` (1194x834) runs every spec but the `*-phone.spec.ts` ones, and `phone` (402x874) runs only those. Vitest covers the new shell's pure UI state logic only; the frozen old UI has one vitest, `web/src/ships.test.ts`, which checks that its ship feed drops a moored ship.
+Tests sit at two seams. `e2e/` (Go) starts `bin/admiral` and drives it over HTTP and WebSocket. Its packaging checks (the release tarball, the install script, the formula and the service) carry the `packaging` build tag: `make e2e` leaves them out and the release runs them (see [releasing](releasing.md)). `web/e2e/` (Playwright, WebKit, touch) loads the new shell at `/app/` in two projects: `ipad-landscape` (1194x834) runs every spec but the `*-phone.spec.ts` ones, and `phone` (402x874) runs only those. Vitest covers the new shell's pure UI state logic and, in `*.test.tsx` under happy-dom, its components; the frozen old UI has one vitest, `web/src/ships.test.ts`, which checks that its ship feed drops a moored ship.
 
 The push path is tested against `internal/push/pushtest` (a fake TLS push service, a subscriber that decrypts per RFC 8291 and a VAPID verifier). Unit tests hand the sender that service's client. The Go e2e starts `bin/admiral` with `ADMIRAL_PUSH_TEST_ROOTS=<path to a PEM file holding the fake's certificate>`, which only a `-tags e2e` build honours (`make build` does; `make release` does not, and a packaging test checks the release lacks the name), and which also lifts the refusal of loopback destinations for that run.
 
