@@ -189,3 +189,44 @@ func TestAnEventShipInARealCloneIsOnItsOwnBranchWithAdmiralExcludedFromGit(t *te
 		t.Errorf("git status in the clone shows .admiral: %q", status)
 	}
 }
+
+const eventPR = "https://github.com/acme/api/pull/7"
+
+func TestAnEventShipsPromptIsTheSkillThenTheEventURLThenTheTextThenTheEventFileLineThenTheGuidance(t *testing.T) {
+	cases := []struct{ name, skill, template, want string }{
+		{"commodore with text", "commodore", "Triage the new issue.", "/commodore " + eventPR + "\n\nTriage the new issue."},
+		{"commodore with no text", "commodore", "", "/commodore " + eventPR},
+		{"no skill with text", "none", "Triage the new issue.", eventPR + "\n\nTriage the new issue."},
+		{"no skill and no text", "none", "", eventPR},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := newPinRig(t, nil)
+			req, fc := p.eventShip()
+			fc.t = t
+			req.Skill, req.Template, req.EventURL = Skill{Kind: c.skill}, c.template, eventPR
+			if _, err := p.l.Launch(req); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			argv, _ := p.shipRecord(t)
+			want := c.want + "\n\n" + eventFileLine + "\n\n## Standing orders\n\n" + guidanceText
+			if got := argv[len(argv)-1]; got != want {
+				t.Errorf("prompt = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestAnEventShipWithAnEventURLWritesItAsTheShipsURLOption(t *testing.T) {
+	p := newPinRig(t, nil)
+	req, fc := p.eventShip()
+	fc.t = t
+	req.EventURL = eventPR
+	out, err := p.l.Launch(req)
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if got := out.Options["url"]; got != eventPR {
+		t.Errorf("url option = %q, want %q", got, eventPR)
+	}
+}

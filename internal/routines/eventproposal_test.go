@@ -67,8 +67,8 @@ func TestLaunchingAnEventProposalStartsOneAutopilotShipWithTheTemplateAndTheLink
 	if !req.Autopilot || req.RoutineKey != "routine:"+r.ID || req.Fleet != "work" {
 		t.Errorf("request = %+v, want autopilot, key routine:%s, fleet work", req, r.ID)
 	}
-	if !strings.Contains(req.Text, r.Do.Launch.Text) || !strings.Contains(req.Text, "https://github.com/acme/api/pull/7") || len(req.Text) > len(r.Do.Launch.Text)+len("https://github.com/acme/api/pull/7")+40 {
-		t.Errorf("prompt = %q, want the routine's template and the event link and nothing more", req.Text)
+	if want := "https://github.com/acme/api/pull/7\n\n" + r.Do.Launch.Text; req.Text != want {
+		t.Errorf("prompt = %q, want the event link, a blank line, then the routine's template and nothing more: %q", req.Text, want)
 	}
 	if got.Outcome != routines.Launched || got.Via != routines.ViaProposal || got.Ship == "" || req.TriggerID != got.ID {
 		t.Errorf("launched record = %+v with trigger id %q, want launched via the proposal with the ship and its own id", got, req.TriggerID)

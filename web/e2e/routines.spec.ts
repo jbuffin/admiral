@@ -19,6 +19,13 @@ test('a routine made through the form fires on its minute and its ship shows in 
   await form.getByLabel('When').fill(`${due.getMinutes()} ${due.getHours()} * * *`);
   await expect(form.getByText(/Daily/)).toBeVisible();
   await form.getByRole('radio', { name: 'Claude' }).tap();
+  // Save before a Checkout is chosen: the error names Checkout and sits under that field, above Text.
+  await form.getByRole('button', { name: 'Save', exact: true }).tap();
+  const missing = form.getByRole('alert').filter({ hasText: 'Checkout' });
+  await expect(missing).toBeVisible();
+  const [select, alert, text] = await Promise.all([form.getByLabel('Checkout').boundingBox(), missing.boundingBox(), form.getByLabel('Text').boundingBox()]);
+  expect(alert!.y).toBeGreaterThanOrEqual(select!.y + select!.height - 1);
+  expect(alert!.y + alert!.height).toBeLessThanOrEqual(text!.y + 1);
   await form.getByLabel('Checkout').selectOption(join(admiral.home, 'proj'));
   await form.getByLabel('Text').fill('go');
   await form.getByRole('radio', { name: 'Act', exact: true }).tap();

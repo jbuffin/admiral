@@ -107,6 +107,8 @@ type Request struct {
 	EventText string `json:"-"`
 	// Template is the routine's launch text, the start of an event ship's prompt.
 	Template string `json:"-"`
+	// EventURL is the PR or issue URL of the event that started the ship; only the scheduler sets it.
+	EventURL string `json:"-"`
 	// StartFrom starts the ship from a restricted ship's work: its own clone, with Branch of Clone as the start.
 	StartFrom *StartFrom `json:"-"`
 }

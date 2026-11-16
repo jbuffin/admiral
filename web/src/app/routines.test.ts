@@ -92,7 +92,9 @@ describe('a server 400 shows by the field it is about', () => {
     expect(errorField('name is required')).toBe('name');
     expect(errorField('name is longer than 80 characters')).toBe('name');
     expect(errorField('when: the cron expression "0 0 30 2 *" never fires')).toBe('when');
-    expect(errorField('do.launch needs a harness, a dir and a prompt text')).toBe('do');
+    expect(errorField('Dock is required')).toBe('dock');
+    expect(errorField('Checkout is required')).toBe('checkout');
+    expect(errorField('Text is required for a routine that runs on a schedule')).toBe('text');
     expect(errorField('the prompt is empty')).toBe('do');
     expect(errorField('autopilot is not proven on claude in fleet work: its guard has not passed')).toBe('do');
     expect(errorField('args: --dangerous is not allowed')).toBe('do');
@@ -106,6 +108,9 @@ describe('a server 400 shows by the field it is about', () => {
     expect(errorText(real)).toBe('when: the cron expression "0 0 30 2 *" never fires');
     expect(errorField('invalid routine: name is required')).toBe('name');
     expect(errorField('invalid routine: the prompt is empty')).toBe('do');
+    expect(errorField('invalid routine: Dock is required')).toBe('dock');
+    expect(errorField('invalid routine: Checkout is required')).toBe('checkout');
+    expect(errorField('invalid routine: Text is required for a routine that runs on a schedule')).toBe('text');
     expect(errorField('something else broke')).toBe('form');
   });
 });
