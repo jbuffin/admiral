@@ -803,7 +803,8 @@ test("a chat question withdrawn while its Peek is open stays open on a plain not
   rmSync(join(admiral.home, 'chat', 'harbor', 'questions', 'q1.json'));
   const send = peek.getByRole('button', { name: 'Send answers' });
   await expect(async () => {
-    if (await send.isEnabled()) await send.tap();
+    // The push can disable Send between the check and the tap; a bounded tap lets toPass retry instead of waiting out its clock.
+    if (await send.isEnabled()) await send.tap({ timeout: 1_000 });
     await expect(peek.getByRole('alert')).toHaveText('AdmiralBot withdrew this question.', { timeout: 1_000 });
   }).toPass({ timeout: 15_000 });
   await expect(send).toBeDisabled();
