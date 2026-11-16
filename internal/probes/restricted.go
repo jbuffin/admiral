@@ -541,7 +541,12 @@ func runRestrictedGit(ctx context.Context, t Target) Outcome {
 		cfg, attr, hard := "cfg-"+r.nonce, "attr-"+r.nonce, "hard-"+r.nonce
 		w := func(p string) string { return "WRITE: " + filepath.Join(r.clone, p) }
 		// A ship's temp dir is its only other writable place; the sandbox refuses git init there on real Claude Code, so the move can only fail.
-		built := filepath.Join(r.tempLink, "claude-"+strconv.Itoa(os.Getuid()), "repo-"+r.nonce)
+		// Named by its resolved path, the one git's refusal prints, so the model has no reason to rewrite the command.
+		tempReal, err := filepath.EvalSymlinks(r.tempLink)
+		if err != nil {
+			tempReal = r.tempLink
+		}
+		built := filepath.Join(tempReal, "claude-"+strconv.Itoa(os.Getuid()), "repo-"+r.nonce)
 		gitmodules, moved = filepath.Join(r.clone, ".GITMODULES"), filepath.Join(r.clone, "moved-"+r.nonce)
 		cmds = []string{
 			w(".git/info/attributes"), w(".GIT/info/attributes"), w(attr), w(cfg), w(hard), w(".GIT/config"),
