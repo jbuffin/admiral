@@ -158,9 +158,15 @@ const INVALID = /^invalid routine: /;
 /** A server 400 message without the "invalid routine: " the store puts before every validation error. */
 export const errorText = (message: string) => message.replace(INVALID, '');
 
+/** A part of the routine form a message can belong to. */
+export type RoutineField = 'name' | 'when' | 'before_acting' | 'do' | 'dock' | 'checkout' | 'text';
+
 /** The part of the form a server 400 message belongs to. */
-export function errorField(message: string): 'name' | 'when' | 'before_acting' | 'do' | 'form' {
+export function errorField(message: string): RoutineField | 'form' {
   const m = errorText(message);
+  if (/^Dock\b/.test(m)) return 'dock';
+  if (/^Checkout\b/.test(m)) return 'checkout';
+  if (/^Text\b/.test(m)) return 'text';
   if (/^name\b/.test(m)) return 'name';
   if (/^when\b|^on\b|^an event routine has no when/.test(m)) return 'when';
   if (/^an event routine launches a ship/.test(m)) return 'do';

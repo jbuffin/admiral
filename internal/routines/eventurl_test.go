@@ -188,3 +188,20 @@ func TestAProposalLaunchWithNoURLAndNoTextFailsAndStartsNoShip(t *testing.T) {
 		t.Errorf("record = %+v, want a failure whose reason says the event had no PR or issue link and the routine has no Text", got)
 	}
 }
+
+func TestAnEventOnAConfiguredEnterpriseHostGetsItsURLAndOtherHostsDoNot(t *testing.T) {
+	const ghe = "https://ghe.example.com/acme/api/pull/7"
+	for ref, want := range map[string]string{ghe: ghe, "https://other.example.com/acme/api/pull/7": ""} {
+		h := newHarness(t)
+		h.sched.GitHubHosts = func(string) []string { return []string{"github.com", "ghe.example.com"} }
+		h.withEvents(standing.PresetLimits(standing.Home))
+		h.onRoutine(routines.Act, nil)
+		ev := evFrom("Eng")
+		ev.Ref = ref
+		h.sched.HandleEvent(ev)
+		h.wantLaunches(1)
+		if got := h.ships.requests()[0].EventURL; got != want {
+			t.Errorf("ref %q: event URL %q, want %q", ref, got, want)
+		}
+	}
+}

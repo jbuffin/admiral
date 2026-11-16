@@ -533,6 +533,13 @@ func serve(args []string) error {
 		ResourceKnown: func(name string) bool { _, ok := cfg.Current().Resources[name]; return ok }}
 	cfg.RoutineNamer = func(fleet string) standing.RoutineNamer { return routineStore.Namer(fleet) }
 	routineScheduler := &routines.Scheduler{Store: routineStore, Clock: realClock{}, Ships: routineShips{shipService}, Chat: chatService, Proposer: routineProposer{inboxService}, Zone: time.Local, Ready: host.Ready(), HostKnown: host.Known,
+		GitHubHosts: func(fleet string) []string {
+			c := cfg.Current()
+			if f, ok := c.Fleet(fleet); ok {
+				return launcher.GitHubHosts(c, f)
+			}
+			return []string{github.DefaultHost}
+		},
 		QuotaHold: func(fleet, harness string) (string, bool) {
 			if harness == "" { // a prompt run goes to the fleet's AdmiralBot
 				f, ok := cfg.Current().Fleet(fleet)

@@ -80,6 +80,8 @@ type Scheduler struct {
 	// HostKnown is false while the ships host cannot list ships; a nil one is always known.
 	HostKnown func() bool
 	Zone      *time.Location // the zone a When is read in; main passes time.Local
+	// GitHubHosts are the hosts whose pull request and issue URLs an event may carry into a launch; nil is github.com alone.
+	GitHubHosts func(fleet string) []string
 	// Own says whether a ref is Admiral's own work (a ship's PR, a claimed issue); such an event is ignored. Nil owns nothing.
 	Own func(fleet, ref string) bool
 	// Enrich is where a Lookout adds the dedupe_key, repo, labels and costs before the decision. Nil adds nothing.
@@ -570,7 +572,7 @@ func (s *Scheduler) fire(ctx context.Context, fleet string, r Routine, due, now 
 		if l == nil {
 			_ = s.prompt(fleet, r, rec)
 		} else {
-			_ = s.launch(ctx, fleet, r, *l, rec, due, false)
+			_ = s.launch(ctx, fleet, r, *l, rec, due, false, "")
 		}
 	}
 }
@@ -655,12 +657,15 @@ func (s *Scheduler) prompt(fleet string, r Routine, rec Trigger) error {
 }
 
 // launch runs the fire-time gates and starts the ship. A run that finds no room waits, unless it is an accepted proposal: that refuses with ErrBusy.
-func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launch, rec Trigger, due time.Time, accepted bool) error {
+func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launch, rec Trigger, due time.Time, accepted bool, eventURL string) error {
 	fail := func(reason string) error {
 		delete(s.waiting, r.ID)
 		rec.Outcome, rec.Reason = Failed, reason
 		s.recordFor(fleet, r, rec)
 		return errors.New(reason)
+	}
+	if r.On != nil && eventURL == "" && strings.TrimSpace(l.Text) == "" {
+		return fail(nothingToLaunch)
 	}
 	skill, err := s.gates(fleet, l)
 	if err != nil {
@@ -670,7 +675,7 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 	ref, lerr := s.Ships.Launch(ctx, launcher.Request{
 		Fleet: fleet, Harness: l.Harness, Dir: l.Dir, Text: l.Text, Model: l.Model, Effort: l.Effort,
 		Skill: skill, Resources: l.Resources, ExtraArgs: l.Args, Autopilot: true, Unattended: !accepted,
-		RoutineKey: routineKey(r.ID), TriggerID: id,
+		RoutineKey: routineKey(r.ID), TriggerID: id, EventURL: eventURL,
 	})
 	switch {
 	case lerr != nil && lerr.Wait != "" && accepted:
@@ -748,7 +753,7 @@ func (s *Scheduler) Accept(ctx context.Context, fleet, routineID, triggerID stri
 		if _, held := s.Ships.Holder(routineKey(r.ID)); held {
 			return Trigger{}, ErrBusy
 		}
-		if err := s.launch(ctx, fleet, r, *l, rec, now, true); err != nil {
+		if err := s.launch(ctx, fleet, r, *l, rec, now, true, ""); err != nil {
 			return Trigger{}, err
 		}
 	} else if err := s.prompt(fleet, r, rec); err != nil {

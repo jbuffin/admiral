@@ -221,7 +221,7 @@ func (s *Store) validate(f config.Fleet, r Routine, onKept bool) error {
 	case l == nil:
 		return nil
 	}
-	return s.validateLaunch(f, *r.Do.Launch)
+	return s.validateLaunch(f, *r.Do.Launch, r.On == nil)
 }
 
 // maxNameRunes caps a name, which AdmiralBot reads through its tools and in the [Routine: <name>] chat prefix.
@@ -240,9 +240,15 @@ func checkName(name string) error {
 	return nil
 }
 
-func (s *Store) validateLaunch(f config.Fleet, l Launch) error {
-	if l.Harness == "" || strings.TrimSpace(l.Dir) == "" || strings.TrimSpace(l.Text) == "" {
-		return invalidf("do.launch needs a harness, a dir and a prompt text")
+// validateLaunch checks the launch in form order; an event routine may leave Text empty, since its ship starts from the event's link.
+func (s *Store) validateLaunch(f config.Fleet, l Launch, needText bool) error {
+	switch {
+	case l.Harness == "":
+		return invalidf("Dock is required")
+	case strings.TrimSpace(l.Dir) == "":
+		return invalidf("Checkout is required")
+	case needText && strings.TrimSpace(l.Text) == "":
+		return invalidf("Text is required for a routine that runs on a schedule")
 	}
 	dock, ok := f.Harness(l.Harness)
 	if !ok {

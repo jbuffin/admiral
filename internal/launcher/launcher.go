@@ -3,6 +3,7 @@
 package launcher
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"github.com/jbuffin/admiral/internal/standing"
@@ -262,7 +263,7 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	}
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", launched}, {"first-launched", firstLaunched}, {"title", orderTitle(req)}, {"url", req.URL}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")},
+		{"order", req.OrderID}, {"launched", launched}, {"first-launched", firstLaunched}, {"title", orderTitle(req)}, {"url", cmp.Or(req.URL, req.EventURL)}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")},
 		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
