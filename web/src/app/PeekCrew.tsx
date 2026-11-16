@@ -216,7 +216,7 @@ export function CrewMemberBody({ entry, item, step, setStep, acting, decided }: 
 
 const MISSION_CONFIRM: Record<'keep' | 'drop', string> = {
   keep: 'The mission is saved for every later ship in the fleet.',
-  drop: 'Nothing is saved.',
+  drop: 'The mission is discarded and nothing is saved.',
 };
 
 export function MissionBody({ entry, item, step, setStep, acting, decided }: { entry: Entry; item: MissionItem; step: MemberStep; setStep: (s: MemberStep) => void; acting: Acting; decided: () => void }) {
