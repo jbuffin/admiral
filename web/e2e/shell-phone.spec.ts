@@ -27,7 +27,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect(page.getByRole('navigation').getByRole('link')).toHaveText(['Inbox', 'Chat', 'Ships', 'Orders']);
   // The needs-you stop fits the screen and is tall enough to tap.
   const stop = page.getByRole('main').getByRole('listitem').filter({ hasText: login.name });
-  await expect(stop).toContainText('Which branch should I rebase onto?');
+  await expect(stop).toContainText('Fix the login redirect');
   expect((await stop.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
 
