@@ -77,6 +77,25 @@ export function seedAdHocMember(a: Admiral, member: string, opts: { id: string; 
   return path;
 }
 
+/**
+ * A mission Dory's report proposed for zulu, and the `mission` item that asks to keep it; returns the mission file's text and the path Keep writes it to.
+ * The text is a valid mission file (frontmatter, then the procedure), `lines` long past the first step. Call after `seedFleets`, before `start`.
+ */
+export function seedMission(a: Admiral, name: string, opts: { id: string; scope?: 'fleet' | 'repo'; repo?: string; lines?: number; hidden?: boolean }): { text: string; path: string } {
+  const scope = opts.scope ?? 'fleet';
+  const steps = Array.from({ length: opts.lines ?? 0 }, (_, i) => `\n${i + 1}. Step ${i + 1} of ${name}.\n`).join('');
+  const text =
+    `---\nname: ${name}\npick-me-when: Pick for a docs sweep.\nsource-of-truth: The docs index.\ntask-force:\n  - implementer\n  - reviewer\nbuilder: implementer\nchecker: reviewer\nstop-rule: Stop when every page links.\ndelivery: One PR.\n---\n\n` +
+    `Sweep the docs for ${name}.${opts.hidden ? '\u200BSecond clause.' : ''}\n${steps}\nLast step of ${name}.\n`;
+  seedInboxItem(a, '_admiral', {
+    id: opts.id,
+    kind: 'mission',
+    title: `Keep mission ${name}?`,
+    mission: { fleet: 'zulu', ship: 'Dory', run_date: '2026-11-12', name, scope, repo: scope === 'repo' ? (opts.repo ?? 'acme/api') : null, text },
+  });
+  return { text, path: join(a.home, 'fleets', 'zulu', 'missions', `${name}.md`) };
+}
+
 /** Runs zulu's claude checks, as Check again does, so the fleet has a harness proven for judge calls; call after `start`. */
 export async function proveJudge(page: Page, server: string) {
   const res = await page.request.post(server + 'api/v1/harness-capabilities/check', { data: { fleet: 'zulu', harness: 'claude' } });

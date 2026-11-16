@@ -1,5 +1,5 @@
 import type { Fleet } from './api';
-import { readCrewMember } from './crewItems';
+import { readCrewMember, readMission } from './crewItems';
 import { fleetPaint } from './fleetPaint';
 import type { Entry } from './inbox';
 import { respondedPRs } from './moored';
@@ -52,6 +52,10 @@ export function rowVerb(e: Entry): string {
     case 'crew_member': {
       const from = readCrewMember(e.item.crew_member).ship;
       return from ? `asks to keep a crew member from ${from}` : 'asks to keep a crew member';
+    }
+    case 'mission': {
+      const m = readMission(e.item.mission);
+      return `proposes a mission${m.ship ? ` from ${m.ship}` : ''}${m.scope === 'repo' && m.repo ? ` for ${m.repo}` : ''}`;
     }
     default:
       return 'posted a notice';

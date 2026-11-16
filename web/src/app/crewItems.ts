@@ -133,3 +133,21 @@ export function markHidden(text: string): { text: string; count: number } {
   }
   return { text: out, count };
 }
+
+export interface MissionItem {
+  fleet: string;
+  ship: string;
+  run_date: string;
+  name: string;
+  scope: 'fleet' | 'repo';
+  repo: string;
+  text: string;
+}
+
+export function readMission(raw: unknown): MissionItem {
+  const o = obj(raw);
+  return { fleet: str(o.fleet), ship: str(o.ship), run_date: str(o.run_date), name: str(o.name), scope: o.scope === 'repo' ? 'repo' : 'fleet', repo: str(o.repo), text: str(o.text) };
+}
+
+export const missionFold = (decision: 'keep' | 'drop', name: string, data: { file_written?: boolean }): string =>
+  decision === 'drop' ? `Dropped mission ${name}` : data.file_written === false ? `Kept mission ${name}; it was already saved` : `Kept mission ${name}`;

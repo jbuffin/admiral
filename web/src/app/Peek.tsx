@@ -8,8 +8,8 @@ import type { Entry } from './inbox';
 import { rowShip, rowVerb } from './inboxRow';
 import { discardFold, lockedBy, submitFold } from './itemActions';
 import { Button } from './Button';
-import { CrewMemberBody, CrewNotesBody, isCrewKind, type MemberStep, readCrew, useCrewNotes } from './PeekCrew';
-import { crewRemoveFold } from './crewItems';
+import { CrewMemberBody, CrewNotesBody, MissionBody, isCrewKind, type MemberStep, readCrew, useCrewNotes } from './PeekCrew';
+import { crewRemoveFold, readMission } from './crewItems';
 import { blankReview, EventProposalBody, FindingsBody, RoutineProposalBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
 import { MergeBody } from './PeekMerge';
 import { ReReviewBody } from './ReReview';
@@ -115,7 +115,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
       const q = qs.find((x) => !answeredQuestion(pickOf(draft, x)));
       const o = q?.options[a.n - 1];
       if (q && o) setDraft((d) => choose(d, q, o.label));
-    } else if (a.kind === 'pick' && kind === 'crew_member') {
+    } else if (a.kind === 'pick' && (kind === 'crew_member' || kind === 'mission')) {
       if (acting.busy || acting.locked || a.n > 2) return;
       acting.clear();
       setRemoving(false);
@@ -164,6 +164,8 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
         <CrewNotesBody entry={entry} acting={acting} state={crewNotes} decided={() => setRemoving(false)} />
       ) : kind === 'crew_member' ? (
         <CrewMemberBody entry={entry} item={crew} step={member} setStep={setMember} acting={acting} decided={() => setRemoving(false)} />
+      ) : kind === 'mission' ? (
+        <MissionBody entry={entry} item={readMission(entry.item?.mission)} step={member} setStep={setMember} acting={acting} decided={() => setRemoving(false)} />
       ) : null}
       {removable ? (
         <RemoveRow

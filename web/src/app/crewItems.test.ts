@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createNoteDecisions, crewMemberFold, markHidden, crewRemoveFold, noteEditProblems, readCrewMember, readCrewNotes } from './crewItems';
+import { createNoteDecisions, crewMemberFold, markHidden, crewRemoveFold, missionFold, noteEditProblems, readCrewMember, readCrewNotes, readMission } from './crewItems';
 
 const note = (id: string, extra: Record<string, unknown> = {}) => ({ id, member: 'scout', role: 'scribe', scope: 'fleet', note: `Fact ${id}`, replaces: null, ...extra });
 
@@ -165,5 +165,49 @@ describe('the fold line after a crew member is answered', () => {
     expect(crewRemoveFold({ file_removed: false }, 'scout')).toContain('left in place');
     expect(crewRemoveFold({ file_removed: true }, 'scout')).not.toContain('left in place');
     expect(crewRemoveFold({}, 'scout')).toContain('left in place');
+  });
+});
+
+describe('reading a mission item', () => {
+  it('reads every field of a fleet proposal, with the whole text', () => {
+    const text = '---\nname: ship-docs\n---\n\nStep one.\n'.repeat(500);
+    expect(readMission({ fleet: 'zulu', ship: 'Dory', run_date: '2026-11-12', name: 'ship-docs', scope: 'fleet', repo: null, text })).toEqual({
+      fleet: 'zulu',
+      ship: 'Dory',
+      run_date: '2026-11-12',
+      name: 'ship-docs',
+      scope: 'fleet',
+      repo: '',
+      text,
+    });
+  });
+
+  it('keeps the proposing repo of a repo proposal', () => {
+    expect(readMission({ name: 'ship-docs', scope: 'repo', repo: 'acme/api', text: 'x' })).toMatchObject({ scope: 'repo', repo: 'acme/api' });
+  });
+
+  it('degrades a missing object and wrong-typed fields to empty values', () => {
+    const empty = { fleet: '', ship: '', run_date: '', name: '', scope: 'fleet', repo: '', text: '' };
+    for (const raw of [undefined, null, 'x', 7, [], { name: 3, text: {}, ship: [], fleet: false }]) {
+      expect(readMission(raw), JSON.stringify(raw)).toEqual(empty);
+    }
+    expect(readMission({ name: 'a', scope: 'galaxy' }).scope).toBe('fleet');
+  });
+});
+
+describe('the fold line after a mission is answered', () => {
+  it('says a kept mission was kept, by name', () => {
+    expect(missionFold('keep', 'ship-docs', { file_written: true })).toBe('Kept mission ship-docs');
+  });
+
+  it('says a kept mission was already saved when nothing was written', () => {
+    const line = missionFold('keep', 'ship-docs', { file_written: false });
+    expect(line).toContain('ship-docs');
+    expect(line).toContain('already saved');
+  });
+
+  it('says a dropped mission was dropped, whatever the answer holds', () => {
+    expect(missionFold('drop', 'ship-docs', {})).toBe('Dropped mission ship-docs');
+    expect(missionFold('drop', 'ship-docs', { file_written: false })).toBe('Dropped mission ship-docs');
   });
 });

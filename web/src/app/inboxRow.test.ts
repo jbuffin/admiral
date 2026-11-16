@@ -63,6 +63,13 @@ describe('rowVerb', () => {
     expect(rowVerb(itemEntry({ kind: 'crew_member', session: '_admiral', name: 'Admiral', crew_member: { ship: 'Dory' } }))).toBe('asks to keep a crew member from Dory');
   });
 
+  it('words a mission with the ship it came from, and names the repo of a repo proposal', () => {
+    const mission = (m?: unknown) => itemEntry({ kind: 'mission', session: '_admiral', name: 'Admiral', mission: m });
+    expect(rowVerb(mission())).toBe('proposes a mission');
+    expect(rowVerb(mission({ ship: 'Dory', scope: 'fleet', repo: null }))).toBe('proposes a mission from Dory');
+    expect(rowVerb(mission({ ship: 'Dory', scope: 'repo', repo: 'acme/api' }))).toBe('proposes a mission from Dory for acme/api');
+  });
+
   it('words a stop by its reason', () => {
     expect(rowVerb(stopEntry('permission:Bash'))).toBe('wants to run Bash');
     expect(rowVerb(stopEntry('stop'))).toBe('finished and is waiting');
