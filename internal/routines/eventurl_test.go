@@ -104,14 +104,21 @@ func TestARefThatIsNotAGitHubPRorIssueGivesTheLaunchNoEventURL(t *testing.T) {
 		"https://github.com.evil.example/acme/api/pull/7",
 		"https://github.com/acme/api/discussions/3",
 		"https://github.com/acme/api/pull/seven",
+		"ENG-9",                                                      // a plugin's ref: no repo to scope by, so only an unverified event carries it
+		"https://evil.example/?u=https://github.com/acme/api/pull/7", // likewise
 	}
 	for _, ref := range refs {
 		t.Run(ref, func(t *testing.T) {
+			limits := standing.PresetLimits(standing.Home)
+			// a plugin's event is never T1, so the sender is allowlisted and T2 may launch
+			limits.SenderAllowlist = []string{"Eng"}
+			limits.Ceilings.T2 = standing.Ceiling{Level: standing.A5}
 			h := newHarness(t)
-			h.withEvents(standing.PresetLimits(standing.Home))
+			h.withEvents(limits)
 			h.onRoutine(routines.Act, nil)
 			ev := evFrom("Eng")
 			ev.Ref = ref
+			ev.Verified = !strings.HasPrefix(ref, "ENG-") && !strings.HasPrefix(ref, "https://evil.example/")
 			h.sched.HandleEvent(ev)
 			h.wantLaunches(1)
 			req := h.ships.requests()[0]
