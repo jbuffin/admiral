@@ -409,7 +409,7 @@ func (w *world) startLAN(t *testing.T) *fleetInst {
 	if _, err := os.Stat(configPath(w.home)); err != nil {
 		writeConfig(t, w.home, w.config())
 	}
-	w.in = launchAdmiral(t, w.home, "0.0.0.0:"+freePort(t), w.baseEnv())
+	w.in = launchAdmiral(t, w.home, "0.0.0.0:0", w.baseEnv())
 	if m := lanLine.FindStringSubmatch(w.in.LANLine); m != nil {
 		w.in.LANIP = m[1]
 	}

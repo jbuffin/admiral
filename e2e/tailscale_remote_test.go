@@ -153,6 +153,7 @@ func (r *tsRig) owned(once func() *tsProc) *tsProc {
 }
 
 // lostPort waits until the process serves or ends, and reports whether its port belonged to someone else.
+// A process that does neither fails the test with its output.
 func (r *tsRig) lostPort(p *tsProc) bool {
 	end := time.Now().Add(tsStartBound)
 	for time.Now().Before(end) {
@@ -161,14 +162,11 @@ func (r *tsRig) lostPort(p *tsProc) bool {
 			return strings.Contains(out, "address already in use")
 		}
 		if strings.Contains(out, "Admiral is running at") {
-			if ownsLoopbackPort(p.instance) {
-				return false
-			}
-			p.Stop()
-			return true
+			return requireOwned(r.t, p.instance)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	r.t.Fatalf("admiral neither served nor exited within %s:\n%s", tsStartBound, p.out.String())
 	return false
 }
 

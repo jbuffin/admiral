@@ -171,7 +171,7 @@ func TestS3_LocalNeedsNoToken(t *testing.T) {
 // The port survives a restart, and no shared token file appears.
 func TestS4_RestartKeepsThePort(t *testing.T) {
 	t.Parallel()
-	in := startAdmiral(t, newHome(t), "127.0.0.1:"+freePort(t))
+	in := startAdmiral(t, newHome(t), "127.0.0.1:0")
 	again := in.Restart(t)
 	if again.Port != in.Port {
 		t.Fatalf("after restart port = %s, want %s", again.Port, in.Port)
@@ -206,7 +206,7 @@ func TestS4_CookieSurvivesRestart(t *testing.T) {
 // Host hardening.
 func TestS5_WebSocketAccess(t *testing.T) {
 	t.Parallel()
-	in := startAdmiral(t, newHome(t), "0.0.0.0:"+freePort(t))
+	in := startAdmiral(t, newHome(t), "0.0.0.0:0")
 	type hello struct {
 		Type    string `json:"type"`
 		Version string `json:"version"`

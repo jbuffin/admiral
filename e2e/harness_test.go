@@ -74,19 +74,12 @@ func binaryPath(t *testing.T) string {
 	return p
 }
 
-// Parallel tests each pick a port and listen on it later, so a port is handed
-// out once per run. A port stays picked until an Admiral has bound it: until
-// then another process on the machine can take it, and startWithRetry picks again.
+// Admiral starts on host:0 and reports the port the kernel gave it, which no other process holds. freePort is for a
+// port that must be known before the start: a tailscale rig's serve config, a Restart that keeps its port, and a
+// port nothing listens on. Parallel tests each draw one, so a port is handed out once per run.
 var (
 	portsMu sync.Mutex
-	ports   = map[string]portState{}
-)
-
-type portState int
-
-const (
-	picked portState = iota + 1
-	bound
+	ports   = map[string]bool{}
 )
 
 func freePort(t *testing.T) string {
@@ -95,8 +88,8 @@ func freePort(t *testing.T) string {
 	defer portsMu.Unlock()
 	for {
 		port := drawPort(t)
-		if ports[port] == 0 {
-			ports[port] = picked
+		if !ports[port] {
+			ports[port] = true
 			return port
 		}
 	}
@@ -115,51 +108,83 @@ var drawPort = func(t *testing.T) string {
 	return port
 }
 
-// ownsLoopbackPort is whether the server answering on in's loopback port is the Admiral just started. A process
+// loopbackOwner says whether the server answering on in's loopback port is the Admiral just started. A process
 // that holds 127.0.0.1:P while Admiral binds 0.0.0.0:P wins the loopback traffic (BSD lets the more specific
-// bind in), and no bind error says so; its answer carries another home id, or none.
-func ownsLoopbackPort(in *instance) bool {
+// bind in) and no bind error says so; it answers 404, or JSON with another home id. Only such an answer is a
+// stranger. Any other failure comes back as unclear, with what was seen, so a broken /api/ships is not read as a port problem.
+func loopbackOwner(in *instance) (owned bool, unclear string) {
 	c := &http.Client{Transport: noProxy(), Timeout: 5 * time.Second}
 	resp, err := c.Get(in.LocalURL + "/api/ships")
 	if err != nil {
-		return false
+		return false, "GET /api/ships: " + err.Error()
 	}
 	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusNotFound {
+		return false, ""
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Sprintf("GET /api/ships = %d %s", resp.StatusCode, b)
+	}
 	var body struct {
 		Home string `json:"home"`
 	}
-	return resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&body) == nil && body.Home == homeid.ID(in.Home)
+	if json.Unmarshal(b, &body) != nil {
+		return false, ""
+	}
+	return body.Home == homeid.ID(in.Home), ""
 }
+
+// requireOwned reports true when the loopback port answers as another server, so the start is tried again.
+func requireOwned(t *testing.T, in *instance) (stranger bool) {
+	t.Helper()
+	owned, unclear := loopbackOwner(in)
+	if unclear != "" {
+		in.Stop()
+		t.Fatalf("admiral started on %s but its loopback answer is unclear: %s", in.LocalURL, unclear)
+	}
+	if !owned {
+		in.Stop()
+	}
+	return !owned
+}
+
+// lanPortFrom is the LAN port the test build bound for ADMIRAL_E2E_LAN_PORT=0, which it reports on stderr before
+// it prints its URLs. A loopback listen has no LAN listener.
+func lanPortFrom(t *testing.T, listen string, stderr *syncBuffer) string {
+	t.Helper()
+	if host, _, _ := net.SplitHostPort(listen); host != "" && !net.ParseIP(host).IsUnspecified() {
+		return ""
+	}
+	var port string
+	waitUntil(t, "Admiral reports its LAN port", func() bool {
+		m := lanPortLine.FindStringSubmatch(stderr.String())
+		if m != nil {
+			port = m[1]
+		}
+		return m != nil
+	})
+	return port
+}
+
+var lanPortLine = regexp.MustCompile(`e2e LAN port: (\d+)`)
 
 const bindTries = 5
 
-// startWithRetry runs once until Admiral owns its ports. once reports true when Admiral exited with "address already
-// in use", or answered on its loopback port as another server: the port freePort handed out was taken before the
-// bind, so a picked listen port and the LAN port are drawn again.
+// startWithRetry runs once until Admiral owns its port. once reports true when Admiral exited with "address
+// already in use" or answered on its loopback port as another server: a port that is being released, or one a stranger
+// holds. A port Admiral picks itself (host:0) can't be taken; this is for the one a Restart keeps.
 func startWithRetry[T any](t *testing.T, listen string, once func(listen string) (T, bool)) T {
 	t.Helper()
 	for try := 1; ; try++ {
 		in, inUse := once(listen)
 		if !inUse {
-			if _, port, err := net.SplitHostPort(listen); err == nil {
-				portsMu.Lock()
-				if ports[port] == picked {
-					ports[port] = bound
-				}
-				portsMu.Unlock()
-			}
 			return in
 		}
 		if try == bindTries {
-			t.Fatalf("admiral could not bind its ports in %d tries", bindTries)
+			t.Fatalf("admiral could not bind %s in %d tries", listen, bindTries)
 		}
-		host, port, err := net.SplitHostPort(listen)
-		portsMu.Lock()
-		again := err == nil && ports[port] == picked
-		portsMu.Unlock()
-		if again {
-			listen = net.JoinHostPort(host, freePort(t))
-		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -264,8 +289,7 @@ func startAdmiralOnce(t *testing.T, home, listen string) (*instance, bool) {
 	t.Helper()
 	bin := binaryPath(t)
 	cmd := exec.Command(bin, "--listen", listen)
-	lanPort := freePort(t)
-	cmd.Env = append(hermeticEnv(t), append(lanEnv(lanPort), "ADMIRAL_HOME="+home)...)
+	cmd.Env = append(hermeticEnv(t), append(lanEnv("0"), "ADMIRAL_HOME="+home)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -275,7 +299,7 @@ func startAdmiralOnce(t *testing.T, home, listen string) (*instance, bool) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start %s: %v", bin, err)
 	}
-	in := &instance{Home: home, listen: listen, LANPort: lanPort, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
+	in := &instance{Home: home, listen: listen, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
 	go func() { _ = cmd.Wait(); close(in.done) }()
 	// Admiral starts a tmux server that outlives it; end this home's. Cleanups
 	// run last-registered-first, so this one is registered first to run after
@@ -338,8 +362,8 @@ func startAdmiralOnce(t *testing.T, home, listen string) (*instance, bool) {
 	} else if !strings.HasPrefix(got[1], "On other devices:") {
 		t.Fatalf("second line must start with `On other devices:`, got %q", got[1])
 	}
-	if !ownsLoopbackPort(in) {
-		in.Stop()
+	in.LANPort = lanPortFrom(t, listen, stderr)
+	if requireOwned(t, in) {
 		return nil, true
 	}
 	return in, false
@@ -372,10 +396,10 @@ func (in *instance) Restart(t *testing.T) *instance {
 	return again
 }
 
-// startLAN starts an instance on 0.0.0.0:<free port> with a device paired over the LAN.
+// startLAN starts an instance on 0.0.0.0 with a device paired over the LAN.
 func startLAN(t *testing.T) *instance {
 	t.Helper()
-	in := startAdmiral(t, newHome(t), "0.0.0.0:"+freePort(t))
+	in := startAdmiral(t, newHome(t), "0.0.0.0:0")
 	requireLAN(t, in)
 	return in
 }

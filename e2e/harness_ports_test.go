@@ -1,8 +1,12 @@
 package e2e
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -19,8 +23,9 @@ func holdPort(t *testing.T, addr string) {
 }
 
 // firstDraws makes the harness's next draws return these ports, as if another process took each one between the
-// draw and Admiral's bind; later draws are real.
-func firstDraws(t *testing.T, ports ...string) {
+// draw and Admiral's bind; later draws are real. It returns how many of them are still undrawn. It swaps a package
+// global, so a test that uses it must not be t.Parallel.
+func firstDraws(t *testing.T, ports ...string) (undrawn func() int) {
 	t.Helper()
 	real := drawPort
 	left := ports
@@ -33,49 +38,83 @@ func firstDraws(t *testing.T, ports ...string) {
 		return real(t)
 	}
 	t.Cleanup(func() { drawPort = real })
-}
-
-// The harness may not hand a test an Admiral that does not own its ports. Each case takes the port first, the
-// way a parallel suite does, and the Admiral that comes back must still be the test's own.
-func TestHarnessAdmiralOwnsItsPortsWhenAStrangerTookThemFirst(t *testing.T) {
-	for _, c := range []struct {
-		name   string
-		listen func(port string) string
-		hold   string // the stranger's address on the listen port
-		lan    bool   // the stranger holds the LAN port instead
-	}{
-		{"same address", func(p string) string { return "127.0.0.1:" + p }, "127.0.0.1:", false},
-		{"loopback while Admiral binds the wildcard", func(p string) string { return "0.0.0.0:" + p }, "127.0.0.1:", false},
-		{"the LAN port", func(p string) string { return "0.0.0.0:" + p }, "127.0.0.1:", true},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			listenPort, lanPort := freePortUnreserved(t), freePortUnreserved(t)
-			taken := listenPort
-			if c.lan {
-				taken = lanPort
-			}
-			holdPort(t, c.hold+taken)
-			firstDraws(t, listenPort, lanPort)
-			home := newHome(t)
-			in := startWithRetry(t, c.listen(freePort(t)), func(listen string) (*instance, bool) {
-				return startAdmiralOnce(t, home, listen)
-			})
-			resp, err := http.Get(in.LocalURL + "/api/ships")
-			if err != nil {
-				t.Fatal(err)
-			}
-			resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("GET %s/api/ships = %d, want 200: a stranger answers where Admiral should", in.LocalURL, resp.StatusCode)
-			}
-		})
-	}
+	return func() int { return len(left) }
 }
 
 // freePortUnreserved is a real free port the harness has not recorded.
 func freePortUnreserved(t *testing.T) string {
 	t.Helper()
 	return drawPort(t)
+}
+
+// An Admiral whose port the harness does not need before the start takes it from the kernel (host:0), which never
+// hands out a port another process holds, so no stranger can be on it. Ports held on loopback sit first in line for
+// a draw; a start that asks the harness for one gets a stranger, so every one must be left undrawn, and each
+// Admiral must answer as itself on its own port.
+func TestHarnessStartsDrawNoPortForAnAdmiralThatTakesItsOwn(t *testing.T) {
+	held := []string{freePortUnreserved(t), freePortUnreserved(t), freePortUnreserved(t), freePortUnreserved(t)}
+	for _, p := range held {
+		holdPort(t, "127.0.0.1:"+p)
+	}
+	undrawn := firstDraws(t, held...)
+	answers := func(in *instance) {
+		t.Helper()
+		resp, err := http.Get(in.LocalURL + "/api/ships")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s/api/ships = %d, want 200: a stranger answers where Admiral should", in.LocalURL, resp.StatusCode)
+		}
+		for _, p := range held {
+			if in.Port == p {
+				t.Fatalf("Admiral is on the held port %s", p)
+			}
+		}
+	}
+	t.Run("loopback", func(t *testing.T) { answers(startAdmiral(t, newHome(t), "127.0.0.1:0")) })
+	t.Run("LAN", func(t *testing.T) { answers(startLAN(t)) })
+	t.Run("world", func(t *testing.T) { answers(newWorld(t).start().instance) })
+	t.Run("world LAN", func(t *testing.T) { answers(newWorld(t).startLAN(t).instance) })
+	if n := undrawn(); n != len(held) {
+		t.Fatalf("the starts drew %d of the %d held ports; an Admiral that takes its own port needs none", len(held)-n, len(held))
+	}
+}
+
+// A port that is known before the start (a restart keeps its port, the tailscale rig's serve config names it) can be
+// taken first. loopbackOwner must call another server a stranger and a broken answer unclear.
+func TestHarnessLoopbackOwnerTellsAStrangerFromTheAdmiral(t *testing.T) {
+	in := startAdmiral(t, newHome(t), "127.0.0.1:0")
+	if owned, unclear := loopbackOwner(in); !owned || unclear != "" {
+		t.Fatalf("the Admiral itself: owned %v, unclear %q", owned, unclear)
+	}
+	at := func(h http.HandlerFunc) *instance {
+		srv := httptest.NewServer(h)
+		t.Cleanup(srv.Close)
+		return &instance{Home: in.Home, LocalURL: srv.URL}
+	}
+	for _, c := range []struct {
+		name     string
+		h        http.HandlerFunc
+		stranger bool
+	}{
+		{"404", http.NotFound, true},
+		{"another home", func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(map[string]string{"home": "0000"})
+		}, true},
+		{"not JSON", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<html>")) }, true},
+		{"500", func(w http.ResponseWriter, r *http.Request) { http.Error(w, "boom", 500) }, false},
+	} {
+		owned, unclear := loopbackOwner(at(c.h))
+		if owned || (unclear == "") != c.stranger {
+			t.Errorf("%s: owned %v, unclear %q; want not owned and a stranger=%v", c.name, owned, unclear, c.stranger)
+		}
+	}
+	dead := &instance{Home: in.Home, LocalURL: "http://127.0.0.1:" + freePort(t)}
+	if owned, unclear := loopbackOwner(dead); owned || unclear == "" {
+		t.Errorf("nothing listening: owned %v, unclear %q; want unclear", owned, unclear)
+	}
 }
 
 // The tailscale rig starts Admiral on its own port, outside startWithRetry; it too must end up with an Admiral that
@@ -100,4 +139,25 @@ func TestHarnessTailscaleRigMovesOffAPortAStrangerTook(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || r.port != p.Port {
 		t.Fatalf("status %d, rig port %s, Admiral port %s", resp.StatusCode, r.port, p.Port)
 	}
+	if got := r.serveProxy(); got != "http://127.0.0.1:"+r.port {
+		t.Fatalf("serve.json proxies to %q, want http://127.0.0.1:%s", got, r.port)
+	}
+}
+
+// serveProxy is the proxy target of the root handler in the rig's serve config.
+func (r *tsRig) serveProxy() string {
+	r.t.Helper()
+	b, err := os.ReadFile(filepath.Join(r.dir, "serve.json"))
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	var cfg struct {
+		Web map[string]struct {
+			Handlers map[string]struct{ Proxy string }
+		}
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		r.t.Fatal(err)
+	}
+	return cfg.Web[tsHostPort(443)].Handlers["/"].Proxy
 }

@@ -336,7 +336,7 @@ func TestLockRouteRefusesANonLoopbackPeer(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	w.writeLockConfig(nil)
-	in := startAdmiral(t, w.home, "0.0.0.0:"+freePort(t))
+	in := startAdmiral(t, w.home, "0.0.0.0:0")
 	requireLAN(t, in)
 	cookie := map[string]string{"Cookie": in.cookieName() + "=" + in.Token}
 	if resp, body := get(t, in.lanURL()+"/api/resources", cookie); resp.StatusCode != http.StatusOK || !strings.Contains(body, "phone") {
