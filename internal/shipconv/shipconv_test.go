@@ -192,7 +192,12 @@ func TestConversationEndpoint_States(t *testing.T) {
 
 	f.ship("resumed", f.path("zz"))
 	f.starts["resumed"] = "claude --resume " + sid
-	f.wantState("resumed", "none") // the launch named no session of ours
+	appendTo(t, f.path("zz"), line(1))
+	f.wantState("resumed", "ok") // a resumed Claude ship binds as a --session-id one does
+
+	f.ship("resumedother", f.path("zz"))
+	f.starts["resumedother"] = "claude --resume 11111111-2222-4333-8444-555555555555"
+	f.wantState("resumedother", "none") // the option names another conversation than the one resumed
 }
 
 func TestConversationEndpoint_AStrayEntryInProjectsIsNotARefusal(t *testing.T) {

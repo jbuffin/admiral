@@ -5,7 +5,6 @@ package shipconv
 import (
 	"context"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -13,106 +12,16 @@ import (
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
+	"github.com/jbuffin/admiral/internal/transcriptfs"
 )
-
-// splitStart splits a pane's start command into its arguments the way a shell would: tmux shows the argv
-// single-quoted when it started one, and plain when it started a string.
-func splitStart(cmd string) []string {
-	var (
-		args  []string
-		cur   strings.Builder
-		in    bool // a word is open, even an empty quoted one
-		quote rune
-	)
-	flush := func() {
-		if in {
-			args = append(args, cur.String())
-			cur.Reset()
-			in = false
-		}
-	}
-	rs := []rune(cmd)
-	for i := 0; i < len(rs); i++ {
-		c := rs[i]
-		switch {
-		case quote == '\'':
-			if c == '\'' {
-				quote = 0
-			} else {
-				cur.WriteRune(c)
-			}
-		case quote == '"':
-			switch {
-			case c == '"':
-				quote = 0
-			case c == '\\' && i+1 < len(rs) && strings.ContainsRune(`"\$`+"`", rs[i+1]):
-				i++
-				cur.WriteRune(rs[i])
-			default:
-				cur.WriteRune(c)
-			}
-		case c == '\'' || c == '"':
-			quote, in = c, true
-		case c == '\\' && i+1 < len(rs):
-			i++
-			cur.WriteRune(rs[i])
-			in = true
-		case c == ' ' || c == '\t' || c == '\n':
-			flush()
-		default:
-			cur.WriteRune(c)
-			in = true
-		}
-	}
-	flush()
-	return args
-}
-
-// Flags whose next argument is an order's text, so it is not read as one of ours.
-var takesOrder = map[string]bool{"-i": true, "--interactive": true, "-p": true, "--prompt": true}
-
-// startFlag finds a flag Admiral put in the start command: before the first "--", and never inside an order's text.
-func startFlag(cmd, name string) (value string, present bool) {
-	args := splitStart(cmd)
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			break
-		}
-		if takesOrder[a] {
-			i++
-			continue
-		}
-		if a == name {
-			if i+1 < len(args) {
-				return args[i+1], true
-			}
-			return "", true
-		}
-		if v, ok := strings.CutPrefix(a, name+"="); ok {
-			return v, true
-		}
-	}
-	return "", false
-}
-
-var sessionUUID = regexp.MustCompile(`^[0-9a-f-]{36}$`)
-
-// startedSession is the session id the launch gave the harness, read from the start command.
-func startedSession(cmd string) string {
-	if v, ok := startFlag(cmd, "--session-id"); ok && sessionUUID.MatchString(v) {
-		return v
-	}
-	return ""
-}
 
 // uiServerPort is the loopback port Admiral gave the ship's Copilot with --ui-server --port, read from the start
 // command, which the pane cannot rewrite.
 func uiServerPort(startCmd string) (int, bool) {
-	if _, on := startFlag(startCmd, "--ui-server"); !on {
+	if _, on := transcriptfs.StartFlag(startCmd, "--ui-server"); !on {
 		return 0, false
 	}
-	v, ok := startFlag(startCmd, "--port")
+	v, ok := transcriptfs.StartFlag(startCmd, "--port")
 	n, err := strconv.Atoi(v)
 	if !ok || err != nil || n < 1 || n > 65535 {
 		return 0, false

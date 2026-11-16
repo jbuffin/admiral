@@ -3,7 +3,9 @@ package launcher
 import (
 	"crypto/rand"
 	"fmt"
+	"net/http"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -57,23 +59,62 @@ func newUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
+var conversationID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+
+func checkResume(req Request, dock config.Harness) *Error {
+	if req.ResumeConversation == "" {
+		return nil
+	}
+	if req.Harness != "claude" {
+		return refuse(http.StatusBadRequest, "only a claude ship can resume its conversation")
+	}
+	if !conversationID.MatchString(req.ResumeConversation) {
+		return refuse(http.StatusBadRequest, "the conversation to resume is not a session id")
+	}
+	if choosesSession(req.Harness, dock.Args) || choosesSession(req.Harness, req.ExtraArgs) {
+		return refuse(http.StatusBadRequest, "the dock or the launch already chooses a session, so the conversation cannot be resumed")
+	}
+	for _, args := range [][]string{dock.Args, req.ExtraArgs} {
+		for _, a := range args {
+			if name, _, _ := strings.Cut(a, "="); name == "--fork-session" {
+				return refuse(http.StatusBadRequest, "--fork-session would give the resumed conversation a new id")
+			}
+		}
+	}
+	if req.Restricted != "" || req.eventShip() || req.StartFrom != nil {
+		return refuse(http.StatusBadRequest, "a restricted, event or promoted launch works in its own checkout, so it cannot resume a conversation")
+	}
+	if !sessionhost.ValidTranscriptPath(claudeTranscript(req, dock, req.ResumeConversation)) {
+		return refuse(http.StatusBadRequest, "the conversation to resume has no usable transcript path under the dock's Claude config")
+	}
+	return nil
+}
+
+func claudeTranscript(req Request, dock config.Harness, id string) string {
+	return filepath.Join(config.IdentityDir("claude", dock.Env), "projects", ProjectSlug(req.Dir), id+".jsonl")
+}
+
 // conversationAnchor names a new Claude Code or Copilot session so the transcript is known before the first hook.
 func conversationAnchor(req Request, dock config.Harness, now time.Time) (flags []string, pane [][2]string) {
 	if (req.Harness != "claude" && req.Harness != "copilot") ||
 		choosesSession(req.Harness, dock.Args) || choosesSession(req.Harness, req.ExtraArgs) {
 		return nil, nil
 	}
-	id, err := newUUID()
-	if err != nil {
-		return nil, nil
+	id, flag := req.ResumeConversation, "--resume"
+	if id == "" {
+		var err error
+		if id, err = newUUID(); err != nil {
+			return nil, nil
+		}
+		flag = "--session-id"
 	}
-	path := filepath.Join(config.IdentityDir("claude", dock.Env), "projects", ProjectSlug(req.Dir), id+".jsonl")
+	path := claudeTranscript(req, dock, id)
 	if req.Harness == "copilot" {
 		path = filepath.Join(config.IdentityDir("copilot", dock.Env), "session-state", id, "events.jsonl")
 	}
 	if !sessionhost.ValidTranscriptPath(path) {
 		return nil, nil
 	}
-	return []string{"--session-id", id},
+	return []string{flag, id},
 		[][2]string{{"transcript", strconv.FormatInt(now.UnixNano(), 10) + " launch " + path}}
 }

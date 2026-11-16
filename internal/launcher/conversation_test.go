@@ -44,3 +44,18 @@ func TestConversationAnchor(t *testing.T) {
 		}
 	}
 }
+
+func TestConversationAnchorResumesTheGivenConversation(t *testing.T) {
+	cfgDir := t.TempDir()
+	const id = "0f8fad5b-d9cb-469f-a165-70867728950e"
+	flags, pane := conversationAnchor(
+		Request{Harness: "claude", Dir: "/work/a", ResumeConversation: id},
+		config.Harness{Env: map[string]string{"CLAUDE_CONFIG_DIR": cfgDir}}, time.Unix(1700000000, 0))
+	if len(flags) != 2 || flags[0] != "--resume" || flags[1] != id {
+		t.Errorf("flags = %q, want --resume %s and no --session-id", flags, id)
+	}
+	want := [][2]string{{"transcript", "1700000000000000000 launch " + cfgDir + "/projects/-work-a/" + id + ".jsonl"}}
+	if len(pane) != 1 || pane[0] != want[0] {
+		t.Errorf("pane options = %q, want %q", pane, want)
+	}
+}

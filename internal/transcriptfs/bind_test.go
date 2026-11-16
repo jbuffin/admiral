@@ -14,7 +14,7 @@ func TestBindAcceptsOnlyAPathTheLaunchRecordedForItsOwnSession(t *testing.T) {
 	cmd := "'/bin/claude' '--session-id' '" + bindID + "' '--' 'go'"
 	for name, c := range map[string]struct{ raw, cmd string }{
 		"another session than the start command gave": {"1 launch " + bindPath, "'/bin/claude' '--session-id' '11111111-2222-4333-8444-555555555555' '--' 'go'"},
-		"a start command with no session id":          {"1 launch " + bindPath, "'/bin/claude' '--resume' '" + bindID + "' '--' 'go'"},
+		"a start command with no session id":          {"1 launch " + bindPath, "'/bin/claude' '--settings' 's.json' '--' 'go'"},
 		"a hook's option, not a launch's":             {"1 hook " + bindPath, cmd},
 		"an option without a source":                  {bindPath, cmd},
 		"an empty option":                             {"", cmd},
@@ -24,6 +24,52 @@ func TestBindAcceptsOnlyAPathTheLaunchRecordedForItsOwnSession(t *testing.T) {
 	} {
 		if path, id, ok := Bind(c.raw, c.cmd); ok || path != "" || id != "" {
 			t.Errorf("Bind with %s = %q, %q, %v; want it refused", name, path, id, ok)
+		}
+	}
+}
+
+func TestBindForResumedClaudeShip(t *testing.T) {
+	resumed := "'/bin/claude' '--resume' '" + bindID + "' '--settings' 's.json' '--' 'go'"
+	if path, id, ok := BindFor("claude", "1 launch "+bindPath, resumed); !ok || path != bindPath || id != bindID {
+		t.Errorf("BindFor(claude) = %q, %q, %v; want %q, %q, true", path, id, ok, bindPath, bindID)
+	}
+	other := "'/bin/claude' '--resume' '11111111-2222-4333-8444-555555555555' '--' 'go'"
+	if _, _, ok := BindFor("claude", "1 launch "+bindPath, other); ok {
+		t.Error("BindFor(claude) bound a path for another conversation than the one resumed")
+	}
+	copilotPath := "/cfg/session-state/" + bindID + "/events.jsonl"
+	copilotResumed := "'/bin/copilot' '--resume' '" + bindID + "' '--' 'go'"
+	if _, _, ok := BindFor("copilot", "1 launch "+copilotPath, copilotResumed); ok {
+		t.Error("BindFor(copilot) bound a --resume launch, want it refused")
+	}
+}
+
+func TestStartedSessionIgnoresAnOrdersText(t *testing.T) {
+	other := "11111111-2222-4333-8444-555555555555"
+	for name, c := range map[string]struct{ harness, cmd, want string }{
+		"flag":              {"copilot", "'/bin/copilot' '--session-id' '" + bindID + "' '--' 'go'", bindID},
+		"in an order":       {"copilot", "'/bin/copilot' '--interactive=fix --session-id " + other + "' '--session-id' '" + bindID + "'", bindID},
+		"only in an order":  {"copilot", "'/bin/copilot' '--interactive=fix --session-id " + other + "'", ""},
+		"after the order's": {"copilot", "copilot -i 'a' --session-id " + bindID, bindID},
+		"resumed":           {"claude", "'/bin/claude' '--resume' '" + bindID + "' '--' 'fix --session-id " + other + "'", bindID},
+		"a prompt's flag":   {"claude", "'/bin/claude' '--session-id' '" + bindID + "' '--' 'fix --session-id " + other + "'", bindID},
+	} {
+		if got, _ := StartedSession(c.harness, c.cmd); got != c.want {
+			t.Errorf("%s: StartedSession = %q, want %q", name, got, c.want)
+		}
+	}
+}
+
+func TestBindIgnoresASessionFlagInThePrompt(t *testing.T) {
+	const other = "11111111-2222-4333-8444-555555555555"
+	otherPath := "/cfg/projects/zz/" + other + ".jsonl"
+	for _, flag := range []string{"--resume", "--session-id"} {
+		cmd := "'/bin/claude' '" + flag + "' '" + bindID + "' '--' 'file it; --session-id " + other + "'"
+		if _, _, ok := BindFor("claude", "1 launch "+otherPath, cmd); ok {
+			t.Errorf("%s: bound the session id written in the prompt", flag)
+		}
+		if path, id, ok := BindFor("claude", "1 launch "+bindPath, cmd); !ok || path != bindPath || id != bindID {
+			t.Errorf("%s: BindFor = %q, %q, %v; want %q, %q, true", flag, path, id, ok, bindPath, bindID)
 		}
 	}
 }

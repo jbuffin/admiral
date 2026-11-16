@@ -72,6 +72,8 @@ type Request struct {
 	Name    string `json:"-"`
 	Session string `json:"-"`
 	Round   int    `json:"-"`
+	// ResumeConversation is the Claude conversation id the launch resumes in place of starting a new one.
+	ResumeConversation string `json:"-"`
 	// Prompt, when set, is the harness's prompt verbatim: a wake's resume text already carries its skill invocation.
 	Prompt string `json:"-"`
 	// Bare makes Prompt the harness's prompt even when empty, with no skill invocation: a wake with no resume text.
@@ -239,6 +241,9 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	}
 	if _, merr := modelFlags(req.Harness, req.Model, req.Effort); merr != nil {
 		return Checked{}, asError(merr)
+	}
+	if lerr := checkResume(req, dock); lerr != nil {
+		return Checked{}, lerr
 	}
 	if req.dockLaunch() {
 		req.Text, req.Note = strings.TrimSpace(req.Text), ""
