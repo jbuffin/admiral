@@ -77,9 +77,28 @@ func newWorld(t *testing.T) *world {
 		// Registered before any Admiral this world starts, so it runs after they stop.
 		killTmux(w.sock())
 		killTmux(w.defaultSocket())
+		w.noTmuxLeft(t)
 		_ = os.RemoveAll(root)
 	})
 	return w
+}
+
+// noTmuxLeft fails the test whose world still has a tmux server after its sockets were killed, and kills it:
+// once the home is removed nothing can reach the server again.
+func (w *world) noTmuxLeft(t *testing.T) {
+	end := time.Now().Add(2 * time.Second)
+	for {
+		out, _ := exec.Command("pgrep", "-f", "--", "-S "+w.sock()).Output()
+		if len(out) == 0 {
+			return
+		}
+		if time.Now().After(end) {
+			_ = exec.Command("pkill", "-9", "-f", "--", "-S "+w.sock()).Run()
+			t.Errorf("a tmux server on %s outlived the test and was killed; stop the Admiral that started it before kill-server", w.sock())
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // at returns the world with its helpers bound to t. A subtest must use it:
