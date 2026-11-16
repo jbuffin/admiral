@@ -150,6 +150,8 @@ func (s *Service) serveHand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// a ship can set the option on its own pane, which wins over the session's
+	_ = s.Host.UnsetPaneOption(ctx, session, sessionhost.OptHandFailed)
 	s.record(outcomes.Record{Ship: session, Event: "handing", Fields: map[string]any{"kind": body.Kind}}, nil)
 	_ = s.Host.Sync(ctx)
 	s.broadcast()
@@ -260,7 +262,7 @@ func (s *Service) advanceHands() {
 	}
 }
 
-// clearOrphanHand ends a mark nothing remembers: Admiral restarted during the hand, or the ship set the mark itself.
+// clearOrphanHand ends a mark nothing remembers: Admiral restarted during the hand, or the ship set the mark itself; either way it lost track.
 func (s *Service) clearOrphanHand(name string) {
 	if _, busy := s.handing.LoadOrStore(name, true); busy {
 		return
@@ -270,9 +272,9 @@ func (s *Service) clearOrphanHand(name string) {
 	if _, has := s.hands.Load(name); !ok || has || cur.Options[sessionhost.OptHanding] == "" {
 		return
 	}
-	s.clearHandMark(name)
-	s.setHandFailed(name, "Admiral restarted during the hand")
-	s.recordHandFailure(name, "", "Admiral restarted during the hand")
+	const why = "Admiral lost track of the hand"
+	s.clearHandMark(name, why)
+	s.recordHandFailure(name, "", why)
 	s.broadcast()
 }
 
@@ -498,10 +500,11 @@ func (s *Service) removeHandRef(name string) {
 	}
 }
 
-func (s *Service) clearHandMark(name string) {
+// clearHandMark ends the mark and leaves why on the ship in the same write; why is "" for a ship that is no longer live.
+func (s *Service) clearHandMark(name, why string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptHanding: ""})
+	_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptHanding: "", sessionhost.OptHandFailed: why})
 	// a ship can set the mark on its own pane, which wins over the session's
 	_ = s.Host.UnsetPaneOption(ctx, name, sessionhost.OptHanding)
 	_ = s.Host.Sync(ctx)
@@ -511,17 +514,14 @@ func (s *Service) clearHandMark(name string) {
 func (s *Service) failHand(sess sessionhost.Session, e *handEntry, why string) {
 	s.hands.Delete(sess.Name)
 	s.removeHandRef(sess.Name)
-	s.clearHandMark(sess.Name)
-	s.setHandFailed(sess.Name, why)
+	exited := sess.PaneDead || status(sess, time.Now()) == StatusAnchored || status(sess, time.Now()) == StatusSailingOff
+	if exited {
+		s.clearHandMark(sess.Name, "")
+	} else {
+		s.clearHandMark(sess.Name, why)
+	}
 	s.recordHandFailure(sess.Name, e.id, why)
 	s.broadcast()
-}
-
-func (s *Service) setHandFailed(name, why string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptHandFailed: why})
-	_ = s.Host.Sync(ctx)
 }
 
 func (s *Service) recordHandFailure(name, id, why string) {

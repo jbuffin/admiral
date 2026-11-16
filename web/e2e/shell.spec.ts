@@ -661,7 +661,7 @@ test('a Copilot ship shows its conversation in the Conversation tab, shows a lin
   setReason(admiral, design, 'stop');
   setState(admiral, design, 'needs_you');
   let ref = '';
-  await expect.poll(() => (ref = /\S*\/ships\/[\w.-]+\/ref/.exec(received(admiral, design))?.[0] ?? '')).not.toBe('');
+  await expect.poll(() => (ref = new RegExp(`\\S*/ships/${design.session}/ref`).exec(received(admiral, design))?.[0] ?? '')).not.toBe('');
   writeFileSync(ref, 'https://github.com/acme/api/issues/7\n');
   await expect.poll(() => shipOption(admiral, design, 'handing')).toBe('sent');
   setReason(admiral, design, 'stop');

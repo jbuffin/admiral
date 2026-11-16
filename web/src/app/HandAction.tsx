@@ -32,6 +32,7 @@ export function HandToCommodore({ ship }: { ship: Ship }) {
         class="hand-commodore"
         busyLabel="Handing to Commodore"
         busy={act.busy}
+        pending={key}
         disabled={!!act.refusal}
         onClick={() => {
           setError('');
