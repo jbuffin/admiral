@@ -1058,6 +1058,7 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await expect(when.locator('option:checked')).toHaveText('Review requested of you');
   await form.getByRole('radio', { name: 'Claude' }).tap();
   await form.getByLabel('Checkout').selectOption(join(admiral.home, 'proj'));
+  await expect(form.getByText('Fires only for events on acme/api.')).toBeVisible();
   await form.getByLabel('Text').fill('sweep the board');
   await form.getByRole('radio', { name: 'Ask first' }).tap();
   await form.getByRole('button', { name: 'Save', exact: true }).tap();

@@ -9,6 +9,7 @@ import type { Dock, FleetCapabilities } from './api';
 import {
   autopilotDocks,
   breakerTripped,
+  checkoutScopeLine,
   errorField,
   formOfRoutine,
   holdFireBanner,
@@ -112,6 +113,34 @@ describe('a server 400 shows by the field it is about', () => {
     expect(errorField('invalid routine: Checkout is required')).toBe('checkout');
     expect(errorField('invalid routine: Text is required for a routine that runs on a schedule')).toBe('text');
     expect(errorField('something else broke')).toBe('form');
+  });
+
+  it('puts the no-remote refusal on the Checkout field', () => {
+    expect(errorField('invalid routine: Checkout has no remote, so a GitHub event routine on it never fires')).toBe('checkout');
+  });
+});
+
+describe('the line that says which repos fire an event routine', () => {
+  const github = { event: true, plugin: 'github' };
+  it('names the one repo, without its host', () => {
+    expect(checkoutScopeLine({ ...github, remotes: ['github.com/acme/api'] })).toBe('Fires only for events on acme/api.');
+  });
+  it('lists two repos', () => {
+    expect(checkoutScopeLine({ ...github, remotes: ['github.com/me/api', 'github.com/acme/api'] })).toBe('Fires only for events on me/api and acme/api.');
+  });
+  it('collapses one owner/name on two hosts to a single repo', () => {
+    expect(checkoutScopeLine({ ...github, remotes: ['github.com/acme/api', 'github-work/acme/api'] })).toBe('Fires only for events on acme/api.');
+  });
+  it('says the routine never fires when the checkout has no remote', () => {
+    expect(checkoutScopeLine({ ...github, remotes: [] })).toMatch(/never fires.*no remote/i);
+  });
+  it('says nothing when the remotes are not known', () => {
+    expect(checkoutScopeLine({ ...github, remotes: undefined })).toBeNull();
+  });
+  it('says nothing for a schedule routine or a plugin source', () => {
+    expect(checkoutScopeLine({ event: false, plugin: 'github', remotes: ['github.com/acme/api'] })).toBeNull();
+    expect(checkoutScopeLine({ event: true, plugin: 'tracker', remotes: ['github.com/acme/api'] })).toBeNull();
+    expect(checkoutScopeLine({ event: true, plugin: undefined, remotes: [] })).toBeNull();
   });
 });
 

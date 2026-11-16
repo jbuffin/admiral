@@ -304,7 +304,7 @@ func TestAFiredLaunchIsAnAutopilotShipUnderTheRoutinesKeyWithItsTriggerRecord(t 
 	h.tickAt(at(0, 9, 0))
 	h.wantLaunches(1)
 	req := h.ships.requests()[0]
-	if !req.Autopilot || req.Fleet != "work" || req.Harness != "claude" || req.Dir != "/tmp/repo" || req.Text != "sweep the board" ||
+	if !req.Autopilot || req.Fleet != "work" || req.Harness != "claude" || req.Dir != sharedCheckout || req.Text != "sweep the board" ||
 		req.Model != "sonnet" || req.Skill.Kind != "skill" || req.Skill.Name != "sweep" {
 		t.Errorf("launch request = %+v, want the routine's launch as an autopilot ship", req)
 	}
@@ -365,7 +365,7 @@ func TestReportOnlyRecordsWhatItWouldDoAndLaunchesNothing(t *testing.T) {
 	if got := h.proposer.proposals(); len(got) != 0 {
 		t.Errorf("Report only proposed %d times, want none", len(got))
 	}
-	if rec := h.latest(r); rec.Outcome != routines.Reported || rec.Tier != "T0" || !strings.Contains(rec.Action, "/tmp/repo") {
+	if rec := h.latest(r); rec.Outcome != routines.Reported || rec.Tier != "T0" || !strings.Contains(rec.Action, sharedCheckout) {
 		t.Errorf("record = %+v, want a T0 reported record whose Action names what it would launch", rec)
 	}
 }

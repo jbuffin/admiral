@@ -761,6 +761,7 @@ func TestAReportedOrProposedDecisionIsHandedToTheActsSeamAfterItsRecordIsWritten
 	h.sched.HandleEvent(evFrom("Eng"))
 	skipped := evFrom("Eng")
 	skipped.Ref = "https://github.com/acme/web/pull/8"
+	skipped.Verified = false // a verified ref on another repo is out of the routine's scope and never reaches the allowlist
 	h.sched.HandleEvent(skipped)
 	recs := h.records(r)
 	if len(recs) != 2 {

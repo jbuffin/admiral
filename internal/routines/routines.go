@@ -85,6 +85,8 @@ type Store struct {
 	ResourceKnown func(name string) bool
 	// Events lists the kinds a fleet's source can emit; ok is false when the fleet has no such source.
 	Events func(fleet, source string) (kinds []EventKind, ok bool)
+	// SourcePlugin names the plugin behind a fleet's source; ok is false when the fleet has no such source.
+	SourcePlugin func(fleet, source string) (plugin string, ok bool)
 
 	mu sync.Mutex
 }
