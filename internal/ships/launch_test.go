@@ -75,11 +75,12 @@ func fleets(t *testing.T) []config.Fleet {
 }
 
 func TestLaunchAPIRefusesWhatAutopilotModeMayNotClaim(t *testing.T) {
+	fl := fleets(t)
 	held := 0
 	s := &Service{
 		Host: sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
 		Launcher: &launcher.Launcher{Home: guardedHome(t), Config: func() *config.Config {
-			return &config.Config{Fleets: fleets(t), Resources: map[string]config.Resource{"phone": {Capacity: 1}}}
+			return &config.Config{Fleets: fl, Resources: map[string]config.Resource{"phone": {Capacity: 1}}}
 		}},
 		Reserve: func(names []string) (func(), string, string) {
 			if held > 0 {
@@ -117,9 +118,10 @@ func TestLaunchAPIRefusesWhatAutopilotModeMayNotClaim(t *testing.T) {
 // The cap counts every ship underway or needing you, however it was launched; it
 // refuses an autopilot launch and never an interactive one.
 func TestAutopilotLaunchOverTheCapIsRefusedButAHandLaunchIsNot(t *testing.T) {
+	fl := fleets(t)
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
-		Launcher: &launcher.Launcher{Home: guardedHome(t), Config: func() *config.Config { return &config.Config{Fleets: fleets(t), MaxShips: 1} }},
+		Launcher: &launcher.Launcher{Home: guardedHome(t), Config: func() *config.Config { return &config.Config{Fleets: fl, MaxShips: 1} }},
 	}
 	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p", nil)
 	base := `"fleet":"work","harness":"claude","dir":"` + t.TempDir() + `","skill":{"kind":"none"}`
@@ -135,10 +137,11 @@ func TestAutopilotLaunchOverTheCapIsRefusedButAHandLaunchIsNot(t *testing.T) {
 // Without a passed guard probe in the launch's fleet, autopilot mode is refused with the
 // same 400 the old harness list gave, nothing starts, and the Inbox says so once.
 func TestAutopilotLaunchWithoutAProvenGuardIsRefusedAndNoticed(t *testing.T) {
+	fl := fleets(t)
 	home := guardedHome(t) // proven in work only
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: a launch that got through would be a 503
-		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{Fleets: fleets(t)} }},
+		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{Fleets: fl} }},
 	}
 	dir := t.TempDir()
 	body := func(fleet, harness string) string {
@@ -186,10 +189,11 @@ func TestAutopilotLaunchWithoutAProvenGuardIsRefusedAndNoticed(t *testing.T) {
 
 // A fleet or dock the config doesn't have is a 404 before the gate, as in Launch, and posts no notice.
 func TestAutopilotLaunchOnAnUnknownFleetOrDockIs404AndPostsNoNotice(t *testing.T) {
+	fl := fleets(t)
 	home := guardedHome(t)
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"),
-		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{Fleets: fleets(t)} }},
+		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{Fleets: fl} }},
 	}
 	dir := t.TempDir()
 	for _, tc := range []struct{ fleet, harness string }{{"wrok", "claude"}, {"home", "codex"}} {

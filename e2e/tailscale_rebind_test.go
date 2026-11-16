@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -285,6 +286,31 @@ func TestFailedRebindKeepsTheOldListener(t *testing.T) {
 	}
 	defer blocker.Close()
 
+	// A dial refused at any point means the old listener was closed, even if it came back.
+	// Several dialers, so one lands in the instant a closed listener would leave.
+	stop, refused := make(chan struct{}), make(chan error, 4)
+	var dialers sync.WaitGroup
+	addr := net.JoinHostPort("127.0.0.1", p.Port)
+	for range 4 {
+		dialers.Add(1)
+		go func() {
+			defer dialers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				c, err := net.DialTimeout("tcp", addr, time.Second)
+				if err != nil {
+					refused <- err
+					return
+				}
+				_ = c.(*net.TCPConn).SetLinger(0) // a reset leaves no TIME_WAIT to use up the ports
+				c.Close()
+			}
+		}()
+	}
 	r.writeConfig(false)
 
 	waitUntil(t, "the failed bind shows as a check", func() bool {
@@ -295,6 +321,13 @@ func TestFailedRebindKeepsTheOldListener(t *testing.T) {
 		}
 		return false
 	})
+	close(stop)
+	dialers.Wait()
+	select {
+	case err := <-refused:
+		t.Errorf("loopback refused a dial during the failed bind: %v", err)
+	default:
+	}
 	if !p.answers(p.LocalURL) || p.exited() {
 		t.Error("Admiral is no longer listening on loopback after the failed bind")
 	}

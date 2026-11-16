@@ -700,7 +700,9 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	_, yInbox := shipPaths(w.record(y.Session))
 	w.touch(y.Session, "go")
 	w.in.waitStatusList(t, 10*time.Second, y.Session, "anchored")
-	time.Sleep(300 * time.Millisecond) // the writer has tried its queued `ended`, and failed
+	waitUntil(t, "the writer tried the anchored ship's queued `ended`, and failed", func() bool {
+		return strings.Contains(w.in.stderrBuf.String(), "e2e: outcome write failed: ended "+y.Session+"\n")
+	})
 
 	if err := os.Remove(blocker); err != nil {
 		t.Fatal(err)

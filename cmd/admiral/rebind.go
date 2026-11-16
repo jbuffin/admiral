@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"sync"
 	"syscall"
-	"time"
 )
 
 // listener is Admiral's one TCP listener, which follows the Tailscale mode unless --listen fixed the address.
@@ -107,9 +106,11 @@ func (l *listener) Move(want string) {
 		l.swap(nl, want, old)
 		return
 	}
-	// A wider address can overlap the old one on some systems, so only then retry with the old one closed.
+	// Only a bind refused on the wanted port can be the old listener's doing (a wider address overlapping it on some
+	// systems); a refusal elsewhere, such as the test build's LAN port, says nothing about it.
 	retired := false
-	if errors.Is(err, syscall.EADDRINUSE) && samePort(oldAddr, want) {
+	var op *net.OpError
+	if errors.Is(err, syscall.EADDRINUSE) && errors.As(err, &op) && op.Addr != nil && samePort(op.Addr.String(), want) && samePort(oldAddr, want) {
 		l.retire(old)
 		retired = true
 		if nl, err = listenTCP(want); err == nil {
@@ -134,26 +135,21 @@ func samePort(a, b string) bool {
 	return erra == nil && errb == nil && pa == pb
 }
 
-// restore binds the retired address again. Another socket can take the port while it is closed, and usually
-// lets go of it within moments, so it keeps trying before it gives up and ends Admiral.
+// restore binds the retired address once more; if that fails too, Admiral has no listener and ends.
 func (l *listener) restore(addr string) bool {
-	var err error
-	for range 50 {
-		var restored net.Listener
-		if restored, err = listenTCP(addr); err == nil {
-			l.mu.Lock()
-			l.ln = restored
-			l.mu.Unlock()
-			l.start()
-			return true
+	restored, err := listenTCP(addr)
+	if err != nil {
+		select {
+		case l.fatal <- fmt.Errorf("could not listen on %s again: %w", addr, err):
+		default:
 		}
-		time.Sleep(100 * time.Millisecond)
+		return false
 	}
-	select {
-	case l.fatal <- fmt.Errorf("could not listen on %s again: %w", addr, err):
-	default:
-	}
-	return false
+	l.mu.Lock()
+	l.ln = restored
+	l.mu.Unlock()
+	l.start()
+	return true
 }
 
 func (l *listener) retire(ln net.Listener) {

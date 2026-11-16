@@ -11,12 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
-	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -56,37 +52,11 @@ func fakeDir(t *testing.T) string {
 	return p
 }
 
-var reapOnce sync.Once
-
-// reapOrphanTmux ends the tmux servers whose socket has been deleted while they ran, as when a world's directory goes before the
-// Admiral inside it has: each keeps its ptys and nothing can reach it again. It leaves any server whose socket exists, as another
-// run's tests may be using it.
-func reapOrphanTmux() {
-	out, err := exec.Command("ps", "-axo", "pid=,command=").Output()
-	if err != nil {
-		return
-	}
-	re := regexp.MustCompile(`^\s*(\d+) \S*tmux -f /dev/null -S (/(?:private/)?tmp/adm\d+/h/tmux\.sock) `)
-	for _, line := range strings.Split(string(out), "\n") {
-		m := re.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		if _, err := os.Stat(m[2]); !os.IsNotExist(err) {
-			continue
-		}
-		if pid, err := strconv.Atoi(m[1]); err == nil {
-			_ = syscall.Kill(pid, syscall.SIGTERM)
-		}
-	}
-}
-
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Fatalf("tmux is required: %v", err)
 	}
-	reapOnce.Do(reapOrphanTmux)
 	root, err := os.MkdirTemp("/tmp", "adm")
 	if err != nil {
 		t.Fatal(err)

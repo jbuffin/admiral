@@ -18,10 +18,11 @@ import (
 
 // The quiet gate refuses an unproven autopilot launch the way the normal gate does, but leaves the Inbox alone.
 func TestAQuietGateRefusesAnUnprovenHarnessWithoutAnInboxNotice(t *testing.T) {
+	fl := fleets(t)
 	home := guardedHome(t) // proven for claude in work only
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: a launch that got through would be a 503
-		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{Fleets: fleets(t)} }},
+		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{Fleets: fl} }},
 	}
 	notices := func() int {
 		names, _ := filepath.Glob(filepath.Join(home, "inbox", "_admiral", "notice-*.json"))

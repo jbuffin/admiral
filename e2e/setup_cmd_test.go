@@ -366,11 +366,12 @@ func TestU12_NoFleetsOffersSetupOnATerminal(t *testing.T) {
 		// kill-server only hangs up the pane; a live Admiral would start its tmux again once the world's cleanup ends it.
 		pids := paneTree(strings.TrimSpace(tmux("list-panes", "-a", "-F", "#{pane_pid}")))
 		tmux("kill-server")
-		for _, pid := range pids {
+		for pid, cmd := range pids {
 			for i := 0; i < 50 && syscall.Kill(pid, 0) == nil; i++ {
 				time.Sleep(100 * time.Millisecond)
 			}
-			if syscall.Kill(pid, 0) == nil {
+			// A pid that exited can be reused, so kill only what still runs the command it did.
+			if syscall.Kill(pid, 0) == nil && commandOf(pid) == cmd {
 				_ = syscall.Kill(pid, syscall.SIGKILL)
 			}
 		}
@@ -398,23 +399,41 @@ func TestU12_NoFleetsOffersSetupOnATerminal(t *testing.T) {
 	wait("Admiral is running at http://127.0.0.1:")
 }
 
-// paneTree is the pane's process and its descendants.
-func paneTree(pane string) []int {
+// paneTree is the pane's process and its descendants, each with its command line.
+func paneTree(pane string) map[int]string {
 	root, err := strconv.Atoi(pane)
 	if err != nil {
 		return nil
 	}
-	out, _ := exec.Command("ps", "-axo", "pid=,ppid=").Output()
+	out, _ := exec.Command("ps", "-axo", "pid=,ppid=,command=").Output()
 	kids := map[int][]int{}
+	cmds := map[int]string{}
 	for _, l := range strings.Split(string(out), "\n") {
-		var pid, ppid int
-		if _, err := fmt.Sscan(l, &pid, &ppid); err == nil {
-			kids[ppid] = append(kids[ppid], pid)
+		f := strings.Fields(l)
+		if len(f) < 3 {
+			continue
 		}
+		pid, err1 := strconv.Atoi(f[0])
+		ppid, err2 := strconv.Atoi(f[1])
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		kids[ppid] = append(kids[ppid], pid)
+		cmds[pid] = strings.Join(f[2:], " ")
 	}
 	all := []int{root}
 	for i := 0; i < len(all); i++ {
 		all = append(all, kids[all[i]]...)
 	}
-	return all
+	tree := map[int]string{}
+	for _, pid := range all {
+		tree[pid] = cmds[pid]
+	}
+	return tree
+}
+
+// commandOf is the command line of a running process, empty if there is none.
+func commandOf(pid int) string {
+	out, _ := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
+	return strings.Join(strings.Fields(string(out)), " ")
 }

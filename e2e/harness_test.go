@@ -170,6 +170,10 @@ func holdClean(t *testing.T, d time.Duration, check func() string) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	// The last pass ran up to a step before the window closed; look once at its end, as a sleep then a check did.
+	if why := check(); why != "" {
+		t.Fatalf("%s", why)
+	}
 }
 
 // sailOff is the SailOffDelay every Admiral in the suite runs with (3 s in

@@ -324,6 +324,7 @@ func serve(args []string) error {
 	outcomeLog := outcomes.New(filepath.Join(dir, "outcomes"), func(format string, args ...any) {
 		fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
 	})
+	outcomeLog.OnFail = outcomeWriteFailed
 	shipService := &ships.Service{Host: host, State: st, Hub: hub, Outcomes: outcomeLog, Launcher: &launcher.Launcher{
 		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current, Checkouts: launcher.GitCheckouts{},
 		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok },
