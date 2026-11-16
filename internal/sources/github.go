@@ -210,11 +210,18 @@ func (g *githubConn) call(ctx context.Context, method string, params any, _ time
 	return nil, &rpcError{Code: codeMethodNotFound, Message: "no such method: " + method}
 }
 
+// refreshNow raises the flag and queues the wake under one lock, so work never clears the flag while a wake is queued.
 func (g *githubConn) refreshNow() {
-	g.setRefreshing(true)
+	g.mu.Lock()
+	changed := !g.refreshing
+	g.refreshing = true
 	select {
 	case g.wake <- struct{}{}:
 	default:
+	}
+	g.mu.Unlock()
+	if changed {
+		g.flipped()
 	}
 }
 
@@ -283,8 +290,27 @@ func (g *githubConn) setRefreshing(on bool) {
 	changed := g.refreshing != on
 	g.refreshing = on
 	g.mu.Unlock()
-	if changed && g.openArgs.setRefreshing != nil {
+	if changed {
+		g.flipped()
+	}
+}
+
+func (g *githubConn) flipped() {
+	if g.openArgs.setRefreshing != nil {
 		g.openArgs.setRefreshing()
+	}
+}
+
+// endRefreshing clears the flag unless a wake is queued, which runs one more cycle with the flag still up.
+func (g *githubConn) endRefreshing() {
+	g.mu.Lock()
+	changed := g.refreshing && len(g.wake) == 0
+	if changed {
+		g.refreshing = false
+	}
+	g.mu.Unlock()
+	if changed {
+		g.flipped()
 	}
 }
 
@@ -295,9 +321,7 @@ func (g *githubConn) work() {
 	for {
 		g.setRefreshing(true)
 		g.cycle()
-		if len(g.wake) == 0 { // a refresh asked for mid-cycle runs one more cycle with the flag still up
-			g.setRefreshing(false)
-		}
+		g.endRefreshing()
 		timer := time.NewTimer(every)
 		select {
 		case <-timer.C:

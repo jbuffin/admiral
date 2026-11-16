@@ -130,6 +130,11 @@ func (g *githubConn) settle(ctx context.Context, tokenErr, queryErr error, login
 	switch {
 	case errors.As(tokenErr, &si):
 		return g.signedOut(si), true
+	case github.IsSlow(tokenErr):
+		if note {
+			return g.noteMessage(tokenErr.Error()), true
+		}
+		return g.currentConn(), true
 	case tokenErr != nil:
 		return g.record(ConnUnreachable, "", tokenErr.Error()), true
 	case queryErr == nil:

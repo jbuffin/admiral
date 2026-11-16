@@ -502,3 +502,23 @@ func TestACancelledCheckRecordsNothing(t *testing.T) {
 		t.Errorf("connection after a cancelled check = %v, want %v", now, was)
 	}
 }
+
+func TestASlowTokenCallKeepsTheConnectionAndShowsOnTheViews(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	g.search("bugs", "label:bug", [3]any{"acme/widgets", 13, "Any bug"})
+	f := newServiceFixture(t, ghConfig(campaignFleet, connSource))
+	f.startSources()
+	c := f.waitConnection("gh", "connected", func(c map[string]any) bool { return c["state"] == "connected" })
+
+	g.write("token.sleep", "30")
+	if code, body := f.do(http.MethodPost, "/gh/refresh", map[string]any{}); code != http.StatusOK {
+		t.Fatalf("POST refresh = %d %s", code, body)
+	}
+	f.waitView("gh", "the slow answer on Bugs", func(s SourceView) bool {
+		return strings.Contains(s.view("bugs").Error, "GitHub took too long to answer")
+	})
+	if n := f.connectionOf("gh"); n["state"] != "connected" || n["checked_at"] != c["checked_at"] {
+		t.Errorf("connection = %v after a slow token call, want it unchanged from %v", n, c)
+	}
+}

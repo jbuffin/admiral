@@ -350,6 +350,9 @@ func (c *Client) callFailed(err error) error {
 	return c.unreachableErr()
 }
 
+// IsSlow says err is a call that ran out of time.
+func IsSlow(err error) bool { return errors.Is(err, errSlow) }
+
 // IsUnreachable says err is a call that failed on the network, not a refusal, a sign-out or a call that ran out of time.
 func IsUnreachable(err error) bool {
 	var u *unreachableError

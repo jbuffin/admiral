@@ -19,7 +19,8 @@
 #   gh auth token -h HOST [-u USER]
 #     prints $FAKEGH_DIR/token-USER (with -u) or $FAKEGH_DIR/token (without)
 #     and exits 0. With no such file it is signed out: it prints
-#     "no oauth token found for HOST" on stderr and exits 1, as gh does.
+#     "no oauth token found for HOST" on stderr and exits 1, as gh does. With
+#     $FAKEGH_DIR/token.sleep it sleeps that many seconds first.
 #
 #   gh pr view [PR] [-R REPO] --json FIELDS
 #     the guard's lookup of a pull request. Prints $FAKEGH_DIR/pr_view.json
@@ -233,6 +234,7 @@ auth)
 		*) echo "fakegh: unsupported argument to gh auth token: $1" >&2; exit 2 ;;
 		esac
 	done
+	[ -s "$FAKEGH_DIR/token.sleep" ] && exec sleep "$(cat "$FAKEGH_DIR/token.sleep")"
 	file="$FAKEGH_DIR/token"
 	[ -n "$user" ] && file="$FAKEGH_DIR/token-$user"
 	if [ -s "$file" ]; then
