@@ -82,10 +82,11 @@ exit "$(cat "` + rec + `/exit")"
 		t.Fatal(err)
 	}
 	home := guardedHome(t)
+	claude := func() config.Harness { return config.Harness{Name: "claude", Executable: exe, Found: true, Env: claudeEnv(t)} }
 	cfg := &config.Config{MaxShips: maxShips, Resources: map[string]config.Resource{"phone": {Capacity: 1}},
 		Fleets: []config.Fleet{{Key: "work", Name: "Work", SearchRoots: []string{root}, WakeReviewers: []string{"alice"},
-			Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true}}},
-			{Key: "home", Name: "Home", SearchRoots: []string{root}, Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true}}}}}
+			Harnesses: []config.Harness{claude()}},
+			{Key: "home", Name: "Home", SearchRoots: []string{root}, Harnesses: []config.Harness{claude()}}}}
 	h := sessionhost.New(tmux, sock)
 	ctx, stop := context.WithCancel(context.Background())
 	t.Cleanup(stop)

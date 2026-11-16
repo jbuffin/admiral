@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -60,10 +61,12 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 	seen := len(p.calls())
 	w.sources()
 	w.mustOK(send(t, http.MethodGet, w.in.LocalURL+"/api/sources/a/schema", nil))
-	time.Sleep(500 * time.Millisecond)
-	if n := len(p.calls()); n != seen {
-		t.Errorf("GETs made the plugin receive %d more calls: %+v", n-seen, p.calls()[seen:])
-	}
+	holdClean(t, 500*time.Millisecond, func() string {
+		if n := len(p.calls()); n != seen {
+			return fmt.Sprintf("GETs made the plugin receive %d more calls: %+v", n-seen, p.calls()[seen:])
+		}
+		return ""
+	})
 	if code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/sources/a/schema", nil); !strings.Contains(body, "flagdir") {
 		t.Errorf("GET schema = %d %s, want the plugin's settingsSchema", code, body)
 	}
@@ -162,24 +165,28 @@ func TestSourceUntrustedOrders(t *testing.T) {
 	// each of these is a protocol error: the order (or list) must not be shown,
 	// and Admiral keeps serving.
 	push(ord("ok", "Plain"), ord("ctl\x01id", "Bad id"))
-	time.Sleep(200 * time.Millisecond)
-	if s, _ := find(w.sources(), "a"); s.hasOrder("ctl\x01id") {
-		t.Errorf("an order id with a control character was accepted: %s", dump(s.Views))
-	}
+	holdClean(t, 200*time.Millisecond, func() string {
+		if s, _ := find(w.sources(), "a"); s.hasOrder("ctl\x01id") {
+			return "an order id with a control character was accepted: " + dump(s.Views)
+		}
+		return ""
+	})
 	push(map[string]any{"id": "big", "title": "Big", "text": strings.Repeat("a", 12001)})
-	time.Sleep(200 * time.Millisecond)
-	if s, _ := find(w.sources(), "a"); s.hasOrder("big") {
-		t.Errorf("an order text over 12,000 bytes was accepted")
-	}
+	holdWindow(t, 200*time.Millisecond, "an order text over 12,000 bytes was accepted", func() bool {
+		s, _ := find(w.sources(), "a")
+		return !s.hasOrder("big")
+	})
 	many := make([]map[string]any, 5001)
 	for i := range many {
 		many[i] = ord("n"+strconv.Itoa(i), "n")
 	}
 	push(many...)
-	time.Sleep(500 * time.Millisecond)
-	if s, _ := find(w.sources(), "a"); len(s.orderIDs()) > 5000 {
-		t.Errorf("an order list over 5,000 orders was accepted (%d)", len(s.orderIDs()))
-	}
+	holdClean(t, 500*time.Millisecond, func() string {
+		if s, _ := find(w.sources(), "a"); len(s.orderIDs()) > 5000 {
+			return fmt.Sprintf("an order list over 5,000 orders was accepted (%d)", len(s.orderIDs()))
+		}
+		return ""
+	})
 }
 
 func TestSourceAuth(t *testing.T) {
@@ -421,12 +428,14 @@ func TestSourceProtocolErrors(t *testing.T) {
 	pid := p.pid()
 	for _, cmd := range []string{"garbage", "oversize"} {
 		p.do(cmd, "")
-		time.Sleep(500 * time.Millisecond)
-		select {
-		case <-w.in.done:
-			t.Fatalf("Admiral exited after a %s line from a plugin; stderr: %s", cmd, w.in.stderrBuf.String())
-		default:
-		}
+		holdClean(t, 500*time.Millisecond, func() string {
+			select {
+			case <-w.in.done:
+				return fmt.Sprintf("Admiral exited after a %s line from a plugin; stderr: %s", cmd, w.in.stderrBuf.String())
+			default:
+				return ""
+			}
+		})
 		w.waitSource("a", 12*time.Second, "the source usable again after "+cmd, func(s sourceJSON) bool { return isOK(s) && !s.ReadOnly && s.hasOrder("o1") })
 		code, body := w.srcReq(http.MethodPost, "/a/refresh", map[string]any{})
 		w.mustOK(code, body, "refresh after a "+cmd+" line")
@@ -468,10 +477,12 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 	w.mustOK(code, body, "PUT settings of a")
 	a.waitStarts(5*time.Second, 2)
 	w.waitSource("a", 5*time.Second, "the new title", func(s sourceJSON) bool { return isOK(s) && len(s.Views) == 1 && s.Views[0].Title == "Alpha 2" })
-	time.Sleep(500 * time.Millisecond)
-	if len(b.starts()) != 1 {
-		t.Errorf("saving a's settings restarted b (%d starts)", len(b.starts()))
-	}
+	holdClean(t, 500*time.Millisecond, func() string {
+		if n := len(b.starts()); n != 1 {
+			return fmt.Sprintf("saving a's settings restarted b (%d starts)", n)
+		}
+		return ""
+	})
 	if got := w.configSources()["a"]["settings"].(map[string]any)["title"]; got != "Alpha 2" {
 		t.Errorf("config.json source a title = %v, want Alpha 2 (saved through the config writer)", got)
 	}

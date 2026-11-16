@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -179,8 +180,10 @@ func TestShipGuardLeavesAHandLaunchedShipAlone(t *testing.T) {
 	if !ran {
 		t.Errorf("handlers run = %q, want the guard among them", handlers)
 	}
-	time.Sleep(500 * time.Millisecond)
-	if got := eventsOf(w.shipLog(ship.Session)); slices.Contains(got, "guard_denied") {
-		t.Errorf("records of the hand-launched ship = %v, want no guard_denied", got)
-	}
+	holdClean(t, 500*time.Millisecond, func() string {
+		if got := eventsOf(w.shipLog(ship.Session)); slices.Contains(got, "guard_denied") {
+			return fmt.Sprintf("records of the hand-launched ship = %v, want no guard_denied", got)
+		}
+		return ""
+	})
 }

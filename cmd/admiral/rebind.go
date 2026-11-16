@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // listener is Admiral's one TCP listener, which follows the Tailscale mode unless --listen fixed the address.
@@ -107,33 +108,52 @@ func (l *listener) Move(want string) {
 		return
 	}
 	// A wider address can overlap the old one on some systems, so only then retry with the old one closed.
-	if errors.Is(err, syscall.EADDRINUSE) {
+	retired := false
+	if errors.Is(err, syscall.EADDRINUSE) && samePort(oldAddr, want) {
 		l.retire(old)
+		retired = true
 		if nl, err = listenTCP(want); err == nil {
 			l.swap(nl, want, nil)
 			return
 		}
 	}
 	log.Printf("admiral: could not listen on %s, keeping %s: %v", want, oldAddr, err)
+	if retired && !l.restore(oldAddr) {
+		return
+	}
+	// Only now: a reader that sees the failure finds the old listener answering again.
 	l.mu.Lock()
 	l.err = fmt.Errorf("could not listen on %s: %w", want, err)
-	retired := l.retired[old]
 	l.mu.Unlock()
-	if !retired {
-		return
-	}
-	restored, rerr := listenTCP(oldAddr)
-	if rerr != nil {
-		select {
-		case l.fatal <- fmt.Errorf("could not listen on %s again: %w", oldAddr, rerr):
-		default:
+}
+
+// samePort is whether two listen addresses name one port, the only way the old listener can be what blocks a bind.
+func samePort(a, b string) bool {
+	_, pa, erra := net.SplitHostPort(a)
+	_, pb, errb := net.SplitHostPort(b)
+	return erra == nil && errb == nil && pa == pb
+}
+
+// restore binds the retired address again. Another socket can take the port while it is closed, and usually
+// lets go of it within moments, so it keeps trying before it gives up and ends Admiral.
+func (l *listener) restore(addr string) bool {
+	var err error
+	for range 50 {
+		var restored net.Listener
+		if restored, err = listenTCP(addr); err == nil {
+			l.mu.Lock()
+			l.ln = restored
+			l.mu.Unlock()
+			l.start()
+			return true
 		}
-		return
+		time.Sleep(100 * time.Millisecond)
 	}
-	l.mu.Lock()
-	l.ln = restored
-	l.mu.Unlock()
-	l.start()
+	select {
+	case l.fatal <- fmt.Errorf("could not listen on %s again: %w", addr, err):
+	default:
+	}
+	return false
 }
 
 func (l *listener) retire(ln net.Listener) {

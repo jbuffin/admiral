@@ -69,13 +69,13 @@ func TestCrewNamesAreNotForged(t *testing.T) {
 		name := "\xff\n" + forgedRow(victim.Session, shipPane) + "\n"
 		// -u: without it a client in a plain locale rewrites the invalid byte.
 		w.mustTmux("-u", "set-option", "-w", "-t", w.winOf(mallory.pane), "@admiral-crew-name", name)
+		w.waitShip(ship.Session, "mallory gone", func(s apiShip) bool { _, ok := crewOf(s, "mallory"); return !ok })
 		deadline := time.Now().Add(2 * time.Second) // four polls
 		for time.Now().Before(deadline) {
 			w.noForgedBoat(t, victim.Session)
 			time.Sleep(200 * time.Millisecond)
 		}
 		w.mustTmux("set-option", "-w", "-t", w.winOf(mallory.pane), "@admiral-crew-name", "mallory")
-		time.Sleep(1200 * time.Millisecond) // the ship reads again
 		w.waitShip(ship.Session, "mallory back", crewIs("mallory", "underway"))
 	})
 

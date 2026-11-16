@@ -102,6 +102,17 @@ func (b *bridgeClient) visible(v bool) {
 	b.t.Helper()
 	b.send(map[string]any{"type": "visible", "visible": v})
 }
+
+// sync returns once the server has handled every message sent so far: it reads a connection's messages one
+// at a time, and answers a ping only when it reads the ping.
+func (b *bridgeClient) sync() {
+	b.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := b.c.Ping(ctx); err != nil {
+		b.t.Fatalf("pinging the bridge: %v", err)
+	}
+}
 func (b *bridgeClient) resize(cols, rows int) {
 	b.t.Helper()
 	b.send(map[string]any{"type": "resize", "cols": cols, "rows": rows})

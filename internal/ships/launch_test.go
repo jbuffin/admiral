@@ -44,9 +44,30 @@ func guardedHome(t *testing.T) string {
 	return home
 }
 
+// claudeEnv points a claude harness at a config directory of its own, holding a Commodore skill, so a launch
+// never reads the developer's ~/.claude and a runner with none still finds Commodore.
+func claudeEnv(t *testing.T) map[string]string {
+	t.Helper()
+	dir := t.TempDir()
+	skill := filepath.Join(dir, "skills", "commodore")
+	if err := os.MkdirAll(skill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\nname: commodore\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return map[string]string{"CLAUDE_CONFIG_DIR": dir}
+}
+
 // fleets are the configured fleets the launch tests name: work docks claude and codex, home claude.
-func fleets() []config.Fleet {
-	dock := func(n string) config.Harness { return config.Harness{Name: n, Executable: n, Found: true} }
+func fleets(t *testing.T) []config.Fleet {
+	dock := func(n string) config.Harness {
+		h := config.Harness{Name: n, Executable: n, Found: true}
+		if n == "claude" {
+			h.Env = claudeEnv(t)
+		}
+		return h
+	}
 	return []config.Fleet{
 		{Key: "work", Name: "Work", Harnesses: []config.Harness{dock("claude"), dock("codex")}},
 		{Key: "home", Name: "Home", Harnesses: []config.Harness{dock("claude")}},
@@ -58,7 +79,7 @@ func TestLaunchAPIRefusesWhatAutopilotModeMayNotClaim(t *testing.T) {
 	s := &Service{
 		Host: sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
 		Launcher: &launcher.Launcher{Home: guardedHome(t), Config: func() *config.Config {
-			return &config.Config{Fleets: fleets(), Resources: map[string]config.Resource{"phone": {Capacity: 1}}}
+			return &config.Config{Fleets: fleets(t), Resources: map[string]config.Resource{"phone": {Capacity: 1}}}
 		}},
 		Reserve: func(names []string) (func(), string, string) {
 			if held > 0 {
@@ -98,7 +119,7 @@ func TestLaunchAPIRefusesWhatAutopilotModeMayNotClaim(t *testing.T) {
 func TestAutopilotLaunchOverTheCapIsRefusedButAHandLaunchIsNot(t *testing.T) {
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
-		Launcher: &launcher.Launcher{Home: guardedHome(t), Config: func() *config.Config { return &config.Config{Fleets: fleets(), MaxShips: 1} }},
+		Launcher: &launcher.Launcher{Home: guardedHome(t), Config: func() *config.Config { return &config.Config{Fleets: fleets(t), MaxShips: 1} }},
 	}
 	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p", nil)
 	base := `"fleet":"work","harness":"claude","dir":"` + t.TempDir() + `","skill":{"kind":"none"}`
@@ -117,7 +138,7 @@ func TestAutopilotLaunchWithoutAProvenGuardIsRefusedAndNoticed(t *testing.T) {
 	home := guardedHome(t) // proven in work only
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: a launch that got through would be a 503
-		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{Fleets: fleets()} }},
+		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{Fleets: fleets(t)} }},
 	}
 	dir := t.TempDir()
 	body := func(fleet, harness string) string {
@@ -168,7 +189,7 @@ func TestAutopilotLaunchOnAnUnknownFleetOrDockIs404AndPostsNoNotice(t *testing.T
 	home := guardedHome(t)
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"),
-		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{Fleets: fleets()} }},
+		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{Fleets: fleets(t)} }},
 	}
 	dir := t.TempDir()
 	for _, tc := range []struct{ fleet, harness string }{{"wrok", "claude"}, {"home", "codex"}} {

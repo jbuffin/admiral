@@ -144,17 +144,14 @@ func TestBridgeS2_TwoBrowsers(t *testing.T) {
 
 	// A hidden browser stops receiving the stream and cannot become active.
 	b.visible(false)
-	time.Sleep(200 * time.Millisecond) // the server has taken the message
+	b.sync()
 	mb = b.mark()
 	ma = a.mark()
 	b.resize(50, 20)
 	b.active()
 	w.paneWrite(s.Session, "while-hidden\r\n")
 	a.waitOutput(2*time.Second, ma, "while-hidden") // A got it, so B's copy has had its chance to arrive
-	time.Sleep(300 * time.Millisecond)
-	if got := b.output(mb); got != "" {
-		t.Errorf("a hidden browser still received output %s", quote(got))
-	}
+	holdWindow(t, 300*time.Millisecond, "a hidden browser still received output", func() bool { return b.output(mb) == "" })
 	if got := w.paneSize(s.Session); got != "120x40" {
 		t.Errorf("a hidden browser changed the pane to %s, want it left at 120x40", got)
 	}
@@ -189,10 +186,7 @@ func TestBridgeS3_ControlClientDetachesAfterTheLastBrowserLeaves(t *testing.T) {
 	}
 
 	a.close()
-	time.Sleep(700 * time.Millisecond)
-	if got := w.controlClients(s.Session); len(got) != 1 {
-		t.Errorf("0.7s after the last browser left (idle linger 2s) %d control clients are attached, want it still attached", len(got))
-	}
+	holdWindow(t, 700*time.Millisecond, "a control client left before the idle linger (2s) ended", func() bool { return len(w.controlClients(s.Session)) == 1 })
 	// Coming back inside the linger reuses the same client.
 	b, _ := w.joinBridge(t, s.Session, 100, 30)
 	if got := w.controlClients(s.Session); len(got) != 1 || got[0] != first[0] {
@@ -243,10 +237,10 @@ func TestBridgeS3_OnlyCurrentShipsAreWatchable(t *testing.T) {
 	if got := w.controlClients(impostor); len(got) != 0 {
 		t.Errorf("a refused bridge attached to %s: %v", impostor, got)
 	}
-	time.Sleep(200 * time.Millisecond)
-	if data, _ := readFile(rec); data != "" {
-		t.Errorf("%s received %s from a bridge for the gone session", impostor, quote(data))
-	}
+	holdWindow(t, 200*time.Millisecond, "the impostor received what a bridge for the gone session typed", func() bool {
+		data, _ := readFile(rec)
+		return data == ""
+	})
 }
 
 func TestBridgeS3_AccessFollowsTheDeviceToken(t *testing.T) {

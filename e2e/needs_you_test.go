@@ -457,7 +457,10 @@ func TestExitSailsOffOrAnchors(t *testing.T) {
 	// Exit 3.
 	a := w.launchIn("three", "claude", "s5three")
 	waitStatus(t, ws, 4*time.Second, a.Session, "anchored")
-	time.Sleep(sailOff + 500*time.Millisecond) // past the sail-off an exit 0 would get
+	holdWindow(t, sailOff+500*time.Millisecond, "the exit-3 ship stopped being anchored", func() bool { // past the sail-off an exit 0 would get
+		got, ok := w.in.u5Ship(t, a.Session)
+		return ok && got.Status == "anchored"
+	})
 	got, ok := w.in.u5Ship(t, a.Session)
 	if !ok || got.Status != "anchored" || string(got.ExitCode) != "3" || string(got.ExitSignal) != "null" {
 		t.Errorf("exit-3 ship = %+v (code %s, signal %s), want anchored, exit_code 3, exit_signal null", got.shipJSON, got.ExitCode, got.ExitSignal)
