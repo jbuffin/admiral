@@ -113,8 +113,8 @@ func (s *Service) serveHand(w http.ResponseWriter, r *http.Request) {
 	case o[sessionhost.OptReturning] != "":
 		writeError(w, http.StatusConflict, "ship "+session+" is returning to port: it cannot also be handed to Commodore")
 		return
-	case o["harness"] != "claude":
-		writeError(w, http.StatusConflict, "ship "+session+" runs on "+o["harness"]+": only a Claude ship can be handed to Commodore")
+	case handNotClaude(session, o["harness"]) != "":
+		writeError(w, http.StatusConflict, handNotClaude(session, o["harness"]))
 		return
 	case o["skill-kind"] == "commodore":
 		writeError(w, http.StatusConflict, "ship "+session+" is already Commodore")
@@ -145,16 +145,26 @@ func (s *Service) serveHand(w http.ResponseWriter, r *http.Request) {
 	s.hands.Store(session, e)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := s.Host.SetOptions(ctx, session, map[string]string{sessionhost.OptHanding: "queued"}); err != nil {
+	if err := s.Host.SetOptions(ctx, session, map[string]string{sessionhost.OptHanding: "queued", sessionhost.OptHandFailed: ""}); err != nil {
 		s.hands.Delete(session)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// a ship can set the option on its own pane, which wins over the session's
+	_ = s.Host.UnsetPaneOption(ctx, session, sessionhost.OptHandFailed)
 	s.record(outcomes.Record{Ship: session, Event: "handing", Fields: map[string]any{"kind": body.Kind}}, nil)
 	_ = s.Host.Sync(ctx)
 	s.broadcast()
 	s.advanceHands()
 	writeJSON(w, http.StatusAccepted, map[string]any{"handing": true})
+}
+
+// handNotClaude is why a ship cannot be handed because of its harness, or "".
+func handNotClaude(session, harness string) string {
+	if harness == "claude" {
+		return ""
+	}
+	return "ship " + session + " runs on " + harness + ": only a Claude ship can be handed to Commodore"
 }
 
 // handBlocked says why a ship cannot be handed because of how it was launched, or "". It fails closed: a trigger log
@@ -252,7 +262,7 @@ func (s *Service) advanceHands() {
 	}
 }
 
-// clearOrphanHand ends a mark nothing remembers: Admiral restarted during the hand, or the ship set the mark itself.
+// clearOrphanHand ends a mark nothing remembers: Admiral restarted during the hand, or the ship set the mark itself; either way it lost track.
 func (s *Service) clearOrphanHand(name string) {
 	if _, busy := s.handing.LoadOrStore(name, true); busy {
 		return
@@ -262,8 +272,9 @@ func (s *Service) clearOrphanHand(name string) {
 	if _, has := s.hands.Load(name); !ok || has || cur.Options[sessionhost.OptHanding] == "" {
 		return
 	}
-	s.clearHandMark(name)
-	s.recordHandFailure(name, "", "Admiral restarted during the hand")
+	const why = "Admiral lost track of the hand"
+	s.clearHandMark(name, why)
+	s.recordHandFailure(name, "", why)
 	s.broadcast()
 }
 
@@ -489,10 +500,11 @@ func (s *Service) removeHandRef(name string) {
 	}
 }
 
-func (s *Service) clearHandMark(name string) {
+// clearHandMark ends the mark and leaves why on the ship in the same write; why is "" for a ship that is no longer live.
+func (s *Service) clearHandMark(name, why string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptHanding: ""})
+	_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptHanding: "", sessionhost.OptHandFailed: why})
 	// a ship can set the mark on its own pane, which wins over the session's
 	_ = s.Host.UnsetPaneOption(ctx, name, sessionhost.OptHanding)
 	_ = s.Host.Sync(ctx)
@@ -502,7 +514,12 @@ func (s *Service) clearHandMark(name string) {
 func (s *Service) failHand(sess sessionhost.Session, e *handEntry, why string) {
 	s.hands.Delete(sess.Name)
 	s.removeHandRef(sess.Name)
-	s.clearHandMark(sess.Name)
+	exited := sess.PaneDead || status(sess, time.Now()) == StatusAnchored || status(sess, time.Now()) == StatusSailingOff
+	if exited {
+		s.clearHandMark(sess.Name, "")
+	} else {
+		s.clearHandMark(sess.Name, why)
+	}
 	s.recordHandFailure(sess.Name, e.id, why)
 	s.broadcast()
 }

@@ -450,8 +450,8 @@ func TestAHandingMarkAdmiralHoldsNoEntryForIsClearedAndFails(t *testing.T) {
 
 	waitUntil(t, "the handing_failed record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "handing_failed")) > 0 })
 	got := outcomeLines(t, r.home, "saltpaw", "handing_failed")
-	if reason, _ := got[0]["reason"].(string); len(got) != 1 || !strings.Contains(reason, "restarted") {
-		t.Errorf("handing_failed records = %v, want one saying Admiral restarted", got)
+	if reason, _ := got[0]["reason"].(string); len(got) != 1 || !strings.Contains(reason, "lost track") {
+		t.Errorf("handing_failed records = %v, want one saying Admiral lost track", got)
 	}
 	if mark := r.options(t, "saltpaw")["handing"]; mark != "" {
 		t.Errorf("handing mark = %q, want it cleared", mark)
@@ -515,4 +515,21 @@ func TestAShipBeingHandedIsNotMooredAtTheEndOfItsTurnForADoneReportWithAnOpenPR(
 		_, err := os.Stat(r.mooredFile())
 		return s.Status != "moored" && err != nil && r.live(t)
 	})
+}
+
+func TestAHandOnAShipThatExitsFirstLeavesNoFailureLineOnTheEndedShip(t *testing.T) {
+	r := newHandRig(t)
+	r.queue(t, `{"kind":"issue"}`)
+	if err := os.WriteFile(filepath.Join(r.rec, "exit"), []byte("0"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, "the handing_failed record", func() bool {
+		_ = r.s.Host.Sync(context.Background())
+		r.s.advanceHands()
+		r.s.settleWG.Wait()
+		return len(outcomeLines(t, r.home, "saltpaw", "handing_failed")) > 0
+	})
+	if v, ok := r.saltpaw(t)["hand_failed"]; ok {
+		t.Errorf("an ended ship carries hand_failed = %v", v)
+	}
 }

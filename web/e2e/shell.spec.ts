@@ -640,6 +640,56 @@ test('a Copilot ship shows its conversation in the Conversation tab, shows a lin
   writeFileSync(join(admiral.home, 'rec', pilot.session, 'echo'), '');
   await expect(sentBubble(page, 'Please rebase onto main')).toHaveCount(0, { timeout: 15_000 });
   await expect(viewPanel(page).getByText('Please rebase onto main')).toHaveCount(1);
+
+  // Hand to Commodore asks the ship for an issue, then relaunches it as Commodore under the same name; a Codex ship shows why it cannot.
+  const commodoreSkill = join(admiral.home, 'identity', 'zulu-claude', 'skills', 'commodore');
+  mkdirSync(commodoreSkill, { recursive: true });
+  writeFileSync(join(commodoreSkill, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
+  const design = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  setState(admiral, design, 'working');
+  await say(admiral, design, 'The design is settled');
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await rowLink(page, design).tap();
+  await page.getByRole('button', { name: 'Hand to Commodore', exact: true }).tap();
+  const handSheet = page.getByRole('dialog', { name: 'Hand to Commodore' });
+  await expect(handSheet.getByRole('radio', { name: /GitHub issue/ })).toBeChecked();
+  await handSheet.getByRole('radio', { name: 'Other' }).tap();
+  await expect(handSheet.getByRole('button', { name: 'Hand to Commodore' })).toBeDisabled();
+  await handSheet.getByRole('radio', { name: /GitHub issue/ }).tap();
+  await handSheet.getByRole('button', { name: 'Hand to Commodore' }).tap();
+  await expect(page.getByRole('button', { name: 'Handing to Commodore' })).toHaveAttribute('aria-busy', 'true');
+  setReason(admiral, design, 'stop');
+  setState(admiral, design, 'needs_you');
+  let ref = '';
+  await expect.poll(() => (ref = new RegExp(`\\S*/ships/${design.session}/ref`).exec(received(admiral, design))?.[0] ?? '')).not.toBe('');
+  writeFileSync(ref, 'https://github.com/acme/api/issues/7\n');
+  await expect.poll(() => shipOption(admiral, design, 'handing')).toBe('sent');
+  setReason(admiral, design, 'stop');
+  setState(admiral, design, 'needs_you');
+  await expect.poll(() => outcomeEvents(admiral, design, ['stopped', 'handed'])).toEqual(['stopped', 'handed']);
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await rowLink(page, design).tap();
+  await expect(page.locator('.ship-view-head').getByText(design.name)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Return to port', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Hand(ing)? to Commodore/ })).toHaveCount(0);
+
+  // A second hand started from elsewhere while the sheet is open is the route's 409, shown in the sheet, which stays open.
+  const raced = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  setState(admiral, raced, 'working');
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await rowLink(page, raced).tap();
+  await page.getByRole('button', { name: 'Hand to Commodore', exact: true }).tap();
+  expect((await page.request.post(admiral.url + `api/ships/${raced.session}/commodore`, { data: { kind: 'issue' } })).status()).toBe(202);
+  await handSheet.getByRole('button', { name: 'Hand to Commodore' }).tap();
+  await expect(handSheet.getByRole('alert')).toContainText('already being handed');
+  await expect(handSheet).toBeVisible();
+
+  const other = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', cues: ['bracketedpaste'] });
+  setState(admiral, other, 'working');
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await rowLink(page, other).tap();
+  await expect(page.getByRole('button', { name: 'Hand to Commodore', exact: true })).toBeDisabled();
+  await expect(page.getByText(/only a Claude ship can be handed to Commodore/)).toBeVisible();
 });
 
 test('a ship\'s Bridge shows its tokens and its own money, and the Usage pages keep each harness\'s money apart, show quota freshness and a quiet mark past 90%', async ({ page, admiral }) => {

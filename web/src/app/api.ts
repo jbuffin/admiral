@@ -155,6 +155,14 @@ export interface Ship {
   seen?: boolean;
   // Set from Return to port until the ship is stopped.
   returning?: boolean;
+  // Set from Hand to Commodore until the ship is relaunched or the hand fails.
+  handing?: boolean;
+  // Why the ship cannot be handed to Commodore, when its own options say so.
+  hand_refusal?: string;
+  // Why the last hand failed on a ship that stayed live, until the next hand starts.
+  hand_failed?: string;
+  // `commodore` on a Commodore ship.
+  skill_kind?: string;
   // A live ship woken from its mooring: it returns to port by itself once its PRs are merged.
   carries_prs?: boolean;
   // A live ship whose report lists PRs GitHub confirms open: it can be moored.

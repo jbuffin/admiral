@@ -113,6 +113,12 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect(sentBubble(page, 'Please rebase onto main')).toHaveCount(0);
   await expect(viewPanel(page)).toContainText('Aye, rebasing now', { timeout: 15_000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  for (const name of ['Return to port', 'Hand to Commodore', 'Stop ship']) {
+    const box = (await page.getByRole('button', { name, exact: true }).boundingBox())!;
+    expect(box.x, `${name} starts on screen`).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, `${name} ends on screen`).toBeLessThanOrEqual(page.viewportSize()!.width);
+    expect(box.width, `${name} is wide enough to tap`).toBeGreaterThanOrEqual(44);
+  }
 
   // The flotilla fits the phone, and a picked boat takes the conversation and the box.
   await launchCrew(admiral, chat, 'rev', 'reviewer');
