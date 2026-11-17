@@ -3,11 +3,26 @@ package update
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/delay"
 )
 
-// STUB: the u1 test writer's placeholder so the tests compile red. The implementer replaces everything below.
+const (
+	defaultBase = "https://api.github.com"
+	releasePage = "https://github.com/jbuffin/admiral/releases/latest"
+	// A release's JSON is a few KB; anything near this size is not one.
+	maxBody       = 1 << 20
+	interval      = 12 * time.Hour
+	firstCheck    = time.Minute
+	afterTurnedOn = 10 * time.Second
+)
 
 // Clock is the checker's source of time; tests drive it by hand.
 type Clock interface {
@@ -15,18 +30,10 @@ type Clock interface {
 	After(d time.Duration) <-chan time.Time
 }
 
-// Command is one upgrade step to show the user.
-type Command struct {
-	Label   string `json:"label"`
-	Command string `json:"command"`
-}
+type realClock struct{}
 
-// Install says how this Admiral was installed and the commands that upgrade it.
-type Install struct {
-	Method      string // homebrew, script or source
-	Commands    []Command
-	RestartNote string
-}
+func (realClock) Now() time.Time                         { return time.Now() }
+func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 type Options struct {
 	BaseURL string       // the releases API's origin; default https://api.github.com
@@ -39,24 +46,133 @@ type Options struct {
 	Changed <-chan struct{}
 }
 
-type Checker struct{}
+type Checker struct {
+	opts    Options
+	install Install
 
-func New(Options) *Checker { return &Checker{} }
+	mu         sync.Mutex
+	latest     string
+	releaseURL string
+	checkedAt  time.Time
+}
+
+func New(o Options) *Checker {
+	if o.BaseURL == "" {
+		o.BaseURL = defaultBase
+	}
+	if o.Client == nil {
+		o.Client = &http.Client{Timeout: 15 * time.Second}
+	}
+	if o.Clock == nil {
+		o.Clock = realClock{}
+	}
+	if o.Enabled == nil {
+		o.Enabled = func() bool { return true }
+	}
+	return &Checker{opts: o, install: InstallFor(o.Version, o.Exe)}
+}
 
 // Run blocks until ctx ends.
-func (c *Checker) Run(ctx context.Context) { <-ctx.Done() }
+func (c *Checker) Run(ctx context.Context) {
+	var timer <-chan time.Time
+	on := c.opts.Enabled()
+	if on {
+		timer = c.opts.Clock.After(delay.From("ADMIRAL_UPDATE_FIRST_CHECK", firstCheck))
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer:
+			if !c.opts.Enabled() {
+				on, timer = false, nil
+				continue
+			}
+			c.check(ctx)
+			timer = c.opts.Clock.After(interval)
+		case <-c.opts.Changed:
+			switch now := c.opts.Enabled(); {
+			case now && !on:
+				timer = c.opts.Clock.After(afterTurnedOn)
+			case !now:
+				timer = nil
+			}
+			on = c.opts.Enabled()
+		}
+	}
+}
+
+type release struct {
+	TagName string `json:"tag_name"`
+	HTMLURL string `json:"html_url"`
+}
+
+// check keeps the last good result when this one fails.
+func (c *Checker) check(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(c.opts.BaseURL, "/")+"/repos/jbuffin/admiral/releases/latest", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", "Admiral/"+c.opts.Version+" (+https://github.com/jbuffin/admiral)")
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := c.opts.Client.Do(req)
+	if err != nil {
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	var rel release
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(&rel); err != nil {
+		return
+	}
+	version, ok := strings.CutPrefix(rel.TagName, "v")
+	if !ok || !validVersion(version) {
+		return
+	}
+	url := rel.HTMLURL
+	if !strings.HasPrefix(url, "https://") {
+		url = fmt.Sprintf("https://github.com/jbuffin/admiral/releases/tag/v%s", version)
+	}
+	c.mu.Lock()
+	c.latest, c.releaseURL, c.checkedAt = version, url, c.opts.Clock.Now()
+	c.mu.Unlock()
+}
+
+type report struct {
+	CurrentVersion  string    `json:"current_version"`
+	LatestVersion   *string   `json:"latest_version"`
+	UpdateAvailable bool      `json:"update_available"`
+	CheckedAt       *string   `json:"checked_at"`
+	Enabled         bool      `json:"enabled"`
+	InstallMethod   string    `json:"install_method"`
+	UpgradeCommands []Command `json:"upgrade_commands"`
+	RestartNote     string    `json:"restart_note"`
+	ExecutablePath  string    `json:"executable_path"`
+	ReleaseURL      string    `json:"release_url"`
+}
+
+func (c *Checker) report() report {
+	s := report{CurrentVersion: c.opts.Version, Enabled: c.opts.Enabled(), InstallMethod: c.install.Method,
+		UpgradeCommands: c.install.Commands, RestartNote: c.install.RestartNote, ExecutablePath: c.opts.Exe, ReleaseURL: releasePage}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !s.Enabled || c.latest == "" {
+		return s
+	}
+	latest, at := c.latest, c.checkedAt.UTC().Format(time.RFC3339)
+	s.LatestVersion, s.CheckedAt, s.ReleaseURL = &latest, &at, c.releaseURL
+	s.UpdateAvailable = Available(c.opts.Version, latest)
+	return s
+}
 
 // Routes registers GET /api/update.
 func (c *Checker) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/update", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotImplemented)
-		_, _ = w.Write([]byte(`{"error":"not implemented"}` + "\n"))
+		_ = json.NewEncoder(w).Encode(c.report())
 	})
 }
-
-// Available is whether latest (a bare x.y.z) is newer than the running version's base; unknown running versions give false.
-func Available(running, latest string) bool { return false }
-
-// InstallFor derives the install method and upgrade commands from the running version and the resolved executable path.
-func InstallFor(version, exe string) Install { return Install{} }

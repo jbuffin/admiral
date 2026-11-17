@@ -29,7 +29,7 @@ type Config struct {
 	MaxShips  int
 	Resources map[string]Resource
 	Remote    Remote
-	// UpdateCheck is the top-level update_check switch (STUB: not parsed yet).
+	// UpdateCheck is the top-level update_check switch; on unless the file says false.
 	UpdateCheck bool
 	// ChatProbe reads the capability store for the AdmiralBot gate; nil reads as not checked everywhere.
 	ChatProbe ChatProbe
@@ -154,7 +154,7 @@ func Parse(data []byte) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := &Config{FavoriteSkills: []string{}, MaxShips: DefaultMaxShips}
+	cfg := &Config{FavoriteSkills: []string{}, MaxShips: DefaultMaxShips, UpdateCheck: true}
 	var fleetsRaw json.RawMessage
 	haveVersion := false
 	for _, m := range top {
@@ -176,6 +176,15 @@ func Parse(data []byte) (*Config, error) {
 		case "max_ships":
 			if cfg.MaxShips, err = positiveInt("max_ships", m.raw); err != nil {
 				return nil, err
+			}
+		case "update_check":
+			switch strings.TrimSpace(string(m.raw)) {
+			case "true":
+				cfg.UpdateCheck = true
+			case "false":
+				cfg.UpdateCheck = false
+			default:
+				return nil, fmt.Errorf("update_check: must be true or false, got %s", m.raw)
 			}
 		case "remote":
 			if cfg.Remote, err = parseRemote(m.raw); err != nil {

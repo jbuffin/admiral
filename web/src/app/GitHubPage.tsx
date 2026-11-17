@@ -28,7 +28,7 @@ export function githubSource(fleetKey: string): (Source & { connection?: Connect
   return src ? { ...src, connection: connectionFor(src) } : undefined;
 }
 
-function CopyCommand({ command }: { command: string }) {
+export function CopyCommand({ command }: { command: string }) {
   const [state, setState] = useState<'copied' | 'select' | null>(null);
   const el = useRef<HTMLElement>(null);
   const copy = async () => {

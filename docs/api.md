@@ -867,12 +867,40 @@ When a config change moves Admiral's listener, a ships-socket client whose path 
 
 Revoke one device or all of them; 204, or 404 for an unknown id. The device's token stops working and its open WebSockets close. A save that fails leaves the device in place and answers 500 `{"error"}`, as it does for a rename.
 
+## Update check
+
+### `GET /api/update` (alias `GET /api/v1/update`)
+
+Whether a newer public Admiral release exists, and how to upgrade. Admiral asks `GET https://api.github.com/repos/jbuffin/admiral/releases/latest` (unauthenticated, so drafts and prereleases never count) about a minute after it starts and every 12 hours after, and keeps the last good result in memory. A failed check (an error status, bad JSON, a body over 1 MiB, a `tag_name` that is not `v<x.y.z>`) keeps the last good result and `checked_at`. This route makes no request; it reports what the last check found.
+
+```json
+{
+  "current_version": "0.9.1",
+  "latest_version": "0.9.2",
+  "update_available": true,
+  "checked_at": "2026-11-17T09:00:00Z",
+  "enabled": true,
+  "install_method": "homebrew",
+  "upgrade_commands": [{"label": "Upgrade with Homebrew", "command": "brew upgrade admiral"}, {"label": "Restart the service", "command": "launchctl kickstart -k gui/$UID/dev.jasonbuffin.admiral"}],
+  "restart_note": "If Admiral did not start as a service, restart it the way you started it.",
+  "executable_path": "/opt/homebrew/Cellar/admiral/0.9.1/bin/admiral",
+  "release_url": "https://github.com/jbuffin/admiral/releases/tag/v0.9.2"
+}
+```
+
+- `current_version` is the running version as stamped. `latest_version` and `checked_at` (RFC 3339, UTC) are `null` before the first good check.
+- `update_available` is true only when `latest_version` is newer than the running version's base: a `git describe` version (`0.9.1-12-gabc123`, `-dirty`) counts as `0.9.1`, and `dev`, an empty or an unparseable version is never updatable.
+- `enabled` is the top-level `update_check` setting in `config.json` (on unless `false`), read live. With it off Admiral makes no request, `update_available` is false and `latest_version` and `checked_at` are `null`; turning it on runs a check about 10 seconds later.
+- `install_method` is `homebrew` (the resolved executable is under `/Cellar/`), `source` (the version is `dev` or a `git describe` one, or the executable is `<dir>/bin/admiral` in a git checkout) or `script`. `upgrade_commands` are the steps in order, ending with the service restart, and `restart_note` says what to do when Admiral was not started as a service. They are plain text for a person to run; a client shows them as text, never as markup.
+- `release_url` is the release's page, kept only when GitHub's `html_url` is an `https://` link, else a page built from the tag; before the first check it is the latest-release page.
+- AdmiralBot may read it. `POST /api/update` is not a route.
+
 ## AdmiralBot's requests
 
 A fleet's chat calls Admiral with its actor token in the `X-Admiral-Actor` header. The token is `HMAC-SHA256(secret, fleet + "\n" + nonce)`: the secret is a random key in `$ADMIRAL_HOME/actor-secret` (mode 0600) and the nonce is minted per chat session and kept in the tmux session option `@admiral-chat-nonce`, so a token survives an Admiral restart while its chat lives and is new with each chat session. The token is never logged and never put in a command line or a file.
 
 - A request with no header is the engineer's own and is unchanged. A valid token on a loopback request makes it AdmiralBot's for that fleet; an unknown or stale token is 401. A request off loopback is refused: 401 without a device cookie (the auth layer answers first), 403 with one.
-- AdmiralBot may call only: `GET /api/ships`, `GET /api/ships/<ship>/conversation`, `GET /api/inbox`, `GET /api/sources`, `GET /api/campaigns`, `GET /api/campaigns/<id>`, `POST /api/ships`, `POST /api/sources/<key>/orders`, `POST /api/inbox/<ship>/<id>/answer`, `POST /api/ships/<ship>/stop`, `POST /api/ships/<ship>/dismiss`, `POST /api/ships/<ship>/next`, `POST /api/ships/<ship>/wake`, `GET /api/outcomes`, `POST /api/chat/questions`, `GET /api/chat/questions/<id>/answer`, `GET /api/fleets/<fleet>/routines`, `GET /api/fleets/<fleet>/standing-orders`, `GET /api/fleets/<fleet>/hold-fire`, `POST /api/fleets/<fleet>/routines/<id>/off`, `POST /api/fleets/<fleet>/hold-fire/on`, `GET /api/hold-fire`, `POST /api/hold-fire/on`, `POST /api/chat/notes`, `POST /api/chat/commitments` and `POST /api/chat/campaign-commitments`, each also under `/api/v1`. A `<fleet>` that is not its own is 403; turning a routine on, turning Hold fire off, and saving, editing or deleting a routine are 403 too, as are `PUT` and `POST …/copy` on `standing-orders` and both drafts (`standing-orders/draft`, `routines/draft`). Every other route is 403, and a path that needs cleaning or decoding to match is refused.
+- AdmiralBot may call only: `GET /api/ships`, `GET /api/ships/<ship>/conversation`, `GET /api/inbox`, `GET /api/sources`, `GET /api/campaigns`, `GET /api/campaigns/<id>`, `GET /api/update`, `POST /api/ships`, `POST /api/sources/<key>/orders`, `POST /api/inbox/<ship>/<id>/answer`, `POST /api/ships/<ship>/stop`, `POST /api/ships/<ship>/dismiss`, `POST /api/ships/<ship>/next`, `POST /api/ships/<ship>/wake`, `GET /api/outcomes`, `POST /api/chat/questions`, `GET /api/chat/questions/<id>/answer`, `GET /api/fleets/<fleet>/routines`, `GET /api/fleets/<fleet>/standing-orders`, `GET /api/fleets/<fleet>/hold-fire`, `POST /api/fleets/<fleet>/routines/<id>/off`, `POST /api/fleets/<fleet>/hold-fire/on`, `GET /api/hold-fire`, `POST /api/hold-fire/on`, `POST /api/chat/notes`, `POST /api/chat/commitments` and `POST /api/chat/campaign-commitments`, each also under `/api/v1`. A `<fleet>` that is not its own is 403; turning a routine on, turning Hold fire off, and saving, editing or deleting a routine are 403 too, as are `PUT` and `POST …/copy` on `standing-orders` and both drafts (`standing-orders/draft`, `routines/draft`). Every other route is 403, and a path that needs cleaning or decoding to match is refused.
 - The list reads (`ships`, `inbox`, `sources`, `campaigns`) hold only the actor's fleet. Touching another fleet's ship, item, source or campaign, or an item or ship of no known fleet, is 403 naming the fleet; a launch must name the actor's fleet and a source of that fleet. A launch body must be one JSON object: data after it is 400 (for the engineer too), and the guard and the handler read the same value. A chat session's own question is the engineer's to answer, so AdmiralBot's answer to an Inbox item of a chat session is 403.
 - `GET /api/outcomes[?ship=<ship>][&limit=<n>]` answers `{"outcomes": [<record>, ...]}`, oldest first, the latest `limit` (default 100, at most 1000; `400` for a bad value) of the month files' records. An actor sees only its fleet's: ship names are reused, so a record's fleet is the `fleet` of the latest `launched` record of its ship before it (read in file order); a record with no such record in the files read takes the fleet of the listed or moored ship that holds the name, unless the files hold a later `launched` record of that name, which hides it; a record of no known fleet is hidden. The fence applies before the limit. A `launched` or `woken` record carries `launched`, the ship's launch stamp (RFC 3339; a wake's is the wake time), which a commitment's ship trigger matches on; a record written before that field existed never matches. A `launched` record of a routine's ship has `trigger: {"fleet", "id"}`, pointing at that routine's trigger-log record.
 - Writes are stamped `"via":"admiralbot"`: the `launched`, `stopped`, `dismissed`, `answered`, `resumed`, `woken` and `unmoored` outcome records and the launched ship's `via`.

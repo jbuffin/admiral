@@ -39,6 +39,7 @@ import { watchAttention } from './attention';
 import { watchPush } from './pushLink';
 import { parseBuildStamp } from './buildCheck';
 import { ShipView } from './ShipView';
+import { UpdateBadge } from './UpdateBadge';
 import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
 const PHONE_QUERY = '(max-width: 640px)';
@@ -375,7 +376,10 @@ function DesktopShell({ surface }: { surface: Surface }) {
             {s.id === 'campaigns' ? <CampaignSidebar /> : null}
           </Fragment>
         ))}
-        {build ? <span class="side-version">{build.version}</span> : null}
+        <div class="side-foot">
+          {build ? <span class="side-version">{build.version}</span> : null}
+          <UpdateBadge />
+        </div>
       </nav>
       <Stage surface={surface} title />
     </div>

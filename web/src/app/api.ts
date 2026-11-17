@@ -550,6 +550,29 @@ export async function checkHarness(fleet: string, harness: string): Promise<Chec
   return body;
 }
 
+export interface UpdateStatus {
+  current_version: string;
+  latest_version: string | null;
+  update_available: boolean;
+  checked_at: string | null;
+  enabled: boolean;
+  install_method: 'homebrew' | 'script' | 'source';
+  upgrade_commands: { label: string; command: string }[];
+  restart_note: string;
+  executable_path: string;
+  release_url: string;
+}
+
+/** The update check's answer, or null when the server cannot give one. */
+export async function fetchUpdateStatus(): Promise<UpdateStatus | null> {
+  try {
+    const res = await fetch(`${API}/update`, { cache: 'no-store' });
+    return res.ok ? ((await res.json()) as UpdateStatus) : null;
+  } catch {
+    return null;
+  }
+}
+
 export const shipsSocketUrl = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1`;
 
 const PROXY_DOWN = new Set([502, 503, 504]);
