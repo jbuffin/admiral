@@ -76,3 +76,22 @@ test('Send stays off while an answer is in flight', () => {
   render(<Form onSend={vi.fn()} start={{ ...answered, sending: true }} />);
   expect((screen.getByRole('button', { name: 'Send answers' }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+test('the question text renders as markdown with headings, lists, links and code, and a script in it stays text', () => {
+  const md = '## Heading\n\n- first point\n\n[the docs](https://example.com/docs) and `inline_code`\n\n```\nfenced line\n```';
+  const qs: InboxQuestion[] = [{ id: 'm', text: md, options: [{ label: 'A' }] }];
+  const { container } = render(<PeekQuestions questions={qs} draft={blankDraft()} edit={() => {}} onSend={() => {}} />);
+  expect(container.querySelector('h1, h2, h3, h4')?.textContent).toBe('Heading');
+  expect(container.querySelector('li')?.textContent).toBe('first point');
+  expect(container.querySelector('a[href="https://example.com/docs"]')?.textContent).toBe('the docs');
+  expect([...container.querySelectorAll('code')].some((c) => c.textContent === 'inline_code')).toBe(true);
+  expect(container.querySelector('pre > code')?.textContent).toContain('fenced line');
+  expect(container.querySelector('button h1, button h2, button h3, button p, button pre')).toBeNull();
+});
+
+test('a script in the question text comes out as text', () => {
+  const qs: InboxQuestion[] = [{ id: 'x', text: 'Hello <script>window.__xss=1</script>', options: [{ label: 'A' }] }];
+  const { container } = render(<PeekQuestions questions={qs} draft={blankDraft()} edit={() => {}} onSend={() => {}} />);
+  expect(container.querySelector('script')).toBeNull();
+  expect(container.textContent).toContain('<script>window.__xss=1</script>');
+});

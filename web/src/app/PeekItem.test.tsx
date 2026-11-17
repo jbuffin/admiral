@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
 import { useState } from 'preact/hooks';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { Entry } from './inbox';
@@ -336,4 +336,62 @@ test('an event whose text is gone says so and still offers Launch and Dismiss', 
   expect(await screen.findByText("The event's text is no longer available.")).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Launch' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Dismiss' })).toBeTruthy();
+});
+
+const MD = '## Heading\n\n- first point\n\n[the docs](https://example.com/docs) and `inline_code`\n\n```\nfenced line\n```';
+const mdIn = (root: Element) => {
+  expect(root.querySelector('h1, h2, h3, h4')?.textContent).toBe('Heading');
+  expect(root.querySelector('li')?.textContent).toBe('first point');
+  expect(root.querySelector('a[href="https://example.com/docs"]')?.textContent).toBe('the docs');
+  expect([...root.querySelectorAll('code')].some((c) => c.textContent === 'inline_code')).toBe(true);
+  expect(root.querySelector('pre > code')?.textContent).toContain('fenced line');
+};
+
+test('a review summary renders as markdown, and a script in it stays text', () => {
+  const e = entry('md-review', { kind: 'review', review: { pr_url: 'https://github.com/acme/widgets/pull/12', review_id: 1, summary: MD } });
+  const { container } = render(<Review e={e} fold={vi.fn()} />);
+  mdIn(container);
+  cleanup();
+  const hostile = render(<Review e={entry('md-review-x', { kind: 'review', review: { review_id: 1, summary: '<script>window.__xss=1</script>' } })} fold={vi.fn()} />);
+  expect(hostile.container.querySelector('script')).toBeNull();
+  expect(hostile.container.textContent).toContain('<script>window.__xss=1</script>');
+});
+
+test('a finding card renders its quote, its reason and a reply proposal as markdown, with the reply kept raw in Edit', () => {
+  const e = entry('md-cards', {
+    kind: 'findings',
+    findings: { pr_url: 'https://github.com/acme/widgets/pull/12', cards: [{ id: 'c1', source: 'reviewer', quote: MD, verdict: 'agree', reason: MD, proposal: { kind: 'reply', content: MD }, evidence: [] }] },
+  });
+  render(<Findings e={e} />);
+  const card = screen.getByRole('region', { name: 'Finding card 1' });
+  expect(card.querySelectorAll('h1, h2, h3, h4')).toHaveLength(3);
+  expect(card.querySelectorAll('a[href="https://example.com/docs"]')).toHaveLength(3);
+  expect(card.querySelectorAll('pre > code')).toHaveLength(3);
+  expect(card.querySelector('blockquote')?.querySelector('h1, h2, h3, h4')?.textContent).toBe('Heading');
+  expect(card.querySelector('.inbox-proposal')?.querySelector('li')?.textContent).toBe('first point');
+  expect(within(card).getByText('Why:')).toBeTruthy();
+
+  press('Edit', card);
+  expect((screen.getByRole('textbox', { name: 'Edit the proposal for card 1' }) as HTMLTextAreaElement).value).toBe(MD);
+});
+
+test('a finding card with a script in its quote shows it as text', () => {
+  const e = entry('md-cards-x', { kind: 'findings', findings: { cards: [{ id: 'c1', source: 's', quote: '<script>window.__xss=1</script>', verdict: 'agree', reason: 'r', proposal: null, evidence: [] }] } });
+  const { container } = render(<Findings e={e} />);
+  expect(container.querySelector('script')).toBeNull();
+  expect(container.textContent).toContain('<script>window.__xss=1</script>');
+});
+
+test('an event summary and a routine proposal stay plain text', async () => {
+  serve((path) => (path.endsWith('/event') ? new Response(JSON.stringify({ ...detail, summary: 'Alice wants **bold** and `code`' })) : new Response('{}')));
+  const { container } = render(<Proposal e={event} fold={vi.fn()} event />);
+  expect(await screen.findByText(/Alice wants \*\*bold\*\* and `code`/)).toBeTruthy();
+  expect([...container.querySelectorAll('strong, code')].map((n) => n.textContent)).not.toContain('bold');
+  expect(container.querySelector('code')).toBeNull();
+  cleanup();
+  const routine = entry('routine-md', { kind: 'routine_proposal', routine_proposal: { fleet: 'zulu', routine: 'r1', action: 'run **this**', reason: 'because `x`', expires_at: '' } });
+  const r = render(<Proposal e={routine} fold={vi.fn()} />);
+  expect(r.container.textContent).toContain('run **this**');
+  expect([...r.container.querySelectorAll('strong, code')].map((n) => n.textContent)).not.toContain('this');
+  expect(r.container.querySelector('code')).toBeNull();
 });
