@@ -7,7 +7,8 @@ import { mergeHint } from './moored';
 import { Failure } from './PeekItem';
 import { go, shipPath } from './router';
 
-const STALE_TOKEN = 'Admiral restarted, reload to merge';
+const STALE_MERGE = 'Admiral restarted, reload to merge';
+const STALE_UPDATE = 'Admiral restarted, reload to update the branch';
 
 /** Merge for a ready ship with the method it will use: the ship's one PR, its whole stack (`stack`), or with `pr` that independent PR alone. The caller shows it only when the ship is ready, and shows the error it reports. */
 export function MergeControl({ ship, pr, stack = false, onMerged, onError, stale: lifted, onStale, locked = false, onBusy }: { ship: Ship; pr?: string; stack?: boolean; onMerged: () => void; onError: (e: string) => void; stale?: boolean; onStale?: (stale: boolean) => void; locked?: boolean; onBusy?: (busy: boolean) => void }) {
@@ -32,7 +33,7 @@ export function MergeControl({ ship, pr, stack = false, onMerged, onError, stale
     }
     const refused = r.status === 403;
     setStale(refused);
-    onError(refused ? STALE_TOKEN : r.error);
+    onError(refused ? STALE_MERGE : r.error);
   };
   return (
     <div class="peek-merge">
@@ -62,7 +63,7 @@ export function UpdateBranchControl({ ship, pr, onError, locked = false, onBusy 
     }
     const refused = r.status === 403;
     setStale(refused);
-    onError(refused ? STALE_TOKEN.replace('merge', 'update the branch') : r.error);
+    onError(refused ? STALE_UPDATE : r.error);
   };
   return (
     <div class="peek-merge">

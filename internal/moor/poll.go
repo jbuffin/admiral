@@ -98,8 +98,13 @@ func (st Status) MergeReasons() []string {
 	if st.Mergeable == "UNKNOWN" || st.MergeState == "UNKNOWN" {
 		out = append(out, "unknown")
 	}
-	if blocked && len(out) == 0 {
-		out = append(out, "held")
+	if len(out) == 0 {
+		// Not ready with no cause named: GitHub has not said yet, or the state is one this list does not know.
+		if blocked {
+			out = append(out, "held")
+		} else {
+			out = append(out, "unknown")
+		}
 	}
 	return out
 }
