@@ -12,7 +12,7 @@ A dashboard for running coding agents (Claude Code, Codex CLI, GitHub Copilot CL
 
 - An Apple silicon Mac with `tmux` (`brew install tmux`).
 - At least one harness, installed and signed in: Claude Code, Codex CLI or GitHub Copilot CLI.
-- Optional: the [Commodore](https://github.com/jbuffin/skills) skill, the default skill for a launch. Install it with `npx skills add jbuffin/skills`, or in Claude Code as the `jasonbuffin@jbuffinskills` plugin. Without it, you launch with another skill or none.
+- Optional: the [Commodore](https://github.com/jbuffin/skills) skill, the default skill for a launch. Admiral offers to install it in `admiral setup` and in the launch dialog. To do it yourself, run `npx skills add jbuffin/skills`, or in Claude Code install the `jasonbuffin@jbuffinskills` plugin. Without it, you launch with another skill or none.
 
 ## Install
 

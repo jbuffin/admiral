@@ -24,10 +24,13 @@ export interface ButtonProps extends Omit<ButtonModelProps, 'busy'> {
   children?: ComponentChildren;
 }
 
+// useId repeats across render roots, and a pending key outlives its button by the spinner's minimum.
+let mounted = 0;
+
 export function Button({ pending, onClick, children, ...props }: ButtonProps) {
   const group = useContext(GroupContext);
   const id = useId();
-  const localKey = useMemo<PendingKey>(() => ['local', id], [id]);
+  const localKey = useMemo<PendingKey>(() => ['local', id, String(++mounted)], [id]);
   const key = pending ?? localKey;
   const busy = !!props.busy || isPending(key);
   const m = buttonModel({ ...props, text: typeof children === 'string' ? children : undefined, busy, disabled: props.disabled || (group?.disabledFor(id) ?? false) });

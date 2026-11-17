@@ -25,6 +25,7 @@ import {
 import { IssueLabels } from './IssueLabels';
 import { CheckoutSelect, CLONE, DockPicker, ModelEffortPair, NO_DIR, ResourcesPicker } from './LaunchPickers';
 import { LaunchSkillPicker } from './LaunchSkillPicker';
+import { LaunchCommodoreOffer, type CommodoreRun } from './LaunchCommodoreOffer';
 
 export interface OrderRef {
   source: string;
@@ -120,6 +121,16 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const readKey = `${harness}\n${dirForSkills}`;
   const skills = read?.key === readKey ? (read.answer ?? null) : null;
   const skillsError = read?.key === readKey ? read.error : undefined;
+  const [run, setRun] = useState<CommodoreRun | null>(null);
+  const [runWarning, setRunWarning] = useState<{ harness: string; text: string } | null>(null);
+  // Bumped after a good install or update, so the skills are read again for the same dock.
+  const [refresh, setRefresh] = useState(0);
+  // The warning of a good run shows once the re-read has landed, with the answer it belongs to.
+  const warnNext = useRef<{ harness: string; text: string } | null>(null);
+  const runNow = useRef(run);
+  runNow.current = run;
+  const harnessNow = useRef(harness);
+  harnessNow.current = harness;
   const readNow = useRef(read);
   readNow.current = read;
   useEffect(() => {
@@ -128,6 +139,10 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
     const q = new URLSearchParams({ fleet: fleet.key, harness, dir: dirForSkills });
     void call<SkillsAnswer>('GET', `/launch-orders/skills?${q}`).then((r) => {
       if (!live) return;
+      if (runNow.current?.status === 'refreshing') {
+        setRun(null);
+        setRunWarning(warnNext.current);
+      }
       if (!r.ok) return setRead({ key: readKey, error: r.error });
       // Text that named a skill of the last list is that pick, which this list may keep or replace; other text stays and is still refused.
       const was = readNow.current?.answer;
@@ -143,7 +158,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
     return () => {
       live = false;
     };
-  }, [dirForSkills, harness]);
+  }, [dirForSkills, harness, refresh]);
 
   // A clone launch has no repo yet, so it offers the built-in and fleet members only.
   const crewDir = dir && dir !== CLONE ? dir : '';
@@ -209,6 +224,23 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
       skillPicked.current = true;
       setSkill(named.choice);
     }
+  };
+  // A result for a dock the engineer has left paints nothing: the run, its warning and the re-read all belong to that dock.
+  const runCommodore = async (action: 'install' | 'update') => {
+    if (run?.harness === harness && (run.status === 'running' || run.status === 'refreshing')) return;
+    const on = harness;
+    setRun({ harness: on, action, status: 'running' });
+    setRunWarning(null);
+    warnNext.current = null;
+    const r = await call<{ state: string; warning?: string }>('POST', '/launch-orders/commodore', { fleet: fleet.key, harness: on, action }, undefined, { timeoutMs: LAUNCH_TIMEOUT_MS });
+    if (!r.ok) return setRun((cur) => (cur?.harness === on ? { harness: on, action, status: 'failed', error: r.error, output: r.output, commands: r.commands } : cur));
+    if (typeof r.data.warning === 'string') warnNext.current = { harness: on, text: r.data.warning };
+    if (harnessNow.current !== on) {
+      setRunWarning(warnNext.current);
+      return setRun((cur) => (cur?.harness === on ? null : cur));
+    }
+    setRun({ harness: on, action, status: 'refreshing' });
+    setRefresh((n) => n + 1);
   };
   const pick = (c: SkillChoice) => {
     skillPicked.current = true;
@@ -317,6 +349,8 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
             </>
           ) : null}
           {campaign?.issues ? null : <LaunchSkillPicker answer={skills} value={skill} blank={!skills && !!campaign && !viewChoice(campaign.skill)} typed={typed} warning={warning} failure={skillsError ? `Couldn't load skills: ${skillsError}` : null} onType={type} onPick={pick} />}
+
+          {campaign?.issues || !skills ? null : <LaunchCommodoreOffer commodore={skills.commodore} run={run?.harness === harness ? run : null} warning={runWarning?.harness === harness ? runWarning.text : null} onRun={(a) => void runCommodore(a)} />}
 
           {launchingAs && membersFailed ? <p class="note warn">Couldn't load crew members</p> : null}
           {launchingAs && memberViews.length > 0 ? (

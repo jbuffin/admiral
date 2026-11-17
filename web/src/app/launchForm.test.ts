@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { campaignLaunch, campaignOrder, type CampaignLaunchState, sliceOrder, type CrewMemberView, crewOptions, defaultSkill, effortsFor, keepSkill, type LaunchFormState, launchBody, memberRun, pickWarning, skillOptions, type SkillsAnswer, sourcesForFleet, startSkill, togglePin, typedSkill } from './launchForm';
+import { commodoreNote, campaignLaunch, campaignOrder, type CampaignLaunchState, sliceOrder, type CrewMemberView, crewOptions, defaultSkill, effortsFor, keepSkill, type LaunchFormState, launchBody, memberRun, pickWarning, skillOptions, type SkillsAnswer, sourcesForFleet, startSkill, togglePin, typedSkill } from './launchForm';
 
 describe('sourcesForFleet', () => {
   it('keeps the sources of the active fleet only', () => {
@@ -15,7 +15,7 @@ describe('sourcesForFleet', () => {
 
 describe('defaultSkill', () => {
   const skills = (found: boolean, favorites: string[]) => ({
-    commodore: { found, name: found ? 'commodore' : '' },
+    commodore: { found, name: found ? 'commodore' : '', state: found ? ('ok' as const) : ('missing' as const) },
     skills: [{ name: 'other', favorite: false }, ...favorites.map((name) => ({ name, favorite: true }))],
   });
 
@@ -133,6 +133,15 @@ describe('campaignLaunch', () => {
   it('sends start_anyway only when it is chosen', () => {
     expect(campaignLaunch(form).body).not.toHaveProperty('start_anyway', true);
     expect(campaignLaunch({ ...form, startAnyway: true }).body).toMatchObject({ start_anyway: true });
+  });
+});
+
+describe('commodoreNote', () => {
+  it('names the versions of an outdated Commodore as text, says a loose copy has no version, and is silent otherwise', () => {
+    expect(commodoreNote({ found: true, name: 'commodore', state: 'outdated', installed: '3.1.0', minimum: '3.5.0' })).toBe('Commodore 3.1.0 is older than this Admiral needs (3.5.0)');
+    expect(commodoreNote({ found: true, name: 'commodore', state: 'unknown-version' })).toBe('Commodore version unknown (installed as loose skills)');
+    expect(commodoreNote({ found: true, name: 'commodore', state: 'ok' })).toBeNull();
+    expect(commodoreNote({ found: false, name: '', state: 'missing' })).toBeNull();
   });
 });
 
@@ -283,7 +292,7 @@ describe('campaignLaunch with a picked skill', () => {
 describe('the launch skill picker', () => {
   const answer = (over: Partial<SkillsAnswer> = {}): SkillsAnswer => ({
     mark: '/',
-    commodore: { found: true, name: 'commodore' },
+    commodore: { found: true, name: 'commodore', state: 'ok' },
     skills: [
       { name: 'grill', description: 'Grill the plan', favorite: true },
       { name: 'tdd', description: 'Test-driven development', favorite: false },
@@ -303,7 +312,7 @@ describe('the launch skill picker', () => {
       expect(names(skillOptions(answer({ mark: '$' }), '$'))).toEqual(['commodore', 'grill', 'wayfinder', 'none']);
     });
     it('shows Commodore as not found, and not pickable, when the dock has none', () => {
-      const rows = skillOptions(answer({ commodore: { found: false, name: '' } }), '');
+      const rows = skillOptions(answer({ commodore: { found: false, name: '', state: 'missing' } }), '');
       const commodore = rows.find((r) => r.choice.kind === 'commodore');
       expect(commodore).toMatchObject({ disabled: true });
       expect(commodore?.description).toMatch(/not found/i);
@@ -370,10 +379,10 @@ describe('the launch skill picker', () => {
     });
     it('falls back to the default when the skill is not installed for the new dock', () => {
       expect(keepSkill(answer(), { kind: 'skill', name: 'gone' })).toEqual({ kind: 'commodore' });
-      expect(keepSkill(answer({ commodore: { found: false, name: '' } }), { kind: 'skill', name: 'gone' })).toEqual({ kind: 'skill', name: 'grill' });
+      expect(keepSkill(answer({ commodore: { found: false, name: '', state: 'missing' } }), { kind: 'skill', name: 'gone' })).toEqual({ kind: 'skill', name: 'grill' });
     });
     it('falls back to the default when Commodore is not on the new dock', () => {
-      expect(keepSkill(answer({ commodore: { found: false, name: '' } }), { kind: 'commodore' })).toEqual({ kind: 'skill', name: 'grill' });
+      expect(keepSkill(answer({ commodore: { found: false, name: '', state: 'missing' } }), { kind: 'commodore' })).toEqual({ kind: 'skill', name: 'grill' });
     });
     it('keeps Just launch and a found Commodore', () => {
       expect(keepSkill(answer(), { kind: 'none' })).toEqual({ kind: 'none' });
@@ -402,7 +411,7 @@ describe('the launch skill picker', () => {
       expect(pickWarning(answer(), { kind: 'skill', name: 'tdd' }, 'codex')).toBeNull();
     });
     it('warns for Commodore when the dock has none, and never for Just launch', () => {
-      const none: SkillsAnswer = { ...answer(), commodore: { found: false, name: '' } };
+      const none: SkillsAnswer = { ...answer(), commodore: { found: false, name: '', state: 'missing' } };
       expect(pickWarning(none, { kind: 'commodore' }, 'claude')).toBe('not installed on claude');
       expect(pickWarning(none, { kind: 'none' }, 'claude')).toBeNull();
       expect(pickWarning(answer(), { kind: 'commodore' }, 'claude')).toBeNull();
