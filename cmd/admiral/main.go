@@ -422,7 +422,7 @@ func serve(args []string) error {
 		}
 		return nil
 	}
-	stackCheck := stackmerge.New(dir, func(c moor.StackCheck) string { return "https://" + c.Host + "/" + c.Repo + ".git" })
+	stackCheck := stackmerge.New(dir, func(c moor.StackCheck) string { return stackRemote(dir, c) })
 	// The fleet's own gh token, never Admiral's ambient login: FleetGitHub builds the client from the fleet's environment.
 	stackCheck.Token = func(ctx context.Context, c moor.StackCheck) (string, error) {
 		gh := sources.FleetGitHub(cfg.Current(), c.Fleet)

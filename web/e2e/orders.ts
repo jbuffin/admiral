@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fakeGhTrees, issueNode } from './campaign';
@@ -23,6 +24,8 @@ export interface Item {
   stack?: { number: number; position: number; size: number };
   /** A chained PR's branches; the node also carries the repository's default branch. */
   branches?: { head: string; base: string };
+  /** The PR's head commit, where the default `head-N` would not be one a repository has. */
+  oid?: string;
 }
 
 // What the fake gh answers for each default view. The docs sweep and the rate limiter are in two views: For you shows each once.
@@ -51,6 +54,34 @@ const CHAINS_VIEW = { title: 'Chained PRs', query: 'is:open is:pr label:chains' 
 const chained = (number: number, title: string, author: string, head: string, base: string): Item => ({ number, title, author, branches: { head, base }, pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' } });
 const OWN_CHAIN = [chained(63, 'Show the ledger', 'fake-viewer', 'ledger-ui', 'ledger-api'), chained(61, 'Store the ledger', 'fake-viewer', 'ledger-db', 'main'), chained(62, 'Serve the ledger', 'fake-viewer', 'ledger-api', 'ledger-db')];
 const THEIR_CHAIN = [chained(72, 'Report the audit', 'bob', 'audit-report', 'audit-log'), chained(71, 'Log the audit', 'bob', 'audit-log', 'main')];
+/** A bare repository at the e2e build's remote for acme/api where the audit chain's top (72) merges cleanly layer by layer but conflicts with a moved main. Returns each PR's head commit. */
+function auditRemote(a: Admiral): Record<number, string> {
+  const bare = join(a.home, 'e2e-remotes', 'github.com', 'acme', 'api.git');
+  const work = join(a.home, 'e2e-remotes', 'audit-work');
+  mkdirSync(bare, { recursive: true });
+  mkdirSync(work, { recursive: true });
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' }).trim();
+  git(bare, 'init', '--bare', '-b', 'main');
+  git(work, 'init', '-b', 'main');
+  const commit = (file: string, body: string, msg: string) => {
+    writeFileSync(join(work, file), body);
+    git(work, 'add', file);
+    git(work, 'commit', '-m', msg);
+    return git(work, 'rev-parse', 'HEAD');
+  };
+  const root = commit('audit.txt', 'one\n', 'root');
+  git(work, 'checkout', '-b', 'audit-log');
+  const log = commit('audit.txt', 'logged\n', 'log the audit');
+  git(work, 'checkout', '-b', 'audit-report');
+  const report = commit('report.txt', 'report\n', 'report the audit');
+  git(work, 'checkout', 'main');
+  commit('audit.txt', 'moved\n', 'move main');
+  git(work, 'push', bare, 'main');
+  git(work, 'push', bare, `${log}:refs/pull/71/head`, `${report}:refs/pull/72/head`);
+  void root;
+  return { 71: log, 72: report };
+}
+
 const NEW_PARENT = { number: 50, title: 'Pool: sensor and retry work' };
 const REST_IDS: Record<number, number> = { 41: 9041, 42: 9042 };
 const REVIEW: Item[] = [
@@ -81,7 +112,7 @@ function node(i: Item) {
     labels: { nodes: (i.labels ?? []).map((name) => ({ name })) },
   };
   if (i.pr) {
-    const oid = `head-${i.number}`;
+    const oid = i.oid ?? `head-${i.number}`;
     Object.assign(n, {
       state: 'OPEN',
       reviewDecision: i.pr.review,
@@ -135,6 +166,8 @@ export function seedOrders(a: Admiral) {
   canned('b-review', 'review-requested:@me', REVIEW);
   canned('c-mine', 'author:@me', MINE);
   canned('p-pool', 'label:pool', POOL);
+  const oids = auditRemote(a);
+  for (const i of THEIR_CHAIN) i.oid = oids[i.number];
   canned('q-chains', 'label:chains', [...OWN_CHAIN, ...THEIR_CHAIN]);
   for (const i of [...OWN_CHAIN, ...THEIR_CHAIN]) chainDetail(a, i);
   canned('z-rest', 'is:open', []);
@@ -747,6 +780,10 @@ async function chainedGroups(page: Page, a: Admiral, press: (l: Locator) => Prom
   await press(tabNamed(page, /^Chained PRs/));
   await expect(tabNamed(page, /^Chained PRs/)).toHaveAttribute('aria-selected', 'true');
   const rows = chainGroupRows(page);
+  // The audit chain is bob's, merges cleanly layer by layer, and conflicts with main as a whole; the ledger chain says nothing of the kind.
+  const audit = rows.filter({ hasNot: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) });
+  await expect(audit).toContainText('conflicts with main as a whole');
+  await expect(rows.filter({ has: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) })).not.toContainText('as a whole');
   const own = rows.filter({ has: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) });
   const theirs = rows.filter({ hasNot: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) });
   await expect(rows).toHaveCount(2);
