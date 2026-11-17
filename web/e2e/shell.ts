@@ -869,6 +869,22 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     }
     await cancel();
   }
+
+  // Last, so the steps above ran with no Commodore on zulu's Claude dock. The fake installer writes the plugin into the dock's identity, and the dialog then offers Commodore with no reload.
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  await press(main.getByRole('button', { name: 'Launch', exact: true }));
+  await expect(form).toBeVisible();
+  const install = form.getByRole('button', { name: 'Install Commodore', exact: true });
+  await expect(install).toBeVisible();
+  await expect(form).not.toContainText('not installed on');
+  if (opts.phone) expect(await fits()).toBe(true);
+  await page.evaluate(() => ((window as unknown as { __noReload?: boolean }).__noReload = true));
+  await install.tap();
+  await expect(install).toBeHidden();
+  await expect(picker.box).toHaveValue('Commodore');
+  expect(await page.evaluate(() => (window as unknown as { __noReload?: boolean }).__noReload), 'the page was not reloaded').toBe(true);
+  if (opts.phone) expect(await fits()).toBe(true);
+  await cancel();
 }
 
 export const messageBox = (page: Page) => viewPanel(page).getByRole('textbox', { name: 'Message' });

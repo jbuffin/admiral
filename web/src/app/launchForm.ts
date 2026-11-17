@@ -7,10 +7,11 @@ export interface SourceView {
   fleet: string;
 }
 export type SkillChoice = { kind: 'commodore' | 'none' } | { kind: 'skill'; name: string };
+export type CommodoreState = 'missing' | 'ok' | 'outdated' | 'unknown-version';
 export interface SkillsAnswer {
   /** What the dock's harness types before a skill name: / for Claude Code and Copilot, $ for Codex. */
   mark: string;
-  commodore: { found: boolean; name: string };
+  commodore: { found: boolean; name: string; state: CommodoreState; installed?: string; minimum?: string };
   skills: { name: string; description: string; favorite: boolean }[];
 }
 export interface LaunchFormState {
@@ -84,6 +85,13 @@ const EFFORTS: Record<string, string[]> = {
 // The server doesn't filter sources by fleet.
 export function sourcesForFleet<T extends SourceView>(sources: T[], fleet: string): T[] {
   return sources.filter((s) => s.fleet === fleet);
+}
+
+/** The line under the skill box for a Commodore that is outdated or a loose copy; versions are free text from a manifest. */
+export function commodoreNote(c: SkillsAnswer['commodore']): string | null {
+  if (c.state === 'outdated') return `Commodore ${c.installed} is older than this Admiral needs (${c.minimum})`;
+  if (c.state === 'unknown-version') return 'Commodore version unknown (installed as loose skills)';
+  return null;
 }
 
 export function defaultSkill(answer: Pick<SkillsAnswer, 'commodore'> & { skills: { name: string; favorite: boolean }[] }): SkillChoice {

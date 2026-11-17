@@ -8,7 +8,7 @@ afterEach(cleanup);
 
 const answer: SkillsAnswer = {
   mark: '/',
-  commodore: { found: false, name: 'commodore' },
+  commodore: { found: false, name: 'commodore', state: 'missing' },
   skills: [
     { name: 'grill', description: 'Grill the plan', favorite: true },
     { name: 'tdd', description: 'Test first', favorite: false },

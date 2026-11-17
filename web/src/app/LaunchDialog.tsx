@@ -25,6 +25,8 @@ import {
 import { IssueLabels } from './IssueLabels';
 import { CheckoutSelect, CLONE, DockPicker, ModelEffortPair, NO_DIR, ResourcesPicker } from './LaunchPickers';
 import { LaunchSkillPicker } from './LaunchSkillPicker';
+import { LaunchCommodoreOffer } from './LaunchCommodoreOffer';
+import { useCommodoreRun } from './useCommodoreRun';
 
 export interface OrderRef {
   source: string;
@@ -120,6 +122,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
   const readKey = `${harness}\n${dirForSkills}`;
   const skills = read?.key === readKey ? (read.answer ?? null) : null;
   const skillsError = read?.key === readKey ? read.error : undefined;
+  const commodoreRun = useCommodoreRun(fleet.key, harness);
   const readNow = useRef(read);
   readNow.current = read;
   useEffect(() => {
@@ -128,6 +131,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
     const q = new URLSearchParams({ fleet: fleet.key, harness, dir: dirForSkills });
     void call<SkillsAnswer>('GET', `/launch-orders/skills?${q}`).then((r) => {
       if (!live) return;
+      commodoreRun.read();
       if (!r.ok) return setRead({ key: readKey, error: r.error });
       // Text that named a skill of the last list is that pick, which this list may keep or replace; other text stays and is still refused.
       const was = readNow.current?.answer;
@@ -143,7 +147,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
     return () => {
       live = false;
     };
-  }, [dirForSkills, harness]);
+  }, [dirForSkills, harness, commodoreRun.refresh]);
 
   // A clone launch has no repo yet, so it offers the built-in and fleet members only.
   const crewDir = dir && dir !== CLONE ? dir : '';
@@ -317,6 +321,8 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
             </>
           ) : null}
           {campaign?.issues ? null : <LaunchSkillPicker answer={skills} value={skill} blank={!skills && !!campaign && !viewChoice(campaign.skill)} typed={typed} warning={warning} failure={skillsError ? `Couldn't load skills: ${skillsError}` : null} onType={type} onPick={pick} />}
+
+          {campaign?.issues || !skills ? null : <LaunchCommodoreOffer commodore={skills.commodore} run={commodoreRun.run} warning={commodoreRun.warning} onRun={(a) => void commodoreRun.start(a)} />}
 
           {launchingAs && membersFailed ? <p class="note warn">Couldn't load crew members</p> : null}
           {launchingAs && memberViews.length > 0 ? (
