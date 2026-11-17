@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -77,9 +78,37 @@ func newWorld(t *testing.T) *world {
 		// Registered before any Admiral this world starts, so it runs after they stop.
 		killTmux(w.sock())
 		killTmux(w.defaultSocket())
+		w.noTmuxLeft(t)
 		_ = os.RemoveAll(root)
 	})
 	return w
+}
+
+// noTmuxLeft fails the test whose world still has a tmux server after its sockets were killed, and kills it:
+// once the home is removed nothing can reach the server again. The Admiral socket's server carries the path in its
+// command line; one on the default socket (the setup terminal's) has none, so it is found by asking it.
+func (w *world) noTmuxLeft(t *testing.T) {
+	pattern := "-S " + regexp.QuoteMeta(w.sock()) + "( |$)"
+	end := time.Now().Add(2 * time.Second)
+	for {
+		out, _ := exec.Command("pgrep", "-f", "--", pattern).Output()
+		defaultUp := exec.Command("tmux", "-S", w.defaultSocket(), "list-sessions").Run() == nil
+		if len(out) == 0 && !defaultUp {
+			return
+		}
+		if time.Now().After(end) {
+			if len(out) > 0 {
+				_ = exec.Command("pkill", "-9", "-f", "--", pattern).Run()
+				t.Errorf("a tmux server on %s outlived the test and was killed; stop the Admiral that started it before kill-server", w.sock())
+			}
+			if defaultUp {
+				killTmux(w.defaultSocket())
+				t.Errorf("a tmux server on %s outlived the test and was killed; stop the Admiral that started it before kill-server", w.defaultSocket())
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // at returns the world with its helpers bound to t. A subtest must use it:
@@ -199,7 +228,7 @@ func (w *world) start() *fleetInst {
 	if _, err := os.Stat(configPath(w.home)); err != nil {
 		writeConfig(w.t, w.home, w.config())
 	}
-	w.in = launchAdmiral(w.t, w.home, "127.0.0.1:"+freePort(w.t), w.baseEnv())
+	w.in = launchAdmiral(w.t, w.home, "127.0.0.1:0", w.baseEnv())
 	return w.in
 }
 
@@ -219,8 +248,7 @@ func launchAdmiral(t *testing.T, home, listen string, env []string) *fleetInst {
 func launchAdmiralOnce(t *testing.T, home, listen string, env []string) (*fleetInst, bool) {
 	t.Helper()
 	cmd := exec.Command(binaryPath(t), "--listen", listen)
-	lanPort := freePort(t)
-	cmd.Env = append(slices.Clone(env), lanEnv(lanPort)...)
+	cmd.Env = append(slices.Clone(env), lanEnv("0")...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +258,7 @@ func launchAdmiralOnce(t *testing.T, home, listen string, env []string) (*fleetI
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start admiral: %v", err)
 	}
-	in := &instance{Home: home, listen: listen, LANPort: lanPort, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
+	in := &instance{Home: home, listen: listen, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
 	go func() { _ = cmd.Wait(); close(in.done) }()
 	t.Cleanup(in.Stop)
 	lines := make(chan string, 8)
@@ -269,6 +297,10 @@ func launchAdmiralOnce(t *testing.T, home, listen string, env []string) (*fleetI
 	in.Port = m[1]
 	in.LocalURL = "http://127.0.0.1:" + in.Port
 	in.LANLine = got[1]
+	in.LANPort = lanPortFrom(t, listen, stderr)
+	if requireOwned(t, in) {
+		return nil, true
+	}
 	return &fleetInst{instance: in, env: env}, false
 }
 

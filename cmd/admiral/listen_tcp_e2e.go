@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"sync"
@@ -14,6 +15,7 @@ import (
 // listenTCP is the test build's way onto a LAN with no network: with ADMIRAL_E2E_LAN_PORT set, a wildcard bind
 // also opens 127.0.0.1 on that port, and its connections look like a LAN peer reaching ADMIRAL_LAN_IP.
 // It closes when Admiral moves to loopback, as a real LAN address stops answering. A release is built without this file.
+// ADMIRAL_E2E_LAN_PORT=0 lets the kernel pick the port, which Admiral reports on stderr and keeps through a rebind.
 func listenTCP(addr string) (net.Listener, error) {
 	wild, err := net.Listen("tcp", addr)
 	lanPort := os.Getenv("ADMIRAL_E2E_LAN_PORT")
@@ -21,11 +23,21 @@ func listenTCP(addr string) (net.Listener, error) {
 	if err != nil || lanPort == "" || (host != "" && !net.ParseIP(host).IsUnspecified()) {
 		return wild, err
 	}
+	lanMu.Lock()
+	if lanPort == "0" && lanDrawn != "" {
+		lanPort = lanDrawn
+	}
 	lan, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", lanPort))
 	if err != nil {
+		lanMu.Unlock()
 		wild.Close()
 		return nil, err
 	}
+	if lanPort == "0" {
+		lanDrawn = fmt.Sprint(lan.Addr().(*net.TCPAddr).Port)
+		fmt.Fprintf(os.Stderr, "e2e LAN port: %s\n", lanDrawn)
+	}
+	lanMu.Unlock()
 	ip, _ := server.LANIPv4()
 	l := &lanListener{Listener: wild, conns: make(chan accepted), done: make(chan struct{}),
 		local: &net.TCPAddr{IP: net.ParseIP(ip), Port: wild.Addr().(*net.TCPAddr).Port}}
@@ -34,6 +46,11 @@ func listenTCP(addr string) (net.Listener, error) {
 	l.lan = lan
 	return l, nil
 }
+
+var (
+	lanMu    sync.Mutex
+	lanDrawn string
+)
 
 type accepted struct {
 	c   net.Conn

@@ -12,7 +12,7 @@ import (
 func TestStartupLinesHaveNoToken(t *testing.T) {
 	t.Parallel()
 	home := newHome(t)
-	in := startAdmiral(t, home, "0.0.0.0:"+freePort(t))
+	in := startAdmiral(t, home, "0.0.0.0:0")
 	port := in.Port
 	if in.LANIP != fakeLAN {
 		t.Fatalf("line 2 must offer %s: %q", fakeLAN, in.LANLine)

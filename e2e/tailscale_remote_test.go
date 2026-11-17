@@ -131,6 +131,57 @@ const tsStartBound = 20 * time.Second
 
 // start runs Admiral on loopback with the fake tailscale first on PATH. noBinary leaves tailscale off PATH.
 func (r *tsRig) start(mode bool, noBinary bool) *tsProc {
+	return r.owned(func() *tsProc { return r.startOnce(mode, noBinary) })
+}
+
+// owned runs once until Admiral owns r.port. A port another process took between the draw and the bind makes
+// Admiral exit with "address already in use", or leaves a stranger answering on loopback; either way the rig
+// draws a new port and a new LAN port, as startWithRetry does for the other tests.
+func (r *tsRig) owned(once func() *tsProc) *tsProc {
+	t := r.t
+	t.Helper()
+	for try := 1; ; try++ {
+		p := once()
+		if !r.lostPort(p) {
+			return p
+		}
+		if try == bindTries {
+			t.Fatalf("admiral could not bind its ports in %d tries", bindTries)
+		}
+		r.movePort()
+	}
+}
+
+// lostPort waits until the process serves or ends, and reports whether its port belonged to someone else.
+// A process that does neither fails the test with its output.
+func (r *tsRig) lostPort(p *tsProc) bool {
+	end := time.Now().Add(tsStartBound)
+	for time.Now().Before(end) {
+		out := p.out.String()
+		if p.exited() {
+			return strings.Contains(out, "address already in use")
+		}
+		if strings.Contains(out, "Admiral is running at") {
+			return requireOwned(r.t, p.instance)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	r.t.Fatalf("admiral neither served nor exited within %s:\n%s", tsStartBound, p.out.String())
+	return false
+}
+
+// movePort gives the rig a new port; the serve config that proxies to the old one follows.
+func (r *tsRig) movePort() {
+	old := r.port
+	r.port = freePort(r.t)
+	b, err := os.ReadFile(filepath.Join(r.dir, "serve.json"))
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	r.put("serve.json", strings.ReplaceAll(string(b), "127.0.0.1:"+old, "127.0.0.1:"+r.port))
+}
+
+func (r *tsRig) startOnce(mode bool, noBinary bool) *tsProc {
 	t := r.t
 	t.Helper()
 	r.writeConfig(mode)
@@ -150,7 +201,7 @@ func (r *tsRig) start(mode bool, noBinary bool) *tsProc {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	in := &instance{Home: r.home, listen: listen, Port: r.port, cmd: cmd, done: make(chan struct{}), stderrBuf: out}
+	in := &instance{Home: r.home, listen: listen, Port: r.port, LocalURL: "http://127.0.0.1:" + r.port, cmd: cmd, done: make(chan struct{}), stderrBuf: out}
 	go func() { _ = cmd.Wait(); close(in.done) }()
 	t.Cleanup(func() { killTmux(filepath.Join(r.home, "tmux.sock")) })
 	t.Cleanup(in.Stop)

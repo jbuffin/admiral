@@ -11,7 +11,6 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -70,15 +69,6 @@ export interface Admiral {
   resumeServer(): Promise<void>;
   restart(): Promise<void>;
 }
-
-const freePort = () =>
-  new Promise<string>((done, fail) => {
-    const s = createServer().listen(0, '127.0.0.1', () => {
-      const { port } = s.address() as { port: number };
-      s.close(() => done(String(port)));
-    });
-    s.once('error', fail);
-  });
 
 class Instance implements Admiral {
   home = mkdtempSync(join(tmpdir(), 'admiral-ui-'));
@@ -185,7 +175,8 @@ class Instance implements Admiral {
     this.lan = !!opts.lan;
     this.extraEnv = opts.env ?? {};
     this.listen = this.lan ? '0.0.0.0:0' : '127.0.0.1:0';
-    if (this.lan) this.lanPort = await freePort();
+    // Admiral takes its own listen port and LAN port from the kernel (:0) and reports the LAN port; a restart keeps both.
+    this.lanPort = '0';
     await this.resumeServer();
     if (this.lan) this.token = await this.pairDevice();
   }
@@ -232,21 +223,30 @@ class Instance implements Admiral {
         out += b.toString();
         this.log += b.toString();
       };
-      proc.stdout!.on('data', (b: Buffer) => {
-        record(b);
+      const ready = () => {
         const m = /Admiral is running at (http:\/\/127\.0\.0\.1:(\d+)\/)/.exec(out);
         if (running || !m) return;
         const other = /On other devices: (http:\/\/[\d.]+:\d+\/)/.exec(out);
-        if (this.lan && !other) return;
+        // The first start reports the LAN port the kernel gave; a restart asks for that port and reports nothing.
+        const lanPort = /e2e LAN port: (\d+)/.exec(out)?.[1] ?? (this.lanPort === '0' ? '' : this.lanPort);
+        if (this.lan && (!other || !lanPort)) return;
         clearTimeout(timer);
         running = true;
         this.url = m[1];
         // A restart comes back on the same port.
         this.listen = `${this.lan ? '0.0.0.0' : '127.0.0.1'}:${m[2]}`;
+        if (lanPort) this.lanPort = lanPort;
         if (other) this.lanUrl = `http://127.0.0.1:${this.lanPort}/`;
         done();
+      };
+      proc.stdout!.on('data', (b: Buffer) => {
+        record(b);
+        ready();
       });
-      proc.stderr!.on('data', record);
+      proc.stderr!.on('data', (b: Buffer) => {
+        record(b);
+        ready();
+      });
     });
   }
 

@@ -572,7 +572,7 @@ func firstFleet(t *testing.T, cfg map[string]any) string {
 
 func (w *world) startFresh() *fleetInst {
 	w.t.Helper()
-	w.in = launchAdmiral(w.t, w.home, "127.0.0.1:"+freePort(w.t), w.baseEnv())
+	w.in = launchAdmiral(w.t, w.home, "127.0.0.1:0", w.baseEnv())
 	return w.in
 }
 
