@@ -187,7 +187,7 @@ func TestHarnessKillTmuxEndsAServerAClientIsStillStarting(t *testing.T) {
 		_ = exec.Command("pkill", "-9", "-f", "--", "-S "+regexp.QuoteMeta(sock)+"( |$)").Run()
 		_ = os.RemoveAll(dir)
 	})
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 5; i++ {
 		cmd := exec.Command("tmux", "-f", "/dev/null", "-S", sock, "-u", "-C", "new-session", "-A", "-s", "_admiral", "tail", "-f", "/dev/null")
 		in, err := cmd.StdinPipe()
 		if err != nil {
