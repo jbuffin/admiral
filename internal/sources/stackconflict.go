@@ -25,9 +25,13 @@ func (gr stackGroup) key() string {
 	return c.Host + "/" + c.Repo + "#" + strconv.Itoa(c.PR) + "@" + c.Head + ">" + c.Base
 }
 
+// stackAnswerKeep is how long an answer outlives the last view that listed its group; views refresh one at a time, so it must span a cycle.
+const stackAnswerKeep = time.Hour
+
 // stackAnswers is the orders-side check's memory: the last answer per group, the checks in flight, and the last failure logged per group.
 type stackAnswers struct {
 	answer   map[string]string // group key -> the base it conflicts with, "" for clean
+	seen     map[string]time.Time
 	inflight map[string]bool
 	logged   map[string]string
 }
@@ -42,13 +46,13 @@ func (g *githubConn) markStackConflicts(client *github.Client, items []github.It
 	groups := stackGroups(client.Host(), g.fleet, items, orders)
 	g.mu.Lock()
 	if g.stacks.answer == nil {
-		g.stacks = stackAnswers{answer: map[string]string{}, inflight: map[string]bool{}, logged: map[string]string{}}
+		g.stacks = stackAnswers{answer: map[string]string{}, seen: map[string]time.Time{}, inflight: map[string]bool{}, logged: map[string]string{}}
 	}
-	live := map[string]bool{}
+	now := time.Now()
 	var start []stackGroup
 	for _, gr := range groups {
 		k := gr.key()
-		live[k] = true
+		g.stacks.seen[k] = now
 		if base := g.stacks.answer[k]; base != "" {
 			for _, u := range gr.urls {
 				if m, ok := orders[u][gr.kind].(map[string]any); ok {
@@ -61,8 +65,9 @@ func (g *githubConn) markStackConflicts(client *github.Client, items []github.It
 			start = append(start, gr)
 		}
 	}
-	for k := range g.stacks.answer {
-		if !live[k] {
+	for k, at := range g.stacks.seen {
+		if now.Sub(at) > stackAnswerKeep {
+			delete(g.stacks.seen, k)
 			delete(g.stacks.answer, k)
 		}
 	}

@@ -432,6 +432,7 @@ func serve(args []string) error {
 		return gh.Token(ctx)
 	}
 	shipService.StackChecker = stackCheck
+	supervisor.StackChecker = stackCheck
 	changed := supervisor.OnChange
 	supervisor.OnChange = func() { changed(); inboxService.KickResume() }
 	followStore, err := follow.OpenStore(dir)

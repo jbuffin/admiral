@@ -542,7 +542,7 @@ export function chainGroupLine(g: ViewGroup, phone = false): { lead: string; res
   if (!g.row.chainRow) return null;
   const base = g.children.find((c) => c.order.chain?.conflicts_with_base)?.order.chain?.conflicts_with_base;
   const line = stackBarLine({ shape: 'chained', prs: g.children.map((c) => c.order.url ?? '') }, phone ? undefined : base);
-  if (line && base && phone) line.rest = ` Conflicts with ${base} as a whole.`;
+  if (line && base && phone) line.rest = ` It conflicts with ${base} as a whole.`;
   return line;
 }
 
@@ -550,7 +550,7 @@ export function chainGroupLine(g: ViewGroup, phone = false): { lead: string; res
 export function stackGroupLine(g: ViewGroup, phone = false): string | null {
   const base = g.children.find((c) => c.order.stack?.conflicts_with_base)?.order.stack?.conflicts_with_base;
   if (!g.row.stackRow || !base) return null;
-  return phone ? `Conflicts with ${base} as a whole` : `This stack conflicts with ${base} as a whole`;
+  return phone ? `Stack conflicts with ${base} as a whole` : `This stack conflicts with ${base} as a whole`;
 }
 
 /** Whether a chain group's header offers Stack on GitHub: only a chain every shown PR of which is the viewer's. */
