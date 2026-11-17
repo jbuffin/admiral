@@ -90,7 +90,7 @@ test('a notice body renders as markdown, and a script in it stays text', () => {
   const { container } = row(notice('n-md', { item: { id: 'n-md', kind: 'notice', title: 'Release notes', notice: { body: md } } } as unknown as Partial<Entry>));
   fireEvent.click(screen.getByRole('button', { expanded: false }));
   expect(container.querySelector('h1, h2, h3, h4')?.textContent).toBe('Heading');
-  expect(container.querySelector('li')?.textContent).toBe('first point');
+  expect(container.querySelector('.md li')?.textContent).toBe('first point');
   expect(container.querySelector('a[href="https://example.com/docs"]')?.textContent).toBe('the docs');
   expect(container.querySelector('pre > code')?.textContent).toContain('fenced line');
   expect(container.querySelector('script')).toBeNull();

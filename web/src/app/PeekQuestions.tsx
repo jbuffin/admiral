@@ -1,4 +1,5 @@
 import { Button } from './Button';
+import { renderMarkdown } from './markdown';
 import type { PendingKey } from './busy';
 import type { InboxQuestion } from './inbox';
 import { type AnswerBody, type Draft, answerBody, answeredQuestion, choose, chooseOther, pickOf, setOtherText } from '../questions';
@@ -54,7 +55,7 @@ function Question({ q, i, of, draft, edit, tap }: { q: InboxQuestion; i: number;
         {of > 1 ? `Question ${i + 1} of ${of} · ` : ''}
         {q.multi ? 'Choose any' : 'Choose one'}
       </span>
-      <p class="inbox-question-text">{q.text}</p>
+      <div class="inbox-question-text md" dangerouslySetInnerHTML={{ __html: renderMarkdown(q.text) }} />
       {q.options.map((o) => (
         <Option key={o.label} role={role} on={p.sel.includes(o.label)} label={o.label} desc={o.description} recommended={q.recommended === o.label} onPick={() => tap(o.label)} />
       ))}

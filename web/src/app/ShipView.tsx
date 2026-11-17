@@ -9,6 +9,7 @@ import { cardFor } from './answerCard';
 import { ConversationView } from './ConversationView';
 import { hasConversationAdapter } from './conversationGate';
 import { Actions, Button } from './Button';
+import { InboxWaiting } from './InboxWaiting';
 import { Composer, InterruptButton, useComposer, type Target } from './Composer';
 import { boatBoxState, chipState, flotilla } from './flotilla';
 import { Icon } from './Icon';
@@ -465,6 +466,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
               />
               )}
             </div>
+            <InboxWaiting session={ship.session} />
             {/* A new ship waits on its first message. */}
             <Composer target={target} box={box} interrupt={false} focus={!boat && !anchored && !moored && conv.state === 'none' && hasConversationAdapter(ship.harness)} />
           </>

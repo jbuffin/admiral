@@ -421,6 +421,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .md p, .md ul, .md ol { margin: 6px 0; }
 .md ul, .md ol { padding-left: 22px; }
 .md code { font-family: var(--font-mono); font-size: var(--font-size-mono); padding: 1px 4px; border-radius: 4px; background: var(--color-sel); }
+.md :not(pre) > code { overflow-wrap: anywhere; }
 .md pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; border-radius: var(--shape-radius-md); background: var(--color-term); color: var(--color-terminal-text); }
 .md pre code { padding: 0; background: none; color: inherit; }
 .md a { color: var(--color-accent); text-decoration: underline; }
@@ -505,6 +506,9 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .msg-box .alert { margin: 0; }
 .msg-note { margin: 0; font-size: var(--font-size-meta); color: var(--color-muted); }
 .msg-tools { display: flex; justify-content: flex-end; }
+.inbox-waiting { display: flex; align-items: center; justify-content: flex-end; flex: none; gap: 10px; min-width: 0; padding-top: 10px; }
+.inbox-waiting-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); color: var(--color-muted); }
+.inbox-waiting-go { flex: none; min-height: var(--shape-min-touch-target); text-decoration: none; }
 .msg-field {
   position: relative; display: flex; align-items: flex-end; gap: 2px; padding-left: 12px;
   background: var(--color-panel); border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md);
@@ -588,7 +592,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .inbox-title { color: var(--color-text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inbox-fleet { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-size-meta); color: var(--color-muted); }
 .inbox-age { flex: none; align-self: flex-start; padding-top: 4px; font-size: var(--font-size-meta); color: var(--color-muted); }
-.inbox-body { margin: 0 0 8px 15px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text2); }
+.inbox-body { margin: 0 0 8px 15px; overflow-wrap: anywhere; color: var(--color-text2); }
 .inbox-folded { display: flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); color: var(--color-muted); animation: inbox-fold 0.25s ease-out, inbox-slide 0.45s ease-in 4.55s forwards; overflow: hidden; }
 .inbox-confirm { flex: 1; }
 @keyframes inbox-fold { from { opacity: 1; } to { opacity: 0.7; } }
@@ -616,7 +620,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 /* Question cards, as the old Inbox's, in the shell's tokens. */
 .inbox-question { display: flex; flex-direction: column; gap: 8px; }
 .inbox-eyebrow { font-size: var(--font-size-meta); color: var(--color-muted); }
-.inbox-question-text { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.inbox-question-text { margin: 0; overflow-wrap: anywhere; }
 .inbox-option { display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: var(--shape-min-touch-target); padding: 10px 12px; text-align: left; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); color: var(--color-text); }
 .inbox-option.on { background: var(--color-sel); border-color: var(--color-accent); }
 .inbox-dot { flex: none; width: 18px; height: 18px; margin-top: 2px; border: 2px solid var(--color-line2); background: var(--color-panel); box-shadow: inset 0 0 0 3px var(--color-panel); }
@@ -638,7 +642,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .inbox-ask { display: flex; flex-direction: column; gap: 8px; }
 .inbox-finding { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
 .inbox-quote { margin: 0; padding-left: 10px; border-left: 3px solid var(--color-line2); overflow-wrap: anywhere; }
-.inbox-why, .inbox-summary-text { margin: 0; overflow-wrap: anywhere; }
+.inbox-why, .inbox-summary-text, .inbox-reply { margin: 0; overflow-wrap: anywhere; }
 .inbox-pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono, monospace); }
 .inbox-hint { font-size: var(--font-size-meta); color: var(--color-muted); }
 .inbox-pr a { overflow-wrap: anywhere; }

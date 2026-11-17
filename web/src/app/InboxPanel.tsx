@@ -4,6 +4,7 @@ import { syncSharedQueue, queueRev } from './attention';
 import { sharedInboxQueue, type Entry, type InboxQueue } from './inbox';
 import { call } from './api';
 import { Button } from './Button';
+import { renderMarkdown } from './markdown';
 import { isChatSession, Peek, peekKeys } from './Peek';
 import { REMOVED_FOLD } from './itemActions';
 import { bridgeSearch } from './peekLink';
@@ -89,7 +90,7 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
           </button>
           {open ? (
             <>
-              <p class="inbox-body">{e.item?.notice?.body ?? ''}</p>
+              <div class="inbox-body md" dangerouslySetInnerHTML={{ __html: renderMarkdown(e.item?.notice?.body ?? '') }} />
               <div class="inbox-send-row inbox-body">
                 <Button label="Dismiss" pending={['item', e.session, e.id!, 'remove']} onClick={dismiss} />
               </div>
