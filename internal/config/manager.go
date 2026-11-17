@@ -53,7 +53,7 @@ func Open(dir string) (*Manager, error) {
 		done:    make(chan struct{}),
 		watched: map[string]bool{},
 		subs:    map[chan struct{}]struct{}{},
-		cur:     &Config{FavoriteSkills: []string{}},
+		cur:     defaultConfig(),
 	}
 	m.reload()
 	go m.watch()

@@ -102,17 +102,71 @@ test('Escape closes the dialog and leaves the badge', async () => {
   expect(screen.getByRole('button', { name: /update available/i })).toBeTruthy();
 });
 
-test('asks again soon while no check has landed, and shows the badge once one has', async () => {
-  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+const unchecked = { ...available, update_available: false, latest_version: null, checked_at: null };
+
+async function withClock(body: () => Promise<void>) {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   try {
-    answer = () => json({ ...available, update_available: false, latest_version: null, checked_at: null });
-    render(<UpdateBadge />);
-    await waitFor(() => expect(asked().length).toBeGreaterThan(0));
-    expect(screen.queryByRole('button', { name: /update available/i })).toBeNull();
-    answer = () => json(available);
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(await screen.findByRole('button', { name: /update available/i })).toBeTruthy();
+    await body();
   } finally {
     vi.useRealTimers();
   }
-});
+}
+
+test('asks again soon while no check has landed, and shows the badge once one has', () =>
+  withClock(async () => {
+    answer = () => json(unchecked);
+    render(<UpdateBadge />);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked().length).toBe(1);
+    expect(screen.queryByRole('button', { name: /update available/i })).toBeNull();
+    answer = () => json(available);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(screen.getByRole('button', { name: /update available/i })).toBeTruthy();
+  }));
+
+test('does not ask the server again right after the first answer', () =>
+  withClock(async () => {
+    answer = () => json(unchecked);
+    render(<UpdateBadge />);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(asked().length).toBe(1);
+  }));
+
+test.each([
+  ['no check ever lands', () => json(unchecked)],
+  ['the server cannot answer', () => json({ error: 'no' }, 500)],
+])('stops asking every 5 seconds after about 2 minutes when %s, then asks every 5 minutes', (_name, reply) =>
+  withClock(async () => {
+    answer = reply;
+    render(<UpdateBadge />);
+    await vi.advanceTimersByTimeAsync(130_000);
+    const n = asked().length;
+    expect(n).toBeGreaterThan(10);
+    expect(n).toBeLessThan(40);
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    expect(asked().length).toBe(n);
+    await vi.advanceTimersByTimeAsync(60_000 + 5_000);
+    expect(asked().length).toBe(n + 1);
+  }));
+
+test('asks every 5 minutes, not every 5 seconds, once a check has landed', () =>
+  withClock(async () => {
+    render(<UpdateBadge />);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    expect(asked().length).toBe(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(asked().length).toBe(2);
+  }));
+
+test('asks every 5 minutes when the check is off', () =>
+  withClock(async () => {
+    answer = () => json({ ...unchecked, enabled: false });
+    render(<UpdateBadge />);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    expect(asked().length).toBe(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(asked().length).toBe(2);
+  }));

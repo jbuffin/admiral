@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	defaultBase = "https://api.github.com"
-	releasePage = "https://github.com/jbuffin/admiral/releases/latest"
+	defaultBase    = "https://api.github.com"
+	releasesPrefix = "https://github.com/jbuffin/admiral/releases/"
+	releasePage    = releasesPrefix + "latest"
 	// A release's JSON is a few KB; anything near this size is not one.
 	maxBody       = 1 << 20
 	interval      = 12 * time.Hour
@@ -86,20 +87,30 @@ func (c *Checker) Run(ctx context.Context) {
 		case <-timer:
 			if !c.opts.Enabled() {
 				on, timer = false, nil
+				c.forget()
 				continue
 			}
 			c.check(ctx)
 			timer = c.opts.Clock.After(interval)
 		case <-c.opts.Changed:
-			switch now := c.opts.Enabled(); {
+			now := c.opts.Enabled()
+			switch {
 			case now && !on:
 				timer = c.opts.Clock.After(afterTurnedOn)
 			case !now:
 				timer = nil
+				c.forget()
 			}
-			on = c.opts.Enabled()
+			on = now
 		}
 	}
+}
+
+// forget drops the last result so turning the check back on never serves a stale one.
+func (c *Checker) forget() {
+	c.mu.Lock()
+	c.latest, c.releaseURL, c.checkedAt = "", "", time.Time{}
+	c.mu.Unlock()
 }
 
 type release struct {
@@ -109,8 +120,6 @@ type release struct {
 
 // check keeps the last good result when this one fails.
 func (c *Checker) check(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(c.opts.BaseURL, "/")+"/repos/jbuffin/admiral/releases/latest", nil)
 	if err != nil {
 		return
@@ -134,8 +143,8 @@ func (c *Checker) check(ctx context.Context) {
 		return
 	}
 	url := rel.HTMLURL
-	if !strings.HasPrefix(url, "https://") {
-		url = fmt.Sprintf("https://github.com/jbuffin/admiral/releases/tag/v%s", version)
+	if !strings.HasPrefix(url, releasesPrefix) {
+		url = fmt.Sprintf("%stag/v%s", releasesPrefix, version)
 	}
 	c.mu.Lock()
 	c.latest, c.releaseURL, c.checkedAt = version, url, c.opts.Clock.Now()

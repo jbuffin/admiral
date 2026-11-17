@@ -1,31 +1,39 @@
 import { useEffect, useState } from 'preact/hooks';
 import { fetchUpdateStatus, type UpdateStatus } from './api';
-import { CopyCommand } from './GitHubPage';
+import { CopyCommand } from './CopyCommand';
 import { Button } from './Button';
 import { Sheet } from './Sheet';
 
 const REFRESH_MS = 5 * 60_000;
-// The first check comes about a minute after Admiral starts, so ask again soon until one has landed.
+// The first check comes about a minute after Admiral starts, so ask again soon until one has landed, but only for a while: a check that fails waits 12 hours for its retry.
 const UNCHECKED_MS = 5_000;
+const UNCHECKED_WINDOW_MS = 2 * 60_000;
 
 /** Beside the build version: shown only while the server says a newer public release is out. */
 export function UpdateBadge() {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [open, setOpen] = useState(false);
-  const waiting = !status || (status.enabled && !status.checked_at);
   useEffect(() => {
     let live = true;
+    let last: UpdateStatus | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const started = Date.now();
     const load = () =>
       void fetchUpdateStatus().then((s) => {
-        if (live && s) setStatus(s);
+        if (!live) return;
+        if (s) {
+          last = s;
+          setStatus(s);
+        }
+        const waiting = !last || (last.enabled && !last.checked_at);
+        timer = setTimeout(load, waiting && Date.now() - started < UNCHECKED_WINDOW_MS ? UNCHECKED_MS : REFRESH_MS);
       });
     load();
-    const t = setInterval(load, waiting ? UNCHECKED_MS : REFRESH_MS);
     return () => {
       live = false;
-      clearInterval(t);
+      clearTimeout(timer);
     };
-  }, [waiting]);
+  }, []);
   if (!status?.update_available || !status.latest_version) return null;
   return (
     <>

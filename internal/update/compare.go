@@ -9,7 +9,7 @@ import (
 var (
 	// Nine digits keep a part inside int on any platform.
 	versionRe  = regexp.MustCompile(`^(\d{1,9})\.(\d{1,9})\.(\d{1,9})$`)
-	describeRe = regexp.MustCompile(`-\d+-g[0-9a-f]+(-dirty)?$`)
+	describeRe = regexp.MustCompile(`(-\d+-g[0-9a-f]+)?-dirty$|-\d+-g[0-9a-f]+$`)
 )
 
 func validVersion(v string) bool { return versionRe.MatchString(v) }

@@ -890,7 +890,7 @@ Whether a newer public Admiral release exists, and how to upgrade. Admiral asks 
 
 - `current_version` is the running version as stamped. `latest_version` and `checked_at` (RFC 3339, UTC) are `null` before the first good check.
 - `update_available` is true only when `latest_version` is newer than the running version's base: a `git describe` version (`0.9.1-12-gabc123`, `-dirty`) counts as `0.9.1`, and `dev`, an empty or an unparseable version is never updatable.
-- `enabled` is the top-level `update_check` setting in `config.json` (on unless `false`), read live. With it off Admiral makes no request, `update_available` is false and `latest_version` and `checked_at` are `null`; turning it on runs a check about 10 seconds later.
+- `enabled` is the top-level `update_check` setting in `config.json` (on unless `false`, so also with no `config.json` or one that is invalid at start), read live. With it off Admiral makes no request, `update_available` is false and `latest_version` and `checked_at` are `null`; turning it on runs a check about 10 seconds later.
 - `install_method` is `homebrew` (the resolved executable is under `/Cellar/`), `source` (the version is `dev` or a `git describe` one, or the executable is `<dir>/bin/admiral` in a git checkout) or `script`. `upgrade_commands` are the steps in order, ending with the service restart, and `restart_note` says what to do when Admiral was not started as a service. They are plain text for a person to run; a client shows them as text, never as markup.
 - `release_url` is the release's page, kept only when GitHub's `html_url` is an `https://` link, else a page built from the tag; before the first check it is the latest-release page.
 - AdmiralBot may read it. `POST /api/update` is not a route.

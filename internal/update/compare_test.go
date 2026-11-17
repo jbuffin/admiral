@@ -15,6 +15,8 @@ func TestAvailableComparesNumericallyAgainstTheBaseOfTheRunningVersion(t *testin
 		{"major bump", "9.9.9", "10.0.0", true},
 		{"describe of the latest is not older", "0.9.1-12-gabc123", "0.9.1", false},
 		{"dirty describe of the latest", "0.9.1-12-gabc123-dirty", "0.9.1", false},
+		{"dirty tree on a tag is that tag", "0.9.1-dirty", "0.9.1", false},
+		{"dirty tree on a tag is behind a newer release", "0.9.1-dirty", "0.9.2", true},
 		{"describe is behind a newer release", "0.9.1-12-gabc123", "0.9.2", true},
 		{"dev is unknown", "dev", "9.9.9", false},
 		{"empty is unknown", "", "1.0.0", false},

@@ -148,13 +148,18 @@ func ValidLogin(l string) bool {
 	return loginRe.MatchString(l) && len(strings.TrimSuffix(l, "[bot]")) <= 39
 }
 
+// defaultConfig is what a config.json that sets no top-level key means; Open starts from it too, so a missing or invalid file gets the same defaults.
+func defaultConfig() *Config {
+	return &Config{FavoriteSkills: []string{}, MaxShips: DefaultMaxShips, UpdateCheck: true}
+}
+
 // Parse errors name the path of the bad value, without the file name.
 func Parse(data []byte) (*Config, error) {
 	top, err := members("", data)
 	if err != nil {
 		return nil, err
 	}
-	cfg := &Config{FavoriteSkills: []string{}, MaxShips: DefaultMaxShips, UpdateCheck: true}
+	cfg := defaultConfig()
 	var fleetsRaw json.RawMessage
 	haveVersion := false
 	for _, m := range top {

@@ -71,6 +71,7 @@ type rig struct {
 	enabled  atomic.Bool
 	changed  chan struct{}
 	mux      *http.ServeMux
+	checker  *Checker
 }
 
 func tag(tagName string) func(w http.ResponseWriter) {
@@ -107,6 +108,7 @@ func start(t *testing.T, version, exe string) *rig {
 	t.Cleanup(r.releases.Close)
 	c := New(Options{BaseURL: r.releases.URL, Client: r.releases.Client(), Clock: r.clock, Version: version, Exe: exe,
 		Enabled: r.enabled.Load, Changed: r.changed})
+	r.checker = c
 	r.mux = http.NewServeMux()
 	c.Routes(r.mux)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -307,7 +309,7 @@ func TestAFailedCheckKeepsTheLastGoodResultAndTheNextOneReplacesIt(t *testing.T)
 		r.serve(bad)
 		before := r.requests.Load()
 		r.tick()
-		time.Sleep(20 * time.Millisecond)
+		r.nextWait()
 		s := r.status()
 		if latest(s) != "0.9.2" || !s.UpdateAvailable || *s.CheckedAt != *good.CheckedAt {
 			t.Errorf("after a %s: %+v, want the last good result kept", name, s)
@@ -333,7 +335,7 @@ func TestATagThatIsNotVMajorMinorPatchIsIgnored(t *testing.T) {
 		r := start(t, "0.9.1", exe)
 		r.serve(tag(bad))
 		r.tick()
-		time.Sleep(20 * time.Millisecond)
+		r.nextWait()
 		if s := r.status(); s.LatestVersion != nil || s.UpdateAvailable {
 			t.Errorf("tag %q: status %+v, want it ignored", bad, s)
 		}
@@ -358,7 +360,7 @@ func TestAnOversizedResponseIsTreatedAsAFailedCheck(t *testing.T) {
 		fmt.Fprint(w, `"}`)
 	})
 	r.tick()
-	time.Sleep(50 * time.Millisecond)
+	r.nextWait()
 	if s := r.status(); s.LatestVersion != nil || s.UpdateAvailable {
 		t.Errorf("an 8 MiB response was read: %+v", s)
 	}
@@ -373,6 +375,42 @@ func TestAReleaseUrlThatIsNotAnHttpsLinkIsNotPassedOn(t *testing.T) {
 	r.waitFor(func() bool { return r.status().LatestVersion != nil }, "the release to be reported")
 	if u := r.status().ReleaseURL; !strings.HasPrefix(u, "https://") {
 		t.Errorf("release_url %q, want an https link", u)
+	}
+}
+
+func TestAReleaseUrlOutsideTheProjectsReleasesIsReplacedByTheTagsPage(t *testing.T) {
+	for _, u := range []string{"https://evil.example/releases/v0.9.2", "https://github.com/other/repo/releases/tag/v0.9.2", "https://github.com/jbuffin/admiral-evil/releases/x"} {
+		r := start(t, "0.9.1", exe)
+		r.serve(func(w http.ResponseWriter) {
+			_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v0.9.2", "html_url": u})
+		})
+		r.tick()
+		r.waitFor(func() bool { return r.status().LatestVersion != nil }, "the release to be reported")
+		if got := r.status().ReleaseURL; got != "https://github.com/jbuffin/admiral/releases/tag/v0.9.2" {
+			t.Errorf("html_url %q: release_url %q, want the tag's page", u, got)
+		}
+	}
+}
+
+func TestTurningTheCheckOffAndOnAgainDoesNotServeTheOldResult(t *testing.T) {
+	r := start(t, "0.9.1", exe)
+	r.tick()
+	r.waitFor(func() bool { return r.status().UpdateAvailable }, "the update")
+	r.serve(fail(500))
+	r.enabled.Store(false)
+	r.notify()
+	// The route hides the result while off whatever the checker holds, so wait on the checker itself.
+	r.waitFor(func() bool {
+		r.checker.mu.Lock()
+		defer r.checker.mu.Unlock()
+		return r.checker.latest == ""
+	}, "the checker to drop its result")
+	r.enabled.Store(true)
+	r.notify()
+	r.waitFor(func() bool { return r.requests.Load() >= 2 }, "the check after turning on")
+	r.nextWait()
+	if s := r.status(); s.LatestVersion != nil || s.CheckedAt != nil {
+		t.Errorf("status %+v after off and on with the new check failing, want the old result gone", s)
 	}
 }
 

@@ -57,3 +57,29 @@ func TestAnEditedUpdateCheckShowsInTheLiveConfig(t *testing.T) {
 		t.Error("after the key was removed the check is still off")
 	}
 }
+
+func TestTheCheckAndTheShipCapStartAtTheirDefaultsWithNoConfigFile(t *testing.T) {
+	m, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if cur := m.Current(); !cur.UpdateCheck || cur.MaxShips != DefaultMaxShips {
+		t.Errorf("update_check %v, max_ships %d with no config.json, want on and %d", cur.UpdateCheck, cur.MaxShips, DefaultMaxShips)
+	}
+}
+
+func TestTheCheckStaysOnWhenTheFileIsInvalidAtStart(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(`{not json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if !m.Current().UpdateCheck {
+		t.Error("the check is off because config.json was invalid at start")
+	}
+}

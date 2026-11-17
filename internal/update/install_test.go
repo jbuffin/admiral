@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +89,34 @@ func TestAReleaseVersionInsideAGitCheckoutIsASourceInstall(t *testing.T) {
 	}
 	if got := commandLines(in); len(got) == 0 || got[0] != "git -C "+dir+" pull" {
 		t.Errorf("commands %q, want a pull of %s first", got, dir)
+	}
+}
+
+func TestAScriptInstallOutsideABinDirectoryDoesNotGuessAPrefix(t *testing.T) {
+	in := InstallFor("0.9.1", "/opt/admiral/admiral")
+	if in.Method != "script" {
+		t.Fatalf("method %q, want script", in.Method)
+	}
+	first := in.Commands[0]
+	if strings.Contains(first.Command, "PREFIX") || !strings.HasSuffix(first.Command, "| sh") {
+		t.Errorf("command %q, want the documented install line without a PREFIX", first.Command)
+	}
+	if !strings.Contains(first.Label, "bin") {
+		t.Errorf("label %q, want a note that this Admiral is not in a bin directory", first.Label)
+	}
+}
+
+func TestAPathThatNeedsQuotingIsSingleQuotedInEveryCommand(t *testing.T) {
+	for _, c := range []struct{ name, exe, quoted string }{
+		{"space", "/Users/sam/my apps/bin/admiral", "'/Users/sam/my apps'"},
+		{"apostrophe", "/Users/o'neil/bin/admiral", `'/Users/o'\''neil'`},
+	} {
+		if got := commandLines(InstallFor("0.9.1", c.exe))[0]; !strings.HasSuffix(got, "PREFIX="+c.quoted+" sh") {
+			t.Errorf("%s: script command %q, want PREFIX=%s", c.name, got, c.quoted)
+		}
+		if got := commandLines(InstallFor("dev", c.exe))[:2]; got[0] != "git -C "+c.quoted+" pull" || got[1] != "make -C "+c.quoted+" release" {
+			t.Errorf("%s: source commands %q, want the path as %s", c.name, got, c.quoted)
+		}
 	}
 }
 

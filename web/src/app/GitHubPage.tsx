@@ -7,7 +7,7 @@ import { arranged, gripKey, pressGrip } from './gripReorder';
 import { NewViewCard } from './NewViewCard';
 import { addView } from './newView';
 import { fleetPath, go } from './router';
-import { copyOutcome } from './remoteTailscale';
+import { CopyCommand } from './CopyCommand';
 import { sources } from './shipsLink';
 
 const gitHubOf = (fleetKey: string): Source | undefined => sources.value.find((s) => s.fleet === fleetKey && s.plugin === 'github');
@@ -26,30 +26,6 @@ export function connectionFor(src: Source | undefined): Connection | undefined {
 export function githubSource(fleetKey: string): (Source & { connection?: Connection }) | undefined {
   const src = gitHubOf(fleetKey);
   return src ? { ...src, connection: connectionFor(src) } : undefined;
-}
-
-export function CopyCommand({ command }: { command: string }) {
-  const [state, setState] = useState<'copied' | 'select' | null>(null);
-  const el = useRef<HTMLElement>(null);
-  const copy = async () => {
-    const outcome = await copyOutcome(command, navigator.clipboard);
-    if (outcome === 'select' && el.current) {
-      const range = document.createRange();
-      range.selectNodeContents(el.current);
-      getSelection()?.removeAllRanges();
-      getSelection()?.addRange(range);
-    }
-    setState(outcome);
-  };
-  return (
-    <div class="gh-cmd" role="group" aria-label={command}>
-      <code ref={el}>{command}</code>
-      <Button label="Copy" onClick={() => void copy()} />
-      <span class="note" role="status">
-        {state === 'copied' ? 'Copied.' : state === 'select' ? 'Select the command and copy it.' : ''}
-      </span>
-    </div>
-  );
 }
 
 function ConnectionSection({ fleet, src, settings, put, error, onCheck }: { fleet: Fleet; src: Source; settings: Record<string, unknown> | null; put: (patch: Record<string, unknown>) => Promise<boolean>; error?: string; onCheck: () => void }) {

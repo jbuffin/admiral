@@ -48,6 +48,11 @@ func InstallFor(version, exe string) Install {
 		method = "source"
 		steps = []Command{{"Pull the latest source", "git -C " + quote(root) + " pull"}, {"Build Admiral", "make -C " + quote(root) + " release"}}
 	default:
+		if filepath.Base(filepath.Dir(exe)) != "bin" {
+			// The script installs to <PREFIX>/bin, so a guessed PREFIX would upgrade some other copy.
+			steps = []Command{{"Upgrade with the install script (it installs to ~/.local/bin; this Admiral is not in a bin directory)", "curl --proto '=https' --tlsv1.2 -fsSL " + installScript + " | sh"}}
+			break
+		}
 		steps = []Command{{"Upgrade with the install script", "curl --proto '=https' --tlsv1.2 -fsSL " + installScript + " | PREFIX=" + quote(root) + " sh"}}
 	}
 	steps = append(steps, Command{"Restart the service", restartCommand})
