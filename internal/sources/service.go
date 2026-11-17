@@ -222,6 +222,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/search-count", s.serveSearchCount)
 	mux.HandleFunc("GET /api/sources/{key}/schema", s.serveSchema)
 	mux.HandleFunc("GET /api/sources/{key}/page", s.servePage)
+	mux.HandleFunc("POST /api/sources/{key}/page/refresh", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotImplemented, "not built yet")
+	})
 	mux.HandleFunc("GET /api/sources/{key}/rows/{id}", s.serveRow)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("GET /api/sources/{key}/repos", s.serveRepos)

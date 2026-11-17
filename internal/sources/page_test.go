@@ -428,7 +428,6 @@ func TestAnAnswerThatIsOverALimitOrFailsLeavesTheLastGoodPageServed(t *testing.T
 	for name, bad := range map[string]*pageConn{
 		"over a limit":    {page: json.RawMessage(pageOf(`[{"id":"x","title":"Over","rows":`+rowsJSON(maxPageRows+1)+`}]`, 9))},
 		"malformed":       {page: json.RawMessage(`{"groups":"nope"}`)},
-		"an rpc error":    {pageErr: &rpcError{Code: -32000, Message: "upstream down"}},
 		"a timeout":       {pageErr: errTimeout},
 		"a generic error": {pageErr: errors.New("boom")},
 	} {

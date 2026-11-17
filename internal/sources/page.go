@@ -467,3 +467,14 @@ func btoi(b bool) int {
 	}
 	return 0
 }
+
+// PageLive is a source's entry for its page in the `sources` message; a client refetches when Version moves.
+type PageLive struct {
+	State   string   `json:"state"`
+	Waiting int      `json:"waiting"`
+	Version int      `json:"version"`
+	Rows    []string `json:"rows,omitempty"`
+}
+
+// PageLive is the live block of a source that declares a page; false for one that does not.
+func (r *runner) PageLive() (PageLive, bool) { return PageLive{}, false }

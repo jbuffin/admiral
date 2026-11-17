@@ -58,6 +58,15 @@ type sourceJSON struct {
 	Error        *string    `json:"error"`
 	Auth         *authJSON  `json:"auth"`
 	Views        []viewJSON `json:"views"`
+	Page         *livePage  `json:"page"`
+}
+
+// livePage is the page block of a source's entry in the `sources` message.
+type livePage struct {
+	State   string   `json:"state"`
+	Waiting int      `json:"waiting"`
+	Version int      `json:"version"`
+	Rows    []string `json:"rows"`
 }
 
 func (p viewJSON) orderIDs() []string { return sourceJSON{Views: []viewJSON{p}}.orderIDs() }

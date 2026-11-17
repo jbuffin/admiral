@@ -22,7 +22,9 @@ type pageJSON struct {
 			Title string `json:"title"`
 		} `json:"rows"`
 	} `json:"groups"`
-	Waiting int `json:"waiting"`
+	Waiting int       `json:"waiting"`
+	Error   string    `json:"error"`
+	Auth    *authJSON `json:"auth"`
 }
 
 func (p *tplug) putRow(id string, detail string) {
@@ -163,5 +165,125 @@ func TestARestartThatBringsAnOverLimitPageKeepsServingTheLastGoodOne(t *testing.
 	got := w.getPage("m")
 	if got.State != "ready" || !reflect.DeepEqual(got.titles(), []string{"Needs review"}) || got.Waiting != 2 {
 		t.Errorf("page after the restart = %s, want the last good page (Needs review, waiting 2)", dump(got))
+	}
+}
+
+func pageWith(title string, waiting int) string {
+	return `{"groups":[{"id":"g","title":"` + title + `","rows":[{"id":"t1","title":"Fix login"},{"id":"t2","title":"Add search"}]}],"waiting":` + strconv.Itoa(waiting) + `}`
+}
+
+func (w *world) waitLive(key, what string, pred func(*livePage) bool) *livePage {
+	w.t.Helper()
+	return w.waitSource(key, 10*time.Second, what, func(s sourceJSON) bool { return s.Page != nil && pred(s.Page) }).Page
+}
+
+func TestAModulesPageStaysLiveWhenItsPluginSendsPageChanged(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	p := w.newTP("m")
+	p.put("page.json", pageWith("Before", 1))
+	o := w.newTP("o")
+	o.mainOrders(ord("o1", "First"))
+	w.startSources(tpSource("m", p, map[string]any{"capabilities": []string{"page"}}), tpSource("o", o, nil))
+
+	first := w.waitLive("m", "a ready page block", func(l *livePage) bool { return l.State == "ready" })
+	if first.Waiting != 1 {
+		t.Errorf("page block = %s, want waiting 1 from the page", dump(first))
+	}
+	code, body := w.srcReq(http.MethodGet, "", nil)
+	w.mustOK(code, body, "GET sources")
+	var raw []map[string]any
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		var wrap struct {
+			Sources []map[string]any `json:"sources"`
+		}
+		if err := json.Unmarshal([]byte(body), &wrap); err != nil {
+			t.Fatalf("GET sources is not JSON: %v", err)
+		}
+		raw = wrap.Sources
+	}
+	for _, s := range raw {
+		if _, has := s["page"]; has && s["key"] == "o" {
+			t.Errorf("the source without a page has a page key: %s", dump(s))
+		}
+	}
+
+	p.put("page.json", pageWith("After", 4))
+	p.do("page-changed", `{"rows":["t1"]}`)
+	named := w.waitLive("m", "a higher version after page.changed", func(l *livePage) bool { return l.Version > first.Version })
+	if !reflect.DeepEqual(named.Rows, []string{"t1"}) || named.Waiting != 4 {
+		t.Errorf("page block = %s, want rows [t1] and waiting 4", dump(named))
+	}
+	if got := w.getPage("m"); !reflect.DeepEqual(got.titles(), []string{"After"}) || got.Waiting != 4 {
+		t.Errorf("GET page right after the version moved = %s, want the new data", dump(got))
+	}
+	if n := len(p.callsOf("page.get")); n != 2 {
+		t.Errorf("page.get calls = %d, want the start and one for page.changed", n)
+	}
+
+	p.do("page-changed", "")
+	all := w.waitLive("m", "a higher version after an unnamed page.changed", func(l *livePage) bool { return l.Version > named.Version })
+	if len(all.Rows) != 0 {
+		t.Errorf("page block = %s, want no rows named: all rows changed", dump(all))
+	}
+
+	groups := make([]string, 101)
+	for i := range groups {
+		groups[i] = `{"id":"g` + strconv.Itoa(i) + `","title":"Over","rows":[]}`
+	}
+	p.put("page.json", `{"groups":[`+strings.Join(groups, ",")+`],"waiting":9}`)
+	p.do("page-changed", "")
+	refused := w.waitLive("m", "a higher version after page.changed whose page.get is over a limit", func(l *livePage) bool { return l.Version > all.Version })
+	if refused.State != "ready" {
+		t.Errorf("page block = %s, want it still ready on the last good page", dump(refused))
+	}
+	if got := w.getPage("m"); got.State != "ready" || !reflect.DeepEqual(got.titles(), []string{"After"}) || got.Waiting != 4 {
+		t.Errorf("GET page after an over-limit answer = %s, want the last good page (After, waiting 4)", dump(got))
+	}
+
+	before := len(p.callsOf("page.get"))
+	w.mustOK(w.srcReq(http.MethodPost, "/m/page/refresh", nil))
+	p.waitCall(5*time.Second, "page.refresh", func(rpcCall) bool { return true })
+	deadline := time.Now().Add(5 * time.Second)
+	for len(p.callsOf("page.get")) <= before {
+		if time.Now().After(deadline) {
+			t.Fatalf("within 5s the page was not asked again after page/refresh; calls: %+v", p.calls())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if code, body := w.srcReq(http.MethodPost, "/o/page/refresh", nil); code != http.StatusNotFound || !strings.Contains(body, "The source has no page") {
+		t.Errorf("POST page/refresh of a source without a page = %d %s, want 404", code, body)
+	}
+	if n := len(o.callsOf("page.refresh")); n != 0 {
+		t.Errorf("the source without a page got %d page.refresh calls, want none", n)
+	}
+}
+
+func TestAModulesPageShowsAuthRequiredAndKeepsItsGroupsUntilAuthOK(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	p := w.newTP("m")
+	p.put("page.json", pageWith("Kept", 2))
+	w.startSources(tpSource("m", p, map[string]any{"capabilities": []string{"page"}}))
+	ready := w.waitLive("m", "a ready page block", func(l *livePage) bool { return l.State == "ready" })
+
+	p.do("auth-required", `{"message":"Sign in to Acme","url":"https://acme.example/login","code":"AB-12"}`)
+	auth := w.waitLive("m", "auth_required", func(l *livePage) bool { return l.State == "auth_required" })
+	if auth.Version <= ready.Version {
+		t.Errorf("version %d -> %d, want it up on a state change", ready.Version, auth.Version)
+	}
+	got := w.getPage("m")
+	if got.State != "auth_required" || got.Auth == nil || got.Auth.Message != "Sign in to Acme" || got.Auth.URL != "https://acme.example/login" || got.Auth.Code != "AB-12" {
+		t.Errorf("GET page = %s, want auth_required with the sign-in fields", dump(got))
+	}
+	if !reflect.DeepEqual(got.titles(), []string{"Kept"}) {
+		t.Errorf("GET page groups = %v, want the last good groups kept", got.titles())
+	}
+
+	p.do("auth-ok", "")
+	w.waitLive("m", "ready again", func(l *livePage) bool { return l.State == "ready" })
+	if got := w.getPage("m"); got.State != "ready" || got.Auth != nil {
+		t.Errorf("GET page after auth.ok = %s, want ready with no auth", dump(got))
 	}
 }
