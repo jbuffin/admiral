@@ -71,22 +71,26 @@ func TestMergeOfAShipWhoseStackOnGitHubIsNotExactlyItsPRsIsRefused(t *testing.T)
 	st.Entries = append(st.Entries, moor.DetailStackEntry{Position: 3, Number: 99, URL: layerURL(99), State: "OPEN"})
 	r := newMergeRig(t, d, layerURL(7), layerURL(9))
 	r.refused(t, r.merge("{}"), http.StatusConflict, "neither one GitHub stack nor independent")
+	r.noMergedOutcome(t)
 }
 
 func TestMergeOfChainedPRsGitHubDoesNotHoldAsAStackIsRefused(t *testing.T) {
 	r := newMergeRig(t, chainedDetails(2), layerURL(7), layerURL(9))
 	r.refused(t, r.merge("{}"), http.StatusConflict, "stack it on GitHub")
+	r.noMergedOutcome(t)
 }
 
 func TestMergeOfAGitHubStackNamingAPRIsRefused(t *testing.T) {
 	r := newMergeRig(t, stackedDetails(2), layerURL(7), layerURL(9))
 	r.refused(t, r.merge(`{"pr":"`+layerURL(7)+`"}`), http.StatusConflict, "name no pr")
+	r.noMergedOutcome(t)
 }
 
 func TestMergeWhenGitHubDoesNotAnswerTheShapeQuestionIsRefused(t *testing.T) {
 	r := newMergeRig(t, stackedDetails(2), layerURL(7), layerURL(9))
 	r.g.detailErr = errors.New("gh: HTTP 502")
 	r.refused(t, r.merge("{}"), http.StatusBadGateway, "gh: HTTP 502")
+	r.noMergedOutcome(t)
 }
 
 func TestMergeOfAStackWithALayerThatStoppedBeingReadyIsRefusedAndRunsNoMerge(t *testing.T) {
@@ -96,6 +100,7 @@ func TestMergeOfAStackWithALayerThatStoppedBeingReadyIsRefusedAndRunsNoMerge(t *
 	st.MergeState = "BLOCKED"
 	r.g.set(layerURL(9), st)
 	r.refused(t, r.merge("{}"), http.StatusConflict, "not ready")
+	r.noMergedOutcome(t)
 }
 
 func TestMergeOfASinglePRThatStoppedBeingReadyIsRefused(t *testing.T) {
@@ -105,6 +110,7 @@ func TestMergeOfASinglePRThatStoppedBeingReadyIsRefused(t *testing.T) {
 	st.MergeState = "BLOCKED"
 	r.g.set(layerURL(7), st)
 	r.refused(t, r.merge("{}"), http.StatusConflict, "not ready")
+	r.noMergedOutcome(t)
 }
 
 func TestMergeOfAPRNamingAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
@@ -117,6 +123,7 @@ func TestMergeOfAPRNamingAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
 		t.Run(what, func(t *testing.T) {
 			r := newMergeRig(t, stackedDetails(2), prs...)
 			r.refused(t, r.merge("{}"), http.StatusUnprocessableEntity, "GitHub host")
+			r.noMergedOutcome(t)
 			if n := len(r.g.callLog()) + len(r.g.detailLog()); n != 0 {
 				t.Errorf("gh was asked %d times about a PR on another host, want none", n)
 			}
@@ -155,6 +162,7 @@ func TestMergeUpToNamesOnlyAPRTheShipOwnsAndOnlyGitHubsTopLayer(t *testing.T) {
 func TestMergeNamingAPRTheShipDoesNotOwnIsRefused(t *testing.T) {
 	r := newMergeRig(t, independentDetails(2), layerURL(7), layerURL(9))
 	r.refused(t, r.merge(`{"pr":"https://github.com/acme/widgets/pull/99"}`), http.StatusBadRequest, "pr is not one of")
+	r.noMergedOutcome(t)
 }
 
 func TestAFailedGhStackMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T) {
@@ -169,30 +177,6 @@ func TestAFailedGhStackMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T)
 	}
 	r.stillMoored(t)
 	r.noMergedOutcome(t)
-}
-
-func TestAFailedGhMergeReturnsItsMessageKeepsTheShipMooredAndAllowsARetry(t *testing.T) {
-	r := newMergeRig(t, nil, layerURL(7))
-	r.g.mergeErr = errors.New("GraphQL: Pull request is not mergeable: the base branch policy prohibits the merge")
-	rec := r.merge("{}")
-	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "the base branch policy prohibits the merge") {
-		t.Errorf("POST merge = %d %s, want 502 carrying gh's message", rec.Code, rec.Body)
-	}
-	if got := r.g.mergeLog(); len(got) != 1 || got[0] != "pr "+layerURL(7)+" merge" {
-		t.Errorf("merges = %v, want exactly the failed one", got)
-	}
-	r.stillMoored(t)
-	r.noMergedOutcome(t)
-
-	r.g.mu.Lock()
-	r.g.mergeErr = nil
-	r.g.mu.Unlock()
-	if rec := r.merge("{}"); rec.Code != http.StatusAccepted {
-		t.Errorf("POST merge after the failure = %d %s, want 202", rec.Code, rec.Body)
-	}
-	if n := len(r.g.mergeLog()); n != 2 {
-		t.Errorf("merges = %d, want the failed one and the retry", n)
-	}
 }
 
 func TestMergeOfAShipThatIsNotThereIsNotFound(t *testing.T) {

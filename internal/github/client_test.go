@@ -687,6 +687,18 @@ func TestLinkStackRunsGhStackLinkByNumberBottomToTopInAFreshFolderWithTheRepoPin
 	}
 }
 
+func TestMergeStackReturnsGhsMessageWhenGhFails(t *testing.T) {
+	f := newFake(t)
+	f.write(t, "token", "fake-token-work-2\n")
+	f.write(t, "pr_detail/https___github.com_acme_widgets_pull_7", `{"number":7,"state":"OPEN","stack":{"number":4,"size":1,"entries":{"nodes":[]}}}`+"\n")
+	f.write(t, "stack_merge.fail", "gh stack: layer 2 has a conflict with its base\n")
+	cl := NewClient("github.com", "", nil, f.env)
+	err := cl.MergeStack(context.Background(), "acme/widgets", 4, "merge")
+	if err == nil || !strings.Contains(err.Error(), "layer 2 has a conflict with its base") {
+		t.Fatalf("MergeStack = %v, want gh's message", err)
+	}
+}
+
 func TestLinkStackReturnsGhsMessageWhenGhFails(t *testing.T) {
 	f := newFake(t)
 	f.write(t, "token", "fake-token-work-2\n")
