@@ -66,7 +66,7 @@ func (r *rig) prove(fleet string, guard, judge bool) {
 func launchRoutine() routines.Routine {
 	return routines.Routine{
 		Name: "Nightly sweep", Enabled: true, When: "30 8 * * 1-5", Before: routines.AskFirst, Notify: true,
-		Do: routines.Do{Launch: &routines.Launch{Harness: "claude", Dir: "/tmp/repo", Text: "sweep the board",
+		Do: routines.Do{Launch: &routines.Launch{Harness: "claude", Dir: sharedCheckout, Text: "sweep the board",
 			Model: "sonnet", Args: []string{"--effort", "high"}}},
 	}
 }
@@ -106,7 +106,7 @@ func TestARoutineSurvivesAReopenWithEveryField(t *testing.T) {
 		t.Fatalf("round trip lost a field: %+v", got)
 	}
 	l := got.Do.Launch
-	if l.Harness != "claude" || l.Dir != "/tmp/repo" || l.Text != "sweep the board" || l.Model != "sonnet" ||
+	if l.Harness != "claude" || l.Dir != sharedCheckout || l.Text != "sweep the board" || l.Model != "sonnet" ||
 		strings.Join(l.Args, " ") != "--effort high" {
 		t.Fatalf("launch spec lost a field: %+v", l)
 	}

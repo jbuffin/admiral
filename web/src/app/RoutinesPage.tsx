@@ -25,6 +25,7 @@ import {
   errorText,
   formOfRoutine,
   holdFireNote,
+  checkoutScopeLine,
   lastRunText,
   noEventsNote,
   triggerRemoved,
@@ -231,7 +232,9 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
     };
   }, [fleet.key, l.harness, l.dir, form.mode]);
 
-  const dirsShown: DirsAnswer | null = dirs && l.dir && !dirs.entries.some((d) => d.path === l.dir) ? { ...dirs, entries: [...dirs.entries, { path: l.dir, name: l.dir, kind: 'checkout', ships_here: 0 }] } : dirs;
+  const known = dirs?.entries.find((d) => d.path === l.dir);
+  const scopeLine = l.dir && form.on ? checkoutScopeLine({ event: true, plugin: sources.value.find((s) => s.key === form.on!.source && s.fleet === fleet.key)?.plugin, remotes: known?.remotes }) : null;
+  const dirsShown: DirsAnswer | null = dirs && l.dir && !dirs.entries.some((d) => d.path === l.dir) ? { ...dirs, entries: [...dirs.entries, { path: l.dir, name: l.dir, kind: 'checkout', ships_here: 0, remotes: [] }] } : dirs;
   const favorites = new Set((skills?.skills ?? []).filter((s) => s.favorite).map((s) => s.name));
   const skillSel = l.skill.kind === 'skill' && !favorites.has(l.skill.name) ? 'custom' : skillValue(l.skill);
 
@@ -351,6 +354,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
           {offered.length === 0 ? <p class="note warn">{docks.why || 'Loading docks…'}</p> : <DockPicker docks={offered.map((harness) => ({ harness }))} harness={l.harness} onChange={(harness) => { fixes('dock'); setForm((f) => ({ ...f, launch: launchOnDock(f.launch, harness) })); }} />}
           {err?.field === 'dock' ? <p class="note error" role="alert">{err.text}</p> : null}
           <CheckoutSelect dir={l.dir} dirs={dirsShown} allowClone={false} onChange={(dir) => setLaunch({ dir })} />
+          {scopeLine && err?.field !== 'checkout' ? <p class="note">{scopeLine}</p> : null}
           {err?.field === 'checkout' ? <p class="note error" role="alert">{err.text}</p> : null}
           <label class="field">
             <span>Text</span>

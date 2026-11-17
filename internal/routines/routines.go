@@ -21,6 +21,7 @@ import (
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/repofinder"
 	"github.com/jbuffin/admiral/internal/standing"
 	"github.com/jbuffin/admiral/internal/textsafe"
 )
@@ -85,6 +86,8 @@ type Store struct {
 	ResourceKnown func(name string) bool
 	// Events lists the kinds a fleet's source can emit; ok is false when the fleet has no such source.
 	Events func(fleet, source string) (kinds []EventKind, ok bool)
+	// SourcePlugin names the plugin behind a fleet's source; ok is false when the fleet has no such source.
+	SourcePlugin func(fleet, source string) (plugin string, ok bool)
 
 	mu sync.Mutex
 }
@@ -221,7 +224,7 @@ func (s *Store) validate(f config.Fleet, r Routine, onKept bool) error {
 	case l == nil:
 		return nil
 	}
-	return s.validateLaunch(f, *r.Do.Launch, r.On == nil)
+	return s.validateLaunch(f, *r.Do.Launch, r.On)
 }
 
 // maxNameRunes caps a name, which AdmiralBot reads through its tools and in the [Routine: <name>] chat prefix.
@@ -241,7 +244,8 @@ func checkName(name string) error {
 }
 
 // validateLaunch checks the launch in form order; an event routine may leave Text empty, since its ship starts from the event's link.
-func (s *Store) validateLaunch(f config.Fleet, l Launch, needText bool) error {
+func (s *Store) validateLaunch(f config.Fleet, l Launch, on *On) error {
+	needText := on == nil
 	switch {
 	case l.Harness == "":
 		return invalidf("Dock is required")
@@ -273,6 +277,11 @@ func (s *Store) validateLaunch(f config.Fleet, l Launch, needText bool) error {
 			if !s.ResourceKnown(name) {
 				return invalidf("no resource named %q", name)
 			}
+		}
+	}
+	if on != nil && s.SourcePlugin != nil {
+		if plugin, ok := s.SourcePlugin(f.Key, on.Source); ok && plugin == BuiltinGitHubPlugin && len(repofinder.Remotes(l.Dir)) == 0 {
+			return invalidf("Checkout has no remote, so a GitHub event routine on it never fires")
 		}
 	}
 	return nil

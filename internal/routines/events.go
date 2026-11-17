@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/autopilotgate"
+	"github.com/jbuffin/admiral/internal/repofinder"
 	"github.com/jbuffin/admiral/internal/standing"
 )
 
@@ -342,11 +343,46 @@ func (s *Scheduler) eventRoutines(ev Event) []Routine {
 	}
 	var out []Routine
 	for _, r := range list {
-		if r.Enabled && r.On != nil && r.On.Kind != RetiredViewKind && r.Do.Launch != nil && r.Do.Prompt == "" && r.On.Source == ev.Source && r.On.Kind == ev.Kind && r.On.Panel == ev.Panel {
+		if r.Enabled && r.On != nil && r.On.Kind != RetiredViewKind && r.Do.Launch != nil && r.Do.Prompt == "" && r.On.Source == ev.Source && r.On.Kind == ev.Kind && r.On.Panel == ev.Panel && inScope(ev, r.Do.Launch.Dir) {
 			out = append(out, r)
 		}
 	}
 	return out
+}
+
+// BuiltinGitHubPlugin is the plugin name of the built-in GitHub source.
+const BuiltinGitHubPlugin = "github"
+
+// inScope is false for a built-in GitHub event whose repo is none of the checkout's remotes, matched by lowercase
+// owner/name with the host ignored, so an Enterprise host counts; a ref with no owner/name matches nothing. A plugin's
+// event is never scoped. The remotes are read now, so a changed config counts.
+func inScope(ev Event, dir string) bool {
+	if !ev.Verified {
+		return true
+	}
+	repo := strings.ToLower(ownerNameOfRef(ev.Ref))
+	if repo == "" {
+		return false
+	}
+	for _, id := range repofinder.Remotes(dir) {
+		if _, ownerName, ok := strings.Cut(id, "/"); ok && ownerName == repo {
+			return true
+		}
+	}
+	return false
+}
+
+// ownerNameOfRef is owner/name from the first two path segments of a URL on any host, else empty.
+func ownerNameOfRef(ref string) string {
+	u, err := url.Parse(ref)
+	if err != nil || u.Hostname() == "" {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+	return parts[0] + "/" + parts[1]
 }
 
 // HandleEvent matches ev to the fleet's enabled event routines, decides each pair and records it.

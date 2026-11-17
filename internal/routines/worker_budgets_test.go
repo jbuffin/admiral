@@ -115,7 +115,7 @@ func budgetRun(t *testing.T, concurrent, wallClock, nRoutines int) (*harness, []
 // evKeyless is an event whose ref carries no dedupe key, so only the caps decide.
 func evKeyless() routines.Event {
 	ev := evFrom("Eng")
-	ev.Ref = "https://tracker.example.test/items/7"
+	ev.Ref = "https://github.com/acme/api/discussions/7" // on the checkout's repo, with no PR or issue number to key on
 	return ev
 }
 

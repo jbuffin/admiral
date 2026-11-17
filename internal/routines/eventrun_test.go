@@ -81,8 +81,8 @@ func TestAnA3DraftFixEventLaunchesOneRestrictedShipWithTheEventTextOnlyInEventTe
 	if strings.Contains(req.Text, "BODY-SENTINEL") || strings.Contains(req.Text, evTitle) || strings.Contains(strings.Join(req.ExtraArgs, " "), "BODY-SENTINEL") {
 		t.Errorf("the event text reached Text %q or the args %q", req.Text, req.ExtraArgs)
 	}
-	if !req.WorkerLaunched || !req.Autopilot || !req.Unattended || req.RoutineKey != "routine:"+r.ID || req.Harness != "claude" || req.Dir != "/tmp/repo" {
-		t.Errorf("request = %+v, want worker-launched, autopilot, unattended, routine key routine:%s, claude in /tmp/repo", req, r.ID)
+	if !req.WorkerLaunched || !req.Autopilot || !req.Unattended || req.RoutineKey != "routine:"+r.ID || req.Harness != "claude" || req.Dir != sharedCheckout {
+		t.Errorf("request = %+v, want worker-launched, autopilot, unattended, routine key routine:%s, claude in the shared checkout", req, r.ID)
 	}
 	recs := h.records(r)
 	if len(recs) != 1 {

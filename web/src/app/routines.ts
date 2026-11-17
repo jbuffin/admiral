@@ -158,6 +158,15 @@ const INVALID = /^invalid routine: /;
 /** A server 400 message without the "invalid routine: " the store puts before every validation error. */
 export const errorText = (message: string) => message.replace(INVALID, '');
 
+/** The line by the Checkout field naming which repos fire an event routine on the built-in GitHub source; remotes are the dirs identities (host/owner/name), undefined when unknown. */
+export function checkoutScopeLine(a: { event: boolean; plugin?: string; remotes?: string[] }): string | null {
+  if (!a.event || a.plugin !== 'github' || !a.remotes) return null;
+  const repos = [...new Set(a.remotes.map((id) => id.split('/').slice(1).join('/').toLowerCase()).filter(Boolean))];
+  if (repos.length === 0) return 'This routine never fires: the Checkout has no remote.';
+  const named = repos.length === 1 ? repos[0] : `${repos.slice(0, -1).join(', ')} and ${repos[repos.length - 1]}`;
+  return `Fires only for events on ${named}.`;
+}
+
 /** A part of the routine form a message can belong to. */
 export type RoutineField = 'name' | 'when' | 'before_acting' | 'do' | 'dock' | 'checkout' | 'text';
 
