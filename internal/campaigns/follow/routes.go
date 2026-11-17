@@ -410,7 +410,13 @@ func sameSkill(pick launcher.Skill, have campaigns.Skill) bool {
 	if pick.Kind != "skill" {
 		return true
 	}
-	return launcher.TrimSkillMark(pick.Name) == launcher.TrimSkillMark(have.Name)
+	picked, saved := launcher.TrimSkillMark(pick.Name), launcher.TrimSkillMark(have.Name)
+	if picked == saved {
+		return true
+	}
+	// The dialog fills a bare saved name as the installed plugin skill that owns it.
+	plugin, own, qualified := strings.Cut(picked, ":")
+	return qualified && plugin != "" && own == saved
 }
 
 // refuseSkillKind answers 400 and reports true when kind is not one a skill can have.

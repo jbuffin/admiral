@@ -216,9 +216,13 @@ export function keepSkill(answer: SkillsAnswer, current: SkillChoice): SkillChoi
   return offered ? current : defaultSkill(answer);
 }
 
-/** Where a campaign child's picker starts: its resolved skill whether or not this dock offers it (the form then warns), else the default. */
+/** Where a campaign child's picker starts: its resolved skill whether or not this dock offers it (the form then warns), a bare name filled as the one installed plugin skill that owns it, else the default. */
 export function startSkill(answer: SkillsAnswer, view: SkillView | undefined): SkillChoice {
-  return viewChoice(view) ?? defaultSkill(answer);
+  const choice = viewChoice(view);
+  if (choice?.kind !== 'skill') return choice ?? defaultSkill(answer);
+  if (answer.skills.some((s) => s.name === choice.name)) return choice;
+  const own = answer.skills.filter((s) => s.name.slice(s.name.lastIndexOf(':') + 1) === choice.name && s.name.includes(':'));
+  return own.length === 1 ? { kind: 'skill', name: own[0].name } : choice;
 }
 
 /** The pick a campaign child's resolved skill stands for; null when it has none. */
