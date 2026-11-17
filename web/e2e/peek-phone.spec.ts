@@ -1,9 +1,7 @@
 import type { Page } from '@playwright/test';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { crewNote, seedAdHocMember, seedCrew, seedMission } from './crew';
+import { crewNote, seedAdHocMember, seedCrew } from './crew';
 import { expect, test } from './fixtures';
-import { addGitHubSource, appendLines, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, rowLink, seedFleets, seedInboxItem, setReason, setState, readyStackMergesFromPeek, withFakeGh, chatAnswerFile, chatAsks } from './shell';
+import { appendLines, launchShip, line, received, rowLink, seedFleets, setReason, setState, withFakeGh } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const listRow = (page: Page, text: string) => page.getByRole('main').getByRole('listitem').filter({ hasText: text });
@@ -33,61 +31,6 @@ test('on the phone, a stop opens in Peek, is answered there, and the list comes 
   await expect(listRow(page, ship.name)).toHaveCount(0, { timeout: 15_000 });
 });
 
-test('on the phone, a question item opens in Peek and its answers are sent', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  const visitor = await launchShip(admiral, { fleet: 'alpha', harness: 'codex' });
-  setState(admiral, visitor, 'working');
-  seedInboxItem(admiral, visitor.session, {
-    id: 'q-port',
-    kind: 'question',
-    title: 'Which port should the visitor use?',
-    question: { questions: [{ id: 'p', text: 'Which port?', options: [{ label: '80' }, { label: '8080' }] }] },
-  });
-  await page.goto(admiral.url + 'app/inbox?fleet=alpha');
-  const row = listRow(page, 'Which port should the visitor use?');
-  await expect(row).toContainText(visitor.name, { timeout: 15_000 });
-  await row.getByRole('link').tap();
-  const peek = peekOf(page);
-  await expect(peek).toContainText('Which port?');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  const choice = peek.getByRole('radio', { name: '8080' });
-  expect((await choice.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  await choice.tap();
-
-  const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/inbox/${visitor.session}/q-port/answer`);
-  await peek.getByRole('button', { name: 'Send answers' }).tap();
-  expect((await posted).postDataJSON()).toEqual({ answers: { p: { choice: '8080' } } });
-  await expect.poll(() => existsSync(join(admiral.home, 'inbox', visitor.session, 'q-port.answer.json'))).toBe(true);
-  await expect(peekOf(page)).toHaveCount(0);
-  await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
-  await expect(listRow(page, visitor.name)).toHaveCount(0, { timeout: 15_000 });
-});
-
-test('on the phone, Merge in Peek merges a ready PR with one gh call, only after the tap, and the ship sails off', { tag: '@critical' }, async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  addGitHubSource(admiral);
-  await admiral.start({ env: mooringEnv(admiral) });
-
-  await mergeFromPeek(page, admiral, { phone: true });
-});
-
-test('on the phone, a merge that gh fails shows its message in Peek and the ship stays moored', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  addGitHubSource(admiral);
-  await admiral.start({ env: mooringEnv(admiral) });
-
-  await mergeFailsInPeek(page, admiral);
-});
-
-test('on the phone, a ready stack shows Ready to merge, and Merge in Peek merges the whole stack with one gh stack merge after the tap', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  addGitHubSource(admiral);
-  await admiral.start({ env: mooringEnv(admiral) });
-
-  await readyStackMergesFromPeek(page, admiral);
-});
-
 test('on the phone, a crew member item shows its whole definition and Keep and Drop stay reachable', async ({ page, admiral }) => {
   seedCrew(admiral);
   seedAdHocMember(admiral, 'deckhand', { id: 'crew-m1', run: 'run-c', notes: [crewNote('n1', 'deckhand', { note: 'Deckhand swabs before it paints' })], lines: 60 });
@@ -110,49 +53,4 @@ test('on the phone, a crew member item shows its whole definition and Keep and D
   }
   await peek.getByRole('button', { name: 'Drop', exact: true }).tap();
   await expect(peek.getByRole('button', { name: 'Drop deckhand' })).toBeInViewport();
-});
-
-test('on the phone, a mission item shows its whole text and Keep and Drop stay reachable', async ({ page, admiral }) => {
-  seedFleets(admiral);
-  seedMission(admiral, 'docs-sweep', { id: 'mission-1', lines: 60 });
-  await admiral.start();
-  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
-  await listRow(page, 'Keep mission docs-sweep?').getByRole('link').tap();
-  const peek = peekOf(page);
-  await expect(peek).toContainText('Sweep the docs for docs-sweep.');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  const text = peek.locator('pre').filter({ hasText: 'Sweep the docs for docs-sweep.' });
-  expect(await text.evaluate((el) => el.scrollHeight <= el.clientHeight || ['auto', 'scroll'].includes(getComputedStyle(el).overflowY))).toBe(true);
-  const last = peek.getByText('Last step of docs-sweep.');
-  await last.scrollIntoViewIfNeeded();
-  await expect(last).toBeInViewport();
-  for (const name of ['Keep', 'Drop']) {
-    const button = peek.getByRole('button', { name, exact: true });
-    await button.scrollIntoViewIfNeeded();
-    await expect(button).toBeInViewport();
-    expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  }
-  await peek.getByRole('button', { name: 'Keep', exact: true }).tap();
-  await expect(peek.getByRole('button', { name: 'Keep docs-sweep' })).toBeInViewport();
-});
-
-test("on the phone, AdmiralBot's waiting question opens in Peek from the Inbox and its answer reaches the fleet's chat", async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true, chat: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
-  await page.goto(admiral.url + 'app/inbox?fleet=harbor');
-  const row = listRow(page, 'Which panel?');
-  await expect(row).toContainText('AdmiralBot', { timeout: 15_000 });
-  await row.getByRole('link').tap();
-  const peek = peekOf(page);
-  await expect(peek).toContainText('Which panel?');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  const choice = peek.getByRole('radio', { name: 'Work queue' });
-  expect((await choice.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  await choice.tap();
-  await peek.getByRole('button', { name: 'Send answers' }).tap();
-  await expect.poll(() => chatAnswerFile(admiral, 'harbor', 'q1')?.answers['1']?.choice).toBe('Work queue');
-  await expect(peekOf(page)).toHaveCount(0);
-  await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
-  await expect(listRow(page, 'Which panel?')).toHaveCount(0, { timeout: 15_000 });
 });

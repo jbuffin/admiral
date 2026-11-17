@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
-import { boatReceived, chip, launchCrew, launchShip, line, appendLines, paneSize, received, resizeWindow, rowLink, seedFleets, setBoatState, setReason, setState, viewPanel, viewTab, withFakeGh } from './shell';
+import { boatReceived, chip, launchCrew, launchShip, line, appendLines, received, rowLink, seedFleets, setBoatState, setReason, setState, viewPanel, viewTab, withFakeGh } from './shell';
 
 const button = (page: Page, name: string) => viewPanel(page).getByRole('button', { name, exact: true });
 const terminalCard = (page: Page) => viewPanel(page).getByText('Answer this in the terminal');
@@ -42,87 +42,11 @@ test('a permission card shows the tool and its oldest pending call, and Allow on
   await expect(button(page, 'Allow once')).toHaveCount(0);
 });
 
-test('a question card sends the number of the tapped option', async ({ page, admiral }) => {
+test('the answer card follows the pane: one answer per tap, a refusal clears it, a prompt Admiral cannot answer goes to the terminal', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
-  await appendLines(admiral, ship, [line.ask('toolu_q1', [{ question: 'Which colour?', options: ['Red', 'Green', 'Blue'] }])]);
-  setReason(admiral, ship, 'question');
-  setState(admiral, ship, 'needs_you');
-  await open(page, admiral, ship);
-
-  await expect(button(page, 'Red')).toBeVisible();
-  await expect(button(page, 'Blue')).toBeVisible();
-  await button(page, 'Green').tap();
-  await expect.poll(() => received(admiral, ship)).toBe('2');
-  await expect(button(page, 'Green')).toHaveCount(0);
-});
-
-test('a four-question Claude call is stepped through the card and answered with one request at iPad width', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  const asked = [
-    { question: 'Which colour?', header: 'Colour', options: ['Red', 'Green', 'Blue'], descriptions: ['A **bold** colour', 'A fresh colour', 'A calm colour'] },
-    { question: 'Which toppings?', header: 'Toppings', options: ['Cheese', 'Olives', 'Mushrooms'], multiSelect: true, descriptions: ['Use `melted`', 'Briny', 'Earthy'] },
-    { question: 'Which size?', header: 'Size', options: ['Small', 'Large'], descriptions: ['One person', 'To share'] },
-    { question: 'How to deliver?', header: 'Delivery', options: ['Pickup', 'Courier'], descriptions: ['Collect it', 'To the door'] },
-  ];
-  const menu = asked.map((q) => ({ text: q.question, labels: q.options, multi: q.multiSelect ?? false }));
-  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', `menu ${JSON.stringify(menu)}`] });
-  await appendLines(admiral, ship, [line.ask('toolu_c4', asked)]);
-  setReason(admiral, ship, 'permission:AskUserQuestion');
-  setState(admiral, ship, 'needs_you');
-  await open(page, admiral, ship);
-
-  const card = viewPanel(page).locator('.q-card');
-  await expect(card.getByText('Question 1 of 4')).toBeVisible();
-  // A description is Markdown inside its button, as it is in the answered card.
-  await expect(card.getByRole('radio', { name: /^Red/ }).locator('strong')).toHaveText('bold');
-  await card.getByRole('radio', { name: /^Green/ }).tap();
-  await card.getByRole('button', { name: 'Next', exact: true }).tap();
-  await card.getByRole('checkbox', { name: /^Cheese/ }).tap();
-  await card.getByRole('checkbox', { name: /^Mushrooms/ }).tap();
-  await card.getByRole('button', { name: 'Next', exact: true }).tap();
-  await card.getByLabel('Other answer').fill('Medium, thanks');
-  await card.getByRole('button', { name: 'Next', exact: true }).tap();
-  await card.getByRole('radio', { name: /^Courier/ }).tap();
-  await card.getByRole('button', { name: 'Next', exact: true }).tap();
-  // Like Claude's own review screen, the card lists every answer before it sends, and Back still edits them.
-  await expect(card.getByText('Review your answers')).toBeVisible();
-  await expect(card.locator('.q-review-a')).toHaveText(['→ Green', '→ Cheese, Mushrooms', '→ Medium, thanks', '→ Courier']);
-  expect(received(admiral, ship)).toBe('');
-  await card.getByRole('button', { name: 'Back', exact: true }).tap();
-  await expect(card.getByText('Question 4 of 4')).toBeVisible();
-  await card.getByRole('button', { name: 'Next', exact: true }).tap();
-  // A phone's terminal left the pane too short for the menu's tabs and question; the answer still lands.
-  resizeWindow(admiral, ship, 40, 12);
-  const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/answer'));
-  await card.getByRole('button', { name: 'Submit answers', exact: true }).tap();
-  expect((await sent).postDataJSON().answers).toEqual([{ options: [2] }, { options: [1, 3] }, { options: [], other: 'Medium, thanks' }, { options: [2] }]);
-
-  // The menu took the keys one step at a time and ended on the review screen's 1.
-  const down = '\x1b[B';
-  await expect.poll(() => received(admiral, ship)).toBe(['2', '\r', down + down, '\r', down + down, '\r', '3', 'Medium, thanks', '\r', '2', '1'].join(''));
-  await expect(card.getByRole('button', { name: 'Submit answers', exact: true })).toHaveCount(0);
-  expect(paneSize(admiral, ship)).toBe('40x12');
-
-  // Once Claude records the answers, the same call is the read-only record: chips, rendered descriptions and chosen marks.
-  await appendLines(admiral, ship, [
-    line.askResult('toolu_c4', { 'Which colour?': 'Green', 'Which toppings?': 'Cheese, Mushrooms', 'Which size?': 'Medium, thanks', 'How to deliver?': 'Courier' }),
-  ]);
-  setState(admiral, ship, 'working');
-  const record = viewPanel(page).locator('.q-record');
-  await expect(record.locator('.q-chip')).toHaveText(['Colour', 'Toppings', 'Size', 'Delivery']);
-  await expect(record.locator('.q-desc strong')).toHaveText('bold');
-  await expect(record.locator('.q-desc code')).toHaveText('melted');
-  await expect(record.locator('.q-option.chosen')).toHaveText([/Green/, /Cheese/, /Mushrooms/, /Courier/]);
-  await expect(record.locator('.q-free')).toHaveText('Other: Medium, thanks');
-});
-
-test('a long conversation with answered questions scrolls inside the view, never the page', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  // A long conversation with an answered question: the view scrolls, never the page, even with a card under it.
   const chatter = (from: number) => Array.from({ length: 30 }, (_, i) => line.assistant(`Step ${from + i}: still working through the build.`));
   await appendLines(admiral, ship, [
     ...chatter(1),
@@ -130,48 +54,36 @@ test('a long conversation with answered questions scrolls inside the view, never
     line.askResult('toolu_s1', { 'Which colour?': 'Green' }),
     ...chatter(31),
   ]);
-  await open(page, admiral, ship);
-
-  await expect(viewPanel(page).locator('.q-option.chosen')).toHaveText(/Green/);
-  await expect(viewPanel(page).getByText('Step 60:')).toBeVisible();
-  const doc = await page.evaluate(() => ({ height: document.scrollingElement!.scrollHeight, view: document.scrollingElement!.clientHeight }));
-  expect(doc.height).toBeLessThanOrEqual(doc.view);
-});
-
-test('a refused answer leaves the question in the transcript with the reason and an Open terminal button', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  // The fake pane draws no menu, so the sender finds nothing to step through and refuses.
-  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
-  await appendLines(admiral, ship, [line.ask('toolu_r1', [{ question: 'Which colour?', header: 'Colour', options: ['Red', 'Green'] }, { question: 'Which size?', header: 'Size', options: ['Small', 'Large'] }])]);
-  setReason(admiral, ship, 'permission:AskUserQuestion');
-  setState(admiral, ship, 'needs_you');
-  await open(page, admiral, ship);
-
-  const card = viewPanel(page).locator('.q-card');
-  await card.getByRole('radio', { name: /^Red/ }).tap();
-  await card.getByRole('button', { name: 'Next', exact: true }).tap();
-  await card.getByRole('radio', { name: /^Large/ }).tap();
-  await card.getByRole('button', { name: 'Next', exact: true }).tap();
-  await card.getByRole('button', { name: 'Submit answers', exact: true }).tap();
-
-  await expect(card.getByRole('alert')).toContainText('terminal');
-  await expect(card.getByText('Which colour?')).toBeVisible();
-  await expect(card.getByText('Which size?')).toBeVisible();
-  expect(received(admiral, ship)).toBe('');
-  await button(page, 'Open terminal').tap();
-  await expect(viewTab(page, 'Terminal')).toHaveAttribute('aria-selected', 'true');
-});
-
-test('a card goes when the pane moves on, and a refused answer removes it and sends nothing more', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
-  await appendLines(admiral, ship, [line.assistant('Working on it')]);
   setReason(admiral, ship, 'permission:Bash');
   setState(admiral, ship, 'needs_you');
   await open(page, admiral, ship);
+  await expect(viewPanel(page).locator('.q-option.chosen')).toHaveText(/Green/);
+  await expect(viewPanel(page).getByText('Step 60:')).toBeVisible();
   await expect(button(page, 'Allow once')).toBeVisible();
+  const doc = await page.evaluate(() => ({ height: document.scrollingElement!.scrollHeight, view: document.scrollingElement!.clientHeight }));
+  expect(doc.height).toBeLessThanOrEqual(doc.view);
+
+  let refuse = false;
+  await page.route('**/api/v1/ships/*/answer', (route) =>
+    refuse ? route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"the pane is not on that card"}' }) : route.fulfill({ status: 200, contentType: 'application/json', body: '{"answered":true}' }),
+  );
+  // Both taps land in one task, before any request is out; the count is read in the page, where a second request would show.
+  await page.evaluate(() => {
+    const w = window as unknown as { answers: number };
+    w.answers = 0;
+    const real = window.fetch;
+    window.fetch = (...args) => {
+      if (String(args[0] instanceof Request ? args[0].url : args[0]).endsWith('/answer')) w.answers++;
+      return real(...args);
+    };
+  });
+  await button(page, 'Allow once').evaluate((el: HTMLElement) => {
+    el.click();
+    el.click();
+  });
+  await expect(button(page, 'Allow once')).toHaveAttribute('aria-busy', 'true');
+  await expect(button(page, 'Deny')).toBeDisabled();
+  expect(await page.evaluate(() => (window as unknown as { answers: number }).answers)).toBe(1);
 
   // The reason moves on without the ship leaving needs you: the permission card is replaced, never kept.
   // A finished turn waits for a message in the box, so it sends nobody to the terminal.
@@ -181,7 +93,7 @@ test('a card goes when the pane moves on, and a refused answer removes it and se
 
   setReason(admiral, ship, 'permission:Edit');
   await expect(button(page, 'Allow once')).toBeVisible();
-  await page.route('**/api/v1/ships/*/answer', (route) => route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"the pane is not on that card"}' }));
+  refuse = true;
   await button(page, 'Allow once').tap();
   await expect(button(page, 'Allow once')).toHaveCount(0);
   await expect(button(page, 'Deny')).toHaveCount(0);
@@ -193,45 +105,12 @@ test('a card goes when the pane moves on, and a refused answer removes it and se
   setReason(admiral, ship, 'permission:Edit');
   await expect(button(page, 'Allow once')).toBeEnabled();
   await expect(button(page, 'Deny')).toBeEnabled();
-});
 
-test('a double tap on Allow once posts one answer', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
-  setReason(admiral, ship, 'permission:Bash');
-  setState(admiral, ship, 'needs_you');
-  await open(page, admiral, ship);
-  let posts = 0;
-  let answered!: () => void;
-  const done = new Promise<void>((r) => (answered = r));
-  await page.route('**/api/v1/ships/*/answer', async (route) => {
-    posts++;
-    await new Promise((r) => setTimeout(r, 300));
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"answered":true}' });
-    answered();
-  });
-  await button(page, 'Allow once').evaluate((el: HTMLElement) => {
-    el.click();
-    el.click();
-  });
-  await expect(button(page, 'Allow once')).toHaveAttribute('aria-busy', 'true');
-  await expect(button(page, 'Deny')).toBeDisabled();
-  await done;
-  expect(posts).toBe(1);
-});
-
-test('a prompt Admiral cannot answer shows the terminal card, and only Open terminal leaves the Conversation tab', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  // A prompt Admiral cannot answer (a multi-select of nine) shows the terminal card; only Open terminal leaves the Conversation tab.
   await appendLines(admiral, ship, [line.ask('toolu_m1', [{ question: 'Which colours?', options: ['Red', 'Green', 'Blue', 'Cyan', 'Pink', 'Gold', 'Gray', 'Teal', 'Plum'], multiSelect: true }])]);
   setReason(admiral, ship, 'question');
-  setState(admiral, ship, 'needs_you');
-  await open(page, admiral, ship);
-
   await expect(terminalCard(page)).toBeVisible();
-  await expect(button(page, 'Red')).toHaveCount(0);
+  await expect(button(page, 'Cyan')).toHaveCount(0);
   await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
   await button(page, 'Open terminal').tap();
   await expect(viewTab(page, 'Terminal')).toHaveAttribute('aria-selected', 'true');

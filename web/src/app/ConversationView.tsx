@@ -102,7 +102,7 @@ function Card({ title, children }: { title: string; children?: preact.ComponentC
 
 const cardKey = (c: AnswerCard) => (c.kind === 'permission' ? `p:${c.reason}:${c.call?.id ?? ''}` : c.kind === 'question' ? `q:${c.reason}:${c.item}` : c.kind);
 
-function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCard; session: string; crew?: string; openTerminal: () => void }) {
+export function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCard; session: string; crew?: string; openTerminal: () => void }) {
   // Which button was tapped; it stays busy until the card goes.
   const [tapped, setTapped] = useState<string | null>(null);
   const [gone, setGone] = useState<string | null>(null);

@@ -196,3 +196,17 @@ func TestClaudeBatchAnswerIsRefusedWhenTheMenuIsNotFreshAndTheShipStillAsks(t *t
 		t.Errorf("the ship's reason is %q after a refused answer, want it still asking", r)
 	}
 }
+
+func TestClaudeBatchAnswerTypesEachTabsKeys(t *testing.T) {
+	p := newMenuPane(t, callItems("call", true))
+	p.needsYou("question")
+	answers := []batchAnswer{{"options": []int{2}}, {"options": []int{1, 3}}, {"other": "Medium, thanks"}, {"options": []int{2}}}
+	if code, msg := p.post(batchBody(t, "question", "call#0", answers...)); code != http.StatusOK {
+		t.Fatalf("the whole call answered = %d %s, want 200", code, msg)
+	}
+	const down = "\x1b[B"
+	want := strings.Join([]string{"2", "\r", down + down, "\r", down + down, "\r", "4", "Medium, thanks", "\r", "2", "1"}, "")
+	if got := p.sent(want); got != want {
+		t.Errorf("the menu read %q, want %q", got, want)
+	}
+}
