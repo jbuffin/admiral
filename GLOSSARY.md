@@ -301,6 +301,10 @@ _Avoid_: report (the Admiral report is a different thing), results, summary
 A turn the server gives AdmiralBot when a ship it launched from the chat finishes, so it can tell the engineer what came back. It is not the engineer's turn: AdmiralBot can read and talk in it, but can't act.
 _Avoid_: wake (a moored ship's), notification, callback
 
+**Fleet digest**:
+A routine's summary, in one fleet's chat, of what that fleet's ships did since the last one. AdmiralBot writes it from facts Admiral gathers, and can't act while it does.
+_Avoid_: brief (AdmiralBot's), morning brief, report, notification
+
 **Admiral report**:
 What a ship's skill leaves for Admiral at the end of every round, its first build and each feedback round: the result, its PRs and the issues each closes, the crew members it used, and the text that resumes it. Never the transcript.
 

@@ -1,6 +1,6 @@
 # 24. AdmiralBot's memory is a server-owned ledger, and Admiral decides context resets
 
-Status: accepted, amended by [ADR 0042](0042-a-ships-result-comes-back-as-a-card-and-a-report-turn.md) (AdmiralBot gets a report turn when a ship it launched from the chat finishes, and a reset waits for queued ones)
+Status: accepted, amended by [ADR 0042](0042-a-ships-result-comes-back-as-a-card-and-a-report-turn.md) (AdmiralBot gets a report turn when a ship it launched from the chat finishes, and a reset waits for queued ones) and [ADR 0045](0045-a-fleet-digest-is-a-routine-action-that-cannot-act.md) (the "since your last turn" digest is removed)
 
 ## Context
 
