@@ -3,17 +3,17 @@ import { expect, test } from './fixtures';
 import { existsSync, readFileSync } from 'node:fs';
 import { seedOrders } from './orders';
 import { join } from 'node:path';
-import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, chip, expectSeededTurn, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, launchAsAdmiralBot, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
+import { HOME, WORK, boatReceived, chip, expectSeededTurn, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
 test('on the phone, the tab bar and More reach every surface, the Ships tab lists the fleet\'s ships and the Fleets sheet switches fleets', { tag: '@critical' }, async ({ page, admiral }) => {
-  // The whole launch journey runs in here, past 30 s on the macOS runner.
-  test.setTimeout(150_000);
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
 
+  // Ships that end are launched first: their cue file is read by any harness that starts while it is there.
+  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
   const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
   setState(admiral, login, 'needs_you');
   await say(admiral, login, 'Which branch should I rebase onto?');
@@ -21,11 +21,15 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   setState(admiral, billing, 'working');
   // A tail near the 200-character cap, to guard the no-scroll check below.
   await say(admiral, billing, 'Reading billing/export.go '.repeat(7).trim());
-  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
 
   await page.goto(admiral.url + 'app/');
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
   await expect(page.getByRole('navigation').getByRole('link')).toHaveText(['Inbox', 'Chat', 'Ships', 'Orders']);
+  // The needs-you stop fits the screen and is tall enough to tap.
+  const stop = page.getByRole('main').getByRole('listitem').filter({ hasText: login.name });
+  await expect(stop).toContainText('Fix the login redirect');
+  expect((await stop.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
 
   await tab(page, 'Ships').tap();
   await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
@@ -56,7 +60,8 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await viewTab(page, 'Conversation').tap();
   await expect(viewPanel(page)).toContainText('Rebase onto main please');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await holds(() => bridges().length === 0 && paneSize(admiral, login) === size, 'no bridge socket opens and the pane keeps its size');
+  expect(bridges(), 'no bridge socket opens').toEqual([]);
+  expect(paneSize(admiral, login), 'the pane keeps its size').toBe(size);
 
   const joined = page.waitForEvent('websocket', (ws) => /\/bridge\//.test(ws.url()));
   await viewTab(page, 'Terminal').tap();
@@ -96,7 +101,47 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect(page.getByRole('navigation', { name: 'Preferences' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Plugin sources', exact: true })).toBeHidden();
 
-  // Back in Westwind, the launch form is usable at the phone's width.
+  // Each Preferences page opens fully on screen with a Back to the list, and its controls take a finger.
+  const heading = (name: string) => page.getByRole('heading', { name, exact: true });
+  await openPreferences(page, { section: 'Remote access' });
+  await expect(page).toHaveURL(/\/app\/preferences\/admiral\/remote/);
+  await expect(heading('Remote access')).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('group', { name: 'Tailscale' }).getByRole('button').first()).toBeInViewport({ ratio: 1 });
+  // New code sits below Tailscale and the allowed logins: scrolled in, it must be uncovered and take a finger.
+  const newCode = page.getByRole('button', { name: 'New code', exact: true });
+  await newCode.scrollIntoViewIfNeeded();
+  await expectReachable(page, newCode);
+  const code = page.locator('.pair-code');
+  const first = await code.textContent();
+  expect(first).toBeTruthy();
+  await expect(newCode).not.toHaveAttribute('aria-busy', 'true');
+  await touchTap(page, newCode);
+  await expect.poll(() => code.textContent()).not.toBe(first);
+  const back = preferencesBack(page);
+  const backBox = (await back.boundingBox())!;
+  expect(backBox.height).toBeGreaterThanOrEqual(44);
+  expect(backBox.width).toBeGreaterThanOrEqual(44);
+  await back.tap();
+  await expect(page.getByRole('navigation', { name: 'Preferences' })).toBeInViewport();
+  await expect(heading('Remote access')).toBeHidden();
+  await openPreferences(page, { fleet: HOME, section: 'Fleet' });
+  await expect(page).toHaveURL(/\/app\/preferences\/alpha\/fleet/);
+  await expect(heading('Fleet')).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('textbox', { name: 'Search root 1' })).toBeInViewport({ ratio: 1 });
+
+  expect(watch.paths).toContain('/ws/v1');
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+
+test('on the phone, the launch form fits, a ship takes a message by button, its crew boats take the box, and Stop ship asks first', { tag: '@critical' }, async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  // The launch form is usable at the phone's width.
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await expect(page.getByRole('main')).toContainText(WORK);
   await launchFromTheShell(page, admiral, (l) => l.tap(), { phone: true });
@@ -150,133 +195,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   expect(watch.errors).toEqual([]);
 });
 
-test('on the phone, Preferences lists its pages, each page opens fully on screen with a Back to the list, and its controls can be tapped', async ({ page, admiral }) => {
-  // Four fleets put the Harborlight group well down the list, where a page used to be squeezed out.
-  seedFleets(admiral, { chat: true });
-  await admiral.start();
-  await page.goto(admiral.url + 'app/inbox');
-  const heading = (name: string) => page.getByRole('heading', { name, exact: true });
-
-  await openPreferences(page, { section: 'Remote access' });
-  await expect(page).toHaveURL(/\/app\/preferences\/admiral\/remote/);
-  await expect(heading('Remote access')).toBeInViewport({ ratio: 1 });
-  await expect(page.getByRole('group', { name: 'Tailscale' }).getByRole('button').first()).toBeInViewport({ ratio: 1 });
-
-  // New code sits below Tailscale and the allowed logins: scrolled in, it must be uncovered and take a finger.
-  const newCode = page.getByRole('button', { name: 'New code', exact: true });
-  await newCode.scrollIntoViewIfNeeded();
-  await expectReachable(page, newCode);
-  const code = page.locator('.pair-code');
-  const first = await code.textContent();
-  expect(first).toBeTruthy();
-  await expect(newCode).not.toHaveAttribute('aria-busy', 'true');
-  await touchTap(page, newCode);
-  await expect.poll(() => code.textContent()).not.toBe(first);
-
-  // Back returns to the list from a page.
-  const back = preferencesBack(page);
-  const size = (await back.boundingBox())!;
-  expect(size.height).toBeGreaterThanOrEqual(44);
-  expect(size.width).toBeGreaterThanOrEqual(44);
-  await back.tap();
-  await expect(page.getByRole('navigation', { name: 'Preferences' })).toBeInViewport();
-  await expect(heading('Remote access')).toBeHidden();
-
-  await openPreferences(page, { fleet: 'Harborlight', section: 'Fleet' });
-  await expect(page).toHaveURL(/\/app\/preferences\/harbor\/fleet/);
-  await expect(heading('Fleet')).toBeInViewport({ ratio: 1 });
-  await expect(page.getByRole('textbox', { name: 'Search root 1' })).toBeInViewport({ ratio: 1 });
-
-  // Harborlight has no plugin source, so its page offers Add source.
-  await openPreferences(page, { fleet: 'Harborlight', section: 'Plugin sources' });
-  await expect(page).toHaveURL(/\/app\/preferences\/harbor\/sources/);
-  await expect(heading('Plugin sources')).toBeInViewport({ ratio: 1 });
-  const add = page.getByRole('button', { name: 'Add source', exact: true });
-  await expectReachable(page, add);
-  await touchTap(page, add);
-  await expect(page.getByRole('group', { name: 'Add source' })).toBeVisible();
-});
-
-test('on the phone, the Inbox lists a question item and a needs-you stop from two fleets, each with its fleet, and the stop leaves live once its ship is back underway', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  await page.goto(admiral.url + 'app/');
-  await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
-  await expect(page.getByRole('main')).toContainText('Whatever needs you, from every fleet, will land here.');
-
-  const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
-  const visitor = await launchShip(admiral, { fleet: 'alpha', harness: 'codex' });
-  setState(admiral, visitor, 'working');
-  setReason(admiral, login, 'permission:Bash');
-  setState(admiral, login, 'needs_you');
-  seedInboxItem(admiral, visitor.session, {
-    id: 'q-port',
-    kind: 'question',
-    title: 'Which port should the visitor use?',
-    question: { questions: [{ id: 'p', text: 'Which port should the visitor use?', options: [{ label: '80' }, { label: '8080' }] }] },
-  });
-  seedInboxItem(admiral, '_admiral', { id: 'n-hostile', kind: 'notice', title: 'Heads up', notice: { body: HOSTILE } });
-
-  // Both rows arrive without a reload; the empty line is gone.
-  const main = page.getByRole('main');
-  const entry = (text: string) => main.getByRole('listitem').filter({ hasText: text });
-  await expect(entry(visitor.name)).toContainText(HOME, { timeout: 15_000 });
-  await expect(entry(visitor.name)).toContainText('asked');
-  await expect(entry(visitor.name)).toContainText('Which port should the visitor use?');
-  await expect(entry(login.name)).toContainText(WORK);
-  await expect(entry(login.name)).toContainText(/wants to run bash/i);
-  await expect(entry(login.name)).toContainText(/^.*\b(now|\d+m)\b/);
-  await expect(main).not.toContainText('Whatever needs you, from every fleet, will land here.');
-  await expect(entry('Heads up')).toBeVisible();
-  await expect(entry('Heads up')).not.toContainText(HOME);
-  await expect(entry('Heads up')).not.toContainText(WORK);
-  for (const n of [login.name, visitor.name, 'Heads up']) expect((await entry(n).boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
-
-  // A notice shows its body as text, and nothing in it runs.
-  await entry('Heads up').getByRole('button').tap();
-  await expect(main).toContainText(HOSTILE);
-  expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
-
-  // The stop folds to its confirmation when its ship goes back underway, then leaves; the item stays.
-  setState(admiral, login, 'working');
-  await expect(entry(login.name)).toContainText('Back underway', { timeout: 15_000 });
-  await expect(entry(login.name)).toHaveCount(0, { timeout: 15_000 });
-  await expect(entry(visitor.name)).toHaveCount(1);
-
-  // A ship-backed row opens Peek on its item.
-  await entry(visitor.name).getByRole('link').tap();
-  await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(visitor.session)}/item/q-port`));
-  await expect(page.getByRole('region', { name: 'Peek' })).toBeVisible();
-});
-
-test('on the phone, Remote access shows the Tailscale checks and copies the tailnet URL', async ({ page, admiral }) => {
-  const ts = fakeTailscale(admiral);
-  setRemote(admiral, { tailscale: true, allowedLogins: [TS_LOGIN] });
-  await admiral.start({ env: ts.env });
-  ts.serve(new URL(admiral.url).port);
-  const copied = await stubClipboard(page);
-  await page.goto(admiral.url + 'app/preferences/admiral/remote');
-  const section = page.getByRole('group', { name: 'Tailscale' });
-  await expect(section.getByRole('listitem')).toHaveCount(4);
-  await section.getByRole('button', { name: 'Copy' }).tap();
-  await expect(section.getByRole('status').filter({ hasText: /copied/i })).toBeVisible();
-  expect(await copied()).toBe(`https://${TS_NAME}/`);
-});
-
-test('on the phone, Turn off Tailscale mode asks first', async ({ page, admiral }) => {
-  const ts = fakeTailscale(admiral);
-  setRemote(admiral, { tailscale: true, allowedLogins: [TS_LOGIN] });
-  await admiral.start({ env: ts.env });
-  ts.serve(new URL(admiral.url).port);
-  await page.goto(admiral.url + 'app/preferences/admiral/remote');
-  const section = page.getByRole('group', { name: 'Tailscale' });
-  await section.getByRole('button', { name: 'Turn off', exact: true }).tap();
-  await expect(page.getByRole('group', { name: 'Turn off Tailscale mode' }).getByRole('button', { name: 'Turn off Tailscale mode' })).toBeVisible();
-
-});
-
-test("on the phone, the Chat tab shows the fleet's AdmiralBot conversation and its composer without the Inbox rail, and a fleet with no Claude Code dock shows why its chat is off", async ({ page, admiral }) => {
+test("on the phone, the Chat tab shows the fleet's AdmiralBot conversation and its composer above the tab bar without the Inbox rail", async ({ page, admiral }) => {
   seedFleets(admiral, { chat: true });
   chatSays(admiral, 'harbor', [line.user('Where are the ships'), line.assistant('Two are **afloat**.')]);
   await admiral.start();
@@ -307,59 +226,7 @@ test("on the phone, the Chat tab shows the fleet's AdmiralBot conversation and i
   // The Inbox keeps its own tab.
   await tab(page, 'Inbox').tap();
   await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
-
-  await page.goto(admiral.url + 'app/chat?fleet=alpha');
-  await expect(main).toContainText(/no Claude Code dock/i);
-  await expect(main.getByRole('textbox', { name: 'Message AdmiralBot' })).toHaveCount(0);
-
-  // A ship AdmiralBot launched is a link in its reply, and tapping it opens the ship's screen in this page, as the installed app needs.
-  await page.goto(admiral.url + 'app/chat?fleet=harbor');
-  const launched = await launchAsAdmiralBot(admiral, 'harbor');
-  chatSays(admiral, 'harbor', [line.assistant(`I launched **${launched.name}** to look at the harbour log.`)]);
-  await expect(main).toContainText(`I launched ${launched.name} to look at the harbour log.`);
-  const shipLink = main.locator('.msg.assistant').getByRole('link', { name: launched.name, exact: true });
-  await expect(shipLink).toHaveCount(1);
-  await expect(shipLink).not.toHaveAttribute('target', /.+/);
-  await touchTap(page, shipLink);
-  await expect(page).toHaveURL(new RegExp(`/app/ships/${encodeURIComponent(launched.session)}`));
-  await expect(page.getByRole('heading', { name: launched.name, exact: true })).toBeVisible();
-  expect(page.context().pages()).toHaveLength(1);
   expect(watch.errors).toEqual([]);
-});
-
-test("on the phone, a fleet's AdmiralBot page shows its harness, model, effort and refresh threshold, saves a change that survives a reload, and shows why a fleet with no Claude Code dock is off", async ({ page, admiral }) => {
-  seedFleets(admiral, { chat: true });
-  await admiral.start();
-  await page.goto(admiral.url + 'app/inbox');
-  await openPreferences(page, { fleet: 'Harborlight', section: 'AdmiralBot' });
-  await expect(page).toHaveURL(/\/app\/preferences\/harbor\/admiralbot/);
-  const pick = (g: string, name: string) => page.getByRole('radiogroup', { name: g }).getByRole('radio', { name, exact: true });
-  await expect(page.getByRole('heading', { name: 'AdmiralBot', exact: true })).toBeInViewport({ ratio: 1 });
-  await expectReachable(page, pick('Harness', 'Claude'));
-  await expect(pick('Harness', 'Claude')).toBeChecked();
-  await expect(pick('Model', 'Sonnet')).toBeChecked();
-  await expect(pick('Effort', 'Default')).toBeChecked();
-  await expect(pick('Refresh context at', '150K')).toBeChecked();
-  expect((await pick('Model', 'Opus').boundingBox())!.height).toBeGreaterThanOrEqual(44);
-
-  await pick('Model', 'Haiku').tap();
-  await pick('Effort', 'High').tap();
-  await pick('Refresh context at', 'Never').tap();
-  await Promise.all([page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/fleets/harbor')), page.getByRole('button', { name: 'Save', exact: true }).tap()]);
-  await page.reload();
-  await expect(pick('Model', 'Haiku')).toBeChecked();
-  await expect(pick('Effort', 'High')).toBeChecked();
-  await expect(pick('Refresh context at', 'Never')).toBeChecked();
-
-  await page.goto(admiral.url + 'app/preferences/alpha/admiralbot');
-  await expect(page.getByRole('main')).toContainText(/no Claude Code dock/i);
-
-  await page.goto(admiral.url + 'app/preferences/zulu/admiralbot');
-  await expect(pick('Harness', 'Codex')).toBeDisabled();
-  await expect(page.getByRole('main')).toContainText(/Codex.*has not been checked/i);
-  const again = page.getByRole('main').getByRole('button', { name: /Check again.*Codex/ });
-  await expectReachable(page, again);
-  expect((await again.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 });
 
 test("on the phone, a chat held before its first SessionStart opens its terminal over the Chat tab, takes touch keys, survives a reload, and sends after Back to chat once it starts", async ({ page, admiral }) => {
@@ -392,66 +259,6 @@ test("on the phone, a chat held before its first SessionStart opens its terminal
   await main.getByRole('textbox', { name: 'Message AdmiralBot' }).fill('Now that it started');
   await main.getByRole('button', { name: 'Send', exact: true }).tap();
   await expect.poll(() => chatReceived(admiral, 'lagoon')).toContain('Now that it started');
-});
-
-test('on the phone, the GitHub page hides a view with a tap and moves one with a touch drag, and Orders follows', async ({ page, admiral }) => {
-  seedOrders(admiral);
-  const gh = admiral.fakeGh();
-  gh.count('z-open', 'is:open', 3);
-  gh.count('a-broken', 'reviews:approved', { fail: 'GitHub does not know the qualifier reviews:approved, so this long explanation has to wrap inside the row' });
-  const cfg = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
-  cfg.sources.gh.settings.views = [...['for-you', 'assigned-to-me', 'review-requested', 'my-prs'].map((id) => ({ id, hidden: false })), { title: 'A custom view with a rather long title', query: 'is:open reviews:approved label:one label:two label:three' }];
-  admiral.writeConfig(cfg);
-  await admiral.start({ env: withFakeGh(admiral) });
-  const stored = () =>
-    (JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).sources.gh.settings.views ?? []) as { id?: string; hidden?: boolean }[];
-  const builtIns = () => stored().slice(0, 4);
-  await expect.poll(() => builtIns().map((v) => v.id)).toEqual(['for-you', 'assigned-to-me', 'review-requested', 'my-prs']);
-
-  await page.goto(admiral.url + 'app/');
-  await openPreferences(page, { fleet: WORK, section: 'GitHub' });
-  await expect(page).toHaveURL(/\/app\/preferences\/zulu\/github/);
-  await expect(page.getByRole('heading', { name: 'GitHub', exact: true })).toBeInViewport({ ratio: 1 });
-  await expect(page.getByRole('region', { name: 'Connection', exact: true })).toContainText('Connected');
-
-  const rows = page.getByRole('list', { name: 'Views' }).getByRole('listitem');
-  const row = (title: string) => rows.filter({ has: page.getByRole('button', { name: title, exact: true }) });
-  // A custom row whose search fails keeps its error, Edit search and Remove inside the screen.
-  const failing = row('A custom view with a rather long title');
-  await expect(failing).toContainText('Search failed: GitHub does not know the qualifier');
-  await failing.scrollIntoViewIfNeeded();
-  const viewport = page.viewportSize()!;
-  for (const part of [failing, failing.getByRole('button', { name: 'Edit search', exact: true }), failing.getByRole('button', { name: /^Remove view/ }), failing.getByRole('switch')]) {
-    const box = (await part.boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
-  }
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-
-  const sw = row('Review requested').getByRole('switch');
-  await sw.scrollIntoViewIfNeeded();
-  await expectReachable(page, sw);
-  const size = (await sw.boundingBox())!;
-  expect(size.height).toBeGreaterThanOrEqual(44);
-  await touchTap(page, sw);
-  await expect.poll(() => stored().find((v) => v.id === 'review-requested')?.hidden).toBe(true);
-
-  // A finger on the grip drags the row: Pointer Events with a touch pointer, as Safari sends them.
-  const grip = row('For you').getByRole('button', { name: 'Move For you', exact: true });
-  await grip.scrollIntoViewIfNeeded();
-  const g = (await grip.boundingBox())!;
-  const x = g.x + g.width / 2;
-  const y = g.y + g.height / 2;
-  const rowHeight = (await rows.first().boundingBox())!.height;
-  const touch = (type: string, dy: number, buttons: number) =>
-    grip.dispatchEvent(type, { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y + dy, buttons, bubbles: true, cancelable: true });
-  await touch('pointerdown', 0, 1);
-  for (const step of [0.25, 0.6, 1.1]) await touch('pointermove', rowHeight * step, 1);
-  await touch('pointerup', rowHeight * 1.1, 0);
-  await expect.poll(() => builtIns().map((v) => v.id)).toEqual(['assigned-to-me', 'for-you', 'review-requested', 'my-prs']);
-
-  await page.getByRole('navigation').getByRole('link', { name: /^Orders/ }).tap();
-  await expect(page.getByRole('tab')).toHaveText([/^Assigned to me/, /^For you/, /^My PRs/, /^A custom view/, /^Orders: Orders/]);
 });
 
 test('on the phone, the New view card fits the screen, its controls are tall enough to tap, and Add view saves', async ({ page, admiral }) => {

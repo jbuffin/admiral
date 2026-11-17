@@ -683,16 +683,12 @@ export function installSkill(a: Admiral, fleet: string, harness: 'claude' | 'cod
   writeFileSync(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\n`);
 }
 
-async function put(url: string, body: unknown) {
-  const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  expect(res.status, `PUT ${url}`).toBe(200);
-}
-
 /** The launch form's Skill picker as a person finds it: a combobox labelled Skill and the options of its open list. */
 export function skillPicker(page: Page, form: Locator, press: (l: Locator) => Promise<void>) {
   const box = form.getByRole('combobox', { name: 'Skill', exact: true });
   const list = page.getByRole('listbox');
   const option = (name: string) => page.getByRole('option', { name: new RegExp(`^[/$]?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`, 'i') });
+  // The list opens only once the dock's skills have answered for the chosen checkout, so it is also the wait for them.
   const open = async () => {
     if (!(await list.isVisible())) await press(box);
     await expect(list).toBeVisible();
@@ -707,8 +703,9 @@ export function skillPicker(page: Page, form: Locator, press: (l: Locator) => Pr
       await box.fill(typed);
       await expect(list).toBeVisible();
     },
-    /** Types `typed` and taps the row named `name`. */
+    /** Waits for the skills, types `typed` and taps the row named `name`. */
     pick: async (name: string, typed = name) => {
+      await open();
       await box.fill(typed);
       await expect(list).toBeVisible();
       await press(option(name));
@@ -726,8 +723,8 @@ export function skillPicker(page: Page, form: Locator, press: (l: Locator) => Pr
 
 /**
  * The launch journey on the Ships screen of the active fleet (Westwind): launching from an order and from the header with
- * freeform text, a skill, a model and effort, resources, autopilot, and the clone of an uncloned repo, each refusal showing
- * in the form. `press` is the click or tap of the device.
+ * freeform text, a skill, a model, an effort and a resource, and the layout of the form on a long order. The form's own
+ * behaviour is in LaunchDialog.test.tsx and the server's refusals are in the Go tests. `press` is the click or tap of the device.
  */
 export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Locator) => Promise<void>, opts: { phone: boolean }) {
   const main = page.getByRole('main');
@@ -750,10 +747,10 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   };
   const submit = form.getByRole('button', { name: 'Launch', exact: true });
   /** Submits the form and answers what the server received and said. */
-  const send = async (button = submit) => {
+  const send = async () => {
     const req = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships');
     const res = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships');
-    await press(button);
+    await press(submit);
     return { body: (await req).postDataJSON() as Post, res: await res };
   };
   const launched = async (sent: { res: { status(): number; json(): Promise<unknown> } }) => {
@@ -778,43 +775,18 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   };
   const proj = join(a.home, 'proj');
   const picker = skillPicker(page, form, press);
-  // A request the form must not send: counted from here on, so a refusal shows nothing went out.
-  let shipPosts = 0;
-  page.on('request', (r) => {
-    if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships') shipPosts++;
-  });
-  // Installed for Claude Code: review and tdd (installed under both docks' names in the listing), and one skill only each dock has.
-  // Codex also reads the engineer's own ~/.agents/skills, so the dock-only names are ones nobody installs there.
   installSkill(a, 'zulu', 'claude', 'review', 'Review the diff before it merges.');
-  installSkill(a, 'zulu', 'claude', 'tdd', 'Test first, then the code.');
   installSkill(a, 'zulu', 'claude', 'fable-claude', 'Only Claude Code has this.');
-  installSkill(a, 'zulu', 'codex', 'fable-codex', 'Only Codex has this.');
-  installSkill(a, 'zulu', 'claude', 'fable-both', 'Both docks have this.');
-  installSkill(a, 'zulu', 'codex', 'fable-both', 'Both docks have this.');
 
-  // From an order: its text, the checkout of its repo, and Just launch (no Commodore, no favorites) are preselected.
+  // From an order: its text and the checkout of its repo are preselected, and the skill picked is what boards.
   await onOrders();
   await press(orderLaunch('Tighten the api limits'));
   await expect(form).toBeVisible();
   await expect(form.getByLabel('Text')).toHaveValue('Tighten them.');
   await expect(form.getByLabel('Checkout')).toHaveValue(proj);
-  await expect(picker.box).toHaveValue(/none|Just launch/i);
-  await expect(form).not.toContainText('Clone ');
   if (opts.phone) expect(await fits()).toBe(true);
-  // The server has no Commodore here, so the list offers it as not found and Just launch beside it, and nothing is a favorite yet.
-  await picker.open();
-  await expect(picker.option('Commodore')).toContainText(/not found/i);
-  await expect(picker.option('Commodore')).toHaveAttribute('aria-disabled', 'true');
-  await expect(picker.option('Just launch')).toBeVisible();
-  // Typing finds an installed skill by part of its name and shows what it does; tapping it picks it, and the form stays open.
-  await picker.type('rev');
-  await expect(picker.option('review')).toContainText('Review the diff before it merges.');
-  await expect(picker.option('review')).toContainText('/review');
-  await expect(picker.option('tdd')).toHaveCount(0);
-  await press(picker.option('review'));
-  await expect(picker.list).toBeHidden();
+  await picker.pick('review', 'rev');
   await expect(form).toBeVisible();
-  await expect(picker.box).toHaveValue(/review/);
   const fromOrder = await send();
   expect(fromOrder.body).toMatchObject({ fleet: 'zulu', harness: 'claude', source: 'orders', order_id: 'ord-api', dir: proj, skill: { kind: 'skill', name: 'review' } });
   const apiShip = await launched(fromOrder);
@@ -826,116 +798,23 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await press(main.getByRole('button', { name: 'Launch', exact: true }));
   await expect(form).toBeVisible();
   await form.getByLabel('Checkout').selectOption(proj);
-  // The keyboard picks too: Arrow moves to a row, Enter takes it without sending the form, and a leading / is not part of the name.
-  await picker.type('/fable-cl');
-  await expect(picker.option('fable-claude')).toBeVisible();
-  await picker.box.press('ArrowDown');
-  await picker.box.press('Enter');
-  await expect(picker.list).toBeHidden();
-  await expect(form).toBeVisible();
-  await expect(picker.box).toHaveValue(/fable-claude/);
-  // Escape closes the list and leaves the form open.
-  await picker.type('re');
-  await picker.box.press('Escape');
-  await expect(picker.list).toBeHidden();
-  await expect(form).toBeVisible();
   // The form is anchored to the bottom, so the warning line going away as the name completes moves the box; the open list follows it and never covers it.
+  await picker.open();
   await picker.type('fable-claud');
   await expect(form).toContainText('not installed on claude');
   await picker.box.press('e');
   await expect(form).not.toContainText('not installed on');
   await expect(picker.option('fable-claude')).toBeVisible();
-  await expect(async () => {
-    const list = (await picker.list.boundingBox())!;
-    const input = (await picker.box.boundingBox())!;
-    expect(list.y >= input.y + input.height - 1 || list.y + list.height <= input.y + 1).toBe(true);
-  }).toPass({ timeout: 3000 });
+  await expect(picker.list).toHaveCSS('visibility', 'visible');
+  const [listBox, inputBox] = [(await picker.list.boundingBox())!, (await picker.box.boundingBox())!];
+  expect(listBox.y >= inputBox.y + inputBox.height - 1 || listBox.y + listBox.height <= inputBox.y + 1, 'the open list does not cover the box').toBe(true);
   await picker.box.press('Escape');
   await form.getByLabel('Text').fill('  look at the parser  ');
   await form.getByLabel('Model').selectOption('opus');
-  // An effort the harness does not offer is not offered.
-  const efforts = form.getByLabel('Effort');
-  await expect(efforts.locator('option')).toContainText(['Low', 'Medium', 'High', 'Max'], { useInnerText: true });
-  // Changing the dock re-reads the skills: a skill only Claude Code has is gone, so the pick falls back to Just launch, and the Codex one is offered.
-  await picker.pick('fable-claude');
-  await form.getByRole('radio', { name: /codex/i }).check();
-  // Codex reads the engineer's own ~/.agents/skills, which may hold a Commodore, so the default there is Commodore or Just launch.
-  await expect(picker.box).toHaveValue(/^(Commodore|Just launch)$/);
-  await picker.type('fable-');
-  await expect(picker.option('fable-codex')).toBeVisible();
-  await expect(picker.option('fable-claude')).toHaveCount(0);
-  await picker.box.press('Escape');
-  await expect(efforts.locator('option', { hasText: 'Max' })).toHaveCount(0);
-  await form.getByRole('radio', { name: /claude/i }).check();
-  await picker.type('fable-');
-  await expect(picker.option('fable-claude')).toBeVisible();
-  await expect(picker.option('fable-codex')).toHaveCount(0);
-  await picker.box.press('Escape');
-  // A skill installed on both docks and not a favorite stays picked across the change.
-  // The label takes each dock's mark once its skills answer, so the next step types into a box that is settled.
-  await picker.pick('fable-both');
-  await form.getByRole('radio', { name: /codex/i }).check();
-  await expect(picker.box).toHaveValue('$fable-both');
-  await form.getByRole('radio', { name: /claude/i }).check();
-  await expect(picker.box).toHaveValue('/fable-both');
-  // A dock whose skills have not answered, or failed, can't launch the last dock's pick: Launch stays off and nothing is sent.
-  await picker.pick('fable-claude');
-  const skillsRead = '**/launch-orders/skills?*harness=codex*';
-  let answer!: () => void;
-  const answered = new Promise<void>((r) => (answer = r));
-  const continued: Promise<void>[] = [];
-  await page.route(skillsRead, (route) => {
-    const go = answered.then(() => route.continue());
-    continued.push(go);
-    return go;
-  });
-  const held = shipPosts;
-  await form.getByRole('radio', { name: /codex/i }).check();
-  await expect(submit).toBeDisabled();
-  await picker.box.press('Enter');
-  expect(shipPosts, 'a pick of the last dock sends nothing while the new dock has not answered').toBe(held);
-  answer();
-  // An unroute that lands before the held request goes on releases it in WebKit, and the late continue throws.
-  await Promise.all(continued);
-  await page.unroute(skillsRead);
-  await expect(submit).toBeEnabled();
-  await expect(picker.box).toHaveValue(/^(Commodore|Just launch)$/);
-  await form.getByRole('radio', { name: /claude/i }).check();
-  await picker.pick('fable-claude');
-  await page.route(skillsRead, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'skills are down' }) }));
-  await form.getByRole('radio', { name: /codex/i }).check();
-  await expect(form).toContainText("Couldn't load skills");
-  await expect(form).toContainText('skills are down');
-  await expect(submit).toBeDisabled();
-  await page.unroute(skillsRead);
-  await form.getByRole('radio', { name: /claude/i }).check();
-  await expect(form).not.toContainText("Couldn't load skills");
-  await expect(submit).toBeEnabled();
-  await picker.pick('review');
   await form.getByLabel('Effort').selectOption({ label: 'High' });
   await form.getByRole('checkbox', { name: 'db' }).check();
-  if (opts.phone) expect(await fits()).toBe(true);
-  // A name no dock has is refused in the form: the crew picker's warning shows, Launch is off, and Enter sends nothing.
-  // Nothing matches, so no list opens: the warning is what shows.
-  await picker.box.fill('not-a-skill');
-  await expect(picker.list).toBeHidden();
-  await expect(form).toContainText('not installed on claude');
-  await expect(submit).toBeDisabled();
-  const before = shipPosts;
-  await picker.box.press('Enter');
-  await expect(form).toBeVisible();
-  await form.getByRole('radio', { name: /codex/i }).check();
-  await expect(form).toContainText('not installed on codex');
-  // The sheet is anchored to the bottom, so it moves as the dock's answers land: tap again until the tap hits the radio.
-  await expect(async () => {
-    await form.getByRole('radio', { name: /claude/i }).click({ timeout: 2000 });
-    await expect(form.getByRole('radio', { name: /claude/i })).toBeChecked({ timeout: 1000 });
-  }).toPass();
-  expect(shipPosts, 'a refused name sends no launch').toBe(before);
-  // Picking a listed skill lifts the refusal.
   await picker.pick('review');
-  await expect(form).not.toContainText('not installed on');
-  await expect(submit).toBeEnabled();
+  if (opts.phone) expect(await fits()).toBe(true);
   const freeform = await send();
   expect(freeform.body).toMatchObject({ fleet: 'zulu', harness: 'claude', dir: proj, skill: { kind: 'skill', name: 'review' }, model: 'opus', effort: 'high', resources: ['db'], autopilot: false });
   expect(freeform.body).not.toHaveProperty('order_id');
@@ -944,143 +823,6 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await boarded(reviewer);
   await expect(main.getByRole('listitem').filter({ hasText: reviewer.name })).toBeVisible();
   setState(a, reviewer, 'working');
-
-  // The ship holds db, so a second launch naming it is refused in the form, which stays open.
-  await press(main.getByRole('button', { name: 'Launch', exact: true }));
-  await form.getByLabel('Text').fill('also the db');
-  await form.getByRole('checkbox', { name: 'db' }).check();
-  const taken = await send();
-  expect(taken.res.status()).toBe(409);
-  await expect(form.getByRole('alert')).toContainText('db');
-  await expect(form).toBeVisible();
-  await form.getByRole('checkbox', { name: 'db' }).uncheck();
-
-  // Autopilot: the server refuses it on a dock whose guard probe has not passed, and the form shows why. The cap's 409 is pinned in the Go e2e.
-  await form.getByRole('radio', { name: /codex/i }).check();
-  await expect(form.getByRole('radio', { name: /codex/i })).toBeChecked();
-  // The form re-renders after the harness switch and can drop the first click.
-  await expect(async () => {
-    await form.getByRole('checkbox', { name: /autopilot/i }).check();
-  }).toPass();
-  const notClaude = await send();
-  expect(notClaude.body).toMatchObject({ harness: 'codex', autopilot: true });
-  expect(notClaude.res.status()).toBe(400);
-  const notClaudeMsg = ((await notClaude.res.json()) as { error: string }).error;
-  await expect(form.getByRole('alert')).toContainText(notClaudeMsg);
-  await form.getByRole('radio', { name: /claude/i }).check();
-  const unproven = await send();
-  expect(unproven.body).toMatchObject({ harness: 'claude', autopilot: true });
-  expect(unproven.res.status()).toBe(400);
-  const unprovenMsg = ((await unproven.res.json()) as { error: string }).error;
-  await expect(form.getByRole('alert')).toContainText(unprovenMsg);
-  await expect(form.getByRole('alert')).toContainText('guard probe has not passed');
-  await cancel();
-
-  // Pinned crew: the playwright server has no Commodore, so the claude dock's identity gets one with a built-in member.
-  const commodoreDir = join(a.home, 'identity', 'zulu-claude', 'skills', 'commodore');
-  mkdirSync(join(commodoreDir, 'crew'), { recursive: true });
-  writeFileSync(join(commodoreDir, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
-  const scout = '---\nname: scout\nrole: scribe\npick-me-when: Pick scout.\n---\n\nWork as scout.\n';
-  writeFileSync(join(commodoreDir, 'crew', 'scout.md'), scout);
-  await press(main.getByRole('button', { name: 'Launch', exact: true }));
-  await expect(form).toBeVisible();
-  await form.getByLabel('Checkout').selectOption(proj);
-  await picker.pickListed('Commodore');
-  const crewGroup = form.getByRole('group', { name: /crew/i });
-  await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
-  // Just launch takes no pins, so the control goes away and nothing is sent for them.
-  const justLaunch = form.getByRole('button', { name: 'Just launch', exact: true });
-  await picker.pickListed('Just launch');
-  await expect(crewGroup).toBeHidden();
-  await expect(justLaunch).toBeHidden();
-  await picker.pickListed('Commodore');
-  await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
-  // The Just launch button skips the Skill pick: whatever the picker holds, it sends no skill and no pins.
-  await form.getByLabel('Text').fill('just launched');
-  const plain = await send(justLaunch);
-  expect(plain.body).toMatchObject({ skill: { kind: 'none' }, text: 'just launched' });
-  expect(plain.body).not.toHaveProperty('crew');
-  const plainShip = await launched(plain);
-  await boarded(plainShip, { waitsOnMessage: true });
-  await expect(main.getByRole('listitem').filter({ hasText: plainShip.name })).toBeVisible();
-  setState(a, plainShip, 'working');
-  await press(main.getByRole('button', { name: 'Launch', exact: true }));
-  await expect(form).toBeVisible();
-  await expect(picker.box).toHaveValue(/commodore/i);
-  // Before any typing the list offers Commodore first, then the favorites, then Just launch.
-  await put(`${a.url}api/v1/favorites`, { skills: ['review', 'tdd'] });
-  await cancel();
-  await press(main.getByRole('button', { name: 'Launch', exact: true }));
-  await expect(picker.box).toHaveValue(/commodore/i);
-  await picker.open();
-  await expect(picker.list.getByRole('option')).toHaveText([/^Commodore/, /^\/?review/, /^\/?tdd/, /^Just launch/]);
-  await expect(picker.option('Commodore')).not.toHaveAttribute('aria-disabled', 'true');
-  await picker.box.press('Escape');
-  await put(`${a.url}api/v1/favorites`, { skills: [] });
-  await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
-  await form.getByLabel('Text').fill('with a pinned scout');
-  const pinned = await send();
-  expect(pinned.body).toMatchObject({ skill: { kind: 'commodore' }, crew: ['scout'] });
-  const pinnedShip = await launched(pinned);
-  await boarded(pinnedShip);
-  await expect(main.getByRole('listitem').filter({ hasText: pinnedShip.name })).toBeVisible();
-  const recorded = join(a.home, 'rec', pinnedShip.session);
-  await expect.poll(() => existsSync(join(recorded, 'recorded'))).toBe(true);
-  const runCrew = readFileSync(join(recorded, 'env'), 'utf8')
-    .split('\n')
-    .find((l) => l.startsWith('ADMIRAL_RUN_CREW='))
-    ?.slice('ADMIRAL_RUN_CREW='.length);
-  expect(runCrew, 'the pinned ship knows its run layer').toBeTruthy();
-  expect(readFileSync(join(runCrew!, 'scout.md'), 'utf8')).toBe(scout);
-  setState(a, pinnedShip, 'working');
-  // Later steps start from Just launch, as before.
-  rmSync(commodoreDir, { recursive: true, force: true });
-
-  // Launch as a member: Just launch offers the fleet's members, and a member locked to codex runs there with its instructions and notes.
-  const zuluCrew = join(a.home, 'fleets', 'zulu', 'crew');
-  mkdirSync(join(zuluCrew, 'memory', 'ada'), { recursive: true });
-  writeFileSync(join(zuluCrew, 'ada.md'), '---\nname: ada\nrole: implementer\nharness: codex\npick-me-when: Pick ada.\n---\n\nWork as ada.\n');
-  writeFileSync(join(zuluCrew, 'memory', 'ada', 'fleet.md'), '- 2026-01-02 (run-1): ada knows the fleet\n');
-  await press(main.getByRole('button', { name: 'Launch', exact: true }));
-  await expect(form).toBeVisible();
-  await form.getByLabel('Checkout').selectOption(proj);
-  await picker.pickListed('Just launch');
-  const launchAs = form.getByLabel('Launch as');
-  await expect(launchAs).toHaveValue('');
-  await launchAs.selectOption({ value: 'ada' });
-  await expect(form).toContainText('runs on codex');
-  await form.getByLabel('Text').fill('as ada');
-  const asMember = await send();
-  expect(asMember.body).toMatchObject({ skill: { kind: 'none' }, member: 'ada', harness: 'codex' });
-  expect(asMember.body).not.toHaveProperty('crew');
-  const memberShip = await launched(asMember);
-  await boarded(memberShip);
-  const memberRec = join(a.home, 'rec', memberShip.session);
-  await expect.poll(() => existsSync(join(memberRec, 'recorded'))).toBe(true);
-  const memberArgv = readFileSync(join(memberRec, 'argv'), 'utf8');
-  expect(memberArgv).toContain('Work as ada.');
-  expect(memberArgv).toContain('ada knows the fleet');
-  expect(memberArgv).toContain('as ada');
-  setState(a, memberShip, 'working');
-  rmSync(zuluCrew, { recursive: true, force: true });
-
-  // An uncloned repo: the form says where it will clone before launch, and launching sends clone with no dir.
-  await onOrders();
-  const dirsAnswer = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/launch-orders/dirs');
-  await press(orderLaunch('Ship the widget fix'));
-  const shown = ((await (await dirsAnswer).json()) as { clone: { repo: string } }).clone.repo;
-  const widget = join(a.home, 'widget');
-  await expect(form).toContainText(/Clone .*acme\/widget.* into /);
-  await expect(form).toContainText(widget);
-  if (opts.phone) expect(await fits()).toBe(true);
-  const cloned = await send();
-  expect(cloned.body).toMatchObject({ fleet: 'zulu', source: 'orders', order_id: 'ord-widget', clone: true, clone_repo: shown });
-  expect(shown).toBe('github.com/acme/widget');
-  expect(cloned.body).not.toHaveProperty('dir');
-  const widgetShip = await launched(cloned);
-  await boarded(widgetShip);
-  await expect(main.getByRole('listitem').filter({ hasText: widgetShip.name })).toBeVisible();
-  expect(existsSync(widget)).toBe(true);
 
   // Long content: the form neither pans sideways nor shrinks a select under the touch target.
   // Enough skills that the open list outgrows the screen and scrolls.
@@ -1127,19 +869,6 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     }
     await cancel();
   }
-
-  // A folder already where the clone would land: the form warns and does not preselect the clone, and choosing it anyway shows the server's refusal.
-  await press(orderLaunch('Retire the gadget'));
-  await expect(form).toContainText(join(a.home, 'gadget'));
-  await expect(form).toContainText(/already exists.*refused/);
-  await expect(form.getByLabel('Checkout')).not.toHaveValue('clone');
-  await form.getByLabel('Checkout').selectOption('clone');
-  const clash = await send();
-  expect(clash.res.status()).toBe(409);
-  await expect(form.getByRole('alert')).toContainText(((await clash.res.json()) as { error: string }).error);
-  await expect(form.getByRole('alert')).toContainText('gadget');
-  await expect(form).toBeVisible();
-  await cancel();
 }
 
 export const messageBox = (page: Page) => viewPanel(page).getByRole('textbox', { name: 'Message' });

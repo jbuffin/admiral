@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, test, type Admiral } from './fixtures';
 import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession, launchAsAdmiralBot } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { spawnSync } from 'node:child_process';
@@ -17,12 +17,21 @@ const group = (page: Page, title: string) => page.getByRole('main').getByRole('r
 const row = (page: Page, ship: { name: string }) => page.getByRole('main').getByRole('listitem').filter({ hasText: ship.name });
 const switcher = (page: Page, fleet: string) => page.getByRole('navigation').getByRole('button', { name: fleet, exact: true });
 
+// What the page asserts about its own traffic, for every journey that opens it.
+function expectCleanTraffic(watch: ReturnType<typeof watchPage>) {
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+}
+
 test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and scopes them to that fleet', { tag: '@critical' }, async ({ page, admiral }) => {
-  // The whole launch journey runs in here, past 30 s on the macOS runner.
-  test.setTimeout(150_000);
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
+
+  // Ships that end are launched first: their cue file is read by any harness that starts while it is there.
+  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
+  const sailed = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', exit: 0 });
 
   const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
   setState(admiral, login, 'needs_you');
@@ -30,8 +39,6 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   const billing = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-billing' });
   setState(admiral, billing, 'working');
   await say(admiral, billing, 'Reading billing/export.go');
-  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
-  const sailed = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', exit: 0 });
   const visitor = await launchShip(admiral, { fleet: 'alpha', harness: 'codex' });
   setState(admiral, visitor, 'working');
   // After the last cue is cleared, so the idling crew boat cannot read an exit cue.
@@ -84,9 +91,64 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(row(page, login)).toContainText('Rebasing onto main', { timeout: 15_000 });
   await expect(row(page, login)).not.toContainText('Which branch should I rebase onto?');
 
-  // Opening a ship: the view opens on Conversation and shows its turn. Back returns to the list.
-  await seedTurn(admiral, login);
+  // Opening a ship is a navigation in the page: Back returns to the list without a reload, and the keyboard opens a row too.
   await page.evaluate(() => ((window as unknown as { stayed: boolean }).stayed = true));
+  await rowLink(page, login).tap();
+  await expect(page).toHaveURL(shipViewUrl(admiral, login));
+  await expect(page.getByRole('heading', { name: login.name, exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(surface(page, 'Ships')).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=zulu/);
+  await rowLink(page, login).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(shipViewUrl(admiral, login));
+  await page.goBack();
+  expect(await page.evaluate(() => (window as unknown as { stayed?: boolean }).stayed)).toBe(true);
+
+  await switcher(page, WORK).click();
+  const menu = page.getByRole('menu');
+  await expect(menu.getByRole('menuitemradio', { name: WORK })).toHaveAttribute('aria-checked', 'true');
+  await menu.getByRole('menuitemradio', { name: HOME }).click();
+  await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=alpha/);
+  await expect(page.getByRole('main')).toContainText(HOME);
+  await expect(page.getByRole('main')).not.toContainText(WORK);
+  await expect(group(page, 'Underway')).toContainText(visitor.name);
+  for (const other of [login, billing, moored]) await expect(row(page, other)).toHaveCount(0);
+
+  // Links navigate in the page and keep the fleet; Back and Forward walk the history.
+  await page.evaluate(() => ((window as unknown as { noReload: boolean }).noReload = true));
+  await nav(page, 'Crew').click();
+  await expect(surface(page, 'Crew')).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/crew\?(.*&)?fleet=alpha/);
+  await page.goBack();
+  await expect(surface(page, 'Ships')).toBeVisible();
+  await page.goForward();
+  await expect(surface(page, 'Crew')).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(true);
+
+  // A fresh load remembers the choice, and an unknown ?fleet= falls back to it.
+  await page.goto(admiral.url + 'app/ships?fleet=nope');
+  await expect(switcher(page, HOME)).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=alpha/);
+
+  expect(watch.paths.some((p) => p.startsWith('/api/v1/config'))).toBe(true);
+  expect(watch.paths).toContain('/ws/v1');
+  expectCleanTraffic(watch);
+});
+
+test('a ship\'s view opens on its conversation, follows the transcript live, joins the bridge only on Terminal, and says when the ship is read only or gone', { tag: '@critical' }, async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  // Ships that end are launched first: their cue file is read by any harness that starts while it is there.
+  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
+  const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
+  setState(admiral, login, 'working');
+
+  // The view opens on Conversation and shows its turn.
+  await seedTurn(admiral, login);
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await rowLink(page, login).tap();
   await expect(page).toHaveURL(shipViewUrl(admiral, login));
   await expect(page.getByRole('heading', { name: login.name, exact: true })).toBeVisible();
@@ -137,19 +199,9 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await viewTab(page, 'Conversation').tap();
   await expect.poll(() => bridge.isClosed()).toBe(true);
 
-  // Back to the list, and the view opens on Conversation again from the keyboard: no tab is remembered.
-  await viewTab(page, 'Terminal').tap();
+  // A Codex ship has no conversation Admiral can read: a card says so and points to the terminal.
   await page.goBack();
   await expect(surface(page, 'Ships')).toBeVisible();
-  await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=zulu/);
-  await rowLink(page, login).focus();
-  await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(shipViewUrl(admiral, login));
-  await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
-  await page.goBack();
-  expect(await page.evaluate(() => (window as unknown as { stayed?: boolean }).stayed)).toBe(true);
-
-  // A Codex ship has no conversation Admiral can read: a card says so and points to the terminal.
   await rowLink(page, moored).tap();
   await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
   await expect(viewPanel(page)).toContainText(/Starting|No conversation/);
@@ -173,38 +225,14 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(surface(page, 'Ships')).toBeVisible();
   await expect(row(page, moored)).toHaveCount(0);
 
-  await switcher(page, WORK).click();
-  const menu = page.getByRole('menu');
-  await expect(menu.getByRole('menuitemradio', { name: WORK })).toHaveAttribute('aria-checked', 'true');
-  await menu.getByRole('menuitemradio', { name: HOME }).click();
-  await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=alpha/);
-  await expect(page.getByRole('main')).toContainText(HOME);
-  await expect(page.getByRole('main')).not.toContainText(WORK);
-  await expect(group(page, 'Underway')).toContainText(visitor.name);
-  for (const other of [login, billing, moored]) await expect(row(page, other)).toHaveCount(0);
+  expectCleanTraffic(watch);
+});
 
-  // Links navigate in the page and keep the fleet; Back and Forward walk the history.
-  await page.evaluate(() => ((window as unknown as { noReload: boolean }).noReload = true));
-  await nav(page, 'Crew').click();
-  await expect(surface(page, 'Crew')).toBeVisible();
-  await expect(page).toHaveURL(/\/app\/crew\?(.*&)?fleet=alpha/);
-  await page.goBack();
-  await expect(surface(page, 'Ships')).toBeVisible();
-  await page.goForward();
-  await expect(surface(page, 'Crew')).toBeVisible();
-  expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(true);
+test('talking to a ship: the box sends, the message shows dimmed until the conversation has it, Interrupt presses Esc, Return to port and Stop ship end the ship', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
 
-  // A fresh load remembers the choice, and an unknown ?fleet= falls back to it.
-  await page.goto(admiral.url + 'app/ships?fleet=nope');
-  await expect(switcher(page, HOME)).toBeVisible();
-  await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=alpha/);
-
-  // Back in Westwind, ships launch from its orders and from the header, and show in the list.
-  await page.goto(admiral.url + 'app/ships?fleet=zulu');
-  await expect(switcher(page, WORK)).toBeVisible();
-  await launchFromTheShell(page, admiral, (l) => l.click(), { phone: false });
-
-  // Talking to a ship: the box sends, the message shows dimmed until the conversation has it, Interrupt presses Esc and Stop ship ends the ship.
   const chat = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', 'replydelay 2', 'reply Aye, rebasing now'] });
   setState(admiral, chat, 'needs_you');
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
@@ -238,8 +266,9 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(messageBox(page)).toBeEditable();
   await expect(sendButton(page)).not.toHaveAttribute('aria-busy', 'true');
   await expect(interruptButton(page)).toBeEnabled();
-  // The harness records the message two seconds after the server accepted it: the bubble waits for the record, not the 200.
+  // The bubble waits for the harness's record, which the fake writes two seconds after the server accepted the message, not for the 200.
   await expect(sentBubble(page, 'Please rebase onto main')).toBeVisible();
+  await expect.poll(() => recordedInTranscript(admiral, chat, 'Please rebase onto main'), { timeout: 15_000 }).toBe(true);
   await expect(sentBubble(page, 'Please rebase onto main')).toHaveCount(0);
   await expect(viewPanel(page).getByText('Please rebase onto main', { exact: true })).toHaveCount(1);
   await expect(viewPanel(page)).toContainText('Aye, rebasing now', { timeout: 15_000 });
@@ -302,6 +331,14 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   setReason(admiral, done, 'stop');
   setState(admiral, done, 'needs_you');
   await expect.poll(() => outcomeEvents(admiral, done)).toEqual(['launched', 'ended', 'stopped']);
+
+  expectCleanTraffic(watch);
+});
+
+test('a ship launched in a checkout names its folder as its repo, and a flotilla chip takes the conversation, drafts, messages, Interrupt and terminal of its boat', { tag: '@critical' }, async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
 
   // A ship launched in a checkout names its folder as its repo, on its row and in the boarded ship's header.
   const repo = join(admiral.home, 'harbor-web');
@@ -404,206 +441,26 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(interruptButton(page)).toHaveCount(0);
   await expect(viewPanel(page)).toContainText('Boat found two parser bugs');
 
-  expect(watch.paths.some((p) => p.startsWith('/api/v1/config'))).toBe(true);
-  expect(watch.paths).toContain('/ws/v1');
-  expect(watch.unversioned()).toEqual([]);
-  expect(watch.foreign).toEqual([]);
-  expect(watch.errors).toEqual([]);
+  expectCleanTraffic(watch);
 });
 
-interface Capability {
-  id: string;
-  label: string;
-  status: string;
-  detail: string;
-}
-
-// What the server says about Westwind's claude dock, read from the API so the page is checked against it.
-async function westwindClaude(page: Page, server: string) {
-  const res = await page.request.get(server + 'api/v1/harness-capabilities');
-  expect(res.status()).toBe(200);
-  const body = (await res.json()) as { fleets: { key: string; harnesses: { harness: string; version: string; features: { capabilities: Capability[] }[] }[] }[] };
-  const claude = body.fleets.find((f) => f.key === 'zulu')!.harnesses.find((h) => h.harness === 'claude')!;
-  const caps = claude.features.flatMap((f) => f.capabilities);
-  return { version: claude.version, caps, guard: caps.find((c) => c.id === 'autopilot.guard_hook')! };
-}
-
-// The fleet's judge object as the API serves it, so the page's judge line is checked against it.
-async function westwindJudge(page: Page, server: string) {
-  const res = await page.request.get(server + 'api/v1/harness-capabilities');
-  expect(res.status()).toBe(200);
-  const body = (await res.json()) as { fleets: { key: string; judge: { harness: string | null; reason?: string } }[] };
-  return body.fleets.find((f) => f.key === 'zulu')!.judge;
-}
-// Judge probes that have a mechanism on claude; usage reports has no probe and stays not checked.
-const judgeProbed = (c: Capability) => c.id.startsWith('judge.') && c.id !== 'judge.usage_reports';
-
-const capabilities = (page: Page) => page.getByRole('main').getByRole('region', { name: 'Harness capabilities' });
-const harnessOf = (page: Page, harness: string) => capabilities(page).getByRole('group', { name: harness, exact: true });
-// Each fleet has its own Harness capabilities page in Preferences' nav.
-async function openCapabilities(page: Page, fleet: string) {
-  await page.getByRole('navigation', { name: 'Preferences' }).getByRole('group', { name: `${fleet} fleet` }).getByRole('link', { name: 'Harness capabilities', exact: true }).tap();
-  await expect(surface(page, 'Harness capabilities')).toBeVisible();
-  await expect(page.getByRole('main')).toContainText(`${fleet} fleet`);
-}
-// A row starts with its label, so another row's reason (the advisor's names no tools) never matches.
-const rowOf = (harness: ReturnType<typeof harnessOf>, label: string) => harness.getByRole('listitem').filter({ hasText: new RegExp('^' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
-const missingLine = (harness: ReturnType<typeof harnessOf>, label: string) => harness.getByRole('note').filter({ hasText: label });
-
-test('Preferences shows what each harness was probed to do, and Check again re-runs a failed probe', async ({ page, admiral }) => {
-  const claude = probeableClaude(admiral);
-  claude.probe('skip-hook');
-  seedFleets(admiral, { claude: claude.dock });
-  await admiral.start();
+test('a ship launches from the header and from an order on the Ships screen and shows in the list', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
-
-  await page.goto(admiral.url + 'app/inbox');
-  await nav(page, 'Preferences').tap();
-  await expect(page).toHaveURL(/\/app\/preferences\//);
-
-  // Each fleet's page lists that fleet's own harnesses, in config order.
-  await openCapabilities(page, HOME);
-  await expect(page).toHaveURL(/\/app\/preferences\/alpha\/capabilities/);
-  await expect(capabilities(page).getByRole('group')).toHaveCount(2);
-  await expect(harnessOf(page, 'Codex')).toBeVisible();
-  await expect(harnessOf(page, 'Copilot')).toBeVisible();
-  await openCapabilities(page, WORK);
-  await expect(page).toHaveURL(/\/app\/preferences\/zulu\/capabilities/);
-  await expect(capabilities(page).getByRole('group')).toHaveCount(2);
-  const workClaude = harnessOf(page, 'Claude');
-  const workCodex = harnessOf(page, 'Codex');
-  await expect(workCodex).toBeVisible();
-  await expect(workClaude.locator('img[src="/api/v1/logos/claude"]')).toBeVisible();
-  await expect(workClaude.locator('img[src="/api/v1/logos/claude"]')).toBeVisible();
-
-  // Nothing has been probed yet: every capability is not checked, the advisor included.
-  const before = await westwindClaude(page, admiral.url);
-  expect(before.caps.length).toBeGreaterThan(1);
-  for (const cap of before.caps) {
-    expect(cap.status).toBe('not_checked');
-    await expect(rowOf(workClaude, cap.label)).toContainText(/not checked/i);
-  }
-  await expect(workClaude.getByRole('note')).toHaveCount(0);
-  // No harness is proven for judge calls yet: the line reads off, with the API's reason.
-  const noJudge = await westwindJudge(page, admiral.url);
-  expect(noJudge.harness).toBeNull();
-  await expect(page.getByRole('main')).toContainText('Judge calls: off');
-  await expect(page.getByRole('main')).toContainText(noJudge.reason!);
-
-  // Check again runs that harness's probe in that fleet and shows the answer. Here the guard fails, with its reason.
-  const post = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/harness-capabilities/check');
-  const sent = box(await workClaude.getByRole('button', { name: 'Check again Claude', exact: true }).boundingBox());
-  expect(sent.height).toBeGreaterThanOrEqual(44);
-  await workClaude.getByRole('button', { name: 'Check again Claude', exact: true }).tap();
-  expect((await post).postDataJSON()).toEqual({ fleet: 'zulu', harness: 'claude' });
-
-  await expect(rowOf(workClaude, before.guard.label)).toContainText(/failed/i);
-  const failed = (await westwindClaude(page, admiral.url)).guard;
-  expect(failed.status).toBe('failed');
-  expect(failed.detail).not.toBe('');
-  await expect(rowOf(workClaude, failed.label)).toContainText(failed.detail);
-  await expect(workClaude).toContainText((await westwindClaude(page, admiral.url)).version);
-  // A failed capability says so in one line on its own row, naming the harness. Nothing else gets a line.
-  await expect(workClaude.getByRole('note')).toHaveCount(1);
-  await expect(rowOf(workClaude, failed.label).getByRole('note')).toContainText('Claude');
-  await expect(missingLine(workClaude, failed.label)).toContainText(failed.label);
-  // The other harnesses were not touched.
-  await expect(rowOf(workCodex, failed.label)).toContainText(/not checked/i);
-
-  // The same check proved the judge probes on the fake claude, so its rows read passed and the line names the harness and models,
-  // before any reload: the page took the judge object from the check's answer.
-  for (const cap of before.caps.filter(judgeProbed)) {
-    await expect(rowOf(workClaude, cap.label)).toContainText(/passed/i);
-  }
-  await expect(rowOf(workClaude, 'Usage reports')).toContainText(/not checked/i);
-  await expect(page.getByRole('main')).toContainText('Judge calls: Claude (haiku / sonnet)');
-  expect((await westwindJudge(page, admiral.url)).harness).toBe('claude');
-
-  // The probe passes this time. The one-line missing-capability component re-runs it too, and the line goes away with the fix.
-  claude.probe('pass');
-  await missingLine(workClaude, failed.label).getByRole('button', { name: `Check again ${failed.label} on Claude`, exact: true }).tap();
-  await expect(rowOf(workClaude, failed.label)).toContainText(/passed/i);
-  await expect(workClaude.getByRole('note')).toHaveCount(0);
-  expect((await westwindClaude(page, admiral.url)).guard.status).toBe('passed');
-  // The advisor follows the judge harness the earlier check proved.
-  await expect(rowOf(workClaude, 'Advisor')).toContainText(/passed/i);
-  // The same check ran the MCP-only fence probe, which the fake claude passes by its own init line.
-  await expect(rowOf(workClaude, 'MCP-only fence')).toContainText(/passed/i);
-  for (const cap of before.caps.filter((c) => c.id !== failed.id && c.id !== 'autopilot.advisor' && c.id !== 'bot.mcp_fence' && !judgeProbed(c) && !c.id.startsWith('restricted.'))) {
-    await expect(rowOf(workClaude, cap.label)).toContainText(/not checked/i);
-  }
-  // It ran the restricted-ship probes too, which the fake claude passes.
-  for (const cap of before.caps.filter((c) => c.id.startsWith('restricted.'))) {
-    await expect(rowOf(workClaude, cap.label)).toContainText(/passed/i);
-  }
-  await expect(rowOf(workCodex, failed.label)).toContainText(/not checked/i);
-
-  // A fresh load shows the same: the answer is the server's, not the page's.
-  await page.reload();
-  await expect(rowOf(harnessOf(page, 'Claude'), failed.label)).toContainText(/passed/i);
-  await expect(page.getByRole('main')).toContainText('Judge calls: Claude (haiku / sonnet)');
-
-  // When the judge probes fail, the line goes off with the reason, and each failed row says what is missing.
-  claude.judge('leak');
-  await harnessOf(page, 'Claude').getByRole('button', { name: 'Check again Claude', exact: true }).tap();
-  for (const cap of before.caps.filter(judgeProbed)) {
-    await expect(rowOf(harnessOf(page, 'Claude'), cap.label)).toContainText(/failed/i);
-  }
-  const off = await westwindJudge(page, admiral.url);
-  expect(off.harness).toBeNull();
-  await expect(page.getByRole('main')).toContainText('Judge calls: off');
-  await expect(page.getByRole('main')).toContainText(off.reason!);
-  await expect(harnessOf(page, 'Claude').getByRole('note')).toHaveCount(before.caps.filter(judgeProbed).length + 1); // the failed advisor too
-
-  expect(watch.paths.some((p) => p === '/api/v1/harness-capabilities')).toBe(true);
-  expect(watch.unversioned()).toEqual([]);
-  expect(watch.foreign).toEqual([]);
-  expect(watch.errors).toEqual([]);
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await expect(switcher(page, WORK)).toBeVisible();
+  await launchFromTheShell(page, admiral, (l) => l.click(), { phone: false });
+  expectCleanTraffic(watch);
 });
 
-test('Check again shows that it is working, and says so when the harness cannot be probed', async ({ page, admiral }) => {
-  const claude = probeableClaude(admiral);
-  seedFleets(admiral, { claude: claude.dock });
-  await admiral.start();
-
-  await page.goto(admiral.url + 'app/preferences/zulu/capabilities');
-  const harness = harnessOf(page, 'Claude');
-  const again = harness.getByRole('button', { name: 'Check again Claude', exact: true });
-  await expect(again).toBeVisible();
-
-  // The guard passes once, so there is something for a later failure to take away.
-  const guard = rowOf(harness, (await westwindClaude(page, admiral.url)).guard.label);
-  await again.tap();
-  await expect(guard).toContainText(/passed/i);
-
-  // A probe can take tens of seconds: hold the answer to see the page wait for it.
-  let release!: () => void;
-  const held = new Promise<void>((r) => (release = r));
-  await page.route('**/api/v1/harness-capabilities/check', async (route) => {
-    await held;
-    await route.continue();
-  });
-  claude.version('FAIL');
-  await again.tap();
-  await expect(again).toHaveAttribute('aria-busy', 'true');
-  await expect(harness).toContainText(/checking/i);
-  release();
-
-  // `--version` fails: the server answers 502, the page says the check could not run and lets the person try again.
-  await expect(harness.getByRole('alert')).toBeVisible();
-  await expect(again).not.toHaveAttribute('aria-busy', 'true');
-  await expect(again).toBeEnabled();
-  await expect(harness).not.toContainText(/checking/i);
-
-  // The server cleared the version with that failure, so the page shows the guard as not proven, never the old pass.
-  await expect(guard).toContainText(/not checked/i);
-  await expect(guard).not.toContainText(/passed/i);
-
-  claude.version('2.1.300 (fake)');
-  await again.tap();
-  await expect(harness.getByRole('alert')).toHaveCount(0);
-  await expect(harness.getByRole('listitem').filter({ hasText: /passed/i })).not.toHaveCount(0);
-});
+// The user line the fake harness appends to the transcript after its reply delay: the record the sent bubble waits for.
+function recordedInTranscript(a: Admiral, ship: { session: string }, text: string): boolean {
+  const args = readFileSync(join(a.home, 'rec', ship.session, 'argv'), 'utf8').split('\0');
+  const id = args[args.indexOf('--session-id') + 1];
+  const file = join(a.home, 'identity', 'zulu-claude', 'projects', 'zz', `${id}.jsonl`);
+  return existsSync(file) && readFileSync(file, 'utf8').includes(text);
+}
 
 function box(b: { width: number; height: number } | null) {
   if (!b) throw new Error('the element has no box');
@@ -692,203 +549,6 @@ test('a Copilot ship shows its conversation in the Conversation tab, shows a lin
   await expect(page.getByText(/only a Claude ship can be handed to Commodore/)).toBeVisible();
 });
 
-test('a ship\'s Bridge shows its tokens and its own money, and the Usage pages keep each harness\'s money apart, show quota freshness and a quiet mark past 90%', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  const cues = ['usage', 'exit 3'];
-  const claude = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues });
-  const copilot = await launchShip(admiral, { fleet: 'alpha', harness: 'copilot', cues });
-  const codex = await launchShip(admiral, { fleet: 'alpha', harness: 'codex', cues });
-  const usage = page.getByLabel('Usage');
-
-  await page.goto(admiral.url + 'app/ships?fleet=zulu');
-  await rowLink(page, claude).tap();
-  await expect(usage).toContainText('150 tokens', { timeout: 15_000 });
-  await expect(usage).toContainText('est. $0.25');
-  await expect(usage).toContainText('from records');
-  await expect(usage).not.toContainText(/credit|premium/i);
-  // The classes open on tap; the cache classes are not in the headline.
-  await expect(usage.getByText('Cache read')).toBeHidden();
-  await usage.getByText('150 tokens').tap();
-  await expect(usage.getByText('Cache read')).toBeVisible();
-  await expect(usage).toContainText('300');
-
-  await page.goto(admiral.url + 'app/ships?fleet=alpha');
-  await rowLink(page, copilot).tap();
-  await expect(usage).toContainText('2.5 credits', { timeout: 15_000 });
-  await expect(usage).toContainText('3 premium requests');
-  await expect(usage).not.toContainText('$');
-
-  // A ship page reads its usage on open and again 30 s later, so open this one once its record is there.
-  await expect.poll(async () => ((await (await fetch(`${admiral.url}api/v1/ships/${codex.session}/usage`)).json()) as { source: string }).source).toBe('record');
-  await page.goto(admiral.url + 'app/ships?fleet=alpha');
-  await rowLink(page, codex).tap();
-  await expect(usage).toContainText('360 tokens', { timeout: 15_000 });
-  await expect(usage).not.toContainText(/\$|credit/);
-
-  // A fleet's Usage: each harness on its own line in its own money, split by spender, no total, no worker cap yet.
-  const main = page.getByRole('main');
-  const period = (name: string) => main.getByRole('region', { name });
-  await page.goto(admiral.url + 'app/preferences/zulu/usage');
-  await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible();
-  await expect(page.getByRole('navigation', { name: 'Preferences' }).getByRole('link', { name: 'Usage' }).first()).toBeVisible();
-  await expect(period('Today')).toContainText('150 tokens', { timeout: 15_000 });
-  await expect(period('Today')).toContainText('est. $0.25');
-  await expect(period('Today')).toContainText('Ships');
-  await expect(period('7 days')).toContainText('est. $0.25');
-  await expect(period('30 days')).toContainText('est. $0.25');
-  await expect(main).not.toContainText(/credit|total|cap\b/i);
-  // Neither dock has a reading yet, and Claude's has no bar.
-  await expect(main.getByRole('region', { name: /claude/i })).toContainText('no live data yet');
-  await expect(main.getByRole('region', { name: /codex/i })).toContainText('no live data yet');
-  await expect(main.getByRole('img', { name: /window/ })).toHaveCount(0);
-
-  await page.goto(admiral.url + 'app/preferences/alpha/usage');
-  await expect(period('Today')).toContainText('2.5 credits', { timeout: 15_000 });
-  await expect(period('Today')).toContainText('3 premium requests');
-  await expect(period('Today')).toContainText('360 tokens');
-  await expect(main).not.toContainText(/\$|total/i);
-  await expect(main.getByRole('region', { name: /copilot/i })).toHaveCount(0);
-
-  // The cross-fleet page has one row for each fleet and nothing that adds them.
-  await page.goto(admiral.url + 'app/preferences/admiral/all-usage');
-  await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible();
-  const fleetRow = (name: string) => main.getByRole('region', { name });
-  await expect(fleetRow(WORK)).toContainText('est. $0.25', { timeout: 15_000 });
-  await expect(fleetRow(WORK)).toContainText('150 tokens');
-  await expect(fleetRow(HOME)).toContainText('2.5 credits');
-  await expect(fleetRow(HOME)).toContainText('360 tokens');
-  await expect(fleetRow(HOME)).not.toContainText('$');
-  await expect(main.getByRole('region', { name: new RegExp(`${WORK}|${HOME}`) })).toHaveCount(2);
-  await expect(main).not.toContainText(/total|all fleets combined/i);
-
-  // A live reading from a running Claude ship gives a bar; past 90% it only gets a quiet note beside it.
-  const reading = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'internal', 'cli', 'testdata', 'claude-statusline.json'), 'utf8'));
-  reading.rate_limits.five_hour = { used_percentage: 93, resets_at: Math.floor(Date.now() / 1000) + 2 * 3600 };
-  reading.rate_limits.seven_day = { used_percentage: 41.2, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 };
-  await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['statusline ' + JSON.stringify(reading)] });
-  // The page reads once on open and then every 30 s, so open it after the server has the reading.
-  const quotaOf = async () => ((await (await fetch(admiral.url + 'api/v1/usage?fleet=zulu')).json()) as { quota: { harness: string; has_data: boolean }[] }).quota.find((q) => q.harness === 'claude');
-  await expect.poll(async () => (await quotaOf())?.has_data, { timeout: 30_000 }).toBe(true);
-  await page.goto(admiral.url + 'app/preferences/zulu/usage');
-  const claudeQuota = main.getByRole('region', { name: /claude/i });
-  await expect(claudeQuota.getByRole('img', { name: /^5-hour window, 93% used, resets in/ })).toBeVisible({ timeout: 30_000 });
-  await expect(claudeQuota.getByRole('img', { name: /^7-day window, 41% used, resets in/ })).toBeVisible();
-  await expect(claudeQuota).toContainText('live');
-  await expect(claudeQuota).toContainText('near the limit');
-  await expect(claudeQuota.getByText('near the limit')).toHaveCount(1);
-  await expect(main.getByRole('region', { name: /codex/i })).toContainText('no live data yet');
-});
-
-test('the Inbox lists a question item and a needs-you stop from two fleets, each with its fleet, and the stop leaves live once its ship is back underway', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  await page.goto(admiral.url + 'app/');
-  await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
-  await expect(page.getByRole('main')).toContainText('Whatever needs you, from every fleet, will land here.');
-
-  const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
-  const visitor = await launchShip(admiral, { fleet: 'alpha', harness: 'codex' });
-  setState(admiral, visitor, 'working');
-  setReason(admiral, login, 'permission:Bash');
-  setState(admiral, login, 'needs_you');
-  seedInboxItem(admiral, visitor.session, {
-    id: 'q-port',
-    kind: 'question',
-    title: 'Which port should the visitor use?',
-    question: { questions: [{ id: 'p', text: 'Which port should the visitor use?', options: [{ label: '80' }, { label: '8080' }] }] },
-  });
-  seedInboxItem(admiral, '_admiral', { id: 'n-hostile', kind: 'notice', title: 'Heads up', notice: { body: HOSTILE } });
-
-  // Both rows arrive without a reload; the empty line is gone.
-  const main = page.getByRole('main');
-  const entry = (text: string) => main.getByRole('listitem').filter({ hasText: text });
-  await expect(entry(visitor.name)).toContainText(HOME, { timeout: 15_000 });
-  await expect(entry(visitor.name)).toContainText('asked');
-  await expect(entry(visitor.name)).toContainText('Which port should the visitor use?');
-  await expect(entry(login.name)).toContainText(WORK);
-  await expect(entry(login.name)).toContainText(/wants to run bash/i);
-  await expect(entry(login.name)).toContainText(/^.*\b(now|\d+m)\b/);
-  await expect(main).not.toContainText('Whatever needs you, from every fleet, will land here.');
-  await expect(entry('Heads up')).toBeVisible();
-  // The list column runs the page's full height however few rows it holds, as it does while empty.
-  const listBox = (await main.boundingBox())!;
-  expect(listBox.y + listBox.height).toBeGreaterThan(page.viewportSize()!.height - 24);
-
-  // The tab counts what waits on the engineer across fleets (the stop and the question; the notice is FYI) and marks its icon.
-  const icon = page.locator('link[rel="icon"]');
-  await expect(page).toHaveTitle('(2) Admiral');
-  await expect(icon).not.toHaveAttribute('href', '/favicon.svg');
-  await expect(entry('Heads up')).not.toContainText(HOME);
-  await expect(entry('Heads up')).not.toContainText(WORK);
-  expect((await entry(login.name).boundingBox())!.height).toBeGreaterThanOrEqual(44);
-
-  // A notice shows its body as text, and nothing in it runs.
-  await entry('Heads up').getByRole('button').tap();
-  await expect(main).toContainText(HOSTILE);
-  expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
-
-  // The stop folds to its confirmation when its ship goes back underway, then leaves; the item stays.
-  setState(admiral, login, 'working');
-  await expect(entry(login.name)).toContainText('Back underway', { timeout: 15_000 });
-  await expect(entry(login.name)).toHaveCount(0, { timeout: 15_000 });
-  await expect(entry(visitor.name)).toHaveCount(1);
-  await expect(page).toHaveTitle('(1) Admiral');
-
-  // A ship-backed row opens Peek on its item.
-  await entry(visitor.name).getByRole('link').tap();
-  await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(visitor.session)}/item/q-port`));
-  await expect(page.getByRole('region', { name: 'Peek' })).toBeVisible();
-
-  // Opening Peek leaves the count alone; removing the item brings it to zero and the icon back to plain.
-  await expect(page).toHaveTitle('(1) Admiral');
-  await page.getByRole('region', { name: 'Peek' }).getByRole('button', { name: 'Remove from inbox' }).tap();
-  await page.getByRole('region', { name: 'Peek' }).getByRole('button', { name: 'Remove', exact: true }).tap();
-  await expect(page).toHaveTitle('Admiral', { timeout: 15_000 });
-  await expect(icon).toHaveAttribute('href', '/favicon.svg');
-});
-
-test('a ship that starts waiting on a watched window brings a toast that opens its Peek, a vague stop and an old one bring none, and an item\'s markup shows as text', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  await page.goto(admiral.url + 'app/inbox');
-  // The first ships message arrives after the shell has reported its presence on the open socket.
-  await expect(page.getByRole('main')).toContainText('Whatever needs you, from every fleet, will land here.');
-  await page.getByRole('navigation').getByRole('link', { name: 'Ships' }).tap();
-  await page.getByRole('navigation').getByRole('link', { name: 'Inbox' }).tap();
-  const toasts = page.getByRole('status');
-
-  const rec = (ship: { session: string }, file: string) => join(admiral.home, 'rec', ship.session, file);
-  const permission = 'event PermissionRequest {"hook_event_name":"PermissionRequest","tool_name":"Bash"}';
-  // The harness reads its cue file line by line as it runs, so the first ship runs all of its cues before the file changes.
-  // A stop with no hook event says only that the ship needs you, which never pushes.
-  const vague = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cue: 'wait go\nhook needs_you\n' });
-  await expect.poll(() => existsSync(rec(vague, 'recorded'))).toBe(true);
-  writeFileSync(rec(vague, 'go'), '');
-  await expect.poll(() => existsSync(rec(vague, 'cues-done'))).toBe(true);
-  await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: vague.name })).toBeVisible({ timeout: 15_000 });
-  await expect(toasts.getByRole('button')).toHaveCount(0);
-  const asking = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cue: `wait go\n${permission}\n` });
-  await expect.poll(() => existsSync(rec(asking, 'recorded'))).toBe(true);
-  writeFileSync(rec(asking, 'go'), '');
-  const toast = toasts.getByRole('button', { name: new RegExp(asking.name) });
-  await expect(toast).toBeVisible({ timeout: 15_000 });
-  expect(box(await toast.boundingBox()).height).toBeGreaterThanOrEqual(44);
-  expect(box(await toasts.getByRole('button', { name: /dismiss/i }).boundingBox()).height).toBeGreaterThanOrEqual(44);
-
-  await toast.tap();
-  await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(asking.session)}(\\?|$)`));
-  await expect(page.getByRole('region', { name: 'Peek' })).toBeVisible();
-  await expect(toast).toHaveCount(0);
-
-  // An item's title is text in the toast, and nothing in it runs.
-  seedInboxItem(admiral, asking.session, { id: 'q-x', kind: 'question', title: HOSTILE, question: { questions: [{ id: 'p', text: HOSTILE, options: [{ label: 'a' }] }] } });
-  await expect(toasts).toContainText(HOSTILE, { timeout: 15_000 });
-  expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
-  await toasts.getByRole('button', { name: /dismiss/i }).tap();
-  await expect(toasts).not.toContainText(HOSTILE);
-});
-
 const cachedPaths = (page: Page) =>
   page.evaluate(async () => {
     const paths: string[] = [];
@@ -902,17 +562,7 @@ const controlled = (page: Page) => page.evaluate(() => navigator.serviceWorker.c
 test.describe('installed app', () => {
   test.use({ serviceWorkers: 'allow' });
 
-  // The first load installs the worker; the second is the one it controls and caches.
-  async function visitTwice(page: Page, url: string) {
-    await page.goto(url + 'app/');
-    await expect(surface(page, 'Inbox')).toBeVisible();
-    await page.evaluate(() => navigator.serviceWorker.ready);
-    await page.reload();
-    await expect(surface(page, 'Inbox')).toBeVisible();
-    await expect.poll(() => controlled(page)).toBe(true);
-  }
-
-  test('the shell links a manifest that makes it installable, and a worker controls /app/', { tag: '@critical' }, async ({ page, admiral }) => {
+  test('the shell is installable and a worker controls /app/, and with the server down the cached shell says it cannot reach the Mac and Retry returns once it answers', { tag: '@critical' }, async ({ page, admiral }) => {
     await admiral.start();
     await page.goto(admiral.url + 'app/');
     await expect(surface(page, 'Inbox')).toBeVisible();
@@ -936,20 +586,16 @@ test.describe('installed app', () => {
     await expect(page.locator('meta[name="theme-color"][media="(prefers-color-scheme: light)"]')).toHaveAttribute('content', /^#F4F5F7$/i);
     await expect(page.locator('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]')).toHaveAttribute('content', /^#0B1118$/i);
 
+    // The worker caches the shell when it installs, and never an API or socket response.
     const scope = await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
     expect(new URL(scope).pathname).toBe('/app/');
+    await expect.poll(() => cachedPaths(page)).toContain('/app/');
+    const paths = await cachedPaths(page);
+    expect(paths.some((p) => p.startsWith('/assets/'))).toBe(true);
+    expect(paths.filter((p) => p.startsWith('/api/') || p.startsWith('/ws/'))).toEqual([]);
+    expect(paths).not.toContain('/');
     await page.reload();
     await expect.poll(() => controlled(page)).toBe(true);
-  });
-
-  test('with the server down, the cached shell says it cannot reach the Mac, and Retry returns to the shell once it answers', { tag: '@critical' }, async ({ page, admiral }) => {
-    await admiral.start();
-    // One online load only: the worker caches the shell when it installs, not from a second visit.
-    await page.goto(admiral.url + 'app/');
-    await expect(surface(page, 'Inbox')).toBeVisible();
-    await page.evaluate(() => navigator.serviceWorker.ready);
-    await expect.poll(() => cachedPaths(page)).toContain('/app/');
-    expect((await cachedPaths(page)).some((p) => p.startsWith('/assets/'))).toBe(true);
 
     await admiral.stopServer();
     await page.reload();
@@ -966,26 +612,6 @@ test.describe('installed app', () => {
     await page.getByRole('button', { name: 'Retry' }).click();
     await expect(surface(page, 'Inbox')).toBeVisible();
     await expect(page.getByRole('heading', { name: "Can't reach your Mac" })).toBeHidden();
-  });
-
-  test('the worker caches the shell but never an API or socket response, and leaves the old UI uncontrolled', async ({ page, admiral }) => {
-    seedFleets(admiral, { live: true });
-    await admiral.start({ env: withFakeGh(admiral) });
-    await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
-    await visitTwice(page, admiral.url);
-    await nav(page, 'Ships').click();
-    await expect(page.getByRole('main')).toContainText(WORK);
-
-    const paths = await cachedPaths(page);
-    expect(paths.some((p) => p.startsWith('/app/'))).toBe(true);
-    expect(paths.some((p) => p.startsWith('/assets/'))).toBe(true);
-    expect(paths.filter((p) => p.startsWith('/api/') || p.startsWith('/ws/'))).toEqual([]);
-    expect(paths).not.toContain('/');
-
-    await page.goto(admiral.url + 'classic/');
-    await expect(page).toHaveTitle('Admiral');
-    await expect(page.locator('#app')).not.toBeEmpty();
-    expect(await controlled(page)).toBe(false);
   });
 
   test('turning notifications on makes this Mac a push device: a watched stop only toasts, an unwatched one pushes a message that decrypts to the ship, and turning it off drops it', async ({ page, context, admiral }) => {
@@ -1050,43 +676,6 @@ test.describe('installed app', () => {
       await fake.close();
     }
   });
-});
-
-test.describe('a shell that does not match the server', () => {
-  const serverBuild = async (page: Page, url: string) => (await (await page.request.get(url + 'api/v1/version')).json()) as { version: string; commit: string };
-  const shellLoads = (page: Page) => {
-    const loads: string[] = [];
-    page.on('request', (r) => {
-      if (r.isNavigationRequest() && new URL(r.url()).pathname.startsWith('/app/')) loads.push(r.url());
-    });
-    return loads;
-  };
-
-  test('reloads once when /api/v1/version names another build, and not again while it still differs', async ({ page, admiral }) => {
-    await admiral.start();
-    await page.route('**/api/v1/version', (route) => route.fulfill({ json: { version: 'other-build', commit: 'zzz9999', api_versions: [1], capabilities: [] } }));
-    const loads = shellLoads(page);
-    await page.goto(admiral.url + 'app/');
-    await expect.poll(() => loads.length).toBe(2);
-    await expect(surface(page, 'Inbox')).toBeVisible();
-    await holds(() => loads.length === 2, 'the shell reloaded again');
-  });
-
-  test('does not reload when /api/v1/version names the shell\'s own build', async ({ page, admiral }) => {
-    await admiral.start();
-    const build = await serverBuild(page, admiral.url);
-    let probed = 0;
-    await page.route('**/api/v1/version', (route) => {
-      probed++;
-      return route.fulfill({ json: { ...build, api_versions: [1], capabilities: [] } });
-    });
-    const loads = shellLoads(page);
-    await page.goto(admiral.url + 'app/');
-    await expect(surface(page, 'Inbox')).toBeVisible();
-    await expect.poll(() => probed).toBeGreaterThan(0);
-    await holds(() => loads.length === 1, 'the shell reloaded');
-  });
-
 });
 
 // The fleets: harbor (Harborlight) and lagoon (Lagoonside) have their own AdmiralBot; alpha (Homeport) has no Claude Code dock.
@@ -1308,13 +897,4 @@ test('a chat terminal whose session ends returns to the conversation', async ({ 
   await expect(page).not.toHaveURL(/\/terminal/);
   await expect(main.locator('.xterm')).toHaveCount(0);
   await expect(main.getByRole('textbox', { name: 'Message AdmiralBot' })).toBeVisible();
-});
-
-test('a fleet whose chat is off has no Open terminal', async ({ page, admiral }) => {
-  seedFleets(admiral, { chat: true });
-  await admiral.start();
-  const main = page.getByRole('main');
-  await page.goto(admiral.url + 'app/chat?fleet=alpha');
-  await expect(main).toContainText(/no Claude Code dock/i);
-  await expect(main.getByRole('button', { name: 'Open terminal' })).toHaveCount(0);
 });

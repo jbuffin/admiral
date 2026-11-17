@@ -209,17 +209,45 @@ func (g *githubConn) currentConn() connState {
 // maxCountQuery bounds a search sent for a count.
 const maxCountQuery = 1024
 
+// startGrace bounds how long a request waits for a source that a settings save restarted.
+const startGrace = 5 * time.Second
+
+// awaitStart holds a request that lands while the source restarts, because the page asks for counts right after its own save and a 409 there only logs a console error.
+func awaitStart(ctx context.Context, rn *runner) {
+	timeout := time.NewTimer(startGrace)
+	defer timeout.Stop()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		rn.mu.Lock()
+		starting := rn.state == StateStarting
+		rn.mu.Unlock()
+		if !starting {
+			return
+		}
+		select {
+		case <-tick.C:
+		case <-timeout.C:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 // githubSource finds a live GitHub source for a route, answering the refusal itself when there is none.
-func (s *Service) githubSource(w http.ResponseWriter, key string) (*runner, *githubConn, bool) {
+func (s *Service) githubSource(ctx context.Context, w http.ResponseWriter, key string) (*runner, *githubConn, bool) {
 	def, ok := s.Config.Current().Source(key)
+	live := s.Sup.runner(key)
 	switch {
-	case !ok || s.Sup.runner(key) == nil:
+	case !ok || live == nil:
 		writeError(w, http.StatusNotFound, "source "+key+" not found")
 		return nil, nil, false
 	case def.Plugin != builtinGitHub:
 		writeError(w, http.StatusBadRequest, "source "+key+" is not a GitHub source")
 		return nil, nil, false
 	}
+	awaitStart(ctx, live)
 	rn, p, fail := s.mutableFor(key, "refresh")
 	if fail != nil {
 		writeError(w, fail.Status, fail.Msg)
@@ -234,7 +262,7 @@ func (s *Service) githubSource(w http.ResponseWriter, key string) (*runner, *git
 }
 
 func (s *Service) serveConnectionCheck(w http.ResponseWriter, r *http.Request) {
-	rn, g, ok := s.githubSource(w, r.PathValue("key"))
+	rn, g, ok := s.githubSource(r.Context(), w, r.PathValue("key"))
 	if !ok {
 		return
 	}
@@ -255,7 +283,7 @@ func (s *Service) serveSearchCount(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	rn, g, ok := s.githubSource(w, r.PathValue("key"))
+	rn, g, ok := s.githubSource(r.Context(), w, r.PathValue("key"))
 	if !ok {
 		return
 	}

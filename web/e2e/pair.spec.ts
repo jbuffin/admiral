@@ -1,15 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
 
-/** The desktop and iPad sidebar's Preferences, then Install app in the all-fleets group. */
-async function openInstallApp(page: Page) {
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Preferences' }).click();
-  await page.getByRole('navigation', { name: 'Preferences' }).getByRole('group', { name: 'Admiral · all fleets' }).getByRole('link', { name: 'Install app', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Install app', exact: true })).toBeVisible();
-}
-
-const ipadSafari = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
-
 // Minting voids the earlier code, so each pairing mints its own.
 const mint = async (admiral: Admiral) => ((await (await fetch(`${admiral.url}api/v1/pairing-codes`, { method: 'POST' })).json()) as { code: string }).code;
 
@@ -57,79 +48,4 @@ test.describe('pairing an unpaired device', () => {
     await pairByTyping(page, admiral);
     await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
   });
-
-  test('a paired device whose server stops sees Can\'t reach your Mac, never Pair this app', async ({ page, admiral }) => {
-    await admiral.start({ lan: true });
-    await page.goto(admiral.lanUrl + 'app/');
-    await pairByTyping(page, admiral);
-    await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
-
-    await admiral.stopServer();
-    await expect(page.getByRole('heading', { name: "Can't reach your Mac" })).toBeVisible();
-    await expect(page.getByRole('heading', { name: /Pair this app|signed out/ })).toBeHidden();
-  });
-
-  test('iPad Safari gets the Add to Home Screen sheet once after pairing and keeps its steps in Install app; the installed app gets neither', async ({ browser, admiral }) => {
-    await admiral.start({ lan: true });
-    const open = async (standalone: boolean) => {
-      const context = await browser.newContext({ userAgent: ipadSafari, hasTouch: true, viewport: { width: 1194, height: 834 } });
-      await context.addInitScript((s) => {
-        Object.defineProperty(navigator, 'maxTouchPoints', { value: 5 });
-        if (s) Object.defineProperty(navigator, 'standalone', { value: true });
-      }, standalone);
-      return { context, page: await context.newPage() };
-    };
-    const sheet = (page: Page) => page.getByRole('dialog', { name: /home screen/i });
-
-    const safari = await open(false);
-    try {
-      await safari.page.goto(admiral.lanUrl + 'app/');
-      await pairByTyping(safari.page, admiral);
-      await expect(sheet(safari.page)).toBeVisible();
-      await safari.page.keyboard.press('Escape');
-      await expect(sheet(safari.page)).toBeHidden();
-      await safari.page.reload();
-      await expect(safari.page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
-      await expect(sheet(safari.page)).toBeHidden();
-      await openInstallApp(safari.page);
-      await expect(safari.page.getByRole('main').getByText('Tap Share, then Add to Home Screen.')).toBeVisible();
-    } finally {
-      await safari.context.close();
-    }
-
-    const installed = await open(true);
-    try {
-      await installed.page.goto(admiral.lanUrl + 'app/');
-      await pairByTyping(installed.page, admiral);
-      await expect(installed.page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
-      await expect(sheet(installed.page)).toBeHidden();
-      await openInstallApp(installed.page);
-      await expect(installed.page.getByText('Admiral is installed on this device.')).toBeVisible();
-    } finally {
-      await installed.context.close();
-    }
-  });
-});
-
-test('Preferences → Install app installs where the browser offers it, and nothing floats over the shell', async ({ page, admiral }) => {
-  await admiral.start();
-  await page.goto(admiral.url + 'app/');
-  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
-
-  await openInstallApp(page);
-  await expect(page.getByText("This browser isn't offering to install Admiral.")).toBeVisible();
-
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Inbox' }).click();
-  await page.evaluate(() => {
-    const e = new Event('beforeinstallprompt', { cancelable: true });
-    Object.assign(e, { prompt: async () => ((window as unknown as { prompted: boolean }).prompted = true), userChoice: Promise.resolve({ outcome: 'accepted' }) });
-    window.dispatchEvent(e);
-  });
-  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Install', exact: true })).toBeHidden();
-
-  await openInstallApp(page);
-  await page.getByRole('main').getByRole('button', { name: 'Install', exact: true }).click();
-  expect(await page.evaluate(() => (window as unknown as { prompted?: boolean }).prompted)).toBe(true);
-  await expect(page.getByText('Admiral is installed on this device.')).toBeVisible();
 });

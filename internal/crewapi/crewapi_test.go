@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -342,6 +344,28 @@ func TestPutRewritesTheFleetMemberAndGetShowsIt(t *testing.T) {
 	got := f.listed()["bosun"]
 	if got.PickMeWhen != "New pick." || got.Instructions != "Triage fast." || got.Model == nil || *got.Model != "opus" || got.Harness == nil || *got.Harness != "codex" {
 		t.Errorf("bosun = %+v, want the PUT's values", got)
+	}
+}
+
+func TestPutKeepsTheSkillsInTheOrderGivenAndWritesThemAsAYAMLList(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	f.fleetMember("bosun", "triager", "Pick.", "")
+
+	body := memberBody("triager", "Pick.")
+	body["skills"] = []string{"unslop", "my-repo-skill", "code-review"}
+	if status, out := f.put("bosun", body); status != 200 {
+		t.Fatalf("PUT: %d %s", status, out)
+	}
+	if got := f.listed()["bosun"].Skills; !reflect.DeepEqual(got, []string{"unslop", "my-repo-skill", "code-review"}) {
+		t.Errorf("skills = %v, want the PUT's order", got)
+	}
+	file, err := os.ReadFile(filepath.Join(f.crewDir(), "bosun.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`skills:\n  - "?unslop"?\n  - "?my-repo-skill"?\n  - "?code-review"?\n`).Match(file) {
+		t.Errorf("the member file does not list the skills in order:\n%s", file)
 	}
 }
 
