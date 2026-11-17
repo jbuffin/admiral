@@ -55,7 +55,8 @@ type Input struct {
 }
 
 // Node is one issue of the folded tree. A nested parent has Parent set and no
-// Status, Mode or Skill.
+// Status, Mode or Skill. The root has them too, so it can be launched by hand, but it is
+// outside Progress, Counts and Ready.
 type Node struct {
 	Number     int
 	Title      string
@@ -63,6 +64,7 @@ type Node struct {
 	Repo       string
 	Closed     bool
 	Parent     bool
+	Root       bool // the campaign's own issue
 	Unreadable int // sub-issues GitHub counts that couldn't be read, so the children shown may be incomplete
 	Status     Status
 	Blockers   []github.Blocker // the open blockers, for a blocked child
@@ -109,7 +111,7 @@ type builder struct {
 func (b *builder) fold(n *github.TreeNode, above []github.Blocker, parent *github.TreeNode, root bool) *Node {
 	out := &Node{Number: n.Number, Title: n.Title, URL: n.URL, Repo: n.Repo, Closed: n.Closed, Labels: append([]string{}, n.Labels...)}
 	if root || n.Parent || len(n.Children) > 0 {
-		out.Parent, out.Unreadable = true, n.Unreadable
+		out.Parent, out.Root, out.Unreadable = true, root, n.Unreadable
 		below := above
 		// The root's own blockers are about the campaign, not its children; a nested parent's still block everything under it.
 		if !n.Closed && !root {
@@ -118,13 +120,28 @@ func (b *builder) fold(n *github.TreeNode, above []github.Blocker, parent *githu
 		for _, ch := range n.Children {
 			out.Children = append(out.Children, b.fold(ch, below, n, false))
 		}
+		if root {
+			b.launchable(out, n, nil, parent)
+		}
 		return out
 	}
 	b.c.Progress.Total++
+	b.launchable(out, n, above, parent)
+	if out.Closed {
+		b.c.Progress.Closed++
+	}
+	b.c.Counts[out.Status]++
+	if out.Status == Ready {
+		b.c.Ready = append(b.c.Ready, out)
+	}
+	return out
+}
+
+// launchable works out out's status, mode and skill from n; the caller decides whether it counts.
+func (b *builder) launchable(out *Node, n *github.TreeNode, above []github.Blocker, parent *github.TreeNode) {
 	switch ship, held := b.in.Claims[n.URL]; {
 	case n.Closed:
 		out.Status = Done
-		b.c.Progress.Closed++
 	case held:
 		out.Status, out.Ship = Underway, ship
 	default:
@@ -136,19 +153,14 @@ func (b *builder) fold(n *github.TreeNode, above []github.Blocker, parent *githu
 			out.Status = Ready
 		}
 	}
-	b.c.Counts[out.Status]++
-	out.Mode, out.Skill = defaults(n, parent)
+	out.Mode, out.Skill = defaults(n, parent, out.Root)
 	out.DefaultMode, out.DefaultSkill = out.Mode, out.Skill
-	if o, ok := b.in.Overrides[n.URL]; ok {
+	if o, ok := b.in.Overrides[n.URL]; ok && !out.Root {
 		if o.Mode != "" {
 			out.Mode = o.Mode
 		}
 		out.Overridden = o.Mode != ""
 	}
-	if out.Status == Ready {
-		b.c.Ready = append(b.c.Ready, out)
-	}
-	return out
 }
 
 func openBlockers(bs []github.Blocker) []github.Blocker {
@@ -177,7 +189,7 @@ func mergeBlockers(own, inherited []github.Blocker) []github.Blocker {
 
 // defaults is ADR 0027's table. A wayfinder label wins over a triage label; a child matching no row
 // is With you with no skill, the choice that starts nothing unattended.
-func defaults(n, parent *github.TreeNode) (Mode, Skill) {
+func defaults(n, parent *github.TreeNode, root bool) (Mode, Skill) {
 	has := func(l string) bool {
 		for _, x := range n.Labels {
 			if x == l {
@@ -188,7 +200,10 @@ func defaults(n, parent *github.TreeNode) (Mode, Skill) {
 	}
 	wayfinder := Skill{Kind: "skill", Name: "wayfinder"}
 	withMap := wayfinder
-	withMap.Args = parent.URL + " " + n.URL
+	withMap.Args = n.URL
+	if !root {
+		withMap.Args = parent.URL + " " + n.URL
+	}
 	switch {
 	case has("wayfinder:grilling"), has("wayfinder:prototype"):
 		return WithYou, withMap

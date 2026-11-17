@@ -29,8 +29,8 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
   const id = campaignIdOf(page);
   await expect(main.getByRole('heading', { name: T.map })).toBeVisible();
-  // The title and the repo#number in the header both open the root issue on GitHub.
-  await expect(main.getByRole('heading', { name: T.map }).getByRole('link')).toHaveAttribute('href', issueUrl(MAP));
+  // The title opens the campaign's own sheet; the repo#number in the header still opens the root issue on GitHub.
+  await expect(main.getByRole('heading', { name: T.map }).getByRole('button')).toBeVisible();
   await expect(main.getByRole('link', { name: 'github.com/acme/widgets#20' })).toHaveAttribute('href', issueUrl(MAP));
   await expect(nav).toContainText(T.map);
   // Following launched nothing.
@@ -100,7 +100,7 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(form).toBeHidden();
   expect(launchPosts).toBe(1);
   // The ship runs the picked skill on the ticket, not the labels' wayfinder.
-  const shipsOf = async () => ((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: { session: string }[] }).ships;
+  const shipsOf = async () => ((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: { session: string; url?: string }[] }).ships;
   await expect.poll(async () => (await shipsOf()).length).toBe(1);
   const started = await shipsOf();
   const argv = join(admiral.home, 'rec', started[0]!.session, 'argv');
@@ -129,6 +129,14 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(form.getByRole('alert')).toContainText(holder);
   await expect(form).toBeVisible();
   await press(form.getByRole('button', { name: 'Cancel', exact: true }));
+
+  // The campaign's own issue launches like a child: tap its title, then Launch.
+  await press(main.getByRole('heading', { name: T.map }).getByRole('button'));
+  const rootSheet = page.getByRole('dialog', { name: T.map });
+  await press(rootSheet.getByRole('button', { name: /^Launch/ }));
+  await press(form.getByRole('button', { name: 'Launch', exact: true }));
+  await expect(form).toBeHidden();
+  await expect.poll(async () => (await shipsOf()).some((s) => s.url === issueUrl(MAP))).toBe(true);
 
   // A child's mode is changed with the chips in its sheet: a tap applies at once, the sheet stays open and says what the labels say; Use labels sends it back.
   const survey = () => page.getByRole('dialog', { name: new RegExp(T.survey) });

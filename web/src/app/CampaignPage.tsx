@@ -185,6 +185,7 @@ export function CampaignsList({ phone, title }: { phone: boolean; title: boolean
   );
 }
 
+// The root's mode and skill come from its labels and change nothing a hand launch does, so its sheet only reads them.
 function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { campaign: Campaign; node: CampaignNode; canStart: boolean; onClose: () => void; onLaunch: (anyway: boolean) => void; onSaved: (c: Campaign) => void }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -235,7 +236,7 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
         <p>
           {modeLabel(node.mode ?? 'with-you')} · {skillLabel(node.default_skill)}
         </p>
-        {status !== 'done' ? (
+        {status !== 'done' && node !== campaign.root ? (
           <>
             <Choice
               legend="Mode"
@@ -360,7 +361,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   }, [id]);
 
   const children = leaves(campaign?.root);
-  const shipsKey = childShipsKey(children, ships.value);
+  const shipsKey = childShipsKey(campaign?.root ? [campaign.root, ...children] : children, ships.value);
   const first = useRef(true);
   useEffect(() => {
     if (first.current) {
@@ -396,7 +397,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   };
   const unreadable = hasUnreadable(campaign.root);
   const kind = kindLabel(campaign.root?.labels);
-  const picked = children.find((c) => c.url === pickedUrl) ?? null;
+  const picked = [campaign.root, ...children].find((c) => c?.url === pickedUrl) ?? null;
   const toggle = (url: string) => setSelected(checked.includes(url) ? checked.filter((u) => u !== url) : [...checked, url]);
 
   const unfollow = async () => {
@@ -412,10 +413,10 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
 
   const rootHref = safeHref(campaign.url);
   const ref = `${campaign.repo.replace(/^https?:\/\//, '')}#${campaign.number}`;
-  const heading = rootHref ? (
-    <a class="issue-link" href={rootHref} target="_blank" rel="noopener noreferrer">
+  const heading = campaign.root ? (
+    <button type="button" class="camp-title-open" onClick={() => setPickedUrl(campaign.root!.url)}>
       {campaign.title}
-    </a>
+    </button>
   ) : (
     campaign.title
   );

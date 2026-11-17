@@ -342,6 +342,8 @@ button.pill { cursor: pointer; min-height: 32px; }
 .work-repo input { min-height: 32px; font-size: 16px; }
 .kind { margin: 0; font-size: var(--font-size-meta); color: var(--color-muted); text-transform: uppercase; letter-spacing: .04em; }
 .camp-page h1, .camp-title { margin: 2px 0 10px; font-size: 17px; font-weight: 600; }
+.camp-title-open { display: inline-flex; align-items: center; min-height: var(--shape-min-touch-target); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; text-decoration: underline dotted; text-underline-offset: 4px; cursor: pointer; }
+.camp-title-open:hover { color: var(--color-accent); }
 .progress { height: 6px; border-radius: 3px; background: var(--color-line2); overflow: hidden; }
 .progress span { display: block; height: 100%; background: var(--color-ok); }
 .meta { margin: 6px 0 0; font-size: var(--font-size-meta); color: var(--color-text2); }

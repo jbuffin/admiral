@@ -433,7 +433,7 @@ func launchable(n *campaigns.Node, what string, startAnyway bool) *launcher.Erro
 	switch {
 	case n == nil:
 		return orderError(http.StatusNotFound, what+" is not in this campaign")
-	case n.Parent:
+	case n.Parent && !n.Root:
 		return orderError(http.StatusBadRequest, what+" is a parent; launch one of its children")
 	case n.Status == campaigns.Done:
 		return orderError(http.StatusConflict, what+" is done")
@@ -450,6 +450,10 @@ func launchable(n *campaigns.Node, what string, startAnyway bool) *launcher.Erro
 		return orderError(http.StatusConflict, what+" is assigned to someone and has no ship; send start_anyway to launch it")
 	}
 	return nil
+}
+
+func rootInSlice(url string) string {
+	return url + " is the campaign's own issue; a slice launches children"
 }
 
 // launchSlice launches two or more children as one Commodore ship holding all of them; start_anyway is not read,
@@ -477,6 +481,9 @@ func (s *Service) launchSlice(ctx context.Context, f Followed, issues []string, 
 	nodes := make([]*campaigns.Node, 0, len(issues))
 	for _, u := range issues {
 		n := find(root, u)
+		if n != nil && n.Root {
+			return nil, orderError(http.StatusBadRequest, rootInSlice(u))
+		}
 		if lerr := launchable(n, u, false); lerr != nil {
 			return nil, lerr
 		}

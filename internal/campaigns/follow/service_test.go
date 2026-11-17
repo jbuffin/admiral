@@ -1034,3 +1034,135 @@ func TestTheNextWriteDropsAStoredSkill(t *testing.T) {
 		t.Errorf("store file after a write still holds a skill: %s", b)
 	}
 }
+
+func rootBody() map[string]any {
+	return map[string]any{"child_url": rootURL, "harness": "claude", "dir": "/work/x"}
+}
+
+func TestTheRootShowsAStatusModeAndSkillAndStaysOutOfTheTotals(t *testing.T) {
+	tree := fixtureTree()
+	tree.labels = []string{"ready-for-agent"}
+	r := newRig(t, tree)
+	c := r.follow(rootURL)
+	root := c.Root
+	if !root.Parent || root.Status != "ready" || root.Mode != "without-you" || root.Skill.Kind != "commodore" || root.DefaultMode != "without-you" || root.Overridden {
+		t.Errorf("root = %+v, want a parent that is ready, Without you on Commodore like a child with its label", root)
+	}
+	if c.Progress.Closed != 1 || c.Progress.Total != 7 {
+		t.Errorf("progress = %+v, want the children only", c.Progress)
+	}
+	if c.Counts["ready"] != 4 || c.ReadyWithYou != 1 || c.ReadyWithoutYou != 3 {
+		t.Errorf("counts %v ready with %d / without %d, want the four ready children and not the root", c.Counts, c.ReadyWithYou, c.ReadyWithoutYou)
+	}
+}
+
+func TestLaunchOnTheRootStartsItsShipUnderTheRootsOrderID(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	if code, body := r.launch(c.ID, rootBody()); code != http.StatusCreated {
+		t.Fatalf("launch on the root = %d %s, want 201", code, body)
+	}
+	got := r.launches()
+	if len(got) != 1 {
+		t.Fatalf("Launch called %d times, want once", len(got))
+	}
+	if q := got[0]; q.Source != SourceKey || q.OrderID != OrderID(c.ID, rootURL) || q.Autopilot || len(q.Issues) != 0 {
+		t.Errorf("request = %+v, want source campaign, the root's order id, autopilot off and no slice", q)
+	}
+	text, title, _, url, panel, err := r.svc.Order(SourceKey, OrderID(c.ID, rootURL))
+	if err != nil || url != rootURL || panel != c.ID || title != "Issue 20" || !strings.Contains(text, rootURL) {
+		t.Errorf("Order(root) = text %q title %q url %q panel %q err %v, want the root's own order", text, title, url, panel, err)
+	}
+}
+
+func TestLaunchOnAWayfinderLabelledRootHandsOverTheRootAlone(t *testing.T) {
+	tree := fixtureTree()
+	tree.labels = []string{"wayfinder:research"}
+	r := newRig(t, tree)
+	c := r.follow(rootURL)
+	if code, body := r.launch(c.ID, rootBody()); code != http.StatusCreated {
+		t.Fatalf("launch on the root = %d %s, want 201", code, body)
+	}
+	text, _, _, _, _, err := r.svc.Order(SourceKey, OrderID(c.ID, rootURL))
+	if err != nil || text != rootURL {
+		t.Errorf("Order(root).text = %q err %v, want the root URL alone", text, err)
+	}
+}
+
+func TestLaunchRefusesARootThatIsNotLaunchableAsItDoesAChild(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		mod   func(*iss)
+		claim bool
+		extra map[string]any
+		code  int
+		want  string
+	}{
+		{"done", func(i *iss) { i.closed = true }, false, nil, http.StatusConflict, "done"},
+		{"blocked", func(i *iss) { i.blockedBy = []int{21} }, false, nil, http.StatusConflict, issURL(21)},
+		{"held by a ship", func(*iss) {}, true, nil, http.StatusConflict, "bold-heron"},
+		{"claimed with no ship", func(i *iss) { i.assignees = []string{"sam"} }, false, nil, http.StatusConflict, "start_anyway"},
+		{"claimed with no ship and start_anyway", func(i *iss) { i.assignees = []string{"sam"} }, false, map[string]any{"start_anyway": true}, http.StatusCreated, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tree := fixtureTree()
+			tc.mod(&tree)
+			r := newRig(t, tree)
+			if tc.claim {
+				r.mu.Lock()
+				r.claims[rootURL] = "bold-heron"
+				r.mu.Unlock()
+			}
+			c := r.follow(rootURL)
+			body := rootBody()
+			for k, v := range tc.extra {
+				body[k] = v
+			}
+			code, msg := r.launch(c.ID, body)
+			if code != tc.code || !strings.Contains(msg, tc.want) {
+				t.Errorf("launch on the root = %d %s, want %d naming %q", code, msg, tc.code, tc.want)
+			}
+			if n := len(r.launches()); (tc.code == http.StatusCreated) != (n == 1) {
+				t.Errorf("Launch called %d times for a %d answer", n, code)
+			}
+		})
+	}
+}
+
+func TestTheRootShowsUnderwayWithItsShip(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	r.mu.Lock()
+	r.claims[rootURL] = "bold-heron"
+	r.mu.Unlock()
+	if root := r.get(c.ID).Root; root.Status != "underway" || root.Ship != "bold-heron" {
+		t.Errorf("root = %s on %q, want underway with the ship holding its claim", root.Status, root.Ship)
+	}
+}
+
+func TestTheRootIsNeverPartOfASliceOrAnOverride(t *testing.T) {
+	tree := sliceTree()
+	tree.labels = []string{"ready-for-agent"} // a root that would pass every other slice check
+	r := newRig(t, tree)
+	c := r.follow(rootURL)
+	body := sliceBody(31)
+	body["issues"] = []string{issURL(31), rootURL}
+	if code, msg := r.launch(c.ID, body); code != http.StatusBadRequest {
+		t.Errorf("slice naming the root = %d %s, want 400", code, msg)
+	}
+	if got := r.launches(); len(got) != 0 {
+		t.Errorf("a slice naming the root still reached Launch: %v", got)
+	}
+	for _, urls := range [][]string{{issURL(31), rootURL}, {rootURL, issURL(31)}} {
+		if _, _, _, _, _, err := r.svc.Order(SourceKey, SliceOrderID(c.ID, urls)); err == nil || err.Status != http.StatusBadRequest {
+			t.Errorf("Order(slice %v) = %+v, want 400", urls, err)
+		}
+	}
+	code, msg := r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": rootURL, "mode": "with-you"})
+	if code != http.StatusBadRequest {
+		t.Errorf("override on the root = %d %s, want 400", code, msg)
+	}
+	if root := r.get(c.ID).Root; root.Overridden {
+		t.Errorf("root = %+v after the refusal, want no override", root)
+	}
+}
