@@ -29,6 +29,8 @@ type Config struct {
 	MaxShips  int
 	Resources map[string]Resource
 	Remote    Remote
+	// UpdateCheck is the top-level update_check switch; on unless the file says false.
+	UpdateCheck bool
 	// ChatProbe reads the capability store for the AdmiralBot gate; nil reads as not checked everywhere.
 	ChatProbe ChatProbe
 }
@@ -146,13 +148,18 @@ func ValidLogin(l string) bool {
 	return loginRe.MatchString(l) && len(strings.TrimSuffix(l, "[bot]")) <= 39
 }
 
+// defaultConfig is what a config.json that sets no top-level key means; Open starts from it too, so a missing or invalid file gets the same defaults.
+func defaultConfig() *Config {
+	return &Config{FavoriteSkills: []string{}, MaxShips: DefaultMaxShips, UpdateCheck: true}
+}
+
 // Parse errors name the path of the bad value, without the file name.
 func Parse(data []byte) (*Config, error) {
 	top, err := members("", data)
 	if err != nil {
 		return nil, err
 	}
-	cfg := &Config{FavoriteSkills: []string{}, MaxShips: DefaultMaxShips}
+	cfg := defaultConfig()
 	var fleetsRaw json.RawMessage
 	haveVersion := false
 	for _, m := range top {
@@ -174,6 +181,15 @@ func Parse(data []byte) (*Config, error) {
 		case "max_ships":
 			if cfg.MaxShips, err = positiveInt("max_ships", m.raw); err != nil {
 				return nil, err
+			}
+		case "update_check":
+			switch strings.TrimSpace(string(m.raw)) {
+			case "true":
+				cfg.UpdateCheck = true
+			case "false":
+				cfg.UpdateCheck = false
+			default:
+				return nil, fmt.Errorf("update_check: must be true or false, got %s", m.raw)
 			}
 		case "remote":
 			if cfg.Remote, err = parseRemote(m.raw); err != nil {
