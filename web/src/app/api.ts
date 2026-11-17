@@ -87,6 +87,7 @@ export interface PRDetail {
   mergeable: string;
   merge_state: string;
   failing_checks: { name: string; url: string }[];
+  author: PRActor;
   reviews: { author: PRActor; state: string }[];
   requested: PRActor[];
   threads: { path: string; line: number; resolved: boolean; comments: { author: PRActor; body: string; url: string; created_at: string }[] }[];
@@ -383,6 +384,11 @@ export function linkSourceStack(source: string, prs: string[]): Promise<Result<S
 /** One PR a ship carries, read from GitHub: 404 when the ship doesn't carry it, 502 when GitHub fails. */
 export function fetchPRDetail(session: string, url: string): Promise<Result<PRDetail>> {
   return call<PRDetail>('GET', `/ships/${encodeURIComponent(session)}/pr?url=${encodeURIComponent(url)}`);
+}
+
+/** Ask GitHub to request another review from `login`: POST /api/ships/<session>/pr/rerequest. Stub: not built yet. */
+export function reRequestReview(session: string, pr: string, login: string): Promise<Result<unknown>> {
+  return call<unknown>('POST', `/ships/${encodeURIComponent(session)}/pr/rerequest`, { pr, login });
 }
 
 export interface Source {

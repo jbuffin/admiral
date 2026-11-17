@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PRActor, PRDetail } from './api';
-import { checksLine, descriptionSource, firstLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary } from './prSections';
+import { canReRequest, checksLine, descriptionSource, firstLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary } from './prSections';
 
 const who = (login: string, bot = false): PRActor => ({ login, bot });
 const review = (login: string, state: string, bot = false) => ({ author: who(login, bot), state });
@@ -44,8 +44,9 @@ describe('reviewerRows', () => {
     expect(rows([], [who('cy'), who('di')])).toEqual(['cy:Waiting', 'di:Waiting']);
   });
 
-  it('shows a requested reviewer who has reviewed once, with their verdict', () => {
-    expect(rows([review('ann', 'CHANGES_REQUESTED')], [who('ann'), who('cy')])).toEqual(['ann:Changes requested', 'cy:Waiting']);
+  it('shows a reviewer who is requested again as Waiting, not with their last verdict', () => {
+    expect(rows([review('ann', 'CHANGES_REQUESTED')], [who('ann'), who('cy')]).sort()).toEqual(['ann:Waiting', 'cy:Waiting']);
+    expect(rows([review('ann', 'APPROVED'), review('bob', 'APPROVED')], [who('ann')]).sort()).toEqual(['ann:Waiting', 'bob:Approved']);
   });
 
   it('shows a requested reviewer whose only review is pending as Waiting', () => {
@@ -284,5 +285,41 @@ describe('relativeTime', () => {
     expect(ago(86_400)).toBe('1d ago');
     expect(ago(10 * 86_400 + 5)).toBe('10d ago');
     expect(ago(400 * 86_400)).toBe('400d ago');
+  });
+});
+
+describe('canReRequest', () => {
+  const pr = (reviews: PRDetail['reviews'], requested: PRActor[] = [], author = 'octocat') => ({ author: who(author), reviews, requested });
+
+  it('offers it to a person whose submitted review stands, whatever its verdict', () => {
+    for (const state of ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED']) {
+      expect(canReRequest(pr([review('hubot', state)]), 'hubot'), state).toBe(true);
+    }
+  });
+
+  it('offers it to a bot that reviewed', () => {
+    expect(canReRequest(pr([review('copilot-pull-request-reviewer', 'COMMENTED', true)]), 'copilot-pull-request-reviewer')).toBe(true);
+  });
+
+  it('offers it for a person who has any submitted review among a pending one', () => {
+    expect(canReRequest(pr([review('hubot', 'APPROVED'), review('hubot', 'PENDING')]), 'hubot')).toBe(true);
+  });
+
+  it('does not offer it to someone with no submitted review', () => {
+    expect(canReRequest(pr([review('hubot', 'PENDING')]), 'hubot')).toBe(false);
+    expect(canReRequest(pr([], [who('hubot')]), 'hubot')).toBe(false);
+    expect(canReRequest(pr([review('hubot', 'APPROVED')]), 'monalisa')).toBe(false);
+  });
+
+  it('does not offer it while the person is in the current review requests', () => {
+    expect(canReRequest(pr([review('hubot', 'APPROVED')], [who('hubot')]), 'hubot')).toBe(false);
+  });
+
+  it('does not offer it to the PR author', () => {
+    expect(canReRequest(pr([review('octocat', 'COMMENTED')]), 'octocat')).toBe(false);
+  });
+
+  it('never offers it for a team, which only ever appears as a pending request', () => {
+    expect(canReRequest(pr([review('hubot', 'APPROVED')], [who('acme/core')]), 'acme/core')).toBe(false);
   });
 });

@@ -38,6 +38,10 @@ func (f *fakeGitHub) LinkStack(context.Context, string, string, []int) error { r
 
 func (f *fakeGitHub) UpdateBranch(context.Context, string) error { return nil }
 
+func (f *fakeGitHub) ReRequestReview(context.Context, string, string) error {
+	return errors.New("not implemented")
+}
+
 func (f *fakeGitHub) OpenPRs(_ context.Context, urls []string) (map[string]bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

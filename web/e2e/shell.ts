@@ -486,6 +486,36 @@ export function mergeCalls(a: Admiral): string[][] {
     .filter((argv) => (argv[0] === 'pr' || argv[0] === 'stack') && argv[1] === 'merge');
 }
 
+/**
+ * What the PR tab reads for PR `number`: alice's review stands and nobody is requested, then, once GitHub takes a review request
+ * (a `requestReviews` call), alice is requested again. The nodes carry the ids the request needs.
+ */
+export function seedReviewedPR(a: Admiral, number: number, author = 'octocat') {
+  const url = `${PR_BASE}/${number}`;
+  const node = (requested: unknown[]) => ({
+    id: 'PR_fake1', number, url, title: 'Rename the helper', body: '', state: 'OPEN', isDraft: false, author: { __typename: 'User', login: author, id: 'U_author' },
+    headRefName: 'feature/rename', baseRefName: 'main', reviewDecision: 'CHANGES_REQUESTED', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: null,
+    reviews: { nodes: [{ id: 'R1', author: { __typename: 'User', login: 'alice', id: 'U_fake1' }, state: 'CHANGES_REQUESTED', url: `${url}#pullrequestreview-1` }] },
+    reviewRequests: { nodes: requested }, reviewThreads: { nodes: [] }, comments: { nodes: [] }, commits: { nodes: [] }, stack: null,
+  });
+  const requestedAlice = [{ requestedReviewer: { __typename: 'User', login: 'alice', id: 'U_fake1' } }];
+  for (const [dir, requested] of [['pr_detail', []], ['pr_detail_after', requestedAlice]] as const) {
+    mkdirSync(join(a.home, 'fakegh', dir), { recursive: true });
+    writeFileSync(join(a.home, 'fakegh', dir, url.replace(/[/:]/g, '_')), JSON.stringify(node([...requested])) + '\n');
+  }
+}
+
+/** The one-string argv of every `requestReviews` call the fake gh recorded. */
+export function reRequestCalls(a: Admiral): string[] {
+  const dir = join(a.home, 'fakegh', 'calls');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .map((d) => join(dir, d, 'argv'))
+    .filter((f) => existsSync(f))
+    .map((f) => readFileSync(f, 'utf8').split('\0').filter((x) => x !== '').join(' '))
+    .filter((argv) => argv.includes('requestReviews'));
+}
+
 /** The argv (after `gh`) of every `stack link` call the fake gh recorded. */
 export function stackLinkCalls(a: Admiral): string[][] {
   const dir = join(a.home, 'fakegh', 'calls');

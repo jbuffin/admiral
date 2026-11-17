@@ -71,7 +71,7 @@ function Description({ body }: { body: string }) {
   );
 }
 
-function Reviewers({ detail }: { detail: PRDetail }) {
+export function Reviewers({ detail }: { detail: PRDetail; session?: string; reread?: () => void }) {
   const [open, setOpen] = useState(false);
   const rows = reviewerRows(detail.reviews, detail.requested);
   return (

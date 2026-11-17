@@ -62,6 +62,11 @@ export function reviewerRows(reviews: PRDetail['reviews'], requested: PRActor[])
   return rows;
 }
 
+/** Whether GitHub's PR page offers Re-request review beside `login`. Stub: always false. */
+export function canReRequest(_detail: Pick<PRDetail, 'author' | 'reviews' | 'requested'>, _login: string): boolean {
+  return false;
+}
+
 const SUMMARY_ORDER: Verdict[] = ['Approved', 'Changes requested', 'Commented', 'Dismissed', 'Waiting'];
 
 export function reviewSummary(rows: ReviewerRow[]): string {
