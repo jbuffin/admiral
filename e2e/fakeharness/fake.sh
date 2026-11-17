@@ -2,11 +2,22 @@
 # Fake coding-agent harness for Admiral's server tests. `claude`, `codex` and
 # `copilot` are symlinks to this script; $0 says which one ran.
 #
-# Two things come before any tmux call and need no pane:
+# Three things come before any tmux call and need no pane:
 #
 #   --version      (first argument) prints the content of the file $FAKE_VERSION_FILE if it
 #                  exists, else $FAKE_VERSION, else "2.1.300 (fake)", and exits 0. The
 #                  content FAIL prints "boom" to stderr and exits 1.
+#   plugin ...     the harness's plugin commands (Commodore's install and update): appends the arguments as one
+#                  line to $FAKE_RECORD_DIR/plugin-runs and the run's PATH to plugin-path, then acts on $FAKE_PLUGIN
+#                  (a process variable, not a cue): ok (default) or unset writes inside the identity directory
+#                  ($CLAUDE_CONFIG_DIR, $CODEX_HOME or $COPILOT_HOME, else the HOME default): `plugin marketplace
+#                  add` registers the jbuffinskills marketplace (a settings.json entry already there is left alone;
+#                  Codex gets [marketplaces.jbuffinskills] in config.toml), and `plugin install|add|update` and
+#                  `plugin marketplace upgrade` write the jasonbuffin plugin at version $FAKE_PLUGIN_VERSION (default
+#                  3.5.0) with the real CLI's layout and registry entry for that harness, each with
+#                  .claude-plugin/plugin.json and skills/engineering/commodore/SKILL.md; fail prints a few lines
+#                  ending boom to stderr, exits 1 and writes nothing; not-logged-in prints "not logged in" to
+#                  stderr and exits 1. Needs jq.
 #   -p <prompt>    a headless probe run: appends a line to $FAKE_RECORD_DIR/headless-runs,
 #                  takes the command after the last ": " of the prompt, plays it as a Bash
 #                  call through the --settings file's PreToolUse hooks (needs jq; a handler
@@ -251,6 +262,89 @@ if [ "$1" = "--version" ]; then
     exit 1
   fi
   echo "$v"
+  exit 0
+fi
+# plugin ...: the harness's own plugin commands, for Commodore's install and update. It writes only
+# inside the identity directory ($CLAUDE_CONFIG_DIR, $CODEX_HOME or $COPILOT_HOME, else the HOME default).
+# Before any tmux call, like --version.
+if [ "$1" = plugin ]; then
+  me=$(basename "$0")
+  mkdir -p "$FAKE_RECORD_DIR"
+  echo "$*" >>"$FAKE_RECORD_DIR/plugin-runs"
+  echo "$PATH" >"$FAKE_RECORD_DIR/plugin-path"
+  case "${FAKE_PLUGIN:-ok}" in
+  fail)
+    printf 'cloning jbuffin/skills\nresolving the plugin\n' >&2
+    echo boom >&2
+    exit 1
+    ;;
+  not-logged-in)
+    echo "not logged in" >&2
+    exit 1
+    ;;
+  esac
+  case "$me" in
+  claude) idir=${CLAUDE_CONFIG_DIR:-$HOME/.claude} ;;
+  codex) idir=${CODEX_HOME:-$HOME/.codex} ;;
+  copilot) idir=${COPILOT_HOME:-$HOME/.copilot} ;;
+  esac
+  mkdir -p "$idir"
+  ver=${FAKE_PLUGIN_VERSION:-3.5.0}
+  key=jasonbuffin@jbuffinskills
+  # jq edits one JSON file in place; a file that is not there starts as {}.
+  jedit() {
+    f=$1
+    shift
+    [ -f "$f" ] || echo '{}' >"$f"
+    jq "$@" "$f" >"$f.tmp" && mv "$f.tmp" "$f"
+  }
+  addmarket() {
+    case "$me" in
+    codex)
+      grep -q '^\[marketplaces.jbuffinskills\]' "$idir/config.toml" 2>/dev/null ||
+        printf '[marketplaces.jbuffinskills]\nsource_type = "git"\nsource = "https://github.com/jbuffin/skills.git"\n' >>"$idir/config.toml"
+      ;;
+    *) jedit "$idir/settings.json" '.extraKnownMarketplaces.jbuffinskills //= {source: {source: "github", repo: "jbuffin/skills"}}' ;;
+    esac
+  }
+  writeplugin() {
+    case "$me" in
+    claude) root=$idir/plugins/cache/jbuffinskills/jasonbuffin/$ver ;;
+    codex) root=$idir/plugins/cache/jbuffinskills/jasonbuffin/$ver ;;
+    copilot) root=$idir/installed-plugins/jbuffinskills/jasonbuffin ;;
+    esac
+    mkdir -p "$root/.claude-plugin" "$root/skills/engineering/commodore"
+    printf '{"name":"jasonbuffin","version":"%s","skills":["./skills/engineering/"]}\n' "$ver" >"$root/.claude-plugin/plugin.json"
+    printf -- '---\nname: commodore\ndescription: Runs the crew.\n---\n' >"$root/skills/engineering/commodore/SKILL.md"
+    case "$me" in
+    claude)
+      mkdir -p "$idir/plugins"
+      [ -f "$idir/plugins/installed_plugins.json" ] || echo '{"version":2,"plugins":{}}' >"$idir/plugins/installed_plugins.json"
+      jedit "$idir/plugins/installed_plugins.json" --arg k "$key" --arg p "$root" --arg v "$ver" '.plugins[$k] = [{scope: "user", installPath: $p, version: $v}]'
+      jedit "$idir/settings.json" --arg k "$key" '.enabledPlugins[$k] = true'
+      ;;
+    codex)
+      grep -q '^\[plugins\."jasonbuffin@jbuffinskills"\]' "$idir/config.toml" 2>/dev/null ||
+        printf '\n[plugins."jasonbuffin@jbuffinskills"]\nenabled = true\n' >>"$idir/config.toml"
+      ;;
+    copilot)
+      {
+        printf '// User settings belong in settings.json.\n// This file is managed automatically.\n'
+        jq -n -c --arg p "$root" --arg v "$ver" '{installedPlugins: [{name: "jasonbuffin", marketplace: "jbuffinskills", version: $v, cache_path: $p, enabled: true}]}'
+      } >"$idir/config.json"
+      jedit "$idir/settings.json" --arg k "$key" '.enabledPlugins[$k] = true'
+      ;;
+    esac
+  }
+  case "$2" in
+  marketplace)
+    case "$3" in
+    add) addmarket ;;
+    upgrade) writeplugin ;;
+    esac
+    ;;
+  install | add | update) writeplugin ;;
+  esac
   exit 0
 fi
 # codex as a ship's app-server, started by `admiral codex-pane` in the pane: it must neither

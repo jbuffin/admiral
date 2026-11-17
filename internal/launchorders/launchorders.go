@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/commodore"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/crew"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -29,12 +30,15 @@ type Service struct {
 	State  *state.Store
 	Ships  func() []ships.Ship
 	Orders ships.Orders
+	// Installer runs Commodore's install and update; nil means the dock's own CLI.
+	Installer commodore.Installer
 }
 
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/launch-orders/dirs", s.serveDirs)
 	mux.HandleFunc("GET /api/launch-orders/skills", s.serveSkills)
 	mux.HandleFunc("GET /api/launch-orders/crew", s.serveCrew)
+	mux.HandleFunc("POST /api/launch-orders/commodore", s.serveCommodore)
 	mux.HandleFunc("GET /api/ships/{session}/skills", s.serveShipSkills)
 	mux.HandleFunc("GET /api/ships/{session}/crew/{name}/skills", s.serveShipSkills)
 	mux.HandleFunc("PUT /api/favorites", s.serveFavorites)
@@ -302,6 +306,11 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 		commodore = map[string]any{"found": true, "name": n}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"mark": skillindex.Mark(dock.Name), "skills": list, "commodore": commodore})
+}
+
+func (s *Service) serveCommodore(w http.ResponseWriter, r *http.Request) {
+	_ = commodore.Install
+	writeError(w, http.StatusNotImplemented, "not implemented")
 }
 
 // serveShipSkills lists the skills a ship's or boat's message box offers: its
