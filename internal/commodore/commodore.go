@@ -29,6 +29,9 @@ const (
 	pluginKey       = "jasonbuffin@jbuffinskills"
 )
 
+// InstallTimeout is how long one install or update may run; a Runner with no timeout fails every command at once.
+const InstallTimeout = 5 * time.Minute
+
 // The values of State.State.
 const (
 	StateMissing        = "missing"
@@ -101,6 +104,15 @@ func Commands(harness string, a Action) []string {
 		out = append(out, harness+" "+strings.Join(args, " "))
 	}
 	return out
+}
+
+// LastLines keeps the last n lines of an installer's output.
+func LastLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Installer runs the install or update and returns the combined output of the commands it ran.

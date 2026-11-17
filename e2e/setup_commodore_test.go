@@ -316,8 +316,8 @@ func TestU3_SetupAnswersInstallCommodore(t *testing.T) {
 			w.fleetObj("off", "Off", `"install_commodore":false`, "claude"),
 			w.fleetObj("fresh", "Fresh", "", "claude"))
 
-		// No input at all: a question would hit the end of input and fail setup.
-		r := w.admiralWith(cliOpts{env: w.cenv()}, "setup", "--answers", file)
+		// Only the write of the new fleet is answered: an install question would hit the end of input and fail setup.
+		r := w.admiralWith(cliOpts{env: w.cenv(), stdin: "y\n"}, "setup", "--answers", file)
 		w.expectExit(r, 0, "setup --answers without --yes, install_commodore false or absent")
 		w.requireNoPluginRuns(r)
 		if strings.Contains(r.stdout, "Install Commodore") {

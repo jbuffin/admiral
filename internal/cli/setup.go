@@ -58,7 +58,7 @@ func setup(args []string, std IO) error {
 	det := Detect(userHome, os.Getenv("PATH"), dir, identityDirsOf(dir))
 	det.Report(std.Out)
 
-	s := &session{io: std, det: det, dir: dir, fleets: current}
+	s := &session{io: std, det: det, dir: dir, fleets: current, answers: *answers != ""}
 	if *answers != "" {
 		if err := s.fromFile(*answers); err != nil {
 			return err
@@ -78,7 +78,7 @@ func setup(args []string, std IO) error {
 		if *dry {
 			return nil
 		}
-		return probeFleets(dir, std)
+		return s.probeAndOffer()
 	}
 
 	for {
@@ -90,7 +90,7 @@ func setup(args []string, std IO) error {
 			if *dry {
 				return nil
 			}
-			return probeFleets(dir, std)
+			return s.probeAndOffer()
 		}
 		if *dry {
 			fmt.Fprintln(std.Out, "Dry run: nothing was changed.")
@@ -127,7 +127,7 @@ func setup(args []string, std IO) error {
 			return err
 		}
 		fmt.Fprintf(std.Out, "Saved %s\n", filepath.Join(dir, config.FileName))
-		return probeFleets(dir, std)
+		return s.probeAndOffer()
 	}
 }
 
@@ -174,6 +174,8 @@ type session struct {
 	served  bool       // setup ran tailscale serve
 	log     []answered // what was answered, to plan again on a changed file
 	in      *bufio.Reader
+	answers bool            // the answers came from --answers, so setup never asks to install
+	install map[string]bool // install_commodore by fleet key
 }
 
 type answered struct {
@@ -241,6 +243,12 @@ func (s *session) fromFile(path string) error {
 		a, err := config.ParseObject(raw)
 		if err != nil {
 			return fmt.Errorf("%s: fleets.%s: %w", path, key, err)
+		}
+		if err := s.takeInstallAnswer(path, key, a); err != nil {
+			return err
+		}
+		if a.Len() == 0 {
+			continue
 		}
 		if err := s.merge(key, a); err != nil {
 			return err
