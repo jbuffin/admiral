@@ -544,6 +544,7 @@ func killTmux(sock string) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	_ = exec.Command("pkill", "-9", "-f", "--", tmuxOnPattern(sock)).Run()
 }
 
 func readJSON(t *testing.T, c *websocket.Conn, v any) {

@@ -71,8 +71,11 @@ func TestStackShapesAnswerTheBarAndOnlyChainedPRsCanBeStacked(t *testing.T) {
 			if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), c.reason) {
 				t.Errorf("POST stack = %d %s, want 409 saying %q", rec.Code, rec.Body, c.reason)
 			}
-			if len(g.linked) != 0 {
-				t.Errorf("a refused stack ran gh stack link: %v", g.linked)
+			g.mu.Lock()
+			linked := g.linked
+			g.mu.Unlock()
+			if len(linked) != 0 || len(g.mergeLog()) != 0 {
+				t.Errorf("a refused stack ran gh stack: link %v, merge %v", linked, g.mergeLog())
 			}
 			if sh, ok := f.ship(t, "Nelson"); !ok || sh.Status != StatusMoored {
 				t.Errorf("ship = %+v, want still moored", sh)

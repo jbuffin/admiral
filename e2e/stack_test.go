@@ -220,48 +220,6 @@ func TestStackARunningShipCarryingNoPRAnswersNone(t *testing.T) {
 	noStackCalls(t, g, "a ship with no PR ran gh stack")
 }
 
-// Independent PRs are never stacked, and the second one's readiness counts again once the first has merged.
-func TestStackIndependentPRsAreNotStackedAndTheSecondReadiesTheShipAfterTheFirstMerges(t *testing.T) {
-	t.Parallel()
-	w, g := mooring(t, "exit 0")
-	g.defaultMergeMethod("SQUASH")
-	g.independentPRs(layer1, layer2)
-	g.prReady(layer1)
-	g.prState(layer2, "OPEN")
-	g.prChips(layer2, "APPROVED", "PENDING", "MERGEABLE")
-	w.start()
-	ship := moorPRs(t, w, layer1, layer2)
-	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the first PR read ready and the second not", func(l []shipJSON) bool {
-		sh := byName(l)[ship.Name]
-		return len(sh.PRs) == 2 && sh.PRs[0].Ready && !sh.PRs[1].Ready
-	})
-
-	code, body := w.getStack(t, ship)
-	wantCode(t, "GET stack on independent PRs", http.StatusOK, code, body)
-	wantStack(t, "GET stack on independent PRs", body, "independent", 0, layer1, layer2)
-	code, body = w.postStack(t, ship)
-	wantCode(t, "POST stack on independent PRs", http.StatusConflict, code, body)
-	noStackCalls(t, g, "independent PRs ran gh stack")
-
-	code, body = w.postMerge(t, ship, map[string]any{"pr": layer1})
-	if code != http.StatusAccepted {
-		t.Fatalf("POST merge naming the first PR = %d, want 202: %s", code, body)
-	}
-	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the poll saw the first PR merged", func(l []shipJSON) bool {
-		sh := byName(l)[ship.Name]
-		return len(sh.PRs) == 2 && sh.PRs[0].State == "MERGED"
-	})
-
-	g.prChips(layer2, "APPROVED", "SUCCESS", "MERGEABLE")
-	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the second PR ready makes the ship ready to merge again", func(l []shipJSON) bool {
-		sh := byName(l)[ship.Name]
-		return len(sh.PRs) == 2 && sh.PRs[1].Ready && sh.StackReady && sh.ReadyUpTo == layer2
-	})
-}
-
 // A stack whose bottom layer already merged: the rest merges as one gh stack merge.
 func TestStackWhoseBottomLayerAlreadyMergedMergesTheRest(t *testing.T) {
 	t.Parallel()

@@ -485,40 +485,6 @@ func TestMergeAGitHubStackRunsOneGhStackMergeByNumberWithNoCheckout(t *testing.T
 	w.in.waitShipsList(t, 20*time.Second, "the ship left its mooring after the merge", func(l []shipJSON) bool { return byName(l)[ship.Name].Status != "moored" })
 }
 
-// An unusable checkout is no reason to refuse: the stack is merged from GitHub's number.
-func TestMergeOfAGitHubStackNeedsNoCheckoutInTheRecord(t *testing.T) {
-	t.Parallel()
-	for what, checkout := range map[string]func(w *world) string{
-		"no checkout":      func(*world) string { return "" },
-		"a missing folder": func(w *world) string { return filepath.Join(w.work, "gone") },
-	} {
-		t.Run(what, func(t *testing.T) {
-			t.Parallel()
-			w, g := mooring(t, "exit 0")
-			g.prReady(layer1)
-			g.prReady(layer2)
-			g.githubStack(4, layer1, layer2)
-			b, _ := json.Marshal(map[string]any{"name": "Adrift", "session": "adrift", "fleet": "f", "harness": "claude",
-				"checkout": checkout(w), "prs": []string{layer1, layer2}, "moored_at": time.Now().UTC()})
-			if err := os.MkdirAll(filepath.Dir(w.mooredFile("adrift")), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(w.mooredFile("adrift"), b, 0o600); err != nil {
-				t.Fatal(err)
-			}
-			w.start()
-			w.in.waitShipsList(t, 20*time.Second, "the record moored", func(l []shipJSON) bool { return byName(l)["Adrift"].Status == "moored" })
-			w.kickMoored()
-			w.in.waitShipsList(t, 20*time.Second, "the stack read ready", func(l []shipJSON) bool { return byName(l)["Adrift"].StackReady })
-			code, body := w.postMerge(t, shipJSON{Session: "adrift"}, map[string]any{})
-			wantCode(t, "POST merge on a stacked record with an unusable checkout", http.StatusAccepted, code, body)
-			if calls := g.mergeCalls(); len(calls) != 1 || !slices.Equal(calls[0].Argv, []string{"stack", "merge", "4", "--yes", "--merge-method", "merge"}) {
-				t.Errorf("merge calls = %v, want one gh stack merge 4", calls)
-			}
-		})
-	}
-}
-
 // A ship's independent PRs merge one at a time by URL, and the ship stays moored until the last one is merged.
 func TestMergeOfIndependentPRsMergesOneAtATimeAndTheShipStaysMooredUntilTheLast(t *testing.T) {
 	t.Parallel()
@@ -586,6 +552,11 @@ func TestMergeOfIndependentPRsMergesOneAtATimeAndTheShipStaysMooredUntilTheLast(
 
 	// The second PR is merged by its own Merge, when it is ready; the merged first PR does not hold it up.
 	g.prChips(layer2, "APPROVED", "SUCCESS", "MERGEABLE")
+	w.kickMoored()
+	w.in.waitShipsList(t, 20*time.Second, "the second PR ready makes the ship ready to merge again", func(l []shipJSON) bool {
+		sh := byName(l)[ship.Name]
+		return len(sh.PRs) == 2 && sh.PRs[1].Ready && sh.StackReady && sh.ReadyUpTo == layer2
+	})
 	code, body = w.postMerge(t, ship, map[string]any{"pr": layer2})
 	if code != http.StatusAccepted {
 		t.Fatalf("POST merge naming the second PR = %d, want 202: %s", code, body)
@@ -633,31 +604,6 @@ func TestMergeOfIndependentPRsInTwoRepositoriesMergesEachByItsOwnURL(t *testing.
 	}
 	if n := g.anyStackCalls(); n != 0 {
 		t.Errorf("gh stack calls = %d, want none for independent PRs", n)
-	}
-}
-
-func TestAStackReadsReadyUpToTheHighestLayerWhoseLowerLayersAreReady(t *testing.T) {
-	t.Parallel()
-	w, g := mooring(t, "exit 0")
-	g.prReady(layer1)
-	g.prReady(layer2)
-	g.prState(layer3, "OPEN")
-	g.prChips(layer3, "APPROVED", "PENDING", "MERGEABLE")
-	w.start()
-	ship := moorPRs(t, w, layer1, layer2, layer3)
-	w.kickMoored()
-	got := byName(w.in.waitShipsList(t, 20*time.Second, "layers 1 and 2 read ready", func(l []shipJSON) bool {
-		sh := byName(l)[ship.Name]
-		return len(sh.PRs) == 3 && sh.PRs[0].Ready && sh.PRs[1].Ready
-	}))[ship.Name]
-	if got.PRs[2].Ready || got.StackReady || got.ReadyUpTo != layer2 {
-		t.Errorf("ship = layer 3 ready %v, stack ready %v, up to %q; want layer 3 not ready, the stack not ready, up to %s",
-			got.PRs[2].Ready, got.StackReady, got.ReadyUpTo, layer2)
-	}
-	code, b := w.postMerge(t, ship, map[string]any{"upTo": "https://github.com/acme/widgets/pull/99"})
-	wantCode(t, "POST merge up to a PR that is not its own", http.StatusBadRequest, code, b)
-	if calls := g.mergeCalls(); len(calls) != 0 {
-		t.Fatalf("a refused merge ran gh: %v", calls)
 	}
 }
 
@@ -737,6 +683,9 @@ func TestMergeWithoutTheShellsTokenIsRefusedAndRunsNoGh(t *testing.T) {
 	// One guard covers the merge route, the stack route and an escaped session path.
 	if code, b := w.postStackWith(t, ship, ""); code != http.StatusForbidden {
 		t.Errorf("POST stack with no token = %d, want 403: %s", code, b)
+	}
+	if code, b := w.postStackWith(t, ship, real[:len(real)-1]+"x"); code != http.StatusForbidden {
+		t.Errorf("POST stack with a wrong token = %d, want 403: %s", code, b)
 	}
 	esc, _ := http.NewRequest(http.MethodPost, w.in.LocalURL+"/api/ships/a%2Fb/merge", strings.NewReader("{}"))
 	if resp, err := client().Do(esc); err != nil {

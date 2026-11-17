@@ -1,6 +1,7 @@
 package ships
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -103,8 +104,13 @@ func TestMergeOfAStackWithALayerThatStoppedBeingReadyIsRefusedAndRunsNoMerge(t *
 	r.noMergedOutcome(t)
 }
 
-func TestMergeOfASinglePRThatStoppedBeingReadyIsRefused(t *testing.T) {
+// GitHub reports a change request as BLOCKED, and readiness reads only that merge state.
+func TestMergeOfASinglePRThatGitHubNowBlocksAfterTheLastPollIsRefused(t *testing.T) {
 	r := newMergeRig(t, nil, layerURL(7))
+	r.s.PollMoored(context.Background())
+	if sh, _ := r.ship(t, "Nelson"); len(sh.PRs) != 1 || !sh.PRs[0].Ready {
+		t.Fatalf("ship = %+v, want the PR served ready before GitHub changes", sh)
+	}
 	st := readyStatus()
 	st.Review = "CHANGES_REQUESTED"
 	st.MergeState = "BLOCKED"
@@ -221,5 +227,23 @@ func TestMergeWithoutAGuardIsForbidden(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/ships/"+r.session+"/merge", strings.NewReader("{}")))
 	if rec.Code != http.StatusForbidden || len(r.g.mergeLog()) != 0 {
 		t.Errorf("POST merge with no guard = %d %s with %v merged, want 403 and none", rec.Code, rec.Body, r.g.mergeLog())
+	}
+}
+
+func TestMergeOfAGitHubStackNeedsNoCheckoutInTheRecord(t *testing.T) {
+	r := newMergeRig(t, stackedDetails(2), layerURL(7), layerURL(9))
+	rec := r.records(t)[0]
+	rec.Checkout = ""
+	if err := moor.Write(r.home, rec); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.records(t); len(got) != 1 || got[0].Checkout != "" {
+		t.Fatalf("records = %+v, want the ship's own with no checkout", got)
+	}
+	if got := r.merge("{}"); got.Code != http.StatusAccepted {
+		t.Fatalf("POST merge with no checkout in the record = %d %s, want 202", got.Code, got.Body)
+	}
+	if got := r.g.mergeLog(); len(got) != 1 || got[0] != "stack 4 merge" {
+		t.Errorf("merges = %v, want one stack 4 merge", got)
 	}
 }
