@@ -292,6 +292,8 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: string; stat
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const SLOW_TIMEOUT_MS = 3 * 60_000;
+/** Above the server's 45 s budget for a re-request, so its timeout message reaches the page. */
+const REREQUEST_TIMEOUT_MS = 60_000;
 export const LAUNCH_TIMEOUT_MS = 10 * 60_000;
 
 const limitText = (ms: number) => (ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`);
@@ -388,7 +390,7 @@ export function fetchPRDetail(session: string, url: string): Promise<Result<PRDe
 
 /** Ask GitHub to request another review from `login`, a GitHub reviewer who already reviewed the PR. */
 export function reRequestReview(session: string, pr: string, login: string): Promise<Result<unknown>> {
-  return call<unknown>('POST', `/ships/${encodeURIComponent(session)}/pr/rerequest`, { pr, login });
+  return call<unknown>('POST', `/ships/${encodeURIComponent(session)}/pr/rerequest`, { pr, login }, undefined, { timeoutMs: REREQUEST_TIMEOUT_MS });
 }
 
 export interface Source {

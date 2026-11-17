@@ -289,6 +289,10 @@ describe('relativeTime', () => {
 });
 
 describe('canReRequest', () => {
+  it('offers nothing beside a deleted user, who has no one to request', () => {
+    expect(canReRequest(pr([review('ghost', 'APPROVED')]), 'ghost')).toBe(false);
+    expect(canReRequest(pr([review('', 'APPROVED')]), 'ghost')).toBe(false);
+  });
   const pr = (reviews: PRDetail['reviews'], requested: PRActor[] = [], author = 'octocat') => ({ author: who(author), reviews, requested });
 
   it('offers it to a person whose submitted review stands, whatever its verdict', () => {

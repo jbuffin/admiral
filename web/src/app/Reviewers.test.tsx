@@ -77,3 +77,16 @@ test("GitHub's refusal shows beside the row, keeps the button and reads nothing 
   expect(reread).not.toHaveBeenCalled();
   expect(button('hubot')).toBeTruthy();
 });
+
+test('after a successful request the button stays busy until the PR is read again, so a second tap sends nothing', async () => {
+  const calls = stub();
+  const reread = vi.fn();
+  render(<Reviewers detail={detail()} session="s-1" reread={reread} />);
+
+  fireEvent.click(button('hubot') as HTMLElement);
+  await waitFor(() => expect(reread).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(button('hubot')?.getAttribute('aria-busy')).toBe('true'));
+  fireEvent.click(button('hubot') as HTMLElement);
+
+  expect(calls).toHaveLength(1);
+});

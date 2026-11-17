@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/moor"
 )
@@ -71,6 +72,7 @@ func TestReRequestRefusesWhatGitHubsPageDoesNotOfferWithoutCallingGitHub(t *test
 		{"someone requested who never reviewed", "monalisa"},
 		{"someone who never reviewed and was never requested", "torvalds"},
 		{"no login", ""},
+		{"a deleted user", "ghost"},
 	} {
 		t.Run(c.why, func(t *testing.T) {
 			g := &pollGitHub{}
@@ -126,4 +128,19 @@ func TestReRequestReturnsGitHubsRefusalAndAFailedRead(t *testing.T) {
 			t.Errorf("GitHub was asked %v, want no request when the PR could not be read", got)
 		}
 	})
+}
+
+func TestReRequestAnswersWithItsTimeoutMessageWhenTheWholeBudgetRunsOut(t *testing.T) {
+	old := reRequestBudget
+	reRequestBudget = 50 * time.Millisecond
+	t.Cleanup(func() { reRequestBudget = old })
+	g := &pollGitHub{reRequestWait: true}
+	g.setDetail(reviewedPR())
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	session := f.moor(t, "Nelson", "work", prSeven)
+
+	rec := f.reRequest(session, prSeven, "hubot")
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "did not finish in time") {
+		t.Errorf("a request that outlives the budget = %d %s, want 502 with the timeout message", rec.Code, rec.Body)
+	}
 }

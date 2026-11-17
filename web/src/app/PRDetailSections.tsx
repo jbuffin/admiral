@@ -73,15 +73,19 @@ function Description({ body }: { body: string }) {
 
 function ReRequest({ session, pr, login, reread }: { session: string; pr: string; login: string; reread: () => void }) {
   const [error, setError] = useState('');
+  // Stays busy after success: the row leaves when the re-read lands, and a second tap before then would ask again.
+  const [sent, setSent] = useState(false);
   const run = async () => {
     setError('');
     const r = await reRequestReview(session, pr, login);
-    if (r.ok) reread();
-    else setError(r.error);
+    if (r.ok) {
+      setSent(true);
+      reread();
+    } else setError(r.error);
   };
   return (
     <>
-      <Button label={`Re-request review from ${login}`} variant="quiet" onClick={run}>
+      <Button label={`Re-request review from ${login}`} class="rerequest" busy={sent} onClick={run}>
         Re-request review
       </Button>
       {error ? (

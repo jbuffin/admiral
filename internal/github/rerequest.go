@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// ReRequestTimeout bounds the requestReviews call.
-var ReRequestTimeout = 30 * time.Second
+// ReRequestTimeout bounds the requestReviews call; the lookup before it has the default gh limit.
+var ReRequestTimeout = 20 * time.Second
 
 // ReRequestReview asks GitHub to request a review from login, who reviewed the PR at prURL, keeping the requests already there.
 func (c *Client) ReRequestReview(ctx context.Context, prURL, login string) error {
@@ -42,6 +42,7 @@ func (c *Client) ReRequestReview(ctx context.Context, prURL, login string) error
 		return errors.New("review request failed: GitHub has no such pull request")
 	}
 	field, id := "", ""
+loop:
 	for _, n := range r.PullRequest.Reviews.Nodes {
 		if a := n.Author; a != nil && a.Login == login {
 			switch a.Type {
@@ -52,7 +53,7 @@ func (c *Client) ReRequestReview(ctx context.Context, prURL, login string) error
 			default:
 				return fmt.Errorf("review request failed: %s is a %s, and GitHub's API only re-requests a User or a Bot", login, a.Type)
 			}
-			break
+			break loop
 		}
 	}
 	if id == "" {

@@ -3,16 +3,24 @@ package ships
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/moor"
 )
 
+// reRequestBudget bounds the fresh read, the id lookup and the mutation together (15 s, 8 s and 20 s at most), and the web
+// client waits longer, so the answer and its timeout message reach the page.
+var reRequestBudget = 45 * time.Second
+
+const reRequestTimedOut = "the review request did not finish in time; look at the pull request on GitHub before asking again"
+
 // canReRequest is the rule GitHub's PR page follows for Re-request review: a person whose review was submitted, who is not
-// pending again and is not the PR's author. The client repeats it to decide what to show.
+// pending again and is not the PR's author, and is not the placeholder for a deleted user. The client repeats it to decide what to show.
 func canReRequest(d moor.Detail, login string) bool {
-	if login == "" || login == d.Author.Login {
+	if login == "" || login == "ghost" || login == d.Author.Login {
 		return false
 	}
 	if slices.ContainsFunc(d.Requested, func(a moor.DetailActor) bool { return a.Login == login }) {
@@ -49,7 +57,9 @@ func (s *Service) serveReRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "fleet "+fleet+" has no GitHub access")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), detailTimeout)
+	budget, stop := context.WithTimeout(r.Context(), reRequestBudget)
+	defer stop()
+	ctx, cancel := context.WithTimeout(budget, detailTimeout)
 	defer cancel()
 	d, err := gh.PullRequestDetail(ctx, req.PR)
 	if err != nil {
@@ -60,7 +70,10 @@ func (s *Service) serveReRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "GitHub offers no re-request of a review from "+req.Login+" on this PR")
 		return
 	}
-	if err := gh.ReRequestReview(r.Context(), req.PR, req.Login); err != nil {
+	if err := gh.ReRequestReview(budget, req.PR, req.Login); err != nil {
+		if budget.Err() != nil && r.Context().Err() == nil {
+			err = errors.New(reRequestTimedOut)
+		}
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
