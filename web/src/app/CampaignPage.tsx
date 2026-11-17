@@ -236,7 +236,7 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
         <p>
           {modeLabel(node.mode ?? 'with-you')} · {skillLabel(node.default_skill)}
         </p>
-        {status !== 'done' && node.url !== campaign.root?.url ? (
+        {status !== 'done' && node !== campaign.root ? (
           <>
             <Choice
               legend="Mode"

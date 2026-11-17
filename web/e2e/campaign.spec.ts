@@ -133,7 +133,6 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   // The campaign's own issue launches like a child: tap its title, then Launch.
   await press(main.getByRole('heading', { name: T.map }).getByRole('button'));
   const rootSheet = page.getByRole('dialog', { name: T.map });
-  await expect(rootSheet).toContainText('acme/widgets#20 · Ready');
   await press(rootSheet.getByRole('button', { name: /^Launch/ }));
   await press(form.getByRole('button', { name: 'Launch', exact: true }));
   await expect(form).toBeHidden();

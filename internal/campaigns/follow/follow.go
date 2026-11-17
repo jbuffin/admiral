@@ -534,7 +534,10 @@ func (s *Service) Order(source, id string) (text, title, repo, url, panel string
 		return "", "", "", "", "", lerr
 	}
 	for _, n := range nodes {
-		if n.Parent && (!n.Root || len(nodes) > 1) {
+		if n.Root && len(nodes) > 1 {
+			return "", "", "", "", "", orderError(http.StatusBadRequest, rootInSlice(n.URL))
+		}
+		if n.Parent && !n.Root {
 			return "", "", "", "", "", orderError(http.StatusBadRequest, "that issue is a parent; launch one of its children")
 		}
 	}

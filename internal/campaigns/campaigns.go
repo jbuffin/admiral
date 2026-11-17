@@ -153,7 +153,7 @@ func (b *builder) launchable(out *Node, n *github.TreeNode, above []github.Block
 			out.Status = Ready
 		}
 	}
-	out.Mode, out.Skill = defaults(n, parent)
+	out.Mode, out.Skill = defaults(n, parent, out.Root)
 	out.DefaultMode, out.DefaultSkill = out.Mode, out.Skill
 	if o, ok := b.in.Overrides[n.URL]; ok && !out.Root {
 		if o.Mode != "" {
@@ -189,7 +189,7 @@ func mergeBlockers(own, inherited []github.Blocker) []github.Blocker {
 
 // defaults is ADR 0027's table. A wayfinder label wins over a triage label; a child matching no row
 // is With you with no skill, the choice that starts nothing unattended.
-func defaults(n, parent *github.TreeNode) (Mode, Skill) {
+func defaults(n, parent *github.TreeNode, root bool) (Mode, Skill) {
 	has := func(l string) bool {
 		for _, x := range n.Labels {
 			if x == l {
@@ -201,7 +201,7 @@ func defaults(n, parent *github.TreeNode) (Mode, Skill) {
 	wayfinder := Skill{Kind: "skill", Name: "wayfinder"}
 	withMap := wayfinder
 	withMap.Args = n.URL
-	if parent != n {
+	if !root {
 		withMap.Args = parent.URL + " " + n.URL
 	}
 	switch {

@@ -452,6 +452,10 @@ func launchable(n *campaigns.Node, what string, startAnyway bool) *launcher.Erro
 	return nil
 }
 
+func rootInSlice(url string) string {
+	return url + " is the campaign's own issue; a slice launches children"
+}
+
 // launchSlice launches two or more children as one Commodore ship holding all of them; start_anyway is not read,
 // so an assigned child refuses the slice.
 func (s *Service) launchSlice(ctx context.Context, f Followed, issues []string, req launcher.Request) (any, *launcher.Error) {
@@ -478,7 +482,7 @@ func (s *Service) launchSlice(ctx context.Context, f Followed, issues []string, 
 	for _, u := range issues {
 		n := find(root, u)
 		if n != nil && n.Root {
-			return nil, orderError(http.StatusBadRequest, u+" is the campaign's own issue; a slice launches children")
+			return nil, orderError(http.StatusBadRequest, rootInSlice(u))
 		}
 		if lerr := launchable(n, u, false); lerr != nil {
 			return nil, lerr
