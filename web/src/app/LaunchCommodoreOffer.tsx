@@ -2,7 +2,6 @@ import { Button } from './Button';
 import { commodoreNote, type SkillsAnswer } from './launchForm';
 
 export interface CommodoreRun {
-  harness: string;
   action: 'install' | 'update';
   // `refreshing` is the skills read that follows a good run, so the stale offer stays busy until it lands.
   status: 'running' | 'refreshing' | 'failed';
@@ -22,8 +21,7 @@ interface Props {
 
 export function LaunchCommodoreOffer({ commodore, run, warning, onRun }: Props) {
   const busy = run?.status === 'running' || run?.status === 'refreshing';
-  // The version line is moot while the update runs.
-  const note = busy ? null : commodoreNote(commodore);
+  const note = commodoreNote(commodore);
   const action = commodore.state === 'missing' ? 'install' : commodore.state === 'outdated' ? 'update' : null;
   if (!action && !note && !run && !warning) return null;
   return (

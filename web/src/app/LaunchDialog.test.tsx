@@ -604,7 +604,9 @@ test('Update posts action update, runs, and on success the read shows Commodore 
   expect(running.getAttribute('aria-busy')).toBe('true');
   fireEvent.click(running);
   finish();
-  await waitFor(() => expect(updateButton()).toBeNull());
+  // Commodore reads ok only after the skills are read again, so wait on the line going and the button returning to idle.
+  await waitFor(() => expect(dialogText()).not.toContain('older than this Admiral needs'));
+  expect(screen.queryByRole('button', { name: /Updat/ })).toBeNull();
   expect(commodorePosts).toEqual([{ fleet: 'zulu', harness: 'claude', action: 'update' }]);
   expect(dialogText()).not.toContain('older than this Admiral needs');
 });
@@ -658,8 +660,11 @@ test('an install still running when the engineer changes dock never paints its f
   choose(/codex/i);
   await waitFor(() => expect(box().value).toMatch(/^(Commodore|Just launch)$/));
   finish();
-  await waitFor(() => expect(commodorePosts).toHaveLength(1));
-  await new Promise((r) => setTimeout(r, 20));
+  // The failure shows once the dock it was for is back, which proves the held response has been handled.
+  choose(/claude/i);
+  expect(await screen.findByText('claude plugin install failed')).toBeTruthy();
+  choose(/codex/i);
+  await waitFor(() => expect(box().value).toMatch(/^Just launch$/));
   expect(screen.queryByText('claude plugin install failed')).toBeNull();
   expect(screen.getByRole('dialog').querySelector('pre')).toBeNull();
   const here = await screen.findByRole('button', { name: 'Install Commodore' });
@@ -686,9 +691,34 @@ test('an install that succeeds after the engineer changed dock leaves the other 
   choose(/codex/i);
   await waitFor(() => expect(box().value).toMatch(/^Just launch$/));
   finish();
-  await waitFor(() => expect(commodorePosts).toHaveLength(1));
-  await new Promise((r) => setTimeout(r, 20));
-  expect(box().value).toBe('Just launch');
+  // The warning shows once the dock it was for is back, which proves the held response has been handled.
+  choose(/claude/i);
+  expect(await screen.findByText('could not turn on auto-update')).toBeTruthy();
+  choose(/codex/i);
+  await waitFor(() => expect(box().value).toBe('Just launch'));
   expect(dialogText()).not.toContain('could not turn on auto-update');
   expect(await screen.findByRole('button', { name: 'Install Commodore' })).toBeTruthy();
+});
+
+test('a run on one dock keeps its busy state and its failure when the engineer goes to another dock, runs there, and comes back', async () => {
+  let finish!: () => void;
+  const held = new Promise<void>((r) => (finish = r));
+  serve({
+    skills: (h) => json(h === 'claude' ? missing : answers.codex),
+    commodore: (body) => (body.harness === 'claude' ? held.then(() => json(failedInstall, 502)) : json({ error: 'another install is running' }, 409)),
+  });
+  open();
+  await ready();
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  await screen.findByRole('button', { name: /Installing/ });
+
+  choose(/codex/i);
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  expect(await screen.findByText('another install is running')).toBeTruthy();
+  choose(/claude/i);
+  expect((await screen.findByRole('button', { name: /Installing/ })).getAttribute('aria-busy')).toBe('true');
+  finish();
+  expect(await screen.findByText('claude plugin install failed')).toBeTruthy();
+  expect(screen.getByRole('dialog').querySelector('pre')).toBeTruthy();
+  expect(screen.queryByText('another install is running')).toBeNull();
 });
