@@ -221,8 +221,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/connection/check", s.serveConnectionCheck)
 	mux.HandleFunc("POST /api/sources/{key}/search-count", s.serveSearchCount)
 	mux.HandleFunc("GET /api/sources/{key}/schema", s.serveSchema)
-	mux.HandleFunc("GET /api/sources/{key}/page", s.serveNotBuilt)
-	mux.HandleFunc("GET /api/sources/{key}/rows/{id}", s.serveNotBuilt)
+	mux.HandleFunc("GET /api/sources/{key}/page", s.servePage)
+	mux.HandleFunc("GET /api/sources/{key}/rows/{id}", s.serveRow)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("GET /api/sources/{key}/repos", s.serveRepos)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
@@ -931,6 +931,40 @@ func (s *Service) serveSchema(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(append(slices.Clone(schema), '\n'))
+}
+
+// pageRunner is the runner of a source that declares a page; it answers the 404 itself otherwise.
+func (s *Service) pageRunner(w http.ResponseWriter, key string) *runner {
+	rn := s.Sup.runner(key)
+	if rn == nil {
+		writeError(w, http.StatusNotFound, "source "+key+" not found")
+		return nil
+	}
+	if !rn.hasPageCap() {
+		writeError(w, http.StatusNotFound, "The source has no page")
+		return nil
+	}
+	return rn
+}
+
+func (s *Service) servePage(w http.ResponseWriter, r *http.Request) {
+	if rn := s.pageRunner(w, r.PathValue("key")); rn != nil {
+		v, _ := rn.Page()
+		writeJSON(w, http.StatusOK, v)
+	}
+}
+
+func (s *Service) serveRow(w http.ResponseWriter, r *http.Request) {
+	rn := s.pageRunner(w, r.PathValue("key"))
+	if rn == nil {
+		return
+	}
+	d, err := rn.rowDetail(r.Context(), r.PathValue("id"), r.URL.Query()["include"])
+	if err != nil {
+		writeError(w, http.StatusBadGateway, cleanMsg(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
 }
 
 func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runner, conn, bool) {

@@ -34,7 +34,7 @@ const (
 	maxQueued = 1000
 )
 
-var knownCapabilities = []string{"add", "edit", "remove", "refresh"}
+var knownCapabilities = []string{"add", "edit", "remove", "refresh", "page"}
 
 type runner struct {
 	home string
@@ -62,6 +62,9 @@ type runner struct {
 	errMsg   string
 	auth     *Auth
 	caps     []string
+	kinds    []MessageKind // the message kinds a module declared in initialize
+	page     Page          // the last good page.get; it outlives the plugin's restarts
+	hasPage  bool
 	schema   json.RawMessage
 	panels   []Panel
 	warnings []string   // the router's, for a built-in GitHub source
@@ -224,7 +227,7 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 	if err != nil {
 		return fatal(fmt.Errorf("initialize: %w", err))
 	}
-	caps, schema, err := parseInitialize(res)
+	caps, schema, kinds, err := parseInitialize(res)
 	if err != nil {
 		return fatal(err)
 	}
@@ -238,11 +241,14 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 	}
 	r.pullCatalog(ctx, p)
 	r.mu.Lock()
-	r.caps, r.schema = caps, schema
+	r.caps, r.schema, r.kinds = caps, schema, kinds
 	r.mergePanels(panels)
 	r.mu.Unlock()
 	for _, pn := range panels {
 		r.pullOrders(ctx, p, pn.ID)
+	}
+	if slices.Contains(caps, "page") {
+		r.pullPage(ctx, p)
 	}
 	select {
 	case <-p.exited():
@@ -324,21 +330,22 @@ func (r *runner) setWarnings(sid int, w []string) {
 	}
 }
 
-func parseInitialize(raw json.RawMessage) ([]string, json.RawMessage, error) {
+func parseInitialize(raw json.RawMessage) ([]string, json.RawMessage, []MessageKind, error) {
 	var res struct {
 		ProtocolVersion *int            `json:"protocolVersion"`
 		Capabilities    []string        `json:"capabilities"`
 		SettingsSchema  json.RawMessage `json:"settingsSchema"`
+		MessageKinds    json.RawMessage `json:"messageKinds"`
 	}
 	if err := decodeInto(raw, &res); err != nil {
-		return nil, nil, fmt.Errorf("initialize: %w", err)
+		return nil, nil, nil, fmt.Errorf("initialize: %w", err)
 	}
 	if res.ProtocolVersion == nil || *res.ProtocolVersion != protocolVersion {
 		got := "none"
 		if res.ProtocolVersion != nil {
 			got = fmt.Sprint(*res.ProtocolVersion)
 		}
-		return nil, nil, &incompatibleError{fmt.Sprintf("the order source speaks protocol version %s, but Admiral speaks version %d", got, protocolVersion)}
+		return nil, nil, nil, &incompatibleError{fmt.Sprintf("the order source speaks protocol version %s, but Admiral speaks version %d", got, protocolVersion)}
 	}
 	caps := []string{}
 	for _, c := range res.Capabilities {
@@ -352,7 +359,7 @@ func parseInitialize(raw json.RawMessage) ([]string, json.RawMessage, error) {
 	if len(schema) > maxSchema || json.Unmarshal(schema, &obj) != nil || obj == nil {
 		schema = json.RawMessage("{}")
 	}
-	return caps, schema, nil
+	return caps, schema, parseMessageKinds(res.MessageKinds), nil
 }
 
 const maxSchema = 256 << 10

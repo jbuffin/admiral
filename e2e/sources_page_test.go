@@ -139,6 +139,7 @@ func TestARestartThatBringsAnOverLimitPageKeepsServingTheLastGoodOne(t *testing.
 	p := w.newTP("m")
 	p.put("page.json", modulePage)
 	w.startSources(tpSource("m", p, map[string]any{"capabilities": []string{"page"}}))
+	w.waitSource("m", 10*time.Second, "state ok", isOK)
 	w.waitPageReady("m")
 
 	groups := make([]string, 101)

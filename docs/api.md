@@ -668,6 +668,14 @@ Checks the token and who gh is signed in as now, waits for the answer, stores it
 
 Body: `{"query": "<GitHub search>"}` or `{"view": "<view id>"}` (a built-in's or a custom view's id, hidden ones included). It answers `200 {"count": N}`, GitHub's total for the search (`issueCount`), with no `sort:` added, not cached, and not the Orders list: the list holds at most 50, drops items routed to another fleet and hides orders a ship holds. Errors: `400` for an empty query, one over 1024 bytes, neither field, `for-you` (not a search) or an unknown view, or a source that isn't GitHub; `404` for an unknown source; `409` while the source isn't running, and `409 {"error", "connection"}` when gh is signed out or missing, without searching; `409 {"error", "connection"}` too when GitHub rejects the token; `422 {"error": "Search failed: …"}` when GitHub refuses the search for another reason, and `422 {"error": "GitHub took too long to answer"}` when a call ran out of time (the connection stays as it was); `502` when GitHub can't be reached. A good count, like a good Check again, sets `connected`.
 
+### `GET /api/sources/<key>/page` and `GET /api/sources/<key>/rows/<id>`
+
+A module's page and one row's detail view; the plugin side is in [A module's page](plugins.md#a-modules-page). Both answer `404 {"error"}` for a source that does not exist, and `404 {"error":"The source has no page"}` for one whose plugin does not declare `page` (its `capabilities` lack it, and they are empty until the plugin has answered `initialize`).
+
+The page answers `200 {"state","groups","waiting"}`. `state` is `starting` with `groups: []` and `waiting: 0` until the plugin's first good `page.get`, and `ready` after. The last good page stays served through a restart and when a later answer is refused. A group is `{"id","title","rows"}`, a row is `{"id","title","subtitle","chips":[{"label","tone"}],"reason","action","actions"}` and an action is `{"id","label","confirm","summary","url"}`, with `action`, `actions` and `url` left out when there are none.
+
+A row answers `200 {"sections":[...]}`, from `row.get`, and passes each repeated `include` query parameter (`?include=closed&include=queued`) to it as a list. A plugin that is not running, or a `row.get` that errors, times out or is over its limit answers `502 {"error"}` with a one-line message.
+
 ### `DELETE /api/sources/<key>` and `POST /api/sources/<key>/restart`
 
 Both answer `409 {"error"}` for a GitHub source, which is always present, and change nothing. A settings save still restarts it internally.
