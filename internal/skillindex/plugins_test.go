@@ -15,7 +15,7 @@ const (
 	jbCommod = "jasonbuffin:commodore"
 )
 
-// writePlugin lays out a plugin repo as the recon found it: the manifest at .claude-plugin/plugin.json and
+// writePlugin lays out a plugin repo with the manifest at .claude-plugin/plugin.json and
 // the skills under skills/engineering/, which the manifest's `skills` names.
 func writePlugin(t *testing.T, root, version string, extra map[string]any) {
 	t.Helper()
@@ -119,6 +119,25 @@ func TestCodexTakesTheHighestVersionDirectory(t *testing.T) {
 	got := lookup(t, "codex", d, "")
 	if got.Version != "3.10.0" || filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(got.Dir)))) != "3.10.0" {
 		t.Errorf("LookupCommodore = %+v, want version 3.10.0 from the 3.10.0 directory", got)
+	}
+}
+
+func TestCodexSkipsAVersionDirectoryThatHoldsNoPlugin(t *testing.T) {
+	d := newIDs(t)
+	writePlugin(t, d.codexCache("jbuffinskills", "jasonbuffin", "3.5.0"), "3.5.0", nil)
+	if err := os.MkdirAll(d.codexCache("jbuffinskills", "jasonbuffin", "3.6.0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d.codexConfig(codexTable(jbKey, true))
+	if got := lookup(t, "codex", d, ""); got.Version != "3.5.0" {
+		t.Errorf("LookupCommodore = %+v, want version 3.5.0", got)
+	}
+
+	d.codexConfig(codexTable(jbKey, false))
+	proj := d.project("proj")
+	writeSkill(t, filepath.Join(proj, ".agents", "skills"), "commodore")
+	if c, ok := skillindex.LookupCommodore("codex", d.environ(), proj); ok {
+		t.Errorf("LookupCommodore = %+v, want the disabled plugin to block the project's Commodore", c)
 	}
 }
 

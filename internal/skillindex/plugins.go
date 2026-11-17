@@ -44,7 +44,7 @@ func codexPlugins(identity string, blocking bool) []skill {
 		}
 		parent := filepath.Join(identity, "plugins", "cache", marketplace, name)
 		root, ok := highestVersionDir(parent)
-		if !ok {
+		if !ok || !within(filepath.Join(identity, "plugins", "cache"), root) {
 			continue
 		}
 		out = append(out, pluginAt(root, name, key)...)
@@ -64,7 +64,7 @@ func highestVersionDir(parent string) (string, bool) {
 	}
 	best := ""
 	for _, e := range ents {
-		if e.IsDir() && (best == "" || versionLess(best, e.Name())) {
+		if e.IsDir() && isFile(filepath.Join(parent, e.Name(), ".claude-plugin", "plugin.json")) && (best == "" || versionLess(best, e.Name())) {
 			best = e.Name()
 		}
 	}
@@ -114,7 +114,7 @@ func copilotPlugins(identity string, blocking bool) []skill {
 		var settings struct {
 			EnabledPlugins map[string]bool `json:"enabledPlugins"`
 		}
-		if json.Unmarshal(s, &settings) == nil {
+		if json.Unmarshal(dropLeadingComments(s), &settings) == nil {
 			enabled = settings.EnabledPlugins
 		}
 	}
@@ -151,16 +151,9 @@ func dropLeadingComments(data []byte) []byte {
 	}
 }
 
-// within says path is below base, by name and after following symlinks.
+// within says path is below base once symlinks are followed.
 func within(base, path string) bool {
 	if !filepath.IsAbs(path) {
-		return false
-	}
-	inside := func(b, p string) bool {
-		rel, err := filepath.Rel(b, p)
-		return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-	}
-	if !inside(base, filepath.Clean(path)) {
 		return false
 	}
 	realBase, err := filepath.EvalSymlinks(base)
@@ -168,7 +161,11 @@ func within(base, path string) bool {
 		return false
 	}
 	realPath, err := filepath.EvalSymlinks(path)
-	return err == nil && inside(realBase, realPath)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(realBase, realPath)
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // pluginAt reads the plugin whose manifest is under root and tags its skills with the registry key.
