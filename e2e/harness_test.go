@@ -533,15 +533,18 @@ func wsDialAt(t *testing.T, base, path, query string, hdr http.Header, host stri
 	return c, resp, err
 }
 
-// killTmux ends the tmux server on sock and waits until the socket stops answering.
+// killTmux ends every tmux process on sock. A client still starting when Admiral exits forks its server after the socket
+// stops answering, so it kills again until no process names the socket.
 func killTmux(sock string) {
-	_ = exec.Command("tmux", "-S", sock, "kill-server").Run()
-	for i := 0; i < 20; i++ {
-		if exec.Command("tmux", "-S", sock, "list-sessions").Run() != nil {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = exec.Command("tmux", "-S", sock, "kill-server").Run()
+		if tmuxOn(sock) == "" {
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
+	_ = exec.Command("pkill", "-9", "-f", "--", tmuxOnPattern(sock)).Run()
 }
 
 func readJSON(t *testing.T, c *websocket.Conn, v any) {

@@ -55,8 +55,13 @@ type pollGitHub struct {
 	stackErr   error               // when set, StackOpenPRs fails
 	stackCalls []string
 
-	linkErr    error   // what LinkStack answers
-	linked     [][]int // the numbers of each LinkStack call
+	merged     []string      // each merge as "pr URL method" or "stack N method"
+	stackMerr  error         // what MergeStack answers; MergePR answers mergeErr
+	method     string        // the default merge method; empty is merge
+	mergeBlock chan struct{} // when set, MergePR waits for it to close
+	linkBlock  chan struct{} // when set, LinkStack waits for it to close
+	linkErr    error         // what LinkStack answers
+	linked     [][]int       // the numbers of each LinkStack call
 	linkedBase []string
 	linkedRepo []string
 }
@@ -132,12 +137,28 @@ func (g *pollGitHub) PullRequests(_ context.Context, urls []string) (map[string]
 	return out, nil
 }
 
-func (g *pollGitHub) DefaultMergeMethod(context.Context, string) (string, error) { return "merge", nil }
+func (g *pollGitHub) DefaultMergeMethod(context.Context, string) (string, error) {
+	if g.method != "" {
+		return g.method, nil
+	}
+	return "merge", nil
+}
 
-func (g *pollGitHub) MergePR(context.Context, string, string) error {
+func (g *pollGitHub) MergePR(_ context.Context, url, method string) error {
+	g.mu.Lock()
+	g.merged = append(g.merged, "pr "+url+" "+method)
+	block, err := g.mergeBlock, g.mergeErr
+	g.mu.Unlock()
+	if block != nil {
+		<-block
+	}
+	return err
+}
+
+func (g *pollGitHub) mergeLog() []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.mergeErr
+	return append([]string(nil), g.merged...)
 }
 
 func (g *pollGitHub) StackOpenPRs(_ context.Context, owner, repo string, number int) ([]string, bool, error) {
@@ -158,8 +179,11 @@ func (g *pollGitHub) stackLog() []string {
 	return append([]string(nil), g.stackCalls...)
 }
 
-func (g *pollGitHub) MergeStack(context.Context, string, int, string) error {
-	return g.MergePR(context.Background(), "", "")
+func (g *pollGitHub) MergeStack(_ context.Context, _ string, number int, method string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.merged = append(g.merged, "stack "+strconv.Itoa(number)+" "+method)
+	return g.stackMerr
 }
 
 func (g *pollGitHub) LinkStack(_ context.Context, repo, base string, numbers []int) error {
@@ -168,6 +192,12 @@ func (g *pollGitHub) LinkStack(_ context.Context, repo, base string, numbers []i
 	g.linked = append(g.linked, slices.Clone(numbers))
 	g.linkedRepo = append(g.linkedRepo, repo)
 	g.linkedBase = append(g.linkedBase, base)
+	block := g.linkBlock
+	g.mu.Unlock()
+	if block != nil {
+		<-block
+	}
+	g.mu.Lock()
 	return g.linkErr
 }
 

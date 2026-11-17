@@ -6,8 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
 
 // holdPort is a stranger on addr that answers 404 to everything, the way another suite's server would.
@@ -160,4 +165,64 @@ func (r *tsRig) serveProxy() string {
 		r.t.Fatal(err)
 	}
 	return cfg.Web[tsHostPort(443)].Handlers["/"].Proxy
+}
+
+// tmuxOnPattern matches a tmux command line that names sock, as given or with its folder's symlinks resolved
+// (/tmp is /private/tmp on macOS, and tmux keeps the path it was started with).
+func tmuxOnPattern(sock string) string {
+	forms := []string{regexp.QuoteMeta(sock)}
+	if dir, err := filepath.EvalSymlinks(filepath.Dir(sock)); err == nil {
+		if real := filepath.Join(dir, filepath.Base(sock)); real != sock {
+			forms = append(forms, regexp.QuoteMeta(real))
+		}
+	}
+	return "-S (" + strings.Join(forms, "|") + ")( |$)"
+}
+
+// tmuxOn lists the pids of tmux processes whose command line names sock: the server, and a client that
+// has not yet forked it.
+func tmuxOn(sock string) string {
+	out, _ := exec.Command("pgrep", "-f", "--", tmuxOnPattern(sock)).Output()
+	return strings.TrimSpace(string(out))
+}
+
+// Admiral's control client starts the tmux server, and a client still starting when Admiral exits forks it after
+// the socket has stopped answering. killTmux must outlast that, or the server outlives the home.
+func TestHarnessKillTmuxEndsAServerAClientIsStillStarting(t *testing.T) {
+	t.Parallel()
+	dir, err := os.MkdirTemp("/tmp", "adm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(dir, "tmux.sock")
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := filepath.Join(real, "tmux.sock") // the form a world's Admiral passes to tmux
+	t.Cleanup(func() {
+		_ = exec.Command("pkill", "-9", "-f", "--", tmuxOnPattern(sock)).Run()
+		_ = os.RemoveAll(dir)
+	})
+	for i := 0; i < 5; i++ {
+		cmd := exec.Command("tmux", "-f", "/dev/null", "-S", started, "-u", "-C", "new-session", "-A", "-s", "_admiral", "tail", "-f", "/dev/null")
+		in, err := cmd.StdinPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		_ = in.Close()
+		killTmux(sock)
+		_ = cmd.Wait()
+		holdClean(t, 300*time.Millisecond, func() string {
+			// Searched by the exact form the client was started with, not by killTmux's own pattern.
+			out, _ := exec.Command("pgrep", "-f", "--", "-S "+regexp.QuoteMeta(started)+"( |$)").Output()
+			if p := strings.TrimSpace(string(out)); p != "" {
+				return "tmux server started after killTmux returned (pids " + strings.ReplaceAll(p, "\n", ",") + ") on try " + strconv.Itoa(i)
+			}
+			return ""
+		})
+	}
 }

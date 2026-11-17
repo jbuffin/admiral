@@ -170,3 +170,10 @@ func TestPullRequestDetailOfAPRInNoStackHasNoStack(t *testing.T) {
 		t.Errorf("title, stack = %q, %+v; want t and no stack", d.Title, d.Stack)
 	}
 }
+
+func TestPullRequestDetailOfAPRGitHubHasNoRecordOfIsAnErrorNotAnEmptyDetail(t *testing.T) {
+	cl, _ := prClient(t)
+	if d, err := cl.PullRequestDetail(context.Background(), prA); err == nil || !strings.Contains(err.Error(), "has no such pull request") {
+		t.Fatalf("PullRequestDetail = %+v, %v; want a has-no-such-pull-request error: a PR GitHub does not have must not read as an empty one", d, err)
+	}
+}

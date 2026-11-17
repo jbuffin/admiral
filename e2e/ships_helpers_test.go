@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -88,7 +87,7 @@ func newWorld(t *testing.T) *world {
 // once the home is removed nothing can reach the server again. The Admiral socket's server carries the path in its
 // command line; one on the default socket (the setup terminal's) has none, so it is found by asking it.
 func (w *world) noTmuxLeft(t *testing.T) {
-	pattern := "-S " + regexp.QuoteMeta(w.sock()) + "( |$)"
+	pattern := tmuxOnPattern(w.sock())
 	end := time.Now().Add(2 * time.Second)
 	for {
 		out, _ := exec.Command("pgrep", "-f", "--", pattern).Output()
