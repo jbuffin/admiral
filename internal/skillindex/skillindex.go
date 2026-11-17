@@ -14,8 +14,9 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// skill is an invocation name and the folder holding its SKILL.md.
-type skill struct{ name, dir string }
+// skill is an invocation name and the folder holding its SKILL.md. plugin is
+// the registry key of the plugin it came from, and version the plugin manifest's.
+type skill struct{ name, dir, plugin, version string }
 
 func Installed(harness string, environ []string, dir string) []string {
 	user, project := locations(harness, environ, dir)
@@ -76,20 +77,46 @@ func CommodoreDir(harness string, environ []string, dir string) (string, bool) {
 	return sk.dir, ok
 }
 
+// Commodore is the Commodore skill a launch would use. Plugin is the registry
+// key of the plugin it comes from, empty for a loose skill; Version is that
+// plugin manifest's version, empty when it has none.
+type Commodore struct{ Name, Dir, Plugin, Version string }
+
+// LookupCommodore is FindCommodore and CommodoreDir with where it came from.
+func LookupCommodore(harness string, environ []string, dir string) (Commodore, bool) {
+	sk, ok := findCommodore(harness, environ, dir)
+	if !ok {
+		return Commodore{}, false
+	}
+	return Commodore{Name: sk.name, Dir: sk.dir, Plugin: sk.plugin, Version: sk.version}, true
+}
+
 func findCommodore(harness string, environ []string, dir string) (skill, bool) {
 	user, project := locations(harness, environ, dir)
 	if sk, ok := pickCommodore(user); ok {
 		return sk, true
 	}
-	if harness == "claude" {
-		// A project that turns off the user's Commodore plugin does not get to
-		// put its own in its place.
-		env := envMap(environ)
-		if _, ok := pickCommodore(claudePlugins(env, config.IdentityDir(harness, env), dir, false)); ok {
-			return skill{}, false
-		}
+	// A Commodore plugin the user turned off, or a project turned off for them,
+	// does not make room for the project's own (ADR 0040).
+	if _, ok := pickCommodore(userPlugins(harness, environ, dir)); ok {
+		return skill{}, false
 	}
 	return pickCommodore(project)
+}
+
+// userPlugins is the skills of every plugin installed at user level, turned on or off.
+func userPlugins(harness string, environ []string, dir string) []skill {
+	env := envMap(environ)
+	identity := config.IdentityDir(harness, env)
+	switch harness {
+	case "claude":
+		return claudePlugins(env, identity, dir, false, true)
+	case "codex":
+		return codexPlugins(identity, true)
+	case "copilot":
+		return copilotPlugins(identity, true)
+	}
+	return nil
 }
 
 func pickCommodore(skills []skill) (skill, bool) {
@@ -115,13 +142,15 @@ func locations(harness string, environ []string, dir string) (user, project []sk
 	identity := config.IdentityDir(harness, env)
 	switch harness {
 	case "claude":
-		user = append(scanDir(filepath.Join(identity, "skills"), true), claudePlugins(env, identity, dir, true)...)
+		user = append(scanDir(filepath.Join(identity, "skills"), true), claudePlugins(env, identity, dir, true, false)...)
 		project = projectSkills(dir, ".claude", true)
 	case "codex":
 		user = append(scanDir(filepath.Join(home, ".agents", "skills"), false), scanDir(filepath.Join(identity, "skills"), false)...)
+		user = append(user, codexPlugins(identity, false)...)
 		project = projectSkills(dir, ".agents", false)
 	case "copilot":
 		user = append(scanDir(filepath.Join(identity, "skills"), false), scanDir(filepath.Join(home, ".agents", "skills"), false)...)
+		user = append(user, copilotPlugins(identity, false)...)
 		for _, d := range []string{".github", ".agents", ".claude"} {
 			project = append(project, projectSkills(dir, d, false)...)
 		}
@@ -176,7 +205,7 @@ func scanDir(dir string, plugins bool) []skill {
 		switch {
 		case isFile(filepath.Join(p, "SKILL.md")):
 			if validName(e.Name()) {
-				out = append(out, skill{e.Name(), p})
+				out = append(out, skill{name: e.Name(), dir: p})
 			}
 		case plugins && isFile(filepath.Join(p, ".claude-plugin", "plugin.json")):
 			out = append(out, pluginSkills(p, "")...)
@@ -198,6 +227,7 @@ func isFile(p string) bool {
 type manifest struct {
 	Name           string          `json:"name"`
 	Skills         json.RawMessage `json:"skills"`
+	Version        string          `json:"version"`
 	DefaultEnabled *bool           `json:"defaultEnabled"`
 }
 
@@ -220,6 +250,7 @@ func pluginSkills(root, fallbackName string) []skill {
 }
 
 func namespaced(root string, m manifest, fallbackName string) []skill {
+	version := m.Version
 	name := m.Name
 	if name == "" {
 		name = fallbackName
@@ -230,7 +261,7 @@ func namespaced(root string, m manifest, fallbackName string) []skill {
 	var out []skill
 	found := func(skillName, dir string) {
 		if validName(skillName) {
-			out = append(out, skill{name + ":" + skillName, dir})
+			out = append(out, skill{name: name + ":" + skillName, dir: dir, version: version})
 		}
 	}
 	for _, s := range findSkills(filepath.Join(root, "skills")) {
@@ -275,7 +306,7 @@ func findSkills(dir string) []skill {
 				continue
 			}
 			if isFile(filepath.Join(p, "SKILL.md")) {
-				out = append(out, skill{e.Name(), p})
+				out = append(out, skill{name: e.Name(), dir: p})
 			} else if depth < maxDepth {
 				walk(p, depth+1)
 			}
@@ -288,7 +319,9 @@ func findSkills(dir string) []skill {
 // claudePlugins lists the skills of the installed, enabled plugins, as
 // https://code.claude.com/docs/en/plugins-reference lays them out. Plugins
 // synced from claude.ai are left out: they are not on disk.
-func claudePlugins(env map[string]string, identity, dir string, projectSettings bool) []skill {
+//
+// blocking lists a plugin the user's settings turn off too.
+func claudePlugins(env map[string]string, identity, dir string, projectSettings, blocking bool) []skill {
 	root := filepath.Join(identity, "plugins")
 	if v := env["CLAUDE_CODE_PLUGIN_CACHE_DIR"]; v != "" {
 		root = v
@@ -323,10 +356,15 @@ func claudePlugins(env map[string]string, identity, dir string, projectSettings 
 			on, listed := enabled[key]
 			if !listed {
 				on = m.DefaultEnabled == nil || *m.DefaultEnabled
+			} else if blocking {
+				on = true
 			}
 			if on {
 				name, _, _ := strings.Cut(key, "@")
-				out = append(out, namespaced(path, m, name)...)
+				for _, sk := range namespaced(path, m, name) {
+					sk.plugin = key
+					out = append(out, sk)
+				}
 			}
 		}
 	}
