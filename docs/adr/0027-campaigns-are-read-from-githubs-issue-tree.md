@@ -1,6 +1,6 @@
 # 27. Campaigns are read from GitHub's issue tree; Admiral creates a parent but never edits a tree
 
-Status: accepted, amended by [ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md) (Without-you children launch in autopilot mode)
+Status: accepted, amended by [ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md) (Without-you children launch in autopilot mode), and by [ADR 0043](0043-an-idea-in-the-chat-becomes-a-pr-with-no-questions-on-the-way.md) (every ship AdmiralBot launches runs in autopilot, not only Commodore ships)
 
 ## Context
 

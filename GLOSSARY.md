@@ -191,8 +191,12 @@ A ship that looks at something (a repo, logs, the web, an issue) and reports bac
 _Avoid_: probe, research ship, investigator
 
 **Quick ship**:
-A ship sent for a small change that one session can finish with no design to settle. Anything bigger goes to a Commodore ship.
+A ship sent for a small change that one session can finish with no design to settle. It runs no skill, in a worktree of its own, and ends with a PR. Anything bigger goes to a Commodore ship.
 _Avoid_: fast ship, light ship
+
+**Launch text**:
+What a ship is told to do when it launches. When AdmiralBot launches it, this is AdmiralBot's restatement of the engineer's request (the goal, the repo, what done looks like), with exact strings kept, not the engineer's words as typed.
+_Avoid_: brief (that is AdmiralBot's own page), prompt, instructions
 
 **Crew boat**:
 A smaller boat rafted beside a ship: a teammate the ship's skill started with `admiral crew`, in its own tmux window, which the engineer can board. It may carry a **role** the skill gave it, such as `test-writer`. A crew boat that ended its turn is idle: it waits for its lead, not the engineer.

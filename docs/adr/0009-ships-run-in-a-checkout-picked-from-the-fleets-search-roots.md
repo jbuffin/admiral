@@ -1,6 +1,6 @@
 # 9. Ships run in a checkout picked from the fleet's search roots
 
-Status: accepted, amended by [ADR 0027](0027-campaigns-are-read-from-githubs-issue-tree.md) (a campaign's work repo comes first in the preselect) and by the amendment below (Admiral clones a missing repo on launch)
+Status: accepted, amended by [ADR 0027](0027-campaigns-are-read-from-githubs-issue-tree.md) (a campaign's work repo comes first in the preselect), by the amendment below (Admiral clones a missing repo on launch) and by [ADR 0043](0043-an-idea-in-the-chat-becomes-a-pr-with-no-questions-on-the-way.md) (Admiral makes a worktree for a ship launched with no skill)
 
 ## Context
 
