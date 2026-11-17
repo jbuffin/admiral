@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/moor"
 )
 
 // Supervisor reconciles against every config reload, whoever caused it.
@@ -18,6 +19,8 @@ type Supervisor struct {
 	OnChange func()
 	// OnEvent receives each event a source raised that passed its catalog; it must not block.
 	OnEvent func(source string, ev Event)
+	// StackChecker tells whether a chain's or stack's top merges into its base; nil leaves the orders as GitHub answered them.
+	StackChecker moor.StackChecker
 
 	mu      sync.Mutex
 	ctx     context.Context

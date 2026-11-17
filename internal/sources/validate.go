@@ -76,6 +76,8 @@ type OrderStack struct {
 	URL      string `json:"url"`
 	Position int    `json:"position"`
 	Size     int    `json:"size"`
+	// ConflictsWithBase names the base branch the whole stack conflicts with, when the check found it.
+	ConflictsWithBase string `json:"conflicts_with_base,omitempty"`
 }
 
 // OrderChain is a pull request's place in a chain: Position counts from 1 at the bottom, ID is the bottom PR's URL,
@@ -87,6 +89,8 @@ type OrderChain struct {
 	Head     string `json:"head"`
 	Base     string `json:"base"`
 	Mine     bool   `json:"mine"`
+	// ConflictsWithBase names the base branch the whole chain conflicts with, when the check found it.
+	ConflictsWithBase string `json:"conflicts_with_base,omitempty"`
 }
 
 type Panel struct {
