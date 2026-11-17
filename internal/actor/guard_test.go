@@ -155,6 +155,7 @@ func TestAnActorIsRefusedEverythingOffTheList(t *testing.T) {
 			{"POST", "/campaigns"},
 			{"POST", "/campaigns/create"},
 			{"POST", "/campaigns/c-1/launch"},
+			{"POST", "/launch-orders/commodore"},
 			{"PUT", "/campaigns/c-1/override"},
 			{"POST", "/campaigns/c-1/unfollow"},
 			{"GET", "/devices"},

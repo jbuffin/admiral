@@ -3,15 +3,20 @@
 package launchorders
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/commodore"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/crew"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -29,12 +34,18 @@ type Service struct {
 	State  *state.Store
 	Ships  func() []ships.Ship
 	Orders ships.Orders
+	// Installer runs Commodore's install and update; nil means the dock's own CLI.
+	Installer commodore.Installer
+
+	installing sync.Mutex
+	running    map[string]bool // fleet/harness docks with an install or update in flight
 }
 
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/launch-orders/dirs", s.serveDirs)
 	mux.HandleFunc("GET /api/launch-orders/skills", s.serveSkills)
 	mux.HandleFunc("GET /api/launch-orders/crew", s.serveCrew)
+	mux.HandleFunc("POST /api/launch-orders/commodore", s.serveCommodore)
 	mux.HandleFunc("GET /api/ships/{session}/skills", s.serveShipSkills)
 	mux.HandleFunc("GET /api/ships/{session}/crew/{name}/skills", s.serveShipSkills)
 	mux.HandleFunc("PUT /api/favorites", s.serveFavorites)
@@ -297,11 +308,105 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 	for i, sk := range found {
 		list[i] = skill{sk.Name, sk.Description, slices.Contains(cfg.FavoriteSkills, sk.Name)}
 	}
-	commodore := map[string]any{"found": false, "name": ""}
-	if n, ok := skillindex.FindCommodore(dock.Name, dock.Environ(), dir); ok {
-		commodore = map[string]any{"found": true, "name": n}
+	cmd := struct {
+		Found bool   `json:"found"`
+		Name  string `json:"name"`
+		commodore.State
+	}{State: commodore.Detect(dock)}
+	cmd.Name, cmd.Found = skillindex.FindCommodore(dock.Name, dock.Environ(), dir)
+	// FindCommodore answers "" when it finds nothing, so Name needs no reset.
+	writeJSON(w, http.StatusOK, map[string]any{"mark": skillindex.Mark(dock.Name), "skills": list, "commodore": cmd})
+}
+
+const installTimeout = 5 * time.Minute
+
+// serveCommodore installs or updates Commodore as a plugin in a dock's own identity.
+func (s *Service) serveCommodore(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Fleet   string `json:"fleet"`
+		Harness string `json:"harness"`
+		Action  string `json:"action"`
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"mark": skillindex.Mark(dock.Name), "skills": list, "commodore": commodore})
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
+		return
+	}
+	fleet, ok := s.Config.Current().Fleet(req.Fleet)
+	if !ok {
+		writeError(w, http.StatusNotFound, "fleet "+req.Fleet+" not found")
+		return
+	}
+	dock, ok := fleet.Harness(req.Harness)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "fleet "+fleet.Name+" has no "+req.Harness+" dock")
+		return
+	}
+	action := commodore.Action(req.Action)
+	if action != commodore.Install && action != commodore.Update {
+		writeError(w, http.StatusBadRequest, `action must be "install" or "update"`)
+		return
+	}
+	// Fleets can share one identity, and its settings and plugin cache take one writer at a time.
+	key := dock.Name + " " + commodore.Identity(dock)
+	s.installing.Lock()
+	if s.running[key] {
+		s.installing.Unlock()
+		writeError(w, http.StatusConflict, "Commodore is already being installed or updated on this dock")
+		return
+	}
+	if s.running == nil {
+		s.running = map[string]bool{}
+	}
+	s.running[key] = true
+	s.installing.Unlock()
+	defer func() {
+		s.installing.Lock()
+		delete(s.running, key)
+		s.installing.Unlock()
+	}()
+
+	before := commodore.Detect(dock)
+	if action == commodore.Update && before.State != commodore.StateOutdated {
+		writeError(w, http.StatusConflict, "Commodore is "+before.State+" here, so there is nothing to update")
+		return
+	}
+	installer := s.Installer
+	if installer == nil {
+		home, err := filepath.Abs(s.Home)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		installer = &commodore.Runner{Home: home, Timeout: installTimeout}
+	}
+	// The run finishes even if the client goes away, so a half-done install is not left behind.
+	out, err := installer.Run(context.WithoutCancel(r.Context()), dock, action)
+	if errors.Is(err, commodore.ErrAutoUpdate) {
+		log.Printf("admiral: Commodore installed on %s/%s: %v", fleet.Key, dock.Name, err)
+		writeJSON(w, http.StatusOK, struct {
+			commodore.State
+			Warning string `json:"warning"`
+		}{commodore.Detect(dock), err.Error()})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error":    err.Error(),
+			"output":   lastLines(out, 20),
+			"commands": commodore.Commands(dock.Name, action),
+			"state":    commodore.Detect(dock),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, commodore.Detect(dock))
+}
+
+func lastLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // serveShipSkills lists the skills a ship's or boat's message box offers: its
