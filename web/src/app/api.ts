@@ -386,7 +386,7 @@ export function fetchPRDetail(session: string, url: string): Promise<Result<PRDe
   return call<PRDetail>('GET', `/ships/${encodeURIComponent(session)}/pr?url=${encodeURIComponent(url)}`);
 }
 
-/** Ask GitHub to request another review from `login`: POST /api/ships/<session>/pr/rerequest. Stub: not built yet. */
+/** Ask GitHub to request another review from `login`, a GitHub reviewer who already reviewed the PR. */
 export function reRequestReview(session: string, pr: string, login: string): Promise<Result<unknown>> {
   return call<unknown>('POST', `/ships/${encodeURIComponent(session)}/pr/rerequest`, { pr, login });
 }

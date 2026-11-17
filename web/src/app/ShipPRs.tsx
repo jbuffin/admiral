@@ -22,9 +22,10 @@ const lastRead = new Map<string, PRDetail>();
 const seen = (urls: string[]) => Object.fromEntries(urls.flatMap((u) => (lastRead.has(u) ? [[u, lastRead.get(u)!]] : [])));
 
 /** Each carried PR's detail, read when the tab opens and every 30s while it stays open; a failed read keeps the last good detail, and a PR never read has none. `failed` holds the PRs whose last read failed. */
-function useDetails(session: string, urls: string[]): { details: Record<string, PRDetail>; failed: Set<string> } {
+function useDetails(session: string, urls: string[]): { details: Record<string, PRDetail>; failed: Set<string>; reread: () => void } {
   const [details, setDetails] = useState<Record<string, PRDetail>>(() => seen(urls));
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
+  const [rereads, setRereads] = useState(0);
   const key = urls.join('\n');
   useLayoutEffect(() => {
     let live = true;
@@ -52,8 +53,8 @@ function useDetails(session: string, urls: string[]): { details: Record<string, 
       live = false;
       clearInterval(timer);
     };
-  }, [session, key]);
-  return { details, failed };
+  }, [session, key, rereads]);
+  return { details, failed, reread: () => setRereads((n) => n + 1) };
 }
 
 /** Where a PR's checks, description, reviewers and timeline go, held open while GitHub has not answered yet. */
@@ -271,7 +272,7 @@ export function PRTab({ ship }: { ship: Ship }) {
   const [fixing, setFixing] = useState(false);
   const [unseen, setUnseen] = useState(false);
   const carried = ship.prs ?? [];
-  const { details, failed } = useDetails(ship.session, carried.map((p) => p.url));
+  const { details, failed, reread } = useDetails(ship.session, carried.map((p) => p.url));
   const chosen = chooseStackDetail(carried, details);
   const stack = chosen?.stack ?? null;
   const [shape, setShape, read] = useShape(ship.session, carried.length > 1);
@@ -438,7 +439,7 @@ export function PRTab({ ship }: { ship: Ship }) {
             <Failure message={error} />
           </div>
         ) : null}
-        {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} /> : <PRLoading failed={failed.has(current.url)} />}
+        {details[current.url] ? <PRSections key={current.url} detail={details[current.url]} session={ship.session} reread={reread} /> : <PRLoading failed={failed.has(current.url)} />}
         {moored && (!mergedAll || error) ? (
           <div class="peek-form">
             {mergedAll || reviews(ship) ? null : <MooredActions ship={ship} tab onError={failAction} locked={acting} onBusy={setActing} />}

@@ -918,8 +918,9 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .pr-detail .pr-cols .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .pr-detail .rev-summary { display: none; text-align: left; }
 .pr-detail .reviewers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.pr-detail .reviewer { display: flex; align-items: center; gap: 10px; min-height: 40px; border-bottom: 1px solid var(--color-line); }
+.pr-detail .reviewer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 40px; border-bottom: 1px solid var(--color-line); }
 .pr-detail .reviewer:last-child { border-bottom: 0; }
+.pr-detail .reviewer .rerequest-error { flex-basis: 100%; margin: 0 0 8px; }
 .pr-detail .avatar { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--color-sel); color: var(--color-text2); font-size: 11px; font-weight: 700; }
 .pr-detail .avatar.bot { border-radius: 6px; }
 .pr-detail .reviewer .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

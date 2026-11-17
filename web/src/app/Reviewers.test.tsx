@@ -21,7 +21,8 @@ const detail = (over: Partial<PRDetail> = {}) =>
     ...over,
   }) as PRDetail;
 
-const row = (login: string) => screen.getByText(login, { exact: false }).closest('li') as HTMLElement;
+// An error beside a row repeats the login, so the row is found by who it names, not by any text.
+const row = (login: string) => screen.getAllByRole('listitem').find((li) => li.querySelector('.who')?.textContent?.includes(login)) as HTMLElement;
 const button = (login: string) => within(row(login)).queryByRole('button', { name: /re-request review/i });
 
 function stub(status = 200, body = '{}') {
