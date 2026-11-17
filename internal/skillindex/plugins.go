@@ -64,7 +64,7 @@ func highestVersionDir(parent string) (string, bool) {
 	}
 	best := ""
 	for _, e := range ents {
-		if e.IsDir() && isFile(filepath.Join(parent, e.Name(), ".claude-plugin", "plugin.json")) && (best == "" || versionLess(best, e.Name())) {
+		if e.IsDir() && isFile(filepath.Join(parent, e.Name(), ".claude-plugin", "plugin.json")) && (best == "" || VersionLess(best, e.Name())) {
 			best = e.Name()
 		}
 	}
@@ -74,8 +74,8 @@ func highestVersionDir(parent string) (string, bool) {
 	return filepath.Join(parent, best), true
 }
 
-// versionLess compares dotted versions numerically, so 3.10.0 is above 3.9.1.
-func versionLess(a, b string) bool {
+// VersionLess compares dotted versions numerically, so 3.10.0 is above 3.9.1.
+func VersionLess(a, b string) bool {
 	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
 	for i := 0; i < len(pa) && i < len(pb); i++ {
 		x, errX := strconv.Atoi(pa[i])

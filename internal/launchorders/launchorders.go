@@ -3,6 +3,7 @@
 package launchorders
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/commodore"
@@ -32,6 +34,9 @@ type Service struct {
 	Orders ships.Orders
 	// Installer runs Commodore's install and update; nil means the dock's own CLI.
 	Installer commodore.Installer
+
+	installing sync.Mutex
+	running    map[string]bool // fleet/harness docks with an install or update in flight
 }
 
 func (s *Service) Routes(mux *http.ServeMux) {
@@ -301,16 +306,98 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 	for i, sk := range found {
 		list[i] = skill{sk.Name, sk.Description, slices.Contains(cfg.FavoriteSkills, sk.Name)}
 	}
-	commodore := map[string]any{"found": false, "name": ""}
+	cmd := map[string]any{"found": false, "name": ""}
 	if n, ok := skillindex.FindCommodore(dock.Name, dock.Environ(), dir); ok {
-		commodore = map[string]any{"found": true, "name": n}
+		cmd = map[string]any{"found": true, "name": n}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"mark": skillindex.Mark(dock.Name), "skills": list, "commodore": commodore})
+	st := commodore.Detect(dock)
+	cmd["state"] = st.State
+	if st.Installed != "" {
+		cmd["installed"], cmd["minimum"] = st.Installed, st.Minimum
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"mark": skillindex.Mark(dock.Name), "skills": list, "commodore": cmd})
 }
 
+const installTimeout = 5 * time.Minute
+
+// serveCommodore installs or updates Commodore as a plugin in a dock's own identity.
 func (s *Service) serveCommodore(w http.ResponseWriter, r *http.Request) {
-	_ = commodore.Install
-	writeError(w, http.StatusNotImplemented, "not implemented")
+	var req struct {
+		Fleet   string `json:"fleet"`
+		Harness string `json:"harness"`
+		Action  string `json:"action"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
+		return
+	}
+	fleet, ok := s.Config.Current().Fleet(req.Fleet)
+	if !ok {
+		writeError(w, http.StatusNotFound, "fleet "+req.Fleet+" not found")
+		return
+	}
+	dock, ok := fleet.Harness(req.Harness)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "fleet "+fleet.Name+" has no "+req.Harness+" dock")
+		return
+	}
+	action := commodore.Action(req.Action)
+	if action != commodore.Install && action != commodore.Update {
+		writeError(w, http.StatusBadRequest, `action must be "install" or "update"`)
+		return
+	}
+	key := fleet.Key + "/" + dock.Name
+	s.installing.Lock()
+	if s.running[key] {
+		s.installing.Unlock()
+		writeError(w, http.StatusConflict, "Commodore is already being installed or updated on this dock")
+		return
+	}
+	if s.running == nil {
+		s.running = map[string]bool{}
+	}
+	s.running[key] = true
+	s.installing.Unlock()
+	defer func() {
+		s.installing.Lock()
+		delete(s.running, key)
+		s.installing.Unlock()
+	}()
+
+	before := commodore.Detect(dock)
+	if action == commodore.Update && before.State != "outdated" {
+		writeError(w, http.StatusConflict, "Commodore is "+before.State+" here, so there is nothing to update")
+		return
+	}
+	installer := s.Installer
+	if installer == nil {
+		home, err := filepath.Abs(s.Home)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		installer = &commodore.Runner{Home: home, Timeout: installTimeout}
+	}
+	// The run finishes even if the client goes away, so a half-done install is not left behind.
+	out, err := installer.Run(context.WithoutCancel(r.Context()), dock, action)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error":    err.Error(),
+			"output":   lastLines(out, 20),
+			"commands": commodore.Commands(dock.Name, action),
+			"state":    commodore.Detect(dock),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, commodore.Detect(dock))
+}
+
+func lastLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // serveShipSkills lists the skills a ship's or boat's message box offers: its

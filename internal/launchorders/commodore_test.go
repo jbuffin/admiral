@@ -505,6 +505,7 @@ func TestASecondRequestForTheSameDockWhileOneRunsIs409(t *testing.T) {
 	if code := <-first; code != http.StatusBadGateway {
 		t.Errorf("the first request = %d, want its own 502", code)
 	}
+	go func() { <-inst.entered }() // the fake announces every claude call and nobody else reads it
 	if code, body := r.post(map[string]string{"fleet": "work", "harness": "claude", "action": "install"}); code == http.StatusConflict {
 		t.Errorf("after the first finished = %d %v, want the dock free again", code, body)
 	}
