@@ -40,6 +40,7 @@ const ASSIGNED: Item[] = [
 ];
 // A GitHub stack of three review-requested PRs by another author, answered top first as the search does (most recently updated first).
 const STACK = { number: 7, url: 'https://github.com/acme/api/stack/7' };
+const STACK_BRANCHES = ['store', 'store-api', 'store-page'];
 const STACK_LAYERS = ['Add the store', 'Wire the store to the API', 'Show the store in the page'];
 // An issue-only view in acme/widgets, the repo campaign.ts builds trees for. Its parent is in no view, so its child sits in a collapsed group.
 const POOL_PARENT = { number: 40, title: 'Existing campaign', repo: 'acme/widgets' };
@@ -74,12 +75,18 @@ function auditRemote(a: Admiral): Record<number, string> {
   const log = commit('audit.txt', 'logged\n', 'log the audit');
   git(work, 'checkout', '-b', 'audit-report');
   const report = commit('report.txt', 'report\n', 'report the audit');
+  const layers: Record<number, string> = {};
+  git(work, 'checkout', '-b', 'store', root);
+  layers[41] = commit('audit.txt', 'store\n', 'add the store');
+  git(work, 'checkout', '-b', 'store-api');
+  layers[42] = commit('api.txt', 'api\n', 'wire the store');
+  git(work, 'checkout', '-b', 'store-page');
+  layers[43] = commit('page.txt', 'page\n', 'show the store');
   git(work, 'checkout', 'main');
   commit('audit.txt', 'moved\n', 'move main');
   git(work, 'push', bare, 'main');
-  git(work, 'push', bare, `${log}:refs/pull/71/head`, `${report}:refs/pull/72/head`);
-  void root;
-  return { 71: log, 72: report };
+  git(work, 'push', bare, `${log}:refs/pull/71/head`, `${report}:refs/pull/72/head`, ...Object.entries(layers).map(([n, sha]) => `${sha}:refs/pull/${n}/head`));
+  return { 71: log, 72: report, ...layers };
 }
 
 const NEW_PARENT = { number: 50, title: 'Pool: sensor and retry work' };
@@ -87,7 +94,7 @@ const REST_IDS: Record<number, number> = { 41: 9041, 42: 9042 };
 const REVIEW: Item[] = [
   { number: 11, title: 'Review the cache layer', author: 'alice', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' }, requested: true },
   { number: 12, title: 'Review the docs sweep', author: 'fake-viewer', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE', reviewed: true }, requested: true },
-  ...[3, 2, 1].map((position): Item => ({ number: 40 + position, title: STACK_LAYERS[position - 1], author: 'alice', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' }, requested: true, stack: { number: STACK.number, position, size: 3 } })),
+  ...[3, 2, 1].map((position): Item => ({ number: 40 + position, title: STACK_LAYERS[position - 1], author: 'alice', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' }, requested: true, stack: { number: STACK.number, position, size: 3 }, branches: { head: STACK_BRANCHES[position - 1], base: STACK_BRANCHES[position - 2] ?? 'main' } })),
 ];
 const MINE: Item[] = [
   { number: 21, title: 'Raise the rate limiter', author: 'fake-viewer', pr: { review: 'CHANGES_REQUESTED', checks: 'SUCCESS', mergeable: 'MERGEABLE' } },
@@ -162,12 +169,12 @@ export function seedOrders(a: Admiral) {
     writeFileSync(join(dir, `${key}.match`), needle);
     writeFileSync(join(dir, `${key}.json`), JSON.stringify({ data: { search: { nodes: items.map(node) } } }));
   };
+  const oids = auditRemote(a);
+  for (const i of [...THEIR_CHAIN, ...REVIEW]) if (oids[i.number]) i.oid = oids[i.number];
   canned('a-assigned', 'assignee:@me', ASSIGNED);
   canned('b-review', 'review-requested:@me', REVIEW);
   canned('c-mine', 'author:@me', MINE);
   canned('p-pool', 'label:pool', POOL);
-  const oids = auditRemote(a);
-  for (const i of THEIR_CHAIN) i.oid = oids[i.number];
   canned('q-chains', 'label:chains', [...OWN_CHAIN, ...THEIR_CHAIN]);
   for (const i of [...OWN_CHAIN, ...THEIR_CHAIN]) chainDetail(a, i);
   canned('z-rest', 'is:open', []);
@@ -458,6 +465,13 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(stackRow).toHaveCount(1);
   await expect(stackRow).toContainText('3 PRs here');
   await expect(stackRow).not.toContainText('not in this view');
+  // The top layer conflicts with a moved main, so the header says the whole stack does; on the phone the words wrap, none cut off.
+  await expect(stackRow).toContainText('conflicts with main as a whole');
+  if (phone) {
+    const whole = stackRow.locator('.orow-whole');
+    await expect(whole).toHaveCount(1);
+    expect(await whole.evaluate((e) => e.scrollWidth <= e.clientWidth && e.getClientRects()[0].width > 0)).toBe(true);
+  }
   await expect(stackRow).not.toContainText('acme/api #');
   await expect(stackRow.locator('.orow-toggle')).toHaveCount(1);
   if (!phone) await expect(stackRow.locator('svg.orow-mark.stack')).toHaveCount(1);

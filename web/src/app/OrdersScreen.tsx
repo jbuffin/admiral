@@ -153,11 +153,11 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
               {note && parentNote(o) ? <span>{` · ${parentNote(o)}`}</span> : null}
               {!row.inView && !row.stackRow ? <span>{' · not in this view'}</span> : null}
               {g ? <span>{` · ${here}`}</span> : null}
-              {whole ? <span>{` · ${whole}`}</span> : null}
               {row.state ? <span>{' · '}</span> : null}
               {state}
               {summary}
             </span>
+            {whole ? <span class="orow-whole">{whole}</span> : null}
           </span>
         </button>
         {arrow}
