@@ -86,8 +86,7 @@ func (s *session) offerCommodore() error {
 					continue
 				}
 			} else {
-				verb := strings.ToUpper(string(action[:1])) + string(action[1:])
-				ok, err := confirm(s.reader(), w, fmt.Sprintf("%s Commodore for %s?", verb, who))
+				ok, err := confirm(s.reader(), w, fmt.Sprintf("%s Commodore for %s?", words[action].verb, who))
 				if err != nil {
 					return err
 				}
@@ -95,16 +94,12 @@ func (s *session) offerCommodore() error {
 					continue
 				}
 			}
-			gerund := "Installing"
-			if action == commodore.Update {
-				gerund = "Updating"
-			}
-			fmt.Fprintf(w, "%s Commodore for %s...\n", gerund, who)
+			fmt.Fprintf(w, "%s Commodore for %s...\n", words[action].ing, who)
 			out, err := runner.Run(context.Background(), h, action)
 			if err != nil && !errors.Is(err, commodore.ErrAutoUpdate) {
-				fmt.Fprintf(w, "Commodore was not %s: %v\n", strings.ToLower(string(action))+"ed", err)
+				fmt.Fprintf(w, "Commodore was not %s: %s\n", words[action].past, printableLines(err.Error()))
 				if tail := commodore.LastLines(out, 20); strings.TrimSpace(tail) != "" {
-					fmt.Fprintln(w, tail)
+					fmt.Fprintln(w, printableLines(tail))
 				}
 				fmt.Fprintln(w, "Run these yourself:")
 				for _, c := range commodore.Commands(h.Name, action) {
@@ -124,7 +119,22 @@ func (s *session) offerCommodore() error {
 // commodoreLine is "Commodore <version> for <who>", or the state word when no version is known.
 func commodoreLine(h config.Harness, state, who string) string {
 	if c, ok := skillindex.LookupCommodore(h.Name, h.Environ(), ""); ok && c.Version != "" {
-		return fmt.Sprintf("Commodore %s for %s", c.Version, who)
+		return fmt.Sprintf("Commodore %s for %s", printable(c.Version), who)
 	}
 	return fmt.Sprintf("Commodore %s for %s", state, who)
+}
+
+// words are what setup calls each action in its questions and lines.
+var words = map[commodore.Action]struct{ verb, ing, past string }{
+	commodore.Install: {"Install", "Installing", "installed"},
+	commodore.Update:  {"Update", "Updating", "updated"},
+}
+
+// printableLines keeps a harness's escape sequences from rewriting the terminal, line by line.
+func printableLines(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = printable(l)
+	}
+	return strings.Join(lines, "\n")
 }

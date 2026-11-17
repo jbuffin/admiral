@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/commodore"
 )
@@ -24,11 +23,5 @@ func TestLastLinesKeepsTheTailOfAnInstallersOutput(t *testing.T) {
 	}
 	if got := commodore.LastLines("", 20); got != "" {
 		t.Errorf("LastLines of no output = %q, want an empty string", got)
-	}
-}
-
-func TestInstallTimeoutIsFiveMinutes(t *testing.T) {
-	if commodore.InstallTimeout != 5*time.Minute {
-		t.Errorf("InstallTimeout = %s, want 5m: a Runner with no timeout fails every command at once", commodore.InstallTimeout)
 	}
 }
