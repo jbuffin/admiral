@@ -458,3 +458,92 @@ func TestCodexInstallWritesNoSettingsFile(t *testing.T) {
 		t.Error("a Codex install wrote settings.json; Codex updates at startup and gets no auto-update key")
 	}
 }
+
+func TestAutoUpdateWritesThroughASymlinkedSettingsFileAndKeepsItsText(t *testing.T) {
+	r := newRig(t, "claude")
+	target := filepath.Join(t.TempDir(), "dotfiles-settings.json")
+	if err := os.WriteFile(target, []byte(`{"hooks":{"cmd":"a && b <c>"}}`), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(r.identity, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(r.identity, "settings.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.run(commodore.Install); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("settings.json is no longer a symlink: %v %v", st, err)
+	}
+	b, _ := os.ReadFile(target)
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("target: %v\n%s", err, b)
+	}
+	if got := r.autoUpdate(); got != true {
+		t.Errorf("the target's autoUpdate = %v, want true", got)
+	}
+	if !strings.Contains(string(b), "a && b <c>") {
+		t.Errorf("a value with && and <> changed: %s", b)
+	}
+	if st, _ := os.Stat(target); st.Mode().Perm() != 0o640 {
+		t.Errorf("mode = %v, want 0640 kept", st.Mode().Perm())
+	}
+}
+
+func TestACopilotSettingsFileWithLeadingCommentLinesIsReadAndKeepsThem(t *testing.T) {
+	r := newRig(t, "copilot")
+	if err := os.MkdirAll(r.identity, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings := filepath.Join(r.identity, "settings.json")
+	text := "// User settings.\n" + `{"extraKnownMarketplaces":{"jbuffinskills":{"source":{"source":"github","repo":"jbuffin/skills"}}}}` + "\n"
+	if err := os.WriteFile(settings, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.run(commodore.Install); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.runs(); !reflect.DeepEqual(got, []string{"plugin install jasonbuffin@jbuffinskills"}) {
+		t.Errorf("ran %q, want no marketplace add: the commented file registers it", got)
+	}
+	// And a commented file with no marketplace gets the key with its comment kept.
+	r2 := newRig(t, "copilot")
+	if err := os.MkdirAll(r2.identity, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(r2.identity, "settings.json"), []byte("// User settings.\n{\"theme\":\"dark\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r2.run(commodore.Install); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(r2.identity, "settings.json"))
+	if !strings.HasPrefix(string(b), "// User settings.\n") {
+		t.Errorf("the comment line is gone: %s", b)
+	}
+}
+
+func TestATimedOutRunKillsTheCLIsChildren(t *testing.T) {
+	r := newRig(t, "claude", "FAKE_PLUGIN", "hang")
+	runner := &commodore.Runner{Home: r.admiral, Timeout: 500 * time.Millisecond}
+	if _, err := runner.Run(context.Background(), r.dock(), commodore.Install); err == nil {
+		t.Fatal("a hanging CLI did not fail")
+	}
+	b, err := os.ReadFile(filepath.Join(r.record, "plugin-child"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := strings.TrimSpace(string(b))
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if exec.Command("kill", "-0", pid).Run() != nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("the CLI's child %s is still running after the timeout", pid)
+}

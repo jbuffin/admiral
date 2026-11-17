@@ -5,6 +5,8 @@ package launchorders
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -306,15 +308,13 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 	for i, sk := range found {
 		list[i] = skill{sk.Name, sk.Description, slices.Contains(cfg.FavoriteSkills, sk.Name)}
 	}
-	cmd := map[string]any{"found": false, "name": ""}
-	if n, ok := skillindex.FindCommodore(dock.Name, dock.Environ(), dir); ok {
-		cmd = map[string]any{"found": true, "name": n}
-	}
-	st := commodore.Detect(dock)
-	cmd["state"] = st.State
-	if st.Installed != "" {
-		cmd["installed"], cmd["minimum"] = st.Installed, st.Minimum
-	}
+	cmd := struct {
+		Found bool   `json:"found"`
+		Name  string `json:"name"`
+		commodore.State
+	}{State: commodore.Detect(dock)}
+	cmd.Name, cmd.Found = skillindex.FindCommodore(dock.Name, dock.Environ(), dir)
+	// FindCommodore answers "" when it finds nothing, so Name needs no reset.
 	writeJSON(w, http.StatusOK, map[string]any{"mark": skillindex.Mark(dock.Name), "skills": list, "commodore": cmd})
 }
 
@@ -346,7 +346,8 @@ func (s *Service) serveCommodore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, `action must be "install" or "update"`)
 		return
 	}
-	key := fleet.Key + "/" + dock.Name
+	// Fleets can share one identity, and its settings and plugin cache take one writer at a time.
+	key := dock.Name + " " + commodore.Identity(dock)
 	s.installing.Lock()
 	if s.running[key] {
 		s.installing.Unlock()
@@ -365,7 +366,7 @@ func (s *Service) serveCommodore(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	before := commodore.Detect(dock)
-	if action == commodore.Update && before.State != "outdated" {
+	if action == commodore.Update && before.State != commodore.StateOutdated {
 		writeError(w, http.StatusConflict, "Commodore is "+before.State+" here, so there is nothing to update")
 		return
 	}
@@ -380,6 +381,14 @@ func (s *Service) serveCommodore(w http.ResponseWriter, r *http.Request) {
 	}
 	// The run finishes even if the client goes away, so a half-done install is not left behind.
 	out, err := installer.Run(context.WithoutCancel(r.Context()), dock, action)
+	if errors.Is(err, commodore.ErrAutoUpdate) {
+		log.Printf("admiral: Commodore installed on %s/%s: %v", fleet.Key, dock.Name, err)
+		writeJSON(w, http.StatusOK, struct {
+			commodore.State
+			Warning string `json:"warning"`
+		}{commodore.Detect(dock), err.Error()})
+		return
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error":    err.Error(),

@@ -17,7 +17,8 @@
 #                  3.5.0) with the real CLI's layout and registry entry for that harness, each with
 #                  .claude-plugin/plugin.json and skills/engineering/commodore/SKILL.md; fail prints a few lines
 #                  ending boom to stderr, exits 1 and writes nothing; not-logged-in prints "not logged in" to
-#                  stderr and exits 1. Needs jq.
+#                  stderr and exits 1; hang starts a sleeping child (its pid in $FAKE_RECORD_DIR/plugin-child) and
+#                  waits for it, for a timeout test. Needs jq.
 #   -p <prompt>    a headless probe run: appends a line to $FAKE_RECORD_DIR/headless-runs,
 #                  takes the command after the last ": " of the prompt, plays it as a Bash
 #                  call through the --settings file's PreToolUse hooks (needs jq; a handler
@@ -282,6 +283,12 @@ if [ "$1" = plugin ]; then
     echo "not logged in" >&2
     exit 1
     ;;
+  hang)
+    sleep 300 >/dev/null 2>&1 &
+    echo $! >"$FAKE_RECORD_DIR/plugin-child"
+    wait
+    exit 1
+    ;;
   esac
   case "$me" in
   claude) idir=${CLAUDE_CONFIG_DIR:-$HOME/.claude} ;;
@@ -296,7 +303,7 @@ if [ "$1" = plugin ]; then
     f=$1
     shift
     [ -f "$f" ] || echo '{}' >"$f"
-    jq "$@" "$f" >"$f.tmp" && mv "$f.tmp" "$f"
+    jq "$@" "$f" >"$f.tmp" && cat "$f.tmp" >"$f" && rm "$f.tmp"
   }
   addmarket() {
     case "$me" in

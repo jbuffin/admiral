@@ -46,7 +46,8 @@ func fakeExe(t *testing.T, harness string) string {
 	return p
 }
 
-// newCmdRig has fleet "work" (claude, copilot and codex docks) and fleet "nobin" (a claude dock with no executable).
+// newCmdRig has fleet "work" (claude, copilot and codex docks), fleet "nobin" (a claude dock with no executable)
+// and fleet "twin" (a claude dock on the same identity as work's).
 // Each dock's identity is <root>/id/<fleet>-<harness>.
 func newCmdRig(t *testing.T, installer commodore.Installer, dockEnv map[string]string) *cmdrig {
 	t.Helper()
@@ -67,9 +68,11 @@ func newCmdRig(t *testing.T, installer commodore.Installer, dockEnv map[string]s
 	}
 	cfg := fmt.Sprintf(`{"version":1,"fleets":{
 	  "work":{"name":"Work","search_roots":[%s],"claude":%s,"copilot":%s,"codex":%s},
-	  "nobin":{"name":"No binary","search_roots":[%s],"claude":%s}}}`,
+	  "nobin":{"name":"No binary","search_roots":[%s],"claude":%s},
+	  "twin":{"name":"Twin","search_roots":[%s],"claude":%s}}}`,
 		quote(r.work), dock("work", "claude", fakeExe(t, "claude")), dock("work", "copilot", fakeExe(t, "copilot")), dock("work", "codex", fakeExe(t, "codex")),
-		quote(r.work), dock("nobin", "claude", filepath.Join(root, "no-such-dir", "claude")))
+		quote(r.work), dock("nobin", "claude", filepath.Join(root, "no-such-dir", "claude")),
+		quote(r.work), dock("work", "claude", fakeExe(t, "claude")))
 	if err := os.WriteFile(filepath.Join(r.home, config.FileName), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -568,5 +571,40 @@ func TestUpdateThroughTheRealInstallerNeverTurnsOnAutoUpdate(t *testing.T) {
 		if got := r.autoUpdate(harness); got != nil {
 			t.Errorf("%s: update set autoUpdate = %v", harness, got)
 		}
+	}
+}
+
+func TestTwoFleetsOnOneIdentityShareTheLock(t *testing.T) {
+	inst := &fakeInstaller{entered: make(chan string), release: make(chan struct{}), err: errors.New("exit status 1")}
+	r := newCmdRig(t, inst, nil)
+	first := make(chan int, 1)
+	go func() {
+		code, _ := r.post(map[string]string{"fleet": "work", "harness": "claude", "action": "install"})
+		first <- code
+	}()
+	select {
+	case <-inst.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first request never reached the installer")
+	}
+	if code, body := r.post(map[string]string{"fleet": "twin", "harness": "claude", "action": "install"}); code != http.StatusConflict {
+		t.Errorf("another fleet on the same identity = %d %v, want 409", code, body)
+	}
+	close(inst.release)
+	<-first
+}
+
+func TestAnAutoUpdateFailureAfterAGoodInstallIs200WithAWarning(t *testing.T) {
+	inst := &fakeInstaller{err: fmt.Errorf("%w: settings.json is not JSON", commodore.ErrAutoUpdate)}
+	r := newCmdRig(t, inst, nil)
+	code, body := r.post(map[string]string{"fleet": "work", "harness": "claude", "action": "install"})
+	if code != http.StatusOK {
+		t.Fatalf("install = %d %v, want 200", code, body)
+	}
+	if w, _ := body["warning"].(string); !strings.Contains(w, "auto-update") {
+		t.Errorf("warning = %v, want a message about auto-update", body["warning"])
+	}
+	if body["state"] == nil {
+		t.Errorf("body = %v, want the state too", body)
 	}
 }

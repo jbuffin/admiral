@@ -106,7 +106,7 @@ func copilotPlugins(identity string, blocking bool) []skill {
 			Enabled     *bool  `json:"enabled"`
 		} `json:"installedPlugins"`
 	}
-	if json.Unmarshal(dropLeadingComments(data), &cfg) != nil {
+	if json.Unmarshal(DropLeadingComments(data), &cfg) != nil {
 		return nil
 	}
 	enabled := map[string]bool{}
@@ -114,7 +114,7 @@ func copilotPlugins(identity string, blocking bool) []skill {
 		var settings struct {
 			EnabledPlugins map[string]bool `json:"enabledPlugins"`
 		}
-		if json.Unmarshal(dropLeadingComments(s), &settings) == nil {
+		if json.Unmarshal(DropLeadingComments(s), &settings) == nil {
 			enabled = settings.EnabledPlugins
 		}
 	}
@@ -139,8 +139,8 @@ func hasKey(m map[string]bool, k string) bool {
 	return ok
 }
 
-// Copilot starts config.json with // lines, which are not JSON.
-func dropLeadingComments(data []byte) []byte {
+// DropLeadingComments strips the // lines Copilot starts config.json (and may start settings.json) with, which are not JSON.
+func DropLeadingComments(data []byte) []byte {
 	for {
 		trimmed := bytes.TrimLeft(data, " \t\r\n")
 		if !bytes.HasPrefix(trimmed, []byte("//")) {

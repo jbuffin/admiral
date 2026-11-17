@@ -117,11 +117,11 @@ The skills a launch on that dock and checkout offers. Answers `{"mark": "/", "sk
 
 Engineer only: AdmiralBot's token is refused, and there is no MCP tool or CLI command for it. Installs or updates the Commodore plugin (`jasonbuffin@jbuffinskills`) in a dock's own identity by running the harness's plugin commands. Body: `{"fleet": "<key>", "harness": "<dock>", "action": "install" | "update"}`. The commands run with the dock's executable and environment and `$ADMIRAL_HOME/bin` first on `PATH`; `install` adds the `jbuffin/skills` marketplace unless the identity already has it, then installs the plugin, and `update` runs only the update command. After an `install` on Claude or Copilot that added the marketplace itself, with no Commodore plugin detected beforehand (a loose skill does not count), Admiral sets `extraKnownMarketplaces.jbuffinskills.autoUpdate: true` in the identity's `settings.json` and keeps every other key. An `update` never sets it, and Codex gets nothing.
 
-Answers `200` with the dock's new state alone, as in the skills route without `found` and `name`: `{"state": "ok"}`. Or `{"error": "..."}` with:
+Answers `200` with the dock's new state alone, as in the skills route without `found` and `name`: `{"state": "ok"}`. When the install worked but Admiral could not turn on auto-update (`settings.json` unreadable or not JSON), the answer is still `200` and carries a `warning` string beside the state, and the server logs it; the plugin is installed and only the `autoUpdate` key is missing. Or `{"error": "..."}` with:
 
 - `502`: a command exited non-zero, timed out or its binary is missing. The body is `{"error": "...", "output": "<last 20 lines of the commands' output>", "commands": ["claude plugin marketplace add jbuffin/skills", "claude plugin install jasonbuffin@jbuffinskills"], "state": {...}}`. `commands` are the exact commands to run by hand, in order (`codex plugin add` replaces `install` on Codex, and an update is the one update command), and `state` is unchanged: `missing` after a failed install, `outdated` after a failed update;
 - `404`: unknown fleet; `400`: the fleet has no such dock, a body that is not JSON, or an `action` other than `install` and `update`;
-- `409`: `update` when the state is not `outdated`, or another request for the same fleet and harness is still running.
+- `409`: `update` when the state is not `outdated`, or another request for the same harness and configuration directory is still running (two fleets sharing one directory take turns).
 
 ### `POST /api/ships` (alias `POST /api/v1/ships`)
 

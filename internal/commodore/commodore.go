@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -28,6 +29,17 @@ const (
 	pluginKey       = "jasonbuffin@jbuffinskills"
 )
 
+// The values of State.State.
+const (
+	StateMissing        = "missing"
+	StateOK             = "ok"
+	StateOutdated       = "outdated"
+	StateUnknownVersion = "unknown-version"
+)
+
+// ErrAutoUpdate wraps the failure to turn on auto-update after an install that otherwise worked.
+var ErrAutoUpdate = errors.New("could not turn on auto-update")
+
 // State is what the dock shows about Commodore: missing, ok, outdated or unknown-version.
 type State struct {
 	State     string `json:"state"`
@@ -39,13 +51,13 @@ type State struct {
 func StateOf(c skillindex.Commodore, detected bool) State {
 	switch {
 	case !detected:
-		return State{State: "missing"}
+		return State{State: StateMissing}
 	case c.Plugin == "" || c.Version == "":
-		return State{State: "unknown-version"}
+		return State{State: StateUnknownVersion}
 	case skillindex.VersionLess(c.Version, MinVersion):
-		return State{State: "outdated", Installed: c.Version, Minimum: MinVersion}
+		return State{State: StateOutdated, Installed: c.Version, Minimum: MinVersion}
 	}
-	return State{State: "ok"}
+	return State{State: StateOK}
 }
 
 // Detect reads the dock's identity with no checkout, so a project copy never counts.
@@ -111,8 +123,7 @@ func (r *Runner) Run(ctx context.Context, dock config.Harness, a Action) (string
 		return "", fmt.Errorf("%s is not installed: no %s executable found", dock.Name, dock.Name)
 	}
 	environ := dock.Environ()
-	env := envMap(environ)
-	identity := config.IdentityDir(dock.Name, env)
+	identity := Identity(dock)
 	_, hadPlugin := detectedPlugin(dock)
 	registered := hasMarketplace(dock.Name, identity)
 
@@ -124,8 +135,11 @@ func (r *Runner) Run(ctx context.Context, dock config.Harness, a Action) (string
 			continue
 		}
 		cmd := exec.CommandContext(ctx, dock.Executable, args...)
-		cmd.Env = withShipPath(environ, filepath.Join(r.Home, "bin"))
+		cmd.Env = append(withShipPath(environ, filepath.Join(r.Home, "bin")), "GIT_TERMINAL_PROMPT=0")
 		cmd.Stdout, cmd.Stderr = &out, &out
+		// The CLI's own git and ssh children die with it, so a retry never races them.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 		cmd.WaitDelay = 2 * time.Second
 		if err := cmd.Run(); err != nil {
 			if ctx.Err() != nil {
@@ -136,10 +150,15 @@ func (r *Runner) Run(ctx context.Context, dock config.Harness, a Action) (string
 	}
 	if a == Install && !registered && !hadPlugin && dock.Name != "codex" {
 		if err := setAutoUpdate(identity); err != nil {
-			fmt.Fprintf(&out, "Admiral could not turn on auto-update: %v\n", err)
+			return out.String(), fmt.Errorf("%w: %v", ErrAutoUpdate, err)
 		}
 	}
 	return out.String(), nil
+}
+
+// Identity is the dock's configuration directory, where its plugins and settings live.
+func Identity(dock config.Harness) string {
+	return config.IdentityDir(dock.Name, envMap(dock.Environ()))
 }
 
 func detectedPlugin(dock config.Harness) (skillindex.Commodore, bool) {
@@ -189,7 +208,7 @@ func hasMarketplace(harness, identity string) bool {
 		_, ok := cfg.Marketplaces[marketplaceName]
 		return ok
 	}
-	settings, err := readSettings(identity)
+	settings, _, err := readSettings(identity)
 	if err != nil {
 		return false
 	}
@@ -198,29 +217,32 @@ func hasMarketplace(harness, identity string) bool {
 	return ok
 }
 
-func readSettings(identity string) (map[string]any, error) {
+// readSettings returns settings.json and the leading // lines Copilot may put before its JSON.
+func readSettings(identity string) (settings map[string]any, comments []byte, err error) {
 	data, err := os.ReadFile(filepath.Join(identity, "settings.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return map[string]any{}, nil
+		return map[string]any{}, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
+	body := skillindex.DropLeadingComments(data)
+	comments = data[:len(data)-len(body)]
+	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
-	var m map[string]any
-	if err := dec.Decode(&m); err != nil {
-		return nil, err
+	if err := dec.Decode(&settings); err != nil {
+		return nil, nil, err
 	}
-	if m == nil {
-		m = map[string]any{}
+	if settings == nil {
+		settings = map[string]any{}
 	}
-	return m, nil
+	return settings, comments, nil
 }
 
-// setAutoUpdate edits one key of settings.json and leaves the rest as it was.
+// setAutoUpdate edits one key of settings.json and leaves the rest as it was. A symlinked
+// file keeps its link and its target gets the change.
 func setAutoUpdate(identity string) error {
-	settings, err := readSettings(identity)
+	settings, comments, err := readSettings(identity)
 	if err != nil {
 		return err
 	}
@@ -235,18 +257,42 @@ func setAutoUpdate(identity string) error {
 		ms[marketplaceName] = mk
 	}
 	mk["autoUpdate"] = true
-	data, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	buf.Write(comments)
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(settings); err != nil {
 		return err
 	}
 	path := filepath.Join(identity, "settings.json")
 	mode := os.FileMode(0o600)
+	if _, err := os.Lstat(path); err == nil {
+		if path, err = filepath.EvalSymlinks(path); err != nil {
+			return err
+		}
+	}
 	if st, err := os.Stat(path); err == nil {
 		mode = st.Mode().Perm()
 	}
-	tmp := path + ".admiral-tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), mode); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".settings-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(buf.Bytes()); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
