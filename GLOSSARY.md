@@ -187,7 +187,7 @@ One harness session and the identity that outlives it, launched by the engineer,
 _Avoid_: boat (for the lead), agent, card
 
 **Scout**:
-A ship that looks at something (a repo, logs, the web, an issue) and reports back, changing nothing and opening no PR. It runs to the end, writes its report and sails off on its own; AdmiralBot sends it and brings its report to the engineer.
+A ship that looks at something (a repo, logs, the web, an issue) and reports back, changing nothing and opening no PR. It runs to the end, leaves its findings and sails off on its own; AdmiralBot sends it and brings its findings to the engineer.
 _Avoid_: probe, research ship, investigator
 
 **Quick ship**:
@@ -260,6 +260,14 @@ _Avoid_: review round (Commodore's own review pass)
 **Merge problem**:
 Something on an open PR that its own ship can fix and that keeps it from merging: a merge conflict, a branch behind a base that requires up-to-date branches, or a failing CI check of its own.
 _Avoid_: not ready, not mergeable, blocked
+
+**Findings**:
+What a ship found, written for the engineer and kept with its outcome after it sails off. Every scout leaves findings; any other ship may.
+_Avoid_: report (the Admiral report is a different thing), results, summary
+
+**Report turn**:
+A turn the server gives AdmiralBot when a ship it launched from the chat finishes, so it can tell the engineer what came back. It is not the engineer's turn: AdmiralBot can read and talk in it, but can't act.
+_Avoid_: wake (a moored ship's), notification, callback
 
 **Admiral report**:
 What a ship's skill leaves for Admiral at the end of every round, its first build and each feedback round: the result, its PRs and the issues each closes, the crew members it used, and the text that resumes it. Never the transcript.

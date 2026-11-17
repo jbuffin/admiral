@@ -1,6 +1,6 @@
 # 33. Pushes are Web Push from the Mac, with no hosted relay
 
-Status: accepted
+Status: accepted, amended by [ADR 0042](0042-a-ships-result-comes-back-as-a-card-and-a-report-turn.md) (AdmiralBot's report on a finished ship pushes, outside the attention count)
 
 ## Context
 
