@@ -1,6 +1,6 @@
 # 27. Campaigns are read from GitHub's issue tree; Admiral creates a parent but never edits a tree
 
-Status: accepted
+Status: accepted, amended by [ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md) (Without-you children launch in autopilot mode)
 
 ## Context
 
@@ -30,7 +30,7 @@ The obvious way to stop two sessions taking the same child is to claim it by ass
   | plain child, `ready-for-human` / `needs-triage` | With you | none suggested |
 
 - **With-you children go one at a time per fleet.** AdmiralBot proposes the next one only when no ship it started on a With-you campaign child in that fleet is underway or needing you. Starting one by hand is never blocked. The proposal is a chat question; on yes, AdmiralBot launches the ship and replies with a Board link, and nothing navigates on its own. Ready With-you children are not Inbox items.
-- **Working a campaign.** "Work on #n" to AdmiralBot follows the campaign and records one ledger commitment ([ADR 0024](0024-admiralbot-memory-is-a-server-owned-ledger.md)). It launches each Without-you child as it becomes ready, as an unattended launch that waits for room under the global cap and for any resources it names. It asks a chat question for each With-you child, under the per-fleet limit. It ends when the campaign ends. Autopilot plays no part ([#240](https://github.com/jbuffin/admiral/issues/240)).
+- **Working a campaign.** "Work on #n" to AdmiralBot follows the campaign and records one ledger commitment ([ADR 0024](0024-admiralbot-memory-is-a-server-owned-ledger.md)). It launches each Without-you child as it becomes ready, as an unattended launch that waits for room under the global cap and for any resources it names. It asks a chat question for each With-you child, under the per-fleet limit. It ends when the campaign ends. Each Without-you child launches in autopilot mode ([ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md)), and the campaign refuses a harness without proven autopilot.
 - **Ships.** One ship per child by default. A **slice** is several ready Without-you plain children launched as one Commodore ship, built as a gh stack. That ship holds the claim on every child in the slice and stays with the change through review ([ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md)). A slice is formed only by the engineer's hand or on their instruction, never from a commitment alone.
 - **Cross-repo.** The whole tree belongs to the campaign's fleet. Every child launches in that fleet and its repo is cloned if missing. There is no extra guard for a child whose repo routes to another fleet; the routing warning for a repo two fleets claim covers it. A campaign may name a **work repo**, the default checkout for children filed in the parent's repo (a map in a docs repo, its build in the code repo).
 - **Following.** By hand: **Follow campaign** on any issue with sub-issues, wherever an order shows (a view, Peek), or by pasting an issue URL into the Campaigns group. Following by hand only shows the campaign; nothing launches until asked. Through AdmiralBot: "work on #n" follows it and records the commitment.
