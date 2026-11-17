@@ -630,3 +630,22 @@ func TestANormalLaunchKeepsTheFleetsGitEnvAndGetsNoStubIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestTheRestrictedPromptIsTheEventURLThenTheTextThenTheEventFileLineThenTheGuidance(t *testing.T) {
+	p := newPinRig(t, nil)
+	req, fc := p.restricted(standing.DraftFix)
+	fc.t = t
+	req.EventURL = eventPR
+	out, err := p.l.Launch(req)
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	argv, _ := p.shipRecord(t)
+	want := eventPR + "\n\nTriage the new issue.\n\n" + eventFileLine + "\n\n## Standing orders\n\n" + guidanceText
+	if got := argv[len(argv)-1]; got != want {
+		t.Errorf("prompt = %q, want %q", got, want)
+	}
+	if got := out.Options["url"]; got != eventPR {
+		t.Errorf("url option = %q, want %q", got, eventPR)
+	}
+}

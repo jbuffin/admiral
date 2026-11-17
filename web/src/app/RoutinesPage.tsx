@@ -39,6 +39,7 @@ import {
   runTime,
   type Before,
   type Routine,
+  type RoutineField,
   type RoutineForm,
   type RoutineRun,
   type RoutineSpend,
@@ -167,7 +168,7 @@ function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
 /** What a routine that still names the removed view trigger says; the server refuses a save that keeps it. */
 const REMOVED_NOTE = 'The "New in <view>" trigger was removed, so this routine never runs.';
 
-function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSaved, onDeleted, onToggled }: { fleet: Fleet; routine: Routine | null; initial: RoutineForm; caps: FleetCapabilities | undefined; problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }; onSaved: (r: Routine) => void; onDeleted: () => void; onToggled: (r: Routine) => void }) {
+function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSaved, onDeleted, onToggled }: { fleet: Fleet; routine: Routine | null; initial: RoutineForm; caps: FleetCapabilities | undefined; problem?: { field: RoutineField; message: string }; onSaved: (r: Routine) => void; onDeleted: () => void; onToggled: (r: Routine) => void }) {
   const [form, setForm] = useState(initial);
   // the event chosen before a switch to a schedule, which a switch back restores
   const lastEvent = useRef(initial.on);
@@ -185,13 +186,18 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
   const groups = [...new Set(choices.map((c) => c.group))].map((g) => [g, choices.filter((c) => c.group === g)] as const);
   const [problem, setProblem] = useState(drafted);
   // A drafted problem goes with the first edit of the field it names.
-  const fixes = (field: 'name' | 'when' | 'before_acting' | 'do') => setProblem((p) => (p?.field === field ? undefined : p));
+  const fixes = (field: RoutineField) => {
+    setProblem((p) => (p?.field === field ? undefined : p));
+    setError((e) => (e && errorField(e) === field ? '' : e));
+  };
   const set = (patch: Partial<RoutineForm>) => {
     for (const [k, f] of [['name', 'name'], ['when', 'when'], ['before', 'before_acting'], ['mode', 'do'], ['prompt', 'do']] as const) if (k in patch) fixes(f);
     setForm((f) => ({ ...f, ...patch }));
   };
   const setLaunch = (patch: Partial<RoutineForm['launch']>) => {
     fixes('do');
+    if ('dir' in patch) fixes('checkout');
+    if ('text' in patch) fixes('text');
     setForm((f) => ({ ...f, launch: { ...f.launch, ...patch } }));
   };
   const offered = docks.harnesses.includes(l.harness) || !l.harness ? docks.harnesses : [...docks.harnesses, l.harness];
@@ -342,12 +348,15 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
         </label>
       ) : (
         <div class="routine-launch">
-          {offered.length === 0 ? <p class="note warn">{docks.why || 'Loading docks…'}</p> : <DockPicker docks={offered.map((harness) => ({ harness }))} harness={l.harness} onChange={(harness) => setForm((f) => ({ ...f, launch: launchOnDock(f.launch, harness) }))} />}
+          {offered.length === 0 ? <p class="note warn">{docks.why || 'Loading docks…'}</p> : <DockPicker docks={offered.map((harness) => ({ harness }))} harness={l.harness} onChange={(harness) => { fixes('dock'); setForm((f) => ({ ...f, launch: launchOnDock(f.launch, harness) })); }} />}
+          {err?.field === 'dock' ? <p class="note error" role="alert">{err.text}</p> : null}
           <CheckoutSelect dir={l.dir} dirs={dirsShown} allowClone={false} onChange={(dir) => setLaunch({ dir })} />
+          {err?.field === 'checkout' ? <p class="note error" role="alert">{err.text}</p> : null}
           <label class="field">
             <span>Text</span>
             <textarea rows={4} value={l.text} onInput={(e) => setLaunch({ text: target(e).value })} />
           </label>
+          {err?.field === 'text' ? <p class="note error" role="alert">{err.text}</p> : null}
           <SkillSelect
             value={skillSel}
             skills={skills}
@@ -424,7 +433,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const [list, setList] = useState<Routine[] | null>(null);
   const [failed, setFailed] = useState('');
   const [spend, setSpend] = useState<RoutineSpend | undefined>();
-  const [drafted, setDrafted] = useState<{ form: RoutineForm; problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }; n: number } | null>(null);
+  const [drafted, setDrafted] = useState<{ form: RoutineForm; problem?: { field: RoutineField; message: string }; n: number } | null>(null);
   const caps: FleetCapabilities | undefined = capabilities.value.find((c) => c.key === fleet.key);
   const proposeNote = proposeOnlyNote(caps, normalizeLimits(fleet.limits));
   const capsError = capabilitiesFailed.value && !caps ? "Could not load the fleet's capabilities." : '';

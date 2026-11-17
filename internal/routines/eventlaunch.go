@@ -6,6 +6,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/campaigns"
+	"github.com/jbuffin/admiral/internal/github"
+	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 // EventProposalExpiry is how long an event proposal stays open.
@@ -64,12 +68,11 @@ func (s *Scheduler) LaunchProposed(ctx context.Context, fleet, routineID, trigge
 		return Trigger{}, ErrBusy
 	}
 	spec := *l
-	if link := EventLink(prop.Event); link != "" {
-		spec.Text = strings.TrimRight(spec.Text, "\n") + "\n\n" + link
-	}
+	link := s.eventURL(fleet, prop.Event)
+	spec.Text = launcher.EventAsk(link, l.Text)
 	rec := Trigger{Routine: r.ID, Tier: prop.Tier, At: now, Via: ViaProposal, ProposalOf: prop.ID, Event: prop.Event,
 		Sender: prop.Sender, DedupeKey: prop.DedupeKey, Action: describe(r)}
-	if err := s.launch(ctx, fleet, r, spec, rec, now, true); err != nil {
+	if err := s.launch(ctx, fleet, r, spec, rec, now, true, link); err != nil {
 		return Trigger{}, err
 	}
 	recent, err := s.Store.Recent(fleet, r.ID, 1)
@@ -77,6 +80,20 @@ func (s *Scheduler) LaunchProposed(ctx context.Context, fleet, routineID, trigge
 		return Trigger{}, err
 	}
 	return recent[0], nil
+}
+
+// eventURL is ref when it is a pull request or issue URL on a host the fleet uses, else empty: any other ref is untrusted text.
+func (s *Scheduler) eventURL(fleet, ref string) string {
+	hosts := []string{github.DefaultHost}
+	if s.GitHubHosts != nil {
+		hosts = s.GitHubHosts(fleet)
+	}
+	for _, pull := range []bool{true, false} {
+		if _, err := campaigns.ParseGitHubURL(ref, hosts, pull); err == nil {
+			return strings.TrimSpace(ref)
+		}
+	}
+	return ""
 }
 
 // EventLink is ref when it is one plain http(s) URL, else empty: a plugin's ref is untrusted text.

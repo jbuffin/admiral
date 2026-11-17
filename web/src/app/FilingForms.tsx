@@ -7,7 +7,7 @@ import { fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage } from './fleetSettings';
 import { go, limitsPath } from './router';
 import { canAddCheck, checkTooLong, guidanceTooLong, MAX_CHECK_RUNES, MAX_GUIDANCE_RUNES, ordersErrorTarget, ordersMessage, runes, saveFailure, type Sentence, type StandingOrdersFields } from './standingOrders';
-import type { RoutineForm } from './routines';
+import type { RoutineField, RoutineForm } from './routines';
 import { formOfRoutine, type Routine } from './routines';
 
 const draftPath = (fleet: string, what: 'standing-orders' | 'routines') => `/fleets/${encodeURIComponent(fleet)}/${what}/draft`;
@@ -384,7 +384,7 @@ export function NewStandingOrder({ fleet, shown, unsaved, onFiled }: { fleet: Fl
 }
 
 /** The input at the top of the Routines tab's list: Draft files prose as an unsaved routine in the editor. */
-export function DescribeRoutine({ fleet, onDrafted }: { fleet: Fleet; onDrafted: (form: RoutineForm, problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }) => void }) {
+export function DescribeRoutine({ fleet, onDrafted }: { fleet: Fleet; onDrafted: (form: RoutineForm, problem?: { field: RoutineField; message: string }) => void }) {
   const [prose, setProse] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');

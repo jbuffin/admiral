@@ -1,3 +1,4 @@
+import type { RoutineField } from './routines';
 import type { LimitsPatch } from './limitsForm';
 import { runes, type StandingOrdersFields } from './standingOrders';
 
@@ -93,7 +94,7 @@ export function confirmFailure(step: 'limits' | 'orders', limitsSaved: boolean, 
 const LABEL = { name: 'Name', when: 'When', before_acting: 'Before acting', do: 'Do' } as const;
 
 /** A drafted routine's problem as the editor shows it: its field and a message that opens with the field's label. */
-export function routineProblem(p: { field: string; message: string }): { field: 'name' | 'when' | 'before_acting' | 'do'; message: string } {
+export function routineProblem(p: { field: string; message: string }): { field: RoutineField; message: string } {
   const field = p.field in LABEL ? (p.field as keyof typeof LABEL) : 'do';
   return { field, message: `${LABEL[field]} ${p.message}` };
 }

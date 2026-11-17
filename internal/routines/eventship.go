@@ -8,6 +8,9 @@ import (
 	"github.com/jbuffin/admiral/internal/standing"
 )
 
+// nothingToLaunch is the failed record of an event launch with neither a link for the ship to work on nor Text.
+const nothingToLaunch = "the event carried no PR or issue link and the routine has no Text"
+
 const noEventText = "(the event carried no text)"
 
 // eventText is what the launched ship reads: the Lookout's text, else the title and one line about the event.
@@ -91,11 +94,15 @@ func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, e
 	if err != nil {
 		return fail(err.Error())
 	}
+	eventURL := s.eventURL(fleet, ev.Ref)
+	if eventURL == "" && strings.TrimSpace(l.Text) == "" {
+		return fail(nothingToLaunch)
+	}
 	req := launcher.Request{
-		Fleet: fleet, Harness: l.Harness, Dir: l.Dir, Text: l.Text, Model: l.Model, Effort: l.Effort,
+		Fleet: fleet, Harness: l.Harness, Dir: l.Dir, Text: launcher.EventAsk(eventURL, l.Text), Model: l.Model, Effort: l.Effort,
 		Skill: skill, Resources: l.Resources, ExtraArgs: l.Args, Autopilot: true, Unattended: true,
 		RoutineKey: routineKey(r.ID), TriggerID: newID(), WorkerLaunched: true,
-		Template: l.Text, EventText: eventText(ev, en, sender),
+		Template: l.Text, EventURL: eventURL, EventText: eventText(ev, en, sender),
 	}
 	if d.Level == standing.A3 {
 		req.Restricted = d.Restricted
