@@ -34,6 +34,12 @@ from the orders.json the test owns.
 Files the test writes in flagdir:
 
   orders.json   {"<panel id>": [order, ...]}, read on every orders.list
+  page.json     the page.get answer {groups, waiting}, read on every page.get
+                (default: no groups, waiting 0); settings.capabilities must list
+                "page" for Admiral to ask
+  rows/<id>.json
+                the row.get answer for that row id, read on every row.get; a
+                row with no file answers a JSON-RPC error
   panels.json   [{"id", "title"}], read on every panels.list (default one
                 panel "main"); settings.panels, a list of {title, ...}, wins
                 when it is set and lists one panel per entry, id = title
@@ -257,6 +263,14 @@ def handle(msg):
             with store_lock:
                 result = result + [{"id": o["id"], "title": title_of(o["text"]), "text": o["text"]}
                                    for o in stored() if o["panel"] == params.get("panel")]
+    elif method == "page.get":
+        result = read_json("page.json", {"groups": [], "waiting": 0})
+    elif method == "row.get":
+        detail = read_json(os.path.join("rows", str(params.get("id")) + ".json"), None)
+        if detail is None:
+            emit({"jsonrpc": "2.0", "id": msg.get("id"), "error": {"code": -32000, "message": "no such row"}})
+            return
+        result = detail
     elif method == "orders.add":
         result = store_add(params) if settings.get("storeOrders") else {"id": "added-1"}
     elif method in ("orders.edit", "orders.remove", "orders.launched") and settings.get("storeOrders"):

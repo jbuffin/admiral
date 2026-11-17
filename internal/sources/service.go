@@ -221,6 +221,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/connection/check", s.serveConnectionCheck)
 	mux.HandleFunc("POST /api/sources/{key}/search-count", s.serveSearchCount)
 	mux.HandleFunc("GET /api/sources/{key}/schema", s.serveSchema)
+	mux.HandleFunc("GET /api/sources/{key}/page", s.serveNotBuilt)
+	mux.HandleFunc("GET /api/sources/{key}/rows/{id}", s.serveNotBuilt)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("GET /api/sources/{key}/repos", s.serveRepos)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
