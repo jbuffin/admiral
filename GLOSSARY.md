@@ -92,8 +92,32 @@ A standing order in the engineer's own words that the reviewer judges before a l
 A standing order in the engineer's own words that Admiral adds to a worker-launched ship's prompt as advice.
 
 **Order source**:
-Where a fleet's orders come from. GitHub is built in, one per fleet; other trackers, such as Jira or Linear, are plugins. Every source belongs to exactly one fleet, and there is no freeform list.
+Where a fleet's orders come from. GitHub is built in, one per fleet; other trackers, such as Jira or Linear, are plugins. Every source belongs to exactly one fleet, and there is no freeform list. A plugin source can give orders, a page, or both.
 _Avoid_: task source, provider, integration, feed
+
+**Plugin**:
+A program the engineer installs that Admiral runs for one fleet as a source, outside Admiral's own process. It brings an outside tracker in as orders, a page, or both.
+_Avoid_: extension, integration, app
+
+**Module**:
+A plugin that has its own page in the fleet's sidebar, for a tracker whose work isn't orders to launch from: tickets the engineer claims, assigns, answers and closes. Admiral draws the page itself from groups of rows and a detail view; a module never supplies its own screen.
+_Avoid_: app, extension, page plugin
+
+**Row**:
+One thing on a module's page, such as a ticket, listed in a group that says why it is there and opened in the side pane for its detail. It is not an order and never launches a ship itself.
+_Avoid_: item (that is the Inbox's word), ticket, card
+
+**Module action**:
+Something the engineer does to a row or one of its steps that the module carries out upstream, such as claiming or closing a ticket. It runs on a click, after a yes/no or from a form.
+_Avoid_: action (alone; that is the action ladder's word), command
+
+**Built-in action**:
+An action a module offers that Admiral carries out itself: opening a link, launching a ship on a GitHub issue the module names, or sending AdmiralBot a message Admiral writes from a row's reference, title and link.
+_Avoid_: native action, system action
+
+**Waiting count**:
+The number of rows on a module's page that wait on the engineer, shown on its sidebar entry. It is not part of the attention count.
+_Avoid_: needs you (that is a ship's state), unread
 
 **View**:
 A named list of orders from one source, such as GitHub's Assigned to me, Review requested and My PRs, or a custom search.
