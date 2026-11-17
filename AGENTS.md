@@ -29,7 +29,7 @@ Touch must work on iPad Safari. Use the harnesses' official logos on flags; neve
 
 ### Tests
 
-A test checks a behavior a person or caller can see: an API response, what the page shows, a ship's status, a file written. Refactoring the code under it leaves it green. Test each behavior once, at the lowest layer that sees it, and read the layer table in [`docs/agents/testing.md`](docs/agents/testing.md) before adding a test. An E2E test is a journey a real person takes through the new shell at `/app/`. Extend an existing journey before adding one.
+A test checks a behavior a person or caller can see: an API response, what the page shows, a ship's status, a file written. Refactoring the code under it leaves it green. Test each behavior once, at the lowest layer that sees it, and read the layer table in [`docs/agents/testing.md`](docs/agents/testing.md) before adding a test. An E2E test is a journey a real person takes through the new shell at `/app/` that crosses browser, server and tmux or a harness and that no lower layer can see; extend an existing journey before adding one. A component's states, validation and what a click changes with the server stubbed are component tests (`*.test.tsx`). A flaky test is a bug: fix the race, never add retries, longer timeouts or a skip.
 
 ### Comments
 
@@ -66,7 +66,7 @@ Keep the `@critical` set to the flows Admiral cannot ship broken. The release ru
 ### Running the tests on a Mac
 
 - Run one Playwright suite at a time on a machine. Several runs at once (each with its own WebKit workers and trace screenshots) can exhaust WindowServer's IOSurfaces and crash it, which logs you out. Local runs use 2 workers and no trace screenshots (`web/playwright.config.ts`); CI keeps the defaults.
-- Admiral's tmux server outlives Admiral by design. A test that starts Admiral must stop it before `tmux -S <home>/tmux.sock kill-server`, or Admiral starts a new tmux and it leaks. In Go, register the kill-server cleanup before `t.Cleanup(stop)`; `web/scripts/serve-e2e.mjs` does this for Playwright's shared server.
+- Admiral's tmux server outlives Admiral by design. A test that starts Admiral must stop it before `tmux -S <home>/tmux.sock kill-server`, or Admiral starts a new tmux and it leaks. In Go, register the kill-server cleanup before `t.Cleanup(stop)`; `stop` in `web/e2e/fixtures.ts` does this for Playwright.
 - After seeding state through the API or a file (an order, a ship, a config edit), wait for the change to show in the API or the page before reading it. Reading it once right away races the source's refresh.
 - Give fake secrets in tests plain values such as `fake-token-work-2`, or the `decoy-secret-<hex>` form that `.gitleaks.toml` allowlists. A key-shaped value such as `ghp_…` fails the secret scan, and clearing it from the branch takes a history rewrite.
 

@@ -3,16 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // router.ts reads the page's location when it loads.
 const page = vi.hoisted(() => {
   const l = { pathname: '/app/inbox', search: '' };
-  vi.stubGlobal('location', l);
-  vi.stubGlobal('addEventListener', () => {});
-  vi.stubGlobal('history', {
-    replaceState: (_s: unknown, _t: string, url: string) => {
-      const [pathname, search = ''] = url.split('?');
-      l.pathname = pathname;
-      l.search = search ? `?${search}` : '';
-    },
-  });
-  return l;
+  const install = () => {
+    vi.stubGlobal('location', l);
+    vi.stubGlobal('addEventListener', () => {});
+    vi.stubGlobal('history', {
+      replaceState: (_s: unknown, _t: string, url: string) => {
+        const [pathname, search = ''] = url.split('?');
+        l.pathname = pathname;
+        l.search = search ? `?${search}` : '';
+      },
+    });
+  };
+  install();
+  return Object.assign(l, { install });
 });
 
 import { githubPath, limitsFieldOf, limitsPath, standingOrdersPath, standingOrdersTab, routineCreating, installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, routineNewPath, routineOf, routinePath } from './router';
@@ -106,6 +109,7 @@ describe('routine paths', () => {
 
 describe('the router', () => {
   beforeEach(() => {
+    page.install();
     page.search = '?fleet=zulu';
   });
   it('keeps a Campaign page path on load', () => {
