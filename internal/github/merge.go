@@ -141,11 +141,11 @@ const mutationMessageCap = 4000
 var ansiEscape = regexp.MustCompile("\x1b(?:\\[[0-9;?]*[ -/]*[@-~]|\\][^\x07\x1b]*(?:\x07|\x1b\\\\))")
 
 // mutationMessage is everything a failed gh command printed, stdout first since gh-stack puts its reason there: the token
-// redacted, escapes stripped, cut to mutationMessageCap.
+// stripped of escapes (so one cannot split the token), redacted, cut to mutationMessageCap.
 func mutationMessage(stdout, stderr, token string) string {
 	var parts []string
 	for _, out := range []string{stdout, stderr} {
-		out = strings.TrimSpace(ansiEscape.ReplaceAllString(redact(out, token), ""))
+		out = strings.TrimSpace(redact(ansiEscape.ReplaceAllString(out, ""), token))
 		if out != "" {
 			parts = append(parts, strings.TrimPrefix(out, "gh: "))
 		}

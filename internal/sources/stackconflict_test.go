@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/moor"
 )
 
@@ -233,5 +234,20 @@ func TestAStackWhoseMiddleLayerIsNotInTheViewIsNotChecked(t *testing.T) {
 		if got := conflictOf(orders["acme/widgets#"+itoa(n)], "stack"); got != nil {
 			t.Errorf("PR %d stack.conflicts_with_base = %v, want none", n, got)
 		}
+	}
+}
+
+func TestAStackInARepositoryRoutedToAnotherFleetIsNotAGroupOfThisSource(t *testing.T) {
+	item := func(n int) github.Item {
+		return github.Item{URL: "https://github.com/other/app/pull/" + itoa(n), Base: "main", HeadSHA: sha(n),
+			PR: &moor.PR{State: "OPEN", Mergeable: "MERGEABLE"}, Stack: &github.Stack{URL: "https://github.com/other/app/stack/9", Position: n}}
+	}
+	items := []github.Item{item(1), item(2)}
+	if got := stackGroups("github.com", "alpha", items, map[string]map[string]any{}); len(got) != 0 {
+		t.Errorf("groups for a stack none of whose PRs this source routed = %+v, want none", got)
+	}
+	routed := map[string]map[string]any{items[0].URL: {}, items[1].URL: {}}
+	if got := stackGroups("github.com", "alpha", items, routed); len(got) != 1 {
+		t.Errorf("groups for the same stack once routed = %+v, want one", got)
 	}
 }

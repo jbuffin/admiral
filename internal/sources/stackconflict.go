@@ -160,7 +160,7 @@ func stackGroups(host, fleet string, items []github.Item, orders map[string]map[
 	stacks := map[string][]github.Item{}
 	var order []string
 	for _, it := range items {
-		if it.Stack == nil || it.PR == nil || it.PR.State != "OPEN" {
+		if _, mine := orders[it.URL]; !mine || it.Stack == nil || it.PR == nil || it.PR.State != "OPEN" {
 			continue
 		}
 		if _, ok := stacks[it.Stack.URL]; !ok {
