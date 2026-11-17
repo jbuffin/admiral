@@ -36,10 +36,10 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 	a := w.eventRoutine("Sweep A", "act")
 	b := w.eventRoutine("Sweep B", "act")
 
-	// the cap of one: one routine's event launches, the other's is a proposal that says why
+	// one routine's event launches and the other's is skipped, naming the ship that now holds the PR
 	var first, second string
 	var run runJSON
-	waitCond(t, 30*time.Second, "one routine to launch and the other to be proposed", func() bool {
+	waitCond(t, 30*time.Second, "one routine to launch and the other to be skipped on its ship", func() bool {
 		w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
 		ra, okA := w.firstRun(a, "launched")
 		rb, okB := w.firstRun(b, "launched")
@@ -51,6 +51,22 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 		default:
 			return false
 		}
+		held, ok := w.firstRun(second, "skipped")
+		return ok && held.Reason == "ref_has_ship" && held.HeldBy == run.Ship
+	})
+
+	// the cap of one: an event on another PR is a proposal that says why
+	reviewRequest := func(number int, at time.Duration) map[string]any {
+		node := ghNode("github.com", "acme/api", number, true, "Fix the harbour lantern")
+		node["author"] = map[string]any{"login": "mallory-the-stranger"}
+		node["timelineItems"] = map[string]any{"nodes": []map[string]any{{"__typename": "ReviewRequestedEvent",
+			"createdAt": time.Now().Add(at).UTC().Format(time.RFC3339), "actor": map[string]any{"login": "mallory-the-stranger"},
+			"requestedReviewer": map[string]any{"login": "fake-viewer"}}}}
+		return node
+	}
+	g.search("review", "review-requested:@me", reviewRequest(8, 2*time.Hour))
+	waitCond(t, 30*time.Second, "the other routine's event to be a proposal that names the cap", func() bool {
+		w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
 		held, ok := w.firstRun(second, "proposed")
 		return ok && strings.Contains(held.Reason, "concurrent")
 	})
@@ -80,12 +96,7 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines/"+first+"/off", map[string]any{}); code != http.StatusOK {
 		t.Fatalf("switching %s off = %d %s, want 200", first, code, body)
 	}
-	again := ghNode("github.com", "acme/api", 8, true, "Fix the harbour lantern")
-	again["author"] = map[string]any{"login": "mallory-the-stranger"}
-	again["timelineItems"] = map[string]any{"nodes": []map[string]any{{"__typename": "ReviewRequestedEvent",
-		"createdAt": time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339), "actor": map[string]any{"login": "mallory-the-stranger"},
-		"requestedReviewer": map[string]any{"login": "fake-viewer"}}}}
-	g.search("review", "review-requested:@me", again)
+	g.search("review", "review-requested:@me", reviewRequest(9, 3*time.Hour))
 	waitCond(t, 30*time.Second, "the second routine to launch once the first ship's slot is free", func() bool {
 		w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
 		_, ok := w.firstRun(second, "launched")

@@ -73,15 +73,18 @@ func TestCheckRates(t *testing.T) {
 }
 
 func TestDedupeHeld(t *testing.T) {
-	live := []string{"sentry:123", "sentry:456"}
-	if !standing.DedupeHeld(live, "sentry:456") {
-		t.Error("a live ship holds sentry:456, but DedupeHeld said no")
+	live := map[string]string{"sentry:123": "ship-a", "sentry:456": "ship-b"}
+	if session, held := standing.DedupeHeld(live, "sentry:456"); !held || session != "ship-b" {
+		t.Errorf("DedupeHeld(sentry:456) = %q, %v, want the holder ship-b", session, held)
 	}
-	if standing.DedupeHeld(live, "sentry:789") {
-		t.Error("no live ship holds sentry:789, but DedupeHeld said yes")
+	if session, held := standing.DedupeHeld(live, "sentry:789"); held {
+		t.Errorf("no live ship holds sentry:789, but DedupeHeld said %q holds it", session)
 	}
-	if standing.DedupeHeld(live, "") {
+	if _, held := standing.DedupeHeld(live, ""); held {
 		t.Error("an event with no dedupe_key was held by another")
+	}
+	if _, held := standing.DedupeHeld(map[string]string{"": "ship-c"}, ""); held {
+		t.Error("an empty key was held by a ship that holds the empty key")
 	}
 }
 

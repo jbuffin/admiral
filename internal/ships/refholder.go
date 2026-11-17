@@ -22,25 +22,27 @@ func prKey(ref string) string {
 	return strings.ToLower("https://" + u.Hostname() + "/" + p[0] + "/" + p[1] + "/pull/" + p[3])
 }
 
-// OwnsRef is whether ref is a PR a listed ship holds or an issue a listed ship claims, spelled however GitHub spells it.
-// Ships push under the engineer's own login, so only the ref can tell their work apart; a PR an underway ship just
-// opened is not in PRs until it moors.
-func OwnsRef(list []Ship, ref string) bool {
+// RefHolder is the listed ship that holds ref, spelled however GitHub spells it: an issue it claims, or a PR in its PRs or
+// its order URL. Ships push under the engineer's own login, so only the ref can tell their work apart; a PR an underway
+// ship just opened is not in PRs until it moors.
+func RefHolder(list []Ship, ref string) (Ship, bool) {
 	if k, ok := ClaimKey(ref); ok {
-		if _, held := ClaimsOf(list)[k]; held {
-			return true
-		}
+		sh, held := claimingShips(list)[k]
+		return sh, held
 	}
 	k := prKey(ref)
 	if k == "" {
-		return false
+		return Ship{}, false
 	}
 	for _, sh := range list {
+		if prKey(sh.URL) == k {
+			return sh, true
+		}
 		for _, pr := range sh.PRs {
 			if prKey(pr.URL) == k {
-				return true
+				return sh, true
 			}
 		}
 	}
-	return false
+	return Ship{}, false
 }

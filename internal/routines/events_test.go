@@ -246,25 +246,72 @@ func TestRatesApplyToLaunchesOnly(t *testing.T) {
 		routines.Reported, standing.A0)
 }
 
-func TestALiveShipOnTheSameDedupeKeyHoldsALaunchAtA1(t *testing.T) {
+func TestALiveShipOnTheSameDedupeKeyIsSkippedNamingTheShip(t *testing.T) {
 	live := func(key string) func(*routines.DecideInput) {
-		return func(in *routines.DecideInput) { in.LiveDedupeKeys, in.DedupeKey = []string{"k1"}, key }
+		return func(in *routines.DecideInput) {
+			in.LiveDedupeKeys, in.DedupeKey = map[string]string{"k1": "ship-1"}, key
+		}
 	}
-	wantDecision(t, routines.Decide(decideIn(live("k1"))), routines.Proposed, standing.A1, routines.ReasonDedupe)
+	g := routines.Decide(decideIn(live("k1")))
+	wantDecision(t, g, routines.Skipped, standing.A0, routines.ReasonRefHasShip)
+	if g.HeldBy != "ship-1" {
+		t.Errorf("HeldBy = %q, want ship-1", g.HeldBy)
+	}
 	wantDecision(t, routines.Decide(decideIn(live("k2"))), routines.Launched, standing.A5)
 	wantDecision(t, routines.Decide(decideIn(live(""))), routines.Launched, standing.A5)
 }
 
-func TestTheDecisionNamesCausesInTheOrderSpendQuietRatesDedupe(t *testing.T) {
+func TestAHeldDedupeKeyIsSkippedWhateverTheRoutineAsksAndBeforeAnyLevelReason(t *testing.T) {
+	held := func(in *routines.DecideInput) {
+		in.LiveDedupeKeys, in.DedupeKey = map[string]string{"k1": "ship-1"}, "k1"
+	}
+	limits := standing.PresetLimits(standing.Home)
+	cases := map[string]func(*routines.DecideInput){
+		"report only":          func(in *routines.DecideInput) { in.Routine.Before = routines.ReportOnly },
+		"ask first":            func(in *routines.DecideInput) { in.Routine.Before = routines.AskFirst },
+		"a Commodore below A5": func(in *routines.DecideInput) { in.Top = standing.A4 },
+		"every level reason": func(in *routines.DecideInput) {
+			in.Limits.QuietHours = []standing.Window{{Weekdays: []string{"thu"}, Start: "09:00", End: "11:00"}}
+			in.SpentTodayUSD = limits.Spend.DailyWorkerUSD
+			in.Counts = standing.Counts{LaunchesLastHour: limits.Rates.LaunchesPerHour}
+			in.HoldOn, in.LookoutFailure = true, "timeout"
+		},
+		"spend unknown": func(in *routines.DecideInput) { in.SpendUnknown = true },
+	}
+	for name, mod := range cases {
+		t.Run(name, func(t *testing.T) {
+			g := routines.Decide(decideIn(func(in *routines.DecideInput) { held(in); mod(in) }))
+			wantDecision(t, g, routines.Skipped, standing.A0, routines.ReasonRefHasShip)
+			if g.HeldBy != "ship-1" {
+				t.Errorf("HeldBy = %q, want ship-1", g.HeldBy)
+			}
+		})
+	}
+}
+
+func TestAMutedOrOffListEventKeepsItsOwnReasonWhenItsKeyIsHeld(t *testing.T) {
+	held := func(in *routines.DecideInput) {
+		in.LiveDedupeKeys, in.DedupeKey = map[string]string{"k1": "ship-1"}, "k1"
+	}
+	wantDecision(t, routines.Decide(decideIn(func(in *routines.DecideInput) {
+		held(in)
+		in.Limits.Skip.Senders, in.Sender = []standing.Scoped{{Value: "bob"}}, "bob"
+	})), routines.Skipped, standing.A0, routines.ReasonSkipFilter)
+	wantDecision(t, routines.Decide(decideIn(func(in *routines.DecideInput) {
+		held(in)
+		in.Limits.RepoAllowlist, in.Repo = []string{"acme/api"}, "acme/web"
+	})), routines.Skipped, standing.A0, routines.ReasonRepo)
+}
+
+func TestTheDecisionNamesCausesInTheOrderSpendQuietRates(t *testing.T) {
 	limits := standing.PresetLimits(standing.Home)
 	g := routines.Decide(decideIn(func(in *routines.DecideInput) {
 		in.Limits.QuietHours = []standing.Window{{Weekdays: []string{"thu"}, Start: "09:00", End: "11:00"}}
 		in.SpentTodayUSD = limits.Spend.DailyWorkerUSD
 		in.Counts = standing.Counts{LaunchesLastHour: limits.Rates.LaunchesPerHour}
-		in.LiveDedupeKeys, in.DedupeKey = []string{"k1"}, "k1"
 	}))
 	wantDecision(t, g, routines.Proposed, standing.A1,
-		routines.ReasonSpend, routines.ReasonQuiet, standing.ReasonPerHour, routines.ReasonDedupe)
+		routines.ReasonSpend, routines.ReasonQuiet, standing.ReasonPerHour)
 }
 
 func TestARoutineAlreadyAtA1NamesNoLimitThatCouldNotLowerIt(t *testing.T) {
@@ -602,21 +649,28 @@ func TestAnEventRecordsTheTierGoComputesFromTheEngineersAllowlist(t *testing.T) 
 	}
 }
 
-func TestAnEventAboutAdmiralsOwnWorkProducesNoRecord(t *testing.T) {
+func TestAnEventAboutAShipsOwnWorkIsSkippedNamingTheShip(t *testing.T) {
 	h := newHarness(t)
 	h.withEvents(standing.PresetLimits(standing.Home))
 	r := h.onRoutine(routines.AskFirst, nil)
 	own := "https://github.com/acme/api/pull/7"
-	h.sched.Own = func(fleet, ref string) bool { return fleet == "work" && ref == own }
+	h.sched.Holder = func(fleet, ref string) (string, bool) { return "dory", fleet == "work" && ref == own }
 	h.sched.HandleEvent(evFrom("Eng"))
-	if n := len(h.records(r)); n != 0 {
-		t.Fatalf("%d records for an event about a ship's own PR, want 0", n)
+	recs := h.records(r)
+	if len(recs) != 1 || recs[0].Outcome != routines.Skipped || recs[0].Reason != "ref_has_ship" || recs[0].HeldBy != "dory" || recs[0].Ship != "" {
+		t.Fatalf("records = %+v, want one skipped ref_has_ship held_by dory and no ship", recs)
+	}
+	if recs[0].Event != own || recs[0].Sender != "Eng" || recs[0].Tier != "T1" {
+		t.Errorf("record = %+v, want the event, sender and tier kept", recs[0])
 	}
 	other := evFrom("Eng")
 	other.Ref = "https://github.com/acme/api/pull/8"
 	h.sched.HandleEvent(other)
-	if n := len(h.records(r)); n != 1 {
-		t.Errorf("%d records for another PR, want 1", n)
+	if n := len(h.records(r)); n != 2 {
+		t.Errorf("%d records after an event on another PR, want 2: the skip and a proposal", n)
+	}
+	if n := len(h.ofOutcome(r, routines.Proposed)); n != 1 {
+		t.Errorf("%d proposals, want 1 for the PR no ship holds", n)
 	}
 }
 

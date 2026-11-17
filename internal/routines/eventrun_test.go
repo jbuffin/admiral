@@ -372,9 +372,14 @@ func twoRoutinesOnOneEvent(t *testing.T, mod func(*standing.Limits)) (*harness, 
 	return h, first, second
 }
 
-func TestTwoRoutinesOnOneEventShareTheLaunchesPerHourBudget(t *testing.T) {
+// Two routines on one event never both launch (the second is skipped on the first's key), so the hour's budget is shared across events.
+func TestTwoRoutinesShareTheLaunchesPerHourBudgetAcrossEvents(t *testing.T) {
 	h, first, second := twoRoutinesOnOneEvent(t, func(l *standing.Limits) { l.Rates.LaunchesPerHour = 1 })
 	h.sched.HandleEvent(evFrom("Eng"))
+	h.wantLaunches(1)
+	other := evFrom("Eng")
+	other.Ref = "https://github.com/acme/api/pull/8"
+	h.sched.HandleEvent(other)
 	h.wantLaunches(1)
 	var launched, proposed int
 	for _, r := range []routines.Routine{first, second} {
@@ -387,25 +392,24 @@ func TestTwoRoutinesOnOneEventShareTheLaunchesPerHourBudget(t *testing.T) {
 			}
 		}
 	}
-	if launched != 1 || proposed != 1 {
-		t.Errorf("%d launched and %d proposed records, want one of each", launched, proposed)
+	if launched != 1 || proposed != 2 {
+		t.Errorf("%d launched and %d proposed records, want one launch and a proposal per routine for the second event", launched, proposed)
 	}
 }
 
-func TestTwoRoutinesOnOneEventLaunchOneShipPerDedupeKey(t *testing.T) {
+func TestTwoRoutinesOnOneEventLaunchOneShipAndTheSecondIsSkippedNamingIt(t *testing.T) {
 	h, first, second := twoRoutinesOnOneEvent(t, func(*standing.Limits) {})
 	h.sched.HandleEvent(evFrom("Eng"))
 	h.wantLaunches(1)
-	var reasons []string
-	for _, r := range []routines.Routine{first, second} {
-		for _, rec := range h.records(r) {
-			if rec.Outcome == routines.Proposed {
-				reasons = append(reasons, rec.Reason)
-			}
-		}
+	launched, skipped := h.ofOutcome(first, routines.Launched), h.ofOutcome(second, routines.Skipped)
+	if len(launched) != 1 || launched[0].Ship != "ship-1" {
+		t.Fatalf("first routine launched = %+v, want one launch of ship-1", launched)
 	}
-	if len(reasons) != 1 || !strings.Contains(reasons[0], "dedupe") {
-		t.Errorf("proposal reasons = %v, want one naming the dedupe hold", reasons)
+	if len(skipped) != 1 || skipped[0].Reason != "ref_has_ship" || skipped[0].HeldBy != "ship-1" || skipped[0].Ship != "" {
+		t.Errorf("second routine skipped = %+v, want ref_has_ship held by ship-1 with no ship of its own", skipped)
+	}
+	if n := len(h.ofOutcome(second, routines.Proposed)); n != 0 {
+		t.Errorf("%d proposals for the second routine, want none", n)
 	}
 }
 

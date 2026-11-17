@@ -82,8 +82,8 @@ type Scheduler struct {
 	Zone      *time.Location // the zone a When is read in; main passes time.Local
 	// GitHubHosts are the hosts whose pull request and issue URLs an event may carry into a launch; nil is github.com alone.
 	GitHubHosts func(fleet string) []string
-	// Own says whether a ref is Admiral's own work (a ship's PR, a claimed issue); such an event is ignored. Nil owns nothing.
-	Own func(fleet, ref string) bool
+	// Holder names the session of a listed ship that already has the ref (ships.RefHolder over the listing); an event on it is skipped. Nil holds nothing.
+	Holder func(fleet, ref string) (session string, ok bool)
 	// Enrich is where a Lookout adds the dedupe_key, repo, labels and costs before the decision. Nil adds nothing.
 	Enrich func(Event) Enrichment
 	// Review is the step reviewer, asked once per routine whose provisional level is A3 or higher in a fleet with Checks. Nil asks.
@@ -678,6 +678,9 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 		RoutineKey: routineKey(r.ID), TriggerID: id, EventURL: eventURL,
 	})
 	switch {
+	case lerr != nil && lerr.Cause == launcher.CauseIssueHeld && accepted:
+		delete(s.waiting, r.ID)
+		return s.skipHeld(fleet, r, rec, lerr.HeldBy, lerr.Msg)
 	case lerr != nil && lerr.Wait != "" && accepted:
 		return ErrBusy
 	case lerr != nil && lerr.Wait != "":
@@ -692,6 +695,27 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 		s.watched[saved.ID] = watch{fleet: fleet, routine: r.ID, session: ref.Session, at: rec.At}
 	}
 	return nil
+}
+
+// busyHeld is ErrBusy that says what holds the item, so the 409 names it.
+type busyHeld struct{ msg string }
+
+func (e busyHeld) Error() string        { return e.msg }
+func (e busyHeld) Is(target error) bool { return target == ErrBusy }
+
+// heldRecord turns rec into the skip written when a ship already holds the item; nothing launched, so it carries no restriction.
+func heldRecord(rec Trigger, heldBy string) Trigger {
+	rec.Outcome, rec.Reason, rec.HeldBy, rec.Restricted = Skipped, ReasonRefHasShip, heldBy, ""
+	return rec
+}
+
+// skipHeld records that a ship already holds the item the run was for, launches nothing, and answers ErrBusy with msg.
+func (s *Scheduler) skipHeld(fleet string, r Routine, rec Trigger, heldBy, msg string) error {
+	s.recordFor(fleet, r, heldRecord(rec, heldBy))
+	if msg == "" {
+		msg = "this PR or issue already has a ship (" + heldBy + ")"
+	}
+	return busyHeld{msg}
 }
 
 // gates are the fire-time checks of a launch, and the Skill it starts with. The gates are checked again now: a guard

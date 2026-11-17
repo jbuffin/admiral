@@ -72,6 +72,11 @@ func (s *Scheduler) LaunchProposed(ctx context.Context, fleet, routineID, trigge
 	spec.Text = launcher.EventAsk(link, l.Text)
 	rec := Trigger{Routine: r.ID, Tier: prop.Tier, At: now, Via: ViaProposal, ProposalOf: prop.ID, Event: prop.Event,
 		Sender: prop.Sender, DedupeKey: prop.DedupeKey, Action: describe(r)}
+	if s.Holder != nil {
+		if session, held := s.Holder(fleet, prop.Event); held {
+			return Trigger{}, s.skipHeld(fleet, r, rec, session, "")
+		}
+	}
 	if err := s.launch(ctx, fleet, r, spec, rec, now, true, link); err != nil {
 		return Trigger{}, err
 	}
@@ -171,7 +176,7 @@ type EventLive struct {
 }
 
 // Load is the worker ship count and the held dedupe_keys, read against recs when Listed is set.
-func (l EventLive) Load(fleet string, recs []Trigger) (int, []string) {
+func (l EventLive) Load(fleet string, recs []Trigger) (int, map[string]string) {
 	ships := l.live(fleet, recs)
 	return countWorking(ships), dedupeKeysOf(ships)
 }
@@ -197,13 +202,13 @@ func countWorking(ships []LiveShip) int {
 	return n
 }
 
-func (l EventLive) DedupeKeys(fleet string) []string { return dedupeKeysOf(l.Ships(fleet)) }
+func (l EventLive) DedupeKeys(fleet string) map[string]string { return dedupeKeysOf(l.Ships(fleet)) }
 
-func dedupeKeysOf(ships []LiveShip) []string {
-	var keys []string
+func dedupeKeysOf(ships []LiveShip) map[string]string {
+	keys := map[string]string{}
 	for _, sh := range ships {
 		if sh.DedupeKey != "" {
-			keys = append(keys, sh.DedupeKey)
+			keys[sh.DedupeKey] = sh.Session
 		}
 	}
 	return keys

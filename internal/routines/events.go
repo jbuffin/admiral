@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"maps"
 	"net/url"
 	"regexp"
 	"slices"
@@ -102,6 +103,7 @@ const (
 	ReasonQuiet      = "quiet_hours"
 	ReasonHold       = "hold_fire"
 	ReasonDedupe     = "dedupe_key_held"
+	ReasonRefHasShip = "ref_has_ship"
 	ReasonNoRestrict = "no_restricted_harness"
 	ReasonCommodore  = "commodore_below_a5"
 	ReasonBusy       = "routine_busy"
@@ -122,7 +124,7 @@ type DecideInput struct {
 	SpentTodayUSD     float64
 	SpendUnknown      bool // the log could not be read, so spend and rates are unknown and count as reached
 	Counts            standing.Counts
-	LiveDedupeKeys    []string
+	LiveDedupeKeys    map[string]string // dedupe_key to the session of the live ship holding it
 	RestrictedHarness bool
 	Reviewer          standing.Verdict
 	Sender            string
@@ -142,6 +144,8 @@ type Decision struct {
 	Level    standing.Level
 	Computed standing.Level
 	Reasons  []string
+	// HeldBy is the session of the ship that held the event's PR, issue or dedupe_key when the outcome is Skipped for ReasonRefHasShip.
+	HeldBy string
 	// Restricted is the profile of an A3 launch.
 	Restricted standing.Restricted
 	// Reviewed is what the step reviewer said; the zero value means it was not asked.
@@ -188,7 +192,7 @@ func routineLevel(m Mode) standing.Level {
 	return standing.A5
 }
 
-// Decide runs the skip filters, the repo allowlist, the effective action, Top, spend, quiet hours, rates and dedupe, in that order.
+// Decide runs the skip filters, the repo allowlist, the dedupe_key hold, the effective action, Top, spend, quiet hours and rates, in that order.
 // Every budget only lowers an action to A1, so a card (A0) and a proposal (A1) never name one.
 func Decide(in DecideInput) Decision {
 	if in.Limits.Skipped(standing.SkipInput{Routine: in.Routine.ID, Labels: in.Labels, Sender: in.Sender, DedupeKey: in.DedupeKey}) {
@@ -197,6 +201,10 @@ func Decide(in DecideInput) Decision {
 	// an event with no repo fails closed against a non-empty allowlist
 	if !in.Limits.RepoAllowed(in.Repo) {
 		return Decision{Outcome: Skipped, Reasons: []string{ReasonRepo}}
+	}
+	// a held key skips at every level, so no budget or Before acting turns it into a proposal or a card
+	if session, held := standing.DedupeHeld(in.LiveDedupeKeys, in.DedupeKey); held {
+		return Decision{Outcome: Skipped, Reasons: []string{ReasonRefHasShip}, HeldBy: session}
 	}
 	action := func(m Mode, restricted bool) standing.Action {
 		return in.Limits.Effective(standing.Event{Tier: in.Tier, Routine: routineLevel(m), RestrictedHarness: restricted, Reviewer: in.Reviewer})
@@ -225,9 +233,6 @@ func Decide(in DecideInput) Decision {
 		}
 		if v := in.Limits.CheckRates(in.Counts); !v.OK {
 			d.Reasons = append(d.Reasons, v.Reason)
-		}
-		if standing.DedupeHeld(in.LiveDedupeKeys, in.DedupeKey) {
-			d.Reasons = append(d.Reasons, ReasonDedupe)
 		}
 		if in.LookoutFailure != "" {
 			d.Reasons = append(d.Reasons, "lookout_"+in.LookoutFailure)
@@ -287,7 +292,7 @@ type EventActs interface {
 // EventLoad is what the decision reads of the ships: how many worker ships run and the dedupe_keys they hold.
 type EventLoad interface {
 	WorkerShips(fleet string) int
-	DedupeKeys(fleet string) []string
+	DedupeKeys(fleet string) map[string]string
 }
 
 // RepoOfRef is owner/name for a github.com ref, else empty.
@@ -389,9 +394,6 @@ func ownerNameOfRef(ref string) string {
 // Only a launch takes the scheduler lock, and it lets go before a card or proposal is posted: the Inbox takes its own lock.
 func (s *Scheduler) HandleEvent(ev Event) {
 	s.init()
-	if s.Own != nil && s.Own(ev.Fleet, ev.Ref) {
-		return
-	}
 	f, ok := s.Store.Fleets(ev.Fleet)
 	if !ok {
 		return
@@ -403,6 +405,30 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	now := s.Clock.Now()
 	zone := s.zone()
 	sender := senderOf(ev)
+	tier := TierOf(ev, f.Limits)
+	if s.Holder != nil {
+		// a held PR or issue costs no Lookout call, and the skip names the ship instead of leaving a silent gap
+		if session, held := s.Holder(ev.Fleet, ev.Ref); held {
+			key, repo := "", ""
+			if r := RepoOfRef(ev.Ref); ev.Verified && r != "" {
+				key, repo = GitHubKey(ev.Ref), r
+			}
+			for _, r := range matches {
+				rec := Trigger{Routine: r.ID, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: sender, Rule: r.ID, Action: describe(r), DedupeKey: key}
+				// a muted sender or a repo outside the allowlist keeps its own reason, as in Decide
+				switch {
+				case f.Limits.Skipped(standing.SkipInput{Routine: r.ID, Sender: sender, DedupeKey: key}):
+					rec.Outcome, rec.Reason = Skipped, ReasonSkipFilter
+				case repo != "" && !f.Limits.RepoAllowed(repo): // an unverified event's repo is the Lookout's, which a held item never asks
+					rec.Outcome, rec.Reason = Skipped, ReasonRepo
+				default:
+					rec = heldRecord(rec, session)
+				}
+				s.record(ev.Fleet, rec)
+			}
+			return
+		}
+	}
 	recs, readErr := s.Store.Records(ev.Fleet)
 	if readErr != nil {
 		log.Printf("routines: event on %s: the trigger log is unreadable (%v), so spend and rates count as reached", ev.Fleet, readErr)
@@ -428,17 +454,18 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	if repo := RepoOfRef(ev.Ref); ev.Verified && repo != "" { // only the built-in source's ref is Admiral's own reading, and it wins over the Lookout's
 		en.Repo = repo
 		en.DedupeKey = GitHubKey(ev.Ref) // a plugin's key is the Lookout's; for the built-in source Admiral reads the ref itself
+	} else if strings.HasPrefix(en.DedupeKey, "gh:") {
+		en.DedupeKey = "" // the gh: namespace is Admiral's reading of a verified ref, which the judge's reading of event text must not spell
 	}
 	holdOn, err := s.Store.HoldOn(ev.Fleet)
 	if err != nil {
 		holdOn = true
 	}
-	tier := TierOf(ev, f.Limits)
 	restricted := autopilotgate.RestrictedCapable(s.Store.Home, f)
 	hasChecks := s.Store.HasChecks(ev.Fleet) // orders that can't be read or parsed count as having Checks
 	costs := en.Costs                        // one record carries them, or the spend would count once per routine
 	var madeShips int                        // ships this event has launched, which the Live view may not list yet
-	var madeKeys []string
+	madeKeys := map[string]string{}
 	// gather reads what one pair's decision reads, with s.mu held: the counts and live keys are the ones a launch, and a
 	// concurrent event's, change.
 	gather := func(r Routine) (Routine, DecideInput) {
@@ -451,18 +478,20 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		for _, c := range costs {
 			spent += c.USD
 		}
-		var live []string
+		var listed map[string]string
 		switch l := s.Live.(type) {
 		case nil:
 		case interface {
-			Load(fleet string, recs []Trigger) (int, []string)
+			Load(fleet string, recs []Trigger) (int, map[string]string)
 		}:
-			counts.WorkerShips, live = l.Load(ev.Fleet, recs)
+			counts.WorkerShips, listed = l.Load(ev.Fleet, recs)
 		default:
-			counts.WorkerShips, live = l.WorkerShips(ev.Fleet), l.DedupeKeys(ev.Fleet)
+			counts.WorkerShips, listed = l.WorkerShips(ev.Fleet), l.DedupeKeys(ev.Fleet)
 		}
 		counts.WorkerShips += madeShips
-		live = append(live, madeKeys...)
+		live := make(map[string]string, len(listed)+len(madeKeys))
+		maps.Copy(live, listed)
+		maps.Copy(live, madeKeys)
 		return r, DecideInput{
 			Commodore: r.Do.Launch.Skill.Kind == "commodore",
 			Routine:   r, Tier: tier, Limits: f.Limits, Top: EventTop, HoldOn: holdOn, Now: now.In(zone),
@@ -538,7 +567,7 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		base := Trigger{
 			Routine: r.ID, Outcome: d.Outcome, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: sender, Rule: r.ID,
 			Reason: strings.Join(d.Reasons, ", "), Action: describe(r), DedupeKey: en.DedupeKey, Costs: recCosts,
-			Verdict: reviewed.Verdict, CheckID: reviewed.CheckID, ReviewerReason: reviewed.Reason,
+			Verdict: reviewed.Verdict, CheckID: reviewed.CheckID, ReviewerReason: reviewed.Reason, HeldBy: d.HeldBy,
 		}
 		if d.Outcome != Launched {
 			return r, d, base, nil, false
@@ -549,7 +578,7 @@ func (s *Scheduler) HandleEvent(ev Event) {
 			launched = &saved
 			madeShips++
 			if en.DedupeKey != "" {
-				madeKeys = append(madeKeys, en.DedupeKey)
+				madeKeys[en.DedupeKey] = saved.Ship
 			}
 		}
 		if !done {

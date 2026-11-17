@@ -720,13 +720,13 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	}
 	if issues := claimed(req); len(issues) > 0 {
 		if holder, ok := s.lockIssues(issues, "a launch in flight"); !ok {
-			return Ship{}, issueHeld(holder)
+			return Ship{}, issueHeld(holder, "")
 		}
 		defer s.unlockIssues(issues)
 		claims := claimingShips(append(s.List(), s.Pending()...))
 		for _, u := range issues {
 			if sh, held := claims[claimKeyOf(u)]; held && !another && cmpName(sh.Name, sh.Session) != self {
-				return Ship{}, issueHeld(holderOf(req, sh))
+				return Ship{}, issueHeld(holderOf(req, sh), sh.Session)
 			}
 		}
 	}
@@ -802,13 +802,16 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	return s.ship(sess), nil
 }
 
-// claimed is the issues a launch holds: its slice, else its one issue URL when it came from a source's order.
+// claimed is the issues a launch holds: its slice, else its one issue URL when it came from a source's order, else the issue of the event that started it.
 func claimed(req launcher.Request) []string {
 	if len(req.Issues) > 0 {
 		return req.Issues
 	}
 	if req.Source != "" && req.URL != "" {
 		return []string{req.URL}
+	}
+	if _, ok := ClaimKey(req.EventURL); ok {
+		return []string{req.EventURL}
 	}
 	return nil
 }
@@ -832,10 +835,10 @@ func (s *Service) orderRefused(req launcher.Request, key OrderKey) *launcher.Err
 		claims := claimingShips(all)
 		for _, u := range req.Issues {
 			if sh, held := claims[claimKeyOf(u)]; held {
-				return issueHeld(holderOf(req, sh))
+				return issueHeld(holderOf(req, sh), sh.Session)
 			}
 		}
-		return issueHeld("a launch in flight")
+		return issueHeld("a launch in flight", "")
 	}
 	for _, sh := range all {
 		if sh.Source == key.Source && sh.OrderID == key.OrderID {

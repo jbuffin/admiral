@@ -466,6 +466,8 @@ type Trigger struct {
 	Reason         string `json:"reason,omitempty"`
 	Action         string `json:"action,omitempty"`
 	Ship           string `json:"ship,omitempty"`
+	// HeldBy is the session of the listed ship that already had the event's PR or issue; a skipped record only, never a launch.
+	HeldBy string `json:"held_by,omitempty"`
 	// Restricted and WorkerLaunched mark an event ship launched at A3 or above.
 	Restricted     standing.Restricted `json:"restricted,omitempty"`
 	WorkerLaunched bool                `json:"worker_launched,omitempty"`

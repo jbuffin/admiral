@@ -223,8 +223,8 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 
 func claimKeyOf(url string) string { k, _ := ClaimKey(url); return k }
 
-func issueHeld(holder string) *launcher.Error {
-	return &launcher.Error{Status: http.StatusConflict, Msg: "this issue already has a ship (" + holder + ")"}
+func issueHeld(holder, session string) *launcher.Error {
+	return &launcher.Error{Status: http.StatusConflict, Msg: "this issue already has a ship (" + holder + ")", Cause: launcher.CauseIssueHeld, HeldBy: session}
 }
 
 func (s *Service) setUnlistedIssues(key OrderKey, url string, issues []string, chat, routine, commitment, fleet string) {
