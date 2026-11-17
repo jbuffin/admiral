@@ -76,7 +76,7 @@ A ship launched from untrusted text that cannot send anything out: no push, no G
 Starting a new normal ship from a restricted ship's trigger-log record and local work, as the engineer's own act. Pushing and PRs start only here; the restricted session is never continued.
 
 **Hold fire**:
-A switch, per fleet or for all of Admiral, that sets every routine to propose only and leaves running ships alone. AdmiralBot or a message from the engineer's own chat account can turn it on; only the engineer in Admiral turns it off.
+A switch, per fleet or for all of Admiral, that sets every routine to propose only and leaves running ships alone. AdmiralBot can turn it on in its own fleet, and a message from the engineer's own chat account can turn it on; only the engineer in Admiral turns it off, and only the engineer turns it on for every fleet.
 
 **Standing order**:
 The engineer's per-fleet rule for work started by outside events, filed as a **Limit**, a **Check** or **Guidance**. It is never an order and never shows in the Orders sidebar.
@@ -160,7 +160,7 @@ _Avoid_: configured skill, skill list
 A skill a harness on this Mac can load for a fleet's dock, from the harness's own skills folder or its plugins. A skill inside a repo counts only for that repo. The same skill can be installed on several harnesses, under its plain name on one and a plugin's name on another, and is still one skill.
 
 **AdmiralBot**:
-A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and acts by launching ships, adding orders, answering inbox items and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which shows in the Inbox as an "AdmiralBot asked" item while it waits and is answered there or in the chat.
+A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and the fleet's map, and acts by launching ships (a scout, a quick ship or a Commodore ship, its choice), working a campaign, adding orders, answering inbox items, giving a ship its next prompt, waking, stopping and dismissing ships, drafting a routine or turning one off, turning Hold fire on in its fleet and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which shows in the Inbox as an "AdmiralBot asked" item while it waits and is answered there or in the chat.
 _Avoid_: assistant, chat ship, chat agent, background session, handoff (say "a launch via AdmiralBot")
 
 **Ledger**:
@@ -185,6 +185,14 @@ _Avoid_: summary, context
 **Ship**:
 One harness session and the identity that outlives it, launched by the engineer, a routine or AdmiralBot, and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain. Each ship has a generated name, unique among the ships that exist, that it keeps for life; the name carries no meaning. A ship that opened a PR stays with it through review: between rounds it is moored, with no session running.
 _Avoid_: boat (for the lead), agent, card
+
+**Scout**:
+A ship that looks at something (a repo, logs, the web, an issue) and reports back, changing nothing and opening no PR. It runs to the end, writes its report and sails off on its own; AdmiralBot sends it and brings its report to the engineer.
+_Avoid_: probe, research ship, investigator
+
+**Quick ship**:
+A ship sent for a small change that one session can finish with no design to settle. Anything bigger goes to a Commodore ship.
+_Avoid_: fast ship, light ship
 
 **Crew boat**:
 A smaller boat rafted beside a ship: a teammate the ship's skill started with `admiral crew`, in its own tmux window, which the engineer can board. It may carry a **role** the skill gave it, such as `test-writer`. A crew boat that ended its turn is idle: it waits for its lead, not the engineer.
