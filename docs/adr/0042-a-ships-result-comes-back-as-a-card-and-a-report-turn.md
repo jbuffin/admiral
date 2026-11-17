@@ -1,6 +1,6 @@
 # 42. A ship's result comes back as a card and a report turn
 
-Status: accepted
+Status: accepted, amended by [ADR 0043](0043-an-idea-in-the-chat-becomes-a-pr-with-no-questions-on-the-way.md) (Ready to merge and the end of a ship AdmiralBot launched each post a card)
 
 ## Context
 
