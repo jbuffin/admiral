@@ -318,8 +318,6 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"mark": skillindex.Mark(dock.Name), "skills": list, "commodore": cmd})
 }
 
-const installTimeout = 5 * time.Minute
-
 // serveCommodore installs or updates Commodore as a plugin in a dock's own identity.
 func (s *Service) serveCommodore(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -377,7 +375,7 @@ func (s *Service) serveCommodore(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		installer = &commodore.Runner{Home: home, Timeout: installTimeout}
+		installer = &commodore.Runner{Home: home, Timeout: commodore.InstallTimeout}
 	}
 	// The run finishes even if the client goes away, so a half-done install is not left behind.
 	out, err := installer.Run(context.WithoutCancel(r.Context()), dock, action)
@@ -392,21 +390,13 @@ func (s *Service) serveCommodore(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error":    err.Error(),
-			"output":   lastLines(out, 20),
+			"output":   commodore.LastLines(out, 20),
 			"commands": commodore.Commands(dock.Name, action),
 			"state":    commodore.Detect(dock),
 		})
 		return
 	}
 	writeJSON(w, http.StatusOK, commodore.Detect(dock))
-}
-
-func lastLines(s string, n int) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return strings.Join(lines, "\n")
 }
 
 // serveShipSkills lists the skills a ship's or boat's message box offers: its
