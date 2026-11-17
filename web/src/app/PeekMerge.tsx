@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
-import { call, fetchStackShape, mergeShip, type Ship, type StackShape } from './api';
+import { call, fetchStackShape, mergeShip, updateBranch, type Ship, type StackShape } from './api';
 import { fleetSearch } from './fleets';
 import { MooredPRs } from './MooredPRs';
 import { mergeHint } from './moored';
@@ -38,6 +38,35 @@ export function MergeControl({ ship, pr, stack = false, onMerged, onError, stale
     <div class="peek-merge">
       <Button label="Merge" variant="primary" pending={['ship', ship.session, 'merge', pr ?? '']} disabled={locked} onClick={merge} />
       {hint ? <span class="merge-hint">{hint}</span> : null}
+      {stale ? <Button label="Reload" onClick={() => location.reload()} /> : null}
+    </div>
+  );
+}
+
+/** Update branch for a PR that is behind its base: GitHub merges the base into the PR's head. The caller shows it only for a behind PR outside a stack, and shows the error it reports. */
+export function UpdateBranchControl({ ship, pr, onError, locked = false, onBusy }: { ship: Ship; pr: string; onError: (e: string) => void; locked?: boolean; onBusy?: (busy: boolean) => void }) {
+  const [stale, setStale] = useState(false);
+  const busy = useRef(false);
+  const update = async () => {
+    if (busy.current) return;
+    busy.current = true;
+    setStale(false);
+    onBusy?.(true);
+    onError('');
+    const r = await updateBranch(ship.session, pr);
+    busy.current = false;
+    onBusy?.(false);
+    if (r.ok) {
+      void call('POST', '/moored/refresh');
+      return;
+    }
+    const refused = r.status === 403;
+    setStale(refused);
+    onError(refused ? STALE_TOKEN.replace('merge', 'update the branch') : r.error);
+  };
+  return (
+    <div class="peek-merge">
+      <Button label="Update branch" pending={['ship', ship.session, 'update-branch', pr]} disabled={locked} onClick={update} />
       {stale ? <Button label="Reload" onClick={() => location.reload()} /> : null}
     </div>
   );

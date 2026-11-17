@@ -360,6 +360,11 @@ export function mergeShip(session: string, pr?: string): Promise<Result<unknown>
   return call('POST', `/ships/${encodeURIComponent(session)}/merge`, pr ? { pr } : undefined, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
+/** Updates a moored ship's PR branch with its base, through the fleet's gh. Sends the merge token like Merge. */
+export function updateBranch(session: string, pr: string): Promise<Result<unknown>> {
+  return call('POST', `/ships/${encodeURIComponent(session)}/update-branch`, { pr }, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
+}
+
 /** How a ship's PRs relate on GitHub; 404 for a ship that is anchored or has no PRs. */
 export function fetchStackShape(session: string): Promise<Result<StackShape>> {
   return call<StackShape>('GET', `/ships/${encodeURIComponent(session)}/stack`);

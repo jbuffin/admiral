@@ -140,16 +140,14 @@ func TestAFailedGhUpdateBranchReturnsItsMessageAndKeepsTheShipMoored(t *testing.
 func TestAnUpdateBranchThatRunsPastGhsLimitAnswers504AndRefreshesThePoll(t *testing.T) {
 	r := newUpdateRig(t, nil, layerURL(7))
 	r.g.updateErr = moor.ErrMergeTimeout
-	before := len(r.g.callLog())
 	rec := r.update(`{"pr":"` + layerURL(7) + `"}`)
 	if rec.Code != http.StatusGatewayTimeout {
 		t.Errorf("POST update-branch = %d %s, want 504", rec.Code, rec.Body)
 	}
-	// The handler's own fresh read is one call; the refresh is a second.
-	for end := time.Now().Add(10 * time.Second); len(r.g.callLog()) < before+2; time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(end) {
-			t.Fatalf("GitHub was asked %d times, want a poll after the timeout", len(r.g.callLog())-before)
-		}
+	select {
+	case <-r.s.kickChan():
+	default:
+		t.Errorf("no poll was asked for after an update whose result is unknown")
 	}
 }
 

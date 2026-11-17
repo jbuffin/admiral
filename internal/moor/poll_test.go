@@ -41,11 +41,11 @@ func TestViewServesTheChipsOfAnOpenPR(t *testing.T) {
 		want  PR
 	}{
 		"every chip": {Status{State: "OPEN", Review: "CHANGES_REQUESTED", Checks: "FAILURE", Mergeable: "CONFLICTING"}, true,
-			PR{URL: url, State: "OPEN", Review: "CHANGES_REQUESTED", Checks: "FAILURE", Mergeable: "CONFLICTING", Conflicts: true}},
+			PR{URL: url, State: "OPEN", Review: "CHANGES_REQUESTED", Checks: "FAILURE", Mergeable: "CONFLICTING", Conflicts: true, MergeReasons: []string{"conflicts", "checks_failing", "changes_requested"}}},
 		"no review and no checks": {Status{State: "OPEN", Mergeable: "MERGEABLE"}, true,
 			PR{URL: url, State: "OPEN", Mergeable: "MERGEABLE"}},
 		"mergeable unknown is no conflict": {Status{State: "OPEN", Review: "APPROVED", Checks: "PENDING", Mergeable: "UNKNOWN"}, true,
-			PR{URL: url, State: "OPEN", Review: "APPROVED", Checks: "PENDING", Mergeable: "UNKNOWN"}},
+			PR{URL: url, State: "OPEN", Review: "APPROVED", Checks: "PENDING", Mergeable: "UNKNOWN", MergeReasons: []string{"unknown"}}},
 		"a merged PR serves no conflicts": {Status{State: "MERGED", Mergeable: "CONFLICTING"}, true,
 			PR{URL: url, State: "MERGED", Mergeable: "CONFLICTING"}},
 		"a closed PR serves no conflicts": {Status{State: "CLOSED", Mergeable: "CONFLICTING"}, true,

@@ -75,7 +75,7 @@ const (
 
 var actor = "author { __typename login }"
 
-var prFields = fmt.Sprintf(`state author { __typename login } createdAt reviewDecision mergeable statusCheckRollup { state } headRefOid mergeStateStatus number
+var prFields = fmt.Sprintf(`state author { __typename login } createdAt reviewDecision mergeable statusCheckRollup { state } headRefOid mergeStateStatus isDraft number
  baseRef { branchProtectionRule { requiresStrictStatusChecks } rules(first: 20) { nodes { type parameters { ... on RequiredStatusChecksParameters { strictRequiredStatusChecksPolicy } } } } }
  reviews(last: %d) { nodes { id commit { oid } %s state submittedAt body url comments { totalCount } } }
  reviewThreads(last: %d) { nodes { id comments(last: %d) { nodes { id %s createdAt body url } } } }
@@ -191,6 +191,7 @@ type prNode struct {
 	ReviewDecision    string    `json:"reviewDecision"`
 	Mergeable         string    `json:"mergeable"`
 	MergeStateStatus  string    `json:"mergeStateStatus"`
+	IsDraft           bool      `json:"isDraft"`
 	HeadRefOid        string    `json:"headRefOid"`
 	StatusCheckRollup *struct {
 		State    string `json:"state"`
@@ -264,7 +265,7 @@ func cut(s string) string {
 }
 
 func (n *prNode) status() moor.Status {
-	st := moor.Status{State: n.State, Review: n.ReviewDecision, Mergeable: n.Mergeable, MergeState: n.MergeStateStatus, Head: n.HeadRefOid,
+	st := moor.Status{State: n.State, Review: n.ReviewDecision, Mergeable: n.Mergeable, MergeState: n.MergeStateStatus, Head: n.HeadRefOid, Draft: n.IsDraft,
 		Author: n.Author.actor().Login, CreatedAt: n.CreatedAt}
 	if n.StatusCheckRollup != nil {
 		st.Checks = n.StatusCheckRollup.State

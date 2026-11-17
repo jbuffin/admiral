@@ -367,7 +367,7 @@ func TestPollMooredServesTheChipsOnTheShip(t *testing.T) {
 		t.Fatalf("ship after a poll = %+v, want still moored with two PRs", sh)
 	}
 	want := []moor.PR{
-		{URL: prSeven, State: "OPEN", Review: "CHANGES_REQUESTED", Checks: "FAILURE", Mergeable: "CONFLICTING", Conflicts: true, Feedback: 1, Answer: ""},
+		{URL: prSeven, State: "OPEN", Review: "CHANGES_REQUESTED", Checks: "FAILURE", Mergeable: "CONFLICTING", Conflicts: true, MergeReasons: []string{"conflicts", "checks_failing", "changes_requested"}, Feedback: 1, Answer: ""},
 		{URL: prNine, State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", Ready: true},
 	}
 	for i, w := range want {

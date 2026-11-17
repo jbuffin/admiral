@@ -61,9 +61,9 @@ func (c *Client) MergePR(ctx context.Context, url, method string) error {
 	return c.merge(ctx, "", nil, []string{"pr", "merge", url, "--" + method}, method)
 }
 
-// UpdateBranch runs `gh pr update-branch URL`.
+// UpdateBranch runs `gh pr update-branch URL`: the merge method, no --rebase, so the head keeps its commits.
 func (c *Client) UpdateBranch(ctx context.Context, url string) error {
-	return errors.New("not implemented")
+	return c.runMutation(ctx, "", nil, []string{"pr", "update-branch", url}, "gh could not update the branch")
 }
 
 // MergeStack runs `gh stack merge N --yes --merge-method METHOD` for GitHub's stack number N, in an empty folder of its

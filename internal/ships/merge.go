@@ -29,7 +29,7 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.startMerge(session) {
-		writeError(w, http.StatusConflict, "a merge of ship "+session+" is already under way")
+		writeError(w, http.StatusConflict, "a merge or branch update of ship "+session+" is already under way")
 		return
 	}
 	defer s.endMerge(session)
@@ -216,6 +216,89 @@ func noControl(r rune) rune {
 	return r
 }
 
+// serveUpdateBranch is the engineer's Update branch act: gh merges the PR's base into its head. Like Merge, it runs only on this request.
 func (s *Service) serveUpdateBranch(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "update branch is not implemented")
+	session := r.PathValue("session")
+	var body struct {
+		PR string `json:"pr"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
+		return
+	}
+	if !s.startMerge(session) {
+		writeError(w, http.StatusConflict, "a merge or branch update of ship "+session+" is already under way")
+		return
+	}
+	defer s.endMerge(session)
+	if !s.startWaking(session) {
+		writeError(w, http.StatusConflict, "ship "+session+" is waking")
+		return
+	}
+	defer s.endWaking(session)
+	rec, ok := s.mooredRecord(session)
+	if !ok {
+		if _, live := s.find(session); live {
+			writeError(w, http.StatusConflict, "ship "+session+" is not moored, and only a moored ship's branch can be updated")
+			return
+		}
+		writeError(w, http.StatusNotFound, "ship "+session+" not found")
+		return
+	}
+	if len(rec.Reviewing) > 0 {
+		writeError(w, http.StatusConflict, "ship "+session+" reviews a pull request, and a review ship does not update its branch")
+		return
+	}
+	if !slices.Contains(rec.PRs, body.PR) {
+		writeError(w, http.StatusBadRequest, "pr is not one of ship "+session+"'s pull requests")
+		return
+	}
+	var gh moor.GitHub
+	if s.GitHub != nil {
+		gh = s.GitHub(rec.Fleet)
+	}
+	if gh == nil {
+		writeError(w, http.StatusConflict, "the fleet has no GitHub source to update the branch with")
+		return
+	}
+	host, repo, number, ok := moor.ParsePR(body.PR)
+	if !ok || !strings.EqualFold(host, gh.Host()) {
+		writeError(w, http.StatusUnprocessableEntity, "the pull request is not on the fleet's GitHub host, so its branch is not updated")
+		return
+	}
+	url := "https://" + gh.Host() + "/" + repo + "/pull/" + number
+
+	fresh, err := gh.PullRequests(r.Context(), []string{body.PR})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "cannot check the pull request before updating its branch: "+err.Error())
+		return
+	}
+	if st, found := fresh[body.PR]; !found || st.State != "OPEN" || st.MergeState != "BEHIND" {
+		writeError(w, http.StatusConflict, "the pull request is not behind its base, so there is no branch to update")
+		return
+	}
+	detail, err := gh.PullRequestDetail(r.Context(), body.PR)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "cannot read the pull request before updating its branch: "+err.Error())
+		return
+	}
+	if detail.Stack != nil {
+		writeError(w, http.StatusConflict, "the pull request is a layer of a GitHub stack, which is fixed as a stack, so its branch is not updated")
+		return
+	}
+
+	// Like a merge, the update outlives a client that hangs up: stopping gh midway would leave its result unknown.
+	err = gh.UpdateBranch(context.WithoutCancel(r.Context()), url)
+	switch {
+	case errors.Is(err, moor.ErrMergeTimeout):
+		s.RefreshMoored()
+		writeError(w, http.StatusGatewayTimeout, err.Error())
+		return
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: updating the branch of pull request %s failed: %s\n", session, number, strings.Join(strings.Fields(strings.Map(noControl, err.Error())), " "))
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.RefreshMoored()
+	writeJSON(w, http.StatusAccepted, map[string]any{"updated": true})
 }

@@ -12,7 +12,7 @@
 #                NAME=value lines; a variable that was not set has no line
 #   cwd          the working directory the call ran in
 #
-# It answers fourteen kinds of call and nothing else (anything else exits 2):
+# It answers fifteen kinds of call and nothing else (anything else exits 2):
 #
 #   gh --version
 #
@@ -55,6 +55,14 @@
 #     and exits 0. With $FAKEGH_DIR/pr_merge.fail it exits 1 and prints that file
 #     on stderr, merging nothing. With $FAKEGH_DIR/pr_merge.sleep it sleeps that
 #     many seconds first, so a second merge can arrive while this one runs.
+#
+#   gh pr update-branch URL
+#     the Update branch act's merge of a PR's base into its head. The URL must
+#     be https:// and no flag is accepted (--rebase above all: the act keeps the
+#     head's commits). On success it changes only the mergeStateStatus member of
+#     pr_events/KEY of the URL from BEHIND to CLEAN, so the next poll sees the
+#     branch up to date, and exits 0. With $FAKEGH_DIR/pr_update_branch.fail it
+#     exits 1 and prints that file on stderr, changing nothing.
 #
 #   gh stack merge N --yes --merge-method (merge|squash|rebase)
 #     the Merge act's whole-stack merge, by GitHub's stack number: exactly one
@@ -109,7 +117,7 @@
 #     the working directory (see env and cwd above).
 #
 #   gh api graphql ...   (the PR tab's single-PR detail query)
-#     Taken before the batched query when an argument holds `isDraft`. It reads
+#     Taken before the batched query when an argument holds `{ d: repository(` (the batched query asks for `isDraft` too, so that word can't tell them apart). It reads
 #     the one `d: repository(owner: "O", name: "N") { pullRequest(number: 7)`
 #     and answers data.d.pullRequest with the content of $FAKEGH_DIR/pr_detail/KEY
 #     (KEY as for pr_state): a JSON object in GitHub's shape, not checked against
@@ -270,6 +278,20 @@ pr)
 		echo MERGED > "$FAKEGH_DIR/pr_state/$mkey"
 		if [ -s "$FAKEGH_DIR/pr_detail/$mkey" ]; then
 			sed 's/"state":"OPEN"/"state":"MERGED"/g' "$FAKEGH_DIR/pr_detail/$mkey" > "$call_dir/detail.tmp" && mv "$call_dir/detail.tmp" "$FAKEGH_DIR/pr_detail/$mkey"
+		fi
+		exit 0
+	fi
+	if [ "$2" = update-branch ]; then
+		shift 2
+		[ $# = 1 ] || { echo "fakegh: gh pr update-branch takes the pull request's URL and no flag" >&2; exit 2; }
+		case "$1" in https://*) ;; *) echo "fakegh: gh pr update-branch needs the pull request's URL" >&2; exit 2 ;; esac
+		if [ -e "$FAKEGH_DIR/pr_update_branch.fail" ]; then
+			cat "$FAKEGH_DIR/pr_update_branch.fail" >&2
+			exit 1
+		fi
+		ukey=$(printf '%s' "$1" | tr '/:' '__')
+		if [ -s "$FAKEGH_DIR/pr_events/$ukey" ]; then
+			sed -E 's/"mergeStateStatus"[[:space:]]*:[[:space:]]*"BEHIND"/"mergeStateStatus":"CLEAN"/' "$FAKEGH_DIR/pr_events/$ukey" > "$call_dir/events.tmp" && mv "$call_dir/events.tmp" "$FAKEGH_DIR/pr_events/$ukey"
 		fi
 		exit 0
 	fi
@@ -510,7 +532,7 @@ api)
 	done
 	for a in "$@"; do
 		case "$a" in
-		*isDraft*)
+		*"{ d: repository("*) # the detail query; the poll's batched query asks for isDraft too
 			[ -s "$FAKEGH_DIR/pr_detail.sleep" ] && sleep "$(cat "$FAKEGH_DIR/pr_detail.sleep")"
 			if [ -e "$FAKEGH_DIR/pr_detail.fail" ]; then
 				cat "$FAKEGH_DIR/pr_detail.fail" >&2
