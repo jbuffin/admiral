@@ -1,6 +1,6 @@
 # 6. GitHub is built in; other trackers are subprocess plugins
 
-Status: accepted, rewritten 2026-11-10 for [#227](https://github.com/jbuffin/admiral/issues/227) (GitHub built in, sources per fleet, event methods, no freeform)
+Status: accepted, rewritten 2026-11-10 for [#227](https://github.com/jbuffin/admiral/issues/227) (GitHub built in, sources per fleet, event methods, no freeform); extended by [ADR 0044](0044-a-modules-page-is-drawn-by-admiral-from-building-blocks.md) (module plugins with their own page)
 
 ## Context
 
