@@ -15,7 +15,7 @@ import (
 func TestEachRefusalASecondTryCouldClearCarriesItsCause(t *testing.T) {
 	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 	rig := func(t *testing.T, maxShips int) *Service {
-		cfg := &config.Config{MaxShips: maxShips, Resources: map[string]config.Resource{"phone": {Capacity: 1}}, Fleets: fleets()}
+		cfg := &config.Config{MaxShips: maxShips, Resources: map[string]config.Resource{"phone": {Capacity: 1}}, Fleets: fleets(t)}
 		cfg.Fleets[0].Limits = standing.PresetLimits(standing.Work)
 		return &Service{
 			Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready

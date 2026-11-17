@@ -30,8 +30,14 @@ func gateNotices(t *testing.T, in *fleetInst, want int) []noticeItem {
 	for want > 0 && len(list()) < want && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
-	time.Sleep(500 * time.Millisecond)
-	return list()
+	// A late duplicate shows within a poll or two; the longest list seen is the answer.
+	out := list()
+	for end := time.Now().Add(500 * time.Millisecond); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+		if l := list(); len(l) > len(out) {
+			out = l
+		}
+	}
+	return out
 }
 
 func (w *world) expectRefused(fleet string) {

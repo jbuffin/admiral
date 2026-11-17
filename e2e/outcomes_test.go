@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -416,14 +417,21 @@ func wantUsage(t *testing.T, m outRec, fleet, harness string, tokens map[string]
 // stayOneUsage holds long enough for a second usage record to land after the first.
 func (w *world) stayOneUsage(session string) {
 	w.t.Helper()
-	time.Sleep(1500 * time.Millisecond)
-	n := 0
-	for _, m := range w.shipLog(session) {
-		if m["event"] == "usage" {
-			n++
+	usages := func() (n int) {
+		for _, m := range w.shipLog(session) {
+			if m["event"] == "usage" {
+				n++
+			}
 		}
+		return n
 	}
-	if n != 1 {
+	holdClean(w.t, 1500*time.Millisecond, func() string {
+		if n := usages(); n > 1 {
+			return fmt.Sprintf("%s has %d usage records, want exactly 1 per exit", session, n)
+		}
+		return ""
+	})
+	if n := usages(); n != 1 {
 		w.t.Errorf("%s has %d usage records, want exactly 1 per exit", session, n)
 	}
 }
@@ -692,7 +700,9 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	_, yInbox := shipPaths(w.record(y.Session))
 	w.touch(y.Session, "go")
 	w.in.waitStatusList(t, 10*time.Second, y.Session, "anchored")
-	time.Sleep(300 * time.Millisecond) // the writer has tried its queued `ended`, and failed
+	waitUntil(t, "the writer tried the anchored ship's queued `ended`, and failed", func() bool {
+		return strings.Contains(w.in.stderrBuf.String(), "e2e: outcome write failed: ended "+y.Session+"\n")
+	})
 
 	if err := os.Remove(blocker); err != nil {
 		t.Fatal(err)

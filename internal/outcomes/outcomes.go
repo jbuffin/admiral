@@ -28,6 +28,8 @@ type item struct {
 
 type Writer struct {
 	Now func() time.Time
+	// OnFail, when set, sees every record whose write failed (the log itself says so once); the e2e build uses it.
+	OnFail func(Record, error)
 
 	dir  string
 	logf func(format string, args ...any)
@@ -109,6 +111,9 @@ func (w *Writer) run() {
 // is tried again by the next record.
 func (w *Writer) write(r Record) error {
 	err := w.append(r)
+	if err != nil && w.OnFail != nil {
+		w.OnFail(r, err)
+	}
 	switch {
 	case err != nil && !w.failing:
 		w.logf("outcome log: %v", err)

@@ -187,21 +187,23 @@ func readAnswer(t *testing.T, dir, id string, before time.Time) map[string]any {
 	return got
 }
 
-// noAnswerOrOutcome checks, once the server has had time to log, that nothing
+// noAnswerOrOutcome checks, through the time the server needs to log, that nothing
 // was answered: no answer file and no record of the given events.
 func (w *world) noAnswerOrOutcome(session, dir string, ids []string, events ...string) {
 	w.t.Helper()
-	time.Sleep(700 * time.Millisecond)
-	for _, id := range ids {
-		if exists(filepath.Join(dir, id+".answer.json")) {
-			w.t.Errorf("%s.answer.json was written", id)
+	holdClean(w.t, 700*time.Millisecond, func() string {
+		for _, id := range ids {
+			if exists(filepath.Join(dir, id+".answer.json")) {
+				return id + ".answer.json was written"
+			}
 		}
-	}
-	for _, e := range append(events, "answered") {
-		if n := countEvent(w.shipLog(session), e); n != 0 {
-			w.t.Errorf("the outcome log has %d %s records, want none", n, e)
+		for _, e := range append(events, "answered") {
+			if n := countEvent(w.shipLog(session), e); n != 0 {
+				return fmt.Sprintf("the outcome log has %d %s records, want none", n, e)
+			}
 		}
-	}
+		return ""
+	})
 }
 
 func TestInboxReviewSubmit(t *testing.T) {

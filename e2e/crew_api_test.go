@@ -560,7 +560,9 @@ func TestCrewAPI_Ending(t *testing.T) {
 
 		w.releaseGo(s.Session, "a") // exit 0, alone
 		w.waitShip(s.Session, "a anchored on the wire", crewIs("a", "anchored"))
-		time.Sleep(sailOff + 500*time.Millisecond)
+		holdWindow(t, sailOff+500*time.Millisecond, "the ship left underway or its session ended after a crew boat exited 0", func() bool {
+			return w.hasSession(s.Session) && statusOf(w.in.ships(t), s.Session) == "underway"
+		})
 		now := w.waitShip(s.Session, "the ship", func(apiShip) bool { return true })
 		if now.Status != "underway" || !w.hasSession(s.Session) {
 			t.Errorf("after a crew boat exited 0 the ship is %q (session alive: %v), want underway and alive", now.Status, w.hasSession(s.Session))

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -43,12 +44,14 @@ func (w *world) waitWinSize(win, want string) {
 // a resize that is still on its way would show.
 func (w *world) expectWinSizes(why string, want map[string]string) {
 	w.t.Helper()
-	time.Sleep(400 * time.Millisecond)
-	for win, size := range want {
-		if got := w.winSize(win); got != size {
-			w.t.Errorf("%s: window %s is %s, want it left at %s", why, win, got, size)
+	holdClean(w.t, 400*time.Millisecond, func() string {
+		for win, size := range want {
+			if got := w.winSize(win); got != size {
+				return fmt.Sprintf("%s: window %s is %s, want it left at %s", why, win, got, size)
+			}
 		}
-	}
+		return ""
+	})
 }
 
 func (w *world) paneWriteID(pane, data string) {
@@ -307,14 +310,29 @@ func TestCrewBridge(t *testing.T) {
 			t.Fatalf("the relaunched boat has the old window %s", oldWin)
 		}
 		w.waitPaneWorking(fresh.pane)
-		// The API lists relay before and after the swap, so let the server's polls
-		// (every 500 ms) read the new window before dialling it.
-		time.Sleep(1500 * time.Millisecond)
-		nb, _ := w.dialCrew(t, ship.Session, "relay", 80, 24)
-		w.paneWriteID(fresh.pane, "RELAY-NEW\r\n")
-		m := nb.mark()
-		w.paneWriteID(fresh.pane, "RELAY-NEW-LIVE\r\n")
-		nb.waitOutput(5*time.Second, m, "RELAY-NEW-LIVE")
+		// The API lists relay before and after the swap, so nothing shows when the server's polls
+		// (every 500 ms) have read the new window: dial again until the new window's output arrives.
+		var nb *bridgeClient
+		for attempt := 1; nb == nil; attempt++ {
+			c := w.dialBridge(t, ship.Session+"/crew/relay")
+			c.send(map[string]any{"type": "join", "cols": 80, "rows": 24})
+			m := c.mark()
+			for end := time.Now().Add(time.Second); nb == nil && time.Now().Before(end); time.Sleep(15 * time.Millisecond) {
+				if len(c.texts(0, "join")) == 0 {
+					continue
+				}
+				w.paneWriteID(fresh.pane, "RELAY-NEW-LIVE\r\n")
+				if strings.Contains(c.output(m), "RELAY-NEW-LIVE") {
+					nb = c
+				}
+			}
+			if nb == nil {
+				c.close()
+				if attempt == 8 {
+					t.Fatal("the bridge dialled after the relaunch never showed the new window's output")
+				}
+			}
+		}
 	})
 
 	// Closing runs before the ship anchors: the ship's pane must still take output

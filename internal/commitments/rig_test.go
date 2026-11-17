@@ -308,6 +308,14 @@ func (g *rig) cardFor(id, outcome string) (commitments.Card, bool) {
 // wantCard fails unless the commitment has a card of the outcome and is closed, and returns the card.
 func (g *rig) wantCard(id, outcome string) commitments.Card {
 	g.t.Helper()
+	// A poll is counted when it looks up, before its verdict reaches the runner, and the runner posts the card before it closes the commitment.
+	for end := time.Now().Add(2 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		if _, ok := g.cardFor(id, outcome); ok {
+			if _, open := g.find(id); !open {
+				break
+			}
+		}
+	}
 	c, ok := g.cardFor(id, outcome)
 	if !ok {
 		g.t.Fatalf("no card commitment-%s-%s among %+v, want one", id, outcome, g.cards.cards())

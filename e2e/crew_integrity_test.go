@@ -74,9 +74,8 @@ func TestCrewNamesAreNotForged(t *testing.T) {
 			w.noForgedBoat(t, victim.Session)
 			time.Sleep(200 * time.Millisecond)
 		}
+		// The ship's crew is read level-triggered, so the next subtest needs no wait for the restored name to be read.
 		w.mustTmux("set-option", "-w", "-t", w.winOf(mallory.pane), "@admiral-crew-name", "mallory")
-		time.Sleep(1200 * time.Millisecond) // the ship reads again
-		w.waitShip(ship.Session, "mallory back", crewIs("mallory", "underway"))
 	})
 
 	t.Run("a boat that takes another boat's name is read for neither", func(t *testing.T) {

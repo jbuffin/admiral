@@ -411,10 +411,21 @@ func (s *Service) relevant(ev fsnotify.Event) bool {
 	return filepath.Dir(ev.Name) != s.Home || base == "inbox"
 }
 
-// syncWatches renews the watch of a directory that was replaced.
+// syncWatches renews the watch of a directory that was replaced. It lists the directories again after adding a
+// watch: one that appeared between the listing and the watch on its parent raises no event, and the file written
+// into it before it is watched would never be read.
 func (s *Service) syncWatches() {
+	for range 4 {
+		if !s.syncWatchesOnce() {
+			return
+		}
+	}
+}
+
+// syncWatchesOnce reports whether it added a watch.
+func (s *Service) syncWatchesOnce() (added bool) {
 	if s.watcher == nil {
-		return
+		return false
 	}
 	want := map[string]os.FileInfo{}
 	add := func(path string, follow bool) {
@@ -446,6 +457,8 @@ func (s *Service) syncWatches() {
 	for path, fi := range want {
 		if _, ok := s.watched[path]; !ok && s.watcher.Add(path) == nil {
 			s.watched[path] = fi
+			added = true
 		}
 	}
+	return added
 }

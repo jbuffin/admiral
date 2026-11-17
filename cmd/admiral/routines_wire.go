@@ -24,7 +24,7 @@ import (
 
 type realClock struct{}
 
-func (realClock) Now() time.Time                         { return time.Now() }
+func (realClock) Now() time.Time                         { return time.Now().Add(clockSkew) }
 func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 // routineShips adapts the ship service to what the routines scheduler needs.

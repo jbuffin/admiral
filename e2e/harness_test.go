@@ -146,12 +146,33 @@ const hold = 1500 * time.Millisecond
 
 func holdThat(t *testing.T, msg string, check func() bool) {
 	t.Helper()
-	end := time.Now().Add(hold)
-	for time.Now().Before(end) {
+	holdWindow(t, hold, msg, check)
+}
+
+// holdWindow is holdThat for a window of the test's own, such as one that must end inside a linger.
+func holdWindow(t *testing.T, d time.Duration, msg string, check func() bool) {
+	t.Helper()
+	holdClean(t, d, func() string {
 		if !check() {
-			t.Fatalf("%s", msg)
+			return msg
+		}
+		return ""
+	})
+}
+
+// holdClean polls check for d and fails with what it returns the first time that is not empty.
+func holdClean(t *testing.T, d time.Duration, check func() string) {
+	t.Helper()
+	end := time.Now().Add(d)
+	for time.Now().Before(end) {
+		if why := check(); why != "" {
+			t.Fatalf("%s", why)
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+	// The last pass ran up to a step before the window closed; look once at its end, as a sleep then a check did.
+	if why := check(); why != "" {
+		t.Fatalf("%s", why)
 	}
 }
 

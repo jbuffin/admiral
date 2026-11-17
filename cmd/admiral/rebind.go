@@ -106,34 +106,50 @@ func (l *listener) Move(want string) {
 		l.swap(nl, want, old)
 		return
 	}
-	// A wider address can overlap the old one on some systems, so only then retry with the old one closed.
-	if errors.Is(err, syscall.EADDRINUSE) {
+	// Only a bind refused on the wanted port can be the old listener's doing (a wider address overlapping it on some
+	// systems); a refusal elsewhere, such as the test build's LAN port, says nothing about it.
+	retired := false
+	var op *net.OpError
+	if errors.Is(err, syscall.EADDRINUSE) && errors.As(err, &op) && op.Addr != nil && samePort(op.Addr.String(), want) && samePort(oldAddr, want) {
 		l.retire(old)
+		retired = true
 		if nl, err = listenTCP(want); err == nil {
 			l.swap(nl, want, nil)
 			return
 		}
 	}
 	log.Printf("admiral: could not listen on %s, keeping %s: %v", want, oldAddr, err)
-	l.mu.Lock()
-	l.err = fmt.Errorf("could not listen on %s: %w", want, err)
-	retired := l.retired[old]
-	l.mu.Unlock()
-	if !retired {
+	if retired && !l.restore(oldAddr) {
 		return
 	}
-	restored, rerr := listenTCP(oldAddr)
-	if rerr != nil {
+	// Only now: a reader that sees the failure finds the old listener answering again.
+	l.mu.Lock()
+	l.err = fmt.Errorf("could not listen on %s: %w", want, err)
+	l.mu.Unlock()
+}
+
+// samePort is whether two listen addresses name one port, the only way the old listener can be what blocks a bind.
+func samePort(a, b string) bool {
+	_, pa, erra := net.SplitHostPort(a)
+	_, pb, errb := net.SplitHostPort(b)
+	return erra == nil && errb == nil && pa == pb
+}
+
+// restore binds the retired address once more; if that fails too, Admiral has no listener and ends.
+func (l *listener) restore(addr string) bool {
+	restored, err := listenTCP(addr)
+	if err != nil {
 		select {
-		case l.fatal <- fmt.Errorf("could not listen on %s again: %w", oldAddr, rerr):
+		case l.fatal <- fmt.Errorf("could not listen on %s again: %w", addr, err):
 		default:
 		}
-		return
+		return false
 	}
 	l.mu.Lock()
 	l.ln = restored
 	l.mu.Unlock()
 	l.start()
+	return true
 }
 
 func (l *listener) retire(ln net.Listener) {

@@ -51,10 +51,19 @@ func TestARoutineAboutAMinuteAheadLaunchesAnAutopilotShipOnTime(t *testing.T) {
 	w := newWorld(t)
 	w.proveGuard()
 	w.writeCue("wait go", "exit 0")
+	// The scheduler's clock runs ahead so that it reads 15 s before a minute boundary when Admiral starts, and the boundary is seconds away.
+	now := time.Now()
+	skew := now.Truncate(time.Minute).Add(45 * time.Second).Sub(now)
+	if skew < 0 {
+		skew += time.Minute
+	}
+	w.extra = append(w.extra, "ADMIRAL_E2E_CLOCK_SKEW="+skew.String())
 	w.start()
 
-	// the next minute that is at least 5 s away, in the zone the server reads a When in
-	due := time.Now().Add(5 * time.Second).Truncate(time.Minute).Add(time.Minute).In(time.Local)
+	// the next minute that is at least 5 s away on the scheduler's clock, in the zone the server reads a When in
+	schedNow := time.Now().Add(skew)
+	due := schedNow.Add(5 * time.Second).Truncate(time.Minute).Add(time.Minute).In(time.Local)
+	realDue := due.Add(-skew)
 	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines", map[string]any{
 		"name": "Every minute test", "enabled": true, "when": due.Format("4 15") + " * * *", "before_acting": "act",
 		"do": map[string]any{"launch": map[string]any{"harness": "claude", "dir": w.checkout("sched"), "text": "go"}},
@@ -69,13 +78,13 @@ func TestARoutineAboutAMinuteAheadLaunchesAnAutopilotShipOnTime(t *testing.T) {
 		t.Fatalf("created routine has no id: %v\n%s", err, body)
 	}
 
-	holdThat(t, "the routine launched before its time", func() bool { return time.Now().After(due) || len(w.routineRuns(made.ID)) == 0 })
+	holdThat(t, "the routine launched before its time", func() bool { return time.Now().After(realDue) || len(w.routineRuns(made.ID)) == 0 })
 
 	var run runJSON
-	deadline := due.Add(30 * time.Second)
+	deadline := realDue.Add(30 * time.Second)
 	for run.Ship == "" {
 		if time.Now().After(deadline) {
-			t.Fatalf("no launched record 30 s after %v: %+v", due, w.routineRuns(made.ID))
+			t.Fatalf("no launched record 30 s after %v: %+v", realDue, w.routineRuns(made.ID))
 		}
 		for _, r := range w.routineRuns(made.ID) {
 			if r.Outcome == "launched" {
