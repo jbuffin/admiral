@@ -194,6 +194,10 @@ _Avoid_: probe, research ship, investigator
 A ship sent for a small change that one session can finish with no design to settle. It runs no skill, in a worktree of its own, and ends with a PR. Anything bigger goes to a Commodore ship.
 _Avoid_: fast ship, light ship
 
+**Drafting ship**:
+A ship that runs the engineer's chosen skill on their text, with them, to file the parent issue of a new campaign, then names that issue for Admiral to follow. It is an ordinary ship with a skill, not a scout or a quick ship.
+_Avoid_: planning ship, campaign ship
+
 **Launch text**:
 What a ship is told to do when it launches. When AdmiralBot launches it, this is AdmiralBot's restatement of the engineer's request (the goal, the repo, what done looks like), with exact strings kept, not the engineer's words as typed.
 _Avoid_: brief (that is AdmiralBot's own page), prompt, instructions
