@@ -102,6 +102,15 @@ test('J and K move the selection and open that row’s Peek, Enter opens the bri
   await expect(page).toHaveURL(new RegExp(`/app/ships/${encodeURIComponent(visitor.session)}`));
 });
 
+test('a ship with an open Inbox item says so on its view, and Go to Inbox lands on that item in Peek', async ({ page, admiral }) => {
+  const visitor = await visitorWithReview(admiral);
+  await page.goto(admiral.url + `app/ships/${encodeURIComponent(visitor.session)}?fleet=alpha`);
+  await expect(page.getByText(/Waiting on the Inbox/)).toBeVisible();
+  await page.getByRole('link', { name: /Go to Inbox/ }).tap();
+  await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(visitor.session)}/item/r-diff`));
+  await expect(peekOf(page)).toContainText('Two small fixes');
+});
+
 test('on a portrait iPad Peek replaces the list instead of squeezing beside it, and the PR link has its own space', async ({ page, admiral }) => {
   await page.setViewportSize({ width: 834, height: 1194 });
   await visitorWithReview(admiral);

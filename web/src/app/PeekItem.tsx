@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, SLOW_TIMEOUT_MS } from './api';
 import { Actions, Button } from './Button';
+import { renderMarkdown } from './markdown';
 import type { Entry } from './inbox';
 import { prLink } from '../inbox';
 import { createDecisions, type Decisions, type FindingCard, readCards, type Verdict } from '../findings';
@@ -10,8 +11,8 @@ import { MuteRule } from './MuteRule';
 import { ReviewerNoteView } from './ReviewerNoteView';
 import type { ReviewerFields } from './reviewerNote';
 
-// Item files are written by ships and are untrusted: every field below is rendered as text, and the only links are
-// the PR's own https address (prLink).
+// Item files are written by ships and are untrusted: the prose fields (summary, finding quote, reason and reply) go
+// through renderMarkdown, which allows no raw HTML and only safe links; the rest renders as text.
 
 export type ReviewStep = 'idle' | 'choose' | 'confirm' | 'discard';
 export interface ReviewUi {
@@ -162,7 +163,7 @@ export function ReviewBody({ entry, ui, set, acting, submit, discard }: { entry:
     <>
       <div class="inbox-summary">
         <span class="inbox-eyebrow">Summary</span>
-        <p class="inbox-summary-text">{typeof r?.summary === 'string' ? r.summary : ''}</p>
+        <div class="inbox-summary-text md" dangerouslySetInnerHTML={{ __html: renderMarkdown(typeof r?.summary === 'string' ? r.summary : '') }} />
       </div>
       <div class="inbox-prrow">
         <PrLine pr={pr} />
@@ -250,15 +251,18 @@ function FindingCardView({ card, n, d, draft, setDraft, locked, changed }: CardP
       <div class="inbox-finding-head">
         <span class="inbox-kind">{VERDICT[card.verdict]}</span> <span class="inbox-source">{card.source}</span>
       </div>
-      <blockquote class="inbox-quote">{card.quote}</blockquote>
-      <p class="inbox-why">
-        <b>Why:</b> {card.reason}
-      </p>
+      <blockquote class="inbox-quote md" dangerouslySetInnerHTML={{ __html: renderMarkdown(card.quote) }} />
+      <span class="inbox-eyebrow">Why:</span>
+      <div class="inbox-why md" dangerouslySetInnerHTML={{ __html: renderMarkdown(card.reason) }} />
       {shown && (
         <div class="inbox-proposal">
           <span class="inbox-eyebrow">{shown.kind === 'reply' ? 'Proposed reply' : 'Proposed change'}</span>
           {draft === undefined ? (
-            <pre class="inbox-pre">{shown.content}</pre>
+            shown.kind === 'reply' ? (
+              <div class="inbox-reply md" dangerouslySetInnerHTML={{ __html: renderMarkdown(shown.content) }} />
+            ) : (
+              <pre class="inbox-pre">{shown.content}</pre>
+            )
           ) : (
             <>
               <textarea class="inbox-note" aria-label={`Edit the proposal for card ${n}`} rows={5} value={draft} readOnly={locked} onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)} />
