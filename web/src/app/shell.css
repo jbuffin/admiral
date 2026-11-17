@@ -991,6 +991,8 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .orow-meta .mono { font-family: var(--font-mono); font-size: 12px; }
 .orow-phone .orow-meta .mono { font-size: 11.5px; }
 .orow-meta { display: flex; gap: 8px; align-items: center; min-width: 0; font-size: var(--font-size-meta); color: var(--color-muted); }
+/* The phone's conflict line wraps on its own line, so it reads in full. */
+.orow-whole { font-size: var(--font-size-meta); color: var(--color-muted); }
 .orow-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .orow-label { flex: none; padding: 1px 8px; border: 1px solid var(--color-line2); border-radius: 999px; font-size: 11.5px; color: var(--color-text2); white-space: nowrap; }
 .orow-state { flex: none; font-size: var(--font-size-meta); color: var(--color-muted); white-space: nowrap; }

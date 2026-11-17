@@ -76,6 +76,8 @@ type OrderStack struct {
 	URL      string `json:"url"`
 	Position int    `json:"position"`
 	Size     int    `json:"size"`
+	// ConflictsWithBase names the base branch the whole stack conflicts with, when the check found it.
+	ConflictsWithBase string `json:"conflicts_with_base,omitempty"`
 }
 
 // OrderChain is a pull request's place in a chain: Position counts from 1 at the bottom, ID is the bottom PR's URL,
@@ -87,6 +89,8 @@ type OrderChain struct {
 	Head     string `json:"head"`
 	Base     string `json:"base"`
 	Mine     bool   `json:"mine"`
+	// ConflictsWithBase names the base branch the whole chain conflicts with, when the check found it.
+	ConflictsWithBase string `json:"conflicts_with_base,omitempty"`
 }
 
 type Panel struct {
@@ -367,6 +371,7 @@ func parseOrderStack(raw json.RawMessage) *OrderStack {
 		URL      *string `json:"url"`
 		Position *int    `json:"position"`
 		Size     *int    `json:"size"`
+		Conflict *string `json:"conflicts_with_base"`
 	}
 	if json.Unmarshal(raw, &in) != nil || in.Number == nil || in.URL == nil || in.Position == nil || in.Size == nil ||
 		*in.Number < 1 || *in.Position < 0 || *in.Size < 1 {
@@ -376,7 +381,11 @@ func parseOrderStack(raw json.RawMessage) *OrderStack {
 	if u == "" {
 		return nil
 	}
-	return &OrderStack{Number: *in.Number, URL: u, Position: *in.Position, Size: *in.Size}
+	o := &OrderStack{Number: *in.Number, URL: u, Position: *in.Position, Size: *in.Size}
+	if in.Conflict != nil {
+		o.ConflictsWithBase = oneLine(*in.Conflict)
+	}
+	return o
 }
 
 // parseOrderChain reads a chain object; one that isn't well-formed is dropped.
@@ -391,6 +400,7 @@ func parseOrderChain(raw json.RawMessage) *OrderChain {
 		Head     *string `json:"head"`
 		Base     *string `json:"base"`
 		Mine     *bool   `json:"mine"`
+		Conflict *string `json:"conflicts_with_base"`
 	}
 	if json.Unmarshal(raw, &in) != nil || in.ID == nil || in.Position == nil || in.Size == nil || in.Head == nil || in.Base == nil || in.Mine == nil ||
 		*in.Size < 2 || *in.Position < 1 || *in.Position > *in.Size {
@@ -401,7 +411,11 @@ func parseOrderChain(raw json.RawMessage) *OrderChain {
 	if id == "" || head == "" || base == "" {
 		return nil
 	}
-	return &OrderChain{ID: id, Position: *in.Position, Size: *in.Size, Head: head, Base: base, Mine: *in.Mine}
+	o := &OrderChain{ID: id, Position: *in.Position, Size: *in.Size, Head: head, Base: base, Mine: *in.Mine}
+	if in.Conflict != nil {
+		o.ConflictsWithBase = oneLine(*in.Conflict)
+	}
+	return o
 }
 
 // parseOrderPR reads a plugin's pr object; anything but a well-formed object is dropped, and a bad failing_check_count

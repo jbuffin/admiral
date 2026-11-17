@@ -77,6 +77,8 @@ type openArgs struct {
 	setConn func(connState)
 	// setRefreshing tells the runner the refreshing flag flipped so it can push; nil when nothing listens.
 	setRefreshing func()
+	// stackChecker tells whether a chain's or stack's top merges into its base; nil skips the check.
+	stackChecker moor.StackChecker
 }
 
 // A failed view keeps its last good orders next to the error.
@@ -117,6 +119,8 @@ type githubConn struct {
 	refreshing bool
 	// kinds is, per event search, when it last answered and the latest event time already delivered or baselined per item.
 	kinds map[string]*kindPoll
+	// stacks is the chains' and stacks' whole-stack check answers.
+	stacks stackAnswers
 }
 
 // clockSkew is how far GitHub's clock may run behind this machine's. An event stamped up to this long before the last
@@ -434,6 +438,7 @@ func (g *githubConn) refresh() {
 			byURL[it.URL] = order
 		}
 		addChains(items, byURL, login)
+		g.markStackConflicts(client, items, byURL)
 		changed = g.store(v.ID, orders, "") || changed
 	}
 	if len(views) == 0 { // no search to carry the login

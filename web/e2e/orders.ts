@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fakeGhTrees, issueNode } from './campaign';
@@ -23,6 +24,8 @@ export interface Item {
   stack?: { number: number; position: number; size: number };
   /** A chained PR's branches; the node also carries the repository's default branch. */
   branches?: { head: string; base: string };
+  /** The PR's head commit, where the default `head-N` would not be one a repository has. */
+  oid?: string;
 }
 
 // What the fake gh answers for each default view. The docs sweep and the rate limiter are in two views: For you shows each once.
@@ -37,6 +40,7 @@ const ASSIGNED: Item[] = [
 ];
 // A GitHub stack of three review-requested PRs by another author, answered top first as the search does (most recently updated first).
 const STACK = { number: 7, url: 'https://github.com/acme/api/stack/7' };
+const STACK_BRANCHES = ['store', 'store-api', 'store-page'];
 const STACK_LAYERS = ['Add the store', 'Wire the store to the API', 'Show the store in the page'];
 // An issue-only view in acme/widgets, the repo campaign.ts builds trees for. Its parent is in no view, so its child sits in a collapsed group.
 const POOL_PARENT = { number: 40, title: 'Existing campaign', repo: 'acme/widgets' };
@@ -51,12 +55,46 @@ const CHAINS_VIEW = { title: 'Chained PRs', query: 'is:open is:pr label:chains' 
 const chained = (number: number, title: string, author: string, head: string, base: string): Item => ({ number, title, author, branches: { head, base }, pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' } });
 const OWN_CHAIN = [chained(63, 'Show the ledger', 'fake-viewer', 'ledger-ui', 'ledger-api'), chained(61, 'Store the ledger', 'fake-viewer', 'ledger-db', 'main'), chained(62, 'Serve the ledger', 'fake-viewer', 'ledger-api', 'ledger-db')];
 const THEIR_CHAIN = [chained(72, 'Report the audit', 'bob', 'audit-report', 'audit-log'), chained(71, 'Log the audit', 'bob', 'audit-log', 'main')];
+/** A bare repository at the e2e build's remote for acme/api where the audit chain's top (72) merges cleanly layer by layer but conflicts with a moved main. Returns each PR's head commit. */
+function auditRemote(a: Admiral): Record<number, string> {
+  const bare = join(a.home, 'e2e-remotes', 'github.com', 'acme', 'api.git');
+  const work = join(a.home, 'e2e-remotes', 'audit-work');
+  mkdirSync(bare, { recursive: true });
+  mkdirSync(work, { recursive: true });
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' }).trim();
+  git(bare, 'init', '--bare', '-b', 'main');
+  git(work, 'init', '-b', 'main');
+  const commit = (file: string, body: string, msg: string) => {
+    writeFileSync(join(work, file), body);
+    git(work, 'add', file);
+    git(work, 'commit', '-m', msg);
+    return git(work, 'rev-parse', 'HEAD');
+  };
+  const root = commit('audit.txt', 'one\n', 'root');
+  git(work, 'checkout', '-b', 'audit-log');
+  const log = commit('audit.txt', 'logged\n', 'log the audit');
+  git(work, 'checkout', '-b', 'audit-report');
+  const report = commit('report.txt', 'report\n', 'report the audit');
+  const layers: Record<number, string> = {};
+  git(work, 'checkout', '-b', 'store', root);
+  layers[41] = commit('audit.txt', 'store\n', 'add the store');
+  git(work, 'checkout', '-b', 'store-api');
+  layers[42] = commit('api.txt', 'api\n', 'wire the store');
+  git(work, 'checkout', '-b', 'store-page');
+  layers[43] = commit('page.txt', 'page\n', 'show the store');
+  git(work, 'checkout', 'main');
+  commit('audit.txt', 'moved\n', 'move main');
+  git(work, 'push', bare, 'main');
+  git(work, 'push', bare, `${log}:refs/pull/71/head`, `${report}:refs/pull/72/head`, ...Object.entries(layers).map(([n, sha]) => `${sha}:refs/pull/${n}/head`));
+  return { 71: log, 72: report, ...layers };
+}
+
 const NEW_PARENT = { number: 50, title: 'Pool: sensor and retry work' };
 const REST_IDS: Record<number, number> = { 41: 9041, 42: 9042 };
 const REVIEW: Item[] = [
   { number: 11, title: 'Review the cache layer', author: 'alice', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' }, requested: true },
   { number: 12, title: 'Review the docs sweep', author: 'fake-viewer', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE', reviewed: true }, requested: true },
-  ...[3, 2, 1].map((position): Item => ({ number: 40 + position, title: STACK_LAYERS[position - 1], author: 'alice', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' }, requested: true, stack: { number: STACK.number, position, size: 3 } })),
+  ...[3, 2, 1].map((position): Item => ({ number: 40 + position, title: STACK_LAYERS[position - 1], author: 'alice', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' }, requested: true, stack: { number: STACK.number, position, size: 3 }, branches: { head: STACK_BRANCHES[position - 1], base: STACK_BRANCHES[position - 2] ?? 'main' } })),
 ];
 const MINE: Item[] = [
   { number: 21, title: 'Raise the rate limiter', author: 'fake-viewer', pr: { review: 'CHANGES_REQUESTED', checks: 'SUCCESS', mergeable: 'MERGEABLE' } },
@@ -81,7 +119,7 @@ function node(i: Item) {
     labels: { nodes: (i.labels ?? []).map((name) => ({ name })) },
   };
   if (i.pr) {
-    const oid = `head-${i.number}`;
+    const oid = i.oid ?? `head-${i.number}`;
     Object.assign(n, {
       state: 'OPEN',
       reviewDecision: i.pr.review,
@@ -131,6 +169,8 @@ export function seedOrders(a: Admiral) {
     writeFileSync(join(dir, `${key}.match`), needle);
     writeFileSync(join(dir, `${key}.json`), JSON.stringify({ data: { search: { nodes: items.map(node) } } }));
   };
+  const oids = auditRemote(a);
+  for (const i of [...THEIR_CHAIN, ...REVIEW]) if (oids[i.number]) i.oid = oids[i.number];
   canned('a-assigned', 'assignee:@me', ASSIGNED);
   canned('b-review', 'review-requested:@me', REVIEW);
   canned('c-mine', 'author:@me', MINE);
@@ -425,6 +465,13 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   await expect(stackRow).toHaveCount(1);
   await expect(stackRow).toContainText('3 PRs here');
   await expect(stackRow).not.toContainText('not in this view');
+  // The top layer conflicts with a moved main, so the header says the whole stack does; on the phone the words wrap, none cut off.
+  await expect(stackRow).toContainText('conflicts with main as a whole');
+  if (phone) {
+    const whole = stackRow.locator('.orow-whole');
+    await expect(whole).toHaveCount(1);
+    expect(await whole.evaluate((e) => e.scrollWidth <= e.clientWidth && e.getClientRects()[0].width > 0)).toBe(true);
+  }
   await expect(stackRow).not.toContainText('acme/api #');
   await expect(stackRow.locator('.orow-toggle')).toHaveCount(1);
   if (!phone) await expect(stackRow.locator('svg.orow-mark.stack')).toHaveCount(1);
@@ -747,6 +794,10 @@ async function chainedGroups(page: Page, a: Admiral, press: (l: Locator) => Prom
   await press(tabNamed(page, /^Chained PRs/));
   await expect(tabNamed(page, /^Chained PRs/)).toHaveAttribute('aria-selected', 'true');
   const rows = chainGroupRows(page);
+  // The audit chain is bob's, merges cleanly layer by layer, and conflicts with main as a whole; the ledger chain says nothing of the kind.
+  const audit = rows.filter({ hasNot: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) });
+  await expect(audit).toContainText('conflicts with main as a whole');
+  await expect(rows.filter({ has: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) })).not.toContainText('as a whole');
   const own = rows.filter({ has: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) });
   const theirs = rows.filter({ hasNot: page.getByRole('button', { name: 'Stack on GitHub', exact: true }) });
   await expect(rows).toHaveCount(2);

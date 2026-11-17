@@ -906,3 +906,39 @@ func TestABadCredentialsRefusalIsTold(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeStackFailureCarriesWhatGhPrintedOnStdoutWithoutTheTokenOrEscapes(t *testing.T) {
+	f := newFake(t)
+	f.write(t, "token", "fake-token-work-2\n")
+	f.write(t, "pr_detail/https___github.com_acme_widgets_pull_7", `{"number":7,"state":"OPEN","stack":{"number":7,"size":1,"entries":{"nodes":[]}}}`+"\n")
+	f.write(t, "stack_merge.stdout", "\x1b[31mpull request #8 cannot be merged yet: #7 below it is not mergeable\x1b[0m\nStack merges are atomic, so nothing was merged. token fake-token-work-2\n"+strings.Repeat("padding ", 2000))
+	f.write(t, "stack_merge.fail", "stack merge failed\n")
+	cl := NewClient("github.com", "", nil, f.env)
+	err := cl.MergeStack(context.Background(), "acme/widgets", 7, "squash")
+	if err == nil {
+		t.Fatal("MergeStack = nil, want gh's failure")
+	}
+	msg := err.Error()
+	for _, want := range []string{"pull request #8 cannot be merged yet", "Stack merges are atomic, so nothing was merged."} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error = %.300q, want it to carry gh's detail %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "fake-token-work-2") || strings.Contains(msg, "\x1b") {
+		t.Errorf("error = %.300q, want the token redacted and escapes stripped", msg)
+	}
+	if len(msg) > 4000 {
+		t.Errorf("error is %d bytes, want a sane cap", len(msg))
+	}
+}
+
+func TestMergeStackFailureWithNothingPrintedKeepsTheFallback(t *testing.T) {
+	f := newFake(t)
+	f.write(t, "token", "fake-token-work-2\n")
+	f.write(t, "pr_detail/https___github.com_acme_widgets_pull_7", `{"number":7,"state":"OPEN","stack":{"number":7,"size":1,"entries":{"nodes":[]}}}`+"\n")
+	f.write(t, "stack_merge.fail", "")
+	cl := NewClient("github.com", "", nil, f.env)
+	if err := cl.MergeStack(context.Background(), "acme/widgets", 7, "squash"); err == nil || !strings.Contains(err.Error(), "gh could not merge the pull request") {
+		t.Errorf("MergeStack = %v, want Admiral's fallback when gh printed nothing", err)
+	}
+}

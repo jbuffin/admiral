@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
@@ -147,6 +151,11 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusGatewayTimeout, err.Error())
 		return
 	case err != nil:
+		what := "pull request " + number
+		if stacked {
+			what = "stack " + strconv.Itoa(stackNumber)
+		}
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: merging %s failed: %s\n", session, what, strings.Join(strings.Fields(strings.Map(noControl, err.Error())), " "))
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -197,4 +206,12 @@ func (s *Service) mergeGuarded(h http.Handler) http.Handler {
 		})
 	}
 	return s.MergeGuard(h)
+}
+
+// noControl turns a control character into a space, so a gh message cannot write one into the log.
+func noControl(r rune) rune {
+	if unicode.IsControl(r) {
+		return ' '
+	}
+	return r
 }

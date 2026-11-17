@@ -210,6 +210,14 @@ describe('stackBarLine', () => {
     expect(stackBarLine(shape('chained', [7, 8, 9]))?.rest).toContain('These 3 PRs');
   });
 
+  it('adds that a stack or chain conflicts with its base as a whole, naming the base, before Merge', () => {
+    for (const kind of ['stacked', 'chained'] as const) {
+      const line = stackBarLine(shape(kind, [7, 8, 9], 4), 'main');
+      expect(`${line?.lead}${line?.rest}`).toContain('conflicts with main as a whole');
+    }
+    expect(`${stackBarLine(shape('stacked', [7, 8], 4))?.rest}`).not.toContain('as a whole');
+  });
+
   it('says a mixed ship is not one chain or stack', () => {
     expect(stackBarLine(shape('mixed', [7, 8, 9]))).toEqual({ lead: 'Not one chain or stack.', rest: ' Merge these PRs on GitHub.' });
   });

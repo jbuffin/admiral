@@ -103,11 +103,12 @@ export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined
 export const actingWhile = (acting: boolean, moored: boolean): boolean => moored && acting;
 
 /** The stack bar's bold lead and the rest of its line for the shape the server read, or null when no bar shows. */
-export function stackBarLine(shape: StackShape | null): { lead: string; rest: string } | null {
+export function stackBarLine(shape: StackShape | null, conflictsWithBase?: string): { lead: string; rest: string } | null {
   if (!shape || shape.prs.length < 2) return null;
   const n = shape.prs.length;
-  if (shape.shape === 'stacked') return { lead: 'Stacked on GitHub', rest: ` · stack #${shape.stack_number} · ${n} PRs, bottom to top. Merge takes the whole stack.` };
-  if (shape.shape === 'chained') return { lead: 'Not a GitHub stack.', rest: ` These ${n} PRs build on each other branch by branch. Stacking them lets GitHub merge them together.` };
+  const whole = conflictsWithBase ? ` The ${shape.shape === 'stacked' ? 'stack' : 'chain'} conflicts with ${conflictsWithBase} as a whole.` : '';
+  if (shape.shape === 'stacked') return { lead: 'Stacked on GitHub', rest: ` · stack #${shape.stack_number} · ${n} PRs, bottom to top. Merge takes the whole stack.${whole}` };
+  if (shape.shape === 'chained') return { lead: 'Not a GitHub stack.', rest: ` These ${n} PRs build on each other branch by branch. Stacking them lets GitHub merge them together.${whole}` };
   if (shape.shape === 'mixed') return { lead: 'Not one chain or stack.', rest: ' Merge these PRs on GitHub.' };
   return null;
 }

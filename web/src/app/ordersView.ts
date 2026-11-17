@@ -537,9 +537,20 @@ export function newCampaignRefs(search: string): string[] {
     });
 }
 
-/** The not-stacked line a chain group's header shows, in the PR tab's stack bar words, or null for any other row. */
-export function chainGroupLine(g: ViewGroup): { lead: string; rest: string } | null {
-  return g.row.chainRow ? stackBarLine({ shape: 'chained', prs: g.children.map((c) => c.order.url ?? '') }) : null;
+/** The not-stacked line a chain group's header shows, in the PR tab's stack bar words, or null for any other row; a phone gets the conflict in fewer words. */
+export function chainGroupLine(g: ViewGroup, phone = false): { lead: string; rest: string } | null {
+  if (!g.row.chainRow) return null;
+  const base = g.children.find((c) => c.order.chain?.conflicts_with_base)?.order.chain?.conflicts_with_base;
+  const line = stackBarLine({ shape: 'chained', prs: g.children.map((c) => c.order.url ?? '') }, phone ? undefined : base);
+  if (line && base && phone) line.rest = ` It conflicts with ${base} as a whole.`;
+  return line;
+}
+
+/** The line a GitHub stack group's header adds when the stack conflicts with its base as a whole, or null; a phone gets fewer words. */
+export function stackGroupLine(g: ViewGroup, phone = false): string | null {
+  const base = g.children.find((c) => c.order.stack?.conflicts_with_base)?.order.stack?.conflicts_with_base;
+  if (!g.row.stackRow || !base) return null;
+  return phone ? `Stack conflicts with ${base} as a whole` : `This stack conflicts with ${base} as a whole`;
 }
 
 /** Whether a chain group's header offers Stack on GitHub: only a chain every shown PR of which is the viewer's. */

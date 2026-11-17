@@ -17,7 +17,7 @@ import { sheetIssues } from './makeCampaign';
 import { Sheet } from './Sheet';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { boxState, type BoxState, chainGroupCanStack, chainGroupLine, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, launchRef, newCampaignRefs, newCampaignSearch, selectableRows, selectAfterChoose, selection, orderRef, parentNote, refreshBusy, refreshedLine, refreshTarget, repoOptions, sourceName, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
+import { boxState, type BoxState, chainGroupCanStack, chainGroupLine, checkedUrls, FOR_YOU, forYou, headerTime, groupRowActions, isIssueTab, issuesLabel, launchRef, newCampaignRefs, newCampaignSearch, selectableRows, selectAfterChoose, selection, orderRef, parentNote, refreshBusy, refreshedLine, refreshTarget, repoOptions, sourceName, stackGroupLine, stackLaunchRef, tabs, viewErrors, viewGroups, viewRows, type OrderRow, type SelectState, type ViewGroup } from './ordersView';
 import { linkSourceStack, refreshSource } from './api';
 import { StackSheet } from './StackSheet';
 import { go, loc, shipPath } from './router';
@@ -96,6 +96,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
   const act = action ?? orderRowAction(ships.value, o);
   const folded = !!g && !parentGroup.open;
   const here = g ? `${plural(g.children.length, row.stackRow ? 'PR' : 'sub-issue')} here` : '';
+  const whole = g ? stackGroupLine(g, phone) : null;
   const state = row.state ? <span class={`orow-state${row.needsYou ? ' needs' : ''}`}>{row.state}</span> : null;
   // A collapsed parent carries what its hidden children would show.
   const summary = folded ? (
@@ -156,6 +157,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
               {state}
               {summary}
             </span>
+            {whole ? <span class="orow-whole">{whole}</span> : null}
           </span>
         </button>
         {arrow}
@@ -172,7 +174,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
           <span class="orow-title">{o.title}</span>
           <span class="orow-meta">
             <span class="mono">{orderRef(o)}</span>
-            {row.reason || here ? <span>{join(row.reason, here)}</span> : null}
+            {row.reason || here ? <span>{join(row.reason, here, whole ?? '')}</span> : null}
           </span>
         </span>
         {(o.labels ?? []).map((l) => (
@@ -190,7 +192,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
 
 /** A chain group's header: its PRs build on each other by branch but GitHub has not stacked them, so it says so and, for the viewer's own chain, offers the stacking. */
 function ChainRow({ group, phone, open, onToggle, onStack }: { group: ViewGroup; phone: boolean; open: boolean; onToggle: () => void; onStack: () => void }) {
-  const line = chainGroupLine(group)!;
+  const line = chainGroupLine(group, phone)!;
   return (
     <li class={phone ? 'orow-phone' : 'orow'}>
       <Button icon variant="quiet" class="orow-toggle" label={`${open ? 'Collapse' : 'Expand'} ${group.row.order.title}`} expanded={open} onClick={onToggle}>

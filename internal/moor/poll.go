@@ -48,8 +48,8 @@ type PR struct {
 	Author    string `json:"author,omitempty"`
 	Reviewing bool   `json:"reviewing,omitempty"`
 	Responded bool   `json:"responded,omitempty"`
-	// ConflictsWithBase is the branch the stack as a whole conflicts with, set on the stack's top PR only; it never serves.
-	ConflictsWithBase string `json:"-"`
+	// ConflictsWithBase is the branch the stack as a whole conflicts with, set on the stack's top PR only.
+	ConflictsWithBase string `json:"conflicts_with_base,omitempty"`
 }
 
 // View is the PR to serve. NOT_FOUND counts as closed, and a PR that is not open

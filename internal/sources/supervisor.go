@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/moor"
 )
 
 // Supervisor reconciles against every config reload, whoever caused it.
@@ -18,6 +19,8 @@ type Supervisor struct {
 	OnChange func()
 	// OnEvent receives each event a source raised that passed its catalog; it must not block.
 	OnEvent func(source string, ev Event)
+	// StackChecker tells whether a chain's or stack's top merges into its base; nil leaves the orders as GitHub answered them.
+	StackChecker moor.StackChecker
 
 	mu      sync.Mutex
 	ctx     context.Context
@@ -157,7 +160,7 @@ func (s *Supervisor) start(def config.Source) {
 	if s.OnEvent != nil {
 		onEvent = func(ev Event) { s.OnEvent(def.Key, ev) }
 	}
-	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, onEvent, s.stopping[def.Key])
+	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, onEvent, s.stopping[def.Key], s.StackChecker)
 	s.runners[def.Key], s.cancels[def.Key] = r, cancel
 	s.wg.Add(1)
 	go func() {

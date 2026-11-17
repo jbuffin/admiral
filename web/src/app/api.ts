@@ -109,6 +109,8 @@ export interface MooredPR {
   checks: string;
   mergeable: string;
   conflicts: boolean;
+  /** The branch the whole stack conflicts with, set on its top PR when the server's check found it. */
+  conflicts_with_base?: string;
   ready?: boolean;
   // New waking events since the ship's last round, and the command that answers them; both only on a moored ship's open PR.
   feedback?: number;
@@ -578,9 +580,9 @@ export interface Order {
   /** An issue's GitHub parent; `id` has the form of an order's id. Never on a pull request. */
   parent?: { id: string; title: string; url: string; repo?: string };
   /** A pull request's GitHub stack; `position` sorts layers ascending from the bottom and `size` is GitHub's own count. Never on an issue. */
-  stack?: { number: number; url: string; position: number; size: number };
+  stack?: { number: number; url: string; position: number; size: number; /** The base branch the whole stack conflicts with, set when the server's check found it. */ conflicts_with_base?: string };
   /** A pull request chained by branch to others in its view but not in a GitHub stack; `id` is the bottom PR's URL and `position` counts from 1 at the bottom. Never with `stack`. */
-  chain?: { id: string; position: number; size: number; head: string; base: string; mine: boolean };
+  chain?: { id: string; position: number; size: number; head: string; base: string; mine: boolean; /** The base branch the whole chain conflicts with, set when the server's check found it. */ conflicts_with_base?: string };
   labels?: string[];
   hot?: boolean;
   author?: string;
