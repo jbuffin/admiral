@@ -433,7 +433,7 @@ func launchable(n *campaigns.Node, what string, startAnyway bool) *launcher.Erro
 	switch {
 	case n == nil:
 		return orderError(http.StatusNotFound, what+" is not in this campaign")
-	case n.Parent:
+	case n.Parent && !n.Root:
 		return orderError(http.StatusBadRequest, what+" is a parent; launch one of its children")
 	case n.Status == campaigns.Done:
 		return orderError(http.StatusConflict, what+" is done")
@@ -477,6 +477,9 @@ func (s *Service) launchSlice(ctx context.Context, f Followed, issues []string, 
 	nodes := make([]*campaigns.Node, 0, len(issues))
 	for _, u := range issues {
 		n := find(root, u)
+		if n != nil && n.Root {
+			return nil, orderError(http.StatusBadRequest, u+" is the campaign's own issue; a slice launches children")
+		}
 		if lerr := launchable(n, u, false); lerr != nil {
 			return nil, lerr
 		}
