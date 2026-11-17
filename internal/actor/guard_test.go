@@ -119,6 +119,7 @@ func TestAnActorReachesOnlyTheRoutesAdmiralBotMayCall(t *testing.T) {
 			{"GET", "/sources", ""},
 			{"GET", "/campaigns", ""},
 			{"GET", "/campaigns/p-1", ""},
+			{"GET", "/update", ""},
 			{"POST", "/ships", own},
 			{"POST", "/sources/p-1/orders", `{"text":"x"}`},
 			{"POST", "/inbox/p-1/i-1/answer", `{}`},
@@ -159,6 +160,7 @@ func TestAnActorIsRefusedEverythingOffTheList(t *testing.T) {
 			{"PUT", "/campaigns/c-1/override"},
 			{"POST", "/campaigns/c-1/unfollow"},
 			{"GET", "/devices"},
+			{"POST", "/update"},
 			{"POST", "/inbox/p-1/i-1/submit"},
 		} {
 			r := newRig(t)

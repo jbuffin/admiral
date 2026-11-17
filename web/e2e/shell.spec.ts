@@ -3,6 +3,8 @@ import { expect, test, type Admiral } from './fixtures';
 import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession, launchAsAdmiralBot } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { spawnSync } from 'node:child_process';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -897,4 +899,36 @@ test('a chat terminal whose session ends returns to the conversation', async ({ 
   await expect(page).not.toHaveURL(/\/terminal/);
   await expect(main.locator('.xterm')).toHaveCount(0);
   await expect(main.getByRole('textbox', { name: 'Message AdmiralBot' })).toBeVisible();
+});
+
+test('the side nav shows an update badge when the update check finds a newer release, and its dialog gives the upgrade commands and the release page', async ({ page, admiral }) => {
+  const asked: string[] = [];
+  const releases: Server = createServer((req, res) => {
+    asked.push(`${req.method} ${req.url}`);
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ tag_name: 'v99.0.0', html_url: 'https://github.com/jbuffin/admiral/releases/tag/v99.0.0' }));
+  });
+  await new Promise<void>((done) => releases.listen(0, '127.0.0.1', done));
+  try {
+    seedFleets(admiral, { live: true });
+    await admiral.start({
+      env: {
+        ...withFakeGh(admiral),
+        ADMIRAL_UPDATE_TEST_URL: `http://127.0.0.1:${(releases.address() as AddressInfo).port}`,
+        ADMIRAL_UPDATE_TEST_VERSION: '0.9.1',
+        ADMIRAL_UPDATE_FIRST_CHECK: '200ms',
+      },
+    });
+    await page.goto(admiral.url + 'app/');
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    await expect(nav.getByText('dev', { exact: true })).toBeVisible();
+    await nav.getByRole('button', { name: /update available/i }).tap();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('99.0.0');
+    await expect(dialog).toContainText('launchctl kickstart -k gui/$UID/dev.jasonbuffin.admiral');
+    await expect(dialog.getByRole('link', { name: /release/i })).toHaveAttribute('href', 'https://github.com/jbuffin/admiral/releases/tag/v99.0.0');
+    expect(asked[0]).toBe('GET /repos/jbuffin/admiral/releases/latest');
+  } finally {
+    await new Promise((done) => releases.close(done));
+  }
 });

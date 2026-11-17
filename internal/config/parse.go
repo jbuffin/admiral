@@ -29,6 +29,8 @@ type Config struct {
 	MaxShips  int
 	Resources map[string]Resource
 	Remote    Remote
+	// UpdateCheck is the top-level update_check switch (STUB: not parsed yet).
+	UpdateCheck bool
 	// ChatProbe reads the capability store for the AdmiralBot gate; nil reads as not checked everywhere.
 	ChatProbe ChatProbe
 }
