@@ -53,11 +53,22 @@ describe('an event routine through the editor form', () => {
 
 describe('Recent runs for an event routine', () => {
   it('words each event reason, never the raw code', () => {
-    for (const code of ['skip_filter', 'repo_not_allowed', 'top_action', 'daily_spend_reached', 'daily_spend_unknown', 'quiet_hours', 'hold_fire', 'dedupe_key_held', 'lookout_timeout']) {
+    for (const code of ['skip_filter', 'repo_not_allowed', 'top_action', 'daily_spend_reached', 'daily_spend_unknown', 'quiet_hours', 'hold_fire', 'dedupe_key_held', 'ref_has_ship', 'lookout_timeout']) {
       const text = runLine(run({ outcome: 'skipped', reason: code })).text;
       expect(text, code).not.toContain(code);
       expect(text, code).toMatch(/\w+ \w+/);
     }
+  });
+
+  it('names the ship that already holds the item and links to it', () => {
+    const line = runLine(run({ outcome: 'skipped', reason: 'ref_has_ship', held_by: 'dory' }));
+    expect(line).toMatchObject({ dot: 'idle', text: 'Skipped: dory is already on it', ship: 'dory' });
+  });
+
+  it('says a ship holds the item when no ship is named, and links nothing', () => {
+    const line = runLine(run({ outcome: 'skipped', reason: 'ref_has_ship' }));
+    expect(line.text).toBe('Skipped: a ship is already on this PR or issue');
+    expect(line.ship).toBeUndefined();
   });
 
   it('words a list of codes one by one', () => {

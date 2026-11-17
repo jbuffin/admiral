@@ -3,7 +3,7 @@ package routines_test
 import (
 	"context"
 	"errors"
-	"slices"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -149,10 +149,8 @@ func TestLiveCountsTheListedEventShipsOfAFleetAndHoldsTheirDedupeKeys(t *testing
 	if got := live.WorkerShips("work"); got != 3 {
 		t.Errorf("WorkerShips(work) = %d, want 3", got)
 	}
-	keys := live.DedupeKeys("work")
-	slices.Sort(keys)
-	if !slices.Equal(keys, []string{"gh:acme/api#7", "gh:acme/api#9"}) {
-		t.Errorf("DedupeKeys(work) = %v, want the two non-empty keys", keys)
+	if keys := live.DedupeKeys("work"); !maps.Equal(keys, map[string]string{"gh:acme/api#7": "s1", "gh:acme/api#9": "s3"}) {
+		t.Errorf("DedupeKeys(work) = %v, want the two non-empty keys, each with its ship's session", keys)
 	}
 	if live.WorkerShips("play") != 0 || len(live.DedupeKeys("play")) != 0 {
 		t.Errorf("play shows %d ships and keys %v, want none", live.WorkerShips("play"), live.DedupeKeys("play"))
@@ -217,7 +215,7 @@ func proposalShip(at time.Time, routine, ref, key, status string) (routines.Trig
 	return rec, routines.ListedShip{Session: "proposed-1", Fleet: "work", Routine: "routine:" + routine, Launched: at.UTC().Format(time.RFC3339), Status: status}
 }
 
-func TestAnEventHeldByALiveProposalShipIsDedupedOnASecondRoutine(t *testing.T) {
+func TestAnEventHeldByALiveProposalShipIsSkippedNamingItOnEveryRoutine(t *testing.T) {
 	h, first, second := twoRoutinesOnOneEvent(t, func(*standing.Limits) {})
 	rec, ship := proposalShip(h.clock.Now(), first.ID, "https://github.com/acme/api/pull/7", "gh:acme/api#7", "underway")
 	if _, err := h.store.AppendTrigger("work", rec); err != nil {
@@ -229,9 +227,12 @@ func TestAnEventHeldByALiveProposalShipIsDedupedOnASecondRoutine(t *testing.T) {
 	h.sched.HandleEvent(evFrom("Eng"))
 	h.wantLaunches(0)
 	for _, r := range []routines.Routine{first, second} {
-		got := h.ofOutcome(r, routines.Proposed)
-		if len(got) != 1 || !strings.Contains(got[0].Reason, "dedupe") {
-			t.Errorf("routine %s proposals = %+v, want one held for dedupe", r.Name, got)
+		skipped := h.ofOutcome(r, routines.Skipped)
+		if len(skipped) != 1 || skipped[0].Reason != "ref_has_ship" || skipped[0].HeldBy != "proposed-1" {
+			t.Errorf("routine %s skipped = %+v, want one ref_has_ship record naming proposed-1", r.Name, skipped)
+		}
+		if n := len(h.ofOutcome(r, routines.Proposed)); n != 0 {
+			t.Errorf("routine %s has %d proposals, want none for a held key", r.Name, n)
 		}
 	}
 }
@@ -243,8 +244,8 @@ func TestLoadHoldsTheDedupeKeyOfAProposalShipWhetherItIsUnderwayOrNot(t *testing
 			rec, ship := proposalShip(at, "rt", "https://github.com/acme/api/pull/7", "gh:acme/api#7", status)
 			live := routines.EventLive{Listed: func() []routines.ListedShip { return []routines.ListedShip{ship} }}
 			_, keys := live.Load("work", []routines.Trigger{rec})
-			if !slices.Equal(keys, []string{"gh:acme/api#7"}) {
-				t.Errorf("held keys = %v, want gh:acme/api#7", keys)
+			if !maps.Equal(keys, map[string]string{"gh:acme/api#7": "proposed-1"}) {
+				t.Errorf("held keys = %v, want gh:acme/api#7 held by proposed-1", keys)
 			}
 		})
 	}

@@ -396,12 +396,12 @@ type flipLive struct {
 }
 
 func (f *flipLive) WorkerShips(string) int { return 0 }
-func (f *flipLive) DedupeKeys(string) []string {
+func (f *flipLive) DedupeKeys(string) map[string]string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reads++
 	if f.reads == 1 {
-		return []string{"gh:acme/api#7"}
+		return map[string]string{"gh:acme/api#7": "ship-1"}
 	}
 	return nil
 }

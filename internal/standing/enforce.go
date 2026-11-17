@@ -37,8 +37,12 @@ func (l Limits) CheckRates(c Counts) RateVerdict {
 }
 
 // DedupeHeld is whether a live ship already holds the dedupe_key; an event with no key is never held.
-func DedupeHeld(liveKeys []string, key string) bool {
-	return key != "" && slices.Contains(liveKeys, key)
+func DedupeHeld(liveKeys map[string]string, key string) (session string, held bool) {
+	if key == "" {
+		return "", false
+	}
+	_, held = liveKeys[key]
+	return "", held
 }
 
 func containsFold(list []string, s string) bool {

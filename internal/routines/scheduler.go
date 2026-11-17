@@ -84,6 +84,8 @@ type Scheduler struct {
 	GitHubHosts func(fleet string) []string
 	// Own says whether a ref is Admiral's own work (a ship's PR, a claimed issue); such an event is ignored. Nil owns nothing.
 	Own func(fleet, ref string) bool
+	// Holder names the session of a listed ship that already has the ref (ships.RefHolder over the listing); it replaces Own.
+	Holder func(fleet, ref string) (session string, ok bool)
 	// Enrich is where a Lookout adds the dedupe_key, repo, labels and costs before the decision. Nil adds nothing.
 	Enrich func(Event) Enrichment
 	// Review is the step reviewer, asked once per routine whose provisional level is A3 or higher in a fleet with Checks. Nil asks.

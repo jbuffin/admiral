@@ -35,6 +35,7 @@ export interface RoutineRun {
   routine: string;
   outcome: Outcome;
   ship?: string;
+  held_by?: string;
   via?: string;
   reason?: string;
   action?: string;

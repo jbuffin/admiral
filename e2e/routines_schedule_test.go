@@ -13,6 +13,8 @@ type runJSON struct {
 	Tier    string `json:"tier"`
 	Ship    string `json:"ship"`
 	Reason  string `json:"reason"`
+	// HeldBy is the ship already on the event's PR or issue, on a skipped record.
+	HeldBy string `json:"held_by"`
 	// Verdict, CheckID and ReviewerReason are the step reviewer's answer on an event record; Costs are the judge calls' prices.
 	Verdict        string `json:"verdict"`
 	CheckID        string `json:"check_id"`

@@ -102,6 +102,7 @@ const (
 	ReasonQuiet      = "quiet_hours"
 	ReasonHold       = "hold_fire"
 	ReasonDedupe     = "dedupe_key_held"
+	ReasonRefHasShip = "ref_has_ship"
 	ReasonNoRestrict = "no_restricted_harness"
 	ReasonCommodore  = "commodore_below_a5"
 	ReasonBusy       = "routine_busy"
@@ -122,7 +123,7 @@ type DecideInput struct {
 	SpentTodayUSD     float64
 	SpendUnknown      bool // the log could not be read, so spend and rates are unknown and count as reached
 	Counts            standing.Counts
-	LiveDedupeKeys    []string
+	LiveDedupeKeys    map[string]string // dedupe_key to the session of the live ship holding it
 	RestrictedHarness bool
 	Reviewer          standing.Verdict
 	Sender            string
@@ -142,6 +143,8 @@ type Decision struct {
 	Level    standing.Level
 	Computed standing.Level
 	Reasons  []string
+	// HeldBy is the session of the ship that held the event's PR, issue or dedupe_key when the outcome is Skipped for ReasonRefHasShip.
+	HeldBy string
 	// Restricted is the profile of an A3 launch.
 	Restricted standing.Restricted
 	// Reviewed is what the step reviewer said; the zero value means it was not asked.
@@ -226,7 +229,7 @@ func Decide(in DecideInput) Decision {
 		if v := in.Limits.CheckRates(in.Counts); !v.OK {
 			d.Reasons = append(d.Reasons, v.Reason)
 		}
-		if standing.DedupeHeld(in.LiveDedupeKeys, in.DedupeKey) {
+		if _, held := standing.DedupeHeld(in.LiveDedupeKeys, in.DedupeKey); held {
 			d.Reasons = append(d.Reasons, ReasonDedupe)
 		}
 		if in.LookoutFailure != "" {
@@ -287,7 +290,7 @@ type EventActs interface {
 // EventLoad is what the decision reads of the ships: how many worker ships run and the dedupe_keys they hold.
 type EventLoad interface {
 	WorkerShips(fleet string) int
-	DedupeKeys(fleet string) []string
+	DedupeKeys(fleet string) map[string]string
 }
 
 // RepoOfRef is owner/name for a github.com ref, else empty.
@@ -438,7 +441,7 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	hasChecks := s.Store.HasChecks(ev.Fleet) // orders that can't be read or parsed count as having Checks
 	costs := en.Costs                        // one record carries them, or the spend would count once per routine
 	var madeShips int                        // ships this event has launched, which the Live view may not list yet
-	var madeKeys []string
+	madeKeys := map[string]string{}
 	// gather reads what one pair's decision reads, with s.mu held: the counts and live keys are the ones a launch, and a
 	// concurrent event's, change.
 	gather := func(r Routine) (Routine, DecideInput) {
@@ -451,18 +454,20 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		for _, c := range costs {
 			spent += c.USD
 		}
-		var live []string
+		live := map[string]string{}
 		switch l := s.Live.(type) {
 		case nil:
 		case interface {
-			Load(fleet string, recs []Trigger) (int, []string)
+			Load(fleet string, recs []Trigger) (int, map[string]string)
 		}:
 			counts.WorkerShips, live = l.Load(ev.Fleet, recs)
 		default:
 			counts.WorkerShips, live = l.WorkerShips(ev.Fleet), l.DedupeKeys(ev.Fleet)
 		}
 		counts.WorkerShips += madeShips
-		live = append(live, madeKeys...)
+		for k, v := range madeKeys {
+			live[k] = v
+		}
 		return r, DecideInput{
 			Commodore: r.Do.Launch.Skill.Kind == "commodore",
 			Routine:   r, Tier: tier, Limits: f.Limits, Top: EventTop, HoldOn: holdOn, Now: now.In(zone),
@@ -549,7 +554,7 @@ func (s *Scheduler) HandleEvent(ev Event) {
 			launched = &saved
 			madeShips++
 			if en.DedupeKey != "" {
-				madeKeys = append(madeKeys, en.DedupeKey)
+				madeKeys[en.DedupeKey] = saved.Ship
 			}
 		}
 		if !done {

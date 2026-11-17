@@ -151,6 +151,8 @@ type Error struct {
 	Wait string
 	// Cause says which refusal this is when a caller acts on the kind, not the text: one of the Cause constants.
 	Cause string
+	// HeldBy is the session of the ship holding what a CauseIssueHeld refusal names; empty when only a launch in flight holds it.
+	HeldBy string
 }
 
 // Why a launch was refused, for a caller that handles each differently.
@@ -160,6 +162,7 @@ const (
 	CauseResources   = "resources"
 	CauseHost        = "host_unknown"
 	CauseRoutineHeld = "routine_busy"
+	CauseIssueHeld   = "issue_held"
 )
 
 func (e *Error) Error() string { return e.Msg }

@@ -188,7 +188,7 @@ func (w *world) seedRestricted(fleet string) {
 
 func TestAReviewRequestFromAnAllowlistedSenderLaunchesARestrictedDraftFixShipInItsOwnCloneWithNoTokens(t *testing.T) {
 	t.Parallel()
-	w, _ := lookoutWorldWith(t, map[string]any{"ceilings": map[string]any{"t2": map[string]any{"level": "A3", "restricted": "draft_fix"}}})
+	w, g := lookoutWorldWith(t, map[string]any{"ceilings": map[string]any{"t2": map[string]any{"level": "A3", "restricted": "draft_fix"}}})
 	w.seedRestricted("work")
 	w.start()
 	id := w.eventRoutine("Draft fix watch", "act")
@@ -264,6 +264,21 @@ func TestAReviewRequestFromAnAllowlistedSenderLaunchesARestrictedDraftFixShipInI
 	}
 	if strings.Contains(chatBody, "Please review my lantern fix.") {
 		t.Errorf("the chat holds the event body: %s", chatBody)
+	}
+
+	// a second review request on the same PR is skipped, naming the ship, and launches nothing
+	again := ghNode("github.com", "acme/api", 7, true, "Fix the quarry lantern")
+	again["author"] = map[string]any{"login": "mallory-the-stranger"}
+	again["timelineItems"] = map[string]any{"nodes": []map[string]any{{"__typename": "ReviewRequestedEvent",
+		"createdAt": time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339), "actor": map[string]any{"login": "mallory-the-stranger"},
+		"requestedReviewer": map[string]any{"login": "fake-viewer"}}}}
+	g.search("review", "review-requested:@me", again)
+	skipped := w.waitRun(id, "skipped")
+	if skipped.HeldBy != run.Ship || skipped.Reason != "ref_has_ship" || skipped.Ship != "" {
+		t.Errorf("skipped record = %+v, want ref_has_ship held_by %s and no ship of its own", skipped, run.Ship)
+	}
+	if all := w.shipsWhere(func(shipJSON) bool { return true }); len(all) != 1 || all[0].Session != run.Ship {
+		t.Errorf("the fleet lists %+v after the repeat request, want only %s", all, run.Ship)
 	}
 
 	// Undo stops the ship, removes its clone and marks the record

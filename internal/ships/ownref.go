@@ -22,6 +22,9 @@ func prKey(ref string) string {
 	return strings.ToLower("https://" + u.Hostname() + "/" + p[0] + "/" + p[1] + "/pull/" + p[3])
 }
 
+// RefHolder is the listed ship that holds ref: a PR in its PRs or its order URL, or an issue it claims.
+func RefHolder(list []Ship, ref string) (Ship, bool) { return Ship{}, false }
+
 // OwnsRef is whether ref is a PR a listed ship holds or an issue a listed ship claims, spelled however GitHub spells it.
 // Ships push under the engineer's own login, so only the ref can tell their work apart; a PR an underway ship just
 // opened is not in PRs until it moors.
