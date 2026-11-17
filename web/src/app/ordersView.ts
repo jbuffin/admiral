@@ -538,8 +538,13 @@ export function newCampaignRefs(search: string): string[] {
 }
 
 /** The not-stacked line a chain group's header shows, in the PR tab's stack bar words, or null for any other row. */
-export function chainGroupLine(g: ViewGroup): { lead: string; rest: string } | null {
+export function chainGroupLine(g: ViewGroup, _phone = false): { lead: string; rest: string } | null {
   return g.row.chainRow ? stackBarLine({ shape: 'chained', prs: g.children.map((c) => c.order.url ?? '') }) : null;
+}
+
+/** The line a GitHub stack group's header adds when the stack conflicts with its base as a whole, or null. */
+export function stackGroupLine(_g: ViewGroup, _phone = false): string | null {
+  return null;
 }
 
 /** Whether a chain group's header offers Stack on GitHub: only a chain every shown PR of which is the viewer's. */

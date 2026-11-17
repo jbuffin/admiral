@@ -103,7 +103,7 @@ export function showAnswerAll(prs: MooredPR[], stack: PRStack | null | undefined
 export const actingWhile = (acting: boolean, moored: boolean): boolean => moored && acting;
 
 /** The stack bar's bold lead and the rest of its line for the shape the server read, or null when no bar shows. */
-export function stackBarLine(shape: StackShape | null): { lead: string; rest: string } | null {
+export function stackBarLine(shape: StackShape | null, _conflictsWithBase?: string): { lead: string; rest: string } | null {
   if (!shape || shape.prs.length < 2) return null;
   const n = shape.prs.length;
   if (shape.shape === 'stacked') return { lead: 'Stacked on GitHub', rest: ` · stack #${shape.stack_number} · ${n} PRs, bottom to top. Merge takes the whole stack.` };

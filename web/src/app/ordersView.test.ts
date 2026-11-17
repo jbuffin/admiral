@@ -4,7 +4,7 @@ import type { RowAction } from './moored';
 import { stackBarLine } from './prTab';
 import { selectedRow, withSelectedOrder } from './orderDetail';
 import { parseExpanded } from './expandedParents';
-import { boxState, chainGroupCanStack, chainGroupLine, checkedUrls, filterRows, forYou, groupRowActions, headerTime, isIssueTab, issuesLabel, keepChecked, launchRef, newCampaignRefs, newCampaignSearch, orderRef, parentNote, refreshedLine, refreshTarget, repoName, repoOptions, selectableRows, selectAfterChoose, selection, stackLaunchLines, tabs, viewGroups, viewRows, withoutParentNote } from './ordersView';
+import { boxState, chainGroupCanStack, chainGroupLine, checkedUrls, filterRows, forYou, groupRowActions, headerTime, isIssueTab, issuesLabel, keepChecked, launchRef, newCampaignRefs, newCampaignSearch, orderRef, parentNote, refreshedLine, refreshTarget, repoName, repoOptions, selectableRows, selectAfterChoose, selection, stackGroupLine, stackLaunchLines, tabs, viewGroups, viewRows, withoutParentNote } from './ordersView';
 import type { OrderRow, SelectState } from './ordersView';
 
 const NOW = Date.parse('2026-11-14T12:00:00Z');
@@ -728,6 +728,18 @@ describe('stack groups in a view tab', () => {
     expect(g.row.source).toBe('gh');
   });
 
+  it('says in the stack group header that the stack conflicts with its base as a whole, naming the base', () => {
+    const conflicting = [1, 2, 3].map((p) => layer(40 + p, p, { stack: { number: 7, url: S, position: p, size: 3, conflicts_with_base: 'main' } }));
+    const [g] = groups(conflicting);
+    expect(stackGroupLine(g)).toContain('conflicts with main as a whole');
+    expect(stackGroupLine(g, true)).toContain('main');
+    expect(stackGroupLine(g, true)!.length).toBeLessThan(stackGroupLine(g)!.length);
+  });
+
+  it('says nothing about the base in the header of a stack that merges cleanly', () => {
+    expect(stackGroupLine(groups(three)[0])).toBeNull();
+  });
+
   it('marks the row as a stack row that never says not in this view, and leaves the layers actionable', () => {
     const [g] = groups(three);
     expect(g.row.stackRow).toBe(true);
@@ -1301,6 +1313,17 @@ describe('chain groups in a view tab', () => {
   it('says in the stack bar words that the PRs are not a GitHub stack', () => {
     const [g] = groups(mine);
     expect(chainGroupLine(g)).toEqual(stackBarLine({ shape: 'chained', prs: g.children.map((c) => c.order.url!) }));
+  });
+
+  it('adds that the chain conflicts with its base as a whole to the group line, shorter on a phone', () => {
+    const conflicting = mine.map((o) => ({ ...o, chain: { ...o.chain!, conflicts_with_base: 'main' } }));
+    const [g] = groups(conflicting);
+    const words = (l: ReturnType<typeof chainGroupLine>) => `${l?.lead}${l?.rest}`;
+    expect(words(chainGroupLine(g))).toContain('conflicts with main as a whole');
+    expect(words(chainGroupLine(g))).toContain('Not a GitHub stack');
+    expect(words(chainGroupLine(g, true))).toContain('main');
+    expect(words(chainGroupLine(g, true)).length).toBeLessThan(words(chainGroupLine(g)).length);
+    expect(words(chainGroupLine(groups(mine)[0]))).not.toContain('as a whole');
   });
 
   it('counts the PRs it shows, so a filter that hides one changes the line', () => {
