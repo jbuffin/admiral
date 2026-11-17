@@ -62,8 +62,8 @@ test('the dock picker marks the chosen dock and reports a change', () => {
 test('the checkout list says what each folder is, flags a ship underway, and offers the clone, saying when its folder exists', () => {
   const dirs: DirsAnswer = {
     entries: [
-      { path: '/w/proj', name: 'proj', kind: 'checkout', ships_here: 1 },
-      { path: '/w', name: 'w', kind: 'search_root', ships_here: 0 },
+      { path: '/w/proj', name: 'proj', kind: 'checkout', ships_here: 1, remotes: [] },
+      { path: '/w', name: 'w', kind: 'search_root', ships_here: 0, remotes: [] },
     ],
     selected: '/w/proj',
     clone: { repo: 'github.com/acme/widget', path: '/w/widget', exists: true },
