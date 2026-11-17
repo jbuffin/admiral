@@ -37,6 +37,8 @@ type GitHub interface {
 	// LinkStack makes the PRs numbers (bottom to top, in repo OWNER/NAME) one stack on GitHub with gh stack link, from no checkout,
 	// on base, the bottom PR's base branch. Its errors are MergePR's.
 	LinkStack(ctx context.Context, repo, base string, numbers []int) error
+	// UpdateBranch merges the base into the PR's head with gh pr update-branch. Only the engineer's Update branch act calls it. Its errors are MergePR's.
+	UpdateBranch(ctx context.Context, url string) error
 }
 
 // ErrMergeTimeout is a merge whose result is unknown.

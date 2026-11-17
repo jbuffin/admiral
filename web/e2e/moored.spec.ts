@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 import { addWakeReviewers, addGitHubSource, answeringEnv, mooringEnv, seedFleets, watchPage } from './shell';
-import { answerReviewFromThePRTab, mergeFromThePRTab } from './moored';
+import { answerReviewFromThePRTab, mergeFromThePRTab, updateBranchFromThePRTab } from './moored';
 
 test('the PR tab of a ready moored ship shows the PR, Merge and Don\'t follow reviews, merges only after the tap, and the ship sails off', { tag: '@critical' }, async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -23,6 +23,19 @@ test('the PR tab of a moored ship with a waking review shows the feedback bar, a
   const watch = watchPage(page, admiral.url);
 
   await answerReviewFromThePRTab(page, admiral);
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('the PR tab of a moored ship whose PR is behind a strict base says why it cannot merge, and Update branch brings it up to date in one call', { tag: '@critical' }, async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await updateBranchFromThePRTab(page, admiral, { phone: false });
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

@@ -1106,3 +1106,28 @@ export function prReview(a: Admiral, number: number, r: { author: string; body: 
   };
   writeFileSync(file, JSON.stringify({ ...events, reviews: { nodes: [node] } }) + '\n');
 }
+
+/** PR `number` is approved, green and mergeable but BEHIND a base that requires up-to-date branches, with a detail that is in no stack. */
+export function prBehindStrictBase(a: Admiral, number: number) {
+  prAnswer(a, number, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  const url = `${PR_BASE}/${number}`;
+  const key = url.replace(/[/:]/g, '_');
+  const events = { mergeStateStatus: 'BEHIND', baseRef: { branchProtectionRule: { requiresStrictStatusChecks: true }, rules: { nodes: [] } } };
+  mkdirSync(join(a.home, 'fakegh', 'pr_events'), { recursive: true });
+  writeFileSync(join(a.home, 'fakegh', 'pr_events', key), JSON.stringify(events) + '\n');
+  const detail = { number, url, title: 'Add the thing', body: '', state: 'OPEN', isDraft: false, author: { login: 'fake-viewer' }, headRefName: 'thing', baseRefName: 'main', baseRepository: { defaultBranchRef: { name: 'main' } }, statusCheckRollup: null, commits: { nodes: [] }, reviews: { nodes: [] }, reviewRequests: { nodes: [] }, reviewThreads: { nodes: [] }, comments: { nodes: [] }, stack: null };
+  mkdirSync(join(a.home, 'fakegh', 'pr_detail'), { recursive: true });
+  writeFileSync(join(a.home, 'fakegh', 'pr_detail', key), JSON.stringify(detail) + '\n');
+}
+
+/** The argv (after `gh`) of every `pr update-branch` call the fake gh recorded. */
+export function updateBranchCalls(a: Admiral): string[][] {
+  const dir = join(a.home, 'fakegh', 'calls');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .sort((x, y) => statSync(join(dir, x)).birthtimeMs - statSync(join(dir, y)).birthtimeMs)
+    .map((d) => join(dir, d, 'argv'))
+    .filter((f) => existsSync(f))
+    .map((f) => readFileSync(f, 'utf8').split('\0').filter((x) => x !== ''))
+    .filter((argv) => argv[0] === 'pr' && argv[1] === 'update-branch');
+}

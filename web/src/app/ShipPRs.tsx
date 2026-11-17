@@ -2,13 +2,13 @@ import { Fragment } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { call, fetchPRDetail, fetchStackShape, linkStack, SLOW_TIMEOUT_MS, type MooredPR, type PRDetail, type Ship, type StackShape } from './api';
 import { Actions, Button } from './Button';
-import { MergeControl } from './PeekMerge';
+import { MergeControl, UpdateBranchControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
 import { Sheet, useCancelFocus } from './Sheet';
 import { StackSheet } from './StackSheet';
 import { OpenPRs } from './OpenPRs';
-import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, fixLine, fixStackInBar, headerChips, mergeFor, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, showAnswerReview, stackBarAction, stackBarLine, tabOrder } from './prTab';
+import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, fixLine, fixStackInBar, headerChips, mergeFor, mergeReasonLines, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, showAnswerReview, stackBarAction, stackBarLine, tabOrder } from './prTab';
 import { MOOR_LINE, moorSheetParts, offersMoor, reReviewPlace, reviews, staleNote } from './moored';
 import { AnswerReviewSheet } from './AnswerReview';
 import { FixButton, FixSheet } from './Fix';
@@ -297,6 +297,9 @@ export function PRTab({ ship }: { ship: Ship }) {
   const action = reviewBar ? 'none' : stackBarAction(shape, ship.status);
   const choice = mergeFor(shape, prs, current, !!ship.stack_ready);
   const justMerged = mergedAll || merged.has(current.url);
+  const reasonLines = mergeReasonLines(current, details[current.url]?.base);
+  // The stack read decides: a layer of a GitHub stack is fixed as a stack, so it has no Update branch.
+  const canUpdate = !!current.merge_reasons?.includes('behind') && !!details[current.url] && details[current.url].stack === null;
   // One error on the tab at a time: starting or failing either action drops the other's.
   const failMerge = (e: string) => {
     setMergeError(e);
@@ -391,6 +394,16 @@ export function PRTab({ ship }: { ship: Ship }) {
             {place?.place === 'stack' ? null : (
               <Button label="Re-review" variant="primary" onClick={() => setReReview(current.url)} />
             )}
+          </div>
+        ) : null}
+        {moored && !reviews(ship) && !justMerged && current.state === 'OPEN' && reasonLines.length > 0 ? (
+          <div class="fix-bar">
+            <span class="fb-text">
+              {reasonLines.map((l) => (
+                <div key={l}>{l}</div>
+              ))}
+            </span>
+            {canUpdate ? <UpdateBranchControl key={current.url} ship={ship} pr={current.url} onError={failMerge} locked={acting} onBusy={setActing} /> : null}
           </div>
         ) : null}
         {fixOn && !fixStack && current.state === 'OPEN' && !current.reviewing ? (

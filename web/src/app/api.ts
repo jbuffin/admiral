@@ -121,6 +121,8 @@ export interface MooredPR {
   // Merge problems besides a conflict, on an open PR the ship opened.
   behind?: boolean;
   failing_checks?: string[];
+  /** Every reason GitHub would refuse a merge now, by code, in the server's order. */
+  merge_reasons?: string[];
 }
 /** What keeps one open PR from merging that its ship can fix. */
 export interface PRProblems {
@@ -356,6 +358,11 @@ const mergeToken = () => ({ 'X-Admiral-Merge-Token': document.querySelector<HTML
 /** Merges a moored ship's single PR, its whole stack, or with `pr` one independent PR by URL. The token is the one the server put in this page; it changes when Admiral restarts. */
 export function mergeShip(session: string, pr?: string): Promise<Result<unknown>> {
   return call('POST', `/ships/${encodeURIComponent(session)}/merge`, pr ? { pr } : undefined, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
+}
+
+/** Updates a moored ship's PR branch with its base, through the fleet's gh. Sends the merge token like Merge. */
+export function updateBranch(session: string, pr: string): Promise<Result<unknown>> {
+  return call('POST', `/ships/${encodeURIComponent(session)}/update-branch`, { pr }, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
 /** How a ship's PRs relate on GitHub; 404 for a ship that is anchored or has no PRs. */

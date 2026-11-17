@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
-import { call, fetchStackShape, mergeShip, type Ship, type StackShape } from './api';
+import { call, fetchStackShape, mergeShip, updateBranch, type Ship, type StackShape } from './api';
 import { fleetSearch } from './fleets';
 import { MooredPRs } from './MooredPRs';
 import { mergeHint } from './moored';
 import { Failure } from './PeekItem';
 import { go, shipPath } from './router';
 
-const STALE_TOKEN = 'Admiral restarted, reload to merge';
+const STALE_MERGE = 'Admiral restarted, reload to merge';
+const STALE_UPDATE = 'Admiral restarted, reload to update the branch';
 
 /** Merge for a ready ship with the method it will use: the ship's one PR, its whole stack (`stack`), or with `pr` that independent PR alone. The caller shows it only when the ship is ready, and shows the error it reports. */
 export function MergeControl({ ship, pr, stack = false, onMerged, onError, stale: lifted, onStale, locked = false, onBusy }: { ship: Ship; pr?: string; stack?: boolean; onMerged: () => void; onError: (e: string) => void; stale?: boolean; onStale?: (stale: boolean) => void; locked?: boolean; onBusy?: (busy: boolean) => void }) {
@@ -32,12 +33,41 @@ export function MergeControl({ ship, pr, stack = false, onMerged, onError, stale
     }
     const refused = r.status === 403;
     setStale(refused);
-    onError(refused ? STALE_TOKEN : r.error);
+    onError(refused ? STALE_MERGE : r.error);
   };
   return (
     <div class="peek-merge">
       <Button label="Merge" variant="primary" pending={['ship', ship.session, 'merge', pr ?? '']} disabled={locked} onClick={merge} />
       {hint ? <span class="merge-hint">{hint}</span> : null}
+      {stale ? <Button label="Reload" onClick={() => location.reload()} /> : null}
+    </div>
+  );
+}
+
+/** Update branch for a PR that is behind its base: GitHub merges the base into the PR's head. The caller shows it only for a behind PR outside a stack, and shows the error it reports. */
+export function UpdateBranchControl({ ship, pr, onError, locked = false, onBusy }: { ship: Ship; pr: string; onError: (e: string) => void; locked?: boolean; onBusy?: (busy: boolean) => void }) {
+  const [stale, setStale] = useState(false);
+  const busy = useRef(false);
+  const update = async () => {
+    if (busy.current) return;
+    busy.current = true;
+    setStale(false);
+    onBusy?.(true);
+    onError('');
+    const r = await updateBranch(ship.session, pr);
+    busy.current = false;
+    onBusy?.(false);
+    if (r.ok) {
+      void call('POST', '/moored/refresh');
+      return;
+    }
+    const refused = r.status === 403;
+    setStale(refused);
+    onError(refused ? STALE_UPDATE : r.error);
+  };
+  return (
+    <div class="peek-merge">
+      <Button label="Update branch" pending={['ship', ship.session, 'update-branch', pr]} disabled={locked} onClick={update} />
       {stale ? <Button label="Reload" onClick={() => location.reload()} /> : null}
     </div>
   );

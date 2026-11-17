@@ -15,6 +15,24 @@ export const openCount = (prs: MooredPR[] | undefined): number => open(prs).leng
 const by = (author: string | undefined) => (author ? ` by @${author}` : '');
 const plural = (n: number) => (n === 1 ? '1 PR' : `${n} PRs`);
 
+/** Each merge reason in lower-case words, naming the PR's base or "its base"; the summary reads them as they are and the reasons bar capitalises them. */
+function reasonWords(base?: string): Record<string, string> {
+  const b = base || 'its base';
+  return {
+    draft: 'draft',
+    behind: `behind ${b}`,
+    conflicts: `has conflicts with ${b}`,
+    checks_failing: 'checks failing',
+    checks_pending: 'checks still running',
+    changes_requested: 'changes requested',
+    review_required: 'waiting on a required review',
+    unknown: 'GitHub is still checking whether it can merge',
+    held: `held by a rule on ${b}`,
+  };
+}
+
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 /** The ship view's one line about its open PRs, or '' when none is open. The server's `ready` and `stack_ready` decide; a reviewed PR never reads as ready to merge, since Admiral doesn't merge it. */
 export function prSummary(prs: MooredPR[] | undefined, stack?: { stack_ready?: boolean; fix?: FixOffer }): string {
   const live = open(prs);
@@ -27,7 +45,8 @@ export function prSummary(prs: MooredPR[] | undefined, stack?: { stack_ready?: b
     const why = stack?.stack_ready === false ? fixItems(stack.fix).join(' \u00b7 ') : '';
     return why ? `${n} · ${why}` : stack?.stack_ready === false ? `${n} · Not ready to merge` : `${n} · Ready to merge`;
   }
-  const why = blocked.review === 'CHANGES_REQUESTED' ? 'changes requested' : blocked.checks === 'FAILURE' || blocked.checks === 'ERROR' ? 'checks failing' : 'waiting on review';
+  const reason = blocked.merge_reasons?.[0];
+  const why = reason ? (reasonWords()[reason] ?? 'not ready to merge') : blocked.review === 'CHANGES_REQUESTED' ? 'changes requested' : blocked.checks === 'FAILURE' || blocked.checks === 'ERROR' ? 'checks failing' : 'not ready to merge';
   return `${n} · #${prNumber(blocked.url)} ${why}`;
 }
 
@@ -181,3 +200,14 @@ export function fixLine(fix: FixOffer | undefined): string {
 
 /** Whether a PR's feedback bar offers Answer review: the ship's Fix round takes the feedback with it, so Fix replaces it. */
 export const showAnswerReview = (pr: MooredPR, fix: FixOffer | undefined): boolean => !fix && feedbackBarText(pr) !== '';
+
+/** What GitHub won't merge a PR for, in plain words and in the server's order; `base` is its base branch when the detail is read. Only a behind PR the server read a strict base for says the base requires it. */
+export function mergeReasonLines(pr: MooredPR, base?: string): string[] {
+  const words = reasonWords(base);
+  const needsBase = `${base || 'Its base'} requires branches to be up to date before they merge.`;
+  return (pr.merge_reasons ?? []).flatMap((r) => {
+    if (!words[r]) return [];
+    const line = capital(words[r]);
+    return [r === 'behind' && pr.behind ? `${line}. ${needsBase}` : line];
+  });
+}

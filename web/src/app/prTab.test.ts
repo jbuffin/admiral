@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FixOffer, MooredPR, Ship, StackShape } from './api';
-import { actingWhile, chooseStackDetail, fixLabel, fixLine, fixStackInBar, showAnswerReview, showAnswerAll, defaultPR, feedbackBarText, headerChips, openCount, orderPRs, prDot, prSummary, stackedPRs, reviewMark, reviewStackBar, mergeFor, stackBarAction, stackBarLine, tabOrder } from './prTab';
+import { actingWhile, chooseStackDetail, fixLabel, fixLine, fixStackInBar, showAnswerReview, showAnswerAll, defaultPR, feedbackBarText, headerChips, mergeReasonLines, openCount, orderPRs, prDot, prSummary, stackedPRs, reviewMark, reviewStackBar, mergeFor, stackBarAction, stackBarLine, tabOrder } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -27,6 +27,14 @@ describe('openCount', () => {
   });
 });
 
+describe('mergeReasonLines', () => {
+  it('names the base, or "its base" when it is unknown, with a capital at the start of each sentence', () => {
+    const behind = pr(7, { behind: true, merge_reasons: ['behind', 'conflicts', 'held'] });
+    expect(mergeReasonLines(behind, 'develop')).toEqual(['Behind develop. develop requires branches to be up to date before they merge.', 'Has conflicts with develop', 'Held by a rule on develop']);
+    expect(mergeReasonLines(behind)).toEqual(['Behind its base. Its base requires branches to be up to date before they merge.', 'Has conflicts with its base', 'Held by a rule on its base']);
+  });
+});
+
 describe('prSummary', () => {
   it('says Ready to merge when every open PR is ready, for one PR and for many', () => {
     expect(prSummary([ready(7)])).toBe('1 PR · Ready to merge');
@@ -47,8 +55,25 @@ describe('prSummary', () => {
   it('says what the first open PR that is not ready waits on', () => {
     expect(prSummary([pr(7, { review: 'CHANGES_REQUESTED' })])).toBe('1 PR · #7 changes requested');
     expect(prSummary([pr(7, { review: 'REVIEW_REQUIRED', checks: 'FAILURE' })])).toBe('1 PR · #7 checks failing');
-    expect(prSummary([pr(7, { review: 'REVIEW_REQUIRED', checks: 'SUCCESS' })])).toBe('1 PR · #7 waiting on review');
-    expect(prSummary([pr(7)])).toBe('1 PR · #7 waiting on review');
+    expect(prSummary([pr(7, { review: 'REVIEW_REQUIRED', checks: 'SUCCESS' })])).toBe('1 PR · #7 not ready to merge');
+    expect(prSummary([pr(7)])).toBe('1 PR · #7 not ready to merge');
+    expect(prSummary([pr(7, { merge_reasons: ['unknown'] })])).toBe('1 PR · #7 GitHub is still checking whether it can merge');
+  });
+
+  it('names the first merge reason instead of waiting on review for an approved, green PR that is behind', () => {
+    const behind = prSummary([pr(7, { review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE', behind: true, merge_reasons: ['behind'] })]);
+    expect(behind).toMatch(/^1 PR · #7 .*behind/i);
+    expect(behind).not.toMatch(/waiting on review/i);
+    expect(prSummary([pr(7, { review: 'APPROVED', checks: 'SUCCESS', merge_reasons: ['conflicts', 'behind'] })])).toMatch(/^1 PR · #7 .*conflict/i);
+    expect(prSummary([pr(7, { merge_reasons: ['draft'] })])).toMatch(/^1 PR · #7 .*draft/i);
+  });
+
+  it('never names a branch it does not know', () => {
+    for (const r of ['behind', 'conflicts', 'held']) {
+      const line = prSummary([pr(7, { merge_reasons: [r] })]);
+      expect(line).toMatch(/its base/);
+      expect(line).not.toMatch(/main/);
+    }
   });
 
   it('names the first PR in the ship\'s list that is not ready, with every open PR counted', () => {

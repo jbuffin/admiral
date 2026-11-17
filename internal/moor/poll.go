@@ -23,6 +23,7 @@ type Status struct {
 	MergeState        string    // mergeStateStatus
 	ConflictsWithBase string    // the base branch the whole stack conflicts with; set on the stack's top PR by Admiral, not by GitHub
 	StrictBase        bool      // the base readably requires branches to be up to date
+	Draft             bool      // isDraft; GitHub reads a draft as BLOCKED
 	Reviews           []Review
 	ThreadComments    []Comment
 	Comments          []Comment
@@ -41,6 +42,7 @@ type PR struct {
 	Ready     bool   `json:"ready"`
 	// Behind and FailingChecks are the PR's merge problems besides a conflict.
 	Behind        bool     `json:"behind,omitempty"`
+	MergeReasons  []string `json:"merge_reasons,omitempty"`
 	FailingChecks []string `json:"failing_checks,omitempty"`
 	// Feedback counts the PR's waking events past its cursor; Answer is the prompt Answer review sends for it.
 	Feedback  int    `json:"feedback,omitempty"`
@@ -60,7 +62,51 @@ func View(url string, st Status, found bool) PR {
 	}
 	p, _ := ProblemsOf(url, st)
 	return PR{URL: url, State: st.State, Review: st.Review, Checks: st.Checks, Mergeable: st.Mergeable, Author: st.Author,
-		Conflicts: p.Conflicts, Behind: p.Behind, FailingChecks: p.FailingChecks, Ready: st.Ready()}
+		Conflicts: p.Conflicts, Behind: p.Behind, FailingChecks: p.FailingChecks, Ready: st.Ready(), MergeReasons: st.MergeReasons()}
+}
+
+// MergeReasons are the stable codes for why GitHub would refuse a merge of this open PR now, in display order; none when it is ready or not open.
+func (st Status) MergeReasons() []string {
+	if st.State != "OPEN" || st.Ready() {
+		return nil
+	}
+	var out []string
+	if st.Draft {
+		out = append(out, "draft")
+	}
+	if st.MergeState == "BEHIND" {
+		out = append(out, "behind")
+	}
+	if st.Mergeable == "CONFLICTING" || st.MergeState == "DIRTY" {
+		out = append(out, "conflicts")
+	}
+	blocked := st.MergeState == "BLOCKED"
+	switch st.Checks {
+	case "FAILURE", "ERROR":
+		out = append(out, "checks_failing")
+	case "PENDING", "EXPECTED":
+		if blocked {
+			out = append(out, "checks_pending")
+		}
+	}
+	switch st.Review {
+	case "CHANGES_REQUESTED":
+		out = append(out, "changes_requested")
+	case "REVIEW_REQUIRED":
+		out = append(out, "review_required")
+	}
+	if st.Mergeable == "UNKNOWN" || st.MergeState == "UNKNOWN" {
+		out = append(out, "unknown")
+	}
+	if len(out) == 0 {
+		// Not ready with no cause named: GitHub has not said yet, or the state is one this list does not know.
+		if blocked {
+			out = append(out, "held")
+		} else {
+			out = append(out, "unknown")
+		}
+	}
+	return out
 }
 
 // Ready says GitHub would let the engineer press Merge now: GitHub's mergeStateStatus already holds the base's

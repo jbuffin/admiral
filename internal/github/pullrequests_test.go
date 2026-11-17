@@ -398,3 +398,44 @@ func TestThePollQueryAsksForEachReviewsCommitAndEachThreadsID(t *testing.T) {
 		}
 	}
 }
+
+func TestPullRequestsReadsWhetherAPRIsADraft(t *testing.T) {
+	for _, c := range []struct {
+		isDraft string
+		want    bool
+	}{{"true", true}, {"false", false}} {
+		t.Run(c.isDraft, func(t *testing.T) {
+			cl, f := prClient(t)
+			f.pr(t, prA, "OPEN", "", "", "MERGEABLE")
+			f.prEvents(t, prA, `{"mergeStateStatus": "BLOCKED", "isDraft": `+c.isDraft+`}`)
+			got, err := cl.PullRequests(context.Background(), []string{prA})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got[prA].Draft != c.want {
+				t.Errorf("Draft = %v, want %v", got[prA].Draft, c.want)
+			}
+		})
+	}
+}
+
+func TestThePollQueryAsksWhetherAPRIsADraft(t *testing.T) {
+	cl, f := prClient(t)
+	f.pr(t, prA, "OPEN", "", "", "MERGEABLE")
+	if _, err := cl.PullRequests(context.Background(), []string{prA}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.only(t, "api").argv, " "), "isDraft") {
+		t.Error("the PR query does not ask for isDraft")
+	}
+}
+
+func TestUpdateBranchRunsGhPrUpdateBranchWithNoRebaseFlag(t *testing.T) {
+	cl, f := prClient(t)
+	if err := cl.UpdateBranch(context.Background(), prA); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.only(t, "pr").argv, []string{"pr", "update-branch", prA}; !reflect.DeepEqual(got, want) {
+		t.Errorf("argv = %q, want %q: no --rebase, so the head keeps its commits", got, want)
+	}
+}
