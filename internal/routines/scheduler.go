@@ -680,7 +680,7 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 	switch {
 	case lerr != nil && lerr.Cause == launcher.CauseIssueHeld && accepted:
 		delete(s.waiting, r.ID)
-		return s.skipHeld(fleet, r, rec, lerr.HeldBy)
+		return s.skipHeld(fleet, r, rec, lerr.HeldBy, lerr.Msg)
 	case lerr != nil && lerr.Wait != "" && accepted:
 		return ErrBusy
 	case lerr != nil && lerr.Wait != "":
@@ -697,11 +697,25 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 	return nil
 }
 
-// skipHeld records that a ship already holds the item the run was for, launches nothing, and answers ErrBusy.
-func (s *Scheduler) skipHeld(fleet string, r Routine, rec Trigger, heldBy string) error {
-	rec.Outcome, rec.Reason, rec.HeldBy = Skipped, ReasonRefHasShip, heldBy
-	s.recordFor(fleet, r, rec)
-	return ErrBusy
+// busyHeld is ErrBusy that says what holds the item, so the 409 names it.
+type busyHeld struct{ msg string }
+
+func (e busyHeld) Error() string        { return e.msg }
+func (e busyHeld) Is(target error) bool { return target == ErrBusy }
+
+// heldRecord turns rec into the skip written when a ship already holds the item; nothing launched, so it carries no restriction.
+func heldRecord(rec Trigger, heldBy string) Trigger {
+	rec.Outcome, rec.Reason, rec.HeldBy, rec.Restricted = Skipped, ReasonRefHasShip, heldBy, ""
+	return rec
+}
+
+// skipHeld records that a ship already holds the item the run was for, launches nothing, and answers ErrBusy with msg.
+func (s *Scheduler) skipHeld(fleet string, r Routine, rec Trigger, heldBy, msg string) error {
+	s.recordFor(fleet, r, heldRecord(rec, heldBy))
+	if msg == "" {
+		msg = "this PR or issue already has a ship (" + heldBy + ")"
+	}
+	return busyHeld{msg}
 }
 
 // gates are the fire-time checks of a launch, and the Skill it starts with. The gates are checked again now: a guard

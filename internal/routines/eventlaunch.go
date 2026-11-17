@@ -74,7 +74,7 @@ func (s *Scheduler) LaunchProposed(ctx context.Context, fleet, routineID, trigge
 		Sender: prop.Sender, DedupeKey: prop.DedupeKey, Action: describe(r)}
 	if s.Holder != nil {
 		if session, held := s.Holder(fleet, prop.Event); held {
-			return Trigger{}, s.skipHeld(fleet, r, rec, session)
+			return Trigger{}, s.skipHeld(fleet, r, rec, session, "")
 		}
 	}
 	if err := s.launch(ctx, fleet, r, spec, rec, now, true, link); err != nil {

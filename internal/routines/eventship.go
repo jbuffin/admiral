@@ -111,8 +111,7 @@ func (s *Scheduler) launchEvent(fleet string, r Routine, ev Event, d Decision, e
 	ref, lerr := s.Ships.Launch(context.Background(), req)
 	if lerr != nil {
 		if lerr.Cause == launcher.CauseIssueHeld {
-			rec.Outcome, rec.Reason, rec.HeldBy = Skipped, ReasonRefHasShip, lerr.HeldBy
-			s.recordFor(fleet, r, rec)
+			s.recordFor(fleet, r, heldRecord(rec, lerr.HeldBy))
 			d.Outcome, d.Reasons, d.HeldBy = Skipped, []string{ReasonRefHasShip}, lerr.HeldBy
 			return d, Trigger{}, false, true
 		}

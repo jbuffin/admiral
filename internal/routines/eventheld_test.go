@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -255,6 +256,9 @@ func TestAcceptingAProposalOnAnItemAnotherShipNowHoldsIsAConflictAndASkippedReco
 			if !errors.Is(err, routines.ErrBusy) {
 				t.Fatalf("LaunchProposed = %v, want ErrBusy, which the server answers with a 409", err)
 			}
+			if msg := err.Error(); !strings.Contains(msg, "already has a ship (dory)") {
+				t.Errorf("409 message = %q, want it to name the ship that holds the item", msg)
+			}
 			skipped := h.ofOutcome(r, routines.Skipped)
 			if len(skipped) != 1 || skipped[0].Reason != "ref_has_ship" || skipped[0].HeldBy != "dory" || skipped[0].Ship != "" {
 				t.Errorf("skipped = %+v, want one ref_has_ship record held_by dory", skipped)
@@ -263,5 +267,47 @@ func TestAcceptingAProposalOnAnItemAnotherShipNowHoldsIsAConflictAndASkippedReco
 				t.Errorf("%d launched or failed records, want none", n)
 			}
 		})
+	}
+}
+
+func TestAHeldPRKeepsTheSkipFilterAndRepoAllowlistReasonsBeforeRefHasShip(t *testing.T) {
+	cases := map[string]struct {
+		limits func(*standing.Limits, string)
+		reason string
+	}{
+		"a muted sender": {func(l *standing.Limits, id string) {
+			l.Skip.Senders = []standing.Scoped{{Routine: id, Value: "bob"}}
+		}, "skip_filter"},
+		"a repo off the allowlist": {func(l *standing.Limits, _ string) { l.RepoAllowlist = []string{"acme/web"} }, "repo_not_allowed"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			h, r, _ := eventRun(t, standing.Ceiling{Level: standing.A4}, nil)
+			l := standing.PresetLimits(standing.Home)
+			l.Ceilings.T1 = standing.Ceiling{Level: standing.A4}
+			l.Rates = standing.Rates{LaunchesPerHour: 100, LaunchesPerSenderPerDay: 100, Concurrent: 100}
+			c.limits(&l, r.ID)
+			h.withEvents(l)
+			h.withListing().add(ships.Ship{Session: "dory", Name: "dory", URL: heldPR})
+			h.sched.HandleEvent(evFrom("bob"))
+			recs := h.records(r)
+			if len(recs) != 1 || recs[0].Outcome != routines.Skipped || recs[0].Reason != c.reason || recs[0].HeldBy != "" {
+				t.Errorf("records = %+v, want one skipped %s record naming no holder", recs, c.reason)
+			}
+		})
+	}
+}
+
+func TestAPluginEventsLookoutKeyInTheGitHubNamespaceIsNoKey(t *testing.T) {
+	h, r, _ := eventRun(t, standing.Ceiling{Level: standing.A4}, nil)
+	h.sched.Enrich = func(routines.Event) routines.Enrichment {
+		return routines.Enrichment{Text: evText, DedupeKey: "gh:acme/api#7"}
+	}
+	ev := evFrom("Eng")
+	ev.Verified, ev.Ref = false, "https://tracker.example/t/42"
+	h.sched.HandleEvent(ev)
+	recs := h.records(r)
+	if len(recs) != 1 || recs[0].DedupeKey != "" {
+		t.Errorf("records = %+v, want one record with no dedupe key: gh: is for keys Admiral reads from a verified ref", recs)
 	}
 }

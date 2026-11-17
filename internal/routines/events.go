@@ -234,9 +234,6 @@ func Decide(in DecideInput) Decision {
 		if v := in.Limits.CheckRates(in.Counts); !v.OK {
 			d.Reasons = append(d.Reasons, v.Reason)
 		}
-		if _, held := standing.DedupeHeld(in.LiveDedupeKeys, in.DedupeKey); held {
-			d.Reasons = append(d.Reasons, ReasonDedupe)
-		}
 		if in.LookoutFailure != "" {
 			d.Reasons = append(d.Reasons, "lookout_"+in.LookoutFailure)
 		}
@@ -412,15 +409,22 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	if s.Holder != nil {
 		// a held PR or issue costs no Lookout call, and the skip names the ship instead of leaving a silent gap
 		if session, held := s.Holder(ev.Fleet, ev.Ref); held {
-			key := ""
-			if repo := RepoOfRef(ev.Ref); ev.Verified && repo != "" {
-				key = GitHubKey(ev.Ref)
+			key, repo := "", ""
+			if r := RepoOfRef(ev.Ref); ev.Verified && r != "" {
+				key, repo = GitHubKey(ev.Ref), r
 			}
 			for _, r := range matches {
-				s.record(ev.Fleet, Trigger{
-					Routine: r.ID, Outcome: Skipped, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: sender, Rule: r.ID,
-					Reason: ReasonRefHasShip, Action: describe(r), DedupeKey: key, HeldBy: session,
-				})
+				rec := Trigger{Routine: r.ID, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: sender, Rule: r.ID, Action: describe(r), DedupeKey: key}
+				// a muted sender or a repo outside the allowlist keeps its own reason, as in Decide
+				switch {
+				case f.Limits.Skipped(standing.SkipInput{Routine: r.ID, Sender: sender, DedupeKey: key}):
+					rec.Outcome, rec.Reason = Skipped, ReasonSkipFilter
+				case repo != "" && !f.Limits.RepoAllowed(repo): // an unverified event's repo is the Lookout's, which a held item never asks
+					rec.Outcome, rec.Reason = Skipped, ReasonRepo
+				default:
+					rec = heldRecord(rec, session)
+				}
+				s.record(ev.Fleet, rec)
 			}
 			return
 		}
@@ -450,6 +454,8 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	if repo := RepoOfRef(ev.Ref); ev.Verified && repo != "" { // only the built-in source's ref is Admiral's own reading, and it wins over the Lookout's
 		en.Repo = repo
 		en.DedupeKey = GitHubKey(ev.Ref) // a plugin's key is the Lookout's; for the built-in source Admiral reads the ref itself
+	} else if strings.HasPrefix(en.DedupeKey, "gh:") {
+		en.DedupeKey = "" // the gh: namespace is Admiral's reading of a verified ref, which the judge's reading of event text must not spell
 	}
 	holdOn, err := s.Store.HoldOn(ev.Fleet)
 	if err != nil {
