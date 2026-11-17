@@ -670,11 +670,11 @@ Body: `{"query": "<GitHub search>"}` or `{"view": "<view id>"}` (a built-in's or
 
 ### `GET /api/sources/<key>/page` and `GET /api/sources/<key>/rows/<id>`
 
-A module's page and one row's detail view; the plugin side is in [A module's page](plugins.md#a-modules-page). Both answer `404 {"error"}` for a source that does not exist, and `404 {"error":"The source has no page"}` for one whose plugin does not declare `page` (its `capabilities` lack it, and they are empty until the plugin has answered `initialize`).
+A module's page and one row's detail view; the plugin side is in [A module's page](plugins.md#a-modules-page). Both answer `404 {"error"}` for a source that does not exist, and `404 {"error":"The source has no page"}` for one whose plugin does not declare `page` once the plugin has answered `initialize` without it. Until that first `initialize` answer, the page answers `starting` as below and a row answers `404 {"error":"The page has no such row"}`.
 
 The page answers `200 {"state","groups","waiting"}`. `state` is `starting` with `groups: []` and `waiting: 0` until the plugin's first good `page.get`, and `ready` after. The last good page stays served through a restart and when a later answer is refused. A group is `{"id","title","rows"}`, a row is `{"id","title","subtitle","chips":[{"label","tone"}],"reason","action","actions"}` and an action is `{"id","label","confirm","summary","url"}`, with `action`, `actions` and `url` left out when there are none.
 
-A row answers `200 {"sections":[...]}`, from `row.get`, and passes each repeated `include` query parameter (`?include=closed&include=queued`) to it as a list. A plugin that is not running, or a `row.get` that errors, times out or is over its limit answers `502 {"error"}` with a one-line message.
+A row answers `200 {"sections":[...]}`, from `row.get`, and passes each repeated `include` query parameter (`?include=closed&include=queued`) to it as a list. An `{id}` that is not a row on the last good page answers `404` and the plugin is not asked. More than 10 `include` values, or one over 200 characters, answers `400`. A plugin that is not running, or a `row.get` that errors, times out or is over its limit answers `502 {"error"}` with a one-line message.
 
 ### `DELETE /api/sources/<key>` and `POST /api/sources/<key>/restart`
 

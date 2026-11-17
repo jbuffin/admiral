@@ -12,8 +12,6 @@ import (
 	"time"
 )
 
-// A module's page and row detail over the API, from the test plugin's page.json and rows/<id>.json.
-
 type pageJSON struct {
 	State  string `json:"state"`
 	Groups []struct {
@@ -107,6 +105,17 @@ func TestAPluginThatDeclaresAPageHasItsPageAndRowDetailServed(t *testing.T) {
 	if inc, _ := call.Params["include"].([]any); !reflect.DeepEqual(inc, []any{"closed", "queued"}) {
 		t.Errorf("row.get params = %v, want include [closed queued]", call.Params)
 	}
+
+	if code, _ := w.srcReq(http.MethodGet, "/m/rows/not-on-the-page", nil); code != http.StatusNotFound {
+		t.Errorf("GET row that is not on the page = %d, want 404", code)
+	}
+	tooMany := "/m/rows/t1?" + strings.Repeat("include=x&", 11)
+	if code, _ := w.srcReq(http.MethodGet, tooMany, nil); code != http.StatusBadRequest {
+		t.Errorf("GET row with 11 include values = %d, want 400", code)
+	}
+	if n := len(p.callsOf("row.get")); n != 1 {
+		t.Errorf("row.get calls = %d, want only the one for t1", n)
+	}
 }
 
 func TestASourceWithoutAPageIsUnchangedAndAnswersItsPageRoutesWith404(t *testing.T) {
@@ -139,7 +148,6 @@ func TestARestartThatBringsAnOverLimitPageKeepsServingTheLastGoodOne(t *testing.
 	p := w.newTP("m")
 	p.put("page.json", modulePage)
 	w.startSources(tpSource("m", p, map[string]any{"capabilities": []string{"page"}}))
-	w.waitSource("m", 10*time.Second, "state ok", isOK)
 	w.waitPageReady("m")
 
 	groups := make([]string, 101)
@@ -149,8 +157,8 @@ func TestARestartThatBringsAnOverLimitPageKeepsServingTheLastGoodOne(t *testing.
 	p.put("page.json", `{"groups":[`+strings.Join(groups, ",")+`],"waiting":9}`)
 	w.mustOK(w.srcReq(http.MethodPost, "/m/restart", nil))
 	p.waitStarts(10*time.Second, 2)
+	// State ok is set only after the restarted plugin's page.get was read, so the bad page has been refused by now.
 	w.waitSource("m", 10*time.Second, "state ok again", isOK)
-	waitUntil(t, "the restarted plugin's page.get", func() bool { return len(p.callsOf("page.get")) >= 2 })
 
 	got := w.getPage("m")
 	if got.State != "ready" || !reflect.DeepEqual(got.titles(), []string{"Needs review"}) || got.Waiting != 2 {

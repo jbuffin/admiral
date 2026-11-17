@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-// A module's page and row detail: what Admiral keeps of a plugin's page.get and row.get answers.
-
 func jsonOf(t *testing.T, v any) map[string]any {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -122,6 +120,8 @@ func TestAPageAtEveryLimitIsKept(t *testing.T) {
 		"100 groups":                 pageOf(groupsJSON(maxPageGroups), 0),
 		"10 chips":                   oneRow(`{"id":"r","title":"R","chips":` + chips + `}`),
 		"10 actions on a row's list": oneRow(`{"id":"r","title":"R","actions":` + acts + `}`),
+		"a main action and 9 more":   oneRow(`{"id":"r","title":"R","action":{"id":"m","label":"M"},"actions":` + repeat(`{"id":"a","label":"A"}`, maxActions-1) + `}`),
+		"an id at the id cap":        oneRow(`{"id":"` + strings.Repeat("i", maxIDRunes) + `","title":"R"}`),
 	} {
 		if _, err := parsePage(json.RawMessage(raw)); err != nil {
 			t.Errorf("%s: parsePage = %v, want the page kept", name, err)
@@ -138,6 +138,11 @@ func TestAPageOverAnyNumericLimitOrMalformedIsDroppedWhole(t *testing.T) {
 		"101 groups":            pageOf(groupsJSON(maxPageGroups+1), 0),
 		"11 chips":              oneRow(`{"id":"r","title":"R","chips":` + chips + `}`),
 		"11 actions":            oneRow(`{"id":"r","title":"R","actions":` + acts + `}`),
+		"a main action and 10":  oneRow(`{"id":"r","title":"R","action":{"id":"m","label":"M"},"actions":` + repeat(`{"id":"a","label":"A"}`, maxActions) + `}`),
+		"an id over the cap":    oneRow(`{"id":"` + strings.Repeat("i", maxIDRunes+1) + `","title":"R"}`),
+		"a control id":          oneRow(`{"id":"a\nb","title":"R"}`),
+		"a repeated group id":   pageOf(`[{"id":"g","title":"A","rows":[]},{"id":"g","title":"B","rows":[]}]`, 0),
+		"a repeated row id":     pageOf(`[{"id":"a","title":"A","rows":[{"id":"r"}]},{"id":"b","title":"B","rows":[{"id":"r"}]}]`, 0),
 		"a row without an id":   oneRow(`{"title":"R"}`),
 		"a group without an id": pageOf(`[{"title":"G","rows":[]}]`, 0),
 		"groups not a list":     `{"groups":{},"waiting":0}`,
@@ -146,6 +151,13 @@ func TestAPageOverAnyNumericLimitOrMalformedIsDroppedWhole(t *testing.T) {
 		if p, err := parsePage(json.RawMessage(raw)); err == nil {
 			t.Errorf("%s: parsePage = %s, want an error that drops the whole answer", name, dump(p))
 		}
+	}
+}
+
+func TestATitleLosesInvisibleAndBidiCharacters(t *testing.T) {
+	row := firstRow(t, oneRow(`{"id":"r","title":"pay\u202eevil\u200b\u0085ok"}`))
+	if row["title"] != "payevilok" {
+		t.Errorf("title = %q, want the invisible and bidi characters stripped", row["title"])
 	}
 }
 
@@ -234,6 +246,26 @@ func TestARowDetailKeepsItsSectionsAndDropsOnlyTheLinksWithBadURLs(t *testing.T)
 	f := list(t, secs[2], "fields")[0].(map[string]any)
 	if f["label"] != "Owner" || f["value"] != "amy" {
 		t.Errorf("field = %s, want Owner = amy", dump(f))
+	}
+}
+
+func TestARowDetailRefusesARepeatedStepIDAndDropsAStepOrFieldWithBadText(t *testing.T) {
+	step := func(id string) string { return `{"id":"` + id + `","title":"T"}` }
+	twoSections := `{"sections":[{"kind":"steps","title":"A","steps":[` + step("s") + `]},{"kind":"steps","title":"B","steps":[` + step("s") + `]}]}`
+	if d, err := parseRowDetail(json.RawMessage(twoSections)); err == nil {
+		t.Errorf("a step id repeated across sections: parseRowDetail = %s, want it refused", dump(d))
+	}
+	d, err := parseRowDetail(json.RawMessage(`{"sections":[{"kind":"steps","title":"A","steps":[` + step(`a\nb`) + `,` + step("ok") + `]},
+		{"kind":"fields","title":"F","fields":[{"label":"bad","value":"x\u001b[31m"},{"label":"multi","value":"a\nb"}]}]}`))
+	if err != nil {
+		t.Fatalf("parseRowDetail: %v", err)
+	}
+	secs := list(t, jsonOf(t, d), "sections")
+	if steps := list(t, secs[0], "steps"); len(steps) != 1 || steps[0].(map[string]any)["id"] != "ok" {
+		t.Errorf("steps = %s, want the step with a control id dropped", dump(steps))
+	}
+	if fields := list(t, secs[1], "fields"); len(fields) != 1 || fields[0].(map[string]any)["label"] != "multi" {
+		t.Errorf("fields = %s, want the field with an escape character dropped and the multi-line one kept", dump(fields))
 	}
 }
 
@@ -394,8 +426,7 @@ func TestPageGetIsCalledWithNoParamsWithinThePluginCallLimit(t *testing.T) {
 func TestAnAnswerThatIsOverALimitOrFailsLeavesTheLastGoodPageServed(t *testing.T) {
 	good := pageOf(`[{"id":"a","title":"Alpha","rows":[{"id":"r1","title":"One"}]}]`, 2)
 	for name, bad := range map[string]*pageConn{
-		"over 5000 rows":  {page: json.RawMessage(pageOf(`[{"id":"x","title":"Over","rows":`+rowsJSON(maxPageRows+1)+`}]`, 9))},
-		"over 100 groups": {page: json.RawMessage(pageOf(groupsJSON(maxPageGroups+1), 9))},
+		"over a limit":    {page: json.RawMessage(pageOf(`[{"id":"x","title":"Over","rows":`+rowsJSON(maxPageRows+1)+`}]`, 9))},
 		"malformed":       {page: json.RawMessage(`{"groups":"nope"}`)},
 		"an rpc error":    {pageErr: &rpcError{Code: -32000, Message: "upstream down"}},
 		"a timeout":       {pageErr: errTimeout},
@@ -429,18 +460,18 @@ func TestANewGoodPageReplacesTheOldOne(t *testing.T) {
 	}
 }
 
-func TestRowGetPassesTheIDAndIncludeAndAnOversizeAnswerIsRefusedAloneWithoutTouchingThePage(t *testing.T) {
+func TestRowGetPassesTheIDAndIncludeForARowOnThePageAndAnUnknownRowNeverReachesThePlugin(t *testing.T) {
 	r := pageRunner()
 	c := &pageConn{
-		page: json.RawMessage(pageOf(`[{"id":"a","title":"Alpha","rows":[{"id":"t1","title":"One"}]}]`, 1)),
-		rows: map[string]json.RawMessage{
-			"t1": json.RawMessage(detailJSON),
-			"big": json.RawMessage(`{"sections":[{"kind":"fields","title":"F","fields":[{"label":"big","value":"` +
-				strings.Repeat("x", maxRowDetail) + `"}]}]}`),
-		},
+		page: json.RawMessage(pageOf(`[{"id":"a","title":"Alpha","rows":[{"id":"t1","title":"One"},{"id":"t2","title":"Two"}]}]`, 1)),
+		rows: map[string]json.RawMessage{"t1": json.RawMessage(detailJSON)},
+	}
+	r.p, r.ready = c, true
+	if _, err := r.rowDetail(t.Context(), "t1", nil); !errors.Is(err, errNoRow) {
+		t.Fatalf("rowDetail before any page = %v, want errNoRow", err)
 	}
 	r.pullPage(t.Context(), c)
-	r.p, r.ready = c, true
+	calls := len(c.calls)
 
 	d, err := r.rowDetail(t.Context(), "t1", []string{"closed", "queued"})
 	if err != nil || len(list(t, jsonOf(t, d), "sections")) != 3 {
@@ -450,13 +481,30 @@ func TestRowGetPassesTheIDAndIncludeAndAnOversizeAnswerIsRefusedAloneWithoutTouc
 	if last.method != "row.get" || last.params != `{"id":"t1","include":["closed","queued"]}` || last.timeout != callTimeout {
 		t.Errorf("call = %+v, want row.get with the id and include and the call limit", last)
 	}
-	if _, err := r.rowDetail(t.Context(), "big", nil); err == nil {
-		t.Error("rowDetail(big) over 1 MiB = nil error, want it refused")
+	if _, err := r.rowDetail(t.Context(), "t2", nil); err == nil {
+		t.Error("rowDetail(t2) the plugin errors on = nil error, want the error")
 	}
-	if _, err := r.rowDetail(t.Context(), "gone", nil); err == nil {
-		t.Error("rowDetail(gone) the plugin errors on = nil error, want the error")
+	calls = len(c.calls)
+	for _, id := range []string{"../../secret", "other", ""} {
+		if _, err := r.rowDetail(t.Context(), id, nil); !errors.Is(err, errNoRow) {
+			t.Errorf("rowDetail(%q) = %v, want errNoRow", id, err)
+		}
+	}
+	if len(c.calls) != calls {
+		t.Errorf("calls after unknown ids = %+v, want no row.get", c.calls[calls:])
 	}
 	if state, titles, _ := pageTitles(t, r); state != "ready" || len(titles) != 1 {
 		t.Errorf("after the refused row.get: state %q groups %v, want the page untouched", state, titles)
+	}
+}
+
+func TestASourceKnownToHaveNoPageHasNeitherPageNorRowDetail(t *testing.T) {
+	r := pageRunner()
+	r.noPage = true
+	if _, ok := r.Page(); ok {
+		t.Error("Page() = true, want false once initialize has been read without page")
+	}
+	if _, err := r.rowDetail(t.Context(), "t1", nil); !errors.Is(err, errNoPage) {
+		t.Errorf("rowDetail = %v, want errNoPage", err)
 	}
 }

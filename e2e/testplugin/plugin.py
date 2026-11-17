@@ -266,7 +266,8 @@ def handle(msg):
     elif method == "page.get":
         result = read_json("page.json", {"groups": [], "waiting": 0})
     elif method == "row.get":
-        detail = read_json(os.path.join("rows", str(params.get("id")) + ".json"), None)
+        row_id = str(params.get("id"))
+        detail = None if "/" in row_id or ".." in row_id else read_json(os.path.join("rows", row_id + ".json"), None)
         if detail is None:
             emit({"jsonrpc": "2.0", "id": msg.get("id"), "error": {"code": -32000, "message": "no such row"}})
             return

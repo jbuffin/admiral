@@ -65,7 +65,7 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"capabilities":["add","edit","remove"],"settingsSchema":{"type":"object","properties":{"project":{"type":"string"}}}}}
 ```
 
-`settings` is the object from `config.json` (`{}` when there is none). Answer with `protocolVersion` 1. Any other number puts the source in `error`, and Admiral does not start it again until the engineer saves its settings or presses Restart. `capabilities` lists what the source can do, from `add`, `edit`, `remove`, `refresh` and `page`; leave out what you don't support and Admiral refuses those calls itself with a 409. `settingsSchema` is a JSON Schema for `settings`, which Admiral renders as a form. `page` declares a page (see [A module's page](#a-modules-page)); `messageKinds` is an optional list of the messages the module may later ask Admiral to send AdmiralBot.
+`settings` is the object from `config.json` (`{}` when there is none). Answer with `protocolVersion` 1. Any other number puts the source in `error`, and Admiral does not start it again until the engineer saves its settings or presses Restart. `capabilities` lists what the source can do, from `add`, `edit`, `remove`, `refresh` and `page`; leave out what you don't support and Admiral refuses those calls itself: with a 409 for `add`, `edit`, `remove` and `refresh`, and with a 404 for the page routes. `settingsSchema` is a JSON Schema for `settings`, which Admiral renders as a form. `page` declares a page (see [A module's page](#a-modules-page)); `messageKinds` is an optional list of the messages the module may later ask Admiral to send AdmiralBot.
 
 **Settings and secrets.** Mark a secret with `"format": "password"` (or `"writeOnly": true`). Admiral never sends a stored value back to the page unless the schema declares it as a plain string, number or integer (or an `enum` or `const` of scalars) reached through `properties` and `items`, in nodes that use only common keywords (`type`, `properties`, `items`, `required`, `title`, `description`, `format`, `enum`, `const`, `default`, `examples`, the length and range limits, `$defs`, `definitions`, `additionalProperties`, `readOnly`, `deprecated`). Everything else comes back as `__admiral_unchanged__`, and saving that text keeps the stored value. Admiral restores a masked value inside a list by its position, so removing a row above a masked value restores the wrong stored value into it.
 
@@ -189,7 +189,7 @@ A plugin that lists `page` in its `initialize` capabilities is a **module**: it 
 
 A row is `{id, title, subtitle, chips, reason, action, actions}`. `id` is required and the other fields are optional. `reason` says why the row is in its group, and `action` is the row's one main action. `actions` is an optional list of further actions. A chip is `{label, tone}`, and `tone` is one of `neutral`, `good`, `warn` or `muted`; any other value reads as `neutral`. An action is `{id, label, confirm, summary, url}`. `confirm` is `click`, `yesno` or `form` (anything else reads as `yesno`), and `url` is optional. Admiral only carries actions as data for now. `waiting` is the count of rows waiting on the engineer.
 
-**`row.get`**: sent when the engineer opens a row. `include` is optional and lists parts you leave out by default, such as closed or queued steps; it is left out of the params when the engineer asked for none.
+**`row.get`**: sent when the engineer opens a row of the last good page. The `id` and the `include` values come from a client through Admiral, which checks only their length and that the id is on the page, so treat both as untrusted (never build a file path from them without checking). `include` is optional and lists parts you leave out by default, such as closed or queued steps; it is left out of the params when the engineer asked for none.
 
 ```json
 {"jsonrpc":"2.0","id":6,"method":"row.get","params":{"id":"T-1","include":["closed"]}}
@@ -200,13 +200,23 @@ A detail view is a list of sections. A section has a `kind` and a `title`: `link
 
 **Message kinds.** `initialize` may also answer `messageKinds`, a list of `{kind, label, job}`, each one a string. Admiral keeps the ones that have all three, each cut to one line of at most 200 characters, and drops a bad declaration on its own.
 
-**Page limits.** Admiral keeps the last good page, and an answer that breaks a numeric limit, is malformed or fails is dropped whole and leaves that page served. A `page.get` or `row.get` that gets no answer within 10 seconds fails like any other call.
+**Page limits.** Admiral keeps the last good page. A `page.get` or `row.get` that gets no answer within 10 seconds fails like any other call.
 
-- At most **5,000 rows** and **100 groups**; a group or row needs a non-empty `id`.
-- At most **10 chips** per row or step and **10 actions** per row or step.
-- A detail view over **1 MiB**.
-- Titles, subtitles, reasons and labels are cut to one line of at most 200 characters.
-- A link or an action whose `url` is not `http:` or `https:` is dropped by itself, and the row and the rest of the answer stay.
+An answer is dropped whole, and the last good page stays served, when:
+
+- there are more than **5,000 rows** or **100 groups**, or `groups` or `rows` is not a list;
+- a group or row has no `id`, or an `id` that is not a string, holds a control character or is over **200 characters**, or a group id or a row id (across the whole page) is used twice;
+- a row or step has more than **10 chips**, or more than **10 actions** (a row's main `action` counts as one);
+- a detail view is over **1 MiB**, or uses a step `id` twice;
+- the answer is not an object.
+
+A part that is bad is dropped by itself, and the rest of the answer stays:
+
+- a chip with no label, an action with no `id` or `label`, a link with no label, a field with no label, a step with no usable `id`, and a section of an unknown `kind`;
+- a link or an action whose `url` is not `http:` or `https:`;
+- a field whose `value` holds a control character other than a line break or tab.
+
+Two values are corrected: a negative or non-number `waiting` reads 0, and an unknown chip `tone` reads `neutral`. Titles, subtitles, reasons and labels are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
 
 ## Limits
 

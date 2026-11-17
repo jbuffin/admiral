@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
+	"unicode"
 )
 
 const (
@@ -15,6 +17,13 @@ const (
 	maxActions    = 10
 	maxRowDetail  = 1 << 20 // bytes of one row.get answer
 	maxTitleRunes = 200
+	maxIDRunes    = 200 // every id, and every include value on the row route
+	maxInclude    = 10
+)
+
+var (
+	errNoPage = errors.New("The source has no page")
+	errNoRow  = errors.New("The page has no such row")
 )
 
 const (
@@ -29,7 +38,6 @@ type Chip struct {
 	Tone  string `json:"tone"`
 }
 
-// Action is carried as data; running it is not built yet.
 type Action struct {
 	ID      string `json:"id"`
 	Label   string `json:"label"`
@@ -102,9 +110,25 @@ type MessageKind struct {
 	Job   string `json:"job"`
 }
 
-func line(raw json.RawMessage) string {
+// titleLine is raw cut to its first line, without invisible characters, and capped.
+func titleLine(raw json.RawMessage) string {
 	s, _ := rawString(raw)
-	return truncate(oneLine(s), maxTitleRunes)
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, oneLine(s))
+	return truncate(s, maxTitleRunes)
+}
+
+// parseID is raw as an id: a non-empty string with no control character, within the id cap.
+func parseID(raw json.RawMessage) (string, bool) {
+	id, ok := rawString(raw)
+	if !ok || id == "" || hasControl(id) || len([]rune(id)) > maxIDRunes {
+		return "", false
+	}
+	return id, true
 }
 
 func parseChips(raw []json.RawMessage) ([]Chip, error) {
@@ -120,7 +144,7 @@ func parseChips(raw []json.RawMessage) ([]Chip, error) {
 		if json.Unmarshal(c, &item) != nil {
 			continue
 		}
-		label := line(item.Label)
+		label := titleLine(item.Label)
 		if label == "" {
 			continue
 		}
@@ -145,7 +169,8 @@ func parseAction(raw json.RawMessage) *Action {
 	if json.Unmarshal(raw, &item) != nil {
 		return nil
 	}
-	a := Action{ID: line(item.ID), Label: line(item.Label), Confirm: line(item.Confirm), Summary: cleanMsg(rawStr(item.Summary))}
+	summary, _ := rawString(item.Summary)
+	a := Action{ID: titleLine(item.ID), Label: titleLine(item.Label), Confirm: titleLine(item.Confirm), Summary: cleanMsg(summary)}
 	if a.ID == "" || a.Label == "" {
 		return nil
 	}
@@ -153,16 +178,12 @@ func parseAction(raw json.RawMessage) *Action {
 		a.Confirm = "yesno" // an unknown kind asks first rather than running at once
 	}
 	if len(item.URL) > 0 && string(item.URL) != "null" {
-		if a.URL = safeURL(rawStr(item.URL)); a.URL == "" {
+		u, _ := rawString(item.URL)
+		if a.URL = safeURL(u); a.URL == "" {
 			return nil
 		}
 	}
 	return &a
-}
-
-func rawStr(raw json.RawMessage) string {
-	s, _ := rawString(raw)
-	return s
 }
 
 func parseActions(raw []json.RawMessage) ([]Action, error) {
@@ -191,16 +212,20 @@ func parseRow(raw json.RawMessage) (Row, error) {
 	if err := decodeInto(raw, &item); err != nil {
 		return Row{}, err
 	}
-	id, _ := rawString(item.ID)
-	if id == "" || hasControl(id) {
-		return Row{}, errors.New("a row has no id")
+	id, ok := parseID(item.ID)
+	if !ok {
+		return Row{}, errors.New("a row has no usable id")
 	}
-	row := Row{ID: id, Title: line(item.Title), Subtitle: line(item.Subtitle), Reason: line(item.Reason)}
+	hasMain := len(item.Action) > 0 && string(item.Action) != "null"
+	if n := len(item.Actions) + btoi(hasMain); n > maxActions {
+		return Row{}, fmt.Errorf("a row has %d actions, over the limit of %d", n, maxActions)
+	}
+	row := Row{ID: id, Title: titleLine(item.Title), Subtitle: titleLine(item.Subtitle), Reason: titleLine(item.Reason)}
 	var err error
 	if row.Chips, err = parseChips(item.Chips); err != nil {
 		return Row{}, err
 	}
-	if len(item.Action) > 0 && string(item.Action) != "null" {
+	if hasMain {
 		row.Action = parseAction(item.Action)
 	}
 	if row.Actions, err = parseActions(item.Actions); err != nil {
@@ -222,6 +247,7 @@ func parsePage(raw json.RawMessage) (Page, error) {
 	}
 	page := Page{Groups: []Group{}, Waiting: positiveInt(res.Waiting)}
 	total := 0
+	groupIDs, rowIDs := map[string]bool{}, map[string]bool{}
 	for _, g := range res.Groups {
 		var item struct {
 			ID    json.RawMessage   `json:"id"`
@@ -231,19 +257,27 @@ func parsePage(raw json.RawMessage) (Page, error) {
 		if err := decodeInto(g, &item); err != nil {
 			return Page{}, fmt.Errorf("page.get: %w", err)
 		}
-		id, _ := rawString(item.ID)
-		if id == "" || hasControl(id) {
-			return Page{}, errors.New("page.get: a group has no id")
+		id, ok := parseID(item.ID)
+		if !ok {
+			return Page{}, errors.New("page.get: a group has no usable id")
 		}
+		if groupIDs[id] {
+			return Page{}, fmt.Errorf("page.get: group id %q is used twice", id)
+		}
+		groupIDs[id] = true
 		if total += len(item.Rows); total > maxPageRows {
 			return Page{}, fmt.Errorf("page.get: over %d rows", maxPageRows)
 		}
-		group := Group{ID: id, Title: line(item.Title), Rows: []Row{}}
+		group := Group{ID: id, Title: titleLine(item.Title), Rows: []Row{}}
 		for _, r := range item.Rows {
 			row, err := parseRow(r)
 			if err != nil {
 				return Page{}, fmt.Errorf("page.get: %w", err)
 			}
+			if rowIDs[row.ID] {
+				return Page{}, fmt.Errorf("page.get: row id %q is used twice", row.ID)
+			}
+			rowIDs[row.ID] = true
 			group.Rows = append(group.Rows, row)
 		}
 		page.Groups = append(page.Groups, group)
@@ -251,7 +285,7 @@ func parsePage(raw json.RawMessage) (Page, error) {
 	return page, nil
 }
 
-func parseSection(raw json.RawMessage) (*Section, error) {
+func parseSection(raw json.RawMessage, stepIDs map[string]bool) (*Section, error) {
 	var item struct {
 		Kind   json.RawMessage   `json:"kind"`
 		Title  json.RawMessage   `json:"title"`
@@ -262,7 +296,8 @@ func parseSection(raw json.RawMessage) (*Section, error) {
 	if err := decodeInto(raw, &item); err != nil {
 		return nil, err
 	}
-	sec := Section{Kind: rawStr(item.Kind), Title: line(item.Title)}
+	kind, _ := rawString(item.Kind)
+	sec := Section{Kind: kind, Title: titleLine(item.Title)}
 	switch sec.Kind {
 	case "links":
 		for _, l := range item.Links {
@@ -270,8 +305,9 @@ func parseSection(raw json.RawMessage) (*Section, error) {
 			if json.Unmarshal(l, &it) != nil {
 				continue
 			}
-			if u := safeURL(rawStr(it.URL)); u != "" && line(it.Label) != "" {
-				sec.Links = append(sec.Links, Link{Label: line(it.Label), URL: u})
+			raw, _ := rawString(it.URL)
+			if u := safeURL(raw); u != "" && titleLine(it.Label) != "" {
+				sec.Links = append(sec.Links, Link{Label: titleLine(it.Label), URL: u})
 			}
 		}
 	case "steps":
@@ -285,10 +321,15 @@ func parseSection(raw json.RawMessage) (*Section, error) {
 			if json.Unmarshal(s, &it) != nil {
 				continue
 			}
-			step := Step{ID: rawStr(it.ID), Title: line(it.Title)}
-			if step.ID == "" {
+			id, ok := parseID(it.ID)
+			if !ok {
 				continue
 			}
+			if stepIDs[id] {
+				return nil, fmt.Errorf("step id %q is used twice", id)
+			}
+			stepIDs[id] = true
+			step := Step{ID: id, Title: titleLine(it.Title)}
 			var err error
 			if step.Chips, err = parseChips(it.Chips); err != nil {
 				return nil, err
@@ -304,8 +345,9 @@ func parseSection(raw json.RawMessage) (*Section, error) {
 			if json.Unmarshal(f, &it) != nil {
 				continue
 			}
-			if label := line(it.Label); label != "" {
-				sec.Fields = append(sec.Fields, Field{Label: label, Value: rawStr(it.Value)})
+			value, _ := rawString(it.Value)
+			if label := titleLine(it.Label); label != "" && !hasTextControl(value) {
+				sec.Fields = append(sec.Fields, Field{Label: label, Value: value})
 			}
 		}
 	default:
@@ -325,8 +367,9 @@ func parseRowDetail(raw json.RawMessage) (RowDetail, error) {
 		return RowDetail{}, fmt.Errorf("row.get: %w", err)
 	}
 	d := RowDetail{Sections: []Section{}}
+	stepIDs := map[string]bool{}
 	for _, s := range res.Sections {
-		sec, err := parseSection(s)
+		sec, err := parseSection(s, stepIDs)
 		if err != nil {
 			return RowDetail{}, fmt.Errorf("row.get: %w", err)
 		}
@@ -349,7 +392,7 @@ func parseMessageKinds(raw json.RawMessage) []MessageKind {
 		if json.Unmarshal(it, &d) != nil {
 			continue
 		}
-		k := MessageKind{Kind: line(d.Kind), Label: line(d.Label), Job: line(d.Job)}
+		k := MessageKind{Kind: titleLine(d.Kind), Label: titleLine(d.Label), Job: titleLine(d.Job)}
 		if k.Kind == "" || k.Label == "" || k.Job == "" || slices.ContainsFunc(kinds, func(o MessageKind) bool { return o.Kind == k.Kind }) {
 			continue
 		}
@@ -376,24 +419,33 @@ func (r *runner) pullPage(ctx context.Context, p conn) {
 	r.notify()
 }
 
-func (r *runner) hasPageCap() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return slices.Contains(r.caps, "page")
-}
-
-// Page is the page as it stands; false when the source declares none.
+// Page is the page as it stands; false once the source is known to have none.
 func (r *runner) Page() (PageView, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	v := PageView{State: PageStarting, Groups: []Group{}}
-	if r.hasPage {
-		v = PageView{State: PageReady, Groups: r.page.Groups, Waiting: r.page.Waiting}
+	if r.noPage {
+		return PageView{}, false
 	}
-	return v, true
+	if !r.hasPage {
+		return PageView{State: PageStarting, Groups: []Group{}}, true
+	}
+	return PageView{State: PageReady, Groups: r.page.Groups, Waiting: r.page.Waiting}, true
 }
 
+// rowDetail asks the plugin for a row of the last good page; an id from anywhere else never reaches it.
 func (r *runner) rowDetail(ctx context.Context, id string, include []string) (RowDetail, error) {
+	r.mu.Lock()
+	noPage, known := r.noPage, false
+	for _, g := range r.page.Groups {
+		known = known || slices.ContainsFunc(g.Rows, func(row Row) bool { return row.ID == id })
+	}
+	r.mu.Unlock()
+	switch {
+	case noPage:
+		return RowDetail{}, errNoPage
+	case !known:
+		return RowDetail{}, errNoRow
+	}
 	p, ok := r.live()
 	if !ok {
 		return RowDetail{}, errors.New("the source is not running")
@@ -407,4 +459,11 @@ func (r *runner) rowDetail(ctx context.Context, id string, include []string) (Ro
 		return RowDetail{}, err
 	}
 	return parseRowDetail(res)
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

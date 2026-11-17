@@ -62,9 +62,10 @@ type runner struct {
 	errMsg   string
 	auth     *Auth
 	caps     []string
-	kinds    []MessageKind // the message kinds a module declared in initialize
-	page     Page          // the last good page.get; it outlives the plugin's restarts
+	kinds    []MessageKind
+	page     Page // the last good page.get; it outlives the plugin's restarts
 	hasPage  bool
+	noPage   bool // an initialize answer has been read and it did not list page
 	schema   json.RawMessage
 	panels   []Panel
 	warnings []string   // the router's, for a built-in GitHub source
@@ -231,6 +232,9 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 	if err != nil {
 		return fatal(err)
 	}
+	r.mu.Lock()
+	r.noPage = !slices.Contains(caps, "page")
+	r.mu.Unlock()
 	res, err = p.call(ctx, "panels.list", map[string]any{}, callTimeout)
 	if err != nil {
 		return fatal(fmt.Errorf("panels.list: %w", err))

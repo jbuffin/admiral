@@ -933,38 +933,40 @@ func (s *Service) serveSchema(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(append(slices.Clone(schema), '\n'))
 }
 
-// pageRunner is the runner of a source that declares a page; it answers the 404 itself otherwise.
-func (s *Service) pageRunner(w http.ResponseWriter, key string) *runner {
-	rn := s.Sup.runner(key)
-	if rn == nil {
-		writeError(w, http.StatusNotFound, "source "+key+" not found")
-		return nil
-	}
-	if !rn.hasPageCap() {
-		writeError(w, http.StatusNotFound, "The source has no page")
-		return nil
-	}
-	return rn
-}
-
 func (s *Service) servePage(w http.ResponseWriter, r *http.Request) {
-	if rn := s.pageRunner(w, r.PathValue("key")); rn != nil {
-		v, _ := rn.Page()
-		writeJSON(w, http.StatusOK, v)
+	rn := s.Sup.runner(r.PathValue("key"))
+	if rn == nil {
+		writeError(w, http.StatusNotFound, "source "+r.PathValue("key")+" not found")
+		return
 	}
+	v, ok := rn.Page()
+	if !ok {
+		writeError(w, http.StatusNotFound, errNoPage.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (s *Service) serveRow(w http.ResponseWriter, r *http.Request) {
-	rn := s.pageRunner(w, r.PathValue("key"))
+	rn := s.Sup.runner(r.PathValue("key"))
 	if rn == nil {
+		writeError(w, http.StatusNotFound, "source "+r.PathValue("key")+" not found")
 		return
 	}
-	d, err := rn.rowDetail(r.Context(), r.PathValue("id"), r.URL.Query()["include"])
-	if err != nil {
+	include := r.URL.Query()["include"]
+	if len(include) > maxInclude || slices.ContainsFunc(include, func(v string) bool { return len([]rune(v)) > maxIDRunes }) {
+		writeError(w, http.StatusBadRequest, "include takes at most "+strconv.Itoa(maxInclude)+" values of "+strconv.Itoa(maxIDRunes)+" characters each")
+		return
+	}
+	d, err := rn.rowDetail(r.Context(), r.PathValue("id"), include)
+	switch {
+	case errors.Is(err, errNoPage), errors.Is(err, errNoRow):
+		writeError(w, http.StatusNotFound, err.Error())
+	case err != nil:
 		writeError(w, http.StatusBadGateway, cleanMsg(err.Error()))
-		return
+	default:
+		writeJSON(w, http.StatusOK, d)
 	}
-	writeJSON(w, http.StatusOK, d)
 }
 
 func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runner, conn, bool) {
