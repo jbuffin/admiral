@@ -10,3 +10,5 @@ require (
 require golang.org/x/sys v0.47.0
 
 require mvdan.cc/sh/v3 v3.14.1
+
+require github.com/pelletier/go-toml/v2 v2.4.3

@@ -52,3 +52,56 @@ func TestLaunchRefusesADirectoryNotInTheFleetsList(t *testing.T) {
 		t.Errorf("a Commodore launch with none installed = %v, want \"Commodore not found\"", err)
 	}
 }
+
+func TestAFleetWithCommodoreAsAHarnessPluginLaunchesItByTheHarnessMark(t *testing.T) {
+	put := func(path, body string) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plugin := func(root string) {
+		put(filepath.Join(root, ".claude-plugin", "plugin.json"), `{"name":"jasonbuffin","version":"3.5.0","skills":["./skills/engineering/"]}`)
+		put(filepath.Join(root, "skills", "engineering", "commodore", "SKILL.md"), "---\nname: commodore\n---\n")
+	}
+	for _, c := range []struct {
+		harness, idVar, mark string
+		install              func(id string)
+	}{
+		{"codex", "CODEX_HOME", "$", func(id string) {
+			plugin(filepath.Join(id, "plugins", "cache", "jbuffinskills", "jasonbuffin", "3.5.0"))
+			put(filepath.Join(id, "config.toml"), "[plugins.\"jasonbuffin@jbuffinskills\"]\nenabled = true\n")
+		}},
+		{"copilot", "COPILOT_HOME", "/", func(id string) {
+			cache := filepath.Join(id, "installed-plugins", "jbuffinskills", "jasonbuffin")
+			plugin(cache)
+			put(filepath.Join(id, "config.json"), "// User settings belong in settings.json.\n// This file is managed automatically.\n"+
+				`{"installedPlugins":[{"name":"jasonbuffin","marketplace":"jbuffinskills","version":"3.5.0","cache_path":"`+cache+`","enabled":true}]}`)
+		}},
+	} {
+		t.Run(c.harness, func(t *testing.T) {
+			root, _ := filepath.EvalSymlinks(t.TempDir())
+			work, id := filepath.Join(root, "work"), filepath.Join(root, "id")
+			repo := filepath.Join(work, "a")
+			if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			c.install(id)
+			cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Name: "Work", SearchRoots: []string{work},
+				Harnesses: []config.Harness{{Name: c.harness, Executable: "/bin/sh", Env: map[string]string{c.idVar: id, "HOME": filepath.Join(root, "home")}}}}}}
+
+			got, err := CheckSpec(cfg, t.TempDir(), Request{Fleet: "work", Harness: c.harness, Dir: repo, Skill: Skill{Kind: "commodore"}})
+			if err != nil {
+				t.Fatalf("CheckSpec = %v, want Commodore found in the plugin", err)
+			}
+			if got.Skill != "jasonbuffin:commodore" {
+				t.Fatalf("Checked.Skill = %q, want jasonbuffin:commodore", got.Skill)
+			}
+			if p, want := promptFor(c.harness, got.Skill, "commodore", "", "go"), c.mark+"jasonbuffin:commodore go"; p != want {
+				t.Errorf("prompt = %q, want %q", p, want)
+			}
+		})
+	}
+}
