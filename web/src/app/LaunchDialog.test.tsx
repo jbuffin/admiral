@@ -14,21 +14,26 @@ const entry = { path: proj, name: 'proj', kind: 'checkout', ships_here: 0 };
 const dirsOf = (over: object = {}) => json({ entries: [entry], selected: proj, clone: null, ...over });
 const installed = (name: string, description = '') => ({ name, description, favorite: false });
 const answers: Record<string, SkillsAnswer> = {
-  claude: { mark: '/', commodore: { found: false, name: 'commodore' }, skills: [installed('review', 'Review the diff before it merges.'), installed('tdd', 'Test first, then the code.'), installed('fable-claude'), installed('fable-both')] },
-  codex: { mark: '$', commodore: { found: false, name: 'commodore' }, skills: [installed('review'), installed('tdd'), installed('fable-codex'), installed('fable-both')] },
+  claude: { mark: '/', commodore: { found: false, name: 'commodore', state: 'missing' }, skills: [installed('review', 'Review the diff before it merges.'), installed('tdd', 'Test first, then the code.'), installed('fable-claude'), installed('fable-both')] },
+  codex: { mark: '$', commodore: { found: false, name: 'commodore', state: 'missing' }, skills: [installed('review'), installed('tdd'), installed('fable-codex'), installed('fable-both')] },
 };
 const noCrew: CrewAnswer = { members: [], warnings: [], errors: [] };
+
+// The body of every install or update posted since the last serve().
+let commodorePosts: Record<string, unknown>[] = [];
 
 interface Routes {
   dirs?: () => Response;
   skills?: (harness: string) => Response | Promise<Response>;
   crew?: () => Response;
   ships?: () => Response;
+  commodore?: (body: Record<string, unknown>) => Response | Promise<Response>;
 }
 
 // The server's answers, stubbed; the returned array holds the body of every launch posted.
 function serve(routes: Routes = {}) {
   const posts: Record<string, unknown>[] = [];
+  commodorePosts = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (path: string, init: RequestInit = {}) => {
@@ -37,6 +42,11 @@ function serve(routes: Routes = {}) {
       if (route === '/launch-orders/dirs') return (routes.dirs ?? dirsOf)();
       if (route === '/launch-orders/skills') return (routes.skills ?? ((h) => json(answers[h])))(url.searchParams.get('harness')!);
       if (route === '/launch-orders/crew') return (routes.crew ?? (() => json(noCrew)))();
+      if (route === '/launch-orders/commodore' && init.method === 'POST') {
+        const body = JSON.parse(init.body as string);
+        commodorePosts.push(body);
+        return (routes.commodore ?? (() => json({ state: 'ok' })))(body);
+      }
       if (route === '/ships' && init.method === 'POST') {
         posts.push(JSON.parse(init.body as string));
         return (routes.ships ?? (() => json({ ship: { session: 'zulu-1' } }, 201)))();
@@ -287,7 +297,7 @@ test('the autopilot box is sent with the launch', async () => {
   expect(posts[0]).toMatchObject({ harness: 'claude', autopilot: true });
 });
 
-const commodore: SkillsAnswer = { ...answers.claude!, commodore: { found: true, name: 'commodore' } };
+const commodore: SkillsAnswer = { ...answers.claude!, commodore: { found: true, name: 'commodore', state: 'ok' } };
 const scout = { name: 'scout', role: 'scribe', layer: 'built-in', harness: null, 'pick-me-when': 'Pick scout.' };
 
 test('Commodore is the default when found, listed first, then the favorites, then Just launch', async () => {
@@ -385,4 +395,300 @@ test('a folder already where the clone would land is warned about and not presel
   expect(alert.textContent).toContain('gadget');
   expect(posts[0]).toMatchObject({ clone: true, clone_repo: 'github.com/acme/gadget' });
   expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
+// Install and Update for Commodore: the answer's `state` decides what the line beside the skill box offers.
+const withState = (harness: string, commodoreAnswer: SkillsAnswer['commodore']): SkillsAnswer => ({ ...answers[harness]!, commodore: commodoreAnswer });
+const missing = withState('claude', { found: false, name: 'commodore', state: 'missing' });
+const outdated = withState('claude', { found: true, name: 'commodore', state: 'outdated', installed: '3.1.0', minimum: '3.5.0' });
+const installButton = () => screen.queryByRole('button', { name: /^Install Commodore/ });
+const updateButton = () => screen.queryByRole('button', { name: /^Update/ });
+const dialogText = () => screen.getByRole('dialog').textContent ?? '';
+const reads = () => vi.mocked(fetch).mock.calls.filter(([p]) => String(p).includes('/launch-orders/skills')).length;
+const failedInstall = { error: 'claude plugin install failed', output: 'line one\nboom: no network', commands: ['claude plugin marketplace add jbuffin/skills', 'claude plugin install jasonbuffin@jbuffinskills'], state: { state: 'missing' } };
+
+test('a dock with no Commodore offers Install Commodore beside the box, with the list shut, and the form never says "not installed on" for it', async () => {
+  serve({ skills: () => json(missing) });
+  open();
+  await ready();
+
+  expect(await screen.findByRole('button', { name: 'Install Commodore' })).toBeTruthy();
+  expect(screen.queryByRole('listbox')).toBeNull();
+  expect(dialogText()).not.toContain('not installed on');
+  expect(updateButton()).toBeNull();
+  fireEvent.click(box());
+  expect(option(/^Commodore/).getAttribute('aria-disabled')).toBe('true');
+  expect(option(/^Commodore/).querySelector('button')).toBeNull();
+});
+
+test('a project copy of Commodore launches as before and still gets the Install offer, because only the dock\'s own identity decides it', async () => {
+  const posts = serve({ skills: () => json(withState('claude', { found: true, name: 'commodore', state: 'missing' })) });
+  open();
+  await ready();
+
+  expect(await screen.findByRole('button', { name: 'Install Commodore' })).toBeTruthy();
+  expect(box().value).toBe('Commodore');
+  fireEvent.click(launch());
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ skill: { kind: 'commodore' } });
+});
+
+test('with Commodore ok nothing new shows: no Install, no Update, no version line', async () => {
+  serve({ skills: () => json(commodore) });
+  open();
+  await ready();
+
+  expect(box().value).toBe('Commodore');
+  expect(installButton()).toBeNull();
+  expect(updateButton()).toBeNull();
+  expect(dialogText()).not.toMatch(/older than|version unknown|Installing|Updating/);
+});
+
+test('pressing Install posts the fleet, dock and action once, shows it running, ignores a second press, waits the launch limit, and sends no launch', async () => {
+  let finish!: () => void;
+  const held = new Promise<void>((r) => (finish = r));
+  const timers = vi.spyOn(globalThis, 'setTimeout');
+  const posts = serve({ skills: () => json(missing), commodore: () => held.then(() => json(failedInstall, 502)) });
+  open();
+  await ready();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  const running = await screen.findByRole('button', { name: /Installing/ });
+  expect(running.getAttribute('aria-busy')).toBe('true');
+  fireEvent.click(running);
+  fireEvent.click(running);
+  expect(commodorePosts).toEqual([{ fleet: 'zulu', harness: 'claude', action: 'install' }]);
+  expect(timers.mock.calls.some(([, ms]) => ms === 10 * 60_000)).toBe(true);
+  expect(posts).toEqual([]);
+
+  finish();
+  await waitFor(() => expect(installButton()).toBeTruthy());
+  timers.mockRestore();
+});
+
+test('after Install succeeds the skills are read again and Commodore is there with no reload: the button goes, the untouched pick becomes Commodore and its row is pickable', async () => {
+  let now: SkillsAnswer = missing;
+  serve({
+    skills: () => json(now),
+    commodore: () => {
+      now = commodore;
+      return json({ state: 'ok' });
+    },
+  });
+  open();
+  await ready();
+  const before = reads();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  await waitFor(() => expect(box().value).toBe('Commodore'));
+  expect(reads()).toBeGreaterThan(before);
+  expect(installButton()).toBeNull();
+  fireEvent.click(box());
+  expect(option(/^Commodore/).getAttribute('aria-disabled')).toBeNull();
+});
+
+test('a skill the engineer picked before Install stays picked after it', async () => {
+  let now: SkillsAnswer = missing;
+  serve({
+    skills: () => json(now),
+    commodore: () => {
+      now = commodore;
+      return json({ state: 'ok' });
+    },
+  });
+  open();
+  await ready();
+  type('review');
+  fireEvent.click(option(/^\/review/));
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  await waitFor(() => expect(installButton()).toBeNull());
+  expect(box().value).toBe('/review');
+});
+
+test('an install that worked but could not turn on auto-update shows the warning as one note and still makes Commodore available', async () => {
+  let now: SkillsAnswer = missing;
+  serve({
+    skills: () => json(now),
+    commodore: () => {
+      now = commodore;
+      return json({ state: 'ok', warning: 'could not turn on auto-update: settings.json is not JSON' });
+    },
+  });
+  open();
+  await ready();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  expect(await screen.findByText('could not turn on auto-update: settings.json is not JSON')).toBeTruthy();
+  expect(box().value).toBe('Commodore');
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('a failed install shows the error, the last output as preformatted text and each manual command on its own selectable line, keeps Commodore not found, and can be pressed again', async () => {
+  serve({ skills: () => json(missing), commodore: () => json(failedInstall, 502) });
+  open();
+  await ready();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  expect(await screen.findByText('claude plugin install failed')).toBeTruthy();
+  const out = screen.getByRole('dialog').querySelector('pre');
+  expect(out?.textContent).toBe('line one\nboom: no network');
+  for (const c of failedInstall.commands) {
+    const line = screen.getByText(c);
+    expect(line.children).toHaveLength(0);
+    expect(line.closest('button')).toBeNull();
+  }
+  expect(box().value).not.toBe('Commodore');
+  fireEvent.click(box());
+  expect(option(/^Commodore/).getAttribute('aria-disabled')).toBe('true');
+  fireEvent.keyDown(box(), { key: 'Escape' });
+
+  const again = await screen.findByRole('button', { name: 'Install Commodore' });
+  expect((again as HTMLButtonElement).disabled).toBe(false);
+  expect(again.getAttribute('aria-busy')).toBeNull();
+  fireEvent.click(again);
+  await waitFor(() => expect(commodorePosts).toHaveLength(2));
+});
+
+test('a refused install (409) and a failure with no output show the server\'s message and leave Commodore as it was', async () => {
+  const answered = [json({ error: 'another install for claude is still running' }, 409), json({ error: 'Admiral is shutting down' }, 500)];
+  serve({ skills: () => json(missing), commodore: () => answered.shift()! });
+  open();
+  await ready();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  expect(await screen.findByText('another install for claude is still running')).toBeTruthy();
+  expect(screen.getByRole('dialog').querySelector('pre')).toBeNull();
+  expect(box().value).not.toBe('Commodore');
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  expect(await screen.findByText('Admiral is shutting down')).toBeTruthy();
+  expect(screen.queryByText('another install for claude is still running')).toBeNull();
+});
+
+test('an outdated Commodore says which versions, offers Update and no Install, stays pickable, and a Commodore launch still sends Commodore', async () => {
+  const posts = serve({ skills: () => json(outdated) });
+  open();
+  await ready();
+
+  expect(await screen.findByText('Commodore 3.1.0 is older than this Admiral needs (3.5.0)')).toBeTruthy();
+  expect(updateButton()).toBeTruthy();
+  expect(installButton()).toBeNull();
+  expect(box().value).toBe('Commodore');
+  fireEvent.click(box());
+  expect(option(/^Commodore/).getAttribute('aria-disabled')).toBeNull();
+  fireEvent.keyDown(box(), { key: 'Escape' });
+  fireEvent.click(launch());
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ skill: { kind: 'commodore' } });
+  expect(commodorePosts).toEqual([]);
+});
+
+test('Update posts action update, runs, and on success the read shows Commodore ok with the line gone', async () => {
+  let now: SkillsAnswer = outdated;
+  let finish!: () => void;
+  const held = new Promise<void>((r) => (finish = r));
+  serve({
+    skills: () => json(now),
+    commodore: async () => {
+      await held;
+      now = commodore;
+      return json({ state: 'ok' });
+    },
+  });
+  open();
+  await ready();
+
+  fireEvent.click(await screen.findByRole('button', { name: /^Update/ }));
+  const running = await screen.findByRole('button', { name: /Updating/ });
+  expect(running.getAttribute('aria-busy')).toBe('true');
+  fireEvent.click(running);
+  finish();
+  await waitFor(() => expect(updateButton()).toBeNull());
+  expect(commodorePosts).toEqual([{ fleet: 'zulu', harness: 'claude', action: 'update' }]);
+  expect(dialogText()).not.toContain('older than this Admiral needs');
+});
+
+test('a failed Update shows the output and the manual command, keeps the outdated line, and Commodore stays pickable', async () => {
+  serve({ skills: () => json(outdated), commodore: () => json({ error: 'claude plugin update failed', output: 'update boom', commands: ['claude plugin update jasonbuffin@jbuffinskills'], state: { state: 'outdated', installed: '3.1.0', minimum: '3.5.0' } }, 502) });
+  open();
+  await ready();
+
+  fireEvent.click(await screen.findByRole('button', { name: /^Update/ }));
+  expect(await screen.findByText('claude plugin update failed')).toBeTruthy();
+  expect(screen.getByRole('dialog').querySelector('pre')?.textContent).toBe('update boom');
+  expect(screen.getByText('claude plugin update jasonbuffin@jbuffinskills')).toBeTruthy();
+  expect(dialogText()).toContain('Commodore 3.1.0 is older than this Admiral needs (3.5.0)');
+  expect(box().value).toBe('Commodore');
+  expect(updateButton()).toBeTruthy();
+});
+
+test('a manifest\'s version strings show as text, never as HTML', async () => {
+  serve({ skills: () => json(withState('claude', { found: true, name: 'commodore', state: 'outdated', installed: '<b id="v">3.1.0</b>', minimum: '<i>3.5.0</i>' })) });
+  open();
+  await ready();
+
+  expect(await screen.findByText('Commodore <b id="v">3.1.0</b> is older than this Admiral needs (<i>3.5.0</i>)')).toBeTruthy();
+  expect(screen.getByRole('dialog').querySelector('#v, b, i')).toBeNull();
+});
+
+test('loose Commodore skills say the version is unknown and how to switch, offer no Update or Install and no warning, and stay pickable', async () => {
+  serve({ skills: () => json(withState('claude', { found: true, name: 'commodore', state: 'unknown-version' })) });
+  open();
+  await ready();
+
+  expect(await screen.findByText('Commodore version unknown (installed as loose skills)')).toBeTruthy();
+  expect(dialogText()).toMatch(/remove the loose skills.*Install/i);
+  expect(updateButton()).toBeNull();
+  expect(installButton()).toBeNull();
+  expect(dialogText()).not.toMatch(/older than/);
+  expect(box().value).toBe('Commodore');
+  expect(launch().disabled).toBe(false);
+});
+
+test('an install still running when the engineer changes dock never paints its failure onto the other dock, and the other dock\'s own Install stays pressable', async () => {
+  let finish!: () => void;
+  const held = new Promise<void>((r) => (finish = r));
+  serve({ skills: (h) => json(h === 'claude' ? missing : answers.codex), commodore: () => held.then(() => json(failedInstall, 502)) });
+  open();
+  await ready();
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  await screen.findByRole('button', { name: /Installing/ });
+
+  choose(/codex/i);
+  await waitFor(() => expect(box().value).toMatch(/^(Commodore|Just launch)$/));
+  finish();
+  await waitFor(() => expect(commodorePosts).toHaveLength(1));
+  await new Promise((r) => setTimeout(r, 20));
+  expect(screen.queryByText('claude plugin install failed')).toBeNull();
+  expect(screen.getByRole('dialog').querySelector('pre')).toBeNull();
+  const here = await screen.findByRole('button', { name: 'Install Commodore' });
+  expect(here.getAttribute('aria-busy')).toBeNull();
+});
+
+test('an install that succeeds after the engineer changed dock leaves the other dock\'s Commodore as that dock\'s read says', async () => {
+  let finish!: () => void;
+  const held = new Promise<void>((r) => (finish = r));
+  let claude: SkillsAnswer = missing;
+  serve({
+    skills: (h) => json(h === 'claude' ? claude : answers.codex),
+    commodore: async () => {
+      await held;
+      claude = commodore;
+      return json({ state: 'ok', warning: 'could not turn on auto-update' });
+    },
+  });
+  open();
+  await ready();
+  fireEvent.click(await screen.findByRole('button', { name: 'Install Commodore' }));
+  await screen.findByRole('button', { name: /Installing/ });
+
+  choose(/codex/i);
+  await waitFor(() => expect(box().value).toMatch(/^Just launch$/));
+  finish();
+  await waitFor(() => expect(commodorePosts).toHaveLength(1));
+  await new Promise((r) => setTimeout(r, 20));
+  expect(box().value).toBe('Just launch');
+  expect(dialogText()).not.toContain('could not turn on auto-update');
+  expect(await screen.findByRole('button', { name: 'Install Commodore' })).toBeTruthy();
 });
