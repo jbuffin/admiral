@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/moor"
 )
 
 const (
@@ -48,6 +49,9 @@ type runner struct {
 	wake      chan struct{}
 	gen       atomic.Uint64 // restart requests so far
 
+	// stackChecker is the supervisor's, set before the runner starts.
+	stackChecker moor.StackChecker
+
 	mu       sync.Mutex
 	def      config.Source
 	sid      int // the current process; a notification from an older one is ignored
@@ -78,8 +82,8 @@ type pulls struct {
 	one    map[string]bool
 }
 
-func newRunner(ctx context.Context, home string, cfg func() *config.Config, def config.Source, notify func(), onEvent func(Event), prev *runner) *runner {
-	r := &runner{home: home, key: def.Key, cfg: cfg, ctx: ctx, def: def, notify: notify, onEvent: onEvent, done: make(chan struct{}),
+func newRunner(ctx context.Context, home string, cfg func() *config.Config, def config.Source, notify func(), onEvent func(Event), prev *runner, stackChecker moor.StackChecker) *runner {
+	r := &runner{stackChecker: stackChecker, home: home, key: def.Key, cfg: cfg, ctx: ctx, def: def, notify: notify, onEvent: onEvent, done: make(chan struct{}),
 		restartCh: make(chan struct{}, 1), wake: make(chan struct{}, 1), state: StateStarting, caps: []string{}}
 	go func() {
 		if prev != nil {
@@ -280,7 +284,7 @@ func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMe
 		r.mu.Unlock()
 		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf, emit: r.emitFrom(sid),
 			setWarnings: func(w []string) { r.setWarnings(sid, w) }, conn: carried, setConn: func(c connState) { r.setConn(sid, c) },
-			setRefreshing: r.notify}), nil
+			setRefreshing: r.notify, stackChecker: r.stackChecker}), nil
 	}
 	m, dir, err := LoadManifest(r.home, def.Plugin)
 	if err != nil {

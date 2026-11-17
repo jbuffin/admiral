@@ -82,6 +82,8 @@ type Item struct {
 	Stack *Stack
 	// Head and Base are a pull request's branches and DefaultBranch its repository's; empty for an issue and when GitHub answered none.
 	Head, Base, DefaultBranch string
+	// HeadSHA is the pull request's head commit; empty for an issue.
+	HeadSHA string
 	// PR is a pull request's state as the poll would serve it; nil for an issue.
 	PR *moor.PR
 	// OpenedAt is when it was opened, Excerpt its body as one short line.
@@ -476,6 +478,7 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 		if n.HeadRefName != nil && n.BaseRefName != nil && n.Repository.DefaultBranchRef != nil {
 			it.Head, it.Base, it.DefaultBranch = *n.HeadRefName, *n.BaseRefName, n.Repository.DefaultBranchRef.Name
 		}
+		it.HeadSHA = n.HeadRefOid
 		it.FailingChecks = n.failingChecks()
 		it.ReviewedSincePush = n.reviewedSincePush()
 	}

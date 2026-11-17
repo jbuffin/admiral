@@ -148,7 +148,7 @@ func TestAChainWhoseTopConflictsWithItsBaseIsServedWithTheBaseOnEveryPR(t *testi
 		}
 	}
 	// The whole chain is asked once, as its top PR's head against the bottom's base.
-	want := moor.StackCheck{Fleet: campaignFleet, Host: "github.com", Repo: "acme/widgets", Base: "main", PR: 33, Head: sha(33)}
+	want := moor.StackCheck{Fleet: "alpha", Host: "github.com", Repo: "acme/widgets", Base: "main", PR: 33, Head: sha(33)}
 	if got := ck.requestsFor(33); len(got) == 0 || !slices.ContainsFunc(got, func(r moor.StackCheck) bool { return r == want }) {
 		t.Errorf("checks for the top = %+v, want one like %+v", got, want)
 	}
@@ -176,7 +176,7 @@ func TestAChainThatMergesCleanlyCarriesNoConflictAndIsAskedAboutItsTop(t *testin
 			t.Errorf("PR %d chain.conflicts_with_base = %v, want none for a chain that merges cleanly", n, got)
 		}
 	}
-	want := moor.StackCheck{Fleet: campaignFleet, Host: "github.com", Repo: "acme/widgets", Base: "main", PR: 43, Head: sha(43)}
+	want := moor.StackCheck{Fleet: "alpha", Host: "github.com", Repo: "acme/widgets", Base: "main", PR: 43, Head: sha(43)}
 	if got := ck.requestsFor(43); !slices.ContainsFunc(got, func(r moor.StackCheck) bool { return r == want }) {
 		t.Errorf("checks for the clean chain's top = %+v, want one like %+v: a clean answer is only meaningful if the check ran", got, want)
 	}

@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/moor"
@@ -147,6 +150,11 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusGatewayTimeout, err.Error())
 		return
 	case err != nil:
+		what := "pull request " + number
+		if stacked {
+			what = "stack " + strconv.Itoa(stackNumber)
+		}
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: merging %s failed: %s\n", session, what, strings.Join(strings.Fields(err.Error()), " "))
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

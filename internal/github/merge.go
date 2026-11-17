@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -116,7 +117,7 @@ func (c *Client) runMutation(ctx context.Context, dir string, extra, args []stri
 	if err != nil {
 		return err
 	}
-	_, stderr, err := c.ghWithin(ctx, MergeTimeout, dir, extra, args, c.tokenVar(), token)
+	stdout, stderr, err := c.ghWithin(ctx, MergeTimeout, dir, extra, args, c.tokenVar(), token)
 	switch {
 	case err == nil:
 		return nil
@@ -127,11 +128,33 @@ func (c *Client) runMutation(ctx context.Context, dir string, extra, args []stri
 	case errors.Is(err, exec.ErrNotFound):
 		return c.unreachableErr()
 	}
-	msg := strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: ")
+	msg := mutationMessage(stdout, stderr, token)
 	if msg == "" {
 		msg = fallback
 	}
 	return errors.New(msg)
+}
+
+// mutationMessageCap bounds what a failed gh command may put on the screen and in the log.
+const mutationMessageCap = 4000
+
+var ansiEscape = regexp.MustCompile("\x1b(?:\\[[0-9;?]*[ -/]*[@-~]|\\][^\x07\x1b]*(?:\x07|\x1b\\\\))")
+
+// mutationMessage is everything a failed gh command printed, stdout first since gh-stack puts its reason there: the token
+// redacted, escapes stripped, cut to mutationMessageCap.
+func mutationMessage(stdout, stderr, token string) string {
+	var parts []string
+	for _, out := range []string{stdout, stderr} {
+		out = strings.TrimSpace(ansiEscape.ReplaceAllString(redact(out, token), ""))
+		if out != "" {
+			parts = append(parts, strings.TrimPrefix(out, "gh: "))
+		}
+	}
+	msg := strings.Join(parts, "\n")
+	if len(msg) > mutationMessageCap {
+		msg = strings.ToValidUTF8(msg[:mutationMessageCap-len("…")], "") + "…"
+	}
+	return msg
 }
 
 // StackOpenPRs is the open layers of GitHub's stack number in owner/repo, bottom first, as PR URLs on this client's host.

@@ -160,7 +160,7 @@ func (s *Supervisor) start(def config.Source) {
 	if s.OnEvent != nil {
 		onEvent = func(ev Event) { s.OnEvent(def.Key, ev) }
 	}
-	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, onEvent, s.stopping[def.Key])
+	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, onEvent, s.stopping[def.Key], s.StackChecker)
 	s.runners[def.Key], s.cancels[def.Key] = r, cancel
 	s.wg.Add(1)
 	go func() {

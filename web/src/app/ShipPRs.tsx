@@ -289,7 +289,7 @@ export function PRTab({ ship }: { ship: Ship }) {
   const reviewBar = reviewStackBar(ship);
   const place = reReviewPlace(ship);
   const respondedHere = moored && current.reviewing && current.responded && current.state === 'OPEN';
-  const line = reviewBar ?? stackBarLine(shape);
+  const line = reviewBar ?? stackBarLine(shape, prs.find((p) => p.conflicts_with_base)?.conflicts_with_base);
   const fixOn = moored && !!ship.fix;
   const fixStack = fixOn && !!ship.fix?.stack;
   const fixText = fixOn ? fixLine(ship.fix) : '';
