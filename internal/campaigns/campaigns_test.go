@@ -408,3 +408,97 @@ func TestParentWithUnreadableChildrenIsNeverLaunchable(t *testing.T) {
 		t.Errorf("ready set = %v, want only #2", got)
 	}
 }
+
+func TestRootGetsAStatusLikeAChild(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mod    func(*github.TreeNode)
+		claims map[string]string
+		status Status
+		ship   string
+		blk    []string
+	}{
+		{"ready", func(*github.TreeNode) {}, nil, Ready, "", nil},
+		{"done", func(n *github.TreeNode) { n.Closed = true }, nil, Done, "", nil},
+		{"blocked by its own open blocker", func(n *github.TreeNode) { n.BlockedBy = []github.Blocker{openBlocker(90)} }, nil, Blocked, "", []string{u(90)}},
+		{"a closed blocker does not block", func(n *github.TreeNode) { n.BlockedBy = []github.Blocker{{URL: u(90), Closed: true}} }, nil, Ready, "", nil},
+		{"underway on a live claim", func(*github.TreeNode) {}, map[string]string{u(1): "Eagle"}, Underway, "Eagle", nil},
+		{"claimed with no ship", func(n *github.TreeNode) { n.Assignees = []string{"sam"} }, nil, ClaimedNoShip, "", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := tree(child(2))
+			tc.mod(root)
+			r := Build(Input{Tree: root, Claims: tc.claims}).Root
+			if !r.Parent || r.Status != tc.status || r.Ship != tc.ship {
+				t.Fatalf("root = parent %v status %q ship %q, want a parent that is %q with ship %q", r.Parent, r.Status, r.Ship, tc.status, tc.ship)
+			}
+			var got []string
+			for _, b := range r.Blockers {
+				got = append(got, b.URL)
+			}
+			if strings.Join(got, " ") != strings.Join(tc.blk, " ") {
+				t.Errorf("root blockers = %v, want %v", got, tc.blk)
+			}
+		})
+	}
+}
+
+func TestRootGetsModeAndSkillFromTheLabelTable(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		labels []string
+		mode   Mode
+		skill  Skill
+	}{
+		{"ready-for-agent runs on Commodore like a child", []string{"ready-for-agent"}, WithoutYou, Skill{Kind: "commodore"}},
+		{"ready-for-human", []string{"ready-for-human"}, WithYou, Skill{Kind: "none"}},
+		{"no row matches", []string{"wayfinder:map"}, WithYou, Skill{Kind: "none"}},
+		{"wayfinder research hands over the root alone, there being no map above it", []string{"wayfinder:research"}, WithoutYou, Skill{Kind: "skill", Name: "wayfinder", Args: u(1)}},
+		{"wayfinder grilling", []string{"wayfinder:grilling"}, WithYou, Skill{Kind: "skill", Name: "wayfinder", Args: u(1)}},
+		{"wayfinder prototype", []string{"wayfinder:prototype"}, WithYou, Skill{Kind: "skill", Name: "wayfinder", Args: u(1)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := tree(child(2))
+			root.Labels = tc.labels
+			r := Build(Input{Tree: root}).Root
+			if r.Mode != tc.mode || r.Skill != tc.skill || r.DefaultMode != tc.mode || r.DefaultSkill != tc.skill || r.Overridden {
+				t.Errorf("root = mode %q skill %+v default %q %+v overridden %v, want %q %+v as its own defaults",
+					r.Mode, r.Skill, r.DefaultMode, r.DefaultSkill, r.Overridden, tc.mode, tc.skill)
+			}
+		})
+	}
+}
+
+func TestRootStaysOutOfProgressCountsAndTheReadySet(t *testing.T) {
+	root := tree(child(2), child(3, closed()))
+	root.Labels = []string{"ready-for-agent"}
+	c := Build(Input{Tree: root})
+	if c.Root.Status != Ready {
+		t.Fatalf("root status = %q, want ready so the test means something", c.Root.Status)
+	}
+	if c.Progress != (Progress{Closed: 1, Total: 2}) {
+		t.Errorf("progress = %+v, want the children only: 1 of 2", c.Progress)
+	}
+	if c.Counts[Ready] != 1 || c.Counts[Done] != 1 || len(c.Counts) != 2 {
+		t.Errorf("counts = %v, want one ready and one done child", c.Counts)
+	}
+	if got := urls(c.Ready); strings.Join(got, " ") != u(2) {
+		t.Errorf("ready set = %v, want child 2 and not the root", got)
+	}
+	closedRoot := tree(child(2))
+	closedRoot.Closed = true
+	if cc := Build(Input{Tree: closedRoot}); cc.Counts[Done] != 0 || cc.Progress.Closed != 0 {
+		t.Errorf("a closed root counted: %+v %v", cc.Progress, cc.Counts)
+	}
+}
+
+func TestRootOverrideDoesNotApplyAndNestedParentsStillHaveNoStatus(t *testing.T) {
+	root := tree(child(2, kids(child(3))))
+	c := Build(Input{Tree: root, Overrides: map[string]Override{u(1): {Mode: WithoutYou}}})
+	if c.Root.Overridden || c.Root.Mode != WithYou {
+		t.Errorf("root = overridden %v mode %q, want its label default: the root takes no override", c.Root.Overridden, c.Root.Mode)
+	}
+	if p := mustNode(t, c, u(2)); !p.Parent || p.Status != "" || p.Mode != "" || p.Skill != (Skill{}) {
+		t.Errorf("a nested parent = %+v, want no status, mode or skill", p)
+	}
+}

@@ -27,6 +27,21 @@ test('on the phone, the Campaigns page and a child sheet fit the screen and thei
   await expect(group('Done')).toContainText(T.site);
   expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
 
+  // The campaign's title is a tap target, and its sheet fits the screen with a Launch tall enough to tap.
+  const title = main.getByRole('heading', { name: T.map }).getByRole('button');
+  await expect(title).toBeVisible();
+  expect((await title.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await title.tap();
+  const rootSheet = page.getByRole('dialog', { name: T.map });
+  const view = page.viewportSize()!;
+  const fit = (await rootSheet.boundingBox())!;
+  expect(fit.x).toBeGreaterThanOrEqual(0);
+  expect(fit.x + fit.width).toBeLessThanOrEqual(view.width);
+  expect(fit.y + fit.height).toBeLessThanOrEqual(view.height);
+  expect((await rootSheet.getByRole('button', { name: /^Launch/ }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await rootSheet.getByRole('button', { name: 'Close' }).tap();
+  await expect(rootSheet).toBeHidden();
+
   await main.getByRole('listitem').filter({ hasText: T.survey }).getByRole('button').first().tap();
   const sheet = page.getByRole('dialog', { name: new RegExp(T.survey) });
   for (const chip of await sheet.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio').all()) expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(44);
