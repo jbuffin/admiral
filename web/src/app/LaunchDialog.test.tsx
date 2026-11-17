@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Fleet } from './api';
 import type { CrewAnswer, SkillsAnswer } from './launchForm';
-import { LaunchForm, type OrderRef } from './LaunchDialog';
+import { LaunchForm, type CampaignChildRef, type OrderRef } from './LaunchDialog';
 import { resources } from './shipsLink';
 
 const proj = '/home/jb/proj';
@@ -47,6 +47,10 @@ function serve(routes: Routes = {}) {
         commodorePosts.push(body);
         return (routes.commodore ?? (() => json({ state: 'ok' })))(body);
       }
+      if (/^\/campaigns\/[^/]+\/launch$/.test(route) && init.method === 'POST') {
+        posts.push(JSON.parse(init.body as string));
+        return (routes.ships ?? (() => json({ ship: { session: 'zulu-1' } }, 201)))();
+      }
       if (route === '/ships' && init.method === 'POST') {
         posts.push(JSON.parse(init.body as string));
         return (routes.ships ?? (() => json({ ship: { session: 'zulu-1' } }, 201)))();
@@ -61,6 +65,12 @@ function open(given?: OrderRef) {
   const props = { onClose: vi.fn(), onLaunched: vi.fn() };
   render(<LaunchForm fleet={fleet} order={given} {...props} />);
   return props;
+}
+
+const child: CampaignChildRef = { campaignId: 'camp-1', url: 'https://github.com/acme/widgets/issues/24', title: 'Map the parser', mode: 'with-you', skill: { kind: 'skill', name: 'wayfinder', args: '' }, startAnyway: false };
+
+function openChild() {
+  render(<LaunchForm fleet={fleet} campaign={child} onClose={vi.fn()} onLaunched={vi.fn()} />);
 }
 
 const box = () => screen.getByRole('combobox', { name: 'Skill' }) as HTMLInputElement;
@@ -721,4 +731,38 @@ test('a run on one dock keeps its busy state and its failure when the engineer g
   expect(await screen.findByText('claude plugin install failed')).toBeTruthy();
   expect(screen.getByRole('dialog').querySelector('pre')).toBeTruthy();
   expect(screen.queryByText('another install is running')).toBeNull();
+});
+
+const withSkills = (...names: string[]): SkillsAnswer => ({ ...answers.claude!, skills: names.map((n) => installed(n)) });
+
+test('a campaign child on the bare wayfinder skill fills the dock\'s plugin skill, and the launch carries that qualified name', async () => {
+  const posts = serve({ skills: () => json(withSkills('review', 'mattpocock-skills:wayfinder')) });
+  openChild();
+  await ready();
+
+  await waitFor(() => expect(box().value).toBe('/mattpocock-skills:wayfinder'));
+  expect(dialogText()).not.toContain('not installed on');
+  fireEvent.click(launch());
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ child_url: child.url, skill: { kind: 'skill', name: 'mattpocock-skills:wayfinder' } });
+});
+
+test('a campaign child on wayfinder keeps the bare name when the dock lists it with no prefix', async () => {
+  const posts = serve({ skills: () => json(withSkills('review', 'wayfinder')) });
+  openChild();
+  await ready();
+
+  await waitFor(() => expect(box().value).toBe('/wayfinder'));
+  fireEvent.click(launch());
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ skill: { kind: 'skill', name: 'wayfinder' } });
+});
+
+test('a campaign child on wayfinder keeps the bare name, and the warning, when two plugins list a wayfinder', async () => {
+  serve({ skills: () => json(withSkills('mattpocock-skills:wayfinder', 'other-plugin:wayfinder')) });
+  openChild();
+  await ready();
+
+  await waitFor(() => expect(dialogText()).toContain('not installed on claude'));
+  expect(box().value).toBe('/wayfinder');
 });

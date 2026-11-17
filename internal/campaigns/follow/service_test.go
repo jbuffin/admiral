@@ -874,6 +874,22 @@ func TestLaunchWithTheChildsOwnSkillKeepsItsSavedArgs(t *testing.T) {
 	}
 }
 
+func TestLaunchWithThePluginQualifiedNameOfTheChildsSkillKeepsItsSavedArgs(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	saved := r.get(c.ID).Root.find(24).Skill.Args
+	if saved == "" {
+		t.Fatal("child 24 has no saved args, the fixture changed")
+	}
+	if code, body := r.launch(c.ID, launchWith(24, map[string]string{"kind": "skill", "name": "mattpocock-skills:wayfinder"})); code != http.StatusCreated {
+		t.Fatalf("launch = %d %s, want 201", code, body)
+	}
+	got := r.launches()
+	if len(got) != 1 || got[0].Skill.Name != "mattpocock-skills:wayfinder" || got[0].Text != saved {
+		t.Errorf("launches = %+v, want the qualified skill with the child's saved args %q", got, saved)
+	}
+}
+
 func TestLaunchWithAnotherSkillDropsTheSavedArgs(t *testing.T) {
 	for _, name := range []string{"tdd", "/$wayfinder"} {
 		r := newRig(t, fixtureTree())
