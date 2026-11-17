@@ -404,6 +404,7 @@ stack)
 	[ -n "$members" ] || { echo "fakegh: no stack $target" >&2; exit 1; }
 	[ -s "$FAKEGH_DIR/stack_merge.sleep" ] && sleep "$(cat "$FAKEGH_DIR/stack_merge.sleep")"
 	if [ -e "$FAKEGH_DIR/stack_merge.fail" ]; then
+		[ -e "$FAKEGH_DIR/stack_merge.stdout" ] && cat "$FAKEGH_DIR/stack_merge.stdout"
 		cat "$FAKEGH_DIR/stack_merge.fail" >&2
 		exit 1
 	fi

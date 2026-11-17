@@ -2,7 +2,9 @@ package ships
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"maps"
 	"strconv"
 	"sync"
 	"testing"
@@ -302,5 +304,37 @@ func TestAReviewedShipsStackIsNotChecked(t *testing.T) {
 
 	if got := ck.requests(); len(got) != 0 {
 		t.Errorf("checks = %+v, want none: Admiral never offers Merge or Fix for a reviewed PR", got)
+	}
+}
+
+func TestAMooredShipServesTheStackConflictOnItsTopPRWithoutAFixOffer(t *testing.T) {
+	r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
+
+	sh := r.poll(t)
+
+	raw, err := json.Marshal(sh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var served struct {
+		Fix *json.RawMessage `json:"fix"`
+		PRs []struct {
+			URL               string `json:"url"`
+			ConflictsWithBase string `json:"conflicts_with_base"`
+		} `json:"prs"`
+	}
+	if err := json.Unmarshal(raw, &served); err != nil {
+		t.Fatal(err)
+	}
+	if served.Fix != nil {
+		t.Fatalf("fix = %s, want no Fix offer: the premise of the test is a ship the engineer cannot fix from the offer", *served.Fix)
+	}
+	got := map[string]string{}
+	for _, p := range served.PRs {
+		got[p.URL] = p.ConflictsWithBase
+	}
+	want := map[string]string{layerURL(7): "", layerURL(9): "", layerURL(11): "main"}
+	if !maps.Equal(got, want) {
+		t.Errorf("served conflicts_with_base per PR = %v, want %v", got, want)
 	}
 }
