@@ -23,6 +23,7 @@ type Status struct {
 	MergeState        string    // mergeStateStatus
 	ConflictsWithBase string    // the base branch the whole stack conflicts with; set on the stack's top PR by Admiral, not by GitHub
 	StrictBase        bool      // the base readably requires branches to be up to date
+	Draft             bool      // isDraft; GitHub reads a draft as BLOCKED
 	Reviews           []Review
 	ThreadComments    []Comment
 	Comments          []Comment
@@ -41,6 +42,7 @@ type PR struct {
 	Ready     bool   `json:"ready"`
 	// Behind and FailingChecks are the PR's merge problems besides a conflict.
 	Behind        bool     `json:"behind,omitempty"`
+	MergeReasons  []string `json:"merge_reasons,omitempty"`
 	FailingChecks []string `json:"failing_checks,omitempty"`
 	// Feedback counts the PR's waking events past its cursor; Answer is the prompt Answer review sends for it.
 	Feedback  int    `json:"feedback,omitempty"`

@@ -64,6 +64,10 @@ type pollGitHub struct {
 	linked     [][]int       // the numbers of each LinkStack call
 	linkedBase []string
 	linkedRepo []string
+
+	updated     []string      // the URL of each UpdateBranch call
+	updateErr   error         // what UpdateBranch answers
+	updateBlock chan struct{} // when set, UpdateBranch waits for it to close
 }
 
 func (g *pollGitHub) Host() string { return "github.com" }
@@ -199,6 +203,23 @@ func (g *pollGitHub) LinkStack(_ context.Context, repo, base string, numbers []i
 	}
 	g.mu.Lock()
 	return g.linkErr
+}
+
+func (g *pollGitHub) UpdateBranch(_ context.Context, url string) error {
+	g.mu.Lock()
+	g.updated = append(g.updated, url)
+	block, err := g.updateBlock, g.updateErr
+	g.mu.Unlock()
+	if block != nil {
+		<-block
+	}
+	return err
+}
+
+func (g *pollGitHub) updateLog() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string(nil), g.updated...)
 }
 
 func (g *pollGitHub) set(url string, st moor.Status) {

@@ -1,6 +1,6 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 import type { Admiral } from './fixtures';
-import { expectChipTone, ghMergeSlow, launchMooredShip, mergeCalls, PR_BASE, prAnswer, prReview, readyOnTheServer, readyToWake, RESUME, rowLink, seedMergeMethod, shipViewUrl, viewPanel, viewTab, wakeButton, wokenPrompt, type LaunchedShip } from './shell';
+import { expectChipTone, ghMergeSlow, launchMooredShip, mergeCalls, PR_BASE, prAnswer, prBehindStrictBase, prReview, readyOnTheServer, readyToWake, RESUME, rowLink, seedMergeMethod, shipViewUrl, updateBranchCalls, viewPanel, viewTab, wakeButton, wokenPrompt, type LaunchedShip } from './shell';
 
 type ShipRow = LaunchedShip & { status: string; prs?: { url: string; review: string; answer?: string }[] };
 
@@ -157,4 +157,32 @@ export async function answerReviewFromThePRTab(page: Page, a: Admiral) {
   expect(await wokenPrompt(a, ship)).toBe(command);
   await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).not.toBe('moored');
   await expect(page.getByRole('alert')).toHaveCount(0);
+}
+
+/** A moored ship's PR that is behind a strict base says so on the PR tab; one tap on Update branch records one `gh pr update-branch <url>`, the merge token is accepted, and the tab stops showing behind. */
+export async function updateBranchFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
+  prBehindStrictBase(a, 7);
+  const ship = await launchMooredShip(a, 7);
+  await expect
+    .poll(async () => {
+      await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
+      return (await listShips(a)).find((s) => s.session === ship.session)?.prs?.find((p) => p.url === `${PR_BASE}/7`)?.review ?? '';
+    }, { timeout: 30_000 })
+    .not.toBe('');
+
+  const panel = await openPRTab(page, a, ship, opts);
+  await expect(panel).toContainText('Behind main');
+  await expect(panel).toContainText('main requires branches to be up to date before they merge');
+  await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
+  const update = panel.getByRole('button', { name: 'Update branch', exact: true });
+  await expect(update).toBeInViewport();
+  expect((await update.boundingBox())!.height, 'Update branch height').toBeGreaterThanOrEqual(44);
+  expect(updateBranchCalls(a), 'no update before the tap').toEqual([]);
+
+  await update.tap();
+  await expect.poll(() => updateBranchCalls(a)).toEqual([['pr', 'update-branch', `${PR_BASE}/7`]]);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(panel).not.toContainText('Behind main');
+  await expect(update).toHaveCount(0);
+  expect(updateBranchCalls(a), 'one update, not one per render or poll').toHaveLength(1);
 }

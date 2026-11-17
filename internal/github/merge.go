@@ -61,6 +61,11 @@ func (c *Client) MergePR(ctx context.Context, url, method string) error {
 	return c.merge(ctx, "", nil, []string{"pr", "merge", url, "--" + method}, method)
 }
 
+// UpdateBranch runs `gh pr update-branch URL`.
+func (c *Client) UpdateBranch(ctx context.Context, url string) error {
+	return errors.New("not implemented")
+}
+
 // MergeStack runs `gh stack merge N --yes --merge-method METHOD` for GitHub's stack number N, in an empty folder of its
 // own so gh-stack reads no repository's git config; N is an integer from GitHub, never text from a request.
 func (c *Client) MergeStack(ctx context.Context, repo string, stackNumber int, method string) error {

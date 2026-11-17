@@ -51,6 +51,14 @@ describe('prSummary', () => {
     expect(prSummary([pr(7)])).toBe('1 PR · #7 waiting on review');
   });
 
+  it('names the first merge reason instead of waiting on review for an approved, green PR that is behind', () => {
+    const behind = prSummary([pr(7, { review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE', behind: true, merge_reasons: ['behind'] })]);
+    expect(behind).toMatch(/^1 PR · #7 .*behind/i);
+    expect(behind).not.toMatch(/waiting on review/i);
+    expect(prSummary([pr(7, { review: 'APPROVED', checks: 'SUCCESS', merge_reasons: ['conflicts', 'behind'] })])).toMatch(/^1 PR · #7 .*conflict/i);
+    expect(prSummary([pr(7, { merge_reasons: ['draft'] })])).toMatch(/^1 PR · #7 .*draft/i);
+  });
+
   it('names the first PR in the ship\'s list that is not ready, with every open PR counted', () => {
     expect(prSummary([ready(7), pr(8, { review: 'CHANGES_REQUESTED' }), pr(9)])).toBe('3 PRs · #8 changes requested');
   });

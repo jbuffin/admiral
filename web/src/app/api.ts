@@ -121,6 +121,8 @@ export interface MooredPR {
   // Merge problems besides a conflict, on an open PR the ship opened.
   behind?: boolean;
   failing_checks?: string[];
+  /** Every reason GitHub would refuse a merge now, by code, in the server's order. */
+  merge_reasons?: string[];
 }
 /** What keeps one open PR from merging that its ship can fix. */
 export interface PRProblems {

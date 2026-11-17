@@ -215,3 +215,7 @@ func noControl(r rune) rune {
 	}
 	return r
 }
+
+func (s *Service) serveUpdateBranch(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "update branch is not implemented")
+}
