@@ -225,7 +225,7 @@ func TestMergeASinglePRRunsOneGhMergeWithTheDefaultMethod(t *testing.T) {
 	}
 	// A single PR has no shape to check, so Merge reads no PR detail.
 	for _, c := range g.calls() {
-		if strings.Contains(strings.Join(c.Argv, " "), "isDraft") {
+		if strings.Contains(strings.Join(c.Argv, " "), "{ d: repository(") { // the detail query; the poll asks for isDraft too
 			t.Errorf("a single-PR merge read the PR detail: %q", c.Argv)
 		}
 	}
