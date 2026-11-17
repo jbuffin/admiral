@@ -170,7 +170,10 @@ func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.
 		}
 		return "", false
 	}
-	sched.Own = func(_, ref string) bool { return ships.OwnsRef(list(), ref) }
+	sched.Holder = func(_, ref string) (string, bool) {
+		sh, held := ships.RefHolder(list(), ref)
+		return sh.Session, held
+	}
 	// one worker keeps events in order and off the source's read loop; a full queue drops the event
 	queue := make(chan routines.Event, 256)
 	go func() {

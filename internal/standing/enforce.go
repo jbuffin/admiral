@@ -36,13 +36,13 @@ func (l Limits) CheckRates(c Counts) RateVerdict {
 	return RateVerdict{OK: true}
 }
 
-// DedupeHeld is whether a live ship already holds the dedupe_key; an event with no key is never held.
+// DedupeHeld is the session of the live ship that already holds the dedupe_key; an event with no key is never held.
 func DedupeHeld(liveKeys map[string]string, key string) (session string, held bool) {
 	if key == "" {
 		return "", false
 	}
-	_, held = liveKeys[key]
-	return "", held
+	session, held = liveKeys[key]
+	return session, held
 }
 
 func containsFold(list []string, s string) bool {

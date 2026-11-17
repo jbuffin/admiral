@@ -90,6 +90,7 @@ const REASON_WORDS: Record<string, string> = {
   quiet_hours: 'quiet hours',
   hold_fire: 'Hold fire is on',
   dedupe_key_held: 'the same event was already held',
+  ref_has_ship: 'a ship is already on this PR or issue',
   no_restricted_harness: 'no harness in this fleet has passed the restricted-ship probe',
 };
 
@@ -116,6 +117,7 @@ export function runLine(run: RoutineRun): { dot: RunDot; text: string; ship?: st
     case 'reported':
       return { dot: 'idle', text: `Report only, would have run: ${run.action ?? 'its action'}` };
     case 'skipped':
+      if (run.held_by) return { dot: 'idle', text: `Skipped: ${run.held_by} is already on it`, ship: run.held_by };
       return { dot: 'idle', text: `Skipped${why}` };
     case 'missed':
       return { dot: 'idle', text: `Missed${why}` };

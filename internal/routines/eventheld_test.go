@@ -144,14 +144,15 @@ func TestARepeatEventOnAPRTheRoutineLaunchedForIsSkippedByItsRefBeforeTheRoutine
 	h.ships.set(func() {
 		h.ships.holders = map[string]routines.ShipRef{"routine:" + r.ID: {Session: "ship-1", Status: "underway"}}
 	})
+	actsBefore := len(acts.got) // the first event's launch card
 	h.sched.HandleEvent(evFrom("Eng"))
 	h.wantLaunches(1)
 	skipped := h.ofOutcome(r, routines.Skipped)
 	if len(skipped) != 1 || skipped[0].Reason != "ref_has_ship" || skipped[0].HeldBy != "ship-1" || skipped[0].Ship != "" {
 		t.Fatalf("skipped = %+v, want one ref_has_ship record held_by ship-1 for the repeat event", skipped)
 	}
-	if n := len(h.ofOutcome(r, routines.Proposed)); n != 0 || len(acts.got) != 0 {
-		t.Errorf("%d proposals and %d decisions for the repeat event, want none: it is not a routine_busy proposal", n, len(acts.got))
+	if n := len(h.ofOutcome(r, routines.Proposed)); n != 0 || len(acts.got) != actsBefore {
+		t.Errorf("%d proposals and %d new decisions for the repeat event, want none: it is not a routine_busy proposal", n, len(acts.got)-actsBefore)
 	}
 }
 

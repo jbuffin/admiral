@@ -372,9 +372,14 @@ func twoRoutinesOnOneEvent(t *testing.T, mod func(*standing.Limits)) (*harness, 
 	return h, first, second
 }
 
-func TestTwoRoutinesOnOneEventShareTheLaunchesPerHourBudget(t *testing.T) {
+// Two routines on one event never both launch (the second is skipped on the first's key), so the hour's budget is shared across events.
+func TestTwoRoutinesShareTheLaunchesPerHourBudgetAcrossEvents(t *testing.T) {
 	h, first, second := twoRoutinesOnOneEvent(t, func(l *standing.Limits) { l.Rates.LaunchesPerHour = 1 })
 	h.sched.HandleEvent(evFrom("Eng"))
+	h.wantLaunches(1)
+	other := evFrom("Eng")
+	other.Ref = "https://github.com/acme/api/pull/8"
+	h.sched.HandleEvent(other)
 	h.wantLaunches(1)
 	var launched, proposed int
 	for _, r := range []routines.Routine{first, second} {
@@ -387,8 +392,8 @@ func TestTwoRoutinesOnOneEventShareTheLaunchesPerHourBudget(t *testing.T) {
 			}
 		}
 	}
-	if launched != 1 || proposed != 1 {
-		t.Errorf("%d launched and %d proposed records, want one of each", launched, proposed)
+	if launched != 1 || proposed != 2 {
+		t.Errorf("%d launched and %d proposed records, want one launch and a proposal per routine for the second event", launched, proposed)
 	}
 }
 

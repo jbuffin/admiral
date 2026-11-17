@@ -82,9 +82,7 @@ type Scheduler struct {
 	Zone      *time.Location // the zone a When is read in; main passes time.Local
 	// GitHubHosts are the hosts whose pull request and issue URLs an event may carry into a launch; nil is github.com alone.
 	GitHubHosts func(fleet string) []string
-	// Own says whether a ref is Admiral's own work (a ship's PR, a claimed issue); such an event is ignored. Nil owns nothing.
-	Own func(fleet, ref string) bool
-	// Holder names the session of a listed ship that already has the ref (ships.RefHolder over the listing); it replaces Own.
+	// Holder names the session of a listed ship that already has the ref (ships.RefHolder over the listing); an event on it is skipped. Nil holds nothing.
 	Holder func(fleet, ref string) (session string, ok bool)
 	// Enrich is where a Lookout adds the dedupe_key, repo, labels and costs before the decision. Nil adds nothing.
 	Enrich func(Event) Enrichment
@@ -680,6 +678,9 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 		RoutineKey: routineKey(r.ID), TriggerID: id, EventURL: eventURL,
 	})
 	switch {
+	case lerr != nil && lerr.Cause == launcher.CauseIssueHeld && accepted:
+		delete(s.waiting, r.ID)
+		return s.skipHeld(fleet, r, rec, lerr.HeldBy)
 	case lerr != nil && lerr.Wait != "" && accepted:
 		return ErrBusy
 	case lerr != nil && lerr.Wait != "":
@@ -694,6 +695,13 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 		s.watched[saved.ID] = watch{fleet: fleet, routine: r.ID, session: ref.Session, at: rec.At}
 	}
 	return nil
+}
+
+// skipHeld records that a ship already holds the item the run was for, launches nothing, and answers ErrBusy.
+func (s *Scheduler) skipHeld(fleet string, r Routine, rec Trigger, heldBy string) error {
+	rec.Outcome, rec.Reason, rec.HeldBy = Skipped, ReasonRefHasShip, heldBy
+	s.recordFor(fleet, r, rec)
+	return ErrBusy
 }
 
 // gates are the fire-time checks of a launch, and the Skill it starts with. The gates are checked again now: a guard
