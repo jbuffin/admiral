@@ -101,3 +101,18 @@ test('Escape closes the dialog and leaves the badge', async () => {
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.getByRole('button', { name: /update available/i })).toBeTruthy();
 });
+
+test('asks again soon while no check has landed, and shows the badge once one has', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  try {
+    answer = () => json({ ...available, update_available: false, latest_version: null, checked_at: null });
+    render(<UpdateBadge />);
+    await waitFor(() => expect(asked().length).toBeGreaterThan(0));
+    expect(screen.queryByRole('button', { name: /update available/i })).toBeNull();
+    answer = () => json(available);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await screen.findByRole('button', { name: /update available/i })).toBeTruthy();
+  } finally {
+    vi.useRealTimers();
+  }
+});

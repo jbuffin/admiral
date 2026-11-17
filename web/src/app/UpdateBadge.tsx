@@ -5,11 +5,14 @@ import { Button } from './Button';
 import { Sheet } from './Sheet';
 
 const REFRESH_MS = 5 * 60_000;
+// The first check comes about a minute after Admiral starts, so ask again soon until one has landed.
+const UNCHECKED_MS = 5_000;
 
 /** Beside the build version: shown only while the server says a newer public release is out. */
 export function UpdateBadge() {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [open, setOpen] = useState(false);
+  const waiting = !status || (status.enabled && !status.checked_at);
   useEffect(() => {
     let live = true;
     const load = () =>
@@ -17,12 +20,12 @@ export function UpdateBadge() {
         if (live && s) setStatus(s);
       });
     load();
-    const t = setInterval(load, REFRESH_MS);
+    const t = setInterval(load, waiting ? UNCHECKED_MS : REFRESH_MS);
     return () => {
       live = false;
       clearInterval(t);
     };
-  }, []);
+  }, [waiting]);
   if (!status?.update_available || !status.latest_version) return null;
   return (
     <>
