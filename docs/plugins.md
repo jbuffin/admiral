@@ -225,9 +225,9 @@ Two values are corrected: a negative or non-number `waiting` reads 0, and an unk
 A module is an ordinary plugin that also draws a page. This is the read side; the answers' shapes and limits are in [A module's page](#a-modules-page), and the routes a client reads are in [the API](api.md#get-apisourceskeypage-and-get-apisourceskeyrowsid).
 
 1. **Declare `page`.** List `"page"` in the `capabilities` of your `initialize` answer. A plugin that does not is never asked for a page. You may also answer `messageKinds` there, a list of `{kind, label, job}` for the messages you want Admiral to be able to send; Admiral only keeps them for now.
-2. **Answer `page.get`.** It comes once you are up, and again after each `page.changed` and `page.refresh`. Answer the groups and the waiting count. A refused answer (over a limit, not valid) leaves the last good page served, and a call that fails with an error of yours shows the page as `error` with your message until the next good answer.
+2. **Answer `page.get`.** It comes during start-up, before the source is `ok`, and again after each `page.changed` and `page.refresh`. Answer the groups and the waiting count. A refused answer (over a limit, not valid) leaves the last good page served, and a call that fails with an error of yours shows the page as `error` with your message until the next good answer.
 3. **Answer `row.get`.** It comes when the engineer opens a row of the last good page.
-4. **Tell Admiral when your data changes.** Send `page.changed`. Name the rows whose detail changed to have open ones refetched, or send it without params to refetch every open row. Admiral asks `page.get` once for changes that arrive together, and drops a malformed list, an id that is not a valid id, and ids past 5,000.
+4. **Tell Admiral when your data changes.** Send `page.changed`. Name the rows whose detail changed to have open ones refetched, or send it without params to refetch every open row. Admiral asks `page.get` once for changes that arrive together, and drops a malformed list and an id that is not a valid id. A `rows` list of more than 5,000 items, or more than 5,000 distinct ids among the changes that coalesce into one `page.get`, counts as naming no rows, so every open row is refetched.
 
    ```json
    {"jsonrpc":"2.0","method":"page.changed","params":{"rows":["T-1","T-2"]}}

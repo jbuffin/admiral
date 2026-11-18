@@ -506,9 +506,6 @@ func (r *runner) processPulls(ctx context.Context, p conn) {
 		ids = append(ids, pn.ID)
 	}
 	r.mu.Unlock()
-	if todo.page {
-		defer r.pullPageQueued(ctx, p, todo)
-	}
 	switch {
 	case todo.panels:
 		r.pullPanels(ctx, p)
@@ -520,6 +517,9 @@ func (r *runner) processPulls(ctx context.Context, p conn) {
 		for id := range todo.one {
 			r.pullOrders(ctx, p, id)
 		}
+	}
+	if todo.page {
+		r.pullPageQueued(ctx, p, todo)
 	}
 }
 

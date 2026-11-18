@@ -406,7 +406,7 @@ func parseMessageKinds(raw json.RawMessage) []MessageKind {
 	return kinds
 }
 
-// fetchPage asks for the page and stores the answer; it reports whether the page's view changed. A refused answer only logs and keeps the last good page.
+// fetchPage asks for the page and stores a good answer; an RPC error sets the page error, and a refusal or timeout only logs.
 func (r *runner) fetchPage(ctx context.Context, p conn) bool {
 	res, err := p.call(ctx, "page.get", map[string]any{}, callTimeout)
 	if err != nil {
@@ -435,7 +435,7 @@ func (r *runner) fetchPage(ctx context.Context, p conn) bool {
 	return true
 }
 
-// pullPage keeps the last good page: an answer that fails or is refused changes nothing.
+// pullPage refetches the page; an RPC error marks it error and keeps its groups, and a refusal or timeout only logs.
 func (r *runner) pullPage(ctx context.Context, p conn) {
 	if r.fetchPage(ctx, p) {
 		r.pageChanged(nil)
@@ -496,21 +496,21 @@ func (r *runner) Page() (PageView, bool) {
 	return v, true
 }
 
-// pageIDs reads the rows a page.changed names; ids that fail the id rules are dropped, and none left means all rows.
+// pageIDs reads the rows a page.changed names; ids that fail the id rules are dropped, and none left, or a list past the row limit, means all rows.
 func pageIDs(params json.RawMessage) []string {
 	var p struct {
 		Rows json.RawMessage `json:"rows"`
 	}
 	var items []json.RawMessage
-	if json.Unmarshal(params, &p) != nil || json.Unmarshal(p.Rows, &items) != nil {
+	if json.Unmarshal(params, &p) != nil || json.Unmarshal(p.Rows, &items) != nil || len(items) > maxPageRows {
 		return nil
 	}
 	var ids []string
+	seen := map[string]bool{}
 	for _, it := range items {
-		if id, ok := parseID(it); ok && !slices.Contains(ids, id) {
-			if ids = append(ids, id); len(ids) == maxPageRows {
-				break
-			}
+		if id, ok := parseID(it); ok && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
 		}
 	}
 	return ids
@@ -526,8 +526,10 @@ func (r *runner) wantPage(changed bool, rows []string) {
 			r.pulls.pageRows = map[string]bool{}
 		}
 		for _, id := range rows {
-			if len(r.pulls.pageRows) < maxPageRows {
+			if len(r.pulls.pageRows) < maxPageRows || r.pulls.pageRows[id] {
 				r.pulls.pageRows[id] = true
+			} else {
+				r.pulls.pageAll = true
 			}
 		}
 	} else {
@@ -541,6 +543,12 @@ func (r *runner) wantPage(changed bool, rows []string) {
 }
 
 func (r *runner) pullPageQueued(ctx context.Context, p conn, todo pulls) {
+	r.mu.Lock()
+	declared := slices.Contains(r.caps, "page")
+	r.mu.Unlock()
+	if !declared {
+		return
+	}
 	moved := r.fetchPage(ctx, p)
 	if !moved && !todo.pageChanged {
 		return

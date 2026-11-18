@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -182,6 +183,53 @@ func TestNamedRowsAreCappedAtThePageRowLimit(t *testing.T) {
 	}
 	if pageGets(c) != 2 {
 		t.Errorf("page.get calls = %d, want the page refetched", pageGets(c))
+	}
+}
+
+func TestARowsListPastThePageRowLimitIsAllRowsEvenWhenItsItemsAreDuplicates(t *testing.T) {
+	ids := make([]string, maxPageRows+1)
+	for i := range ids {
+		ids[i] = "r1"
+	}
+	raw, _ := json.Marshal(map[string]any{"rows": ids})
+	c := &pageConn{page: json.RawMessage(pageOf(alphaPage, 1))}
+	r := livePageRunner(t, c)
+	r.note(1, "page.changed", raw)
+	r.processPulls(t.Context(), c)
+	if got := rowsOf(t, r); got != nil {
+		t.Errorf("live rows = %v, want none: a list past the row limit means all rows", got)
+	}
+	if pageGets(c) != 2 {
+		t.Errorf("page.get calls = %d, want the page refetched", pageGets(c))
+	}
+}
+
+func TestNamedRowsThatCoalescePastThePageRowLimitMakeItAllRows(t *testing.T) {
+	c := &pageConn{page: json.RawMessage(pageOf(alphaPage, 1))}
+	r := livePageRunner(t, c)
+	for _, from := range []int{0, maxPageRows} {
+		ids := make([]string, maxPageRows)
+		for i := range ids {
+			ids[i] = "r" + strconv.Itoa(from+i)
+		}
+		raw, _ := json.Marshal(map[string]any{"rows": ids})
+		r.note(1, "page.changed", raw)
+	}
+	r.processPulls(t.Context(), c)
+	if got := rowsOf(t, r); got != nil {
+		t.Errorf("live rows = %d ids, want none: the union passed the row limit, so all rows", len(got))
+	}
+}
+
+func TestAPageChangedBeforeInitializeFromAPluginWithoutAPageNeverReachesPageGet(t *testing.T) {
+	c := &pageConn{page: json.RawMessage(pageOf(alphaPage, 1))}
+	r := pageRunner()
+	r.caps = []string{"refresh"}
+	r.p, r.ready, r.state = c, true, StateOK
+	r.note(1, "page.changed", nil)
+	r.processPulls(t.Context(), c)
+	if pageGets(c) != 0 {
+		t.Errorf("page.get calls = %d, want none for a plugin that declares no page", pageGets(c))
 	}
 }
 

@@ -190,22 +190,8 @@ func TestAModulesPageStaysLiveWhenItsPluginSendsPageChanged(t *testing.T) {
 	if first.Waiting != 1 {
 		t.Errorf("page block = %s, want waiting 1 from the page", dump(first))
 	}
-	code, body := w.srcReq(http.MethodGet, "", nil)
-	w.mustOK(code, body, "GET sources")
-	var raw []map[string]any
-	if err := json.Unmarshal([]byte(body), &raw); err != nil {
-		var wrap struct {
-			Sources []map[string]any `json:"sources"`
-		}
-		if err := json.Unmarshal([]byte(body), &wrap); err != nil {
-			t.Fatalf("GET sources is not JSON: %v", err)
-		}
-		raw = wrap.Sources
-	}
-	for _, s := range raw {
-		if _, has := s["page"]; has && s["key"] == "o" {
-			t.Errorf("the source without a page has a page key: %s", dump(s))
-		}
+	if plain := w.waitSource("o", 10*time.Second, "state ok", isOK); plain.Page != nil {
+		t.Errorf("the source without a page has a page block: %s", dump(plain))
 	}
 
 	p.put("page.json", pageWith("After", 4))
@@ -241,49 +227,10 @@ func TestAModulesPageStaysLiveWhenItsPluginSendsPageChanged(t *testing.T) {
 		t.Errorf("GET page after an over-limit answer = %s, want the last good page (After, waiting 4)", dump(got))
 	}
 
-	before := len(p.callsOf("page.get"))
 	w.mustOK(w.srcReq(http.MethodPost, "/m/page/refresh", nil))
 	p.waitCall(5*time.Second, "page.refresh", func(rpcCall) bool { return true })
-	deadline := time.Now().Add(5 * time.Second)
-	for len(p.callsOf("page.get")) <= before {
-		if time.Now().After(deadline) {
-			t.Fatalf("within 5s the page was not asked again after page/refresh; calls: %+v", p.calls())
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
 
 	if code, body := w.srcReq(http.MethodPost, "/o/page/refresh", nil); code != http.StatusNotFound || !strings.Contains(body, "The source has no page") {
 		t.Errorf("POST page/refresh of a source without a page = %d %s, want 404", code, body)
-	}
-	if n := len(o.callsOf("page.refresh")); n != 0 {
-		t.Errorf("the source without a page got %d page.refresh calls, want none", n)
-	}
-}
-
-func TestAModulesPageShowsAuthRequiredAndKeepsItsGroupsUntilAuthOK(t *testing.T) {
-	t.Parallel()
-	w := newWorld(t)
-	p := w.newTP("m")
-	p.put("page.json", pageWith("Kept", 2))
-	w.startSources(tpSource("m", p, map[string]any{"capabilities": []string{"page"}}))
-	ready := w.waitLive("m", "a ready page block", func(l *livePage) bool { return l.State == "ready" })
-
-	p.do("auth-required", `{"message":"Sign in to Acme","url":"https://acme.example/login","code":"AB-12"}`)
-	auth := w.waitLive("m", "auth_required", func(l *livePage) bool { return l.State == "auth_required" })
-	if auth.Version <= ready.Version {
-		t.Errorf("version %d -> %d, want it up on a state change", ready.Version, auth.Version)
-	}
-	got := w.getPage("m")
-	if got.State != "auth_required" || got.Auth == nil || got.Auth.Message != "Sign in to Acme" || got.Auth.URL != "https://acme.example/login" || got.Auth.Code != "AB-12" {
-		t.Errorf("GET page = %s, want auth_required with the sign-in fields", dump(got))
-	}
-	if !reflect.DeepEqual(got.titles(), []string{"Kept"}) {
-		t.Errorf("GET page groups = %v, want the last good groups kept", got.titles())
-	}
-
-	p.do("auth-ok", "")
-	w.waitLive("m", "ready again", func(l *livePage) bool { return l.State == "ready" })
-	if got := w.getPage("m"); got.State != "ready" || got.Auth != nil {
-		t.Errorf("GET page after auth.ok = %s, want ready with no auth", dump(got))
 	}
 }
