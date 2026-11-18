@@ -185,7 +185,7 @@ test('a signed-out fleet says how to sign in with its views greyed, and turns Co
   await expect.poll(copied).toBe('gh auth login -h github.com');
   const dot = githubNavLink(page, WORK).getByRole('img', { name: 'not signed in' });
   await expect(dot).toBeVisible();
-  await expect(prefsNav(page).getByRole('group', { name: `${WORK} fleet` }).getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'GitHub', 'Plugin sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours']);
+  await expect(prefsNav(page).getByRole('group', { name: `${WORK} fleet` }).getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'GitHub', 'Plugin sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours', 'Allow rules']);
 
   const views = page.getByRole('region', { name: 'Views', exact: true });
   await expect(views).toContainText('They run once GitHub is connected.');
@@ -552,7 +552,7 @@ test('a fleet page opens from the switcher, writes its owners and clone root to 
   await page.getByRole('menu').getByRole('menuitem', { name: `${WORK} fleet settings` }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/fleet/);
   const group = prefsNav(page).getByRole('group', { name: `${WORK} fleet` });
-  await expect(group.getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'GitHub', 'Plugin sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours']);
+  await expect(group.getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'GitHub', 'Plugin sources', 'Harness capabilities', 'Usage', 'Limits and quiet hours', 'Allow rules']);
   await group.getByRole('link', { name: 'Plugin sources' }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/sources/);
   await page.goBack();
@@ -573,6 +573,25 @@ test('a fleet page opens from the switcher, writes its owners and clone root to 
 
   // A touch target is at least 44px tall; the component test has no layout.
   expect((await page.getByRole('switch', { name: 'Notify' }).boundingBox())?.height).toBeGreaterThanOrEqual(44);
+
+  // Allow rules: a tap on Remove drops the rule from the store, and the skip stays.
+  const allowRules = join(admiral.home, 'allow-rules.json');
+  writeFileSync(
+    allowRules,
+    JSON.stringify({ fleets: { zulu: { rules: [{ harness: 'codex', pattern: ['make', 'check'], added: '2026-11-02T15:00:00Z' }], skipped: [{ harness: 'claude', repo: 'acme/widgets', rule: 'Bash(npm test:*)', added: '2026-11-03T15:00:00Z' }] } } }),
+  );
+  await group.getByRole('link', { name: 'Allow rules' }).tap();
+  await expect(page).toHaveURL(/\/app\/preferences\/zulu\/allow-rules/);
+  const rules = page.getByRole('list', { name: 'Allow rules' });
+  await expect(rules.getByRole('listitem')).toHaveText([/make check.*every repo/s]);
+  const remove = rules.getByRole('button', { name: 'Remove rule make check' });
+  expect((await remove.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await remove.tap();
+  await expect(page.getByText('No allow rules yet.')).toBeVisible();
+  const storedRules = () => (JSON.parse(readFileSync(allowRules, 'utf8')) as { fleets: { zulu: { rules: unknown[]; skipped: unknown[] } } }).fleets.zulu;
+  expect(storedRules().rules).toEqual([]);
+  expect(storedRules().skipped).toHaveLength(1);
+  await expect(page.getByRole('list', { name: 'Skipped proposals' }).getByRole('listitem')).toHaveText([/Bash\(npm test:\*\).*acme\/widgets/s]);
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

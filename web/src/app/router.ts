@@ -121,7 +121,7 @@ export function chatTerminalOf(path: string): string | null {
   }
 }
 
-const PREFERENCES_PAGES = ['fleet', 'admiralbot', 'github', 'sources', 'capabilities', 'usage', 'limits', 'all-usage', 'remote', 'install', 'notifications'] as const;
+const PREFERENCES_PAGES = ['fleet', 'admiralbot', 'github', 'sources', 'capabilities', 'usage', 'limits', 'allow-rules', 'all-usage', 'remote', 'install', 'notifications'] as const;
 
 const GLOBAL_PAGES: string[] = ['remote', 'all-usage', 'install', 'notifications'];
 
@@ -224,6 +224,9 @@ export const standingOrdersTab = (path: string): boolean => path.replace(/\/$/, 
 
 /** A fleet's Limits page, landing on one field when named. */
 export const limitsPath = (fleetKey: string, field?: string): string => `/app/preferences/${encodeURIComponent(fleetKey)}/limits${field ? `?field=${encodeURIComponent(field)}` : ''}`;
+
+/** A fleet's allow rules and skipped proposals. */
+export const allowRulesPath = (fleetKey: string): string => `/app/preferences/${encodeURIComponent(fleetKey)}/allow-rules`;
 
 /** The field a Limits page query names, if any. */
 export const limitsFieldOf = (search: string): string | null => new URLSearchParams(search).get('field') || null;

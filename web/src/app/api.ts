@@ -527,6 +527,22 @@ export async function getCommitments(fleet: string): Promise<Result<ChatCommitme
 export const cancelCommitment = (fleet: string, id: string) => call<unknown>('DELETE', chatPath(fleet, `commitments/${encodeURIComponent(id)}`));
 export const promoteNote = (fleet: string, id: string) => call<Instructions>('POST', chatPath(fleet, `notes/${encodeURIComponent(id)}/promote`));
 export const startSetup = () => call<unknown>('POST', '/setup');
+export interface AllowRule {
+  harness: string;
+  /** The remote's owner/repo or the checkout's path; a Codex rule has none, since it covers every repo of the fleet. */
+  repo?: string;
+  rule?: string;
+  pattern?: string[];
+  added?: string;
+}
+export interface AllowRules {
+  rules: AllowRule[];
+  skipped: AllowRule[];
+}
+const allowRulesPath = (fleet: string, rest = '') => `/fleets/${encodeURIComponent(fleet)}/allow-rules${rest}`;
+export const getAllowRules = (fleet: string) => call<AllowRules>('GET', allowRulesPath(fleet));
+export const removeAllowRule = (fleet: string, rule: AllowRule) => call<AllowRules>('POST', allowRulesPath(fleet, '/remove'), { rule });
+export const unskipAllowRule = (fleet: string, rule: AllowRule) => call<AllowRules>('POST', allowRulesPath(fleet, '/skipped/remove'), { rule });
 
 export type CapabilityStatus = 'passed' | 'failed' | 'not_checked';
 export interface Capability {
