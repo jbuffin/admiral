@@ -103,6 +103,8 @@ beforeEach(() => {
       );
       if (route === "/campaigns/camp-1" && (init.method ?? "GET") === "GET")
         return json(served);
+      if (route === "/fleets/zulu/campaigns/search")
+        return json({ results: [] });
       if (route === "/launch-orders/dirs")
         return json({
           entries: [
@@ -218,20 +220,35 @@ test("clicking the Campaigns link opens the Campaigns page", async () => {
   expect(location.search).toBe("?fleet=zulu");
 });
 
-test("clicking + toggles the Campaign issue field without leaving the page, and aria-expanded follows", async () => {
+test("clicking + opens the Add campaign modal without leaving the page, and the paste field is gone", async () => {
   await nav();
-  const add = screen.getByRole("button", { name: "Add campaign" });
-  expect(add.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("dialog", { name: "Add campaign" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Add campaign" }));
+  expect(
+    await screen.findByRole("dialog", { name: "Add campaign" }),
+  ).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Campaign issue" })).toBeNull();
-  fireEvent.click(add);
-  expect(screen.getByRole("textbox", { name: "Campaign issue" })).toBeTruthy();
-  expect(add.getAttribute("aria-expanded")).toBe("true");
   expect(location.pathname).toBe("/app/ships");
   expect(location.search).toBe("?fleet=zulu");
-  fireEvent.click(add);
+});
+
+test("the phone's Campaigns list has an Add campaign button that opens the modal, and no paste field", async () => {
+  campaignList.value = [];
+  fleets.value = [fleet];
+  go("/app/campaigns", "?fleet=zulu");
+  render(<CampaignsList phone title />);
   expect(screen.queryByRole("textbox", { name: "Campaign issue" })).toBeNull();
-  expect(add.getAttribute("aria-expanded")).toBe("false");
-  expect(location.pathname).toBe("/app/ships");
+  fireEvent.click(screen.getByRole("button", { name: "Add campaign" }));
+  expect(
+    await screen.findByRole("dialog", { name: "Add campaign" }),
+  ).toBeTruthy();
+  expect(location.pathname).toBe("/app/campaigns");
+});
+
+test("an empty Following list points to Add campaign", () => {
+  render(<CampaignsList phone={false} title />);
+  expect(screen.getByText(/Add campaign/)).toBeTruthy();
+  expect(screen.queryByText(/pasting/)).toBeNull();
 });
 
 test("the followed campaigns and Ended (n) still show under the row", async () => {
@@ -268,7 +285,9 @@ test("a list card shows the same meta line and the same ready count as the sideb
   cleanup();
   render(<CampaignsList phone={false} title />);
   const card = screen.getByRole("link", { name: /Widgets overhaul/ });
-  expect(within(card).getByText("acme/widgets#20 · 0 of 1").textContent).toBe(rowMeta);
+  expect(within(card).getByText("acme/widgets#20 · 0 of 1").textContent).toBe(
+    rowMeta,
+  );
   expect(card.textContent).not.toContain("Map");
   expect(screen.getByRole("link", { name: /2 ready, with you/ })).toBe(card);
 });
@@ -283,7 +302,12 @@ test("a list card shows its underway count with what it counts", () => {
 test("a list card shows neither count when both are 0 or absent", () => {
   campaignList.value = [
     summaryOf({ ready_with_you: 0, counts: { ready: 0, underway: 0 } }),
-    summaryOf({ id: "camp-2", title: "Gadgets", ready_with_you: 0, counts: {} }),
+    summaryOf({
+      id: "camp-2",
+      title: "Gadgets",
+      ready_with_you: 0,
+      counts: {},
+    }),
   ];
   render(<CampaignsList phone={false} title />);
   for (const name of [/Widgets overhaul/, /Gadgets/]) {
@@ -298,7 +322,9 @@ test("the Ended tab's cards carry the same counts", () => {
   render(<CampaignsList phone={false} title />);
   const card = screen.getByRole("link", { name: /Widgets overhaul/ });
   expect(card.getAttribute("href")).toBeTruthy();
-  expect(screen.getByRole("link", { name: /2 ready, with you 3 underway/ })).toBe(card);
+  expect(
+    screen.getByRole("link", { name: /2 ready, with you 3 underway/ }),
+  ).toBe(card);
 });
 
 test("on a campaign's page Done shows its count with its rows hidden, and tapping its head shows them", async () => {
@@ -315,7 +341,9 @@ test("on a campaign's page Done shows its count with its rows hidden, and tappin
     root: { ...root, children: [child, shipped] },
   };
   render(<CampaignPage id="camp-1" title />);
-  expect(await screen.findByRole("button", { name: /Map the parser/ })).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: /Map the parser/ }),
+  ).toBeTruthy();
   const head = screen.getByRole("heading", { name: /^Done/ });
   expect(within(head).getByText("1")).toBeTruthy();
   expect(screen.queryByText("Shipped the lexer")).toBeNull();
@@ -325,6 +353,8 @@ test("on a campaign's page Done shows its count with its rows hidden, and tappin
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText("Shipped the lexer")).toBeTruthy();
   expect(
-    screen.getByRole("heading", { name: /^Ready, with you/ }).querySelector("button"),
+    screen
+      .getByRole("heading", { name: /^Ready, with you/ })
+      .querySelector("button"),
   ).toBeNull();
 });

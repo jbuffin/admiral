@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { T, campaignIdOf, followByPaste, githubReady, issueUrl, seedCampaignFleet } from './campaign';
+import { T, campaignIdOf, githubReady, seedCampaignFleet } from './campaign';
 import { watchPage, withFakeGh } from './shell';
 
 test('on the phone, the Campaigns page and a child sheet fit the screen and their controls are tall enough to tap', async ({ page, admiral }) => {
@@ -7,7 +7,6 @@ test('on the phone, the Campaigns page and a child sheet fit the screen and thei
   await admiral.start({ env: withFakeGh(admiral) });
   await githubReady(admiral);
   const watch = watchPage(page, admiral.url);
-  const press = (l: { tap(): Promise<void> }) => l.tap();
 
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await page.getByRole('button', { name: 'More', exact: true }).tap();
@@ -15,7 +14,18 @@ test('on the phone, the Campaigns page and a child sheet fit the screen and thei
   const main = page.getByRole('main');
   await expect(main.getByRole('button', { name: /^Ended/ })).toBeVisible();
 
-  await followByPaste(page, press, issueUrl(20));
+  // The Add campaign sheet fits the screen, and a row takes a tap.
+  await main.getByRole('button', { name: 'Add campaign' }).tap();
+  const add = page.getByRole('dialog', { name: 'Add campaign' });
+  const room = page.viewportSize()!;
+  const frame = (await add.boundingBox())!;
+  expect(frame.x).toBeGreaterThanOrEqual(0);
+  expect(frame.x + frame.width).toBeLessThanOrEqual(room.width);
+  expect(frame.y + frame.height).toBeLessThanOrEqual(room.height);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const pick = add.getByRole('button', { name: new RegExp(T.map) });
+  expect((await pick.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await pick.tap();
   await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
   const id = campaignIdOf(page);
   await expect(main.getByRole('heading', { name: T.map })).toBeVisible();

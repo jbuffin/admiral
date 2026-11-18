@@ -1,10 +1,10 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { ANNEX, T, campaignIdOf, closeAnnexChild, followByPaste, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, proposalJourney, seedChatCampaignFleet, seedCampaignFleet } from './campaign';
+import { ANNEX, DEPOT, DEPOT_TITLE, OLD_DUST, T, campaignIdOf, closeAnnexChild, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, proposalJourney, seedChatCampaignFleet, seedCampaignFleet } from './campaign';
 import { skillPicker, watchPage, withFakeGh } from './shell';
 
-test('on the iPad, a person follows a campaign by pasting it, sees each child\'s status and mode, launches a ready child, is refused a second launch, unfollows it and finds it under Ended; Follow on an order opens its campaign', async ({ page, admiral }) => {
+test('on the iPad, a person follows a campaign by searching for it and another by its reference, sees each child\'s status and mode, launches a ready child, is refused a second launch, unfollows it and finds it under Ended; Follow on an order opens its campaign', async ({ page, admiral }) => {
   seedCampaignFleet(admiral);
   await admiral.start({ env: { ...withFakeGh(admiral), ADMIRAL_SAIL_OFF_DELAY: '1s' } });
   await githubReady(admiral);
@@ -17,16 +17,27 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   const group = (title: string) => main.getByRole('region', { name: new RegExp(`^${title}`) });
   const row = (title: string) => main.getByRole('listitem').filter({ hasText: title });
 
-  // A paste the server would refuse for its shape says so before it is sent.
+  // The + opens the Add campaign modal where the person is, with the fleet's open parents listed first.
   await press(nav.getByRole('button', { name: 'Add campaign' }));
-  const field = page.getByRole('textbox', { name: /campaign/i });
-  await field.fill(issueUrl(MAP) + '/');
-  await expect(page.getByText(/trailing slash/i)).toBeVisible();
-  await field.fill(issueUrl(MAP) + '#issuecomment-123456');
-  await expect(page.getByText(/comment/i)).toBeVisible();
+  const modal = page.getByRole('dialog', { name: 'Add campaign' });
+  const search = modal.getByPlaceholder('Search, #n, owner/repo#n or a URL');
+  await expect(search).toBeFocused();
+  await expect(page).toHaveURL(/\/app\/ships/);
+  await expect(modal.getByText('Open parent issues in this fleet')).toBeVisible();
+  await expect(modal.getByRole('button', { name: new RegExp(T.map) })).toBeVisible();
+  await expect(modal.getByRole('button', { name: new RegExp(T.annex) })).toBeVisible();
 
-  await followByPaste(page, press, 'acme/widgets#20');
-  await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
+  // Typing groups parents before the rest, and says which issue is closed.
+  await search.fill('moon');
+  await expect(modal.getByText('Parent issues', { exact: true })).toBeVisible();
+  await expect(modal.getByText('Other issues', { exact: true })).toBeVisible();
+  await expect(modal.getByRole('button', { name: new RegExp(OLD_DUST) })).toContainText('closed');
+  await expect(modal.getByRole('button', { name: /Start a new campaign/ })).toBeDisabled();
+
+  const followedIn = async () => ((await (await fetch(`${admiral.url}api/v1/campaigns`)).json()) as { campaigns: { title: string }[] }).campaigns.map((c) => c.title);
+  await press(modal.getByRole('button', { name: new RegExp(T.map) }));
+  await expect.poll(followedIn).toContain(T.map);
+  await expect(modal).toBeHidden();
   const id = campaignIdOf(page);
   await expect(main.getByRole('heading', { name: T.map })).toBeVisible();
   // The title opens the campaign's own sheet; the repo#number in the header still opens the root issue on GitHub.
@@ -35,6 +46,16 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(nav).toContainText(T.map);
   // Following launched nothing.
   expect(((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: unknown[] }).ships).toHaveLength(0);
+
+  // A reference no search lists is looked up and gets its own row; it follows too, and the map's page opens again from the sidebar.
+  await press(nav.getByRole('button', { name: 'Add campaign' }));
+  await modal.getByPlaceholder('Search, #n, owner/repo#n or a URL').fill(`acme/widgets#${DEPOT}`);
+  await press(modal.getByRole('button', { name: new RegExp(DEPOT_TITLE) }));
+  await expect.poll(followedIn).toContain(DEPOT_TITLE);
+  await expect(main.getByRole('heading', { name: DEPOT_TITLE })).toBeVisible();
+  await press(nav.getByRole('link', { name: new RegExp(T.map) }));
+  await expect(main.getByRole('heading', { name: T.map })).toBeVisible();
+  expect(campaignIdOf(page)).toBe(id);
 
   // Ready with you and without you, blocked with its blocker, claimed with no ship, and done; each in sub-issue order.
   await expect(group('Ready, with you').getByRole('listitem')).toHaveText([new RegExp(T.grill), new RegExp(T.rover)]);

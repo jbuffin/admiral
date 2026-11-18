@@ -47,6 +47,15 @@ export function fakeGhTrees(a: Admiral) {
   writeFileSync(join(search, 'partof.match'), 'Part of');
   writeFileSync(join(search, 'partof.json'), JSON.stringify({ data: { search: { nodes: [], pageInfo: page1 } } }));
   return {
+    /** The canned issue searches: the parent query (needle `has:sub-issue`) and the plain one (`is:issue (`, which the parent query lacks), the parent key sorting first so the plain needle can't catch it. */
+    search(parents: Tree[], plain: Tree[]) {
+      const key = (name: string, needle: string, nodes: Tree[]) => {
+        writeFileSync(join(search, `${name}.match`), needle);
+        writeFileSync(join(search, `${name}.json`), JSON.stringify({ data: { search: { nodes } } }));
+      };
+      key('search1parents', 'has:sub-issue', parents);
+      key('search2plain', 'is:issue (', plain);
+    },
     tree(node: Tree) {
       const n = node.number as number;
       writeFileSync(join(search, `tree${n}.match`), `number=${n}`);
@@ -60,7 +69,25 @@ export function fakeGhTrees(a: Admiral) {
   };
 }
 
+/** An issue as the GraphQL search answers it; `sub` makes it a parent with that many sub-issues, `done` of them closed. */
+export function searchNode(n: number, title: string, o: { sub?: [done: number, total: number]; closed?: boolean } = {}): Tree {
+  return {
+    number: n,
+    title,
+    url: issueUrl(n),
+    state: o.closed ? 'CLOSED' : 'OPEN',
+    repository: { nameWithOwner: 'acme/widgets' },
+    subIssuesSummary: { total: o.sub?.[1] ?? 0, completed: o.sub?.[0] ?? 0 },
+  };
+}
+
 export const MAP = 20;
+/** Found by the typed search "moon", never by the empty one: a leaf and a closed leaf. */
+export const DUST = 'Moonbase dust sweep';
+export const OLD_DUST = 'Moonbase old dust';
+/** Followed by typing its reference, which no canned search lists. */
+export const DEPOT = 40;
+export const DEPOT_TITLE = 'Moonbase depot';
 export const ANNEX = 30;
 /** The annex's children, all `ready-for-agent`: Ready, Without you and Commodore. */
 export const ANNEX_KIDS: [number, string][] = [
@@ -124,6 +151,9 @@ export function seedCampaignFleet(a: Admiral) {
     }),
   );
   gh.campaign(annexTree());
+  gh.campaign(issueNode(DEPOT, DEPOT_TITLE, { kids: [issueNode(43, 'Stock the depot', { labels: ['ready-for-agent'] })] }));
+  const parents = [searchNode(MAP, T.map, { sub: [1, 6] }), searchNode(ANNEX, T.annex, { sub: [0, 4] })];
+  gh.search(parents, [...parents, searchNode(41, DUST), searchNode(42, OLD_DUST, { closed: true })]);
 
   // Orders the Ships screen offers Follow on: one with sub-issues, one without.
   a.flags('orders').orders({
@@ -144,14 +174,6 @@ export async function githubReady(a: Admiral) {
       return list.find((s) => s.key === 'github')?.state;
     })
     .toBe('ok');
-}
-
-/** Follows by pasting into the Campaigns field, opening it first when it is behind the Add campaign button. */
-export async function followByPaste(page: Page, press: (l: Locator) => Promise<void>, text: string) {
-  const field = page.getByRole('textbox', { name: /campaign/i });
-  if (!(await field.isVisible())) await press(page.getByRole('button', { name: 'Add campaign' }));
-  await field.fill(text);
-  await field.press('Enter');
 }
 
 export const campaignIdOf = (page: Page) => new URL(page.url()).pathname.replace(/\/$/, '').split('/').pop()!;
