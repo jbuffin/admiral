@@ -55,7 +55,7 @@ test('a filter does not match a row by its reason', () => {
 
 test('a filter drops a group left with no rows and keeps the others in order', () => {
   expect(ids(filterGroups(groups, 'docs'))).toEqual([['done', ['c']]]);
-  expect(ids(filterGroups(groups, 'o'))).toEqual([
+  expect(ids(filterGroups(groups, 'c'))).toEqual([
     ['review', ['b']],
     ['done', ['c']],
   ]);
