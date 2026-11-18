@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, loaded } from './fleets';
 import { Flag } from './Flag';
 import { FleetSwitcher } from './FleetSwitcher';
+import { ThemeToggle } from './ThemeToggle';
 import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
@@ -409,6 +410,7 @@ function DesktopShell({ surface, mod }: { surface: Surface; mod: ModuleView | nu
         <div class="side-foot">
           {build ? <span class="side-version">{build.version}</span> : null}
           <UpdateBadge />
+          <ThemeToggle />
         </div>
       </nav>
       <Stage surface={surface} mod={mod} title />

@@ -10,11 +10,13 @@ import { effect } from '@preact/signals';
 import { settleRoute, startRouter } from './router';
 import { Shell } from './Shell';
 import { checkBuild } from './buildCheck';
+import { applyStoredTheme } from './theme';
 import { onShipsOpen, watchShips } from './shipsLink';
 
 // iOS Safari only applies :active on touch when a touch listener exists.
 document.addEventListener('touchstart', () => {}, { passive: true });
 
+applyStoredTheme();
 listenForInstall();
 startRouter();
 effect(settleRoute);
