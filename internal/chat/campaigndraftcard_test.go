@@ -61,7 +61,7 @@ func TestACampaignDraftCardAddsADigestLineWithTheTitleQuotedSafely(t *testing.T)
 		t.Fatalf("digest = %+v, want one line after two posts of one card", f.Lines)
 	}
 	text := lineTexts(f)
-	if !strings.Contains(text, "https://github.com/acme/widgets/issues/99") || strings.Contains(text, "\"the\"") || strings.Contains(text, "\n") && strings.Count(text, "\n") > 1 {
-		t.Errorf("digest line = %q, want the URL, and the title's quotes and newline made safe", text)
+	if !strings.Contains(text, "https://github.com/acme/widgets/issues/99") || strings.Contains(text, "\"the\"") || strings.Contains(text, "\n") {
+		t.Errorf("digest line = %q, want the URL and a title with no quote of its own and no newline", text)
 	}
 }

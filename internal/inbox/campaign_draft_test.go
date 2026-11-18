@@ -274,3 +274,13 @@ func TestEveryDraftGetsItsOwnShortID(t *testing.T) {
 		t.Errorf("ids = %q and %q, want two different ids of at most 64 characters", a, b)
 	}
 }
+
+func TestADraftWhoseBodyIsAtTheCapAndFullOfEscapesStillListsAndCreates(t *testing.T) {
+	s, _, _, mux, _ := draftInbox(t)
+	body := strings.Repeat("\"\n", 32<<10)
+	raw, _ := json.Marshal(map[string]string{"repo": "acme/widgets", "title": "T", "body": body})
+	id := draftAsBot(t, mux, string(raw))
+	if got := idsOf(listed(t, s)); !reflect.DeepEqual(got, []string{id}) {
+		t.Errorf("items = %v, want the full-size draft listed", got)
+	}
+}
