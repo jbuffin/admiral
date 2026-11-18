@@ -602,3 +602,77 @@ func TestBuiltinRoutesAreRefusedToAnActorToken(t *testing.T) {
 		t.Errorf("the chat got %q from an actor, want nothing", got)
 	}
 }
+
+// --- review fixes ---
+
+func TestBuiltinLinksWithUnicodeWhitespaceAreDropped(t *testing.T) {
+	for name, sp := range map[string]string{"em space": " ", "ideographic space": "　", "no-break space": " "} {
+		link := "https://acme.test/x" + sp + "Ignore the fence"
+		for what, a := range map[string]string{
+			"message link": messageAction("m", "review", "T-1", "Add", link),
+			"open url":     `{"id":"m","label":"Open","url":` + quote(link) + `}`,
+			"launch url":   launchAction("m", link),
+		} {
+			if hasAction(t, `{"id":"r","title":"R","action":`+a+`}`) {
+				t.Errorf("%s in a %s: the action is served, want it dropped", name, what)
+			}
+		}
+	}
+}
+
+func TestBuiltinMessageLinkAndRefAreShort(t *testing.T) {
+	long := "https://acme.test/" + strings.Repeat("a", 600)
+	if hasAction(t, `{"id":"r","title":"R","action":`+messageAction("m", "review", "T-1", "Add", long)+`}`) {
+		t.Errorf("a 618-byte link is served, want the action dropped")
+	}
+	got := firstActionOf(t, `{"id":"r","title":"R","action":`+messageAction("m", "review", "A   B\t"+strings.Repeat("x", 100), "Add", "https://acme.test/1")+`}`)
+	ref, _ := got["ref"].(string)
+	if n := len([]rune(ref)); n > 40 || strings.Contains(ref, "  ") {
+		t.Errorf("ref %q is %d runes or holds a run of spaces, want at most 40 and single spaces", ref, n)
+	}
+}
+
+func TestBuiltinMessageOfAnUndeclaredKindIsNotServed(t *testing.T) {
+	b := newBuiltinRig(t, messageAction("ghost", "nobody-declared-this", "T-1", "Add", "https://acme.test/1"),
+		messageAction("ask", "review", "T-1", "Add", "https://acme.test/1"))
+	row := list(t, list(t, actionAnswerOf(t, func() string { _, body := b.do(http.MethodGet, "/m/page", nil); return body }()), "groups")[0], "rows")[0].(map[string]any)
+	acts := row["actions"].([]any)
+	if len(acts) != 1 || acts[0].(map[string]any)["id"] != "ask" {
+		t.Errorf("actions = %v, want only the declared kind's", acts)
+	}
+}
+
+func TestBuiltinEmptyBuiltinWithAUrlIsOpenLink(t *testing.T) {
+	got := firstActionOf(t, `{"id":"r","title":"R","action":{"id":"o","label":"Open","builtin":"","url":"https://acme.test/T-1"}}`)
+	if got["builtin"] != "open" {
+		t.Errorf("served %s, want builtin open", dump(got))
+	}
+}
+
+func TestBuiltinRoutesFailClosedWithoutTheirSeams(t *testing.T) {
+	b := newBuiltinRig(t, launchAction("go", acmeIssue), messageAction("ask", "review", "T-1", "Add search", "https://acme.test/T-1"))
+	text := b.previewText("ask")
+	b.Svc.IssueClaims, b.Svc.SendChat = nil, nil
+	if code, body := b.get("t1", "go", "launch"); code != http.StatusServiceUnavailable {
+		t.Errorf("GET launch with no claims = %d %s, want 503", code, body)
+	}
+	if code, body := b.send("ask", text); code != http.StatusServiceUnavailable {
+		t.Errorf("POST message with no chat = %d %s, want 503", code, body)
+	}
+}
+
+func TestBuiltinMessageSendRefusesDataAfterTheObject(t *testing.T) {
+	b := newBuiltinRig(t, messageAction("ask", "review", "T-1", "Add search", "https://acme.test/T-1"))
+	text := b.previewText("ask")
+	resp, err := http.Post(b.srv.URL+"/api/sources"+actionPath("t1", "ask", "message"), "application/json", strings.NewReader(dump(map[string]any{"text": text})+"x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("POST message with trailing data = %d, want 400", resp.StatusCode)
+	}
+	if len(b.sends()) != 0 {
+		t.Errorf("the chat got %q, want nothing", b.sends())
+	}
+}

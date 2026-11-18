@@ -31,9 +31,9 @@ type Service struct {
 	Hub    *server.Hub
 	// MergeGuard wraps the stack route with its token check; with none the route refuses everything.
 	MergeGuard func(http.Handler) http.Handler
-	// IssueClaims maps each claimed GitHub issue (by ships.ClaimKey) to the ship holding it.
+	// IssueClaims maps each claimed GitHub issue (by ships.ClaimKey) to the ship holding it; with none, Launch is refused with 503.
 	IssueClaims func() map[string]string
-	// SendChat pastes text into the fleet's chat as the engineer; nil means sent.
+	// SendChat pastes text into the fleet's chat as the engineer; with none, a message is refused with 503.
 	SendChat func(fleet, text string) *launcher.Error
 
 	linkMu  sync.Mutex      // guards linking

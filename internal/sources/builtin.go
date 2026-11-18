@@ -3,10 +3,12 @@ package sources
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/jbuffin/admiral/internal/campaigns"
 	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -51,16 +53,13 @@ func (s *Service) serveBuiltinLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	k, isIssue := ships.ClaimKey(a.URL)
-	if !isIssue {
+	ref, err := campaigns.ParseIssueRef(strings.TrimRight(strings.SplitN(strings.TrimSpace(a.URL), "#", 2)[0], "/"))
+	if !isIssue || err != nil {
 		writeError(w, http.StatusBadRequest, "Launch takes a GitHub issue URL")
 		return
 	}
 	cfg := s.Config.Current()
-	host := strings.TrimPrefix(k, "https://")
-	host, path, _ := strings.Cut(host, "/")
-	owner, rest, _ := strings.Cut(path, "/")
-	repo, _, _ := strings.Cut(rest, "/")
-	fleetKey := github.RouterFromFleets(cfg.Fleets).Route(host, owner+"/"+repo)
+	fleetKey := github.RouterFromFleets(cfg.Fleets).Route(ref.Host, ref.Owner+"/"+ref.Repo)
 	fleet, found := cfg.Fleet(fleetKey)
 	if !found {
 		writeError(w, http.StatusBadRequest, "the issue routes to no fleet")
@@ -70,11 +69,13 @@ func (s *Service) serveBuiltinLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, lerr.Status, cleanMsg(lerr.Msg))
 		return
 	}
-	if s.IssueClaims != nil {
-		if holder, held := s.IssueClaims()[k]; held {
-			writeError(w, http.StatusConflict, cleanMsg(errIssueHasAShip.Error()+": "+holder))
-			return
-		}
+	if s.IssueClaims == nil {
+		writeError(w, http.StatusServiceUnavailable, "Admiral cannot tell which issues have a ship")
+		return
+	}
+	if holder, held := s.IssueClaims()[k]; held {
+		writeError(w, http.StatusConflict, cleanMsg(errIssueHasAShip.Error()+": "+holder))
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"url": k, "fleet": fleetKey})
 }
@@ -151,7 +152,8 @@ func (s *Service) sendBuiltinMessage(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Text string `json:"text"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxMessageBody)).Decode(&body); err != nil {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxMessageBody))
+	if err := dec.Decode(&body); err != nil || dec.Decode(&struct{}{}) != io.EOF {
 		writeError(w, http.StatusBadRequest, "the body is not a JSON object with the shown text")
 		return
 	}
@@ -159,11 +161,13 @@ func (s *Service) sendBuiltinMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, errMessageStale.Error())
 		return
 	}
-	if s.SendChat != nil {
-		if lerr := s.SendChat(fleet, text); lerr != nil {
-			writeError(w, lerr.Status, cleanMsg(lerr.Msg))
-			return
-		}
+	if s.SendChat == nil {
+		writeError(w, http.StatusServiceUnavailable, "Admiral cannot reach the chat")
+		return
+	}
+	if lerr := s.SendChat(fleet, text); lerr != nil {
+		writeError(w, lerr.Status, cleanMsg(lerr.Msg))
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sent": true, "chat": chatPath(fleet)})
 }

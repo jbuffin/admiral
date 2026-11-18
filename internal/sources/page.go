@@ -31,6 +31,9 @@ const (
 	maxRunValueRunes = 1000
 	maxRunURLBytes   = 2000    // a run answer's url
 	maxRunBytes      = 1 << 20 // bytes of a run request's body
+
+	maxMessageLinkBytes = 500 // a message action's link
+	maxMessageRefRunes  = 40
 )
 
 var (
@@ -156,9 +159,14 @@ func cappedLine(raw json.RawMessage, runes int) string {
 	return cleanLine(s)
 }
 
+// invisible is a rune that no text sent on to a chat may hold: a control, a format character or a line or paragraph separator.
+func invisible(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
+}
+
 func cleanLine(s string) string {
 	s = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
+		if invisible(r) {
 			return -1
 		}
 		return r
@@ -201,11 +209,34 @@ func parseChips(raw []json.RawMessage) ([]Chip, error) {
 	return chips, nil
 }
 
-// plainURL is whether a link holds no control or format character, which safeURL leaves in.
+// plainURL is whether a link holds no invisible rune and no whitespace of any script, which safeURL leaves in.
 func plainURL(u string) bool {
-	return strings.IndexFunc(u, func(r rune) bool {
-		return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
-	}) < 0
+	return strings.IndexFunc(u, func(r rune) bool { return invisible(r) || unicode.IsSpace(r) }) < 0
+}
+
+// messageRef is a reference as one short identifier: single spaces only, at most maxMessageRefRunes.
+func messageRef(raw json.RawMessage) string {
+	return truncate(strings.Join(strings.Fields(titleLine(raw)), " "), maxMessageRefRunes)
+}
+
+// keepDeclared is actions without the message actions whose kind the plugin did not declare.
+func keepDeclared(actions []Action, kinds []MessageKind) []Action {
+	return slices.DeleteFunc(actions, func(a Action) bool {
+		return a.Builtin == "message" && !slices.ContainsFunc(kinds, func(k MessageKind) bool { return k.Kind == a.Kind })
+	})
+}
+
+// dropUndeclared removes the message actions of page whose kind is not in kinds.
+func dropUndeclared(page *Page, kinds []MessageKind) {
+	for gi := range page.Groups {
+		rows := page.Groups[gi].Rows
+		for ri := range rows {
+			if a := rows[ri].Action; a != nil && len(keepDeclared([]Action{*a}, kinds)) == 0 {
+				rows[ri].Action = nil
+			}
+			rows[ri].Actions = keepDeclared(rows[ri].Actions, kinds)
+		}
+	}
 }
 
 // parseAction is nil for an action with no id or label, a built-in action without its fields, or a url that is not http(s).
@@ -235,7 +266,7 @@ func parseAction(raw json.RawMessage) *Action {
 	}
 	if len(item.URL) > 0 && string(item.URL) != "null" {
 		u, _ := rawString(item.URL)
-		if a.URL = safeURL(u); a.URL == "" {
+		if a.URL = safeURL(u); a.URL == "" || !plainURL(a.URL) {
 			return nil
 		}
 	}
@@ -244,7 +275,8 @@ func parseAction(raw json.RawMessage) *Action {
 		if a.Builtin, ok = rawString(item.Builtin); !ok {
 			return nil
 		}
-	} else if a.URL != "" {
+	}
+	if a.Builtin == "" && a.URL != "" {
 		a.Builtin = "open"
 	}
 	switch a.Builtin {
@@ -256,9 +288,9 @@ func parseAction(raw json.RawMessage) *Action {
 	case "message":
 		a.URL = ""
 		a.Confirm = "yesno" // a message always asks first
-		a.Kind, a.Ref, a.Title = titleLine(item.Kind), titleLine(item.Ref), titleLine(item.Title)
+		a.Kind, a.Ref, a.Title = titleLine(item.Kind), messageRef(item.Ref), titleLine(item.Title)
 		link, _ := rawString(item.Link)
-		if a.Link = safeURL(link); a.Link == "" || len(a.Link) > maxRunURLBytes || !plainURL(a.Link) || a.Kind == "" || a.Ref == "" || a.Title == "" {
+		if a.Link = safeURL(link); a.Link == "" || len(a.Link) > maxMessageLinkBytes || !plainURL(a.Link) || a.Kind == "" || a.Ref == "" || a.Title == "" {
 			return nil
 		}
 	default:
@@ -562,6 +594,7 @@ func (r *runner) fetchPage(ctx context.Context, p conn) bool {
 		return false
 	}
 	r.mu.Lock()
+	dropUndeclared(&page, r.kinds)
 	switch {
 	case !page.Loading:
 		r.page, r.hasPage = page, true
@@ -731,6 +764,14 @@ func (r *runner) rowDetail(ctx context.Context, id string, include []string) (Ro
 	}
 	d, err := parseRowDetail(res)
 	if err == nil {
+		r.mu.Lock()
+		kinds := r.kinds
+		r.mu.Unlock()
+		for i := range d.Sections {
+			for j := range d.Sections[i].Steps {
+				d.Sections[i].Steps[j].Actions = keepDeclared(d.Sections[i].Steps[j].Actions, kinds)
+			}
+		}
 		r.rememberSteps(id, d)
 	}
 	return d, err

@@ -764,15 +764,15 @@ The same two routes for a notice's action, with the same bodies, answers and sta
 
 Looks up a Launch built-in action; the plugin side is in [A module's page](plugins.md#a-modules-page). The engineer's alone: AdmiralBot gets `403`. It reads the action from the stored page, so it works while the source is down or the page is in `error`, and never calls the plugin. Answers `200 {"url","fleet"}`: the issue in its claim form (`https`, lower case, no fragment) and the key of the fleet the issue routes to. The launch itself is the normal `POST /api/ships` with `issues: ["<url>"]` and that `fleet`.
 
-Errors: `404` for an unknown source, a row or action not on the page, or an action that is not a Launch; `400` when the `url` is not an `https` GitHub issue on a host that fleet uses; `409` when the issue already has a ship, a pending launch or a launch in flight.
+Errors: `404` for an unknown source, a row or action not on the page, or an action that is not a Launch; `400` when the `url` is not an `https` GitHub issue on a host that fleet uses, or when the issue routes to no fleet; `503` when Admiral cannot read the ships' claims; `409` when the issue already has a ship, a pending launch or a launch in flight.
 
 ### `GET` and `POST /api/sources/<key>/rows/<id>/actions/<action>/message`
 
 Previews and sends a Message AdmiralBot built-in action. The engineer's alone: AdmiralBot gets `403`. Both compose the text from the stored page and the kind's declaration, with no plugin call, so they work while the source is down.
 
-`GET` answers `200 {"text","fleet","chat"}`: the exact text, the module's fleet, and the chat's shell path (`/app/chat?fleet=<fleet>`). The text is `*From the <page>:* <job> Row: <ref>`, a newline, a fence of backticks (at least five, longer than any run in the title), the title, the fence, a newline and the link. `POST` takes `{"text"}`, the text the client showed, and posts it to that fleet's chat as the engineer only when it equals the text composed now, byte for byte. It answers `200 {"sent": true, "chat"}`.
+`GET` answers `200 {"text","fleet","chat"}`: the exact text, the module's fleet, and the chat's shell path (`/app/chat?fleet=<fleet>`). The text is `*From the <page>:* <job> Row: <ref>`, `\n`, a fence of backticks (at least five, longer than any run in the title), `\n`, the title, `\n`, the same fence, `\n` and the link, with no trailing newline. `POST` takes `{"text"}`, the text the client showed, and posts it to that fleet's chat as the engineer only when it equals the text composed now, byte for byte. It answers `200 {"sent": true, "chat"}`.
 
-Errors: `404` for an unknown source, a row or action not on the page, an action that is not a message, or a kind the plugin did not declare; `409` when the page is in `error`, or on `POST` when the text is not the composed one (nothing is posted; ask `GET` again); `400` for a bad body. The chat's own refusal passes through: `404` for no such fleet, `409` when its chat is off or not running, `502` when the paste failed.
+Errors: `404` for an unknown source, a row or action not on the page, an action that is not a message, or a kind the plugin did not declare; `409` when the page is in `error`, or on `POST` when the text is not the composed one (nothing is posted; ask `GET` again); `400` for a body that is not one JSON object (data after it counts); `503` when Admiral has no chat to send to. The chat's own refusal passes through: `404` for no such fleet, `409` when its chat is off or not running, `502` when the paste failed.
 
 ### `POST /api/sources/<key>/page/refresh`
 
