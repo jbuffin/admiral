@@ -75,11 +75,16 @@ func TestAScoutLaunchedThroughTheAPIIsGuardedAndSailsAtItsStop(t *testing.T) {
 			break
 		}
 	}
-	handlers, _ := handlersOf(t, r.dir)
+	// A handler's line is appended only after it exits, so the last guard exit can trail its guard_denied record.
+	var handlers [][3]string
 	exit2 := 0
-	for _, h := range handlers {
-		if h[2] == "admiral guard pretooluse" && h[1] == "2" {
-			exit2++
+	for end := time.Now().Add(10 * time.Second); exit2 < 4 && time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		handlers, _ = handlersOf(t, r.dir)
+		exit2 = 0
+		for _, h := range handlers {
+			if h[2] == "admiral guard pretooluse" && h[1] == "2" {
+				exit2++
+			}
 		}
 	}
 	if exit2 != 4 {
@@ -88,7 +93,7 @@ func TestAScoutLaunchedThroughTheAPIIsGuardedAndSailsAtItsStop(t *testing.T) {
 
 	seen := map[string]bool{}
 	gone := false
-	for end := time.Now().Add(15 * time.Second); !gone && time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+	for end := time.Now().Add(10 * time.Second); !gone && time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
 		code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/ships", nil)
 		var list struct {
 			Ships []struct{ Session, Status string } `json:"ships"`
@@ -105,12 +110,13 @@ func TestAScoutLaunchedThroughTheAPIIsGuardedAndSailsAtItsStop(t *testing.T) {
 		}
 	}
 	if !gone {
-		t.Fatalf("the scout is still listed 15s after its stop, with statuses %v", seen)
+		t.Fatalf("the scout is still listed 10s after its stop, with statuses %v", seen)
 	}
 	if seen["anchored"] || seen["moored"] {
 		t.Errorf("the scout showed statuses %v, want it never anchored or moored", seen)
 	}
-	log := w.shipLog(ship.Session)
+	// The outcome writer is asynchronous: the ship can leave the list before its stopped record is written.
+	log := w.waitEvent(ship.Session, "stopped", 1)
 	stopped := lastOf(log, "stopped")
 	if stopped == nil || stopped["scout"] != true {
 		t.Errorf("stopped record = %v, want one marked as a scout's end", stopped)
