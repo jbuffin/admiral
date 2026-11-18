@@ -472,8 +472,8 @@ repo)
 	mkdir -p "$dir"
 	git -C "$dir" init -q -b main && git -C "$dir" remote add origin "$url" || exit 1
 	# A no-skill launch fetches origin, so the URL is served from a local bare repo with one commit, as a clone of a real repo has.
-	bare="$FAKEGH_DIR/bare/$(printf '%s' "$repo" | tr '/' '_').git"
-	mkdir -p "$bare" && git -C "$bare" init -q --bare -b main || exit 1
+	bare=$(mktemp -d "$FAKEGH_DIR/bare.XXXXXX") || exit 1
+	git -C "$bare" init -q --bare -b main || exit 1
 	git -C "$dir" config url."$bare".insteadOf "$url"
 	git -C "$dir" -c user.name=fakegh -c user.email=fakegh@example.com commit -q --allow-empty -m first || exit 1
 	git -C "$dir" push -q origin main || exit 1
