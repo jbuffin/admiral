@@ -112,6 +112,27 @@ function PasteField() {
 
 export const addOpen = signal(false);
 
+// The digit is hidden from assistive tech so the link's name reads "2 ready, with you", not a bare number.
+function ReadyBadge({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span class="camp-ready">
+      <span aria-hidden="true">{n}</span>
+      <span class="visually-hidden">{n} ready, with you</span>
+    </span>
+  );
+}
+
+function UnderwayCount({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span class="camp-underway">
+      <span aria-hidden="true">{n}</span>
+      <span class="visually-hidden">{n} underway</span>
+    </span>
+  );
+}
+
 function CampaignSidebar() {
   const fleet = activeFleet.value;
   const mine = campaignList.value.filter((c) => c.fleet === fleet?.key);
@@ -128,11 +149,7 @@ function CampaignSidebar() {
               <Ring done={c.progress.closed} total={c.progress.total} />
               <span class="camp-name">{c.title}</span>
               <span class="camp-meta">{campaignMeta(c)}</span>
-              {c.ready_with_you > 0 ? (
-                <span class="camp-ready" aria-label={`${c.ready_with_you} ready, with you`}>
-                  {c.ready_with_you}
-                </span>
-              ) : null}
+              <ReadyBadge n={c.ready_with_you} />
             </a>
           </li>
         ))}
@@ -194,16 +211,8 @@ export function CampaignsList({ phone, title }: { phone: boolean; title: boolean
               <Ring done={c.progress.closed} total={c.progress.total} />
               <span class="camp-name">{c.title}</span>
               <span class="camp-meta">{campaignMeta(c)}</span>
-              {c.ready_with_you > 0 ? (
-                <span class="camp-ready" aria-label={`${c.ready_with_you} ready, with you`}>
-                  {c.ready_with_you}
-                </span>
-              ) : null}
-              {(c.counts?.underway ?? 0) > 0 ? (
-                <span class="camp-underway" aria-label={`${c.counts!.underway} underway`}>
-                  {c.counts!.underway}
-                </span>
-              ) : null}
+              <ReadyBadge n={c.ready_with_you} />
+              <UnderwayCount n={c.counts.underway ?? 0} />
             </a>
           </li>
         ))}

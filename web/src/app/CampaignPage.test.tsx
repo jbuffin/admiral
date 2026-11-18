@@ -255,7 +255,7 @@ test("the sidebar row names the repo and issue, never Map, and says what its bad
   const row = screen.getByRole("link", { name: /Widgets overhaul/ });
   expect(within(row).getByText("acme/widgets#20 · 0 of 1")).toBeTruthy();
   expect(row.textContent).not.toContain("Map");
-  expect(within(row).getByLabelText("2 ready, with you")).toBeTruthy();
+  expect(screen.getByRole("link", { name: /2 ready, with you/ })).toBeTruthy();
 });
 
 test("a list card shows the same meta line and the same ready count as the sidebar row", () => {
@@ -263,20 +263,21 @@ test("a list card shows the same meta line and the same ready count as the sideb
   render(<CampaignsNav />);
   const row = screen.getByRole("link", { name: /Widgets overhaul/ });
   const rowMeta = within(row).getByText(/acme\/widgets#20/).textContent;
-  const rowReady = within(row).getByLabelText(/ready, with you/).getAttribute("aria-label");
+  expect(row.getAttribute("href")).toBeTruthy();
+  expect(screen.getByRole("link", { name: /2 ready, with you/ })).toBe(row);
   cleanup();
   render(<CampaignsList phone={false} title />);
   const card = screen.getByRole("link", { name: /Widgets overhaul/ });
   expect(within(card).getByText("acme/widgets#20 · 0 of 1").textContent).toBe(rowMeta);
   expect(card.textContent).not.toContain("Map");
-  expect(within(card).getByLabelText(/ready, with you/).getAttribute("aria-label")).toBe(rowReady);
+  expect(screen.getByRole("link", { name: /2 ready, with you/ })).toBe(card);
 });
 
 test("a list card shows its underway count with what it counts", () => {
   campaignList.value = [summary];
   render(<CampaignsList phone={false} title />);
   const card = screen.getByRole("link", { name: /Widgets overhaul/ });
-  expect(within(card).getByLabelText("3 underway")).toBeTruthy();
+  expect(screen.getByRole("link", { name: /3 underway/ })).toBe(card);
 });
 
 test("a list card shows neither count when both are 0 or absent", () => {
@@ -287,8 +288,7 @@ test("a list card shows neither count when both are 0 or absent", () => {
   render(<CampaignsList phone={false} title />);
   for (const name of [/Widgets overhaul/, /Gadgets/]) {
     const card = screen.getByRole("link", { name });
-    expect(within(card).queryByLabelText(/ready, with you/)).toBeNull();
-    expect(within(card).queryByLabelText(/underway/)).toBeNull();
+    expect(card.textContent).not.toMatch(/ready, with you|underway/);
   }
 });
 
@@ -297,8 +297,8 @@ test("the Ended tab's cards carry the same counts", () => {
   endedOpen.value = true;
   render(<CampaignsList phone={false} title />);
   const card = screen.getByRole("link", { name: /Widgets overhaul/ });
-  expect(within(card).getByLabelText("2 ready, with you")).toBeTruthy();
-  expect(within(card).getByLabelText("3 underway")).toBeTruthy();
+  expect(card.getAttribute("href")).toBeTruthy();
+  expect(screen.getByRole("link", { name: /2 ready, with you 3 underway/ })).toBe(card);
 });
 
 test("on a campaign's page Done shows its count with its rows hidden, and tapping its head shows them", async () => {
