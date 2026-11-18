@@ -333,7 +333,7 @@ func serve(args []string) error {
 	})
 	outcomeLog.OnFail = outcomeWriteFailed
 	shipService := &ships.Service{Host: host, State: st, Hub: hub, Outcomes: outcomeLog, Launcher: &launcher.Launcher{
-		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current, Checkouts: launcher.GitCheckouts{},
+		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current, Checkouts: launcher.GitCheckouts{}, Worktrees: launcher.GitWorktrees{},
 		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok },
 		AutopilotGate: func(fleet config.Fleet, harness string) error {
 			return autopilotgate.Check(dir, fleet, harness)

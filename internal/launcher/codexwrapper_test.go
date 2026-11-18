@@ -165,10 +165,19 @@ func TestCodexDockProfilesAndFeaturesStillLaunch(t *testing.T) {
 	for _, args := range [][]string{{"-p", "work"}, {"--profile=work"}, {"-c", "profile=work"}, {"-c", "features.web_search=true"}, {"--enable", "x"}, {"--disable", "web_search"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			l, work, _ := recordingLauncher(t, "codex")
-			installFakeWrapper(t, l.Home)
+			ran := installFakeWrapper(t, l.Home)
 			l.Config().Fleets[0].Harnesses[0].Args = args
 			if _, err := l.Launch(Request{Fleet: "work", Harness: "codex", Dir: work, Skill: Skill{Kind: "none"}}); err != nil {
 				t.Fatalf("Launch = %v, want the dock's args let through", err)
+			}
+			// The wrapper is still starting in tmux when Launch returns; the test's temp dirs go only once it has run.
+			for end := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+				if _, err := os.Stat(ran); err == nil {
+					break
+				}
+				if time.Now().After(end) {
+					t.Fatal("the wrapper never started")
+				}
 			}
 		})
 	}

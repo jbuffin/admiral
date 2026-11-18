@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -86,7 +87,12 @@ func (s *Service) advanceReturns() {
 				if sess.Options["round"] != "" {
 					s.endMooring(sess) // its PRs are done, so its round ends sailed, not anchored by the stop
 				}
-				_ = s.stopShip(name, map[string]any{"returned": true})
+				if s.stopShip(name, map[string]any{"returned": true}) == nil {
+					// The session is gone, so its worktree is no longer a harness's cwd; the branch stays.
+					if home, _, _, ok := s.shipFiles(name); ok {
+						launcher.RemoveWorktree(home, name, sess.Options["dir"])
+					}
+				}
 				return
 			}
 			s.sendReturnPrompt(name)

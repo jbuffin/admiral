@@ -192,6 +192,9 @@ func (g *ghRig) run() (stop func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	r := g.r
+	// The runner ignores an answer from a poll that began within a second of the commitment, so its first poll, which starts the
+	// moment it runs, must start later than the commitments added before it.
+	g.clk.set(g.clk.Now().Add(2 * time.Second))
 	go func() { r.Run(ctx); close(done) }()
 	var once sync.Once
 	stop = func() {

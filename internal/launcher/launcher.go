@@ -203,6 +203,8 @@ type Launcher struct {
 	Guidance func(fleet string) (string, error)
 	// Checkouts makes a restricted ship's own checkout; nil refuses a restricted launch.
 	Checkouts Checkouts
+	// Worktrees makes the worktree a no-skill ship works in; nil runs it in the checkout.
+	Worktrees Worktrees
 
 	mu sync.Mutex // one launch at a time, so two don't pick one name
 }
@@ -439,9 +441,17 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 
+	tracking, err := l.fetchForWorktree(req, !restricted && !evented && !promoted)
+	if err != nil {
+		return nil, err
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	name, session, err := l.nameFor(req)
+	branchDir := ""
+	if tracking != "" {
+		branchDir = req.Dir
+	}
+	name, session, err := l.nameFor(req, branchDir)
 	if err != nil {
 		return nil, err
 	}
@@ -473,6 +483,20 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 		if err := tooLong(); err != nil {
 			return nil, err
+		}
+	}
+	if !restricted && !evented && !promoted {
+		wt, undo, err := l.shipWorktree(req, session, tracking)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if !launched {
+				undo()
+			}
+		}()
+		if wt != "" {
+			req.Dir = wt
 		}
 	}
 	if req.Before != nil {
@@ -570,9 +594,9 @@ func roundOption(round int) string {
 
 // nameFor is the name a launch takes: a relaunch keeps its own and refuses while that session is live;
 // the caller holds l.mu, so no other launch takes the name in between.
-func (l *Launcher) nameFor(req Request) (name, session string, err error) {
+func (l *Launcher) nameFor(req Request, branchDir string) (name, session string, err error) {
 	if req.Session == "" {
-		name, err = l.pickName()
+		name, err = l.pickNameIn(branchDir)
 		return name, Slug(name), err
 	}
 	rows, err := l.server().SessionRows()
@@ -849,7 +873,11 @@ func crewDirNotDir(dir string, fi fs.FileInfo) error {
 
 // No tmux server yet means nothing is in use; any other error stops the launch, since a
 // name in use would end with a clash.
-func (l *Launcher) pickName() (string, error) {
+func (l *Launcher) pickName() (string, error) { return l.pickNameIn("") }
+
+// pickNameIn also skips a name whose admiral/<session> branch survives in dir's repo, which a new worktree would collide
+// with; dir is empty when the launch makes no worktree.
+func (l *Launcher) pickNameIn(dir string) (string, error) {
 	rows, err := l.server().SessionRows()
 	if err != nil {
 		return "", refuse(http.StatusInternalServerError, "tmux could not list its sessions: %s", err)
@@ -862,9 +890,23 @@ func (l *Launcher) pickName() (string, error) {
 	for _, r := range moored {
 		shipNames[r.Name], sessions[r.Session] = true, true
 	}
-	// A restricted ship's clone outlives the ship, and Make refuses a path that exists.
+	var branches map[string]bool
+	if dir != "" {
+		branches = map[string]bool{}
+		out, _ := boundedGit(0, dir, "for-each-ref", "--format=%(refname)", "refs/heads/admiral/")
+		for _, ref := range strings.Fields(out) {
+			branches[strings.TrimPrefix(ref, "refs/heads/admiral/")] = true
+		}
+	}
+	// A restricted ship's clone outlives the ship, and Add refuses a path that exists.
 	kept := func(session string) bool {
 		if _, err := os.Lstat(filepath.Join(l.Home, "checkouts", session)); err == nil {
+			return true
+		}
+		if HasWorktree(l.Home, session) {
+			return true
+		}
+		if branches[session] {
 			return true
 		}
 		return l.Kept != nil && l.Kept(session)
