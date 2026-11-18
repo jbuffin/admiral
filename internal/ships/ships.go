@@ -374,6 +374,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/rereview", s.serveRereview)
 	mux.HandleFunc("POST /api/ships/{session}/pr/rerequest", s.serveReRequest)
 	mux.HandleFunc("GET /api/outcomes", s.serveOutcomes)
+	mux.HandleFunc("GET /api/ships/{session}/findings", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotImplemented, "findings are not kept yet")
+	})
 	mux.Handle("POST /api/ships/{session}/merge", s.mergeGuarded(http.HandlerFunc(s.serveMerge)))
 	mux.Handle("POST /api/ships/{session}/update-branch", s.mergeGuarded(http.HandlerFunc(s.serveUpdateBranch)))
 	mux.Handle("POST /api/ships/{session}/ready-for-review", s.mergeGuarded(http.HandlerFunc(s.serveReadyForReview)))
