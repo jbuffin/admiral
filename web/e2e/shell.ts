@@ -173,7 +173,7 @@ function chatDock(a: Admiral, fleet: string, hold: boolean, turn = false) {
   const cleared = JSON.stringify({ transcript_path: chatTranscriptPath(a, fleet, 't2'), source: 'clear' });
   // A New chat clears the context: the second transcript starts once the test touches go-clear.
   // A held chat stays before its first SessionStart, as one stopped on Claude's folder-trust dialog does, until chatStarts.
-  writeFileSync(cue, ['record', 'bracketedpaste', ...(hold ? ['wait go-start'] : []), `event SessionStart ${startup}`, ...(turn ? ['hook working', 'wait go-turn-end', 'event Stop {"background_tasks":[]}'] : []), 'wait go-clear', `event SessionStart ${cleared}`].join('\n') + '\n');
+  writeFileSync(cue, ['record', 'bracketedpaste', ...(hold ? ['wait go-start'] : []), `event SessionStart ${startup}`, ...(turn ? ['hook working', 'wait go-turn-end', 'event Stop {"background_tasks":[]}', 'wait go-report-start', 'hook working', 'wait go-report-end', 'event Stop {"background_tasks":[]}'] : []), 'wait go-clear', `event SessionStart ${cleared}`].join('\n') + '\n');
   mkdirSync(join(chatConfigDir(a, fleet), 'projects', 'p'), { recursive: true });
   return { executable: fakeClaude, env: { FAKE_RECORD_DIR: join(a.home, 'rec'), FAKE_CUE: cue, CLAUDE_CONFIG_DIR: chatConfigDir(a, fleet) } };
 }
@@ -206,9 +206,9 @@ export const chatPrompts = (a: Admiral, fleet: ChatFleet) =>
   spawnSync('tmux', ['-S', join(a.home, 'tmux.sock'), 'set-option', '-p', '-t', `${chatSession(fleet)}:`, '@admiral-chat-prompt', String(BigInt(Date.now()) * 1000000n)], { encoding: 'utf8' });
 
 /** Ends the engineer's turn in a chat seeded with `turnChat`, which works from its start until then, as Claude Code does while it answers. */
-export function chatTurnEnds(a: Admiral, fleet: ChatFleet) {
+export function chatTurnEnds(a: Admiral, fleet: ChatFleet, step: 'turn-end' | 'report-start' | 'report-end' = 'turn-end') {
   mkdirSync(chatRecord(a, fleet), { recursive: true });
-  writeFileSync(join(chatRecord(a, fleet), 'go-turn-end'), '');
+  writeFileSync(join(chatRecord(a, fleet), `go-${step}`), '');
 }
 
 /** Ends the fleet's chat session, as quitting Claude Code in its terminal does. */

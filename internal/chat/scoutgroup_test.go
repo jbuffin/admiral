@@ -168,6 +168,8 @@ func TestAScoutGroupWaitsForEveryScoutStillOut(t *testing.T) {
 	g.observe(5*time.Minute, []ships.Ship{botScout("scout-c", turnOne)}, ends...)
 	g.wantResults("work", "sailed_off", "sailed_off")
 	g.wantTurns()
+	g.observe(9*time.Minute, nil, join(ends, sailedOff("scout-c", 6*time.Minute))...)
+	g.wantTurns("scout-a+scout-b+scout-c<-scout-c:sailed_off")
 }
 
 func TestScoutsOfDifferentTurnsReportSeparately(t *testing.T) {

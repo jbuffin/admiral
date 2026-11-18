@@ -847,7 +847,6 @@ test("a ship that sails off gets AdmiralBot's reply to its report turn threaded 
 });
 
 test("scouts launched together report in one turn naming each, while a quick ship from the same prompt reports in its own", async ({ page, admiral }) => {
-  test.setTimeout(120_000);
   seedFleets(admiral, { live: true, chat: true, turnChat: 'harbor' });
   chatSays(admiral, 'harbor', [line.user('Look into the harbour log with two scouts and a quick ship')]);
   await admiral.start({ env: mooringEnv(admiral) });
@@ -866,7 +865,10 @@ test("scouts launched together report in one turn naming each, while a quick shi
   expect(chatReceived(admiral, 'harbor')).not.toContain('[Report: ');
   chatTurnEnds(admiral, 'harbor');
   const turns = () => chatReceived(admiral, 'harbor').split('\r').filter((x) => x.includes('[Report: '));
-  await expect.poll(() => turns().length, { timeout: 60_000 }).toBe(2);
+  await expect.poll(() => turns().length).toBe(1);
+  chatTurnEnds(admiral, 'harbor', 'report-start');
+  chatTurnEnds(admiral, 'harbor', 'report-end');
+  await expect.poll(() => turns().length).toBe(2);
   const group = turns().filter((x) => x.includes(`ship: ${first.session}`));
   expect(group).toHaveLength(1);
   expect(group[0]).toContain(`ship: ${second.session}`);
