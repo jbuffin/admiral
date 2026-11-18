@@ -208,3 +208,76 @@ test('a mission Keep the server refuses shows its error and leaves Keep availabl
   expect((await screen.findByRole('alert')).textContent).toContain('already has a mission docs-sweep with other text');
   await waitFor(() => expect((screen.getByRole('button', { name: 'Keep docs-sweep' }) as HTMLButtonElement).disabled).toBe(false));
 });
+
+const card = (n: number) => screen.getByRole('region', { name: `Note card ${n}` });
+const STAMPED = '2026-11-01 (some-run): uses **pnpm**';
+
+test('a crew note renders its markdown: bold, inline code and a safe link, with no literal markers', () => {
+  render(<Notes e={notes('cn-md', [note('n1', 'scout', { note: 'Use **pnpm**, run `make check` and read [the docs](https://example.com/docs)' })])} fold={vi.fn()} />);
+  const c = card(1);
+  expect(within(c).getByText('pnpm').tagName).toBe('STRONG');
+  expect(within(c).getByText('make check').tagName).toBe('CODE');
+  const link = within(c).getByRole('link', { name: 'the docs' });
+  expect(link.getAttribute('href')).toBe('https://example.com/docs');
+  expect(link.getAttribute('rel')).toContain('noopener');
+  expect(c.textContent).not.toContain('**');
+  expect(c.textContent).not.toContain('`');
+});
+
+test('a crew note with a fenced block renders it as a code block', () => {
+  render(<Notes e={notes('cn-fence', [note('n1', 'scout', { note: 'Run this:\n\n```sh\nmake check\n```\n' })])} fold={vi.fn()} />);
+  const code = card(1).querySelector('pre > code');
+  expect(code).not.toBeNull();
+  expect(code!.textContent).toContain('make check');
+  expect(card(1).textContent).not.toContain('```');
+});
+
+test('the Replaces line keeps its label, shows the stamp as text and renders the fact as markdown', () => {
+  render(<Notes e={notes('cn-replaces', [note('n1', 'scout', { replaces: STAMPED })])} fold={vi.fn()} />);
+  const c = card(1);
+  expect(within(c).getByText('Replaces:', { selector: 'b' })).toBeTruthy();
+  expect(c.textContent).toContain('2026-11-01 (some-run):');
+  expect(within(c).getByText('pnpm').tagName).toBe('STRONG');
+  expect(c.textContent).not.toContain('**');
+  expect(c.querySelector('p p')).toBeNull();
+});
+
+test('a Replaces line with no stamp renders as markdown too', () => {
+  render(<Notes e={notes('cn-unstamped', [note('n1', 'scout', { replaces: 'uses **pnpm**' })])} fold={vi.fn()} />);
+  expect(within(card(1)).getByText('pnpm').tagName).toBe('STRONG');
+});
+
+test('raw HTML in a crew note or its Replaces line shows as text and creates no element', () => {
+  render(<Notes e={notes('cn-html', [note('n1', 'scout', { note: '<img src=x onerror=alert(1)> and <script>alert(2)</script>', replaces: '2026-11-01 (some-run): <img src=y onerror=alert(3)>' })])} fold={vi.fn()} />);
+  const c = card(1);
+  expect(c.querySelector('img')).toBeNull();
+  expect(c.querySelector('script')).toBeNull();
+  expect(c.textContent).toContain('<img src=x onerror=alert(1)>');
+  expect(c.textContent).toContain('<script>');
+  expect(c.textContent).toContain('<img src=y onerror=alert(3)>');
+});
+
+test('a hidden character in a crew note or its Replaces line still shows marked', () => {
+  render(<Notes e={notes('cn-hidden', [note('n1', 'scout', { note: 'Scout trusts‮ the log', replaces: '2026-11-01 (some-run): old‮ line' })])} fold={vi.fn()} />);
+  expect(card(1).textContent).toContain('Scout trusts⟨U+202E⟩ the log');
+  expect(card(1).textContent).toContain('old⟨U+202E⟩ line');
+});
+
+test('the crew notes under a crew member render markdown the same way', () => {
+  render(<Member e={member('cm-md', { notes: [note('n1', 'deckhand', { note: 'Swab **first**, then `paint`', replaces: STAMPED })] })} fold={vi.fn()} />);
+  const c = card(1);
+  expect(within(c).getByText('first').tagName).toBe('STRONG');
+  expect(within(c).getByText('paint').tagName).toBe('CODE');
+  expect(within(c).getByText('pnpm').tagName).toBe('STRONG');
+  expect(c.textContent).not.toContain('**');
+  expect(c.textContent).toContain('2026-11-01 (some-run):');
+});
+
+test('an edited crew note shows its edited text rendered', () => {
+  render(<Notes e={notes('cn-edit-md', [note('n1', 'scout')])} fold={vi.fn()} />);
+  press('Edit', card(1));
+  fireEvent.input(within(card(1)).getByRole('textbox', { name: 'Edit note 1' }), { target: { value: 'Scout runs **make check** first' } });
+  press('Save', card(1));
+  expect(within(card(1)).getByText('make check').tagName).toBe('STRONG');
+  expect(card(1).textContent).not.toContain('**');
+});
