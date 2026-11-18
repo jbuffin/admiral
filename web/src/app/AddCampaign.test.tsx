@@ -669,7 +669,50 @@ test("a create that filed the parent but couldn't follow it links the parent and
   expect(onClose).not.toHaveBeenCalled();
 });
 
-test("Escape and a tap on the backdrop close it, a tap inside doesn't", async () => {
+test("a return to the confirm step after a create that filed the parent can't file a second", async () => {
+  const parent = "https://github.com/acme/gadgets/issues/50";
+  createAnswer = () => json({ error: "follow failed: gh is signed out", parent }, 502);
+  opened();
+  await toConfirm();
+  fireEvent.click(screen.getByRole("button", { name: "Create campaign" }));
+  await screen.findByRole("link", { name: parent });
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Draft" }));
+  await repoSelect();
+  expect(screen.getByRole("link", { name: parent })).toBeTruthy();
+  const create = screen.getByRole("button", { name: "Create campaign" }) as HTMLButtonElement;
+  expect(create.disabled).toBe(true);
+  fireEvent.click(create);
+  expect(creates).toHaveLength(1);
+});
+
+test("the text step seeds from new search text after a reference left it empty", async () => {
+  opened();
+  const empty = (await toTextStep("#12")) as HTMLTextAreaElement;
+  expect(empty.value).toBe("");
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  await type("pool work");
+  await screen.findByRole("button", { name: /^Start a new campaign: 'pool work'$/ });
+  fireEvent.click(startRow());
+  expect(((await textArea()) as HTMLTextAreaElement).value).toBe("pool work");
+});
+
+test("Escape still closes the modal after Start a new campaign, on the text step and the confirm step", async () => {
+  opened();
+  await toTextStep("pool work");
+  const dialog = screen.getByRole("dialog", { name: "Add campaign" });
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape", bubbles: true });
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await settled();
+  fireEvent.click(await screen.findByRole("button", { name: "Draft" }));
+  await repoSelect();
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape", bubbles: true });
+  expect(onClose).toHaveBeenCalledTimes(2);
+});
+
+test("Escape and a tap on the backdrop close it, a tap inside doesn\'t", async () => {
   opened();
   const dialog = await screen.findByRole("dialog", { name: "Add campaign" });
   fireEvent.click(dialog);

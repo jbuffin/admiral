@@ -5,7 +5,7 @@ import type { Campaign } from './campaign';
 import { openCampaign } from './campaignsLink';
 import { capabilities, capabilitiesLoaded, loadCapabilities } from './capabilities';
 import { draftingOff, MAX_PROSE_RUNES } from './filing';
-import { accountForHost, initialProject, projectChoices, safeHref, sourceHost, textCampaignNote, type Project } from './makeCampaign';
+import { accountForHost, type CreateBody, initialProject, projectChoices, safeHref, sourceHost, textCampaignNote, type Project } from './makeCampaign';
 import { runes } from './standingOrders';
 
 const REMEMBERED = 'admiral.campaign-repo';
@@ -46,8 +46,10 @@ export function TextStep({ fleet, text, onText, onBack, onConfirm, onBusy }: Tex
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState(false);
   const live = useRef(true);
+  const area = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     live.current = true;
+    area.current?.focus();
     void loadCapabilities();
     return () => {
       live.current = false;
@@ -93,7 +95,7 @@ export function TextStep({ fleet, text, onText, onBack, onConfirm, onBusy }: Tex
       <div class="launch-body">
         <label class="field">
           <span>What is this campaign for?</span>
-          <textarea aria-label="What is this campaign for?" rows={6} value={text} onInput={(e) => onText(e.currentTarget.value)} />
+          <textarea ref={area} aria-label="What is this campaign for?" rows={6} value={text} readOnly={busy} onInput={(e) => onText(e.currentTarget.value)} />
         </label>
         <p class={tooLong ? 'alert' : 'note'}>
           {size.toLocaleString('en-US')} / {MAX_PROSE_RUNES.toLocaleString('en-US')}
@@ -114,11 +116,20 @@ export function TextStep({ fleet, text, onText, onBack, onConfirm, onBusy }: Tex
 interface Loaded {
   projects: Project[];
   accounts: { key: string; settings: Record<string, unknown> }[];
+  problem: string;
+}
+
+export interface Filed {
+  parent: string;
+  error: string;
 }
 
 interface ConfirmProps {
   fleet: string;
   start: Confirmed;
+  /** The parent issue a failed create already filed; kept above the step so a return to it can't file a second. */
+  filed: Filed | null;
+  onFiled: (f: Filed) => void;
   onClose: () => void;
   onBack: () => void;
   onBusy: (b: boolean) => void;
@@ -136,7 +147,7 @@ function ParentLink({ url }: { url: string }) {
 }
 
 /** The step that shows the title, description and repo before the parent issue is filed. */
-export function ConfirmStep({ fleet, start, onClose, onBack, onBusy }: ConfirmProps) {
+export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onBusy }: ConfirmProps) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState('');
   const [repoId, setRepoId] = useState('');
@@ -144,10 +155,15 @@ export function ConfirmStep({ fleet, start, onClose, onBack, onBusy }: ConfirmPr
   const [body, setBody] = useState(start.body);
   const [drafted, setDrafted] = useState(start.drafted);
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState('');
-  const [parentMade, setParentMade] = useState('');
+  const [error, setError] = useState(filed?.error ?? '');
+  const parentMade = filed?.parent ?? '';
+  const titleBox = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   useEffect(() => () => void (alive.current = false), []);
+
+  useEffect(() => {
+    if (loaded) titleBox.current?.focus();
+  }, [!!loaded]);
 
   useEffect(() => {
     let live = true;
@@ -164,9 +180,10 @@ export function ConfirmStep({ fleet, start, onClose, onBack, onBusy }: ConfirmPr
       );
       if (!live) return;
       const accounts = settled.flatMap(({ key, r }) => (r.ok ? [{ key, settings: r.data.settings }] : []));
+      const failed = settled.flatMap(({ key, r }) => (r.ok ? [] : [`${key}: ${r.error}`]));
       const projects = projectChoices(repos.data.repos ?? [], new Set(accounts.map((a) => sourceHost(a.settings))));
       setRepoId(initialProject(projects, remembered()));
-      setLoaded({ projects, accounts });
+      setLoaded({ projects, accounts, problem: failed.length ? `Couldn't read a GitHub source's settings (${failed.join('; ')}), so some projects may be missing.` : '' });
     })();
     return () => {
       live = false;
@@ -176,25 +193,13 @@ export function ConfirmStep({ fleet, start, onClose, onBack, onBusy }: ConfirmPr
   const project = loaded?.projects.find((p) => p.id === repoId);
   const account = project && loaded ? accountForHost(loaded.accounts, project.host)?.account : undefined;
 
-  const create = async () => {
+  const submit = async () => {
     if (creating || parentMade || !project || !title.trim()) return;
     setCreating(true);
     onBusy(true);
     setError('');
-    const r = await call<Campaign>(
-      'POST',
-      '/campaigns/create',
-      {
-        repo: project.repo,
-        host: project.host,
-        fleet,
-        title,
-        body,
-        issues: [],
-      },
-      undefined,
-      { timeoutMs: SLOW_TIMEOUT_MS },
-    );
+    const create: CreateBody = { repo: project.repo, host: project.host, fleet, title, body, issues: [] };
+    const r = await call<Campaign>('POST', '/campaigns/create', create, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     if (!alive.current) return;
     onBusy(false);
     if (r.ok) {
@@ -203,21 +208,31 @@ export function ConfirmStep({ fleet, start, onClose, onBack, onBusy }: ConfirmPr
       return onClose();
     }
     setCreating(false);
-    setParentMade(r.parent ?? '');
     setError(r.error);
+    if (r.parent) onFiled({ parent: r.parent, error: r.error });
   };
 
   if (!loaded) {
-    return loadError ? (
-      <div class="launch-body">
-        <p class="alert" role="alert">
-          {loadError}
-        </p>
-      </div>
-    ) : (
-      <div class="launch-body">
-        <p class="note">Loading the fleet's projects…</p>
-      </div>
+    return (
+      <>
+        <div class="launch-body">
+          {loadError ? (
+            <p class="alert" role="alert">
+              {loadError}
+            </p>
+          ) : (
+            <p class="note">Loading the fleet's projects…</p>
+          )}
+        </div>
+        <div class="launch-foot">
+          <Button label="Back" onClick={onBack}>
+            Back
+          </Button>
+          <Button variant="primary" label="Create campaign" disabled>
+            Create campaign
+          </Button>
+        </div>
+      </>
     );
   }
 
@@ -235,10 +250,12 @@ export function ConfirmStep({ fleet, start, onClose, onBack, onBusy }: ConfirmPr
             ))}
           </select>
         </label>
-        {loaded.projects.length === 0 ? <p class="note">No project of this fleet is on a host it has a GitHub source for.</p> : null}
+        {loaded.problem ? <p class="note">{loaded.problem}</p> : null}
+        {loaded.projects.length === 0 && !loaded.problem ? <p class="note">No project of this fleet is on a host it has a GitHub source for.</p> : null}
         <label class="field">
           <span>Title {drafted.title ? <em class="campaign-tag">Drafted</em> : null}</span>
           <input
+            ref={titleBox}
             type="text"
             aria-label="Title"
             value={title}
@@ -276,7 +293,7 @@ export function ConfirmStep({ fleet, start, onClose, onBack, onBusy }: ConfirmPr
         <Button label="Back" disabled={creating} onClick={onBack}>
           Back
         </Button>
-        <Button variant="primary" label="Create campaign" busyLabel="Creating campaign" busy={creating} disabled={!title.trim() || !project || creating || !!parentMade} onClick={() => void create()}>
+        <Button variant="primary" label="Create campaign" busyLabel="Creating campaign" busy={creating} disabled={!title.trim() || !project || creating || !!parentMade} onClick={() => void submit()}>
           Create campaign
         </Button>
       </div>

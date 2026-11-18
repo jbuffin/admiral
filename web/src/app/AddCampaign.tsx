@@ -3,7 +3,7 @@ import { call } from './api';
 import { followReference } from './campaignsLink';
 import { Icon } from './Icon';
 import { isReference } from './makeCampaign';
-import { ConfirmStep, TextStep, type Confirmed } from './NewCampaign';
+import { ConfirmStep, TextStep, type Confirmed, type Filed } from './NewCampaign';
 
 interface Hit {
   title: string;
@@ -57,12 +57,16 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<'search' | 'text' | 'confirm'>('search');
-  // Null until the text step first opens, so it seeds from the search box once and then keeps its own words.
-  const [text, setText] = useState<string | null>(null);
+  // Seeded from the search box while empty, then it keeps its own words.
+  const [text, setText] = useState('');
   const [confirmed, setConfirmed] = useState<Confirmed | null>(null);
+  const [filed, setFiled] = useState<Filed | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (step === 'search') input.current?.focus();
+    // The confirm step has nothing to focus until its projects load; the dialog keeps Escape working meanwhile.
+    else if (step === 'confirm') dialog.current?.focus();
   }, [step]);
 
   useEffect(() => {
@@ -98,7 +102,7 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
   };
 
   const startNew = () => {
-    if (text === null) setText(isReference(q) ? '' : q.trim());
+    if (!text) setText(isReference(q) ? '' : q.trim());
     setStep('text');
   };
 
@@ -108,7 +112,7 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
   const rest = list.filter((h) => !h.parent);
   return (
     <div class="backdrop launch-backdrop" onClick={(e) => e.target === e.currentTarget && !busy && onClose()}>
-      <div class="sheet launch-form ac-form" role="dialog" aria-modal="true" aria-label="Add campaign" onKeyDown={(e) => e.key === 'Escape' && !busy && onClose()}>
+      <div ref={dialog} tabIndex={-1} class="sheet launch-form ac-form" role="dialog" aria-modal="true" aria-label="Add campaign" onKeyDown={(e) => e.key === 'Escape' && !busy && onClose()}>
         <h2 class="sheet-title">Add campaign</h2>
         {step === 'search' ? (
           <div class="launch-body">
@@ -138,7 +142,7 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
         ) : step === 'text' ? (
           <TextStep
             fleet={fleet}
-            text={text ?? ''}
+            text={text}
             onText={setText}
             onBack={() => setStep('search')}
             onConfirm={(c) => {
@@ -148,7 +152,7 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
             onBusy={setBusy}
           />
         ) : confirmed ? (
-          <ConfirmStep fleet={fleet} start={confirmed} onClose={onClose} onBack={() => setStep('text')} onBusy={setBusy} />
+          <ConfirmStep fleet={fleet} start={confirmed} filed={filed} onFiled={setFiled} onClose={onClose} onBack={() => setStep('text')} onBusy={setBusy} />
         ) : null}
       </div>
     </div>
