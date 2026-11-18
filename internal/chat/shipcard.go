@@ -458,7 +458,7 @@ func latest(ts ...time.Time) time.Time {
 }
 
 // reportsOn says whether the result is a voyage's first reporting event. Only the ships AdmiralBot launched from the
-// chat report (scouts have their own report), and a sail-off after a moor is the end, which posts its card only.
+// chat report (scouts report with their group), and a sail-off after a moor is the end, which posts its card only.
 func (v *voyage) reportsOn(result string) bool {
 	if v.Reported || v.Done[ShipAnchored] || v.Done[ShipMoored] || v.Done[ShipSailedOff] || v.Via != "admiralbot" || v.Commitment != "" || v.Routine != "" || v.Scout || v.Round > 0 {
 		return false
