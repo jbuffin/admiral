@@ -547,6 +547,8 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 	prompt := `event UserPromptSubmit {"prompt":"look at the harbour log"}`
 	w.writeCue(prompt, "mcp launch", "mcp again", prompt, "mcp next", "mcp stop-other", "mcp stop-own",
 		"mcp note", "wait briefed", `event SessionStart {"source":"clear"}`, `event PreCompact {"trigger":"auto","session_id":"s"}`, "mcp promise")
+	// every AdmiralBot launch is autopilot, which needs the guard proven in the chat's fleet
+	w.proveGuard(chatFleet)
 	w.start()
 	other := w.launch(w.order("ship", "claude", "otherrepo", noSkill, "x"))
 	c.start()
@@ -555,6 +557,10 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 	first := c.mcpCall("launch", "launch_ship", launch)
 	if first.IsError {
 		t.Fatalf("launch_ship was refused: %s", first.text())
+	}
+	var launched struct{ Mode string }
+	if err := json.Unmarshal([]byte(first.text()), &launched); err != nil || launched.Mode != "autopilot" {
+		t.Errorf("launch_ship result = %q, want mode autopilot: every AdmiralBot launch runs in autopilot unless with_me", first.text())
 	}
 	var mine shipJSON
 	for end := time.Now().Add(10 * time.Second); mine.Session == ""; time.Sleep(50 * time.Millisecond) {

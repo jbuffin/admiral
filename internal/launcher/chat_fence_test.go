@@ -501,3 +501,55 @@ func TestEveryChatPromptGivesTheMakeCampaignLinkInsteadOfATool(t *testing.T) {
 		}
 	}
 }
+
+func promptSentences(prompt string) []string {
+	return strings.FieldsFunc(prompt, func(r rune) bool { return r == '.' || r == '\n' })
+}
+
+func TestEveryChatPromptRunsEveryLaunchInAutopilotUnlessTheEngineerSaysWithMe(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		var every bool
+		for _, s := range promptSentences(prompt) {
+			low := strings.ToLower(s)
+			if strings.Contains(low, "commodore launch") {
+				t.Errorf("%s prompt limits autopilot to a Commodore launch: %q", harness, s)
+			}
+			if strings.Contains(low, "every launch") && strings.Contains(low, "autopilot") && strings.Contains(low, "with me") {
+				every = true
+			}
+		}
+		if !every {
+			t.Errorf("%s prompt has no sentence saying every launch runs in autopilot unless the engineer says \"with me\"", harness)
+		}
+	}
+}
+
+func TestEveryChatPromptTellsARefusedAutopilotAsItCameAndNeverRelaunchesInteractive(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		var found bool
+		for _, s := range promptSentences(chatPromptFor(harness)) {
+			low := strings.ToLower(s)
+			if strings.Contains(low, "refus") && strings.Contains(low, "with me") && strings.Contains(low, "never") && strings.Contains(low, "interactive") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s prompt does not say to tell a refused autopilot launch as it came, offer \"with me\" and never relaunch interactive on its own", harness)
+		}
+	}
+}
+
+func TestEveryChatPromptLaunchesTheWayfinderWithMe(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		var found bool
+		for _, s := range promptSentences(chatPromptFor(harness)) {
+			if strings.Contains(s, "wayfinder") && strings.Contains(s, "with_me") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s prompt's wayfinder launch does not pass with_me: a Drafting ship runs With you", harness)
+		}
+	}
+}
