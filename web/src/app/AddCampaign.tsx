@@ -3,6 +3,9 @@ import { call } from './api';
 import { followReference } from './campaignsLink';
 import { Icon } from './Icon';
 import { isReference } from './makeCampaign';
+import { useDraftingPick, saveDraftingSkill } from './draftingPick';
+import { fleetSearch } from './fleets';
+import { go, shipPath } from './router';
 import { ConfirmStep, TextStep, type Confirmed, type Filed } from './NewCampaign';
 
 interface Hit {
@@ -61,6 +64,7 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
   const [text, setText] = useState('');
   const [confirmed, setConfirmed] = useState<Confirmed | null>(null);
   const [filed, setFiled] = useState<Filed | null>(null);
+  const drafting = useDraftingPick(fleet, step !== 'search');
   const input = useRef<HTMLInputElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -150,9 +154,15 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
               setStep('confirm');
             }}
             onBusy={setBusy}
+            pick={drafting}
+            onLaunched={(session, skill) => {
+              void saveDraftingSkill(fleet, skill);
+              go(shipPath(session), fleetSearch.value);
+              onClose();
+            }}
           />
         ) : confirmed ? (
-          <ConfirmStep fleet={fleet} start={confirmed} filed={filed} onFiled={setFiled} onClose={onClose} onBack={() => setStep('text')} onBusy={setBusy} />
+          <ConfirmStep fleet={fleet} start={confirmed} filed={filed} onFiled={setFiled} onClose={onClose} onBack={() => setStep('text')} onBusy={setBusy} onCreated={drafting?.known ? () => void saveDraftingSkill(fleet, '') : undefined} />
         ) : null}
       </div>
     </div>

@@ -8,9 +8,13 @@ import {
   within,
 } from "@testing-library/preact";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { DirsAnswer, Fleet } from "./api";
 import { AddCampaign } from "./AddCampaign";
 import { capabilities, capabilitiesLoaded } from "./capabilities";
 import { campaignList } from "./campaignsLink";
+import { MAX_PROSE_RUNES } from "./filing";
+import { fleets } from "./fleets";
+import type { SkillsAnswer } from "./launchForm";
 import { go } from "./router";
 
 interface Row {
@@ -81,12 +85,43 @@ let judge: { harness: string | null; reason?: string };
 let repos: { path: string; name: string; kind: string; remotes: string[] }[];
 let sources: { key: string; plugin: string; fleet: string; name: string }[];
 let accounts: Record<string, { account: string; host?: string }>;
+// The drafting-skill reads and writes; log holds each one in the order the modal made it.
+interface Drafting {
+  skill: string;
+  harnesses: { harness: string; names: string[] }[];
+}
+let log: string[];
+let dirsBodies: Record<string, unknown>[];
+let saves: Record<string, unknown>[];
+let ships: Record<string, unknown>[];
+let dirsFor: (harness: string) => DirsAnswer | Promise<DirsAnswer>;
+let draftingFor: (dir: string) => Drafting;
+let skillsFor: (
+  harness: string,
+  dir: string,
+) => SkillsAnswer | Promise<SkillsAnswer>;
+let shipAnswer: () => Response | Promise<Response>;
+let saveAnswer: () => Response | Promise<Response>;
+let draftingGate: Promise<void> | null;
+let draftingFails: boolean;
 
 const checkout = (name: string, ...remotes: string[]) => ({
   path: `/work/${name}`,
   name,
   kind: "checkout",
   remotes,
+});
+const dirEntry = (name: string, kind = "checkout") => ({
+  path: `/work/${name}`,
+  name,
+  kind,
+  ships_here: 0,
+  remotes: [],
+});
+const skillsOf = (mark: string, ...names: string[]): SkillsAnswer => ({
+  mark,
+  commodore: { found: false, name: "commodore", state: "missing" },
+  skills: names.map((name) => ({ name, description: "", favorite: false })),
 });
 const github = (key: string, fleet = "zulu") => ({
   key,
@@ -112,6 +147,26 @@ beforeEach(() => {
   accounts = { github: { account: "octo-work" } };
   capabilities.value = [];
   capabilitiesLoaded.value = false;
+  fleets.value = [];
+  log = [];
+  dirsBodies = [];
+  saves = [];
+  ships = [];
+  dirsFor = (harness) => ({
+    entries:
+      harness === "codex"
+        ? [dirEntry("tools")]
+        : [dirEntry("widgets"), dirEntry("gadgets")],
+    selected: harness === "codex" ? "/work/tools" : "/work/widgets",
+    clone: null,
+  });
+  draftingFor = () => ({ skill: "", harnesses: [] });
+  skillsFor = (harness) =>
+    skillsOf(harness === "codex" ? "$" : "/", "wayfinder", "review");
+  shipAnswer = () => json({ ship: { session: "zulu-7" } }, 201);
+  saveAnswer = () => json({}, 200);
+  draftingGate = null;
+  draftingFails = false;
   localStorage.clear();
   answer = () => json({ results: [] });
   follow = () => json(followed, 201);
@@ -138,7 +193,40 @@ beforeEach(() => {
       }
       if (route === "/campaigns/create" && init.method === "POST") {
         creates.push(JSON.parse(String(init.body)));
+        log.push("create");
         return createAnswer();
+      }
+      if (route === "/launch-orders/dirs" && init.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        dirsBodies.push(body);
+        log.push(`dirs:${body.harness}`);
+        return json(await dirsFor(body.harness));
+      }
+      if (
+        route === "/fleets/zulu/drafting" &&
+        (init.method ?? "GET") === "GET"
+      ) {
+        const dir = url.searchParams.get("dir") ?? "";
+        log.push(`drafting:${dir}`);
+        await draftingGate;
+        if (draftingFails) return json({ error: "drafting is down" }, 500);
+        return json(draftingFor(dir));
+      }
+      if (route === "/fleets/zulu/drafting" && init.method === "PUT") {
+        saves.push(JSON.parse(String(init.body)));
+        log.push("save");
+        return saveAnswer();
+      }
+      if (route === "/launch-orders/skills") {
+        const harness = url.searchParams.get("harness") ?? "";
+        const dir = url.searchParams.get("dir") ?? "";
+        log.push(`skills:${harness}:${dir}`);
+        return json(await skillsFor(harness, dir));
+      }
+      if (route === "/ships" && init.method === "POST") {
+        ships.push(JSON.parse(String(init.body)));
+        log.push("ship");
+        return shipAnswer();
       }
       if (route === "/fleets/zulu/repos") return json({ repos });
       if (route === "/harness-capabilities")
@@ -671,7 +759,8 @@ test("a create that filed the parent but couldn't follow it links the parent and
 
 test("a return to the confirm step after a create that filed the parent can't file a second", async () => {
   const parent = "https://github.com/acme/gadgets/issues/50";
-  createAnswer = () => json({ error: "follow failed: gh is signed out", parent }, 502);
+  createAnswer = () =>
+    json({ error: "follow failed: gh is signed out", parent }, 502);
   opened();
   await toConfirm();
   fireEvent.click(screen.getByRole("button", { name: "Create campaign" }));
@@ -680,7 +769,9 @@ test("a return to the confirm step after a create that filed the parent can't fi
   fireEvent.click(await screen.findByRole("button", { name: "Draft" }));
   await repoSelect();
   expect(screen.getByRole("link", { name: parent })).toBeTruthy();
-  const create = screen.getByRole("button", { name: "Create campaign" }) as HTMLButtonElement;
+  const create = screen.getByRole("button", {
+    name: "Create campaign",
+  }) as HTMLButtonElement;
   expect(create.disabled).toBe(true);
   fireEvent.click(create);
   expect(creates).toHaveLength(1);
@@ -692,7 +783,9 @@ test("the text step seeds from new search text after a reference left it empty",
   expect(empty.value).toBe("");
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   await type("pool work");
-  await screen.findByRole("button", { name: /^Start a new campaign: 'pool work'$/ });
+  await screen.findByRole("button", {
+    name: /^Start a new campaign: 'pool work'$/,
+  });
   fireEvent.click(startRow());
   expect(((await textArea()) as HTMLTextAreaElement).value).toBe("pool work");
 });
@@ -702,13 +795,19 @@ test("Escape still closes the modal after Start a new campaign, on the text step
   await toTextStep("pool work");
   const dialog = screen.getByRole("dialog", { name: "Add campaign" });
   expect(dialog.contains(document.activeElement)).toBe(true);
-  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape", bubbles: true });
+  fireEvent.keyDown(document.activeElement ?? document.body, {
+    key: "Escape",
+    bubbles: true,
+  });
   expect(onClose).toHaveBeenCalledTimes(1);
   await settled();
   fireEvent.click(await screen.findByRole("button", { name: "Draft" }));
   await repoSelect();
   expect(dialog.contains(document.activeElement)).toBe(true);
-  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape", bubbles: true });
+  fireEvent.keyDown(document.activeElement ?? document.body, {
+    key: "Escape",
+    bubbles: true,
+  });
   expect(onClose).toHaveBeenCalledTimes(2);
 });
 
@@ -721,4 +820,614 @@ test("Escape and a tap on the backdrop close it, a tap inside doesn\'t", async (
   expect(onClose).toHaveBeenCalledTimes(1);
   fireEvent.click(dialog.parentElement!);
   expect(onClose).toHaveBeenCalledTimes(2);
+});
+
+// The drafting skill: the Add campaign modal's new-campaign step can hand the text to a drafting ship.
+const docked = (...harnesses: string[]) =>
+  (fleets.value = [
+    {
+      key: "zulu",
+      docks: harnesses.map((harness) => ({
+        harness,
+        executable: harness,
+        executable_found: true,
+        warnings: [],
+      })),
+    } as unknown as Fleet,
+  ]);
+const installedOn = (
+  ...docks: [string, ...string[]][]
+): Drafting["harnesses"] =>
+  docks.map(([harness, ...names]) => ({ harness, names }));
+const wayfinder = "wayfinder";
+const withSaved = (skill: string, ...docks: [string, ...string[]][]) =>
+  (draftingFor = () => ({ skill, harnesses: installedOn(...docks) }));
+const skillBox = () =>
+  screen.findByRole("combobox", {
+    name: "Drafting skill",
+  }) as Promise<HTMLSelectElement>;
+const optionLabels = (sel: HTMLSelectElement) =>
+  within(sel)
+    .getAllByRole("option")
+    .map((o) => (o.textContent ?? "").trim());
+const selectedLabel = (sel: HTMLSelectElement) =>
+  (sel.selectedOptions[0].textContent ?? "").trim();
+const pickOption = (sel: HTMLSelectElement, start: string) => {
+  const o = within(sel)
+    .getAllByRole("option")
+    .find((x) =>
+      (x.textContent ?? "").trim().startsWith(start),
+    ) as HTMLOptionElement;
+  fireEvent.change(sel, { target: { value: o.value } });
+};
+// The deepest element holding the Ship line, so a wrapped label or separator can't hide its words.
+const shipLine = () =>
+  screen.findByText((_, el) => {
+    const own = (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+    const deeper = [...(el?.children ?? [])].some((c) =>
+      /^Ship:.*own worktree/.test(
+        (c.textContent ?? "").replace(/\s+/g, " ").trim(),
+      ),
+    );
+    return /^Ship:.*own worktree/.test(own) && !deeper;
+  });
+const noShipLine = () => expect(screen.queryByText(/^Ship:/)).toBeNull();
+const launch = async () =>
+  (await screen.findByRole("button", {
+    name: "Launch drafting ship",
+  })) as HTMLButtonElement;
+const dockRadios = () =>
+  within(screen.getByRole("group", { name: "Dock" })).getAllByRole("radio");
+const checkoutBox = () =>
+  screen.getByRole("combobox", { name: "Checkout" }) as HTMLSelectElement;
+// Both reads that follow a dir are in the log once the skills read for it is.
+const readFor = (harness: string, dir: string) =>
+  waitFor(() => {
+    expect(log).toContain(`drafting:${dir}`);
+    expect(log).toContain(`skills:${harness}:${dir}`);
+  });
+const toSkillStep = async (typed = "pool work") => {
+  const area = await toTextStep(typed);
+  await settled();
+  return area as HTMLTextAreaElement;
+};
+// The name of an ambiguity choice may be a radio or an option; either way it lists the installed names.
+const chooseName = (name: string) => {
+  const exact = new RegExp(`^${name}$`);
+  const radio = screen.queryByRole("radio", { name: exact });
+  if (radio) return fireEvent.click(radio);
+  const o = screen
+    .getAllByRole("option")
+    .find((x) => exact.test((x.textContent ?? "").trim())) as HTMLOptionElement;
+  fireEvent.change(o.parentElement!, { target: { value: o.value } });
+};
+const hasName = (name: string) =>
+  screen.queryByRole("radio", { name: new RegExp(`^${name}$`) }) ??
+  screen
+    .queryAllByRole("option")
+    .find((x) => (x.textContent ?? "").trim() === name) ??
+  null;
+
+test("the Drafting skill select opens on the fleet's saved skill, with its Ship line and Launch drafting ship in place of Draft", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  opened();
+  await toSkillStep();
+  const sel = await skillBox();
+  await waitFor(() =>
+    expect(selectedLabel(sel)).toBe(
+      "/wayfinder: a drafting ship runs it with you",
+    ),
+  );
+  expect(optionLabels(sel)).toContain(
+    "No skill: Admiral drafts a title and description",
+  );
+  expect(await shipLine()).toBeTruthy();
+  expect((await launch()).disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: "Draft" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+});
+
+test("with nothing saved the select opens on No skill, with Draft and no Ship line", async () => {
+  docked("claude");
+  opened();
+  await toSkillStep();
+  const sel = await skillBox();
+  await readFor("claude", "/work/widgets");
+  expect(selectedLabel(sel)).toBe(
+    "No skill: Admiral drafts a title and description",
+  );
+  expect(optionLabels(sel)).toContain(
+    "/wayfinder: a drafting ship runs it with you",
+  );
+  expect(screen.getByRole("button", { name: "Draft" })).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Launch drafting ship" }),
+  ).toBeNull();
+  noShipLine();
+});
+
+test("the first read asks for the first dock's directories without the text, starts on its last-used checkout, then reads the drafting skill and the dock's skills for it", async () => {
+  docked("claude", "codex");
+  dirsFor = () => ({
+    entries: [dirEntry("widgets"), dirEntry("gadgets")],
+    selected: "/work/gadgets",
+    clone: null,
+  });
+  withSaved(wayfinder, ["claude", wayfinder]);
+  opened();
+  await toSkillStep("pool work for acme/widgets");
+  const line = await shipLine();
+  expect(line.textContent).toMatch(/claude/i);
+  expect(line.textContent).toContain("gadgets");
+  expect(dirsBodies[0]).toEqual({ fleet: "zulu", harness: "claude" });
+  await readFor("claude", "/work/gadgets");
+  expect(log[0]).toBe("dirs:claude");
+});
+
+test("when the last-used directory is a search root the repo starts on the first checkout", async () => {
+  docked("claude");
+  dirsFor = () => ({
+    entries: [
+      dirEntry("work", "search_root"),
+      dirEntry("gadgets"),
+      dirEntry("widgets"),
+    ],
+    selected: "/work/work",
+    clone: null,
+  });
+  withSaved(wayfinder, ["claude", wayfinder]);
+  opened();
+  await toSkillStep();
+  expect((await shipLine()).textContent).toContain("gadgets");
+  await readFor("claude", "/work/gadgets");
+});
+
+test("a saved skill installed only on the second dock starts the Ship line there, re-reading directories, drafting and skills once for it", async () => {
+  docked("claude", "codex");
+  withSaved(wayfinder, ["codex", wayfinder]);
+  opened();
+  await toSkillStep();
+  await waitFor(async () => {
+    const line = (await shipLine()).textContent;
+    expect(line).toMatch(/codex/i);
+    expect(line).toContain("tools");
+  });
+  await readFor("codex", "/work/tools");
+  expect(dirsBodies).toEqual([
+    { fleet: "zulu", harness: "claude" },
+    { fleet: "zulu", harness: "codex" },
+  ]);
+  expect(log.filter((l) => l.startsWith("drafting:"))).toHaveLength(2);
+  expect(log.filter((l) => l.startsWith("skills:"))).toHaveLength(2);
+  expect((await launch()).disabled).toBe(false);
+});
+
+test("Change shows the dock picker limited to the docks that carry the skill and a checkout picker of checkouts only, without clone", async () => {
+  docked("claude", "codex", "copilot");
+  dirsFor = () => ({
+    entries: [
+      dirEntry("widgets"),
+      dirEntry("work", "search_root"),
+      dirEntry("gadgets"),
+    ],
+    selected: "/work/widgets",
+    clone: { repo: "acme/widgets", path: "/work/new" },
+  });
+  withSaved(wayfinder, ["claude", wayfinder], ["codex", wayfinder]);
+  opened();
+  await toSkillStep();
+  await shipLine();
+  expect(screen.queryByRole("combobox", { name: "Checkout" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  const docks = dockRadios().map((r) =>
+    r.closest("label")?.textContent?.trim().toLowerCase(),
+  );
+  expect(docks).toEqual(["claude", "codex"]);
+  expect(
+    within(checkoutBox())
+      .getAllByRole("option")
+      .map((o) => (o.textContent ?? "").trim())
+      .sort(),
+  ).toEqual(["gadgets (checkout)", "widgets (checkout)"]);
+});
+
+test("picking another repo in Change re-reads the drafting skill and the skills for it", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  opened();
+  await toSkillStep();
+  await shipLine();
+  await readFor("claude", "/work/widgets");
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  fireEvent.change(checkoutBox(), { target: { value: "/work/gadgets" } });
+  await readFor("claude", "/work/gadgets");
+  expect((await shipLine()).textContent).toContain("gadgets");
+  expect(dirsBodies).toHaveLength(1);
+});
+
+test("picking another harness in Change moves the repo to that dock's last-used checkout and re-reads directories, drafting and skills", async () => {
+  docked("claude", "codex");
+  withSaved(wayfinder, ["claude", wayfinder], ["codex", wayfinder]);
+  opened();
+  await toSkillStep();
+  await shipLine();
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  const codex = dockRadios().find((r) =>
+    /codex/i.test(r.closest("label")?.textContent ?? ""),
+  )!;
+  fireEvent.click(codex);
+  await readFor("codex", "/work/tools");
+  expect(dirsBodies.at(-1)).toEqual({ fleet: "zulu", harness: "codex" });
+  await waitFor(async () => {
+    const line = (await shipLine()).textContent;
+    expect(line).toMatch(/codex/i);
+    expect(line).toContain("tools");
+  });
+});
+
+test("a skill that isn't installed on the Ship line's harness stays selected, marks the option and the Ship line not installed, and blocks Launch drafting ship until No skill is picked", async () => {
+  docked("claude");
+  withSaved(wayfinder);
+  opened();
+  await toSkillStep();
+  const sel = await skillBox();
+  await waitFor(() =>
+    expect(selectedLabel(sel)).toMatch(/wayfinder.*not installed/i),
+  );
+  expect((await shipLine()).textContent).toMatch(/not installed/i);
+  expect((await launch()).disabled).toBe(true);
+  expect(ships).toEqual([]);
+  pickOption(sel, "No skill");
+  const draft = (await screen.findByRole("button", {
+    name: "Draft",
+  })) as HTMLButtonElement;
+  expect(draft.disabled).toBe(false);
+  noShipLine();
+});
+
+test("a repo that lacks the skill marks the Ship line not installed without switching the harness", async () => {
+  docked("claude", "codex");
+  draftingFor = (dir) => ({
+    skill: wayfinder,
+    harnesses:
+      dir === "/work/widgets"
+        ? installedOn(["claude", wayfinder], ["codex", wayfinder])
+        : [],
+  });
+  opened();
+  await toSkillStep();
+  await shipLine();
+  await readFor("claude", "/work/widgets");
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  fireEvent.change(checkoutBox(), { target: { value: "/work/gadgets" } });
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Launch drafting ship",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true),
+  );
+  const line = await shipLine();
+  expect(line.textContent).toMatch(/not installed/i);
+  expect(line.textContent).toMatch(/claude/i);
+  expect(dirsBodies).toHaveLength(1);
+});
+
+test("a dock listing two installed names asks which one, and Launch drafting ship waits for the answer then sends it and saves it", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder, "acme:wayfinder"]);
+  opened();
+  await toSkillStep("pool work");
+  await shipLine();
+  await waitFor(() => expect(hasName("acme:wayfinder")).toBeTruthy());
+  expect(hasName(wayfinder)).toBeTruthy();
+  const button = await launch();
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(ships).toEqual([]);
+  chooseName("acme:wayfinder");
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Launch drafting ship",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Launch drafting ship" }));
+  await waitFor(() => expect(ships).toHaveLength(1));
+  expect(ships[0]).toMatchObject({
+    skill: { kind: "skill", name: "acme:wayfinder" },
+  });
+  await waitFor(() => expect(saves).toEqual([{ skill: "acme:wayfinder" }]));
+});
+
+test("installed plugin skills are listed once by their plain name", async () => {
+  docked("claude");
+  skillsFor = () =>
+    skillsOf("/", "acme:wayfinder", "other:wayfinder", "review");
+  opened();
+  await toSkillStep();
+  const sel = await skillBox();
+  await readFor("claude", "/work/widgets");
+  await waitFor(() => expect(optionLabels(sel)).toHaveLength(3));
+  expect(optionLabels(sel).sort()).toEqual(
+    [
+      "No skill: Admiral drafts a title and description",
+      "/review: a drafting ship runs it with you",
+      "/wayfinder: a drafting ship runs it with you",
+    ].sort(),
+  );
+});
+
+test.each(["ghost", "acme:ghost"])(
+  "a saved skill (%s) that no dock has installed still has its option, selected and marked not installed",
+  async (name) => {
+    docked("claude");
+    withSaved(name);
+    opened();
+    await toSkillStep();
+    const sel = await skillBox();
+    await waitFor(() => expect(selectedLabel(sel)).toContain(name));
+    expect(selectedLabel(sel)).toMatch(/not installed/i);
+  },
+);
+
+test("Launch drafting ship sends the drafting launch with the skill, harness, directory and text, then saves the pick, closes the modal and opens the ship's bridge", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  opened();
+  await toSkillStep("pool work");
+  await shipLine();
+  fireEvent.click(await launch());
+  await waitFor(() => expect(location.pathname).toBe("/app/ships/zulu-7"));
+  expect(ships).toEqual([
+    {
+      drafting: true,
+      fleet: "zulu",
+      harness: "claude",
+      dir: "/work/widgets",
+      text: "pool work",
+      skill: { kind: "skill", name: wayfinder },
+    },
+  ]);
+  expect(location.search).toBe("?fleet=zulu");
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(saves).toEqual([{ skill: wayfinder }]));
+  expect(log.indexOf("save")).toBeGreaterThan(log.indexOf("ship"));
+});
+
+test("choosing another skill in the select saves nothing until its launch succeeds, then saves its plain name", async () => {
+  docked("claude");
+  skillsFor = () => skillsOf("/", "wayfinder", "acme:review");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  opened();
+  await toSkillStep();
+  const sel = await skillBox();
+  await shipLine();
+  pickOption(sel, "/review");
+  expect(saves).toEqual([]);
+  fireEvent.click(await launch());
+  await waitFor(() => expect(ships).toHaveLength(1));
+  expect(ships[0]).toMatchObject({ skill: { kind: "skill", name: "review" } });
+  await waitFor(() => expect(saves).toEqual([{ skill: "review" }]));
+});
+
+test("a refused drafting launch shows its reason, keeps the modal open and saves nothing", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  shipAnswer = () =>
+    json({ error: "no installed skill carries wayfinder" }, 400);
+  opened();
+  await toSkillStep();
+  await shipLine();
+  fireEvent.click(await launch());
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("no installed skill carries wayfinder");
+  expect(onClose).not.toHaveBeenCalled();
+  expect(location.pathname).toBe("/app/campaigns");
+  expect(saves).toEqual([]);
+});
+
+test("a failed save of the pick doesn't undo the launch", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  saveAnswer = () => json({ error: "config.json is busy" }, 409);
+  opened();
+  await toSkillStep();
+  await shipLine();
+  fireEvent.click(await launch());
+  await waitFor(() => expect(location.pathname).toBe("/app/ships/zulu-7"));
+  await waitFor(() => expect(saves).toHaveLength(1));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("Launch drafting ship is disabled while the text is empty or over the limit", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  opened();
+  const area = await toSkillStep("pool work");
+  await shipLine();
+  expect((await launch()).disabled).toBe(false);
+  fireEvent.input(area, { target: { value: "" } });
+  expect((await launch()).disabled).toBe(true);
+  fireEvent.input(area, { target: { value: "x".repeat(MAX_PROSE_RUNES + 1) } });
+  expect((await launch()).disabled).toBe(true);
+  expect(ships).toEqual([]);
+});
+
+test("Launch drafting ship is disabled while the reads are loading", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  let release!: (a: SkillsAnswer) => void;
+  skillsFor = () => new Promise((resolve) => (release = resolve));
+  opened();
+  await toSkillStep();
+  await waitFor(() =>
+    expect(log.some((l) => l.startsWith("skills:"))).toBe(true),
+  );
+  const button = await launch();
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(ships).toEqual([]);
+  release(skillsOf("/", wayfinder));
+  await waitFor(async () => expect((await launch()).disabled).toBe(false));
+});
+
+test("Create campaign on the No skill path saves an empty skill after the campaign is filed, and Draft alone saves nothing", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  opened();
+  await toSkillStep();
+  pickOption(await skillBox(), "No skill");
+  fireEvent.click(await screen.findByRole("button", { name: "Draft" }));
+  await repoSelect();
+  expect(saves).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "Create campaign" }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  expect(creates).toHaveLength(1);
+  await waitFor(() => expect(saves).toEqual([{ skill: "" }]));
+  expect(log.indexOf("save")).toBeGreaterThan(log.indexOf("create"));
+});
+
+test("Back from the confirm step, closing, and a failed create save nothing", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  createAnswer = () =>
+    json({ error: "acme/widgets belongs to fleet yankee" }, 422);
+  opened();
+  await toSkillStep();
+  pickOption(await skillBox(), "No skill");
+  fireEvent.click(await screen.findByRole("button", { name: "Draft" }));
+  await repoSelect();
+  fireEvent.click(screen.getByRole("button", { name: "Create campaign" }));
+  await screen.findByText("acme/widgets belongs to fleet yankee");
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  await skillBox();
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Add campaign" }), {
+    key: "Escape",
+  });
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await act(async () => {});
+  expect(saves).toEqual([]);
+});
+
+test("Back from the confirm step keeps the pick, the Ship line's harness and its repo", async () => {
+  docked("claude", "codex");
+  withSaved(wayfinder, ["claude", wayfinder], ["codex", wayfinder]);
+  opened();
+  await toSkillStep();
+  await shipLine();
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  fireEvent.click(
+    dockRadios().find((r) =>
+      /codex/i.test(r.closest("label")?.textContent ?? ""),
+    )!,
+  );
+  await readFor("codex", "/work/tools");
+  const sel = await skillBox();
+  pickOption(sel, "No skill");
+  fireEvent.click(await screen.findByRole("button", { name: "Draft" }));
+  await repoSelect();
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  const back = await skillBox();
+  expect(selectedLabel(back)).toBe(
+    "No skill: Admiral drafts a title and description",
+  );
+  pickOption(back, "$wayfinder");
+  await waitFor(async () => {
+    const line = (await shipLine()).textContent;
+    expect(line).toMatch(/codex/i);
+    expect(line).toContain("tools");
+  });
+});
+
+test("Draft waits for the drafting read, so a Create can't save a pick the engineer never saw", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  let release!: () => void;
+  draftingGate = new Promise((resolve) => (release = resolve));
+  opened();
+  await toSkillStep();
+  await waitFor(() => expect(log).toContain("drafting:/work/widgets"));
+  const draft = (await screen.findByRole("button", {
+    name: "Draft",
+  })) as HTMLButtonElement;
+  expect(draft.disabled).toBe(true);
+  release();
+  await launch();
+  expect(selectedLabel(await skillBox())).toBe(
+    "/wayfinder: a drafting ship runs it with you",
+  );
+  expect(saves).toEqual([]);
+});
+
+test("a failed drafting read leaves Draft working and Create saves nothing", async () => {
+  docked("claude");
+  draftingFails = true;
+  opened();
+  await toSkillStep();
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "drafting is down",
+  );
+  await waitFor(async () =>
+    expect(
+      ((await screen.findByRole("button", { name: "Draft" })) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Draft" }));
+  await repoSelect();
+  fireEvent.click(screen.getByRole("button", { name: "Create campaign" }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  expect(creates).toHaveLength(1);
+  await act(async () => {});
+  expect(saves).toEqual([]);
+});
+
+test("a saved plugin skill stays installed in its option after the plain name is picked", async () => {
+  docked("claude");
+  skillsFor = () => skillsOf("/", "acme:wayfinder");
+  withSaved("acme:wayfinder", ["claude", "acme:wayfinder"]);
+  opened();
+  await toSkillStep();
+  const sel = await skillBox();
+  await waitFor(() => expect(selectedLabel(sel)).toContain("acme:wayfinder"));
+  pickOption(sel, "/wayfinder");
+  await waitFor(() => expect(selectedLabel(sel)).toContain("wayfinder"));
+  expect(optionLabels(sel).join("\n")).not.toMatch(/not installed/i);
+  expect(optionLabels(sel)).toContain(
+    "/acme:wayfinder: a drafting ship runs it with you",
+  );
+});
+
+test("a skill other than the saved one offers every dock in Change", async () => {
+  docked("claude", "codex", "copilot");
+  withSaved(wayfinder, ["claude", wayfinder], ["codex", wayfinder]);
+  opened();
+  await toSkillStep();
+  pickOption(await skillBox(), "/review");
+  await shipLine();
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  expect(
+    dockRadios().map((r) => r.closest("label")?.textContent?.trim().toLowerCase()),
+  ).toEqual(["claude", "codex", "copilot"]);
+});
+
+test("a refused launch's reason goes away when the pick changes", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  shipAnswer = () => json({ error: "no installed skill carries wayfinder" }, 400);
+  opened();
+  await toSkillStep();
+  await shipLine();
+  fireEvent.click(await launch());
+  await screen.findByRole("alert");
+  pickOption(await skillBox(), "No skill");
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 });

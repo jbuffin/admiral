@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call, fetchFleetRepos, fetchSettings, fetchSources, SLOW_TIMEOUT_MS } from './api';
+import { call, fetchFleetRepos, fetchSettings, fetchSources, LAUNCH_TIMEOUT_MS, SLOW_TIMEOUT_MS } from './api';
 import { Button } from './Button';
 import type { Campaign } from './campaign';
 import { openCampaign } from './campaignsLink';
 import { capabilities, capabilitiesLoaded, loadCapabilities } from './capabilities';
+import type { DraftingPick } from './draftingPick';
 import { draftingOff, MAX_PROSE_RUNES } from './filing';
+import { CheckoutSelect, cap, DockPicker } from './LaunchPickers';
 import { accountForHost, type CreateBody, initialProject, projectChoices, safeHref, sourceHost, textCampaignNote, type Project } from './makeCampaign';
 import { runes } from './standingOrders';
 
@@ -39,11 +41,72 @@ interface TextProps {
   onBack: () => void;
   onConfirm: (c: Confirmed) => void;
   onBusy: (b: boolean) => void;
+  /** The fleet's drafting skill pick; null when the fleet has no dock to run a drafting ship on. */
+  pick?: DraftingPick | null;
+  onLaunched?: (session: string, skill: string) => void;
+}
+
+const NO_SKILL = '';
+
+function DraftingSkill({ pick }: { pick: DraftingPick }) {
+  const [changing, setChanging] = useState(false);
+  const mark = pick.skills?.mark ?? '/';
+  const missing = (n: string) => !pick.loading && !pick.options.find((o) => o.name === n)?.installed;
+  const checkouts = pick.dirs ? { ...pick.dirs, clone: null } : null;
+  const repo = checkouts?.entries.find((e) => e.path === pick.dir)?.name ?? pick.dir;
+  return (
+    <>
+      <label class="field">
+        <span>Drafting skill</span>
+        <select aria-label="Drafting skill" value={pick.skill} onChange={(e) => pick.setSkill(e.currentTarget.value)}>
+          <option value={NO_SKILL}>No skill: Admiral drafts a title and description</option>
+          {pick.options.map(({ name: n }) => (
+            <option key={n} value={n}>
+              {`${mark}${n}: ${missing(n) ? 'not installed' : 'a drafting ship runs it with you'}`}
+            </option>
+          ))}
+        </select>
+      </label>
+      {pick.error ? (
+        <p class="alert" role="alert">
+          {pick.error}
+        </p>
+      ) : null}
+      {pick.skill ? (
+        <>
+          <p class="note">
+            {`Ship: ${cap(pick.harness)} · ${repo} · own worktree${!pick.loading && !pick.installed ? ' · not installed' : ''} · `}
+            <button type="button" class="btn link ship-change" aria-expanded={changing} onClick={() => setChanging(!changing)}>
+              Change
+            </button>
+          </p>
+          {changing ? (
+            <>
+              <DockPicker docks={pick.docks} harness={pick.harness} onChange={pick.setHarness} />
+              <CheckoutSelect dir={pick.dir} dirs={checkouts} allowClone={false} onChange={pick.setDir} />
+            </>
+          ) : null}
+          {pick.ambiguous ? (
+            <fieldset class="checks">
+              <legend>Which installed skill runs?</legend>
+              {pick.names.map((n) => (
+                <label key={n} class="check">
+                  <input type="radio" name="drafting-name" checked={pick.picked === n} onChange={() => pick.setPicked(n)} />
+                  {n}
+                </label>
+              ))}
+            </fieldset>
+          ) : null}
+        </>
+      ) : null}
+    </>
+  );
 }
 
 /** The step that asks what the campaign is for and has the drafter title it. */
-export function TextStep({ fleet, text, onText, onBack, onConfirm, onBusy }: TextProps) {
+export function TextStep({ fleet, text, onText, onBack, onConfirm, onBusy, pick, onLaunched }: TextProps) {
   const [busy, setBusy] = useState(false);
+  const [launchError, setLaunchError] = useState('');
   const [refused, setRefused] = useState(false);
   const live = useRef(true);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -90,6 +153,23 @@ export function TextStep({ fleet, text, onText, onBack, onConfirm, onBusy }: Tex
     onConfirm(own(`Couldn't draft a title: ${r.error}. Write your own.`));
   };
 
+  const drafts = !!pick && pick.skill !== NO_SKILL;
+  const canLaunch = !!pick?.launchable && text.trim() !== '' && !tooLong;
+  // A refusal belongs to the pick that drew it.
+  useEffect(() => setLaunchError(''), [pick?.skill, pick?.harness, pick?.dir]);
+  const launch = async () => {
+    if (!pick || busy || !canLaunch) return;
+    setBusy(true);
+    onBusy(true);
+    setLaunchError('');
+    const r = await call<{ ship: { session: string } }>('POST', '/ships', { drafting: true, fleet, harness: pick.harness, dir: pick.dir, text, skill: { kind: 'skill', name: pick.name } }, undefined, { timeoutMs: LAUNCH_TIMEOUT_MS });
+    if (!live.current) return;
+    setBusy(false);
+    onBusy(false);
+    if (!r.ok) return setLaunchError(r.error);
+    onLaunched?.(r.data.ship.session, pick.name);
+  };
+
   return (
     <>
       <div class="launch-body">
@@ -100,14 +180,26 @@ export function TextStep({ fleet, text, onText, onBack, onConfirm, onBusy }: Tex
         <p class={tooLong ? 'alert' : 'note'}>
           {size.toLocaleString('en-US')} / {MAX_PROSE_RUNES.toLocaleString('en-US')}
         </p>
+        {pick ? <DraftingSkill pick={pick} /> : null}
+        {launchError ? (
+          <p class="alert" role="alert">
+            {launchError}
+          </p>
+        ) : null}
       </div>
       <div class="launch-foot">
         <Button label="Back" disabled={busy} onClick={onBack}>
           Back
         </Button>
-        <Button variant="primary" label={plain ? 'Next' : 'Draft'} busyLabel="Drafting" busy={busy} disabled={text.trim() === '' || tooLong || !capabilitiesLoaded.value} onClick={() => void next()}>
+        {drafts ? (
+          <Button variant="primary" label="Launch drafting ship" busyLabel="Launching" busy={busy} disabled={!canLaunch} onClick={() => void launch()}>
+            Launch drafting ship
+          </Button>
+        ) : (
+        <Button variant="primary" label={plain ? 'Next' : 'Draft'} busyLabel="Drafting" busy={busy} disabled={text.trim() === '' || tooLong || !capabilitiesLoaded.value || !!pick?.pending} onClick={() => void next()}>
           {plain ? 'Next' : 'Draft'}
         </Button>
+        )}
       </div>
     </>
   );
@@ -133,6 +225,7 @@ interface ConfirmProps {
   onClose: () => void;
   onBack: () => void;
   onBusy: (b: boolean) => void;
+  onCreated?: () => void;
 }
 
 function ParentLink({ url }: { url: string }) {
@@ -147,7 +240,7 @@ function ParentLink({ url }: { url: string }) {
 }
 
 /** The step that shows the title, description and repo before the parent issue is filed. */
-export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onBusy }: ConfirmProps) {
+export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onBusy, onCreated }: ConfirmProps) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState('');
   const [repoId, setRepoId] = useState('');
@@ -205,6 +298,7 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
     if (r.ok) {
       remember(project.id);
       openCampaign(r.data);
+      onCreated?.();
       return onClose();
     }
     setCreating(false);
