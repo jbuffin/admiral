@@ -17,6 +17,17 @@ function open(t: Toast<Alert>) {
   go(alertDestination(t.alert, { ships: ships.value, items: inboxItems.value }), alertSearch(t.alert));
 }
 
+export interface ResultToast {
+  tag: string;
+  name: string;
+  line: string;
+  url?: string;
+  error?: boolean;
+}
+
+/** Shows a module action's result as a toast that stays until dismissed. */
+export function showResult(_result: ResultToast) {}
+
 /** Shows the server's alerts as toasts over the shell and chimes for each, and only for an alert. */
 export function ToastRegion() {
   useEffect(() => {

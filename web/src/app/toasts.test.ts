@@ -79,3 +79,50 @@ describe('toast queue', () => {
     expect(toasts.list()[0]).toMatchObject({ name: '<b>Dory</b>', line: '<img src=x onerror=alert(1)>' });
   });
 });
+
+describe('a module action result toast', () => {
+  it('keeps its link and shows it with its name and line', () => {
+    const { toasts } = queue();
+    toasts.pushResult(alert('r', { url: 'https://example.com/t/1' }));
+    expect(toasts.list().map((x) => [x.name, x.line, x.url])).toEqual([['Ship r', 'line r', 'https://example.com/t/1']]);
+  });
+
+  it('does not expire, while an alert beside it still does', () => {
+    const { toasts, advance } = queue();
+    toasts.pushResult(alert('r'));
+    toasts.push(alert('a'));
+    advance(TOAST_MS * 10);
+    toasts.expire();
+    expect(toasts.list().map((x) => x.tag)).toEqual(['r']);
+  });
+
+  it('goes when dismissed', () => {
+    const { toasts } = queue();
+    const r = toasts.pushResult(alert('r'));
+    toasts.dismiss(r.id);
+    expect(toasts.list()).toEqual([]);
+  });
+
+  it('counts toward the cap of two, and a same-tag result replaces the one before it', () => {
+    const { toasts } = queue();
+    toasts.pushResult(alert('r1'));
+    toasts.pushResult(alert('r2', { url: 'https://example.com/2' }));
+    toasts.push(alert('a'));
+    expect(toasts.list().map((x) => [x.tag, x.url])).toEqual([
+      ['r2', 'https://example.com/2'],
+      ['a', undefined],
+    ]);
+    toasts.pushResult({ ...alert('r2'), line: 'newer' });
+    expect(toasts.list().map((x) => [x.tag, x.line])).toEqual([
+      ['a', 'line a'],
+      ['r2', 'newer'],
+    ]);
+  });
+
+  it('leaves an alert without a link or a sticky mark', () => {
+    const { toasts } = queue();
+    toasts.push(alert('a'));
+    expect(toasts.list()[0].url).toBeUndefined();
+  });
+});
+
