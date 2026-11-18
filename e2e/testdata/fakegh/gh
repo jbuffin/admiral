@@ -65,6 +65,15 @@
 #     branch up to date, and exits 0. With $FAKEGH_DIR/pr_update_branch.fail it
 #     exits 1 and prints that file on stderr, changing nothing.
 #
+#   gh pr ready URL
+#     the Mark ready for review act. The URL must be https:// and no flag is
+#     accepted. On success it changes "isDraft":true to false in pr_detail/KEY and
+#     pr_events/KEY of the URL and in the canned search/*.json node whose "url" it
+#     is (the node writes its isDraft and url as plain members, no object between
+#     them), so the next read shows the PR ready for review, and exits 0. With
+#     $FAKEGH_DIR/pr_ready.fail it exits 1 and prints that file on stderr,
+#     changing nothing.
+#
 #   gh stack merge N --yes --merge-method (merge|squash|rebase)
 #     the Merge act's whole-stack merge, by GitHub's stack number: exactly one
 #     positional argument, an integer (anything else exits 2). --yes and
@@ -304,6 +313,26 @@ pr)
 		if [ -s "$FAKEGH_DIR/pr_events/$ukey" ]; then
 			sed -E 's/"mergeStateStatus"[[:space:]]*:[[:space:]]*"BEHIND"/"mergeStateStatus":"CLEAN"/' "$FAKEGH_DIR/pr_events/$ukey" > "$call_dir/events.tmp" && mv "$call_dir/events.tmp" "$FAKEGH_DIR/pr_events/$ukey"
 		fi
+		exit 0
+	fi
+	if [ "$2" = ready ]; then
+		shift 2
+		[ $# = 1 ] || { echo "fakegh: gh pr ready takes the pull request's URL and no flag" >&2; exit 2; }
+		case "$1" in https://*) ;; *) echo "fakegh: gh pr ready needs the pull request's URL" >&2; exit 2 ;; esac
+		if [ -e "$FAKEGH_DIR/pr_ready.fail" ]; then
+			cat "$FAKEGH_DIR/pr_ready.fail" >&2
+			exit 1
+		fi
+		rkey=$(printf '%s' "$1" | tr '/:' '__')
+		for f in "$FAKEGH_DIR/pr_detail/$rkey" "$FAKEGH_DIR/pr_events/$rkey"; do
+			[ -s "$f" ] || continue
+			sed -E 's/"isDraft"[[:space:]]*:[[:space:]]*true/"isDraft":false/' "$f" > "$call_dir/ready.tmp" && mv "$call_dir/ready.tmp" "$f"
+		done
+		rpat=$(printf '%s' "$1" | sed 's/[][\.*^$|]/\\&/g')
+		for f in "$FAKEGH_DIR"/search/*.json; do
+			[ -e "$f" ] || continue
+			sed -E "s|(\"url\":\"$rpat\"[^{}]*)\"isDraft\":true|\1\"isDraft\":false|; s|\"isDraft\":true([^{}]*\"url\":\"$rpat\")|\"isDraft\":false\1|" "$f" > "$call_dir/search.tmp" && mv "$call_dir/search.tmp" "$f"
+		done
 		exit 0
 	fi
 	[ "$2" = view ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }

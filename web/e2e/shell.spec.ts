@@ -242,8 +242,14 @@ test('talking to a ship: the box sends, the message shows dimmed until the conve
   await expect(messageBox(page)).toBeEnabled();
   // A draft survives a visit to another tab.
   await messageBox(page).fill('A draft to keep');
+  // Leaving Terminal before the bridge joined, or letting its socket outlive the ship, logs a socket error.
+  const joined = page.waitForEvent('websocket', (ws) => /\/bridge\//.test(ws.url()));
   await viewTab(page, 'Terminal').tap();
+  const bridge = await joined;
+  await bridge.waitForEvent('framereceived');
+  const closed = bridge.waitForEvent('close');
   await viewTab(page, 'Conversation').tap();
+  await closed;
   await expect(messageBox(page)).toHaveValue('A draft to keep');
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
@@ -457,7 +463,10 @@ test('a ship launches from the header and from an order on the Ships screen and 
 
 // The user line the fake harness appends to the transcript after its reply delay: the record the sent bubble waits for.
 function recordedInTranscript(a: Admiral, ship: { session: string }, text: string): boolean {
-  const args = readFileSync(join(a.home, 'rec', ship.session, 'argv'), 'utf8').split('\0');
+  // The fake writes argv only once its pane has started, after the launch call returned.
+  const argv = join(a.home, 'rec', ship.session, 'argv');
+  if (!existsSync(argv)) return false;
+  const args = readFileSync(argv, 'utf8').split('\0');
   const id = args[args.indexOf('--session-id') + 1];
   const file = join(a.home, 'identity', 'zulu-claude', 'projects', 'zz', `${id}.jsonl`);
   return existsSync(file) && readFileSync(file, 'utf8').includes(text);

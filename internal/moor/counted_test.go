@@ -38,6 +38,8 @@ func (f *fakeGitHub) LinkStack(context.Context, string, string, []int) error { r
 
 func (f *fakeGitHub) UpdateBranch(context.Context, string) error { return nil }
 
+func (f *fakeGitHub) MarkReadyForReview(context.Context, string) error { return nil }
+
 func (f *fakeGitHub) ReRequestReview(context.Context, string, string) error {
 	return errors.New("not implemented")
 }

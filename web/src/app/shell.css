@@ -904,6 +904,11 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .issue-label { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); font-size: var(--font-size-meta); color: var(--color-text2); white-space: nowrap; }
 .pr-chip.err { color: var(--color-err); border-color: var(--color-err); }
 .pr-chip.rev { color: var(--color-rev); border-color: var(--color-rev); }
+.pr-chip.review-draft { color: var(--color-text); border-color: var(--color-text2); font-weight: 600; }
+.pr-chip.review-ready_for_review { color: var(--color-muted); }
+.pr-subtab { position: relative; }
+.pr-subtab .tag-draft { flex: none; font-size: var(--font-size-meta); font-weight: 600; color: var(--color-text); }
+.ready-failed { color: var(--color-err); }
 
 /* ---- count on the PR view tab ---- */
 .view-tab .tab-count { margin-left: 6px; padding: 0 6px; border-radius: 9px; background: var(--color-sel); color: var(--color-text2); font-size: var(--font-size-meta); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -1035,6 +1040,8 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .orow-mark { flex: none; color: var(--color-muted); }
 .orow-mark.pr { color: var(--color-accent); }
 .orow-mark.issue { color: var(--fleet-0-light); }
+.orow-mark.draft { stroke-dasharray: 2.4 1.8; }
+.orow-mark.ready-for-review:not(.pr) { color: var(--color-ok); }
 .orow-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 7px 0; }
 .orow-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .orow-phone .orow-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }

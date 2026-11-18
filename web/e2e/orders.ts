@@ -320,13 +320,14 @@ export async function ordersJourney(page: Page, a: Admiral, press: (l: Locator) 
   // Tapping a row's body opens its detail, not the Launch dialog: a column on the iPad, a sheet on the phone.
   const form = page.getByRole('dialog', { name: 'Launch', exact: true });
   const pane = orderPane(page, phone);
-  const body = (t: string) => page.getByRole('button', { name: `Open ${t}`, exact: true });
+  // An open PR order's button also names whether it is a draft; the seeded PRs are out of draft.
+  const body = (t: string, state = '') => page.getByRole('button', { name: `Open ${t}${state ? `, ${state}` : ''}`, exact: true });
   await expect(pane).toBeHidden();
   await press(body('Rotate the signing keys'));
   await expect(form).toBeHidden();
   await expect(pane).toBeVisible();
   await expect(body('Rotate the signing keys')).toHaveAttribute('aria-pressed', 'true');
-  await expect(body('Review the cache layer')).not.toHaveAttribute('aria-pressed', 'true');
+  await expect(body('Review the cache layer', 'pull request ready for review')).not.toHaveAttribute('aria-pressed', 'true');
   await expect(page).toHaveURL(/[?&]order=gh%2Facme%2Fapi%2331(&|$)/);
   await expect(pane.getByRole('heading', { name: 'Rotate the signing keys' })).toBeVisible();
   await expect(pane).toContainText('acme/api #31');

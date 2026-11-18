@@ -31,8 +31,8 @@ var SearchTimeout = 60 * time.Second
 
 const itemFields = "number title url createdAt bodyText author { login } repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
 
-// prStateFields are the PullRequest fields the chips and ready read, the poll's own and no more, so a search stays light.
-const prStateFields = " state reviewDecision mergeable mergeStateStatus statusCheckRollup { state contexts { checkRunCountsByState { state count } statusContextCountsByState { state count } } } headRefOid viewerLatestReview { state commit { oid } }"
+// prStateFields are the PullRequest fields the chips, ready and the draft mark read, the poll's own plus isDraft and no more, so a search stays light.
+const prStateFields = " state isDraft reviewDecision mergeable mergeStateStatus statusCheckRollup { state contexts { checkRunCountsByState { state count } statusContextCountsByState { state count } } } headRefOid viewerLatestReview { state commit { oid } }"
 
 // searchQuery is GitHub's advanced search, the one github.com uses: it knows
 // qualifiers such as is:blocked, and it reads AND, OR and parentheses.
@@ -87,6 +87,8 @@ type Item struct {
 	HeadSHA string
 	// PR is a pull request's state as the poll would serve it; nil for an issue.
 	PR *moor.PR
+	// Draft is true for a pull request still in draft; false for an issue.
+	Draft bool
 	// OpenedAt is when it was opened, Excerpt its body as one short line.
 	OpenedAt time.Time
 	Excerpt  string
@@ -566,6 +568,7 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 	if n.State != "" { // only the pull request fragment asks for state
 		pr := moor.View(it.URL, n.status(), true)
 		it.PR = &pr
+		it.Draft = n.IsDraft
 		if n.HeadRefName != nil && n.BaseRefName != nil && n.Repository.DefaultBranchRef != nil {
 			it.Head, it.Base, it.DefaultBranch = *n.HeadRefName, *n.BaseRefName, n.Repository.DefaultBranchRef.Name
 		}

@@ -69,6 +69,9 @@ type pollGitHub struct {
 	updateErr   error         // what UpdateBranch answers
 	updateBlock chan struct{} // when set, UpdateBranch waits for it to close
 
+	readied  []string         // the URL of each MarkReadyForReview call
+	readyErr map[string]error // what MarkReadyForReview answers per URL
+
 	reRequested   []string // each ReRequestReview as "PR URL login"
 	reRequestErr  error    // what ReRequestReview answers
 	reRequestWait bool     // ReRequestReview blocks until its context ends
@@ -224,6 +227,19 @@ func (g *pollGitHub) updateLog() []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return append([]string(nil), g.updated...)
+}
+
+func (g *pollGitHub) MarkReadyForReview(_ context.Context, url string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.readied = append(g.readied, url)
+	return g.readyErr[url]
+}
+
+func (g *pollGitHub) readyLog() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string(nil), g.readied...)
 }
 
 func (g *pollGitHub) ReRequestReview(ctx context.Context, prURL, login string) error {

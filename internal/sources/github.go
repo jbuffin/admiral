@@ -427,7 +427,7 @@ func (g *githubConn) refresh() {
 				order["excerpt"] = it.Excerpt
 			}
 			if p := it.PR; p != nil {
-				order["pr"] = OrderPR{State: p.State, Review: p.Review, Checks: p.Checks, Mergeable: p.Mergeable, Conflicts: p.Conflicts, Ready: p.Ready,
+				order["pr"] = OrderPR{State: p.State, Review: p.Review, Checks: p.Checks, Mergeable: p.Mergeable, Conflicts: p.Conflicts, Ready: p.Ready, Draft: &it.Draft,
 					FailingCheckCount: it.FailingChecks}
 				order["reviewed_since_push"] = it.ReviewedSincePush
 				if !it.ReviewRequestedAt.IsZero() {

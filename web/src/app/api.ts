@@ -113,6 +113,8 @@ export interface MooredPR {
   /** The branch the whole stack conflicts with, set on its top PR when the server's check found it. */
   conflicts_with_base?: string;
   ready?: boolean;
+  /** True while an order's PR is a draft; only orders carry it, a ship's PR tab reads its PR detail. */
+  draft?: boolean;
   // New waking events since the ship's last round, and the command that answers them; both only on a moored ship's open PR.
   feedback?: number;
   answer?: string;
@@ -366,6 +368,18 @@ export function mergeShip(session: string, pr?: string): Promise<Result<unknown>
 /** Updates a moored ship's PR branch with its base, through the fleet's gh. Sends the merge token like Merge. */
 export function updateBranch(session: string, pr: string): Promise<Result<unknown>> {
   return call('POST', `/ships/${encodeURIComponent(session)}/update-branch`, { pr }, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
+}
+
+/** What marking one PR ready for review came to. */
+export interface ReadyForReviewResult {
+  url: string;
+  outcome: 'marked_ready' | 'already_ready_for_review' | 'failed';
+  error?: string;
+}
+
+/** Takes the named draft PRs, bottom to top, out of draft through the fleet's gh, and answers each one's outcome. Sends the merge token like Merge. */
+export function markReadyForReview(session: string, prs: string[]): Promise<Result<{ results: ReadyForReviewResult[] }>> {
+  return call('POST', `/ships/${encodeURIComponent(session)}/ready-for-review`, { prs }, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
 /** How a ship's PRs relate on GitHub; 404 for a ship that is anchored or has no PRs. */

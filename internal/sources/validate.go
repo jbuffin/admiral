@@ -57,6 +57,8 @@ type OrderPR struct {
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
 	Ready     bool   `json:"ready"`
+	// Draft is nil when the source does not say, so a consumer never reads silence as ready for review.
+	Draft *bool `json:"draft,omitempty"`
 	// FailingCheckCount is how many checks fail; left out when none.
 	FailingCheckCount int `json:"failing_check_count,omitempty"`
 }
