@@ -168,9 +168,9 @@ test('a note edits inline keeping its stamp out of the text, moves to another sc
   const calls = server(state);
   page('ada');
   const scope = async (name: RegExp) => await screen.findByRole('region', { name });
-  const note = async (text: string) => (await screen.findByText(text, { exact: false })).closest('li')!;
+  const note = async (text: string) => (await screen.findByText(text, { exact: false })).closest('li.crew-note')!;
 
-  fireEvent.click(within(await note(stamped)).getByRole('button', { name: 'Edit note' }));
+  fireEvent.click(within(await note('ada keeps handlers thin')).getByRole('button', { name: 'Edit note' }));
   const text = screen.getByRole('textbox', { name: 'Note text' }) as HTMLTextAreaElement;
   expect(text.value).toBe('ada keeps handlers thin');
   fireEvent.input(text, { target: { value: 'ada keeps handlers thin and typed' } });
@@ -243,4 +243,90 @@ test('a draft the resolver refuses shows its problem beside the field, and fixin
   fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
   await waitFor(() => expect(calls.some((c) => c.path.endsWith('/members'))).toBe(true));
   expect(calls.find((c) => c.path.endsWith('/members'))!.body).toMatchObject({ name: 'purser', 'based-on': 'scribe', 'pick-me-when': 'Pick for the accounts.' });
+});
+
+const withNotes = (fleetNotes: string[]) => ({ members: [member('ada', 'Pick for parser work.', { notes: { fleet: fleetNotes, repos: {} } })] });
+const rowOf = async (text: string) => (await screen.findByText(text, { exact: false })).closest('li.crew-note') as HTMLElement;
+
+test('a stamped note shows its stamp as muted text outside the markdown, and an unstamped note renders whole with no stamp', async () => {
+  server(withNotes(['2026-11-10 (run-b): ```go\nfunc answer() int { return 42 }\n```', 'plain **fact** with no stamp']));
+  page('ada');
+  const stamped = (await screen.findByText('2026-11-10 (run-b):')).closest('li.crew-note') as HTMLElement;
+  const stamp = stamped.querySelector('.crew-note-stamp')!;
+  expect(stamp.textContent).toBe('2026-11-10 (run-b):');
+  expect(stamp.closest('.md')).toBeNull();
+  expect(stamped.querySelector('.md pre > code')!.textContent).toContain('func answer() int');
+
+  const bare = await rowOf('plain');
+  expect(bare.querySelector('.crew-note-stamp')).toBeNull();
+  expect(bare.querySelector('.md strong')!.textContent).toBe('fact');
+});
+
+test('a note with markdown shows bold, a safe external link and a list as chat renders them', async () => {
+  server(withNotes(['read **the log** at [the docs](https://example.com/docs) first\n\n- tidy\n- push']));
+  page('ada');
+  const row = await rowOf('the log');
+  const md = row.querySelector('.md')!;
+  expect(md.querySelector('strong')!.textContent).toBe('the log');
+  const a = md.querySelector('a')!;
+  expect(a.getAttribute('href')).toBe('https://example.com/docs');
+  expect(a.getAttribute('target')).toBe('_blank');
+  expect(a.getAttribute('rel')).toBe('noopener noreferrer');
+  expect([...md.querySelectorAll('ul > li')].map((li) => li.textContent)).toEqual(['tidy', 'push']);
+  expect(md.textContent).not.toContain('**');
+});
+
+test('a note shows inline code and a highlighted fenced block, and raw HTML stays text', async () => {
+  server(withNotes(['run `make check` then\n\n```go\npackage main\n```\n\n<img src=x onerror="alert(1)">']));
+  page('ada');
+  const row = await rowOf('make check');
+  const md = row.querySelector('.md')!;
+  expect(md.querySelector('p code')!.textContent).toBe('make check');
+  expect(md.querySelector('pre > code.hljs')!.textContent).toContain('package main');
+  expect(md.querySelector('img')).toBeNull();
+  expect(md.textContent).toContain('<img src=x onerror=');
+});
+
+test('an unsafe link scheme in a note is not made a link', async () => {
+  server(withNotes(['[click](javascript:alert(1)) done']));
+  page('ada');
+  const row = await rowOf('done');
+  expect(row.querySelector('.md')!.textContent).toContain('click');
+  expect(row.querySelector('a[href^="javascript"]')).toBeNull();
+});
+
+test('the Move view renders the note as markdown too', async () => {
+  server(withNotes(['2026-11-10 (run-b): keep **handlers** thin']));
+  page('ada');
+  fireEvent.click(within(await rowOf('handlers')).getByRole('button', { name: 'Move note' }));
+  const row = (await screen.findByRole('combobox', { name: 'Move to' })).closest('li.crew-note') as HTMLElement;
+  expect(row.querySelector('.md strong')!.textContent).toBe('handlers');
+});
+
+test('editing a markdown note shows the raw fact without its stamp and sends the raw strings; delete sends the raw note', async () => {
+  const raw = '2026-11-10 (run-b): keep **handlers** thin, see `x.go`';
+  const other = 'run `make check` before **pushing**';
+  const calls = server(withNotes([raw, other]));
+  page('ada');
+  expect((await rowOf('handlers')).querySelector('.md strong')!.textContent).toBe('handlers');
+  fireEvent.click(within(await rowOf('handlers')).getByRole('button', { name: 'Edit note' }));
+  const text = screen.getByRole('textbox', { name: 'Note text' }) as HTMLTextAreaElement;
+  expect(text.value).toBe('keep **handlers** thin, see `x.go`');
+  fireEvent.input(text, { target: { value: 'keep **handlers** thin, see `y.go`' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true } as never));
+  await waitFor(() => expect(calls).toHaveLength(1));
+  expect(calls[0].body).toMatchObject({ op: 'edit', scope: 'fleet', note: raw, text: 'keep **handlers** thin, see `y.go`' });
+
+  fireEvent.click(within(await rowOf('pushing')).getByRole('button', { name: 'Delete note' }));
+  await waitFor(() => expect(calls).toHaveLength(2));
+  expect(calls[1].body).toMatchObject({ op: 'delete', scope: 'fleet', note: other });
+});
+
+test('an Unclaimed note renders its markdown the same way', async () => {
+  server({ members: [member('boatswain', 'Pick for rigging.')], unclaimed: [{ member: 'bosun', notes: { fleet: ['2026-11-09 (run-a): tie a **bowline**'], repos: {} } }] });
+  page();
+  const unclaimed = await screen.findByRole('region', { name: /^Unclaimed notes\b/ });
+  const row = unclaimed.querySelector('li.crew-note')!;
+  expect(row.querySelector('.crew-note-stamp')!.textContent).toBe('2026-11-09 (run-a):');
+  expect(row.querySelector('.md strong')!.textContent).toBe('bowline');
 });
