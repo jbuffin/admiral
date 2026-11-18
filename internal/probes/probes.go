@@ -202,6 +202,9 @@ func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness, version s
 	target := Target{Home: r.home, Fleet: fleet, Harness: harness, Version: version}
 	skipped := map[capabilities.ID]string{}
 	unrecorded := map[capabilities.ID]string{}
+	// The probes of a harness use their own directories and run side by side, so one
+	// more probe does not add its model call to the wait.
+	var due []Probe
 	for _, p := range r.probes {
 		if p.Harness != harness {
 			continue
@@ -211,10 +214,23 @@ func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness, version s
 			skipped[p.Capability] = fmt.Sprintf("version %s is older than %s, the first that claims it", version, cl.From)
 			continue
 		}
-		out := p.Run(ctx, target)
-		if cancelled(ctx) {
-			return Report{}, ctx.Err()
-		}
+		due = append(due, p)
+	}
+	outs := make([]Outcome, len(due))
+	var wg sync.WaitGroup
+	for i, p := range due {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			outs[i] = p.Run(ctx, target)
+		}()
+	}
+	wg.Wait()
+	if cancelled(ctx) {
+		return Report{}, ctx.Err()
+	}
+	for i, p := range due {
+		out := outs[i]
 		if out.Inconclusive {
 			unrecorded[p.Capability] = out.Detail
 			continue
