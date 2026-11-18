@@ -485,6 +485,7 @@ func TestHandingALiveShipToCommodoreRelaunchesItsConversationUnderTheSameName(t 
 	w.start()
 
 	ship := w.launchIn("f", "claude", "widgets")
+	w.dropFetchRedirect(filepath.Join(w.work, "widgets"))
 	first := w.record(ship.Session)
 	var id string
 	for i, a := range first.argv {

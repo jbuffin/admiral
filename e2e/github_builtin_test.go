@@ -113,6 +113,14 @@ func (w *world) checkoutOf(root, dir, repo string) {
 	w.git(d, "push", "-q", "origin", "main")
 }
 
+// dropFetchRedirect sends origin back to its GitHub URL, which Hand to Commodore reads the repo slug from; a worktree already made needs no more fetches.
+func (w *world) dropFetchRedirect(dir string) {
+	w.t.Helper()
+	for _, key := range strings.Fields(w.git(dir, "config", "--name-only", "--get-regexp", `^url\..*\.insteadof$`)) {
+		w.git(dir, "config", "--unset-all", key)
+	}
+}
+
 func inFleetDef(d srcDef, fleet string) srcDef { d.Fleet = fleet; return d }
 
 func TestGitHubBuiltin(t *testing.T) {

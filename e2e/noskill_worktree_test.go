@@ -241,7 +241,7 @@ func TestReturnToPortOfALiveNoSkillShipRemovesItsWorktreeAndKeepsItsBranch(t *te
 	w.hookAt(pane, "Stop", hookStop)
 
 	waitCond(t, 20*time.Second, "the returned ship's session gone", func() bool { return !w.hasSession(ship.Session) })
-	waitCond(t, 20*time.Second, "the worktree removed", func() bool { return !exists(cwd) })
+	waitCond(t, 20*time.Second, "the worktree removed", func() bool { return !exists(cwd) && !w.isWorktreeOf(dir, cwd) })
 	if w.isWorktreeOf(dir, cwd) || len(w.worktreesOf(dir)) != 1 {
 		t.Errorf("worktrees = %v, want the checkout alone", w.worktreesOf(dir))
 	}
@@ -284,7 +284,7 @@ func TestReturnToPortOfAMooredNoSkillShipWhosePRMergedRemovesItsWorktreeAndKeeps
 	pane := strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", "="+ship.Session+":0", "#{pane_id}"))
 	w.hookAt(pane, "Stop", hookStop)
 	waitUntil(t, "the moored record removed", func() bool { return !exists(w.mooredFile(ship.Name)) })
-	waitCond(t, 20*time.Second, "the worktree removed", func() bool { return !exists(cwd) })
+	waitCond(t, 20*time.Second, "the worktree removed", func() bool { return !exists(cwd) && !w.isWorktreeOf(dir, cwd) })
 	if got := w.worktreesOf(dir); len(got) != 1 {
 		t.Errorf("worktrees = %v, want the checkout alone", got)
 	}
