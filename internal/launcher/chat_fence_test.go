@@ -594,3 +594,23 @@ func TestTheChatPromptTellsAdmiralBotHowToReportAShipOnAReportTurn(t *testing.T)
 		}
 	}
 }
+
+func TestEveryChatPromptTeachesDraftCampaignAsAnInstructionOnlyAskingOnlyWhenSeveralReposFitAndLinkingTheItem(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		i := strings.Index(prompt, "draft_campaign")
+		if i < 0 {
+			t.Errorf("%s prompt never names draft_campaign", harness)
+			continue
+		}
+		near := strings.ToLower(prompt[max(0, i-400):min(len(prompt), i+900)])
+		for _, want := range []string{"tells you to draft", "more than one repo", "/app/inbox/_admiral/item/"} {
+			if !strings.Contains(near, want) {
+				t.Errorf("%s prompt near draft_campaign lacks %q: %q", harness, want, near)
+			}
+		}
+		if strings.Contains(strings.ToLower(prompt), "you cannot create a campaign") {
+			t.Errorf("%s prompt still says AdmiralBot cannot create a campaign", harness)
+		}
+	}
+}

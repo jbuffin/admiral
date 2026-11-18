@@ -35,6 +35,8 @@ const (
 	KindShipCard = "ship_card"
 	// KindLaunchLine is the line a chat launch posts for its ship, shown to the engineer and never read by AdmiralBot.
 	KindLaunchLine = "launch_line"
+	// KindCampaignDraftCard is the card Create or Dismiss of a campaign draft posts, shown to the engineer and never read by AdmiralBot.
+	KindCampaignDraftCard = "campaign_draft_card"
 )
 
 const (

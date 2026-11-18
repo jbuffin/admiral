@@ -12,11 +12,11 @@ import (
 // Message is one entry of the fleet's history: text, a question card or a New chat marker.
 type Message struct {
 	ID   string `json:"id"`
-	Kind string `json:"kind"`           // "message", "question", "reset", "commitment", "event_card", "launch_card", "ship_card" or "launch_line"
+	Kind string `json:"kind"`           // "message", "question", "reset", "commitment", "event_card", "launch_card", "ship_card", "launch_line" or "campaign_draft_card"
 	Role string `json:"role,omitempty"` // "user" or "assistant", for a message
 	Text string `json:"text"`           // a card's title; a marker's "New chat"
 	At   string `json:"at"`
-	// Card is a question's item as it was asked, without its answer, an event card's {routine, routine_name, tier, sender, link, metadata, mute_by} (its text is untrusted), or a launch card's event card fields plus {ship, level, restricted}, or a ship card's {ship, fleet, skill, skill_kind, result, prs}, or a commitment card's {commitment, outcome, ship, reason}; outcome is launched, reminded, cant_run, dropped or aged (a no-trigger commitment 14 days old).
+	// Card is a question's item as it was asked, without its answer, an event card's {routine, routine_name, tier, sender, link, metadata, mute_by} (its text is untrusted), or a launch card's event card fields plus {ship, level, restricted}, or a ship card's {ship, fleet, skill, skill_kind, result, prs}, or a commitment card's {commitment, outcome, ship, reason}, or a campaign draft card's {title, url, created, failed}; outcome is launched, reminded, cant_run, dropped or aged (a no-trigger commitment 14 days old).
 	Card json.RawMessage `json:"card,omitempty"`
 	// Thread is the id of the ship card whose report turn this entry is, or whose reply it is.
 	Thread string `json:"thread,omitempty"`

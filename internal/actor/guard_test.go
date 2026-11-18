@@ -274,3 +274,33 @@ func TestAnEngineersRequestIsNotFencedToAFleet(t *testing.T) {
 		t.Errorf("code %d, reached %d; want the engineer's stop of a ship in any fleet through", c, r.reached)
 	}
 }
+
+func TestAnActorMayDraftACampaignOnlyInItsOwnFleet(t *testing.T) {
+	r := newRig(t)
+	for _, path := range []string{"/api/fleets/work/campaign-drafts", "/api/v1/fleets/work/campaign-drafts"} {
+		if code := r.do("POST", path, `{"repo":"acme/widgets","title":"T","body":"B"}`, "tok-work", local).Code; code != 200 || r.reached != 1 || r.fleet != "work" || !r.acting {
+			t.Errorf("POST %s as work's AdmiralBot: code %d, reached %d for %q; want 200 acting for work", path, code, r.reached, r.fleet)
+		}
+	}
+	for _, c := range []struct{ method, path string }{
+		{"POST", "/api/fleets/personal/campaign-drafts"},
+		{"GET", "/api/fleets/work/campaign-drafts"},
+	} {
+		r := newRig(t)
+		if code := r.do(c.method, c.path, "{}", "tok-work", local).Code; code != 403 || r.reached != 0 {
+			t.Errorf("%s %s as work's AdmiralBot: code %d, reached %d; want 403 and the handler not reached", c.method, c.path, code, r.reached)
+		}
+	}
+}
+
+// Holds today because no allow entry covers these routes; it fails if one for create, dismiss or remove is ever added.
+func TestAnActorIsNeverLetThroughToCreateOrDismissACampaignDraft(t *testing.T) {
+	for _, prefix := range []string{"/api", "/api/v1"} {
+		for _, path := range []string{"/inbox/_admiral/campaign-1/create", "/inbox/_admiral/campaign-1/dismiss", "/inbox/_admiral/campaign-1/remove"} {
+			r := newRig(t)
+			if code := r.do("POST", prefix+path, `{"repo":"acme/widgets","title":"T","body":"B"}`, "tok-work", local).Code; code != 403 || r.reached != 0 {
+				t.Errorf("POST %s%s as AdmiralBot: code %d, reached %d; want 403 and the handler not reached", prefix, path, code, r.reached)
+			}
+		}
+	}
+}

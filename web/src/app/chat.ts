@@ -66,7 +66,7 @@ export interface LaunchLine {
 
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line';
+  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
@@ -96,6 +96,7 @@ export type ThreadItem =
   | { kind: 'launch'; id: string; text: string; at: string; card: LaunchCard }
   | { kind: 'launch_line'; id: string; text: string; at: string; card: LaunchLine }
   | { kind: 'ship'; id: string; text: string; at: string; card: ShipCard; thread?: ThreadMessage[] }
+  | { kind: 'campaign_draft'; id: string; text: string; at: string }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer; kept?: string };
 
 /** The snapshot's entries oldest first; entries with one time, or none that parses, keep the served order. */
@@ -114,6 +115,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
     if (m.kind === 'launch_card' && m.card) return [{ t, i, item: { kind: 'launch', id: m.id, text: m.text, at: m.at, card: m.card as LaunchCard } }];
     if (m.kind === 'launch_line' && m.card) return [{ t, i, item: { kind: 'launch_line', id: m.id, text: m.text, at: m.at, card: m.card as LaunchLine } }];
     if (m.kind === 'ship_card' && m.card) return [{ t, i, item: { kind: 'ship', id: m.id, text: m.text, at: m.at, card: m.card as ShipCard } }];
+    if (m.kind === 'campaign_draft_card') return [{ t, i, item: { kind: 'campaign_draft', id: m.id, text: m.text, at: m.at } }];
     if (m.kind === 'question' && m.card) {
       const card = m.card as InboxItem;
       const answer = answers.get(card.id);

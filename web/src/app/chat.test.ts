@@ -27,6 +27,11 @@ describe('the thread', () => {
     expect(t.map((i) => i.id)).toEqual(['u-1', 'a-2']);
   });
 
+  it('shows a campaign draft card as a line of its text', () => {
+    const t = threadOf(snap({ messages: [{ id: 'c-1', kind: 'campaign_draft_card', text: 'Thrown away the campaign draft "Map".', at: '2026-01-02T03:04:05Z' }] }));
+    expect(t).toEqual([{ kind: 'campaign_draft', id: 'c-1', text: 'Thrown away the campaign draft "Map".', at: '2026-01-02T03:04:05Z' }]);
+  });
+
   it('keeps the served order for entries with one time', () => {
     const at = '2026-01-02T03:04:05Z';
     const t = threadOf(

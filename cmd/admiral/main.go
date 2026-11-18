@@ -281,7 +281,7 @@ func serve(args []string) error {
 	}
 	defer cfg.Close()
 	cfg.SetChatProbe(capabilities.ChatProbe(capabilities.Open(dir)))
-	cfg.SetRepoLookup(fleetRepos(cfg))
+	cfg.SetRepoLookup(fleetRepos(cfg, ""))
 	listenOn, err := resolveListen(cfg, *listen, func() (bool, error) { return cli.OfferSetup(cli.Std()) })
 	if err != nil {
 		return err
@@ -607,7 +607,7 @@ func serve(args []string) error {
 	routineService.Listed = listedShips(allShips)
 	shipService.EventShip = eventShip(routineStore, listedShips(allShips))
 	routineScheduler.EndHarness = wallClockEnder(host)
-	lk := newLookout(absDir, cfg, fleetRepos(cfg), supervisor)
+	lk := newLookout(absDir, cfg, fleetRepos(cfg, ""), supervisor)
 	wireEvents(supervisor, routineStore, routineScheduler, allShips, lk, newReviewer(lk), lookoutActs)
 	inboxService.LaunchEvent = launchEvent(routineScheduler)
 	wireStandingOrders(shipService.Launcher, routineStore, routineService, cfg)
@@ -630,6 +630,29 @@ func serve(args []string) error {
 			return nil, http.StatusBadGateway, err.Error()
 		}
 		return map[string]any{"session": t.Ship}, 0, ""
+	}
+	// A draft's repo is one of the fleet's github.com projects that route to it, so every draft can be created.
+	inboxService.FleetRepos = func(fleet string) []string {
+		router := github.RouterFromFleets(cfg.Current().Fleets)
+		var out []string
+		for _, repo := range fleetRepos(cfg, github.DefaultHost)(fleet) {
+			if router.Route(github.DefaultHost, repo) == fleet {
+				out = append(out, repo)
+			}
+		}
+		return out
+	}
+	inboxService.CreateCampaign = func(ctx context.Context, d inbox.CampaignDraft) (inbox.CreatedCampaign, int, string) {
+		got, cerr := campaignService.CreateCampaign(ctx, follow.CreateRequest{Repo: d.Repo, Title: d.Title, Body: d.Body, Fleet: d.Fleet})
+		if cerr != nil {
+			return inbox.CreatedCampaign{URL: cerr.Parent}, cerr.Status, cerr.Msg
+		}
+		return inbox.CreatedCampaign{ID: got.ID, URL: got.URL}, 0, ""
+	}
+	inboxService.PostCampaignCard = func(fleet string, c inbox.CampaignCard) {
+		if err := chatService.PostCampaignDraftCard(fleet, chat.CampaignDraftCard{ID: c.ID, Title: c.Title, URL: c.URL, Created: c.Created, Failed: c.Failed}); err != nil {
+			log.Printf("admiral: campaign draft card for fleet %s: %v", fleet, err)
+		}
 	}
 	inboxService.DismissRoutine = func(p inbox.RoutineProposal) { routineScheduler.Dismiss(p.Fleet, p.Routine, p.Trigger) }
 	shipService.OnChange = func() {
@@ -824,8 +847,8 @@ func moveListener(lis *listener, cfg *config.Manager, hub *server.Hub, guard *au
 	}
 }
 
-// fleetRepos lists the owner/name of every remote of the checkouts a fleet's search roots find.
-func fleetRepos(cfg *config.Manager) config.RepoLookup {
+// fleetRepos lists the owner/name of every remote of the checkouts a fleet's search roots find; a host keeps only its remotes.
+func fleetRepos(cfg *config.Manager, host string) config.RepoLookup {
 	return func(key string) []string {
 		f, ok := cfg.Current().Fleet(key)
 		if !ok {
@@ -834,7 +857,7 @@ func fleetRepos(cfg *config.Manager) config.RepoLookup {
 		var out []string
 		for _, e := range repofinder.List(repofinder.FleetRoots(f.SearchRoots, f.CloneRoot)) {
 			for _, id := range e.Remotes {
-				if _, nameWithOwner, ok := strings.Cut(id, "/"); ok {
+				if h, nameWithOwner, ok := strings.Cut(id, "/"); ok && (host == "" || h == host) {
 					out = append(out, nameWithOwner)
 				}
 			}

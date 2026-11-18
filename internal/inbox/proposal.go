@@ -142,6 +142,8 @@ func (s *Service) serveDismissProposal(w http.ResponseWriter, r *http.Request) {
 		dismiss = s.DismissRoutineProposal
 	} else if s.isEventProposal(id) {
 		dismiss = s.DismissEventProposal
+	} else if s.isCampaignDraft(id) {
+		dismiss = s.DismissCampaignDraft
 	}
 	if err := dismiss(id); err != nil {
 		respondProposal(w, id, err)

@@ -112,7 +112,9 @@ func (s *Service) DismissRoutineProposal(id string) error {
 }
 
 // isRoutineProposal says whether item id, answered or not, is a routine proposal, which the launch and dismiss routes dispatch on.
-func (s *Service) isRoutineProposal(id string) bool {
+func (s *Service) isRoutineProposal(id string) bool { return s.isAdmiralKind(id, KindRoutineProposal) }
+
+func (s *Service) isAdmiralKind(id, kind string) bool {
 	if !idPattern.MatchString(id) {
 		return false
 	}
@@ -122,7 +124,7 @@ func (s *Service) isRoutineProposal(id string) bool {
 	}
 	defer dir.Close()
 	it, err := readItem(dir, AdmiralSession, id)
-	return err == nil && it.Kind == KindRoutineProposal
+	return err == nil && it.Kind == kind
 }
 
 func (s *Service) fleetOf(key string) (FleetInfo, bool) {

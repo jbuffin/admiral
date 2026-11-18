@@ -274,26 +274,11 @@ func (s *Service) reviewAction(session, id string, discard, forget bool, event s
 			return ReviewResult{}, err
 		}
 	}
-	key := session + "/" + id
-	s.actMu.Lock()
-	if s.acting[key] {
-		s.actMu.Unlock()
-		return ReviewResult{}, ErrBusy
-	}
-	if s.acting == nil {
-		s.acting = map[string]bool{}
-	}
-	s.acting[key] = true
-	s.actMu.Unlock()
-	defer func() {
-		s.actMu.Lock()
-		delete(s.acting, key)
-		s.actMu.Unlock()
-	}()
-	// An answer may have landed while this request waited for the item.
-	if _, err := s.open(session, id); err != nil {
+	release, err := s.beginAction(session, id)
+	if err != nil {
 		return ReviewResult{}, err
 	}
+	defer release()
 
 	action, gerr := ActionDiscarded, (*GhError)(nil)
 	switch {
@@ -361,4 +346,31 @@ func (s *Service) reviewAction(session, id string, discard, forget bool, event s
 		return file, []outcomes.Record{rec}, nil
 	})
 	return ReviewResult{Action: action, InvalidTarget: invalidTarget && action == ActionDiscarded, Forgotten: forget}, err
+}
+
+// beginAction gives the caller the item's one action at a time, so a double tap or a second tab gets ErrBusy,
+// and returns the item's answer state as of the lock.
+func (s *Service) beginAction(session, id string) (release func(), err error) {
+	key := session + "/" + id
+	s.actMu.Lock()
+	if s.acting[key] {
+		s.actMu.Unlock()
+		return nil, ErrBusy
+	}
+	if s.acting == nil {
+		s.acting = map[string]bool{}
+	}
+	s.acting[key] = true
+	s.actMu.Unlock()
+	release = func() {
+		s.actMu.Lock()
+		delete(s.acting, key)
+		s.actMu.Unlock()
+	}
+	// An answer may have landed while this request waited for the item.
+	if _, err := s.open(session, id); err != nil {
+		release()
+		return nil, err
+	}
+	return release, nil
 }

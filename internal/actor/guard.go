@@ -70,6 +70,8 @@ var allowed = []struct {
 	{"POST", []string{"fleets", "*", "routines", "*", "off"}, fleetKey},
 	// a routine draft is kept for the engineer to open; AdmiralBot never saves, edits or turns on a routine
 	{"POST", []string{"fleets", "*", "routines", "draft"}, fleetKey},
+	// a campaign draft waits in the Inbox for the engineer, who alone creates or dismisses it
+	{"POST", []string{"fleets", "*", "campaign-drafts"}, fleetKey},
 	{"POST", []string{"fleets", "*", "hold-fire", "on"}, fleetKey},
 	// reading the global Hold fire is fine; turning it on for every fleet stays with the engineer
 	{"GET", []string{"hold-fire"}, plain},
