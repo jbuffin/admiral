@@ -365,3 +365,45 @@ func TestAScoutStillInTheSnapshotIsNotLostAndAnchoredOneIsNotCardedAgainWhenItLe
 	g.wantResults("work", "anchored")
 	g.wantTurns()
 }
+
+// hostState sets what the host says it cannot show: lost tmux, and ships whose options could not be read.
+func (g *grouping) hostState(lost bool, unreadable ...string) {
+	g.d.HostState(func() (bool, []string) { return lost, unreadable })
+}
+
+func TestAScoutMissingWhileTmuxIsLostIsNotLostAndItsRealEndPostsTheRightCard(t *testing.T) {
+	g := newGrouping(t)
+	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne)})
+	g.hostState(true)
+	g.observe(2*time.Minute, nil)
+	g.observe(5*time.Minute, nil)
+	g.observe(10*time.Minute, nil)
+	g.wantResults("work")
+	g.wantTurns()
+	g.hostState(false)
+	g.observe(11*time.Minute, []ships.Ship{botScout("scout-a", turnOne)})
+	g.observe(12*time.Minute, nil, sailedOff("scout-a", 11*time.Minute+30*time.Second)...)
+	g.wantResults("work", "sailed_off")
+	g.wantTurns("scout-a<-scout-a:sailed_off")
+}
+
+func TestAScoutWhoseOptionsCouldNotBeReadIsNotLostWhileTmuxStillListsIt(t *testing.T) {
+	g := newGrouping(t)
+	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne)})
+	g.hostState(false, "scout-a")
+	g.observe(5*time.Minute, nil)
+	g.observe(10*time.Minute, nil)
+	g.wantResults("work")
+	g.wantTurns()
+}
+
+func TestAScoutKeepsTheEngineerTurnItWasFirstSeenInWhateverItsOptionLaterSays(t *testing.T) {
+	g := newGrouping(t)
+	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", turnOne)})
+	g.observe(2*time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", "nonce-9")})
+	g.observe(3*time.Minute, nil, append(sailedOff("scout-a", 150*time.Second), sailedOff("scout-b", 160*time.Second)...)...)
+	g.observe(4*time.Minute, nil)
+	if len(g.scouts.calls) != 1 || len(g.scouts.calls[0].members) != 2 {
+		t.Errorf("turns = %+v, want one group of both scouts", g.scouts.calls)
+	}
+}

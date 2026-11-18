@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -159,4 +160,28 @@ func TestAScoutGroupTurnIsQueuedUnderTheTriggeringScoutsCardIdWithEachScoutsFind
 
 func launchLineOf(c ShipCard, text string) ships.LaunchLine {
 	return ships.LaunchLine{Ship: c.Ship, Name: c.Name, FirstLaunched: c.FirstLaunched, Kind: "scout", Reason: "to look", Text: text}
+}
+
+func TestAGroupTurnTooBigEvenWithEmptyFencesDropsEveryScoutsFencedWordsAndKeepsItsLines(t *testing.T) {
+	var group []ScoutReport
+	var last ShipCard
+	for i := range 55 {
+		last = scoutCard(fmt.Sprintf("scout-%02d", i), ShipSailedOff)
+		last.Name = strings.Repeat("n", 80)
+		last.Title = strings.Repeat("t", 5000)
+		group = append(group, report(last, strings.Repeat("x", 50_000), true))
+	}
+	text := ScoutGroupTurnText(last, group)
+	if n := len(sessionhost.CleanMessage(text)); n >= sessionhost.MaxPaste {
+		t.Errorf("the turn is %d bytes, want under the %d paste limit", n, sessionhost.MaxPaste)
+	}
+	if strings.Contains(text, "launch text:") || strings.Contains(text, "title:") {
+		t.Error("the turn still quotes a scout's title or launch text")
+	}
+	for _, g := range group {
+		block := strings.Join(blockOf(text, g.Card.Ship), "\n")
+		if !strings.Contains(block, "name: ") || !strings.Contains(block, "result: sailed_off") || !strings.Contains(block, "findings: kept") {
+			t.Errorf("scout %s lost its lines: %q", g.Card.Ship, block)
+		}
+	}
 }

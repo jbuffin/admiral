@@ -608,6 +608,10 @@ func serve(args []string) error {
 	shipCards.cards.QueueScoutReports(chatService.EnqueueScoutReport)
 	shipCards.cards.TurnOver(chatService.TurnOver)
 	shipCards.cards.KeptFindings(chatService.KeptFindings)
+	shipCards.cards.HostState(func() (bool, []string) {
+		_, lost := host.Snapshot()
+		return lost, host.Unreadable()
+	})
 	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop, Launch: routineShips{shipService}.Launch}
 	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
 	routineService.Listed = listedShips(allShips)

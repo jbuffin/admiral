@@ -140,6 +140,7 @@ type ShipCards struct {
 	scouts func(fleet string, trigger ShipCard, group []ShipCard) error
 	over   func(fleet, promptKey string) bool
 	kept   func(ship, firstLaunched string) bool
+	host   func() (lost bool, unreadable []string)
 	st     shipCardState
 }
 
@@ -222,6 +223,7 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 		}
 	}
 	if !seeding {
+		d.keepHiddenShipsSeen(now)
 		for _, r := range records {
 			if v := d.voyageAt(r.Ship, r.At); v != nil {
 				v.apply(r)
@@ -246,6 +248,19 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 	d.st.Seeded, d.st.Scouts, d.st.Groups = true, true, true
 	errs = append(errs, d.save())
 	return errors.Join(errs...)
+}
+
+// keepHiddenShipsSeen stops a ship from aging toward lost while the snapshot can't show it: tmux is lost, or the ship's options could not be read.
+func (d *ShipCards) keepHiddenShipsSeen(now time.Time) {
+	if d.host == nil {
+		return
+	}
+	lost, unreadable := d.host()
+	for _, v := range d.st.Voyages {
+		if lost || slices.Contains(unreadable, v.Ship) {
+			v.LastSeen = now
+		}
+	}
 }
 
 // settleScoutsOfOlderBuild leaves the scouts an older build ended without a card, and the ones it carded, out of group reports and out of the new stop and loss cards.
@@ -278,16 +293,14 @@ func (d *ShipCards) voyageOf(s ships.Ship, now time.Time) *voyage {
 	key := s.Session + "|" + stamp
 	v := d.st.Voyages[key]
 	if v == nil {
-		v = &voyage{Ship: s.Session, Name: s.Name, FirstLaunched: stamp, Done: map[string]bool{}}
+		// Fixed at first sighting: another ship rewriting the option must not move a scout between groups.
+		v = &voyage{Ship: s.Session, Name: s.Name, FirstLaunched: stamp, PromptKey: s.PromptKey, Done: map[string]bool{}}
 		d.st.Voyages[key] = v
 	}
 	v.Name, v.Fleet, v.Via, v.SkillKind, v.Scout, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, s.Scout, now
 	v.Commitment, v.Routine, v.Round = s.Commitment, s.Routine, max(v.Round, s.Round)
 	if s.Titled { // before that a ship's title is its prompt's first line
 		v.Title = s.Title
-	}
-	if s.PromptKey != "" { // a woken scout carries none
-		v.PromptKey = s.PromptKey
 	}
 	if s.Skill != nil {
 		v.Skill = *s.Skill
