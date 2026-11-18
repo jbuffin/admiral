@@ -13,15 +13,11 @@ import (
 
 	"github.com/jbuffin/admiral/internal/allowrules"
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/repokey"
 )
 
-// RepoKey is the repo an allow rule names: the origin's owner/repo, else the checkout's path.
-func RepoKey(dir string) string {
-	if slug, _ := OriginSlug(dir); slug != "" {
-		return slug
-	}
-	return filepath.Clean(dir)
-}
+// RepoKey is the repo an allow rule names, the same key the permission log records.
+func RepoKey(dir string) string { return repokey.Key(dir) }
 
 // AllowRules is the fleets' allow rule store; a change to a fleet's rules rewrites the Codex rules files.
 func (l *Launcher) AllowRules() *allowrules.Store {

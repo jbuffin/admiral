@@ -1,20 +1,17 @@
 package launcher
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/crew"
+	"github.com/jbuffin/admiral/internal/repokey"
 )
 
 const fixChecker = "fix-checker"
@@ -23,8 +20,6 @@ const fixChecker = "fix-checker"
 var memberModel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]{0,127}$`)
 
 var modelFlag = map[string]string{"claude": "--model", "codex": "-m", "copilot": "--model"}
-
-const gitTimeout = 10 * time.Second
 
 // CheckMember refuses a member on any launch but Just launch, and a name that is no member name.
 func CheckMember(skillKind, member string) *Error {
@@ -194,29 +189,5 @@ func SetsModel(args []string) bool {
 	return false
 }
 
-// OriginSlug reads the dir's origin remote as crew.py does: no shell, a timeout, and no git location
-// variables, so a failure of any kind means no repo notes.
-func OriginSlug(dir string) (string, bool) {
-	if dir == "" {
-		return "", false
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "remote", "get-url", "origin")
-	var env []string
-	for _, kv := range os.Environ() {
-		switch k, _, _ := strings.Cut(kv, "="); k {
-		case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE":
-		default:
-			env = append(env, kv)
-		}
-	}
-	cmd.Env = append(env, "GIT_CONFIG_NOSYSTEM=1")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", false
-	}
-	url := strings.TrimSpace(string(out))
-	slug, _ := crew.OriginSlug(url)
-	return slug, url != ""
-}
+// OriginSlug is repokey.OriginSlug.
+func OriginSlug(dir string) (string, bool) { return repokey.OriginSlug(dir) }

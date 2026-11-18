@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -149,6 +150,17 @@ func promptIDs(card map[string]any) []string {
 	return ids
 }
 
+// promptShips are the ship names the card's prompts carry, in order.
+func promptShips(card map[string]any) []string {
+	var ships []string
+	ps, _ := card["prompts"].([]any)
+	for _, p := range ps {
+		ship, _ := p.(map[string]any)["ship"].(string)
+		ships = append(ships, ship)
+	}
+	return ships
+}
+
 const viewRuleText = "Bash(gh pr view:*)"
 
 func TestAHandAllowedPromptLeavesOneCardWhenItsRoundEnds(t *testing.T) {
@@ -167,6 +179,9 @@ func TestAHandAllowedPromptLeavesOneCardWhenItsRoundEnds(t *testing.T) {
 	}
 	if ids := promptIDs(c); len(ids) != 1 || ids[0] != "p1" {
 		t.Errorf("card prompts = %v, want p1", ids)
+	}
+	if ships := promptShips(c); !slices.Equal(ships, []string{"saltpaw"}) {
+		t.Errorf("card prompt ships = %v, want saltpaw", ships)
 	}
 }
 
@@ -200,8 +215,12 @@ func TestACrewBoatsHandAllowedPromptProposesUnderItsShip(t *testing.T) {
 	r.launch(t, "dory", "2026-11-11T11:00:00Z", "claude")
 	r.prompt(t, "dory", "b1", "reviewer-1", claudeCall("Bash", "gh pr view:*"), permlog.Allow, permlog.Person)
 	r.end("dory")
-	if cards := r.cards(t); len(cards) != 1 || cards[0]["count"] != float64(2) {
-		t.Errorf("cards = %v, want the second ship's boat to raise the count to 2", cards)
+	cards := r.cards(t)
+	if len(cards) != 1 || cards[0]["count"] != float64(2) {
+		t.Fatalf("cards = %v, want the second ship's boat to raise the count to 2", cards)
+	}
+	if ships := promptShips(cards[0]); !slices.Equal(ships, []string{"saltpaw", "dory"}) {
+		t.Errorf("card prompt ships = %v, want each boat's prompt to name its ship, saltpaw then dory", ships)
 	}
 }
 

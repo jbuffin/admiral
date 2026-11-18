@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/jbuffin/admiral/internal/repofinder"
+	"github.com/jbuffin/admiral/internal/repokey"
 )
 
 // Dir is the folder under Admiral's home that holds the logs.
@@ -164,15 +164,8 @@ func Append(home, ship string, evs ...Event) error {
 	return err
 }
 
-// Repo is how a log names a checkout's repo: its remote's owner/repo, or its path when it has none.
-func Repo(dir string) string {
-	if id, ok := repofinder.Origin(dir); ok {
-		if _, ownerRepo, ok := strings.Cut(id, "/"); ok {
-			return ownerRepo
-		}
-	}
-	return dir
-}
+// Repo is how a log names a checkout's repo: the key launch looks allow rules up by.
+func Repo(dir string) string { return repokey.Key(dir) }
 
 // Launched starts a launch's part of the ship's log: what every prompt after it shares.
 func Launched(home, ship, harness, fleet, dir string) error {
