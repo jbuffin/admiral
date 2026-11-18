@@ -4,6 +4,7 @@ import { call, type Fleet, type Result } from './api';
 import { Actions, Button } from './Button';
 import { Flag } from './Flag';
 import { fleetSearch } from './fleets';
+import { renderMarkdown } from './markdown';
 import { crewPath, go, loc } from './router';
 import { Sheet } from './Sheet';
 import { SkillPicker } from './SkillPicker';
@@ -439,6 +440,17 @@ function RenameSheet({ member, fleetKey, harness, onClose, onRenamed }: { member
   );
 }
 
+/** The stamp as muted text, then only the fact through chat's renderer. */
+function NoteText({ text }: { text: string }) {
+  const { stamp, fact } = splitNote(text);
+  return (
+    <div class="crew-note-text">
+      {stamp ? <span class="crew-note-stamp">{stamp}</span> : null}
+      <div class="msg md" dangerouslySetInnerHTML={{ __html: renderMarkdown(fact) }} />
+    </div>
+  );
+}
+
 type NoteMode = { kind: 'edit'; text: string } | { kind: 'move'; to: string; typed: string };
 
 function NoteItem({ pendingBase, text, scope, notes, mode, setMode, busy, error, run }: { pendingBase: readonly string[]; text: string; scope: Scope; notes: Notes; mode: NoteMode | null; setMode: (m: NoteMode | null) => void; busy: boolean; error: string; run: (body: object) => Promise<void> }) {
@@ -461,7 +473,7 @@ function NoteItem({ pendingBase, text, scope, notes, mode, setMode, busy, error,
     const target = moveTarget(mode.to, mode.typed);
     return (
       <li class="crew-note editing">
-        <span class="crew-note-text">{text}</span>
+        <NoteText text={text} />
         <select aria-label="Move to" value={mode.to} onChange={(e) => setMode({ ...mode, to: (e.currentTarget as HTMLSelectElement).value })}>
           {choices.map((c) => (
             <option key={c.value} value={c.value}>
@@ -480,7 +492,7 @@ function NoteItem({ pendingBase, text, scope, notes, mode, setMode, busy, error,
   }
   return (
     <li class="crew-note">
-      <span class="crew-note-text">{text}</span>
+      <NoteText text={text} />
       <Actions class="crew-actions">
         <Button variant="quiet" label="Edit note" disabled={busy} onClick={() => setMode({ kind: 'edit', text: splitNote(text).fact })}>
           Edit

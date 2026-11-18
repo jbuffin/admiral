@@ -730,9 +730,10 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .crew-scope { margin-top: 16px; }
 .crew-scope h3, .crew-scope h4, .crew-unclaimed h3 { margin: 0 0 4px; font-size: var(--font-size-body); font-weight: 600; }
 .crew-notes { list-style: none; margin: 0; padding: 0; }
-.crew-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 4px 0; border-bottom: 1px solid var(--color-line); }
+.crew-note { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 4px 12px; padding: 4px 0; border-bottom: 1px solid var(--color-line); }
 .crew-note.editing { flex-direction: column; align-items: stretch; }
-.crew-note-text { flex: 1; min-width: 0; white-space: pre-wrap; }
+.crew-note-text { flex: 1; min-width: 0; }
+.crew-note:not(.editing) > .crew-note-text { align-self: center; }
 .crew-note .crew-actions { margin: 0; }
 .crew-note textarea, .crew-note select, .crew-note input[type='text'] { min-height: var(--shape-min-touch-target); box-sizing: border-box; width: 100%; padding: 8px 10px; font: inherit; font-size: 16px; color: var(--color-text); background: var(--color-panel); border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
 .crew-warnings { margin: 0 0 12px; padding-left: 18px; }
