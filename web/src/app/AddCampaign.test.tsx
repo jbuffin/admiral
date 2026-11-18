@@ -568,8 +568,8 @@ test("a browser that blocks storage still shows the confirm step and files the c
   const blocked = () => {
     throw new DOMException("blocked", "SecurityError");
   };
-  vi.spyOn(Storage.prototype, "getItem").mockImplementation(blocked);
-  vi.spyOn(Storage.prototype, "setItem").mockImplementation(blocked);
+  // happy-dom caches a storage method after its first read, so a prototype spy depends on test order; the global is replaced instead.
+  vi.stubGlobal("localStorage", { getItem: blocked, setItem: blocked });
   expect(() => localStorage.getItem("x")).toThrow();
   opened();
   expect(chosen(await toConfirm())).toBe("acme/gadgets");

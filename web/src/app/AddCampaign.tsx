@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { call } from './api';
 import { followReference } from './campaignsLink';
 import { Icon } from './Icon';
+import { isReference } from './makeCampaign';
+import { ConfirmStep, TextStep, type Confirmed } from './NewCampaign';
 
 interface Hit {
   title: string;
@@ -48,14 +50,20 @@ function Group({ caption, hits, busy, onPick }: { caption: string; hits: Hit[]; 
   );
 }
 
-/** The Add campaign modal: finds an issue in the fleet and follows it. */
+/** The Add campaign modal: finds an issue in the fleet and follows it, or starts a campaign from a few words. */
 export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => void }) {
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<'search' | 'text' | 'confirm'>('search');
+  // Null until the text step first opens, so it seeds from the search box once and then keeps its own words.
+  const [text, setText] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState<Confirmed | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => input.current?.focus(), []);
+  useEffect(() => {
+    if (step === 'search') input.current?.focus();
+  }, [step]);
 
   useEffect(() => {
     setHits(null);
@@ -89,6 +97,11 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
     } else onClose();
   };
 
+  const startNew = () => {
+    if (text === null) setText(isReference(q) ? '' : q.trim());
+    setStep('text');
+  };
+
   const typed = q.trim() !== '';
   const list = hits ?? [];
   const parents = list.filter((h) => h.parent);
@@ -97,30 +110,46 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
     <div class="backdrop launch-backdrop" onClick={(e) => e.target === e.currentTarget && !busy && onClose()}>
       <div class="sheet launch-form ac-form" role="dialog" aria-modal="true" aria-label="Add campaign" onKeyDown={(e) => e.key === 'Escape' && !busy && onClose()}>
         <h2 class="sheet-title">Add campaign</h2>
-        <div class="launch-body">
-          <div class="ac-search">
-            <Icon name="search" size={16} />
-            <input ref={input} type="search" aria-label="Find an issue" placeholder="Search, #n, owner/repo#n or a URL" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+        {step === 'search' ? (
+          <div class="launch-body">
+            <div class="ac-search">
+              <Icon name="search" size={16} />
+              <input ref={input} type="search" aria-label="Find an issue" placeholder="Search, #n, owner/repo#n or a URL" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+            </div>
+            {error ? (
+              <p class="alert" role="alert">
+                {error}
+              </p>
+            ) : null}
+            {typed ? (
+              <>
+                <Group caption="Parent issues" hits={parents} busy={busy} onPick={pick} />
+                <Group caption="Other issues" hits={rest} busy={busy} onPick={pick} />
+              </>
+            ) : (
+              <Group caption="Open parent issues in this fleet" hits={list} busy={busy} onPick={pick} />
+            )}
+            {typed && hits && list.length === 0 && !error ? <p class="note">No issue in this fleet matches.</p> : null}
+            <button type="button" class="ac-row ac-new" disabled={busy} onClick={startNew}>
+              <Icon name="plus" size={16} />
+              <span>{typed ? `Start a new campaign: '${q.trim()}'` : 'Start a new campaign'}</span>
+            </button>
           </div>
-          {error ? (
-            <p class="alert" role="alert">
-              {error}
-            </p>
-          ) : null}
-          {typed ? (
-            <>
-              <Group caption="Parent issues" hits={parents} busy={busy} onPick={pick} />
-              <Group caption="Other issues" hits={rest} busy={busy} onPick={pick} />
-            </>
-          ) : (
-            <Group caption="Open parent issues in this fleet" hits={list} busy={busy} onPick={pick} />
-          )}
-          {typed && hits && list.length === 0 && !error ? <p class="note">No issue in this fleet matches.</p> : null}
-          <button type="button" class="ac-row ac-new" disabled>
-            <Icon name="plus" size={16} />
-            <span>Start a new campaign</span>
-          </button>
-        </div>
+        ) : step === 'text' ? (
+          <TextStep
+            fleet={fleet}
+            text={text ?? ''}
+            onText={setText}
+            onBack={() => setStep('search')}
+            onConfirm={(c) => {
+              setConfirmed(c);
+              setStep('confirm');
+            }}
+            onBusy={setBusy}
+          />
+        ) : confirmed ? (
+          <ConfirmStep fleet={fleet} start={confirmed} onClose={onClose} onBack={() => setStep('text')} onBusy={setBusy} />
+        ) : null}
       </div>
     </div>
   );
