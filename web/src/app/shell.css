@@ -1262,6 +1262,13 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .mform .mform-option { display: flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); }
 .mform input[type="text"] { font: inherit; min-height: var(--shape-min-touch-target); padding: 0 10px; }
 .mform .mform-note { margin: 0; color: var(--color-needs); font-size: var(--font-size-meta); }
+.mnotices { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mnotice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 8px 12px; border: 1px solid var(--color-accent); border-radius: var(--shape-radius-sm); color: var(--color-text); overflow-wrap: anywhere; }
+.mnotice a { color: var(--color-accent); min-height: 24px; }
+.mnotice[data-tone="warn"] { border-color: var(--color-needs-line); background: var(--color-needs-bg); }
+.mnotice[data-tone="warn"] a { color: var(--color-needs); }
+.mnotice[data-tone="error"] { border-color: var(--color-err); }
+.mnotice[data-tone="error"] a { color: var(--color-err); }
 .module-filter { width: auto; margin: 12px 20px; }
 .module-page .msection h3 { margin: 0 0 8px; font-size: var(--font-size-meta); font-weight: 600; color: var(--color-text2); }
 .module-page .mlinks, .odetail .mlinks, .odetail .msteps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

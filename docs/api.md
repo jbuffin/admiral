@@ -715,14 +715,14 @@ Body: `{"query": "<GitHub search>"}` or `{"view": "<view id>"}` (a built-in's or
 
 A module's page and one row's detail view; the plugin side is in [A module's page](plugins.md#a-modules-page). Both answer `404 {"error"}` for a source that does not exist, and `404 {"error":"The source has no page"}` for one whose plugin does not declare `page` once the plugin has answered `initialize` without it. Until that first `initialize` answer, the page answers `starting` as below and a row answers `404 {"error":"The page has no such row"}`.
 
-The page answers `200 {"state","groups","waiting","auth"?,"error"?}`. `state` is one of:
+The page answers `200 {"state","groups","waiting","notices","auth"?,"error"?}`. `notices` is a module's notices: `[{"id","text","tone","link"?}]` in order, `[]` when there are none, with `tone` one of `info`, `warn` or `error` and `link` `{"label","url"}`, left out when there is none. They are part of the last good page and never count toward `waiting`. `state` is one of:
 
-- `starting`, with `groups: []` and `waiting: 0`, until the plugin's first good `page.get`. A restart after a good page keeps `ready` and its groups.
+- `starting`, with `groups: []` and `waiting: 0`, until the plugin's first good `page.get`. An answer with `loading: true` is not good for this: the state stays `starting` and serves that answer's notices, while its groups and `waiting` are ignored. After a good page, a `loading: true` answer changes nothing. A restart after a good page keeps `ready` and its groups.
 - `ready`, once there is a good page.
 - `auth_required`, while the source is: `auth` is `{"message","url","code"}`, the same fields the source's `auth` shows.
 - `error`, when the source is in `error` (a crash, which is also `state: "error"` on the source, with `error` as its message) or when the plugin's last `page.get` failed with an error of its own (`error` is its message and the source stays `ok`). The next good `page.get` clears it.
 
-`auth_required` and `error` keep the last good groups and `waiting`, and are `groups: []` when there has been no good page. Restart is `POST /api/sources/<key>/restart`. A `page.get` that is refused (over a limit, not valid) or times out only logs: the state stays as it was, with the last good page. A group is `{"id","title","rows"}`, a row is `{"id","title","subtitle","chips":[{"label","tone"}],"reason","action","actions"}` and an action is `{"id","label","confirm","summary","url"}`, with `action`, `actions` and `url` left out when there are none.
+`auth_required` and `error` keep the last good groups, `waiting` and notices, and are `groups: []` when there has been no good page. Restart is `POST /api/sources/<key>/restart`. A `page.get` that is refused (over a limit, not valid) or times out only logs: the state stays as it was, with the last good page. A group is `{"id","title","rows"}`, a row is `{"id","title","subtitle","chips":[{"label","tone"}],"reason","action","actions"}` and an action is `{"id","label","confirm","summary","url"}`, with `action`, `actions` and `url` left out when there are none.
 
 A row answers `200 {"sections":[...]}`, from `row.get`, and passes each repeated `include` query parameter (`?include=closed&include=queued`) to it as a list. An `{id}` that is not a row on the last good page answers `404` and the plugin is not asked. More than 10 `include` values, or one over 200 characters, answers `400`. A plugin that is not running, or a `row.get` that errors, times out or is over its limit answers `502 {"error"}` with a one-line message.
 
