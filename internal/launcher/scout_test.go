@@ -9,8 +9,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// Needs Request.Scout, CrewRequest.Scout and Launcher.ScoutGate.
-
 func (p *pinRig) scoutRequest(dir string) Request {
 	return Request{Fleet: "work", Harness: "claude", Dir: dir, Skill: Skill{Kind: "none"}, Text: "find the flaky test", Autopilot: true, Scout: true}
 }

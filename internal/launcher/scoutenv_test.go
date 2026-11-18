@@ -2,8 +2,6 @@ package launcher
 
 import "testing"
 
-// These need no scout symbol: a ship that is not a scout never carries ADMIRAL_SCOUT, whoever sets it.
-
 func TestAShipThatIsNotAScoutNeverHasTheScoutVariableWhoeverSetsIt(t *testing.T) {
 	t.Setenv("ADMIRAL_SCOUT", "/admirals/own/env")
 	r := newCrewDirRig(t, map[string]string{"ADMIRAL_SCOUT": "/fleet/says/so"})
