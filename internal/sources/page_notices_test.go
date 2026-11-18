@@ -166,8 +166,8 @@ func TestANoticeKeepsItsOneActionParsedAsARowsMainActionIs(t *testing.T) {
 	if act, _ := ns[0]["action"].(map[string]any); act == nil || act["id"] != "go" || act["label"] != "Go" || act["confirm"] != "yesno" || act["summary"] != "Sure?" {
 		t.Errorf("first action = %s, want id go, label Go, yesno, summary cut to its first line", dump(ns[0]["action"]))
 	}
-	if act, _ := ns[1]["action"].(map[string]any); act == nil || act["url"] != "https://acme.test/x" {
-		t.Errorf("second action = %s, want the https url kept", dump(ns[1]["action"]))
+	if _, has := ns[1]["action"]; has {
+		t.Errorf("second notice = %s, want its url action (Open link, a built-in) dropped", dump(ns[1]))
 	}
 	if _, has := ns[2]["actions"]; has {
 		t.Errorf("third notice = %s, want no actions list: a notice has one action", dump(ns[2]))
@@ -192,7 +192,7 @@ func TestANoticeActionThatARowActionWouldDropIsDroppedAndTheNoticeKept(t *testin
 	}
 }
 
-func TestANoticeKeepsOpenLinkAndModuleActionsButDropsLaunchAndMessage(t *testing.T) {
+func TestANoticeKeepsAModuleActionButDropsEveryBuiltIn(t *testing.T) {
 	ns := parsedNotices(t, noticesPage(`[
 		{"id":"a","text":"A","action":{"id":"go","label":"Go","builtin":"launch","url":"https://github.com/acme/app/issues/1"}},
 		{"id":"b","text":"B","action":{"id":"say","label":"Say","builtin":"message","kind":"k","ref":"r","title":"t","link":"https://acme.test/x"}},
@@ -201,12 +201,12 @@ func TestANoticeKeepsOpenLinkAndModuleActionsButDropsLaunchAndMessage(t *testing
 	if noticeIDs(ns) != "a,b,c,d" {
 		t.Fatalf("notices = %s, want all four kept", dump(ns))
 	}
-	for _, i := range []int{0, 1} {
+	for _, i := range []int{0, 1, 2} {
 		if _, has := ns[i]["action"]; has {
-			t.Errorf("notice %d = %s, want a row-only built-in action dropped", i, dump(ns[i]))
+			t.Errorf("notice %d = %s, want a row-only built-in action dropped (Open link too)", i, dump(ns[i]))
 		}
 	}
-	for _, i := range []int{2, 3} {
+	for _, i := range []int{3} {
 		if act, _ := ns[i]["action"].(map[string]any); act == nil {
 			t.Errorf("notice %d = %s, want its action kept", i, dump(ns[i]))
 		}
