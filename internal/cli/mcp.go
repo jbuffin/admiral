@@ -13,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 // mcpLatest is the protocol revision the server speaks when the client asks for one it doesn't know.
@@ -246,7 +244,7 @@ var mcpTools = []mcpTool{
 	{"list_inbox", "List the Inbox: what is waiting for the engineer (questions, proposals, reports).", obj(nil, nil), plainGet("/api/inbox")},
 	{"list_sources", "List the order sources with their panels and orders.", obj(nil, nil), plainGet("/api/sources")},
 	{"list_campaigns", "List the campaigns.", obj(nil, nil), plainGet("/api/campaigns")},
-	{"launch_ship", "Launch a ship, from an order (source and order_id) or freeform text. A Commodore launch runs in autopilot mode unless with_me is true; the result says which mode the ship runs in.",
+	{"launch_ship", "Launch a ship, from an order (source and order_id) or freeform text. Every launch runs in autopilot mode unless with_me is true, and the max_ships cap never blocks it; the result says which mode the ship runs in. If autopilot is refused (the harness or fleet has no proven guard), tell the engineer the refusal as it came and that they can say \"with me\"; never relaunch interactive on your own. Set resources, model or effort only when the engineer names one or the fleet's map calls for a resource; otherwise the dock's defaults apply. A busy named resource refuses with its reason.",
 		obj([]string{"harness"}, map[string]any{
 			"harness":    str("the harness: claude, codex or copilot"),
 			"dir":        str("a checkout or search root of the fleet"),
@@ -259,7 +257,10 @@ var mcpTools = []mcpTool{
 			"crew":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "crew members to pin, on a Commodore launch"},
 			"issues":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "GitHub issue URLs the ship claims; only on a launch with no source"},
 			"anyway":     flag01("launch again for a message that already has a freeform ship"),
-			"with_me":    flag01("true when the engineer said to work on it with them: the ship runs interactive, not in autopilot"),
+			"with_me":    flag01("true when the engineer said to work on it with them: the ship runs interactive; without it every launch runs in autopilot"),
+			"resources":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "names of resources the ship claims; a busy one refuses the launch"},
+			"model":      str("the model, only when the engineer names one"),
+			"effort":     str("the effort level, only when the engineer names one"),
 		}), launchShip},
 	{"add_order", "Add an order to a source's panel, for a source that supports adding.",
 		obj([]string{"source", "panel", "text"}, map[string]any{"source": str("the order source's key"), "panel": str("the panel's id"), "text": str("the order's text")}),
@@ -437,28 +438,24 @@ func skillKind(skill string) (kind, name string) {
 func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 	var a struct {
 		shipSpec
-		WithMe bool `json:"with_me"`
+		WithMe        bool `json:"with_me"`
+		Model, Effort string
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return "", err
 	}
-	a.Resources = nil
-	kind, _ := skillKind(a.Skill)
-	autopilot := kind == "commodore" && !a.WithMe
+	autopilot := !a.WithMe
 	body, err := c.shipsBody(a.shipSpec, autopilot)
 	if err != nil {
 		return "", err
 	}
-	out, err := c.do("POST", "/api/ships", body, 120*time.Second)
-	reason := ""
-	var he *httpError
-	// Autopilot at its cap is the one refusal worked around: a launch on the engineer's current instruction is not blocked by it.
-	if errors.As(err, &he) && autopilot && he.Status == http.StatusConflict && strings.Contains(he.Msg, launcher.AutopilotCapText) {
-		reason = he.Msg + ", so the ship runs with the engineer instead"
-		body["autopilot"] = false
-		autopilot = false
-		out, err = c.do("POST", "/api/ships", body, 120*time.Second)
+	if a.Model != "" {
+		body["model"] = a.Model
 	}
+	if a.Effort != "" {
+		body["effort"] = a.Effort
+	}
+	out, err := c.do("POST", "/api/ships", body, 120*time.Second)
 	if err != nil {
 		return "", err
 	}
@@ -467,9 +464,6 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 		mode = "autopilot"
 	}
 	res := map[string]any{"mode": mode, "launched": json.RawMessage(bytes.TrimSpace(out))}
-	if reason != "" {
-		res["reason"] = reason
-	}
 	b, err := json.Marshal(res)
 	return string(b), err
 }

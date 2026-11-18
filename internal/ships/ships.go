@@ -618,8 +618,8 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: "no resource named " + strconv.Quote(name)}
 		}
 	}
-	// A proposal launch is the engineer's own act: like a hand wake it counts toward the cap and is never blocked by it.
-	if req.Autopilot && req.By != "proposal" {
+	// A proposal launch and an instruction launch are the engineer's own act: like a hand wake they count toward the cap and are never blocked by it.
+	if req.Autopilot && req.By != "proposal" && !req.OnInstruction {
 		// Ships the host lists, ships launched but not listed yet, and launches
 		// still running (a hand launch is not counted twice by much: it errs
 		// towards refusing).

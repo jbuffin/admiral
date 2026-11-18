@@ -213,6 +213,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Via = viaOf(r)
+	req.OnInstruction = req.Via == actor.Via
 	got, lerr := s.Launch(r.Context(), req)
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
