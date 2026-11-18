@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
@@ -806,6 +806,7 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   // A chat message launches one ship, so the engineer asks again.
   chatSays(admiral, 'harbor', [line.user('Send another ship to read the harbour log')], true);
   await expect(main).toContainText('Send another ship to read the harbour log');
+  chatPrompts(admiral, 'harbor');
   const sailing =await launchAsAdmiralBot(admiral, 'harbor', 'Read the harbour log and report the newest error.', 'to look at the harbour log', true);
   await expect(main.getByText('Sailed off', { exact: true })).toHaveCount(1, { timeout: 30_000 });
   await expect.poll(() => chatReceived(admiral, 'harbor'), { timeout: 30_000 }).toContain(`[Report: ${sailing.name}]`);

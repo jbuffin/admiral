@@ -201,6 +201,10 @@ export function chatStarts(a: Admiral, fleet: ChatFleet) {
   writeFileSync(join(chatRecord(a, fleet), 'go-start'), '');
 }
 
+/** Stamps a new prompt on the chat's pane, as its UserPromptSubmit hook does, which the fake Claude Code does not run: a ship launched for the earlier prompt no longer holds this one. */
+export const chatPrompts = (a: Admiral, fleet: ChatFleet) =>
+  spawnSync('tmux', ['-S', join(a.home, 'tmux.sock'), 'set-option', '-p', '-t', `${chatSession(fleet)}:`, '@admiral-chat-prompt', String(BigInt(Date.now()) * 1000000n)], { encoding: 'utf8' });
+
 /** Ends the fleet's chat session, as quitting Claude Code in its terminal does. */
 export const chatEnds = (a: Admiral, fleet: ChatFleet) => spawnSync('tmux', ['-S', join(a.home, 'tmux.sock'), 'kill-session', '-t', chatSession(fleet)], { encoding: 'utf8' });
 
