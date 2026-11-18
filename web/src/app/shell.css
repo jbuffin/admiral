@@ -1229,3 +1229,9 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 /* On the phone a message box sits on the tab bar, which already clears the home indicator. */
 .phone :is(.chat-panel, .peek-panel) { padding-bottom: 6px; }
 .phone .msg-box { padding-top: 8px; padding-bottom: 0; }
+
+.module-page { overflow-wrap: anywhere; }
+.module-page .skeleton { height: 96px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-hover); animation: module-pulse 1.4s ease-in-out infinite; }
+@keyframes module-pulse { 50% { opacity: 0.45; } }
+.module-page .signin { padding: 12px; border: 1px solid var(--color-needs-line); border-radius: var(--shape-radius-md); }
+.nav-link .nav-icon-img, .menu-item .nav-icon-img { width: 20px; height: 20px; border-radius: 4px; }
