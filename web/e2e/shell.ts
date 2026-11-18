@@ -387,7 +387,7 @@ export async function launchShip(
 }
 
 /** Launches a ship the way AdmiralBot does: with the chat's own actor token, read from the MCP config Admiral wrote when it started the chat, so the ship carries `via: admiralbot`. The fleet's only dock is the chat's, so for the launch the dock's cue file holds the ship's own cue (a SessionStart on a transcript of its own) and the chat's cue, which its running Claude has already read, is put back after. */
-export async function launchAsAdmiralBot(a: Admiral, fleet: ChatFleet, text = 'Look at the harbour log'): Promise<LaunchedShip> {
+export async function launchAsAdmiralBot(a: Admiral, fleet: ChatFleet, text = 'Look at the harbour log', reason = 'to look at the harbour log'): Promise<LaunchedShip> {
   const dir = join(a.home, 'proj');
   mkdirSync(dir, { recursive: true });
   spawnSync('git', ['init', '-q'], { cwd: dir });
@@ -406,7 +406,7 @@ export async function launchAsAdmiralBot(a: Admiral, fleet: ChatFleet, text = 'L
       const res = await fetch(`${a.url}api/v1/ships`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Admiral-Actor': token },
-        body: JSON.stringify({ fleet, harness: 'claude', dir, skill: { kind: 'none' }, text }),
+        body: JSON.stringify({ fleet, harness: 'claude', dir, skill: { kind: 'none' }, text, reason }),
       });
       if (res.status === 201) {
         const got = (await res.json()) as LaunchedShip & { ship?: LaunchedShip };

@@ -784,7 +784,13 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
 
   // A ship AdmiralBot launched is a link in its reply, and tapping it opens the ship's screen in this page.
   await page.goto(admiral.url + 'app/chat?fleet=harbor');
-  const launched = await launchAsAdmiralBot(admiral, 'harbor');
+  const launchText = 'Read the harbour log and report the three newest errors.';
+  const launched = await launchAsAdmiralBot(admiral, 'harbor', launchText, 'to look at the harbour log');
+  // The launch line says what was sent and why; its launch text opens by touch.
+  await expect(main).toContainText('Sent a quick ship to look at the harbour log');
+  await expect(main.getByText(launchText, { exact: true })).toHaveCount(0);
+  await main.getByRole('button', { name: /launch text/i }).tap();
+  await expect(main.getByText(launchText, { exact: true })).toBeVisible();
   chatSays(admiral, 'harbor', [line.assistant(`I launched **${launched.name}** to look at the harbour log.`)], true);
   await expect(main).toContainText(`I launched ${launched.name} to look at the harbour log.`);
   const shipLink = main.locator('.msg.assistant').getByRole('link', { name: launched.name, exact: true });
