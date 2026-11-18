@@ -240,9 +240,10 @@ func draftRoutine(c *mcpClient, raw json.RawMessage) (string, error) {
 		return "", errors.New("the draft came back unreadable")
 	}
 	d := r.Draft
+	oneLine := strings.NewReplacer("\r", " ", "\n", " ").Replace
 	before := map[string]string{"report_only": "only report what it finds", "ask_first": "ask the engineer first", "act": "act without asking"}[d.Before]
 	if before == "" {
-		before = d.Before
+		before = oneLine(d.Before)
 	}
 	notify, state := "no notification", "off"
 	if d.Notify {
@@ -253,9 +254,9 @@ func draftRoutine(c *mcpClient, raw json.RawMessage) (string, error) {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Drafted a routine, unsaved: %q.\nWhen: %s\nWhat it does: %s\nBefore acting: %s\nNotify: %s\nOnce saved it will be %s.\n",
-		d.Name, d.When, d.Do.Prompt, before, notify, state)
+		d.Name, oneLine(d.When), oneLine(d.Do.Prompt), before, notify, state)
 	for _, p := range r.Problems {
-		fmt.Fprintf(&b, "Problem with %s: %s\n", p.Field, p.Message)
+		fmt.Fprintf(&b, "Problem with %s: %s\n", oneLine(p.Field), oneLine(p.Message))
 	}
 	fmt.Fprintf(&b, "The engineer reviews and saves it at /app/routines/new?fleet=%s&draft=%s", url.QueryEscape(c.fleet), url.QueryEscape(r.ID))
 	return b.String(), nil

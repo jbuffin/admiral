@@ -990,17 +990,25 @@ func TestAFailedRoutineDraftKeepsNothing(t *testing.T) {
 	r := newSO(t)
 	r.answers(routineDraftFields())
 	good := r.madeDraft(routineProse)
-	r.routineDraft("")
-	r.do("POST", "/api/fleets/play/routines/draft", map[string]any{"prose": routineProse})
+	for i := 1; i < 49; i++ {
+		r.advance(time.Second)
+		r.madeDraft(routineProse)
+	}
+	if code, body := r.routineDraft(""); code != 400 || body["id"] != nil {
+		t.Errorf("blank prose = %d %v, want 400 and no id", code, body)
+	}
 	r.reply = func(judge.Call) (judge.Reply, error) {
 		return judge.Reply{}, &judge.Failure{Kind: judge.KindTimeout, Detail: "no answer"}
 	}
-	code, body := r.routineDraft(routineProse)
-	if code != 502 || body["id"] != nil {
+	if code, body := r.routineDraft(routineProse); code != 502 || body["id"] != nil {
 		t.Errorf("failed draft = %d %v, want 502 and no id", code, body)
 	}
+	r.answers(routineDraftFields())
+	r.advance(time.Second)
+	r.madeDraft(routineProse)
+	// a kept failure would have been the 51st draft and pushed the first one out
 	if code, got := r.keptDraft("work", good); code != 200 {
-		t.Errorf("the earlier draft = %d %v, want it kept", code, got)
+		t.Errorf("the first draft = %d %v, want it kept: a failed call kept something", code, got)
 	}
 }
 

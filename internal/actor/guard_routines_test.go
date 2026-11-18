@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestAnActorMayReadRoutinesTurnOneOffAndTurnHoldFireOnButNothingElseAboutThem(t *testing.T) {
+func TestAnActorMayReadRoutinesDraftOneTurnOneOffAndTurnHoldFireOnButNothingElse(t *testing.T) {
 	r := newRig(t)
 	for _, c := range []struct{ method, path string }{
 		{"GET", "/api/fleets/work/routines"},
