@@ -359,6 +359,34 @@ func TestOnlyAShipLaunchedWithNoSkillGetsAWorktree(t *testing.T) {
 	}
 }
 
+func TestAScoutRunsInTheCheckoutItWasLaunchedInWithNoWorktreeOrBranch(t *testing.T) {
+	p, _, _ := worktreeRig(t)
+	out, err := p.l.Launch(p.scoutRequest(p.work))
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	env := p.recorded(t, "claude")
+	if got := env["PWD"]; !samePath(t, got, p.work) {
+		t.Errorf("a scout ran in %s, want the checkout %s", got, p.work)
+	}
+	if got := worktreePaths(t, p.work); len(got) != 1 {
+		t.Errorf("git worktree list = %v after a scout launch, want the checkout alone", got)
+	}
+	if got := git(t, p.work, "branch", "--list", "admiral/*"); got != "" {
+		t.Errorf("branches = %q after a scout launch, want no admiral branch", got)
+	}
+	if _, err := os.Stat(filepath.Join(p.home, "worktrees", out.Session)); err == nil {
+		t.Errorf("a scout launch left a worktree directory for %s", out.Session)
+	}
+	want, err := filepath.EvalSymlinks(p.work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := env["ADMIRAL_SCOUT"]; got != want {
+		t.Errorf("ADMIRAL_SCOUT = %q, want the checkout %q", got, want)
+	}
+}
+
 func TestAnEventShipKeepsItsOwnCloneWhileANoSkillShipGetsAWorktree(t *testing.T) {
 	p, _, _ := worktreeRig(t)
 	req, fc := p.eventShip()
