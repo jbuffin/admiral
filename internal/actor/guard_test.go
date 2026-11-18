@@ -30,7 +30,7 @@ func newRig(t *testing.T) *rig {
 		}
 		return "", false
 	}
-	of2 := func(id string) bool { _, ok := of(id); return ok }
+	known := func(id string) bool { _, ok := of(id); return ok }
 	r.g = &actor.Guard{
 		Tokens: func(tok string) (string, bool) {
 			switch tok {
@@ -42,7 +42,7 @@ func newRig(t *testing.T) *rig {
 			return "", false
 		},
 		ShipFleet:     of,
-		ShipFound:     func(id string) bool { return id == "ghost" || id != "" && of2(id) },
+		ShipFound:     func(id string) bool { return id == "ghost" || (id != "" && known(id)) },
 		ItemFleet:     func(session, _ string) (string, bool) { return of(session) },
 		SourceFleet:   of,
 		CampaignFleet: of,

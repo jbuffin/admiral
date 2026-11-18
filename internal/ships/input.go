@@ -289,7 +289,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	// The card shows from the transcript while the answer checks the pane, so the log is where a refusal says which one disagreed.
 	refuse := func(status int, why string) {
-		log.Printf("admiral: answer to %s refused: %d %s (card %s, reason %q)", t.what, status, why, req.Card, req.Reason)
+		log.Printf("admiral: answer to %s refused: %d %s (card %s, reason %.64q)", t.what, status, why, req.Card, req.Reason)
 		writeError(w, status, why)
 	}
 	keys, plan, why := s.answerKeys(ctx, t, session, req)

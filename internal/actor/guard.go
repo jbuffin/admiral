@@ -156,7 +156,7 @@ func (g *Guard) fence(r *http.Request, fleet string, m matched) (int, string) {
 	switch m.kind {
 	case ship:
 		if g.ShipFound != nil && !g.ShipFound(m.ids[0]) {
-			return forbid("ship " + m.ids[0] + " was not found: pass the ship's session from list_ships (for example vesper-vane), not its display name")
+			return forbid("ship " + m.ids[0] + " was not found (or not read yet): pass the ship's session from list_ships (for example vesper-vane), not its display name")
 		}
 		return forbid(check("ship", m.ids[0], fleet)(g.ShipFleet(m.ids[0])))
 	case item:

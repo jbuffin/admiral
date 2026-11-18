@@ -792,6 +792,22 @@ func (s *Service) alive(w *watch) bool {
 // oldest first: a question left pending by an earlier turn is not on the pane any more.
 func (s *Service) PendingQuestions(session, crew string) []conversation.Item {
 	if crew == "" {
+		return s.inLiveRound(session, s.pendingQuestions(session, crew))
+	}
+	return s.pendingQuestions(session, crew)
+}
+
+// inLiveRound gives the items the ids the conversation shows them under: a ship relaunched into a later round
+// (a hand to Commodore) prefixes them, and an answer names the item by that id.
+func (s *Service) inLiveRound(session string, items []conversation.Item) []conversation.Item {
+	if sh, ok := s.shipOf(session, false); ok {
+		return prefixed(s.liveRoundOf(sh), items)
+	}
+	return items
+}
+
+func (s *Service) pendingQuestions(session, crew string) []conversation.Item {
+	if crew == "" {
 		if q, up := s.livePending(session); up {
 			return q
 		}

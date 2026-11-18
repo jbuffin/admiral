@@ -336,3 +336,34 @@ func TestPushesFromALiveRoundCarryItsPrefix(t *testing.T) {
 		t.Errorf("pushed %v, want the one item with id r1:u-004", m["items"])
 	}
 }
+
+func TestAPendingQuestionOfALiveShipInALaterRoundHasTheIdTheConversationShowsIt(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	r := withRounds(f)
+	r.hist["live-name"] = []moor.Round{r.round(0, "zero a"), r.round(1, "one a")}
+	appendTo(t, f.path("zz"), userAt("u-001", "two a")+
+		`{"type":"assistant","uuid":"q-001","message":{"content":[{"type":"tool_use","id":"tq","name":"AskUserQuestion","input":{"questions":[{"question":"Which?","options":[{"label":"a"},{"label":"b"}]}]}}]}}`+"\n")
+	f.ship("live", f.path("zz"))
+	f.mu.Lock()
+	r.live["live"] = 2
+	f.mu.Unlock()
+	f.svc.ship = func(session string) (ships.Ship, bool) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		h, ok := f.harness[session]
+		return ships.Ship{Session: session, Name: session + "-name", Harness: h, Launched: "L1", Fleet: "work"}, ok
+	}
+
+	_, p, _ := r.get("live", "")
+	shown := ""
+	for _, it := range p.Items {
+		if it.Kind == "question" {
+			shown = it.ID
+		}
+	}
+	qs := f.svc.PendingQuestions("live", "")
+	if shown != "r2:q-001" || len(qs) != 1 || qs[0].ID != shown {
+		t.Errorf("the conversation shows the question as %q, PendingQuestions gives %+v: the answer card posts the shown id, so they must match", shown, qs)
+	}
+}
