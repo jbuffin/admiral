@@ -9,7 +9,7 @@ const at = '2026-11-01T10:00:00Z';
 const comment = (author: PRActor, body: string, n = 1) => ({ author, body, url: `https://github.com/acme/api/pull/7#c${n}`, created_at: at });
 const detail = (over: Partial<PRDetail> = {}) =>
   ({ number: 7, url: 'https://github.com/acme/api/pull/7', body: '', author: who('octocat'), reviews: [], requested: [], failing_checks: [], checks: 'SUCCESS', threads: [], comments: [], ...over }) as unknown as PRDetail;
-const timeline = (c: HTMLElement) => c.querySelector('.timeline') as HTMLElement;
+const timeline = (c: Element) => c.querySelector('.timeline') as HTMLElement;
 const showsFormatted = (el: HTMLElement) => {
   expect(el.querySelector('strong')?.textContent).toBe('bold');
   expect(el.querySelector('code')?.textContent).toBe('inline');
