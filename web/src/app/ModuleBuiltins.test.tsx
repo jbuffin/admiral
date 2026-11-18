@@ -1,5 +1,5 @@
 // Built-in actions on a module page: Open link, Launch on an issue and the AdmiralBot message.
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { Fleet, Source } from './api';
 import { fleets } from './fleets';
@@ -33,8 +33,11 @@ const start_ = { id: 'dock', label: 'Start ship', builtin: 'launch', url: ISSUE,
 const tell = { id: 'tell', label: 'Message AdmiralBot', builtin: 'message', kind: 'review', ref: 'ACME-1', title: 'Fix login', link: LINK, confirm: 'yesno' };
 const archive = { id: 'archive', label: 'Archive', confirm: 'click' };
 
-const pageOf = (state = 'ready') => ({
+const sync = { id: 'sync', label: 'Sync now', confirm: 'click' };
+
+const pageOf = (state = 'ready', notices: unknown[] = []) => ({
   state,
+  notices,
   waiting: 0,
   ...(state === 'error' ? { error: 'plugin crashed' } : {}),
   groups: [
@@ -59,8 +62,9 @@ const fleet = (key: string, name: string) => ({ key, name, docks: [{ harness: 'c
 type Answer = { status?: number; body: unknown };
 interface Handlers {
   state?: () => string;
-  launch?: () => Answer;
-  preview?: () => Answer;
+  notices?: unknown[];
+  launch?: () => Answer | Promise<Answer>;
+  preview?: () => Answer | Promise<Answer>;
   send?: (body: { text: string }) => Answer;
   ships?: () => Answer;
 }
@@ -81,10 +85,10 @@ function server(h: Handlers = {}) {
       const route = new URL(path, 'http://admiral.test').pathname.replace('/api/v1', '');
       const body = init.body ? JSON.parse(String(init.body)) : undefined;
       seen.push({ path: route, method, body });
-      if (route === '/sources/deploys/page') return new Response(JSON.stringify(pageOf(h.state?.() ?? 'ready')));
-      if (/\/actions\/dock\/launch$/.test(route)) return json((h.launch ?? (() => ({ body: { url: ISSUE, fleet: 'alpha' } })))());
+      if (route === '/sources/deploys/page') return new Response(JSON.stringify(pageOf(h.state?.() ?? 'ready', h.notices)));
+      if (/\/actions\/dock\/launch$/.test(route)) return json(await (h.launch ?? (() => ({ body: { url: ISSUE, fleet: 'alpha' } })))());
       if (/\/actions\/tell\/message$/.test(route))
-        return method === 'GET' ? json((h.preview ?? (() => ({ body: { text: TEXT, fleet: 'zulu', chat: CHAT } })))()) : json((h.send ?? (() => ({ body: { sent: true, chat: CHAT } })))(body));
+        return method === 'GET' ? json(await (h.preview ?? (() => ({ body: { text: TEXT, fleet: 'zulu', chat: CHAT } })))()) : json((h.send ?? (() => ({ body: { sent: true, chat: CHAT } })))(body));
       if (route === '/launch-orders/dirs') return new Response(JSON.stringify({ entries: [{ path: '/p', name: 'p', kind: 'checkout', ships_here: 0 }], selected: '/p', clone: null }));
       if (route === '/launch-orders/skills') return new Response(JSON.stringify({ mark: '/', commodore: { found: false, name: 'commodore', state: 'missing' }, skills: [] }));
       if (route === '/launch-orders/crew') return new Response(JSON.stringify({ members: [], warnings: [], errors: [] }));
@@ -371,4 +375,28 @@ test.each(['ready', 'auth_required'])('the message and Launch are enabled when t
   const row = await rowItem();
   expect(button(row, 'Message AdmiralBot').disabled).toBe(false);
   expect(button(row, 'Start ship').disabled).toBe(false);
+});
+
+// A row's pending built-in request is the row's own: a notice with the same id keeps its action enabled.
+
+test.each([
+  ['Launch', 'Start ship', 'launch'],
+  ['Message AdmiralBot', 'Message AdmiralBot', 'preview'],
+] as const)('a row whose %s request is out does not disable or mark a notice with the same id', async (_kind, name, hold) => {
+  let release!: (a: Answer) => void;
+  const held = () => new Promise<Answer>((r) => (release = r));
+  const seen = server({
+    notices: [{ id: 'r1', text: 'Same id as a row', tone: 'info', action: sync }],
+    [hold]: held,
+  });
+  open();
+  const row = await rowItem();
+  const item = (await screen.findByText('Same id as a row')).closest('li') as HTMLElement;
+  press(row, name);
+  await waitFor(() => expect(button(row, name).getAttribute('aria-busy')).toBe('true'));
+  expect(button(item, 'Sync now').disabled).toBe(false);
+  expect(button(item, 'Sync now').getAttribute('aria-busy')).toBeNull();
+  press(item, 'Sync now');
+  await waitFor(() => expect(posts(seen, '/sources/deploys/notices/r1/actions/sync/run')).toHaveLength(1));
+  await act(async () => release({ status: 400, body: { error: 'later' } }));
 });

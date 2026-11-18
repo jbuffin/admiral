@@ -30,7 +30,7 @@ type Run = {
 /** How long a row or notice waits for the page to change after a run before its module actions come back. */
 export const UPDATING_FALLBACK_MS = 30_000;
 
-/** The action id a built-in action's first request is out for, per row. */
+/** The action id a built-in action's first request is out for, keyed by `targetKey` like `runs`. */
 type Pending = Record<string, string>;
 
 /** What an action does: a bare url is Open link, and a module action has no builtin. */
@@ -152,13 +152,13 @@ export function useModuleActions(
     });
   const settle = (row: string) =>
     setPending((p) => {
-      const { [row]: _gone, ...rest } = p;
+      const { [targetKey({ id: row })]: _gone, ...rest } = p;
       return rest;
     });
 
   // Launch asks the server which fleet the issue routes to; a refusal shows its reason and opens nothing.
   const startLaunch = async (row: string, action: PageAction) => {
-    setPending((p) => ({ ...p, [row]: action.id }));
+    setPending((p) => ({ ...p, [targetKey({ id: row })]: action.id }));
     const r = await fetchLaunchTarget(sourceKey, row, action.id);
     settle(row);
     if (!r.ok) return failed(action, row, r.error);
@@ -168,7 +168,7 @@ export function useModuleActions(
   };
 
   const startMessage = async (row: string, action: PageAction) => {
-    setPending((p) => ({ ...p, [row]: action.id }));
+    setPending((p) => ({ ...p, [targetKey({ id: row })]: action.id }));
     const r = await fetchMessagePreview(sourceKey, row, action.id);
     settle(row);
     if (!r.ok) return failed(action, row, r.error);
@@ -219,7 +219,7 @@ export function useModuleActions(
       if (!openableRow(target.id) || !openableRow(action.id)) return;
       const kind = builtinOf(action);
       const key = targetKey(target);
-      if (kind === "open" || pending[target.id] || runs[key]) return;
+      if (kind === "open" || pending[key] || runs[key]) return;
       if (!enabledFor(kind, blocked)) return;
       if (kind) {
         // Built-in actions belong to rows; a notice never draws them.
@@ -313,11 +313,11 @@ export function ModuleActions({
               !ctl ||
               !enabledFor(kind, ctl.blocked) ||
               !!run ||
-              !!ctl.pending[target.id] ||
+              !!ctl.pending[targetKey(target)] ||
               !openableRow(target.id) ||
               !openableRow(a.id)
             }
-            aria-busy={running || ctl?.pending[target.id] === a.id ? "true" : undefined}
+            aria-busy={running || ctl?.pending[targetKey(target)] === a.id ? "true" : undefined}
             onClick={() => ctl?.press(target, a)}
           >
             {a.label}

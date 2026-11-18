@@ -667,11 +667,16 @@ test('a row and a notice with the same id each keep their own result toast', asy
   expect(screen.getByText('Row pinged')).toBeTruthy();
 });
 
-test('a built-in action on a notice is not drawn: built-in actions belong to rows', async () => {
-  const posts = server({ page: withNotices('ready', notices) });
+test.each([
+  ['Open link', { id: 'o', label: 'Open it', builtin: 'open', url: 'https://tracker.example/docs' }],
+  ['Launch', { id: 'l', label: 'Start ship', builtin: 'launch', url: 'https://github.com/acme/widgets/issues/7' }],
+  ['Message AdmiralBot', { id: 'm', label: 'Tell the bot', builtin: 'message', kind: 'review', ref: 'A-1', title: 'T', link: 'https://tracker.example/t/1' }],
+])('a %s action on a notice is not drawn: built-in actions belong to rows', async (_kind, action) => {
+  const posts = server({ page: withNotices('ready', [{ id: 'bi', text: 'Built-in here', tone: 'info', action }]) });
   open();
-  const item = await noticeItem('Read the docs');
-  expect(within(item).queryByText('Open docs')).toBeNull();
+  const item = await noticeItem('Built-in here');
+  expect(within(item).queryByText(action.label)).toBeNull();
+  expect(within(item).queryByRole('button')).toBeNull();
   expect(posts).toHaveLength(0);
 });
 
