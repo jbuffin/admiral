@@ -667,13 +667,11 @@ test('a row and a notice with the same id each keep their own result toast', asy
   expect(screen.getByText('Row pinged')).toBeTruthy();
 });
 
-test('a url action on a notice stays a disabled button and a press sends nothing', async () => {
+test('a built-in action on a notice is not drawn: built-in actions belong to rows', async () => {
   const posts = server({ page: withNotices('ready', notices) });
   open();
-  const b = within(await noticeItem('Read the docs')).getByRole('button', { name: 'Open docs' }) as HTMLButtonElement;
-  expect(b.disabled).toBe(true);
-  fireEvent.click(b);
-  expect(screen.queryByRole('dialog')).toBeNull();
+  const item = await noticeItem('Read the docs');
+  expect(within(item).queryByText('Open docs')).toBeNull();
   expect(posts).toHaveLength(0);
 });
 
