@@ -18,7 +18,7 @@ const page = vi.hoisted(() => {
   return Object.assign(l, { install });
 });
 
-import { githubPath, limitsFieldOf, limitsPath, standingOrdersPath, standingOrdersTab, routineCreating, installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, routineNewPath, routineOf, routinePath } from './router';
+import { githubPath, limitsFieldOf, limitsPath, standingOrdersPath, standingOrdersTab, routineCreating, installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, chatMessagePath, chatMessageOf, routineNewPath, routineOf, routinePath } from './router';
 import { sourcesLoaded } from './shipsLink';
 
 describe('campaign paths', () => {
@@ -284,6 +284,28 @@ describe("a fleet's AdmiralBot page", () => {
   });
   it('is part of Preferences', () => {
     expect(surfaceOf('/app/preferences/harbor/admiralbot')?.id).toBe('preferences');
+  });
+});
+
+describe('chat message paths', () => {
+  it('names a fleet and a message, and belongs to the Chat surface', () => {
+    expect(chatMessagePath('work', 'm-7')).toBe('/app/chat/work/message/m-7');
+    expect(chatMessageOf('/app/chat/work/message/m-7')).toEqual({ fleet: 'work', message: 'm-7' });
+    expect(surfaceOf('/app/chat/work/message/m-7')?.id).toBe('chat');
+    expect(chatPeekOf('/app/chat/work/message/m-7')).toBeNull();
+    expect(chatTerminalOf('/app/chat/work/message/m-7')).toBeNull();
+  });
+
+  it('round-trips a fleet key and a message id that need encoding', () => {
+    for (const [fleet, message] of [['a/b', 'x y#1'], ['message', 'terminal'], ['100%', '?q=1']]) {
+      expect(chatMessageOf(chatMessagePath(fleet, message))).toEqual({ fleet, message });
+    }
+  });
+
+  it('is not a path when the message is missing or the path has more', () => {
+    expect(chatMessageOf('/app/chat/work/message')).toBeNull();
+    expect(chatMessageOf('/app/chat/work/message/m-7/more')).toBeNull();
+    expect(surfaceOf('/app/chat/work/message/m-7/more')).toBeUndefined();
   });
 });
 

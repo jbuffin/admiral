@@ -25,6 +25,12 @@ describe('the notification a push shows', () => {
     expect(n.options.data).toMatchObject({ session: HOSTILE, item: HOSTILE, crew: HOSTILE });
   });
 
+  it('carries the fleet and message a chat tap opens', () => {
+    const n = notice(JSON.stringify({ name: 'Calm Otter · done', line: 'Done', tag: 'ship-1', fleet: 'work', target: 'chat', message: 'm-7' }));
+    expect(n.options.data).toEqual({ name: 'Calm Otter · done', line: 'Done', tag: 'ship-1', fleet: 'work', target: 'chat', message: 'm-7' });
+    expect(clickUrl(n.options.data)).toContain(encodeURIComponent('"message":"m-7"'));
+  });
+
   it('carries the routine a tap opens', () => {
     const n = notice(JSON.stringify({ name: 'Nightly sweep', line: 'failed to run', tag: 'routine:r1:t1', fleet: 'f', target: 'routine', routine: 'r1' }));
     expect(n.options.data).toMatchObject({ target: 'routine', routine: 'r1' });

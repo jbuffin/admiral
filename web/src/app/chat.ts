@@ -71,6 +71,8 @@ export interface ChatEntry {
   text: string;
   at: string;
   card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard | LaunchLine;
+  /** The id of the ship card this entry belongs to: a report turn and its reply. */
+  thread?: string;
 }
 
 /** A fleet's chat as the server serves it: GET /api/chat/<fleet>/session and the `chat` socket message. */

@@ -1,6 +1,6 @@
 import type { Alert } from './alerts';
 
-export type PushTarget = Pick<Alert, 'target' | 'fleet' | 'item' | 'crew' | 'merge' | 'routine'> & { session?: string };
+export type PushTarget = Pick<Alert, 'target' | 'fleet' | 'item' | 'crew' | 'merge' | 'routine' | 'message'> & { session?: string };
 
 /** The target fields of a tapped push's payload, text only; null when it names no ship or routine. */
 export function pushTargetOfData(raw: unknown): PushTarget | null {

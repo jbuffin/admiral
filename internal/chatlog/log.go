@@ -57,6 +57,8 @@ type Entry struct {
 	At time.Time `json:"at,omitzero"`
 	// Card is a question's item, as the inbox spells it.
 	Card json.RawMessage `json:"card,omitempty"`
+	// Thread is the id of the ship card this entry belongs to, for a report turn and its reply.
+	Thread string `json:"thread,omitempty"`
 	// Logged is when Admiral appended the entry, by the Log's clock; it names the file's month.
 	Logged time.Time `json:"logged"`
 }

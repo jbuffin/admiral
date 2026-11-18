@@ -15,12 +15,13 @@ export interface Alert extends ToastAlert {
   crew?: string;
   merge?: boolean;
   routine?: string;
+  message?: string;
 }
 
 const INBOX = '/app/inbox';
 
 /** Where a tap on the alert's toast goes: its Peek while the entry is still there, otherwise the Inbox alone. */
-export function alertDestination(alert: Pick<Alert, 'target' | 'item' | 'crew' | 'merge' | 'routine'> & { session?: string }, now: { ships: Ship[]; items: InboxItem[] }): string {
+export function alertDestination(alert: Pick<Alert, 'target' | 'item' | 'crew' | 'merge' | 'routine' | 'fleet' | 'message'> & { session?: string }, now: { ships: Ship[]; items: InboxItem[] }): string {
   if (alert.target === 'routine' && alert.routine) return routinePath(alert.routine);
   const session = alert.session ?? '';
   const ship = now.ships.find((s) => s.session === session);

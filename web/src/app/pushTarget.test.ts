@@ -25,6 +25,17 @@ describe('the page reads back the target a tapped push opened it with', () => {
     expect(through({ target: 'routine', fleet: 'zulu', routine: '../x y&z=1' })).toMatchObject({ routine: '../x y&z=1' });
   });
 
+  it('gets a chat target, which names a fleet and a message and no ship', () => {
+    expect(through({ target: 'chat', fleet: 'work', message: 'm-7' })).toEqual({ target: 'chat', fleet: 'work', message: 'm-7' });
+    expect(through({ target: 'chat', fleet: 'work', message: '../x y&z=1' })).toMatchObject({ message: '../x y&z=1' });
+  });
+
+  it('finds no chat target without a fleet and a message', () => {
+    expect(through({ target: 'chat', fleet: 'work', message: 'm-7' })).not.toBeNull();
+    expect(through({ target: 'chat', fleet: 'work' })).toBeNull();
+    expect(through({ target: 'chat', message: 'm-7' })).toBeNull();
+  });
+
   it('finds no target in an ordinary page address', () => {
     expect(pushTargetOf('')).toBeNull();
     expect(pushTargetOf('?fleet=zulu')).toBeNull();

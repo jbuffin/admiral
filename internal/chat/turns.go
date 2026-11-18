@@ -371,3 +371,22 @@ func (s *fleetChat) clearDeferred() {
 		log.Printf("admiral: chat %s: the deferred New chat: %v", s.key, lerr.Msg)
 	}
 }
+
+// ReportReply is the reply AdmiralBot gave to a report turn: the ship card it belongs to and its first message.
+type ReportReply struct {
+	CardID    string
+	MessageID string
+	Text      string
+}
+
+// TurnEnd is how a queued turn ended.
+type TurnEnd int
+
+const (
+	TurnEndedNormally TurnEnd = iota
+	// TurnDropped is a turn whose paste never took or whose session went away.
+	TurnDropped
+)
+
+// endTurn is called once for each way trackTurn ends the turn that was pasted under id.
+func (s *fleetChat) endTurn(id string, how TurnEnd) {}

@@ -95,6 +95,13 @@ export function chatPeekOf(path: string): (PeekTarget & { item: string; fleet: s
   }
 }
 
+/** The fleet's chat opened at one message. */
+export const chatMessagePath = (_fleetKey: string, _messageId: string): string => '';
+
+export function chatMessageOf(_path: string): { fleet: string; message: string } | null {
+  return null;
+}
+
 /** The fleet's chat session shown through the bridge, in place of the conversation. */
 export const chatTerminalPath = (fleetKey: string) => `/app/chat/${encodeURIComponent(fleetKey)}/terminal`;
 
