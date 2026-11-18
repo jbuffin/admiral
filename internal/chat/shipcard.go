@@ -86,6 +86,7 @@ type voyage struct {
 	Via           string
 	Skill         string
 	SkillKind     string
+	Scout         bool
 	FirstLaunched string
 	PRs           []ShipCardPR
 	Done          map[string]bool
@@ -93,6 +94,7 @@ type voyage struct {
 	MooredAt      time.Time
 	UnmooredAt    time.Time // the PRs all closed
 	StoppedAt     time.Time
+	ScoutEndedAt  time.Time // a scout's own end
 	ReturnedAt    time.Time
 	ReturningAt   time.Time
 	ReadyHeld     bool // moored at the seed: its first answered poll is not news
@@ -206,7 +208,7 @@ func (d *ShipCards) voyageOf(s ships.Ship, now time.Time) *voyage {
 		v = &voyage{Ship: s.Session, Name: s.Name, FirstLaunched: stamp, Done: map[string]bool{}}
 		d.st.Voyages[key] = v
 	}
-	v.Name, v.Fleet, v.Via, v.SkillKind, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, now
+	v.Name, v.Fleet, v.Via, v.SkillKind, v.Scout, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, s.Scout, now
 	if s.Skill != nil {
 		v.Skill = *s.Skill
 	}
@@ -260,6 +262,10 @@ func (v *voyage) apply(r ShipRecord) {
 	case "stopped":
 		if r.Returned {
 			v.ReturnedAt = r.At
+		} else if r.Scout {
+			if r.At.After(v.ScoutEndedAt) {
+				v.ScoutEndedAt = r.At
+			}
 		} else if r.At.After(v.StoppedAt) {
 			v.StoppedAt = r.At
 		}
@@ -275,6 +281,11 @@ func (d *ShipCards) settle(v *voyage, mooredNow, inSnap bool, now time.Time) err
 		return errors.Join(errs...)
 	}
 	switch {
+	case !v.ScoutEndedAt.IsZero():
+		// A scout's end is a kill, so only its own `stopped` mark tells it from an engineer's Stop ship.
+		if !inSnap && now.Sub(v.ScoutEndedAt) >= ShipSettleGrace {
+			errs = append(errs, d.emit(v, ShipSailedOff, false))
+		}
 	case !v.UnmooredAt.IsZero():
 		// A return to port writes `unmoored` and then `returning`; the ship is not sailing off.
 		if v.ReturningAt.Before(v.UnmooredAt) && now.Sub(v.UnmooredAt) >= ShipSettleGrace {
@@ -296,12 +307,30 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 		return nil
 	}
 	if !silent {
-		if err := d.post(v.Fleet, ShipCard{Ship: v.Ship, Name: v.Name, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.SkillKind, Result: result, PRs: v.PRs}); err != nil {
+		if err := d.post(v.Fleet, ShipCard{Ship: v.Ship, Name: v.Name, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.cardKind(), Result: result, PRs: v.PRs}); err != nil {
 			return err
 		}
 	}
 	v.Done[result] = true
 	return nil
+}
+
+// cardKind is the kind the card reads, decided here so every client agrees.
+func (v *voyage) cardKind() string {
+	switch {
+	case v.Scout:
+		return "scout"
+	case v.SkillKind == "commodore":
+		return v.SkillKind
+	case v.Via == "admiralbot" && v.Skill == "":
+		return "quick"
+	case v.SkillKind == "":
+		if v.Skill != "" {
+			return "skill"
+		}
+		return "none"
+	}
+	return v.SkillKind
 }
 
 func (d *ShipCards) save() error {
