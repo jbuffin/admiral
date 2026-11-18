@@ -173,3 +173,42 @@ test('a refused merge token tells the engineer to reload, in words about marking
   expect(await screen.findByText('Admiral restarted, reload to mark ready for review')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy();
 });
+
+test('the result sheet stays until it is closed, even when the re-read finds no draft left', async () => {
+  const details: Record<string, PRDetail> = { [url(41)]: detail(41), [url(42)]: detail(42) };
+  serve(details, () => {
+    details[url(41)] = detail(41, { draft: false });
+    details[url(42)] = detail(42, { draft: false });
+    return results([{ url: url(41), outcome: 'marked_ready' }, { url: url(42), outcome: 'failed', error: 'gh did not finish in time, so whether the pull request is ready for review is unknown until the next refresh' }]);
+  });
+  render(<PRTab ship={ship('mark-sheet-stays', [pr(41), pr(42)])} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Mark all ready for review' }));
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Mark all ready for review' }));
+  expect(await within(await screen.findByRole('dialog')).findByText(/is unknown until the next refresh/)).toBeTruthy();
+  // Give the re-read time to land: with no draft left the tab drops its own button, and the sheet must outlive it.
+  await waitFor(() => expect(screen.queryByText('Draft')).toBeNull());
+  expect(within(screen.getByRole('dialog')).getByText(/is unknown until the next refresh/)).toBeTruthy();
+  // A button stays ignoring taps for the spinner's minimum after the request, so retry the tap until it lands.
+  await waitFor(() => {
+    const close = screen.queryByRole('dialog') && within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' });
+    if (close) fireEvent.click(close);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+test('Mark all needs two of the ship own open PRs, so a merged PR beside one draft offers only Mark ready for review', async () => {
+  serve({ [url(51)]: detail(51, { state: 'MERGED', draft: false }), [url(52)]: detail(52) });
+  render(<PRTab ship={ship('mark-all-merged', [pr(51, { state: 'MERGED', draft: false }), pr(52)])} />);
+  expect(await screen.findByRole('button', { name: 'Mark ready for review' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Mark all ready for review' })).toBeNull();
+});
+
+test('the confirm sheet does not call a PR whose detail did not load a draft', async () => {
+  serve({ [url(61)]: detail(61) });
+  render(<PRTab ship={ship('mark-unknown', [pr(61), pr(62)])} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Mark all ready for review' }));
+  const lines = within(await screen.findByRole('dialog')).getAllByRole('listitem');
+  expect(lines[0].textContent).toMatch(/#61.*draft/);
+  expect(lines[1].textContent).toMatch(/#62.*state unknown/);
+  expect(lines[1].textContent).not.toMatch(/draft/);
+});

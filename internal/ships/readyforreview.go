@@ -27,20 +27,6 @@ type markResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// shipCarry is the fleet and the PRs a ship carries, whether it is moored or live.
-func (s *Service) shipCarry(session string) (fleet string, prs []string, reviewing bool, found bool) {
-	if rec, ok := s.mooredRecord(session); ok {
-		return rec.Fleet, rec.PRs, len(rec.Reviewing) > 0, true
-	}
-	sess, ok := s.find(session)
-	if !ok {
-		return "", nil, false, false
-	}
-	s.mooredMu.Lock()
-	defer s.mooredMu.Unlock()
-	return sess.Options["fleet"], s.carried(sess), len(s.reviewingOf(sess)) > 0, true
-}
-
 // serveReadyForReview is the engineer's Mark ready for review act: gh takes each named draft PR out of draft. It runs only on this request and merges nothing.
 func (s *Service) serveReadyForReview(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
@@ -61,12 +47,12 @@ func (s *Service) serveReadyForReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.endWaking(session)
-	fleet, carried, reviewing, ok := s.shipCarry(session)
+	fleet, carried, reviewing, ok := s.carriedBy(session)
 	if !ok {
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
 		return
 	}
-	if reviewing {
+	if len(reviewing) > 0 {
 		writeError(w, http.StatusConflict, "ship "+session+" reviews a pull request, and a review ship does not mark pull requests ready for review")
 		return
 	}

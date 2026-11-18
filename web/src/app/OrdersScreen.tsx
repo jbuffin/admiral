@@ -39,6 +39,7 @@ export function NeedsYouBadge() {
 
 const MARK_PR = <path d="M4 5.1v5.8M12 10.9V6.5a2 2 0 0 0-2-2H7.5M9 3 7.5 4.5 9 6" />;
 
+// The icon is hidden from assistive tech, as a button's children are presentational; the row's button carries the state in its name.
 // A needs-you PR keeps its accent colour, so draft shows by a dashed stroke on every PR and ready for review by green on the rest.
 function Mark({ pr, needs, stack, draft }: { pr: boolean; needs: boolean; stack?: boolean; draft?: boolean }) {
   const named = pr && !stack && draft !== undefined;
@@ -51,7 +52,7 @@ function Mark({ pr, needs, stack, draft }: { pr: boolean; needs: boolean; stack?
       fill="none"
       stroke="currentColor"
       stroke-width="1.5"
-      {...(named ? { role: 'img', 'aria-label': draft ? 'Draft pull request' : 'Pull request ready for review' } : { 'aria-hidden': 'true' })}
+      aria-hidden="true"
     >
       {stack ? (
         <>
@@ -152,12 +153,14 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
         </button>
       </>
     );
+  const prState = o.pr?.state === 'OPEN' && !row.stackRow && o.pr.draft !== undefined ? (o.pr.draft ? 'draft pull request' : 'pull request ready for review') : '';
+  const openName = `Open ${o.title}${prState ? `, ${prState}` : ''}`;
   if (phone) {
     return (
       <li class={`orow-phone${child ? ' child' : ''}${selected ? ' selected' : ''}`}>
         {tick}
         {toggle ?? spacer}
-        <button type="button" class="orow-open" aria-label={`Open ${o.title}`} aria-pressed={selected} onClick={() => onOpen(row)}>
+        <button type="button" class="orow-open" aria-label={openName} aria-pressed={selected} onClick={() => onOpen(row)}>
           <span class="orow-main">
             <span class="orow-title">{o.title}</span>
             <span class="orow-meta">
@@ -180,8 +183,8 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
     <li class={`orow${muted ? ' waiting' : ''}${child ? ' child' : ''}${selected ? ' selected' : ''}`}>
       {tick}
       {toggle ?? spacer}
-      <button type="button" class="orow-open" aria-label={`Open ${o.title}`} aria-pressed={selected} onClick={() => onOpen(row)}>
-        <Mark pr={!!o.pr} needs={row.needsYou} stack={row.stackRow} draft={o.pr?.state === 'OPEN' ? o.pr.draft : undefined} />
+      <button type="button" class="orow-open" aria-label={openName} aria-pressed={selected} onClick={() => onOpen(row)}>
+        <Mark pr={!!o.pr} needs={row.needsYou} stack={row.stackRow} draft={prState ? o.pr?.draft : undefined} />
         <span class="orow-main">
           <span class="orow-title">{o.title}</span>
           <span class="orow-meta">

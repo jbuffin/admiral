@@ -15,7 +15,7 @@ import { AnswerReviewSheet } from './AnswerReview';
 import { FixButton, FixSheet } from './Fix';
 import { ReReviewSheet } from './ReReview';
 import { PRSections } from './PRDetailSections';
-import { MarkReady, type ReadyLine } from './ReadyForReview';
+import { MarkReadyButton, MarkReadySheet, type ReadyLine } from './ReadyForReview';
 
 const REFRESH_MS = 30_000;
 
@@ -291,6 +291,7 @@ export function PRTab({ ship }: { ship: Ship }) {
   const [reReview, setReReview] = useState<string | null>(null);
   const [stacking, setStacking] = useState(false);
   const [fixing, setFixing] = useState(false);
+  const [marking, setMarking] = useState<{ all: boolean; lines: ReadyLine[] } | null>(null);
   const [unseen, setUnseen] = useState(false);
   const carried = ship.prs ?? [];
   const { details, failed, reread, refresh } = useDetails(ship.session, carried.map((p) => p.url));
@@ -320,16 +321,13 @@ export function PRTab({ ship }: { ship: Ship }) {
   const choice = mergeFor(shape, prs, current, !!ship.stack_ready);
   const justMerged = mergedAll || merged.has(current.url);
   const ownDraft = hasOwnDraft(prs, details);
-  const markAll = (
-    <MarkReady
-      session={ship.session}
-      all
-      lines={ownOpen(prs).map((p): ReadyLine => ({ url: p.url, draft: reviewState(p, details[p.url]) !== 'ready_for_review', head: details[p.url]?.head, base: details[p.url]?.base }))}
-      locked={acting}
-      onBusy={setActing}
-      onDone={reread}
-    />
-  );
+  const markLines = ownOpen(prs).map((p): ReadyLine => {
+    const state = reviewState(p, details[p.url]);
+    return { url: p.url, draft: state === null ? undefined : state === 'draft', head: details[p.url]?.head, base: details[p.url]?.base };
+  });
+  const canMarkAll = markLines.length > 1 && ownDraft;
+  const markAll = <MarkReadyButton session={ship.session} all lines={markLines} locked={acting} onAsk={() => setMarking({ all: true, lines: markLines })} />;
+  const markOneLines: ReadyLine[] = [{ url: current.url, draft: true, head: details[current.url]?.head, base: details[current.url]?.base }];
   const markOne = ownOpen([current]).length > 0 && reviewState(current, details[current.url]) === 'draft';
   const reasonLines = mergeReasonLines(current, details[current.url]?.base);
   // The stack read decides: a layer of a GitHub stack is fixed as a stack, so it has no Update branch.
@@ -376,9 +374,9 @@ export function PRTab({ ship }: { ship: Ship }) {
           ) : null}
           {action === 'after-moor' ? <span class="merge-hint">Stack after the ship moors</span> : null}
           {unseen && shape?.shape === 'chained' ? <span>GitHub hasn't shown the stack yet. It shows on the next refresh.</span> : null}
-          {prs.length > 1 && ownDraft ? markAll : null}
+          {canMarkAll ? markAll : null}
         </div>
-      ) : prs.length > 1 && ownDraft ? (
+      ) : canMarkAll ? (
         <div class="fix-bar">
           <span class="fb-text">Some of these PRs are drafts.</span>
           {markAll}
@@ -390,6 +388,7 @@ export function PRTab({ ship }: { ship: Ship }) {
           <FixButton ship={ship} locked={acting} onAsk={() => setFixing(true)} />
         </div>
       ) : null}
+      {marking ? <MarkReadySheet session={ship.session} all={marking.all} lines={marking.lines} onBusy={setActing} onDone={reread} onClose={() => setMarking(null)} /> : null}
       {fixing && fixOn ? <FixSheet ship={ship} onClose={() => setFixing(false)} onBusy={setActing} /> : null}
       {stacking ? (
         <StackSheet
@@ -433,7 +432,7 @@ export function PRTab({ ship }: { ship: Ship }) {
         {markOne ? (
           <div class="fix-bar">
             <span class="fb-text">This PR is a draft.</span>
-            <MarkReady key={current.url} session={ship.session} all={false} lines={[{ url: current.url, draft: true, head: details[current.url]?.head, base: details[current.url]?.base }]} locked={acting} onBusy={setActing} onDone={reread} />
+            <MarkReadyButton session={ship.session} all={false} lines={markOneLines} locked={acting} onAsk={() => setMarking({ all: false, lines: markOneLines })} />
           </div>
         ) : null}
         {respondedHere ? (

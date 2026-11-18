@@ -27,16 +27,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test('only the PR icon names whether the order is a draft or ready for review', () => {
+test("the row's button names whether the order is a draft or ready for review", () => {
   sources.value = [gh([order(1, true), order(2, false)])];
   render(<OrdersPanel phone={false} title={false} />);
-  expect(screen.getAllByRole('img', { name: 'Draft pull request' })).toHaveLength(1);
-  expect(screen.getAllByRole('img', { name: 'Pull request ready for review' })).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Open Order 1, draft pull request' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Open Order 2, pull request ready for review' })).toBeTruthy();
+  expect(screen.queryByRole('img')).toBeNull();
 });
 
-test('an order whose draft state is not known carries neither name', () => {
+test('an order whose draft state is not known names neither state', () => {
   sources.value = [gh([order(3, undefined), order(4, true)])];
   render(<OrdersPanel phone={false} title={false} />);
-  expect(screen.getAllByRole('img', { name: 'Draft pull request' })).toHaveLength(1);
-  expect(screen.queryByRole('img', { name: 'Pull request ready for review' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Open Order 3' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Open Order 4, draft pull request' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /ready for review/ })).toBeNull();
 });

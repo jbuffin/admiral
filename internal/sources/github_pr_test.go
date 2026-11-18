@@ -99,9 +99,25 @@ func TestParseOrdersKeepsAGoodPRAndDropsAMalformedOneWithoutFailingTheList(t *te
 	if pr, ok := served(t, got[0])["pr"]; !ok || json.Unmarshal(pr, &kept) != nil || kept["state"] != "OPEN" || kept["ready"] != true || kept["review"] != "APPROVED" {
 		t.Errorf("the good pr was not kept: %+v", served(t, got[0]))
 	}
+	if _, says := kept["draft"]; says {
+		t.Errorf("a pr that does not say draft serves draft = %v, want the key left out", kept["draft"])
+	}
 	for _, o := range got[1:] {
 		if pr, ok := served(t, o)["pr"]; ok {
 			t.Errorf("order %s kept the malformed pr %s", o.ID, pr)
+		}
+	}
+}
+
+func TestParseOrdersKeepsADraftFlagTheSourceSends(t *testing.T) {
+	got, err := parseOrders([]byte(`[{"id":"d","title":"D","text":"d","pr":{"state":"OPEN","draft":true}},{"id":"r","title":"R","text":"r","pr":{"state":"OPEN","draft":false}}]`))
+	if err != nil || len(got) != 2 {
+		t.Fatalf("parseOrders = %d orders, %v", len(got), err)
+	}
+	for i, want := range []bool{true, false} {
+		var pr map[string]any
+		if raw, ok := served(t, got[i])["pr"]; !ok || json.Unmarshal(raw, &pr) != nil || pr["draft"] != want {
+			t.Errorf("order %s pr = %v, want draft %v", got[i].ID, pr, want)
 		}
 	}
 }
