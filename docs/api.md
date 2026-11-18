@@ -561,10 +561,10 @@ A row is `{"title", "reference": "owner/repo#n", "url", "state": "open"|"closed"
 
 ### `POST /api/campaigns/create`
 
-The engineer's confirm to make a campaign from issues. Needs a browser or CLI token: an actor token is `403`. Body `{"repo": "owner/name", "title": "…", "body": "…", "issues": ["<issue URL or owner/repo#n>", …]}`: 1 to 50 distinct issues in the order to link them, all on one host (`owner/repo#n` means github.com), the title not blank. Using the fleet that owns `repo`, it reads every issue first, creates the parent in `repo`, links each issue under it with one call each in the given order, then follows the parent as `POST /api/campaigns` does. Nothing launches. `201` with the campaign.
+The engineer's confirm to make a campaign from issues. Needs a browser or CLI token: an actor token is `403`. Body `{"repo": "owner/name", "title": "…", "body": "…", "issues": ["<issue URL or owner/repo#n>", …], "host": "…", "fleet": "…"}`: 0 to 50 distinct issues in the order to link them, all on one host (`owner/repo#n` means github.com), the title not blank. `issues` may be empty or missing: the parent is then filed alone. `host` is optional: empty means the issues' host, or `github.com` with no issues; a value must equal the issues' host. `fleet` is optional: when given, the fleet that owns `repo` on that host must be it. Using the fleet that owns `repo`, it reads every issue first, creates the parent in `repo`, links each issue under it with one call each in the given order (none with no issues), then follows the parent as `POST /api/campaigns` does. Nothing launches. `201` with the campaign.
 
-- `400`: the body is not JSON, `repo` is not a plain `owner/name`, the title is blank, there are no issues or more than 50, a ref is repeated or can't be read. Nothing is written.
-- `422`: the hosts differ, no fleet owns `repo`, an issue routes to another fleet or is owned by someone other than `repo`'s owner, or the fleet has no GitHub source for the host. Nothing is written.
+- `400`: the body is not JSON, `repo` is not a plain `owner/name`, the title is blank, there are more than 50 issues, a ref is repeated or can't be read. Nothing is written.
+- `422`: the hosts differ (an issue's, or `host` against the issues'), no fleet owns `repo`, `fleet` is not the fleet that owns `repo`, an issue routes to another fleet or is owned by someone other than `repo`'s owner, or the fleet has no GitHub source for the host. Nothing is written.
 - `409`: an issue already has a parent; the error names it. Admiral never moves an issue. Nothing is written.
 - `422` too: an issue is a pull request (named in the error).
 - `502` before the parent exists: an issue could not be read, or the parent could not be created. Nothing is written.
@@ -911,7 +911,7 @@ The 200 answer is `{"id": "…", "draft": {…}, "problems": […]}`: the server
 
 ### `POST /api/fleets/<key>/campaigns/draft`
 
-`{"issues": [{"url": "…", "title": "…"}, …]}` (1 to 50). The same judge call, for the parent issue of a campaign that groups them: `{"title": "…", "body": "…"}`. Nothing is saved or written to GitHub. `409` and `502` are the other drafters'; a reply without a title and a body is `502`.
+`{"issues": [{"url": "…", "title": "…"}, …]}` (1 to 50) or `{"text": "…"}` (at most 4000 characters), exactly one of them; an empty `issues` or a blank `text` counts as absent. The same judge call, for the parent issue of a campaign that groups the issues, or one drafted from the engineer's own words: `{"title": "…", "body": "…"}`. The text's title is at most 100 characters and its body restates the text without inventing a plan or sub-issues. `400` for both fields, neither, more than 50 issues, or a text over the cap (`text: at most 4000 characters`), before any judge call. Nothing is saved or written to GitHub. `409` and `502` are the other drafters'; a reply without a title and a body is `502`.
 
 ## Harness capabilities
 
