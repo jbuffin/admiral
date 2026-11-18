@@ -124,7 +124,7 @@ func (s *Service) harness(store *capabilities.Store, fleet config.Fleet, name st
 				if !st.Result.At.IsZero() {
 					cj.CheckedAt = &st.Result.At
 				}
-			case snap.Version == "" && !snap.DetectedAt.IsZero() && c.ID == capabilities.AutopilotGuard:
+			case snap.Version == "" && !snap.DetectedAt.IsZero() && (c.ID == capabilities.AutopilotGuard || c.ID == capabilities.ScoutGuard):
 				cj.Detail = snap.VersionError
 				if cj.Detail == "" {
 					cj.Detail = "version could not be detected"

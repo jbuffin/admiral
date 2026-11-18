@@ -159,3 +159,38 @@ func titleCase(s string) string {
 	r, n := utf8.DecodeRuneInString(s)
 	return strings.ToUpper(string(r)) + s[n:]
 }
+
+// ScoutRefusal is the error CheckScout returns for a harness whose scout guard is not proven.
+type ScoutRefusal struct {
+	Fleet   string // the fleet's key
+	Name    string // the fleet's name
+	Harness string
+	Reason  string
+}
+
+func (e *ScoutRefusal) Error() string {
+	return fmt.Sprintf("a scout cannot run on %s in fleet %s (%s): %s", e.Harness, e.Name, e.Fleet, e.Reason)
+}
+
+// ScoutProven reports whether a scout may run on harness in the fleet: the scout guard probe and the autopilot
+// guard probe both passed against the last version detected there, since a scout runs in autopilot.
+func ScoutProven(home, fleetKey, harness string) bool {
+	if !slices.Contains(probes.ScoutGuardHarnesses(), harness) {
+		return false
+	}
+	return capabilities.Open(home).Proven(fleetKey, harness, capabilities.ScoutGuard) && Proven(home, fleetKey, harness)
+}
+
+// CheckScout returns nil when ScoutProven, and a *ScoutRefusal saying which proof is missing otherwise.
+// It posts no Inbox notice: the caller that asked for the scout shows the refusal.
+func CheckScout(home string, fleet config.Fleet, harness string) error {
+	switch {
+	case !slices.Contains(probes.ScoutGuardHarnesses(), harness):
+		return &ScoutRefusal{Fleet: fleet.Key, Name: fleet.Name, Harness: harness, Reason: "no scout guard for " + harness}
+	case !capabilities.Open(home).Proven(fleet.Key, harness, capabilities.ScoutGuard):
+		return &ScoutRefusal{Fleet: fleet.Key, Name: fleet.Name, Harness: harness, Reason: "the scout guard probe has not passed"}
+	case !Proven(home, fleet.Key, harness):
+		return &ScoutRefusal{Fleet: fleet.Key, Name: fleet.Name, Harness: harness, Reason: "the autopilot guard probe has not passed"}
+	}
+	return nil
+}

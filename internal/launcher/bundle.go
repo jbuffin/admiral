@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // The hook bundle is rewritten at every start and shared by all fleets.
@@ -21,6 +22,44 @@ func statusLine(flags string) map[string]any {
 // MergeToolMatcher spells the case out: a matcher is a JavaScript regular expression,
 // which has no (?i).
 const MergeToolMatcher = "^mcp__.*([Mm][Ee][Rr][Gg][Ee]|[Ee][Nn][Qq][Uu][Ee][Uu][Ee])"
+
+// ScoutEnv names the checkout of a scout, a ship that may read and look things up but changes nothing
+// in it: the guard (`admiral guard pretooluse`) is in scout mode while it is non-empty, and refuses every
+// call unless its value is a clean absolute path. The launcher sets it from the ship's own launch, so the
+// ship cannot switch it off.
+const ScoutEnv = "ADMIRAL_SCOUT"
+
+// ScoutEditMatcher is the harness's edit tools: a scout's guard refuses them inside its checkout.
+const ScoutEditMatcher = "^(Edit|Write|MultiEdit|NotebookEdit)$"
+
+// ScoutMCPMatcher matches the MCP tools whose name says they create or change a pull request, push, commit,
+// merge, review, or write a file or branch, except those whose name starts with get_, list_ or search_. The
+// guard decides with the same expression. It is both a JavaScript and an RE2 expression, so it has no
+// lookahead and no (?i): the read verbs are spelled as their complement and the case out.
+var ScoutMCPMatcher = scoutMCPMatcher()
+
+func scoutMCPMatcher() string {
+	fold := func(s string) string {
+		var b strings.Builder
+		for _, r := range s {
+			if u := strings.ToUpper(string(r)); u != string(r) {
+				b.WriteString("[" + u + string(r) + "]")
+			} else {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	words := []string{"pull_request", "push", "merge", "branch", "commit", "review"}
+	for i, w := range words {
+		words[i] = fold(w)
+	}
+	verbs := fold("(create|update|delete|write|edit|upload|remove|move)")
+	kw := "(?:" + strings.Join(words, "|") + "|" + verbs + `\w*` + fold("file") + ")"
+	// A name that is not a read verb's prefix: the first characters that differ from get_, list_ or search_.
+	notRead := "(?:[^gls]|g(?:[^e]|e(?:[^t]|t[^_]))|l(?:[^i]|i(?:[^s]|s(?:[^t]|t[^_])))|s(?:[^e]|e(?:[^a]|a(?:[^r]|r(?:[^c]|c(?:[^h]|h[^_])))))" + ")"
+	return "^mcp__.*__(?:" + kw + "|" + notRead + ".*" + kw + ")"
+}
 
 // Claude Code lets a call through when a PreToolUse hook times out or fails, so onFailure
 // "block" (Claude Code 2.1.295 and later) turns both into a refusal.
@@ -47,6 +86,8 @@ func claudeSettings() any {
 			guardGroup("Bash"),
 			guardGroup("^mcp__.*pull_request_review.*$"),
 			guardGroup(MergeToolMatcher),
+			guardGroup(ScoutEditMatcher),
+			guardGroup(ScoutMCPMatcher),
 		},
 		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
 		"Stop":             []any{group("", "Stop")},

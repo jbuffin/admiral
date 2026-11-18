@@ -28,6 +28,15 @@ func DeniedPath(dir, nonce string) string   { return filepath.Join(dir, "denied-
 // env is live, so the probe can tell a hook that never ran from a model that ran something else.
 func SeenPath(dir, nonce string) string { return filepath.Join(dir, "seen-"+nonce) }
 
+// The scout guard probe's files, beside the autopilot probe's: the guard writes ScoutSeenPath for every Write
+// call it is asked about while the probe's env is live, and ScoutDeniedPath when it refuses the probe's file,
+// which is ScoutFilePath inside the checkout the run's ADMIRAL_SCOUT names.
+func ScoutSeenPath(dir, nonce string) string   { return filepath.Join(dir, "scout-seen-"+nonce) }
+func ScoutDeniedPath(dir, nonce string) string { return filepath.Join(dir, "scout-denied-"+nonce) }
+func ScoutFilePath(checkout, nonce string) string {
+	return filepath.Join(checkout, "scout-"+nonce)
+}
+
 var nonceFormat = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
 // ValidEnv is what the guard requires of the probe's two variables before it acts on them,
@@ -118,7 +127,7 @@ func (r *Runner) Close() { r.stop() }
 func NewDefault(home string) *Runner { return New(home, defaultProbes()...) }
 
 func defaultProbes() []Probe {
-	ps := append([]Probe{ClaudeGuard(), ClaudeMCPFence(), CodexMCPFence(), CodexConfigHome(), CopilotMCPFence(), CopilotConfigHome()}, judgeProbes()...)
+	ps := append([]Probe{ClaudeGuard(), ClaudeScoutGuard(), ClaudeMCPFence(), CodexMCPFence(), CodexConfigHome(), CopilotMCPFence(), CopilotConfigHome()}, judgeProbes()...)
 	// Last, so a slow restricted run cannot starve the judge calls of the run's time.
 	return append(ps, ClaudeRestrictedSandbox(), ClaudeRestrictedNetwork())
 }
@@ -278,3 +287,14 @@ func (r *Runner) refresh(ctx context.Context, fleet config.Fleet, harness string
 
 // Wait blocks until the background runs Refresh started have finished.
 func (r *Runner) Wait() { r.bg.Wait() }
+
+// ScoutGuardHarnesses lists the harnesses with a registered scout guard probe.
+func ScoutGuardHarnesses() []string {
+	var out []string
+	for _, p := range defaultProbes() {
+		if p.Capability == capabilities.ScoutGuard {
+			out = append(out, p.Harness)
+		}
+	}
+	return out
+}

@@ -372,7 +372,7 @@ func TestSnapshotIsOneConsistentRead(t *testing.T) {
 	if st := snap.States[JudgeNoTools]; st.Status != NotChecked || st.Result != nil {
 		t.Errorf("judge.no_tools = %+v", st)
 	}
-	if len(snap.States) != 12 {
+	if len(snap.States) != 13 {
 		t.Errorf("%d states, want every table capability", len(snap.States))
 	}
 	if err := s.RecordVersion("work", "claude", "2.1.301", t0); err != nil {
