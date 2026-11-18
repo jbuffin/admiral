@@ -176,3 +176,17 @@ test('an engineer who scrolls off the bottom before the reply arrives is not pul
   expect(scrolled).toHaveLength(0);
   expect(document.querySelector('.flash')).toBeNull();
 });
+
+const DIGEST_ID = 'digest:routine-1:rec-1';
+const DIGEST_TURN = '[Digest: Weekly digest]\nWrite the engineer a short summary.\n- Calm Otter moored';
+
+test("a fleet digest's typed turn sits behind the collapsed disclosure and its reply stays a top-level message", async () => {
+  chatWith([entry('d1', '2026-01-02T03:05:00Z', { role: 'user', text: DIGEST_TURN, thread: DIGEST_ID }), reply('d2', 'Two ships **moored**.', DIGEST_ID)]);
+  await shown(ready);
+  expect(document.querySelector('.msg.user')).toBeNull();
+  const toggle = screen.getByRole('button', { name: 'Report sent to AdmiralBot' });
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(screen.queryByText(/Write the engineer a short summary/, { exact: false })).toBeNull();
+  expect(document.querySelector('[data-thread]')).toBeNull();
+  expect(byId('d2')?.querySelector('strong')?.textContent).toBe('moored');
+});
