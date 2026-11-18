@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Locator, type Page, expect } from '@playwright/test';
@@ -101,9 +102,7 @@ export function seedFleets(a: Admiral, opts: { userHome?: string; live?: boolean
   if (live) {
     config.sources = { orders: a.ordersSource('orders', 'Orders', { fleet: 'zulu' }) };
     a.flags('orders').orders({ orders: ORDERS });
-    mkdirSync(join(a.home, 'proj'), { recursive: true });
-    spawnSync('git', ['init', '-q'], { cwd: join(a.home, 'proj') });
-    spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/api.git'], { cwd: join(a.home, 'proj') });
+    gitCheckout(join(a.home, 'proj'), 'https://github.com/acme/api.git');
     // Taken by a ship that names it, which the launch form lists beside the order's other fields.
     config.resources = { db: {} };
     // A folder where a clone would land, so cloning there clashes.
@@ -320,6 +319,26 @@ async function listShips(a: Admiral): Promise<ShipJSON[]> {
 }
 
 /** The cue makes the harness exit (0 sails off, 3 anchors); `cues` are cue lines the harness runs instead; without either it idles. */
+/** Makes dir a checkout with a commit on main and a fetchable origin: a local bare repo, which the GitHub URL (when given) is redirected to, since a no-skill launch fetches origin. */
+export function gitCheckout(dir: string, githubUrl?: string) {
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' },
+    });
+    expect(r.status, r.stderr).toBe(0);
+  };
+  const bare = mkdtempSync(join(tmpdir(), 'admiral-ui-origin-'));
+  mkdirSync(dir, { recursive: true });
+  git(bare, 'init', '-q', '--bare', '-b', 'main');
+  git(dir, 'init', '-q', '-b', 'main');
+  git(dir, 'remote', 'add', 'origin', githubUrl ?? bare);
+  if (githubUrl) git(dir, 'config', `url.${bare}.insteadOf`, githubUrl);
+  git(dir, 'commit', '-q', '--allow-empty', '-m', 'first');
+  git(dir, 'push', '-q', 'origin', 'main');
+}
+
 export async function launchShip(
   a: Admiral,
   req: { fleet: 'zulu' | 'alpha'; harness: Harness; source?: string; order?: string; anyway?: boolean; text?: string; exit?: 0 | 3; cue?: string; cues?: string[]; dir?: string; skill?: 'commodore' },

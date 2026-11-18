@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path';
 import { type Locator, type Page, expect } from '@playwright/test';
 import type { Admiral } from './fixtures';
-import { ORDERS, installSkill, seedFleets } from './shell';
+import { ORDERS, gitCheckout, installSkill, seedFleets } from './shell';
 
 export const issueUrl = (n: number) => `https://github.com/acme/widgets/issues/${n}`;
 
@@ -108,9 +108,7 @@ export function seedCampaignFleet(a: Admiral) {
   a.writeConfig(config);
 
   const widgets = join(a.home, 'widgets');
-  mkdirSync(widgets, { recursive: true });
-  spawnSync('git', ['init', '-q'], { cwd: widgets });
-  spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], { cwd: widgets });
+  gitCheckout(widgets, 'https://github.com/acme/widgets.git');
 
   const gh = fakeGhTrees(a);
   gh.campaign(
@@ -197,9 +195,7 @@ export function seedChatCampaignFleet(a: Admiral) {
   config.sources.github = { plugin: 'github', name: 'GitHub', fleet: 'harbor', settings: { views: [] } };
   a.writeConfig(config);
   const widgets = join(a.home, 'widgets');
-  mkdirSync(widgets, { recursive: true });
-  spawnSync('git', ['init', '-q'], { cwd: widgets });
-  spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], { cwd: widgets });
+  gitCheckout(widgets, 'https://github.com/acme/widgets.git');
   fakeGhTrees(a).campaign(issueNode(MAP, T.map, { kids: [issueNode(21, T.grill, { labels: ['wayfinder:grilling'] })] }));
 }
 
