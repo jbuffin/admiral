@@ -85,9 +85,11 @@ const json = (body: unknown, status = 200) =>
 const proj = "/home/jb/proj";
 
 let posts: Record<string, unknown>[];
+let follows: Record<string, unknown>[];
 let served: Campaign;
 beforeEach(() => {
   posts = [];
+  follows = [];
   served = campaign;
   campaignList.value = [];
   endedOpen.value = false;
@@ -103,6 +105,13 @@ beforeEach(() => {
       );
       if (route === "/campaigns/camp-1" && (init.method ?? "GET") === "GET")
         return json(served);
+      if (route === "/campaigns" && (init.method ?? "GET") === "GET")
+        return json({ campaigns: [served] });
+      if (route === "/campaigns" && init.method === "POST") {
+        follows.push(JSON.parse(String(init.body)));
+        served = { ...served, ended: false, ended_at: undefined, end_reason: undefined } as Campaign;
+        return json(served);
+      }
       if (route === "/fleets/zulu/campaigns/search")
         return json({ results: [] });
       if (route === "/launch-orders/dirs")
@@ -357,4 +366,41 @@ test("on a campaign's page Done shows its count with its rows hidden, and tappin
       .getByRole("heading", { name: /^Ready, with you/ })
       .querySelector("button"),
   ).toBeNull();
+});
+
+const unfollowed = () =>
+  ({ ...campaign, ended: true, ended_at: "2026-01-01T12:00:00Z", end_reason: "unfollowed" }) as Campaign;
+const treeClosed = () =>
+  ({ ...campaign, ended: true, ended_at: "2026-01-01T12:00:00Z", end_reason: "ended" }) as Campaign;
+
+test("an unfollowed campaign offers Follow again and no Unfollow, and following again returns it to the sidebar", async () => {
+  go("/app/ships", "?fleet=zulu");
+  served = unfollowed();
+  campaignList.value = [served];
+  render(
+    <>
+      <CampaignsNav />
+      <CampaignPage id="camp-1" title />
+    </>,
+  );
+  const again = await screen.findByRole("button", { name: "Follow again" });
+  expect(screen.queryByRole("button", { name: "Unfollow" })).toBeNull();
+  expect(screen.queryByRole("link", { name: /Widgets overhaul/ })).toBeNull();
+
+  fireEvent.click(again);
+
+  await waitFor(() => expect(follows).toHaveLength(1));
+  expect(follows[0]).toMatchObject({ reference: rootUrl });
+  expect(await screen.findByRole("link", { name: /Widgets overhaul/ })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Unfollow" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Follow again" })).toBeNull();
+});
+
+test("a campaign that ended because its tree closed shows Ended and no Follow again", async () => {
+  served = treeClosed();
+  render(<CampaignPage id="camp-1" title />);
+  await screen.findByRole("button", { name: "Widgets overhaul" });
+  await waitFor(() => expect(screen.getByText("Ended")).toBeTruthy());
+  expect(screen.queryByRole("button", { name: "Follow again" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Unfollow" })).toBeNull();
 });

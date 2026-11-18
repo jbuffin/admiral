@@ -447,14 +447,15 @@ type node struct {
 }
 
 type campaignJSON struct {
-	ID       string `json:"id"`
-	URL      string `json:"url"`
-	Fleet    string `json:"fleet"`
-	WorkRepo string `json:"work_repo"`
-	Ended    bool   `json:"ended"`
-	LastRead string `json:"last_read"`
-	ReadErr  string `json:"read_error"`
-	Progress struct {
+	ID        string `json:"id"`
+	URL       string `json:"url"`
+	Fleet     string `json:"fleet"`
+	WorkRepo  string `json:"work_repo"`
+	Ended     bool   `json:"ended"`
+	EndReason string `json:"end_reason"`
+	LastRead  string `json:"last_read"`
+	ReadErr   string `json:"read_error"`
+	Progress  struct {
 		Closed int `json:"closed"`
 		Total  int `json:"total"`
 	} `json:"progress"`

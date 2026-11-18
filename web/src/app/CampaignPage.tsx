@@ -327,7 +327,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   const [launching, setLaunching] = useState<{ node: CampaignNode; anyway: boolean; slice?: CampaignNode[] } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [refreshFailed, setRefreshFailed] = useState(false);
-  const [unfollowError, setUnfollowError] = useState('');
+  const [followChangeError, setFollowChangeError] = useState('');
   const [doneOpen, setDoneOpen] = useState(false);
   const fastSince = useRef<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -402,16 +402,19 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   const picked = [campaign.root, ...children].find((c) => c?.url === pickedUrl) ?? null;
   const toggle = (url: string) => setSelected(checked.includes(url) ? checked.filter((u) => u !== url) : [...checked, url]);
 
-  const unfollow = async () => {
-    setUnfollowError('');
-    const r = await call<Campaign>('POST', `/campaigns/${campaign.id}/unfollow`);
-    if (!r.ok) setUnfollowError(r.error);
+  const changeFollow = async (path: string, method: string, body?: unknown) => {
+    setFollowChangeError('');
+    const r = await call<Campaign>(method, path, body);
+    if (!r.ok) setFollowChangeError(r.error);
     else {
-      setCampaign({ ...campaign, ...r.data, root: r.data.root ?? campaign.root });
+      setCampaign({ ...r.data, root: r.data.root ?? campaign.root });
       noteCampaign(r.data);
       void refreshCampaigns();
     }
   };
+
+  const unfollow = () => changeFollow(`/campaigns/${campaign.id}/unfollow`, 'POST');
+  const followAgain = () => changeFollow('/campaigns', 'POST', { reference: campaign.url });
 
   const rootHref = safeHref(campaign.url);
   const ref = `${campaign.repo.replace(/^https?:\/\//, '')}#${campaign.number}`;
@@ -453,9 +456,11 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
         ) : null}
         {campaign.ended ? <span class="pill ended">Ended</span> : null}
         <WorkRepo campaign={campaign} onSaved={(c) => setCampaign({ ...campaign, ...c, root: c.root ?? campaign.root })} />
-        {campaign.ended ? null : (
+        {!campaign.ended ? (
           <Button variant="quiet" label="Unfollow" pending={['campaign', campaign.id, 'unfollow']} onClick={unfollow} />
-        )}
+        ) : campaign.end_reason === 'unfollowed' ? (
+          <Button variant="quiet" label="Follow again" pending={['campaign', campaign.id, 'follow']} onClick={followAgain} />
+        ) : null}
       </div>
       <p class="kind">{kind}</p>
       {title ? <h1>{heading}</h1> : <h2 class="camp-title">{heading}</h2>}
@@ -468,9 +473,9 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
       <p class="meta">
         {campaign.reading ? 'Reading the tree…' : campaign.last_read ? `Last read ${when(campaign.last_read)}` : 'Not read yet'}
       </p>
-      {unfollowError ? (
+      {followChangeError ? (
         <p class="alert" role="alert">
-          {unfollowError}
+          {followChangeError}
         </p>
       ) : null}
       {refreshFailed ? <p class="note">Couldn't refresh; showing the last read.</p> : null}
