@@ -1295,4 +1295,8 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .orders-split > .module-page { flex: 1; min-width: 0; min-height: 0; }
 .module-page .orow-open { flex-wrap: wrap; }
 .module-page .orow-main { flex: 1 1 12em; }
+/* A phone row has no room for its actions beside the title: they wrap onto their own right-aligned line. */
+.module-page .orow-phone { flex-wrap: wrap; row-gap: 0; }
+.module-page .orow-phone .orow-open { flex: 1 1 12em; }
+.module-page .orow-phone .mactions { flex: 0 1 auto; max-width: 100%; justify-content: flex-end; margin: 0 14px 8px auto; }
 .mchips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 7px; }
