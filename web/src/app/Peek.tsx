@@ -10,6 +10,7 @@ import type { Entry } from './inbox';
 import { rowShip, rowShipTitle, rowTitle, rowVerb, rowVia, titleLines } from './inboxRow';
 import { discardFold, lockedBy, submitFold } from './itemActions';
 import { Button } from './Button';
+import { AllowRulesBody } from './PeekAllowRules';
 import { CrewMemberBody, CrewNotesBody, MissionBody, isCrewKind, type MemberStep, readCrew, useCrewNotes } from './PeekCrew';
 import { crewRemoveFold, readMission } from './crewItems';
 import { blankReview, CampaignDraftBody, EventProposalBody, FindingsBody, RoutineProposalBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
@@ -165,6 +166,8 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
         <CampaignDraftBody entry={entry} acting={acting} fold={fold} />
       ) : kind === 'event_proposal' ? (
         <EventProposalBody entry={entry} acting={acting} />
+      ) : kind === 'allow_rules' ? (
+        <AllowRulesBody entry={entry} acting={acting} fleet={entry.fleet?.name || entry.fleet?.key || ''} />
       ) : kind === 'crew_notes' ? (
         <CrewNotesBody entry={entry} acting={acting} state={crewNotes} decided={() => setRemoving(false)} />
       ) : kind === 'crew_member' ? (
@@ -181,7 +184,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
           fold={kind === 'crew_member' ? (data: { file_removed?: boolean }) => crewRemoveFold(data, crew.member) : undefined}
         />
       ) : null}
-      {kind === 'review' || kind === 'findings' || kind === 'routine_proposal' || kind === 'event_proposal' || kind === 'campaign_draft' || removing || (isCrewKind(kind) && !noteShown) ? <Failure message={acting.error} /> : null}
+      {kind === 'review' || kind === 'findings' || kind === 'routine_proposal' || kind === 'event_proposal' || kind === 'campaign_draft' || kind === 'allow_rules' || removing || (isCrewKind(kind) && !noteShown) ? <Failure message={acting.error} /> : null}
     </div>
   );
   return (

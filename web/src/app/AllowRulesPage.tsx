@@ -4,7 +4,7 @@ import { Flag } from './Flag';
 import { harnessName } from './harnessName';
 import { getAllowRules, removeAllowRule, unskipAllowRule, type AllowRule, type AllowRules, type Fleet, type Result } from './api';
 
-const ruleText = (r: AllowRule) => r.rule || (r.pattern ?? []).join(' ');
+export const ruleText = (r: AllowRule) => r.rule || (r.pattern ?? []).join(' ');
 const ruleKey = (r: AllowRule) => JSON.stringify([r.harness, r.repo ?? '', r.rule ?? '', r.pattern ?? []]);
 
 function addedOn(ts?: string): string {

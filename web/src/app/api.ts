@@ -545,6 +545,14 @@ export interface AllowRule {
   pattern?: string[];
   added?: string;
 }
+/** One rule of an allow rule proposal in the Inbox. */
+export interface AllowRuleCard extends AllowRule {
+  id: string;
+  count: number;
+  prompts?: { ship?: string; id?: string }[];
+  reason?: string;
+  every_repo?: boolean;
+}
 export interface AllowRules {
   rules: AllowRule[];
   skipped: AllowRule[];

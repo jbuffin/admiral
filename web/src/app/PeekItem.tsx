@@ -404,6 +404,8 @@ export function FindingsBody({ entry, acting, state }: { entry: Entry; acting: A
 const removeCopy = (kind: string | undefined, review: boolean) =>
   kind === 'drafting_ended'
     ? 'Remove this item from the inbox? The ship is already gone.'
+    : kind === 'allow_rules'
+    ? 'Remove this proposal? Nothing is added or skipped, so its rules can be proposed again.'
     : kind === 'crew_notes'
     ? 'Remove this item? It counts as Drop: its notes are discarded.'
     : kind === 'mission'
@@ -438,7 +440,7 @@ export function RemoveRow({ entry, confirm, setConfirm, acting, fold = () => REM
       <Actions class="inbox-send-row">
         <Button label="Remove" variant="danger" pending={itemKey(entry, 'remove')} disabled={acting.locked} onClick={() => acting.run('remove', undefined, fold)} />
         <Button
-          label={kind === 'crew_notes' || kind === 'crew_member' || kind === 'mission' ? 'Cancel' : 'Keep it'}
+          label={kind === 'crew_notes' || kind === 'crew_member' || kind === 'mission' || kind === 'allow_rules' ? 'Cancel' : 'Keep it'}
           disabled={acting.locked}
           onClick={() => {
             acting.clear();
