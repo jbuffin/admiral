@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Ship } from './api';
-import { blockerLine, campaignMeta, canJoinSlice, keepSelectable, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, pasteHint, overrideBody, labelsDisagree, safeHref, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
+import { blockerLine, campaignMeta, canJoinSlice, keepSelectable, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, overrideBody, labelsDisagree, safeHref, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
 
 const url = (n: number) => `https://github.com/acme/widgets/issues/${n}`;
 const child = (n: number, status: CampaignNode['status'], mode: CampaignNode['mode'] = 'with-you', extra: Partial<CampaignNode> = {}): CampaignNode => ({
@@ -88,21 +88,6 @@ describe('blockerLine', () => {
   it('reads the stand-in past the cap as a note, never a link', () => {
     const line = blockerLine({ url: url(28), title: 'More Blocked by lines than Admiral reads; check the issue', capped: true });
     expect(line).toEqual({ kind: 'note', text: 'More Blocked by lines than Admiral reads; check the issue' });
-  });
-});
-
-describe('pasteHint', () => {
-  it('stays quiet for an issue URL and for owner/repo#n, whitespace around them aside', () => {
-    expect(pasteHint(url(20))).toBeNull();
-    expect(pasteHint('acme/widgets#20')).toBeNull();
-    expect(pasteHint(`  ${url(20)}\n`)).toBeNull();
-    expect(pasteHint('')).toBeNull();
-  });
-  it('says a trailing slash is not accepted', () => {
-    expect(pasteHint(`${url(20)}/`)).toMatch(/trailing slash/i);
-  });
-  it('says a comment link is not accepted', () => {
-    expect(pasteHint(`${url(20)}#issuecomment-123456`)).toMatch(/comment/i);
   });
 });
 

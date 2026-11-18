@@ -31,8 +31,8 @@ export function openCampaign(c: Campaign) {
 }
 
 /** Follows an issue and opens its page, in the campaign's own fleet; answers the refusal, or null. */
-export async function followReference(reference: string): Promise<string | null> {
-  const r = await call<Campaign>('POST', '/campaigns', { reference });
+export async function followReference(reference: string, fleet?: string): Promise<string | null> {
+  const r = await call<Campaign>('POST', '/campaigns', fleet ? { reference, fleet } : { reference });
   if (!r.ok) return r.error;
   openCampaign(r.data);
   return null;
