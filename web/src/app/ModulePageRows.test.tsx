@@ -217,7 +217,7 @@ test('module actions on a row and on a step are drawn disabled and a press makes
   expect(calls.some((c) => c.method !== 'GET')).toBe(false);
 });
 
-test('a row whose plugin is gone, a 404, clears the selection and says so', async () => {
+test('a row no longer on the page, a 404, clears the selection and says so', async () => {
   server({ r1: { status: 404, body: { error: 'The page has no such row' } } });
   select('r1');
   sources.value = [source(1)];
