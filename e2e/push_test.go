@@ -225,6 +225,8 @@ func TestPushIsHeldBackWhileAWindowIsWatching(t *testing.T) {
 	holdThat(t, "a push went out while a window was watching", func() bool { return r.svc.Count() == 0 })
 
 	// Control: once the window stops watching, the next ship pushes, so the hold above was not a sender that was never wired.
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if err := ws.Write(ctx, websocket.MessageText, []byte(`{"type":"presence","visible":false,"idle_ms":0}`)); err != nil {
 		t.Fatal(err)
 	}
