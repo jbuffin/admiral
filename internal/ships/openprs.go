@@ -212,7 +212,7 @@ func (s *Service) serveMoor(w http.ResponseWriter, r *http.Request, sess session
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	carried := s.carriedOpen(sess)
-	prs, answered := s.countedFrom(ctx, sess, withCarried(carried, s.report(sess.Name).PRs))
+	prs, answered := s.countedFrom(ctx, sess, withCarried(s.carriedAll(sess), s.report(sess.Name).PRs))
 	if !answered && s.GitHub != nil {
 		prs = carried
 	}
