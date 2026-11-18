@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PRActor, PRDetail } from './api';
-import { canReRequest, checksLine, descriptionSource, firstLine, foldedLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary } from './prSections';
+import { canReRequest, checksLine, descriptionSource, foldedLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary } from './prSections';
 
 const who = (login: string, bot = false): PRActor => ({ login, bot });
 const review = (login: string, state: string, bot = false) => ({ author: who(login, bot), state });
@@ -241,22 +241,6 @@ describe('resolvedLabel', () => {
     expect(resolvedLabel(1)).toBe('1 resolved thread');
     expect(resolvedLabel(2)).toBe('2 resolved threads');
     expect(resolvedLabel(12)).toBe('12 resolved threads');
-  });
-});
-
-describe('firstLine', () => {
-  it('is the text up to the first line break', () => {
-    expect(firstLine('Coverage 91%\nlines: 120\nbranches: 40')).toBe('Coverage 91%');
-    expect(firstLine('Windows\r\nline')).toBe('Windows');
-  });
-
-  it('skips leading blank lines and leaves one line whole', () => {
-    expect(firstLine('\n\n  \nreal start\nmore')).toBe('real start');
-    expect(firstLine('only one line')).toBe('only one line');
-  });
-
-  it('is empty for empty text', () => {
-    expect(firstLine('')).toBe('');
   });
 });
 

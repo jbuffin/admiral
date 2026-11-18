@@ -119,8 +119,13 @@ export function resolvedLabel(n: number): string {
   return `${n} resolved thread${n === 1 ? '' : 's'}`;
 }
 
-export function firstLine(text: string): string {
-  return text.split(/\r?\n/).map((l) => l.trim()).find((l) => l) ?? '';
+/** The one line a folded bot item shows: the first non-blank, non-fence line, its block marker dropped, still Markdown source. */
+export function foldedLine(body: string): string {
+  const line = descriptionSource(body)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l && !/^(```|~~~)/.test(l));
+  return (line ?? '').replace(/^(?:#{1,6}\s+|>\s*|(?:[-*+]|\d+\.)\s+)?(?:\[[ xX]\]\s+)?/, '');
 }
 
 export function relativeTime(iso: string, nowMs: number): string {

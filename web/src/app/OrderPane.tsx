@@ -2,6 +2,8 @@ import { signal } from '@preact/signals';
 import { useState } from 'preact/hooks';
 import type { Source } from './api';
 import { Button } from './Button';
+import { renderRestrictedInline } from './markdown';
+import { descriptionSource } from './prSections';
 import { campaignList, followReference } from './campaignsLink';
 import { mooredShipOn, reviews, shipsOnOrder } from './moored';
 import { campaignAction, openedLine, topLine, whyItsHere } from './orderDetail';
@@ -141,7 +143,7 @@ export function OrderPane({ row, group, viewer, sources, now, heading, onLaunch,
           ))}
         </ol>
       ) : null}
-      {o.excerpt ? <p class="odetail-excerpt">{o.excerpt}</p> : null}
+      {o.excerpt ? <p class="odetail-excerpt" dangerouslySetInnerHTML={{ __html: renderRestrictedInline(descriptionSource(o.excerpt)) }} /> : null}
       {stack && onOrder.length > 0 ? <h3 class="odetail-sub">Ships on this stack</h3> : null}
       {onOrder.length > 0 ? (
         <ul class="odetail-ships" aria-label={stack ? 'Ships on this stack' : 'Ships on this order'}>

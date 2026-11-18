@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
 import { reRequestReview, type PRActor, type PRDetail } from './api';
-import { renderMarkdown } from './markdown';
-import { canReRequest, checksLine, descriptionSource, firstLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary, type TimelineItem } from './prSections';
+import { renderMarkdown, renderRestrictedInline } from './markdown';
+import { canReRequest, checksLine, descriptionSource, foldedLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary, type TimelineItem } from './prSections';
 
 const initials = (login: string) => login.replace(/[^a-z]/gi, '').slice(0, 2).toUpperCase();
 const BotTag = ({ actor }: { actor: PRActor }) => (actor.bot ? <span class="bot-tag">bot</span> : null);
@@ -135,6 +135,16 @@ export function Reviewers({ detail, session, reread }: { detail: PRDetail; sessi
 
 const itemId = (i: TimelineItem) => i.url;
 
+function Body({ body, folded }: { body: string; folded?: boolean }) {
+  const source = descriptionSource(body);
+  if (!source.trim()) return null;
+  return folded ? (
+    <p class="item-body" dangerouslySetInnerHTML={{ __html: renderRestrictedInline(foldedLine(body)) }} />
+  ) : (
+    <div class="item-body md" dangerouslySetInnerHTML={{ __html: renderMarkdown(source) }} />
+  );
+}
+
 function Item({ item, now, folded, onToggle }: { item: TimelineItem; now: number; folded: boolean; onToggle: () => void }) {
   const cls = `item${item.author.bot ? ' bot' : ''}${folded ? ' folded' : ''}${item.resolved ? ' resolved' : ''}`;
   return (
@@ -146,8 +156,8 @@ function Item({ item, now, folded, onToggle }: { item: TimelineItem; now: number
         {item.resolved ? <span class="pr-chip">Resolved</span> : null}
         <span class="when">{relativeTime(item.at, now)}</span>
       </div>
-      {item.body ? <p class="item-body">{folded ? firstLine(item.body) : item.body}</p> : null}
-      {item.author.bot ? (
+      <Body body={item.body} folded={folded} />
+      {item.author.bot && descriptionSource(item.body).trim() ? (
         <Button label={folded ? 'Show all' : 'Show less'} variant="link" expanded={!folded} onClick={onToggle} />
       ) : null}
       {item.replies.map((r, i) => (
@@ -157,7 +167,7 @@ function Item({ item, now, folded, onToggle }: { item: TimelineItem; now: number
             <BotTag actor={r.author} />
             <span class="when">{relativeTime(r.at, now)}</span>
           </div>
-          <p class="item-body">{r.body}</p>
+          <Body body={r.body} />
         </div>
       ))}
     </div>
