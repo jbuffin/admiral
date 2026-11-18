@@ -73,3 +73,56 @@ test('a muted engineer still gets the toast, with no chime, and a message that i
   send({ type: 'ships', ships: [] });
   expect(screen.getAllByRole('button', { name: /Quiet|Dismiss/ })).toHaveLength(2);
 });
+
+const fromAnotherPage = (value: string | null) =>
+  act(() => {
+    if (value === null) localStorage.clear();
+    else localStorage.setItem('admiral.muted', value);
+    window.dispatchEvent(new StorageEvent('storage', { key: value === null ? null : 'admiral.muted', newValue: value, storageArea: localStorage }));
+  });
+
+test('another page muting the sound silences the next alert, and unmuting brings the chime back', async () => {
+  localStorage.clear();
+  render(<ToastRegion />);
+  fromAnotherPage('1');
+  expect(muted.value).toBe(true);
+  send(alert({ tag: `m${n}` }));
+  expect(h.chime).not.toHaveBeenCalled();
+  fromAnotherPage('0');
+  expect(muted.value).toBe(false);
+  send(alert({ tag: `u${n}`, session: 's1' }));
+  expect(h.chime).toHaveBeenCalledTimes(1);
+  localStorage.clear();
+});
+
+test('another page clearing storage returns the sound to on', () => {
+  localStorage.setItem('admiral.muted', '1');
+  muted.value = true;
+  render(<ToastRegion />);
+  fromAnotherPage(null);
+  expect(muted.value).toBe(false);
+});
+
+test('a change to another key, or in session storage, leaves the sound alone', () => {
+  render(<ToastRegion />);
+  act(() => {
+    localStorage.setItem('admiral.muted', '1');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'admiral.other', newValue: '1', storageArea: localStorage }));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'admiral.muted', newValue: '1', storageArea: sessionStorage }));
+  });
+  expect(muted.value).toBe(false);
+  localStorage.clear();
+});
+
+test('following another page writes nothing back', () => {
+  render(<ToastRegion />);
+  localStorage.setItem('admiral.muted', '1');
+  const set = vi.spyOn(Storage.prototype, 'setItem');
+  act(() => {
+    window.dispatchEvent(new StorageEvent('storage', { key: 'admiral.muted', newValue: '1', storageArea: localStorage }));
+  });
+  expect(muted.value).toBe(true);
+  expect(set).not.toHaveBeenCalled();
+  set.mockRestore();
+  localStorage.clear();
+});

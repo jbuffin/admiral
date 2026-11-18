@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { muted, setMuted } from '../chime';
 import { fetchDevices, type Device } from './api';
 import { readPushDevice, turnOffPush, turnOnPush, type PushDeviceState } from './pushDevice';
 import { pushSwitchState, type PushSwitchKind } from './pushSwitch';
@@ -112,6 +113,20 @@ export function NotificationsPage() {
           ))}
         </ul>
       ) : null}
+      <h2 class="h2" id="sound-title">
+        This browser
+      </h2>
+      <div class="set box" role="group" aria-labelledby="sound-title">
+        <div class="t">
+          <span id="sound-label" class="label">
+            Attention sounds
+          </span>
+          <span id="sound-hint">A chime in this browser when something needs you.</span>
+        </div>
+        <button type="button" class="switch" role="switch" aria-checked={!muted.value} aria-labelledby="sound-label" aria-describedby="sound-hint" onClick={() => setMuted(!muted.value)}>
+          <span class="track" aria-hidden="true" />
+        </button>
+      </div>
     </>
   );
 }
