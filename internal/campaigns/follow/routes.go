@@ -13,6 +13,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/campaigns"
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/repofinder"
 )
@@ -557,6 +558,8 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 		Title  string   `json:"title"`
 		Body   string   `json:"body"`
 		Issues []string `json:"issues"`
+		Host   string   `json:"host"`
+		Fleet  string   `json:"fleet"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -566,8 +569,8 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 	case title == "":
 		writeError(w, http.StatusBadRequest, "title: write a title for the campaign")
 		return
-	case len(body.Issues) == 0 || len(body.Issues) > maxCreateIssues:
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("issues: pick 1 to %d", maxCreateIssues))
+	case len(body.Issues) > maxCreateIssues:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("issues: at most %d", maxCreateIssues))
 		return
 	}
 	owner, repoName, ok := strings.Cut(strings.TrimSpace(body.Repo), "/")
@@ -596,13 +599,28 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 		seen[key] = true
 		kids = append(kids, child{ref, url})
 	}
-	host := hostOf(kids[0].ref)
+	host := strings.ToLower(strings.TrimSpace(body.Host))
+	switch {
+	case len(kids) > 0:
+		if issuesHost := hostOf(kids[0].ref); host == "" {
+			host = issuesHost
+		} else if host != issuesHost {
+			writeError(w, http.StatusUnprocessableEntity, "issues: every issue must be on the same GitHub host")
+			return
+		}
+	case host == "":
+		host = github.DefaultHost
+	}
 	fleet := ""
 	if s.Route != nil {
 		fleet = s.Route(host, owner+"/"+repoName)
 	}
 	if fleet == "" {
 		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("No fleet owns %s/%s, so Admiral can't file the campaign there", owner, repoName))
+		return
+	}
+	if want := strings.TrimSpace(body.Fleet); want != "" && want != fleet {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s/%s belongs to fleet %s, not %s", owner, repoName, fleet, want))
 		return
 	}
 	for _, k := range kids {

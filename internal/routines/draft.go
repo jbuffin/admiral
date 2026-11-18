@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	maxProseRunes  = 4000
-	draftBudgetUSD = 0.30
-	draftTimeout   = 2 * time.Minute
+	maxProseRunes        = 4000
+	maxCampaignTextRunes = 4000
+	draftBudgetUSD       = 0.30
+	draftTimeout         = 2 * time.Minute
 )
 
 //go:embed standingorders_writer.md
@@ -33,10 +34,18 @@ var routineWriter string
 //go:embed campaignwriter.md
 var campaignWriter string
 
+//go:embed campaigntextwriter.md
+var campaignTextWriter string
+
 const maxCampaignIssues = 50
 
 const campaignSchema = `{"type":"object","properties":{` +
 	`"title":{"type":"string","maxLength":200},` +
+	`"body":{"type":"string","maxLength":4000}` +
+	`},"required":["title","body"],"additionalProperties":false}`
+
+const campaignTextSchema = `{"type":"object","properties":{` +
+	`"title":{"type":"string","maxLength":100},` +
 	`"body":{"type":"string","maxLength":4000}` +
 	`},"required":["title","body"],"additionalProperties":false}`
 
@@ -399,19 +408,33 @@ func (s *Service) serveCampaignDraft(w http.ResponseWriter, r *http.Request) {
 			URL   string `json:"url"`
 			Title string `json:"title"`
 		} `json:"issues"`
+		Text string `json:"text"`
 	}
 	if !decodeBody(w, r, &req) {
 		return
 	}
-	if len(req.Issues) == 0 || len(req.Issues) > maxCampaignIssues {
+	hasText := strings.TrimSpace(req.Text) != ""
+	var prompt, schema string
+	switch {
+	case hasText && len(req.Issues) > 0, !hasText && len(req.Issues) == 0:
+		writeError(w, http.StatusBadRequest, "send either issues or text, not both and not neither")
+		return
+	case hasText && utf8.RuneCountInString(req.Text) > maxCampaignTextRunes:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("text: at most %d characters", maxCampaignTextRunes))
+		return
+	case hasText:
+		prompt, schema = fencedPrompt(campaignTextWriter, "The engineer's text:", req.Text), campaignTextSchema
+	case len(req.Issues) > maxCampaignIssues:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("issues: pick 1 to %d", maxCampaignIssues))
 		return
+	default:
+		var list strings.Builder
+		for _, is := range req.Issues {
+			fmt.Fprintf(&list, "%s %s\n", is.URL, collapse(is.Title))
+		}
+		prompt, schema = fencedPrompt(campaignWriter, "The issues, one per line as url then title:", strings.TrimSuffix(list.String(), "\n")), campaignSchema
 	}
-	var list strings.Builder
-	for _, is := range req.Issues {
-		fmt.Fprintf(&list, "%s %s\n", is.URL, collapse(is.Title))
-	}
-	fields, ok := s.judgeCall(w, r, f, fencedPrompt(campaignWriter, "The issues, one per line as url then title:", strings.TrimSuffix(list.String(), "\n")), campaignSchema)
+	fields, ok := s.judgeCall(w, r, f, prompt, schema)
 	if !ok {
 		return
 	}
