@@ -222,6 +222,10 @@ _Avoid_: fast ship, light ship
 A ship that runs the engineer's chosen skill on their text, with them, to file the parent issue of a new campaign, then names that issue for Admiral to follow. It runs With you, even when AdmiralBot launches it. It is an ordinary ship with a skill, not a scout or a quick ship.
 _Avoid_: planning ship, campaign ship
 
+**Drafting skill**:
+The skill a fleet remembers for drafting a new campaign: the last one the engineer chose when creating a campaign from text, or none. With one, a new campaign is drafted by a drafting ship running it; with none, the filing drafter drafts it for the engineer to confirm. AdmiralBot follows it unless the engineer names another way, and never changes it.
+_Avoid_: default skill, campaign skill
+
 **Launch text**:
 What a ship is told to do when it launches. When AdmiralBot launches it, this is AdmiralBot's restatement of the engineer's request (the goal, the repo, what done looks like), with exact strings kept, not the engineer's words as typed.
 _Avoid_: brief (that is AdmiralBot's own page), prompt, instructions
