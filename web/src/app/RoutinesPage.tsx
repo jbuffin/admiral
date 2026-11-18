@@ -3,7 +3,7 @@ import { call, type DirsAnswer, type Fleet, type FleetCapabilities } from './api
 import { Actions, Button } from './Button';
 import { capabilities, capabilitiesFailed, loadCapabilities } from './capabilities';
 import { cronSentence } from './cron';
-import { DescribeRoutine } from './FilingForms';
+import { DescribeRoutine, openedDraft, routineDraftPath } from './FilingForms';
 import { fleetSearch } from './fleets';
 import { holdFire, setHoldFire, stopResult, stopWorkerShips } from './holdFireLink';
 import { JudgeLine } from './HarnessCapabilities';
@@ -12,7 +12,7 @@ import { CheckoutSelect, DockPicker, ModelEffortPair, ResourcesPicker, SkillSele
 import type { SkillsAnswer } from './launchForm';
 import { normalizeLimits } from './limitsForm';
 import { RoutineTabs } from './RoutineTabs';
-import { go, peekPath, routineNewPath, routinePath, shipPath } from './router';
+import { go, loc, peekPath, routineNewPath, routinePath, shipPath } from './router';
 import {
   autopilotDocks,
   blankForm,
@@ -446,6 +446,8 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const [tripped, setTripped] = useState(false);
   const lastSeen = useRef<string | null>(null);
   const search = fleetSearch.value;
+  const linkId = creating ? new URLSearchParams(loc.value.search).get('draft') : null;
+  const [linked, setLinked] = useState<{ id: string; gone: boolean; error: string } | null>(null);
 
   const load = async () => {
     const r = await call<{ routines: Routine[] | null; spend?: RoutineSpend }>('GET', api(fleet.key));
@@ -475,6 +477,23 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   useEffect(() => {
     if (!creating) setDrafted(null);
   }, [creating]);
+  // A kept draft is asked for once per link visit; an answer that lands after the link is gone is dropped.
+  useEffect(() => {
+    if (!linkId) return;
+    let live = true;
+    void (async () => {
+      const r = await call<{ draft: Omit<Routine, 'id'>; problems: { field: string; message: string }[] | null }>('GET', routineDraftPath(fleet.key, linkId));
+      if (!live) return;
+      if (r.ok) {
+        const [form, problem] = openedDraft(r.data);
+        setDrafted((d) => ({ form, problem, n: (d?.n ?? 0) + 1 }));
+      }
+      setLinked({ id: linkId, gone: !r.ok && r.status === 404, error: r.ok || r.status === 404 ? '' : r.error });
+    })();
+    return () => {
+      live = false;
+    };
+  }, [fleet.key, linkId]);
 
   // Recent runs follow the open routine; a breaker record reloads it so an open form can't undo the trip.
   useEffect(() => {
@@ -652,7 +671,19 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                 <Button label="Try again" onClick={() => void loadCaps()} />
               </p>
             ) : null}
-            {creating ? (
+            {creating && linkId && linked?.id === linkId && linked.gone ? (
+              <p class="note" role="status">
+                That draft has expired or can't be found. Describe the routine again or fill in the form.
+              </p>
+            ) : null}
+            {creating && linkId && linked?.id === linkId && linked.error ? (
+              <p class="alert" role="alert">
+                {linked.error}
+              </p>
+            ) : null}
+            {creating && linkId && linked?.id !== linkId ? (
+              <p class="line">Loading…</p>
+            ) : creating ? (
               <RoutineEditor
                 key={`new:${drafted ? `described:${drafted.n}` : 'blank'}`}
                 fleet={fleet}

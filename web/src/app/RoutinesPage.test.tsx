@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Capability, Fleet, FleetCapabilities } from './api';
 import { capabilities, capabilitiesFailed, capabilitiesLoaded } from './capabilities';
@@ -226,7 +226,7 @@ const link = (search: string) => {
   loc.value = { path: '/app/routines/new', search };
 };
 const linked = (over: Partial<Routine> = {}, problems: { field: string; message: string }[] | null = null) => () =>
-  json({ id: 'd/1', draft: stored({ name: 'Linked sweep', when: '0 4 * * 1', before_acting: 'propose', ...over }), problems, expires_at: '2026-11-17T12:00:00Z' });
+  json({ id: 'd/1', draft: stored({ name: 'Linked sweep', when: '0 4 * * 1', before_acting: 'ask_first', ...over }), problems, expires_at: '2026-11-17T12:00:00Z' });
 
 test('a draft link fills the editor from the kept draft with its first problem on its field, and Save stores it', async () => {
   draftReply = linked({}, [{ field: 'when', message: 'needs five parts' }]);
@@ -235,7 +235,7 @@ test('a draft link fills the editor from the kept draft with its first problem o
   const form = within(await screen.findByRole('form', { name: 'Routine' }));
   expect((form.getByLabelText('Name') as HTMLInputElement).value).toBe('Linked sweep');
   expect((form.getByLabelText('When') as HTMLInputElement).value).toBe('0 4 * * 1');
-  expect((form.getByRole('radio', { name: 'Propose' }) as HTMLInputElement).checked).toBe(true);
+  expect((form.getByRole('radio', { name: 'Ask first' }) as HTMLInputElement).checked).toBe(true);
   expect(form.getByRole('alert').textContent).toContain('When needs five parts');
   expect(screen.queryByText(GONE)).toBeNull();
   expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET /api/v1/fleets/zulu/routine-drafts/d%2F1']);
@@ -302,8 +302,9 @@ test('describing a routine while on a draft link shows the described draft, and 
   view.rerender(<RoutinesPage fleet={fleet} id={null} creating title phone={false} />);
   const form = within(await screen.findByRole('form', { name: 'Routine' }));
   expect((form.getByLabelText('Name') as HTMLInputElement).value).toBe('Nightly dependency check');
-  answer(linked()());
-  await new Promise((r) => setTimeout(r, 20));
+  await act(async () => {
+    answer(linked()());
+  });
   expect((within(editor()).getByLabelText('Name') as HTMLInputElement).value).toBe('Nightly dependency check');
   expect(screen.queryByText(GONE)).toBeNull();
 });
