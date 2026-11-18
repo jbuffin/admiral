@@ -1,6 +1,6 @@
 # 42. A ship's result comes back as a card and a report turn
 
-Status: accepted, amended by [ADR 0043](0043-an-idea-in-the-chat-becomes-a-pr-with-no-questions-on-the-way.md) (Ready to merge and the end of a ship AdmiralBot launched each post a card) and [ADR 0045](0045-a-fleet-digest-is-a-routine-action-that-cannot-act.md) (the report-turn queue also carries fleet digest turns)
+Status: accepted, amended by [ADR 0043](0043-an-idea-in-the-chat-becomes-a-pr-with-no-questions-on-the-way.md) (Ready to merge and the end of a ship AdmiralBot launched each post a card) and [ADR 0045](0045-a-fleet-digest-is-a-routine-action-that-cannot-act.md) (the report-turn queue also carries fleet digest turns) and by a later change to its Report-turns bullet (an error exit, anchored, reports; only needing the engineer queues nothing)
 
 ## Context
 
@@ -13,7 +13,7 @@ Today nothing wakes AdmiralBot when a ship ends. [ADR 0024](0024-admiralbot-memo
 **When a ship AdmiralBot launched from a chat turn finishes, the server posts a card at once and queues a report turn. AdmiralBot answers the report turn with a short summary and links. A ship can leave findings, a file Admiral keeps after sail-off.**
 
 - **The card.** When any ship in the fleet sails off, ends with an error, is lost or first moors with an open PR, the server posts a card in the chat: the ship, its kind, its result and links to its findings, PRs and conversation. It needs no model turn, and it never pushes.
-- **Report turns.** A ship launched via AdmiralBot on an engineer turn also queues a **report turn** for those same events. A ship launched from a commitment, a campaign or by hand gets the card only, so "work on #n" does not post a message per child. Anchoring or needing the engineer (a question or a permission prompt) queues nothing: it goes to the Inbox as before, and AdmiralBot never answers it.
+- **Report turns.** A ship launched via AdmiralBot on an engineer turn also queues a **report turn** for those same events. A ship launched from a commitment, a campaign or by hand gets the card only, so "work on #n" does not post a message per child. Needing the engineer (a question or a permission prompt) queues no report turn: it goes to the Inbox as before, and AdmiralBot never answers it. An error exit (anchored) does queue a report turn.
 - **Scouts launched together report together.** Scouts launched from one chat message form a group, and the group's report turn comes when the last of them ends. Each scout's card still posts as it ends. Quick and Commodore ships always report on their own, so a scout's answer never waits on a build.
 - **Delivery.** Report turns wait in a server-side queue per fleet and are typed into the chat when it is idle (no turn running, no chat question open), like a routine's `[Routine: …]` turn, so they work on every harness. They are never merged into the engineer's turn. A reset or New chat waits until the queue is empty, so no report is lost to a reset.
 - **A report turn is not the engineer's turn.** The server's turn gate ([ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md)) refuses every AdmiralBot write during it. AdmiralBot reads and talks; it offers follow-up work ("Want me to make that a PR?") and acts only on the engineer's answer.

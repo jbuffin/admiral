@@ -54,6 +54,9 @@ func (s *Service) settle(ctx context.Context, sess sessionhost.Session) {
 	}()
 }
 
+// ReportResult is the result the ship's Admiral report gives, "" when the report is gone or has none.
+func (s *Service) ReportResult(session string) string { return s.report(session).Result }
+
 func (s *Service) report(session string) moor.Report {
 	return moor.ParseReport(s.readReport(session))
 }
@@ -241,7 +244,7 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 		}
 		sh := Ship{Session: r.Session, Name: r.Name, Fleet: r.Fleet, Harness: r.Harness, Dir: r.Checkout,
 			Repo: filepath.Base(r.Checkout), Status: StatusMoored,
-			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, Link: r.Link, Titled: true, Via: r.Via, Chat: r.Chat, Routine: r.Routine, Commitment: r.Commitment, Launched: r.Launched, FirstLaunched: cmpFirst(r.FirstLaunched, r.Launched), PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, Waiting: polls[i].waiting, NoResume: !moor.ValidResume(r.Resume),
+			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, Link: r.Link, Titled: true, Via: r.Via, Chat: r.Chat, Routine: r.Routine, Commitment: r.Commitment, Round: r.Round, Launched: r.Launched, FirstLaunched: cmpFirst(r.FirstLaunched, r.Launched), PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, Waiting: polls[i].waiting, NoResume: !moor.ValidResume(r.Resume),
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}}
 		sh.Fix = polls[i].fix
 		sh.StackReady, sh.ReadyUpTo = moor.StackReady(prs[i])

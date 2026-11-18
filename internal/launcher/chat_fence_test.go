@@ -577,3 +577,20 @@ func TestEveryChatPromptLaunchesTheWayfinderWithMe(t *testing.T) {
 		}
 	}
 }
+
+func TestTheChatPromptTellsAdmiralBotHowToReportAShipOnAReportTurn(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		i := strings.Index(prompt, "[Report:")
+		if i < 0 {
+			t.Errorf("%s: the chat prompt does not mention a [Report: …] turn", harness)
+			continue
+		}
+		rule := strings.ToLower(prompt[i:min(len(prompt), i+900)])
+		for _, want := range []string{"only when", "done", "pr", "partial", "failed", "reason", "conversation", "cannot act"} {
+			if !strings.Contains(rule, want) {
+				t.Errorf("%s: the rule after [Report: lacks %q:\n%s", harness, want, rule)
+			}
+		}
+	}
+}

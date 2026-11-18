@@ -601,6 +601,7 @@ func serve(args []string) error {
 	chatService.Notes().OnChange = commitmentRunner.Changed
 	shipService.PostLaunchLine = chatService.PostLaunchLine
 	shipCards := newShipCardRunner(absDir, chatService.PostShipCard, shipService.List, host.Ready())
+	shipCards.cards.QueueReports(shipReportHook(chatService.EnqueueShipReport, shipService.ReportResult))
 	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop, Launch: routineShips{shipService}.Launch}
 	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
 	routineService.Listed = listedShips(allShips)

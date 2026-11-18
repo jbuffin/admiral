@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/chat"
+	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -132,22 +133,34 @@ func parseShipRecords(data []byte) []chat.ShipRecord {
 		line, err := outcomes.ReadLine(br)
 		if len(line) > 0 && line[0] == '{' {
 			var raw struct {
-				TS       time.Time `json:"ts"`
-				Ship     string    `json:"ship"`
-				Event    string    `json:"event"`
-				Reason   string    `json:"reason"`
-				ExitCode *int      `json:"exit_code"`
-				Signal   *string   `json:"signal"`
-				Returned bool      `json:"returned"`
-				Scout    bool      `json:"scout"`
+				TS       time.Time       `json:"ts"`
+				Ship     string          `json:"ship"`
+				Event    string          `json:"event"`
+				Reason   string          `json:"reason"`
+				ExitCode *int            `json:"exit_code"`
+				Signal   *string         `json:"signal"`
+				Returned bool            `json:"returned"`
+				Scout    bool            `json:"scout"`
+				Report   json.RawMessage `json:"report"`
 			}
 			if json.Unmarshal(line, &raw) == nil && raw.Ship != "" {
 				out = append(out, chat.ShipRecord{At: raw.TS, Ship: raw.Ship, Event: raw.Event, Reason: raw.Reason,
-					Clean: raw.Event == "ended" && raw.Signal == nil && raw.ExitCode != nil && *raw.ExitCode == 0, Returned: raw.Returned, Scout: raw.Scout})
+					Clean: raw.Event == "ended" && raw.Signal == nil && raw.ExitCode != nil && *raw.ExitCode == 0, Returned: raw.Returned, Scout: raw.Scout, ReportResult: moor.ParseReport(raw.Report).Result})
 			}
 		}
 		if err != nil {
 			return out
 		}
+	}
+}
+
+// shipReportHook queues a card's report turn with the result its ended record carried, and the live report's when it did not.
+func shipReportHook(enqueue func(fleet string, c chat.ShipCard, reportResult string) error, live func(session string) string) func(string, chat.ShipCard) error {
+	return func(fleet string, c chat.ShipCard) error {
+		result := c.ReportResult
+		if result == "" {
+			result = live(c.Ship)
+		}
+		return enqueue(fleet, c, result)
 	}
 }

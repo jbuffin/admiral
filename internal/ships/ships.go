@@ -99,6 +99,8 @@ type Ship struct {
 	Handing bool `json:"handing,omitempty"`
 	// HandRefusal is why the ship cannot be handed, when its own options say so.
 	HandRefusal string `json:"hand_refusal,omitempty"`
+	// Round is the voyage's round: 0 for the first launch, above 0 for a feedback round, a wake or a hand relaunch.
+	Round int `json:"-"`
 	// Scout is set on a scout: an autopilot ship that changes nothing and ends by itself.
 	Scout bool `json:"scout,omitempty"`
 	// SkillKind is `commodore` on a Commodore ship, `skill` on one running a named skill and `none` on one with no skill; a moored ship carries its record's. It is omitted when the ship has none.
@@ -293,12 +295,17 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 	return sh
 }
 
+func roundOf(o map[string]string) int {
+	n, _ := strconv.Atoi(o["round"])
+	return max(n, 0)
+}
+
 // FromSession has no position; the CLI uses it when the server is not running.
 func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], FirstLaunched: firstLaunched(o), Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Scout: o["scout"] != "", Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "",
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], FirstLaunched: firstLaunched(o), Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Scout: o["scout"] != "", Round: roundOf(o), Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "",
 		Handing: o[sessionhost.OptHanding] != "", HandRefusal: handNotClaude(session, o["harness"]), HandFailed: o[sessionhost.OptHandFailed], SkillKind: o["skill-kind"]}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if sh.Status == "anchored" {
