@@ -61,6 +61,13 @@ type Action struct {
 	Confirm string `json:"confirm"`
 	Summary string `json:"summary"`
 	URL     string `json:"url,omitempty"`
+	// Builtin is "open", "launch" or "message" for an action Admiral handles itself, and empty for a module action.
+	Builtin string `json:"builtin,omitempty"`
+	// Kind, Ref, Title and Link are the fields of a message action.
+	Kind  string `json:"kind,omitempty"`
+	Ref   string `json:"ref,omitempty"`
+	Title string `json:"title,omitempty"`
+	Link  string `json:"link,omitempty"`
 }
 
 type Row struct {
@@ -146,8 +153,12 @@ func titleLine(raw json.RawMessage) string { return cappedLine(raw, maxTitleRune
 
 func cappedLine(raw json.RawMessage, runes int) string {
 	s, _ := rawString(raw)
+	return cleanLine(s)
+}
+
+func cleanLine(s string) string {
 	s = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
 			return -1
 		}
 		return r
@@ -190,7 +201,14 @@ func parseChips(raw []json.RawMessage) ([]Chip, error) {
 	return chips, nil
 }
 
-// parseAction is nil for an action with no id or label, or whose url is not http(s).
+// plainURL is whether a link holds no control or format character, which safeURL leaves in.
+func plainURL(u string) bool {
+	return strings.IndexFunc(u, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
+	}) < 0
+}
+
+// parseAction is nil for an action with no id or label, a built-in action without its fields, or a url that is not http(s).
 func parseAction(raw json.RawMessage) *Action {
 	var item struct {
 		ID      json.RawMessage `json:"id"`
@@ -198,6 +216,11 @@ func parseAction(raw json.RawMessage) *Action {
 		Confirm json.RawMessage `json:"confirm"`
 		Summary json.RawMessage `json:"summary"`
 		URL     json.RawMessage `json:"url"`
+		Builtin json.RawMessage `json:"builtin"`
+		Kind    json.RawMessage `json:"kind"`
+		Ref     json.RawMessage `json:"ref"`
+		Title   json.RawMessage `json:"title"`
+		Link    json.RawMessage `json:"link"`
 	}
 	if json.Unmarshal(raw, &item) != nil {
 		return nil
@@ -215,6 +238,31 @@ func parseAction(raw json.RawMessage) *Action {
 		if a.URL = safeURL(u); a.URL == "" {
 			return nil
 		}
+	}
+	if len(item.Builtin) > 0 && string(item.Builtin) != "null" {
+		var ok bool
+		if a.Builtin, ok = rawString(item.Builtin); !ok {
+			return nil
+		}
+	} else if a.URL != "" {
+		a.Builtin = "open"
+	}
+	switch a.Builtin {
+	case "":
+	case "open", "launch":
+		if a.URL == "" {
+			return nil
+		}
+	case "message":
+		a.URL = ""
+		a.Confirm = "yesno" // a message always asks first
+		a.Kind, a.Ref, a.Title = titleLine(item.Kind), titleLine(item.Ref), titleLine(item.Title)
+		link, _ := rawString(item.Link)
+		if a.Link = safeURL(link); a.Link == "" || len(a.Link) > maxRunURLBytes || !plainURL(a.Link) || a.Kind == "" || a.Ref == "" || a.Title == "" {
+			return nil
+		}
+	default:
+		return nil
 	}
 	return &a
 }

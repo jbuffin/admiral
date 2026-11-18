@@ -513,6 +513,8 @@ func serve(args []string) error {
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	shipService.ChatPrompt = chatService.PromptKey
 	chatService.Ships, chatService.Campaigns, chatService.Inbox = shipService.List, followStore.List, inboxService.List
+	sourceService.IssueClaims = shipService.Claims
+	sourceService.SendChat = chatService.SendStatus
 	chatService.SourceFleet = func(key string) (string, bool) {
 		src, ok := cfg.Current().Source(key)
 		return src.Fleet, ok

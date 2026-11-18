@@ -238,9 +238,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/run", s.serveActionRun)
 	mux.HandleFunc("POST /api/sources/{key}/notices/{id}/actions/{action}/form", s.serveNoticeActionForm)
 	mux.HandleFunc("POST /api/sources/{key}/notices/{id}/actions/{action}/run", s.serveNoticeActionRun)
-	mux.HandleFunc("GET /api/sources/{key}/rows/{id}/actions/{action}/launch", notBuilt)
-	mux.HandleFunc("GET /api/sources/{key}/rows/{id}/actions/{action}/message", notBuilt)
-	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/message", notBuilt)
+	mux.HandleFunc("GET /api/sources/{key}/rows/{id}/actions/{action}/launch", s.serveBuiltinLaunch)
+	mux.HandleFunc("GET /api/sources/{key}/rows/{id}/actions/{action}/message", s.serveBuiltinMessage)
+	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/message", s.sendBuiltinMessage)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("GET /api/sources/{key}/repos", s.serveRepos)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
@@ -249,10 +249,6 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/sources/{key}/stack", s.mergeGuarded(http.HandlerFunc(s.serveStack)))
 	mux.HandleFunc("GET /api/plugins", s.servePlugins)
 	mux.HandleFunc("GET /api/plugins/{name}/icon", s.serveIcon)
-}
-
-func notBuilt(w http.ResponseWriter, _ *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not built yet")
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

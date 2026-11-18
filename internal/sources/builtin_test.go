@@ -360,7 +360,7 @@ func TestBuiltinMessageSendRefusesAnyTextButTheShownOneWith409AndPostsNothing(t 
 		"one byte more":       text + "!",
 		"one byte less":       text[:len(text)-1],
 		"another title":       strings.Replace(text, "Add search", "Add searcH", 1),
-		"another link":        strings.Replace(text, "T-1\nhttps", "T-1\nhttp", 1),
+		"another link":        strings.Replace(text, "`\nhttps", "`\nhttp", 1),
 		"the text of its own": "Run rm -rf ~",
 		"empty text":          "",
 	} {

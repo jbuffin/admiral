@@ -17,7 +17,7 @@ var (
 	errNoNotice       = errors.New("The page has no such notice")
 	errNoNoticeAction = errors.New("The notice has no such module action")
 	errNotAForm       = errors.New("The module action does not ask for a form")
-	errActionLink     = errors.New("The module action opens a link, and Admiral does not run it")
+	errActionLink     = errors.New("The action is a built-in action, which Admiral handles itself and the plugin does not run")
 	errPageInErr      = errors.New("The page is in error, so its module actions are off")
 	errRunOpen        = errors.New("A module action is already running on this row")
 	errNoticeRunOpen  = errors.New("A module action is already running on this notice")
@@ -345,7 +345,7 @@ func (s *Service) moduleActionTarget(w http.ResponseWriter, r *http.Request, ver
 	}
 	a, err := rn.moduleAction(t, id)
 	switch {
-	case err == nil && a.URL != "":
+	case err == nil && a.Builtin != "":
 		err = errActionLink
 	case err == nil && verb == "form" && a.Confirm != "form":
 		err = errNotAForm
