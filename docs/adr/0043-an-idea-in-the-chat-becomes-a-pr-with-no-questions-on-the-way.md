@@ -37,3 +37,4 @@ The research for the map ([#654](https://github.com/jbuffin/admiral/issues/654))
 - Amends [ADR 0027](0027-campaigns-are-read-from-githubs-issue-tree.md): the autopilot default covers every ship AdmiralBot launches, not only Commodore ships.
 - Amends [ADR 0042](0042-a-ships-result-comes-back-as-a-card-and-a-report-turn.md): Ready to merge and the end of a ship AdmiralBot launched each post a card.
 - A quick ship no longer edits the engineer's checkout, and its worktree is one more thing Return to port removes.
+- Amended 2026-11-17: a drafting launch always runs With you, as if the engineer said "with me", because its skill grills the engineer. The rest holds: the launch text is AdmiralBot's restatement, and the cap never blocks it ([#705](https://github.com/jbuffin/admiral/issues/705)).
