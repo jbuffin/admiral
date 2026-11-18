@@ -15,7 +15,7 @@ import (
 	"github.com/jbuffin/admiral/internal/moor"
 )
 
-// What a ship's findings do when it sails off: kept, served by the route, and the scout's result (issue 735, unit u1).
+// What a ship's findings do when it sails off: kept, served by the route, and the scout's result.
 
 type keptFindings struct {
 	Ship          string `json:"ship"`
@@ -58,6 +58,16 @@ func (r *liveRig) ended(t *testing.T) map[string]any {
 	waitUntil(t, "the ended record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "ended")) > 0 })
 	got := outcomeLines(t, r.home, "saltpaw", "ended")
 	return got[len(got)-1]
+}
+
+// sailedOff waits for the ship to leave tmux and its report file to go: its files go after its findings are kept.
+func (r *liveRig) sailedOff(t *testing.T) {
+	t.Helper()
+	r.gone(t, "the ship to leave tmux")
+	waitUntil(t, "the ship's report file to go", func() bool {
+		_, err := os.Stat(filepath.Join(r.home, "reports", "saltpaw.json"))
+		return os.IsNotExist(err)
+	})
 }
 
 func (r *liveRig) getFindings(ship, first string) *httptest.ResponseRecorder {
@@ -130,7 +140,7 @@ func TestAScoutsFindingsAreKeptAndItsEndedRecordSaysFindingsAndLeavesTheReportAl
 	if rep, _ := e["report"].(map[string]any); rep == nil || rep["result"] != "partial" || rep["version"] != float64(2) {
 		t.Errorf("ended report = %v, want the report as the scout left it", e["report"])
 	}
-	r.gone(t, "the scout to be stopped")
+	r.sailedOff(t)
 	r.wantFindings(t, first, keptFindings{Ship: "saltpaw", FirstLaunched: first, Fleet: "work", Findings: "# Flaky test\n\nit sleeps\n"})
 }
 
@@ -178,7 +188,7 @@ func TestALaterRoundThatWritesNoFindingsLeavesTheEarlierRoundsKeptFindingsServed
 	r.writeFindings(t, "round one found this\n")
 	r.sailClean(t)
 	r.ended(t)
-	r.gone(t, "round one to sail off")
+	r.sailedOff(t)
 	// Round two is a wake: same name, same first launch, a harness that exits cleanly at once and writes nothing.
 	if _, lerr := r.s.LaunchOrder(launcher.Request{Fleet: "work", Harness: "claude", Dir: r.checkout, Model: "opus", Name: "Saltpaw",
 		Session: "saltpaw", Round: 1, FirstLaunched: first, Prompt: "go on", Skill: launcher.Skill{Kind: "none"}, Autopilot: true}); lerr != nil {
@@ -186,6 +196,7 @@ func TestALaterRoundThatWritesNoFindingsLeavesTheEarlierRoundsKeptFindingsServed
 	}
 	r.started(t, 2)
 	waitUntil(t, "round two's ended record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "ended")) == 2 })
+	r.gone(t, "round two to sail off")
 	r.wantFindings(t, first, keptFindings{Ship: "saltpaw", FirstLaunched: first, Fleet: "work", Findings: "round one found this\n"})
 }
 
@@ -214,7 +225,7 @@ func TestAReusedShipNameKeepsTheOldVoyagesFindingsUnderItsOwnFirstLaunchAndTheNe
 	r.writeFindings(t, "old voyage\n")
 	r.sailClean(t)
 	r.ended(t)
-	r.gone(t, "the old voyage to sail off")
+	r.sailedOff(t)
 	// A fresh launch under the same name: no FirstLaunched, so it is a new voyage.
 	if _, lerr := r.s.LaunchOrder(launcher.Request{Fleet: "work", Harness: "claude", Dir: r.checkout, Model: "opus", Name: "Saltpaw",
 		Session: "saltpaw", Prompt: "go", Skill: launcher.Skill{Kind: "none"}, Autopilot: true}); lerr != nil {

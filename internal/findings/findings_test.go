@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// What the store keeps of a ship's findings after it sailed off (issue 735, unit u1).
+// What the store keeps of a ship's findings after it sailed off.
 
 const (
 	first1 = "2026-11-18T09:30:00Z"
@@ -198,21 +198,21 @@ func TestAHostileShipNameCannotWriteOrReadOutsideTheStoreAndNamesThatLookAlikeSt
 	if b, _ := os.ReadFile(outside); string(b) != "not findings\n" {
 		t.Errorf("a hostile name overwrote a file outside the store: %q", b)
 	}
-	// Names that a naive encoding would fold together are different voyages.
-	r.mustKeep("a/b", first1, "work", "slash\n")
-	r.mustKeep("a_b", first1, "work", "underscore\n")
-	r.mustKeep("a%2Fb", first1, "work", "percent\n")
-	for ship, want := range map[string]string{"a/b": "slash\n", "a_b": "underscore\n", "a%2Fb": "percent\n"} {
-		if got, ok := r.store.Voyage(ship, first1); !ok || got.Markdown != want {
-			t.Errorf("Voyage(%q) = %+v, %v, want %q", ship, got, ok, want)
+	// Names a naive encoding would fold together: whichever Keep accepts reads back its own body, and the rest read nothing.
+	for ship, body := range map[string]string{"a/b": "slash\n", "a_b": "underscore\n", "a%2Fb": "percent\n"} {
+		kept := r.keep(ship, first1, "work", r.file(body))
+		got, ok := r.store.Voyage(ship, first1)
+		if kept != ok || (ok && got.Markdown != body) {
+			t.Errorf("Voyage(%q) = %+v, %v after Keep reported %v, want its own body %q when kept and nothing otherwise", ship, got, ok, kept, body)
 		}
 	}
+	r.mustKeep("a_b", first1, "work", "underscore\n")
 }
 
 func TestTheStoreKeepsFilesPrivateLikeTheOtherHomeStores(t *testing.T) {
 	r := newRig(t)
 	r.mustKeep("dory", first1, "work", "private\n")
-	var files, dirs int
+	var files int
 	err := filepath.WalkDir(filepath.Join(r.home, "findings"), func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -227,9 +227,7 @@ func TestTheStoreKeepsFilesPrivateLikeTheOtherHomeStores(t *testing.T) {
 		case !d.IsDir() && fi.Mode().Perm() != 0o600:
 			t.Errorf("file %s has mode %v, want 0600", p, fi.Mode().Perm())
 		}
-		if d.IsDir() {
-			dirs++
-		} else {
+		if !d.IsDir() {
 			files++
 		}
 		return nil
@@ -240,5 +238,4 @@ func TestTheStoreKeepsFilesPrivateLikeTheOtherHomeStores(t *testing.T) {
 	if files == 0 {
 		t.Error("the store wrote no file under findings/")
 	}
-	_ = dirs
 }

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Findings env: ADMIRAL_FINDINGS names a ship's findings file (issue 735, unit u1).
+// ADMIRAL_FINDINGS names a ship's findings file, and the prompts say how to use it.
 
 func TestAShipsFindingsFileIsNamedByAnEnvVarBesideItsReportAndAnOldOneIsCleared(t *testing.T) {
 	home := t.TempDir()
@@ -79,8 +79,8 @@ func TestAScoutIsToldToWriteItsFindingsToTheFileTheVariableNamesAndThatNoneMeans
 		t.Fatalf("Launch: %v", err)
 	}
 	prompt := p.lastArg(t)
-	for _, want := range []string{"$ADMIRAL_FINDINGS", "markdown", "file-writing tool", "echo $ADMIRAL_FINDINGS", "failed"} {
-		if !strings.Contains(prompt, want) {
+	for _, want := range []string{"$admiral_findings", "markdown", "file-writing tool", "echo $admiral_findings", "failed"} {
+		if !strings.Contains(strings.ToLower(prompt), want) {
 			t.Errorf("a scout's prompt = %q, want it to contain %q", prompt, want)
 		}
 	}
