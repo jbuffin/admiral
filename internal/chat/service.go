@@ -102,6 +102,8 @@ type Service struct {
 	OrderExists func(source, id string) bool
 	// OrderRepo is an order's text and repo, which a clone launch derives its repository from.
 	OrderRepo func(source, id string) (text, repo string, ok bool)
+	// OnReply runs once for a report turn that ended with a reply in the log; Admiral pushes it.
+	OnReply func(fleet string, r ReportReply)
 	// readPromptKey replaces the tmux read of the prompt key; a test seam.
 	readPromptKey func(fleet string) (string, bool)
 	// DigestAcked replaces the digest sequence read from the chat's pane options; a test seam.
@@ -139,6 +141,7 @@ type fleetChat struct {
 	qSig     string // the waiting set the Inbox was last told of
 
 	tq        turnState // the report-turn queue
+	th        threadState
 	resets    resetUsage
 	rst       resetState
 	resetting atomic.Bool // a flush and clear are running: a send is refused

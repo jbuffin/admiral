@@ -175,3 +175,21 @@ func TestAShipCardOfAShipWithNoTitleHasNoTitleKey(t *testing.T) {
 		t.Errorf("card = %v, want no title key", m)
 	}
 }
+
+func TestShipCardOfReadsTheShipsNameAndResultFromItsCardInThatFleetOnly(t *testing.T) {
+	r := newBriefRig(t)
+	c := sampleShipCard()
+	if err := r.PostShipCard("work", c); err != nil {
+		t.Fatal(err)
+	}
+	name, result, ok := r.ShipCardOf("work", c.id())
+	if !ok || name != "calm-otter" || result != "moored" {
+		t.Errorf("ShipCardOf = %q, %q, %v, want calm-otter, moored, true", name, result, ok)
+	}
+	if _, _, ok := r.ShipCardOf("home", c.id()); ok {
+		t.Error("the home chat found a ship card that was posted in work")
+	}
+	if _, _, ok := r.ShipCardOf("work", "ship-nobody-2026-11-17T10:00:00Z-moored"); ok {
+		t.Error("an id with no ship card found one")
+	}
+}

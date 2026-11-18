@@ -2,6 +2,7 @@
 package push
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/textsafe"
@@ -21,11 +22,13 @@ const (
 	// CodeApproval and RoutineNotify have no producer yet; Watcher.Emit is their way in.
 	CodeApproval  Kind = "code_approval"
 	RoutineNotify Kind = "routine_notify"
+	// ReportReply is AdmiralBot's reply to a ship's report turn.
+	ReportReply Kind = "report_reply"
 )
 
 var pushing = map[Kind]bool{
 	ChatQuestion: true, ShipQuestion: true, InboxQuestion: true, WakeProposal: true, Findings: true,
-	ReadyToMerge: true, Anchored: true, CodeApproval: true, RoutineNotify: true,
+	ReadyToMerge: true, Anchored: true, CodeApproval: true, RoutineNotify: true, ReportReply: true,
 }
 
 // Event is one new occurrence worth hearing about.
@@ -48,13 +51,62 @@ type Event struct {
 	Merge   bool
 	// A tap lands on this fleet's Routines screen at Routine (Target "routine"), for a routine run with no ship to open.
 	Routine string
+	// A tap lands on the fleet's chat at this message (Target "chat").
+	Message string
 }
 
 const (
 	TargetPeek    = "peek"
 	TargetShip    = "ship"
 	TargetRoutine = "routine"
+	TargetChat    = "chat"
 )
+
+// Reply is AdmiralBot's reply to a report turn, as the push describes it.
+type Reply struct {
+	Fleet, FleetName string
+	Ship, Result     string // the ship's name and its card's result, as the card spells it
+	Card, Message    string // the ship card's id and the reply's message id in the chat log
+	Text             string // the reply's first message, markdown
+}
+
+// ReportReplyEvent is the event for a reply.
+func ReportReplyEvent(r Reply) Event {
+	return Event{Kind: ReportReply, Fleet: r.Fleet, FleetName: r.FleetName, Key: "report-reply-" + r.Card,
+		Name: r.Ship + " " + strings.ReplaceAll(r.Result, "_", " "), Text: plainText(firstLine(r.Text)),
+		Target: TargetChat, Message: r.Message}
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	return s
+}
+
+var (
+	mdLink = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+	// Not #{1,6}: the tmux boundary test reads that as a tmux format.
+	mdHeading = regexp.MustCompile(`^\s*(##?#?#?#?#?|>)\s+`)
+	// Marks drop only where they pair around text, so `__init__` and `2 * 3 = 6` stay as written.
+	mdBold   = regexp.MustCompile(`\*\*(\S(?:[^*]*\S)?)\*\*`)
+	mdStar   = regexp.MustCompile(`\*(\S(?:[^*]*\S)?)\*`)
+	mdStrike = regexp.MustCompile(`~~(\S(?:[^~]*\S)?)~~`)
+	mdCode   = regexp.MustCompile("`([^`]+)`")
+	mdUnder  = regexp.MustCompile(`(^|\s)_([^_]+)_(\s|[.,;:!?]|$)`)
+)
+
+// plainText turns a line of markdown into the text a lock screen shows: links keep their text, paired marks drop.
+func plainText(s string) string {
+	s = mdLink.ReplaceAllString(s, "$1")
+	s = mdHeading.ReplaceAllString(s, "")
+	s = mdCode.ReplaceAllString(s, "$1")
+	s = mdBold.ReplaceAllString(s, "$1")
+	s = mdStar.ReplaceAllString(s, "$1")
+	s = mdStrike.ReplaceAllString(s, "$1")
+	return mdUnder.ReplaceAllString(s, "$1$2$3")
+}
 
 type Outcome int
 
@@ -97,11 +149,12 @@ type Payload struct {
 	Crew      string `json:"crew,omitempty"`
 	Merge     bool   `json:"merge,omitempty"`
 	Routine   string `json:"routine,omitempty"`
+	Message   string `json:"message,omitempty"`
 }
 
 func PayloadOf(ev Event) Payload {
 	return Payload{Fleet: ev.Fleet, FleetName: clean(ev.FleetName), Name: clean(ev.Name), Line: oneLine(ev.Text), Tag: ev.Key,
-		Target: ev.Target, Session: ev.Session, Item: ev.Item, Crew: ev.Crew, Merge: ev.Merge, Routine: ev.Routine}
+		Target: ev.Target, Session: ev.Session, Item: ev.Item, Crew: ev.Crew, Merge: ev.Merge, Routine: ev.Routine, Message: ev.Message}
 }
 
 func oneLine(s string) string {

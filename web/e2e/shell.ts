@@ -201,6 +201,10 @@ export function chatStarts(a: Admiral, fleet: ChatFleet) {
   writeFileSync(join(chatRecord(a, fleet), 'go-start'), '');
 }
 
+/** Stamps a new prompt on the chat's pane, as its UserPromptSubmit hook does, which the fake Claude Code does not run: a ship launched for the earlier prompt no longer holds this one. */
+export const chatPrompts = (a: Admiral, fleet: ChatFleet) =>
+  spawnSync('tmux', ['-S', join(a.home, 'tmux.sock'), 'set-option', '-p', '-t', `${chatSession(fleet)}:`, '@admiral-chat-prompt', String(BigInt(Date.now()) * 1000000n)], { encoding: 'utf8' });
+
 /** Ends the fleet's chat session, as quitting Claude Code in its terminal does. */
 export const chatEnds = (a: Admiral, fleet: ChatFleet) => spawnSync('tmux', ['-S', join(a.home, 'tmux.sock'), 'kill-session', '-t', chatSession(fleet)], { encoding: 'utf8' });
 
@@ -386,8 +390,8 @@ export async function launchShip(
   return ship;
 }
 
-/** Launches a ship the way AdmiralBot does: with the chat's own actor token, read from the MCP config Admiral wrote when it started the chat, so the ship carries `via: admiralbot`. The fleet's only dock is the chat's, so for the launch the dock's cue file holds the ship's own cue (a SessionStart on a transcript of its own) and the chat's cue, which its running Claude has already read, is put back after. */
-export async function launchAsAdmiralBot(a: Admiral, fleet: ChatFleet, text = 'Look at the harbour log', reason = 'to look at the harbour log'): Promise<LaunchedShip> {
+/** Launches a ship the way AdmiralBot does: with the chat's own actor token, read from the MCP config Admiral wrote when it started the chat, so the ship carries `via: admiralbot`. The fleet's only dock is the chat's, so for the launch the dock's cue file holds the ship's own cue (a SessionStart on a transcript of its own) and the chat's cue, which its running Claude has already read, is put back after. With `sailOff` the ship's cue ends in a clean exit, so the ship sails off. */
+export async function launchAsAdmiralBot(a: Admiral, fleet: ChatFleet, text = 'Look at the harbour log', reason = 'to look at the harbour log', sailOff = false): Promise<LaunchedShip> {
   const dir = join(a.home, 'proj');
   mkdirSync(dir, { recursive: true });
   spawnSync('git', ['init', '-q'], { cwd: dir });
@@ -399,7 +403,7 @@ export async function launchAsAdmiralBot(a: Admiral, fleet: ChatFleet, text = 'L
   const chatCue = readFileSync(cue, 'utf8');
   const transcript = chatTranscriptPath(a, fleet, 'ship');
   writeFileSync(transcript, '');
-  writeFileSync(cue, `event SessionStart ${JSON.stringify({ transcript_path: transcript, source: 'startup' })}\n`);
+  writeFileSync(cue, `event SessionStart ${JSON.stringify({ transcript_path: transcript, source: 'startup' })}\n${sailOff ? 'exit 0\n' : ''}`);
   let ship!: LaunchedShip;
   await expect
     .poll(async () => {

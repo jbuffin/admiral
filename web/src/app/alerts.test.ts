@@ -89,3 +89,18 @@ describe('the alert message', () => {
     expect(toasts.list()).toHaveLength(0);
   });
 });
+
+describe('where a tapped reply toast lands', () => {
+  it('opens the fleet chat at the message', () => {
+    expect(alertDestination({ target: 'chat', fleet: 'work', message: 'm-7' }, none)).toBe('/app/chat/work/message/m-7');
+  });
+
+  it('keeps a fleet key and message id that need encoding intact', () => {
+    expect(alertDestination({ target: 'chat', fleet: 'a/b', message: 'x y#1' }, none)).toBe('/app/chat/a%2Fb/message/x%20y%231');
+  });
+
+  it('opens the Inbox for a chat target that names no fleet or message', () => {
+    expect(alertDestination({ target: 'chat', fleet: 'work', message: 'm-7' }, none)).not.toBe('/app/inbox');
+    expect(alertDestination({ target: 'chat' }, none)).toBe('/app/inbox');
+  });
+});

@@ -10,12 +10,12 @@ import { shipLinkSet, shipsOfLinkSet } from './shipLinkSet';
 import { fetchLaunchState, launchCardView, promoteLaunch, stopShip, undoLaunch } from './launchCard';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
-import { commitmentCardView, launchLineView, needsTerminal, shipCardView, questionEyebrow, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
+import { commitmentCardView, launchLineView, needsTerminal, shipCardView, questionEyebrow, resetLabel, threadOf, youAnswered, type ThreadItem, type ThreadMessage } from './chat';
 import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
 import { MuteRule } from './MuteRule';
 import { ReviewerNoteView } from './ReviewerNoteView';
 import { Peek } from './Peek';
-import { go, loc, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
+import { go, loc, chatMessageOf, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
 import { renderMarkdown } from './markdown';
 import { PeekQuestions } from './PeekQuestions';
 import { useChat } from './useChat';
@@ -255,9 +255,60 @@ function LaunchCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'la
   );
 }
 
+/** The text of a report turn Admiral typed, closed until the engineer asks for it; plain text, never markdown. */
+function ReportSent({ item, flash }: { item: ThreadMessage; flash: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div class={flash ? 'report-sent flash' : 'report-sent'} data-message-id={item.id}>
+      <Button label="Report sent to AdmiralBot" expanded={open} onClick={() => setOpen(!open)} />
+      {open ? <p class="report-text">{item.text}</p> : null}
+    </div>
+  );
+}
+
+function MessageView({ item, linkShips, fleet, flash }: { item: ThreadMessage; linkShips: ReturnType<typeof shipsOfLinkSet>; fleet: string; flash: boolean }) {
+  const cls = flash ? ' flash' : '';
+  if (item.report) return <ReportSent item={item} flash={flash} />;
+  return item.role === 'user' ? (
+    <div class={`msg user${cls}`} data-message-id={item.id}>
+      {item.text}
+    </div>
+  ) : (
+    <div class={`msg assistant md${cls}`} data-message-id={item.id} dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text, { ships: linkShips, fleet, at: item.at, search: fleetSearch.value }) }} />
+  );
+}
+
+/** Scrolls to the message a push or toast named once the thread has it, and lights it for a moment. It keeps looking as items render until the engineer scrolls off the bottom or the route changes; a message that has left the window leaves the chat at the bottom. */
+function useFocusMessage(scroller: { current: HTMLDivElement | null }, pinned: { current: boolean }, focusId: string | null, items: ThreadItem[]) {
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const done = useRef<string | null>(null);
+  const started = useRef<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (!focusId || items.length === 0 || done.current === focusId) return;
+    if (started.current === focusId && !pinned.current) {
+      done.current = focusId;
+      return;
+    }
+    started.current = focusId;
+    const el = Array.from(scroller.current?.querySelectorAll('[data-message-id]') ?? []).find((e) => e.getAttribute('data-message-id') === focusId);
+    if (!el) return;
+    done.current = focusId;
+    pinned.current = false;
+    el.scrollIntoView({ block: 'center' });
+    setFlashId(focusId);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setFlashId(null), 2500);
+  }, [focusId, items]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return flashId;
+}
+
 function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working: boolean; chat: Chat; fleet: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const target = chatMessageOf(loc.value.path);
+  const flashId = useFocusMessage(scroller, pinned, target?.fleet === fleet ? target.message : null, items);
   const linkSet = useMemo(() => computed(() => shipLinkSet(ships.value, fleet)), [fleet]).value;
   const linkShips = useMemo(() => shipsOfLinkSet(linkSet), [linkSet]);
   useLayoutEffect(() => {
@@ -296,14 +347,17 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           <CommitmentCard key={i.id} item={i} fleet={fleet} />
         ) : i.kind === 'launch_line' ? (
           <LaunchLineView key={i.id} item={i} />
+        ) : i.kind === 'ship' && i.thread?.length ? (
+          <div key={i.id} class="report-thread" data-thread={i.id}>
+            <ShipCardView item={i} />
+            {i.thread.map((m) => (
+              <MessageView key={m.id} item={m} linkShips={linkShips} fleet={fleet} flash={flashId === m.id} />
+            ))}
+          </div>
         ) : i.kind === 'ship' ? (
           <ShipCardView key={i.id} item={i} />
-        ) : i.role === 'user' ? (
-          <div key={i.id} class="msg user">
-            {i.text}
-          </div>
         ) : (
-          <div key={i.id} class="msg assistant md" dangerouslySetInnerHTML={{ __html: renderMarkdown(i.text, { ships: linkShips, fleet, at: i.at, search: fleetSearch.value }) }} />
+          <MessageView key={i.id} item={i} linkShips={linkShips} fleet={fleet} flash={flashId === i.id} />
         ),
       )}
       {working ? <p class="working">{workingLabel([], Date.now())}</p> : null}

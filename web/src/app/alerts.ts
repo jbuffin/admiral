@@ -1,7 +1,7 @@
 import type { Ship } from './api';
 import type { InboxItem } from './inbox';
 import { bridgeSearch } from './peekLink';
-import { peekPath, routinePath, shipPath } from './router';
+import { chatMessagePath, peekPath, routinePath, shipPath } from './router';
 import type { ToastAlert } from './toasts';
 
 /** The alert message on /ws/v1: what the server decided is worth the engineer's eye, and where a tap lands. */
@@ -15,13 +15,15 @@ export interface Alert extends ToastAlert {
   crew?: string;
   merge?: boolean;
   routine?: string;
+  message?: string;
 }
 
 const INBOX = '/app/inbox';
 
 /** Where a tap on the alert's toast goes: its Peek while the entry is still there, otherwise the Inbox alone. */
-export function alertDestination(alert: Pick<Alert, 'target' | 'item' | 'crew' | 'merge' | 'routine'> & { session?: string }, now: { ships: Ship[]; items: InboxItem[] }): string {
+export function alertDestination(alert: Pick<Alert, 'target' | 'item' | 'crew' | 'merge' | 'routine' | 'fleet' | 'message'> & { session?: string }, now: { ships: Ship[]; items: InboxItem[] }): string {
   if (alert.target === 'routine' && alert.routine) return routinePath(alert.routine);
+  if (alert.target === 'chat') return alert.fleet && alert.message ? chatMessagePath(alert.fleet, alert.message) : INBOX;
   const session = alert.session ?? '';
   const ship = now.ships.find((s) => s.session === session);
   if (alert.target === 'ship') return ship?.status === 'anchored' ? shipPath(session) : INBOX;

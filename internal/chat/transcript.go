@@ -18,6 +18,9 @@ type Message struct {
 	At   string `json:"at"`
 	// Card is a question's item as it was asked, without its answer, an event card's {routine, routine_name, tier, sender, link, metadata, mute_by} (its text is untrusted), or a launch card's event card fields plus {ship, level, restricted}, or a ship card's {ship, fleet, skill, skill_kind, result, prs}, or a commitment card's {commitment, outcome, ship, reason}; outcome is launched, reminded, cant_run, dropped or aged (a no-trigger commitment 14 days old).
 	Card json.RawMessage `json:"card,omitempty"`
+	// Thread is the id of the ship card whose report turn this entry is, or whose reply it is.
+	Thread string `json:"thread,omitempty"`
+	notice bool   // a subagent's report or another session's message, which isn't the engineer
 }
 
 // A notice (a subagent's report, or another Claude session's message) shows as the user's message.
@@ -28,7 +31,7 @@ func messages(items []conversation.Item) []Message {
 		if it.Kind == conversation.KindAssistant {
 			role = "assistant"
 		}
-		out = append(out, Message{ID: it.ID, Kind: chatlog.KindMessage, Role: role, Text: it.Text, At: it.At})
+		out = append(out, Message{ID: it.ID, Kind: chatlog.KindMessage, Role: role, Text: it.Text, At: it.At, notice: it.Kind == conversation.KindNotice})
 	}
 	return out
 }
