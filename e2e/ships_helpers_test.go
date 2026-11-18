@@ -303,9 +303,8 @@ func launchAdmiralOnce(t *testing.T, home, listen string, env []string) (*fleetI
 	return &fleetInst{instance: in, env: env}, false
 }
 
-// checkout makes a git checkout in the search root, since a launch is refused
-// for any other directory. The remotes a test needs are added with git.
-// checkout is a git checkout with a local bare origin and a first commit, since a no-skill launch fetches origin.
+// checkout makes a git checkout in the search root with a local bare origin and a first commit, since a launch is
+// refused for any other directory and a no-skill launch fetches origin.
 func (w *world) checkout(name string) string {
 	w.t.Helper()
 	d := w.plainCheckout(name)

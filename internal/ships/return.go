@@ -90,7 +90,7 @@ func (s *Service) advanceReturns() {
 				if s.stopShip(name, map[string]any{"returned": true}) == nil {
 					// The session is gone, so its worktree is no longer a harness's cwd; the branch stays.
 					if home, _, _, ok := s.shipFiles(name); ok {
-						launcher.RemoveWorktree(home, name)
+						launcher.RemoveWorktree(home, name, sess.Options["dir"])
 					}
 				}
 				return

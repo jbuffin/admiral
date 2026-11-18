@@ -318,7 +318,6 @@ async function listShips(a: Admiral): Promise<ShipJSON[]> {
   return ((await res.json()) as { ships: ShipJSON[] }).ships;
 }
 
-/** The cue makes the harness exit (0 sails off, 3 anchors); `cues` are cue lines the harness runs instead; without either it idles. */
 /** Makes dir a checkout with a commit on main and a fetchable origin: a local bare repo, which the GitHub URL (when given) is redirected to, since a no-skill launch fetches origin. */
 export function gitCheckout(dir: string, githubUrl?: string) {
   const git = (cwd: string, ...args: string[]) => {
@@ -348,6 +347,7 @@ export function dropFetchRedirect(dir: string): () => void {
   return () => git(key, value);
 }
 
+/** The cue makes the harness exit (0 sails off, 3 anchors); `cues` are cue lines the harness runs instead; without either it idles. */
 export async function launchShip(
   a: Admiral,
   req: { fleet: 'zulu' | 'alpha'; harness: Harness; source?: string; order?: string; anyway?: boolean; text?: string; exit?: 0 | 3; cue?: string; cues?: string[]; dir?: string; skill?: 'commodore' },

@@ -435,9 +435,17 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 
+	tracking, err := l.fetchForWorktree(req, !restricted && !evented && !promoted)
+	if err != nil {
+		return nil, err
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	name, session, err := l.nameFor(req)
+	branchDir := ""
+	if tracking != "" {
+		branchDir = req.Dir
+	}
+	name, session, err := l.nameFor(req, branchDir)
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +480,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 	}
 	if !restricted && !evented && !promoted {
-		wt, undo, err := l.shipWorktree(req, session)
+		wt, undo, err := l.shipWorktree(req, session, tracking)
 		if err != nil {
 			return nil, err
 		}
@@ -572,9 +580,9 @@ func roundOption(round int) string {
 
 // nameFor is the name a launch takes: a relaunch keeps its own and refuses while that session is live;
 // the caller holds l.mu, so no other launch takes the name in between.
-func (l *Launcher) nameFor(req Request) (name, session string, err error) {
+func (l *Launcher) nameFor(req Request, branchDir string) (name, session string, err error) {
 	if req.Session == "" {
-		name, err = l.pickNameIn(req.Dir)
+		name, err = l.pickNameIn(branchDir)
 		return name, Slug(name), err
 	}
 	rows, err := l.server().SessionRows()
@@ -853,7 +861,8 @@ func crewDirNotDir(dir string, fi fs.FileInfo) error {
 // name in use would end with a clash.
 func (l *Launcher) pickName() (string, error) { return l.pickNameIn("") }
 
-// pickNameIn also skips a name whose admiral/<session> branch survives in dir's repo, which a new worktree would collide with.
+// pickNameIn also skips a name whose admiral/<session> branch survives in dir's repo, which a new worktree would collide
+// with; dir is empty when the launch makes no worktree.
 func (l *Launcher) pickNameIn(dir string) (string, error) {
 	rows, err := l.server().SessionRows()
 	if err != nil {
@@ -867,7 +876,15 @@ func (l *Launcher) pickNameIn(dir string) (string, error) {
 	for _, r := range moored {
 		shipNames[r.Name], sessions[r.Session] = true, true
 	}
-	// A restricted ship's clone outlives the ship, and Make refuses a path that exists.
+	var branches map[string]bool
+	if dir != "" {
+		branches = map[string]bool{}
+		out, _ := exec.Command("git", "-C", dir, "for-each-ref", "--format=%(refname)", "refs/heads/admiral/").Output()
+		for _, ref := range strings.Fields(string(out)) {
+			branches[strings.TrimPrefix(ref, "refs/heads/admiral/")] = true
+		}
+	}
+	// A restricted ship's clone outlives the ship, and Add refuses a path that exists.
 	kept := func(session string) bool {
 		if _, err := os.Lstat(filepath.Join(l.Home, "checkouts", session)); err == nil {
 			return true
@@ -875,7 +892,7 @@ func (l *Launcher) pickNameIn(dir string) (string, error) {
 		if HasWorktree(l.Home, session) {
 			return true
 		}
-		if dir != "" && l.Worktrees != nil && exec.Command("git", "-C", dir, "show-ref", "--verify", "--quiet", "refs/heads/admiral/"+session).Run() == nil {
+		if branches[session] {
 			return true
 		}
 		return l.Kept != nil && l.Kept(session)

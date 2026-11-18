@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jbuffin/admiral/internal/moor"
 )
 
 // originWorld gives work a local bare origin whose default branch is trunk and one commit ahead of work's HEAD, with
@@ -434,5 +437,77 @@ func TestANameWhoseBranchSurvivedItsWorktreesRemovalIsNotGivenToANewShip(t *test
 	}
 	if second.Session == first.Session {
 		t.Errorf("a new ship got the name %s, whose branch is still in the repo", first.Session)
+	}
+}
+
+func TestARelaunchOfAShipWithNoWorktreeRunsInTheCheckoutAndMakesNone(t *testing.T) {
+	p, _, _ := worktreeRig(t)
+	p.l.Worktrees = nil // a ship moored before ships got worktrees
+	first, err := p.l.Launch(p.noSkill())
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	p.cwd(t)
+	p.killSession(t, first.Session)
+	p.l.Worktrees = GitWorktrees{}
+
+	req := p.noSkill()
+	req.Session, req.Name = first.Session, first.Options["name"]
+	if _, err := p.l.Launch(req); err != nil {
+		t.Fatalf("relaunch: %v", err)
+	}
+	if got := p.cwd(t); !samePath(t, got, p.work) {
+		t.Errorf("relaunch cwd = %s, want the checkout %s", got, p.work)
+	}
+	if got := worktreePaths(t, p.work); len(got) != 1 {
+		t.Errorf("git worktree list = %v, want only the checkout", got)
+	}
+	if got := git(t, p.work, "branch", "--list", "admiral/*"); got != "" {
+		t.Errorf("branches = %q, want no admiral branch", got)
+	}
+}
+
+func TestALaunchWhoseFetchHangsIsRefusedAsTimedOutAndPutsNoShipToSea(t *testing.T) {
+	p, _, _ := worktreeRig(t)
+	p.l.Worktrees = GitWorktrees{Timeout: 200 * time.Millisecond}
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shim := t.TempDir()
+	writeFile(t, filepath.Join(shim, "git"), "#!/bin/sh\ncase \"$*\" in *ls-remote*) exec sleep 60 ;; esac\nexec "+real+" \"$@\"\n")
+	if err := os.Chmod(filepath.Join(shim, "git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shim+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, err = p.l.Launch(p.noSkill())
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("Launch error = %v, want a refusal that says the git call timed out", err)
+	}
+	if got := p.sessionNames(t); len(got) != 0 {
+		t.Errorf("sessions = %v, want no ship put to sea", got)
+	}
+}
+
+func TestTheCheckoutsSharedExcludeFileIsUntouchedAndAFeedbackRoundLeavesTheWorktreeClean(t *testing.T) {
+	p, _, _ := worktreeRig(t)
+	exclude := filepath.Join(p.work, ".git", "info", "exclude")
+	before, _ := os.ReadFile(exclude)
+	req := p.noSkill()
+	var wt string
+	req.Before = func(dir string) error {
+		wt = dir
+		_, err := moor.WriteFeedback(dir, 1, "feedback")
+		return err
+	}
+	if _, err := p.l.Launch(req); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if got := git(t, wt, "status", "--porcelain"); got != "" {
+		t.Errorf("the worktree's status after a feedback round = %q, want clean", got)
+	}
+	if after, _ := os.ReadFile(exclude); string(after) != string(before) {
+		t.Errorf("the checkout's info/exclude changed from %q to %q", before, after)
 	}
 }
