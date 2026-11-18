@@ -1315,6 +1315,25 @@ func TestReadFindingsCutsLongMultiByteFindingsAtAboutEightThousandCharactersOnAR
 	if !length {
 		t.Errorf("result has no number holding the full length, 10000 characters")
 	}
+	for _, c := range []struct {
+		runes     int
+		truncated bool
+		kept      int
+	}{{8000, false, 8000}, {8001, true, 8000}} {
+		body := strings.Repeat("é", c.runes)
+		a := newStandIn(t, func(mcpReq) (int, string) { return 200, findingsReply("saltpaw", "work", body) })
+		var edge struct {
+			Findings  string `json:"findings"`
+			Truncated bool   `json:"truncated"`
+			Length    int    `json:"length"`
+		}
+		if err := json.Unmarshal([]byte(readFindings(t, a, `{"ship":"saltpaw"}`).text()), &edge); err != nil {
+			t.Fatal(err)
+		}
+		if n := utf8.RuneCountInString(edge.Findings); n != c.kept || edge.Truncated != c.truncated || edge.Length != c.runes {
+			t.Errorf("%d characters: kept %d, truncated %v, length %d; want %d, %v, %d", c.runes, n, edge.Truncated, edge.Length, c.kept, c.truncated, c.runes)
+		}
+	}
 }
 
 func TestReadFindingsPassesTheRoutesRefusalThroughAsTheToolsError(t *testing.T) {
