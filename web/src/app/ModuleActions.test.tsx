@@ -116,6 +116,9 @@ const openForm = async () => {
   return screen.findByRole('dialog');
 };
 
+// The row's own Open link is also a link, so a result's link is looked for in the toasts.
+const toasts = () => within(document.querySelector('.toasts') as HTMLElement);
+
 test('a click module action on a row runs at once with no values and no sheet', async () => {
   const posts = server({ run: () => ({ body: { message: 'Owner pinged' } }) });
   open();
@@ -326,7 +329,7 @@ test('a successful run shows its message as a toast with its link, which opens i
   open();
   press(await rowItem(), 'Ping owner');
   expect(await screen.findByText('Review passed')).toBeTruthy();
-  const link = screen.getByRole('link') as HTMLAnchorElement;
+  const link = toasts().getByRole('link') as HTMLAnchorElement;
   expect(link.getAttribute('href')).toBe('https://example.com/t/1');
   expect(link.getAttribute('target')).toBe('_blank');
   expect(link.getAttribute('rel')).toBe('noopener noreferrer');
@@ -339,12 +342,12 @@ test('a result with no link, or a link that is not http or https, shows its mess
   open();
   press(await rowItem(), 'Ping owner');
   expect(await screen.findByText('Plain result')).toBeTruthy();
-  expect(screen.queryByRole('link')).toBeNull();
+  expect(toasts().queryByRole('link')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
   await waitFor(() => expect(screen.queryByText('Plain result')).toBeNull());
   press(await rowItem('Ship docs'), 'Archive');
   expect(await screen.findByText('Sneaky result')).toBeTruthy();
-  expect(screen.queryByRole('link')).toBeNull();
+  expect(toasts().queryByRole('link')).toBeNull();
 });
 
 test('plugin text in a result is drawn as text', async () => {
@@ -376,7 +379,7 @@ test.each([
   open();
   press(await rowItem(), 'Ping owner');
   expect(await screen.findByText(error)).toBeTruthy();
-  expect(screen.queryByRole('link')).toBeNull();
+  expect(toasts().queryByRole('link')).toBeNull();
 });
 
 test('a form run that fails shows its error toast and the row comes back, not updating', async () => {
