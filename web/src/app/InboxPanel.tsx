@@ -10,7 +10,7 @@ import { REMOVED_FOLD } from './itemActions';
 import { bridgeSearch } from './peekLink';
 import { keyAction, keyHint } from './peekKeys';
 import { peekKey } from './peekLink';
-import { entryAge, fleetLabel, rowShip, rowShipTitle, rowVerb, titleLines } from './inboxRow';
+import { entryAge, fleetLabel, rowShip, rowShipTitle, rowTitle, rowVerb, rowVia, titleLines } from './inboxRow';
 import { go, loc, peekOf, peekPath, type PeekTarget, shipPath, surfacePath } from './router';
 import { inboxItems, inboxLoaded, ships, shipsLoaded } from './shipsLink';
 import { orderLabel } from './moored';
@@ -50,7 +50,7 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
   const notice = e.item?.kind === 'notice';
   const ship = e.ship ?? ships.value.find((s) => s.session === e.session);
   const shipTitle = rowShipTitle(e);
-  const title = e.item?.title ?? '';
+  const title = rowTitle(e);
   const age = entryAge(e, now);
   const search = fleetSearch.value;
   const target: PeekTarget = targetOf(e);
@@ -61,6 +61,7 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
       <div class="ship-main">
         <span class="inbox-who">
           <span class="ship-name">{rowShip(e)}</span> <span class="inbox-verb">{rowVerb(e)}</span>
+          {rowVia(e) ? <span class="muted"> via {rowVia(e)}</span> : null}
         </span>
         {titleLines(e, title, shipTitle).map((t, i) => (
           <span key={i} class="inbox-title">{t} </span>

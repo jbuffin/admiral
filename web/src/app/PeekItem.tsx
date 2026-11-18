@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, SLOW_TIMEOUT_MS } from './api';
 import { Actions, Button } from './Button';
+import { refreshCampaigns } from './campaignsLink';
+import { rememberFleet } from './fleets';
+import { ConfirmStep, type Filed } from './NewCampaign';
+import { campaignPath, go } from './router';
 import { renderMarkdown } from './markdown';
 import type { Entry } from './inbox';
 import { prLink } from '../inbox';
@@ -69,6 +73,40 @@ function PrLine({ pr }: { pr: ReturnType<typeof prLink> }) {
       </a>
       <span class="inbox-host"> {pr.host}</span>
     </span>
+  );
+}
+
+/** AdmiralBot's campaign draft: the modal's confirm step, then Create files the parent issue and Dismiss throws the draft away. */
+export function CampaignDraftBody({ entry, acting, fold }: { entry: Entry; acting: Acting; fold: (text: string) => void }) {
+  const d = entry.item?.campaign_draft;
+  const fleet = d?.fleet || entry.fleet?.key || '';
+  const [filed, setFiled] = useState<Filed | null>(null);
+  const [busy, setBusy] = useState(false);
+  // The item's own Create follows the campaign here, not in the step: the Inbox push can unmount this Peek before the answer arrives.
+  const create = async (body: { repo: string; title: string; body: string }) => {
+    const r = await call<{ campaign: { id: string; url: string } }>('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/create`, body, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
+    if (r.ok) {
+      void refreshCampaigns();
+      rememberFleet(fleet);
+      go(campaignPath(r.data.campaign.id), `?fleet=${encodeURIComponent(fleet)}`);
+    }
+    return r;
+  };
+  return (
+    <div class="campaign-draft">
+      <ConfirmStep
+        fleet={fleet}
+        start={{ title: d?.title ?? '', body: d?.body ?? '', drafted: { title: false, body: false }, note: '' }}
+        filed={filed}
+        onFiled={setFiled}
+        onClose={() => {}}
+        onBusy={setBusy}
+        onCreate={create}
+        repoSeed={d?.repo ?? ''}
+        autoFocus={false}
+        foot={<Button label="Dismiss" pending={itemKey(entry, 'dismiss')} disabled={acting.locked || busy} onClick={() => acting.run('dismiss', {}, () => 'Dismissed')} />}
+      />
+    </div>
   );
 }
 

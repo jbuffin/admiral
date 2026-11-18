@@ -16,7 +16,8 @@ import { MuteRule } from './MuteRule';
 import { ReviewerNoteView } from './ReviewerNoteView';
 import { Peek } from './Peek';
 import { go, loc, chatMessageOf, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
-import { renderMarkdown, renderRestrictedMarkdown } from './markdown';
+import { safeHref } from './makeCampaign';
+import { renderMarkdown } from './markdown';
 import { PeekQuestions } from './PeekQuestions';
 import { useChat } from './useChat';
 import { MessageField } from './Composer';
@@ -77,6 +78,19 @@ function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'co
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+function CampaignDraftCardView({ item }: { item: Extract<ThreadItem, { kind: 'campaign_draft' }> }) {
+  const { title, url, created, failed } = item.card;
+  const href = created ? safeHref(url ?? '') : undefined;
+  return (
+    <div class="convo-card chat-card">
+      <p class="chat-card-eyebrow">{created ? 'Campaign created' : 'Draft thrown away'}</p>
+      <p class="line">{title}</p>
+      {href ? <Button label="Open the campaign issue" href={href} external /> : null}
+      {failed ? <p class="line">{failed}</p> : null}
     </div>
   );
 }
@@ -357,7 +371,7 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
         ) : i.kind === 'ship' ? (
           <ShipCardView key={i.id} item={i} />
         ) : i.kind === 'campaign_draft' ? (
-          <div key={i.id} class="msg assistant md" dangerouslySetInnerHTML={{ __html: renderRestrictedMarkdown(i.text) }} />
+          <CampaignDraftCardView key={i.id} item={i} />
         ) : (
           <MessageView key={i.id} item={i} linkShips={linkShips} fleet={fleet} flash={flashId === i.id} />
         ),

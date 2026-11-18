@@ -16,6 +16,9 @@ interface Sent {
   method: string;
   body: unknown;
 }
+// A button's pending key outlives its test by the spinner's minimum, so each test gets its own item id.
+let seq = 0;
+let id: string;
 let sent: Sent[];
 let repos: ReturnType<typeof checkout>[];
 let sources: { key: string; plugin: string; fleet: string; name: string }[];
@@ -24,6 +27,7 @@ let createAnswer: () => Response | Promise<Response>;
 let dismissAnswer: () => Response | Promise<Response>;
 
 beforeEach(() => {
+  id = `draft-${++seq}`;
   sent = [];
   nav.go.mockClear();
   localStorage.clear();
@@ -39,8 +43,8 @@ beforeEach(() => {
       const route = new URL(path, 'http://admiral.test').pathname.replace('/api/v1', '');
       const method = init.method ?? 'GET';
       sent.push({ path: route, method, body: init.body ? JSON.parse(String(init.body)) : undefined });
-      if (route === '/inbox/_admiral/draft-map/create') return createAnswer();
-      if (route === '/inbox/_admiral/draft-map/dismiss') return dismissAnswer();
+      if (route === `/inbox/_admiral/${id}/create`) return createAnswer();
+      if (route === `/inbox/_admiral/${id}/dismiss`) return dismissAnswer();
       if (route === '/fleets/zulu/repos') return json({ repos });
       if (route === '/campaigns') return json({ campaigns: [] });
       if (route === '/sources') return json(sources.map((s) => ({ ...s, icon_url: '', has_schema: true, state: 'ok', error: null })));
@@ -57,15 +61,15 @@ afterEach(() => {
 
 const entry = (draft: Record<string, unknown> = {}): Entry =>
   ({
-    key: 'item:_admiral/draft-map',
+    key: `item:_admiral/${id}`,
     type: 'item',
     session: '_admiral',
-    id: 'draft-map',
+    id,
     folded: null,
     since: 0,
     fleet: { key: 'zulu', name: 'Zulu', color: '#2a9d8f' },
     item: {
-      id: 'draft-map',
+      id,
       kind: 'campaign_draft',
       name: 'AdmiralBot',
       title: 'AdmiralBot drafted a campaign',
@@ -154,7 +158,7 @@ test('Create sends the edited draft to the item\'s create action, not the campai
   fireEvent.input(await title(), { target: { value: 'Speed up the map' } });
   fireEvent.click(create());
   await waitFor(() => expect(nav.go).toHaveBeenCalledWith('/app/campaigns/camp-9', '?fleet=zulu'));
-  expect(posts('/create')).toEqual([{ path: '/inbox/_admiral/draft-map/create', method: 'POST', body: { repo: 'acme/widgets', title: 'Speed up the map', body: 'Load the map in **under** a second.' } }]);
+  expect(posts('/create')).toEqual([{ path: `/inbox/_admiral/${id}/create`, method: 'POST', body: { repo: 'acme/widgets', title: 'Speed up the map', body: 'Load the map in **under** a second.' } }]);
   expect(sent.some((s) => s.path === '/campaigns/create')).toBe(false);
   expect(sent.some((s) => s.path === '/campaigns' && s.method === 'GET')).toBe(true);
   expect(localStorage.getItem('admiral.campaign-repo')).toBeNull();
@@ -221,7 +225,7 @@ test('Dismiss sends one dismiss and folds the row, and opens no campaign', async
   await title();
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
   await waitFor(() => expect(fold).toHaveBeenCalledTimes(1));
-  expect(posts('/dismiss')).toEqual([{ path: '/inbox/_admiral/draft-map/dismiss', method: 'POST', body: {} }]);
+  expect(posts('/dismiss')).toEqual([{ path: `/inbox/_admiral/${id}/dismiss`, method: 'POST', body: {} }]);
   expect(nav.go).not.toHaveBeenCalled();
 });
 

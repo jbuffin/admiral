@@ -1,5 +1,6 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call, fetchFleetRepos, fetchSettings, fetchSources, LAUNCH_TIMEOUT_MS, SLOW_TIMEOUT_MS } from './api';
+import { call, fetchFleetRepos, fetchSettings, fetchSources, LAUNCH_TIMEOUT_MS, type Result, SLOW_TIMEOUT_MS } from './api';
 import { Button } from './Button';
 import type { Campaign } from './campaign';
 import { openCampaign } from './campaignsLink';
@@ -223,9 +224,18 @@ interface ConfirmProps {
   filed: Filed | null;
   onFiled: (f: Filed) => void;
   onClose: () => void;
-  onBack: () => void;
+  /** Absent where the step has nowhere to go back to; the Back button is then not shown. */
+  onBack?: () => void;
   onBusy: (b: boolean) => void;
   onCreated?: () => void;
+  /** Runs the create itself: the step then offers github.com projects only, remembers nothing and leaves following to the caller. */
+  onCreate?: (body: { repo: string; title: string; body: string }) => Promise<Result<unknown>>;
+  /** The repo ("owner/name") to preselect, matched without regard to case; none is selected when it is not offered. */
+  repoSeed?: string;
+  /** False where the step opens from a link, so the page keeps the focus. */
+  autoFocus?: boolean;
+  /** Buttons that sit before Create in the foot. */
+  foot?: ComponentChildren;
 }
 
 function ParentLink({ url }: { url: string }) {
@@ -240,7 +250,7 @@ function ParentLink({ url }: { url: string }) {
 }
 
 /** The step that shows the title, description and repo before the parent issue is filed. */
-export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onBusy, onCreated }: ConfirmProps) {
+export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onBusy, onCreated, onCreate, repoSeed, autoFocus = true, foot }: ConfirmProps) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState('');
   const [repoId, setRepoId] = useState('');
@@ -255,7 +265,7 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
   useEffect(() => () => void (alive.current = false), []);
 
   useEffect(() => {
-    if (loaded) titleBox.current?.focus();
+    if (loaded && autoFocus) titleBox.current?.focus();
   }, [!!loaded]);
 
   useEffect(() => {
@@ -274,8 +284,11 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
       if (!live) return;
       const accounts = settled.flatMap(({ key, r }) => (r.ok ? [{ key, settings: r.data.settings }] : []));
       const failed = settled.flatMap(({ key, r }) => (r.ok ? [] : [`${key}: ${r.error}`]));
-      const projects = projectChoices(repos.data.repos ?? [], new Set(accounts.map((a) => sourceHost(a.settings))));
-      setRepoId(initialProject(projects, remembered()));
+      const all = projectChoices(repos.data.repos ?? [], new Set(accounts.map((a) => sourceHost(a.settings))));
+      // The create-from-item body carries no host, so the server routes on github.com.
+      const projects = onCreate ? all.filter((p) => p.host === 'github.com') : all;
+      const seeded = repoSeed === undefined ? undefined : projects.find((p) => p.repo.toLowerCase() === repoSeed.toLowerCase());
+      setRepoId(repoSeed !== undefined ? (seeded?.id ?? '') : initialProject(projects, remembered()));
       setLoaded({ projects, accounts, problem: failed.length ? `Couldn't read a GitHub source's settings (${failed.join('; ')}), so some projects may be missing.` : '' });
     })();
     return () => {
@@ -292,17 +305,19 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
     onBusy(true);
     setError('');
     const create: CreateBody = { repo: project.repo, host: project.host, fleet, title, body, issues: [] };
-    const r = await call<Campaign>('POST', '/campaigns/create', create, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
+    const r = onCreate ? await onCreate({ repo: project.repo, title, body }) : await call<Campaign>('POST', '/campaigns/create', create, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     if (!alive.current) return;
     onBusy(false);
     if (r.ok) {
-      remember(project.id);
-      openCampaign(r.data);
-      onCreated?.();
+      if (!onCreate) {
+        remember(project.id);
+        openCampaign(r.data as Campaign);
+        onCreated?.();
+      }
       return onClose();
     }
     setCreating(false);
-    setError(r.error);
+    setError(r.status === 409 && !r.parent ? 'This draft is being created already. Wait a moment and try again.' : r.error);
     if (r.parent) onFiled({ parent: r.parent, error: r.error });
   };
 
@@ -319,9 +334,12 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
           )}
         </div>
         <div class="launch-foot">
-          <Button label="Back" onClick={onBack}>
-            Back
-          </Button>
+          {onBack ? (
+            <Button label="Back" onClick={onBack}>
+              Back
+            </Button>
+          ) : null}
+          {foot}
           <Button variant="primary" label="Create campaign" disabled>
             Create campaign
           </Button>
@@ -337,6 +355,11 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
         <label class="field">
           <span>Repo for the parent issue</span>
           <select aria-label="Repo for the parent issue" value={repoId} onChange={(e) => setRepoId(e.currentTarget.value)}>
+            {repoId === '' ? (
+              <option value="" disabled>
+                Choose a repo
+              </option>
+            ) : null}
             {loaded.projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.label}
@@ -344,6 +367,7 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
             ))}
           </select>
         </label>
+        {repoSeed !== undefined && repoId === '' ? <p class="note">{`${repoSeed} isn't one of this fleet's projects. Pick the repo for the parent issue.`}</p> : null}
         {loaded.problem ? <p class="note">{loaded.problem}</p> : null}
         {loaded.projects.length === 0 && !loaded.problem ? <p class="note">No project of this fleet is on a host it has a GitHub source for.</p> : null}
         <label class="field">
@@ -384,9 +408,12 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
         ) : null}
       </div>
       <div class="launch-foot">
-        <Button label="Back" disabled={creating} onClick={onBack}>
-          Back
-        </Button>
+        {onBack ? (
+          <Button label="Back" disabled={creating} onClick={onBack}>
+            Back
+          </Button>
+        ) : null}
+        {foot}
         <Button variant="primary" label="Create campaign" busyLabel="Creating campaign" busy={creating} disabled={!title.trim() || !project || creating || !!parentMade} onClick={() => void submit()}>
           Create campaign
         </Button>

@@ -114,6 +114,7 @@ func (s *Service) List() []Item {
 				}
 			}
 			if d, ok := items[i].CampaignDraft(); ok {
+				items[i].Name = "AdmiralBot"
 				items[i].Fleet = d.Fleet
 				if f, ok := s.fleetOf(d.Fleet); ok {
 					items[i].FleetName, items[i].FleetColor = f.Name, f.Color

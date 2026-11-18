@@ -293,6 +293,7 @@ a { color: inherit; text-decoration: none; }
 .launch-body { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 2px 2px 8px; }
 .launch-body > * { min-width: 0; max-width: 100%; }
 .launch-form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.campaign-draft .launch-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding-top: 8px; }
 .launch-inner { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .launch-form legend, .field > span { display: block; margin-bottom: 4px; font-size: var(--font-size-meta); color: var(--color-text2); }
 .field { display: block; min-width: 0; }
