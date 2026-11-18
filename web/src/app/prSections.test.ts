@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PRActor, PRDetail } from './api';
-import { canReRequest, checksLine, descriptionSource, firstLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary } from './prSections';
+import { canReRequest, checksLine, descriptionSource, firstLine, foldedLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary } from './prSections';
 
 const who = (login: string, bot = false): PRActor => ({ login, bot });
 const review = (login: string, state: string, bot = false) => ({ author: who(login, bot), state });
@@ -257,6 +257,43 @@ describe('firstLine', () => {
 
   it('is empty for empty text', () => {
     expect(firstLine('')).toBe('');
+  });
+});
+
+describe('foldedLine', () => {
+  it('is the first non-blank line of the body, HTML comments dropped', () => {
+    expect(foldedLine('<!-- bot marker -->\n\nCoverage **91%**\nlines: 120')).toBe('Coverage **91%**');
+  });
+
+  it('drops a leading heading marker', () => {
+    expect(foldedLine('## Heading\nbody')).toBe('Heading');
+    expect(foldedLine('# One')).toBe('One');
+  });
+
+  it('drops a bullet, number, quote or task marker', () => {
+    expect(foldedLine('- first item\n- second')).toBe('first item');
+    expect(foldedLine('* star item')).toBe('star item');
+    expect(foldedLine('+ plus item')).toBe('plus item');
+    expect(foldedLine('1. numbered')).toBe('numbered');
+    expect(foldedLine('> quoted text')).toBe('quoted text');
+    expect(foldedLine('[ ] todo')).toBe('todo');
+    expect(foldedLine('- [x] done')).toBe('done');
+  });
+
+  it('skips a code-fence line and shows the first line after it', () => {
+    expect(foldedLine('```ts\nconst a = 1;\n```')).toBe('const a = 1;');
+    expect(foldedLine('~~~\nplain\n~~~')).toBe('plain');
+  });
+
+  it('keeps inline markdown for the caller to format and leaves a plain line whole', () => {
+    expect(foldedLine('Use `go test` and **bold**')).toBe('Use `go test` and **bold**');
+    expect(foldedLine('3 files changed')).toBe('3 files changed');
+  });
+
+  it('is empty when nothing is left to show', () => {
+    expect(foldedLine('')).toBe('');
+    expect(foldedLine('<!-- only a marker -->')).toBe('');
+    expect(foldedLine('```\n```')).toBe('');
   });
 });
 
