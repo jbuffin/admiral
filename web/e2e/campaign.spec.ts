@@ -43,6 +43,7 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(group('Blocked')).toContainText('Issue 25');
   await expect(group('Claimed, no ship')).toContainText(T.habitat);
   await expect(group('Claimed, no ship').getByRole('button', { name: /Start anyway/ })).toBeVisible();
+  await group('Done').getByRole('button').click();
   await expect(group('Done')).toContainText(T.site);
   // The page says when it last read the tree.
   await expect(main).toContainText(/Last read/);
@@ -299,6 +300,7 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   const rec = join(admiral.home, 'rec', mine[0].session);
   await expect.poll(() => existsSync(join(rec, 'env'))).toBe(true);
   writeFileSync(join(rec, 'go'), '');
+  await group('Done').getByRole('button').click();
   await expect(group('Done').getByRole('listitem').filter({ hasText: 'Annex pumps' })).toContainText('closed');
   await expect(ready.getByRole('listitem').filter({ hasText: 'Annex vents' })).toContainText('Start');
   await expect(row('Annex vents')).not.toContainText(mine[0].name);

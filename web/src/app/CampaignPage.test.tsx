@@ -9,8 +9,13 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Fleet } from "./api";
 import type { Campaign, CampaignNode } from "./campaign";
-import { addOpen, CampaignPage, CampaignsNav } from "./CampaignPage";
-import { campaignList } from "./campaignsLink";
+import {
+  addOpen,
+  CampaignPage,
+  CampaignsList,
+  CampaignsNav,
+} from "./CampaignPage";
+import { campaignList, endedOpen } from "./campaignsLink";
 import { fleets } from "./fleets";
 import { go } from "./router";
 import { resources, ships } from "./shipsLink";
@@ -80,8 +85,12 @@ const json = (body: unknown, status = 200) =>
 const proj = "/home/jb/proj";
 
 let posts: Record<string, unknown>[];
+let served: Campaign;
 beforeEach(() => {
   posts = [];
+  served = campaign;
+  campaignList.value = [];
+  endedOpen.value = false;
   fleets.value = [fleet];
   ships.value = [];
   resources.value = [];
@@ -93,7 +102,7 @@ beforeEach(() => {
         "",
       );
       if (route === "/campaigns/camp-1" && (init.method ?? "GET") === "GET")
-        return json(campaign);
+        return json(served);
       if (route === "/launch-orders/dirs")
         return json({
           entries: [
@@ -229,4 +238,93 @@ test("the followed campaigns and Ended (n) still show under the row", async () =
   await nav();
   expect(screen.getByRole("link", { name: /Widgets overhaul/ })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Ended (1)" })).toBeTruthy();
+});
+
+const summary: Campaign = {
+  ...campaign,
+  repo: "https://github.com/acme/widgets",
+  progress: { closed: 0, total: 1 },
+  counts: { ready: 2, underway: 3 },
+  ready_with_you: 2,
+};
+const summaryOf = (over: Partial<Campaign>) => ({ ...summary, ...over });
+
+test("the sidebar row names the repo and issue, never Map, and says what its badge counts", () => {
+  campaignList.value = [summary];
+  render(<CampaignsNav />);
+  const row = screen.getByRole("link", { name: /Widgets overhaul/ });
+  expect(within(row).getByText("acme/widgets#20 · 0 of 1")).toBeTruthy();
+  expect(row.textContent).not.toContain("Map");
+  expect(screen.getByRole("link", { name: /2 ready, with you/ })).toBeTruthy();
+});
+
+test("a list card shows the same meta line and the same ready count as the sidebar row", () => {
+  campaignList.value = [summary];
+  render(<CampaignsNav />);
+  const row = screen.getByRole("link", { name: /Widgets overhaul/ });
+  const rowMeta = within(row).getByText(/acme\/widgets#20/).textContent;
+  expect(row.getAttribute("href")).toBeTruthy();
+  expect(screen.getByRole("link", { name: /2 ready, with you/ })).toBe(row);
+  cleanup();
+  render(<CampaignsList phone={false} title />);
+  const card = screen.getByRole("link", { name: /Widgets overhaul/ });
+  expect(within(card).getByText("acme/widgets#20 · 0 of 1").textContent).toBe(rowMeta);
+  expect(card.textContent).not.toContain("Map");
+  expect(screen.getByRole("link", { name: /2 ready, with you/ })).toBe(card);
+});
+
+test("a list card shows its underway count with what it counts", () => {
+  campaignList.value = [summary];
+  render(<CampaignsList phone={false} title />);
+  const card = screen.getByRole("link", { name: /Widgets overhaul/ });
+  expect(screen.getByRole("link", { name: /3 underway/ })).toBe(card);
+});
+
+test("a list card shows neither count when both are 0 or absent", () => {
+  campaignList.value = [
+    summaryOf({ ready_with_you: 0, counts: { ready: 0, underway: 0 } }),
+    summaryOf({ id: "camp-2", title: "Gadgets", ready_with_you: 0, counts: {} }),
+  ];
+  render(<CampaignsList phone={false} title />);
+  for (const name of [/Widgets overhaul/, /Gadgets/]) {
+    const card = screen.getByRole("link", { name });
+    expect(card.textContent).not.toMatch(/ready, with you|underway/);
+  }
+});
+
+test("the Ended tab's cards carry the same counts", () => {
+  campaignList.value = [summaryOf({ ended: true })];
+  endedOpen.value = true;
+  render(<CampaignsList phone={false} title />);
+  const card = screen.getByRole("link", { name: /Widgets overhaul/ });
+  expect(card.getAttribute("href")).toBeTruthy();
+  expect(screen.getByRole("link", { name: /2 ready, with you 3 underway/ })).toBe(card);
+});
+
+test("on a campaign's page Done shows its count with its rows hidden, and tapping its head shows them", async () => {
+  const shipped: CampaignNode = {
+    ...child,
+    number: 22,
+    title: "Shipped the lexer",
+    url: "https://github.com/acme/widgets/issues/22",
+    status: "done",
+  };
+  served = {
+    ...campaign,
+    progress: { closed: 1, total: 2 },
+    root: { ...root, children: [child, shipped] },
+  };
+  render(<CampaignPage id="camp-1" title />);
+  expect(await screen.findByRole("button", { name: /Map the parser/ })).toBeTruthy();
+  const head = screen.getByRole("heading", { name: /^Done/ });
+  expect(within(head).getByText("1")).toBeTruthy();
+  expect(screen.queryByText("Shipped the lexer")).toBeNull();
+  const toggle = within(head).getByRole("button");
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("Shipped the lexer")).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { name: /^Ready, with you/ }).querySelector("button"),
+  ).toBeNull();
 });

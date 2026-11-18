@@ -112,6 +112,27 @@ function PasteField() {
 
 export const addOpen = signal(false);
 
+// The digit is hidden from assistive tech so the link's name reads "2 ready, with you", not a bare number.
+function ReadyBadge({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span class="camp-ready">
+      <span aria-hidden="true">{n}</span>
+      <span class="visually-hidden">{n} ready, with you</span>
+    </span>
+  );
+}
+
+function UnderwayCount({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span class="camp-underway">
+      <span aria-hidden="true">{n}</span>
+      <span class="visually-hidden">{n} underway</span>
+    </span>
+  );
+}
+
 function CampaignSidebar() {
   const fleet = activeFleet.value;
   const mine = campaignList.value.filter((c) => c.fleet === fleet?.key);
@@ -128,7 +149,7 @@ function CampaignSidebar() {
               <Ring done={c.progress.closed} total={c.progress.total} />
               <span class="camp-name">{c.title}</span>
               <span class="camp-meta">{campaignMeta(c)}</span>
-              {c.ready_with_you > 0 ? <span class="camp-ready">{c.ready_with_you}</span> : null}
+              <ReadyBadge n={c.ready_with_you} />
             </a>
           </li>
         ))}
@@ -190,6 +211,8 @@ export function CampaignsList({ phone, title }: { phone: boolean; title: boolean
               <Ring done={c.progress.closed} total={c.progress.total} />
               <span class="camp-name">{c.title}</span>
               <span class="camp-meta">{campaignMeta(c)}</span>
+              <ReadyBadge n={c.ready_with_you} />
+              <UnderwayCount n={c.counts.underway ?? 0} />
             </a>
           </li>
         ))}
@@ -340,6 +363,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [unfollowError, setUnfollowError] = useState('');
+  const [doneOpen, setDoneOpen] = useState(false);
   const fastSince = useRef<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const live = useRef(true);
@@ -492,52 +516,66 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
       ) : null}
       {unreadable ? <p class="note">Some sub-issues couldn't be read, so this list may be short.</p> : null}
       {groups.map((g) => {
+        const folded = g.key === 'done' && !doneOpen;
         const joinable = new Set(g.rows.filter((r) => canJoinSlice(r.node, sliceCtx, ships.value)).map((r) => r.node.url));
         return (
           <section key={g.key} class="camp-group" aria-labelledby={`cg-${g.key}`}>
             <h2 id={`cg-${g.key}`} class="group-head">
-              {g.title} <span class="count">{g.rows.length}</span>
+              {g.key === 'done' ? (
+                <button type="button" class="group-toggle" aria-expanded={doneOpen} onClick={() => setDoneOpen(!doneOpen)}>
+                  <span class={`fold-chevron${doneOpen ? ' open' : ''}`}>
+                    <Icon name="chevron" size={14} />
+                  </span>
+                  {g.title} <span class="count">{g.rows.length}</span>
+                </button>
+              ) : (
+                <>
+                  {g.title} <span class="count">{g.rows.length}</span>
+                </>
+              )}
               {g.note ? <span class="group-note">{g.note}</span> : null}
             </h2>
-            <ul class="ti-list">
-              {g.rows.map((r) => {
-                const ship = shipName(r.node);
-                const blockers = (r.node.blockers ?? []).map((b) => b.title || b.url);
-                return (
-                  <li key={r.node.url} class="ti-row">
-                    {joinable.has(r.node.url) ? (
-                      <label class="ti-pick">
-                        <input type="checkbox" aria-label={r.node.title} checked={checked.includes(r.node.url)} onChange={() => toggle(r.node.url)} />
-                      </label>
-                    ) : joinable.size > 0 ? (
-                      // An empty cell keeps the group's columns lined up with the rows that have a checkbox.
-                      <span class="ti-pick" aria-hidden="true" />
-                    ) : null}
-                    {safeHref(r.node.url) ? (
-                      <a class="mono ti-num ti-num-link" href={safeHref(r.node.url)!} target="_blank" rel="noopener noreferrer" aria-label={`Open issue #${r.node.number} on GitHub`}>
-                        #{r.node.number}
-                      </a>
-                    ) : (
-                      <span class="mono ti-num ti-num-link">#{r.node.number}</span>
-                    )}
-                    <button type="button" class="ti" onClick={() => setPickedUrl(r.node.url)}>
-                      <span class="ti-type">{typeLabel(r.node.labels)}</span>
-                      <span class="ti-main">
-                        <span class="ti-title">
-                          {r.prefix ? <span class="muted">{r.prefix} / </span> : null}
-                          {r.node.title}
+            {folded ? null : (
+              <ul class="ti-list">
+                {g.rows.map((r) => {
+                  const ship = shipName(r.node);
+                  const blockers = (r.node.blockers ?? []).map((b) => b.title || b.url);
+                  return (
+                    <li key={r.node.url} class="ti-row">
+                      {joinable.has(r.node.url) ? (
+                        <label class="ti-pick">
+                          <input type="checkbox" aria-label={r.node.title} checked={checked.includes(r.node.url)} onChange={() => toggle(r.node.url)} />
+                        </label>
+                      ) : joinable.size > 0 ? (
+                        // An empty cell keeps the group's columns lined up with the rows that have a checkbox.
+                        <span class="ti-pick" aria-hidden="true" />
+                      ) : null}
+                      {safeHref(r.node.url) ? (
+                        <a class="mono ti-num ti-num-link" href={safeHref(r.node.url)!} target="_blank" rel="noopener noreferrer" aria-label={`Open issue #${r.node.number} on GitHub`}>
+                          #{r.node.number}
+                        </a>
+                      ) : (
+                        <span class="mono ti-num ti-num-link">#{r.node.number}</span>
+                      )}
+                      <button type="button" class="ti" onClick={() => setPickedUrl(r.node.url)}>
+                        <span class="ti-type">{typeLabel(r.node.labels)}</span>
+                        <span class="ti-main">
+                          <span class="ti-title">
+                            {r.prefix ? <span class="muted">{r.prefix} / </span> : null}
+                            {r.node.title}
+                          </span>
+                          {blockers.length > 0 ? <span class="ti-sub">Waits on {blockers.join(', ')}</span> : null}
                         </span>
-                        {blockers.length > 0 ? <span class="ti-sub">Waits on {blockers.join(', ')}</span> : null}
-                      </span>
-                      <span class="ti-state">
-                        {stateOf(r, ship, campaign.ended, clockOf(r.node))}
-                        {!['ready', 'underway'].includes(r.node.status ?? '') && r.node.mode ? <span class="ti-mode">{r.node.mode === 'with-you' ? 'with you' : 'without you'}</span> : null}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+                        <span class="ti-state">
+                          {stateOf(r, ship, campaign.ended, clockOf(r.node))}
+                          {!['ready', 'underway'].includes(r.node.status ?? '') && r.node.mode ? <span class="ti-mode">{r.node.mode === 'with-you' ? 'with you' : 'without you'}</span> : null}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
             {g.key === 'ready-without-you' && checked.length >= 2 ? (
               <div class="slice-bar">
                 <Button variant="primary" label={`Launch slice (${checked.length})`} onClick={() => setLaunching({ node: children.find((c) => c.url === checked[0])!, anyway: false, slice: checked.map((u) => children.find((c) => c.url === u)!) })} />

@@ -24,6 +24,7 @@ test('on the phone, the Campaigns page and a child sheet fit the screen and thei
   await expect(group('Ready, without you')).toContainText(T.survey);
   await expect(group('Blocked')).toContainText(T.airlock);
   await expect(group('Claimed, no ship')).toContainText(T.habitat);
+  await group('Done').getByRole('button').tap();
   await expect(group('Done')).toContainText(T.site);
   expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
 
