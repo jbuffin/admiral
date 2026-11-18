@@ -58,6 +58,7 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
   useEffect(() => input.current?.focus(), []);
 
   useEffect(() => {
+    setHits(null);
     const ctl = new AbortController();
     const run = async () => {
       const r = await call<{ results: Hit[] | null }>('GET', `/fleets/${encodeURIComponent(fleet)}/campaigns/search?q=${encodeURIComponent(q.trim())}`, undefined, undefined, { signal: ctl.signal });
