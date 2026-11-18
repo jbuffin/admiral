@@ -457,7 +457,10 @@ test('a ship launches from the header and from an order on the Ships screen and 
 
 // The user line the fake harness appends to the transcript after its reply delay: the record the sent bubble waits for.
 function recordedInTranscript(a: Admiral, ship: { session: string }, text: string): boolean {
-  const args = readFileSync(join(a.home, 'rec', ship.session, 'argv'), 'utf8').split('\0');
+  // The fake writes argv only once its pane has started, after the launch call returned.
+  const argv = join(a.home, 'rec', ship.session, 'argv');
+  if (!existsSync(argv)) return false;
+  const args = readFileSync(argv, 'utf8').split('\0');
   const id = args[args.indexOf('--session-id') + 1];
   const file = join(a.home, 'identity', 'zulu-claude', 'projects', 'zz', `${id}.jsonl`);
   return existsSync(file) && readFileSync(file, 'utf8').includes(text);
