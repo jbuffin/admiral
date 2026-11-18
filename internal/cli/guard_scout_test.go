@@ -434,13 +434,13 @@ func TestScoutModeRunsWithoutAutopilotAndAutopilotRulesStackOnTop(t *testing.T) 
 			t.Errorf("Guard = %v, want a refusal", err)
 		}
 	})
-	t.Run("an opaque command is refused on a scout on autopilot and allowed on one that is not", func(t *testing.T) {
-		cmd := `bash review-approve.sh`
+	t.Run("a token read is refused on a scout on autopilot and allowed on one that is not", func(t *testing.T) {
+		cmd := `gh auth token`
 		if err, _, _ := r.run(t, "1", "Bash", bashInput(cmd), ""); err == nil {
-			t.Error("autopilot's shell_script rule did not apply to a scout on autopilot")
+			t.Error("autopilot's token rule did not apply to a scout on autopilot")
 		}
 		if err, _, _ := r.run(t, "", "Bash", bashInput(cmd), ""); err != nil {
-			t.Errorf("Guard = %v for a script run by a scout not on autopilot, want it allowed: the autopilot rules apply only with ADMIRAL_AUTOPILOT=1", err)
+			t.Errorf("Guard = %v for a token read by a scout not on autopilot, want it allowed: the autopilot rules apply only with ADMIRAL_AUTOPILOT=1", err)
 		}
 	})
 }

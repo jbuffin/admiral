@@ -175,10 +175,7 @@ func (e *ScoutRefusal) Error() string {
 // ScoutProven reports whether a scout may run on harness in the fleet: the scout guard probe and the autopilot
 // guard probe both passed against the last version detected there, since a scout runs in autopilot.
 func ScoutProven(home, fleetKey, harness string) bool {
-	if !slices.Contains(probes.ScoutGuardHarnesses(), harness) {
-		return false
-	}
-	return capabilities.Open(home).Proven(fleetKey, harness, capabilities.ScoutGuard) && Proven(home, fleetKey, harness)
+	return CheckScout(home, config.Fleet{Key: fleetKey}, harness) == nil
 }
 
 // CheckScout returns nil when ScoutProven, and a *ScoutRefusal saying which proof is missing otherwise.

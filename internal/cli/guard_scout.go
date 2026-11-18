@@ -116,7 +116,7 @@ func scoutDecision(raw []byte, root string) (tool, rule, target string) {
 	case "Edit", "Write", "MultiEdit", "NotebookEdit":
 		rule, target = editTarget(p.ToolName, p.ToolInput, root)
 		return p.ToolName, rule, target
-	case "Bash":
+	case "Bash", "Monitor":
 		var in struct {
 			Command *string `json:"command"`
 		}
@@ -126,10 +126,24 @@ func scoutDecision(raw []byte, root string) (tool, rule, target string) {
 		c := scoutCheck{root: root, cwd: p.Cwd, st: &scoutState{}}
 		return p.ToolName, c.command(*in.Command, 0), ""
 	}
-	if strings.HasPrefix(p.ToolName, "mcp__") && scoutMcpWrites(p.ToolName) {
-		return p.ToolName, ruleScoutMcp, ""
+	if strings.HasPrefix(p.ToolName, "mcp__") {
+		if scoutMcpWrites(p.ToolName) {
+			return p.ToolName, ruleScoutMcp, ""
+		}
+		return p.ToolName, "", ""
+	}
+	if !scoutHarmless[p.ToolName] {
+		return p.ToolName, ruleScoutEnv, "" // a tool the policy has not seen could change something
 	}
 	return p.ToolName, "", ""
+}
+
+// scoutHarmless are the harness tools that only read, plan or start another session under the same hooks.
+var scoutHarmless = map[string]bool{
+	"Read": true, "Grep": true, "Glob": true, "LS": true, "WebFetch": true, "WebSearch": true, "TodoWrite": true,
+	"Task": true, "Agent": true, "NotebookRead": true, "BashOutput": true, "KillShell": true, "KillBash": true,
+	"TaskOutput": true, "TaskStop": true, "TaskList": true, "TaskGet": true, "ExitPlanMode": true, "EnterPlanMode": true,
+	"AskUserQuestion": true, "ToolSearch": true, "Skill": true, "SendMessage": true,
 }
 
 var scoutMcpTool = regexp.MustCompile(launcher.ScoutMCPMatcher)
@@ -189,15 +203,20 @@ type scoutState struct {
 	moved bool // a cd, pushd, popd, env -C or sudo -D: relative paths are not under cwd
 	// A name in the environment that makes git or a shell run a program of its own.
 	gitEnv, shellEnv bool
+	renamed          bool // an alias table was assigned: a later word may be any command
 }
 
 var gitSafeEnv = []string{"GIT_TERMINAL_PROMPT", "GIT_OPTIONAL_LOCKS"}
+
+// A pager or editor git starts runs whatever the variable names.
+var gitProgramEnv = []string{"PAGER", "EDITOR", "VISUAL", "LESSOPEN", "LESS"}
 
 // Where git finds its global config, whose core.fsmonitor or pager runs a program.
 var gitConfigEnv = []string{"HOME", "XDG_CONFIG_HOME"}
 
 func (st *scoutState) assigned(name string) {
-	st.gitEnv = st.gitEnv || strings.HasPrefix(name, "GIT_") && !slices.Contains(gitSafeEnv, name) || slices.Contains(gitConfigEnv, name)
+	st.gitEnv = st.gitEnv || strings.HasPrefix(name, "GIT_") && !slices.Contains(gitSafeEnv, name) || slices.Contains(gitConfigEnv, name) || slices.Contains(gitProgramEnv, name)
+	st.renamed = st.renamed || slices.Contains(aliasTables, name)
 	st.shellEnv = st.shellEnv || slices.Contains(startupNames, name)
 }
 
@@ -236,8 +255,32 @@ func (c scoutCheck) command(text string, depth int) string {
 	return rule
 }
 
+// ansiEscaped finds a $'…' part with an escape in it: the parser keeps the text raw, so the word is not the one the shell runs.
+func ansiEscaped(w *syntax.Word) bool {
+	var has func(parts []syntax.WordPart) bool
+	has = func(parts []syntax.WordPart) bool {
+		for _, p := range parts {
+			switch p := p.(type) {
+			case *syntax.SglQuoted:
+				if p.Dollar && strings.Contains(p.Value, `\`) {
+					return true
+				}
+			case *syntax.DblQuoted:
+				if has(p.Parts) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return has(w.Parts)
+}
+
 func (c scoutCheck) redirects(redirs []*syntax.Redirect) string {
 	for _, r := range redirs {
+		if r.Word != nil && ansiEscaped(r.Word) {
+			return ruleScoutWrite
+		}
 		switch r.Op {
 		case syntax.RdrOut, syntax.AppOut, syntax.ClbOut, syntax.RdrAll, syntax.AppAll, syntax.RdrInOut:
 		case syntax.DplOut:
@@ -288,8 +331,14 @@ func (c scoutCheck) call(call *syntax.CallExpr, redirs []*syntax.Redirect, depth
 			c.st.assigned(a.Name.Value)
 		}
 	}
+	if c.st.renamed {
+		return ruleScoutWrite
+	}
 	words := make([]string, len(call.Args))
 	for i, w := range call.Args {
+		if ansiEscaped(w) {
+			return ruleScoutWrite
+		}
 		words[i] = wordText(w)
 	}
 	return c.words(words, redirs, depth, false)
@@ -302,6 +351,9 @@ func (c scoutCheck) words(words []string, redirs []*syntax.Redirect, depth int, 
 		}
 		w, args := strings.TrimPrefix(filepath.Base(words[0]), "="), words[1:]
 		if spec, ok := wrappers[w]; ok {
+			if w == "xcrun" {
+				args = longSingleDash(args, "-sdk", "-toolchain")
+			}
 			rest, script := skipWrapperFlags(spec, args)
 			if script != "" {
 				if r := c.command(script, depth+1); r != "" {
@@ -319,13 +371,27 @@ func (c scoutCheck) words(words []string, redirs []*syntax.Redirect, depth int, 
 			if slices.Contains(joinedWrappers, w) && len(rest) > 0 {
 				return c.command(markWords.Replace(strings.Join(rest, " ")), depth+1)
 			}
-			viaXargs = viaXargs || w == "xargs"
+			if viaXargs && len(rest) == 0 && w != "xargs" && w != "parallel" {
+				return ruleScoutWrite // the words from stdin become the command it runs
+			}
+			viaXargs = viaXargs || w == "xargs" || w == "parallel"
 			words = rest
 			continue
 		}
 		return c.program(w, args, redirs, depth, viaXargs)
 	}
 	return ""
+}
+
+// longSingleDash spells the flags xcrun takes with one dash as the long options the wrapper table knows.
+func longSingleDash(args []string, names ...string) []string {
+	out := slices.Clone(args)
+	for i, a := range out {
+		if slices.Contains(names, a) {
+			out[i] = "-" + a
+		}
+	}
+	return out
 }
 
 // chdirFlag finds the flag of a wrapper that runs its command in another directory.
@@ -351,7 +417,15 @@ func (c scoutCheck) program(w string, args []string, redirs []*syntax.Redirect, 
 	case w == "cd" || w == "pushd" || w == "popd":
 		c.st.moved = true
 	case w == "git":
-		return c.git(args)
+		return c.git(args, viaXargs)
+	case strings.HasPrefix(w, "git-"):
+		return c.git(append([]string{strings.TrimPrefix(w, "git-")}, args...), viaXargs) // git's own dashed binaries
+	case w == "alias" || w == "unalias" || w == "hash" && hashRenames(args):
+		return ruleScoutWrite
+	case slices.Contains(httpClients, w):
+		if httpSends(w, args) {
+			return ruleScoutWrite
+		}
 	case w == "gh":
 		if viaXargs {
 			return ruleScoutGhPr
@@ -379,7 +453,7 @@ func (c scoutCheck) program(w string, args []string, redirs []*syntax.Redirect, 
 			return c.command(markWords.Replace(args[0]), depth+1)
 		}
 	default:
-		if c.anyWrites(c.targets(w, args)) {
+		if c.anyWrites(c.targets(w, args)) || c.hardLinks(w, args) {
 			return ruleScoutWrite
 		}
 	}
@@ -389,7 +463,7 @@ func (c scoutCheck) program(w string, args []string, redirs []*syntax.Redirect, 
 var scoutWriters = map[string]bool{
 	"rm": true, "rmdir": true, "unlink": true, "touch": true, "mkdir": true, "truncate": true,
 	"chmod": true, "chown": true, "chgrp": true, "mv": true, "cp": true, "install": true, "ln": true,
-	"rsync": true, "tee": true, "dd": true, "sed": true, "perl": true, "patch": true,
+	"rsync": true, "ditto": true, "tee": true, "dd": true, "sed": true, "perl": true, "patch": true,
 }
 
 // targets are the paths a command changes, or too many of them when its flags are
@@ -412,7 +486,12 @@ func (c scoutCheck) targets(w string, args []string) []string {
 		return operands(args, "", nil)
 	case "mv":
 		return append(operands(args, "tS", []string{"target-directory", "suffix"}), targetDir(w, args)...)
-	case "cp", "install", "ln", "rsync":
+	case "install":
+		if installsDirs(args) {
+			return operands(args, "mogGSt", []string{"mode", "owner", "group", "suffix", "target-directory"})
+		}
+		return destination(w, args)
+	case "cp", "ln", "rsync", "ditto":
 		return destination(w, args)
 	case "dd":
 		var out []string
@@ -423,9 +502,9 @@ func (c scoutCheck) targets(w string, args []string) []string {
 		}
 		return out
 	case "sed":
-		return inPlace(args, "efl", "expression", "file", "line-length")
+		return inPlace(args, "iI", "efl", "expression", "file", "line-length")
 	case "perl":
-		return inPlace(args, "eE", "", "", "")
+		return inPlace(args, "i", "eE", "", "", "")
 	case "patch":
 		return patchTargets(args, c.cwd)
 	}
@@ -516,7 +595,7 @@ func destination(w string, args []string) []string {
 
 // inPlace is the files sed or perl edit when given -i, and none otherwise. The
 // script is the first operand unless a flag gave it.
-func inPlace(args []string, valued, longValued, longValued2, longValued3 string) []string {
+func inPlace(args []string, editing, valued, longValued, longValued2, longValued3 string) []string {
 	edits, scripted := false, false
 	var pos []string
 	for i := 0; i < len(args); i++ {
@@ -544,7 +623,7 @@ func inPlace(args []string, valued, longValued, longValued2, longValued3 string)
 		cluster:
 			for j := 1; j < len(a); j++ {
 				switch {
-				case a[j] == 'i':
+				case strings.IndexByte(editing, a[j]) >= 0:
 					edits = true
 					break cluster
 				case strings.IndexByte(valued, a[j]) >= 0:
@@ -573,27 +652,71 @@ func inPlace(args []string, valued, longValued, longValued2, longValued3 string)
 func patchTargets(args []string, cwd string) []string {
 	base := cwd
 	var out []string
+	longName := func(name string) string {
+		for _, l := range []string{"directory", "output", "input", "strip", "reject-file"} {
+			if name != "" && strings.HasPrefix(l, name) && (len(name) > 1 || l == "output") {
+				return l
+			}
+		}
+		return ""
+	}
+	set := func(opt, v string) {
+		switch opt {
+		case "directory":
+			base = v
+		case "output", "reject-file":
+			out = append(out, v)
+		}
+	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
-		case a == "-d" || a == "--directory":
-			if i++; i < len(args) {
-				base = args[i]
+		case a == "--":
+			if i+1 < len(args) {
+				return append(out, patchFile(base, args[i+1]))
 			}
-		case strings.HasPrefix(a, "--directory="):
-			base = strings.TrimPrefix(a, "--directory=")
-		case a == "-o" || a == "--output":
-			if i++; i < len(args) {
-				out = append(out, args[i])
+		case strings.HasPrefix(a, "--"):
+			name, v, has := strings.Cut(a[2:], "=")
+			if opt := longName(name); opt != "" {
+				if !has && i+1 < len(args) {
+					i++
+					v = args[i]
+				}
+				set(opt, v)
 			}
-		case a == "-i" || a == "-p" || a == "-r" || a == "-F" || a == "-B" || a == "-V" || a == "-z" || a == "--input" || a == "--strip" || a == "--reject-file":
-			i++
-		case strings.HasPrefix(a, "-"):
+		case len(a) > 1 && a[0] == '-':
+			for j := 1; j < len(a); j++ {
+				if strings.IndexByte("dioprFBVz", a[j]) < 0 {
+					continue
+				}
+				v := a[j+1:]
+				if v == "" && i+1 < len(args) {
+					i++
+					v = args[i]
+				}
+				switch a[j] {
+				case 'd':
+					set("directory", v)
+				case 'o':
+					set("output", v)
+				case 'r':
+					set("reject-file", v)
+				}
+				break
+			}
 		default:
-			return append(out, a)
+			return append(out, patchFile(base, a))
 		}
 	}
 	return append(out, base)
+}
+
+// patchFile is a file patch is told to patch, which -d puts under its directory.
+func patchFile(base, name string) string {
+	if filepath.IsAbs(name) {
+		return name
+	}
+	return filepath.Join(base, name)
 }
 
 func (c scoutCheck) find(args []string, redirs []*syntax.Redirect, depth int) string {
@@ -633,8 +756,8 @@ func (c scoutCheck) find(args []string, redirs []*syntax.Redirect, depth int) st
 	return ""
 }
 
-// shell reads the script a shell runs when the call shows it; a file that does not
-// exist cannot run, and any other file the guard cannot read is refused.
+// shell reads the script a shell runs when the call shows it; a file the guard cannot read is refused,
+// and so is one that does not exist yet, which a write earlier in the call may create.
 func (c scoutCheck) shell(args []string, redirs []*syntax.Redirect, depth int) string {
 	if c.st.shellEnv {
 		return ruleScoutWrite // BASH_ENV, ENV or ZDOTDIR makes the shell run a file first
@@ -701,9 +824,6 @@ func (c scoutCheck) scriptFile(name string, depth int) string {
 		}
 		name = filepath.Join(c.cwd, name)
 	}
-	if _, err := os.Stat(name); errors.Is(err, fs.ErrNotExist) {
-		return ""
-	}
 	text, ok := guardCheck{cwd: c.cwd, st: &guardState{}}.readFile(name)
 	if !ok {
 		return ruleScoutWrite
@@ -719,9 +839,57 @@ var gitReads = []string{
 	"check-ignore", "var", "verify-commit", "verify-tag", "show-branch", "range-diff", "annotate",
 }
 
+// gitXargsReads are the reads with no option that writes a file or runs a program.
+var gitXargsReads = []string{"status", "rev-parse", "cat-file", "ls-files", "ls-tree", "rev-list", "show-ref", "merge-base", "name-rev", "blame", "check-ignore", "describe"}
+
+// gitDangerousLong are the long options of a read that write a file or run a program; git takes any unambiguous prefix.
+var gitDangerousLong = []string{"output", "upload-pack", "receive-pack", "exec", "open-files-in-pager"}
+
+// gitRunsAProgram finds an option that makes a read write a file or run a program, in any spelling git accepts.
+func gitRunsAProgram(name string, args []string) bool {
+	dangerous := gitDangerousLong
+	if name == "fetch" {
+		dangerous = append(slices.Clone(dangerous), "update-head-ok", "refmap", "negotiate-only")
+	}
+	for _, a := range args {
+		switch {
+		case a == "--":
+			return false
+		case strings.HasPrefix(a, "--"):
+			opt, _, _ := strings.Cut(a[2:], "=")
+			if opt != "" && slices.ContainsFunc(dangerous, func(d string) bool { return strings.HasPrefix(d, opt) || strings.HasPrefix(opt, d) }) {
+				return true
+			}
+		case len(a) > 1 && a[0] == '-':
+			if name == "grep" && strings.Contains(a, "O") || name == "fetch" && strings.Contains(a, "u") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// gitFetch refuses a refspec that writes a local ref: one with a destination or a leading plus.
+func gitFetch(args []string) string {
+	seenRemote := false
+	for _, a := range args {
+		if a == "--" || strings.HasPrefix(a, "-") {
+			continue
+		}
+		if !seenRemote {
+			seenRemote = true
+			continue
+		}
+		if strings.Contains(a, ":") || strings.HasPrefix(a, "+") {
+			return ruleScoutGit
+		}
+	}
+	return ""
+}
+
 var gitSafeConfig = []string{"color.", "column.", "advice."}
 
-func (c scoutCheck) git(args []string) string {
+func (c scoutCheck) git(args []string, viaXargs bool) string {
 	if c.st.gitEnv {
 		return ruleScoutGit
 	}
@@ -744,15 +912,20 @@ func (c scoutCheck) git(args []string) string {
 			if i >= len(args) || !slices.ContainsFunc(gitSafeConfig, func(p string) bool { return strings.HasPrefix(args[i], p) }) {
 				return ruleScoutGit
 			}
-		case a == "--git-dir" || a == "--work-tree" || a == "--namespace":
+		case a == "--namespace":
 			i++
-		case strings.HasPrefix(a, "--git-dir=") || strings.HasPrefix(a, "--work-tree=") || strings.HasPrefix(a, "--namespace="):
+		case strings.HasPrefix(a, "--git-dir") || strings.HasPrefix(a, "--work-tree"):
+			return ruleScoutGit // another repository's directory: GIT_DIR by another name
+		case strings.HasPrefix(a, "--namespace="):
 		case strings.HasPrefix(a, "--config-env") || strings.HasPrefix(a, "--exec-path") || a == "--list-cmds" || strings.HasPrefix(a, "-c") && len(a) > 2:
 			return ruleScoutGit
 		case strings.HasPrefix(a, "-"):
 		default:
 			goto sub
 		}
+	}
+	if viaXargs {
+		return ruleScoutGit // the subcommand is whatever stdin brings
 	}
 	return "" // git with no subcommand: a version or help flag
 sub:
@@ -762,11 +935,11 @@ sub:
 	}
 	switch {
 	case slices.Contains(gitReads, name):
-		if slices.ContainsFunc(rest, func(a string) bool {
-			return strings.HasPrefix(a, "--output") || strings.HasPrefix(a, "--upload-pack") || strings.HasPrefix(a, "--receive-pack") ||
-				name == "grep" && (a == "-O" || strings.HasPrefix(a, "-O") || strings.HasPrefix(a, "--open-files-in-pager"))
-		}) {
-			return ruleScoutGit
+		if viaXargs && !slices.Contains(gitXargsReads, name) || gitRunsAProgram(name, rest) {
+			return ruleScoutGit // stdin can add any option to the call
+		}
+		if name == "fetch" {
+			return gitFetch(rest)
 		}
 		return ""
 	case name == "branch":
@@ -889,6 +1062,9 @@ func (c scoutCheck) gh(args []string) string {
 	if len(sub) == 0 {
 		return ""
 	}
+	if ghFlagBeforeVerb(args) {
+		return ruleScoutGhPr // ghSubcommand skips the flag, so the verb it reads may be the flag's value
+	}
 	readVerb := func() bool {
 		return len(sub) >= 2 && slices.Contains([]string{"view", "list", "status", "diff", "checks"}, sub[1])
 	}
@@ -912,6 +1088,31 @@ func (c scoutCheck) gh(args []string) string {
 		return ruleScoutGhPr
 	}
 	return ""
+}
+
+// ghFlagBeforeVerb finds a flag between the command group and its verb; -R and --hostname are the ones gh takes there.
+func ghFlagBeforeVerb(args []string) bool {
+	group := false
+	if sub := ghSubcommand(args); len(sub) > 0 && sub[0] == "api" {
+		return false
+	}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-R" || a == "--repo" || a == "--hostname":
+			i++
+		case strings.HasPrefix(a, "--repo=") || strings.HasPrefix(a, "--hostname="):
+		case strings.HasPrefix(a, "-"):
+			if group {
+				return true
+			}
+		case !group:
+			group = true
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 var graphqlMutation = regexp.MustCompile(`(?i)\bmutation\b`)
@@ -970,4 +1171,137 @@ func (c scoutCheck) graphqlRule(p apiArgs) string {
 		}
 	}
 	return ""
+}
+
+var httpClients = []string{"curl", "wget", "http", "https", "xh", "xhs"}
+
+var httpDataItem = regexp.MustCompile(`^[^=:@/\s]+(?::=|=[^=]|=$|@)`)
+
+// httpSends finds a request that sends a body or uses a method other than GET or HEAD, to any host.
+func httpSends(w string, args []string) bool {
+	readMethod := func(m string) bool { return strings.EqualFold(m, "GET") || strings.EqualFold(m, "HEAD") }
+	if w == "http" || w == "https" || w == "xh" || w == "xhs" {
+		ignoresStdin := false
+		for _, a := range args {
+			switch {
+			case a == "--ignore-stdin" || a == "-I":
+				ignoresStdin = true
+			case a == "--":
+			case strings.HasPrefix(a, "--"):
+				if name, _, _ := strings.Cut(a[2:], "="); slices.ContainsFunc([]string{"form", "json", "multipart", "raw", "data"}, func(l string) bool { return name != "" && strings.HasPrefix(l, name) }) {
+					return true
+				}
+			case len(a) > 1 && a[0] == '-':
+				if strings.ContainsAny(a, "fjxd") {
+					return true
+				}
+			case a == strings.ToUpper(a) && isLetters(a) && !readMethod(a), httpDataItem.MatchString(a):
+				return true
+			}
+		}
+		return !ignoresStdin // httpie and xh send what stdin holds as the body
+	}
+	method := func(i int, inline string) bool {
+		if inline == "" && i+1 < len(args) {
+			inline = args[i+1]
+		}
+		return !readMethod(inline)
+	}
+	for i, a := range args {
+		switch {
+		case a == "--":
+			return false
+		case strings.HasPrefix(a, "--"):
+			name, v, has := strings.Cut(a[2:], "=")
+			hasPrefix := func(l string) bool { return name != "" && strings.HasPrefix(l, name) }
+			switch {
+			case name == "request" || name == "method":
+				if !has {
+					v = ""
+				}
+				if method(i, v) {
+					return true
+				}
+			case slices.ContainsFunc([]string{"data", "form", "upload-file", "json", "post-data", "post-file", "body-data", "body-file", "config"}, hasPrefix) || strings.HasPrefix(name, "data") || strings.HasPrefix(name, "form") || strings.HasPrefix(name, "post") || strings.HasPrefix(name, "body") || strings.HasPrefix(name, "json"):
+				return true
+			}
+		case len(a) > 1 && a[0] == '-':
+			for j := 1; j < len(a); j++ {
+				switch a[j] {
+				case 'd', 'F', 'T', 'K':
+					return true
+				case 'X':
+					return method(i, a[j+1:])
+				}
+			}
+		}
+	}
+	return false
+}
+
+func isLetters(s string) bool {
+	return s != "" && strings.Trim(s, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") == ""
+}
+
+// installsDirs finds install -d or -D, which create directories from its operands.
+func installsDirs(args []string) bool {
+	for _, a := range args {
+		switch {
+		case a == "--":
+			return false
+		case strings.HasPrefix(a, "--"):
+			if name, _, _ := strings.Cut(a[2:], "="); len(name) >= 3 && strings.HasPrefix("directory", name) {
+				return true
+			}
+		case len(a) > 1 && a[0] == '-' && strings.ContainsAny(a, "dD"):
+			return true
+		}
+	}
+	return false
+}
+
+// hardLinks finds a link or copy that gives a checkout file a second name, which a later write outside the checkout changes through.
+func (c scoutCheck) hardLinks(w string, args []string) bool {
+	var link bool
+	switch w {
+	case "ln":
+		link = true
+		for _, a := range args {
+			switch {
+			case a == "--":
+			case strings.HasPrefix(a, "--"):
+				if name, _, _ := strings.Cut(a[2:], "="); len(name) >= 3 && strings.HasPrefix("symbolic", name) {
+					link = false
+				}
+			case len(a) > 1 && a[0] == '-' && strings.Contains(a, "s"):
+				link = false
+			}
+		}
+	case "cp":
+		for _, a := range args {
+			switch {
+			case a == "--":
+			case strings.HasPrefix(a, "--"):
+				if name, _, _ := strings.Cut(a[2:], "="); name != "" && strings.HasPrefix("link", name) {
+					link = true
+				}
+			case len(a) > 1 && a[0] == '-' && strings.Contains(a, "l"):
+				link = true
+			}
+		}
+	case "rsync":
+		for _, a := range args {
+			if v, ok := strings.CutPrefix(a, "--link-dest="); ok && c.writes(v) {
+				return true
+			}
+		}
+	}
+	if !link {
+		return false
+	}
+	pos := operands(args, "tS", []string{"suffix", "target-directory"})
+	if targetDir(w, args) == nil && len(pos) > 1 {
+		pos = pos[:len(pos)-1]
+	}
+	return c.anyWrites(pos)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -33,9 +34,9 @@ const ScoutEnv = "ADMIRAL_SCOUT"
 const ScoutEditMatcher = "^(Edit|Write|MultiEdit|NotebookEdit)$"
 
 // ScoutMCPMatcher matches the MCP tools whose name says they create or change a pull request, push, commit,
-// merge, review, or write a file or branch, except those whose name starts with get_, list_ or search_. The
-// guard decides with the same expression. It is both a JavaScript and an RE2 expression, so it has no
-// lookahead and no (?i): the read verbs are spelled as their complement and the case out.
+// merge, review, or write a file or branch, and every tool of a GitHub server whose name does not start with
+// get_, list_ or search_. The guard decides with the same expression. It is both a JavaScript and an RE2
+// expression, so it has no lookahead and no (?i): the read verbs are spelled as their complement and the case out.
 var ScoutMCPMatcher = scoutMCPMatcher()
 
 func scoutMCPMatcher() string {
@@ -56,9 +57,28 @@ func scoutMCPMatcher() string {
 	}
 	verbs := fold("(create|update|delete|write|edit|upload|remove|move)")
 	kw := "(?:" + strings.Join(words, "|") + "|" + verbs + `\w*` + fold("file") + ")"
-	// A name that is not a read verb's prefix: the first characters that differ from get_, list_ or search_.
-	notRead := "(?:[^gls]|g(?:[^e]|e(?:[^t]|t[^_]))|l(?:[^i]|i(?:[^s]|s(?:[^t]|t[^_])))|s(?:[^e]|e(?:[^a]|a(?:[^r]|r(?:[^c]|c(?:[^h]|h[^_])))))" + ")"
-	return "^mcp__.*__(?:" + kw + "|" + notRead + ".*" + kw + ")"
+	notRead := notPrefixed([]string{"get_", "list_", "search_"})
+	return "^mcp__(?:.*__(?:" + kw + "|" + notRead + ".*" + kw + ")|.*" + fold("github") + ".*__" + notRead + ")"
+}
+
+// notPrefixed matches a string that starts with none of prefixes, as a pattern with no lookahead.
+func notPrefixed(prefixes []string) string {
+	groups := map[byte][]string{}
+	var order []byte
+	for _, p := range prefixes {
+		if _, ok := groups[p[0]]; !ok {
+			order = append(order, p[0])
+		}
+		groups[p[0]] = append(groups[p[0]], p[1:])
+	}
+	alts := []string{"$", "[^" + string(order) + "]"}
+	for _, c := range order {
+		if slices.Contains(groups[c], "") {
+			continue
+		}
+		alts = append(alts, string(c)+notPrefixed(groups[c]))
+	}
+	return "(?:" + strings.Join(alts, "|") + ")"
 }
 
 // Claude Code lets a call through when a PreToolUse hook times out or fails, so onFailure
@@ -83,7 +103,7 @@ func claudeSettings() any {
 		"PreToolUse": []any{
 			group("AskUserQuestion", "PreToolUse"),
 			group("^(?!AskUserQuestion$).*", "PreToolUse"),
-			guardGroup("Bash"),
+			guardGroup("Bash|Monitor"),
 			guardGroup("^mcp__.*pull_request_review.*$"),
 			guardGroup(MergeToolMatcher),
 			guardGroup(ScoutEditMatcher),

@@ -177,7 +177,7 @@ func guardDecision(raw []byte) (tool, rule string) {
 		return "", ruleUnparsed
 	}
 	switch {
-	case p.ToolName == "Bash":
+	case p.ToolName == "Bash" || p.ToolName == "Monitor":
 		var in struct {
 			Command *string `json:"command"`
 		}
