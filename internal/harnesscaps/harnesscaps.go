@@ -144,6 +144,16 @@ func (s *Service) harness(store *capabilities.Store, fleet config.Fleet, name st
 	return h
 }
 
+// Docks is one fleet's docks with their probed versions and capabilities, in the config's order.
+func (s *Service) Docks(f config.Fleet) []any {
+	store := capabilities.Open(s.Home)
+	out := make([]any, 0, len(f.Harnesses))
+	for _, h := range f.Harnesses {
+		out = append(out, s.harness(store, f, h.Name, nil))
+	}
+	return out
+}
+
 func (s *Service) list(w http.ResponseWriter, r *http.Request) {
 	store := capabilities.Open(s.Home)
 	out := []fleetJSON{}
