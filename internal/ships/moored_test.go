@@ -37,3 +37,14 @@ func TestMooredSliceShipKeepsClaimingEveryIssue(t *testing.T) {
 		}
 	}
 }
+
+func TestAMooredShipListsItsSkillKind(t *testing.T) {
+	f := mooredService(t, nil)
+	if err := moor.Write(f.home, moor.Record{Name: "Hood", Session: "hood", Fleet: "work", Skill: moor.Skill{Kind: "commodore"}}); err != nil {
+		t.Fatal(err)
+	}
+	got := f.s.mooredShips(nil)
+	if len(got) != 1 || got[0].SkillKind != "commodore" {
+		t.Fatalf("moored ships = %+v, want one with skill_kind commodore", got)
+	}
+}

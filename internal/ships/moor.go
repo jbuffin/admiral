@@ -256,6 +256,7 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 			name := r.Skill.Name
 			sh.Skill = &name
 		}
+		sh.SkillKind = r.Skill.Kind
 		if p, ok := s.State.Position(r.Session); ok {
 			sh.Position = &p
 		}

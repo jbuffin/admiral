@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -423,5 +424,118 @@ func TestAVoyageWithNoParsableLaunchStampPostsNoCard(t *testing.T) {
 		m.Launched, m.FirstLaunched = stamp, stamp
 		x.observe(time.Minute, []ships.Ship{m})
 		x.wantResults("work")
+	}
+}
+
+func scout(name, fleet string) ships.Ship {
+	s := ship(name, fleet, ships.StatusUnderway)
+	s.Skill, s.SkillKind, s.Scout = nil, "none", true
+	return s
+}
+
+// A scout's end writes a KILL `ended` and then a `stopped` marked scout; a clean `ended` is never what it writes.
+func scoutEnd() []ShipRecord {
+	return []ShipRecord{
+		{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended"},
+		{At: t0.Add(2*time.Minute + time.Second), Ship: "calm-otter", Event: "stopped", Scout: true},
+	}
+}
+
+func TestAScoutThatRunsToItsEndPostsOneSailedOffCardInItsFleetOnly(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	end := scoutEnd()
+	x.observe(2*time.Minute+10*time.Second, nil, end...)
+	x.wantResults("work")
+	x.observe(5*time.Minute, nil, end...)
+	x.observe(6*time.Minute, nil, end...)
+	x.restart()
+	x.observe(7*time.Minute, nil, end...)
+	x.wantResults("work", "sailed_off")
+	x.wantResults("home")
+	if cards := shipCardsIn(t, x.r, "work"); len(cards) != 1 || cards[0].Ship != "calm-otter" || cards[0].SkillKind != "scout" {
+		t.Errorf("cards = %+v, want the scout's own with skill_kind scout", cards)
+	}
+}
+
+func TestAScoutStillInTheSnapshotPostsNoSailedOffCardYet(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	x.observe(5*time.Minute, []ships.Ship{scout("calm-otter", "work")}, scoutEnd()...)
+	x.wantResults("work")
+	x.observe(6*time.Minute, nil, scoutEnd()...)
+	x.observe(7*time.Minute, nil, scoutEnd()...)
+	x.wantResults("work", "sailed_off")
+}
+
+func TestAScoutStopAloneMakesTheCardAScoutsEvenWhenTheShipWasNeverListedAsOne(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
+	x.observe(5*time.Minute, nil, scoutEnd()...)
+	if cards := shipCardsIn(t, x.r, "work"); len(cards) != 1 || cards[0].SkillKind != "scout" {
+		t.Errorf("cards = %+v, want one with skill_kind scout", cards)
+	}
+}
+
+func TestAScoutStopAnOlderBuildSavedPostsNothingAfterTheUpgradeButALaterOneStillPosts(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	x.observe(2*time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	old, err := os.ReadFile(x.d.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]json.RawMessage
+	if err := json.Unmarshal(old, &state); err != nil {
+		t.Fatal(err)
+	}
+	delete(state, "Scouts")
+	if old, err = json.Marshal(state); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(x.d.path, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	x.restart()
+	x.observe(5*time.Minute, nil, scoutEnd()...)
+	x.observe(6*time.Minute, nil, scoutEnd()...)
+	x.wantResults("work")
+	later := ship("calm-lark", "work", ships.StatusUnderway)
+	later.Scout = true
+	x.observe(7*time.Minute, []ships.Ship{later})
+	x.observe(10*time.Minute, nil, append(scoutEnd(), ShipRecord{At: t0.Add(8 * time.Minute), Ship: "calm-lark", Event: "stopped", Scout: true})...)
+	x.wantResults("work", "sailed_off")
+}
+
+func TestStopShipOfALiveShipPostsNoCardAlthoughItsKilledEndIsLogged(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
+	x.observe(5*time.Minute, nil,
+		ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended"},
+		ShipRecord{At: t0.Add(2*time.Minute + time.Second), Ship: "calm-otter", Event: "stopped"})
+	x.wantResults("work")
+}
+
+func TestTheKindOfAMooredShipsCardIsDecidedOnTheServer(t *testing.T) {
+	noSkill := func(s ships.Ship, kind string) ships.Ship { s.Skill, s.SkillKind = nil, kind; return s }
+	for name, tc := range map[string]struct {
+		ship ships.Ship
+		want string
+	}{
+		"an AdmiralBot ship with no skill is a quick ship":               {viaBot(noSkill(moored("calm-otter", "work", pr7), "")), "quick"},
+		"an AdmiralBot ship whose skill kind reads none is a quick ship": {viaBot(noSkill(moored("calm-otter", "work", pr7), "none")), "quick"},
+		"an AdmiralBot ship with a skill keeps its skill":                {viaBot(moored("calm-otter", "work", pr7)), "skill"},
+		"a Commodore ship is Commodore, even launched by AdmiralBot":     {viaBot(noSkill(moored("calm-otter", "work", pr7), "commodore")), "commodore"},
+		"a Commodore ship the engineer launched is Commodore":            {noSkill(moored("calm-otter", "work", pr7), "commodore"), "commodore"},
+		"an engineer's ship with no skill has none":                      {noSkill(moored("calm-otter", "work", pr7), ""), "none"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			x := seeded(t)
+			x.observe(time.Minute, []ships.Ship{tc.ship})
+			got := shipCardsIn(t, x.r, "work")
+			if len(got) != 1 || got[0].SkillKind != tc.want {
+				t.Errorf("cards = %+v, want one with skill_kind %q", got, tc.want)
+			}
+		})
 	}
 }

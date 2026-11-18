@@ -74,6 +74,7 @@ type ShipRecord struct {
 	Reason   string // an unmoored line's reason
 	Clean    bool   // an ended line's exit was clean
 	Returned bool   // a stopped line ended a return to port
+	Scout    bool   // a stopped line ended a scout that ran to its end
 }
 
 // voyage is what the detector keeps of one ship's voyage: who it is, which cards it has settled and the record times that
@@ -85,6 +86,7 @@ type voyage struct {
 	Via           string
 	Skill         string
 	SkillKind     string
+	Scout         bool
 	FirstLaunched string
 	PRs           []ShipCardPR
 	Done          map[string]bool
@@ -92,6 +94,7 @@ type voyage struct {
 	MooredAt      time.Time
 	UnmooredAt    time.Time // the PRs all closed
 	StoppedAt     time.Time
+	ScoutEndedAt  time.Time // a scout's own end
 	ReturnedAt    time.Time
 	ReturningAt   time.Time
 	ReadyHeld     bool // moored at the seed: its first answered poll is not news
@@ -100,6 +103,7 @@ type voyage struct {
 
 type shipCardState struct {
 	Seeded   bool
+	Scouts   bool // saved by a build that reads a scout's stop
 	Voyages  map[string]*voyage
 	lastSent []byte
 }
@@ -118,10 +122,11 @@ func NewShipCards(home string, post func(fleet string, c ShipCard) error) *ShipC
 	if b, err := os.ReadFile(d.path); err == nil {
 		var saved struct {
 			Seeded  bool
+			Scouts  bool
 			Voyages map[string]*voyage
 		}
 		if json.Unmarshal(b, &saved) == nil {
-			d.st.Seeded, d.st.Voyages, d.st.lastSent = saved.Seeded, saved.Voyages, b
+			d.st.Seeded, d.st.Scouts, d.st.Voyages, d.st.lastSent = saved.Seeded, saved.Scouts, saved.Voyages, b
 		}
 	}
 	if d.st.Voyages == nil {
@@ -178,6 +183,10 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 			}
 		}
 		for _, v := range d.st.Voyages {
+			// An older build read a scout's stop as a plain one, so a stop already logged was never news.
+			if !d.st.Scouts && !v.ScoutEndedAt.IsZero() {
+				v.Done[ShipSailedOff] = true
+			}
 			errs = append(errs, d.settle(v, mooredNow[v], inSnap[v], now))
 		}
 	}
@@ -186,7 +195,7 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 			delete(d.st.Voyages, k)
 		}
 	}
-	d.st.Seeded = true
+	d.st.Seeded, d.st.Scouts = true, true
 	errs = append(errs, d.save())
 	return errors.Join(errs...)
 }
@@ -205,7 +214,7 @@ func (d *ShipCards) voyageOf(s ships.Ship, now time.Time) *voyage {
 		v = &voyage{Ship: s.Session, Name: s.Name, FirstLaunched: stamp, Done: map[string]bool{}}
 		d.st.Voyages[key] = v
 	}
-	v.Name, v.Fleet, v.Via, v.SkillKind, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, now
+	v.Name, v.Fleet, v.Via, v.SkillKind, v.Scout, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, s.Scout, now
 	if s.Skill != nil {
 		v.Skill = *s.Skill
 	}
@@ -259,6 +268,11 @@ func (v *voyage) apply(r ShipRecord) {
 	case "stopped":
 		if r.Returned {
 			v.ReturnedAt = r.At
+		} else if r.Scout {
+			v.Scout = true
+			if r.At.After(v.ScoutEndedAt) {
+				v.ScoutEndedAt = r.At
+			}
 		} else if r.At.After(v.StoppedAt) {
 			v.StoppedAt = r.At
 		}
@@ -274,6 +288,11 @@ func (d *ShipCards) settle(v *voyage, mooredNow, inSnap bool, now time.Time) err
 		return errors.Join(errs...)
 	}
 	switch {
+	case !v.ScoutEndedAt.IsZero():
+		// A scout's end is a kill, so only its own `stopped` mark tells it from an engineer's Stop ship.
+		if !inSnap && now.Sub(v.ScoutEndedAt) >= ShipSettleGrace {
+			errs = append(errs, d.emit(v, ShipSailedOff, false))
+		}
 	case !v.UnmooredAt.IsZero():
 		// A return to port writes `unmoored` and then `returning`; the ship is not sailing off.
 		if v.ReturningAt.Before(v.UnmooredAt) && now.Sub(v.UnmooredAt) >= ShipSettleGrace {
@@ -295,7 +314,7 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 		return nil
 	}
 	if !silent {
-		if err := d.post(v.Fleet, ShipCard{Ship: v.Ship, Name: v.Name, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.SkillKind, Result: result, PRs: v.PRs}); err != nil {
+		if err := d.post(v.Fleet, ShipCard{Ship: v.Ship, Name: v.Name, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.cardKind(), Result: result, PRs: v.PRs}); err != nil {
 			return err
 		}
 	}
@@ -303,11 +322,30 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 	return nil
 }
 
+// cardKind is the kind the card reads, decided here so every client agrees.
+func (v *voyage) cardKind() string {
+	switch {
+	case v.Scout:
+		return "scout"
+	case v.SkillKind == "commodore":
+		return v.SkillKind
+	case v.Via == "admiralbot" && v.Skill == "":
+		return "quick"
+	case v.SkillKind == "":
+		if v.Skill != "" {
+			return "skill"
+		}
+		return "none"
+	}
+	return v.SkillKind
+}
+
 func (d *ShipCards) save() error {
 	b, err := json.Marshal(struct {
 		Seeded  bool
+		Scouts  bool
 		Voyages map[string]*voyage
-	}{d.st.Seeded, d.st.Voyages})
+	}{d.st.Seeded, d.st.Scouts, d.st.Voyages})
 	if err != nil || slices.Equal(b, d.st.lastSent) {
 		return err
 	}
