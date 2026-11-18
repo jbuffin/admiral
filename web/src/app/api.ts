@@ -549,7 +549,7 @@ export interface AllowRule {
 export interface AllowRuleCard extends AllowRule {
   id: string;
   count: number;
-  prompts?: { ship?: string; id?: string }[];
+  prompts?: { ship?: string; id?: string; command?: string }[];
   reason?: string;
   every_repo?: boolean;
 }

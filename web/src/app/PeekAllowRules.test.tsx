@@ -158,3 +158,47 @@ test('a 409 shows the error and locks Add, Skip and Send', async () => {
   expect(send().disabled).toBe(true);
   for (const name of ['Add', 'Skip']) expect((within(card(1)).getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+test('a bidi override in a rule and a zero-width character in a command show as visible tokens', () => {
+  const rule = 'Bash(ls‮:*)';
+  const e = entry('ar-8', [claude('c1', { rule, prompts: [{ ship: 'Dory', id: 'p1', command: 'ls​ -la' }] })]);
+  render(<Proposal e={e} fold={vi.fn()} />);
+  const c = card(1);
+  expect(c.textContent).toContain('Bash(ls⟨U+202E⟩:*)');
+  expect(c.textContent).toContain('ls⟨U+200B⟩ -la');
+  expect(c.textContent).not.toMatch(/[‮​]/);
+});
+
+test('a refused card set reloads the item, keeps the decisions of cards still there and asks for the new one', async () => {
+  const gets: string[] = [];
+  const posts: unknown[] = [];
+  let first = true;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posts.push(JSON.parse(init.body as string));
+        if (first) {
+          first = false;
+          return new Response(JSON.stringify({ error: 'card c2 has no decision' }), { status: 400 });
+        }
+        return new Response('{"answered":"ar-9"}');
+      }
+      gets.push(path);
+      return new Response(JSON.stringify({ items: [entry('ar-9', [claude('c1'), claude('c2', { rule: 'Bash(ls:*)' })]).item] }));
+    }),
+  );
+  const fold = vi.fn();
+  render(<Proposal e={entry('ar-9', [claude('c1')])} fold={fold} />);
+  press('Add', card(1));
+  fireEvent.click(send());
+  await screen.findByRole('status');
+  expect(gets).toEqual(['/api/v1/inbox']);
+  expect(screen.getByText('1 of 2 decided')).toBeTruthy();
+  expect(within(card(1)).getByRole('button', { name: 'Add' }).getAttribute('aria-pressed')).toBe('true');
+  expect(send().disabled).toBe(true);
+  press('Skip', card(2));
+  fireEvent.click(send());
+  await waitFor(() => expect(fold).toHaveBeenCalledWith('Allow rules sent: 1 added, 1 skipped'));
+  expect(posts[1]).toEqual({ cards: { c1: { decision: 'add' }, c2: { decision: 'skip' } } });
+});
