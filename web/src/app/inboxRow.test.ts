@@ -63,6 +63,15 @@ describe('rowVerb', () => {
     expect(rowVerb(itemEntry({ kind: 'crew_member', session: '_admiral', name: 'Admiral', crew_member: { ship: 'Dory' } }))).toBe('asks to keep a crew member from Dory');
   });
 
+  it('counts the rules an allow rule proposal carries and names its fleet', () => {
+    const allow = (n: number, fleetEntry: Partial<Entry>) =>
+      itemEntry({ kind: 'allow_rules', session: '_admiral', name: 'Admiral', allow_rules: { fleet: 'a', cards: Array.from({ length: n }, () => ({})) } }, fleetEntry);
+    const f = { fleet: { key: 'a', name: 'Alpha', color: '#abc' } };
+    expect(rowVerb(allow(1, f))).toBe('proposes 1 allow rule for Alpha');
+    expect(rowVerb(allow(3, f))).toBe('proposes 3 allow rules for Alpha');
+    expect(rowVerb(allow(2, { fleet: { key: 'a', name: '', color: '#abc' } }))).toBe('proposes 2 allow rules for a');
+  });
+
   it('words a mission with the ship it came from, and names the repo of a repo proposal', () => {
     const mission = (m?: unknown) => itemEntry({ kind: 'mission', session: '_admiral', name: 'Admiral', mission: m });
     expect(rowVerb(mission())).toBe('proposes a mission');

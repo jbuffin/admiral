@@ -234,6 +234,13 @@ test.each([
   expect(screen.getByRole('button', { name: back })).toBeTruthy();
 });
 
+test('Remove on an allow rule proposal says nothing is added or skipped and offers Cancel', () => {
+  render(<Remove e={entry('rm-allow', { kind: 'allow_rules' })} />);
+  press('Remove from inbox');
+  expect(screen.getByText('Remove this proposal? Nothing is added or skipped, so its rules can be proposed again.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+});
+
 const proposal = entry('routine-t1', {
   kind: 'routine_proposal',
   routine_proposal: {
