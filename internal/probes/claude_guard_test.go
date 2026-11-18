@@ -202,7 +202,7 @@ func TestGuardProbeRunsTheHarnessHeadlessOnTheCheapestModelWithBashAllowed(t *te
 
 func TestGuardProbeEnvIsScrubbedAndAutopilotIsOurs(t *testing.T) {
 	for k, v := range map[string]string{"ADMIRAL_SHIP": "ghost", "ADMIRAL_REPORT": "/nowhere/reports/ghost.json",
-		"ADMIRAL_INBOX": "/nowhere/inbox", "TMUX": "/nowhere/sock,1,0", "TMUX_PANE": "%9",
+		"ADMIRAL_INBOX": "/nowhere/inbox", "ADMIRAL_FINDINGS": "/nowhere/reports/ghost.md", "TMUX": "/nowhere/sock,1,0", "TMUX_PANE": "%9",
 		"CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1"} {
 		t.Setenv(k, v)
 	}
@@ -214,7 +214,7 @@ func TestGuardProbeEnvIsScrubbedAndAutopilotIsOurs(t *testing.T) {
 			env[k] = v
 		}
 	}
-	for _, k := range []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "TMUX", "TMUX_PANE", "CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION"} {
+	for _, k := range []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "ADMIRAL_FINDINGS", "TMUX", "TMUX_PANE", "CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION"} {
 		if v, set := env[k]; set {
 			t.Errorf("%s=%q reaches the probe's harness: it would record an outcome against a real ship or mark the engineer's pane", k, v)
 		}
