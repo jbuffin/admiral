@@ -6,11 +6,25 @@ type Sentences = { sentences: { field: string; sentence: string }[]; checks: str
 const orders = async (a: { url: string }, fleet: string) => (await (await fetch(`${a.url}api/v1/fleets/${fleet}/standing-orders`)).json()) as Sentences;
 const sentenceFor = (o: Sentences, field: string) => o.sentences.find((s) => s.field === field)!.sentence;
 
-test('a Standing orders sentence leads to its field on the Limits page, and a Check, a decimal and the Home preset reach the server', async ({ page, admiral }) => {
+test('the link of a kept routine draft opens the filled-in form, and a Standing orders sentence leads to its field on the Limits page, and a Check, a decimal and the Home preset reach the server', async ({ page, admiral }) => {
   const claude = probeableClaude(admiral);
   seedFleets(admiral, { claude: claude.dock });
   await admiral.start();
   await proveJudge(page, admiral.url);
+
+  // The link draft_routine hands AdmiralBot opens the kept draft in the form, unsaved; an unknown draft opens an empty form with a note.
+  const made = await page.request.post(admiral.url + 'api/v1/fleets/zulu/routines/draft', { data: { prose: 'every night at 3, check for outdated dependencies' } });
+  expect(made.ok()).toBe(true);
+  const kept = (await made.json()) as { id?: string; draft: { name: string; when: string } };
+  expect(kept.id).toBeTruthy();
+  await page.goto(admiral.url + `app/routines/new?fleet=zulu&draft=${encodeURIComponent(kept.id!)}`);
+  const routine = page.getByRole('form', { name: 'Routine' });
+  await expect(routine.getByLabel('Name')).toHaveValue(kept.draft.name);
+  await expect(routine.getByLabel('When')).toHaveValue(kept.draft.when);
+  await page.goto(admiral.url + 'app/routines/new?fleet=zulu&draft=unknown');
+  await expect(page.getByText(/expired or can.t be found/)).toBeVisible();
+  await expect(page.getByRole('form', { name: 'Routine' }).getByLabel('Name')).toHaveValue('');
+
   await page.goto(admiral.url + 'app/routines?fleet=zulu');
   await page.getByRole('main').getByRole('tab', { name: 'Standing orders' }).click();
   await expect(page).toHaveURL(/\/app\/routines\/standing-orders/);

@@ -4,6 +4,7 @@ import type { Capability, Fleet, FleetCapabilities } from './api';
 import { capabilities, capabilitiesFailed, capabilitiesLoaded } from './capabilities';
 import { RoutinesPage } from './RoutinesPage';
 import type { Routine, RoutineSpend } from './routines';
+import { loc } from './router';
 import { sources } from './shipsLink';
 
 const fleet = { key: 'zulu', name: 'Zulu', docks: [{ harness: 'claude' }], limits: {}, sentences: [] } as unknown as Fleet;
@@ -26,6 +27,8 @@ interface Call {
 let routines: Routine[];
 let spend: RoutineSpend | undefined;
 let calls: Call[];
+let draftReply: () => Response | Promise<Response>;
+const start = { value: loc.value };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 const stored = (over: Partial<Routine> = {}): Routine => ({
   id: 'r1',
@@ -42,6 +45,7 @@ beforeEach(() => {
   routines = [];
   spend = undefined;
   calls = [];
+  draftReply = () => json({ error: 'not found' }, 404);
   capabilities.value = [];
   capabilitiesLoaded.value = false;
   capabilitiesFailed.value = false;
@@ -58,6 +62,7 @@ beforeEach(() => {
       if (path.endsWith('/runs')) return json({ runs: [] });
       if (method === 'GET' && path.endsWith('/routines')) return json({ routines, spend });
       calls.push({ method, path, body });
+      if (method === 'GET' && path.includes('/routine-drafts/')) return draftReply();
       if (path.endsWith('/routines/draft')) return json({ draft: stored({ name: 'Nightly dependency check', when: '0 3 * * *' }), problems: null });
       const id = /routines\/([^/]+?)(?:\/(on|off))?$/.exec(path);
       if (method === 'POST' && !id) {
@@ -73,7 +78,10 @@ beforeEach(() => {
     }),
   );
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  loc.value = start.value;
+});
 
 const page = (id: string | null = null, creating = false) => render(<RoutinesPage fleet={fleet} id={id} creating={creating} title phone={false} />);
 const editor = () => screen.getByRole('form', { name: 'Routine' });
@@ -210,4 +218,92 @@ test('the daily worker cap notice names the spend once it is reached, and the pa
   const note = await screen.findByText(/\$2\.00/);
   expect(note.textContent).toBe('Worker spend today is $2.00 of the $2.00 cap, so events stop at a proposal until the day turns.');
   expect(note.getAttribute('role')).toBe('status');
+});
+
+const GONE = /expired or can.t be found/;
+const link = (search: string) => {
+  history.replaceState(null, '', '/app/routines/new' + search);
+  loc.value = { path: '/app/routines/new', search };
+};
+const linked = (over: Partial<Routine> = {}, problems: { field: string; message: string }[] | null = null) => () =>
+  json({ id: 'd/1', draft: stored({ name: 'Linked sweep', when: '0 4 * * 1', before_acting: 'propose', ...over }), problems, expires_at: '2026-11-17T12:00:00Z' });
+
+test('a draft link fills the editor from the kept draft with its first problem on its field, and Save stores it', async () => {
+  draftReply = linked({}, [{ field: 'when', message: 'needs five parts' }]);
+  link('?fleet=zulu&draft=d%2F1');
+  page(null, true);
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  expect((form.getByLabelText('Name') as HTMLInputElement).value).toBe('Linked sweep');
+  expect((form.getByLabelText('When') as HTMLInputElement).value).toBe('0 4 * * 1');
+  expect((form.getByRole('radio', { name: 'Propose' }) as HTMLInputElement).checked).toBe(true);
+  expect(form.getByRole('alert').textContent).toContain('When needs five parts');
+  expect(screen.queryByText(GONE)).toBeNull();
+  expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET /api/v1/fleets/zulu/routine-drafts/d%2F1']);
+  expect(routines).toEqual([]);
+  fireEvent.click(save());
+  await waitFor(() => expect(routines.map((r) => r.name)).toEqual(['Linked sweep']));
+  expect(calls.filter((c) => c.method === 'GET')).toHaveLength(1);
+});
+
+test('the editor slot shows the loading line, not an empty form, until the linked draft answers', async () => {
+  let answer: (r: Response) => void = () => {};
+  draftReply = () => new Promise<Response>((r) => (answer = r));
+  link('?fleet=zulu&draft=d1');
+  page(null, true);
+  await screen.findByText(/No routines yet/);
+  expect(screen.getByText('Loading…')).toBeTruthy();
+  expect(screen.queryByRole('form', { name: 'Routine' })).toBeNull();
+  answer(linked()());
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  expect((form.getByLabelText('Name') as HTMLInputElement).value).toBe('Linked sweep');
+  expect(screen.queryByText('Loading…')).toBeNull();
+});
+
+test('an expired or unknown draft opens the empty form with a note saying so', async () => {
+  link('?fleet=zulu&draft=gone');
+  page(null, true);
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  expect((form.getByLabelText('Name') as HTMLInputElement).value).toBe('');
+  const note = await screen.findByText(GONE);
+  expect(note.getAttribute('role')).toBe('status');
+  expect(note.textContent).toMatch(/describe the routine again or fill in the form/i);
+  expect(routines).toEqual([]);
+});
+
+test('another failure shows its error over the empty form', async () => {
+  draftReply = () => json({ error: 'the store is down' }, 500);
+  link('?fleet=zulu&draft=d1');
+  page(null, true);
+  const form = await screen.findByRole('form', { name: 'Routine' });
+  expect((within(form).getByLabelText('Name') as HTMLInputElement).value).toBe('');
+  expect((await screen.findByText(/the store is down/)).getAttribute('role')).toBe('alert');
+  expect(screen.queryByText(GONE)).toBeNull();
+});
+
+test('a draft with markup in it shows as text and adds no elements', async () => {
+  draftReply = linked({ name: '<img src=x onerror=alert(1)>' });
+  link('?fleet=zulu&draft=d1');
+  const view = page(null, true);
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  expect((form.getByLabelText('Name') as HTMLInputElement).value).toBe('<img src=x onerror=alert(1)>');
+  expect(view.container.querySelector('img[src="x"]')).toBeNull();
+});
+
+test('describing a routine while on a draft link shows the described draft, and a late linked answer is dropped', async () => {
+  let answer: (r: Response) => void = () => {};
+  draftReply = () => new Promise<Response>((r) => (answer = r));
+  link('?fleet=zulu&draft=d1');
+  const view = page(null, true);
+  const describe = await screen.findByRole('textbox', { name: 'Describe a routine' });
+  await waitFor(() => expect(calls.map((c) => c.path)).toEqual(['/api/v1/fleets/zulu/routine-drafts/d1']));
+  fireEvent.input(describe, { target: { value: 'every night at 3, check for outdated dependencies' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Draft' }));
+  await waitFor(() => expect(location.search).not.toContain('draft='));
+  view.rerender(<RoutinesPage fleet={fleet} id={null} creating title phone={false} />);
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  expect((form.getByLabelText('Name') as HTMLInputElement).value).toBe('Nightly dependency check');
+  answer(linked()());
+  await new Promise((r) => setTimeout(r, 20));
+  expect((within(editor()).getByLabelText('Name') as HTMLInputElement).value).toBe('Nightly dependency check');
+  expect(screen.queryByText(GONE)).toBeNull();
 });
