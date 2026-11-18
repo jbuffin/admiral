@@ -98,6 +98,8 @@ type Request struct {
 	QuietGate bool `json:"-"`
 	// Unattended marks a launch no one asked for in the moment (a routine run, a commitment, a feedback round); only the quota hold reads it.
 	Unattended bool `json:"-"`
+	// OnInstruction marks a launch AdmiralBot makes on the engineer's instruction in the chat; set only by the launch route from the caller's token, never from the body.
+	OnInstruction bool `json:"-"`
 	// TriggerID is the id of the trigger-log record the launch answers; the `launched` outcome points at it.
 	TriggerID string `json:"-"`
 	// WorkerLaunched marks a ship started by an outside event, which gets the fleet's Guidance in its prompt.
@@ -141,7 +143,7 @@ type Skill struct {
 	Name string `json:"name"`
 }
 
-// AutopilotCapText opens the 409 a launch gets when autopilot is at its cap; the MCP server keys its interactive relaunch on it.
+// AutopilotCapText opens the 409 a launch gets when autopilot is at its cap.
 const AutopilotCapText = "autopilot is at its cap"
 
 type Error struct {

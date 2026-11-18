@@ -537,7 +537,13 @@ func TestHandingALiveShipToCommodoreRelaunchesItsConversationUnderTheSameName(t 
 		env, _ := os.ReadFile(filepath.Join(w.rec, ship.Session, "env"))
 		return strings.Contains(string(env), "CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000\n")
 	})
-	if cwd := strings.TrimSpace(w.readFile(filepath.Join(w.rec, ship.Session, "cwd"))); cwd != first.cwd {
+	// The fake harness truncates and rewrites cwd after argv and env, so a read can land between the two.
+	var cwd string
+	holdFor(t, "the relaunch's cwd record", func() bool {
+		cwd = strings.TrimSpace(w.readFile(filepath.Join(w.rec, ship.Session, "cwd")))
+		return cwd != ""
+	})
+	if cwd != first.cwd {
 		t.Errorf("relaunch cwd = %q, want the first launch's %q", cwd, first.cwd)
 	}
 	list := w.in.waitShipsList(t, 20*time.Second, "the ship under its own name", func(l []shipJSON) bool {
