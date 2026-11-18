@@ -124,7 +124,7 @@ A named list of orders from one source, such as GitHub's Assigned to me, Review 
 _Avoid_: panel, column, list
 
 **Campaign**:
-A parent GitHub issue Admiral follows as one effort through its tree of children. Admiral reads the tree and launches from it and never edits it. It may create the parent issue from issues the engineer selects, on their confirm; AdmiralBot cannot.
+A parent GitHub issue Admiral follows as one effort through its tree of children. Admiral reads the tree and launches from it and never edits it. It may create the parent issue from issues the engineer selects, on their confirm. AdmiralBot never files one itself: on the engineer's instruction it launches a drafting ship or leaves a draft for the engineer to confirm in Admiral.
 
 **Ready**:
 A campaign child that can start now: open, with every blocker closed, nobody assigned and no live ship holding Admiral's claim on it.
@@ -184,7 +184,7 @@ _Avoid_: configured skill, skill list
 A skill a harness on this Mac can load for a fleet's dock, from the harness's own skills folder or its plugins. A skill inside a repo counts only for that repo. The same skill can be installed on several harnesses, under its plain name on one and a plugin's name on another, and is still one skill.
 
 **AdmiralBot**:
-A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and the fleet's map, and acts by launching ships (a scout, a quick ship or a Commodore ship, its choice), working a campaign, adding orders, answering inbox items, giving a ship its next prompt, waking, stopping and dismissing ships, drafting a routine or turning one off, turning Hold fire on in its fleet and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which shows in the Inbox as an "AdmiralBot asked" item while it waits and is answered there or in the chat.
+A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and the fleet's map, and acts by launching ships (a scout, a quick ship or a Commodore ship, its choice), working a campaign, drafting a campaign (a drafting ship, or a draft the engineer confirms in Admiral), adding orders, answering inbox items, giving a ship its next prompt, waking, stopping and dismissing ships, drafting a routine or turning one off, turning Hold fire on in its fleet and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which shows in the Inbox as an "AdmiralBot asked" item while it waits and is answered there or in the chat.
 _Avoid_: assistant, chat ship, chat agent, background session, handoff (say "a launch via AdmiralBot")
 
 **Ledger**:
@@ -219,7 +219,7 @@ A ship sent for a small change that one session can finish with no design to set
 _Avoid_: fast ship, light ship
 
 **Drafting ship**:
-A ship that runs the engineer's chosen skill on their text, with them, to file the parent issue of a new campaign, then names that issue for Admiral to follow. It is an ordinary ship with a skill, not a scout or a quick ship.
+A ship that runs the engineer's chosen skill on their text, with them, to file the parent issue of a new campaign, then names that issue for Admiral to follow. It runs With you, even when AdmiralBot launches it. It is an ordinary ship with a skill, not a scout or a quick ship.
 _Avoid_: planning ship, campaign ship
 
 **Launch text**:
