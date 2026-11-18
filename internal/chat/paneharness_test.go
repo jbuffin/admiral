@@ -28,6 +28,7 @@ func hostedChat(t *testing.T, harness string) (*Service, *fleetChat) {
 		t.Fatal(err)
 	}
 	svc := serviceFor(t, l, home)
+	svc.Launcher = l
 	model := map[string]string{"claude": "opus", "codex": "gpt-6.1-sol"}[harness]
 	{
 		raw, _ := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{"work": map[string]any{

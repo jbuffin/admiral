@@ -102,6 +102,8 @@ type Service struct {
 	OrderExists func(source, id string) bool
 	// OrderRepo is an order's text and repo, which a clone launch derives its repository from.
 	OrderRepo func(source, id string) (text, repo string, ok bool)
+	// readPromptKey replaces the tmux read of the prompt key; a test seam.
+	readPromptKey func(fleet string) (string, bool)
 	// DigestAcked replaces the digest sequence read from the chat's pane options; a test seam.
 	DigestAcked func(fleet string) uint64
 
@@ -679,8 +681,18 @@ func (s *Service) ActorToken(fleet string) string {
 // isn't running. The nonce starts a new series with each session; the stamp is the hook's, so a message typed
 // in the terminal moves it too.
 func (s *Service) PromptKey(fleet string) string {
+	key, _ := s.promptKey(fleet)
+	return key
+}
+
+// promptKey is PromptKey that says whether the read worked, so a caller that compares keys can tell a failed read
+// from a value. A stamp that was never written reads as "0".
+func (s *Service) promptKey(fleet string) (string, bool) {
+	if s.readPromptKey != nil {
+		return s.readPromptKey(fleet)
+	}
 	if s.Tmux == "" {
-		return ""
+		return "", false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -688,13 +700,16 @@ func (s *Service) PromptKey(fleet string) string {
 	session := sessionhost.ChatSession(fleet)
 	nonce, err := srv.ReadSessionOption(ctx, session, sessionhost.ChatNonceOpt)
 	if err != nil || nonce == "" {
-		return ""
+		return "", false
 	}
 	stamp, err := srv.ReadPaneOption(ctx, "="+session+":", sessionhost.ChatPromptOpt)
-	if err != nil || !sessionhost.SafeToken.MatchString(stamp) {
+	if err != nil {
+		return "", false
+	}
+	if !sessionhost.SafeToken.MatchString(stamp) {
 		stamp = "0"
 	}
-	return nonce + "-" + stamp
+	return nonce + "-" + stamp, true
 }
 
 func (s *fleetChat) start() *launcher.Error {
@@ -769,9 +784,11 @@ func (s *fleetChat) send(raw string) *launcher.Error {
 	if pane == "" {
 		return &launcher.Error{Status: status, Msg: msg}
 	}
+	key, _ := s.promptKey(s.key)
 	if err := s.pasteMessage(pane, text); err != nil {
 		return &launcher.Error{Status: http.StatusBadGateway, Msg: "could not send the message: " + err.Error()}
 	}
+	s.afterSend(key)
 	return nil
 }
 
@@ -930,7 +947,8 @@ func (s *fleetChat) newChatLocked(deferrable bool) (deferred bool, lerr *launche
 		return false, &launcher.Error{Status: http.StatusConflict, Msg: "the chat is off for this fleet: " + off}
 	}
 	if deferrable && s.turnBusy() {
-		s.turns(func(t *turnState) { t.clearPending = true })
+		sess, _ := s.session()
+		s.turns(func(t *turnState) { t.clearPending, t.clearPane = true, sess.PaneID })
 		return true, nil
 	}
 	if opts.matches(fleet) {

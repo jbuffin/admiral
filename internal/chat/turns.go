@@ -39,12 +39,20 @@ type turnState struct {
 	queue     []queuedTurn
 	delivered []string
 
-	active       bool   // a turn was pasted and has not ended
-	started      bool   // its prompt hook has fired
-	pasteKey     string // PromptKey just before the paste
-	runKey       string // PromptKey once the turn started
-	pastedAt     time.Time
-	clearPending bool // New chat is waiting for the queue to drain
+	active   bool   // a turn was pasted and has not ended
+	started  bool   // its prompt hook has fired
+	pasteKey string // PromptKey just before the paste
+	runKey   string // PromptKey once the turn started
+	pastedAt time.Time
+
+	// A message pasted by send whose turn may not have started: its prompt hook fires some time after the paste.
+	sendHeld bool
+	sendKey  string // PromptKey just before that paste; "" when it couldn't be read
+	sendAt   time.Time
+
+	clearPending bool   // New chat is waiting for the queue to drain
+	clearPane    string // the chat session it was asked for
+	clearing     bool   // the deferred clear is running on its own goroutine
 	lastErr      string
 }
 
@@ -67,14 +75,16 @@ func (s *fleetChat) turns(f func(t *turnState)) {
 		case err != nil:
 			log.Printf("admiral: chat %s: report queue: %v", s.key, err)
 		case json.Unmarshal(b, &file) != nil:
-			log.Printf("admiral: chat %s: %s is not valid JSON, starting with an empty queue", s.key, turnsFile)
+			log.Printf("admiral: chat %s: %s is not valid JSON, kept as %s.bad; starting with an empty queue", s.key, turnsFile, turnsFile)
+			_ = os.Rename(s.turnsPath(), s.turnsPath()+".bad")
+			file.Queue, file.Delivered = nil, nil
 		}
 		t.queue, t.delivered = file.Queue, file.Delivered
 	}
 	f(t)
 }
 
-// saveLocked writes the queue by temp file and rename; the caller holds t.mu.
+// saveTurnsLocked writes the queue by temp file and rename; the caller holds t.mu.
 func (s *fleetChat) saveTurnsLocked(t *turnState) error {
 	b, err := json.MarshalIndent(map[string]any{"queue": t.queue, "delivered": t.delivered}, "", "  ")
 	if err != nil {
@@ -152,10 +162,11 @@ func (s *Service) QueuedTurns(fleet string) []string {
 	return ids
 }
 
-// TurnCantAct is whether a queued turn is running in the fleet's chat, so AdmiralBot's writes are refused.
+// TurnCantAct is whether a queued turn is pasted and not over, so AdmiralBot's writes are refused. It counts from the
+// paste, not from the prompt hook: a stalled loop or a hook that never fires over-gates until the turn-start wait.
 func (s *Service) TurnCantAct(fleet string) bool {
 	running := false
-	s.chat(fleet).turns(func(t *turnState) { running = t.active && t.started })
+	s.chat(fleet).turns(func(t *turnState) { running = t.active })
 	return running
 }
 
@@ -166,7 +177,7 @@ func (s *fleetChat) turnBusy() bool {
 	return busy
 }
 
-// RunTurns is the queue's loop, on its own goroutine so a deferred New chat's flush never holds up the tick.
+// RunTurns is the queue's loop. Nothing in a tick blocks for long: a deferred New chat's clear runs on its own goroutine.
 func (s *Service) RunTurns(ctx context.Context) {
 	t := time.NewTicker(turnLoopEvery)
 	defer t.Stop()
@@ -192,8 +203,15 @@ func (s *Service) TurnTick() {
 }
 
 func (s *fleetChat) turnTick() {
+	sess, running := s.session()
 	active := false
-	s.turns(func(t *turnState) { active = t.active })
+	s.turns(func(t *turnState) {
+		active = t.active
+		// A deferred clear belongs to the chat session it was asked in.
+		if t.clearPending && (!running || sess.PaneID != t.clearPane) {
+			t.clearPending = false
+		}
+	})
 	if active {
 		s.trackTurn()
 	}
@@ -207,30 +225,43 @@ func (s *fleetChat) turnTick() {
 			q := t.queue[0]
 			head = &q
 		}
-		clearNow = head == nil && t.clearPending
+		clearNow = head == nil && t.clearPending && !t.clearing
 	})
 	switch {
 	case head != nil:
 		s.deliver(*head)
-	case clearNow:
-		s.clearDeferred()
+	case clearNow && s.idleNow():
+		claimed := false
+		s.turns(func(t *turnState) {
+			if t.clearPending && !t.clearing {
+				t.clearing, claimed = true, true
+			}
+		})
+		if claimed {
+			go func() {
+				defer s.turns(func(t *turnState) { t.clearing = false })
+				s.clearDeferred()
+			}()
+		}
 	}
 }
 
 // trackTurn ends the running turn when the chat idles again after it started, or when its prompt stamp moves past the
-// turn's own (the engineer's prompt has started), or when the session is gone or never took the message.
+// turn's own (the engineer's prompt has started), or when the session is gone or never took the message. A failed read
+// of the stamp changes nothing.
 func (s *fleetChat) trackTurn() {
 	_, running := s.session()
-	key := ""
-	idle := false
+	key, ok, idle := "", false, false
 	if running {
-		key, idle = s.PromptKey(s.key), s.paneIdle()
+		key, ok = s.promptKey(s.key)
+		idle = s.paneIdle()
 	}
 	s.turns(func(t *turnState) {
 		switch {
 		case !t.active:
 		case !running:
 			t.active = false
+		case !ok:
 		case !t.started:
 			if key != t.pasteKey {
 				t.started, t.runKey = true, key
@@ -241,6 +272,37 @@ func (s *fleetChat) trackTurn() {
 			t.active = false
 		}
 	})
+}
+
+// afterSend records a paste that isn't a report: its turn may not have started when the queue next looks, and a
+// report typed then would land inside it. A send also drops a deferred New chat, since the engineer has moved on;
+// that policy is this one place.
+func (s *fleetChat) afterSend(key string) {
+	s.turns(func(t *turnState) {
+		t.sendHeld, t.sendKey, t.sendAt = true, key, time.Now()
+		t.clearPending = false
+	})
+}
+
+// sendHolds is whether a message pasted by send is still starting its turn. It lets go once the stamp has moved past
+// the one the paste went over and the pane idles again, or after the turn-start wait; an unreadable stamp holds.
+func (s *fleetChat) sendHolds() bool {
+	var held bool
+	var from string
+	var at time.Time
+	s.turns(func(t *turnState) { held, from, at = t.sendHeld, t.sendKey, t.sendAt })
+	if !held {
+		return false
+	}
+	key, ok := s.promptKey(s.key)
+	if !ok {
+		return true
+	}
+	if time.Since(at) <= turnStartWait && (from == "" || key == from || !s.paneIdle()) {
+		return true
+	}
+	s.turns(func(t *turnState) { t.sendHeld = false })
+	return false
 }
 
 // idleNow is whether the chat can take a turn: running, no turn and no unanswered question. The snapshot's state reads
@@ -257,11 +319,17 @@ func (s *fleetChat) deliver(q queuedTurn) {
 		return
 	}
 	defer s.op.Unlock()
+	if s.sendHolds() {
+		return
+	}
 	pane, _, _ := s.ready()
 	if pane == "" || !s.idleNow() {
 		return
 	}
-	key := s.PromptKey(s.key)
+	key, ok := s.promptKey(s.key)
+	if !ok {
+		return
+	}
 	if err := s.pasteMessage(pane, q.Text); err != nil {
 		s.turns(func(t *turnState) {
 			if msg := err.Error(); msg != t.lastErr {
@@ -294,7 +362,11 @@ func (s *fleetChat) clearDeferred() {
 	}
 	defer s.op.Unlock()
 	defer s.resetting.Store(false)
-	s.turns(func(t *turnState) { t.clearPending = false })
+	still := false
+	s.turns(func(t *turnState) { still, t.clearPending = t.clearPending, false })
+	if !still {
+		return
+	}
 	if _, lerr := s.newChatLocked(false); lerr != nil {
 		log.Printf("admiral: chat %s: the deferred New chat: %v", s.key, lerr.Msg)
 	}

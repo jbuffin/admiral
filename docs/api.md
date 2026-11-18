@@ -362,7 +362,7 @@ Starts the fleet's chat session or leaves a running one alone, and answers `{"ru
 
 Clears the model's context and appends a `reset` entry to the log; the earlier history is still served. An idle chat first gets the hidden flush turn (the held answer takes up to `ADMIRAL_CHAT_FLUSH_WAIT`, 3 minutes); the flush and its reply are not served or logged. It sends `/clear` when the running session's model, effort and fleet match the fleet's chat settings, else it ends the session and starts a new one. It withdraws the fleet's chat questions. 409 when the chat isn't running.
 
-While a queued turn (a message Admiral types into the chat by itself) is waiting or running, the clear is deferred: the answer is `200 {"running":true,"deferred":true}` at once, nothing is cleared yet, and the clear runs once the queue is empty and the chat is idle. Queued turns are kept.
+While a queued turn (a message Admiral types into the chat by itself) is waiting or running, the clear is deferred: the answer is `200 {"running":true,"deferred":true}` at once, nothing is cleared yet, and the clear runs once the queue is empty and the chat is idle. Queued turns are kept. The clear is dropped if the chat is stopped or restarted, or the engineer sends a chat message, before it runs.
 
 ### `POST /api/chat/<fleet>/questions/<id>/answer`
 
