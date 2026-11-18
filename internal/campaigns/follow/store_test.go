@@ -136,3 +136,21 @@ func TestStoreMovesAnUnreadableFileAsideAndStartsEmpty(t *testing.T) {
 		t.Errorf("after a restart List = %d campaigns, want the one followed after the reset", len(got))
 	}
 }
+
+func TestResumeLeavesACampaignThatIsNotUnfollowedAsItIs(t *testing.T) {
+	s := openStore(t, t.TempDir())
+	f := followed(t, s)
+	tree := &github.TreeNode{}
+	if applied, err := s.Resume(f.ID, tree, time.Unix(4000, 0).UTC()); err != nil || applied {
+		t.Fatalf("Resume of a followed campaign = %v, %v; want it left alone", applied, err)
+	}
+	if err := s.End(f.ID, time.Unix(3000, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if applied, err := s.Resume(f.ID, tree, time.Unix(4000, 0).UTC()); err != nil || applied {
+		t.Fatalf("Resume of a campaign whose tree closed = %v, %v; want it left ended", applied, err)
+	}
+	if got, _ := s.Get(f.ID); !got.Ended() || got.Tree != nil {
+		t.Errorf("after Resume: %+v, want the ended campaign unchanged", got)
+	}
+}

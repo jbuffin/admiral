@@ -407,7 +407,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
     const r = await call<Campaign>(method, path, body);
     if (!r.ok) setFollowChangeError(r.error);
     else {
-      setCampaign({ ...campaign, ...r.data, root: r.data.root ?? campaign.root });
+      setCampaign({ ...r.data, root: r.data.root ?? campaign.root });
       noteCampaign(r.data);
       void refreshCampaigns();
     }

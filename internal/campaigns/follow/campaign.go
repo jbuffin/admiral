@@ -75,10 +75,11 @@ func (s *Service) FollowAgain(ctx context.Context, reference string) (Followed, 
 	if err != nil {
 		return Followed{}, false, orderError(http.StatusUnprocessableEntity, err.Error())
 	}
-	if err := s.Store.Resume(got.ID, tree, s.now()); err != nil {
+	applied, err := s.Store.Resume(got.ID, tree, s.now())
+	if err != nil {
 		return Followed{}, false, orderError(http.StatusInternalServerError, err.Error())
 	}
-	if allClosed(tree) {
+	if applied && allClosed(tree) {
 		_ = s.Store.End(got.ID, s.now())
 	}
 	got, _ = s.Store.Get(got.ID)

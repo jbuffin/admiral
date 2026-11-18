@@ -220,12 +220,18 @@ func (s *Store) endFor(id string, at time.Time, reason string) error {
 	})
 }
 
-// Resume follows an ended campaign again on the tree just read.
-func (s *Store) Resume(id string, tree *github.TreeNode, at time.Time) error {
-	return s.update(id, func(f *Followed) {
+// Resume follows an unfollowed campaign again on the tree just read; it reports false and changes nothing when the campaign is no longer in that state.
+func (s *Store) Resume(id string, tree *github.TreeNode, at time.Time) (bool, error) {
+	applied := false
+	err := s.update(id, func(f *Followed) {
+		if !f.Ended() || f.endState() != endUnfollowed {
+			return
+		}
+		applied = true
 		f.EndedAt, f.EndReason = time.Time{}, ""
 		f.Tree, f.ReadAt, f.TriedAt, f.ReadError = tree, at, at, ""
 	})
+	return applied && err == nil, err
 }
 
 // SetOverride stores o for the child; a zero override removes it.
