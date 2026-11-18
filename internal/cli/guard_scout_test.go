@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -155,6 +156,8 @@ func scoutCases(r scoutRig) []scoutCase {
 		sh("git branch listing", `git branch --list`, scoutAllowed),
 		sh("git tag listing", `git tag -l`, scoutAllowed),
 		sh("git remote listing", `git remote -v`, scoutAllowed),
+		sh("git remote show", `git remote -v show origin`, scoutAllowed),
+		sh("git with a harmless variable", `GIT_TERMINAL_PROMPT=0 git fetch origin`, scoutAllowed),
 		sh("git config reading", `git config --get remote.origin.url`, scoutAllowed),
 		sh("git stash listing", `git stash list`, scoutAllowed),
 		sh("git worktree listing", `git worktree list`, scoutAllowed),
@@ -261,6 +264,14 @@ func scoutCases(r scoutRig) []scoutCase {
 		sh("rmdir", `rmdir `+in("sub"), scoutWrite),
 		sh("mv into the checkout", `mv `+ex("a")+` `+in("b"), scoutWrite),
 		sh("mv out of the checkout", `mv `+in("a.go")+` `+ex("b"), scoutWrite),
+		sh("mv -t into the checkout", `mv -t `+r.co+` `+ex("a"), scoutWrite),
+		sh("git remote -v then a change", `git remote -v remove origin`, scoutGit),
+		sh("git remote set-url", `git remote set-url origin https://example.test/r.git`, scoutGit),
+		sh("git run by an external diff program", `GIT_EXTERNAL_DIFF=/bin/true git diff`, scoutGit),
+		sh("git config from the environment", `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=x git status`, scoutGit),
+		sh("git env exported on an earlier line", "export GIT_SSH_COMMAND=x\ngit fetch", scoutGit),
+		sh("git env under env", `env GIT_PAGER=x git log`, scoutGit),
+		sh("a shell with a startup file", `BASH_ENV=f bash -c ls`, scoutWrite),
 		sh("cp into the checkout", `cp `+ex("a")+` `+in("b"), scoutWrite),
 		sh("ln", `ln -s a.go `+in("link"), scoutWrite),
 		sh("touch", `touch `+in("f"), scoutWrite),
@@ -527,5 +538,31 @@ func TestScoutModeOffEditPayloadsAreAllowed(t *testing.T) {
 		if err, _, _ := runGuardTest(t, string(p), "1"); err != nil {
 			t.Errorf("Guard refused %q outside scout mode: %v, want the autopilot rules alone", cmd, err)
 		}
+	}
+}
+
+func TestScoutModeRefusesAPathThatNamesTheCheckoutByAnotherSpelling(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("a case-insensitive volume and firmlinks are a Mac's")
+	}
+	r := newScoutRig(t)
+	upper := strings.ToUpper(r.co)
+	if _, err := os.Stat(upper); err != nil {
+		t.Skip("the volume is case-sensitive")
+	}
+	for name, p := range map[string]string{
+		"another letter case": filepath.Join(upper, "a.go"),
+		"the data volume":     "/System/Volumes/Data" + strings.TrimPrefix(r.co, "/private") + "/a.go",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := os.Stat(p); err != nil {
+				t.Skip("the spelling does not reach the checkout here")
+			}
+			err, _, _ := r.run(t, "", "Write", map[string]any{"file_path": p}, "")
+			var denied *GuardDenied
+			if !errors.As(err, &denied) {
+				t.Errorf("Guard returned %v, want a *GuardDenied", err)
+			}
+		})
 	}
 }

@@ -85,7 +85,23 @@ func resolvePath(p string) (string, bool) {
 	return cur, true
 }
 
-func inside(p, root string) bool { return p == root || strings.HasPrefix(p, root+"/") }
+// inside also compares by file identity: on a Mac a path can name the checkout with other
+// letter case or through /System/Volumes/Data, which no string prefix shows.
+func inside(p, root string) bool {
+	if p == root || strings.HasPrefix(p, root+"/") {
+		return true
+	}
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		return true
+	}
+	for q := p; q != "/" && q != "."; q = filepath.Dir(q) {
+		if fi, err := os.Stat(q); err == nil && os.SameFile(fi, rootInfo) {
+			return true
+		}
+	}
+	return false
+}
 
 // scoutDecision judges one hook call for a scout ship. It refuses a payload it cannot read.
 func scoutDecision(raw []byte, root string) (tool, rule, target string) {
@@ -172,6 +188,15 @@ func scoutProbe(tool, rule, target string) {
 
 type scoutState struct {
 	moved bool // a cd, pushd, popd, env -C or sudo -D: relative paths are not under cwd
+	// A name in the environment that makes git or a shell run a program of its own.
+	gitEnv, shellEnv bool
+}
+
+var gitSafeEnv = []string{"GIT_TERMINAL_PROMPT", "GIT_OPTIONAL_LOCKS"}
+
+func (st *scoutState) assigned(name string) {
+	st.gitEnv = st.gitEnv || strings.HasPrefix(name, "GIT_") && !slices.Contains(gitSafeEnv, name)
+	st.shellEnv = st.shellEnv || slices.Contains(startupNames, name)
 }
 
 type scoutCheck struct {
@@ -192,8 +217,15 @@ func (c scoutCheck) command(text string, depth int) string {
 	syntax.Walk(file, func(n syntax.Node) bool {
 		if s, ok := n.(*syntax.Stmt); ok && rule == "" {
 			if rule = c.redirects(s.Redirs); rule == "" {
-				if call, ok := s.Cmd.(*syntax.CallExpr); ok {
-					rule = c.call(call, s.Redirs, depth)
+				switch cmd := s.Cmd.(type) {
+				case *syntax.CallExpr:
+					rule = c.call(cmd, s.Redirs, depth)
+				case *syntax.DeclClause:
+					for _, a := range cmd.Args {
+						if a.Name != nil {
+							c.st.assigned(a.Name.Value)
+						}
+					}
 				}
 			}
 		}
@@ -249,6 +281,11 @@ func (c scoutCheck) anyWrites(paths []string) bool {
 }
 
 func (c scoutCheck) call(call *syntax.CallExpr, redirs []*syntax.Redirect, depth int) string {
+	for _, a := range call.Assigns {
+		if a.Name != nil {
+			c.st.assigned(a.Name.Value)
+		}
+	}
 	words := make([]string, len(call.Args))
 	for i, w := range call.Args {
 		words[i] = wordText(w)
@@ -267,6 +304,11 @@ func (c scoutCheck) words(words []string, redirs []*syntax.Redirect, depth int, 
 			if script != "" {
 				if r := c.command(script, depth+1); r != "" {
 					return r
+				}
+			}
+			for _, a := range args[:len(args)-len(rest)] {
+				if assignment.MatchString(a) {
+					c.st.assigned(a[:strings.IndexByte(a, '=')])
 				}
 			}
 			if chdirFlag(w, args[:len(args)-len(rest)]) {
@@ -367,7 +409,7 @@ func (c scoutCheck) targets(w string, args []string) []string {
 	case "tee":
 		return operands(args, "", nil)
 	case "mv":
-		return operands(args, "tS", []string{"target-directory", "suffix"})
+		return append(operands(args, "tS", []string{"target-directory", "suffix"}), targetDir(args)...)
 	case "cp", "install", "ln", "rsync":
 		return destination(w, args)
 	case "dd":
@@ -417,12 +459,12 @@ func operands(args []string, short string, long []string) []string {
 	return out
 }
 
-// destination is the one path cp, install, ln and rsync write: -t's directory, else
-// the last operand. ln with one operand links into the current directory.
-func destination(w string, args []string) []string {
+// targetDir is the directory -t names, when there is one.
+func targetDir(args []string) []string {
 	for i, a := range args {
 		switch {
 		case a == "--":
+			return nil
 		case a == "-t" || a == "--target-directory":
 			if i+1 < len(args) {
 				return []string{args[i+1]}
@@ -431,6 +473,15 @@ func destination(w string, args []string) []string {
 		case strings.HasPrefix(a, "--target-directory="):
 			return []string{strings.TrimPrefix(a, "--target-directory=")}
 		}
+	}
+	return nil
+}
+
+// destination is the one path cp, install, ln and rsync write: -t's directory, else
+// the last operand. ln with one operand links into the current directory.
+func destination(w string, args []string) []string {
+	if dir := targetDir(args); dir != nil {
+		return dir
 	}
 	pos := operands(args, "tS", []string{"suffix"})
 	switch {
@@ -564,6 +615,9 @@ func (c scoutCheck) find(args []string, redirs []*syntax.Redirect, depth int) st
 // shell reads the script a shell runs when the call shows it; a file that does not
 // exist cannot run, and any other file the guard cannot read is refused.
 func (c scoutCheck) shell(args []string, redirs []*syntax.Redirect, depth int) string {
+	if c.st.shellEnv {
+		return ruleScoutWrite // BASH_ENV, ENV or ZDOTDIR makes the shell run a file first
+	}
 	cFlag := false
 	i := 0
 	for ; i < len(args); i++ {
@@ -647,6 +701,9 @@ var gitReads = []string{
 var gitSafeConfig = []string{"color.", "column.", "advice."}
 
 func (c scoutCheck) git(args []string) string {
+	if c.st.gitEnv {
+		return ruleScoutGit
+	}
 	dir := c.cwd
 	i := 0
 	for ; i < len(args); i++ {
@@ -698,7 +755,10 @@ sub:
 		return gitListing(rest, "-n --no-color --color --column --no-column -i --ignore-case",
 			"--contains --no-contains --merged --no-merged --points-at --sort --format")
 	case name == "remote":
-		if len(rest) == 0 || slices.Contains([]string{"-v", "--verbose", "show", "get-url"}, rest[0]) && !slices.ContainsFunc(rest[1:], func(a string) bool { return a == "add" }) {
+		for len(rest) > 0 && (rest[0] == "-v" || rest[0] == "--verbose") {
+			rest = rest[1:]
+		}
+		if len(rest) == 0 || rest[0] == "show" || rest[0] == "get-url" {
 			return ""
 		}
 	case name == "config":
