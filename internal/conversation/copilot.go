@@ -123,6 +123,8 @@ func (d *copilotDecoder) line(raw []byte) ([]emission, bool) {
 		return d.toolStart(l, data, item), true
 	case "tool.execution_complete":
 		return d.toolComplete(data), true
+	case "permission.requested", "permission.completed":
+		return d.permission(l), true
 	}
 	return nil, true
 }
@@ -170,12 +172,49 @@ func (d *copilotDecoder) toolStart(l copilotLine, data copilotData, item func(It
 			return item(Item{Kind: KindQuestion, Question: &q})
 		}
 	}
-	d.calls[data.ToolCallID] = copilotCall{id: l.ID}
+	sum := summary(data.Arguments)
+	d.calls[data.ToolCallID] = copilotCall{id: l.ID, summary: sum}
 	return item(Item{Kind: KindToolCall, Tool: &ToolCall{
 		Name:    cutTo(data.ToolName, maxToolName, "…"),
-		Summary: summary(data.Arguments),
+		Summary: sum,
 		Input:   copilotInput(data.ToolName, data.Arguments),
 	}})
+}
+
+// permission marks the call a permission prompt is open for, so a card names it and shows what allowing approves.
+func (d *copilotDecoder) permission(l copilotLine) []emission {
+	var p struct {
+		ToolCallID string `json:"toolCallId"`
+		Req        struct {
+			ToolCallID  string `json:"toolCallId"`
+			FullCommand string `json:"fullCommandText"`
+			FileName    string `json:"fileName"`
+			Path        string `json:"path"`
+			URL         string `json:"url"`
+		} `json:"permissionRequest"`
+	}
+	if json.Unmarshal(l.Data, &p) != nil {
+		return nil
+	}
+	id := p.ToolCallID
+	if l.Type == "permission.requested" {
+		id = p.Req.ToolCallID
+	}
+	c, ok := d.calls[id]
+	if !ok || c.question {
+		return nil
+	}
+	if l.Type == "permission.completed" {
+		return []emission{{Update: true, Item: Item{ID: c.id, Tool: &ToolCall{Live: true}}}}
+	}
+	input := p.Req.FullCommand
+	for _, alt := range []string{p.Req.FileName, p.Req.URL, p.Req.Path} {
+		if input == "" {
+			input = alt
+		}
+	}
+	return []emission{{Update: true, Item: Item{ID: c.id, Tool: &ToolCall{Live: true, Approving: true,
+		Input: cutTo(input, maxToolInput, "\n… cut"), Summary: c.summary}}}}
 }
 
 // toolComplete drops a result whose start was not seen, as when a read began mid-file.

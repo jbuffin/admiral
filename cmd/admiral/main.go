@@ -40,6 +40,7 @@ import (
 	"github.com/jbuffin/admiral/internal/lookout"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
+	"github.com/jbuffin/admiral/internal/permlog"
 	"github.com/jbuffin/admiral/internal/probes"
 	"github.com/jbuffin/admiral/internal/push"
 	"github.com/jbuffin/admiral/internal/repofinder"
@@ -547,6 +548,11 @@ func serve(args []string) error {
 	forgetLive := func(ship string) { liveUsage.Forget(ship); codexFeed.Forget(ship) }
 	shipService.ForgetLive, chatService.ForgetLive = forgetLive, forgetLive
 	convService.LiveFrame = codexFeed.Frame
+	convService.Permissions = func(ship string, evs []permlog.Event) {
+		if err := permlog.Append(absDir, ship, evs...); err != nil {
+			fmt.Fprintf(os.Stderr, "admiral: permission log of %s: %v\n", ship, err)
+		}
+	}
 	liveTmux := &uselive.Tmux{Server: sessionhost.NewServer(tmuxPath, sock), Dir: liveLogin, Harness: shipService.Harness}
 	claudeFeed := &uselive.Claude{Store: liveUsage, Login: liveLogin, Panes: liveTmux.ClaudePanes}
 	copilotFeed := &uselive.Copilot{Store: liveUsage, Files: liveTmux.CopilotFiles}

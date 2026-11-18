@@ -56,6 +56,9 @@ _Avoid_: block, filter, ignore list
 A rule the engineer added through Admiral that lets one harness's ships in one fleet run one narrow kind of call in one repo without asking. A Codex allow rule covers every repo in the fleet. Admiral keeps them; nothing outside Admiral's ships uses them.
 _Avoid_: permission, auto-approve, allowlist (that is a Limit's word)
 
+**Permission log**:
+A ship's record of every permission prompt it and its crew boats hit, and how each was answered: by a person in the terminal or from a card, by the harness's reviewer, or refused. Allow rule proposals are built from it.
+
 **Allow rule proposal**:
 An Inbox item offering an allow rule, built from a prompt a person allowed by hand on a ship. Add keeps the rule; Skip keeps it from being proposed again.
 

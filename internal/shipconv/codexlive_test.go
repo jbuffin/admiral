@@ -16,6 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/jbuffin/admiral/internal/permlog"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
@@ -511,5 +512,35 @@ func TestLiveFramesReachTheUsageSink(t *testing.T) {
 			}
 		}
 		return n == 2
+	})
+}
+
+// An approval the server asks the TUI for is a person's to answer, whoever is watching; the reviewer's verdicts are its own.
+func TestLiveApprovalsReachThePermissionLog(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	fake := newLiveFake(t)
+	f.liveShip(fake, false)
+	var mu sync.Mutex
+	var evs []permlog.Event
+	f.svc.Permissions = func(session string, got []permlog.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		if session == "s" {
+			evs = append(evs, got...)
+		}
+	}
+	f.startLive()
+	f.serving(fake)
+
+	fake.push(`{"method":"item/commandExecution/requestApproval","id":4,"params":{"threadId":"` + liveThread + `","turnId":"t1","itemId":"call_a","command":"gh pr create","cwd":"/w"}}`)
+	fake.push(`{"method":"item/completed","params":{"threadId":"` + liveThread + `","turnId":"t1","item":{"type":"commandExecution","id":"call_a","command":"gh pr create","status":"completed"}}}`)
+	fake.push(`{"method":"item/autoApprovalReview/completed","params":{"threadId":"` + liveThread + `","turnId":"t1","reviewId":"r1","review":{"status":"approved"},"action":{"type":"command","command":"ls","cwd":"/w","source":"shell"}}}`)
+	eventually(t, "a person's allow and the reviewer's", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		recs := permlog.Fold("s", evs)
+		return len(recs) == 2 && recs[0].Call.Command == "gh pr create" && recs[0].Answer == permlog.Allow && recs[0].By == permlog.Person &&
+			recs[1].Call.Command == "ls" && recs[1].By == permlog.Reviewer
 	})
 }

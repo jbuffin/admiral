@@ -60,11 +60,13 @@ function questionCard(reason: string, conv: Conversation, harness: string): Answ
   return { kind: 'question', reason, item: first.id, text: first.text, options: first.options, descriptions: first.descriptions, questions };
 }
 
-// Copilot's reasons carry no tool name, so the card previews the one call still open in the current turn.
+// Copilot's reasons carry no tool name. Its permission event names the call; without one the card previews the one call still open in the current turn.
 function copilotCard(r: string, conv: Conversation): AnswerCard {
   if (r === 'question') return questionCard(r, conv, 'copilot');
   if (r !== 'notification:permission_prompt') return { kind: 'terminal' };
   const open = conv.items.slice(currentTurnStart(conv.items)).filter((i) => i.kind === 'tool_call' && !i.tool?.done);
+  const named = open.find((i) => i.tool?.approving);
+  if (named?.tool) return { kind: 'permission', tool: named.tool.name, reason: r, call: named };
   // A subagent's own command asks while the launching call is the one open, so that call is not what Allow runs.
   const call = open.length === 1 && !SUBAGENT_TOOLS.has(open[0].tool?.name ?? '') ? open[0] : undefined;
   return { kind: 'permission', tool: call?.tool?.name ?? '', reason: r, call };

@@ -228,11 +228,16 @@
 #   prompted <text>
 #                  Copilot only, needs jq: appends one user.message line holding <text>, the echo of a message
 #                  sent to the pane.
+#   permission <decisionSource> <command>
+#                  Copilot only, needs jq: appends a bash call's start, its permission.requested for <command> and its
+#                  permission.completed to events.jsonl, as Copilot 1.0.98 records them. <decisionSource> is
+#                  human_response or assisted_approval (approved) or unattended_fallback (denied).
 #   copilothook <event> <json>
 #                  Copilot only, needs jq: runs the commands of the plugin's hooks.json (the
 #                  --plugin-dir in argv) for <event>, <json> on stdin, as Copilot's hook stdin reads
-#                  (snake_case: notification_type, toolName). A matcher is tested against
-#                  notification_type or toolName; the event name goes to `events-done`.
+#                  (snake_case: notification_type, toolName), with sessionId set to the --session-id in argv when
+#                  <json> has none. A matcher is tested against notification_type or toolName; the event name goes
+#                  to `events-done`.
 #   usage          append the usage line this harness writes at its end, with fixed figures (the
 #                  tests read them): claude a cost-state line (input 100, output 50 with 10
 #                  thinking, cache read 300, cache write 40, $0.25) to the transcript in the pane's
@@ -1124,6 +1129,36 @@ EOF5
 			  line("assistant.message"; {messageId: ("fake-m-" + $n), content: $t, toolRequests: []}),
 			  line("assistant.turn_end"; {turnId: "0"})' >>"$COPILOT_HOME/session-state/$sid/events.jsonl"
 			;;
+		permission)
+			# Copilot only: a bash call that asks permission for <command>, answered as <decisionSource> says
+			# (human_response allows, the others as Copilot records them), each event in the recorded shape.
+			src=${arg%% *}
+			cmd=${arg#"$src" }
+			sid=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--session-id" ] && sid=$a
+				prev=$a
+			done
+			case "$sid" in
+			"" | */*) echo "permission cue: no usable --session-id in argv" | tee "$d/events-error" >&2; exit 1 ;;
+			esac
+			[ -n "$COPILOT_HOME" ] || { echo "permission cue: COPILOT_HOME is unset" | tee "$d/events-error" >&2; exit 1; }
+			mkdir -p "$COPILOT_HOME/session-state/$sid"
+			n=$(($(cat "$d/.events-n" 2>/dev/null || echo 0) + 1))
+			echo "$n" >"$d/.events-n"
+			jq -cn --arg c "$cmd" --arg src "$src" --arg n "$n" '
+			  def line($type; $data): {type: $type, id: ("fake-" + $type + "-" + $n), parentId: null, timestamp: (now | todate), data: $data};
+			  ("toolu_fake" + $n) as $call | ("req-" + $n) as $req |
+			  ($c | split(" ")[0]) as $id |
+			  line("tool.execution_start"; {toolCallId: $call, toolName: "bash", arguments: {command: $c}}),
+			  line("permission.requested"; {requestId: $req, permissionRequest: {kind: "shell", toolCallId: $call, fullCommandText: $c,
+			    commands: [{identifier: $id, readOnly: false}], commandSegments: [{identifier: $id, fullCommandText: $c, workingDirectory: env.PWD}],
+			    possiblePaths: [], possibleUrls: []}}),
+			  line("permission.completed"; {requestId: $req, toolCallId: $call,
+			    result: {kind: (if $src == "unattended_fallback" then "denied-no-approval-rule-and-could-not-request-from-user" else "approved" end)},
+			    decisionSource: $src})' >>"$COPILOT_HOME/session-state/$sid/events.jsonl"
+			;;
 		ask)
 			# Copilot only: a pending ask_user call, <message>|<option>|<option>..., as the recorded oneOf form.
 			sid=""
@@ -1171,6 +1206,14 @@ EOF5
 				prev=$a
 			done
 			subject=$(printf '%s' "$payload" | jq -r '.notification_type // .toolName // ""' 2>>"$d/event-error")
+			# Copilot puts the session id on every hook's payload.
+			sid=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--session-id" ] && sid=$a
+				prev=$a
+			done
+			[ -n "$sid" ] && payload=$(printf '%s' "$payload" | jq -c --arg s "$sid" '.sessionId //= $s' 2>>"$d/event-error")
 			: >"$d/.cmds"
 			[ -n "$plugin" ] && jq -r --arg e "$ev" --arg s "$subject" '.hooks[$e][]? | (.matcher // "") as $m | select($m == "" or ($s | test($m))) | .bash' "$plugin/hooks.json" >"$d/.cmds" 2>>"$d/event-error"
 			if [ ! -s "$d/.cmds" ]; then

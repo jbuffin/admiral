@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/jbuffin/admiral/internal/standing"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"github.com/jbuffin/admiral/internal/codexpane"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/moor"
+	"github.com/jbuffin/admiral/internal/permlog"
 	"github.com/jbuffin/admiral/internal/repofinder"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/skillindex"
@@ -567,6 +569,12 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 	}
 
+	// Before the session starts, so its first prompt already has the launch it belongs to.
+	if home, err := filepath.Abs(l.Home); err == nil {
+		if err := permlog.Launched(home, session, req.Harness, fleet.Key, req.Dir); err != nil {
+			log.Printf("admiral: could not start the permission log of %s: %v", session, err)
+		}
+	}
 	if err := l.createSession(session, req.Dir, opts, paneOpts, env, unset, argv, true); err != nil {
 		if runCrew != "" {
 			home, _ := filepath.Abs(l.Home)

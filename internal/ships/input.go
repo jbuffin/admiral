@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/keymap"
 	"github.com/jbuffin/admiral/internal/outcomes"
+	"github.com/jbuffin/admiral/internal/permlog"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
@@ -321,6 +323,17 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	} else if err := s.tmux().SendLiteral(ctx, t.pane, keys); err != nil {
 		refuse(http.StatusBadGateway, "could not send the answer: "+err.Error())
 		return
+	}
+	if req.Card == "permission" {
+		ans := permlog.Allow
+		if req.Choice == "deny" {
+			ans = permlog.Deny
+		}
+		if home, err := filepath.Abs(s.Launcher.Home); err == nil {
+			if err := permlog.Append(home, session, permlog.Event{Ev: "card", Crew: t.crew, Answer: ans}); err != nil {
+				log.Printf("admiral: permission log of %s: %v", session, err)
+			}
+		}
 	}
 	if req.Choice == "deny" {
 		// The pane sits at its prompt after a deny; Claude's hooks don't say so, and Codex's Interrupt hook says it only after a flush, so write it now.

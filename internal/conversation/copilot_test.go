@@ -297,3 +297,28 @@ func TestCopilotFailedToolShowsItsErrorMessage(t *testing.T) {
 		t.Errorf("failed call = %+v", tool)
 	}
 }
+
+// A real Copilot ui-server session's events.jsonl: a bash call asks permission (line 5) and a person allows it (line 6).
+func TestCopilotPermissionPromptMarksItsCallUntilAnswered(t *testing.T) {
+	data, err := os.ReadFile("testdata/copilot-server-stream.events.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	call := func(items []conversation.Item) *conversation.ToolCall {
+		for _, it := range items {
+			if it.Kind == conversation.KindToolCall && it.Tool.Name == "bash" {
+				return it.Tool
+			}
+		}
+		t.Fatalf("no bash call in %+v", items)
+		return nil
+	}
+	asking := call(readCop(t, strings.Join(lines[:5], "")))
+	if !asking.Approving || asking.Input != "touch u3-final.txt" {
+		t.Fatalf("while the prompt is open the call is %+v, want approving with its command", asking)
+	}
+	if answered := call(readCop(t, strings.Join(lines[:6], ""))); answered.Approving {
+		t.Fatalf("once answered the call is %+v, want no longer approving", answered)
+	}
+}
