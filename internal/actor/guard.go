@@ -44,6 +44,7 @@ var allowed = []struct {
 }{
 	{"GET", []string{"ships"}, plain},
 	{"GET", []string{"ships", "*", "conversation"}, ship},
+	{"GET", []string{"ships", "*", "findings"}, plain},
 	{"GET", []string{"inbox"}, plain},
 	{"GET", []string{"sources"}, plain},
 	{"GET", []string{"campaigns"}, plain},

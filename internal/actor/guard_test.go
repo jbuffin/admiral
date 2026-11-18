@@ -117,6 +117,7 @@ func TestAnActorReachesOnlyTheRoutesAdmiralBotMayCall(t *testing.T) {
 		for _, c := range []struct{ method, path, body string }{
 			{"GET", "/ships", ""},
 			{"GET", "/ships/p-1/conversation", ""},
+			{"GET", "/ships/p-1/findings", ""},
 			{"GET", "/inbox", ""},
 			{"GET", "/sources", ""},
 			{"GET", "/campaigns", ""},
@@ -301,6 +302,16 @@ func TestAnActorIsNeverLetThroughToCreateOrDismissACampaignDraft(t *testing.T) {
 			if code := r.do("POST", prefix+path, `{"repo":"acme/widgets","title":"T","body":"B"}`, "tok-work", local).Code; code != 403 || r.reached != 0 {
 				t.Errorf("POST %s%s as AdmiralBot: code %d, reached %d; want 403 and the handler not reached", prefix, path, code, r.reached)
 			}
+		}
+	}
+}
+
+// The handler fences findings by fleet; a guard that named a foreign ship's fleet would say it has findings.
+func TestTheGuardLetsAFindingsReadOfAnyShipReachTheHandlerWhichFencesIt(t *testing.T) {
+	for _, ship := range []string{"w-1", "ghost", "nobody"} {
+		r := newRig(t)
+		if code := r.do("GET", "/api/ships/"+ship+"/findings", "", "tok-personal", local).Code; code != 200 || r.reached != 1 || r.fleet != "personal" {
+			t.Errorf("findings of %s: code %d, reached %d, fleet %q; want the handler reached acting for personal", ship, code, r.reached, r.fleet)
 		}
 	}
 }

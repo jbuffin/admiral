@@ -34,6 +34,7 @@ type Voyage struct {
 type Reader interface {
 	Voyage(ship, firstLaunched string) (Voyage, bool)
 	Latest(ship string) (Voyage, bool)
+	LatestIn(ship, fleet string) (Voyage, bool)
 	Has(ship, firstLaunched string) bool
 }
 
@@ -181,6 +182,18 @@ func (s *Store) Voyage(ship, firstLaunched string) (Voyage, bool) {
 
 // Latest is the ship's voyage with the newest first launch.
 func (s *Store) Latest(ship string) (Voyage, bool) {
+	return s.latest(ship, func(Voyage) bool { return true })
+}
+
+// LatestIn is the ship's newest voyage that belongs to fleet; a voyage with no fleet belongs to none.
+func (s *Store) LatestIn(ship, fleet string) (Voyage, bool) {
+	if fleet == "" {
+		return Voyage{}, false
+	}
+	return s.latest(ship, func(v Voyage) bool { return v.Fleet == fleet })
+}
+
+func (s *Store) latest(ship string, keep func(Voyage) bool) (Voyage, bool) {
 	dir, ok := encode(ship)
 	if !ok {
 		return Voyage{}, false
@@ -207,7 +220,7 @@ func (s *Store) Latest(ship string) (Voyage, bool) {
 			continue
 		}
 		v, ok := s.read(root, path.Join(dir, e.Name()))
-		if !ok || v.Ship != ship {
+		if !ok || v.Ship != ship || !keep(v) {
 			continue
 		}
 		at, _ := time.Parse(time.RFC3339, v.FirstLaunched)

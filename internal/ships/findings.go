@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/findings"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -49,6 +50,7 @@ func (s *Service) keepFindings(sess sessionhost.Session) (kept, failed bool) {
 
 func (s *Service) serveFindings(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
+	fleet, acting := actor.FleetOf(r.Context())
 	var v findings.Voyage
 	var ok bool
 	if first := r.URL.Query().Get("first_launched"); first != "" {
@@ -57,8 +59,14 @@ func (s *Service) serveFindings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		v, ok = s.findingsKept().Voyage(session, first)
+	} else if acting {
+		v, ok = s.findingsKept().LatestIn(session, fleet)
 	} else {
 		v, ok = s.findingsKept().Latest(session)
+	}
+	// One refusal for every cause, so a fleet's reader learns nothing of another fleet's ships.
+	if acting && (v.Fleet == "" || v.Fleet != fleet) {
+		ok = false
 	}
 	if !ok {
 		writeError(w, http.StatusNotFound, "no findings are kept for this ship")
