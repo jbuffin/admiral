@@ -70,6 +70,12 @@ describe('rowVerb', () => {
     expect(rowVerb(mission({ ship: 'Dory', scope: 'repo', repo: 'acme/api' }))).toBe('proposes a mission from Dory for acme/api');
   });
 
+  it('words a drafting ship that ended, not as a notice', () => {
+    const ended = itemEntry({ kind: 'drafting_ended', session: '_admiral', name: 'Admiral', title: 'Saltpaw ended without filing a campaign', drafting_ended: { ship: 'saltpaw', name: 'Saltpaw', fleet: 'a', harness: 'claude' } });
+    expect(rowShip(ended)).toBe('Admiral');
+    expect(rowVerb(ended)).toBe('a drafting ship ended');
+  });
+
   it('words a stop by its reason', () => {
     expect(rowVerb(stopEntry('permission:Bash'))).toBe('wants to run Bash');
     expect(rowVerb(stopEntry('stop'))).toBe('finished and is waiting');

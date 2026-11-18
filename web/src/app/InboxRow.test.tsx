@@ -232,3 +232,44 @@ test('a campaign draft row shows a hostile model-written title as text', () => {
   expect(document.querySelector('img, script')).toBeNull();
   expect(screen.getByRole('link').textContent).toContain('<img src=x');
 });
+
+const ended = (name: string, over: Record<string, unknown> = {}) =>
+  ({
+    key: 'item:_admiral/d-1',
+    type: 'item',
+    session: '_admiral',
+    id: 'd-1',
+    folded: null,
+    since: 0,
+    fleet: homeport,
+    item: {
+      id: 'd-1',
+      kind: 'drafting_ended',
+      name: 'Admiral',
+      title: `${name} ended without filing a campaign`,
+      fleet: 'alpha',
+      drafting_ended: { ship: 'saltpaw', name, fleet: 'alpha', harness: 'claude' },
+      ...over,
+    },
+  }) as unknown as Entry;
+
+test('a drafting-ended row reads Admiral, a drafting ship ended, then the title with the ship name in italics', () => {
+  row(ended('Saltpaw'));
+  const link = screen.getByRole('link') as HTMLAnchorElement;
+  expect(link.querySelector('.inbox-who')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('Admiral a drafting ship ended');
+  const title = link.querySelector('.inbox-title')!;
+  expect(title.textContent!.trim()).toBe('Saltpaw ended without filing a campaign');
+  expect(title.querySelector('em')!.textContent).toBe('Saltpaw');
+  expect(link.textContent!.match(/ended without filing a campaign/g)).toHaveLength(1);
+  expect(link.getAttribute('href')).toBe('/app/inbox/_admiral/item/d-1');
+});
+
+test('the italic name comes from the item data, so a name with markup or asterisks stays literal', () => {
+  const name = '<b>Salt</b> *paw* <img src=x onerror="window.__xss=1">';
+  row(ended(name));
+  const title = screen.getByRole('link').querySelector('.inbox-title')!;
+  expect(title.querySelector('em')!.textContent).toBe(name);
+  expect(title.querySelectorAll('em')).toHaveLength(1);
+  expect(title.querySelector('b, img')).toBeNull();
+  expect(title.textContent!.trim()).toBe(`${name} ended without filing a campaign`);
+});

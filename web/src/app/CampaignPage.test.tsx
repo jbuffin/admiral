@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/preact";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { Fleet } from "./api";
+import type { Fleet, Ship } from "./api";
 import type { Campaign, CampaignNode } from "./campaign";
 import {
   addOpen,
@@ -403,4 +403,110 @@ test("a campaign that ended because its tree closed shows Ended and no Follow ag
   await waitFor(() => expect(screen.getByText("Ended")).toBeTruthy());
   expect(screen.queryByRole("button", { name: "Follow again" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Unfollow" })).toBeNull();
+});
+
+const drafter = (over: Record<string, unknown> = {}) =>
+  ({
+    session: "saltpaw",
+    name: "Saltpaw",
+    title: "Plan the parser rewrite",
+    fleet: "zulu",
+    harness: "claude",
+    status: "underway",
+    skill: "wayfinder",
+    skill_kind: "skill",
+    drafting: true,
+    crew: [],
+    ...over,
+  }) as unknown as Ship;
+const draftingRow = () =>
+  Array.from(document.querySelectorAll("a, button")).find((el) =>
+    /Drafting a campaign/.test(el.textContent ?? ""),
+  ) as HTMLElement | undefined;
+const draftingRows = () =>
+  Array.from(document.querySelectorAll("a, button")).filter((el) =>
+    /Drafting a campaign/.test(el.textContent ?? ""),
+  );
+
+test("the sidebar shows a Drafting row for a drafting ship of the fleet, with its skill and ship name, above the followed campaigns", async () => {
+  ships.value = [drafter()];
+  await nav();
+  const row = draftingRow()!;
+  expect(row.textContent).toMatch(
+    /^\s*Drafting a campaign\s*·\s*\/wayfinder\s*·\s*Saltpaw\s*$/,
+  );
+  expect(row.textContent).not.toContain("Plan the parser rewrite");
+  const followed = screen.getByRole("link", { name: /Widgets overhaul/ });
+  expect(
+    row.compareDocumentPosition(followed) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
+test("the Drafting row shows a ship's name and skill as text, never as markup", async () => {
+  ships.value = [drafter({ name: "<b>Salt</b> *paw*", skill: "<i>way</i>_*x*" })];
+  await nav();
+  const row = draftingRow()!;
+  expect(row.textContent).toContain("<b>Salt</b> *paw*");
+  expect(row.textContent).toContain("/<i>way</i>_*x*");
+  expect(row.querySelector("b, i, em")).toBeNull();
+});
+
+test("a drafting ship of another fleet, and a ship that is not drafting, show no Drafting row", async () => {
+  ships.value = [
+    drafter({ session: "other", fleet: "alpha" }),
+    drafter({ session: "plain", drafting: undefined }),
+  ];
+  await nav();
+  expect(draftingRows()).toHaveLength(0);
+});
+
+test("the Drafting row goes when the ship drops drafting, and the followed campaign shows, with no reload", async () => {
+  ships.value = [drafter()];
+  campaignList.value = [];
+  go("/app/ships", "?fleet=zulu");
+  render(<CampaignsNav />);
+  expect(draftingRow()).toBeTruthy();
+  expect(screen.queryByRole("link", { name: /Widgets overhaul/ })).toBeNull();
+  ships.value = [drafter({ drafting: undefined })];
+  campaignList.value = [{ ...campaign, id: "camp-1" }];
+  await waitFor(() => expect(draftingRow()).toBeUndefined());
+  expect(screen.getByRole("link", { name: /Widgets overhaul/ })).toBeTruthy();
+});
+
+test("the Drafting row goes when the ship is gone", async () => {
+  ships.value = [drafter()];
+  await nav();
+  expect(draftingRow()).toBeTruthy();
+  ships.value = [];
+  await waitFor(() => expect(draftingRow()).toBeUndefined());
+});
+
+test("tapping the Drafting row opens the ship's bridge", async () => {
+  ships.value = [drafter()];
+  await nav();
+  fireEvent.click(draftingRow()!);
+  expect(location.pathname).toBe("/app/ships/saltpaw");
+});
+
+test("a moored drafting ship keeps its Drafting row", async () => {
+  ships.value = [drafter({ status: "moored" })];
+  await nav();
+  expect(draftingRows()).toHaveLength(1);
+});
+
+test("the phone's Campaigns list shows the Drafting row above the cards and drops the empty line while one shows", () => {
+  ships.value = [drafter()];
+  campaignList.value = [];
+  go("/app/campaigns", "?fleet=zulu");
+  render(<CampaignsList phone title />);
+  expect(draftingRows()).toHaveLength(1);
+  expect(screen.queryByText(/Follow a campaign with Add campaign/)).toBeNull();
+  cleanup();
+  campaignList.value = [{ ...campaign, id: "camp-1" }];
+  render(<CampaignsList phone title />);
+  const row = draftingRow()!;
+  const card = screen.getByRole("link", { name: /Widgets overhaul/ });
+  expect(
+    row.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });

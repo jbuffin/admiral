@@ -441,3 +441,13 @@ describe('createInboxQueue: re-review', () => {
     expect(keys(q)).toEqual(['rereview:a']);
   });
 });
+
+describe('a drafting ship that ended', () => {
+  const ended: InboxItem = { version: 1, id: 'd-1', session: '_admiral', kind: 'drafting_ended', created: at(0), title: 'Saltpaw ended without filing a campaign', name: 'Admiral', fleet: 'a', drafting_ended: { ship: 'saltpaw', name: 'Saltpaw', fleet: 'a', harness: 'claude' } };
+
+  it('counts toward the Inbox count', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [ended], ships: [] }, T0);
+    expect(attentionCount(q)).toBe(1);
+  });
+});
