@@ -189,7 +189,7 @@ A plugin that lists `page` in its `initialize` capabilities is a **module**: it 
 {"jsonrpc":"2.0","id":5,"result":{"groups":[{"id":"review","title":"Needs review","rows":[{"id":"T-1","title":"Fix login","subtitle":"Acme","chips":[{"label":"P1","tone":"warn"}],"reason":"Review is open","action":{"id":"pass","label":"Pass review","confirm":"form","summary":"Pass the review"}}]}],"waiting":1}}
 ```
 
-A row is `{id, title, subtitle, chips, reason, action, actions}`. `id` is required and the other fields are optional. `reason` says why the row is in its group, and `action` is the row's one main action. `actions` is an optional list of further actions. A chip is `{label, tone}`, and `tone` is one of `neutral`, `good`, `warn` or `muted`; any other value reads as `neutral`. An action is `{id, label, confirm, summary, url}`. `confirm` is `click`, `yesno` or `form` (anything else reads as `yesno`), and `url` is optional. Admiral only carries actions as data for now. `waiting` is the count of rows waiting on the engineer.
+A row is `{id, title, subtitle, chips, reason, action, actions}`. `id` is required and the other fields are optional. `reason` says why the row is in its group, and `action` is the row's one main action. `actions` is an optional list of further actions. A chip is `{label, tone}`, and `tone` is one of `neutral`, `good`, `warn` or `muted`; any other value reads as `neutral`. An action is `{id, label, confirm, summary, url}`. `confirm` is `click`, `yesno` or `form` (anything else reads as `yesno`), and `url` is optional. A module action with a `url` opens that link and Admiral runs nothing; one without a `url` is run through `action.form` and `action.run` below. `waiting` is the count of rows waiting on the engineer.
 
 **`row.get`**: sent when the engineer opens a row of the last good page. The `id` and the `include` values come from a client through Admiral, which checks only their length and that the id is on the page, so treat both as untrusted (never build a file path from them without checking). `include` is optional and lists parts you leave out by default, such as closed or queued steps; it is left out of the params when the engineer asked for none.
 
@@ -200,11 +200,36 @@ A row is `{id, title, subtitle, chips, reason, action, actions}`. `id` is requir
 
 A detail view is a list of sections. A section has a `kind` and a `title`: `links` holds `links`, a list of `{label, url}`; `steps` holds `steps`, a list of `{id, title, chips, actions}`; `fields` holds `fields`, a list of `{label, value}`. A section of any other `kind` is dropped.
 
+**Module actions: `action.form` and `action.run`.** A module action is the `action` of a row, one of its `actions`, or an action of one of its steps. Its `id` is unique within a row and its steps: when several carry the same `id`, the first wins, in the order the row's `action`, its `actions`, then each step's actions in section and step order, and Admiral ignores the later ones. Admiral knows a step's module actions only from the last good `row.get` of that row, and forgets them when the row leaves the page. Admiral never asks you about an `id` it does not know, a module action with a `url`, or (for `action.form`) one whose `confirm` is not `form`.
+
+`action.form` is sent when the engineer opens a module action whose `confirm` is `form`, and answers the form to fill in. It must answer within the 10-second call limit.
+
+```json
+{"jsonrpc":"2.0","id":7,"method":"action.form","params":{"row":"T-1","action":"pass"}}
+{"jsonrpc":"2.0","id":7,"result":{"title":"Pass review","fields":[{"id":"whose","label":"Whose work","type":"choice","options":[{"id":"a","label":"Amy"},{"id":"b","label":"Bo"}],"default":"b"},{"id":"files","label":"Files","type":"checklist","options":[{"id":"x","label":"X"},{"id":"y","label":"Y"}],"default":["y"]},{"id":"time","label":"Time","type":"duration","default":"01:30","min":"00:15"}]}}
+```
+
+A form is `{title, fields}`; `title` is optional. A field is `{id, label, type, options, default, min}`, and `type` is `choice` (pick one of `options`), `checklist` (tick any of `options`) or `duration`. An option is `{id, label}`. A duration value is `"hh:mm"` (two digits, minutes 00 to 59). `default` is optional: a choice's is an option id, a checklist's is a list of option ids, a duration's is `"hh:mm"`. A checklist with no `default` starts all ticked. `min` is the least duration, `"hh:mm"`, and only a duration has it. There is no text field yet. Titles and labels are cut to one line of at most 200 characters. Admiral drops a `default` that does not fit its field (a choice default that is not one of the options, a checklist default naming an id that is not an option); the field stays, with no default. Admiral refuses the whole answer, and the engineer sees a one-line error, when:
+
+- it is over **64 KiB**, is not an object, or `fields` is not a list;
+- there are more than **20 fields**, or a field has more than **100 options**;
+- a field has an unknown `type`, or a duration's `default` or `min` is not `"hh:mm"`;
+- a field `id` or an option `id` is not a string, is empty, holds a control character or is over 200 characters, or a field `id` (across the form) or an option `id` (within its field) is used twice.
+
+`action.run` is sent when the engineer confirms a module action, and carries what they filled in. It may take up to **60 seconds** to answer, an exception to the 10-second rule in Limits; the answer is `{message, url}`.
+
+```json
+{"jsonrpc":"2.0","id":8,"method":"action.run","params":{"row":"T-1","action":"pass","values":{"whose":"b","files":["x","y"],"time":"01:30"}}}
+{"jsonrpc":"2.0","id":8,"result":{"message":"Review passed","url":"https://example.com/t/1"}}
+```
+
+`values` is an object keyed by field id, whose values are strings or lists of strings; a module action with no form gets `{}`. Admiral checks only its shape and size (at most **50 fields**, a list of at most **100 items**, each string at most **1,000 characters**, a field id at most 200 characters, and a request body of at most 1 MiB) and passes it on. Validating the values against your form is your job, so treat them as untrusted. Answer a JSON-RPC error to refuse them: its message, cut to one line of at most 300 characters, is what the engineer sees, and nothing is assumed to have changed. `message` is required, and is cut the same way; `url` is optional and is left out unless it is an http(s) link. An answer that is not an object, or has no `message`, is an error to the engineer. A module action runs one at a time per row: Admiral refuses a second run on a row until the first has answered or its 60 seconds have passed, even if the engineer's browser has gone away. Admiral sends no message when a run ends; send `page.changed` when the page moved.
+
 **Message kinds.** `initialize` may also answer `messageKinds`, a list of `{kind, label, job}`, each one a string. Admiral keeps the ones that have all three, each cut to one line of at most 200 characters, and drops a bad declaration on its own.
 
 **Page route.** The shell opens a module at `/app/<source key>`, and a row at `/app/<source key>/<row id>`. A source whose key equals a built-in surface id (`inbox`, `ships`, `orders`, `chat`, `campaigns`, `routines`, `crew`, `preferences`) gets no nav entry and its page can't be reached; the surface keeps its path.
 
-**Page limits.** Admiral keeps the last good page. A `page.get` or `row.get` that gets no answer within 10 seconds fails like any other call.
+**Page limits.** Admiral keeps the last good page. A `page.get` or `row.get` that gets no answer within 10 seconds fails like any other call. A page in the `error` state turns the module's module actions off.
 
 An answer is dropped whole, and the last good page stays served, when:
 
@@ -245,7 +270,7 @@ Everything you send is checked against the [limits](#a-modules-page) and the las
 
 Admiral treats everything a plugin sends as untrusted.
 
-- A request that gets no answer within **10 seconds** fails. A hung `initialize` or `panels.list` also counts as a crash: Admiral kills the process and restarts it. Any other hung request fails only that call.
+- A request that gets no answer within **10 seconds** fails. A hung `initialize` or `panels.list` also counts as a crash: Admiral kills the process and restarts it. Any other hung request fails only that call. `action.run` has **60 seconds**.
 - A line over **16 MiB** is dropped.
 - An order list over **5,000 orders**, or an order whose `text` is over **12,000 bytes**, is refused.
 - At most **100 panels**. A panel id or an order id must be non-empty and unique within its list.

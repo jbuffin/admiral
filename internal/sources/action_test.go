@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -191,7 +192,11 @@ func TestAFormDropsADefaultThatDoesNotFitItsFieldAndKeepsTheRest(t *testing.T) {
 }
 
 func repeatFormFields(n int) string {
-	return `{"fields":` + repeat(`{"id":"f","label":"F","type":"choice","options":[{"id":"a","label":"A"}]}`, n) + `}`
+	fields := make([]string, n)
+	for i := range fields {
+		fields[i] = fmt.Sprintf(`{"id":"f%d","label":"F","type":"choice","options":[{"id":"a","label":"A"}]}`, i)
+	}
+	return `{"fields":[` + strings.Join(fields, ",") + `]}`
 }
 
 func optionsFormOf(n int) string {
@@ -681,4 +686,58 @@ func TestARunStaysOpenAfterItsClientGoesAwayAndTheSlotFreesWhenTheRunTimeoutPass
 		code, _ := f.runAction("t1", "close", map[string]any{})
 		return code == http.StatusOK
 	})
+}
+
+func TestAFormCanBeFetchedWhileARunIsOpenOnTheRow(t *testing.T) {
+	c := newActionConn(pageOf(actionsPage, 0))
+	c.hold = true
+	c.form = json.RawMessage(`{"fields":[]}`)
+	f, _ := actionFixture(t, c)
+	first := startRun(t, f, c, t.Context(), "t1")
+	if code, body := f.formOf("t1", "pass"); code != http.StatusOK {
+		t.Errorf("POST form while a run is open = %d %s, want 200", code, body)
+	}
+	close(c.release)
+	<-first
+}
+
+func TestARunAnswerThatIsNotAnObjectOrHasNoMessageIs502WithOneLine(t *testing.T) {
+	for name, run := range map[string]string{
+		"a string":          `"done"`,
+		"no message":        `{"url":"https://acme.test/"}`,
+		"a blank message":   `{"message":"\n"}`,
+		"a numeric message": `{"message":3}`,
+	} {
+		c := newActionConn(pageOf(actionsPage, 0))
+		c.run = json.RawMessage(run)
+		f, _ := actionFixture(t, c)
+		code, body := f.runAction("t1", "close", map[string]any{})
+		if code != http.StatusBadGateway {
+			t.Errorf("%s: POST run = %d %s, want 502", name, code, body)
+			continue
+		}
+		actionErrorLine(t, body)
+	}
+}
+
+func TestAFormWithAnUnusableOrRepeatedFieldOrOptionIdIs502(t *testing.T) {
+	opt := func(id string) string { return `{"id":` + id + `,"label":"O"}` }
+	for name, form := range map[string]string{
+		"an empty field id":         `{"fields":[{"id":"","label":"F","type":"duration"}]}`,
+		"a field id with control":   `{"fields":[{"id":"a\u0007b","label":"F","type":"duration"}]}`,
+		"a repeated field id":       `{"fields":[{"id":"f","label":"F","type":"duration"},{"id":"f","label":"G","type":"duration"}]}`,
+		"an empty option id":        `{"fields":[{"id":"f","label":"F","type":"choice","options":[` + opt(`""`) + `]}]}`,
+		"a repeated option id":      `{"fields":[{"id":"f","label":"F","type":"checklist","options":[` + opt(`"a"`) + `,` + opt(`"a"`) + `]}]}`,
+		"an option id not a string": `{"fields":[{"id":"f","label":"F","type":"choice","options":[` + opt(`4`) + `]}]}`,
+	} {
+		c := newActionConn(pageOf(actionsPage, 0))
+		c.form = json.RawMessage(form)
+		f, _ := actionFixture(t, c)
+		code, body := f.formOf("t1", "pass")
+		if code != http.StatusBadGateway {
+			t.Errorf("%s: POST form = %d %.200s, want 502", name, code, body)
+			continue
+		}
+		actionErrorLine(t, body)
+	}
 }

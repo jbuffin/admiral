@@ -52,30 +52,32 @@ type runner struct {
 	// stackChecker is the supervisor's, set before the runner starts.
 	stackChecker moor.StackChecker
 
-	mu        sync.Mutex
-	def       config.Source
-	sid       int // the current process; a notification from an older one is ignored
-	p         conn
-	ready     bool // initialized and listed: requests may be sent
-	state     string
-	readOnly  bool
-	errMsg    string
-	auth      *Auth
-	caps      []string
-	kinds     []MessageKind
-	page      Page // the last good page.get; it outlives the plugin's restarts
-	hasPage   bool
-	pageErr   string   // the last page.get the plugin failed, until a good one
-	pageVer   int      // moves on every change of the page a client reads
-	pageRows  []string // what the last bump named, none meaning every row
-	pageState string   // the state the last bump saw
-	noPage    bool     // an initialize answer has been read and it did not list page
-	schema    json.RawMessage
-	panels    []Panel
-	warnings  []string   // the router's, for a built-in GitHub source
-	conn      *connState // a built-in GitHub source's last connection; it outlives the source's restarts
-	queue     []string   // orders.launched not yet delivered
-	pulls     pulls
+	mu          sync.Mutex
+	def         config.Source
+	sid         int // the current process; a notification from an older one is ignored
+	p           conn
+	ready       bool // initialized and listed: requests may be sent
+	state       string
+	readOnly    bool
+	errMsg      string
+	auth        *Auth
+	caps        []string
+	kinds       []MessageKind
+	page        Page // the last good page.get; it outlives the plugin's restarts
+	hasPage     bool
+	stepActions map[string][]Action // per row, the module actions in its last good row.get
+	runs        map[string]bool     // rows with a module action running
+	pageErr     string              // the last page.get the plugin failed, until a good one
+	pageVer     int                 // moves on every change of the page a client reads
+	pageRows    []string            // what the last bump named, none meaning every row
+	pageState   string              // the state the last bump saw
+	noPage      bool                // an initialize answer has been read and it did not list page
+	schema      json.RawMessage
+	panels      []Panel
+	warnings    []string   // the router's, for a built-in GitHub source
+	conn        *connState // a built-in GitHub source's last connection; it outlives the source's restarts
+	queue       []string   // orders.launched not yet delivered
+	pulls       pulls
 
 	catalog    []EventKind
 	hasCatalog bool

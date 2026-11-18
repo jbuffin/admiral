@@ -230,8 +230,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sources/{key}/page", s.servePage)
 	mux.HandleFunc("POST /api/sources/{key}/page/refresh", s.servePageRefresh)
 	mux.HandleFunc("GET /api/sources/{key}/rows/{id}", s.serveRow)
-	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/form", s.serveActionNotBuilt)
-	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/run", s.serveActionNotBuilt)
+	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/form", s.serveActionForm)
+	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/run", s.serveActionRun)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("GET /api/sources/{key}/repos", s.serveRepos)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
@@ -999,10 +999,6 @@ func (s *Service) serveRow(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, d)
 	}
-}
-
-func (s *Service) serveActionNotBuilt(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "module actions are not built yet")
 }
 
 func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runner, conn, bool) {
