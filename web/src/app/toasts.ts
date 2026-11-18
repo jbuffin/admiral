@@ -35,7 +35,10 @@ export function createToasts<A extends ToastAlert = ToastAlert>({ now }: { now: 
     },
     /** A module action's result: it keeps its link and stays until dismissed. */
     pushResult(alert: A): Toast<A> {
-      return this.push(alert);
+      const toast = this.push(alert);
+      toast.url = alert.url;
+      toast.sticky = true;
+      return toast;
     },
     list: (): Toast<A>[] => list,
     dismiss(id: number) {
@@ -43,7 +46,7 @@ export function createToasts<A extends ToastAlert = ToastAlert>({ now }: { now: 
     },
     expire() {
       const t = now();
-      list = list.filter((x) => t - x.at < TOAST_MS);
+      list = list.filter((x) => x.sticky || t - x.at < TOAST_MS);
     },
   };
 }

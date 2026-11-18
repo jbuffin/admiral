@@ -409,6 +409,25 @@ test('a refetch with the same page version does not end updating…', async () =
   expect(within(row).getByText('updating…')).toBeTruthy();
 });
 
+test('with no page change after a run, the row\'s module actions come back after the 30 second fallback with no refetch', async () => {
+  const real = globalThis.setTimeout;
+  const fallback: (() => void)[] = [];
+  vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => (ms === 30_000 ? (fallback.push(fn), 0) : real(fn, ms, ...rest))) as typeof setTimeout);
+  const posts = server({ run: () => ({ body: { message: 'Pinged' } }) });
+  open();
+  const row = await rowItem();
+  press(row, 'Ping owner');
+  await screen.findByText('Pinged');
+  expect(within(row).getByText('updating…')).toBeTruthy();
+  const pageGets = () => (fetch as ReturnType<typeof vi.fn>).mock.calls.filter(([p, i]) => String(p).endsWith('/page') && !(i as RequestInit | undefined)?.method).length;
+  const before = pageGets();
+  await act(async () => fallback.at(-1)!());
+  expect(within(row).queryByText('updating…')).toBeNull();
+  expect((within(row).getByRole('button', { name: 'Ping owner' }) as HTMLButtonElement).disabled).toBe(false);
+  expect(pageGets()).toBe(before);
+  expect(runPosts(posts)).toHaveLength(1);
+});
+
 test.each(['ready', 'auth_required', 'error'])('a built-in module action with a url stays a disabled button when the page is %s and a press sends nothing', async (state) => {
   const posts = server({ page: () => pageOf(state) });
   open(state);

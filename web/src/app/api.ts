@@ -694,6 +694,28 @@ export interface RowDetail {
   sections: RowSection[];
 }
 export const fetchModuleRow = (key: string, id: string) => call<RowDetail>('GET', `${src(key)}/rows/${encodeURIComponent(id)}`);
+export interface FormField {
+  id: string;
+  label: string;
+  type: 'choice' | 'checklist' | 'duration';
+  options?: { id: string; label: string }[];
+  default?: string | string[];
+  min?: string;
+}
+export interface ModuleForm {
+  title?: string;
+  fields: FormField[];
+}
+export interface RunAnswer {
+  message: string;
+  url?: string;
+}
+/** Above the server's 60 s run timeout, so its own timeout message reaches the page. */
+const RUN_TIMEOUT_MS = 90_000;
+const actionPath = (key: string, row: string, action: string, leaf: string) => `${src(key)}/rows/${encodeURIComponent(row)}/actions/${encodeURIComponent(action)}/${leaf}`;
+export const fetchModuleForm = (key: string, row: string, action: string) => call<ModuleForm>('POST', actionPath(key, row, action, 'form'), {});
+export const runModuleAction = (key: string, row: string, action: string, values: Record<string, string | string[]>) =>
+  call<RunAnswer>('POST', actionPath(key, row, action, 'run'), { values }, undefined, { timeoutMs: RUN_TIMEOUT_MS });
 export const fetchModulePage = (key: string) => call<ModulePageData>('GET', `${src(key)}/page`);
 
 export interface Source {
