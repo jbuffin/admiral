@@ -1333,7 +1333,7 @@ test("Back from the confirm step keeps the pick, the Ship line's harness and its
   expect(selectedLabel(back)).toBe(
     "No skill: Admiral drafts a title and description",
   );
-  pickOption(back, "/wayfinder");
+  pickOption(back, "$wayfinder");
   await waitFor(async () => {
     const line = (await shipLine()).textContent;
     expect(line).toMatch(/codex/i);
