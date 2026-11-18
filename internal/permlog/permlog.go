@@ -218,6 +218,30 @@ func cut(s string, n int) string {
 
 // Read folds the ship's log into its prompts, oldest first. A missing log is no prompts.
 func Read(home, ship string) ([]Record, error) {
+	evs, err := readEvents(home, ship)
+	return Fold(ship, evs), err
+}
+
+// ReadRound is the prompts of the ship's newest launch only. The log outlives the ship, so it also holds earlier
+// rounds and earlier ships of the same name.
+func ReadRound(home, ship string) ([]Record, error) {
+	evs, err := readEvents(home, ship)
+	last := ""
+	for _, ev := range evs {
+		if ev.Ev == "launch" {
+			last = ev.At
+		}
+	}
+	var out []Record
+	for _, r := range Fold(ship, evs) {
+		if r.Launched == last {
+			out = append(out, r)
+		}
+	}
+	return out, err
+}
+
+func readEvents(home, ship string) ([]Event, error) {
 	p, ok := Path(home, ship)
 	if !ok {
 		return nil, errors.New("permlog: not a ship name: " + ship)
@@ -239,7 +263,7 @@ func Read(home, ship string) ([]Record, error) {
 			evs = append(evs, ev)
 		}
 	}
-	return Fold(ship, evs), sc.Err()
+	return evs, sc.Err()
 }
 
 // Fold turns a log's events into its prompts. A person's answer counts as the card's when the card answered that

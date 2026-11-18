@@ -176,7 +176,7 @@ func (s *Service) handBlocked(fleet, session string) string {
 	if s.EventShip == nil {
 		return ""
 	}
-	restricted, fromEvent, err := s.EventShip(fleet, session)
+	restricted, fromEvent, _, err := s.EventShip(fleet, session)
 	switch {
 	case err != nil:
 		return "cannot be handed to Commodore: Admiral could not tell whether an outside event launched it: " + err.Error()

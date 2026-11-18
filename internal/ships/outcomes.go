@@ -243,6 +243,7 @@ func (s *Service) queueEnded(e ending) {
 	}
 	report := s.readReport(name)
 	s.writeCrewItems(sess, report)
+	s.proposeAllowRules(sess, report)
 	s.queueUsage(sess, end)
 	kept, failed := s.keepFindings(sess)
 	fields := map[string]any{

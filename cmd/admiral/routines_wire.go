@@ -103,13 +103,13 @@ func listedShips(list func() []ships.Ship) func() []routines.ListedShip {
 }
 
 // eventShip answers from the fleet's trigger log whether a listed ship was launched from an outside event, and whether
-// that launch was restricted. The record must still match the ship, as session names are reused. A log that cannot be
+// that launch was restricted, and its trigger's tier. The record must still match the ship, as session names are reused. A log that cannot be
 // read is an error, so the caller can refuse rather than guess.
-func eventShip(store *routines.Store, listed func() []routines.ListedShip) func(fleet, session string) (restricted, fromEvent bool, err error) {
-	return func(fleet, session string) (bool, bool, error) {
+func eventShip(store *routines.Store, listed func() []routines.ListedShip) func(fleet, session string) (restricted, fromEvent bool, tier string, err error) {
+	return func(fleet, session string) (bool, bool, string, error) {
 		recs, err := store.Records(fleet)
 		if err != nil {
-			return false, false, err
+			return false, false, "", err
 		}
 		for _, sh := range routines.EventLaunchedShips(fleet, recs, listed()) {
 			if sh.Session != session {
@@ -117,12 +117,12 @@ func eventShip(store *routines.Store, listed func() []routines.ListedShip) func(
 			}
 			for _, r := range recs {
 				if r.ID == sh.Trigger {
-					return r.Restricted != "", true, nil
+					return r.Restricted != "", true, r.Tier, nil
 				}
 			}
-			return false, true, nil
+			return false, true, "", nil
 		}
-		return false, false, nil
+		return false, false, "", nil
 	}
 }
 

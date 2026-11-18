@@ -162,8 +162,9 @@ type Service struct {
 	// OnChange must not block.
 	OnChange func()
 
-	// EventShip reports whether a ship was launched restricted or from an outside event; nil means it never was.
-	EventShip func(fleet, session string) (restricted, fromEvent bool, err error)
+	// EventShip reports whether a ship was launched restricted or from an outside event, and the trigger's tier
+	// ("T0" to "T3"); nil means it never was.
+	EventShip func(fleet, session string) (restricted, fromEvent bool, tier string, err error)
 	// Tail gives a ship's conversation tail from a cache; it must not block.
 	Tail func(session string) string
 	// Candidates gives the PR URLs a ship and its crew boats printed in tool results, in order of first appearance.
