@@ -809,7 +809,7 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   chatPrompts(admiral, 'harbor');
   const sailing =await launchAsAdmiralBot(admiral, 'harbor', 'Read the harbour log and report the newest error.', 'to look at the harbour log', true);
   await expect(main.getByText('Sailed off', { exact: true })).toHaveCount(1, { timeout: 30_000 });
-  await expect.poll(() => chatReceived(admiral, 'harbor'), { timeout: 30_000 }).toContain(`[Report: ${sailing.name}]`);
+  await expect.poll(() => new RegExp(`\\[Report: ${sailing.name}\\][^\\r]*\\r`).test(chatReceived(admiral, 'harbor')), { timeout: 30_000 }).toBe(true);
   const turn = chatReceived(admiral, 'harbor').split('\r').find((x) => x.includes('[Report: ')) ?? '';
   chatSays(admiral, 'harbor', [line.user(turn.trim()), line.assistant('The newest error is a **tide gauge** timeout.')], true);
   const thread = main.locator('[data-thread]');

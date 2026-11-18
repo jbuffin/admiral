@@ -87,7 +87,8 @@ func firstLine(s string) string {
 
 var (
 	mdLink    = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
-	mdHeading = regexp.MustCompile(`^\s*(##?#?#?#?#?|>)\s+`)
+	// Not #{1,6}: the tmux boundary test reads that as a tmux format.
+	mdHeading =regexp.MustCompile(`^\s*(##?#?#?#?#?|>)\s+`)
 	mdEmph    = regexp.MustCompile(`(\*\*|__|\*|` + "`" + `|~~)`)
 	mdUnder   = regexp.MustCompile(`(^|\s)_([^_]+)_(\s|[.,;:!?]|$)`)
 )
