@@ -52,26 +52,30 @@ type runner struct {
 	// stackChecker is the supervisor's, set before the runner starts.
 	stackChecker moor.StackChecker
 
-	mu       sync.Mutex
-	def      config.Source
-	sid      int // the current process; a notification from an older one is ignored
-	p        conn
-	ready    bool // initialized and listed: requests may be sent
-	state    string
-	readOnly bool
-	errMsg   string
-	auth     *Auth
-	caps     []string
-	kinds    []MessageKind
-	page     Page // the last good page.get; it outlives the plugin's restarts
-	hasPage  bool
-	noPage   bool // an initialize answer has been read and it did not list page
-	schema   json.RawMessage
-	panels   []Panel
-	warnings []string   // the router's, for a built-in GitHub source
-	conn     *connState // a built-in GitHub source's last connection; it outlives the source's restarts
-	queue    []string   // orders.launched not yet delivered
-	pulls    pulls
+	mu        sync.Mutex
+	def       config.Source
+	sid       int // the current process; a notification from an older one is ignored
+	p         conn
+	ready     bool // initialized and listed: requests may be sent
+	state     string
+	readOnly  bool
+	errMsg    string
+	auth      *Auth
+	caps      []string
+	kinds     []MessageKind
+	page      Page // the last good page.get; it outlives the plugin's restarts
+	hasPage   bool
+	pageErr   string   // the last page.get the plugin failed, until a good one
+	pageVer   int      // moves on every change of the page a client reads
+	pageRows  []string // what the last bump named, none meaning every row
+	pageState string   // the state the last bump saw
+	noPage    bool     // an initialize answer has been read and it did not list page
+	schema    json.RawMessage
+	panels    []Panel
+	warnings  []string   // the router's, for a built-in GitHub source
+	conn      *connState // a built-in GitHub source's last connection; it outlives the source's restarts
+	queue     []string   // orders.launched not yet delivered
+	pulls     pulls
 
 	catalog    []EventKind
 	hasCatalog bool
@@ -84,6 +88,11 @@ type pulls struct {
 	panels bool
 	all    bool
 	one    map[string]bool
+
+	page        bool
+	pageChanged bool // a page.changed asked, so the version moves even if the answer is refused
+	pageAll     bool
+	pageRows    map[string]bool
 }
 
 func newRunner(ctx context.Context, home string, cfg func() *config.Config, def config.Source, notify func(), onEvent func(Event), prev *runner, stackChecker moor.StackChecker) *runner {
@@ -497,6 +506,9 @@ func (r *runner) processPulls(ctx context.Context, p conn) {
 		ids = append(ids, pn.ID)
 	}
 	r.mu.Unlock()
+	if todo.page {
+		defer r.pullPageQueued(ctx, p, todo)
+	}
 	switch {
 	case todo.panels:
 		r.pullPanels(ctx, p)
@@ -528,6 +540,13 @@ func (r *runner) note(sid int, method string, params json.RawMessage) {
 			r.wantPull(false, *p.Panel)
 		} else {
 			r.wantPull(false, "")
+		}
+	case "page.changed":
+		r.mu.Lock()
+		noPage := r.noPage
+		r.mu.Unlock()
+		if !noPage {
+			r.wantPage(true, pageIDs(params))
 		}
 	case "panels.changed":
 		r.wantPull(true, "")

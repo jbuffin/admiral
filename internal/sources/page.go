@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"unicode"
@@ -27,8 +28,10 @@ var (
 )
 
 const (
-	PageStarting = "starting"
-	PageReady    = "ready"
+	PageStarting     = "starting"
+	PageReady        = "ready"
+	PageAuthRequired = "auth_required"
+	PageError        = "error"
 )
 
 var chipTones = []string{"neutral", "good", "warn", "muted"}
@@ -72,6 +75,8 @@ type PageView struct {
 	State   string  `json:"state"`
 	Groups  []Group `json:"groups"`
 	Waiting int     `json:"waiting"`
+	Auth    *Auth   `json:"auth,omitempty"`
+	Error   string  `json:"error,omitempty"`
 }
 
 type Link struct {
@@ -401,22 +406,68 @@ func parseMessageKinds(raw json.RawMessage) []MessageKind {
 	return kinds
 }
 
-// pullPage keeps the last good page: an answer that fails or is refused changes nothing.
-func (r *runner) pullPage(ctx context.Context, p conn) {
+// fetchPage asks for the page and stores the answer; it reports whether the page's view changed. A refused answer only logs and keeps the last good page.
+func (r *runner) fetchPage(ctx context.Context, p conn) bool {
 	res, err := p.call(ctx, "page.get", map[string]any{}, callTimeout)
 	if err != nil {
 		r.logf("page.get failed: %v", err)
-		return
+		var rpc *rpcError
+		if !errors.As(err, &rpc) {
+			return false
+		}
+		msg := cleanMsg(rpc.Error())
+		if msg == "" {
+			msg = "The page couldn't be fetched."
+		}
+		r.mu.Lock()
+		r.pageErr = msg
+		r.mu.Unlock()
+		return true
 	}
 	page, err := parsePage(res)
 	if err != nil {
 		r.logf("protocol error: %v", err)
-		return
+		return false
 	}
 	r.mu.Lock()
-	r.page, r.hasPage = page, true
+	r.page, r.hasPage, r.pageErr = page, true, ""
+	r.mu.Unlock()
+	return true
+}
+
+// pullPage keeps the last good page: an answer that fails or is refused changes nothing.
+func (r *runner) pullPage(ctx context.Context, p conn) {
+	if r.fetchPage(ctx, p) {
+		r.pageChanged(nil)
+	}
+}
+
+// pageChanged moves the page's version on; rows are the ids a client need refetch, none meaning all of them.
+func (r *runner) pageChanged(rows []string) {
+	r.mu.Lock()
+	r.bumpPageLocked(rows)
 	r.mu.Unlock()
 	r.notify()
+}
+
+// r.mu must be held.
+func (r *runner) bumpPageLocked(rows []string) {
+	r.pageVer++
+	r.pageRows = rows
+	r.pageState = r.pageStateLocked()
+}
+
+// r.mu must be held.
+func (r *runner) pageStateLocked() string {
+	switch {
+	case r.state == StateAuthRequired:
+		return PageAuthRequired
+	case r.state == StateError, r.pageErr != "":
+		return PageError
+	case r.hasPage:
+		return PageReady
+	}
+	return PageStarting
 }
 
 // Page is the page as it stands; false once the source is known to have none.
@@ -426,10 +477,79 @@ func (r *runner) Page() (PageView, bool) {
 	if r.noPage {
 		return PageView{}, false
 	}
-	if !r.hasPage {
-		return PageView{State: PageStarting, Groups: []Group{}}, true
+	v := PageView{State: r.pageStateLocked(), Groups: []Group{}}
+	if r.hasPage {
+		v.Groups, v.Waiting = r.page.Groups, r.page.Waiting
 	}
-	return PageView{State: PageReady, Groups: r.page.Groups, Waiting: r.page.Waiting}, true
+	switch v.State {
+	case PageAuthRequired:
+		if r.auth != nil {
+			a := *r.auth
+			v.Auth = &a
+		}
+	case PageError:
+		v.Error = r.errMsg
+		if r.state != StateError {
+			v.Error = r.pageErr
+		}
+	}
+	return v, true
+}
+
+// pageIDs reads the rows a page.changed names; ids that fail the id rules are dropped, and none left means all rows.
+func pageIDs(params json.RawMessage) []string {
+	var p struct {
+		Rows json.RawMessage `json:"rows"`
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(params, &p) != nil || json.Unmarshal(p.Rows, &items) != nil {
+		return nil
+	}
+	var ids []string
+	for _, it := range items {
+		if id, ok := parseID(it); ok && !slices.Contains(ids, id) {
+			if ids = append(ids, id); len(ids) == maxPageRows {
+				break
+			}
+		}
+	}
+	return ids
+}
+
+// wantPage queues a page.get; rows are what a page.changed named, and none means every row.
+func (r *runner) wantPage(changed bool, rows []string) {
+	r.mu.Lock()
+	r.pulls.page = true
+	r.pulls.pageChanged = r.pulls.pageChanged || changed
+	if changed && len(rows) > 0 {
+		if r.pulls.pageRows == nil {
+			r.pulls.pageRows = map[string]bool{}
+		}
+		for _, id := range rows {
+			if len(r.pulls.pageRows) < maxPageRows {
+				r.pulls.pageRows[id] = true
+			}
+		}
+	} else {
+		r.pulls.pageAll = true
+	}
+	r.mu.Unlock()
+	select {
+	case r.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (r *runner) pullPageQueued(ctx context.Context, p conn, todo pulls) {
+	moved := r.fetchPage(ctx, p)
+	if !moved && !todo.pageChanged {
+		return
+	}
+	var rows []string
+	if !todo.pageAll && todo.pageChanged {
+		rows = slices.Sorted(maps.Keys(todo.pageRows))
+	}
+	r.pageChanged(rows)
 }
 
 // rowDetail asks the plugin for a row of the last good page; an id from anywhere else never reaches it.
@@ -477,4 +597,21 @@ type PageLive struct {
 }
 
 // PageLive is the live block of a source that declares a page; false for one that does not.
-func (r *runner) PageLive() (PageLive, bool) { return PageLive{}, false }
+func (r *runner) PageLive() (PageLive, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.pageLiveLocked()
+}
+
+// A state change the page was not told about, such as a crash, moves the version here, where a client reads it.
+func (r *runner) pageLiveLocked() (PageLive, bool) {
+	if !slices.Contains(r.caps, "page") {
+		return PageLive{}, false
+	}
+	if st := r.pageStateLocked(); r.pageState == "" {
+		r.pageState = st
+	} else if st != r.pageState {
+		r.bumpPageLocked(nil)
+	}
+	return PageLive{State: r.pageState, Waiting: r.page.Waiting, Version: r.pageVer, Rows: slices.Clone(r.pageRows)}, true
+}

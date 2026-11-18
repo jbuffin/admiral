@@ -50,6 +50,7 @@ type sourceState struct {
 	panels    []Panel
 	warnings  []string
 	hasSchema bool
+	page      *PageLive
 	viewer    string
 	conn      *connState
 	// refreshing is a built-in GitHub source's cycle in flight; a plugin never sets it.
@@ -67,6 +68,9 @@ func (r *runner) snapshot() sourceState {
 	if r.auth != nil {
 		a := *r.auth
 		st.auth = &a
+	}
+	if l, ok := r.pageLiveLocked(); ok {
+		st.page = &l
 	}
 	st.warnings = slices.Clone(r.warnings)
 	if r.conn != nil {
@@ -104,6 +108,8 @@ type SourceView struct {
 	Connection *Connection `json:"connection,omitempty"`
 	// Tabs are a GitHub source's visible views in stored order, For you included; omitted for any other source.
 	Tabs *[]Tab `json:"tabs,omitempty"`
+	// Page is a page source's live block; omitted for a source that declares no page.
+	Page *PageLive `json:"page,omitempty"`
 	// Events is the source's event catalog, omitted until it has one.
 	Events []EventKind `json:"events,omitempty"`
 }
@@ -130,7 +136,7 @@ func (s *Service) View() []SourceView {
 	out := []SourceView{}
 	for _, st := range s.Sup.snapshot() {
 		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Fleet: st.def.Fleet, Capabilities: st.caps, HasSchema: st.hasSchema,
-			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Viewer: st.viewer, Refreshing: st.refreshing, Views: []Panel{}, Warnings: []string{}}
+			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Viewer: st.viewer, Refreshing: st.refreshing, Views: []Panel{}, Warnings: []string{}, Page: st.page}
 		v.Warnings = append(v.Warnings, st.warnings...)
 		v.Connection = connectionOf(st)
 		if st.def.Plugin == builtinGitHub {
@@ -222,9 +228,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/search-count", s.serveSearchCount)
 	mux.HandleFunc("GET /api/sources/{key}/schema", s.serveSchema)
 	mux.HandleFunc("GET /api/sources/{key}/page", s.servePage)
-	mux.HandleFunc("POST /api/sources/{key}/page/refresh", func(w http.ResponseWriter, _ *http.Request) {
-		writeError(w, http.StatusNotImplemented, "not built yet")
-	})
+	mux.HandleFunc("POST /api/sources/{key}/page/refresh", s.servePageRefresh)
 	mux.HandleFunc("GET /api/sources/{key}/rows/{id}", s.serveRow)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("GET /api/sources/{key}/repos", s.serveRepos)
@@ -948,6 +952,29 @@ func (s *Service) servePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Service) servePageRefresh(w http.ResponseWriter, r *http.Request) {
+	rn := s.Sup.runner(r.PathValue("key"))
+	if rn == nil {
+		writeError(w, http.StatusNotFound, "source "+r.PathValue("key")+" not found")
+		return
+	}
+	if _, ok := rn.Page(); !ok {
+		writeError(w, http.StatusNotFound, errNoPage.Error())
+		return
+	}
+	p, live := rn.live()
+	if !live {
+		writeError(w, http.StatusConflict, "The source is not running yet")
+		return
+	}
+	if _, err := p.call(r.Context(), "page.refresh", map[string]any{}, callTimeout); err != nil {
+		callError(w, err)
+		return
+	}
+	rn.wantPage(false, nil)
+	writeJSON(w, http.StatusOK, map[string]string{"refreshing": rn.key})
 }
 
 func (s *Service) serveRow(w http.ResponseWriter, r *http.Request) {
