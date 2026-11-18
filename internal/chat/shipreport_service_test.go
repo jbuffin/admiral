@@ -72,7 +72,7 @@ func TestAReportTurnFallsBackToTheShipsTitleWhenItHasNoLaunchLine(t *testing.T) 
 	}
 }
 
-func findingsLine(t *testing.T, r *briefRig, c ShipCard) string {
+func findingsKeptInTurn(t *testing.T, r *briefRig, c ShipCard) bool {
 	t.Helper()
 	if err := r.EnqueueShipReport("work", c, "done"); err != nil {
 		t.Fatalf("EnqueueShipReport = %v", err)
@@ -81,13 +81,11 @@ func findingsLine(t *testing.T, r *briefRig, c ShipCard) string {
 	if len(texts) != 1 {
 		t.Fatalf("%d turns queued, want 1", len(texts))
 	}
-	for _, l := range strings.Split(texts[0], "\n") {
-		if strings.HasPrefix(l, "findings:") {
-			return l
-		}
+	line := lineWithPrefix(texts[0], "findings:")
+	if line == "" {
+		t.Fatalf("no findings line in the report turn:\n%s", texts[0])
 	}
-	t.Fatalf("no findings line in the report turn:\n%s", texts[0])
-	return ""
+	return strings.HasPrefix(line, "findings: kept")
 }
 
 func TestTheReportTurnSaysFindingsWereKeptWhenTheCardsVoyageHasThem(t *testing.T) {
@@ -95,16 +93,16 @@ func TestTheReportTurnSaysFindingsWereKeptWhenTheCardsVoyageHasThem(t *testing.T
 	r.Service.Findings = findings.Open(r.home)
 	c := sampleCard()
 	keepFindings(t, r.home, c.Ship, c.FirstLaunched, "work")
-	if got := findingsLine(t, r, c); got != "findings: kept, read them with read_findings" {
-		t.Errorf("findings line = %q, want kept", got)
+	if !findingsKeptInTurn(t, r, c) {
+		t.Error("the report turn says no findings were kept, want kept")
 	}
 }
 
 func TestTheReportTurnSaysNoFindingsWhenTheVoyageKeptNone(t *testing.T) {
 	r := newBriefRig(t)
 	r.Service.Findings = findings.Open(r.home)
-	if got := findingsLine(t, r, sampleCard()); got != "findings: none" {
-		t.Errorf("findings line = %q, want none", got)
+	if findingsKeptInTurn(t, r, sampleCard()) {
+		t.Error("the report turn says findings were kept, want none")
 	}
 }
 
@@ -112,8 +110,8 @@ func TestTheReportTurnSaysNoFindingsWhenTheServiceHasNoFindingsStore(t *testing.
 	r := newBriefRig(t)
 	c := sampleCard()
 	keepFindings(t, r.home, c.Ship, c.FirstLaunched, "work")
-	if got := findingsLine(t, r, c); got != "findings: none" {
-		t.Errorf("findings line = %q, want none with a nil store", got)
+	if findingsKeptInTurn(t, r, c) {
+		t.Error("the report turn says findings were kept, want none with a nil store")
 	}
 }
 
@@ -122,7 +120,7 @@ func TestTheReportTurnIgnoresFindingsOfAnotherVoyageOfTheSameShipName(t *testing
 	r.Service.Findings = findings.Open(r.home)
 	c := sampleCard()
 	keepFindings(t, r.home, c.Ship, firstB, "work")
-	if got := findingsLine(t, r, c); got != "findings: none" {
-		t.Errorf("findings line = %q, want none: only another voyage kept findings", got)
+	if findingsKeptInTurn(t, r, c) {
+		t.Error("the report turn says findings were kept, want none: only another voyage kept findings")
 	}
 }

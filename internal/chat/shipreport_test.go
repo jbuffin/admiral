@@ -292,41 +292,47 @@ func TestAReportTurnCarriesTheCardIdShipKindLaunchTextResultPRsAndFindings(t *te
 	}
 }
 
-func TestAReportTurnsFindingsLineSaysKeptWithHowToReadThemOrNone(t *testing.T) {
-	lineOf := func(text string) string {
-		for _, l := range strings.Split(text, "\n") {
-			if strings.HasPrefix(l, "findings:") {
-				return l
-			}
+// lineWithPrefix is the first line of a report turn that starts with prefix, "" when none does.
+func lineWithPrefix(text, prefix string) string {
+	for _, l := range strings.Split(text, "\n") {
+		if strings.HasPrefix(l, prefix) {
+			return l
 		}
-		return ""
 	}
+	return ""
+}
+
+func TestAReportTurnsFindingsLineSaysKeptWithHowToReadThemOrNone(t *testing.T) {
 	kept := ReportTurnText(sampleCard(), "launch", "done", true)
-	if got := lineOf(kept); got != "findings: kept, read them with read_findings" {
+	if got := lineWithPrefix(kept, "findings:"); got != "findings: kept, read them with read_findings, passing ship and first_launched" {
 		t.Errorf("findings line with findings kept = %q", got)
 	}
 	none := ReportTurnText(sampleCard(), "launch", "done", false)
-	if got := lineOf(none); got != "findings: none" {
+	if got := lineWithPrefix(none, "findings:"); got != "findings: none" {
 		t.Errorf("findings line with none kept = %q", got)
 	}
 }
 
-func TestAReportTurnTellsAdmiralBotAboutKeptFindingsOnlyWhenThereAreSome(t *testing.T) {
-	// Beyond the findings: line, so the instruction sentence itself is what is checked.
-	body := func(text string) string {
-		var out []string
-		for _, l := range strings.Split(text, "\n") {
-			if !strings.HasPrefix(l, "findings:") {
-				out = append(out, l)
-			}
+func TestAReportTurnNamesTheVoyageSoReadFindingsReadsThisCardsFindings(t *testing.T) {
+	c := sampleCard()
+	for _, kept := range []bool{true, false} {
+		text := ReportTurnText(c, "launch", "done", kept)
+		if got, want := lineWithPrefix(text, "first launched:"), "first launched: "+c.FirstLaunched; got != want {
+			t.Errorf("kept=%v: first launched line = %q, want %q", kept, got, want)
 		}
-		return strings.ToLower(strings.Join(out, "\n"))
 	}
-	if !strings.Contains(body(ReportTurnText(sampleCard(), "launch", "done", true)), "findings") {
-		t.Error("the report turn with findings kept never mentions them outside its findings: line")
+}
+
+func TestAReportTurnTellsAdmiralBotTheCardOpensKeptFindingsAndNeverToPasteThemWhole(t *testing.T) {
+	text := ReportTurnText(sampleCard(), "launch", "done", true)
+	for _, want := range []string{"the card opens them", "never paste them whole", "first_launched"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the report turn with findings kept lacks %q:\n%s", want, text)
+		}
 	}
-	if strings.Contains(body(ReportTurnText(sampleCard(), "launch", "done", false)), "findings") {
-		t.Error("the report turn with no findings mentions them outside its findings: line")
+	none := ReportTurnText(sampleCard(), "launch", "done", false)
+	if strings.Contains(none, "the card opens them") {
+		t.Errorf("the report turn with no findings says the card opens them:\n%s", none)
 	}
 }
 

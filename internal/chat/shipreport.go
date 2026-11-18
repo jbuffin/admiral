@@ -54,12 +54,13 @@ func ReportTurnText(c ShipCard, launchText, reportResult string, findingsKept bo
 	b.WriteString("[Report: " + oneLine(strings.NewReplacer("[", "(", "]", ")").Replace(c.Name), 80) + "] A ship you launched has reported back. You cannot act in this turn: write a short summary for the engineer, with links, and offer any follow-up work in plain text.\n\n")
 	b.WriteString("card: " + c.id() + "\n")
 	b.WriteString("ship: " + oneLine(c.Ship, 120) + "\n")
+	b.WriteString("first launched: " + oneLine(c.FirstLaunched, 40) + "\n")
 	b.WriteString("kind: " + oneLine(c.SkillKind, 40) + "\n")
 	b.WriteString("result: " + c.Result + "\n")
 	b.WriteString("report result: " + oneLine(reportResult, 40) + "\n")
 	b.WriteString("prs: " + prs + "\n")
 	if findingsKept {
-		b.WriteString("findings: kept, read them with read_findings\n\n")
+		b.WriteString("findings: kept, read them with read_findings, passing ship and first_launched\n\n")
 	} else {
 		b.WriteString("findings: none\n\n")
 	}
@@ -68,7 +69,7 @@ func ReportTurnText(c ShipCard, launchText, reportResult string, findingsKept bo
 	b.WriteString("launch text:\n" + fenced(cut(cleanShipText(launchText), maxReportLaunchText)) + "\n\n")
 	b.WriteString("Say the ship is done only when the result is done and a PR exists. Otherwise say it is partial or failed, with the reason (anchored: the harness exited with an error; sailed off: the ship ended without a PR; the report's result) and a link to the ship's conversation. Reply with a short summary and links.")
 	if findingsKept {
-		b.WriteString(" The ship kept findings: say so and that the card opens them. You may read_findings to summarize them, and never paste them whole.")
+		b.WriteString(" The ship kept findings: say so and that the card opens them. You may call read_findings with this ship and first_launched above to summarize them, and never paste them whole.")
 	}
 	return b.String()
 }
