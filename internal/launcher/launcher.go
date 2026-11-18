@@ -441,7 +441,9 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 
-	tracking, err := l.fetchForWorktree(req, !restricted && !evented && !promoted)
+	// A scout runs in the checkout it was launched in so its guard fences that checkout.
+	wantsWorktree := !restricted && !evented && !promoted && !req.Scout
+	tracking, err := l.fetchForWorktree(req, wantsWorktree)
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +487,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			return nil, err
 		}
 	}
-	if !restricted && !evented && !promoted {
+	if wantsWorktree {
 		wt, undo, err := l.shipWorktree(req, session, tracking)
 		if err != nil {
 			return nil, err
