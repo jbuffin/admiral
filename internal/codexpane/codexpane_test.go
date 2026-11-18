@@ -134,15 +134,18 @@ func fakeTUI(dir string, args []string) int {
 			writeFile(dir, "tui.connected", "")
 		}
 	}
-	writeFile(dir, "tui.started", "")
 	mode := os.Getenv("FAKE_TUI")
+	if mode == "hold" {
+		// Before tui.started, so a signal sent once the test sees the marker never finds the default action.
+		signal.Notify(make(chan os.Signal, 8), syscall.SIGINT, syscall.SIGQUIT)
+	}
+	writeFile(dir, "tui.started", "")
 	switch {
 	case strings.HasPrefix(mode, "exit:"):
 		n, _ := strconv.Atoi(strings.TrimPrefix(mode, "exit:"))
 		return n
 	case mode == "hold":
 		// A real TUI handles Ctrl-C itself (raw mode); the fake just survives it.
-		signal.Notify(make(chan os.Signal, 8), syscall.SIGINT, syscall.SIGQUIT)
 		waitForFile(filepath.Join(dir, "tui-release"), 30*time.Second)
 	case mode == "echo-stdin":
 		waitForFile(filepath.Join(dir, "server.stdin-eof"), 5*time.Second)

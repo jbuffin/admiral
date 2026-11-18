@@ -20,6 +20,15 @@ const (
 	maxTitleRunes = 200
 	maxIDRunes    = 200 // every id, and every include value on the row route
 	maxInclude    = 10
+
+	maxFormBytes     = 64 << 10 // bytes of one action.form answer
+	maxFormFields    = 20
+	maxFormOptions   = 100 // per field
+	maxRunValues     = 50  // fields in one run's values
+	maxRunItems      = 100 // items in one checklist value
+	maxRunValueRunes = 1000
+	maxRunURLBytes   = 2000    // a run answer's url
+	maxRunBytes      = 1 << 20 // bytes of a run request's body
 )
 
 var (
@@ -431,6 +440,7 @@ func (r *runner) fetchPage(ctx context.Context, p conn) bool {
 	}
 	r.mu.Lock()
 	r.page, r.hasPage, r.pageErr = page, true, ""
+	r.forgetStepsLocked()
 	r.mu.Unlock()
 	return true
 }
@@ -586,7 +596,11 @@ func (r *runner) rowDetail(ctx context.Context, id string, include []string) (Ro
 	if err != nil {
 		return RowDetail{}, err
 	}
-	return parseRowDetail(res)
+	d, err := parseRowDetail(res)
+	if err == nil {
+		r.rememberSteps(id, d)
+	}
+	return d, err
 }
 
 func btoi(b bool) int {

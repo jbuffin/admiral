@@ -61,6 +61,9 @@ func (s *Service) report(session string) moor.Report {
 // countedPRs is the PRs GitHub confirms open in the ship's fleet out of its report's and the ones it carries. When GitHub
 // cannot be asked, the carried PRs the last poll saw open stand.
 func (s *Service) countedPRs(ctx context.Context, sess sessionhost.Session) []string {
+	if sess.Options["scout"] != "" {
+		return nil
+	}
 	carried := s.carriedOpen(sess)
 	prs, answered := s.countedFrom(ctx, sess, withCarried(carried, s.report(sess.Name).PRs))
 	if !answered || s.GitHub == nil {

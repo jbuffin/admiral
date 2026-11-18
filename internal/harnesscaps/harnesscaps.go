@@ -124,7 +124,7 @@ func (s *Service) harness(store *capabilities.Store, fleet config.Fleet, name st
 				if !st.Result.At.IsZero() {
 					cj.CheckedAt = &st.Result.At
 				}
-			case snap.Version == "" && !snap.DetectedAt.IsZero() && c.ID == capabilities.AutopilotGuard:
+			case snap.Version == "" && !snap.DetectedAt.IsZero() && (c.ID == capabilities.AutopilotGuard || c.ID == capabilities.ScoutGuard):
 				cj.Detail = snap.VersionError
 				if cj.Detail == "" {
 					cj.Detail = "version could not be detected"
@@ -142,6 +142,16 @@ func (s *Service) harness(store *capabilities.Store, fleet config.Fleet, name st
 		h.Features = append(h.Features, f)
 	}
 	return h
+}
+
+// Docks is one fleet's docks with their probed versions and capabilities, in the config's order.
+func (s *Service) Docks(f config.Fleet) []any {
+	store := capabilities.Open(s.Home)
+	out := make([]any, 0, len(f.Harnesses))
+	for _, h := range f.Harnesses {
+		out = append(out, s.harness(store, f, h.Name, nil))
+	}
+	return out
 }
 
 func (s *Service) list(w http.ResponseWriter, r *http.Request) {

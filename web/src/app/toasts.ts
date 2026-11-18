@@ -7,6 +7,8 @@ export interface ToastAlert {
   name: string;
   line: string;
   tag: string;
+  /** A result toast's link, drawn only when it is http(s). */
+  url?: string;
 }
 
 export interface Toast<A extends ToastAlert = ToastAlert> {
@@ -16,6 +18,9 @@ export interface Toast<A extends ToastAlert = ToastAlert> {
   line: string;
   alert: A;
   at: number;
+  url?: string;
+  /** A result toast stays until dismissed. */
+  sticky?: boolean;
 }
 
 export function createToasts<A extends ToastAlert = ToastAlert>({ now }: { now: () => number }) {
@@ -28,13 +33,20 @@ export function createToasts<A extends ToastAlert = ToastAlert>({ now }: { now: 
       list = [...list.filter((t) => t.tag !== alert.tag), toast].slice(-MAX_TOASTS);
       return toast;
     },
+    /** A module action's result: it keeps its link and stays until dismissed. */
+    pushResult(alert: A): Toast<A> {
+      const toast = this.push(alert);
+      toast.url = alert.url;
+      toast.sticky = true;
+      return toast;
+    },
     list: (): Toast<A>[] => list,
     dismiss(id: number) {
       list = list.filter((t) => t.id !== id);
     },
     expire() {
       const t = now();
-      list = list.filter((x) => t - x.at < TOAST_MS);
+      list = list.filter((x) => x.sticky || t - x.at < TOAST_MS);
     },
   };
 }

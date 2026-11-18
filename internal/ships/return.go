@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -86,11 +87,35 @@ func (s *Service) advanceReturns() {
 				if sess.Options["round"] != "" {
 					s.endMooring(sess) // its PRs are done, so its round ends sailed, not anchored by the stop
 				}
-				_ = s.stopShip(name, map[string]any{"returned": true})
+				if s.stopShip(name, map[string]any{"returned": true}) == nil {
+					// The session is gone, so its worktree is no longer a harness's cwd; the branch stays.
+					if home, _, _, ok := s.shipFiles(name); ok {
+						launcher.RemoveWorktree(home, name, sess.Options["dir"])
+					}
+				}
 				return
 			}
 			s.sendReturnPrompt(name)
 		}(sess.Name, step)
+	}
+}
+
+// advanceScouts stops each scout whose own turn has ended: it has said what it found, and nothing carries it on.
+// The stop reads as sailed, so a scout never anchors or moors by it.
+func (s *Service) advanceScouts() {
+	for _, sess := range s.Host.Sessions() {
+		if !sess.IsShip() || sess.Options["scout"] == "" || sess.PaneDead || status(sess, time.Now()) != StatusNeedsYou || reasonOf(sess) != "stop" {
+			continue
+		}
+		if _, busy := s.returning.LoadOrStore(sess.Name, true); busy {
+			continue
+		}
+		s.settleWG.Add(1)
+		go func(name string) {
+			defer s.settleWG.Done()
+			defer s.returning.Delete(name)
+			_ = s.stopShip(name, map[string]any{"scout": true})
+		}(sess.Name)
 	}
 }
 

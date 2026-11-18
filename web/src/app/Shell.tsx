@@ -30,11 +30,12 @@ import { RoutinesPage } from './RoutinesPage';
 import { StandingOrdersPage } from './StandingOrdersPage';
 import { holdFire } from './holdFireLink';
 import { holdFireBanner } from './routines';
-import { campaignOf, crewOf, go, loc, moduleOf, modulePath, routineCreating, routineOf, shipPath, shipSession, standingOrdersTab, surfaceOf, surfacePath } from './router';
+import { campaignOf, crewOf, go, loc, moduleOf, modulePath, routineCreating, routineOf, shipPath, shipSession, standingOrdersTab, surfaceOf } from './router';
 import { resolveModule } from './modules';
 import { ModulePage, ModuleSkeleton } from './ModulePage';
 import { WaitingBadge } from './WaitingBadge';
-import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
+import { CampaignPage, CampaignsList, CampaignsNav } from './CampaignPage';
+import { Link } from './NavLink';
 import { ChatPanel } from './ChatPanel';
 import { NeedsYouBadge, OrdersPanel, needsYouCount } from './OrdersScreen';
 import { InboxPanel } from './InboxPanel';
@@ -64,26 +65,6 @@ function usePhone() {
     return () => mq.removeEventListener('change', on);
   }, []);
   return phone;
-}
-
-function Link({ surface, class: cls, onNavigate, children }: { surface: Surface; class: string; onNavigate?: () => void; children: ComponentChildren }) {
-  const current = surfaceOf(loc.value.path)?.id === surface.id;
-  const search = fleetSearch.value;
-  return (
-    <a
-      class={cls}
-      href={surfacePath(surface) + search}
-      aria-current={current ? 'page' : undefined}
-      onClick={(e) => {
-        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        e.preventDefault();
-        go(surfacePath(surface), search);
-        onNavigate?.();
-      }}
-    >
-      {children}
-    </a>
-  );
 }
 
 function ModuleLink({ item, class: cls, size, onNavigate }: { item: ModuleItem; class: string; size: number; onNavigate?: () => void }) {
@@ -413,12 +394,15 @@ function DesktopShell({ surface, mod }: { surface: Surface; mod: ModuleView | nu
           const s = surfaceById(item.id);
           return (
             <Fragment key={s.id}>
-              <Link surface={s} class="nav-link">
-                <Icon name={s.id} />
-                {s.title}
-                {s.id === 'orders' ? <NeedsYouBadge /> : null}
-              </Link>
-              {s.id === 'campaigns' ? <CampaignSidebar /> : null}
+              {s.id === 'campaigns' ? (
+                <CampaignsNav />
+              ) : (
+                <Link surface={s} class="nav-link">
+                  <Icon name={s.id} />
+                  {s.title}
+                  {s.id === 'orders' ? <NeedsYouBadge /> : null}
+                </Link>
+              )}
             </Fragment>
           );
         })}

@@ -1,6 +1,7 @@
 package ships
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -205,4 +207,43 @@ func TestAutopilotLaunchOnAnUnknownFleetOrDockIs404AndPostsNoNotice(t *testing.T
 	if names, _ := filepath.Glob(filepath.Join(home, "inbox", "_admiral", "notice-*.json")); len(names) != 0 {
 		t.Errorf("an unknown fleet or dock posted %d notices, want none", len(names))
 	}
+}
+
+// Only AdmiralBot's own token context, never a body field, lifts the cap; its launch still counts.
+func TestAnAdmiralBotInstructionLaunchIsNeverBlockedByTheCapButStillCounts(t *testing.T) {
+	fl := fleets(t)
+	s := &Service{
+		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: a launch that got past the cap is a 503
+		Launcher: &launcher.Launcher{Home: guardedHome(t), Config: func() *config.Config { return &config.Config{Fleets: fl, MaxShips: 2} }},
+	}
+	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p", nil)
+	body := `{"fleet":"work","harness":"claude","dir":"` + t.TempDir() + `","skill":{"kind":"none"},"autopilot":true}`
+	viaBody := strings.Replace(body, `"autopilot":true`, `"autopilot":true,"via":"admiralbot","by":"proposal"`, 1)
+
+	post := func(b string, bot bool) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/ships", strings.NewReader(b))
+		if bot {
+			req = req.WithContext(actor.WithFleet(context.Background(), "work"))
+		}
+		s.serveLaunch(rec, req)
+		return rec
+	}
+
+	if rec := post(body, false); rec.Code == http.StatusConflict {
+		t.Fatalf("a hand autopilot launch under the cap = %d %s, want it admitted", rec.Code, rec.Body)
+	}
+	// A ship the instruction launch left behind fills the cap.
+	s.holdUnlisted(OrderKey{"s", "o2"}, "ship-2", "p", nil)
+
+	if rec := post(body, true); rec.Code == http.StatusConflict {
+		t.Errorf("an AdmiralBot launch over the cap = %d %s, want it never refused by the cap", rec.Code, rec.Body)
+	}
+	if rec := post(body, false); rec.Code != http.StatusConflict {
+		t.Errorf("the same launch by hand over the cap = %d %s, want 409", rec.Code, rec.Body)
+	}
+	if rec := post(viaBody, false); rec.Code != http.StatusConflict {
+		t.Errorf("a body claiming via admiralbot, with no AdmiralBot token, over the cap = %d %s, want 409", rec.Code, rec.Body)
+	}
+
 }

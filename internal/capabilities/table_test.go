@@ -11,6 +11,7 @@ func TestTableGroupsExactlyTheADRCapabilities(t *testing.T) {
 		"bot":        {BotMCPFence, BotConfigHome},
 		"restricted": {RestrictedSandbox, RestrictedAllow},
 		"autopilot":  {AutopilotGuard, AutopilotArgs, AutopilotAdvisor},
+		"scout":      {ID("scout.guard_hook")},
 	}
 	got := map[string][]ID{}
 	seen := map[ID]bool{}

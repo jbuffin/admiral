@@ -155,8 +155,8 @@ func TestCloneLaunchClonesAnUnclonedRepo(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(want, ".git")); err != nil {
 		t.Errorf("%s is not a git checkout: %v", want, err)
 	}
-	if cwd := w.record(ship.Session).cwd; cwd != want {
-		t.Errorf("the harness started in %q, want %q", cwd, want)
+	if cwd := w.record(ship.Session).cwd; !w.isWorktreeOf(want, cwd) {
+		t.Errorf("the harness started in %q, want a worktree of the clone %q", cwd, want)
 	}
 	calls := gh.cloneCalls()
 	if len(calls) != 1 {

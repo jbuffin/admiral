@@ -90,8 +90,14 @@ func TestProbe_SetupProvesTheGuardOnAFreshHome(t *testing.T) {
 	if s := pw.storeText(); !strings.Contains(s, "2.1.300 (fake)") || !strings.Contains(s, "autopilot.guard_hook") {
 		t.Errorf("capabilities.json lacks the version or the guard result:\n%s", s)
 	}
-	if pw.headlessRuns() != 1 {
-		t.Errorf("the fake claude ran headless %d times, want 1", pw.headlessRuns())
+	if l := lineFor(r.stdout, "Scout guard hook"); !strings.Contains(l, "passed") {
+		t.Errorf("setup output has no passed line for the scout guard hook (got %q):\n%s", l, r.stdout)
+	}
+	if s := pw.storeText(); !strings.Contains(s, "scout.guard_hook") {
+		t.Errorf("capabilities.json lacks the scout guard result:\n%s", s)
+	}
+	if pw.headlessRuns() != 2 {
+		t.Errorf("the fake claude ran headless %d times, want 2: the autopilot guard probe and the scout guard probe", pw.headlessRuns())
 	}
 	for _, name := range []string{"outcomes", "tmux.sock"} {
 		if _, err := os.Stat(filepath.Join(pw.home, name)); err == nil {
@@ -125,6 +131,10 @@ func TestProbe_EachWayTheGuardCanFailPrintsFailedWithItsOwnReason(t *testing.T) 
 			if detail == "" {
 				t.Errorf("the failed line gives no reason: %q", l)
 			}
+			sl := lineFor(r.stdout, "Scout guard hook")
+			if !strings.Contains(sl, "failed") || strings.TrimSpace(strings.TrimPrefix(sl[strings.Index(sl, "failed")+len("failed"):], ":")) == "" {
+				t.Errorf("scout guard line = %q, want failed with its own reason\n%s", sl, r.stdout)
+			}
 			mu.Lock()
 			seen[mode] = detail
 			mu.Unlock()
@@ -154,8 +164,11 @@ func TestProbe_RunningSetupAgainWithNothingToChangeStillReprobes(t *testing.T) {
 	if l := lineFor(r.stdout, "Pre-tool guard hook"); !strings.Contains(l, "failed") {
 		t.Errorf("a rerun with nothing to change reused the old result (line %q): Check again must probe", l)
 	}
-	if pw.headlessRuns() != 2 {
-		t.Errorf("headless runs = %d, want 2", pw.headlessRuns())
+	if l := lineFor(r.stdout, "Scout guard hook"); !strings.Contains(l, "failed") {
+		t.Errorf("a rerun reused the old scout guard result (line %q)", l)
+	}
+	if pw.headlessRuns() != 4 {
+		t.Errorf("headless runs = %d, want 4: both guard probes, twice", pw.headlessRuns())
 	}
 }
 
@@ -186,12 +199,12 @@ func TestProbe_RestartKeepsTheStatusAndSpendsNoModelCall(t *testing.T) {
 	t.Parallel()
 	pw := newProbeWorld(t)
 	pw.setup()
-	if pw.headlessRuns() != 1 {
-		t.Fatalf("setup did not probe: headless runs = %d, want 1", pw.headlessRuns())
+	if pw.headlessRuns() != 2 {
+		t.Fatalf("setup did not probe: headless runs = %d, want 2", pw.headlessRuns())
 	}
 	pw.extra = pw.env()
 	pw.start()
-	holdThat(t, "starting the server re-probed an unchanged harness", func() bool { return pw.headlessRuns() == 1 })
+	holdThat(t, "starting the server re-probed an unchanged harness", func() bool { return pw.headlessRuns() == 2 })
 	if s := pw.storeText(); !strings.Contains(s, `"version": "2.1.300 (fake)"`) || !strings.Contains(s, "autopilot.guard_hook") {
 		t.Errorf("the status did not survive the restart:\n%s", s)
 	}
@@ -201,18 +214,18 @@ func TestProbe_ANewHarnessVersionReprobesAtServerStartInTheBackground(t *testing
 	t.Parallel()
 	pw := newProbeWorld(t)
 	pw.setup()
-	if pw.headlessRuns() != 1 {
-		t.Fatalf("setup did not probe: headless runs = %d, want 1", pw.headlessRuns())
+	if pw.headlessRuns() != 2 {
+		t.Fatalf("setup did not probe: headless runs = %d, want 2", pw.headlessRuns())
 	}
 	pw.writeRaw(pw.versionFile, "2.1.400 (fake)", 0o644)
 	pw.extra = pw.env()
 	pw.start()
 	end := time.Now().Add(15 * time.Second)
-	for pw.headlessRuns() < 2 && time.Now().Before(end) {
+	for pw.headlessRuns() < 4 && time.Now().Before(end) {
 		time.Sleep(100 * time.Millisecond)
 	}
-	if pw.headlessRuns() != 2 {
-		t.Fatalf("headless runs = %d after the version moved, want a second probe", pw.headlessRuns())
+	if pw.headlessRuns() != 4 {
+		t.Fatalf("headless runs = %d after the version moved, want both guard probes again", pw.headlessRuns())
 	}
 	for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && !strings.Contains(pw.storeText(), `"2.1.400 (fake)": {`); {
 		time.Sleep(100 * time.Millisecond)

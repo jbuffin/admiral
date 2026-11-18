@@ -29,6 +29,7 @@ import (
 	"github.com/jbuffin/admiral/internal/commitments"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/crewapi"
+	"github.com/jbuffin/admiral/internal/fleetmap"
 	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/harnesscaps"
 	"github.com/jbuffin/admiral/internal/home"
@@ -332,10 +333,13 @@ func serve(args []string) error {
 	})
 	outcomeLog.OnFail = outcomeWriteFailed
 	shipService := &ships.Service{Host: host, State: st, Hub: hub, Outcomes: outcomeLog, Launcher: &launcher.Launcher{
-		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current, Checkouts: launcher.GitCheckouts{},
+		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current, Checkouts: launcher.GitCheckouts{}, Worktrees: launcher.GitWorktrees{},
 		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok },
 		AutopilotGate: func(fleet config.Fleet, harness string) error {
 			return autopilotgate.Check(dir, fleet, harness)
+		},
+		ScoutGate: func(fleet config.Fleet, harness string) error {
+			return autopilotgate.CheckScout(dir, fleet, harness)
 		}}}
 
 	if err := sources.RemoveRetired(dir); err != nil {
@@ -579,6 +583,7 @@ func serve(args []string) error {
 			return keys
 		}}
 	chatService.Notes().OnChange = commitmentRunner.Changed
+	shipCards := newShipCardRunner(absDir, chatService.PostShipCard, shipService.List, host.Ready())
 	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop, Launch: routineShips{shipService}.Launch}
 	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
 	routineService.Listed = listedShips(allShips)
@@ -613,6 +618,7 @@ func serve(args []string) error {
 		pushFeed.ShipsChanged()
 		routineScheduler.Changed()
 		commitmentRunner.Changed()
+		shipCards.Changed()
 	}
 	probeRunner := probes.NewDefault(dir)
 	tails := convService.Tails()
@@ -636,7 +642,7 @@ func serve(args []string) error {
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, &crewapi.Service{Home: absDir, Config: cfg}, routineService, campaignService, bridgeService, resourceService, lockRoute, chatService, convService,
 			&usageapi.Service{Home: absDir, Config: cfg.Current, Live: liveUsage, Ships: shipService.List, Now: time.Now, Zone: time.Local},
-			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, updateRoutes{updateChecker}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
+			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, &fleetmap.Service{Home: dir, Config: cfg.Current}, guardRoutes{guard}, updateRoutes{updateChecker}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "usage"}}
 	shipService.MergeGuard = s.MergeGuard
 	sourceService.MergeGuard = s.MergeGuard
@@ -676,7 +682,7 @@ func serve(args []string) error {
 			}
 		}
 	}()
-	runs := []func(context.Context){s.WatchConfig, updateChecker.Run, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run, titler.Run, routineScheduler.Run, commitmentRunner.Run, func(ctx context.Context) {
+	runs := []func(context.Context){s.WatchConfig, updateChecker.Run, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run, titler.Run, routineScheduler.Run, commitmentRunner.Run, shipCards.Run, func(ctx context.Context) {
 		wakeOn(ctx, resourceSet.Changed, routineScheduler.Changed, commitmentRunner.Changed)
 	}}
 	if tmuxPath != "" {

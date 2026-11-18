@@ -162,12 +162,43 @@ func TestListShowsPassedFailedAndNotCheckedPerFleetAndHarness(t *testing.T) {
 	for _, f := range claude.Features {
 		ids = append(ids, f.ID)
 	}
-	if strings.Join(ids, ",") != "judge,bot,restricted,autopilot" {
-		t.Errorf("features = %v, want the table's groups judge, bot, restricted, autopilot", ids)
+	if strings.Join(ids, ",") != "judge,bot,restricted,autopilot,scout" {
+		t.Errorf("features = %v, want the table's groups judge, bot, restricted, autopilot, scout", ids)
 	}
 	ap := claude.Features[3]
 	if ap.Label != "Autopilot" || len(ap.Capabilities) != 3 || ap.Capabilities[0].ID != "autopilot.guard_hook" {
 		t.Errorf("autopilot group = %+v, want its three capabilities, guard first", ap)
+	}
+	if len(claude.Features) < 5 {
+		t.Fatalf("features = %v, want a scout group", ids)
+	}
+	sc := claude.Features[4]
+	if sc.ID != "scout" || sc.Label != "Scout" || len(sc.Capabilities) != 1 || sc.Capabilities[0].ID != "scout.guard_hook" || sc.Capabilities[0].Label != "Scout guard hook" {
+		t.Errorf("scout group = %+v, want one row, Scout guard hook", sc)
+	}
+	if s := claude.status(t, "scout.guard_hook"); s.Status != "not_checked" {
+		t.Errorf("work claude scout guard = %+v, want not_checked: nothing has probed it", s)
+	}
+}
+
+func TestScoutGuardShowsWhyTheVersionCouldNotBeDetectedLikeTheAutopilotGuard(t *testing.T) {
+	home := t.TempDir()
+	if err := capabilities.Open(home).RecordVersionFailure("work", "claude", "claude failed: boom", time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	s := service(t, home, fleet("work", "Work", dock("claude", "x")))
+	rec := do(t, s, "GET", "/api/harness-capabilities", "")
+	var got struct {
+		Fleets []fleetJSON `json:"fleets"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, rec.Body)
+	}
+	h := got.Fleets[0].Harnesses[0]
+	for _, id := range []string{"autopilot.guard_hook", "scout.guard_hook"} {
+		if c := h.status(t, id); c.Status != "not_checked" || c.Detail != "claude failed: boom" {
+			t.Errorf("%s = %+v, want not_checked with the detection failure as its detail", id, c)
+		}
 	}
 }
 
@@ -185,8 +216,8 @@ func TestCheckRunsTheProbesAndAnswersInTheHarnessShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, rec.Body)
 	}
-	if got.Fleet != "work" || got.Harness != "claude" || got.Version != "2.1.300 (test)" || len(got.Features) != 4 {
-		t.Errorf("response = %+v, want fleet work, harness claude, the detected version and the four feature groups", got)
+	if got.Fleet != "work" || got.Harness != "claude" || got.Version != "2.1.300 (test)" || len(got.Features) != 5 {
+		t.Errorf("response = %+v, want fleet work, harness claude, the detected version and the five feature groups", got)
 	}
 	// The harness doesn't run Claude's headless guard probe, so the guard reads as the probe saw it, and the
 	// store now holds the detected version.

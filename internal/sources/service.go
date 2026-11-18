@@ -230,6 +230,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sources/{key}/page", s.servePage)
 	mux.HandleFunc("POST /api/sources/{key}/page/refresh", s.servePageRefresh)
 	mux.HandleFunc("GET /api/sources/{key}/rows/{id}", s.serveRow)
+	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/form", s.serveActionForm)
+	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/run", s.serveActionRun)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("GET /api/sources/{key}/repos", s.serveRepos)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)

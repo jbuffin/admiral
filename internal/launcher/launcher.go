@@ -62,7 +62,9 @@ type Request struct {
 	// ByFleet is the fleet AdmiralBot launches for; empty for the engineer. It shapes a refusal's wording only.
 	ByFleet string `json:"-"`
 	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
-	Autopilot bool     `json:"autopilot"`
+	Autopilot bool `json:"autopilot"`
+	// Scout is an autopilot ship that reads and reports back, changing nothing: its guard is in scout mode.
+	Scout     bool     `json:"scout"`
 	ExtraArgs []string `json:"-"`
 	// PRs are the pull requests a woken ship carries from its mooring; they are confirmed already.
 	PRs []string `json:"-"`
@@ -98,6 +100,8 @@ type Request struct {
 	QuietGate bool `json:"-"`
 	// Unattended marks a launch no one asked for in the moment (a routine run, a commitment, a feedback round); only the quota hold reads it.
 	Unattended bool `json:"-"`
+	// OnInstruction marks a launch AdmiralBot makes on the engineer's instruction in the chat; set only by the launch route from the caller's token, never from the body.
+	OnInstruction bool `json:"-"`
 	// TriggerID is the id of the trigger-log record the launch answers; the `launched` outcome points at it.
 	TriggerID string `json:"-"`
 	// WorkerLaunched marks a ship started by an outside event, which gets the fleet's Guidance in its prompt.
@@ -141,7 +145,7 @@ type Skill struct {
 	Name string `json:"name"`
 }
 
-// AutopilotCapText opens the 409 a launch gets when autopilot is at its cap; the MCP server keys its interactive relaunch on it.
+// AutopilotCapText opens the 409 a launch gets when autopilot is at its cap.
 const AutopilotCapText = "autopilot is at its cap"
 
 type Error struct {
@@ -190,6 +194,8 @@ type Launcher struct {
 	// AutopilotGate decides whether a crew launch may carry autopilot mode. It lives
 	// outside this package because the Inbox it writes to imports the launcher.
 	AutopilotGate func(fleet config.Fleet, harness string) error
+	// ScoutGate decides whether a crew launch from a scout may run on the boat's harness; nil refuses it.
+	ScoutGate func(fleet config.Fleet, harness string) error
 	// Warn gets what a launch as a crew member left out (a dropped model, ignored skills, a bad note file);
 	// the server log when nil.
 	Warn func(msg string)
@@ -197,6 +203,8 @@ type Launcher struct {
 	Guidance func(fleet string) (string, error)
 	// Checkouts makes a restricted ship's own checkout; nil refuses a restricted launch.
 	Checkouts Checkouts
+	// Worktrees makes the worktree a no-skill ship works in; nil runs it in the checkout.
+	Worktrees Worktrees
 
 	mu sync.Mutex // one launch at a time, so two don't pick one name
 }
@@ -267,7 +275,7 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
 		{"order", req.OrderID}, {"launched", launched}, {"first-launched", firstLaunched}, {"title", orderTitle(req)}, {"url", cmp.Or(req.URL, req.EventURL)}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")},
-		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}}
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}, {"scout", scoutOption(req.Scout)}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return Checked{}, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
@@ -389,6 +397,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		prompt = req.Prompt
 	}
 	prompt = l.withGuidance(req, prompt)
+	prompt = withScoutContract(req, prompt)
 	flags, known := l.hookFlags(req.Harness)
 	if !known {
 		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)
@@ -432,9 +441,17 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 
+	tracking, err := l.fetchForWorktree(req, !restricted && !evented && !promoted)
+	if err != nil {
+		return nil, err
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	name, session, err := l.nameFor(req)
+	branchDir := ""
+	if tracking != "" {
+		branchDir = req.Dir
+	}
+	name, session, err := l.nameFor(req, branchDir)
 	if err != nil {
 		return nil, err
 	}
@@ -468,6 +485,20 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			return nil, err
 		}
 	}
+	if !restricted && !evented && !promoted {
+		wt, undo, err := l.shipWorktree(req, session, tracking)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if !launched {
+				undo()
+			}
+		}()
+		if wt != "" {
+			req.Dir = wt
+		}
+	}
 	if req.Before != nil {
 		if err := req.Before(req.Dir); err != nil {
 			return nil, err
@@ -497,7 +528,15 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if runCrew != "" {
 		ours["ADMIRAL_RUN_CREW"] = runCrew
 	}
-	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_CHAT_FLEET", "ADMIRAL_CHAT_HARNESS", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW"} {
+	if req.Scout {
+		// The guard reads the checkout from here, so it is the resolved path the ship really works in.
+		resolved, err := resolveScoutDir(req.Dir)
+		if err != nil {
+			return nil, refuse(http.StatusBadRequest, "a scout's directory cannot be resolved: %v", err)
+		}
+		ours[ScoutEnv] = resolved
+	}
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_CHAT_FLEET", "ADMIRAL_CHAT_HARNESS", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW", ScoutEnv} {
 		if v, ok := ours[k]; ok {
 			env[k] = v
 			continue
@@ -555,9 +594,9 @@ func roundOption(round int) string {
 
 // nameFor is the name a launch takes: a relaunch keeps its own and refuses while that session is live;
 // the caller holds l.mu, so no other launch takes the name in between.
-func (l *Launcher) nameFor(req Request) (name, session string, err error) {
+func (l *Launcher) nameFor(req Request, branchDir string) (name, session string, err error) {
 	if req.Session == "" {
-		name, err = l.pickName()
+		name, err = l.pickNameIn(branchDir)
 		return name, Slug(name), err
 	}
 	rows, err := l.server().SessionRows()
@@ -834,7 +873,11 @@ func crewDirNotDir(dir string, fi fs.FileInfo) error {
 
 // No tmux server yet means nothing is in use; any other error stops the launch, since a
 // name in use would end with a clash.
-func (l *Launcher) pickName() (string, error) {
+func (l *Launcher) pickName() (string, error) { return l.pickNameIn("") }
+
+// pickNameIn also skips a name whose admiral/<session> branch survives in dir's repo, which a new worktree would collide
+// with; dir is empty when the launch makes no worktree.
+func (l *Launcher) pickNameIn(dir string) (string, error) {
 	rows, err := l.server().SessionRows()
 	if err != nil {
 		return "", refuse(http.StatusInternalServerError, "tmux could not list its sessions: %s", err)
@@ -847,9 +890,23 @@ func (l *Launcher) pickName() (string, error) {
 	for _, r := range moored {
 		shipNames[r.Name], sessions[r.Session] = true, true
 	}
-	// A restricted ship's clone outlives the ship, and Make refuses a path that exists.
+	var branches map[string]bool
+	if dir != "" {
+		branches = map[string]bool{}
+		out, _ := boundedGit(0, dir, "for-each-ref", "--format=%(refname)", "refs/heads/admiral/")
+		for _, ref := range strings.Fields(out) {
+			branches[strings.TrimPrefix(ref, "refs/heads/admiral/")] = true
+		}
+	}
+	// A restricted ship's clone outlives the ship, and Add refuses a path that exists.
 	kept := func(session string) bool {
 		if _, err := os.Lstat(filepath.Join(l.Home, "checkouts", session)); err == nil {
+			return true
+		}
+		if HasWorktree(l.Home, session) {
+			return true
+		}
+		if branches[session] {
 			return true
 		}
 		return l.Kept != nil && l.Kept(session)

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
 import { cannedSearch, seedOrders } from './orders';
-import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, seedFleets, setRemote, stubClipboard, watchPage, withFakeGh } from './shell';
+import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, gitCheckout, seedFleets, setRemote, stubClipboard, watchPage, withFakeGh } from './shell';
 
 // The fleets are `zulu` (Westwind) and `alpha` (Homeport); zulu is the active fleet until one is chosen.
 const sourcesPage = (a: Admiral, fleet: string) => `${a.url}app/preferences/${fleet}/sources`;
@@ -134,11 +134,7 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
 });
 
 function checkout(root: string, dir: string, repo: string) {
-  const d = join(root, dir);
-  mkdirSync(d, { recursive: true });
-  for (const args of [['init', '-q'], ['remote', 'add', 'origin', `https://github.com/${repo}.git`]]) {
-    expect(spawnSync('git', args, { cwd: d }).status).toBe(0);
-  }
+  gitCheckout(join(root, dir), `https://github.com/${repo}.git`);
 }
 
 const githubPage = (a: Admiral, fleet: string) => `${a.url}app/preferences/${fleet}/github`;

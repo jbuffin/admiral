@@ -26,6 +26,9 @@ var table = []Feature{
 		{AutopilotArgs, "Args allowlist"},
 		{AutopilotAdvisor, "Advisor"},
 	}},
+	{ID: "scout", Label: "Scout", Capabilities: []Capability{
+		{ScoutGuard, "Scout guard hook"},
+	}},
 }
 
 var harnesses = []string{"claude", "codex", "copilot"}
@@ -33,7 +36,7 @@ var harnesses = []string{"claude", "codex", "copilot"}
 // minimums holds the only sourced minimum versions; every other claim holds for all versions.
 var minimums = map[string]map[ID]string{
 	// onFailure "block" in the hook settings needs it (internal/launcher/bundle.go).
-	"claude": {AutopilotGuard: "2.1.295"},
+	"claude": {AutopilotGuard: "2.1.295", ScoutGuard: "2.1.295"},
 }
 
 // Table returns the built-in table, grouped by feature.

@@ -59,6 +59,11 @@ var allowed = []struct {
 	{"GET", []string{"fleets", "*", "routines"}, fleetKey},
 	{"GET", []string{"fleets", "*", "standing-orders"}, fleetKey},
 	{"GET", []string{"fleets", "*", "hold-fire"}, fleetKey},
+	{"GET", []string{"fleets", "*", "repos"}, fleetKey},
+	{"GET", []string{"fleets", "*", "cloneable"}, fleetKey},
+	{"GET", []string{"fleets", "*", "docks"}, fleetKey},
+	{"GET", []string{"fleets", "*", "crew"}, fleetKey},
+	{"GET", []string{"fleets", "*", "crew", "skills"}, fleetKey},
 	{"POST", []string{"fleets", "*", "routines", "*", "off"}, fleetKey},
 	// a routine draft is kept for the engineer to open; AdmiralBot never saves, edits or turns on a routine
 	{"POST", []string{"fleets", "*", "routines", "draft"}, fleetKey},
@@ -159,7 +164,7 @@ func (g *Guard) fence(r *http.Request, fleet string, m matched) (int, string) {
 		return forbid(check("source", m.ids[0], fleet)(g.SourceFleet(m.ids[0])))
 	case fleetKey:
 		if m.ids[0] != fleet {
-			return forbid("fleet " + m.ids[0] + " is not fleet " + fleet + ", so AdmiralBot can't touch that fleet's routines or standing orders")
+			return forbid("fleet " + m.ids[0] + " is not fleet " + fleet + ", so AdmiralBot can't touch that fleet")
 		}
 	case campaign:
 		return forbid(check("campaign", m.ids[0], fleet)(g.CampaignFleet(m.ids[0])))

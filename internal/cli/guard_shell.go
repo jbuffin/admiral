@@ -196,6 +196,8 @@ var wrappers = map[string]wrapper{
 	"stdbuf":     {"ioe", []string{"input", "output", "error"}, 0, ""},
 	"caffeinate": {"tw", nil, 0, ""},
 	"xargs":      {"ILnPsdEaJRS", []string{"replace", "max-lines", "max-args", "max-procs", "max-chars", "delimiter", "eof", "arg-file"}, 0, ""},
+	"parallel":   {"jnNSaLdEsPI", []string{"jobs", "max-args", "max-replace-args", "sshlogin", "arg-file", "max-lines", "delimiter", "eof", "replace"}, 0, ""},
+	"xcrun":      {"", []string{"sdk", "toolchain"}, 0, ""},
 	"arch":       {},
 	"script":     {"tF", nil, 1, ""}, // script [-q] [-t time] file command…
 	"flock":      {"wE", []string{"timeout", "conflict-exit-code"}, 1, ""},
@@ -264,7 +266,7 @@ func (g guardCheck) callWords(c *syntax.CallExpr, words []string, redirs []*synt
 			if slices.Contains(joinedWrappers, w) && len(args) > 0 {
 				return g.command(markWords.Replace(strings.Join(args, " ")), depth+1)
 			}
-			if w == "xargs" {
+			if w == "xargs" || w == "parallel" {
 				viaXargs = true // it adds the words it reads from stdin
 			}
 			if w == "env" && len(args) == 0 {

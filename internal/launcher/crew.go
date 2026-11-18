@@ -28,6 +28,8 @@ type CrewRequest struct {
 	// Autopilot is a caller with ADMIRAL_AUTOPILOT=1: only a harness whose guard probe
 	// passed in the fleet launches, and Args must fit the autopilot args allowlist.
 	Autopilot bool
+	// Scout is a caller with ADMIRAL_SCOUT set: only a harness whose scout guard is proven launches.
+	Scout bool
 }
 
 // A teammate writes neither the ship's report nor its inbox, so it gets none of these.
@@ -111,6 +113,30 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if err := RefuseHookArgs(req.Harness, req.Args); err != nil {
 		return err
 	}
+	// The session's own mark decides, not the caller's environment, which a shell can change in too many ways.
+	sessionScout, err := shipOpt("scout")
+	if err != nil {
+		return err
+	}
+	var scoutDir string
+	if sessionScout != "" {
+		req.Scout, req.Autopilot = true, true
+		recorded, err := shipOpt("dir")
+		if err != nil {
+			return err
+		}
+		if scoutDir, err = resolveScoutDir(recorded); err != nil {
+			return fmt.Errorf("the scout's checkout cannot be resolved: %w", err)
+		}
+	}
+	if req.Scout {
+		if l.ScoutGate == nil {
+			return errors.New("a scout cannot launch crew: no scout gate is configured")
+		}
+		if err := l.ScoutGate(fleet, req.Harness); err != nil {
+			return fmt.Errorf("a caller with ADMIRAL_SCOUT set can launch only on a harness whose scout guard is proven: %w", err)
+		}
+	}
 	if req.Autopilot {
 		if err := l.autopilotGate(fleet, req.Harness); err != nil {
 			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only on a harness whose guard and advisor are proven: %w", err)
@@ -143,7 +169,7 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	}
 	// The ship's own variables and Admiral's, which only the session sets, so a
 	// crew boat of an autopilot ship stays under `admiral guard`.
-	for _, k := range append([]string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR"}, shipEnvNames...) {
+	for _, k := range append([]string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", ScoutEnv}, shipEnvNames...) {
 		delete(env, k)
 	}
 	// The ship's session holds the fleet's crew and missions directories and its run layer, which the boat keeps.
@@ -151,6 +177,10 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	delete(env, "ADMIRAL_MISSIONS_DIR")
 	delete(env, "ADMIRAL_RUN_CREW")
 	delete(env, "PATH")
+	if sessionScout != "" {
+		// Passed with -e so a `tmux set-environment -u` on the session cannot strip them.
+		env[ScoutEnv], env["ADMIRAL_AUTOPILOT"], env["ADMIRAL_LOW_STAKES"] = scoutDir, "1", "advisor"
+	}
 	clientPath := l.shipEnv(dock)["PATH"]
 	// What the session holds that this boat must not have: the ship's own
 	// variables, and the keys the ship's dock sets that this dock doesn't. env -u
@@ -158,7 +188,7 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	clear := append([]string(nil), shipEnvNames...)
 	if shipDock, ok := fleet.Harness(shipHarness); ok {
 		for k := range shipDock.Env {
-			if _, set := dock.Env[k]; !set && k != "PATH" && k != "ADMIRAL_CREW_DIR" && k != "ADMIRAL_MISSIONS_DIR" && k != "ADMIRAL_RUN_CREW" && !slices.Contains(clear, k) {
+			if _, set := dock.Env[k]; !set && k != "PATH" && k != "ADMIRAL_CREW_DIR" && k != "ADMIRAL_MISSIONS_DIR" && k != "ADMIRAL_RUN_CREW" && k != ScoutEnv && !slices.Contains(clear, k) {
 				clear = append(clear, k)
 			}
 		}

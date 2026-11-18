@@ -220,8 +220,8 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 // The tools by name, with the route each calls. Anything not in this list is a tool the Never list forbids or one
 // nobody specified: approvals, typing mid-turn, config, sources, settings and Preferences have none.
 var wantTools = []string{
-	"add_order", "answer_item", "ask_question", "dismiss_ship", "draft_routine", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_inbox",
-	"list_routines", "list_ships", "list_sources", "make_commitment", "next_prompt", "read_campaign", "read_conversation", "read_hold_fire", "read_outcomes",
+	"add_order", "answer_item", "ask_question", "dismiss_ship", "draft_routine", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_cloneable_repos",
+	"list_crew", "list_docks", "list_inbox", "list_repos", "list_routines", "list_ships", "list_skills", "list_sources", "make_commitment", "next_prompt", "read_campaign", "read_conversation", "read_hold_fire", "read_outcomes",
 	"save_note", "stop_ship", "turn_routine_off", "wake_ship", "work_on_campaign",
 }
 
@@ -353,6 +353,13 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 		{"turn_routine_off", `{"routine":"r-1"}`, "POST", "/api/fleets/work/routines/r-1/off", "", nil},
 		{"hold_fire_on", `{}`, "POST", "/api/fleets/work/hold-fire/on", "", nil},
 		{"read_hold_fire", `{}`, "GET", "/api/fleets/work/hold-fire", "", nil},
+		{"list_repos", `{}`, "GET", "/api/fleets/work/repos", "", nil},
+		{"list_cloneable_repos", `{}`, "GET", "/api/fleets/work/cloneable", "", nil},
+		{"list_docks", `{}`, "GET", "/api/fleets/work/docks", "", nil},
+		{"list_crew", `{}`, "GET", "/api/fleets/work/crew", "", nil},
+		{"list_crew", `{"harness":"codex"}`, "GET", "/api/fleets/work/crew", "harness=codex", nil},
+		{"list_skills", `{}`, "GET", "/api/fleets/work/crew/skills", "", nil},
+		{"list_skills", `{"harness":"codex"}`, "GET", "/api/fleets/work/crew/skills", "harness=codex", nil},
 	} {
 		t.Run(c.tool, func(t *testing.T) {
 			a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"ok":true}` })
@@ -464,7 +471,7 @@ func launchArgs(skill string, extra string) string {
 	return `{"dir":"/code/widget","harness":"claude","skill":"` + skill + `","text":"fix the build"` + extra + `}`
 }
 
-func TestACommodoreLaunchIsAutopilotUnlessTheEngineerSaidWithMe(t *testing.T) {
+func TestEveryLaunchIsAutopilotUnlessTheEngineerSaidWithMe(t *testing.T) {
 	for _, c := range []struct {
 		name, args string
 		autopilot  bool
@@ -472,6 +479,10 @@ func TestACommodoreLaunchIsAutopilotUnlessTheEngineerSaidWithMe(t *testing.T) {
 	}{
 		{"commodore", launchArgs("commodore", ""), true, "autopilot"},
 		{"commodore with me", launchArgs("commodore", `,"with_me":true`), false, "interactive"},
+		{"named skill", launchArgs("wayfinder", ""), true, "autopilot"},
+		{"named skill with me", launchArgs("wayfinder", `,"with_me":true`), false, "interactive"},
+		{"no skill", launchArgs("none", ""), true, "autopilot"},
+		{"no skill with me", launchArgs("none", `,"with_me":true`), false, "interactive"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })
@@ -491,33 +502,12 @@ func TestACommodoreLaunchIsAutopilotUnlessTheEngineerSaidWithMe(t *testing.T) {
 			if b["fleet"] != "work" || b["dir"] != "/code/widget" || b["harness"] != "claude" || b["text"] != "fix the build" {
 				t.Errorf("body = %v, want fleet work (from the chat's fleet), the dir, harness and text", b)
 			}
-			if sk, _ := b["skill"].(map[string]any); sk["kind"] != "commodore" {
-				t.Errorf("skill = %v, want kind commodore", b["skill"])
-			}
 			var out struct{ Mode string }
 			tr := result(t, replies, "1")
 			if err := json.Unmarshal([]byte(tr.text()), &out); err != nil || out.Mode != c.mode || tr.IsError {
 				t.Errorf("result = %q, want a JSON object with mode %q", tr.text(), c.mode)
 			}
 		})
-	}
-}
-
-func TestALaunchWithAnotherSkillLeavesAutopilotToTheRequest(t *testing.T) {
-	a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })
-	a.env(t, mcpToken)
-	if _, _, err := serve(t, call(1, "launch_ship", launchArgs("none", ""))); err != nil {
-		t.Fatal(err)
-	}
-	got := a.requests()
-	if len(got) != 1 {
-		t.Fatalf("requests = %+v, want one", got)
-	}
-	if ap, _ := got[0].Body["autopilot"].(bool); ap {
-		t.Errorf("a Just launch got autopilot: %v", got[0].Body)
-	}
-	if sk, _ := got[0].Body["skill"].(map[string]any); sk["kind"] != "none" {
-		t.Errorf("skill = %v, want kind none", got[0].Body["skill"])
 	}
 }
 
@@ -538,46 +528,37 @@ func TestALaunchRefusedForTheGuardIsPassedThroughNotRetried(t *testing.T) {
 	}
 }
 
-func TestALaunchRefusedForTheCapIsRelaunchedWithTheEngineer(t *testing.T) {
-	a := newStandIn(t, func(r mcpReq) (int, string) {
-		if ap, _ := r.Body["autopilot"].(bool); ap {
-			return 409, `{"error":"autopilot is at its cap of 3 ships"}`
-		}
-		return 201, `{"ship":{"session":"saltpaw"}}`
-	})
-	a.env(t, mcpToken)
-	replies, _, err := serve(t, call(1, "launch_ship", launchArgs("commodore", "")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := a.requests()
-	if len(got) != 2 {
-		t.Fatalf("POSTs = %d, want 2: autopilot, then interactive", len(got))
-	}
-	if ap, _ := got[1].Body["autopilot"].(bool); ap || got[1].Body["text"] != got[0].Body["text"] || got[1].Body["dir"] != got[0].Body["dir"] {
-		t.Errorf("second POST = %v, want the same request with autopilot false", got[1].Body)
-	}
-	tr := result(t, replies, "1")
-	var out struct{ Mode string }
-	if json.Unmarshal([]byte(tr.text()), &out) != nil || out.Mode != "interactive" || tr.IsError || !strings.Contains(tr.text(), "cap") {
-		t.Errorf("result = %q, want mode interactive and the cap as the reason", tr.text())
-	}
-}
-
-func TestOtherLaunchConflictsAreNotRetriedAsInteractive(t *testing.T) {
-	a := newStandIn(t, func(mcpReq) (int, string) {
-		return 409, `{"error":"this order already has a ship (saltpaw)"}`
-	})
-	a.env(t, mcpToken)
-	replies, _, err := serve(t, call(1, "launch_ship", launchArgs("commodore", "")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n := len(a.requests()); n != 1 {
-		t.Errorf("POSTs = %d, want 1: only the cap is worked around", n)
-	}
-	if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "already has a ship") {
-		t.Errorf("result = %+v, want isError with the holding ship's message", tr)
+func TestARefusedLaunchIsReturnedAsTheToolsErrorAndPostedOnce(t *testing.T) {
+	for _, c := range []struct {
+		name, skill string
+		status      int
+		msg, want   string
+	}{
+		{"cap", "commodore", 409, "autopilot is at its cap of 3 ships", "cap of 3"},
+		{"cap on a named skill", "wayfinder", 409, "autopilot is at its cap of 3 ships", "cap of 3"},
+		{"held order", "commodore", 409, "this order already has a ship (saltpaw)", "already has a ship"},
+		{"busy resource", "none", 409, `resource "phone" is in use by ship saltpaw`, `resource "phone" is in use`},
+		{"guard", "wayfinder", 400, "autopilot needs the guard for claude, which has not passed its probe in fleet work", "has not passed its probe"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a := newStandIn(t, func(mcpReq) (int, string) { return c.status, `{"error":"` + c.msg + `"}` })
+			a.env(t, mcpToken)
+			replies, _, err := serve(t, call(1, "launch_ship", launchArgs(c.skill, "")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := a.requests()
+			if len(got) != 1 {
+				t.Fatalf("POSTs = %d, want 1: a refusal is never retried, least of all as interactive", len(got))
+			}
+			if ap, _ := got[0].Body["autopilot"].(bool); !ap {
+				t.Errorf("the one POST = %v, want autopilot true", got[0].Body)
+			}
+			tr := result(t, replies, "1")
+			if !tr.IsError || !strings.Contains(tr.text(), c.want) || strings.Contains(tr.text(), "interactive") {
+				t.Errorf("result = %+v, want isError with the server's message %q unchanged", tr, c.want)
+			}
+		})
 	}
 }
 
@@ -662,7 +643,7 @@ func TestALaunchSendsEveryInputItWasGivenAndOmitsTheRest(t *testing.T) {
 	a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })
 	a.env(t, mcpToken)
 	args := `{"dir":"/code/widget","harness":"claude","skill":"commodore","text":"fix the build","source":"notes","order_id":"o-1",` +
-		`"clone":true,"clone_repo":"jbuffin/widget","anyway":true,"crew":["a","b"]}`
+		`"clone":true,"clone_repo":"jbuffin/widget","anyway":true,"crew":["a","b"],"resources":["phone","bench"],"model":"opus","effort":"high"}`
 	if _, _, err := serve(t, call(1, "launch_ship", args)); err != nil {
 		t.Fatal(err)
 	}
@@ -671,7 +652,8 @@ func TestALaunchSendsEveryInputItWasGivenAndOmitsTheRest(t *testing.T) {
 		t.Fatalf("POSTs = %+v, want one", got)
 	}
 	want := map[string]any{"dir": "/code/widget", "harness": "claude", "text": "fix the build", "source": "notes", "order_id": "o-1",
-		"clone": true, "clone_repo": "jbuffin/widget", "anyway": true, "crew": []any{"a", "b"}, "fleet": "work"}
+		"clone": true, "clone_repo": "jbuffin/widget", "anyway": true, "crew": []any{"a", "b"}, "fleet": "work",
+		"resources": []any{"phone", "bench"}, "model": "opus", "effort": "high"}
 	for k, v := range want {
 		if mustJSON(got[0].Body[k]) != mustJSON(v) {
 			t.Errorf("body %s = %s, want %s", k, mustJSON(got[0].Body[k]), mustJSON(v))
@@ -683,7 +665,7 @@ func TestALaunchSendsEveryInputItWasGivenAndOmitsTheRest(t *testing.T) {
 	if _, _, err := serve(t, call(1, "launch_ship", launchArgs("commodore", ""))); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"source", "order_id", "clone", "clone_repo", "anyway", "chat_message", "crew", "issues"} {
+	for _, k := range []string{"source", "order_id", "clone", "clone_repo", "anyway", "chat_message", "crew", "issues", "resources", "model", "effort"} {
 		if v, ok := b.requests()[0].Body[k]; ok {
 			t.Errorf("body holds %s = %v though the input was not given", k, v)
 		}
@@ -1121,5 +1103,39 @@ func TestWorkOnCampaignNeedsAReference(t *testing.T) {
 	}
 	if r := replies["2"]; r.Error == nil && !result(t, replies, "2").IsError {
 		t.Errorf("reply 2 = %+v, want an error", r)
+	}
+}
+
+// The fleet comes from the chat's environment, so a model-supplied fleet changes nothing.
+func TestTheFleetMapReadsNameOnlyTheChatsFleetEvenWhenTheModelNamesAnother(t *testing.T) {
+	for _, tool := range []string{"list_repos", "list_cloneable_repos", "list_docks", "list_crew", "list_skills"} {
+		t.Run(tool, func(t *testing.T) {
+			a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"ok":true}` })
+			a.env(t, mcpToken)
+			if _, _, err := serve(t, call(1, tool, `{"fleet":"home","key":"home"}`)); err != nil {
+				t.Fatal(err)
+			}
+			got := a.requests()
+			if len(got) != 1 || !strings.HasPrefix(got[0].Path, "/api/fleets/work/") || strings.Contains(got[0].Path+got[0].Query, "home") {
+				t.Errorf("requests = %+v, want one under /api/fleets/work/ and nothing of the model's fleet", got)
+			}
+		})
+	}
+}
+
+func TestTheFleetMapReadsRefuseAChatWithNoFleetWithoutAskingTheServer(t *testing.T) {
+	for _, tool := range []string{"list_repos", "list_cloneable_repos", "list_docks", "list_crew", "list_skills"} {
+		t.Run(tool, func(t *testing.T) {
+			a := newStandIn(t, nil)
+			a.env(t, mcpToken)
+			t.Setenv("ADMIRAL_CHAT_FLEET", "")
+			replies, _, err := serve(t, call(1, tool, `{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "no fleet") || len(a.requests()) != 0 {
+				t.Errorf("result = %+v, requests = %v; want a tool error saying the chat has no fleet and no request", tr, a.requests())
+			}
+		})
 	}
 }

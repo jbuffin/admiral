@@ -41,7 +41,8 @@
 #   gh repo clone [--] REPO DIR
 #     REPO is OWNER/REPO (host github.com) or HOST/OWNER/REPO. Makes DIR a git
 #     checkout whose origin is https://HOST/OWNER/REPO.git, so the checkout is
-#     matched to the repo by its remote. It refuses (exit 1, "fatal: destination
+#     matched to the repo by its remote, and serves that URL from a local bare
+#     repo through an insteadOf rule. It refuses (exit 1, "fatal: destination
 #     path ... already exists") when DIR exists, as git does. Steered by:
 #       repo_clone.sleep   sleep that many seconds before cloning, so two clones overlap
 #       repo_clone.fail    leave a partial DIR (a junk file, as an interrupted
@@ -469,7 +470,13 @@ repo)
 	*) url="https://github.com/$repo.git" ;;
 	esac
 	mkdir -p "$dir"
-	git -C "$dir" init -q && git -C "$dir" remote add origin "$url" || exit 1
+	git -C "$dir" init -q -b main && git -C "$dir" remote add origin "$url" || exit 1
+	# A no-skill launch fetches origin, so the URL is served from a local bare repo with one commit, as a clone of a real repo has.
+	bare=$(mktemp -d "$FAKEGH_DIR/bare.XXXXXX") || exit 1
+	git -C "$bare" init -q --bare -b main || exit 1
+	git -C "$dir" config url."$bare".insteadOf "$url"
+	git -C "$dir" -c user.name=fakegh -c user.email=fakegh@example.com commit -q --allow-empty -m first || exit 1
+	git -C "$dir" push -q origin main || exit 1
 	exit 0
 	;;
 api)

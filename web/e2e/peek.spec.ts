@@ -131,6 +131,11 @@ test('on a portrait iPad Peek replaces the list instead of squeezing beside it, 
 test("AdmiralBot's waiting question shows in the Inbox as AdmiralBot's, is answered from Peek, leaves the Inbox, and the fleet's chat shows the answer", async ({ page, admiral }) => {
   seedFleets(admiral, { live: true, chat: true });
   await admiral.start({ env: withFakeGh(admiral) });
+  // Opening the chat later must not start a session: a start withdraws the questions waiting, answered ones too.
+  await page.request.post(admiral.url + 'api/v1/chat/harbor/start');
+  await expect
+    .poll(async () => ((await (await page.request.get(admiral.url + 'api/v1/chat/harbor/session')).json()) as { running?: boolean }).running)
+    .toBe(true);
   chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
   chatAsks(admiral, 'lagoon', 'q2', 'Which branch?', ['main', 'next']);
   await page.goto(admiral.url + 'app/inbox?fleet=harbor');
