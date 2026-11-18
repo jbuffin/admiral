@@ -166,14 +166,6 @@ export function blockerLine(b: Blocker): BlockerLine {
   return { kind: 'link', text: b.title || b.url, url: b.url };
 }
 
-/** A hint for a paste the server would refuse for its shape, or null when the text needs none. */
-export function pasteHint(text: string): string | null {
-  const t = text.trim();
-  if (/#issuecomment/i.test(t)) return "A link to a comment isn't accepted. Paste the issue's own URL.";
-  if (t.endsWith('/')) return "A trailing slash isn't accepted. Remove it.";
-  return null;
-}
-
 /** The second line of a sidebar row or list card: owner/repo#number and progress. */
 export function campaignMeta(c: { repo: string; number: number; progress: { closed: number; total: number } }): string {
   const repo = c.repo.replace(/^[a-z]+:\/\/[^/]+\//i, '');

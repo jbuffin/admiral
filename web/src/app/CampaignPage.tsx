@@ -21,7 +21,6 @@ import {
   modeLabel,
   nextPoll,
   SLOW_POLL_MS,
-  pasteHint,
   shipOfChild,
   skillLabel,
   statusLabel,
@@ -31,7 +30,8 @@ import {
   type Mode,
   type Row,
 } from './campaign';
-import { campaignList, endedOpen, followReference, noteCampaign, refreshCampaigns } from './campaignsLink';
+import { campaignList, endedOpen, noteCampaign, refreshCampaigns } from './campaignsLink';
+import { AddCampaign } from './AddCampaign';
 import { activeFleet, fleetPaint, fleets } from './fleets';
 import { Choice } from './Choice';
 import { Icon } from './Icon';
@@ -62,52 +62,6 @@ function open(e: MouseEvent, c: Campaign) {
   if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
   go(campaignPath(c.id), search(c.fleet));
-}
-
-/** The field that follows a pasted issue; answers its refusal in place. */
-function PasteField() {
-  const [text, setText] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const hint = pasteHint(text);
-  const submit = async () => {
-    const t = text.trim();
-    if (!t || hint || busy) return;
-    setBusy(true);
-    setError('');
-    const err = await followReference(t);
-    setBusy(false);
-    if (err) setError(err);
-    else {
-      setText('');
-      addOpen.value = false;
-    }
-  };
-  return (
-    <div class="paste">
-      <input
-        type="text"
-        class="paste-input"
-        aria-label="Campaign issue"
-        placeholder="Paste an issue URL or owner/repo#n"
-        value={text}
-        autoFocus={addOpen.value}
-        onInput={(e) => {
-          setText((e.target as HTMLInputElement).value);
-          setError('');
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') void submit();
-        }}
-      />
-      {hint ? <p class="note hint">{hint}</p> : null}
-      {error ? (
-        <p class="alert" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
 }
 
 export const addOpen = signal(false);
@@ -141,7 +95,6 @@ function CampaignSidebar() {
   const here = typeof location === 'undefined' ? '' : location.pathname;
   return (
     <div class="camp-side">
-      {addOpen.value ? <PasteField /> : null}
       <ul class="camp-list">
         {active.map((c) => (
           <li key={c.id}>
@@ -170,6 +123,12 @@ function CampaignSidebar() {
   );
 }
 
+function AddCampaignModal() {
+  const fleet = activeFleet.value;
+  if (!addOpen.value || !fleet) return null;
+  return <AddCampaign fleet={fleet.key} onClose={() => (addOpen.value = false)} />;
+}
+
 /** The desktop sidebar's Campaigns row and what follows it. */
 export function CampaignsNav() {
   return (
@@ -184,11 +143,12 @@ export function CampaignsNav() {
         </Button>
       </div>
       <CampaignSidebar />
+      <AddCampaignModal />
     </>
   );
 }
 
-/** The Campaigns surface: the followed campaigns of the fleet, or the ended ones; the phone also gets the paste field. */
+/** The Campaigns surface: the followed campaigns of the fleet, or the ended ones; the phone also gets the Add campaign button. */
 export function CampaignsList({ phone, title }: { phone: boolean; title: boolean }) {
   const fleet = activeFleet.value;
   const mine = campaignList.value.filter((c) => c.fleet === fleet?.key);
@@ -198,12 +158,17 @@ export function CampaignsList({ phone, title }: { phone: boolean; title: boolean
   return (
     <main class="panel">
       {title ? <h1>Campaigns</h1> : null}
-      {phone ? <PasteField /> : null}
+      {phone ? (
+        <>
+          <Button label="Add campaign" onClick={() => (addOpen.value = true)} />
+          <AddCampaignModal />
+        </>
+      ) : null}
       <div class="camp-tabs">
         <Button label={`Following (${mine.length - ended.length})`} pressed={!showEnded} onClick={() => (endedOpen.value = false)} />
         <Button label={`Ended (${ended.length})`} pressed={showEnded} onClick={() => (endedOpen.value = true)} />
       </div>
-      {list.length === 0 ? <p class="line">{showEnded ? 'No campaign has ended.' : 'Follow a campaign by pasting its issue, or with Follow on an order.'}</p> : null}
+      {list.length === 0 ? <p class="line">{showEnded ? 'No campaign has ended.' : 'Follow a campaign with Add campaign, or with Follow on an order.'}</p> : null}
       <ul class="camp-cards">
         {list.map((c) => (
           <li key={c.id}>
