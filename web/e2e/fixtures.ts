@@ -1,4 +1,4 @@
-import { test as base, expect } from '@playwright/test';
+import { type Browser, test as base, expect } from '@playwright/test';
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
@@ -280,7 +280,45 @@ class Instance implements Admiral {
   }
 }
 
-export const test = base.extend<{ admiral: Admiral }>({
+// WebKit has no mute launch flag, so every page's audio ends at a gain-0 node and the app's own code runs unchanged.
+function silenceAudio() {
+  const proto = (globalThis as unknown as { BaseAudioContext?: { prototype: object } }).BaseAudioContext?.prototype;
+  const real = proto && Object.getOwnPropertyDescriptor(proto, 'destination');
+  if (!proto || !real?.get) return;
+  const nodes = new WeakMap<object, AudioNode>();
+  Object.defineProperty(proto, 'destination', {
+    configurable: true,
+    get(this: BaseAudioContext) {
+      let node = nodes.get(this);
+      if (!node) {
+        const gain = this.createGain();
+        gain.gain.value = 0;
+        gain.connect(real.get!.call(this));
+        node = gain;
+        nodes.set(this, node);
+      }
+      return node;
+    },
+  });
+}
+
+export const test = base.extend<{ admiral: Admiral }, { browser: Browser }>({
+  browser: [
+    async ({ browser }, use) => {
+      const newContext = browser.newContext.bind(browser);
+      browser.newContext = async (options) => {
+        const context = await newContext(options);
+        await context.addInitScript(silenceAudio);
+        return context;
+      };
+      try {
+        await use(browser);
+      } finally {
+        browser.newContext = newContext;
+      }
+    },
+    { scope: 'worker' },
+  ],
   admiral: async ({ context }, use, info) => {
     const a = new Instance();
     // Close the test's pages so whatever it awaits fails now, not at its timeout.
