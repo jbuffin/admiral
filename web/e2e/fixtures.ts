@@ -284,22 +284,22 @@ class Instance implements Admiral {
 function silenceAudio() {
   const proto = (globalThis as unknown as { BaseAudioContext?: { prototype: object } }).BaseAudioContext?.prototype;
   const real = proto && Object.getOwnPropertyDescriptor(proto, 'destination');
-  if (!proto || !real?.get) return;
+  // A context can get this script twice (newContext and the context fixture), and a second patch would chain gain nodes.
+  if (!proto || !real?.get || (real.get as { silenced?: boolean }).silenced) return;
   const nodes = new WeakMap<object, AudioNode>();
-  Object.defineProperty(proto, 'destination', {
-    configurable: true,
-    get(this: BaseAudioContext) {
-      let node = nodes.get(this);
-      if (!node) {
-        const gain = this.createGain();
-        gain.gain.value = 0;
-        gain.connect(real.get!.call(this));
-        node = gain;
-        nodes.set(this, node);
-      }
-      return node;
-    },
-  });
+  const get = function (this: BaseAudioContext) {
+    let node = nodes.get(this);
+    if (!node) {
+      const gain = this.createGain();
+      gain.gain.value = 0;
+      gain.connect(real.get!.call(this));
+      node = gain;
+      nodes.set(this, node);
+    }
+    return node;
+  };
+  (get as { silenced?: boolean }).silenced = true;
+  Object.defineProperty(proto, 'destination', { configurable: true, get });
 }
 
 export const test = base.extend<{ admiral: Admiral }, { browser: Browser }>({
@@ -319,6 +319,11 @@ export const test = base.extend<{ admiral: Admiral }, { browser: Browser }>({
     },
     { scope: 'worker' },
   ],
+  // Context reuse (PW_TEST_REUSE_CONTEXT) hands out a context without calling browser.newContext.
+  context: async ({ context }, use) => {
+    await context.addInitScript(silenceAudio);
+    await use(context);
+  },
   admiral: async ({ context }, use, info) => {
     const a = new Instance();
     // Close the test's pages so whatever it awaits fails now, not at its timeout.
