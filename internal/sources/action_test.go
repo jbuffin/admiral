@@ -582,24 +582,7 @@ type actionRunResult struct {
 // startRun posts a run that the held conn blocks, and returns once the plugin has it.
 func startRun(t *testing.T, f *serviceFixture, c *actionConn, ctx context.Context, row string) chan actionRunResult {
 	t.Helper()
-	out := make(chan actionRunResult, 1)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, f.srv.URL+"/api/sources"+actionPath(row, "pass", "run"), strings.NewReader(`{"values":{}}`))
-	go func() {
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			out <- actionRunResult{0, err.Error()}
-			return
-		}
-		defer resp.Body.Close()
-		b, _ := io.ReadAll(resp.Body)
-		out <- actionRunResult{resp.StatusCode, string(b)}
-	}()
-	select {
-	case <-c.entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("within 5s the plugin never got the run")
-	}
-	return out
+	return startRunAt(t, f, c, ctx, actionPath(row, "pass", "run"))
 }
 
 func holdActionWindow(d time.Duration, bad func() string) string {

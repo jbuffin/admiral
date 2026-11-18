@@ -52,7 +52,7 @@ function NoticeLine({ n }: { n: PageNotice }) {
         </a>
       ) : null}
       {updating ? <span class="mact-updating">updating…</span> : null}
-      <ModuleActions row={n.id} notice one={n.action} />
+      <ModuleActions target={{ notice: true, id: n.id }} one={n.action} />
     </li>
   );
 }
@@ -100,7 +100,7 @@ function ModuleRow({ row, phone, selected, onOpen }: { row: PageRow; phone: bool
         ) : null}
       </button>
       {updating ? <span class="mact-updating">updating…</span> : null}
-      <ModuleActions row={row.id} one={row.action} many={row.actions} />
+      <ModuleActions target={{ id: row.id }} one={row.action} many={row.actions} />
     </li>
   );
 }
@@ -132,7 +132,7 @@ function Sections({ detail, rowId }: { detail: RowDetail; rowId: string }) {
                 <li key={st.id}>
                   <span class="mstep-title">{st.title}</span>
                   <Chips chips={st.chips} />
-                  <ModuleActions row={rowId} one={st.action} many={st.actions} />
+                  <ModuleActions target={{ id: rowId }} one={st.action} many={st.actions} />
                 </li>
               ))}
             </ul>

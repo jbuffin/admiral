@@ -316,9 +316,7 @@ func parseNotices(raw []json.RawMessage) ([]Notice, error) {
 		}
 		notice := Notice{ID: id, Text: text, Tone: tone}
 		notice.Link, _ = parseLink(item.Link)
-		if len(item.Action) > 0 && string(item.Action) != "null" {
-			notice.Action = parseAction(item.Action)
-		}
+		notice.Action = parseAction(item.Action)
 		out = append(out, notice)
 	}
 	return out, nil

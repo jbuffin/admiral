@@ -21,7 +21,7 @@ type Run = {
   token: number;
 };
 
-/** How long a row waits for the page to change after a run before its module actions come back. */
+/** How long a row or notice waits for the page to change after a run before its module actions come back. */
 export const UPDATING_FALLBACK_MS = 30_000;
 
 interface Controller {
@@ -85,7 +85,7 @@ export function useModuleActions(
       [key]: { phase: "running", action: action.id, token },
     }));
     const res = await runModuleAction(sourceKey, target, action.id, values);
-    const tag = `module-action:${sourceKey}:${key}`;
+    const tag = `module-action:${sourceKey}:${target.notice ? `notice:${target.id}` : target.id}`;
     if (!res.ok) {
       showResult({ tag, name: action.label, line: res.error, error: true });
       return drop(key, token);
@@ -148,19 +148,16 @@ export function useModuleActions(
 
 /** A row's, step's or notice's module actions; a built-in action with a url stays an inert button. */
 export function ModuleActions({
-  row,
-  notice,
+  target,
   one,
   many,
 }: {
-  row: string;
-  notice?: boolean;
+  target: ActionTarget;
   one?: PageAction;
   many?: PageAction[];
 }) {
   const ctl = useContext(Ctx);
   const all = [...(one ? [one] : []), ...(many ?? [])];
-  const target: ActionTarget = { notice, id: row };
   const run = ctl?.runs[targetKey(target)];
   return all.length === 0 ? null : (
     <span class="mactions">
@@ -176,7 +173,7 @@ export function ModuleActions({
               !!a.url ||
               ctl.blocked ||
               !!run ||
-              !openableRow(row) ||
+              !openableRow(target.id) ||
               !openableRow(a.id)
             }
             aria-busy={running ? "true" : undefined}
