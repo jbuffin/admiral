@@ -339,12 +339,13 @@ export function gitCheckout(dir: string, githubUrl?: string) {
   git(dir, 'push', '-q', 'origin', 'main');
 }
 
-/** Undoes gitCheckout's redirect after the launch, so the checkout's GitHub origin reads as it is: `git remote get-url` expands insteadOf, and a hand names the repo from it. */
-export function dropFetchRedirect(dir: string) {
-  const key = spawnSync('git', ['config', '--name-only', '--get-regexp', '^url\\..*\\.insteadof$'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
-  expect(key).not.toBe('');
-  const r = spawnSync('git', ['config', '--unset-all', key], { cwd: dir, encoding: 'utf8' });
-  expect(r.status, r.stderr).toBe(0);
+/** Undoes gitCheckout's redirect, so the checkout's GitHub origin reads as it is: `git remote get-url` expands insteadOf, and a hand names the repo from it. Returns what puts it back, for a launch that still needs to fetch. */
+export function dropFetchRedirect(dir: string): () => void {
+  const [key, value] = spawnSync('git', ['config', '--get-regexp', '^url\\..*\\.insteadof$'], { cwd: dir, encoding: 'utf8' }).stdout.trim().split(' ');
+  expect(key).toBeTruthy();
+  const git = (...args: string[]) => expect(spawnSync('git', ['config', ...args], { cwd: dir, encoding: 'utf8' }).status).toBe(0);
+  git('--unset-all', key);
+  return () => git(key, value);
 }
 
 export async function launchShip(

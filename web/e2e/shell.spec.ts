@@ -504,7 +504,7 @@ test('a Copilot ship shows its conversation in the Conversation tab, shows a lin
   mkdirSync(commodoreSkill, { recursive: true });
   writeFileSync(join(commodoreSkill, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
   const design = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
-  dropFetchRedirect(join(admiral.home, 'proj'));
+  const restoreRedirect = dropFetchRedirect(join(admiral.home, 'proj'));
   setState(admiral, design, 'working');
   await say(admiral, design, 'The design is settled');
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
@@ -533,6 +533,7 @@ test('a Copilot ship shows its conversation in the Conversation tab, shows a lin
   await expect(page.getByRole('button', { name: /Hand(ing)? to Commodore/ })).toHaveCount(0);
 
   // A second hand started from elsewhere while the sheet is open is the route's 409, shown in the sheet, which stays open.
+  restoreRedirect();
   const raced = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
   setState(admiral, raced, 'working');
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
