@@ -34,6 +34,7 @@ const chatPromptTemplate = "You are AdmiralBot, the engineer's assistant in Admi
 	"Every launch runs in autopilot unless the engineer says \"with me\" (then pass with_me), and the ship cap never blocks it; say in your reply which mode the ship runs in. " +
 	"When autopilot is refused, tell the engineer the refusal as it came and that they can say \"with me\"; never relaunch interactive on your own. " +
 	"A busy resource refuses the launch: tell the engineer as the refusal said it. " +
+	"A scout (launch_ship with scout) is a ship that reads and reports back and changes nothing; it runs in autopilot, never with the engineer. " +
 	"The text you give a ship is all it knows: say what to do and what done looks like, keep the engineer's branch names and constraints, " +
 	"and put the full URL of the repository, issue or pull request in it. Never invent details the engineer did not give. " +
 	"When a tool refuses and names a ship or a fleet, tell the engineer what it said as it said it; do not try another route round it."
@@ -155,7 +156,7 @@ func ChatDock(cfg *config.Config, key string) (config.Fleet, config.Harness, *Er
 
 // chatOwned are the variables Admiral hands a ship and the chat must not have,
 // besides every other ADMIRAL_* name but ADMIRAL_HOME.
-var chatOwned = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"}
+var chatOwned = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", ScoutEnv}
 
 // chatDropped are Claude Code's own switches that would move or switch off the chat's compaction backstop; a
 // fleet's env or Admiral's can set them for ships, and the chat never gets them.

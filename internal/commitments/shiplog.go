@@ -34,6 +34,7 @@ type rec struct {
 	reason   string
 	clean    bool // an `ended` with exit code 0
 	killed   bool // an `ended` by signal KILL: a stop or a dismissal writes it, then its own record
+	scout    bool // a `stopped` of a scout's own end, which reads as sailed
 }
 
 // shipLog is the outcome log's records by ship, oldest first.
@@ -129,9 +130,10 @@ func (l *shipLog) readFile(read func(string) ([]byte, error), path string) {
 				Reason   string    `json:"reason"`
 				ExitCode *int      `json:"exit_code"`
 				Signal   *string   `json:"signal"`
+				Scout    bool      `json:"scout"`
 			}
 			if json.Unmarshal(line, &raw) == nil && raw.Ship != "" {
-				e := rec{at: raw.TS, event: raw.Event, launched: raw.Launched, reason: raw.Reason}
+				e := rec{at: raw.TS, event: raw.Event, launched: raw.Launched, reason: raw.Reason, scout: raw.Scout}
 				if raw.Event == "ended" {
 					e.clean = raw.Signal == nil && raw.ExitCode != nil && *raw.ExitCode == 0
 					e.killed = raw.Signal != nil && *raw.Signal == "KILL"
@@ -190,6 +192,7 @@ const (
 //	ended with an error (or KILL unexplained)  waits: it can be woken   fires
 //	moored, woken (running)                waits               waits
 //	stopped                                drops               drops (a stop is not anchoring)
+//	a scout's own stop                     fires               drops: the ship sailed off
 //	dismissed (also unmoored as dismissed) drops               drops
 //	unmoored as unfollowed                 drops               drops
 func (l *shipLog) verdict(c ledger.Commitment, now time.Time) verdict {
@@ -246,6 +249,9 @@ func apply(cur stance, e rec) stance {
 	case "woken":
 		return running
 	case "stopped":
+		if e.scout {
+			return sailed
+		}
 		return stopped
 	case "dismissed":
 		return dismissed

@@ -134,7 +134,7 @@ func (s *Service) dueCheck(ctx context.Context, sess sessionhost.Session, st *op
 // autoMoor moors each live ship whose own turn has ended on a done report that has open PRs, or that reviews an open one.
 func (s *Service) autoMoor(ctx context.Context) {
 	for _, sess := range s.Host.Sessions() {
-		if !sess.IsShip() || sess.PaneDead || sess.Options[sessionhost.OptReturning] != "" || s.beingHanded(sess) ||
+		if !sess.IsShip() || sess.PaneDead || sess.Options["scout"] != "" || sess.Options[sessionhost.OptReturning] != "" || s.beingHanded(sess) ||
 			status(sess, time.Now()) != StatusNeedsYou || reasonOf(sess) != "stop" {
 			continue
 		}

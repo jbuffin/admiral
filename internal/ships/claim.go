@@ -130,6 +130,9 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 		}
 	}
 	// These need no disk, so a bad request leaves no clone.
+	if lerr := checkScout(req); lerr != nil {
+		return Ship{}, lerr
+	}
 	if lerr := launcher.CheckMember(req.Skill.Kind, req.Member); lerr != nil {
 		return Ship{}, lerr
 	}
@@ -333,4 +336,34 @@ func (s *Service) rememberClone(req launcher.Request, dir string) {
 	if os.MkdirAll(filepath.Dir(m), 0o755) == nil {
 		_ = os.WriteFile(m, []byte(dir), 0o644)
 	}
+}
+
+// checkScout refuses what a scout never takes: it is a freeform autopilot ship in an existing checkout.
+func checkScout(req launcher.Request) *launcher.Error {
+	if !req.Scout {
+		return nil
+	}
+	what := ""
+	switch {
+	case !req.Autopilot:
+		return &launcher.Error{Status: http.StatusBadRequest, Msg: "a scout runs in autopilot: send autopilot with scout"}
+	case req.Skill.Kind != "none":
+		what = "skill"
+	case req.Member != "":
+		what = "crew member"
+	case len(req.Crew) > 0:
+		what = "crew pins"
+	case len(req.Issues) > 0:
+		what = "issues"
+	case req.Source != "":
+		what = "order source"
+	case req.OrderID != "":
+		what = "order"
+	case req.Clone:
+		what = "clone"
+	}
+	if what != "" {
+		return &launcher.Error{Status: http.StatusBadRequest, Msg: "a scout takes no " + what + ": it works freeform in the fleet's existing checkout"}
+	}
+	return nil
 }

@@ -21,3 +21,26 @@ func (l *Launcher) withGuidance(req Request, prompt string) string {
 	}
 	return prompt + "\n\n" + section
 }
+
+func scoutOption(scout bool) string {
+	if scout {
+		return "1"
+	}
+	return ""
+}
+
+const scoutContract = "## Scout\n\n" +
+	"A scout changes nothing: your guard refuses commits, pushes, pull request changes and edits in your checkout, " +
+	"so read, run and look things up, and write what you found to your report. " +
+	"Anything you cannot settle goes in your report as an open question; do not ask the engineer."
+
+// withScoutContract puts a scout's contract after its prompt.
+func withScoutContract(req Request, prompt string) string {
+	if !req.Scout || req.Prompt != "" || req.Bare {
+		return prompt
+	}
+	if prompt == "" {
+		return scoutContract
+	}
+	return prompt + "\n\n" + scoutContract
+}

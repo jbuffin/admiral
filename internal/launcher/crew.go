@@ -28,6 +28,8 @@ type CrewRequest struct {
 	// Autopilot is a caller with ADMIRAL_AUTOPILOT=1: only a harness whose guard probe
 	// passed in the fleet launches, and Args must fit the autopilot args allowlist.
 	Autopilot bool
+	// Scout is a caller with ADMIRAL_SCOUT set: only a harness whose scout guard is proven launches.
+	Scout bool
 }
 
 // A teammate writes neither the ship's report nor its inbox, so it gets none of these.
@@ -111,6 +113,14 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if err := RefuseHookArgs(req.Harness, req.Args); err != nil {
 		return err
 	}
+	if req.Scout {
+		if l.ScoutGate == nil {
+			return errors.New("a scout cannot launch crew: no scout gate is configured")
+		}
+		if err := l.ScoutGate(fleet, req.Harness); err != nil {
+			return fmt.Errorf("a caller with ADMIRAL_SCOUT set can launch only on a harness whose scout guard is proven: %w", err)
+		}
+	}
 	if req.Autopilot {
 		if err := l.autopilotGate(fleet, req.Harness); err != nil {
 			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only on a harness whose guard and advisor are proven: %w", err)
@@ -143,7 +153,7 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	}
 	// The ship's own variables and Admiral's, which only the session sets, so a
 	// crew boat of an autopilot ship stays under `admiral guard`.
-	for _, k := range append([]string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR"}, shipEnvNames...) {
+	for _, k := range append([]string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", ScoutEnv}, shipEnvNames...) {
 		delete(env, k)
 	}
 	// The ship's session holds the fleet's crew and missions directories and its run layer, which the boat keeps.
@@ -158,7 +168,7 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	clear := append([]string(nil), shipEnvNames...)
 	if shipDock, ok := fleet.Harness(shipHarness); ok {
 		for k := range shipDock.Env {
-			if _, set := dock.Env[k]; !set && k != "PATH" && k != "ADMIRAL_CREW_DIR" && k != "ADMIRAL_MISSIONS_DIR" && k != "ADMIRAL_RUN_CREW" && !slices.Contains(clear, k) {
+			if _, set := dock.Env[k]; !set && k != "PATH" && k != "ADMIRAL_CREW_DIR" && k != "ADMIRAL_MISSIONS_DIR" && k != "ADMIRAL_RUN_CREW" && k != ScoutEnv && !slices.Contains(clear, k) {
 				clear = append(clear, k)
 			}
 		}

@@ -100,6 +100,9 @@ func crewTarget(ship string) (*crewShip, error) {
 	l := &launcher.Launcher{Tmux: tmux, Socket: sock, Home: dir,
 		AutopilotGate: func(fleet config.Fleet, harness string) error {
 			return autopilotgate.Check(dir, fleet, harness)
+		},
+		ScoutGate: func(fleet config.Fleet, harness string) error {
+			return autopilotgate.CheckScout(dir, fleet, harness)
 		}}
 	if l.Config, err = crewConfig(); err != nil {
 		return nil, err
@@ -163,7 +166,7 @@ func crewLaunch(args []string, std IO) error {
 		return err
 	}
 	c.l.Warn = func(msg string) { fmt.Fprintln(std.Err, "warning: "+msg) }
-	err = c.l.LaunchCrew(launcher.CrewRequest{Session: c.session, Name: *name, Harness: *harness, Dir: *dir, Prompt: strings.Join(prompt, " "), Args: extra, Role: *role, Member: *member, Autopilot: os.Getenv("ADMIRAL_AUTOPILOT") == "1"})
+	err = c.l.LaunchCrew(launcher.CrewRequest{Session: c.session, Name: *name, Harness: *harness, Dir: *dir, Prompt: strings.Join(prompt, " "), Args: extra, Role: *role, Member: *member, Autopilot: os.Getenv("ADMIRAL_AUTOPILOT") == "1", Scout: os.Getenv(launcher.ScoutEnv) != ""})
 	if errors.Is(err, launcher.ErrCrewNameTaken) {
 		return &ExitError{Code: crewExitTaken, Msg: err.Error()}
 	}

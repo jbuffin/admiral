@@ -25,6 +25,8 @@ func TestAScoutsEnvironmentNamesItsResolvedCheckoutAndRunsInAutopilot(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The checkout check lists only roots and git checkouts, so the link is the fleet's search root.
+	p.l.Config().Fleets[0].SearchRoots = []string{link}
 	if _, err := p.l.Launch(p.scoutRequest(link)); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
