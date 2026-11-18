@@ -66,7 +66,7 @@ func (s *Service) PostShipCard(fleet string, c ShipCard) error {
 	if err != nil {
 		return err
 	}
-	id := "ship-" + c.Ship + "-" + c.FirstLaunched + "-" + c.Result
+	id := c.id()
 	_, err = s.history().Append(fleet, chatlog.Entry{ID: id, Kind: chatlog.KindShipCard, Text: c.Ship, Card: card})
 	return err
 }
@@ -93,6 +93,10 @@ type voyage struct {
 	Skill         string
 	SkillKind     string
 	Scout         bool
+	Commitment    string
+	Routine       string
+	Round         int  // the highest round seen: a feedback round or a wake keeps the voyage
+	Reported      bool // its report turn is queued, or its first event passed without one
 	FirstLaunched string
 	PRs           []ShipCardPR
 	Done          map[string]bool
@@ -116,10 +120,11 @@ type shipCardState struct {
 
 // ShipCards works out which ship cards are due from the ship snapshot and the outcome log, and keeps what it has seen under home.
 type ShipCards struct {
-	mu   sync.Mutex
-	path string
-	post func(fleet string, c ShipCard) error
-	st   shipCardState
+	mu     sync.Mutex
+	path   string
+	post   func(fleet string, c ShipCard) error
+	report func(fleet string, c ShipCard) error
+	st     shipCardState
 }
 
 // NewShipCards reads its seen state from home, so a restart repeats nothing.
@@ -221,6 +226,7 @@ func (d *ShipCards) voyageOf(s ships.Ship, now time.Time) *voyage {
 		d.st.Voyages[key] = v
 	}
 	v.Name, v.Fleet, v.Via, v.SkillKind, v.Scout, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, s.Scout, now
+	v.Commitment, v.Routine, v.Round = s.Commitment, s.Routine, max(v.Round, s.Round)
 	if s.Titled { // before that a ship's title is its prompt's first line
 		v.Title = s.Title
 	}
@@ -322,13 +328,39 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 	if v.Done[result] {
 		return nil
 	}
+	reports := v.reportsOn(result)
+	if reports && silent {
+		v.Reported = true
+	}
 	if !silent {
+		card := ShipCard{Ship: v.Ship, Name: v.Name, Title: v.Title, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.cardKind(), Result: result, PRs: v.PRs}
+		if reports && d.report != nil {
+			if err := d.report(v.Fleet, card); err != nil {
+				return err
+			}
+			v.Reported = true
+		}
 		if err := d.post(v.Fleet, ShipCard{Ship: v.Ship, Name: v.Name, Title: v.Title, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.cardKind(), Result: result, PRs: v.PRs}); err != nil {
 			return err
 		}
 	}
 	v.Done[result] = true
 	return nil
+}
+
+// reportsOn says whether the result is a voyage's first reporting event. Only the ships AdmiralBot launched from the
+// chat report (scouts have their own report), and a sail-off after a moor is the end, which posts its card only.
+func (v *voyage) reportsOn(result string) bool {
+	if v.Reported || v.Via != "admiralbot" || v.Commitment != "" || v.Routine != "" || v.Scout || v.Round > 0 {
+		return false
+	}
+	switch result {
+	case ShipAnchored, ShipMoored:
+		return true
+	case ShipSailedOff:
+		return !v.Done[ShipMoored] && v.UnmooredAt.IsZero()
+	}
+	return false
 }
 
 // cardKind is the kind the card reads, decided here so every client agrees.
