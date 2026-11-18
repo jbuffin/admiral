@@ -70,7 +70,7 @@ export interface ChatEntry {
   role?: 'user' | 'assistant';
   text: string;
   at: string;
-  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard | LaunchLine;
+  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard | LaunchLine | CampaignDraftCard;
   /** The id of the ship card this entry belongs to: a report turn and its reply. */
   thread?: string;
 }
