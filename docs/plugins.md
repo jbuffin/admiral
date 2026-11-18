@@ -65,7 +65,7 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"capabilities":["add","edit","remove"],"settingsSchema":{"type":"object","properties":{"project":{"type":"string"}}}}}
 ```
 
-`settings` is the object from `config.json` (`{}` when there is none). Answer with `protocolVersion` 1. Any other number puts the source in `error`, and Admiral does not start it again until the engineer saves its settings or presses Restart. `capabilities` lists what the source can do, from `add`, `edit`, `remove` and `refresh`; leave out what you don't support and Admiral refuses those calls itself with a 409. `settingsSchema` is a JSON Schema for `settings`, which Admiral renders as a form.
+`settings` is the object from `config.json` (`{}` when there is none). Answer with `protocolVersion` 1. Any other number puts the source in `error`, and Admiral does not start it again until the engineer saves its settings or presses Restart. `capabilities` lists what the source can do, from `add`, `edit`, `remove`, `refresh` and `page`; leave out what you don't support and Admiral refuses those calls itself: with a 409 for `add`, `edit`, `remove` and `refresh`, and with a 404 for the page routes. `settingsSchema` is a JSON Schema for `settings`, which Admiral renders as a form. `page` declares a page (see [A module's page](#a-modules-page)); `messageKinds` is an optional list of the messages the module may later ask Admiral to send AdmiralBot.
 
 **Settings and secrets.** Mark a secret with `"format": "password"` (or `"writeOnly": true`). Admiral never sends a stored value back to the page unless the schema declares it as a plain string, number or integer (or an `enum` or `const` of scalars) reached through `properties` and `items`, in nodes that use only common keywords (`type`, `properties`, `items`, `required`, `title`, `description`, `format`, `enum`, `const`, `default`, `examples`, the length and range limits, `$defs`, `definitions`, `additionalProperties`, `readOnly`, `deprecated`). Everything else comes back as `__admiral_unchanged__`, and saving that text keeps the stored value. Admiral restores a masked value inside a list by its position, so removing a row above a masked value restores the wrong stored value into it.
 
@@ -175,6 +175,48 @@ One full line of each:
 ```
 
 **Signing in.** If your source needs the engineer to sign in, answer `initialize` and `panels.list` at once (an empty panel list is fine), then send `auth.required`. Never hold a request open while you wait for the engineer: it would hit the 10-second limit, count as a crash and put the source into a restart loop. Send `auth.ok` when sign-in is done, then `panels.changed` or `orders.changed` with the real data.
+
+## A module's page
+
+A plugin that lists `page` in its `initialize` capabilities is a **module**: it declares a page of groups and rows with a detail view for each row. It stays on protocol version 1, and a plugin without `page` is not asked for any of this. Admiral draws everything from the answers below; a plugin never sends HTML or a color.
+
+**`page.get`**: sent once the plugin is up, with no params. Answer the groups in order and the waiting count:
+
+```json
+{"jsonrpc":"2.0","id":5,"method":"page.get","params":{}}
+{"jsonrpc":"2.0","id":5,"result":{"groups":[{"id":"review","title":"Needs review","rows":[{"id":"T-1","title":"Fix login","subtitle":"Acme","chips":[{"label":"P1","tone":"warn"}],"reason":"Review is open","action":{"id":"pass","label":"Pass review","confirm":"form","summary":"Pass the review"}}]}],"waiting":1}}
+```
+
+A row is `{id, title, subtitle, chips, reason, action, actions}`. `id` is required and the other fields are optional. `reason` says why the row is in its group, and `action` is the row's one main action. `actions` is an optional list of further actions. A chip is `{label, tone}`, and `tone` is one of `neutral`, `good`, `warn` or `muted`; any other value reads as `neutral`. An action is `{id, label, confirm, summary, url}`. `confirm` is `click`, `yesno` or `form` (anything else reads as `yesno`), and `url` is optional. Admiral only carries actions as data for now. `waiting` is the count of rows waiting on the engineer.
+
+**`row.get`**: sent when the engineer opens a row of the last good page. The `id` and the `include` values come from a client through Admiral, which checks only their length and that the id is on the page, so treat both as untrusted (never build a file path from them without checking). `include` is optional and lists parts you leave out by default, such as closed or queued steps; it is left out of the params when the engineer asked for none.
+
+```json
+{"jsonrpc":"2.0","id":6,"method":"row.get","params":{"id":"T-1","include":["closed"]}}
+{"jsonrpc":"2.0","id":6,"result":{"sections":[{"kind":"links","title":"Links","links":[{"label":"Ticket","url":"https://example.com/t/1"}]},{"kind":"steps","title":"Steps","steps":[{"id":"s1","title":"Code review","chips":[{"label":"open","tone":"warn"}],"actions":[{"id":"pass","label":"Pass","confirm":"form"}]}]},{"kind":"fields","title":"Details","fields":[{"label":"Owner","value":"amy"}]}]}}
+```
+
+A detail view is a list of sections. A section has a `kind` and a `title`: `links` holds `links`, a list of `{label, url}`; `steps` holds `steps`, a list of `{id, title, chips, actions}`; `fields` holds `fields`, a list of `{label, value}`. A section of any other `kind` is dropped.
+
+**Message kinds.** `initialize` may also answer `messageKinds`, a list of `{kind, label, job}`, each one a string. Admiral keeps the ones that have all three, each cut to one line of at most 200 characters, and drops a bad declaration on its own.
+
+**Page limits.** Admiral keeps the last good page. A `page.get` or `row.get` that gets no answer within 10 seconds fails like any other call.
+
+An answer is dropped whole, and the last good page stays served, when:
+
+- there are more than **5,000 rows** or **100 groups**, or `groups` or `rows` is not a list;
+- a group or row has no `id`, or an `id` that is not a string, holds a control character or is over **200 characters**, or a group id or a row id (across the whole page) is used twice;
+- a row or step has more than **10 chips**, or more than **10 actions** (a row's main `action` counts as one);
+- a detail view is over **1 MiB**, or uses a step `id` twice;
+- the answer is not an object.
+
+A part that is bad is dropped by itself, and the rest of the answer stays:
+
+- a chip with no label, an action with no `id` or `label`, a link with no label, a field with no label, a step with no usable `id`, and a section of an unknown `kind`;
+- a link or an action whose `url` is not `http:` or `https:`;
+- a field whose `value` holds a control character other than a line break or tab.
+
+Two values are corrected: a negative or non-number `waiting` reads 0, and an unknown chip `tone` reads `neutral`. Titles, subtitles, reasons and labels are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
 
 ## Limits
 

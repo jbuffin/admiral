@@ -221,6 +221,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/connection/check", s.serveConnectionCheck)
 	mux.HandleFunc("POST /api/sources/{key}/search-count", s.serveSearchCount)
 	mux.HandleFunc("GET /api/sources/{key}/schema", s.serveSchema)
+	mux.HandleFunc("GET /api/sources/{key}/page", s.servePage)
+	mux.HandleFunc("GET /api/sources/{key}/rows/{id}", s.serveRow)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("GET /api/sources/{key}/repos", s.serveRepos)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
@@ -929,6 +931,42 @@ func (s *Service) serveSchema(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(append(slices.Clone(schema), '\n'))
+}
+
+func (s *Service) servePage(w http.ResponseWriter, r *http.Request) {
+	rn := s.Sup.runner(r.PathValue("key"))
+	if rn == nil {
+		writeError(w, http.StatusNotFound, "source "+r.PathValue("key")+" not found")
+		return
+	}
+	v, ok := rn.Page()
+	if !ok {
+		writeError(w, http.StatusNotFound, errNoPage.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Service) serveRow(w http.ResponseWriter, r *http.Request) {
+	rn := s.Sup.runner(r.PathValue("key"))
+	if rn == nil {
+		writeError(w, http.StatusNotFound, "source "+r.PathValue("key")+" not found")
+		return
+	}
+	include := r.URL.Query()["include"]
+	if len(include) > maxInclude || slices.ContainsFunc(include, func(v string) bool { return len([]rune(v)) > maxIDRunes }) {
+		writeError(w, http.StatusBadRequest, "include takes at most "+strconv.Itoa(maxInclude)+" values of "+strconv.Itoa(maxIDRunes)+" characters each")
+		return
+	}
+	d, err := rn.rowDetail(r.Context(), r.PathValue("id"), include)
+	switch {
+	case errors.Is(err, errNoPage), errors.Is(err, errNoRow):
+		writeError(w, http.StatusNotFound, err.Error())
+	case err != nil:
+		writeError(w, http.StatusBadGateway, cleanMsg(err.Error()))
+	default:
+		writeJSON(w, http.StatusOK, d)
+	}
 }
 
 func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runner, conn, bool) {
