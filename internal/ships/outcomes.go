@@ -250,7 +250,7 @@ func (s *Service) queueEnded(e ending) {
 		"needs_you_count": t.Count, "needs_you_s": seconds(t.Seconds), "report": report, "findings": kept,
 	}
 	if failed {
-		fields["result"] = "failed"
+		fields["result"] = outcomes.ResultFailed
 	}
 	s.record(outcomes.Record{Ship: name, Event: "ended", Fields: fields}, func(err error) {
 		if err != nil {

@@ -142,10 +142,11 @@ func parseShipRecords(data []byte) []chat.ShipRecord {
 				Returned bool            `json:"returned"`
 				Scout    bool            `json:"scout"`
 				Report   json.RawMessage `json:"report"`
+				Result   string          `json:"result"`
 			}
 			if json.Unmarshal(line, &raw) == nil && raw.Ship != "" {
 				out = append(out, chat.ShipRecord{At: raw.TS, Ship: raw.Ship, Event: raw.Event, Reason: raw.Reason,
-					Clean: raw.Event == "ended" && raw.Signal == nil && raw.ExitCode != nil && *raw.ExitCode == 0, Returned: raw.Returned, Scout: raw.Scout, ReportResult: moor.ParseReport(raw.Report).Result})
+					Clean: raw.Event == "ended" && raw.Signal == nil && raw.ExitCode != nil && *raw.ExitCode == 0, Returned: raw.Returned, Scout: raw.Scout, Result: raw.Result, ReportResult: moor.ParseReport(raw.Report).Result})
 			}
 		}
 		if err != nil {

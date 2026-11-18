@@ -34,6 +34,7 @@ type Voyage struct {
 type Reader interface {
 	Voyage(ship, firstLaunched string) (Voyage, bool)
 	Latest(ship string) (Voyage, bool)
+	Has(ship, firstLaunched string) bool
 }
 
 // Store keeps findings under <home>/findings/<ship>/<first launch>.json. Names are hex-encoded, so no ship name or
@@ -215,4 +216,20 @@ func (s *Store) Latest(ship string) (Voyage, bool) {
 		}
 	}
 	return best, found
+}
+
+// Has says whether the voyage has kept findings. It is a stat, so the card can ask for every ship on every chat tick.
+func (s *Store) Has(ship, firstLaunched string) bool {
+	dir, ok1 := encode(ship)
+	name, ok2 := encode(firstLaunched)
+	if !ok1 || !ok2 {
+		return false
+	}
+	root, err := s.root(false)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	fi, err := root.Stat(path.Join(dir, name+".json"))
+	return err == nil && fi.Mode().IsRegular()
 }

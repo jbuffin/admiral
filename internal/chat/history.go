@@ -57,7 +57,32 @@ func (s *fleetChat) recent() []Message {
 		if at.IsZero() {
 			at = e.Logged
 		}
-		out = append(out, Message{ID: e.ID, Kind: e.Kind, Role: e.Role, Text: e.Text, At: at.UTC().Format(time.RFC3339Nano), Card: e.Card, Thread: e.Thread})
+		card := e.Card
+		if e.Kind == chatlog.KindShipCard {
+			card = s.withFindings(card)
+		}
+		out = append(out, Message{ID: e.ID, Kind: e.Kind, Role: e.Role, Text: e.Text, At: at.UTC().Format(time.RFC3339Nano), Card: card, Thread: e.Thread})
+	}
+	return out
+}
+
+// withFindings marks a ship card whose voyage has kept findings; the log keeps the card as posted, since findings can arrive after it.
+func (s *fleetChat) withFindings(card json.RawMessage) json.RawMessage {
+	if s.Findings == nil {
+		return card
+	}
+	var c map[string]json.RawMessage
+	if json.Unmarshal(card, &c) != nil {
+		return card
+	}
+	var ship, first string
+	if json.Unmarshal(c["ship"], &ship) != nil || json.Unmarshal(c["first_launched"], &first) != nil || !s.Findings.Has(ship, first) {
+		return card
+	}
+	c["findings"] = json.RawMessage("true")
+	out, err := json.Marshal(c)
+	if err != nil {
+		return card
 	}
 	return out
 }

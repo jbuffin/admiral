@@ -5,6 +5,9 @@ import (
 	"bytes"
 )
 
+// ResultFailed is the `result` an `ended` record carries for a scout that left no findings.
+const ResultFailed = "failed"
+
 // MaxLine leaves room for any `ended`: a 1 MiB report can grow sixfold when the
 // writer escapes <, > and &.
 const MaxLine = 7 << 20

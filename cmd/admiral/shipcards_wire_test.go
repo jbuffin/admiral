@@ -81,3 +81,23 @@ func TestAMooredShipsReportTurnCarriesTheResultFromItsEndedRecord(t *testing.T) 
 		t.Errorf("report turns = %v, want [moored:done]", got)
 	}
 }
+
+func TestTheShipCardRunnerReadsAnEndedRecordsResult(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)
+	w := outcomes.New(filepath.Join(dir, "outcomes"), func(string, ...any) {})
+	w.Now = func() time.Time { return at }
+	w.Enqueue(outcomes.Record{Ship: "scouted", Event: "ended", Fields: map[string]any{"signal": "KILL", "result": "failed"}}, nil)
+	w.Enqueue(outcomes.Record{Ship: "plain", Event: "ended", Fields: map[string]any{"signal": "KILL"}}, nil)
+	w.Close()
+
+	r := newShipCardRunner(dir, func(string, chat.ShipCard) error { return nil }, nil, nil)
+	got := r.records(at.Add(time.Minute))
+	want := []chat.ShipRecord{
+		{At: at, Ship: "scouted", Event: "ended", Result: "failed"},
+		{At: at, Ship: "plain", Event: "ended"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("records = %+v, want %+v", got, want)
+	}
+}

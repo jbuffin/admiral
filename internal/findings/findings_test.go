@@ -252,3 +252,59 @@ func TestAReadNeverCreatesTheStoreDirectory(t *testing.T) {
 		t.Errorf("a read left %s/findings (%v)", r.home, err)
 	}
 }
+
+func TestHasIsTrueOnlyForAVoyageThatKeptFindings(t *testing.T) {
+	r := newRig(t)
+	if r.store.Has("dory", first1) {
+		t.Error("Has is true before anything was kept")
+	}
+	r.mustKeep("dory", first1, "work", "kept\n")
+	if !r.store.Has("dory", first1) {
+		t.Error("Has is false for a voyage that kept findings")
+	}
+	if r.store.Has("dory", first2) {
+		t.Error("Has is true for another first launch of the same name")
+	}
+	if r.store.Has("kestrel", first1) {
+		t.Error("Has is true for another ship")
+	}
+}
+
+func TestHasSeesFindingsKeptAfterItAnsweredNoAndAfterARestart(t *testing.T) {
+	r := newRig(t)
+	if r.store.Has("dory", first1) {
+		t.Fatal("Has is true before anything was kept")
+	}
+	r.mustKeep("dory", first1, "work", "kept\n")
+	if !r.store.Has("dory", first1) {
+		t.Error("Has stayed false after the voyage kept findings")
+	}
+	if !Open(r.home).Has("dory", first1) {
+		t.Error("a new store on the same home does not see the kept findings")
+	}
+}
+
+func TestHasRefusesNamesTheStoreWouldNotKeep(t *testing.T) {
+	r := newRig(t)
+	r.mustKeep("dory", first1, "work", "kept\n")
+	if !r.store.Has("dory", first1) {
+		t.Fatal("Has is false for a voyage that kept findings")
+	}
+	for _, c := range [][2]string{{"", first1}, {"dory", ""}, {"../dory", first1}, {strings.Repeat("a", 101), first1}} {
+		if r.store.Has(c[0], c[1]) {
+			t.Errorf("Has(%q, %q) = true, want false", c[0], c[1])
+		}
+	}
+}
+
+func TestAHasNeverCreatesTheStoreDirectory(t *testing.T) {
+	r := newRig(t)
+	r.store.Has("dory", first1)
+	if _, err := os.Stat(filepath.Join(r.home, "findings")); !os.IsNotExist(err) {
+		t.Fatalf("a Has left %s/findings (%v)", r.home, err)
+	}
+	r.mustKeep("dory", first1, "work", "kept\n")
+	if !r.store.Has("dory", first1) {
+		t.Error("Has is false for a voyage that kept findings")
+	}
+}

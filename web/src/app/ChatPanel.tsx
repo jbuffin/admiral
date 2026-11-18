@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Actions, Button } from './Button';
+import { FindingsSheet } from './FindingsSheet';
 import { Icon } from './Icon';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
 import { probeChatSession, type Fleet, type Result } from './api';
@@ -97,6 +98,7 @@ function CampaignDraftCardView({ item }: { item: Extract<ThreadItem, { kind: 'ca
 
 function ShipCardView({ item }: { item: Extract<ThreadItem, { kind: 'ship' }> }) {
   const v = shipCardView(item, ships.value);
+  const [showFindings, setShowFindings] = useState(false);
   return (
     <div class="convo-card chat-card">
       <p class="chat-card-eyebrow">{v.eyebrow}</p>
@@ -118,6 +120,8 @@ function ShipCardView({ item }: { item: Extract<ThreadItem, { kind: 'ship' }> })
       )}
       {v.title ? <p class="line">{v.title}</p> : null}
       {v.prs.map((p) => (p.href ? <Button key={p.url} label={p.label} href={p.href} external /> : <p key={p.url} class="line">{p.url}</p>))}
+      {v.findings ? <Button label="Findings" onClick={() => setShowFindings(true)} /> : null}
+      {showFindings ? <FindingsSheet ship={item.card.ship} firstLaunched={item.card.first_launched} onClose={() => setShowFindings(false)} /> : null}
     </div>
   );
 }
