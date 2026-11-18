@@ -21,13 +21,13 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
-	"github.com/jbuffin/admiral/internal/transcriptfs"
 )
 
 const (
 	maxHandText = 4 << 10
 	handRefFile = "ref"
 	maxRefRead  = 4 << 10
+	noRefFile   = "the ship wrote no ref file"
 )
 
 // handRequest is what the engineer asked for.
@@ -206,18 +206,7 @@ func checkHandText(text string) string {
 // conversationOf is the id of the Claude conversation the ship's start command gave it; the pane's transcript option
 // alone is not trusted, since the pane can write it.
 func (s *Service) conversationOf(sess sessionhost.Session) (string, bool) {
-	if sess.PaneID == "" {
-		return "", false
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	host := sessionhost.NewServer(s.Launcher.Tmux, s.Launcher.Socket)
-	raw, rerr := host.ReadPaneOption(ctx, sess.PaneID, "transcript")
-	cmd, cerr := host.ReadPaneStartCommand(ctx, sess.PaneID)
-	if rerr != nil || cerr != nil {
-		return "", false
-	}
-	_, id, ok := transcriptfs.BindFor("claude", raw, cmd)
+	_, _, id, ok := s.conversationBinding(sess)
 	return id, ok
 }
 
@@ -400,6 +389,7 @@ func (s *Service) finishHand(sess sessionhost.Session, e *handEntry) {
 		s.recordHandFailure(name, e.id, "the relaunch failed: "+lerr.Msg)
 		return
 	}
+	s.dropDrafting(got.Session, req.FirstLaunched)
 	s.releaseWhenListed(got.Session, release)
 	s.record(outcomes.Record{Ship: got.Session, Event: "handed", Fields: map[string]any{"ref": ref, "conversation": e.id}}, nil)
 	s.broadcast()
@@ -428,18 +418,13 @@ func (s *Service) waitGone(name string) bool {
 	return false
 }
 
-// readRef reads and removes the ref file and says why it cannot be used, or "" with the ref.
-func (s *Service) readRef(name string, e *handEntry) (ref, why string) {
-	dir, ok := s.handDir(name)
-	if !ok {
-		return "", "the ship has no ref directory"
-	}
-	file := filepath.Join(dir, handRefFile)
+// readRefLine reads and removes a one-line ref file a ship wrote, and says why it cannot be used, or "" with the line.
+func readRefLine(file string) (line, why string) {
 	defer os.Remove(file)
 	// O_NOFOLLOW and Fstat on the open file, so a link swapped in after a check is not followed; O_NONBLOCK so a pipe cannot hang the read.
 	f, err := os.OpenFile(file, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", "the ship wrote no ref file"
+		return "", noRefFile
 	}
 	if err != nil {
 		return "", "the ref file is not a regular file"
@@ -452,12 +437,25 @@ func (s *Service) readRef(name string, e *handEntry) (ref, why string) {
 	if err != nil || len(raw) > maxRefRead {
 		return "", "the ref file cannot be read or is too long"
 	}
-	line := strings.TrimSpace(string(raw))
+	line = strings.TrimSpace(string(raw))
 	switch {
 	case line == "":
 		return "", "the ref file is empty"
 	case strings.ContainsAny(line, "\r\n"):
 		return "", "the ref file holds more than one line"
+	}
+	return line, ""
+}
+
+// readRef reads and removes the ref file and says why it cannot be used, or "" with the ref.
+func (s *Service) readRef(name string, e *handEntry) (ref, why string) {
+	dir, ok := s.handDir(name)
+	if !ok {
+		return "", "the ship has no ref directory"
+	}
+	line, why := readRefLine(filepath.Join(dir, handRefFile))
+	if why != "" {
+		return "", why
 	}
 	if m := issueRef.FindStringSubmatch(line); m != nil {
 		if e.slug == "" || !strings.EqualFold(m[1], e.slug) {

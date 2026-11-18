@@ -145,10 +145,12 @@ func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 		s.serveMoor(w, r, sess)
 		return
 	}
+	drafted := s.captureDraftEnd(sess)
 	if err := s.stopShip(session, withVia(nil, viaOf(r))); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.endDrafted(drafted)
 	writeJSON(w, http.StatusOK, map[string]any{"stopped": session})
 }
 

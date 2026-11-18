@@ -56,6 +56,9 @@ func (it Item) MarshalJSON() ([]byte, error) {
 		out[k] = v
 	}
 	out["session"], _ = json.Marshal(it.Session)
+	if d, ok := it.DraftingEnded(); ok && it.Kind == KindDraftingEnded {
+		out[KindDraftingEnded], _ = json.Marshal(d.withoutBinding())
+	}
 	delete(out, "name")
 	delete(out, "harness")
 	delete(out, "ship_title")
@@ -163,6 +166,10 @@ func parseItem(b []byte, session, id string) (Item, error) {
 		if _, ok := it.CampaignDraft(); session != AdmiralSession || !ok {
 			return Item{}, errSkip
 		}
+	case KindDraftingEnded: // only Admiral's own inbox holds these
+		if _, ok := it.DraftingEnded(); session != AdmiralSession || !ok {
+			return Item{}, errSkip
+		}
 	case KindCrewNotes, KindCrewMember: // only Admiral's own inbox holds crew items
 		if _, ok := it.CrewObject(); session != AdmiralSession || !ok {
 			return Item{}, errSkip
@@ -174,7 +181,7 @@ func parseItem(b []byte, session, id string) (Item, error) {
 	default:
 		return Item{}, errSkip
 	}
-	for _, k := range []string{KindQuestion, KindReview, KindFindings, KindNotice, KindWakeProposal, KindRoutineProposal, KindEventProposal, KindCampaignDraft, KindCrewNotes, KindCrewMember, KindMission} { // only the kind's own object
+	for _, k := range []string{KindQuestion, KindReview, KindFindings, KindNotice, KindWakeProposal, KindRoutineProposal, KindEventProposal, KindCampaignDraft, KindDraftingEnded, KindCrewNotes, KindCrewMember, KindMission} { // only the kind's own object
 		if k != it.Kind {
 			delete(fields, k)
 		}

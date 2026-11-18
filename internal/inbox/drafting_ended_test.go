@@ -52,14 +52,18 @@ func TestAnEndedDraftingItemServesItsShipsConversationUntilTheItemIsGone(t *test
 }
 
 func TestAnEndedDraftingItemIsListedWithItsShipAndFleet(t *testing.T) {
-	_, home, mux := actorInbox(t)
+	s, home, mux := actorInbox(t)
 	if _, err := inbox.WriteDraftingEnded(home, draftingEnded()); err != nil {
 		t.Fatalf("WriteDraftingEnded = %v", err)
 	}
+	s.Refresh()
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(body, "ended without filing a campaign") || !strings.Contains(body, "Bramble") {
 		t.Errorf("inbox = %d %s, want the item titled for Bramble", rec.Code, body)
+	}
+	if strings.Contains(body, "start_cmd") || strings.Contains(body, "/cfg/projects") {
+		t.Errorf("inbox = %s, want the conversation binding kept from clients", body)
 	}
 }

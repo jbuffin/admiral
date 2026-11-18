@@ -394,11 +394,14 @@ func TestTheShipsListCarriesTheDraftingFieldsOverHTTP(t *testing.T) {
 	r := newDraftRig(t)
 	rec := httptest.NewRecorder()
 	r.mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/ships", nil))
-	var list []map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list) == 0 {
+	var body struct {
+		Ships []map[string]any `json:"ships"`
+	}
+	list := &body.Ships
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || len(*list) == 0 {
 		t.Fatalf("GET /api/ships = %d %s (%v)", rec.Code, rec.Body, err)
 	}
-	for _, sh := range list {
+	for _, sh := range *list {
 		if sh["session"] == "saltpaw" && sh["drafting"] != true {
 			t.Errorf("saltpaw over HTTP: drafting = %v, want true", sh["drafting"])
 		}

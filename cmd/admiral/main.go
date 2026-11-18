@@ -466,6 +466,7 @@ func serve(args []string) error {
 		Claims: shipService.Claims, Launch: shipService.Launch}
 	defer campaignService.Close()
 	shipService.Orders = campaignService
+	shipService.FollowDrafted = campaignService.FollowDrafted
 	// An unreadable key file is logged and leaves push off, never replaced: devices subscribe against the key.
 	vapidKey, err := push.LoadKey(dir)
 	if err != nil {
@@ -535,6 +536,9 @@ func serve(args []string) error {
 		fmt.Fprintf(os.Stderr, "admiral: chat: %v\n", err)
 	}
 	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Asking: shipService.Asking}
+	inboxService.DraftingConversation = func(d inbox.DraftingEnded, query string) (int, []byte) {
+		return convService.RecordedConversation(d.Harness, d.Transcript, d.StartCmd, d.ConfigDir, query)
+	}
 	// Live figures live in memory only; a restart starts empty.
 	liveUsage := usage.NewStore(time.Now)
 	shipService.LastLive, chatService.LastLive = liveUsage.LastLive, liveUsage.LastLive

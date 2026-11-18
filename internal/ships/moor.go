@@ -40,11 +40,17 @@ func (s *Service) settle(ctx context.Context, sess sessionhost.Session) {
 			delete(s.settling, sess.Name)
 			s.mu.Unlock()
 		}()
+		// A ref written just before the end counts, and a ship that moors keeps drafting, so only a ship that sails off is reported.
+		drafted := s.captureDraftEnd(sess)
+		stillDrafting := drafted != nil && s.followEndRef(drafted)
 		prs := s.countedPRs(ctx, sess)
 		if ctx.Err() != nil { // Admiral is stopping: the next start checks again
 			return
 		}
 		if len(prs) == 0 || !s.moor(ctx, sess, prs) {
+			if stillDrafting {
+				s.postDraftEnded(drafted)
+			}
 			s.endMooring(sess)
 		}
 		if err := s.killShip(ctx, sess.Name, true); err == nil {
@@ -247,6 +253,7 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, Link: r.Link, Titled: true, Via: r.Via, Chat: r.Chat, Routine: r.Routine, Commitment: r.Commitment, Round: r.Round, Launched: r.Launched, FirstLaunched: cmpFirst(r.FirstLaunched, r.Launched), PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, Waiting: polls[i].waiting, NoResume: !moor.ValidResume(r.Resume),
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}}
 		sh.Fix = polls[i].fix
+		s.showDrafting(&sh)
 		sh.StackReady, sh.ReadyUpTo = moor.StackReady(prs[i])
 		sh.MergeMethod = methods[i]
 		if !polls[i].at.IsZero() {
