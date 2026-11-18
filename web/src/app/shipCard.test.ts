@@ -46,6 +46,8 @@ describe('the ship card view', () => {
   it('names the ship and its kind in the eyebrow: the skill, or No skill', () => {
     expect(shipCardView(item(), []).eyebrow).toBe('Calm Otter · tdd');
     expect(shipCardView(item({ skill: '', skill_kind: 'none' }), []).kind).toBe('No skill');
+    expect(shipCardView(item({ skill: 'jasonbuffin:commodore', skill_kind: 'commodore' }), []).eyebrow).toBe('Calm Otter · Commodore');
+    expect(shipCardView(item({ skill: '', skill_kind: 'commodore' }), []).kind).toBe('Commodore');
     expect(shipCardView(item({ skill: '', skill_kind: 'none' }), []).eyebrow).not.toContain('Quick');
   });
 

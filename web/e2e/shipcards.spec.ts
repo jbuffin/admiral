@@ -46,6 +46,8 @@ test("a moored ship and then a sailed-off one each post one card in their own fl
   // Another fleet's chat shows neither card.
   await page.goto(admiral.url + 'app/chat?fleet=lagoon');
   await expect(page.getByRole('heading', { name: 'AdmiralBot · Lagoonside fleet' })).toBeVisible();
+  // The thread shows Loading… until lagoon's snapshot arrives, so the counts below read a loaded thread.
+  await expect(main.getByText('Loading…')).toHaveCount(0);
   await expect(main.getByText('Moored', { exact: true })).toHaveCount(0);
   await expect(main.getByText('Sailed off', { exact: true })).toHaveCount(0);
 

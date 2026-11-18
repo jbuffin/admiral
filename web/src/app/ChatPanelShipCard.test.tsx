@@ -88,14 +88,18 @@ test('a modifier-click on the ship link leaves the browser to open it', async ()
   expect(nav.go).not.toHaveBeenCalled();
 });
 
-test('the ship is plain text, with no link, once it has gone or its name was reused by a later voyage', async () => {
+test('the ship link goes once the ship leaves the list, and a later voyage that reused the name gets none', async () => {
   chatWith({});
+  ships.value = [live()];
+  await shown();
+  expect(screen.getByRole('link', { name: 'Open ship Calm Otter' })).not.toBeNull();
   ships.value = [live({ first_launched: '2026-02-03T04:05:06Z' })];
-  const el = await shown();
-  expect(el.textContent).toContain('Calm Otter');
-  expect(screen.queryByRole('link', { name: /^Open ship/ })).toBeNull();
+  await waitFor(() => expect(screen.queryByRole('link', { name: /^Open ship/ })).toBeNull());
+  ships.value = [live()];
+  await waitFor(() => expect(screen.queryByRole('link', { name: 'Open ship Calm Otter' })).not.toBeNull());
   ships.value = [];
-  expect(screen.queryByRole('link', { name: /^Open ship/ })).toBeNull();
+  await waitFor(() => expect(screen.queryByRole('link', { name: /^Open ship/ })).toBeNull());
+  expect(document.querySelector('.chat-card')?.textContent).toContain('Calm Otter');
 });
 
 test('a card without a name shows the session slug', async () => {

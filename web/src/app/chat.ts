@@ -155,7 +155,7 @@ const httpsHref = (url: string): string => {
 export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships: Ship[]): { eyebrow: string; name: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string } {
   const c = item.card;
   const name = c.name || c.ship;
-  const kind = c.skill_kind === 'none' ? 'No skill' : c.skill || 'No skill';
+  const kind = c.skill_kind === 'commodore' ? 'Commodore' : c.skill_kind === 'none' ? 'No skill' : c.skill || 'No skill';
   const afloat = ships.some((s) => s.session === c.ship && s.first_launched === c.first_launched);
   return {
     eyebrow: `${name} · ${kind}`,
