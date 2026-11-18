@@ -9,7 +9,7 @@ import { shipLinkSet, shipsOfLinkSet } from './shipLinkSet';
 import { fetchLaunchState, launchCardView, promoteLaunch, stopShip, undoLaunch } from './launchCard';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
-import { commitmentCardView, needsTerminal, questionEyebrow, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
+import { commitmentCardView, needsTerminal, shipCardView, questionEyebrow, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
 import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
 import { MuteRule } from './MuteRule';
 import { ReviewerNoteView } from './ReviewerNoteView';
@@ -76,6 +76,32 @@ function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'co
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+function ShipCardView({ item }: { item: Extract<ThreadItem, { kind: 'ship' }> }) {
+  const v = shipCardView(item, ships.value);
+  return (
+    <div class="convo-card chat-card">
+      <p class="chat-card-eyebrow">{v.eyebrow}</p>
+      <p class="line">{v.result}</p>
+      {v.shipHref ? (
+        <Button
+          label={`Open ship ${v.name}`}
+          href={v.shipHref + fleetSearch.value}
+          onClick={(e) => {
+            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            go(v.shipHref, fleetSearch.value);
+          }}
+        >
+          {v.name}
+        </Button>
+      ) : (
+        <p class="line">{v.name}</p>
+      )}
+      {v.prs.map((p) => (p.href ? <Button key={p.url} label={p.label} href={p.href} external /> : <p key={p.url} class="line">{p.url}</p>))}
     </div>
   );
 }
@@ -229,6 +255,8 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           <LaunchCardView key={i.id} item={i} fleet={fleet} />
         ) : i.kind === 'commitment' ? (
           <CommitmentCard key={i.id} item={i} fleet={fleet} />
+        ) : i.kind === 'ship' ? (
+          <ShipCardView key={i.id} item={i} />
         ) : i.role === 'user' ? (
           <div key={i.id} class="msg user">
             {i.text}
