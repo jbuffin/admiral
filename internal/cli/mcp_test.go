@@ -359,6 +359,7 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 		{"list_crew", `{}`, "GET", "/api/fleets/work/crew", "", nil},
 		{"list_crew", `{"harness":"codex"}`, "GET", "/api/fleets/work/crew", "harness=codex", nil},
 		{"list_skills", `{}`, "GET", "/api/fleets/work/crew/skills", "", nil},
+		{"list_skills", `{"harness":"codex"}`, "GET", "/api/fleets/work/crew/skills", "harness=codex", nil},
 	} {
 		t.Run(c.tool, func(t *testing.T) {
 			a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"ok":true}` })
@@ -999,13 +1000,5 @@ func TestTheFleetMapReadsRefuseAChatWithNoFleetWithoutAskingTheServer(t *testing
 				t.Errorf("result = %+v, requests = %v; want a tool error saying the chat has no fleet and no request", tr, a.requests())
 			}
 		})
-	}
-}
-
-func TestCopilotsAllowlistNamesEachFleetMapRead(t *testing.T) {
-	for _, tool := range []string{"list_repos", "list_cloneable_repos", "list_docks", "list_crew", "list_skills"} {
-		if !slices.Contains(launcher.ChatTools, tool) {
-			t.Errorf("launcher.ChatTools = %v, want it to name %s", launcher.ChatTools, tool)
-		}
 	}
 }

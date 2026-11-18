@@ -236,6 +236,8 @@ func TestEachReadOfAnUnknownFleetIs404(t *testing.T) {
 	for _, read := range []string{"repos", "cloneable", "docks"} {
 		if code, body := r.get(t, "/api/fleets/ghost/"+read); code != http.StatusNotFound {
 			t.Errorf("GET ghost %s = %d %s, want 404", read, code, body)
+		} else if !strings.Contains(body, "fleet ghost not found") {
+			t.Errorf("GET ghost %s body = %q, want a JSON error naming the fleet, not the mux's default 404", read, body)
 		}
 	}
 }

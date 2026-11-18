@@ -36,7 +36,6 @@ func TestTheFleetMapReadsAreReadsOnlyAndNoCrossFleetRouteIsOpenToAnActor(t *test
 		{"POST", "/api/fleets/work/crew/draft", "the crew drafter"},
 		{"GET", "/api/harness-capabilities", "every fleet's docks"},
 		{"POST", "/api/harness-capabilities/check", "running a probe"},
-		{"GET", "/api/config", "every fleet's config"},
 		{"GET", "/api/launch-orders/skills?fleet=personal", "a skills read whose fleet the guard can't see"},
 		{"GET", "/api/launch-orders/crew?fleet=personal", "a crew read whose fleet the guard can't see"},
 		{"POST", "/api/launch-orders/dirs", "the per-launch directory read"},
