@@ -247,6 +247,7 @@ An answer is dropped whole, and the last good page stays served, when:
 - there are more than **20 notices**, or a notice has no `id`, an `id` that is not a valid id (the rule above), or an `id` used twice among the notices;
 - a row or step has more than **10 chips**, or more than **10 actions** (a row's main `action` counts as one);
 - a detail view is over **1 MiB**, or uses a step `id` twice;
+- `notices` is not a list, or `loading` is not a boolean;
 - the answer is not an object.
 
 A part that is bad is dropped by itself, and the rest of the answer stays:
@@ -256,7 +257,7 @@ A part that is bad is dropped by itself, and the rest of the answer stays:
 - a link or an action whose `url` is not `http:` or `https:`, and a notice's link with no label or such a url, which drops the link and keeps the notice;
 - a field whose `value` holds a control character other than a line break or tab.
 
-Two values are corrected: a negative or non-number `waiting` reads 0, an unknown chip `tone` reads `neutral`, and an unknown notice `tone` reads `info`. A notice's text is cut to one line of at most 300 characters, without invisible or bidirectional-control characters. An `action` on a notice is ignored. Titles, subtitles, reasons and labels are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
+Three values are corrected: a negative or non-number `waiting` reads 0, an unknown chip `tone` reads `neutral`, and an unknown notice `tone` reads `info`. A notice's text is cut to one line of at most 300 characters, without invisible or bidirectional-control characters. An `action` on a notice is ignored. Titles, subtitles, reasons and labels are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
 
 ## Writing a module
 

@@ -50,7 +50,6 @@ func manyNotices(n int) string {
 	return "[" + strings.Join(items, ",") + "]"
 }
 
-// AC1-no-fields
 func TestAPageWithoutNoticesOrLoadingServesNoticesAsAnEmptyList(t *testing.T) {
 	p, err := parsePage(json.RawMessage(pageOf(alphaPage, 3)))
 	if err != nil {
@@ -77,7 +76,6 @@ func TestAPageWithoutNoticesOrLoadingServesNoticesAsAnEmptyList(t *testing.T) {
 	}
 }
 
-// AC2-notice-shape
 func TestNoticesAreServedInOrderWithTheirIDTextToneAndLink(t *testing.T) {
 	ns := parsedNotices(t, noticesPage(`[
 		{"id":"update","text":"An update is waiting","tone":"warn","link":{"label":"Release notes","url":"https://example.com/notes"}},
@@ -100,7 +98,6 @@ func TestNoticesAreServedInOrderWithTheirIDTextToneAndLink(t *testing.T) {
 	}
 }
 
-// AC2-notice-shape
 func TestANoticeToneOutsideTheFixedSetServesAsInfo(t *testing.T) {
 	ns := parsedNotices(t, noticesPage(`[
 		{"id":"a","text":"A","tone":"warning"},{"id":"b","text":"B","tone":"red"},{"id":"c","text":"C"},
@@ -115,7 +112,6 @@ func TestANoticeToneOutsideTheFixedSetServesAsInfo(t *testing.T) {
 	}
 }
 
-// AC2-notice-shape
 func TestANoticeTextIsOneLineWithoutInvisibleCharactersAndAtMost300Characters(t *testing.T) {
 	ns := parsedNotices(t, noticesPage(`[
 		{"id":"lines","text":"First line\nSecond line"},
@@ -139,25 +135,25 @@ func TestANoticeTextIsOneLineWithoutInvisibleCharactersAndAtMost300Characters(t 
 	}
 }
 
-// AC2-notice-shape
 func TestANoticeWhoseTextIsEmptyAfterCleaningIsDroppedAndTheRestOfTheAnswerStays(t *testing.T) {
 	raw := `{"groups":` + alphaPage + `,"waiting":2,"notices":[
 		{"id":"missing"},{"id":"blank","text":"   "},{"id":"invisible","text":"​‮"},{"id":"number","text":7},
-		{"id":"kept","text":"Kept"}]}`
+		{"id":"kept","text":"Kept"},{"id":"newline","text":"\nlater line"}]}`
 	p, err := parsePage(json.RawMessage(raw))
 	if err != nil {
 		t.Fatalf("parsePage: %v, want the answer to stand", err)
 	}
 	got := jsonOf(t, p)
-	if ids := noticeIDs(noticeList(t, got)); ids != "kept" {
-		t.Errorf("notices kept = %q, want only kept", ids)
+	if ids := noticeIDs(noticeList(t, got)); ids != "kept,newline" {
+		t.Errorf("notices kept = %q, want kept and newline", ids)
+	}	if ns := noticeList(t, got); len(ns) == 2 && ns[1]["text"] != "later line" {
+		t.Errorf("text = %q, want the first non-empty line", ns[1]["text"])
 	}
 	if len(list(t, got, "groups")) != 1 || got["waiting"] != float64(2) {
 		t.Errorf("page = %s, want the groups and waiting kept", dump(got))
 	}
 }
 
-// AC2-notice-shape
 func TestANoticeActionIsIgnored(t *testing.T) {
 	ns := parsedNotices(t, noticesPage(`[{"id":"a","text":"A","action":{"id":"go","label":"Go","confirm":"click"}}]`))
 	if len(ns) != 1 {
@@ -168,7 +164,6 @@ func TestANoticeActionIsIgnored(t *testing.T) {
 	}
 }
 
-// AC3-bad-link
 func TestABadNoticeLinkDropsOnlyTheLink(t *testing.T) {
 	for name, link := range map[string]string{
 		"a javascript url":   `{"label":"L","url":"javascript:alert(1)"}`,
@@ -195,7 +190,6 @@ func TestABadNoticeLinkDropsOnlyTheLink(t *testing.T) {
 	}
 }
 
-// AC4-refusals
 func TestAnAnswerWithAnUnusableNoticeIsRefusedWhole(t *testing.T) {
 	for name, notices := range map[string]string{
 		"21 notices":         manyNotices(21),
@@ -212,7 +206,6 @@ func TestAnAnswerWithAnUnusableNoticeIsRefusedWhole(t *testing.T) {
 	}
 }
 
-// AC4-refusals
 func TestTwentyNoticesAndAnIDAtTheCapAreKept(t *testing.T) {
 	if ns := parsedNotices(t, noticesPage(manyNotices(20))); len(ns) != 20 {
 		t.Errorf("20 notices: %d kept, want all 20", len(ns))
@@ -227,7 +220,6 @@ func TestTwentyNoticesAndAnIDAtTheCapAreKept(t *testing.T) {
 	}
 }
 
-// AC4-refusals
 func TestARefusedNoticesAnswerKeepsTheLastGoodGroupsAndNotices(t *testing.T) {
 	good := noticesPage(`[{"id":"keep","text":"Kept notice","tone":"warn"}]`)
 	for name, bad := range map[string]string{
@@ -250,7 +242,6 @@ func TestARefusedNoticesAnswerKeepsTheLastGoodGroupsAndNotices(t *testing.T) {
 	}
 }
 
-// AC5-loading-first
 func TestLoadingBeforeAnyGoodPageStaysStartingAndServesTheNoticesWithoutGroupsOrWaiting(t *testing.T) {
 	c := &pageConn{page: json.RawMessage(`{"loading":true,"groups":` + alphaPage + `,"waiting":4,"notices":[
 		{"id":"pick","text":"Pick your project","tone":"warn","link":{"label":"Settings","url":"https://example.com/s"}}]}`)}
@@ -274,7 +265,6 @@ func TestLoadingBeforeAnyGoodPageStaysStartingAndServesTheNoticesWithoutGroupsOr
 	}
 }
 
-// AC5-loading-first
 func TestALaterAnswerWithoutLoadingDrawsTheGroupsAndItsOwnNotices(t *testing.T) {
 	c := &pageConn{page: json.RawMessage(`{"loading":true,"groups":[],"notices":[{"id":"pick","text":"Pick your project"}]}`)}
 	r := livePageRunner(t, c)
@@ -294,7 +284,6 @@ func TestALaterAnswerWithoutLoadingDrawsTheGroupsAndItsOwnNotices(t *testing.T) 
 	}
 }
 
-// AC5-loading-first
 func TestNoticesFromALoadingAnswerStayThroughAuthRequiredAndError(t *testing.T) {
 	loading := `{"loading":true,"notices":[{"id":"pick","text":"Pick your project"}]}`
 	c := &pageConn{page: json.RawMessage(loading)}
@@ -314,7 +303,6 @@ func TestNoticesFromALoadingAnswerStayThroughAuthRequiredAndError(t *testing.T) 
 	}
 }
 
-// AC6-loading-later
 func TestALoadingAnswerAfterAGoodPageChangesNothing(t *testing.T) {
 	c := &pageConn{page: json.RawMessage(`{"groups":` + alphaPage + `,"waiting":3,"notices":[{"id":"keep","text":"Kept notice"}]}`)}
 	r := livePageRunner(t, c)
@@ -343,7 +331,6 @@ func TestALoadingAnswerAfterAGoodPageChangesNothing(t *testing.T) {
 	}
 }
 
-// AC6-loading-later
 func TestALoadingAnswerAfterAGoodPageStillClearsAPageError(t *testing.T) {
 	c := &pageConn{page: json.RawMessage(pageOf(alphaPage, 2))}
 	r := livePageRunner(t, c)
@@ -362,7 +349,6 @@ func TestALoadingAnswerAfterAGoodPageStillClearsAPageError(t *testing.T) {
 	}
 }
 
-// AC7-auth-error
 func TestNoticesKeepShowingWhenTheSourceGoesAuthRequiredOrError(t *testing.T) {
 	good := `{"groups":` + alphaPage + `,"waiting":2,"notices":[{"id":"keep","text":"Kept notice","tone":"error"}]}`
 
@@ -393,7 +379,6 @@ func TestNoticesKeepShowingWhenTheSourceGoesAuthRequiredOrError(t *testing.T) {
 	}
 }
 
-// AC8-waiting
 func TestNoticesNeverAddToTheWaitingCountOrTheLiveBlock(t *testing.T) {
 	notices := `[{"id":"a","text":"A","tone":"error"},{"id":"b","text":"B","tone":"warn"},{"id":"c","text":"C","tone":"info"}]`
 	p, err := parsePage(json.RawMessage(`{"groups":` + alphaPage + `,"waiting":2,"notices":` + notices + `}`))

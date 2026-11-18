@@ -94,7 +94,7 @@ type Page struct {
 	Loading bool     `json:"-"`
 }
 
-// PageView is a source's page as served: the last good answer and whether there has been one.
+// PageView is a source's page as served: the last good answer, or before one a loading answer's notices.
 type PageView struct {
 	State   string   `json:"state"`
 	Groups  []Group  `json:"groups"`
@@ -266,6 +266,19 @@ func parseRow(raw json.RawMessage) (Row, error) {
 	return row, nil
 }
 
+// parseLink is raw as a link; false for one with no label or a url that is not http(s).
+func parseLink(raw json.RawMessage) (*Link, bool) {
+	var it struct{ Label, URL json.RawMessage }
+	if json.Unmarshal(raw, &it) != nil {
+		return nil, false
+	}
+	s, _ := rawString(it.URL)
+	if u, label := safeURL(s), titleLine(it.Label); u != "" && label != "" {
+		return &Link{Label: label, URL: u}, true
+	}
+	return nil, false
+}
+
 // parseNotices keeps the notices in order; a notice with no usable id or a repeated one refuses the list, and one with no text or a bad link drops itself or its link.
 func parseNotices(raw []json.RawMessage) ([]Notice, error) {
 	if len(raw) > maxNotices {
@@ -300,13 +313,7 @@ func parseNotices(raw []json.RawMessage) ([]Notice, error) {
 			tone = "info"
 		}
 		notice := Notice{ID: id, Text: text, Tone: tone}
-		var l struct{ Label, URL json.RawMessage }
-		if json.Unmarshal(item.Link, &l) == nil {
-			u, _ := rawString(l.URL)
-			if u, label := safeURL(u), titleLine(l.Label); u != "" && label != "" {
-				notice.Link = &Link{Label: label, URL: u}
-			}
-		}
+		notice.Link, _ = parseLink(item.Link)
 		out = append(out, notice)
 	}
 	return out, nil
@@ -385,13 +392,8 @@ func parseSection(raw json.RawMessage, stepIDs map[string]bool) (*Section, error
 	switch sec.Kind {
 	case "links":
 		for _, l := range item.Links {
-			var it struct{ Label, URL json.RawMessage }
-			if json.Unmarshal(l, &it) != nil {
-				continue
-			}
-			raw, _ := rawString(it.URL)
-			if u := safeURL(raw); u != "" && titleLine(it.Label) != "" {
-				sec.Links = append(sec.Links, Link{Label: titleLine(it.Label), URL: u})
+			if link, ok := parseLink(l); ok {
+				sec.Links = append(sec.Links, *link)
 			}
 		}
 	case "steps":
