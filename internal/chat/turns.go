@@ -38,7 +38,9 @@ type turnState struct {
 	loaded    bool
 	queue     []queuedTurn
 	delivered []string
+	reported  []string // ship cards whose reply was handed over, so one reply pushes once
 
+	activeID string // the id of the turn that is active
 	active   bool   // a turn was pasted and has not ended
 	started  bool   // its prompt hook has fired
 	pasteKey string // PromptKey just before the paste
@@ -68,6 +70,7 @@ func (s *fleetChat) turns(f func(t *turnState)) {
 		var file struct {
 			Queue     []queuedTurn `json:"queue"`
 			Delivered []string     `json:"delivered"`
+			Reported  []string     `json:"reported"`
 		}
 		b, err := os.ReadFile(s.turnsPath())
 		switch {
@@ -77,16 +80,16 @@ func (s *fleetChat) turns(f func(t *turnState)) {
 		case json.Unmarshal(b, &file) != nil:
 			log.Printf("admiral: chat %s: %s is not valid JSON, kept as %s.bad; starting with an empty queue", s.key, turnsFile, turnsFile)
 			_ = os.Rename(s.turnsPath(), s.turnsPath()+".bad")
-			file.Queue, file.Delivered = nil, nil
+			file.Queue, file.Delivered, file.Reported = nil, nil, nil
 		}
-		t.queue, t.delivered = file.Queue, file.Delivered
+		t.queue, t.delivered, t.reported = file.Queue, file.Delivered, file.Reported
 	}
 	f(t)
 }
 
 // saveTurnsLocked writes the queue by temp file and rename; the caller holds t.mu.
 func (s *fleetChat) saveTurnsLocked(t *turnState) error {
-	b, err := json.MarshalIndent(map[string]any{"queue": t.queue, "delivered": t.delivered}, "", "  ")
+	b, err := json.MarshalIndent(map[string]any{"queue": t.queue, "delivered": t.delivered, "reported": t.reported}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -256,22 +259,28 @@ func (s *fleetChat) trackTurn() {
 		key, ok = s.promptKey(s.key)
 		idle = s.paneIdle()
 	}
+	var endedID string
+	var how TurnEnd
 	s.turns(func(t *turnState) {
+		end := func(h TurnEnd) { t.active, endedID, how = false, t.activeID, h }
 		switch {
 		case !t.active:
 		case !running:
-			t.active = false
+			end(TurnDropped)
 		case !ok:
 		case !t.started:
 			if key != t.pasteKey {
 				t.started, t.runKey = true, key
 			} else if time.Since(t.pastedAt) > turnStartWait {
-				t.active = false
+				end(TurnDropped)
 			}
 		case key != t.runKey || idle:
-			t.active = false
+			end(TurnEndedNormally)
 		}
 	})
+	if endedID != "" {
+		s.endTurn(endedID, how)
+	}
 }
 
 // afterSend records a paste that isn't a report: its turn may not have started when the queue next looks, and a
@@ -330,7 +339,14 @@ func (s *fleetChat) deliver(q queuedTurn) {
 	if !ok {
 		return
 	}
+	s.th.mu.Lock()
+	prev := threadState{id: s.th.id, head: s.th.head, seen: s.th.seen}
+	s.th.open(q.ID, q.Text)
+	s.th.mu.Unlock()
 	if err := s.pasteMessage(pane, q.Text); err != nil {
+		s.th.mu.Lock()
+		s.th.id, s.th.head, s.th.seen = prev.id, prev.head, prev.seen
+		s.th.mu.Unlock()
 		s.turns(func(t *turnState) {
 			if msg := err.Error(); msg != t.lastErr {
 				t.lastErr = msg
@@ -348,7 +364,7 @@ func (s *fleetChat) deliver(q queuedTurn) {
 		if n := len(t.delivered) - deliveredKeep; n > 0 {
 			t.delivered = t.delivered[n:]
 		}
-		t.active, t.started, t.pasteKey, t.runKey, t.pastedAt = true, false, key, "", time.Now()
+		t.active, t.activeID, t.started, t.pasteKey, t.runKey, t.pastedAt = true, q.ID, false, key, "", time.Now()
 		if err := s.saveTurnsLocked(t); err != nil {
 			log.Printf("admiral: chat %s: could not save the report queue: %v", s.key, err)
 		}
@@ -387,6 +403,3 @@ const (
 	// TurnDropped is a turn whose paste never took or whose session went away.
 	TurnDropped
 )
-
-// endTurn is called once for each way trackTurn ends the turn that was pasted under id.
-func (s *fleetChat) endTurn(id string, how TurnEnd) {}

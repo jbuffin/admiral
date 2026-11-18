@@ -605,6 +605,17 @@ func serve(args []string) error {
 	wireEvents(supervisor, routineStore, routineScheduler, allShips, lk, newReviewer(lk), lookoutActs)
 	inboxService.LaunchEvent = launchEvent(routineScheduler)
 	wireStandingOrders(shipService.Launcher, routineStore, routineService, cfg)
+	chatService.OnReply = func(fleet string, r chat.ReportReply) {
+		name, result, ok := chatService.ShipCardOf(fleet, r.CardID)
+		if !ok {
+			return
+		}
+		fleetName := fleet
+		if f, _, found := cfg.Current().ChatFleet(fleet); found {
+			fleetName = f.Name
+		}
+		pushFeed.Watcher.Emit(push.ReportReplyEvent(push.Reply{Fleet: fleet, FleetName: fleetName, Ship: name, Result: result, Card: r.CardID, Message: r.MessageID, Text: r.Text}))
+	}
 	chatService.OnQuestions = func() { inboxService.Changed(); commitmentRunner.Changed() }
 	chatService.FollowCampaign, chatService.CampaignFleet, commitmentRunner.Campaign, campaignService.OnRead = campaignService.Follow, campaignService.Owner, campaignService.Snapshot, commitmentRunner.Changed
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {

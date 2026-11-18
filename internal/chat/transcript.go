@@ -20,6 +20,7 @@ type Message struct {
 	Card json.RawMessage `json:"card,omitempty"`
 	// Thread is the id of the ship card whose report turn this entry is, or whose reply it is.
 	Thread string `json:"thread,omitempty"`
+	notice bool   // a subagent's report or another session's message, which isn't the engineer
 }
 
 // A notice (a subagent's report, or another Claude session's message) shows as the user's message.
@@ -30,7 +31,7 @@ func messages(items []conversation.Item) []Message {
 		if it.Kind == conversation.KindAssistant {
 			role = "assistant"
 		}
-		out = append(out, Message{ID: it.ID, Kind: chatlog.KindMessage, Role: role, Text: it.Text, At: it.At})
+		out = append(out, Message{ID: it.ID, Kind: chatlog.KindMessage, Role: role, Text: it.Text, At: it.At, notice: it.Kind == conversation.KindNotice})
 	}
 	return out
 }

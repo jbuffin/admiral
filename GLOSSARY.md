@@ -284,7 +284,7 @@ A **routine proposal** is an item for a routine run that waits for a go-ahead (A
 _Avoid_: notifications, tasks, card (for an item)
 
 **Push**:
-The system notification Admiral sends to the engineer about something waiting on them.
+The system notification Admiral sends to the engineer about something waiting on them, or about AdmiralBot's reply to a report turn, which waits on nothing (ADR 0042).
 _Avoid_: notification (for an Inbox item)
 
 **Attention count**:

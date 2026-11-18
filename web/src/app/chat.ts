@@ -85,14 +85,17 @@ export interface ChatSnapshot {
   error?: string;
 }
 
+/** A message of the chat; `report` marks the user entry Admiral typed as a ship's report turn, which is not the engineer's. */
+export type ThreadMessage = { kind: 'message'; id: string; role: 'user' | 'assistant'; text: string; at: string; report?: true };
+
 export type ThreadItem =
-  | { kind: 'message'; id: string; role: 'user' | 'assistant'; text: string; at: string }
+  | ThreadMessage
   | { kind: 'reset'; id: string; text: string; at: string }
   | { kind: 'commitment'; id: string; text: string; at: string; card: CommitmentCard }
   | { kind: 'event'; id: string; text: string; at: string; card: EventCard }
   | { kind: 'launch'; id: string; text: string; at: string; card: LaunchCard }
   | { kind: 'launch_line'; id: string; text: string; at: string; card: LaunchLine }
-  | { kind: 'ship'; id: string; text: string; at: string; card: ShipCard }
+  | { kind: 'ship'; id: string; text: string; at: string; card: ShipCard; thread?: ThreadMessage[] }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer; kept?: string };
 
 /** The snapshot's entries oldest first; entries with one time, or none that parses, keep the served order. */
@@ -118,11 +121,21 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
       const state = answer === undefined && keptText === undefined ? 'withdrawn' : answer === null ? 'open' : 'answered';
       return [{ t, i, item: { kind: 'question', id: m.id, at: m.at, card, state, ...(answer ? { answer } : {}), ...(keptText !== undefined ? { kept: keptText } : {}) } }];
     }
-    if (m.kind === 'message' && m.role) return [{ t, i, item: { kind: 'message', id: m.id, role: m.role, text: m.text, at: m.at } }];
+    if (m.kind === 'message' && m.role) return [{ t, i, item: { kind: 'message', id: m.id, role: m.role, text: m.text, at: m.at, ...(m.thread && m.role === 'user' ? { report: true as const } : {}), ...(m.thread ? { threadId: m.thread } : {}) } }];
     return [];
   });
   rows.sort((a, b) => (Number.isNaN(a.t) || Number.isNaN(b.t) ? 0 : a.t - b.t) || a.i - b.i);
-  return rows.map((r) => r.item);
+  // A report turn and the replies marked with a ship card that is in the window go under that ship card; the rest stay where they fell.
+  const out: ThreadItem[] = [];
+  const cards = new Map<string, Extract<ThreadItem, { kind: 'ship' }>>();
+  for (const r of rows) if (r.item.kind === 'ship') cards.set(r.item.id, r.item);
+  for (const r of rows) {
+    const { threadId, ...rest } = r.item as ThreadItem & { threadId?: string };
+    const card = threadId ? cards.get(threadId) : undefined;
+    if (card && rest.kind === 'message') (card.thread ??= []).push(rest);
+    else out.push(r.item.kind === 'ship' ? r.item : (rest as ThreadItem));
+  }
+  return out;
 }
 
 /** What the engineer chose, as a line: every choice and typed answer, in question order. */

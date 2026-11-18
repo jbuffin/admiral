@@ -2,6 +2,7 @@
 package push
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/textsafe"
@@ -27,7 +28,7 @@ const (
 
 var pushing = map[Kind]bool{
 	ChatQuestion: true, ShipQuestion: true, InboxQuestion: true, WakeProposal: true, Findings: true,
-	ReadyToMerge: true, Anchored: true, CodeApproval: true, RoutineNotify: true,
+	ReadyToMerge: true, Anchored: true, CodeApproval: true, RoutineNotify: true, ReportReply: true,
 }
 
 // Event is one new occurrence worth hearing about.
@@ -70,7 +71,34 @@ type Reply struct {
 }
 
 // ReportReplyEvent is the event for a reply.
-func ReportReplyEvent(r Reply) Event { return Event{} }
+func ReportReplyEvent(r Reply) Event {
+	return Event{Kind: ReportReply, Fleet: r.Fleet, FleetName: r.FleetName, Key: "report-reply-" + r.Card,
+		Name: r.Ship + " " + strings.ReplaceAll(r.Result, "_", " "), Text: plainText(firstLine(r.Text)),
+		Target: TargetChat, Message: r.Message}
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	return s
+}
+
+var (
+	mdLink    = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+	mdHeading = regexp.MustCompile(`^\s*(##?#?#?#?#?|>)\s+`)
+	mdEmph    = regexp.MustCompile(`(\*\*|__|\*|` + "`" + `|~~)`)
+	mdUnder   = regexp.MustCompile(`(^|\s)_([^_]+)_(\s|[.,;:!?]|$)`)
+)
+
+// plainText turns a line of markdown into the text a lock screen shows: links keep their text, marks drop.
+func plainText(s string) string {
+	s = mdLink.ReplaceAllString(s, "$1")
+	s = mdHeading.ReplaceAllString(s, "")
+	s = mdUnder.ReplaceAllString(s, "$1$2$3")
+	return mdEmph.ReplaceAllString(s, "")
+}
 
 type Outcome int
 

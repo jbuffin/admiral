@@ -280,3 +280,26 @@ func TestARepeatedEndHandsOverOnceEvenAfterTheQueueFileIsReloaded(t *testing.T) 
 		t.Errorf("replies after repeated ends and a reload = %d, want 1", len(got))
 	}
 }
+
+func TestAnEngineersMessageDuringTheTurnEndsTheThread(t *testing.T) {
+	r := newReplyRig(t)
+	r.sendReport()
+	before := r.say("assistant", "Checking the PR")
+	asked := r.say("user", "stop, do something else")
+	after := r.say("assistant", "Sure")
+	th := r.threads()
+	r.wantThread(th, before, replyCard, "the reply before the engineer spoke")
+	r.wantThread(th, asked, "", "the engineer's message")
+	r.wantThread(th, after, "", "the reply after the engineer spoke")
+}
+
+func TestAReplyLoggedAfterTheTurnEndsIsThreadedButPushesNothing(t *testing.T) {
+	r := newReplyRig(t)
+	turn := r.sendReport()
+	r.turnEnds()
+	r.ticks(2)
+	late := r.say("assistant", "Calm Otter is done")
+	r.wantThread(r.threads(), late, replyCard, "a reply logged after the end")
+	r.wantThread(r.threads(), turn, replyCard, "the pasted turn")
+	r.hold("a reply logged after the end pushed late", func() bool { return len(r.replies()) != 0 })
+}

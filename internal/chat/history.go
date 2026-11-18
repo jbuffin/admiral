@@ -15,12 +15,18 @@ import (
 func (s *fleetChat) record(snap Snapshot) {
 	l := s.history()
 	var err error
+	s.th.mu.Lock()
 	for _, m := range snap.Messages {
 		at, _ := time.Parse(time.RFC3339Nano, m.At)
-		if _, e := l.Append(s.key, chatlog.Entry{ID: m.ID, Kind: chatlog.KindMessage, Role: m.Role, Text: m.Text, At: at}); e != nil {
+		thread, advance := s.th.classify(m)
+		isNew, e := l.Append(s.key, chatlog.Entry{ID: m.ID, Kind: chatlog.KindMessage, Role: m.Role, Text: m.Text, At: at, Thread: thread})
+		if e != nil {
 			err = e
+		} else if isNew {
+			advance()
 		}
 	}
+	s.th.mu.Unlock()
 	for _, q := range snap.Questions {
 		card, e := json.Marshal(q.Item)
 		if e != nil {
@@ -50,7 +56,7 @@ func (s *fleetChat) recent() []Message {
 		if at.IsZero() {
 			at = e.Logged
 		}
-		out = append(out, Message{ID: e.ID, Kind: e.Kind, Role: e.Role, Text: e.Text, At: at.UTC().Format(time.RFC3339Nano), Card: e.Card})
+		out = append(out, Message{ID: e.ID, Kind: e.Kind, Role: e.Role, Text: e.Text, At: at.UTC().Format(time.RFC3339Nano), Card: e.Card, Thread: e.Thread})
 	}
 	return out
 }

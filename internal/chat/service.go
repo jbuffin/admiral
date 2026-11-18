@@ -141,6 +141,7 @@ type fleetChat struct {
 	qSig     string // the waiting set the Inbox was last told of
 
 	tq        turnState // the report-turn queue
+	th        threadState
 	resets    resetUsage
 	rst       resetState
 	resetting atomic.Bool // a flush and clear are running: a send is refused

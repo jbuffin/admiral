@@ -16,7 +16,7 @@ export function surfaceOf(path: string): Surface | undefined {
   const [id, ...sub] = segments(path);
   const s = SURFACES.find((x) => x.id === id);
   if (s?.id === 'inbox' && sub.length > 0) return peekOf(path) ? s : undefined;
-  if (s?.id === 'chat' && sub.length > 0) return chatPeekOf(path) || chatTerminalOf(path) ? s : undefined;
+  if (s?.id === 'chat' && sub.length > 0) return chatPeekOf(path) || chatTerminalOf(path) || chatMessageOf(path) ? s : undefined;
   if (s?.id === 'ships' && sub.length === 1 && sub[0] !== '') return s;
   // Preferences alone has pages below it: /app/preferences/<fleet key>/<page>.
   // Campaigns has the Campaign page below it: /app/campaigns/<id>; Crew has a member: /app/crew/<name>.
@@ -96,10 +96,16 @@ export function chatPeekOf(path: string): (PeekTarget & { item: string; fleet: s
 }
 
 /** The fleet's chat opened at one message. */
-export const chatMessagePath = (_fleetKey: string, _messageId: string): string => '';
+export const chatMessagePath = (fleetKey: string, messageId: string) => `/app/chat/${encodeURIComponent(fleetKey)}/message/${encodeURIComponent(messageId)}`;
 
-export function chatMessageOf(_path: string): { fleet: string; message: string } | null {
-  return null;
+export function chatMessageOf(path: string): { fleet: string; message: string } | null {
+  const [id, fleet, kind, message, ...rest] = segments(path);
+  if (id !== 'chat' || kind !== 'message' || !fleet || !message || rest.length > 0) return null;
+  try {
+    return { fleet: decodeURIComponent(fleet), message: decodeURIComponent(message) };
+  } catch {
+    return null;
+  }
 }
 
 /** The fleet's chat session shown through the bridge, in place of the conversation. */
