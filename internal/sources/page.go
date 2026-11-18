@@ -20,6 +20,13 @@ const (
 	maxTitleRunes = 200
 	maxIDRunes    = 200 // every id, and every include value on the row route
 	maxInclude    = 10
+
+	maxFormBytes     = 64 << 10 // bytes of one action.form answer
+	maxFormFields    = 20
+	maxFormOptions   = 100 // per field
+	maxRunValues     = 50  // fields in one run's values
+	maxRunItems      = 100 // items in one checklist value
+	maxRunValueRunes = 1000
 )
 
 var (

@@ -234,3 +234,62 @@ func TestAModulesPageStaysLiveWhenItsPluginSendsPageChanged(t *testing.T) {
 		t.Errorf("POST page/refresh of a source without a page = %d %s, want 404", code, body)
 	}
 }
+
+func (p *tplug) putAnswer(dir, id, content string) {
+	p.t.Helper()
+	if err := os.MkdirAll(filepath.Join(p.dir, dir), 0o755); err != nil {
+		p.t.Fatal(err)
+	}
+	tmp := filepath.Join(p.dir, dir, ".tmp-"+id)
+	if err := os.WriteFile(tmp, []byte(content), 0o600); err != nil {
+		p.t.Fatal(err)
+	}
+	if err := os.Rename(tmp, filepath.Join(p.dir, dir, id+".json")); err != nil {
+		p.t.Fatal(err)
+	}
+}
+
+func TestAModuleActionFormIsFetchedAndRunThroughThePluginProcess(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	p := w.newTP("m")
+	p.put("page.json", `{"groups":[{"id":"review","title":"Needs review","rows":[{"id":"t1","title":"Fix login","action":{"id":"pass","label":"Pass review","confirm":"form"}}]}],"waiting":1}`)
+	p.putAnswer("forms", "pass", `{"title":"Pass review","fields":[{"id":"time","label":"Time","type":"duration","default":"01:30","min":"00:15"}]}`)
+	p.putAnswer("runs", "pass", `{"message":"Review passed","url":"https://acme.test/T-1"}`)
+	w.startSources(tpSource("m", p, map[string]any{"capabilities": []string{"page"}}))
+	w.waitPageReady("m")
+
+	code, body := w.srcReq(http.MethodPost, "/m/rows/t1/actions/pass/form", nil)
+	w.mustOK(code, body, "POST form")
+	var form struct {
+		Title  string `json:"title"`
+		Fields []struct {
+			ID      string `json:"id"`
+			Type    string `json:"type"`
+			Default string `json:"default"`
+			Min     string `json:"min"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal([]byte(body), &form); err != nil || form.Title != "Pass review" || len(form.Fields) != 1 ||
+		form.Fields[0].ID != "time" || form.Fields[0].Type != "duration" || form.Fields[0].Default != "01:30" || form.Fields[0].Min != "00:15" {
+		t.Errorf("form = %s (%v), want the plugin's forms/pass.json", body, err)
+	}
+	call := p.waitCall(2*time.Second, "action.form", func(rpcCall) bool { return true })
+	if call.Params["row"] != "t1" || call.Params["action"] != "pass" {
+		t.Errorf("action.form params = %v, want row t1 and action pass", call.Params)
+	}
+
+	code, body = w.srcReq(http.MethodPost, "/m/rows/t1/actions/pass/run", map[string]any{"values": map[string]any{"time": "01:45"}})
+	w.mustOK(code, body, "POST run")
+	if !strings.Contains(body, `"message":"Review passed"`) || !strings.Contains(body, `"url":"https://acme.test/T-1"`) {
+		t.Errorf("run answer = %s, want the plugin's runs/pass.json", body)
+	}
+	run := p.waitCall(2*time.Second, "action.run", func(rpcCall) bool { return true })
+	values, _ := run.Params["values"].(map[string]any)
+	if run.Params["row"] != "t1" || run.Params["action"] != "pass" || values["time"] != "01:45" {
+		t.Errorf("action.run params = %v, want row t1, action pass and values {time: 01:45}", run.Params)
+	}
+	if n := len(p.callsOf("action.form")) + len(p.callsOf("action.run")); n != 2 {
+		t.Errorf("module action calls = %d, want one form fetch and one run", n)
+	}
+}
