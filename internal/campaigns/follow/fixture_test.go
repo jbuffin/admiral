@@ -49,10 +49,13 @@ for a in "$@"; do
 	repo=*) repo=${a#repo=} ;;
 	number=*) number=${a#number=} ;;
 	after=*) after=${a#after=} ;;
-	q=*) q=1 ;;
+	q=*) q=${a#q=} ;;
 	esac
 done
-if [ -n "$q" ]; then key=search; else key=${owner}_${repo}_${number}; fi
+if [ -n "$q" ]; then
+	key=search
+	case "$q" in *has:sub-issue*) key=search_parents ;; esac
+else key=${owner}_${repo}_${number}; fi
 [ -n "$after" ] && key=${key}_${after}
 if [ -e "$d/delay" ]; then sleep "$(cat "$d/delay")"; fi
 if [ -e "$d/resp/$key.fail" ]; then cat "$d/resp/$key.fail" >&2; exit 1; fi
@@ -146,6 +149,7 @@ func newFakeGH(t *testing.T, root iss) *fakeGH {
 	g.set(root)
 	g.respond("__", "fake-token-work-1")
 	g.respond("search", `{"data":{"search":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}`)
+	g.respond("search_parents", `{"data":{"search":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}`)
 	return g
 }
 
@@ -195,6 +199,77 @@ func (g *fakeGH) restCalls() []restCall {
 		}
 		f := strings.SplitN(line, "\t", 5)
 		out = append(out, restCall{f[0], f[1], strings.TrimPrefix(f[2], "/"), f[3], f[4]})
+	}
+	return out
+}
+
+// hit is one issue a search answers with.
+type hit struct {
+	repo              string
+	num               int
+	closed            bool
+	total, closedKids int
+}
+
+func (h hit) node() map[string]any {
+	state := "OPEN"
+	if h.closed {
+		state = "CLOSED"
+	}
+	return map[string]any{
+		"number": h.num, "title": fmt.Sprintf("Issue %d", h.num), "state": state,
+		"url":              fmt.Sprintf("https://github.com/%s/issues/%d", h.repo, h.num),
+		"repository":       map[string]any{"nameWithOwner": h.repo},
+		"subIssuesSummary": map[string]any{"total": h.total, "completed": h.closedKids},
+	}
+}
+
+// respondSearch answers the plain search with plain and the has:sub-issue search with parents.
+func (g *fakeGH) respondSearch(plain, parents []hit) {
+	for key, hits := range map[string][]hit{"search": plain, "search_parents": parents} {
+		nodes := []any{}
+		for _, h := range hits {
+			nodes = append(nodes, h.node())
+		}
+		b, _ := json.Marshal(map[string]any{"data": map[string]any{"search": map[string]any{"nodes": nodes}}})
+		g.respond(key, string(b))
+	}
+}
+
+// respondIssue answers the single-issue read of h, the one a reference with no search hit resolves through.
+func (g *fakeGH) respondIssue(h hit) {
+	n := h.node()
+	n["__typename"] = "Issue"
+	b, _ := json.Marshal(map[string]any{"data": map[string]any{"repository": map[string]any{"issueOrPullRequest": n}}})
+	g.respond(strings.ReplaceAll(h.repo, "/", "_")+"_"+fmt.Sprint(h.num), string(b))
+}
+
+// respondPullRequest answers the single read of owner/repo#num with a pull request.
+func (g *fakeGH) respondPullRequest(repo string, num int) {
+	n := map[string]any{"__typename": "PullRequest", "number": num, "title": "A pull request", "state": "OPEN",
+		"url": fmt.Sprintf("https://github.com/%s/pull/%d", repo, num), "repository": map[string]any{"nameWithOwner": repo}}
+	b, _ := json.Marshal(map[string]any{"data": map[string]any{"repository": map[string]any{"issueOrPullRequest": n}}})
+	g.respond(strings.ReplaceAll(repo, "/", "_")+"_"+fmt.Sprint(num), string(b))
+}
+
+// failFile makes the answer for key an error with stderr.
+func (g *fakeGH) failFile(key, stderr string) {
+	if err := os.WriteFile(filepath.Join(g.dir, "resp", key+".fail"), []byte(stderr), 0o644); err != nil {
+		panic(err)
+	}
+}
+
+// searchQueries reads back the q= of every search gh was asked for.
+func (g *fakeGH) searchQueries() []string {
+	files, _ := filepath.Glob(filepath.Join(g.dir, "calls", "*.argv"))
+	var out []string
+	for _, f := range files {
+		raw, _ := os.ReadFile(f)
+		for _, a := range strings.Split(string(raw), "\x00") {
+			if q, ok := strings.CutPrefix(a, "q="); ok {
+				out = append(out, q)
+			}
+		}
 	}
 	return out
 }

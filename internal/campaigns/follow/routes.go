@@ -21,6 +21,7 @@ import (
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/campaigns", s.serveList)
 	mux.HandleFunc("POST /api/campaigns", s.serveFollow)
+	mux.HandleFunc("GET /api/fleets/{key}/campaigns/search", s.serveSearch)
 	mux.HandleFunc("GET /api/campaigns/{id}", s.serveGet)
 	mux.HandleFunc("POST /api/campaigns/create", s.serveCreate)
 	mux.HandleFunc("POST /api/campaigns/{id}/unfollow", s.serveUnfollow)
@@ -190,6 +191,10 @@ func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 		out = append(out, c)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"campaigns": out})
+}
+
+func (s *Service) serveSearch(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "campaign search is not built")
 }
 
 func (s *Service) serveFollow(w http.ResponseWriter, r *http.Request) {

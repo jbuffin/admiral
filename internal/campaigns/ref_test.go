@@ -29,6 +29,8 @@ func TestParseIssueRefRefusesWithAMessageToShow(t *testing.T) {
 		{"empty", "", "issue"},
 		{"no number", "https://github.com/acme/campaign/issues/", "issue"},
 		{"a non-numeric number", "https://github.com/acme/campaign/issues/abc", "issue"},
+		{"a trailing slash", "https://github.com/acme/campaign/issues/9/", "issue"},
+		{"a comment link", "https://github.com/acme/campaign/issues/9#issuecomment-123456", "issue"},
 		{"number with a query string", "https://github.com/acme/campaign/issues/9?x=1", "issue"},
 		{"a bad character in the repo", "https://github.com/acme/camp aign/issues/9", "issue"},
 		{"shell syntax in the owner", "acme;rm/campaign#9", "issue"},
