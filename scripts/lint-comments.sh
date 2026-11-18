@@ -22,6 +22,9 @@ hits=$(git grep -nE '(//|/\*|^[[:space:]]*\*).*(^|[^/[:alnum:]_&])#[0-9]+([^[:al
 hits=$(git grep -n 'waitForTimeout' -- 'web/e2e')
 [ -z "$hits" ] || fail "wait for what the page shows, not a fixed time:" "$hits"
 
+hits=$(git grep -nE "import[^;]*[{ ,](test|webkit|chromium|firefox)[ ,}][^;]*from '@playwright/test'|\.launch(PersistentContext)?\(" -- 'web/e2e' ':!web/e2e/fixtures.ts')
+[ -z "$hits" ] || fail "import test from ./fixtures, which silences the browser's audio, and open pages through it:" "$hits"
+
 hits=$(git grep -nE 'time\.Sleep\(([0-9]+ *\* *)?time\.Second\)' -- 'e2e')
 [ -z "$hits" ] || fail "poll for the change instead of sleeping whole seconds:" "$hits"
 

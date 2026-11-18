@@ -1,4 +1,4 @@
-import { test as base, expect } from '@playwright/test';
+import { type Browser, test as base, expect } from '@playwright/test';
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
@@ -280,7 +280,50 @@ class Instance implements Admiral {
   }
 }
 
-export const test = base.extend<{ admiral: Admiral }>({
+// WebKit has no mute launch flag, so every page's audio ends at a gain-0 node and the app's own code runs unchanged.
+function silenceAudio() {
+  const proto = (globalThis as unknown as { BaseAudioContext?: { prototype: object } }).BaseAudioContext?.prototype;
+  const real = proto && Object.getOwnPropertyDescriptor(proto, 'destination');
+  // A context can get this script twice (newContext and the context fixture), and a second patch would chain gain nodes.
+  if (!proto || !real?.get || (real.get as { silenced?: boolean }).silenced) return;
+  const nodes = new WeakMap<object, AudioNode>();
+  const get = function (this: BaseAudioContext) {
+    let node = nodes.get(this);
+    if (!node) {
+      const gain = this.createGain();
+      gain.gain.value = 0;
+      gain.connect(real.get!.call(this));
+      node = gain;
+      nodes.set(this, node);
+    }
+    return node;
+  };
+  (get as { silenced?: boolean }).silenced = true;
+  Object.defineProperty(proto, 'destination', { configurable: true, get });
+}
+
+export const test = base.extend<{ admiral: Admiral }, { browser: Browser }>({
+  browser: [
+    async ({ browser }, use) => {
+      const newContext = browser.newContext.bind(browser);
+      browser.newContext = async (options) => {
+        const context = await newContext(options);
+        await context.addInitScript(silenceAudio);
+        return context;
+      };
+      try {
+        await use(browser);
+      } finally {
+        browser.newContext = newContext;
+      }
+    },
+    { scope: 'worker' },
+  ],
+  // Context reuse (PW_TEST_REUSE_CONTEXT) hands out a context without calling browser.newContext.
+  context: async ({ context }, use) => {
+    await context.addInitScript(silenceAudio);
+    await use(context);
+  },
   admiral: async ({ context }, use, info) => {
     const a = new Instance();
     // Close the test's pages so whatever it awaits fails now, not at its timeout.
