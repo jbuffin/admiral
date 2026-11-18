@@ -16,6 +16,7 @@ import (
 type Guard struct {
 	Tokens        func(token string) (fleet string, ok bool)
 	ShipFleet     func(session string) (fleet string, known bool)
+	ShipFound     func(session string) bool // optional: tells a ship that doesn't exist from one with no fleet
 	ItemFleet     func(session, id string) (fleet string, known bool)
 	SourceFleet   func(key string) (fleet string, known bool)
 	CampaignFleet func(id string) (fleet string, known bool)
@@ -154,6 +155,9 @@ func match(r *http.Request) (matched, bool) {
 func (g *Guard) fence(r *http.Request, fleet string, m matched) (int, string) {
 	switch m.kind {
 	case ship:
+		if g.ShipFound != nil && !g.ShipFound(m.ids[0]) {
+			return forbid("ship " + m.ids[0] + " was not found (or not read yet): pass the ship's session from list_ships (for example vesper-vane), not its display name")
+		}
 		return forbid(check("ship", m.ids[0], fleet)(g.ShipFleet(m.ids[0])))
 	case item:
 		if sessionhost.IsChatSession(m.ids[0]) {

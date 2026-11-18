@@ -722,6 +722,7 @@ func serve(args []string) error {
 		},
 		ActorToken: chatService.ActorToken,
 		ShipFleet:  shipService.FleetOf,
+		ShipFound:  shipService.Exists,
 		Inbox:      inboxService.List,
 		Source:     sourceService.FleetOf,
 		Campaign:   followStore.Get,

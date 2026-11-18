@@ -999,6 +999,15 @@ func (s *Service) FleetOf(session string) (string, bool) {
 	return "", false
 }
 
+// Exists is whether a live or moored ship goes by this session name.
+func (s *Service) Exists(session string) bool {
+	if _, ok := s.find(session); ok {
+		return true
+	}
+	_, ok := s.mooredRecord(session)
+	return ok
+}
+
 var ErrExited = errors.New("ship has exited")
 
 // InputSeen clears needs you in Admiral's view only, until the next waiting hook.

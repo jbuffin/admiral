@@ -12,6 +12,7 @@ type Deps struct {
 	FleetKeys  func() []string
 	ActorToken func(fleet string) string
 	ShipFleet  func(session string) (string, bool)
+	ShipFound  func(session string) bool
 	Inbox      func() []inbox.Item
 	Source     func(key string) (fleet string, ok bool)
 	Campaign   func(id string) (follow.Followed, bool)
@@ -24,6 +25,7 @@ func Guard(d Deps) *actor.Guard {
 			return actor.Lookup(token, d.FleetKeys(), d.ActorToken)
 		},
 		ShipFleet: d.ShipFleet,
+		ShipFound: d.ShipFound,
 		ItemFleet: func(session, id string) (string, bool) {
 			for _, it := range d.Inbox() {
 				if it.Session == session && it.ID == id {

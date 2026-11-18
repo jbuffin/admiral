@@ -54,6 +54,9 @@ func Hook(args []string, std IO) error {
 		if w == stopWrite && held {
 			w = hookWrite{}
 		}
+		if w.unlessAsking {
+			w = keepsQuestion(w, paneReason(pane))
+		}
 		if w == stopWrite {
 			w = leadDecision(args[0], p, readCrewFacts(pane, now))
 		}
@@ -82,6 +85,24 @@ func Hook(args []string, std IO) error {
 	call = sessionhost.Join(call, digestSeqCall(pane, printed))
 	_ = sessionhost.WriteCurrent(call)
 	return nil
+}
+
+// keepsQuestion drops a subagent's working write while the pane's reason says the lead asks its own question.
+func keepsQuestion(w hookWrite, reason string) hookWrite {
+	if reason == "question" || reason == "permission:AskUserQuestion" {
+		return hookWrite{}
+	}
+	w.unlessAsking = false
+	return w
+}
+
+// paneReason is the pane's recorded reason; an unreadable pane reads as asking, so a failed read never undoes a question.
+func paneReason(pane string) string {
+	out, err := tmuxOut(sessionhost.PaneOptionCall(pane, sessionhost.ReasonOption)...)
+	if err != nil {
+		return "question"
+	}
+	return strings.TrimSpace(out)
 }
 
 func tmuxOut(args ...string) (string, error) { return sessionhost.ReadCurrent(args...) }
@@ -119,6 +140,8 @@ type hookWrite struct {
 	ifUnset       bool
 	crewHeld      bool
 	flagLead      string
+	// unlessAsking drops the write while the pane waits on the lead's own question (see keepsQuestion).
+	unlessAsking bool
 }
 
 // hookDecision keeps only a tool name or notification type in a reason, and only
@@ -127,12 +150,20 @@ func hookDecision(event string, p hookPayload) hookWrite {
 	switch event {
 	case "PermissionRequest":
 		return hookWrite{state: "needs_you", reason: withToken("permission", p.ToolName)}
-	case "PreToolUse":
+	case "PreToolUse", "PostToolUse":
+		// A background subagent keeps running tools while the lead waits on a question; its hooks must not undo that.
+		// They do clear a prompt of the subagent's own that the engineer answered in the terminal.
+		if p.SubagentID != "" {
+			return hookWrite{state: "working", unlessAsking: true}
+		}
+		if event == "PostToolUse" {
+			return hookWrite{state: "working"}
+		}
 		if p.ToolName == "AskUserQuestion" {
 			return hookWrite{state: "needs_you", reason: "question"}
 		}
 		return hookWrite{state: "working"}
-	case "UserPromptSubmit", "PostToolUse", "postToolUse":
+	case "UserPromptSubmit", "postToolUse":
 		return hookWrite{state: "working"}
 	case "Interrupt":
 		// Codex runs this hook as it aborts the turn, so it is idle at its prompt: the same as a Stop, and it covers an Esc typed in the terminal.
