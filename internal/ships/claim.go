@@ -198,7 +198,7 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 		return Ship{}, lerr
 	}
 	if req.Drafting {
-		s.markDrafting(got.Session, got.Options["launched"])
+		s.markDrafting(got.Session, got.Launched)
 	}
 	s.releaseWhenListed(got.Session, release)
 	return got, nil
