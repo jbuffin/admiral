@@ -34,6 +34,7 @@ type Voyage struct {
 type Reader interface {
 	Voyage(ship, firstLaunched string) (Voyage, bool)
 	Latest(ship string) (Voyage, bool)
+	LatestIn(ship, fleet string) (Voyage, bool)
 	Has(ship, firstLaunched string) bool
 }
 
@@ -217,6 +218,9 @@ func (s *Store) Latest(ship string) (Voyage, bool) {
 	}
 	return best, found
 }
+
+// LatestIn is the ship's newest voyage that belongs to fleet.
+func (s *Store) LatestIn(ship, fleet string) (Voyage, bool) { return Voyage{}, false }
 
 // Has says whether the voyage has kept findings. It is a stat, so the card can ask for every ship on every chat tick.
 func (s *Store) Has(ship, firstLaunched string) bool {

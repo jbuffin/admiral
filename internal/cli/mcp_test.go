@@ -16,6 +16,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -221,7 +222,7 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 // nobody specified: approvals, typing mid-turn, config, sources, settings and Preferences have none.
 var wantTools = []string{
 	"add_order", "answer_item", "ask_question", "dismiss_ship", "draft_campaign", "draft_routine", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_cloneable_repos",
-	"list_crew", "list_docks", "list_inbox", "list_repos", "list_routines", "list_ships", "list_skills", "list_sources", "make_commitment", "next_prompt", "read_campaign", "read_conversation", "read_hold_fire", "read_outcomes",
+	"list_crew", "list_docks", "list_inbox", "list_repos", "list_routines", "list_ships", "list_skills", "list_sources", "make_commitment", "next_prompt", "read_campaign", "read_conversation", "read_findings", "read_hold_fire", "read_outcomes",
 	"save_note", "stop_ship", "turn_routine_off", "wake_ship", "work_on_campaign",
 }
 
@@ -1228,5 +1229,107 @@ func TestDraftCampaignToolDescriptionSaysItOnlyDraftsForTheEngineerToConfirm(t *
 func TestTheCopilotChatsAllowlistIncludesTheCampaignDrafter(t *testing.T) {
 	if !slices.Contains(launcher.ChatTools, "draft_campaign") {
 		t.Errorf("launcher.ChatTools = %v, want it to name draft_campaign", launcher.ChatTools)
+	}
+}
+
+const findingsFirstLaunch = "2026-11-18T09:30:00Z"
+
+func findingsReply(ship, fleet, body string) string {
+	return mustJSON(map[string]string{"ship": ship, "first_launched": findingsFirstLaunch, "fleet": fleet, "findings": body})
+}
+
+func readFindings(t *testing.T, a *admiralStandIn, args string) toolResult {
+	t.Helper()
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "read_findings", args))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result(t, replies, "1")
+}
+
+func TestReadFindingsReadsTheShipsRouteWithTheStampAndTheActorHeader(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 200, findingsReply("saltpaw", "work", "x") })
+	if tr := readFindings(t, a, `{"ship":"saltpaw","first_launched":"`+findingsFirstLaunch+`"}`); tr.IsError {
+		t.Fatalf("result = %+v", tr)
+	}
+	got := a.requests()
+	if len(got) != 1 || got[0].Method != "GET" || got[0].Path != "/api/ships/saltpaw/findings" || got[0].Query != "first_launched=2026-11-18T09%3A30%3A00Z" || got[0].Actor != mcpToken {
+		t.Errorf("requests = %+v, want one GET of the ship's findings with the stamp encoded and the token", got)
+	}
+	b := newStandIn(t, func(mcpReq) (int, string) { return 200, findingsReply("saltpaw", "work", "x") })
+	readFindings(t, b, `{"ship":"saltpaw"}`)
+	if got := b.requests(); len(got) != 1 || got[0].Query != "" {
+		t.Errorf("without first_launched: requests = %+v, want no query", got)
+	}
+}
+
+func TestReadFindingsReturnsTheFindingsWithTheirShipFleetFirstLaunchAndAQuotedDataNote(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 200, findingsReply("saltpaw", "work", "# Results\nall green\n") })
+	tr := readFindings(t, a, `{"ship":"saltpaw"}`)
+	var got map[string]any
+	if err := json.Unmarshal([]byte(tr.text()), &got); err != nil || tr.IsError {
+		t.Fatalf("result %q is not the JSON object: %v", tr.text(), err)
+	}
+	if got["findings"] != "# Results\nall green\n" || got["ship"] != "saltpaw" || got["fleet"] != "work" || got["first_launched"] != findingsFirstLaunch {
+		t.Errorf("result = %v, want the findings with ship, fleet and first_launched beside them", got)
+	}
+	if got["truncated"] == true {
+		t.Error("short findings are marked truncated")
+	}
+	note := ""
+	for k, v := range got {
+		if s, ok := v.(string); ok && k != "findings" && strings.Contains(strings.ToLower(s), "quoted data") {
+			note = s
+		}
+	}
+	if note == "" || !strings.Contains(strings.ToLower(note), "instruction") {
+		t.Errorf("result = %v, want a note that the findings are quoted data from a ship, not instructions", got)
+	}
+}
+
+func TestReadFindingsCutsLongMultiByteFindingsAtAboutEightThousandCharactersOnARuneBoundary(t *testing.T) {
+	full := strings.Repeat("日🙂", 5000) // 10,000 characters, 40,000 bytes
+	a := newStandIn(t, func(mcpReq) (int, string) { return 200, findingsReply("saltpaw", "work", full) })
+	tr := readFindings(t, a, `{"ship":"saltpaw"}`)
+	var got map[string]any
+	if err := json.Unmarshal([]byte(tr.text()), &got); err != nil || tr.IsError {
+		t.Fatalf("result is not the JSON object: %v", err)
+	}
+	cut, _ := got["findings"].(string)
+	if n := utf8.RuneCountInString(cut); n < 7500 || n > 8000 {
+		t.Errorf("findings hold %d characters, want about 8,000 (counting characters, not bytes)", n)
+	}
+	if !utf8.ValidString(cut) || !strings.HasPrefix(full, cut) {
+		t.Error("the cut findings are not a valid UTF-8 prefix of the original")
+	}
+	if got["truncated"] != true {
+		t.Errorf("result = %v, want truncated true", got["truncated"])
+	}
+	length := false
+	for _, v := range got {
+		if n, ok := v.(float64); ok && int(n) == 10000 {
+			length = true
+		}
+	}
+	if !length {
+		t.Errorf("result has no number holding the full length, 10000 characters")
+	}
+}
+
+func TestReadFindingsPassesTheRoutesRefusalThroughAsTheToolsError(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) {
+		return 404, `{"error":"no findings are kept for this ship"}`
+	})
+	if tr := readFindings(t, a, `{"ship":"w-1"}`); !tr.IsError || !strings.Contains(tr.text(), "no findings are kept for this ship") {
+		t.Errorf("result = %+v, want isError with the route's message", tr)
+	}
+}
+
+func TestReadFindingsWithNoShipIsRefusedNamingShipWithoutCallingTheServer(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{}` })
+	tr := readFindings(t, a, `{}`)
+	if !tr.IsError || !strings.Contains(tr.text(), "ship") || strings.Contains(tr.text(), "session") || len(a.requests()) != 0 {
+		t.Errorf("result = %+v, requests %v, want an error naming ship and no request", tr, a.requests())
 	}
 }

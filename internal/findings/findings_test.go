@@ -308,3 +308,38 @@ func TestAHasNeverCreatesTheStoreDirectory(t *testing.T) {
 		t.Error("Has is false for a voyage that kept findings")
 	}
 }
+
+func TestLatestInIsTheNewestVoyageOfThatFleetWhateverOtherFleetsKeptUnderTheName(t *testing.T) {
+	r := newRig(t)
+	r.mustKeep("dory", first1, "work", "work voyage\n")
+	r.mustKeep("dory", first2, "play", "play voyage, newer\n")
+	if got, ok := r.store.LatestIn("dory", "work"); !ok || got.FirstLaunched != first1 || got.Markdown != "work voyage\n" {
+		t.Errorf("LatestIn work = %+v, %v, want the work voyage though play's is newer", got, ok)
+	}
+	if got, ok := r.store.LatestIn("dory", "play"); !ok || got.FirstLaunched != first2 {
+		t.Errorf("LatestIn play = %+v, %v, want the play voyage", got, ok)
+	}
+	if _, ok := r.store.LatestIn("dory", "home"); ok {
+		t.Error("LatestIn found a voyage for a fleet that kept none under the name")
+	}
+	if _, ok := r.store.LatestIn("kestrel", "work"); ok {
+		t.Error("LatestIn found findings for a ship that left none")
+	}
+}
+
+func TestLatestInPicksTheNewestOfTheFleetsOwnVoyages(t *testing.T) {
+	r := newRig(t)
+	r.mustKeep("dory", first2, "work", "newer\n")
+	r.mustKeep("dory", first1, "work", "older\n")
+	if got, ok := r.store.LatestIn("dory", "work"); !ok || got.FirstLaunched != first2 {
+		t.Errorf("LatestIn = %+v, %v, want the voyage first launched %s", got, ok, first2)
+	}
+}
+
+func TestLatestInNeverMatchesAVoyageWithNoFleetToAnEmptyFleet(t *testing.T) {
+	r := newRig(t)
+	r.mustKeep("dory", first1, "", "no fleet\n")
+	if got, ok := r.store.LatestIn("dory", ""); ok {
+		t.Errorf("LatestIn with an empty fleet = %+v, want no voyage", got)
+	}
+}
