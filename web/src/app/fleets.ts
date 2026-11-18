@@ -72,7 +72,8 @@ export function watchFleets() {
     const active = activeFleet.value;
     const urlKey = new URLSearchParams(loc.value.search).get('fleet');
     if (loaded.value && active && urlKey !== null && urlKey !== active.key) {
-      go(loc.value.path, `?fleet=${encodeURIComponent(active.key)}`, true);
+      const draft = new URLSearchParams(loc.value.search).get('draft');
+      go(loc.value.path, `?fleet=${encodeURIComponent(active.key)}${draft ? `&draft=${encodeURIComponent(draft)}` : ''}`, true);
     }
   });
   void loadFleets();

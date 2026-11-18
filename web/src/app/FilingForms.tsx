@@ -11,6 +11,14 @@ import type { RoutineField, RoutineForm } from './routines';
 import { formOfRoutine, type Routine } from './routines';
 
 const draftPath = (fleet: string, what: 'standing-orders' | 'routines') => `/fleets/${encodeURIComponent(fleet)}/${what}/draft`;
+export const routineDraftPath = (fleet: string, id: string) => `/fleets/${encodeURIComponent(fleet)}/routine-drafts/${encodeURIComponent(id)}`;
+
+/** A drafted routine as the editor opens it: unsaved, with its first problem on its field. */
+export function openedDraft(a: { draft: Omit<Routine, 'id'>; problems: { field: string; message: string }[] | null }): [RoutineForm, { field: RoutineField; message: string } | undefined] {
+  const first = a.problems?.[0];
+  return [formOfRoutine({ ...a.draft, id: '' }), first ? routineProblem(first) : undefined];
+}
+
 const ordersPath = (fleet: string) => `/fleets/${encodeURIComponent(fleet)}/standing-orders`;
 
 interface OrdersAnswer {
@@ -409,8 +417,8 @@ export function DescribeRoutine({ fleet, onDrafted }: { fleet: Fleet; onDrafted:
       if (r.status === 409) void loadCapabilities();
       return setError(draftFailure(r));
     }
-    const first = r.data.problems?.[0];
-    onDrafted(formOfRoutine({ ...r.data.draft, id: '' }), first ? routineProblem(first) : undefined);
+    const [form, problem] = openedDraft(r.data);
+    onDrafted(form, problem);
     setProse('');
   };
 

@@ -3,7 +3,7 @@ import { call, type DirsAnswer, type Fleet, type FleetCapabilities } from './api
 import { Actions, Button } from './Button';
 import { capabilities, capabilitiesFailed, loadCapabilities } from './capabilities';
 import { cronSentence } from './cron';
-import { DescribeRoutine } from './FilingForms';
+import { DescribeRoutine, openedDraft, routineDraftPath } from './FilingForms';
 import { fleetSearch } from './fleets';
 import { holdFire, setHoldFire, stopResult, stopWorkerShips } from './holdFireLink';
 import { JudgeLine } from './HarnessCapabilities';
@@ -12,7 +12,7 @@ import { CheckoutSelect, DockPicker, ModelEffortPair, ResourcesPicker, SkillSele
 import type { SkillsAnswer } from './launchForm';
 import { normalizeLimits } from './limitsForm';
 import { RoutineTabs } from './RoutineTabs';
-import { go, peekPath, routineNewPath, routinePath, shipPath } from './router';
+import { go, loc, peekPath, routineNewPath, routinePath, shipPath } from './router';
 import {
   autopilotDocks,
   blankForm,
@@ -433,6 +433,35 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
   );
 }
 
+type LinkVisit = { status: 'loading' } | { status: 'ready'; form: RoutineForm; problem?: { field: RoutineField; message: string } } | { status: 'gone' } | { status: 'error'; error: string };
+
+// One status per link visit: the page stays mounted as `draft=` comes and goes, so it resets when the link leaves.
+function useLinkedDraft(fleetKey: string, linkId: string | null): LinkVisit | null {
+  const [answer, setAnswer] = useState<{ id: string; visit: LinkVisit } | null>(null);
+  useEffect(() => {
+    if (!linkId) return;
+    if (linkId === '.' || linkId === '..') {
+      setAnswer({ id: linkId, visit: { status: 'gone' } });
+      return () => setAnswer(null);
+    }
+    let live = true;
+    void (async () => {
+      const r = await call<{ draft: Omit<Routine, 'id'>; problems: { field: string; message: string }[] | null }>('GET', routineDraftPath(fleetKey, linkId));
+      if (!live) return;
+      if (r.ok) {
+        const [form, problem] = openedDraft(r.data);
+        setAnswer({ id: linkId, visit: { status: 'ready', form, problem } });
+      } else setAnswer({ id: linkId, visit: r.status === 404 ? { status: 'gone' } : { status: 'error', error: r.error } });
+    })();
+    return () => {
+      live = false;
+      setAnswer(null);
+    };
+  }, [fleetKey, linkId]);
+  if (!linkId) return null;
+  return answer?.id === linkId ? answer.visit : { status: 'loading' };
+}
+
 export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fleet; id: string | null; creating: boolean; title: boolean; phone: boolean }) {
   const [list, setList] = useState<Routine[] | null>(null);
   const [failed, setFailed] = useState('');
@@ -446,6 +475,8 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const [tripped, setTripped] = useState(false);
   const lastSeen = useRef<string | null>(null);
   const search = fleetSearch.value;
+  const linkId = creating ? new URLSearchParams(loc.value.search).get('draft') : null;
+  const visit = useLinkedDraft(fleet.key, linkId);
 
   const load = async () => {
     const r = await call<{ routines: Routine[] | null; spend?: RoutineSpend }>('GET', api(fleet.key));
@@ -475,7 +506,6 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   useEffect(() => {
     if (!creating) setDrafted(null);
   }, [creating]);
-
   // Recent runs follow the open routine; a breaker record reloads it so an open form can't undo the trip.
   useEffect(() => {
     setRuns(null);
@@ -546,7 +576,8 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const showDetail = id !== null || creating;
   const showList = !phone || !showDetail;
   const judgeOff = !!caps?.judge && !caps.judge.harness;
-  const draft = drafted ? drafted.form : blankForm();
+  const opened = visit?.status === 'ready' ? visit : visit ? null : drafted;
+  const draft = opened && 'form' in opened ? opened.form : blankForm();
 
   return (
     <main class={`panel crew routines${showList && showDetail ? ' split' : ''}`}>
@@ -652,14 +683,26 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                 <Button label="Try again" onClick={() => void loadCaps()} />
               </p>
             ) : null}
-            {creating ? (
+            {creating && visit?.status === 'gone' ? (
+              <p class="note" role="status">
+                That draft has expired or can't be found. Describe the routine again or fill in the form.
+              </p>
+            ) : null}
+            {creating && visit?.status === 'error' ? (
+              <p class="alert" role="alert">
+                {visit.error}
+              </p>
+            ) : null}
+            {creating && visit?.status === 'loading' ? (
+              <p class="line">Loading…</p>
+            ) : creating ? (
               <RoutineEditor
-                key={`new:${drafted ? `described:${drafted.n}` : 'blank'}`}
+                key={`new:${visit?.status === 'ready' ? `link:${linkId}` : visit ? 'blank' : drafted ? `described:${drafted.n}` : 'blank'}`}
                 fleet={fleet}
                 routine={null}
                 initial={draft}
                 caps={caps}
-                problem={drafted?.problem}
+                problem={opened?.problem}
                 onSaved={(r) => {
                   void load();
                   go(routinePath(r.id), search);
