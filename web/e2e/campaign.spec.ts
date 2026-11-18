@@ -2,12 +2,16 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import { ANNEX, DEPOT, DEPOT_TITLE, OLD_DUST, T, campaignIdOf, closeAnnexChild, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, proposalJourney, seedChatCampaignFleet, seedCampaignFleet } from './campaign';
+import { proveJudge } from './crew';
+import { ghWrites, NEW_PARENT, seedCampaignCreate } from './orders';
 import { skillPicker, watchPage, withFakeGh } from './shell';
 
 test('on the iPad, a person follows a campaign by searching for it and another by its reference, sees each child\'s status and mode, launches a ready child, is refused a second launch, unfollows it and finds it under Ended; Follow on an order opens its campaign', async ({ page, admiral }) => {
   seedCampaignFleet(admiral);
+  seedCampaignCreate(admiral, { children: false });
   await admiral.start({ env: { ...withFakeGh(admiral), ADMIRAL_SAIL_OFF_DELAY: '1s' } });
   await githubReady(admiral);
+  await proveJudge(page, admiral.url);
   const watch = watchPage(page, admiral.url);
   const press = (l: { click(): Promise<void> }) => l.click();
 
@@ -32,7 +36,7 @@ test('on the iPad, a person follows a campaign by searching for it and another b
   await expect(modal.getByText('Parent issues', { exact: true })).toBeVisible();
   await expect(modal.getByText('Other issues', { exact: true })).toBeVisible();
   await expect(modal.getByRole('button', { name: new RegExp(OLD_DUST) })).toContainText('closed');
-  await expect(modal.getByRole('button', { name: /Start a new campaign/ })).toBeDisabled();
+  await expect(modal.getByRole('button', { name: `Start a new campaign: 'moon'` })).toBeEnabled();
 
   const followedIn = async () => ((await (await fetch(`${admiral.url}api/v1/campaigns`)).json()) as { campaigns: { title: string }[] }).campaigns.map((c) => c.title);
   await press(modal.getByRole('button', { name: new RegExp(T.map) }));
@@ -230,6 +234,33 @@ test('on the iPad, a person follows a campaign by searching for it and another b
   await press(main.getByRole('link', { name: grillShip.name, exact: true }));
   await expect(main.getByRole('heading', { name: grillShip.name })).toBeVisible();
   await expect(main.getByRole('link', { name: `#21 ${T.grill}` })).toHaveAttribute('href', issueUrl(21));
+  // Start a new campaign takes free text: the judge drafts a title and description, the engineer edits the title and creates; the parent is filed with no sub-issues and its campaign opens.
+  await press(nav.getByRole('button', { name: 'Add campaign' }));
+  await search.fill('Pool: sensor and retry work');
+  await press(modal.getByRole('button', { name: /^Start a new campaign: / }));
+  await expect(modal.getByRole('textbox', { name: 'What is this campaign for?' })).toHaveValue('Pool: sensor and retry work');
+  await press(modal.getByRole('button', { name: 'Back' }));
+  await expect(search).toHaveValue('Pool: sensor and retry work');
+  await press(modal.getByRole('button', { name: /^Start a new campaign: / }));
+  await press(modal.getByRole('button', { name: 'Draft', exact: true }));
+  const repoSelect = modal.getByRole('combobox', { name: /Repo for the parent issue/ });
+  const draftedTitle = modal.getByRole('textbox', { name: 'Title' });
+  await expect(draftedTitle).not.toHaveValue('');
+  await expect(modal.getByText('Drafted', { exact: true })).toHaveCount(2);
+  // The fleet has two projects; the file's only fake REST answers are for acme/widgets.
+  await repoSelect.selectOption((await repoSelect.locator('option', { hasText: /acme\/widgets$/ }).getAttribute('value')) as string);
+  await draftedTitle.fill(NEW_PARENT.title);
+  await expect(modal.getByText('Drafted', { exact: true })).toHaveCount(1);
+  await press(modal.getByRole('button', { name: 'Create campaign', exact: true }));
+  await expect(modal).toBeHidden();
+  await expect(main.getByRole('heading', { name: NEW_PARENT.title })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
+  await expect.poll(followedIn).toContain(NEW_PARENT.title);
+  // One issue was filed on the chosen repo, with the engineer's title and no sub-issue link.
+  expect(ghWrites(admiral).filter((w) => w.endpoint.startsWith('repos/'))).toEqual([
+    { method: 'POST', endpoint: 'repos/acme/widgets/issues', host: 'github.com', stdin: { title: NEW_PARENT.title, body: expect.any(String) } },
+  ]);
+
   // An order's detail opens its issue; Follow as campaign (only with sub-issues) opens the campaign, and the detail then offers Open campaign.
   await page.goto(admiral.url + 'app/orders?fleet=zulu');
   await press(page.getByRole('tab', { name: /^Orders: Orders/ }));
