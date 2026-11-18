@@ -41,8 +41,8 @@ const (
 
 const (
 	current = "conversation.jsonl"
-	// TailCap is how many of the newest entries a fleet keeps in memory.
-	TailCap = 500
+	// tailCap is how many of the newest entries a fleet keeps in memory.
+	tailCap = 500
 )
 
 var (
@@ -146,8 +146,8 @@ func (l *Log) Append(fleet string, e Entry) (bool, error) {
 	}
 	fl.seen[e.ID] = true
 	fl.tail = append(fl.tail, e)
-	if len(fl.tail) > TailCap {
-		fl.tail = append([]Entry(nil), fl.tail[len(fl.tail)-TailCap:]...)
+	if len(fl.tail) > tailCap {
+		fl.tail = append([]Entry(nil), fl.tail[len(fl.tail)-tailCap:]...)
 	}
 	return true, nil
 }
@@ -188,6 +188,58 @@ func (l *Log) Recent(fleet string, n int) ([]Entry, error) {
 	return append([]Entry{}, fl.tail[len(fl.tail)-n:]...), nil
 }
 
+// Since is every entry logged after t, oldest first, across months. It reads the month files only when the
+// in-memory tail may have dropped entries newer than t.
+func (l *Log) Since(fleet string, t time.Time) ([]Entry, error) {
+	if !fleetKey.MatchString(fleet) {
+		return nil, fmt.Errorf("chat log: %q is not a fleet key", fleet)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fl, err := l.load(fleet)
+	if err != nil {
+		return nil, err
+	}
+	all := fl.tail
+	if len(fl.tail) >= tailCap && fl.tail[0].Logged.After(t) {
+		if all, err = l.readBack(fleet, t); err != nil {
+			return nil, err
+		}
+	}
+	out := []Entry{}
+	for _, e := range all {
+		if e.Logged.After(t) {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
+// readBack is the fleet's entries from the newest month file back to the first file that starts at or before t.
+func (l *Log) readBack(fleet string, t time.Time) ([]Entry, error) {
+	dir, err := l.fleetDir(fleet, false)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	names, err := listFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	var out []Entry
+	for i := len(names) - 1; i >= 0; i-- {
+		es, err := readFile(dir, names[i])
+		if err != nil {
+			return nil, err
+		}
+		out = append(es, out...)
+		if len(es) > 0 && !es[0].Logged.After(t) {
+			break
+		}
+	}
+	return out, nil
+}
+
 func (l *Log) load(fleet string) (*fleetLog, error) {
 	if fl, ok := l.fleets[fleet]; ok {
 		return fl, nil
@@ -215,8 +267,8 @@ func (l *Log) load(fleet string) (*fleetLog, error) {
 			fl.seen[e.ID] = true
 		}
 		fl.tail = append(fl.tail, es...)
-		if len(fl.tail) > TailCap {
-			fl.tail = append([]Entry(nil), fl.tail[len(fl.tail)-TailCap:]...)
+		if len(fl.tail) > tailCap {
+			fl.tail = append([]Entry(nil), fl.tail[len(fl.tail)-tailCap:]...)
 		}
 		if name == current && len(es) > 0 {
 			fl.month = es[0].Logged.UTC().Format("2006-01")

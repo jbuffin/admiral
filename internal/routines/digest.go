@@ -6,6 +6,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/textsafe"
 )
 
@@ -15,30 +16,38 @@ type FactSection struct {
 	Lines []string
 }
 
-// DigestFacts gathers what changed in a fleet in the window (from, to]. The scheduler adds the routine runs itself.
+// DigestFacts gathers what changed in a fleet in the window (from, to] for one routine. The scheduler adds the routine
+// runs itself. commit keeps what the facts were read against for this routine's next window; the scheduler calls it only
+// once the run is recorded Queued or nothing new, so a failed run consumes nothing.
 type DigestFacts interface {
-	Facts(fleet string, from, to time.Time) ([]FactSection, error)
+	Facts(fleet, routine string, from, to time.Time) (sections []FactSection, commit func(), err error)
 }
 
 const (
 	// ReasonNothingNew is the reason of the Skipped record a digest run writes when no section holds a line.
 	ReasonNothingNew = "nothing new"
 	// maxSectionLines and maxFactRunes bound each section and line; maxFactBytes bounds the whole fact sheet.
-	// The marker, the instructions and the extra words (at most 1,000 characters) fit in what is left of the paste limit.
 	maxSectionLines = 25
 	maxFactRunes    = 240
 	maxFactBytes    = 10 * 1024
+	// factSlack is room kept for section titles and "and N more" lines past the facts' own budget.
+	factSlack = 512
 )
 
-// oneLine drops control and invisible characters and folds the rest onto one line, so a fact can't fake a marker line.
-func oneLine(s string) string {
+// fold drops control and invisible characters and folds the rest onto one line, so text can't fake a marker line.
+func fold(s string) string {
 	s = strings.Map(func(r rune) rune {
 		if textsafe.Hidden(r) {
 			return ' '
 		}
 		return r
 	}, s)
-	s = strings.Join(strings.Fields(s), " ")
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// oneLine is a fact folded onto one line and cut at maxFactRunes.
+func oneLine(s string) string {
+	s = fold(s)
 	if utf8.RuneCountInString(s) > maxFactRunes {
 		s = string([]rune(s)[:maxFactRunes]) + "…"
 	}
@@ -107,17 +116,24 @@ func digestText(r Routine, from, to time.Time, sections []FactSection) string {
 		"Don't repeat what a ship's report already told them. You may offer follow-up work, " +
 		"but do nothing until the engineer answers: every write you make in this turn is refused.\n")
 	fmt.Fprintf(&b, "Window: %s to %s\n", from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339))
+	tail := ""
+	if d := r.Do.Digest; d != nil {
+		if extra := fold(d.Extra); extra != "" {
+			tail = "\nExtra words from the engineer: " + extra + "\n"
+		}
+	}
+	// the facts give way to the extra words, so the whole turn fits one paste
+	budget := min(maxFactBytes, sessionhost.MaxPaste-b.Len()-len(tail)-factSlack)
 	used := 0
 	for _, sec := range sections {
 		if len(sec.Lines) == 0 {
 			continue
 		}
-		title := oneLine(sec.Title)
-		b.WriteString("\n" + title + ":\n")
+		b.WriteString("\n" + oneLine(sec.Title) + ":\n")
 		shown := 0
 		for _, l := range sec.Lines {
 			l = "- " + oneLine(l)
-			if shown == maxSectionLines || used+len(l) > maxFactBytes {
+			if shown == maxSectionLines || used+len(l) > budget {
 				break
 			}
 			b.WriteString(l + "\n")
@@ -128,11 +144,7 @@ func digestText(r Routine, from, to time.Time, sections []FactSection) string {
 			fmt.Fprintf(&b, "- and %d more\n", more)
 		}
 	}
-	if d := r.Do.Digest; d != nil {
-		if extra := oneLine(d.Extra); extra != "" {
-			b.WriteString("\nExtra words from the engineer: " + extra + "\n")
-		}
-	}
+	b.WriteString(tail)
 	return b.String()
 }
 
@@ -152,7 +164,7 @@ func (s *Scheduler) digest(fleet string, r Routine, rec Trigger) error {
 		return fail("no fact source")
 	}
 	from, to := s.digestStart(fleet, r), rec.At
-	sections, err := s.Facts.Facts(fleet, from, to)
+	sections, commit, err := s.Facts.Facts(fleet, r.ID, from, to)
 	if err != nil {
 		return fail(err.Error())
 	}
@@ -170,6 +182,7 @@ func (s *Scheduler) digest(fleet string, r Routine, rec Trigger) error {
 	if len(lit) == 0 {
 		rec.Outcome, rec.Reason = Skipped, ReasonNothingNew
 		s.recordFor(fleet, r, rec)
+		commit()
 		return nil
 	}
 	id := newID()
@@ -178,5 +191,6 @@ func (s *Scheduler) digest(fleet string, r Routine, rec Trigger) error {
 	}
 	rec.ID, rec.Outcome = id, Queued
 	s.recordFor(fleet, r, rec)
+	commit()
 	return nil
 }

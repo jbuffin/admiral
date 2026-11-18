@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/routines"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // A digest run through the scheduler: firing modes, the window, nothing new, the queued turn and its text.
@@ -25,13 +26,20 @@ type fakeFacts struct {
 	sections []routines.FactSection
 	err      error
 	calls    []factsCall
+	commits  int
 }
 
-func (f *fakeFacts) Facts(fleet string, from, to time.Time) ([]routines.FactSection, error) {
+func (f *fakeFacts) Facts(fleet, routine string, from, to time.Time) ([]routines.FactSection, func(), error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, factsCall{fleet, from, to})
-	return f.sections, f.err
+	return f.sections, func() { f.mu.Lock(); f.commits++; f.mu.Unlock() }, f.err
+}
+
+func (f *fakeFacts) committed() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.commits
 }
 
 func (f *fakeFacts) called() []factsCall {
@@ -447,5 +455,44 @@ func TestAVeryLongFactSheetIsCappedPerSectionWithAnAndNMoreLineAndTheTurnFitsThe
 	}
 	if !strings.Contains(text, "lead with PRs") {
 		t.Error("the extra words were cut off by the facts")
+	}
+}
+
+func TestADigestKeepsWhatItReadAgainstOnlyOnceItsRunIsRecordedQueuedOrNothingNew(t *testing.T) {
+	h, f := digestHarness(t)
+	r := h.digest(nil)
+	h.chat.enqueueErr = errors.New("disk full")
+	h.tickAt(at(0, 9, 0))
+	if rec := h.latest(r); rec.Outcome != routines.Failed || f.committed() != 0 {
+		t.Fatalf("record = %+v with %d commits, want a failed run to keep nothing", rec, f.committed())
+	}
+	h.chat.enqueueErr = nil
+	h.tickAt(at(1, 9, 0))
+	if h.latest(r).Outcome != routines.Queued || f.committed() != 1 {
+		t.Fatalf("record = %+v with %d commits, want the queued run to keep its facts once", h.latest(r), f.committed())
+	}
+	f.set()
+	h.tickAt(at(2, 9, 0))
+	if rec := h.latest(r); rec.Outcome != routines.Skipped || f.committed() != 2 {
+		t.Errorf("record = %+v with %d commits, want a nothing-new run to keep its facts too", rec, f.committed())
+	}
+}
+
+func TestTheEngineersWholeExtraWordsReachTheTurnInFullEvenWithFullFactSectionsAndMultiByteText(t *testing.T) {
+	extra := strings.Repeat("海", 1000)
+	h, f := digestHarness(t)
+	h.digest(func(r *routines.Routine) { r.Do.Digest.Extra = extra })
+	lines := make([]string, 200)
+	for i := range lines {
+		lines[i] = strings.Repeat("魚", 240)
+	}
+	f.set(routines.FactSection{Title: "Ships", Lines: lines}, routines.FactSection{Title: "Moored", Lines: lines}, routines.FactSection{Title: "Inbox", Lines: lines})
+	h.tickAt(at(0, 9, 0))
+	text := h.wantTurns(1)[0].text
+	if !strings.Contains(text, extra) {
+		t.Errorf("turn lacks the whole extra words (%d bytes of turn)", len(text))
+	}
+	if len(text) > sessionhost.MaxPaste {
+		t.Errorf("turn is %d bytes, want at most %d", len(text), sessionhost.MaxPaste)
 	}
 }

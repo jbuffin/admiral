@@ -11,14 +11,15 @@ import (
 type PostedShipCard struct {
 	At     time.Time
 	Ship   string
+	Voyage string
 	Name   string
 	Result string
 	PRs    []string
 }
 
-// PostedShipCards are the ship cards among the fleet's newest log entries, oldest first. A card has no At of its own, so At is when it was logged.
-func (s *Service) PostedShipCards(fleet string) []PostedShipCard {
-	entries, err := s.history().Recent(fleet, chatlog.TailCap)
+// PostedShipCards are the ship cards the fleet's chat log holds that were logged after since, oldest first. A card has no At of its own, so At is when it was logged.
+func (s *Service) PostedShipCards(fleet string, since time.Time) []PostedShipCard {
+	entries, err := s.history().Since(fleet, since)
 	if err != nil {
 		return nil
 	}
@@ -29,6 +30,7 @@ func (s *Service) PostedShipCards(fleet string) []PostedShipCard {
 		}
 		var body struct {
 			Ship   string `json:"ship"`
+			Voyage string `json:"first_launched"`
 			Name   string `json:"name"`
 			Result string `json:"result"`
 			PRs    []struct {
@@ -42,7 +44,7 @@ func (s *Service) PostedShipCards(fleet string) []PostedShipCard {
 		if at.IsZero() {
 			at = e.Logged
 		}
-		card := PostedShipCard{At: at, Ship: body.Ship, Name: body.Name, Result: body.Result}
+		card := PostedShipCard{At: at, Ship: body.Ship, Voyage: body.Voyage, Name: body.Name, Result: body.Result}
 		for _, p := range body.PRs {
 			card.PRs = append(card.PRs, p.URL)
 		}

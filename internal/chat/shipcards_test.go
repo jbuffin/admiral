@@ -647,3 +647,29 @@ func TestAScoutThatSailedOffBeforeTheResultWasReadPostsNoSecondFailedCardWhenIts
 	x.observe(7*time.Minute, nil, failedScoutEnd()...)
 	x.wantResults("work", "sailed_off")
 }
+
+func TestPostedShipCardsAreTheFleetsCardsLoggedAfterTheTimeWithTheirVoyage(t *testing.T) {
+	r := newBriefRig(t)
+	before := time.Now().Add(-time.Hour)
+	for _, c := range []ShipCard{
+		{Ship: "s-dory", Name: "dory", FirstLaunched: "v1", Result: ShipMoored, PRs: []ShipCardPR{{URL: "https://github.com/o/r/pull/7", Number: 7}}},
+		{Ship: "s-skiff", Name: "skiff", FirstLaunched: "v2", Result: ShipSailedOff},
+	} {
+		if err := r.PostShipCard("work", c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := r.PostedShipCards("work", before)
+	if len(got) != 2 || got[0].Ship != "s-dory" || got[0].Voyage != "v1" || got[0].Result != ShipMoored || len(got[0].PRs) != 1 || got[0].PRs[0] != "https://github.com/o/r/pull/7" || got[0].At.IsZero() {
+		t.Fatalf("cards = %+v, want dory's moored card with its voyage, PR and logged time, then skiff's", got)
+	}
+	if got[1].Name != "skiff" || got[1].Voyage != "v2" {
+		t.Errorf("second card = %+v, want skiff on voyage v2", got[1])
+	}
+	if later := r.PostedShipCards("work", time.Now().Add(time.Hour)); len(later) != 0 {
+		t.Errorf("cards after the future = %+v, want none", later)
+	}
+	if other := r.PostedShipCards("home", before); len(other) != 0 {
+		t.Errorf("home's cards = %+v, want none: cards are per fleet", other)
+	}
+}
