@@ -24,11 +24,13 @@ const (
 	RoutineNotify Kind = "routine_notify"
 	// ReportReply is AdmiralBot's reply to a ship's report turn.
 	ReportReply Kind = "report_reply"
+	// DigestReply is AdmiralBot's reply to a fleet digest turn.
+	DigestReply Kind = "digest_reply"
 )
 
 var pushing = map[Kind]bool{
 	ChatQuestion: true, ShipQuestion: true, InboxQuestion: true, WakeProposal: true, Findings: true,
-	ReadyToMerge: true, Anchored: true, CodeApproval: true, RoutineNotify: true, ReportReply: true,
+	ReadyToMerge: true, Anchored: true, CodeApproval: true, RoutineNotify: true, ReportReply: true, DigestReply: true,
 }
 
 // Event is one new occurrence worth hearing about.
@@ -75,6 +77,19 @@ func ReportReplyEvent(r Reply) Event {
 	return Event{Kind: ReportReply, Fleet: r.Fleet, FleetName: r.FleetName, Key: "report-reply-" + r.Card,
 		Name: r.Ship + " " + strings.ReplaceAll(r.Result, "_", " "), Text: plainText(firstLine(r.Text)),
 		Target: TargetChat, Message: r.Message}
+}
+
+// Digest is AdmiralBot's reply to a fleet digest turn, as the push describes it.
+type Digest struct {
+	Fleet, FleetName string
+	Turn, Message    string // the digest turn's id and the reply's message id in the chat log
+	Text             string // the reply's first message, markdown
+}
+
+// DigestReplyEvent is the event for a digest reply; it has its own key per digest run.
+func DigestReplyEvent(d Digest) Event {
+	return Event{Kind: DigestReply, Fleet: d.Fleet, FleetName: d.FleetName, Key: "digest-reply-" + d.Turn,
+		Name: "Fleet digest", Text: plainText(firstLine(d.Text)), Target: TargetChat, Message: d.Message}
 }
 
 func firstLine(s string) string {

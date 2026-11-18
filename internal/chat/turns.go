@@ -395,6 +395,13 @@ type ReportReply struct {
 	Text      string
 }
 
+// DigestReply is the reply AdmiralBot gave to a fleet digest turn: the turn's id and its first message.
+type DigestReply struct {
+	TurnID    string
+	MessageID string
+	Text      string
+}
+
 // TurnEnd is how a queued turn ended.
 type TurnEnd int
 

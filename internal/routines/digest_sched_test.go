@@ -108,9 +108,14 @@ func TestTheDigestTurnStartsWithItsMarkerThenTheFactsThenTheExtraWords(t *testin
 	h, _ := digestHarness(t)
 	h.digest(nil)
 	h.tickAt(at(0, 9, 0))
-	text := h.wantTurns(1)[0].text
-	if first, _, _ := strings.Cut(text, "\n"); first != "[Digest: Morning digest]" {
+	turn := h.wantTurns(1)[0]
+	text := turn.text
+	first, rest, _ := strings.Cut(text, "\n")
+	if first != "[Digest: Morning digest]" {
 		t.Errorf("first line = %q, want the marker line [Digest: Morning digest]", first)
+	}
+	if second, _, _ := strings.Cut(rest, "\n"); second != "turn: "+turn.id {
+		t.Errorf("second line = %q, want the turn id line %q", second, "turn: "+turn.id)
 	}
 	if strings.HasPrefix(text, "[Report: ") || strings.Contains(text, "[Routine: ") {
 		t.Errorf("turn = %q, want a marker distinct from a report's and a prompt routine's", text)

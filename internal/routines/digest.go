@@ -108,10 +108,10 @@ func (s *Scheduler) routineRuns(fleet string, self Routine, from, to time.Time) 
 	return FactSection{Title: "Routine runs and proposals", Lines: lines}, nil
 }
 
-// digestText is the turn: its marker line, what AdmiralBot is to do, the capped fact sheet, then the engineer's extra words.
-func digestText(r Routine, from, to time.Time, sections []FactSection) string {
+// digestText is the turn: its marker line, the turn id line the chat matches the pasted turn by, what AdmiralBot is to do, the capped fact sheet, then the engineer's extra words.
+func digestText(r Routine, turn string, from, to time.Time, sections []FactSection) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[Digest: %s]\n", r.Name)
+	fmt.Fprintf(&b, "[Digest: %s]\nturn: %s\n", r.Name, turn)
 	b.WriteString("Write the engineer a short summary of the facts below, with links where a fact has one. " +
 		"Don't repeat what a ship's report already told them. You may offer follow-up work, " +
 		"but do nothing until the engineer answers: every write you make in this turn is refused.\n")
@@ -186,7 +186,8 @@ func (s *Scheduler) digest(fleet string, r Routine, rec Trigger) error {
 		return nil
 	}
 	id := newID()
-	if err := s.Chat.EnqueueTurn(fleet, "digest:"+r.ID+":"+id, digestText(r, from, to, lit)); err != nil {
+	turn := "digest:" + r.ID + ":" + id
+	if err := s.Chat.EnqueueTurn(fleet, turn, digestText(r, turn, from, to, lit)); err != nil {
 		return fail(err.Error())
 	}
 	rec.ID, rec.Outcome = id, Queued

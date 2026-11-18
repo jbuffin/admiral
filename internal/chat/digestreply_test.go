@@ -10,7 +10,7 @@ import (
 
 const (
 	digestTurnID = "digest:routine-1:rec-1"
-	digestTurn   = "[Digest: Weekly digest]\nDIGEST-TURN-TEXT\nWindow: 2026-11-11T10:00:00Z to 2026-11-18T10:00:00Z\n"
+	digestTurn   = "[Digest: Weekly digest]\nturn: digest:routine-1:rec-1\nDIGEST-TURN-TEXT\nWindow: 2026-11-11T10:00:00Z to 2026-11-18T10:00:00Z\n"
 )
 
 type digestRig struct {

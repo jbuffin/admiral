@@ -18,12 +18,23 @@ const threadSkew = 2 * time.Second
 // reportCardRe is the card line a report turn carries, which names the ship card the turn is about.
 var reportCardRe = regexp.MustCompile(`(?m)^card: (\S+)[ \t\r]*$`)
 
-// reportCardOf is the ship card id a pasted report turn names, "" when the text is not one.
+// digestTurnRe is the turn id line a fleet digest turn carries. Its fact lines all start with "- ", so one can't forge it.
+var digestTurnRe = regexp.MustCompile(`(?m)^turn: (digest:\S+)[ \t\r]*$`)
+
+// digestTurnPrefix starts the id of every fleet digest turn; a ship card's id never does.
+const digestTurnPrefix = "digest:"
+
+// reportCardOf is the id a pasted report turn names (its ship card) or a pasted digest turn carries, "" when the text is neither.
 func reportCardOf(text string) string {
-	if !strings.HasPrefix(strings.TrimSpace(text), "[Report: ") {
+	re := reportCardRe
+	switch {
+	case strings.HasPrefix(strings.TrimSpace(text), "[Report: "):
+	case strings.HasPrefix(strings.TrimSpace(text), "[Digest: "):
+		re = digestTurnRe
+	default:
 		return ""
 	}
-	if m := reportCardRe.FindStringSubmatch(text); m != nil {
+	if m := re.FindStringSubmatch(text); m != nil {
 		return m[1]
 	}
 	return ""
@@ -136,6 +147,12 @@ func (s *fleetChat) endTurn(id string, how TurnEnd) {
 			log.Printf("admiral: chat %s: could not save the report queue: %v", s.key, err)
 		}
 	})
+	if first && strings.HasPrefix(id, digestTurnPrefix) {
+		if s.OnDigestReply != nil {
+			s.OnDigestReply(s.key, DigestReply{TurnID: id, MessageID: e.ID, Text: e.Text})
+		}
+		return
+	}
 	if first && s.OnReply != nil {
 		s.OnReply(s.key, ReportReply{CardID: id, MessageID: e.ID, Text: e.Text})
 	}
