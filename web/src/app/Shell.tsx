@@ -16,21 +16,24 @@ import { LaunchForm } from './LaunchDialog';
 import { forYouLinkText } from './orderDetail';
 import { watchPresence } from './presence';
 import { ToastRegion } from './ToastRegion';
-import { ships, shipsLink, shipsLoaded, sources } from './shipsLink';
+import { ships, shipsLink, shipsLoaded, sources, sourcesLoaded } from './shipsLink';
 import { signedOut } from './session';
 import { Unreachable } from './Unreachable';
 import { PairScreen } from './PairScreen';
 import { InstallSheet } from './InstallPrompts';
 import { gateOf } from './pairing';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
-import { call, type Ship } from './api';
+import { call, iconSrc, type Ship } from './api';
 import { ShipOrder, ShipRepo } from './ShipOrder';
 import { CrewPage } from './CrewPage';
 import { RoutinesPage } from './RoutinesPage';
 import { StandingOrdersPage } from './StandingOrdersPage';
 import { holdFire } from './holdFireLink';
 import { holdFireBanner } from './routines';
-import { campaignOf, crewOf, go, loc, routineCreating, routineOf, shipPath, shipSession, standingOrdersTab, surfaceOf, surfacePath } from './router';
+import { campaignOf, crewOf, go, loc, moduleOf, modulePath, routineCreating, routineOf, shipPath, shipSession, standingOrdersTab, surfaceOf, surfacePath } from './router';
+import { resolveModule } from './modules';
+import { ModulePage, ModuleSkeleton } from './ModulePage';
+import { WaitingBadge } from './WaitingBadge';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
 import { ChatPanel } from './ChatPanel';
 import { NeedsYouBadge, OrdersPanel, needsYouCount } from './OrdersScreen';
@@ -40,7 +43,15 @@ import { watchPush } from './pushLink';
 import { parseBuildStamp } from './buildCheck';
 import { ShipView } from './ShipView';
 import { UpdateBadge } from './UpdateBadge';
-import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
+import { emptyLine, moreItems, navItems, PHONE_TABS, SURFACES, surfaceById, type NavItem, type Surface } from './surfaces';
+
+type ModuleItem = Extract<NavItem, { kind: 'module' }>;
+interface ModuleView {
+  key: string;
+  name: string;
+  /** The route isn't settled yet: draw the skeleton and fetch nothing. */
+  pending: boolean;
+}
 
 const PHONE_QUERY = '(max-width: 640px)';
 
@@ -71,6 +82,29 @@ function Link({ surface, class: cls, onNavigate, children }: { surface: Surface;
       }}
     >
       {children}
+    </a>
+  );
+}
+
+function ModuleLink({ item, class: cls, size, onNavigate }: { item: ModuleItem; class: string; size: number; onNavigate?: () => void }) {
+  const current = !surfaceOf(loc.value.path) && moduleOf(loc.value.path)?.key === item.key;
+  const search = fleetSearch.value;
+  const href = modulePath(item.key);
+  return (
+    <a
+      class={cls}
+      href={href + search}
+      aria-current={current ? 'page' : undefined}
+      onClick={(e) => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        go(href, search);
+        onNavigate?.();
+      }}
+    >
+      {item.icon_url ? <img src={iconSrc(item.icon_url)} alt="" width={size} height={size} /> : <Icon name="orders" size={size} />}
+      {item.name}
+      <WaitingBadge count={item.waiting} />
     </a>
   );
 }
@@ -283,11 +317,11 @@ function HoldFireBanner() {
   );
 }
 
-function Stage({ surface, title, phone }: { surface: Surface; title: boolean; phone?: boolean }) {
+function Stage({ surface, mod, title, phone }: { surface: Surface; mod: ModuleView | null; title: boolean; phone?: boolean }) {
   return (
     <div class="stage">
       <HoldFireBanner />
-      {surface.id === 'preferences' ? <Preferences phone={!!phone} /> : <Panel surface={surface} title={title} phone={phone} />}
+      {mod ? mod.pending ? <ModuleSkeleton name={mod.name} title={title} phone={phone} /> : <ModulePage key={mod.key} sourceKey={mod.key} title={title} phone={phone} /> : surface.id === 'preferences' ? <Preferences phone={!!phone} /> : <Panel surface={surface} title={title} phone={phone} />}
     </div>
   );
 }
@@ -295,17 +329,21 @@ function Stage({ surface, title, phone }: { surface: Surface; title: boolean; ph
 function MoreSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet label="More" onClose={onClose}>
-      {MORE.map((id) => (
-        <Link key={id} surface={surfaceById(id)} class="menu-item" onNavigate={onClose}>
-          <Icon name={id} />
-          {surfaceById(id).title}
-        </Link>
-      ))}
+      {moreItems(sources.value, activeFleet.value?.key).map((item) =>
+        item.kind === 'module' ? (
+          <ModuleLink key={`module:${item.key}`} item={item} class="menu-item" size={15} onNavigate={onClose} />
+        ) : (
+          <Link key={item.id} surface={surfaceById(item.id)} class="menu-item" onNavigate={onClose}>
+            <Icon name={item.id} />
+            {surfaceById(item.id).title}
+          </Link>
+        ),
+      )}
     </Sheet>
   );
 }
 
-function PhoneShell({ surface }: { surface: Surface }) {
+function PhoneShell({ surface, mod }: { surface: Surface; mod: ModuleView | null }) {
   const [more, setMore] = useState(false);
   const moreBtn = useRef<HTMLButtonElement>(null);
   const closeMore = () => {
@@ -318,10 +356,10 @@ function PhoneShell({ surface }: { surface: Surface }) {
       {shipSession(loc.value.path) ? null : (
         <header class="phone-header">
           <FleetSwitcher sheet />
-          <h1>{surface.title}</h1>
+          <h1>{mod ? mod.name : surface.title}</h1>
         </header>
       )}
-      <Stage surface={surface} title={false} phone />
+      <Stage surface={surface} mod={mod} title={false} phone />
       <nav class="tabbar" aria-label="Main">
         {PHONE_TABS.map((id) => (
           <Link key={id} surface={surfaceById(id)} class="tab">
@@ -345,12 +383,16 @@ export function Shell() {
   const phone = usePhone();
   useEffect(() => watchAttention(), []);
   useEffect(() => watchPush(), []);
-  const surface = surfaceOf(loc.value.path) ?? SURFACES[0];
+  const known = surfaceOf(loc.value.path);
+  const route = known ? null : resolveModule(loc.value.path, sources.value, sourcesLoaded.value);
+  const pendingKey = moduleOf(loc.value.path)?.key ?? '';
+  const mod: ModuleView | null = route?.state === 'open' ? { key: route.source.key, name: route.source.name, pending: false } : route?.state === 'pending' ? { key: pendingKey, name: sources.value.find((s) => s.key === pendingKey)?.name || pendingKey, pending: true } : null;
+  const surface = known ?? SURFACES[0];
   const gate = signedOut.value ? 'pair' : gateOf(shipsLink.value);
   // An overlay, not a replacement: a blip must not unmount a Launch sheet with typed work in it.
   return (
     <>
-      {phone ? <PhoneShell surface={surface} /> : <DesktopShell surface={surface} />}
+      {phone ? <PhoneShell surface={surface} mod={mod} /> : <DesktopShell surface={surface} mod={mod} />}
       <ToastRegion />
       {gate === 'unreachable' ? <Unreachable /> : null}
       {gate === 'pair' ? <PairScreen /> : null}
@@ -361,27 +403,31 @@ export function Shell() {
 
 const build = parseBuildStamp(document.querySelector('meta[name="admiral-build"]')?.getAttribute('content') ?? null);
 
-function DesktopShell({ surface }: { surface: Surface }) {
+function DesktopShell({ surface, mod }: { surface: Surface; mod: ModuleView | null }) {
   return (
     <div class="shell">
       <nav class="side" aria-label="Main">
         <FleetSwitcher sheet={false} />
-        {SURFACES.map((s) => (
-          <Fragment key={s.id}>
-            <Link surface={s} class="nav-link">
-              <Icon name={s.id} />
-              {s.title}
-              {s.id === 'orders' ? <NeedsYouBadge /> : null}
-            </Link>
-            {s.id === 'campaigns' ? <CampaignSidebar /> : null}
-          </Fragment>
-        ))}
+        {navItems(sources.value, activeFleet.value?.key).map((item) => {
+          if (item.kind === 'module') return <ModuleLink key={`module:${item.key}`} item={item} class="nav-link" size={15} />;
+          const s = surfaceById(item.id);
+          return (
+            <Fragment key={s.id}>
+              <Link surface={s} class="nav-link">
+                <Icon name={s.id} />
+                {s.title}
+                {s.id === 'orders' ? <NeedsYouBadge /> : null}
+              </Link>
+              {s.id === 'campaigns' ? <CampaignSidebar /> : null}
+            </Fragment>
+          );
+        })}
         <div class="side-foot">
           {build ? <span class="side-version">{build.version}</span> : null}
           <UpdateBadge />
         </div>
       </nav>
-      <Stage surface={surface} title />
+      <Stage surface={surface} mod={mod} title />
     </div>
   );
 }

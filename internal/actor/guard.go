@@ -63,9 +63,8 @@ var allowed = []struct {
 	// a routine draft is kept for the engineer to open; AdmiralBot never saves, edits or turns on a routine
 	{"POST", []string{"fleets", "*", "routines", "draft"}, fleetKey},
 	{"POST", []string{"fleets", "*", "hold-fire", "on"}, fleetKey},
-	// every fleet's Hold fire can only be turned on from here: it makes Admiral quieter, never louder
+	// reading the global Hold fire is fine; turning it on for every fleet stays with the engineer
 	{"GET", []string{"hold-fire"}, plain},
-	{"POST", []string{"hold-fire", "on"}, plain},
 	{"POST", []string{"chat", "notes"}, plain},
 	{"POST", []string{"chat", "commitments"}, plain},
 	{"POST", []string{"chat", "campaign-commitments"}, plain},

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestAnActorMayReadRoutinesDraftOneTurnOneOffAndTurnHoldFireOnButNothingElse(t *testing.T) {
+func TestAnActorMayReadRoutinesDraftOneTurnOneOffAndHoldFireOnOnlyInItsOwnFleet(t *testing.T) {
 	r := newRig(t)
 	for _, c := range []struct{ method, path string }{
 		{"GET", "/api/fleets/work/routines"},
@@ -15,7 +15,6 @@ func TestAnActorMayReadRoutinesDraftOneTurnOneOffAndTurnHoldFireOnButNothingElse
 		{"POST", "/api/fleets/work/routines/draft"},
 		{"POST", "/api/v1/fleets/work/routines/draft"},
 		{"POST", "/api/fleets/work/hold-fire/on"},
-		{"POST", "/api/hold-fire/on"},
 	} {
 		if code := r.do(c.method, c.path, "", "tok-work", local).Code; code != 200 || r.reached != 1 || r.fleet != "work" || !r.acting {
 			t.Errorf("%s %s as work's AdmiralBot: code %d, reached %d for %q; want 200 acting for work", c.method, c.path, code, r.reached, r.fleet)
@@ -29,6 +28,8 @@ func TestAnActorMayReadRoutinesDraftOneTurnOneOffAndTurnHoldFireOnButNothingElse
 		{"POST", "/api/fleets/work/routines/r1/on", "turning a routine on"},
 		{"POST", "/api/fleets/work/hold-fire/off", "turning Hold fire off"},
 		{"POST", "/api/hold-fire/off", "turning every fleet's Hold fire off"},
+		{"POST", "/api/hold-fire/on", "turning every fleet's Hold fire on"},
+		{"POST", "/api/v1/hold-fire/on", "turning every fleet's Hold fire on"},
 		{"POST", "/api/fleets/personal/routines/draft", "another fleet's routine drafter"},
 		{"GET", "/api/fleets/work/routine-drafts/abc", "reading a kept routine draft"},
 		{"POST", "/api/fleets/work/routines", "saving a routine"},

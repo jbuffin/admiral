@@ -307,6 +307,18 @@ var mcpTools = []mcpTool{
 	{"list_inbox", "List the Inbox: what is waiting for the engineer (questions, proposals, reports).", obj(nil, nil), plainGet("/api/inbox")},
 	{"list_sources", "List the order sources with their panels and orders.", obj(nil, nil), plainGet("/api/sources")},
 	{"list_campaigns", "List the campaigns.", obj(nil, nil), plainGet("/api/campaigns")},
+	{"read_campaign", "Read one campaign's tree: each child's status (done, ready, blocked, claimed-no-ship, underway), its open blockers and its live ship. id is the campaign id from list_campaigns, not the parent issue reference work_on_campaign takes.",
+		obj([]string{"id"}, map[string]any{"id": str("the campaign id from list_campaigns")}),
+		func(c *mcpClient, raw json.RawMessage) (string, error) {
+			var a struct{ ID string }
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", err
+			}
+			if a.ID == "" {
+				return "", errors.New("id is required")
+			}
+			return c.get("/api/campaigns/" + url.PathEscape(a.ID))
+		}},
 	{"launch_ship", "Launch a ship, from an order (source and order_id) or freeform text. A Commodore launch runs in autopilot mode unless with_me is true; the result says which mode the ship runs in.",
 		obj([]string{"harness"}, map[string]any{
 			"harness":    str("the harness: claude, codex or copilot"),
@@ -369,9 +381,10 @@ var mcpTools = []mcpTool{
 			}
 			return c.post(path, nil)
 		}},
-	{"hold_fire_on", "Turn Hold fire on, so this fleet's routines propose instead of acting; with all_fleets, every fleet's. Only the engineer turns it off.",
-		obj(nil, map[string]any{"all_fleets": flag01("true to turn Hold fire on for every fleet, not only this one")}),
+	{"hold_fire_on", "Turn Hold fire on in this fleet, so its routines propose instead of acting. Only the engineer turns it off, or on for every fleet.",
+		obj(nil, nil),
 		func(c *mcpClient, raw json.RawMessage) (string, error) {
+			// all_fleets left the schema but is still decoded, so asking for every fleet is refused, not narrowed to this fleet
 			var a struct {
 				AllFleets bool `json:"all_fleets"`
 			}
@@ -379,7 +392,7 @@ var mcpTools = []mcpTool{
 				return "", err
 			}
 			if a.AllFleets {
-				return c.post("/api/hold-fire/on", nil)
+				return "", errors.New("AdmiralBot turns Hold fire on only in its own fleet; the engineer turns it on for every fleet")
 			}
 			path, err := c.fleetPath("/hold-fire/on")
 			if err != nil {

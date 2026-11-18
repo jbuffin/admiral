@@ -19,6 +19,7 @@ const page = vi.hoisted(() => {
 });
 
 import { githubPath, limitsFieldOf, limitsPath, standingOrdersPath, standingOrdersTab, routineCreating, installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, routineNewPath, routineOf, routinePath } from './router';
+import { sourcesLoaded } from './shipsLink';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -118,7 +119,11 @@ describe('the router', () => {
     expect(page.pathname).toBe('/app/campaigns/3f9c0a41b7d2e8a5');
     expect(loc.value.path).toBe('/app/campaigns/3f9c0a41b7d2e8a5');
   });
-  it('still sends an unknown path to the inbox', () => {
+  afterEach(() => {
+    sourcesLoaded.value = false;
+  });
+  it('still sends an unknown path to the inbox once the sources have loaded', () => {
+    sourcesLoaded.value = true;
     page.pathname = '/app/nowhere';
     startRouter();
     expect(page.pathname).toBe('/app/inbox');

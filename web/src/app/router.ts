@@ -1,5 +1,10 @@
 import { signal } from '@preact/signals';
+import { moduleOf, modulePath, resolveModule } from './modules';
+import type { Source } from './api';
+import { sources, sourcesLoaded } from './shipsLink';
 import { SURFACES, type Surface } from './surfaces';
+
+export { moduleOf, modulePath };
 
 export const loc = signal({ path: location.pathname, search: location.search });
 
@@ -219,11 +224,53 @@ export function go(path: string, search: string, replace = false) {
   sync();
 }
 
-// /app, /app/ and unknown paths land on the inbox, replacing the entry so Back doesn't loop.
-function normalize() {
-  if (!surfaceOf(location.pathname)) history.replaceState(null, '', `/app/inbox${location.search}`);
-  sync();
+export interface FleetView {
+  active: string | null;
+  keys: string[];
 }
+
+// fleets.ts imports this file, so it hands its state over instead of being imported.
+let fleetView = (): FleetView => ({ active: null, keys: [] });
+export const provideFleets = (fn: () => FleetView) => {
+  fleetView = fn;
+};
+
+const withFleet = (search: string, fleet: string) => {
+  const q = new URLSearchParams(search);
+  q.set('fleet', fleet);
+  return `?${q}`;
+};
+
+/** Where a path that isn't a surface goes once its meaning is known: null keeps it, else the entry replacing it. */
+export function settleTarget(path: string, search: string, list: Source[], loaded: boolean, fleet: FleetView): { path: string; search: string } | null {
+  if (surfaceOf(path)) return null;
+  const m = resolveModule(path, list, loaded);
+  if (m?.state === 'pending') return null;
+  if (m?.state === 'open') {
+    // A module of another fleet opens that fleet, in place of the entry so Back doesn't return to the mismatch.
+    return fleet.active && fleet.active !== m.fleet && fleet.keys.includes(m.fleet) ? { path, search: withFleet(search, m.fleet) } : null;
+  }
+  return { path: '/app/inbox', search };
+}
+
+/** The path a fleet switch lands on: a module page of another fleet is left for the inbox, so the switch sticks. */
+export function pathAfterFleetSwitch(path: string, search: string, key: string, list: Source[], loaded: boolean): string {
+  if (surfaceOf(path)) return path;
+  const m = resolveModule(path, list, loaded);
+  return m?.state === 'open' && m.fleet !== key ? '/app/inbox' : path;
+}
+
+function normalize() {
+  // Reads every input before deciding, so an effect over it never goes idle.
+  const t = settleTarget(location.pathname, location.search, sources.value, sourcesLoaded.value, fleetView());
+  const at = loc.value;
+  if (t) history.replaceState(null, '', t.path + t.search);
+  // An unchanged location isn't rewritten, or the effect over this would feed itself.
+  if (at.path !== location.pathname || at.search !== location.search) sync();
+}
+
+/** Judges the path again, so /app, /app/ and unknown paths land on the inbox in place of the entry, for when the sources, the fleets or the path change. */
+export const settleRoute = normalize;
 
 export function startRouter() {
   addEventListener('popstate', normalize);
