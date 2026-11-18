@@ -7,6 +7,13 @@ const TONES: readonly string[] = ['good', 'warn', 'muted'];
 /** A plugin's tone, or neutral for a missing or unknown one. */
 export const chipTone = (tone?: string): ChipTone => (tone !== undefined && TONES.includes(tone) ? (tone as ChipTone) : 'neutral');
 
+export type NoticeTone = 'info' | 'warn' | 'error';
+
+const NOTICE_TONES: readonly string[] = ['warn', 'error'];
+
+/** A notice's tone, or info for a missing or unknown one. */
+export const noticeTone = (tone?: string): NoticeTone => (tone !== undefined && NOTICE_TONES.includes(tone) ? (tone as NoticeTone) : 'info');
+
 /** The groups narrowed to rows whose title, subtitle or a chip label holds the query; a group with none left drops. */
 export function filterGroups(groups: PageGroup[], query: string): PageGroup[] {
   const q = query.trim().toLowerCase();

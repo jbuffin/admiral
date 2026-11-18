@@ -668,10 +668,17 @@ export interface PageGroup {
   title: string;
   rows: PageRow[];
 }
+export interface PageNotice {
+  id: string;
+  text: string;
+  tone?: string;
+  link?: { label: string; url: string } | null;
+}
 export interface ModulePageData {
   state: PageState;
   groups: PageGroup[];
   waiting: number;
+  notices?: PageNotice[];
   auth?: { message: string; url?: string; code?: string };
   error?: string;
 }

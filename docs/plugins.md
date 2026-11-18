@@ -191,6 +191,14 @@ A plugin that lists `page` in its `initialize` capabilities is a **module**: it 
 
 A row is `{id, title, subtitle, chips, reason, action, actions}`. `id` is required and the other fields are optional. `reason` says why the row is in its group, and `action` is the row's one main action. `actions` is an optional list of further actions. A chip is `{label, tone}`, and `tone` is one of `neutral`, `good`, `warn` or `muted`; any other value reads as `neutral`. An action is `{id, label, confirm, summary, url}`. `confirm` is `click`, `yesno` or `form` (anything else reads as `yesno`), and `url` is optional. A module action with a `url` opens that link and Admiral runs nothing; one without a `url` is run through `action.form` and `action.run` below. `waiting` is the count of rows waiting on the engineer.
 
+**A module's notices.** The `page.get` result may also carry `notices`, a list of `{id, text, tone, link}` in the order to draw them: lines about the module itself (an update is waiting, a setting to choose, an upstream read is failing), drawn above the groups. `id` is required and follows the row id rules, unique among the page's notices. `tone` is `info`, `warn` or `error`; any other value reads as `info`. `link` is optional, `{label, url}` like a detail-view link, and opens in a new tab. The engineer can't dismiss a notice, and a notice never counts toward `waiting` or the nav badge, whatever its tone. Notices belong to the last good page: they stay while the source is `auth_required` or `error`.
+
+```json
+{"jsonrpc":"2.0","id":5,"result":{"groups":[],"waiting":0,"notices":[{"id":"update","text":"An update is waiting","tone":"warn","link":{"label":"Release notes","url":"https://example.com/releases"}}]}}
+```
+
+**Loading.** `loading: true` says the plugin has not finished its first upstream read. While the source has no good page, the page stays `starting` and the shell draws its notices above the starting skeleton, so a plugin can say "Pick your project" before it has data; its `groups` and `waiting` are ignored. After a page has been shown, a `loading: true` answer changes nothing and the last good groups and notices stay. The next answer without `loading`, after a `page.changed`, draws normally. Admiral sets no time limit on loading.
+
 **`row.get`**: sent when the engineer opens a row of the last good page. The `id` and the `include` values come from a client through Admiral, which checks only their length and that the id is on the page, so treat both as untrusted (never build a file path from them without checking). `include` is optional and lists parts you leave out by default, such as closed or queued steps; it is left out of the params when the engineer asked for none.
 
 ```json
@@ -236,24 +244,26 @@ An answer is dropped whole, and the last good page stays served, when:
 
 - there are more than **5,000 rows** or **100 groups**, or `groups` or `rows` is not a list;
 - a group or row has no `id`, or an `id` that is not a string, holds a control character or is over **200 characters**, or a group id or a row id (across the whole page) is used twice;
+- there are more than **20 notices**, or a notice has no `id`, an `id` that is not a valid id (the rule above), or an `id` used twice among the notices;
 - a row or step has more than **10 chips**, or more than **10 actions** (a row's main `action` counts as one);
 - a detail view is over **1 MiB**, or uses a step `id` twice;
 - the answer is not an object.
 
 A part that is bad is dropped by itself, and the rest of the answer stays:
 
+- a notice whose text is empty after cleaning, which drops itself;
 - a chip with no label, an action with no `id` or `label`, a link with no label, a field with no label, a step with no usable `id`, and a section of an unknown `kind`;
-- a link or an action whose `url` is not `http:` or `https:`;
+- a link or an action whose `url` is not `http:` or `https:`, and a notice's link with no label or such a url, which drops the link and keeps the notice;
 - a field whose `value` holds a control character other than a line break or tab.
 
-Two values are corrected: a negative or non-number `waiting` reads 0, and an unknown chip `tone` reads `neutral`. Titles, subtitles, reasons and labels are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
+Two values are corrected: a negative or non-number `waiting` reads 0, an unknown chip `tone` reads `neutral`, and an unknown notice `tone` reads `info`. A notice's text is cut to one line of at most 300 characters, without invisible or bidirectional-control characters. An `action` on a notice is ignored. Titles, subtitles, reasons and labels are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
 
 ## Writing a module
 
 A module is an ordinary plugin that also draws a page. This is the read side; the answers' shapes and limits are in [A module's page](#a-modules-page), and the routes a client reads are in [the API](api.md#get-apisourceskeypage-and-get-apisourceskeyrowsid).
 
 1. **Declare `page`.** List `"page"` in the `capabilities` of your `initialize` answer. A plugin that does not is never asked for a page. You may also answer `messageKinds` there, a list of `{kind, label, job}` for the messages you want Admiral to be able to send; Admiral only keeps them for now.
-2. **Answer `page.get`.** It comes during start-up, before the source is `ok`, and again after each `page.changed` and `page.refresh`. Answer the groups and the waiting count. A refused answer (over a limit, not valid) leaves the last good page served, and a call that fails with an error of yours shows the page as `error` with your message until the next good answer.
+2. **Answer `page.get`.** It comes during start-up, before the source is `ok`, and again after each `page.changed` and `page.refresh`. Answer the groups and the waiting count, and add `notices` to say something about the module itself. Send `loading: true` while your first upstream read is still running. A refused answer (over a limit, not valid) leaves the last good page served, and a call that fails with an error of yours shows the page as `error` with your message until the next good answer.
 3. **Answer `row.get`.** It comes when the engineer opens a row of the last good page.
 4. **Tell Admiral when your data changes.** Send `page.changed`. Name the rows whose detail changed to have open ones refetched, or send it without params to refetch every open row. Admiral asks `page.get` once for changes that arrive together, and drops a malformed list and an id that is not a valid id. A `rows` list of more than 5,000 items, or more than 5,000 distinct ids among the changes that coalesce into one `page.get`, counts as naming no rows, so every open row is refetched.
 
@@ -363,7 +373,8 @@ tasks = {"t1": {"title": "Fix login", "done": False}, "t2": {"title": "Update do
 def page():
     rows = [{"id": i, "title": t["title"], "chips": [{"label": "done" if t["done"] else "open", "tone": "good" if t["done"] else "warn"}]}
             for i, t in tasks.items()]
-    return {"groups": [{"id": "tasks", "title": "Tasks", "rows": rows}], "waiting": sum(not t["done"] for t in tasks.values())}
+    return {"groups": [{"id": "tasks", "title": "Tasks", "rows": rows}], "waiting": sum(not t["done"] for t in tasks.values()),
+            "notices": [{"id": "demo", "text": "These tasks are examples", "tone": "info"}]}
 
 
 def handle(method, params):

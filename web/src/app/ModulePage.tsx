@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
-import { fetchModulePage, fetchModuleRow, restartSource, type ModulePageData, type PageAction, type PageChip, type PageRow, type RowDetail } from './api';
+import { fetchModulePage, fetchModuleRow, restartSource, type ModulePageData, type PageAction, type PageChip, type PageNotice, type PageRow, type RowDetail } from './api';
 import { Icon } from './Icon';
 import { ModuleActions, ModuleActionsProvider, useModuleActions, useUpdating } from './ModuleActions';
 import { ListGroup } from './ListGroup';
-import { chipTone, filterGroups, shouldRefetchRow } from './moduleView';
+import { chipTone, filterGroups, noticeTone, shouldRefetchRow } from './moduleView';
 import { closeRow, openRow } from './moduleNav';
 import { go, loc, moduleOf, modulePath } from './router';
 import { openableRow } from './modules';
@@ -38,6 +38,23 @@ export function ModuleSkeleton({ name, title, phone }: { name: string; title: bo
       {title ? <h1>{name}</h1> : null}
       <div class="skeleton" role="status" aria-label="Loading" />
     </main>
+  );
+}
+
+function Notices({ notices }: { notices: PageNotice[] }) {
+  return notices.length === 0 ? null : (
+    <ul class="mnotices">
+      {notices.map((n) => (
+        <li key={n.id} class="mnotice" data-tone={noticeTone(n.tone)}>
+          <span class="mnotice-text">{n.text}</span>
+          {n.link && isWebUrl(n.link.url) ? (
+            <a href={n.link.url} target="_blank" rel="noopener noreferrer">
+              {n.link.label}
+            </a>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -258,6 +275,7 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
     <div class={`orders-split${detail ? ' has-pane' : ''}`}>
       <main class={phone ? 'panel module-page phone' : 'panel module-page'}>
         {title ? <h1>{source?.name ?? sourceKey}</h1> : null}
+        {page?.notices ? <Notices notices={page.notices} /> : null}
         {(!page && !problem) || page?.state === 'starting' ? <div class="skeleton" role="status" aria-label="Loading" /> : null}
         {problem ? (
           <p class="note error" role="alert">

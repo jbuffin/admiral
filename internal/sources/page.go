@@ -12,14 +12,16 @@ import (
 )
 
 const (
-	maxPageRows   = 5000
-	maxPageGroups = 100
-	maxChips      = 10
-	maxActions    = 10
-	maxRowDetail  = 1 << 20 // bytes of one row.get answer
-	maxTitleRunes = 200
-	maxIDRunes    = 200 // every id, and every include value on the row route
-	maxInclude    = 10
+	maxPageRows    = 5000
+	maxPageGroups  = 100
+	maxChips       = 10
+	maxActions     = 10
+	maxRowDetail   = 1 << 20 // bytes of one row.get answer
+	maxTitleRunes  = 200
+	maxNotices     = 20
+	maxNoticeRunes = 300
+	maxIDRunes     = 200 // every id, and every include value on the row route
+	maxInclude     = 10
 
 	maxFormBytes     = 64 << 10 // bytes of one action.form answer
 	maxFormFields    = 20
@@ -43,7 +45,10 @@ const (
 	PageError        = "error"
 )
 
-var chipTones = []string{"neutral", "good", "warn", "muted"}
+var (
+	chipTones   = []string{"neutral", "good", "warn", "muted"}
+	noticeTones = []string{"info", "warn", "error"}
+)
 
 type Chip struct {
 	Label string `json:"label"`
@@ -74,18 +79,29 @@ type Group struct {
 	Rows  []Row  `json:"rows"`
 }
 
+// Notice is a line a module says about itself, drawn above its groups.
+type Notice struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+	Tone string `json:"tone"`
+	Link *Link  `json:"link,omitempty"`
+}
+
 type Page struct {
-	Groups  []Group `json:"groups"`
-	Waiting int     `json:"waiting"`
+	Groups  []Group  `json:"groups"`
+	Waiting int      `json:"waiting"`
+	Notices []Notice `json:"notices"`
+	Loading bool     `json:"-"`
 }
 
 // PageView is a source's page as served: the last good answer and whether there has been one.
 type PageView struct {
-	State   string  `json:"state"`
-	Groups  []Group `json:"groups"`
-	Waiting int     `json:"waiting"`
-	Auth    *Auth   `json:"auth,omitempty"`
-	Error   string  `json:"error,omitempty"`
+	State   string   `json:"state"`
+	Groups  []Group  `json:"groups"`
+	Waiting int      `json:"waiting"`
+	Notices []Notice `json:"notices"`
+	Auth    *Auth    `json:"auth,omitempty"`
+	Error   string   `json:"error,omitempty"`
 }
 
 type Link struct {
@@ -125,7 +141,9 @@ type MessageKind struct {
 }
 
 // titleLine is raw cut to its first line, without invisible characters, and capped.
-func titleLine(raw json.RawMessage) string {
+func titleLine(raw json.RawMessage) string { return cappedLine(raw, maxTitleRunes) }
+
+func cappedLine(raw json.RawMessage, runes int) string {
 	s, _ := rawString(raw)
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
@@ -133,7 +151,7 @@ func titleLine(raw json.RawMessage) string {
 		}
 		return r
 	}, oneLine(s))
-	return truncate(s, maxTitleRunes)
+	return truncate(s, runes)
 }
 
 // parseID is raw as an id: a non-empty string with no control character, within the id cap.
@@ -248,10 +266,58 @@ func parseRow(raw json.RawMessage) (Row, error) {
 	return row, nil
 }
 
+// parseNotices keeps the notices in order; a notice with no usable id or a repeated one refuses the list, and one with no text or a bad link drops itself or its link.
+func parseNotices(raw []json.RawMessage) ([]Notice, error) {
+	if len(raw) > maxNotices {
+		return nil, fmt.Errorf("%d notices, over the limit of %d", len(raw), maxNotices)
+	}
+	out := []Notice{}
+	seen := map[string]bool{}
+	for _, n := range raw {
+		var item struct {
+			ID   json.RawMessage `json:"id"`
+			Text json.RawMessage `json:"text"`
+			Tone json.RawMessage `json:"tone"`
+			Link json.RawMessage `json:"link"`
+		}
+		if err := decodeInto(n, &item); err != nil {
+			return nil, err
+		}
+		id, ok := parseID(item.ID)
+		if !ok {
+			return nil, errors.New("a notice has no usable id")
+		}
+		if seen[id] {
+			return nil, fmt.Errorf("notice id %q is used twice", id)
+		}
+		seen[id] = true
+		text := cappedLine(item.Text, maxNoticeRunes)
+		if text == "" {
+			continue
+		}
+		tone, _ := rawString(item.Tone)
+		if !slices.Contains(noticeTones, tone) {
+			tone = "info"
+		}
+		notice := Notice{ID: id, Text: text, Tone: tone}
+		var l struct{ Label, URL json.RawMessage }
+		if json.Unmarshal(item.Link, &l) == nil {
+			u, _ := rawString(l.URL)
+			if u, label := safeURL(u), titleLine(l.Label); u != "" && label != "" {
+				notice.Link = &Link{Label: label, URL: u}
+			}
+		}
+		out = append(out, notice)
+	}
+	return out, nil
+}
+
 func parsePage(raw json.RawMessage) (Page, error) {
 	var res struct {
 		Groups  []json.RawMessage `json:"groups"`
 		Waiting json.RawMessage   `json:"waiting"`
+		Notices []json.RawMessage `json:"notices"`
+		Loading bool              `json:"loading"`
 	}
 	if err := decodeInto(raw, &res); err != nil {
 		return Page{}, fmt.Errorf("page.get: %w", err)
@@ -259,7 +325,11 @@ func parsePage(raw json.RawMessage) (Page, error) {
 	if len(res.Groups) > maxPageGroups {
 		return Page{}, fmt.Errorf("page.get: %d groups, over the limit of %d", len(res.Groups), maxPageGroups)
 	}
-	page := Page{Groups: []Group{}, Waiting: positiveInt(res.Waiting)}
+	notices, err := parseNotices(res.Notices)
+	if err != nil {
+		return Page{}, fmt.Errorf("page.get: %w", err)
+	}
+	page := Page{Groups: []Group{}, Waiting: positiveInt(res.Waiting), Notices: notices, Loading: res.Loading}
 	total := 0
 	groupIDs, rowIDs := map[string]bool{}, map[string]bool{}
 	for _, g := range res.Groups {
@@ -439,8 +509,15 @@ func (r *runner) fetchPage(ctx context.Context, p conn) bool {
 		return false
 	}
 	r.mu.Lock()
-	r.page, r.hasPage, r.pageErr = page, true, ""
-	r.forgetStepsLocked()
+	switch {
+	case !page.Loading:
+		r.page, r.hasPage = page, true
+		r.forgetStepsLocked()
+	case !r.hasPage:
+		// Only its notices show until the first answer without loading.
+		r.page = Page{Groups: []Group{}, Notices: page.Notices}
+	}
+	r.pageErr = ""
 	r.mu.Unlock()
 	return true
 }
@@ -487,9 +564,12 @@ func (r *runner) Page() (PageView, bool) {
 	if r.noPage {
 		return PageView{}, false
 	}
-	v := PageView{State: r.pageStateLocked(), Groups: []Group{}}
+	v := PageView{State: r.pageStateLocked(), Groups: []Group{}, Notices: []Notice{}}
 	if r.hasPage {
 		v.Groups, v.Waiting = r.page.Groups, r.page.Waiting
+	}
+	if r.page.Notices != nil {
+		v.Notices = r.page.Notices
 	}
 	switch v.State {
 	case PageAuthRequired:

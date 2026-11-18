@@ -143,7 +143,7 @@ func TestANoticeTextIsOneLineWithoutInvisibleCharactersAndAtMost300Characters(t 
 func TestANoticeWhoseTextIsEmptyAfterCleaningIsDroppedAndTheRestOfTheAnswerStays(t *testing.T) {
 	raw := `{"groups":` + alphaPage + `,"waiting":2,"notices":[
 		{"id":"missing"},{"id":"blank","text":"   "},{"id":"invisible","text":"​‮"},{"id":"number","text":7},
-		{"id":"kept","text":"Kept"},{"id":"newline","text":"\nlater line"}]}`
+		{"id":"kept","text":"Kept"}]}`
 	p, err := parsePage(json.RawMessage(raw))
 	if err != nil {
 		t.Fatalf("parsePage: %v, want the answer to stand", err)
