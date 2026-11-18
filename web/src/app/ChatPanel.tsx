@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Actions, Button } from './Button';
+import { Icon } from './Icon';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
 import { probeChatSession, type Fleet, type Result } from './api';
 import { computed } from '@preact/signals';
@@ -111,7 +112,7 @@ function LaunchLineView({ item }: { item: Extract<ThreadItem, { kind: 'launch_li
   const [open, setOpen] = useState(false);
   return (
     <div class="convo-card chat-card">
-      <p class="chat-card-eyebrow">{v.sentence}</p>
+      <p class="chat-card-eyebrow launch-sentence">{v.sentence}</p>
       {v.shipHref ? (
         <Button
           label={`Open ship ${v.name}`}
@@ -130,6 +131,9 @@ function LaunchLineView({ item }: { item: Extract<ThreadItem, { kind: 'launch_li
       {v.text ? (
         <>
           <button type="button" class="tool-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+            <span class={`fold-chevron${open ? ' open' : ''}`}>
+              <Icon name="chevron" size={14} />
+            </span>
             Launch text
           </button>
           {open ? <p class="line launch-text">{v.text}</p> : null}

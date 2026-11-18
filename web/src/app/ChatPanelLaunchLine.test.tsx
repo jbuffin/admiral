@@ -13,7 +13,7 @@ vi.mock('./router', async (orig) => ({ ...(await orig<typeof import('./router')>
 
 const surface = { id: 'chat', title: 'Chat', scoped: true, line: '' } as unknown as Surface;
 const alpha = { key: 'alpha', name: 'Homeport', color: '#2a9d8f', docks: [], chat: { on: true, off_reason: '', harnesses: [], harness_options: [], models: [], efforts: [] } } as unknown as Fleet;
-const card: LaunchLine = { ship: 'calm-otter', name: 'Calm Otter', fleet: 'alpha', kind: 'quick_ship', reason: 'to fix the 500 in widgets', text: 'Read the logs and fix the 500.' };
+const card: LaunchLine = { ship: 'calm-otter', name: 'Calm Otter', first_launched: '2026-01-02T03:04:05Z', fleet: 'alpha', kind: 'quick_ship', reason: 'to fix the 500 in widgets', text: 'Read the logs and fix the 500.' };
 const live = (over: Partial<Ship> = {}) => ({ session: 'calm-otter', name: 'Calm Otter', first_launched: '2026-01-02T03:04:05Z', status: 'working', ...over }) as Ship;
 
 const chatWith = (c: Partial<LaunchLine>) =>
@@ -49,11 +49,19 @@ test.each([
   ['scout', 'Sent a scout to fix the 500 in widgets'],
   ['commodore', 'Sent a Commodore ship to fix the 500 in widgets'],
   ['tdd', 'Sent a tdd ship to fix the 500 in widgets'],
+  ['improve-codebase', 'Sent an improve-codebase ship to fix the 500 in widgets'],
 ])('a %s launch reads "%s", with the reason as written', async (kind, wording) => {
   chatWith({ kind });
   ships.value = [live()];
   const el = await line('Sent a');
   expect(el.textContent).toContain(wording);
+});
+
+test('a launch with no reason reads without a trailing space', async () => {
+  chatWith({ reason: '' });
+  ships.value = [live()];
+  await line('Sent a');
+  expect(document.querySelector('.launch-sentence')?.textContent).toBe('Sent a quick ship');
 });
 
 test('the launch text is behind a closed disclosure that a click opens and shows exactly', async () => {
@@ -85,7 +93,7 @@ test('a launch with no launch text has no disclosure', async () => {
   expect(document.querySelector('[aria-expanded]')).toBeNull();
 });
 
-test("the ship's name links to it while it is afloat, and is plain text once it is gone", async () => {
+test("the ship's name links to it while it is afloat", async () => {
   chatWith({});
   ships.value = [live()];
   await line('Sent a');
@@ -93,6 +101,14 @@ test("the ship's name links to it while it is afloat, and is plain text once it 
   expect(link.getAttribute('href')).toContain(shipPath('calm-otter'));
   fireEvent.click(link);
   expect(nav.go.mock.calls[0][0]).toBe(shipPath('calm-otter'));
+});
+
+test('a ship with the same session but another first_launched shows its name with no link', async () => {
+  chatWith({});
+  ships.value = [live({ first_launched: '2026-02-03T04:05:06Z' })];
+  const el = await line('Sent a');
+  expect(el.textContent).toContain('Calm Otter');
+  expect(screen.queryByRole('link', { name: /Calm Otter/ })).toBeNull();
 });
 
 test('a ship no longer afloat shows its name with no link', async () => {

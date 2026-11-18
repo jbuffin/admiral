@@ -224,7 +224,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.OnInstruction && s.PostLaunchLine != nil {
-		line := LaunchLine{Ship: got.Session, Name: got.Name, Kind: launchKind(req), Reason: req.Reason, Text: req.Text}
+		line := LaunchLine{Ship: got.Session, Name: got.Name, FirstLaunched: cmpFirst(got.FirstLaunched, got.Launched), Kind: launchKind(req), Reason: req.Reason, Text: req.Text}
 		if err := s.PostLaunchLine(req.Fleet, line); err != nil {
 			log.Printf("ships: launch line for %s: %v", got.Session, err)
 		}

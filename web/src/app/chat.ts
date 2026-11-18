@@ -55,6 +55,7 @@ export interface ShipCard {
 export interface LaunchLine {
   ship: string;
   name?: string;
+  first_launched?: string;
   fleet: string;
   kind: string;
   reason: string;
@@ -168,8 +169,8 @@ const LAUNCH_KIND: Record<string, string> = { quick_ship: 'a quick ship', scout:
 /** What a launch line shows: its sentence, the ship and, while the ship is afloat, its page. */
 export function launchLineView(item: Extract<ThreadItem, { kind: 'launch_line' }>, ships: Ship[]): { sentence: string; name: string; shipHref: string; text: string } {
   const c = item.card;
-  const kind = Object.hasOwn(LAUNCH_KIND, c.kind) ? LAUNCH_KIND[c.kind] : `a ${c.kind} ship`;
-  return { sentence: `Sent ${kind} ${c.reason}`, name: c.name || c.ship, shipHref: ships.some((s) => s.session === c.ship) ? shipPath(c.ship) : '', text: c.text };
+  const kind = Object.hasOwn(LAUNCH_KIND, c.kind) ? LAUNCH_KIND[c.kind] : `${/^[aeiou]/i.test(c.kind) ? 'an' : 'a'} ${c.kind} ship`;
+  return { sentence: c.reason ? `Sent ${kind} ${c.reason}` : `Sent ${kind}`, name: c.name || c.ship, shipHref: ships.some((s) => s.session === c.ship && s.first_launched === c.first_launched) ? shipPath(c.ship) : '', text: c.text };
 }
 
 /** What a ship card shows: the ship and its kind, the result in words, each PR and, while its voyage is still in the ships list, the ship's page. */
