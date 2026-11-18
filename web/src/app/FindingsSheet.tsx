@@ -17,7 +17,7 @@ export function FindingsSheet({ ship, firstLaunched, onClose }: { ship: string; 
   useEffect(() => {
     let live = true;
     const query = firstLaunched ? `?first_launched=${encodeURIComponent(firstLaunched)}` : '';
-    fetch(`/api/ships/${encodeURIComponent(ship)}/findings${query}`)
+    fetch(`/api/v1/ships/${encodeURIComponent(ship)}/findings${query}`)
       .then(async (r) => {
         const body = r.ok ? ((await r.json()) as { findings?: string }) : null;
         return typeof body?.findings === 'string' ? ({ kind: 'ready', markdown: body.findings } as State) : ({ kind: 'error' } as State);

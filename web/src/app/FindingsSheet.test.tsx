@@ -24,7 +24,7 @@ test('the sheet asks for its own voyage of the ship and says it is loading until
   const dialog = await screen.findByRole('dialog');
   expect(dialog.textContent).toMatch(/loading/i);
   const url = new URL(calls[0], 'http://admiral.test');
-  expect(url.pathname).toBe('/api/ships/calm-otter/findings');
+  expect(url.pathname).toBe('/api/v1/ships/calm-otter/findings');
   expect(url.searchParams.get('first_launched')).toBe(FIRST);
   release(reply(200, findingsOf('# Done')));
   await waitFor(() => expect(dialog.textContent).not.toMatch(/loading/i));
