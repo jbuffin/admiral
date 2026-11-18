@@ -48,6 +48,22 @@ func withScoutContract(req Request, prompt string) string {
 	return prompt + "\n\n" + scoutContract
 }
 
+const closingSteps = "## Closing steps\n\n" +
+	"When the work is done: commit it on your branch, push the branch, and open a pull request. " +
+	"Then write your Admiral report to the file named by $ADMIRAL_REPORT as JSON with version 2, a result of done, partial or failed, " +
+	"and prs listing the pull request you opened as [{\"url\": ...}], each url the full URL (https://host/owner/repo/pull/N)."
+
+// withClosingSteps puts Admiral's closing steps after a fresh quick ship's launch text: a chat launch, no skill, not a scout, not a wake.
+func withClosingSteps(req Request, prompt string) string {
+	if !req.OnInstruction || req.Skill.Kind != "none" || req.Scout || req.Prompt != "" || req.Bare {
+		return prompt
+	}
+	if prompt == "" {
+		return closingSteps
+	}
+	return prompt + "\n\n" + closingSteps
+}
+
 // resolveScoutDir is the checkout path a scout's ADMIRAL_SCOUT names: absolute, with symlinks resolved.
 func resolveScoutDir(dir string) (string, error) {
 	resolved, err := filepath.EvalSymlinks(dir)

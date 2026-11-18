@@ -335,9 +335,10 @@ var mcpTools = []mcpTool{
 			}
 			return c.get("/api/campaigns/" + url.PathEscape(a.ID))
 		}},
-	{"launch_ship", "Launch a ship, from an order (source and order_id) or freeform text. Every launch runs in autopilot mode unless with_me is true, and the max_ships cap never blocks it; the result says which mode the ship runs in. A scout (scout true) reads and reports back, changes nothing and always runs in autopilot. If autopilot is refused (the harness or fleet has no proven guard), tell the engineer the refusal as it came and that they can say \"with me\"; never relaunch interactive on your own. Set resources, model or effort only when the engineer names one or the fleet's map calls for a resource; otherwise the dock's defaults apply. A busy named resource refuses with its reason.",
-		obj([]string{"harness"}, map[string]any{
+	{"launch_ship", "Launch a ship, from an order (source and order_id) or freeform text. Every launch runs in autopilot mode unless with_me is true, and the max_ships cap never blocks it; the result says which mode the ship runs in. A scout (scout true) reads and reports back, changes nothing and always runs in autopilot. If autopilot is refused (the harness or fleet has no proven guard), tell the engineer the refusal as it came and that they can say \"with me\"; never relaunch interactive on your own. Set resources, model or effort only when the engineer names one or the fleet's map calls for a resource; otherwise the dock's defaults apply. A busy named resource refuses with its reason. reason is required: the one line the engineer reads in the chat beside the ship, such as \"to read the AWS logs\".",
+		obj([]string{"harness", "reason"}, map[string]any{
 			"harness":    str("the harness: claude, codex or copilot"),
+			"reason":     str("one line saying why the ship is launched, e.g. to read the AWS logs"),
 			"dir":        str("a checkout or search root of the fleet"),
 			"clone":      flag01("clone the order's repo instead of naming dir"),
 			"clone_repo": str("the host/owner/repo the clone is for"),
@@ -572,9 +573,17 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 		WithMe        bool `json:"with_me"`
 		Model, Effort string
 		Scout         bool
+		Reason        string
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return "", err
+	}
+	a.Reason = strings.TrimSpace(a.Reason)
+	if a.Reason == "" {
+		return "", errors.New("reason is required: give the one line the engineer reads in the chat, such as \"to read the AWS logs\"")
+	}
+	if strings.ContainsAny(a.Reason, "\r\n") {
+		return "", errors.New("reason must be one line: no line breaks")
 	}
 	autopilot := !a.WithMe
 	if a.Scout {
@@ -587,6 +596,7 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	body["reason"] = a.Reason
 	if a.Scout {
 		body["scout"] = true
 	}

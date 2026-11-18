@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -222,7 +223,26 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, lerr.Status, lerr.Msg)
 		return
 	}
+	if req.OnInstruction && s.PostLaunchLine != nil {
+		line := LaunchLine{Ship: got.Session, Name: got.Name, Kind: launchKind(req), Reason: req.Reason, Text: req.Text}
+		if err := s.PostLaunchLine(req.Fleet, line); err != nil {
+			log.Printf("ships: launch line for %s: %v", got.Session, err)
+		}
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
+}
+
+// launchKind is what a chat launch's line calls the ship: scout, quick_ship, commodore, or the skill's name.
+func launchKind(req launcher.Request) string {
+	switch {
+	case req.Scout:
+		return "scout"
+	case req.Skill.Kind == "commodore":
+		return "commodore"
+	case req.Skill.Kind == "skill":
+		return launcher.TrimSkillMark(req.Skill.Name)
+	}
+	return "quick_ship"
 }
 
 func claimKeyOf(url string) string { k, _ := ClaimKey(url); return k }

@@ -12,12 +12,15 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/jbuffin/admiral/internal/capabilities"
 )
 
 type botOpts struct {
 	chatArgs []string // the chat dock's args; default a ship's widening ones
 	shipCue  []string
-	sources  func(w *world) string // builds the raw `sources` object once the world exists
+	// chatShipCue is the cue a ship launched in the chat's own fleet plays, as FAKE_SHIP_CUE; without it that ship replays the chat's cue.
+	chatShipCue []string
+	sources     func(w *world) string // builds the raw `sources` object once the world exists
 }
 
 // newBotWorld writes a config with two fleets: "chat" (the chat's dock, cue file
@@ -43,6 +46,13 @@ func newBotWorld(t *testing.T, o botOpts) *chatWorld {
 		}
 	}
 	chatEnv := map[string]string{"FAKE_RECORD_DIR": w.rec, "FAKE_CUE": w.cue, "CLAUDE_CONFIG_DIR": c.cfgDir}
+	if o.chatShipCue != nil {
+		chatShipCue := filepath.Join(w.root, "cue-chat-ship")
+		if err := os.WriteFile(chatShipCue, []byte(strings.Join(o.chatShipCue, "\n")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		chatEnv["FAKE_SHIP_CUE"] = chatShipCue
+	}
 	shipEnv := map[string]string{"FAKE_RECORD_DIR": w.rec, "FAKE_CUE": shipCue}
 	cfg := map[string]any{"version": 1,
 		"fleets": map[string]any{
@@ -553,7 +563,7 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 	other := w.launch(w.order("ship", "claude", "otherrepo", noSkill, "x"))
 	c.start()
 
-	launch := map[string]any{"harness": "claude", "dir": w.checkout("repo1"), "skill": "none", "text": "Look at the harbour log"}
+	launch := map[string]any{"harness": "claude", "dir": w.checkout("repo1"), "skill": "none", "text": "Look at the harbour log", "reason": "to read the harbour log"}
 	first := c.mcpCall("launch", "launch_ship", launch)
 	if first.IsError {
 		t.Fatalf("launch_ship was refused: %s", first.text())
@@ -1279,4 +1289,90 @@ func TestAdmiralBot_ChatQuestionsAreReadDefensively(t *testing.T) {
 	if len(s.Questions) != 1 || string(s.Questions[0]["answer"]) != "null" {
 		t.Errorf("with an oversized answer: %+v, want the question still open", s)
 	}
+}
+
+// A quick ship AdmiralBot launches is told to finish with a PR and an Admiral report, so it moors; a scout is not.
+func TestAdmiralBot_AQuickShipFollowsAdmiralsClosingStepsToAPRAndMoors(t *testing.T) {
+	t.Parallel()
+	const text = "Read the logs and fix the 500 in widgets"
+	var g *fakeGH
+	c := newBotWorld(t, botOpts{
+		chatShipCue: []string{"record", "bracketedpaste", "hook working", "wait go", `event Stop {"background_tasks":[]}`},
+		sources: func(w *world) string {
+			g = w.newFakeGH()
+			g.token("", "fake-token-chat")
+			return rawSourcesIn(chatFleet, srcDef{Key: "gh", Plugin: "github", Name: "GitHub", Settings: map[string]any{"views": []any{}}})
+		}})
+	w := c.world
+	prompt := `event UserPromptSubmit {"prompt":"fix the 500 in widgets"}`
+	w.writeCue(prompt, "mcp quick", prompt, "mcp scout")
+	w.checkoutOf(w.work, "widgets", "acme/widgets")
+	g.prState(mooredPR, "OPEN")
+	w.proveGuard(chatFleet)
+	if err := capabilities.Open(w.home).Record(chatFleet, "claude", fakeVersion, capabilities.ScoutGuard,
+		capabilities.Result{Passed: true, At: time.Now(), Detail: "seeded by the test"}); err != nil {
+		t.Fatal(err)
+	}
+	w.start()
+	c.start()
+	dir := filepath.Join(w.work, "widgets")
+
+	shipOf := func(skip string) shipJSON {
+		var found shipJSON
+		waitCond(t, 10*time.Second, "a chat ship", func() bool {
+			for _, s := range w.in.ships(t) {
+				if s.Fleet == chatFleet && s.Via == "admiralbot" && s.Session != skip {
+					found = s
+					return true
+				}
+			}
+			return false
+		})
+		return found
+	}
+	promptOf := func(s shipJSON) string {
+		args := strings.Split(strings.TrimSuffix(w.waitFile(s.Session, "argv"), "\x00"), "\x00")
+		return args[len(args)-1]
+	}
+
+	r := c.mcpCall("quick", "launch_ship", map[string]any{"harness": "claude", "dir": dir, "skill": "none", "text": text, "reason": "to fix the 500 in widgets"})
+	if r.IsError {
+		t.Fatalf("launch_ship was refused: %s", r.text())
+	}
+	ship := shipOf("")
+	got := promptOf(ship)
+	if !strings.HasPrefix(got, text) {
+		t.Errorf("the quick ship's prompt = %q, want it to start with AdmiralBot's launch text", got)
+	}
+	closing := strings.TrimPrefix(got, text)
+	if !strings.Contains(closing, "ADMIRAL_REPORT") {
+		t.Errorf("the text after the launch text = %q, want Admiral's closing steps naming ADMIRAL_REPORT", closing)
+	}
+
+	// The fake harness opens no PR and writes no report, so the test plays the ship following its closing steps.
+	w.finishTurn(ship, mooredReport(mooredPR))
+	w.wantMoored(ship)
+	var line *chatMsg
+	for _, m := range c.session().Messages {
+		if m.Kind == "launch_line" {
+			line = &m
+		}
+	}
+	if line == nil {
+		t.Errorf("the fleet chat holds no launch_line entry after the launch: %+v", c.session().Messages)
+	} else if !strings.Contains(string(line.Card), "to fix the 500 in widgets") || !strings.Contains(string(line.Card), ship.Name) || strings.Contains(string(line.Card), "ADMIRAL_REPORT") {
+		t.Errorf("launch_line card = %s, want the ship's name and reason and no closing steps", line.Card)
+	}
+
+	t.Run("a scout's prompt is the launch text alone", func(t *testing.T) {
+		const scoutText = "Find where widgets logs the 500"
+		r := c.mcpCall("scout", "launch_ship", map[string]any{"harness": "claude", "dir": dir, "scout": true, "text": scoutText, "reason": "to find the 500"})
+		if r.IsError {
+			t.Fatalf("scout launch_ship was refused: %s", r.text())
+		}
+		got := promptOf(shipOf(ship.Session))
+		if !strings.HasPrefix(got, scoutText) || strings.Contains(got, "ADMIRAL_REPORT") || strings.Contains(got, "full URL") {
+			t.Errorf("the scout's prompt = %q, want AdmiralBot's text and no closing steps", got)
+		}
+	})
 }

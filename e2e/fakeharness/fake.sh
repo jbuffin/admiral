@@ -108,6 +108,8 @@
 #
 #   FAKE_RECORD_DIR  directory the recording goes in (required)
 #   FAKE_CUE         path of a cue file (optional)
+#   FAKE_SHIP_CUE    path of a cue file a ship plays in place of FAKE_CUE: the harness runs it when ADMIRAL_SHIP is set,
+#                    so a ship launched in the chat's own fleet (AdmiralBot's) does not replay the chat's cue
 #
 # Recording: <FAKE_RECORD_DIR>/<tmux session name>/ gets these files, written in
 # this order, with `recorded` created last so a test can wait for it. A crew boat
@@ -929,6 +931,7 @@ claude_sid() {
 	done
 	printf '%s' "${_sid:-$_res}"
 }
+[ -n "$ADMIRAL_SHIP" ] && [ -n "$FAKE_SHIP_CUE" ] && FAKE_CUE=$FAKE_SHIP_CUE
 exec 3<&0 # the terminal, for a `record` cue: the loop below reads the cue file on fd 0
 if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 	while read -r cmd arg; do

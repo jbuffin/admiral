@@ -123,7 +123,14 @@ type Orders interface {
 	Launched(source, id string)
 }
 
+// LaunchLine is what a chat launch tells the chat: the ship, what kind it is, why AdmiralBot launched it and the launch text as written.
+type LaunchLine struct {
+	Ship, Name, Kind, Reason, Text string
+}
+
 type Service struct {
+	// PostLaunchLine puts a chat launch's line in its fleet's chat; nil posts nothing.
+	PostLaunchLine func(fleet string, l LaunchLine) error
 	// answering holds one mutex per pane id, taken for the whole of an answer.
 	answering sync.Map
 	// returning holds the ships a Return to port step is running for.

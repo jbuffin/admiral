@@ -591,6 +591,7 @@ func serve(args []string) error {
 			return keys
 		}}
 	chatService.Notes().OnChange = commitmentRunner.Changed
+	shipService.PostLaunchLine = chatService.PostLaunchLine
 	shipCards := newShipCardRunner(absDir, chatService.PostShipCard, shipService.List, host.Ready())
 	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop, Launch: routineShips{shipService}.Launch}
 	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
