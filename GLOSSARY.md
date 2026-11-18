@@ -52,6 +52,16 @@ _Avoid_: budget (the per-call caps are separate)
 A skip entry the engineer adds from an event card or an event proposal: it skips later events of one routine from one sender, or with one dedupe key. It lands in the fleet's Limits, scoped to that routine, and is removed there.
 _Avoid_: block, filter, ignore list
 
+**Allow rule**:
+A rule the engineer added through Admiral that lets one harness's ships in one fleet run one narrow kind of call in one repo without asking. A Codex allow rule covers every repo in the fleet. Admiral keeps them; nothing outside Admiral's ships uses them.
+_Avoid_: permission, auto-approve, allowlist (that is a Limit's word)
+
+**Allow rule proposal**:
+An Inbox item offering an allow rule, built from a prompt a person allowed by hand on a ship. Add keeps the rule; Skip keeps it from being proposed again.
+
+**Never list**:
+The calls that can never become an allow rule, however often they were allowed by hand, such as a push, a merge, a delete or a secret read. Admiral fixes it; the engineer can only add to it.
+
 **Before acting**:
 A routine's setting for how far it may go on its own: Report only, Ask first or Act. It can only lower what the trigger tier and the fleet allow.
 
