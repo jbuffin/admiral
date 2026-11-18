@@ -459,6 +459,27 @@ func TestEveryChatPromptTeachesWorkOnAsAnInstructionOnlyAndItsLimits(t *testing.
 	}
 }
 
+func TestEveryChatPromptSendsAWhatIsLeftQuestionToReadCampaign(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		reads := strings.Index(prompt, "list_campaigns")
+		if reads < 0 || !strings.Contains(prompt[max(0, reads-200):min(len(prompt), reads+100)], "read_campaign") {
+			t.Errorf("%s prompt's reads line does not name read_campaign beside list_campaigns", harness)
+		}
+		i := strings.LastIndex(prompt, "read_campaign")
+		if i < 0 || i == strings.Index(prompt, "read_campaign") {
+			t.Errorf("%s prompt has no line telling the chat when to use read_campaign", harness)
+			continue
+		}
+		near := strings.ToLower(prompt[max(0, i-300):min(len(prompt), i+300)])
+		for _, want := range []string{"left", "campaign"} {
+			if !strings.Contains(near, want) {
+				t.Errorf("%s prompt near its read_campaign instruction lacks %q: %q", harness, want, near)
+			}
+		}
+	}
+}
+
 func TestEveryChatPromptSendsALayOutRequestToTheWayfinderSkillWithTheEngineersWordsAsTheOrder(t *testing.T) {
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
