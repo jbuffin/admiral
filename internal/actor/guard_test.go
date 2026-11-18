@@ -154,6 +154,8 @@ func TestAnActorIsRefusedEverythingOffTheList(t *testing.T) {
 			{"GET", "/sources/p-1/settings"},
 			{"GET", "/sources/p-1/repos"},
 			{"PUT", "/sources/p-1/orders/o-1"},
+			{"POST", "/sources/p-1/rows/r-1/actions/a-1/form"},
+			{"POST", "/sources/p-1/rows/r-1/actions/a-1/run"},
 			{"POST", "/campaigns"},
 			{"POST", "/campaigns/create"},
 			{"POST", "/campaigns/c-1/launch"},

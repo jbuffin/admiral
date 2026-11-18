@@ -42,6 +42,15 @@ Files the test writes in flagdir:
   rows/<id>.json
                 the row.get answer for that row id, read on every row.get; a
                 row with no file answers a JSON-RPC error
+  forms/<module action id>.json
+                the action.form answer for that module action id, read on every
+                action.form; a module action with no file answers a JSON-RPC error
+  runs/<module action id>.json
+                the action.run answer, read on every action.run; no file answers a
+                JSON-RPC error. In either file, an object with an "error" string
+                answers a JSON-RPC error carrying it, and a "delay" number is the
+                seconds to wait first (it is not part of the answer), so a test
+                can hold a run open
   panels.json   [{"id", "title"}], read on every panels.list (default one
                 panel "main"); settings.panels, a list of {title, ...}, wins
                 when it is set and lists one panel per entry, id = title
@@ -283,6 +292,17 @@ def handle(msg):
             emit({"jsonrpc": "2.0", "id": msg.get("id"), "error": {"code": -32000, "message": "no such row"}})
             return
         result = detail
+    elif method in ("action.form", "action.run"):
+        folder = "forms" if method == "action.form" else "runs"
+        action_id = str(params.get("action"))
+        answer = None if "/" in action_id or ".." in action_id else read_json(os.path.join(folder, action_id + ".json"), None)
+        if isinstance(answer, dict):
+            time.sleep(float(answer.pop("delay", 0)))
+        if answer is None or (isinstance(answer, dict) and "error" in answer):
+            message = answer["error"] if answer else "no such module action"
+            emit({"jsonrpc": "2.0", "id": msg.get("id"), "error": {"code": -32000, "message": str(message)}})
+            return
+        result = answer
     elif method == "orders.add":
         result = store_add(params) if settings.get("storeOrders") else {"id": "added-1"}
     elif method in ("orders.edit", "orders.remove", "orders.launched") and settings.get("storeOrders"):

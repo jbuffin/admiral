@@ -29,6 +29,9 @@ const (
 
 var callTimeout = delay.From("ADMIRAL_CALL_TIMEOUT", 10*time.Second)
 
+// runTimeout is a module action run's time to answer; a run waits on a person's upstream.
+var runTimeout = delay.From("ADMIRAL_RUN_TIMEOUT", 60*time.Second)
+
 var (
 	errTimeout    = errors.New("the order source did not answer in time")
 	errNotRunning = errors.New("the order source is not running")
