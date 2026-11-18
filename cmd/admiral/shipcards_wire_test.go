@@ -41,7 +41,4 @@ func TestTheShipCardRunnerReadsTheOutcomeLogsRealRecordShapes(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("records = %+v, want %+v", got, want)
 	}
-	if held := r.records(at.Add(time.Second)); len(held) != 0 {
-		t.Errorf("records a second after they were written = %+v, want none: they are held back so a return to port's pair is read together", held)
-	}
 }

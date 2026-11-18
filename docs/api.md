@@ -316,18 +316,19 @@ In `GET /api/config`, each fleet's `chat` object carries the AdmiralBot settings
 
 A ship card is a chat entry with `kind: "ship_card"` that the server posts in the chat of the ship's own fleet when the ship's result comes in. It starts no turn, sends no push and writes no digest line, so AdmiralBot never reads it. It reaches clients the way every entry does, through the `chat` WebSocket message.
 
-`id` is `ship-<ship>-<first_launched>-<result>`, so a result posts once per voyage and a reused ship name posts its own cards. `text` is the ship's name and `card` is:
+`id` is `ship-<ship>-<first_launched>-<result>`, so a result posts once per voyage and a reused ship name posts its own cards. `text` is the ship's session name and `card` is:
 
 ```json
-{"ship": "calm-otter", "fleet": "harbor", "skill": "tdd", "skill_kind": "skill", "result": "moored",
+{"ship": "calm-otter", "name": "Fix the login", "first_launched": "2026-11-17T10:00:00Z", "fleet": "harbor", "skill": "tdd", "skill_kind": "skill", "result": "moored",
  "prs": [{"url": "https://github.com/acme/api/pull/7", "number": 7}]}
 ```
 
-- `ship` is the session name; `GET /api/v1/ships/<ship>/conversation` opens its conversation (`GET /api/v1/ships/<ship>/conversation`). `skill` is the skill's name, empty when none, and `skill_kind` is `commodore`, `skill` or `none`.
-- `result` is `sailed_off` (the ship ended clean with no PR to moor on, or its moored PRs all closed), `anchored` (it ended with an error), `moored` (it first moored with an open PR; a later re-moor posts nothing), `ready_to_merge` (a moored ship's stack became ready to merge; once per voyage), `returned` (it returned to port) or `lost` (accepted, but nothing posts it yet).
+- `ship` is the session name and `name` the ship's display name. `first_launched` is the voyage's stamp, as written in the `id`; `GET /api/ships` lists the same stamp as `first_launched`, falling back to `launched` when a ship has none. `skill` is the skill's name, empty when none, and `skill_kind` is `commodore`, `skill` or `none`.
+- The ship's conversation, `GET /api/v1/ships/<ship>/conversation`, is reachable only while the voyage is live, moored or anchored; it is `404` for a ship that sailed off or returned, and a reused name opens the new voyage. A client links the card to the conversation only while a ship in `GET /api/ships` has this `ship` and `first_launched`.
+- `result` is `sailed_off` (the ship ended clean with no PR to moor on and has left the ship list, or its moored PRs all closed; each waits 15 s for a moor or a return to port to follow), `anchored` (it ended with an error), `moored` (it first moored with an open PR; a later re-moor posts nothing), `ready_to_merge` (a moored ship's stack became ready to merge; once per voyage), `returned` (it returned to port) or `lost` (accepted, but nothing posts it yet).
 - Only a ship AdmiralBot launched (`via: admiralbot`, which includes commitment and campaign launches) posts `ready_to_merge`; every ship posts the other results. Stop ship, Dismiss and a Hand to Commodore relaunch post no card.
 - `prs` are the ship's PRs as last seen, in order; `number` is read from the URL.
-- Ships already moored or anchored when the server first runs this feature post nothing. Admiral records them as seen in `$ADMIRAL_HOME/ship-cards.json`, which also keeps each voyage's posted results across restarts.
+- Ships already moored or anchored when the server first runs this feature post nothing, and a moored one's `ready_to_merge` waits out its first answered poll: if that poll shows the stack ready, no card. Admiral records them as seen in `$ADMIRAL_HOME/ship-cards.json`, which also keeps each voyage's posted results across restarts.
 
 ### The log
 

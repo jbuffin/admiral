@@ -18,9 +18,7 @@ import (
 const (
 	// shipCardLookback bounds the log a pass reads; a voyage's own state decides what is still pending.
 	shipCardLookback = 14 * 24 * time.Hour
-	// shipCardHold keeps the newest records back so the `unmoored` and `returning` of a return to port are read together.
-	shipCardHold = 3 * time.Second
-	shipCardTick = 5 * time.Second
+	shipCardTick     = 5 * time.Second
 )
 
 // shipCardRunner feeds the ship snapshot and the outcome log to the chat's ship card detector.
@@ -91,13 +89,13 @@ func (r *shipCardRunner) pass() {
 	}
 }
 
-// records is the log's records of the lookback, less the newest few seconds.
+// records is the log's records of the lookback.
 func (r *shipCardRunner) records(now time.Time) []chat.ShipRecord {
 	files, err := outcomes.MonthFiles(r.dir)
 	if err != nil {
 		return nil
 	}
-	since, until := now.Add(-shipCardLookback), now.Add(-shipCardHold)
+	since := now.Add(-shipCardLookback)
 	var out []chat.ShipRecord
 	kept := map[string]cachedRecords{}
 	for _, f := range files {
@@ -118,7 +116,7 @@ func (r *shipCardRunner) records(now time.Time) []chat.ShipRecord {
 		}
 		kept[f.Path] = c
 		for _, rec := range c.recs {
-			if !rec.At.Before(since) && !rec.At.After(until) {
+			if !rec.At.Before(since) {
 				out = append(out, rec)
 			}
 		}

@@ -37,6 +37,7 @@ type ShipCardPR struct {
 // ShipCard is the card a ship's result posts in its fleet's chat.
 type ShipCard struct {
 	Ship          string // the ship's session name, which names its conversation
+	Name          string // the ship's display name
 	FirstLaunched string // with Ship, the voyage: a reused name starts a new one
 	Skill         string
 	SkillKind     string
@@ -55,7 +56,7 @@ func (s *Service) PostShipCard(fleet string, c ShipCard) error {
 		prs = append(prs, pr{p.URL, p.Number})
 	}
 	card, err := json.Marshal(map[string]any{
-		"ship": c.Ship, "fleet": fleet, "skill": c.Skill, "skill_kind": c.SkillKind, "result": c.Result, "prs": prs,
+		"ship": c.Ship, "name": c.Name, "first_launched": c.FirstLaunched, "fleet": fleet, "skill": c.Skill, "skill_kind": c.SkillKind, "result": c.Result, "prs": prs,
 	})
 	if err != nil {
 		return err
@@ -79,6 +80,7 @@ type ShipRecord struct {
 // decide the ones still pending. The outcome log names a ship only by session, so identity comes from the snapshot.
 type voyage struct {
 	Ship          string
+	Name          string
 	Fleet         string
 	Via           string
 	Skill         string
@@ -91,7 +93,8 @@ type voyage struct {
 	UnmooredAt    time.Time // the PRs all closed
 	StoppedAt     time.Time
 	ReturnedAt    time.Time
-	Returning     bool
+	ReturningAt   time.Time
+	ReadyHeld     bool // moored at the seed: its first answered poll is not news
 	LastSeen      time.Time
 }
 
@@ -138,18 +141,30 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 	defer d.mu.Unlock()
 	seeding := !d.st.Seeded
 	var errs []error
-	mooredNow := map[*voyage]bool{}
+	mooredNow, inSnap := map[*voyage]bool{}, map[*voyage]bool{}
 	for _, s := range snap {
 		if s.Fleet == "" {
 			continue
 		}
 		v := d.voyageOf(s, now)
+		if v == nil {
+			continue
+		}
+		inSnap[v] = true
 		switch s.Status {
 		case ships.StatusMoored:
 			mooredNow[v] = true
 			errs = append(errs, d.emit(v, ShipMoored, seeding))
-			if s.Via == "admiralbot" && s.StackReady && s.PolledAt != "" {
-				errs = append(errs, d.emit(v, ShipReadyToMerge, seeding))
+			if seeding {
+				v.ReadyHeld = true
+			}
+			if s.PolledAt == "" {
+				break
+			}
+			held := v.ReadyHeld
+			v.ReadyHeld = false
+			if s.Via == "admiralbot" && s.StackReady {
+				errs = append(errs, d.emit(v, ShipReadyToMerge, seeding || held))
 			}
 		case ships.StatusAnchored:
 			errs = append(errs, d.emit(v, ShipAnchored, seeding))
@@ -163,7 +178,7 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 			}
 		}
 		for _, v := range d.st.Voyages {
-			errs = append(errs, d.settle(v, mooredNow[v], now))
+			errs = append(errs, d.settle(v, mooredNow[v], inSnap[v], now))
 		}
 	}
 	for k, v := range d.st.Voyages {
@@ -181,13 +196,16 @@ func (d *ShipCards) voyageOf(s ships.Ship, now time.Time) *voyage {
 	if stamp == "" {
 		stamp = s.Launched
 	}
+	if _, err := time.Parse(time.RFC3339, stamp); err != nil {
+		return nil
+	}
 	key := s.Session + "|" + stamp
 	v := d.st.Voyages[key]
 	if v == nil {
-		v = &voyage{Ship: s.Session, FirstLaunched: stamp, Done: map[string]bool{}}
+		v = &voyage{Ship: s.Session, Name: s.Name, FirstLaunched: stamp, Done: map[string]bool{}}
 		d.st.Voyages[key] = v
 	}
-	v.Fleet, v.Via, v.SkillKind, v.LastSeen = s.Fleet, s.Via, s.SkillKind, now
+	v.Name, v.Fleet, v.Via, v.SkillKind, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, now
 	if s.Skill != nil {
 		v.Skill = *s.Skill
 	}
@@ -235,7 +253,9 @@ func (v *voyage) apply(r ShipRecord) {
 			}
 		}
 	case "returning":
-		v.Returning = true
+		if r.At.After(v.ReturningAt) {
+			v.ReturningAt = r.At
+		}
 	case "stopped":
 		if r.Returned {
 			v.ReturnedAt = r.At
@@ -245,20 +265,24 @@ func (v *voyage) apply(r ShipRecord) {
 	}
 }
 
-// settle posts the cards a voyage's records have made due.
-func (d *ShipCards) settle(v *voyage, mooredNow bool, now time.Time) error {
+// settle posts the cards a voyage's records have made due. Each sail-off waits out ShipSettleGrace: the ship's own next
+// record, a moor or the `returning` of a return to port, can follow its trigger by a second or more.
+func (d *ShipCards) settle(v *voyage, mooredNow, inSnap bool, now time.Time) error {
 	var errs []error
 	if !v.ReturnedAt.IsZero() {
 		errs = append(errs, d.emit(v, ShipReturned, false))
+		return errors.Join(errs...)
 	}
-	// A return to port writes `unmoored` and then `returning`, so the caller holds records back long enough to read the pair together.
 	switch {
 	case !v.UnmooredAt.IsZero():
-		if !v.Returning {
+		// A return to port writes `unmoored` and then `returning`; the ship is not sailing off.
+		if v.ReturningAt.Before(v.UnmooredAt) && now.Sub(v.UnmooredAt) >= ShipSettleGrace {
 			errs = append(errs, d.emit(v, ShipSailedOff, false))
 		}
-	case !v.EndedAt.IsZero() && v.MooredAt.Before(v.EndedAt) && !mooredNow && !v.Returning && (v.StoppedAt.IsZero() || v.StoppedAt.Before(v.EndedAt)):
-		if now.Sub(v.EndedAt) >= ShipSettleGrace {
+	case !v.EndedAt.IsZero() && v.MooredAt.Before(v.EndedAt) && !mooredNow && !inSnap && (v.StoppedAt.IsZero() || v.StoppedAt.Before(v.EndedAt)):
+		// A clean-ended ship stays in the snapshot until settle has moored it or let it sail off.
+		returning := !v.ReturningAt.IsZero() && now.Sub(v.ReturningAt) < ShipSettleGrace
+		if now.Sub(v.EndedAt) >= ShipSettleGrace && !returning {
 			errs = append(errs, d.emit(v, ShipSailedOff, false))
 		}
 	}
@@ -271,7 +295,7 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 		return nil
 	}
 	if !silent {
-		if err := d.post(v.Fleet, ShipCard{Ship: v.Ship, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.SkillKind, Result: result, PRs: v.PRs}); err != nil {
+		if err := d.post(v.Fleet, ShipCard{Ship: v.Ship, Name: v.Name, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.SkillKind, Result: result, PRs: v.PRs}); err != nil {
 			return err
 		}
 	}

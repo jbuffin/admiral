@@ -249,7 +249,7 @@ func TestShipsAlreadyMooredOrAnchoredOnTheFirstPassPostNothingAndLaterEventsStil
 	x.wantResults("home")
 
 	// An old ship's later end still posts: the seed holds back only what was already true.
-	x.observe(4*time.Minute, []ships.Ship{fresh, old[1], old[2]}, ShipRecord{At: t0.Add(4 * time.Minute), Ship: "old-mooring", Event: "unmoored", Reason: "merged"})
+	x.observe(4*time.Minute+ShipSettleGrace, []ships.Ship{fresh, old[1], old[2]}, ShipRecord{At: t0.Add(4 * time.Minute), Ship: "old-mooring", Event: "unmoored", Reason: "merged"})
 	x.wantResults("work", "moored", "sailed_off")
 }
 
