@@ -184,18 +184,17 @@ func (g *ghRig) wire() {
 
 func (g *ghRig) restart() { g.rig.restart(); g.wire() }
 
-// run starts the runner, waits for its first poll to be judged, and returns the function that stops it; the test's end stops it too.
+// run starts the runner, waits for its first poll to finish, and returns the function that stops it; the test's end stops it too.
 func (g *ghRig) run() (stop func()) {
 	g.t.Helper()
-	stop, ctx := g.start()
-	// Return once the first poll is over and its answer judged, so a test's first wait never races it.
+	stop = g.start()
+	// pollLoop arms After(GHPoll) only after it stored the answers and called Changed, so this deadline means the first poll is over.
 	waitFor(g.t, "the first poll to finish", func() bool { return g.clk.hasDeadline(g.clk.Now().Add(commitments.GHPoll)) })
-	g.r.Tick(ctx)
 	return stop
 }
 
 // start runs the runner without waiting for its first poll, for a test whose poll is held.
-func (g *ghRig) start() (stop func(), ctx context.Context) {
+func (g *ghRig) start() (stop func()) {
 	g.t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -216,7 +215,7 @@ func (g *ghRig) start() (stop func(), ctx context.Context) {
 		})
 	}
 	g.t.Cleanup(stop)
-	return stop, ctx
+	return stop
 }
 
 // advanceUntil moves the fake clock one poll interval at a time, so a poller that waits on the runner's clock wakes, until ok.
