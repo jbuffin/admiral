@@ -17,13 +17,14 @@ test('on the phone, the Campaigns page and a child sheet fit the screen and thei
   // The Add campaign sheet fits the screen, and a row takes a tap.
   await main.getByRole('button', { name: 'Add campaign' }).tap();
   const add = page.getByRole('dialog', { name: 'Add campaign' });
+  const pick = add.getByRole('button', { name: new RegExp(T.map) });
+  await expect(pick).toBeVisible();
   const room = page.viewportSize()!;
   const frame = (await add.boundingBox())!;
   expect(frame.x).toBeGreaterThanOrEqual(0);
   expect(frame.x + frame.width).toBeLessThanOrEqual(room.width);
   expect(frame.y + frame.height).toBeLessThanOrEqual(room.height);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  const pick = add.getByRole('button', { name: new RegExp(T.map) });
   expect((await pick.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await pick.tap();
   await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
