@@ -35,6 +35,8 @@ import { campaignList, endedOpen, followReference, noteCampaign, refreshCampaign
 import { activeFleet, fleetPaint, fleets } from './fleets';
 import { Choice } from './Choice';
 import { Icon } from './Icon';
+import { Link } from './NavLink';
+import { surfaceById } from './surfaces';
 import { IssueLabels } from './IssueLabels';
 import { LaunchForm } from './LaunchDialog';
 import { campaignPath, go } from './router';
@@ -110,7 +112,7 @@ function PasteField() {
 
 export const addOpen = signal(false);
 
-export function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
+function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const fleet = activeFleet.value;
   const mine = campaignList.value.filter((c) => c.fleet === fleet?.key);
   const active = mine.filter((c) => !c.ended);
@@ -118,12 +120,6 @@ export function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const here = typeof location === 'undefined' ? '' : location.pathname;
   return (
     <div class="camp-side">
-      <div class="sec">
-        <span>Campaigns</span>
-        <Button variant="quiet" icon label="Add campaign" expanded={addOpen.value} onClick={() => (addOpen.value = !addOpen.value)}>
-          <Icon name="plus" size={14} />
-        </Button>
-      </div>
       {addOpen.value ? <PasteField /> : null}
       <ul class="camp-list">
         {active.map((c) => (
@@ -156,7 +152,20 @@ export function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
 
 /** The desktop sidebar's Campaigns row and what follows it. */
 export function CampaignsNav({ onNavigate }: { onNavigate?: () => void }) {
-  return <CampaignSidebar onNavigate={onNavigate} />;
+  return (
+    <>
+      <div class="nav-row">
+        <Link surface={surfaceById('campaigns')} class="nav-link" onNavigate={onNavigate}>
+          <Icon name="campaigns" />
+          Campaigns
+        </Link>
+        <Button variant="quiet" icon label="Add campaign" expanded={addOpen.value} onClick={() => (addOpen.value = !addOpen.value)}>
+          <Icon name="plus" size={14} />
+        </Button>
+      </div>
+      <CampaignSidebar onNavigate={onNavigate} />
+    </>
+  );
 }
 
 /** The Campaigns surface: the followed campaigns of the fleet, or the ended ones; the phone also gets the paste field. */

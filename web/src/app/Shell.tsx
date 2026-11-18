@@ -34,7 +34,7 @@ import { campaignOf, crewOf, go, loc, moduleOf, modulePath, routineCreating, rou
 import { resolveModule } from './modules';
 import { ModulePage, ModuleSkeleton } from './ModulePage';
 import { WaitingBadge } from './WaitingBadge';
-import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
+import { CampaignPage, CampaignsList, CampaignsNav } from './CampaignPage';
 import { Link } from './NavLink';
 import { ChatPanel } from './ChatPanel';
 import { NeedsYouBadge, OrdersPanel, needsYouCount } from './OrdersScreen';
@@ -394,12 +394,15 @@ function DesktopShell({ surface, mod }: { surface: Surface; mod: ModuleView | nu
           const s = surfaceById(item.id);
           return (
             <Fragment key={s.id}>
-              <Link surface={s} class="nav-link">
-                <Icon name={s.id} />
-                {s.title}
-                {s.id === 'orders' ? <NeedsYouBadge /> : null}
-              </Link>
-              {s.id === 'campaigns' ? <CampaignSidebar /> : null}
+              {s.id === 'campaigns' ? (
+                <CampaignsNav />
+              ) : (
+                <Link surface={s} class="nav-link">
+                  <Icon name={s.id} />
+                  {s.title}
+                  {s.id === 'orders' ? <NeedsYouBadge /> : null}
+                </Link>
+              )}
             </Fragment>
           );
         })}
