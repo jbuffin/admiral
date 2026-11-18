@@ -232,7 +232,7 @@ func TestAnInvalidFormAnswerIs502WithOneLineAndNothingElseChanges(t *testing.T) 
 		"minutes past 59":               `{"fields":[{"id":"f","label":"F","type":"duration","default":"00:75"}]}`,
 		"one field too many":            repeatFormFields(maxFormFields + 1),
 		"one option too many":           optionsFormOf(maxFormOptions + 1),
-		"a field id over the id cap":    `{"fields":[{"id":"` + strings.Repeat("i", maxIDRunes+1) + `","label":"F","type":"choice","options":[]}]}`,
+		"a field id over the id cap":    `{"fields":[{"id":"` + strings.Repeat("i", maxIDRunes+1) + `","label":"F","type":"choice","options":[{"id":"a","label":"A"}]}]}`,
 		"an answer over the byte limit": bigTitle,
 	} {
 		c := newActionConn(pageOf(actionsPage, 4))
@@ -414,9 +414,9 @@ func TestModuleActionRoutesCheckInTheDocumentedOrderAndAskThePluginOnlyAfterEver
 		{"a row not on the page", []string{"page"}, false, true, none, "/m/rows/nope/actions/close/%s", "", 404, 404, ""},
 		{"a module action nobody declared", []string{"page"}, false, true, none, "/m/rows/t1/actions/nope/%s", "", 404, 404, ""},
 		{"a module action of another row", []string{"page"}, false, true, none, "/m/rows/t2/actions/close/%s", "", 404, 404, ""},
-		{"a step's action before the row was opened", []string{"page"}, false, true, none, "/m/rows/t1/actions/retry/%s", "", 404, 404, ""},
-		{"a click action on /form", []string{"page"}, false, true, none, "/m/rows/t1/actions/close/%s", "", 404, 200, ""},
-		{"a yesno action on /form", []string{"page"}, false, true, none, "/m/rows/t1/actions/ask/%s", "", 404, 200, ""},
+		{"a step's module action before the row was opened", []string{"page"}, false, true, none, "/m/rows/t1/actions/retry/%s", "", 404, 404, ""},
+		{"a click module action on /form", []string{"page"}, false, true, none, "/m/rows/t1/actions/close/%s", "", 404, 200, ""},
+		{"a yesno module action on /form", []string{"page"}, false, true, none, "/m/rows/t1/actions/ask/%s", "", 404, 200, ""},
 		{"a module action with a url", []string{"page"}, false, true, none, "/m/rows/t1/actions/open/%s", "", 404, 404, ""},
 		{"an unknown module action while the page is in error", []string{"page"}, false, true, inError, "/m/rows/t1/actions/nope/%s", "", 404, 404, ""},
 		{"a source that is not running", []string{"page"}, false, false, none, "/m/rows/t1/actions/pass/%s", "", 409, 409, ""},
@@ -518,7 +518,7 @@ func TestTheFirstModuleActionWithAnIdWinsInRowActionListThenStepOrder(t *testing
 	if code, body := f.runAction("t1", "close", map[string]any{}); code != http.StatusOK {
 		t.Errorf("POST run of %q = %d %s, want 200", "close", code, body)
 	}
-	// "pass" is the row's main action and a later step repeats it as a click with a url.
+	// "pass" is the row's main module action and a later step repeats it as a click with a url.
 	c.rows["t1"] = json.RawMessage(`{"sections":[{"kind":"steps","title":"S","steps":[{"id":"s1","title":"S","actions":[{"id":"pass","label":"P","confirm":"click","url":"https://acme.test/"}]}]}]}`)
 	f.do(http.MethodGet, "/m/rows/t1", nil)
 	if code, body := f.formOf("t1", "pass"); code != http.StatusOK {
@@ -723,12 +723,14 @@ func TestARunAnswerThatIsNotAnObjectOrHasNoMessageIs502WithOneLine(t *testing.T)
 func TestAFormWithAnUnusableOrRepeatedFieldOrOptionIdIs502(t *testing.T) {
 	opt := func(id string) string { return `{"id":` + id + `,"label":"O"}` }
 	for name, form := range map[string]string{
-		"an empty field id":         `{"fields":[{"id":"","label":"F","type":"duration"}]}`,
-		"a field id with control":   `{"fields":[{"id":"a\u0007b","label":"F","type":"duration"}]}`,
-		"a repeated field id":       `{"fields":[{"id":"f","label":"F","type":"duration"},{"id":"f","label":"G","type":"duration"}]}`,
-		"an empty option id":        `{"fields":[{"id":"f","label":"F","type":"choice","options":[` + opt(`""`) + `]}]}`,
-		"a repeated option id":      `{"fields":[{"id":"f","label":"F","type":"checklist","options":[` + opt(`"a"`) + `,` + opt(`"a"`) + `]}]}`,
-		"an option id not a string": `{"fields":[{"id":"f","label":"F","type":"choice","options":[` + opt(`4`) + `]}]}`,
+		"an empty field id":                      `{"fields":[{"id":"","label":"F","type":"duration"}]}`,
+		"a field id with control":                `{"fields":[{"id":"a\u0007b","label":"F","type":"duration"}]}`,
+		"a repeated field id":                    `{"fields":[{"id":"f","label":"F","type":"duration"},{"id":"f","label":"G","type":"duration"}]}`,
+		"an empty option id":                     `{"fields":[{"id":"f","label":"F","type":"choice","options":[` + opt(`""`) + `]}]}`,
+		"a repeated option id":                   `{"fields":[{"id":"f","label":"F","type":"checklist","options":[` + opt(`"a"`) + `,` + opt(`"a"`) + `]}]}`,
+		"a choice with no options":               `{"fields":[{"id":"f","label":"F","type":"choice"}]}`,
+		"a checklist with an empty options list": `{"fields":[{"id":"f","label":"F","type":"checklist","options":[]}]}`,
+		"an option id not a string":              `{"fields":[{"id":"f","label":"F","type":"choice","options":[` + opt(`4`) + `]}]}`,
 	} {
 		c := newActionConn(pageOf(actionsPage, 0))
 		c.form = json.RawMessage(form)
@@ -739,5 +741,53 @@ func TestAFormWithAnUnusableOrRepeatedFieldOrOptionIdIs502(t *testing.T) {
 			continue
 		}
 		actionErrorLine(t, body)
+	}
+}
+
+func TestARunBodyWithTrailingDataIs400AndAnEmptyOrNullBodyMeansNoValues(t *testing.T) {
+	post := func(f *serviceFixture, body string) int {
+		req, _ := http.NewRequest(http.MethodPost, f.srv.URL+"/api/sources"+actionPath("t1", "close", "run"), strings.NewReader(body))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for body, want := range map[string]int{
+		`{}trailing`:       http.StatusBadRequest,
+		`{"values":{}} {}`: http.StatusBadRequest,
+		``:                 http.StatusOK,
+		`null`:             http.StatusOK,
+		`{"values":null}`:  http.StatusOK,
+	} {
+		c := newActionConn(pageOf(actionsPage, 0))
+		f, _ := actionFixture(t, c)
+		if got := post(f, body); got != want {
+			t.Errorf("POST run with body %q = %d, want %d", body, got, want)
+		}
+		if want == http.StatusBadRequest && len(c.actionCalls()) != 0 {
+			t.Errorf("body %q: the plugin was asked after a refused body", body)
+		}
+	}
+}
+
+func TestARunAnswerUrlOver2000BytesIsLeftOutAndOneAtTheLimitIsKept(t *testing.T) {
+	pad := func(n int) string { return "https://acme.test/" + strings.Repeat("p", n-len("https://acme.test/")) }
+	for name, tc := range map[string]struct {
+		url  string
+		kept bool
+	}{"at the limit": {pad(maxRunURLBytes), true}, "over the limit": {pad(maxRunURLBytes + 1), false}} {
+		c := newActionConn(pageOf(actionsPage, 0))
+		c.run = json.RawMessage(`{"message":"Done","url":"` + tc.url + `"}`)
+		f, _ := actionFixture(t, c)
+		code, body := f.runAction("t1", "close", map[string]any{})
+		if code != http.StatusOK {
+			t.Fatalf("%s: POST run = %d %.100s, want 200", name, code, body)
+		}
+		if _, has := actionAnswerOf(t, body)["url"]; has != tc.kept {
+			t.Errorf("%s: url present = %v, want %v", name, has, tc.kept)
+		}
 	}
 }

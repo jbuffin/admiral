@@ -213,17 +213,18 @@ A form is `{title, fields}`; `title` is optional. A field is `{id, label, type, 
 
 - it is over **64 KiB**, is not an object, or `fields` is not a list;
 - there are more than **20 fields**, or a field has more than **100 options**;
+- a `choice` or `checklist` field has no options (`options` missing or empty);
 - a field has an unknown `type`, or a duration's `default` or `min` is not `"hh:mm"`;
 - a field `id` or an option `id` is not a string, is empty, holds a control character or is over 200 characters, or a field `id` (across the form) or an option `id` (within its field) is used twice.
 
-`action.run` is sent when the engineer confirms a module action, and carries what they filled in. It may take up to **60 seconds** to answer, an exception to the 10-second rule in Limits; the answer is `{message, url}`.
+`action.run` is sent when the engineer confirms a module action, and carries what they filled in. It may take up to **60 seconds** to answer, an exception to the 10-second rule in Limits; the answer is `{message, url}`. Requests overlap: while a run is open Admiral still sends `page.get`, `row.get`, `panels.list` and other calls, each with its 10-second limit. Keep answering them while a run works, for example by handling each request on its own thread or task, as a sequential loop would let a long run time those calls out, turn the page to `error` and get a hung `panels.list` restarted mid-run.
 
 ```json
 {"jsonrpc":"2.0","id":8,"method":"action.run","params":{"row":"T-1","action":"pass","values":{"whose":"b","files":["x","y"],"time":"01:30"}}}
 {"jsonrpc":"2.0","id":8,"result":{"message":"Review passed","url":"https://example.com/t/1"}}
 ```
 
-`values` is an object keyed by field id, whose values are strings or lists of strings; a module action with no form gets `{}`. Admiral checks only its shape and size (at most **50 fields**, a list of at most **100 items**, each string at most **1,000 characters**, a field id at most 200 characters, and a request body of at most 1 MiB) and passes it on. Validating the values against your form is your job, so treat them as untrusted. Answer a JSON-RPC error to refuse them: its message, cut to one line of at most 300 characters, is what the engineer sees, and nothing is assumed to have changed. `message` is required, and is cut the same way; `url` is optional and is left out unless it is an http(s) link. An answer that is not an object, or has no `message`, is an error to the engineer. A module action runs one at a time per row: Admiral refuses a second run on a row until the first has answered or its 60 seconds have passed, even if the engineer's browser has gone away. Admiral sends no message when a run ends; send `page.changed` when the page moved.
+`values` is an object keyed by field id, whose values are strings or lists of strings; a module action with no form gets `{}`. Admiral checks only its shape and size (at most **50 fields**, a list of at most **100 items**, each string at most **1,000 characters**, a field id at most 200 characters, and a request body of at most 1 MiB) and passes it on. Validating the values against your form is your job, so treat them as untrusted. Answer a JSON-RPC error to refuse them: its message, cut to one line of at most 300 characters, is what the engineer sees, and nothing is assumed to have changed. `message` is required, and is cut the same way; `url` is optional and is left out unless it is an http(s) link of at most 2,000 bytes. An answer that is not an object, or has no `message`, is an error to the engineer. A module action runs one at a time per row: Admiral refuses a second run on a row until the first has answered or its 60 seconds have passed, even if the engineer's browser has gone away. Admiral sends no message when a run ends; send `page.changed` when the page moved.
 
 **Message kinds.** `initialize` may also answer `messageKinds`, a list of `{kind, label, job}`, each one a string. Admiral keeps the ones that have all three, each cut to one line of at most 200 characters, and drops a bad declaration on its own.
 
@@ -270,7 +271,7 @@ Everything you send is checked against the [limits](#a-modules-page) and the las
 
 Admiral treats everything a plugin sends as untrusted.
 
-- A request that gets no answer within **10 seconds** fails. A hung `initialize` or `panels.list` also counts as a crash: Admiral kills the process and restarts it. Any other hung request fails only that call. `action.run` has **60 seconds**.
+- A request that gets no answer within **10 seconds** fails. A hung `initialize` or `panels.list` also counts as a crash: Admiral kills the process and restarts it. Any other hung request fails only that call. `action.run` has **60 seconds**, and the other requests are still sent while it is open, so a plugin must answer them in the meantime.
 - A line over **16 MiB** is dropped.
 - An order list over **5,000 orders**, or an order whose `text` is over **12,000 bytes**, is refused.
 - At most **100 panels**. A panel id or an order id must be non-empty and unique within its list.

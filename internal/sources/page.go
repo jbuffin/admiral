@@ -27,6 +27,7 @@ const (
 	maxRunValues     = 50  // fields in one run's values
 	maxRunItems      = 100 // items in one checklist value
 	maxRunValueRunes = 1000
+	maxRunURLBytes   = 2000    // a run answer's url
 	maxRunBytes      = 1 << 20 // bytes of a run request's body
 )
 

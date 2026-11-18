@@ -96,6 +96,9 @@ func parseFormField(raw json.RawMessage) (FormField, error) {
 		if len(item.Options) > maxFormOptions {
 			return FormField{}, fmt.Errorf("field %q has %d options, over the limit of %d", id, len(item.Options), maxFormOptions)
 		}
+		if len(item.Options) == 0 {
+			return FormField{}, fmt.Errorf("field %q has no options", id)
+		}
 		f.Options = []FormOption{}
 		known := map[string]bool{}
 		for _, o := range item.Options {
@@ -169,7 +172,7 @@ func parseRunAnswer(raw json.RawMessage) (map[string]string, error) {
 		return nil, errors.New("action.run: the answer has no message")
 	}
 	out := map[string]string{"message": msg}
-	if u, _ := rawString(res.URL); safeURL(u) != "" {
+	if u, _ := rawString(res.URL); len(u) <= maxRunURLBytes && safeURL(u) != "" {
 		out["url"] = safeURL(u)
 	}
 	return out, nil
@@ -358,22 +361,25 @@ func (s *Service) serveActionRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, errRunOpen.Error())
 		return
 	}
+	defer rn.closeRun(row)
 	var body struct {
 		Values json.RawMessage `json:"values"`
 	}
-	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRunBytes)).Decode(&body)
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRunBytes))
+	err := dec.Decode(&body)
+	if err == nil && dec.Decode(&struct{}{}) != io.EOF {
+		err = errors.New("the body holds more than one JSON value")
+	}
 	var values map[string]any
 	if err == nil || errors.Is(err, io.EOF) {
 		values, err = parseRunValues(body.Values)
 	}
 	if err != nil {
-		rn.closeRun(row)
 		writeError(w, http.StatusBadRequest, cleanMsg(err.Error()))
 		return
 	}
 	// The run outlives a client that goes away, and so does its slot.
 	res, err := p.call(context.WithoutCancel(r.Context()), "action.run", map[string]any{"row": row, "action": id, "values": values}, runTimeout)
-	rn.closeRun(row)
 	if err != nil {
 		callError(w, err)
 		return

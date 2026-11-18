@@ -699,14 +699,14 @@ A row answers `200 {"sections":[...]}`, from `row.get`, and passes each repeated
 
 Fetch a module action's form, and run the module action; the plugin side is in [A module's page](plugins.md#a-modules-page). Both are the engineer's alone: AdmiralBot gets `403`. `<action>` is a module action id of the row: the row's `action`, one of its `actions`, or one in a step of the row's last good detail view (it is known only once `GET …/rows/<id>` has answered). The first module action with an id wins.
 
-`/form` answers `200 {"title"?,"fields":[...]}`, the validated form (see the plugin docs for what Admiral drops). `/run` takes `{"values": {...}}`, an object of strings or lists of strings (a missing `values` is `{}`), and answers `200 {"message","url"?}`. A form can be fetched while a run is open on the row; only `/run` is refused then.
+`/form` answers `200 {"title"?,"fields":[...]}`, the validated form (see the plugin docs for what Admiral drops). `/run` takes `{"values": {...}}`, an object of strings or lists of strings (a missing `values` is `{}`), and answers `200 {"message","url"?}`; `url` is left out unless it is an http(s) link of at most 2,000 bytes. A form can be fetched while a run is open on the row; only `/run` is refused then.
 
 Checked in this order, and the plugin is not asked until all pass:
 
 1. `404`: an unknown source; a source with no page; a row not on the last good page; a module action id the row does not have; `/form` on one whose `confirm` is not `form`; `/form` or `/run` on one with a `url`.
 2. `409`: the source is not running; the page's state is `error` (`auth_required` does not stop module actions); `/run` while another run is open on the row. The slot stays held until the plugin answers or the run timeout (60 seconds) passes, even when the client goes away.
-3. `400`, `/run` only: a body that is not a JSON object, or `values` of the wrong shape or over a limit (50 fields, 100 items in a list, 1,000 characters in a string, a body of 1 MiB), with a one-line message.
-4. The call: `action.form` within 10 seconds, `action.run` within 60. `422` when the plugin refuses it (its message, cut to one line of 300 characters), `504` when it does not answer in time, `502` when it can't be reached, or when its answer is invalid (a form over a limit or out of shape, or a run answer with no `message`), with a one-line message.
+3. `400`, `/run` only: a body that is not one JSON object (anything after it, such as `{}x`, counts), over 1 MiB, or `values` that is not an object of strings and lists of strings or is over a limit (50 fields, 100 items in a list, 1,000 characters in a string), with a one-line message. An empty body, `null` and a missing or `null` `values` count as `values: {}`.
+4. The call: `action.form` within 10 seconds, `action.run` within 60. `422` when the plugin refuses it (its message, cut to one line of 300 characters), `504` when it does not answer in time, `502` when it can't be reached, or when its answer is invalid (a form over a limit or out of shape, such as a `choice` or `checklist` with no options, or a run answer with no `message`), with a one-line message.
 
 A run changes the page through the plugin's own `page.changed`; no live message is sent for it.
 
