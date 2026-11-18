@@ -1,4 +1,4 @@
-import type { FixOffer, MooredPR, PRStack, Ship, ShipStatus, StackShape } from './api';
+import type { FixOffer, MooredPR, PRDetail, PRStack, Ship, ShipStatus, StackShape } from './api';
 import { isStackUrl, prChips, type ChipTone } from './moored';
 
 export type DetailTone = ChipTone | 'rev';
@@ -66,6 +66,18 @@ export function prDot(pr: MooredPR): DotKind {
   if (pr.review === 'APPROVED' && pr.checks === 'SUCCESS') return 'ok';
   return 'wait';
 }
+
+export type ReviewState = 'draft' | 'ready_for_review';
+
+/** Whether an open PR is still a draft, from its fresh detail; null for a PR that is not open or has not been read yet. */
+export const reviewState = (pr: Pick<MooredPR, 'state'>, detail: Pick<PRDetail, 'state' | 'draft'> | undefined): ReviewState | null =>
+  pr.state === 'OPEN' && detail?.state === 'OPEN' ? (detail.draft ? 'draft' : 'ready_for_review') : null;
+
+/** The ship's own open PRs that Mark all ready for review sends, in tab order; a PR it reviews is someone else's. */
+export const ownOpen = (prs: MooredPR[]): MooredPR[] => prs.filter((p) => p.state === 'OPEN' && !p.reviewing);
+
+/** Whether any of the ship's own open PRs is a draft, which is when the tab offers marking. */
+export const hasOwnDraft = (prs: MooredPR[], details: Record<string, PRDetail>): boolean => ownOpen(prs).some((p) => reviewState(p, details[p.url]) === 'draft');
 
 export function headerChips(pr: MooredPR): DetailChip[] {
   return prChips(pr).map((c): DetailChip => (pr.state === 'MERGED' ? { ...c, tone: 'rev' } : c));

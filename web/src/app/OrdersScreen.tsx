@@ -39,9 +39,20 @@ export function NeedsYouBadge() {
 
 const MARK_PR = <path d="M4 5.1v5.8M12 10.9V6.5a2 2 0 0 0-2-2H7.5M9 3 7.5 4.5 9 6" />;
 
-function Mark({ pr, needs, stack }: { pr: boolean; needs: boolean; stack?: boolean }) {
+// A needs-you PR keeps its accent colour, so draft shows by a dashed stroke on every PR and ready for review by green on the rest.
+function Mark({ pr, needs, stack, draft }: { pr: boolean; needs: boolean; stack?: boolean; draft?: boolean }) {
+  const named = pr && !stack && draft !== undefined;
   return (
-    <svg class={`orow-mark${stack ? ' stack' : needs ? (pr ? ' pr' : ' issue') : ''}`} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+    <svg
+      class={`orow-mark${stack ? ' stack' : needs ? (pr ? ' pr' : ' issue') : ''}${named ? (draft ? ' draft' : ' ready-for-review') : ''}`}
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      {...(named ? { role: 'img', 'aria-label': draft ? 'Draft pull request' : 'Pull request ready for review' } : { 'aria-hidden': 'true' })}
+    >
       {stack ? (
         <>
           <path d="M8 2 14 5 8 8 2 5Z" />
@@ -170,7 +181,7 @@ function Row({ row, phone, muted, selected, onOpen, onLaunch, onAgain, action, v
       {tick}
       {toggle ?? spacer}
       <button type="button" class="orow-open" aria-label={`Open ${o.title}`} aria-pressed={selected} onClick={() => onOpen(row)}>
-        <Mark pr={!!o.pr} needs={row.needsYou} stack={row.stackRow} />
+        <Mark pr={!!o.pr} needs={row.needsYou} stack={row.stackRow} draft={o.pr?.state === 'OPEN' ? o.pr.draft : undefined} />
         <span class="orow-main">
           <span class="orow-title">{o.title}</span>
           <span class="orow-meta">

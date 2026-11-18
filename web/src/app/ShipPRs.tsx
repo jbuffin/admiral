@@ -9,12 +9,13 @@ import { Failure } from './PeekItem';
 import { Sheet, useCancelFocus } from './Sheet';
 import { StackSheet } from './StackSheet';
 import { OpenPRs } from './OpenPRs';
-import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, fixLine, fixStackInBar, headerChips, mergeFor, mergeReasonLines, prDot, prNumber, reviewMark, reviewStackBar, showAnswerAll, showAnswerReview, stackBarAction, stackBarLine, tabOrder } from './prTab';
+import { chooseStackDetail, actingWhile, defaultPR, feedbackBarText, fixLine, fixStackInBar, hasOwnDraft, headerChips, mergeFor, mergeReasonLines, ownOpen, prDot, prNumber, reviewMark, reviewState, reviewStackBar, showAnswerAll, showAnswerReview, stackBarAction, stackBarLine, tabOrder } from './prTab';
 import { MOOR_LINE, moorSheetParts, offersMoor, reReviewPlace, reviews, staleNote } from './moored';
 import { AnswerReviewSheet } from './AnswerReview';
 import { FixButton, FixSheet } from './Fix';
 import { ReReviewSheet } from './ReReview';
 import { PRSections } from './PRDetailSections';
+import { MarkReady, type ReadyLine } from './ReadyForReview';
 
 const REFRESH_MS = 30_000;
 
@@ -116,6 +117,7 @@ function useShape(session: string, many: boolean): [StackShape | null, (s: Stack
 function PRHeader({ ship, url, detail, failed, refresh }: { ship: Ship; url: string; detail: PRDetail | undefined; failed: boolean; refresh: () => Promise<void> }) {
   const pr = (ship.prs ?? []).find((p) => p.url === url)!;
   const note = staleNote(ship, Date.now());
+  const state = reviewState(pr, detail);
   return (
     <>
       <div class="pr-head">
@@ -138,10 +140,10 @@ function PRHeader({ ship, url, detail, failed, refresh }: { ship: Ship; url: str
           ) : failed ? (
             <span>Couldn't load this PR from GitHub.</span>
           ) : null}
-          {detail?.draft ? <span>Draft</span> : null}
         </div>
       </div>
       <div class="pr-status">
+        {state ? <span class={`pr-chip review-${state}`}>{state === 'draft' ? 'Draft' : 'Ready for review'}</span> : null}
         {headerChips(pr).map((c) => (
           <span key={c.text} class={`pr-chip ${c.tone === 'muted' ? '' : c.tone}`}>
             {c.text}
@@ -317,6 +319,18 @@ export function PRTab({ ship }: { ship: Ship }) {
   const action = reviewBar ? 'none' : stackBarAction(shape, ship.status);
   const choice = mergeFor(shape, prs, current, !!ship.stack_ready);
   const justMerged = mergedAll || merged.has(current.url);
+  const ownDraft = hasOwnDraft(prs, details);
+  const markAll = (
+    <MarkReady
+      session={ship.session}
+      all
+      lines={ownOpen(prs).map((p): ReadyLine => ({ url: p.url, draft: reviewState(p, details[p.url]) !== 'ready_for_review', head: details[p.url]?.head, base: details[p.url]?.base }))}
+      locked={acting}
+      onBusy={setActing}
+      onDone={reread}
+    />
+  );
+  const markOne = ownOpen([current]).length > 0 && reviewState(current, details[current.url]) === 'draft';
   const reasonLines = mergeReasonLines(current, details[current.url]?.base);
   // The stack read decides: a layer of a GitHub stack is fixed as a stack, so it has no Update branch.
   const canUpdate = !!current.merge_reasons?.includes('behind') && !!details[current.url] && details[current.url].stack === null;
@@ -362,6 +376,12 @@ export function PRTab({ ship }: { ship: Ship }) {
           ) : null}
           {action === 'after-moor' ? <span class="merge-hint">Stack after the ship moors</span> : null}
           {unseen && shape?.shape === 'chained' ? <span>GitHub hasn't shown the stack yet. It shows on the next refresh.</span> : null}
+          {prs.length > 1 && ownDraft ? markAll : null}
+        </div>
+      ) : prs.length > 1 && ownDraft ? (
+        <div class="fix-bar">
+          <span class="fb-text">Some of these PRs are drafts.</span>
+          {markAll}
         </div>
       ) : null}
       {fixStack && !fixInBar ? (
@@ -401,6 +421,8 @@ export function PRTab({ ship }: { ship: Ship }) {
                 <span class={`dot ${prDot(p)}`} />
                 <span class="num">#{prNumber(p.url)}</span>
                 {details[p.url] ? <span class="ttl">{details[p.url].title}</span> : null}
+                {reviewState(p, details[p.url]) === 'draft' ? <span class="tag-draft">Draft</span> : null}
+                {reviewState(p, details[p.url]) === 'ready_for_review' ? <span class="visually-hidden">ready for review</span> : null}
               </button>
             </Fragment>
           ))}
@@ -408,6 +430,12 @@ export function PRTab({ ship }: { ship: Ship }) {
       ) : null}
       <div class="pr-detail">
         <PRHeader ship={ship} url={current.url} detail={details[current.url]} failed={failed.has(current.url)} refresh={() => refresh(current.url)} />
+        {markOne ? (
+          <div class="fix-bar">
+            <span class="fb-text">This PR is a draft.</span>
+            <MarkReady key={current.url} session={ship.session} all={false} lines={[{ url: current.url, draft: true, head: details[current.url]?.head, base: details[current.url]?.base }]} locked={acting} onBusy={setActing} onDone={reread} />
+          </div>
+        ) : null}
         {respondedHere ? (
           <div class="feedback-bar">
             <span class="fb-text">{current.author ? `@${current.author}` : 'The author'} responded since your review.</span>
