@@ -73,3 +73,19 @@ func TestOnlyAFreshNoSkillLaunchTheEngineerAskedForInTheChatGetsClosingSteps(t *
 		})
 	}
 }
+
+func TestAQuickShipWithTheEngineerStillGetsClosingStepsWithoutABanOnQuestions(t *testing.T) {
+	p := newPinRig(t, nil)
+	r := p.chatLaunch()
+	r.Autopilot = false
+	if _, err := p.l.Launch(r); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	got := p.lastArg(t)
+	if !strings.Contains(got, "ADMIRAL_REPORT") {
+		t.Errorf("prompt = %q, want closing steps naming ADMIRAL_REPORT", got)
+	}
+	if strings.Contains(got, "ask the engineer") {
+		t.Errorf("prompt = %q, want no ban on asking the engineer", got)
+	}
+}

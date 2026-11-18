@@ -8,10 +8,11 @@ import (
 
 func TestALaunchWithoutAReasonIsRefusedNamingItAndNeverPosted(t *testing.T) {
 	for name, args := range map[string]string{
-		"missing": `{"dir":"/code/widget","harness":"claude","skill":"none","text":"fix the build"}`,
-		"empty":   `{"dir":"/code/widget","harness":"claude","skill":"none","text":"fix the build","reason":""}`,
-		"blank":   `{"dir":"/code/widget","harness":"claude","skill":"none","text":"fix the build","reason":"  "}`,
-		"scout":   `{"dir":"/code/widget","harness":"claude","text":"find it","scout":true}`,
+		"missing":   `{"dir":"/code/widget","harness":"claude","skill":"none","text":"fix the build"}`,
+		"empty":     `{"dir":"/code/widget","harness":"claude","skill":"none","text":"fix the build","reason":""}`,
+		"blank":     `{"dir":"/code/widget","harness":"claude","skill":"none","text":"fix the build","reason":"  "}`,
+		"two lines": `{"dir":"/code/widget","harness":"claude","skill":"none","text":"fix the build","reason":"read the logs\nthen fix"}`,
+		"scout":     `{"dir":"/code/widget","harness":"claude","text":"find it","scout":true}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })

@@ -51,8 +51,7 @@ func withScoutContract(req Request, prompt string) string {
 const closingSteps = "## Closing steps\n\n" +
 	"When the work is done: commit it on your branch, push the branch, and open a pull request. " +
 	"Then write your Admiral report to the file named by $ADMIRAL_REPORT as JSON with version 2, a result of done, partial or failed, " +
-	"and prs listing the pull request you opened as [{\"url\": ...}], each url the full URL (https://host/owner/repo/pull/N). " +
-	"Do not ask the engineer anything on the way; anything you cannot settle goes in your report."
+	"and prs listing the pull request you opened as [{\"url\": ...}], each url the full URL (https://host/owner/repo/pull/N)."
 
 // withClosingSteps puts Admiral's closing steps after a fresh quick ship's launch text: a chat launch, no skill, not a scout, not a wake.
 func withClosingSteps(req Request, prompt string) string {

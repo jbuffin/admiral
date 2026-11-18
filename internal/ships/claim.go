@@ -240,7 +240,7 @@ func launchKind(req launcher.Request) string {
 	case req.Skill.Kind == "commodore":
 		return "commodore"
 	case req.Skill.Kind == "skill":
-		return req.Skill.Name
+		return launcher.TrimSkillMark(req.Skill.Name)
 	}
 	return "quick_ship"
 }

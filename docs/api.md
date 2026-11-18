@@ -343,7 +343,7 @@ A launch line is a chat entry with `kind: "launch_line"` that the server posts i
 
 - `kind` is `scout`, `quick_ship`, `commodore`, or the name of the skill the ship runs (a drafting ship shows its skill's name).
 - `reason` is the one line AdmiralBot gave `launch_ship`, which requires it.
-- `text` is the launch text as AdmiralBot wrote it, without the closing steps Admiral adds to a quick ship's prompt.
+- `text` is the launch text as AdmiralBot wrote it, without the closing steps Admiral adds to a quick ship's prompt. It is empty for a launch from an order (`source` and `order_id`), which has no launch text.
 
 ### The log
 

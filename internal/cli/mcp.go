@@ -582,6 +582,9 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 	if a.Reason == "" {
 		return "", errors.New("reason is required: give the one line the engineer reads in the chat, such as \"to read the AWS logs\"")
 	}
+	if strings.ContainsAny(a.Reason, "\r\n") {
+		return "", errors.New("reason must be one line: no line breaks")
+	}
 	autopilot := !a.WithMe
 	if a.Scout {
 		if err := checkScoutParams(a.shipSpec, a.WithMe); err != nil {
