@@ -35,6 +35,12 @@ export function titleLines(e: Entry, heading: string, shipTitle: string): string
   return (e.item?.wake_proposal ? [heading, shipTitle] : [shipTitle, heading]).filter(Boolean);
 }
 
+/** A draft's second line names the campaign, since the item's own title repeats the verb. */
+export const rowTitle = (e: Entry): string => (e.item?.kind === 'campaign_draft' ? (e.item.campaign_draft?.title ?? '') : (e.item?.title ?? ''));
+
+/** Who a Bot-made item speaks for, shown muted after the verb; empty on every other item. */
+export const rowVia = (e: Entry): string => (e.item?.kind === 'campaign_draft' ? 'AdmiralBot' : '');
+
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 // The phrase reads after the ship name: "Dory asked", "Dory wants to run Bash".
@@ -57,6 +63,8 @@ export function rowVerb(e: Entry): string {
     }
     case 'routine_proposal':
       return e.item.routine_proposal?.reason ? `proposes a routine run, ${lower(e.item.routine_proposal.reason.split(':')[0])}` : 'proposes a routine run';
+    case 'campaign_draft':
+      return 'drafted a campaign';
     case 'event_proposal':
       return 'proposes a routine run for an outside event';
     case 'crew_notes':

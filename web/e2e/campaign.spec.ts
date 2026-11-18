@@ -4,7 +4,7 @@ import { expect, test } from './fixtures';
 import { ANNEX, DEPOT, DEPOT_TITLE, OLD_DUST, T, campaignIdOf, closeAnnexChild, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, proposalJourney, seedChatCampaignFleet, seedCampaignFleet } from './campaign';
 import { proveJudge } from './crew';
 import { ghWrites, NEW_PARENT, seedCampaignCreate } from './orders';
-import { skillPicker, watchPage, withFakeGh } from './shell';
+import { seedInboxItem, skillPicker, watchPage, withFakeGh } from './shell';
 
 test('on the iPad, a person follows a campaign by searching for it and another by its reference, sees each child\'s status and mode, launches a ready child, is refused a second launch, unfollows it and finds it under Ended; Follow on an order opens its campaign', async ({ page, admiral }) => {
   seedCampaignFleet(admiral);
@@ -375,5 +375,53 @@ test('on the iPad, a chat-on fleet works a campaign: Admiral asks in the chat wh
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
   await proposalJourney(page, admiral, (l) => l.tap());
+  expect(watch.errors).toEqual([]);
+});
+
+test('on the iPad, a campaign draft in the Inbox opens the confirm step with the draft, Create files the edited parent, opens its campaign and the chat shows the card; Dismiss removes a second draft and the chat shows it thrown away', async ({ page, admiral }) => {
+  seedChatCampaignFleet(admiral);
+  seedCampaignCreate(admiral, { children: false });
+  const draft = (id: string, title: string) => seedInboxItem(admiral, '_admiral', { id, kind: 'campaign_draft', title: 'AdmiralBot drafted a campaign', campaign_draft: { fleet: 'harbor', repo: 'acme/widgets', title, body: 'Load the map in under a second.', via: 'admiralbot' } });
+  draft('draft-map', 'Speed up the fleet map');
+  draft('draft-docs', 'Rewrite the docs index');
+  await admiral.start({ env: withFakeGh(admiral) });
+  await githubReady(admiral);
+  const watch = watchPage(page, admiral.url);
+  await page.goto(admiral.url + 'app/inbox?fleet=harbor');
+  const main = page.getByRole('main');
+  const row = (title: string) => main.getByRole('link').filter({ hasText: title });
+
+  await expect(row('Speed up the fleet map')).toBeVisible();
+  await row('Speed up the fleet map').tap();
+  await expect(page).toHaveURL(/\/app\/inbox\/_admiral\/item\/draft-map/);
+  const peek = page.getByRole('region', { name: 'Peek' });
+  const title = peek.getByRole('textbox', { name: 'Title' });
+  await expect(title).toHaveValue('Speed up the fleet map');
+  await expect(peek.getByRole('textbox', { name: 'Description' })).toHaveValue('Load the map in under a second.');
+  await expect(peek.getByRole('combobox', { name: 'Repo for the parent issue' })).toHaveValue('github.com/acme/widgets');
+
+  await title.fill(NEW_PARENT.title);
+  const writesBefore = ghWrites(admiral).length;
+  await peek.getByRole('button', { name: 'Create campaign' }).tap();
+  await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
+  await expect(main.getByRole('heading', { name: NEW_PARENT.title })).toBeVisible();
+  await expect.poll(() => ghWrites(admiral).slice(writesBefore)).toEqual([
+    { method: 'POST', endpoint: 'repos/acme/widgets/issues', host: 'github.com', stdin: { title: NEW_PARENT.title, body: 'Load the map in under a second.' } },
+  ]);
+  await expect.poll(async () => ((await (await fetch(`${admiral.url}api/v1/campaigns`)).json()) as { campaigns: { title: string }[] }).campaigns.map((c) => c.title)).toContain(NEW_PARENT.title);
+
+  await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  const created = main.locator('.chat-card').filter({ hasText: NEW_PARENT.title });
+  await expect(created.getByRole('link')).toHaveAttribute('href', `https://github.com/acme/widgets/issues/${NEW_PARENT.number}`);
+
+  await page.goto(admiral.url + 'app/inbox?fleet=harbor');
+  await expect(row('Rewrite the docs index')).toBeVisible();
+  await expect(row('Speed up the fleet map')).toHaveCount(0);
+  await row('Rewrite the docs index').tap();
+  await page.getByRole('region', { name: 'Peek' }).getByRole('button', { name: 'Dismiss' }).tap();
+  await expect(row('Rewrite the docs index')).toHaveCount(0);
+
+  await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  await expect(main.locator('.chat-card').filter({ hasText: 'Rewrite the docs index' })).toContainText(/thrown away/i);
   expect(watch.errors).toEqual([]);
 });

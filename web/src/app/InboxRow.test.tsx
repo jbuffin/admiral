@@ -196,3 +196,39 @@ test("a wake proposal row of a ship with no title shows the proposal's own words
   expect(li.textContent).toContain('Saltpaw');
   expect(Array.from(li.querySelectorAll('.ship-main *')).filter((n) => n.textContent?.trim() === '')).toEqual([]);
 });
+
+const draft = (over: Record<string, unknown> = {}) =>
+  ({
+    key: 'item:_admiral/draft-map',
+    type: 'item',
+    session: '_admiral',
+    id: 'draft-map',
+    folded: null,
+    since: 0,
+    fleet: homeport,
+    item: {
+      id: 'draft-map',
+      kind: 'campaign_draft',
+      name: 'AdmiralBot',
+      title: 'AdmiralBot drafted a campaign',
+      fleet: 'alpha',
+      campaign_draft: { fleet: 'alpha', repo: 'acme/widgets', title: 'Speed up the fleet map', body: 'Load it fast.', via: 'admiralbot' },
+      ...over,
+    },
+  }) as unknown as Entry;
+
+test('a campaign draft row reads "AdmiralBot drafted a campaign", marks it via AdmiralBot, names the campaign under it and shows no expiry', () => {
+  row(draft());
+  const link = screen.getByRole('link') as HTMLAnchorElement;
+  expect(link.querySelector('.inbox-who')!.textContent).toMatch(/^AdmiralBot\s+drafted a campaign\s+via AdmiralBot\s*$/);
+  expect(link.querySelector('.inbox-title')!.textContent!.trim()).toBe('Speed up the fleet map');
+  expect(link.textContent!.match(/drafted a campaign/g)).toHaveLength(1);
+  expect(link.textContent).not.toMatch(/expire|open until/i);
+  expect(link.getAttribute('href')).toBe('/app/inbox/_admiral/item/draft-map');
+});
+
+test('a campaign draft row shows a hostile model-written title as text', () => {
+  row(draft({ campaign_draft: { fleet: 'alpha', repo: 'acme/widgets', title: HOSTILE, body: '', via: 'admiralbot' } }));
+  expect(document.querySelector('img, script')).toBeNull();
+  expect(screen.getByRole('link').textContent).toContain('<img src=x');
+});

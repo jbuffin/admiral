@@ -109,6 +109,15 @@ func TestADraftFromAdmiralBotIsAnAdmiralItemCarryingTheDraftAndTheViaMarkerAndTo
 	}
 }
 
+func TestADraftIsNamedAdmiralBotNotAdmiral(t *testing.T) {
+	s, _, _, mux, _ := draftInbox(t)
+	draftAsBot(t, mux, draftBody)
+	items := listed(t, s)
+	if len(items) != 1 || items[0]["name"] != "AdmiralBot" {
+		t.Errorf("name = %v, want AdmiralBot so the row reads \"AdmiralBot drafted a campaign\"", items)
+	}
+}
+
 func TestADraftNeverExpires(t *testing.T) {
 	s, home, _, mux, _ := draftInbox(t)
 	id := draftAsBot(t, mux, draftBody)

@@ -5,12 +5,12 @@ import { Composer, useComposer } from './Composer';
 import { ConversationView } from './ConversationView';
 import { fleetSearch } from './fleets';
 import type { Entry } from './inbox';
-import { rowShip, rowShipTitle, rowVerb, titleLines } from './inboxRow';
+import { rowShip, rowShipTitle, rowTitle, rowVerb, rowVia, titleLines } from './inboxRow';
 import { discardFold, lockedBy, submitFold } from './itemActions';
 import { Button } from './Button';
 import { CrewMemberBody, CrewNotesBody, MissionBody, isCrewKind, type MemberStep, readCrew, useCrewNotes } from './PeekCrew';
 import { crewRemoveFold, readMission } from './crewItems';
-import { blankReview, EventProposalBody, FindingsBody, RoutineProposalBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
+import { blankReview, CampaignDraftBody, EventProposalBody, FindingsBody, RoutineProposalBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
 import { MergeBody } from './PeekMerge';
 import { ReReviewBody } from './ReReview';
 import { PeekQuestions } from './PeekQuestions';
@@ -71,7 +71,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
   const boat = entry.crew ? ship?.crew.find((b) => b.name === entry.crew!.name) : undefined;
   const fleetKey = entry.fleet?.key ?? ship?.fleet;
   const item = entry.type === 'item';
-  const title = entry.item?.title;
+  const title = rowTitle(entry);
   const shipTitle = rowShipTitle(entry);
   const question = entry.item?.kind === 'question';
   // The draft lives here, above the ship's arrival, so it survives ShipTurn replacing the bare form.
@@ -105,7 +105,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
   const kind = entry.item?.kind;
   const crewNoteIds = (kind === 'crew_notes' ? crewNotes.item.notes : crew.notes).map((n) => n.id);
   // Withdrawing one chat question is not specified, so only a ship's item can leave unanswered.
-  const removable = item && kind !== 'notice' && kind !== 'routine_proposal' && kind !== 'event_proposal' && !chat;
+  const removable = item && kind !== 'notice' && kind !== 'routine_proposal' && kind !== 'event_proposal' && kind !== 'campaign_draft' && !chat;
   const mine = (a: KeyAct) => {
     if (a.kind === 'remove' && removable && !acting.busy) {
       acting.clear();
@@ -159,6 +159,8 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
         <FindingsBody entry={entry} acting={acting} state={findings} />
       ) : kind === 'routine_proposal' ? (
         <RoutineProposalBody entry={entry} acting={acting} />
+      ) : kind === 'campaign_draft' ? (
+        <CampaignDraftBody entry={entry} acting={acting} fold={fold} />
       ) : kind === 'event_proposal' ? (
         <EventProposalBody entry={entry} acting={acting} />
       ) : kind === 'crew_notes' ? (
@@ -177,7 +179,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
           fold={kind === 'crew_member' ? (data: { file_removed?: boolean }) => crewRemoveFold(data, crew.member) : undefined}
         />
       ) : null}
-      {kind === 'review' || kind === 'findings' || kind === 'routine_proposal' || kind === 'event_proposal' || removing || (isCrewKind(kind) && !noteShown) ? <Failure message={acting.error} /> : null}
+      {kind === 'review' || kind === 'findings' || kind === 'routine_proposal' || kind === 'event_proposal' || kind === 'campaign_draft' || removing || (isCrewKind(kind) && !noteShown) ? <Failure message={acting.error} /> : null}
     </div>
   );
   return (
@@ -197,6 +199,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
         <div class="peek-who">
           <h2>
             {rowShip(entry)} <span class="inbox-verb">{rowVerb(entry)}</span>
+            {rowVia(entry) ? <span class="muted"> via {rowVia(entry)}</span> : null}
           </h2>
           {titleLines(entry, title ?? '', shipTitle).map((t, i) => (
             <p key={i} class="peek-title">{t}</p>
