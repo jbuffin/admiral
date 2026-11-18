@@ -152,3 +152,60 @@ test('a ship card shows a title as text, never as markup', async () => {
   expect(el.textContent).toContain(title);
   expect(el.querySelector('img, b')).toBeNull();
 });
+
+const twoCards = (cards: Partial<ShipCard>[], findingsBody = '# Found it') => {
+  const calls: string[] = [];
+  vi.stubGlobal('fetch', async (url: string) => {
+    calls.push(String(url));
+    if (url.endsWith('/session')) {
+      const messages = cards.map((c, i) => ({ id: `ship-${i}`, kind: 'ship_card', text: 'x', at: '2026-01-02T03:04:05Z', card: { ...card, ...c } }));
+      return new Response(JSON.stringify({ fleet: 'alpha', running: true, state: 'idle', questions: [], messages }));
+    }
+    return new Response(JSON.stringify({ ship: 'calm-otter', first_launched: '', fleet: 'alpha', findings: findingsBody }));
+  });
+  return calls;
+};
+
+test('only the card whose voyage has findings shows a Findings button', async () => {
+  twoCards([{ ship: 'calm-otter', name: 'Calm Otter', findings: true }, { ship: 'calm-lark', name: 'Calm Lark' }]);
+  ships.value = [];
+  render(<ChatPanel surface={surface} title phone />);
+  await waitFor(() => expect(document.querySelectorAll('.chat-card')).toHaveLength(2));
+  const buttons = screen.getAllByRole('button', { name: 'Findings' });
+  expect(buttons).toHaveLength(1);
+  expect(buttons[0].closest('.chat-card')?.textContent).toContain('Calm Otter');
+});
+
+test("tapping Findings opens the sheet with that voyage's findings rendered, and Close shuts it", async () => {
+  const calls = twoCards([{ findings: true }], '# The race\n\n- the cache\n');
+  ships.value = [];
+  render(<ChatPanel surface={surface} title phone />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Findings' }));
+  expect(await screen.findByRole('heading', { name: 'The race' })).not.toBeNull();
+  expect(screen.getByRole('dialog')).not.toBeNull();
+  const url = new URL(calls.find((c) => c.includes('/findings')) ?? '', 'http://admiral.test');
+  expect(url.pathname).toBe('/api/ships/calm-otter/findings');
+  expect(url.searchParams.get('first_launched')).toBe('2026-01-02T03:04:05Z');
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+});
+
+test('cards of a reused ship name each open their own voyage', async () => {
+  const calls = twoCards([{ first_launched: '2026-01-02T03:04:05Z', findings: true }, { first_launched: '2026-03-04T05:06:07Z', findings: true }]);
+  ships.value = [];
+  render(<ChatPanel surface={surface} title phone />);
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Findings' })).toHaveLength(2));
+  fireEvent.click(screen.getAllByRole('button', { name: 'Findings' })[1]);
+  await screen.findByRole('dialog');
+  const url = new URL(calls.find((c) => c.includes('/findings')) ?? '', 'http://admiral.test');
+  expect(url.searchParams.get('first_launched')).toBe('2026-03-04T05:06:07Z');
+});
+
+test('a scout without findings shows Failed and no Findings button', async () => {
+  chatWith({ result: 'failed', skill_kind: 'scout', skill: '' });
+  ships.value = [];
+  const el = await shown();
+  expect(el.textContent).toContain('Failed');
+  expect(el.textContent).not.toContain('Result unknown');
+  expect(screen.queryByRole('button', { name: 'Findings' })).toBeNull();
+});

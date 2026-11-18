@@ -21,6 +21,7 @@ import (
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
+	"github.com/jbuffin/admiral/internal/findings"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/ledger"
@@ -106,6 +107,8 @@ type Service struct {
 	OnReply func(fleet string, r ReportReply)
 	// readPromptKey replaces the tmux read of the prompt key; a test seam.
 	readPromptKey func(fleet string) (string, bool)
+	// Findings says which voyages kept findings, for the ship cards; nil reads as none.
+	Findings findings.Reader
 	// DigestAcked replaces the digest sequence read from the chat's pane options; a test seam.
 	DigestAcked func(fleet string) uint64
 

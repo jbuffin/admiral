@@ -23,6 +23,7 @@ const (
 	ShipMoored       = "moored"
 	ShipReadyToMerge = "ready_to_merge"
 	ShipReturned     = "returned"
+	ShipFailed       = "failed"
 )
 
 // ShipSettleGrace is how long a clean end waits for a moor before the ship counts as sailed off; the ships service moors a ship with open PRs a few seconds after it ends.
@@ -83,6 +84,7 @@ type ShipRecord struct {
 	Scout    bool   // a stopped line ended a scout that ran to its end
 	// ReportResult is the result of the report an ended line carried: the file itself is gone once the ship moors.
 	ReportResult string
+	Result       string // an ended line's result
 }
 
 // voyage is what the detector keeps of one ship's voyage: who it is, which cards it has settled and the record times that

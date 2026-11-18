@@ -11,7 +11,7 @@ test("a moored ship and then a sailed-off one each post one card in their own fl
   const watch = watchPage(page, admiral.url);
 
   prAnswer(admiral, 7, { state: 'OPEN' });
-  const ship = await launchMooredShip(admiral, 7);
+  const ship = await launchMooredShip(admiral, 7, { findings: '# Root cause\n\n- the cache\n- the lock\n\n```\nmutex.Lock()\n```\n' });
   rmSync(join(admiral.home, 'cue'), { force: true });
 
   await page.goto(admiral.url + 'app/chat?fleet=zulu');
@@ -31,6 +31,15 @@ test("a moored ship and then a sailed-off one each post one card in their own fl
   await expect(page).toHaveURL(shipViewUrl(admiral, ship));
   await page.goBack();
   await expect(main.getByText('Moored', { exact: true })).toHaveCount(1);
+
+  // The kept findings open in a sheet over the chat, rendered as markdown.
+  await main.getByRole('button', { name: 'Findings' }).tap();
+  const sheet = page.getByRole('dialog', { name: 'Findings' });
+  await expect(sheet.getByRole('heading', { name: 'Root cause' })).toBeVisible();
+  await expect(sheet.getByRole('listitem')).toHaveText(['the cache', 'the lock']);
+  await expect(sheet.locator('pre')).toContainText('mutex.Lock()');
+  await sheet.getByRole('button', { name: 'Close' }).tap();
+  await expect(sheet).toHaveCount(0);
 
   // Closing the PR, not merging it, makes the ship sail off.
   prAnswer(admiral, 7, { state: 'CLOSED' });

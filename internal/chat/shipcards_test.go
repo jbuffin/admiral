@@ -560,3 +560,75 @@ func TestTheCardOfAShipWithASettledTitleCarriesItAndAShipNotYetTitledCarriesNone
 		t.Errorf("untitled ship's card = %+v, want no title", c)
 	}
 }
+
+// A scout without findings: its `ended` is a kill that carries result failed, and its `stopped` follows.
+func failedScoutEnd() []ShipRecord {
+	return []ShipRecord{
+		{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Result: "failed"},
+		{At: t0.Add(2*time.Minute + time.Second), Ship: "calm-otter", Event: "stopped", Scout: true},
+	}
+}
+
+func TestAScoutThatLeftNoFindingsPostsOneFailedCardAndNoSailedOffCard(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	end := failedScoutEnd()
+	x.observe(2*time.Minute+10*time.Second, nil, end...)
+	x.wantResults("work")
+	x.observe(5*time.Minute, nil, end...)
+	x.observe(6*time.Minute, nil, end...)
+	x.restart()
+	x.observe(7*time.Minute, nil, end...)
+	x.wantResults("work", "failed")
+	x.wantResults("home")
+}
+
+func TestAScoutThatLeftNoFindingsAndExitedCleanOnItsOwnPostsFailedNotSailedOff(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	x.observe(5*time.Minute, nil, ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Clean: true, Result: "failed"})
+	x.observe(6*time.Minute, nil, ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Clean: true, Result: "failed"})
+	x.wantResults("work", "failed")
+}
+
+func TestAFailedScoutStillInTheSnapshotPostsNoFailedCardYet(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	x.observe(5*time.Minute, []ships.Ship{scout("calm-otter", "work")}, failedScoutEnd()...)
+	x.wantResults("work")
+	x.observe(6*time.Minute, nil, failedScoutEnd()...)
+	x.observe(7*time.Minute, nil, failedScoutEnd()...)
+	x.wantResults("work", "failed")
+}
+
+func TestAFailedScoutStopAnOlderBuildSavedPostsNoLateFailedCardButALaterOneStillPosts(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	x.observe(2*time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	old, err := os.ReadFile(x.d.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]json.RawMessage
+	if err := json.Unmarshal(old, &state); err != nil {
+		t.Fatal(err)
+	}
+	delete(state, "Scouts")
+	if old, err = json.Marshal(state); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(x.d.path, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	x.restart()
+	x.observe(5*time.Minute, nil, failedScoutEnd()...)
+	x.observe(6*time.Minute, nil, failedScoutEnd()...)
+	x.wantResults("work")
+	later := ship("calm-lark", "work", ships.StatusUnderway)
+	later.Scout = true
+	x.observe(7*time.Minute, []ships.Ship{later})
+	x.observe(10*time.Minute, nil, append(failedScoutEnd(),
+		ShipRecord{At: t0.Add(8 * time.Minute), Ship: "calm-lark", Event: "ended", Result: "failed"},
+		ShipRecord{At: t0.Add(8*time.Minute + time.Second), Ship: "calm-lark", Event: "stopped", Scout: true})...)
+	x.wantResults("work", "failed")
+}

@@ -452,14 +452,14 @@ export const mooringEnv = (a: Admiral) => ({ ...withFakeGh(a), ADMIRAL_SAIL_OFF_
 /** The resume text a moored ship's report carries unless a test says otherwise: a skill's own resume invocation. */
 export const RESUME = '/commodore resume run-7';
 
-/** Launches a ship whose harness waits, then exits 0 with a report naming the PR (and the `more` PRs, a stack): Admiral moors it. `resume` is the report's resume text; `lines` are transcript lines round 0 holds when it moors. */
-export async function launchMooredShip(a: Admiral, prNumber: number, opts: { resume?: string; lines?: TranscriptLine[]; more?: number[] } = {}): Promise<LaunchedShip> {
+/** Launches a ship whose harness waits, then exits 0 with a report naming the PR (and the `more` PRs, a stack): Admiral moors it. `resume` is the report's resume text; `lines` are transcript lines round 0 holds when it moors, `findings` is markdown it writes to ADMIRAL_FINDINGS. */
+export async function launchMooredShip(a: Admiral, prNumber: number, opts: { resume?: string; lines?: TranscriptLine[]; more?: number[]; findings?: string } = {}): Promise<LaunchedShip> {
   const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', cue: 'wait go\nexit 0\n' });
   await mooreWith(a, ship, [prNumber, ...(opts.more ?? [])], opts);
   return ship;
 }
 
-async function mooreWith(a: Admiral, ship: LaunchedShip, prs: number[], opts: { resume?: string; lines?: TranscriptLine[] }) {
+async function mooreWith(a: Admiral, ship: LaunchedShip, prs: number[], opts: { resume?: string; lines?: TranscriptLine[]; findings?: string }) {
   const rec = join(a.home, 'rec', ship.session);
   // The fake writes `recorded` last; `env` can exist while it is still half written.
   await expect.poll(() => existsSync(join(rec, 'recorded'))).toBe(true);
@@ -467,6 +467,11 @@ async function mooreWith(a: Admiral, ship: LaunchedShip, prs: number[], opts: { 
   const report = /^ADMIRAL_REPORT=(.*)$/m.exec(readFileSync(join(rec, 'env'), 'utf8'))?.[1];
   expect(report, 'the harness env names a report path').toBeTruthy();
   writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'PR opened', prs: prs.map((n) => ({ url: `${PR_BASE}/${n}`, closes: [] })), resume: opts.resume ?? RESUME }));
+  if (opts.findings !== undefined) {
+    const findings = /^ADMIRAL_FINDINGS=(.*)$/m.exec(readFileSync(join(rec, 'env'), 'utf8'))?.[1];
+    expect(findings, 'the harness env names a findings path').toBeTruthy();
+    writeFileSync(findings!, opts.findings);
+  }
   writeFileSync(join(rec, 'go'), '');
   await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status, { timeout: 30_000 }).toBe('moored');
 }

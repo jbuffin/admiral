@@ -48,8 +48,9 @@ export interface ShipCard {
   fleet: string;
   skill: string;
   skill_kind: 'commodore' | 'skill' | 'none' | 'scout' | 'quick';
-  result: 'sailed_off' | 'anchored' | 'moored' | 'ready_to_merge' | 'returned' | 'lost';
+  result: 'sailed_off' | 'anchored' | 'moored' | 'ready_to_merge' | 'returned' | 'lost' | 'failed';
   prs: { url: string; number: number }[];
+  findings?: boolean;
 }
 
 /** The line AdmiralBot's launch posts in the chat: what it sent and why, with its launch text as written. */
@@ -180,7 +181,7 @@ export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment
 /** The eyebrow of an open question card: Admiral's own proposals read differently from AdmiralBot's questions. */
 export const questionEyebrow = (id: string): string => (id.startsWith('campaign-') ? 'Admiral asks' : 'AdmiralBot asks');
 
-const SHIP_RESULT: Record<ShipCard['result'], string> = { moored: 'Moored', anchored: 'Anchored', ready_to_merge: 'Ready to merge', sailed_off: 'Sailed off', returned: 'Returned to port', lost: 'Lost' };
+const SHIP_RESULT: Record<ShipCard['result'], string> = { moored: 'Moored', anchored: 'Anchored', ready_to_merge: 'Ready to merge', sailed_off: 'Sailed off', returned: 'Returned to port', lost: 'Lost', failed: 'Result unknown' };
 
 const httpsHref = (url: string): string => {
   try {
