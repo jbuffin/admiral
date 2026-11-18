@@ -89,6 +89,7 @@ func TestAScoutsCrewBoatInheritsTheSessionsScoutVariable(t *testing.T) {
 	if session == "" {
 		t.Fatal("the scout has no ADMIRAL_SCOUT")
 	}
+	p.allowGates()
 	p.l.Config().Fleets[0].Harnesses[1].Env["ADMIRAL_SCOUT"] = "/dock/says/so"
 	if err := p.l.LaunchCrew(CrewRequest{Session: scout.Session, Name: "boat", Harness: "codex", Dir: p.work, Prompt: "go"}); err != nil {
 		t.Fatalf("LaunchCrew: %v", err)

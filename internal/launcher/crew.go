@@ -113,6 +113,22 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if err := RefuseHookArgs(req.Harness, req.Args); err != nil {
 		return err
 	}
+	// The session's own mark decides, not the caller's environment, which a shell can change in too many ways.
+	sessionScout, err := shipOpt("scout")
+	if err != nil {
+		return err
+	}
+	var scoutDir string
+	if sessionScout != "" {
+		req.Scout, req.Autopilot = true, true
+		recorded, err := shipOpt("dir")
+		if err != nil {
+			return err
+		}
+		if scoutDir, err = resolveScoutDir(recorded); err != nil {
+			return fmt.Errorf("the scout's checkout cannot be resolved: %w", err)
+		}
+	}
 	if req.Scout {
 		if l.ScoutGate == nil {
 			return errors.New("a scout cannot launch crew: no scout gate is configured")
@@ -161,6 +177,10 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	delete(env, "ADMIRAL_MISSIONS_DIR")
 	delete(env, "ADMIRAL_RUN_CREW")
 	delete(env, "PATH")
+	if sessionScout != "" {
+		// Passed with -e so a `tmux set-environment -u` on the session cannot strip them.
+		env[ScoutEnv], env["ADMIRAL_AUTOPILOT"], env["ADMIRAL_LOW_STAKES"] = scoutDir, "1", "advisor"
+	}
 	clientPath := l.shipEnv(dock)["PATH"]
 	// What the session holds that this boat must not have: the ship's own
 	// variables, and the keys the ship's dock sets that this dock doesn't. env -u

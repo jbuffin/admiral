@@ -506,12 +506,9 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	if req.Scout {
 		// The guard reads the checkout from here, so it is the resolved path the ship really works in.
-		resolved, err := filepath.EvalSymlinks(req.Dir)
+		resolved, err := resolveScoutDir(req.Dir)
 		if err != nil {
 			return nil, refuse(http.StatusBadRequest, "a scout's directory cannot be resolved: %v", err)
-		}
-		if resolved, err = filepath.Abs(resolved); err != nil {
-			return nil, err
 		}
 		ours[ScoutEnv] = resolved
 	}

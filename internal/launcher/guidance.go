@@ -1,6 +1,9 @@
 package launcher
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+)
 
 // withGuidance puts the fleet's Guidance after the prompt of a ship an outside event started; a read error launches without it.
 func (l *Launcher) withGuidance(req Request, prompt string) string {
@@ -43,4 +46,13 @@ func withScoutContract(req Request, prompt string) string {
 		return scoutContract
 	}
 	return prompt + "\n\n" + scoutContract
+}
+
+// resolveScoutDir is the checkout path a scout's ADMIRAL_SCOUT names: absolute, with symlinks resolved.
+func resolveScoutDir(dir string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(resolved)
 }
