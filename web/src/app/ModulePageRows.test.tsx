@@ -52,14 +52,14 @@ interface Call {
 type Row = { status?: number; body: unknown };
 
 // Serves the page and each row's answer; `rows` is read on each request so a test can change it.
-function server(rows: Record<string, Row | (() => Row)> = { r1: { body: detail } }) {
+function server(rows: Record<string, Row | (() => Row)> = { r1: { body: detail } }, served: unknown = page) {
   const calls: Call[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (path: string, init?: RequestInit) => {
       const method = init?.method ?? 'GET';
       calls.push({ method, path });
-      if (method === 'GET' && path.endsWith('/page')) return new Response(JSON.stringify(page));
+      if (method === 'GET' && path.endsWith('/page')) return new Response(JSON.stringify(served));
       const m = /\/rows\/([^/?]+)$/.exec(path);
       if (method === 'GET' && m) {
         const r = rows[decodeURIComponent(m[1])];
@@ -186,8 +186,8 @@ test('a steps section shows each step with its title and chips, and a fields sec
 test('a built-in action with a url is drawn disabled on a row and on a step, and a press makes no request', async () => {
   const docs = { id: 'docs', label: 'Open docs', confirm: 'click', url: 'https://tracker.example/docs' };
   const steps = { sections: [{ kind: 'steps', title: 'Steps', steps: [{ id: 's1', title: 'Code review', chips: [], actions: [docs] }] }] };
-  const calls = server({ r1: { body: steps } });
-  (page.groups[0].rows[0] as { actions?: unknown }).actions = [docs];
+  const withDocs = { ...page, groups: [{ ...page.groups[0], rows: [{ ...page.groups[0].rows[0], actions: [docs] }, ...page.groups[0].rows.slice(1)] }, page.groups[1]] };
+  const calls = server({ r1: { body: steps } }, withDocs);
   select('r1');
   sources.value = [source(1)];
   open();
@@ -201,7 +201,6 @@ test('a built-in action with a url is drawn disabled on a row and on a step, and
   }
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(calls).toHaveLength(before);
-  delete (page.groups[0].rows[0] as { actions?: unknown }).actions;
 });
 
 test('a module action on a row is enabled and opens its form when pressed', async () => {

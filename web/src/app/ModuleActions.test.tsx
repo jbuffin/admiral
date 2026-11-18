@@ -223,6 +223,19 @@ test('a form with no title is still drawn, named for its module action', async (
   expect(screen.getByRole('dialog', { name: /Pass review/ })).toBeTruthy();
 });
 
+test('a duration takes a typed colon, as a plain text input an iPhone keypad can type ":" into', async () => {
+  const posts = server();
+  open();
+  const dialog = await openForm();
+  const time = (await within(dialog).findByLabelText('Time')) as HTMLInputElement;
+  expect(time.inputMode).not.toBe('numeric');
+  fireEvent.input(time, { target: { value: '00:45' } });
+  expect(time.value).toBe('00:45');
+  expect((within(dialog).getByRole('button', { name: 'Submit' }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Submit' }));
+  await waitFor(() => expect(runPosts(posts)[0].body).toMatchObject({ values: { time: '00:45' } }));
+});
+
 test('a duration below its minimum keeps Submit disabled with a note, and a valid one frees it', async () => {
   const posts = server();
   open();
@@ -482,4 +495,38 @@ test('module actions come back when the page leaves the error state', async () =
   state = 'ready';
   sources.value = [source(2, 'ready')];
   await waitFor(() => expect((within(row).getByRole('button', { name: 'Ping owner' }) as HTMLButtonElement).disabled).toBe(false));
+});
+
+test('when the page version moves while a run is pending, the answer drops the run at once with no updating…', async () => {
+  let release!: (a: Answer) => void;
+  server({ run: () => new Promise<Answer>((r) => (release = r)) });
+  open();
+  const row = await rowItem();
+  press(row, 'Ping owner');
+  await waitFor(() => expect(within(row).getByRole('button', { name: 'Ping owner' }).getAttribute('aria-busy')).toBe('true'));
+  sources.value = [source(2)];
+  await act(async () => release({ body: { message: 'Pinged' } }));
+  await screen.findByText('Pinged');
+  expect(within(row).queryByText('updating…')).toBeNull();
+  for (const name of ['Pass review', 'Ship it', 'Ping owner']) expect((within(row).getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('a module action whose row id or module action id is . or .. is disabled and a press sends nothing', async () => {
+  const dots = { id: '..', label: 'Dotted', confirm: 'click' };
+  const odd = {
+    state: 'ready',
+    waiting: 0,
+    groups: [{ id: 'g', title: 'G', rows: [{ id: '.', title: 'Dot row', subtitle: '', chips: [], reason: '', action: ping }, { id: 'r9', title: 'Plain row', subtitle: '', chips: [], reason: '', actions: [dots, ping] }] }],
+  };
+  const posts = server({ page: () => odd });
+  open();
+  const dotRow = await rowItem('Dot row');
+  const plain = await rowItem('Plain row');
+  const buttons = [within(dotRow).getByRole('button', { name: 'Ping owner' }), within(plain).getByRole('button', { name: 'Dotted' })] as HTMLButtonElement[];
+  for (const b of buttons) {
+    expect(b.disabled).toBe(true);
+    fireEvent.click(b);
+  }
+  expect((within(plain).getByRole('button', { name: 'Ping owner' }) as HTMLButtonElement).disabled).toBe(false);
+  expect(posts).toHaveLength(0);
 });

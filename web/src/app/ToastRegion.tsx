@@ -4,19 +4,25 @@ import { chime, muted } from '../chime';
 import { alertDestination, alertSearch, createAlertHandler, type Alert } from './alerts';
 import { go } from './router';
 import { inboxItems, onShipsMessage, ships } from './shipsLink';
-import { createToasts, type Toast } from './toasts';
+import { createToasts, type Toast, type ToastAlert } from './toasts';
 
 const isWebUrl = (u?: string) => !!u && /^https?:\/\//i.test(u);
 
-const queue = createToasts<Alert>({ now: Date.now });
-const shown = signal<Toast<Alert>[]>([]);
+const queue = createToasts<Alert | ResultAlert>({ now: Date.now });
+const shown = signal<Toast<Alert | ResultAlert>[]>([]);
 const sync = () => (shown.value = queue.list());
 const handle = createAlertHandler({ toasts: queue, chime, muted: () => muted.value });
 
-function open(t: Toast<Alert>) {
+function open(t: Toast<Alert | ResultAlert>) {
   queue.dismiss(t.id);
   sync();
+  if (!('session' in t.alert)) return;
   go(alertDestination(t.alert, { ships: ships.value, items: inboxItems.value }), alertSearch(t.alert));
+}
+
+/** What a module action's result puts on the queue. */
+export interface ResultAlert extends ToastAlert {
+  error?: boolean;
 }
 
 export interface ResultToast {
@@ -29,7 +35,7 @@ export interface ResultToast {
 
 /** Shows a module action's result as a toast that stays until dismissed. */
 export function showResult(r: ResultToast) {
-  queue.pushResult({ tag: r.tag, name: r.name, line: r.line, url: r.url, error: r.error } as unknown as Alert);
+  queue.pushResult({ tag: r.tag, name: r.name, line: r.line, url: r.url, error: r.error });
   sync();
 }
 
@@ -56,7 +62,7 @@ export function ToastRegion() {
   return (
     <div class="toasts" role="status" aria-live="polite">
       {shown.value.map((t) => (
-        <div class={t.sticky ? 'toast result' : 'toast'} key={t.id} data-error={(t.alert as { error?: boolean }).error ? 'true' : undefined}>
+        <div class={t.sticky ? 'toast result' : 'toast'} key={t.id} data-error={'error' in t.alert && t.alert.error ? 'true' : undefined}>
           {t.sticky ? (
             <div class="toast-text">
               <span class="toast-name">{t.name}</span>

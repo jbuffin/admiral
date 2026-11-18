@@ -8,6 +8,7 @@ import {
   type PageAction,
 } from "./api";
 import { Actions, Button } from "./Button";
+import { openableRow } from "./modules";
 import { Sheet, useCancelFocus } from "./Sheet";
 import { showResult } from "./ToastRegion";
 
@@ -73,6 +74,7 @@ export function useModuleActions(
 
   const run = async (row: string, action: PageAction, values: Values) => {
     const token = ++tokens.current;
+    const startVersion = current.current.version;
     setRuns((r) => ({
       ...r,
       [row]: { phase: "running", action: action.id, token },
@@ -89,12 +91,13 @@ export function useModuleActions(
       line: res.data.message,
       url: res.data.url,
     });
+    if (current.current.version !== startVersion) return drop(row, token);
     setRuns((r) => ({
       ...r,
       [row]: {
         phase: "updating",
         action: action.id,
-        version: current.current.version,
+        version: startVersion,
         token,
       },
     }));
@@ -107,6 +110,7 @@ export function useModuleActions(
     runs,
     blocked,
     press: (row, action) => {
+      if (!openableRow(row) || !openableRow(action.id)) return;
       if (action.url || blocked || runs[row]) return;
       if (action.confirm === "yesno" || action.confirm === "form")
         setSheet({ row, action });
@@ -159,7 +163,14 @@ export function ModuleActions({
             key={a.id}
             type="button"
             class="btn mact"
-            disabled={!ctl || !!a.url || ctl.blocked || !!run}
+            disabled={
+              !ctl ||
+              !!a.url ||
+              ctl.blocked ||
+              !!run ||
+              !openableRow(row) ||
+              !openableRow(a.id)
+            }
             aria-busy={running ? "true" : undefined}
             onClick={() => ctl?.press(row, a)}
           >
@@ -339,7 +350,6 @@ function Field({
         <input
           id={id}
           type="text"
-          inputMode="numeric"
           autocomplete="off"
           value={String(value ?? "")}
           onInput={(e) => onChange(e.currentTarget.value)}
