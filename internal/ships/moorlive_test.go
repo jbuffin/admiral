@@ -446,7 +446,9 @@ func TestMoorOnAShipWithoutAnOpenPRIsRefusedAndLeavesTheShipAlone(t *testing.T) 
 			moor.RetryWindow = 300 * time.Millisecond
 			t.Cleanup(func() { moor.RetryWindow = old })
 		}},
-		{"a woken ship whose new report is not written yet", true, func(*testing.T, *liveRig) {}},
+		{"a woken ship whose carried PR is closed and whose new report is not written yet", true, func(_ *testing.T, r *liveRig) {
+			r.gh.set(map[string]bool{}, nil)
+		}},
 	} {
 		for _, route := range []string{"stop", "return"} {
 			t.Run(c.name+" on "+route, func(t *testing.T) {
