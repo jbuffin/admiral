@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -879,8 +878,8 @@ func (l *Launcher) pickNameIn(dir string) (string, error) {
 	var branches map[string]bool
 	if dir != "" {
 		branches = map[string]bool{}
-		out, _ := exec.Command("git", "-C", dir, "for-each-ref", "--format=%(refname)", "refs/heads/admiral/").Output()
-		for _, ref := range strings.Fields(string(out)) {
+		out, _ := boundedGit(0, dir, "for-each-ref", "--format=%(refname)", "refs/heads/admiral/")
+		for _, ref := range strings.Fields(out) {
 			branches[strings.TrimPrefix(ref, "refs/heads/admiral/")] = true
 		}
 	}

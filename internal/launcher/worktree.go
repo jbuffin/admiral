@@ -24,19 +24,20 @@ type Worktrees interface {
 
 const worktreeGitTimeout = 30 * time.Second
 
+var errGitTimeout = errors.New("timed out")
+
 func worktreePath(home, session string) string { return filepath.Join(home, "worktrees", session) }
 
 // GitWorktrees makes worktrees under $ADMIRAL_HOME/worktrees with git. Timeout bounds each git call; zero means 30s.
 type GitWorktrees struct{ Timeout time.Duration }
 
-// git runs one bounded git call in dir that can never wait on a person: no credential or host-key prompt, unless the
-// engineer's environment already says how git should ask.
-func (g GitWorktrees) git(dir string, args ...string) (string, error) {
-	d := g.Timeout
-	if d == 0 {
-		d = worktreeGitTimeout
+// boundedGit runs one git call in dir that ends at the deadline and can never wait on a person: no credential or
+// host-key prompt, unless the engineer's environment already says how git should ask.
+func boundedGit(timeout time.Duration, dir string, args ...string) (string, error) {
+	if timeout == 0 {
+		timeout = worktreeGitTimeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), d)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	cmd.Env = os.Environ()
@@ -49,12 +50,23 @@ func (g GitWorktrees) git(dir string, args ...string) (string, error) {
 	cmd.WaitDelay = time.Second
 	out, err := cmd.CombinedOutput()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return "", fmt.Errorf("git %s timed out after %s", args[0], d)
+		return "", fmt.Errorf("git %s ran past %s: %w", args[0], timeout, errGitTimeout)
 	}
 	if err != nil {
 		return "", fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func (g GitWorktrees) git(dir string, args ...string) (string, error) {
+	return boundedGit(g.Timeout, dir, args...)
+}
+
+func fetchFailed(dir string, err error) error {
+	if errors.Is(err, errGitTimeout) {
+		return fmt.Errorf("fetching the origin remote of %s timed out: %w", dir, err)
+	}
+	return fmt.Errorf("cannot fetch the origin remote of %s: %w", dir, err)
 }
 
 func (g GitWorktrees) Fetch(dir string) (string, error) {
@@ -64,7 +76,7 @@ func (g GitWorktrees) Fetch(dir string) (string, error) {
 	// A plain fetch doesn't set refs/remotes/origin/HEAD, so ask the remote which branch is its default.
 	head, err := g.git(dir, "ls-remote", "--symref", "origin", "HEAD")
 	if err != nil {
-		return "", fmt.Errorf("cannot reach the origin remote of %s: %w", dir, err)
+		return "", fetchFailed(dir, err)
 	}
 	branch := ""
 	for _, line := range strings.Split(head, "\n") {
@@ -77,7 +89,7 @@ func (g GitWorktrees) Fetch(dir string) (string, error) {
 	}
 	tracking := "refs/remotes/origin/" + branch
 	if _, err := g.git(dir, "fetch", "--quiet", "origin", "+refs/heads/"+branch+":"+tracking); err != nil {
-		return "", fmt.Errorf("cannot fetch the origin remote of %s: %w", dir, err)
+		return "", fetchFailed(dir, err)
 	}
 	return tracking, nil
 }
@@ -143,14 +155,18 @@ func RemoveWorktree(home, session, checkout string) {
 	if parent, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
 		real = filepath.Join(parent, filepath.Base(path))
 	}
-	_ = exec.Command("git", "-C", checkout, "worktree", "remove", "--force", real).Run()
+	if checkout == "" {
+		_ = os.RemoveAll(path)
+		return
+	}
+	_, _ = boundedGit(0, checkout, "worktree", "remove", "--force", real)
 	_ = os.RemoveAll(path)
 	// A worktree git could not remove leaves its registration; drop only this one.
-	common, err := exec.Command("git", "-C", checkout, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	common, err := boundedGit(0, checkout, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return
 	}
-	admin := filepath.Join(strings.TrimSpace(string(common)), "worktrees")
+	admin := filepath.Join(common, "worktrees")
 	ents, _ := os.ReadDir(admin)
 	for _, e := range ents {
 		if b, err := os.ReadFile(filepath.Join(admin, e.Name(), "gitdir")); err == nil && strings.TrimSpace(string(b)) == filepath.Join(real, ".git") {

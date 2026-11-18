@@ -482,7 +482,7 @@ func TestALaunchWhoseFetchHangsIsRefusedAsTimedOutAndPutsNoShipToSea(t *testing.
 	t.Setenv("PATH", shim+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	_, err = p.l.Launch(p.noSkill())
-	if err == nil || !strings.Contains(err.Error(), "timed out") {
+	if err == nil || !strings.Contains(err.Error(), "fetching the origin remote") || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("Launch error = %v, want a refusal that says the git call timed out", err)
 	}
 	if got := p.sessionNames(t); len(got) != 0 {
