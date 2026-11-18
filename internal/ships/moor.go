@@ -114,12 +114,12 @@ func (s *Service) moorVia(ctx context.Context, sess sessionhost.Session, prs []s
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be written, so it sails off: %v\n", name, err)
 		return false
 	}
-	s.setMoored(rec)
-	s.record(outcomes.Record{Ship: name, Event: "moored", Fields: withVia(map[string]any{"prs": prs}, via)}, nil)
-	s.endRound(sess, "moored")
 	if e := s.captureDraftEnd(sess); e != nil { // its pane goes with the session, so the end a later stop reports is read now
 		e.keepMoored()
 	}
+	s.setMoored(rec)
+	s.record(outcomes.Record{Ship: name, Event: "moored", Fields: withVia(map[string]any{"prs": prs}, via)}, nil)
+	s.endRound(sess, "moored")
 	return true
 }
 
