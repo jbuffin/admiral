@@ -80,7 +80,7 @@ function server(h: Handlers = {}) {
       const method = init?.method ?? 'GET';
       if (method === 'GET' && path.endsWith('/page')) return new Response(JSON.stringify(h.page ? h.page() : pageOf()));
       if (method === 'GET' && path.endsWith('/rows/r1')) return new Response(JSON.stringify(detail));
-      const m = /\/rows\/([^/]+)\/actions\/([^/]+)\/(form|run)$/.exec(path);
+      const m = /\/(?:rows|notices)\/([^/]+)\/actions\/([^/]+)\/(form|run)$/.exec(path);
       if (method === 'POST' && m) {
         posts.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined, init });
         const a: Answer = await (m[3] === 'form' ? (h.form ?? (() => ({ body: form })))() : (h.run ?? (() => ({ body: { message: 'Done' } })))(m[1], m[2]));
@@ -528,5 +528,186 @@ test('a module action whose row id or module action id is . or .. is disabled an
     fireEvent.click(b);
   }
   expect((within(plain).getByRole('button', { name: 'Ping owner' }) as HTMLButtonElement).disabled).toBe(false);
+  expect(posts).toHaveLength(0);
+});
+
+// Actions on a notice: the same confirm kinds, form and run as a row's, addressed by notice id.
+const NBASE = '/api/v1/sources/deploys/notices';
+const pick = { id: 'project', label: 'Pick your project', confirm: 'form', summary: 'Choose one' };
+const sync = { id: 'sync', label: 'Sync now', confirm: 'click' };
+const reset = { id: 'reset', label: 'Reset setup', confirm: 'yesno', summary: 'Forget the setup?' };
+const withNotices = (state = 'ready', notices: unknown[] = []) => () => ({ ...pageOf(state), notices });
+const notices = [
+  { id: 'pick', text: 'Setup needed', tone: 'warn', action: pick },
+  { id: 'sync', text: 'Out of date', tone: 'info', action: sync },
+  { id: 'reset', text: 'Old setup', tone: 'info', action: reset },
+  { id: 'docs', text: 'Read the docs', tone: 'info', action: docs },
+  { id: 'plain', text: 'Nothing to press', tone: 'info' },
+  { id: 'r1', text: 'Same id as a row', tone: 'info', action: sync },
+];
+const noticeItem = async (text: string) => (await screen.findByText(text)).closest('li') as HTMLElement;
+
+test('a notice with no action draws no button', async () => {
+  server({ page: withNotices('ready', notices) });
+  open();
+  expect(within(await noticeItem('Nothing to press')).queryByRole('button')).toBeNull();
+});
+
+test('a click action on a notice runs at once with no values and no sheet', async () => {
+  const posts = server({ page: withNotices('ready', notices), run: () => ({ body: { message: 'Synced' } }) });
+  open();
+  press(await noticeItem('Out of date'), 'Sync now');
+  await waitFor(() => expect(runPosts(posts)).toHaveLength(1));
+  expect(runPosts(posts)[0].path).toBe(`${NBASE}/sync/actions/sync/run`);
+  expect(runPosts(posts)[0].body).toEqual({ values: {} });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(formPosts(posts)).toHaveLength(0);
+  expect(await screen.findByText('Synced')).toBeTruthy();
+});
+
+test('a yesno action on a notice shows its summary first and runs only once confirmed', async () => {
+  const posts = server({ page: withNotices('ready', notices) });
+  open();
+  press(await noticeItem('Old setup'), 'Reset setup');
+  const dialog = await screen.findByRole('dialog');
+  expect(within(dialog).getByText('Forget the setup?')).toBeTruthy();
+  expect(posts).toHaveLength(0);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Reset setup' }));
+  await waitFor(() => expect(runPosts(posts)).toHaveLength(1));
+  expect(runPosts(posts)[0].path).toBe(`${NBASE}/reset/actions/reset/run`);
+  expect(runPosts(posts)[0].body).toEqual({ values: {} });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+});
+
+test('a form action on a notice fetches its form from the notice and submitting runs it with the values', async () => {
+  const posts = server({ page: withNotices('ready', notices), run: () => ({ body: { message: 'Project set' } }) });
+  open();
+  press(await noticeItem('Setup needed'), 'Pick your project');
+  const dialog = await screen.findByRole('dialog', { name: 'Pass this review' });
+  expect(formPosts(posts)[0].path).toBe(`${NBASE}/pick/actions/project/form`);
+  await within(dialog).findByText('Whose work');
+  fireEvent.click(within(dialog).getByRole('radio', { name: 'Amy' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Submit' }));
+  await waitFor(() => expect(runPosts(posts)).toHaveLength(1));
+  expect(runPosts(posts)[0].path).toBe(`${NBASE}/pick/actions/project/run`);
+  expect(runPosts(posts)[0].body).toEqual({ values: { whose: 'a', files: ['y'], time: '01:30' } });
+  expect(await screen.findByText('Project set')).toBeTruthy();
+});
+
+test('a notice run that fails shows its error toast and the notice comes back, not updating', async () => {
+  server({ page: withNotices('ready', notices), run: () => ({ status: 422, body: { error: 'No such project' } }) });
+  open();
+  const item = await noticeItem('Out of date');
+  press(item, 'Sync now');
+  expect(await screen.findByText('No such project')).toBeTruthy();
+  expect(within(item).queryByText('updating…')).toBeNull();
+  await waitFor(() => expect((within(item).getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false));
+});
+
+test('after a successful run the notice says updating… beside its disabled button until the page version moves', async () => {
+  const posts = server({ page: withNotices('ready', notices), run: () => ({ body: { message: 'Synced' } }) });
+  open();
+  const item = await noticeItem('Out of date');
+  press(item, 'Sync now');
+  await screen.findByText('Synced');
+  expect(within(item).getByText('updating…')).toBeTruthy();
+  expect((within(item).getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(within(await noticeItem('Old setup')).queryByText('updating…')).toBeNull();
+  fireEvent.click(within(item).getByRole('button', { name: 'Sync now' }));
+  expect(runPosts(posts)).toHaveLength(1);
+  sources.value = [source(2)];
+  await waitFor(() => expect(within(item).queryByText('updating…')).toBeNull());
+  expect((within(item).getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('a second press on a notice is refused while its run is pending', async () => {
+  let release!: (a: Answer) => void;
+  const posts = server({ page: withNotices('ready', notices), run: () => new Promise<Answer>((r) => (release = r)) });
+  open();
+  const item = await noticeItem('Out of date');
+  press(item, 'Sync now');
+  await waitFor(() => expect(within(item).getByRole('button', { name: 'Sync now' }).getAttribute('aria-busy')).toBe('true'));
+  fireEvent.click(within(item).getByRole('button', { name: 'Sync now' }));
+  expect(runPosts(posts)).toHaveLength(1);
+  await act(async () => release({ body: { message: 'Synced' } }));
+});
+
+test('a running row does not disable or mark a notice with the same id, and the other way round', async () => {
+  let release!: (a: Answer) => void;
+  const posts = server({ page: withNotices('ready', notices), run: () => new Promise<Answer>((r) => (release = r)) });
+  open();
+  const row = await rowItem();
+  const item = await noticeItem('Same id as a row');
+  press(row, 'Ping owner');
+  await waitFor(() => expect(within(row).getByRole('button', { name: 'Ping owner' }).getAttribute('aria-busy')).toBe('true'));
+  expect((within(item).getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false);
+  press(item, 'Sync now');
+  await waitFor(() => expect(runPosts(posts)).toHaveLength(2));
+  expect(runPosts(posts).map((p) => p.path)).toEqual([`${BASE}/r1/actions/ping/run`, `${NBASE}/r1/actions/sync/run`]);
+  await act(async () => release({ body: { message: 'Done one' } }));
+});
+
+test('a finished row run does not show updating… on a notice with the same id, and a finished notice run not on the row', async () => {
+  server({ page: withNotices('ready', notices) });
+  open();
+  const row = await rowItem();
+  const item = await noticeItem('Same id as a row');
+  press(row, 'Ping owner');
+  await screen.findByText('Done');
+  expect(within(row).getByText('updating…')).toBeTruthy();
+  expect(within(item).queryByText('updating…')).toBeNull();
+  expect((within(item).getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false);
+  sources.value = [source(2)];
+  await waitFor(() => expect(within(row).queryByText('updating…')).toBeNull());
+  press(item, 'Sync now');
+  await waitFor(() => expect(within(item).getByText('updating…')).toBeTruthy());
+  expect(within(row).queryByText('updating…')).toBeNull();
+  expect((within(row).getByRole('button', { name: 'Ping owner' }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('a row and a notice with the same id each keep their own result toast', async () => {
+  server({ page: withNotices('ready', notices), run: (_id, action) => ({ body: { message: action === 'ping' ? 'Row pinged' : 'Notice synced' } }) });
+  open();
+  press(await rowItem(), 'Ping owner');
+  await screen.findByText('Row pinged');
+  press(await noticeItem('Same id as a row'), 'Sync now');
+  await screen.findByText('Notice synced');
+  expect(screen.getByText('Row pinged')).toBeTruthy();
+});
+
+test('a url action on a notice stays a disabled button and a press sends nothing', async () => {
+  const posts = server({ page: withNotices('ready', notices) });
+  open();
+  const b = within(await noticeItem('Read the docs')).getByRole('button', { name: 'Open docs' }) as HTMLButtonElement;
+  expect(b.disabled).toBe(true);
+  fireEvent.click(b);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(posts).toHaveLength(0);
+});
+
+test('while the page is in error a notice action is disabled and a press sends nothing', async () => {
+  const posts = server({ page: withNotices('error', notices) });
+  open('error');
+  const b = within(await noticeItem('Out of date')).getByRole('button', { name: 'Sync now' }) as HTMLButtonElement;
+  expect(b.disabled).toBe(true);
+  fireEvent.click(b);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(posts).toHaveLength(0);
+});
+
+test('a notice whose id is . or .. is disabled and a press sends nothing', async () => {
+  const odd = [
+    { id: '.', text: 'Dot notice', tone: 'info', action: sync },
+    { id: '..', text: 'Dotdot notice', tone: 'info', action: sync },
+    { id: 'ok', text: 'Fine notice', tone: 'info', action: sync },
+  ];
+  const posts = server({ page: withNotices('ready', odd) });
+  open();
+  for (const text of ['Dot notice', 'Dotdot notice']) {
+    const b = within(await noticeItem(text)).getByRole('button', { name: 'Sync now' }) as HTMLButtonElement;
+    expect(b.disabled).toBe(true);
+    fireEvent.click(b);
+  }
+  expect((within(await noticeItem('Fine notice')).getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false);
   expect(posts).toHaveLength(0);
 });
