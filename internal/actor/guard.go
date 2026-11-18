@@ -20,6 +20,8 @@ type Guard struct {
 	ItemFleet     func(session, id string) (fleet string, known bool)
 	SourceFleet   func(key string) (fleet string, known bool)
 	CampaignFleet func(id string) (fleet string, known bool)
+	// TurnCantAct says whether a turn that can't act is running in the fleet's chat; nil means never.
+	TurnCantAct func(fleet string) bool
 }
 
 type kind int

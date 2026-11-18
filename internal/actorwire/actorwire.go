@@ -16,6 +16,8 @@ type Deps struct {
 	Inbox      func() []inbox.Item
 	Source     func(key string) (fleet string, ok bool)
 	Campaign   func(id string) (follow.Followed, bool)
+	// TurnCantAct is the chat service's report: a turn that can't act is running for the fleet.
+	TurnCantAct func(fleet string) bool
 }
 
 // Guard is the guard a server runs: a thing with no fleet recorded counts as unknown.
