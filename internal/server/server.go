@@ -101,8 +101,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/ws", s.serveWS)
 	mux.HandleFunc("GET /api/config", s.serveConfig)
 	mux.HandleFunc("PUT /api/fleets/{key}", s.serveFleetSave)
-	mux.HandleFunc("GET /api/fleets/{key}/drafting", serveDraftingStub)
-	mux.HandleFunc("PUT /api/fleets/{key}/drafting", serveDraftingStub)
+	mux.HandleFunc("GET /api/fleets/{key}/drafting", s.serveDraftingGet)
+	mux.HandleFunc("PUT /api/fleets/{key}/drafting", s.serveDraftingPut)
 	mux.HandleFunc("GET /api/version", s.serveVersion)
 	mux.HandleFunc("GET /api/logos/{harness}", serveLogo)
 	for _, m := range s.Modules {
@@ -286,11 +286,6 @@ func (s *Server) serveFleetSave(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(s.Config.View())
 	}
-}
-
-// serveDraftingStub answers 501 until the drafting routes are built.
-func serveDraftingStub(w http.ResponseWriter, r *http.Request) {
-	writeJSONError(w, http.StatusNotImplemented, "drafting is not built yet")
 }
 
 func writeJSONError(w http.ResponseWriter, status int, msg string) {

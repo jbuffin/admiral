@@ -208,9 +208,9 @@ func (l *Launcher) shipWorktree(req Request, session, tracking string) (path str
 	return path, func() { RemoveWorktree(home, session, checkout) }, nil
 }
 
-// fetchForWorktree fetches origin for a fresh no-skill launch that will get a worktree, before the launch lock is taken.
+// fetchForWorktree fetches origin for a fresh no-skill or drafting launch that will get a worktree, before the launch lock is taken.
 func (l *Launcher) fetchForWorktree(req Request, plain bool) (string, error) {
-	if l.Worktrees == nil || !plain || req.Session != "" || req.Skill.Kind != "none" {
+	if l.Worktrees == nil || !plain || req.Session != "" || (req.Skill.Kind != "none" && !req.Drafting) {
 		return "", nil
 	}
 	tracking, err := l.Worktrees.Fetch(req.Dir)

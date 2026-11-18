@@ -67,7 +67,7 @@ type Request struct {
 	Autopilot bool `json:"autopilot"`
 	// Scout is an autopilot ship that reads and reports back, changing nothing: its guard is in scout mode.
 	Scout bool `json:"scout"`
-	// Drafting is a stub: a drafting ship's launch; nothing reads it yet.
+	// Drafting makes this a drafting ship: With you, in its own worktree, and told where to write the campaign's ref.
 	Drafting  bool     `json:"drafting"`
 	ExtraArgs []string `json:"-"`
 	// PRs are the pull requests a woken ship carries from its mooring; they are confirmed already.
@@ -255,6 +255,12 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	if err != nil {
 		return Checked{}, asError(err)
 	}
+	if req.Drafting {
+		req.Autopilot = false
+	}
+	if req.Drafting && req.Skill.Kind != "skill" {
+		return Checked{}, refuse(http.StatusBadRequest, "a drafting ship needs a skill to draft with")
+	}
 	if lerr := CheckMember(req.Skill.Kind, req.Member); lerr != nil {
 		return Checked{}, lerr
 	}
@@ -281,7 +287,7 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
 		{"order", req.OrderID}, {"launched", launched}, {"first-launched", firstLaunched}, {"title", orderTitle(req)}, {"url", cmp.Or(req.URL, req.EventURL)}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")},
-		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}, {"scout", scoutOption(req.Scout)}}
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}, {"scout", scoutOption(req.Scout)}, {"drafting", scoutOption(req.Drafting)}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return Checked{}, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
@@ -311,6 +317,13 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 			return Checked{}, refuse(http.StatusBadRequest, "directory %s is not a checkout or search root of fleet %s", req.Dir, fleet.Name)
 		}
 		req.Dir = dir
+		if req.Drafting {
+			resolved, lerr := checkDrafting(req, dock, skill)
+			if lerr != nil {
+				return Checked{}, lerr
+			}
+			skill = resolved
+		}
 		if req.Skill.Kind == "commodore" {
 			name, ok := skillindex.FindCommodore(req.Harness, dock.Environ(), req.Dir)
 			ok = ok && skillindex.SafeInvocation(name)
@@ -427,10 +440,12 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 		return appendPrompt(argv, prompt, req.dockLaunch())
 	}
-	// An event ship's checkout and prompt depend on its session, so they come after nameFor.
+	// An event ship's checkout and prompt depend on its session, so they come after nameFor; so does a drafting ship's.
 	if !restricted && !evented {
 		argv = append(argv, flags...)
-		argv = addPrompt(argv, prompt)
+		if !req.Drafting {
+			argv = addPrompt(argv, prompt)
+		}
 	}
 	if req.Harness == "codex" {
 		sock, err := codexpane.SocketPath(os.Getuid())
@@ -468,6 +483,16 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 	opts[0][1] = name
+	if req.Drafting {
+		home, err := filepath.Abs(l.Home)
+		if err != nil {
+			return nil, refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
+		}
+		argv = addPrompt(argv, withCampaignRef(prompt, filepath.Join(home, "ships", session, CampaignRefFile)))
+		if err := tooLong(); err != nil {
+			return nil, err
+		}
+	}
 	launched := false
 	var tempLink string
 	if restricted || evented || promoted {

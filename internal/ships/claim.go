@@ -130,6 +130,13 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 			req.ChatMessage = s.ChatPrompt(f)
 		}
 	}
+	if req.Drafting {
+		if req.Clone {
+			return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "a drafting ship needs a dir to draft in, not a clone"}
+		}
+		// A drafting ship always runs With you, so the autopilot gate and cap never see it.
+		req.Autopilot = false
+	}
 	// These need no disk, so a bad request leaves no clone.
 	if lerr := checkScout(req); lerr != nil {
 		return Ship{}, lerr
@@ -190,8 +197,17 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 		release()
 		return Ship{}, lerr
 	}
+	if req.Drafting {
+		s.drafters.Store(got.Session, true)
+	}
 	s.releaseWhenListed(got.Session, release)
 	return got, nil
+}
+
+// IsDrafting is whether Admiral launched the ship as a drafting ship since it started.
+func (s *Service) IsDrafting(session string) bool {
+	_, ok := s.drafters.Load(session)
+	return ok
 }
 
 func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {

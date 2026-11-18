@@ -69,7 +69,7 @@ type Fleet struct {
 	Preset        standing.Preset   // work unless config.json says home
 	Limits        standing.Limits   // resolved: the preset's values under the fleet's own
 	Overridden    []string          // the Limits the fleet stores itself, as sentence field paths
-	DraftingSkill string            // stub: drafting.skill; empty means no skill
+	DraftingSkill string            // drafting.skill; empty means no skill
 }
 
 func (c *Config) clone() *Config {
@@ -286,6 +286,24 @@ func parseFleets(raw json.RawMessage) ([]Fleet, error) {
 	return fleets, nil
 }
 
+func parseDrafting(path string, raw json.RawMessage) (string, error) {
+	ms, err := members(path, raw)
+	if err != nil {
+		return "", err
+	}
+	skill := ""
+	for _, m := range ms {
+		p := path + "." + m.key
+		if m.key != "skill" {
+			return "", fmt.Errorf("%s: unknown key", p)
+		}
+		if skill, err = str(p, m.raw); err != nil {
+			return "", err
+		}
+	}
+	return skill, nil
+}
+
 func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 	ms, err := members(path, raw)
 	if err != nil {
@@ -353,6 +371,10 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			}
 		case "notify":
 			if f.Notify, err = boolean(p, m.raw); err != nil {
+				return Fleet{}, err
+			}
+		case "drafting":
+			if f.DraftingSkill, err = parseDrafting(p, m.raw); err != nil {
 				return Fleet{}, err
 			}
 		case "preset":

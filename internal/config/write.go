@@ -136,7 +136,7 @@ type FleetFields struct {
 	CloneRoot     *string
 	Color         *string
 	Notify        *bool
-	// DraftingSkill is drafting.skill (stub: nothing reads it yet); "" clears it.
+	// DraftingSkill is drafting.skill; "" clears it.
 	DraftingSkill *string
 	// Chat holds the chat settings to change, by key; nil leaves them as stored.
 	Chat map[string]json.RawMessage
@@ -198,6 +198,13 @@ func editFleet(dir, key string, f FleetFields, cfg *Config, repos RepoLookup) er
 		}
 		setOrDrop("clone_root", f.CloneRoot)
 		setOrDrop("color", f.Color)
+		if f.DraftingSkill != nil {
+			if *f.DraftingSkill == "" {
+				fleet.Delete("drafting")
+			} else {
+				fleet.SetValue("drafting", map[string]string{"skill": *f.DraftingSkill})
+			}
+		}
 		return nil
 	})
 }
