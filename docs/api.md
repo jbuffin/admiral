@@ -377,6 +377,8 @@ Starts the fleet's chat session or leaves a running one alone, and answers `{"ru
 
 Clears the model's context and appends a `reset` entry to the log; the earlier history is still served. An idle chat first gets the hidden flush turn (the held answer takes up to `ADMIRAL_CHAT_FLUSH_WAIT`, 3 minutes); the flush and its reply are not served or logged. It sends `/clear` when the running session's model, effort and fleet match the fleet's chat settings, else it ends the session and starts a new one. It withdraws the fleet's chat questions. 409 when the chat isn't running.
 
+While a queued turn (a message Admiral types into the chat by itself) is waiting or running, the clear is deferred: the answer is `200 {"running":true,"deferred":true}` at once, nothing is cleared yet, and the clear runs once the queue is empty and the chat is idle. Queued turns are kept. The clear is dropped if the chat is stopped or restarted, or the engineer sends a chat message, before it runs.
+
 ### `POST /api/chat/<fleet>/questions/<id>/answer`
 
 Takes the inbox's question answer body and writes the answer file. 404 for an unknown id, 409 when it is already answered, 400 for an invalid answer. A question in one fleet's chat can't be answered through another fleet's route.
@@ -388,6 +390,8 @@ Takes the inbox's question answer body and writes the answer file. 404 for an un
 ### `POST /api/chat/questions` and `GET /api/chat/questions/<id>/answer` (AdmiralBot only)
 
 These two serve AdmiralBot's `ask_question` tool and need an actor token: any other caller is `403`, and nothing is written. The fleet is the token's. `POST` takes `{"title", "questions"}`, checked as the inbox checks a question item, writes the question file and answers `201 {"id"}`; `400` for a bad question. `GET` holds the request for up to `wait` seconds (a non-negative integer, at most 110) and answers `200` with `{"state": "answered", "answer": {...}}`, `{"state": "withdrawn"}` once the question is gone (a New chat), or `{"state": "waiting"}` at the deadline. A bad id or `wait` is `400`. A question of another fleet is never answered.
+
+While a queued turn runs in a fleet's chat, every AdmiralBot write for that fleet (every route that isn't a GET, this `POST` included) is refused with `403 {"error": ...}` telling AdmiralBot the turn can only read and talk and to offer the action to the engineer in plain text. Reads still pass, and the engineer's own requests are never gated.
 
 ### `POST /api/chat/notes` (AdmiralBot only)
 

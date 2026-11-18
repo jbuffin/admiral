@@ -102,6 +102,8 @@ type Service struct {
 	OrderExists func(source, id string) bool
 	// OrderRepo is an order's text and repo, which a clone launch derives its repository from.
 	OrderRepo func(source, id string) (text, repo string, ok bool)
+	// readPromptKey replaces the tmux read of the prompt key; a test seam.
+	readPromptKey func(fleet string) (string, bool)
 	// DigestAcked replaces the digest sequence read from the chat's pane options; a test seam.
 	DigestAcked func(fleet string) uint64
 
@@ -136,6 +138,7 @@ type fleetChat struct {
 	qAnswers map[string]cachedAnswer
 	qSig     string // the waiting set the Inbox was last told of
 
+	tq        turnState // the report-turn queue
 	resets    resetUsage
 	rst       resetState
 	resetting atomic.Bool // a flush and clear are running: a send is refused
@@ -281,6 +284,11 @@ func (s *Service) Run(ctx context.Context) {
 	go func() {
 		defer done.Done()
 		s.tickLoop(ctx)
+	}()
+	done.Add(1)
+	go func() {
+		defer done.Done()
+		s.RunTurns(ctx)
 	}()
 	defer done.Wait()
 	tick := time.NewTicker(500 * time.Millisecond)
@@ -673,8 +681,18 @@ func (s *Service) ActorToken(fleet string) string {
 // isn't running. The nonce starts a new series with each session; the stamp is the hook's, so a message typed
 // in the terminal moves it too.
 func (s *Service) PromptKey(fleet string) string {
+	key, _ := s.promptKey(fleet)
+	return key
+}
+
+// promptKey is PromptKey that says whether the read worked, so a caller that compares keys can tell a failed read
+// from a value. A stamp that was never written reads as "0".
+func (s *Service) promptKey(fleet string) (string, bool) {
+	if s.readPromptKey != nil {
+		return s.readPromptKey(fleet)
+	}
 	if s.Tmux == "" {
-		return ""
+		return "", false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -682,13 +700,16 @@ func (s *Service) PromptKey(fleet string) string {
 	session := sessionhost.ChatSession(fleet)
 	nonce, err := srv.ReadSessionOption(ctx, session, sessionhost.ChatNonceOpt)
 	if err != nil || nonce == "" {
-		return ""
+		return "", false
 	}
 	stamp, err := srv.ReadPaneOption(ctx, "="+session+":", sessionhost.ChatPromptOpt)
-	if err != nil || !sessionhost.SafeToken.MatchString(stamp) {
+	if err != nil {
+		return "", false
+	}
+	if !sessionhost.SafeToken.MatchString(stamp) {
 		stamp = "0"
 	}
-	return nonce + "-" + stamp
+	return nonce + "-" + stamp, true
 }
 
 func (s *fleetChat) start() *launcher.Error {
@@ -763,9 +784,11 @@ func (s *fleetChat) send(raw string) *launcher.Error {
 	if pane == "" {
 		return &launcher.Error{Status: status, Msg: msg}
 	}
+	key, _ := s.promptKey(s.key)
 	if err := s.pasteMessage(pane, text); err != nil {
 		return &launcher.Error{Status: http.StatusBadGateway, Msg: "could not send the message: " + err.Error()}
 	}
+	s.afterSend(key)
 	return nil
 }
 
@@ -872,7 +895,8 @@ func resetCommand(harness string) string {
 }
 
 // flushIfIdle gives an idle chat its flush turn before New chat acts, and refuses sends until serveNew returns.
-// A turn that runs or a question that waits is cleared without one, since the engineer asked for the reset.
+// A turn that runs or a question that waits is cleared without one, since the engineer asked for the reset; a report
+// turn that is queued or running holds the reset back before it gets here.
 func (s *fleetChat) flushIfIdle(snap Snapshot) {
 	if snap.State != "idle" || !flushesBeforeReset(s.paneHarness()) {
 		return
@@ -886,20 +910,32 @@ func (s *fleetChat) flushIfIdle(snap Snapshot) {
 	}
 }
 
-// serveNew sends the reset command when the running session matches the config, else starts a new session.
+// serveNew sends the reset command when the running session matches the config, else starts a new session. With a
+// report turn queued or running it returns at once and the clear waits for the queue to drain.
 func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 	s.op.Lock()
 	defer s.op.Unlock()
 	defer s.resetting.Store(false)
+	deferred, lerr := s.newChatLocked(true)
+	switch {
+	case lerr != nil:
+		writeError(w, lerr.Status, lerr.Msg)
+	case deferred:
+		writeJSON(w, http.StatusOK, map[string]bool{"running": true, "deferred": true})
+	default:
+		writeJSON(w, http.StatusOK, map[string]bool{"running": true})
+	}
+}
+
+// newChatLocked is New chat with op held. A deferrable one parks while a report turn is queued or running.
+func (s *fleetChat) newChatLocked(deferrable bool) (deferred bool, lerr *launcher.Error) {
 	snap, err := s.refresh(true)
 	if !snap.Running {
-		writeError(w, http.StatusConflict, "the chat is not running")
-		return
+		return false, &launcher.Error{Status: http.StatusConflict, Msg: "the chat is not running"}
 	}
 	if err != nil {
 		// Without the options the settings can't be compared: don't restart a healthy session.
-		writeError(w, http.StatusBadGateway, "could not read the chat's state: "+err.Error())
-		return
+		return false, &launcher.Error{Status: http.StatusBadGateway, Msg: "could not read the chat's state: " + err.Error()}
 	}
 	s.mu.Lock()
 	opts, pane, noPath := s.st.opts, s.st.pane, s.st.optRaw == ""
@@ -908,21 +944,22 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	fleet, off, _ := s.Config().ChatFleet(s.key)
 	if off != "" {
-		writeError(w, http.StatusConflict, "the chat is off for this fleet: "+off)
-		return
+		return false, &launcher.Error{Status: http.StatusConflict, Msg: "the chat is off for this fleet: " + off}
+	}
+	if deferrable && s.turnBusy() {
+		sess, _ := s.session()
+		s.turns(func(t *turnState) { t.clearPending, t.clearPane = true, sess.PaneID })
+		return true, nil
 	}
 	if opts.matches(fleet) {
 		if noPath {
-			writeError(w, http.StatusConflict, NotStarted)
-			return
+			return false, &launcher.Error{Status: http.StatusConflict, Msg: NotStarted}
 		}
 		s.flushIfIdle(snap)
 		if err := s.clearChat(pane, path, dir, raw, MarkerNewChat); err != nil {
-			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
-			return
+			return false, &launcher.Error{Status: http.StatusBadGateway, Msg: "could not clear the chat: " + err.Error()}
 		}
-		writeJSON(w, http.StatusOK, map[string]bool{"running": true})
-		return
+		return false, nil
 	}
 	// The settings changed since this session started: a new one takes them.
 	if !noPath {
@@ -931,8 +968,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.server().KillSession(ctx, s.name()); err != nil {
-		writeError(w, http.StatusBadGateway, "could not end the chat: "+err.Error())
-		return
+		return false, &launcher.Error{Status: http.StatusBadGateway, Msg: "could not end the chat: " + err.Error()}
 	}
 	if opts.harness != "" {
 		harness = opts.harness
@@ -945,12 +981,11 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 	if err := s.start(); err != nil {
 		s.sync()
 		s.broadcast()
-		writeError(w, err.Status, err.Msg)
-		return
+		return false, &launcher.Error{Status: err.Status, Msg: err.Msg}
 	}
 	s.sync()
 	s.broadcast()
-	writeJSON(w, http.StatusOK, map[string]bool{"running": true})
+	return false, nil
 }
 
 func (s *fleetChat) clearLocked() { s.clearAtLocked(-1) }

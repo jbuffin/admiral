@@ -28,6 +28,7 @@ func hostedChat(t *testing.T, harness string) (*Service, *fleetChat) {
 		t.Fatal(err)
 	}
 	svc := serviceFor(t, l, home)
+	svc.Launcher = l
 	model := map[string]string{"claude": "opus", "codex": "gpt-6.1-sol"}[harness]
 	{
 		raw, _ := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{"work": map[string]any{
@@ -37,6 +38,8 @@ func hostedChat(t *testing.T, harness string) (*Service, *fleetChat) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// A Codex chat counts as on only once its probes passed.
+		cfg.ChatProbe = fakeProbes{"work/codex/bot.mcp_fence": {"passed", ""}, "work/codex/bot.config_home": {"passed", ""}}.probe
 		svc.Config = func() *config.Config { return cfg }
 	}
 	svc.Host = sessionhost.New(l.Tmux, l.Socket)

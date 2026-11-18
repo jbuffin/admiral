@@ -20,6 +20,8 @@ type Guard struct {
 	ItemFleet     func(session, id string) (fleet string, known bool)
 	SourceFleet   func(key string) (fleet string, known bool)
 	CampaignFleet func(id string) (fleet string, known bool)
+	// TurnCantAct says whether a turn that can't act is running in the fleet's chat; nil means never.
+	TurnCantAct func(fleet string) bool
 }
 
 type kind int
@@ -99,6 +101,10 @@ func (g *Guard) Middleware(next http.Handler) http.Handler {
 		}
 		if status, msg := g.fence(r, fleet, args); msg != "" {
 			refuse(w, status, msg)
+			return
+		}
+		if r.Method != http.MethodGet && g.TurnCantAct != nil && g.TurnCantAct(fleet) {
+			refuse(w, http.StatusForbidden, "this turn can only read and talk, so AdmiralBot can't act now: offer the action to the engineer in plain text instead")
 			return
 		}
 		r.Header.Del(Header)

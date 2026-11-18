@@ -16,6 +16,8 @@ type Deps struct {
 	Inbox      func() []inbox.Item
 	Source     func(key string) (fleet string, ok bool)
 	Campaign   func(id string) (follow.Followed, bool)
+	// TurnCantAct is the chat service's report: a turn that can't act is running for the fleet.
+	TurnCantAct func(fleet string) bool
 }
 
 // Guard is the guard a server runs: a thing with no fleet recorded counts as unknown.
@@ -24,8 +26,9 @@ func Guard(d Deps) *actor.Guard {
 		Tokens: func(token string) (string, bool) {
 			return actor.Lookup(token, d.FleetKeys(), d.ActorToken)
 		},
-		ShipFleet: d.ShipFleet,
-		ShipFound: d.ShipFound,
+		ShipFleet:   d.ShipFleet,
+		ShipFound:   d.ShipFound,
+		TurnCantAct: d.TurnCantAct,
 		ItemFleet: func(session, id string) (string, bool) {
 			for _, it := range d.Inbox() {
 				if it.Session == session && it.ID == id {
