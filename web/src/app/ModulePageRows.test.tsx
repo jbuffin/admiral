@@ -52,14 +52,14 @@ interface Call {
 type Row = { status?: number; body: unknown };
 
 // Serves the page and each row's answer; `rows` is read on each request so a test can change it.
-function server(rows: Record<string, Row | (() => Row)> = { r1: { body: detail } }) {
+function server(rows: Record<string, Row | (() => Row)> = { r1: { body: detail } }, served: unknown = page) {
   const calls: Call[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (path: string, init?: RequestInit) => {
       const method = init?.method ?? 'GET';
       calls.push({ method, path });
-      if (method === 'GET' && path.endsWith('/page')) return new Response(JSON.stringify(page));
+      if (method === 'GET' && path.endsWith('/page')) return new Response(JSON.stringify(served));
       const m = /\/rows\/([^/?]+)$/.exec(path);
       if (method === 'GET' && m) {
         const r = rows[decodeURIComponent(m[1])];
@@ -183,18 +183,17 @@ test('a steps section shows each step with its title and chips, and a fields sec
   expect(pane.querySelector('b')).toBeNull();
 });
 
-test('module actions on a row and on a step are drawn disabled and a press makes no request', async () => {
-  const calls = server();
+test('a built-in action with a url is drawn disabled on a row and on a step, and a press makes no request', async () => {
+  const docs = { id: 'docs', label: 'Open docs', confirm: 'click', url: 'https://tracker.example/docs' };
+  const steps = { sections: [{ kind: 'steps', title: 'Steps', steps: [{ id: 's1', title: 'Code review', chips: [], actions: [docs] }] }] };
+  const withDocs = { ...page, groups: [{ ...page.groups[0], rows: [{ ...page.groups[0].rows[0], actions: [docs] }, ...page.groups[0].rows.slice(1)] }, page.groups[1]] };
+  const calls = server({ r1: { body: steps } }, withDocs);
   select('r1');
   sources.value = [source(1)];
   open();
   const pane = await screen.findByRole('complementary', { name: 'Selected row' });
   await within(pane).findByText('Code review');
-  const buttons = [
-    within(screen.getByRole('button', { name: 'Open Fix login' }).closest('li') as HTMLElement).getByRole('button', { name: 'Pass review' }),
-    within(pane).getByRole('button', { name: 'Pass review' }),
-    within(pane).getByRole('button', { name: 'Skip review' }),
-  ];
+  const buttons = [within(screen.getByRole('button', { name: 'Open Fix login' }).closest('li') as HTMLElement).getByRole('button', { name: 'Open docs' }), within(pane).getByRole('button', { name: 'Open docs' })];
   const before = calls.length;
   for (const b of buttons) {
     expect((b as HTMLButtonElement).disabled).toBe(true);
@@ -202,7 +201,17 @@ test('module actions on a row and on a step are drawn disabled and a press makes
   }
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(calls).toHaveLength(before);
-  expect(calls.some((c) => c.method !== 'GET')).toBe(false);
+});
+
+test('a module action on a row is enabled and opens its form when pressed', async () => {
+  server();
+  sources.value = [source(1)];
+  open();
+  const row = (await screen.findByRole('button', { name: 'Open Fix login' })).closest('li') as HTMLElement;
+  const b = within(row).getByRole('button', { name: 'Pass review' }) as HTMLButtonElement;
+  expect(b.disabled).toBe(false);
+  fireEvent.click(b);
+  expect(await screen.findByRole('dialog')).toBeTruthy();
 });
 
 test('a row no longer on the page, a 404, clears the selection and says so', async () => {

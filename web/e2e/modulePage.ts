@@ -6,6 +6,8 @@ import { seedFleets } from './shell';
 
 const chip = (label: string, tone?: string) => ({ label, ...(tone ? { tone } : {}) });
 const action = { id: 'pass', label: 'Pass review', confirm: 'form', summary: 'Pass the review' };
+// A module action id is unique within a row and its steps, so the step's differs from the row's.
+const stepAction = { id: 'recheck', label: 'Recheck', confirm: 'click' };
 
 export const PAGE = {
   waiting: 2,
@@ -25,7 +27,7 @@ export const PAGE = {
 const detail = (owner: string) => ({
   sections: [
     { kind: 'links', title: 'Links', links: [{ label: 'Ticket', url: 'https://tracker.example/t/1' }] },
-    { kind: 'steps', title: 'Steps', steps: [{ id: 's1', title: 'Code review', chips: [chip('open', 'warn')], actions: [action] }] },
+    { kind: 'steps', title: 'Steps', steps: [{ id: 's1', title: 'Code review', chips: [chip('open', 'warn')], actions: [stepAction] }] },
     { kind: 'fields', title: 'Details', fields: [{ label: 'Owner', value: owner }] },
   ],
 });
@@ -34,6 +36,10 @@ export interface Module {
   /** Writes page.json atomically-enough for the plugin's per-request read. */
   page(p: unknown): void;
   row(id: string, detail: unknown): void;
+  /** The action.form answer for a module action id. */
+  form(id: string, form: unknown): void;
+  /** The action.run answer for a module action id; an object with `error` answers an error and `delay` waits that many seconds first. */
+  run(id: string, answer: unknown): void;
   /** Has the plugin send page.changed, naming rows when given. */
   changed(rows?: string[]): void;
 }
@@ -43,15 +49,18 @@ export function seedModule(a: Admiral): Module {
   seedFleets(a);
   a.installTestPlugin();
   const f = a.flags('deploys');
-  mkdirSync(join(f.dir, 'rows'), { recursive: true });
+  for (const d of ['rows', 'forms', 'runs']) mkdirSync(join(f.dir, d), { recursive: true });
+  // Flags.put writes only at the top of the flag directory.
+  const put = (dir: string, id: string, d: unknown) => {
+    const tmp = join(f.dir, dir, `.${id}.tmp`);
+    writeFileSync(tmp, JSON.stringify(d));
+    renameSync(tmp, join(f.dir, dir, `${id}.json`));
+  };
   const m: Module = {
     page: (p) => f.put('page.json', JSON.stringify(p)),
-    // Flags.put writes only at the top of the flag directory.
-    row: (id, d) => {
-      const tmp = join(f.dir, 'rows', `.${id}.tmp`);
-      writeFileSync(tmp, JSON.stringify(d));
-      renameSync(tmp, join(f.dir, 'rows', `${id}.json`));
-    },
+    row: (id, d) => put('rows', id, d),
+    form: (id, d) => put('forms', id, d),
+    run: (id, d) => put('runs', id, d),
     changed: (rows) => f.put('do-page-changed', rows ? JSON.stringify({ rows }) : ''),
   };
   m.page(PAGE);

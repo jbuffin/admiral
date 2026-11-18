@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
 import { fetchModulePage, fetchModuleRow, restartSource, type ModulePageData, type PageAction, type PageChip, type PageRow, type RowDetail } from './api';
 import { Icon } from './Icon';
+import { ModuleActions, ModuleActionsProvider, useModuleActions, useUpdating } from './ModuleActions';
 import { ListGroup } from './ListGroup';
 import { chipTone, filterGroups, shouldRefetchRow } from './moduleView';
 import { closeRow, openRow } from './moduleNav';
@@ -52,21 +53,8 @@ function Chips({ chips }: { chips?: PageChip[] }) {
   );
 }
 
-// A module action is drawn but inert until module actions are wired.
-function ModuleActions({ one, many }: { one?: PageAction; many?: PageAction[] }) {
-  const all = [...(one ? [one] : []), ...(many ?? [])];
-  return all.length === 0 ? null : (
-    <span class="mactions">
-      {all.map((a) => (
-        <button key={a.id} type="button" class="btn mact" disabled>
-          {a.label}
-        </button>
-      ))}
-    </span>
-  );
-}
-
 function ModuleRow({ row, phone, selected, onOpen }: { row: PageRow; phone: boolean; selected: boolean; onOpen: (id: string) => void }) {
+  const updating = useUpdating(row.id);
   return (
     <li class={`${phone ? 'orow-phone' : 'orow'}${selected ? ' selected' : ''}`}>
       <button type="button" class="orow-open" aria-label={`Open ${row.title}`} aria-pressed={selected} disabled={!openableRow(row.id)} onClick={() => onOpen(row.id)}>
@@ -85,12 +73,13 @@ function ModuleRow({ row, phone, selected, onOpen }: { row: PageRow; phone: bool
           </span>
         ) : null}
       </button>
-      <ModuleActions one={row.action} many={row.actions} />
+      {updating ? <span class="mact-updating">updating…</span> : null}
+      <ModuleActions row={row.id} one={row.action} many={row.actions} />
     </li>
   );
 }
 
-function Sections({ detail }: { detail: RowDetail }) {
+function Sections({ detail, rowId }: { detail: RowDetail; rowId: string }) {
   return (
     <>
       {detail.sections.map((sec, i) => (
@@ -117,7 +106,7 @@ function Sections({ detail }: { detail: RowDetail }) {
                 <li key={st.id}>
                   <span class="mstep-title">{st.title}</span>
                   <Chips chips={st.chips} />
-                  <ModuleActions one={st.action} many={st.actions} />
+                  <ModuleActions row={rowId} one={st.action} many={st.actions} />
                 </li>
               ))}
             </ul>
@@ -173,7 +162,7 @@ function RowDetailView({ detail, row, onBack, phone }: { detail: Detail; row?: P
           {`Couldn't load this row. ${detail.error}`}
         </p>
       ) : null}
-      {detail.detail ? <Sections detail={detail.detail} /> : !detail.error ? <div class="skeleton" role="status" aria-label="Loading" /> : null}
+      {detail.detail ? <Sections detail={detail.detail} rowId={detail.id} /> : !detail.error ? <div class="skeleton" role="status" aria-label="Loading" /> : null}
     </div>
   );
 }
@@ -238,6 +227,9 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
     };
   }, [sourceKey, selected, again, starting]);
 
+  const blocked = source?.page?.state === 'error' || page?.state === 'error';
+  const { controller, sheet } = useModuleActions(sourceKey, version, blocked);
+
   const open = (id: string) => openRow(sourceKey, id);
   const close = () => closeRow(sourceKey);
 
@@ -253,12 +245,16 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
   const named = selected ? page?.groups.flatMap((g) => g.rows).find((r) => r.id === selected) : undefined;
   if (phone && detail) {
     return (
-      <main class="panel module-page phone">
-        <RowDetailView detail={detail} row={named} onBack={close} phone />
-      </main>
+      <ModuleActionsProvider value={controller}>
+        <main class="panel module-page phone">
+          <RowDetailView detail={detail} row={named} onBack={close} phone />
+        </main>
+        {sheet}
+      </ModuleActionsProvider>
     );
   }
   return (
+    <ModuleActionsProvider value={controller}>
     <div class={`orders-split${detail ? ' has-pane' : ''}`}>
       <main class={phone ? 'panel module-page phone' : 'panel module-page'}>
         {title ? <h1>{source?.name ?? sourceKey}</h1> : null}
@@ -301,5 +297,7 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
         </aside>
       ) : null}
     </div>
+    {sheet}
+    </ModuleActionsProvider>
   );
 }
