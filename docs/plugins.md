@@ -202,6 +202,8 @@ A detail view is a list of sections. A section has a `kind` and a `title`: `link
 
 **Message kinds.** `initialize` may also answer `messageKinds`, a list of `{kind, label, job}`, each one a string. Admiral keeps the ones that have all three, each cut to one line of at most 200 characters, and drops a bad declaration on its own.
 
+**Page route.** The shell opens a module at `/app/<source key>`, and a row at `/app/<source key>/<row id>`. A source whose key equals a built-in surface id (`inbox`, `ships`, `orders`, `chat`, `campaigns`, `routines`, `crew`, `preferences`) gets no nav entry and its page can't be reached; the surface keeps its path.
+
 **Page limits.** Admiral keeps the last good page. A `page.get` or `row.get` that gets no answer within 10 seconds fails like any other call.
 
 An answer is dropped whole, and the last good page stays served, when:

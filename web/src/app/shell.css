@@ -1229,3 +1229,25 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 /* On the phone a message box sits on the tab bar, which already clears the home indicator. */
 .phone :is(.chat-panel, .peek-panel) { padding-bottom: 6px; }
 .phone .msg-box { padding-top: 8px; padding-bottom: 0; }
+
+.module-page { overflow-wrap: anywhere; }
+.module-page .skeleton { height: 96px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-hover); animation: module-pulse 1.4s ease-in-out infinite; }
+@keyframes module-pulse { 50% { opacity: 0.45; } }
+.module-page .signin { padding: 12px; border: 1px solid var(--color-needs-line); border-radius: var(--shape-radius-md); }
+.nav-link .nav-icon-img, .menu-item .nav-icon-img { width: 20px; height: 20px; border-radius: 4px; }
+.mchip { flex: none; padding: 1px 8px; border: 1px solid var(--color-line2); border-radius: 999px; font-size: 11.5px; white-space: nowrap; }
+.mchip[data-tone="good"] { color: var(--color-ok); border-color: var(--color-ok); }
+.mchip[data-tone="warn"] { color: var(--color-needs); border-color: var(--color-needs); }
+.mchip[data-tone="muted"] { color: var(--color-muted); border-color: var(--color-line2); }
+.mchip[data-tone="neutral"] { color: var(--color-text2); border-color: var(--color-line2); }
+.mactions { flex: none; display: inline-flex; gap: 6px; }
+.module-filter { width: auto; margin: 12px 20px; }
+.module-page .msection h3 { margin: 0 0 8px; font-size: var(--font-size-meta); font-weight: 600; color: var(--color-text2); }
+.module-page .mlinks, .odetail .mlinks, .odetail .msteps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.odetail .msteps li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: var(--shape-min-touch-target); }
+.odetail .msection h3 { margin: 0 0 8px; font-size: var(--font-size-meta); font-weight: 600; color: var(--color-text2); }
+.phone .module-page .odetail { padding: 8px 14px; }
+.orders-split > .module-page { flex: 1; min-width: 0; min-height: 0; }
+.module-page .orow-open { flex-wrap: wrap; }
+.module-page .orow-main { flex: 1 1 12em; }
+.mchips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 7px; }

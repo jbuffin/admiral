@@ -221,7 +221,7 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 // nobody specified: approvals, typing mid-turn, config, sources, settings and Preferences have none.
 var wantTools = []string{
 	"add_order", "answer_item", "ask_question", "dismiss_ship", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_inbox",
-	"list_routines", "list_ships", "list_sources", "make_commitment", "next_prompt", "read_conversation", "read_hold_fire", "read_outcomes",
+	"list_routines", "list_ships", "list_sources", "make_commitment", "next_prompt", "read_campaign", "read_conversation", "read_hold_fire", "read_outcomes",
 	"save_note", "stop_ship", "turn_routine_off", "wake_ship", "work_on_campaign",
 }
 
@@ -341,6 +341,7 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 		{"list_inbox", `{}`, "GET", "/api/inbox", "", nil},
 		{"list_sources", `{}`, "GET", "/api/sources", "", nil},
 		{"list_campaigns", `{}`, "GET", "/api/campaigns", "", nil},
+		{"read_campaign", `{"id":"c-1"}`, "GET", "/api/campaigns/c-1", "", nil},
 		{"add_order", `{"source":"notes","panel":"todo","text":"fix the docs"}`, "POST", "/api/sources/notes/orders", "", map[string]any{"panel": "todo", "text": "fix the docs"}},
 		{"answer_item", `{"session":"saltpaw","id":"i-1","answers":{"q1":{"selected":["main"]}}}`, "POST", "/api/inbox/saltpaw/i-1/answer", "", map[string]any{"answers": map[string]any{"q1": map[string]any{"selected": []any{"main"}}}}},
 		{"save_note", `{"text":"deploys go out on Tuesdays"}`, "POST", "/api/chat/notes", "", map[string]any{"text": "deploys go out on Tuesdays"}},
@@ -351,7 +352,6 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 		{"list_routines", `{}`, "GET", "/api/fleets/work/routines", "", nil},
 		{"turn_routine_off", `{"routine":"r-1"}`, "POST", "/api/fleets/work/routines/r-1/off", "", nil},
 		{"hold_fire_on", `{}`, "POST", "/api/fleets/work/hold-fire/on", "", nil},
-		{"hold_fire_on", `{"all_fleets":true}`, "POST", "/api/hold-fire/on", "", nil},
 		{"read_hold_fire", `{}`, "GET", "/api/fleets/work/hold-fire", "", nil},
 	} {
 		t.Run(c.tool, func(t *testing.T) {
@@ -383,6 +383,50 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 
 func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
 
+func TestHoldFireOnRefusesAllFleetsAndSendsNothing(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"ok":true}` })
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "hold_fire_on", `{"all_fleets":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "own fleet") {
+		t.Errorf("result = %+v, want isError saying AdmiralBot turns Hold fire on only in its own fleet", tr)
+	}
+	if got := a.requests(); len(got) != 0 {
+		t.Errorf("requests = %+v, want none", got)
+	}
+}
+
+func TestHoldFireOnOffersNoAllFleetsOption(t *testing.T) {
+	a := newStandIn(t, nil)
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, rpc(1, "tools/list", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Tools []struct {
+			Name        string
+			Description string
+			InputSchema json.RawMessage
+		}
+	}
+	if err := json.Unmarshal(replies["1"].Result, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range list.Tools {
+		if tl.Name != "hold_fire_on" {
+			continue
+		}
+		if strings.Contains(string(tl.InputSchema), "all_fleets") || strings.Contains(tl.Description, "all_fleets") {
+			t.Errorf("hold_fire_on offers all_fleets: %s / %s", tl.InputSchema, tl.Description)
+		}
+		return
+	}
+	t.Error("tools/list has no hold_fire_on")
+}
+
 func TestAServerErrorBecomesAToolErrorCarryingItsMessage(t *testing.T) {
 	a := newStandIn(t, func(mcpReq) (int, string) {
 		return 403, `{"error":"AdmiralBot for personal can't touch w-1, which belongs to fleet work"}`
@@ -394,6 +438,25 @@ func TestAServerErrorBecomesAToolErrorCarryingItsMessage(t *testing.T) {
 	}
 	if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "belongs to fleet work") {
 		t.Errorf("result = %+v, want isError with the server's message", tr)
+	}
+}
+
+func TestReadCampaignWithNoIdIsRefusedWithoutCallingTheServer(t *testing.T) {
+	for name, args := range map[string]string{"empty": `{"id":""}`, "missing": `{}`} {
+		t.Run(name, func(t *testing.T) {
+			a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"ok":true}` })
+			a.env(t, mcpToken)
+			replies, _, err := serve(t, call(1, "read_campaign", args))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "id is required") {
+				t.Errorf("result = %+v, want isError saying the id is required", tr)
+			}
+			if got := a.requests(); len(got) != 0 {
+				t.Errorf("requests = %+v, want none", got)
+			}
+		})
 	}
 }
 

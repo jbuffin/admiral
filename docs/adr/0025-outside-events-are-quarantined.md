@@ -125,7 +125,7 @@ Every fleet starts on **Work**. **Home** is a "personal" preset the engineer can
 
 ### Hold fire
 
-Per fleet and global. It can be turned on from the UI, `admiral hold`, a T1 Slack DM or AdmiralBot, and turned off only by the engineer in the UI or the CLI. It sets every routine to Propose and leaves running ships alone. A separate "Stop all worker-launched" ends those ships.
+Per fleet and global. It can be turned on from the UI, `admiral hold`, a T1 Slack DM or AdmiralBot (only in its own fleet, never for every fleet), and turned off only by the engineer in the UI or the CLI. It sets every routine to Propose and leaves running ships alone. A separate "Stop all worker-launched" ends those ships.
 
 ## Considered options
 
