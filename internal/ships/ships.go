@@ -172,6 +172,7 @@ type Service struct {
 
 	findingsOnce  sync.Once
 	findingsStore *findings.Store
+	findingsHome  string
 	// ChatPrompt names the prompt a fleet's chat is answering; an actor's freeform launch is keyed on it.
 	ChatPrompt func(fleet string) string
 	// UsageRead replaces the transcript reading at a ship's exit, for tests.

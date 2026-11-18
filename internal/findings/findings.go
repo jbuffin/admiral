@@ -39,8 +39,9 @@ type Reader interface {
 // Store keeps findings under <home>/findings/<ship>/<first launch>.json. Names are hex-encoded, so no ship name or
 // timestamp can reach outside the store or fold into another's file.
 type Store struct {
-	home string
-	mu   sync.Mutex
+	home   string
+	mu     sync.Mutex
+	warned sync.Map
 }
 
 func Open(home string) *Store { return &Store{home: home} }
@@ -59,16 +60,26 @@ func encode(s string) (string, bool) {
 	return hex.EncodeToString([]byte(s)), true
 }
 
-func (s *Store) root() (*os.Root, error) {
+// root opens the store's directory; only a write makes it.
+func (s *Store) root(create bool) (*os.Root, error) {
 	home, err := os.OpenRoot(s.home)
 	if err != nil {
 		return nil, err
 	}
 	defer home.Close()
-	if err := home.MkdirAll("findings", 0o700); err != nil {
-		return nil, err
+	if create {
+		if err := home.MkdirAll("findings", 0o700); err != nil {
+			return nil, err
+		}
 	}
 	return home.OpenRoot("findings")
+}
+
+// refused logs once per name a ship or first launch that encode will not take.
+func (s *Store) refused(ship, firstLaunched string) {
+	if _, seen := s.warned.LoadOrStore(ship+"\x00"+firstLaunched, true); !seen {
+		fmt.Fprintf(os.Stderr, "admiral: ship %q: its findings are not kept: the ship name or first launch is empty or over %d bytes\n", ship, maxName)
+	}
 }
 
 // Keep copies the findings file at p into the store as the voyage's findings. kept is false when the file is
@@ -77,6 +88,7 @@ func (s *Store) Keep(ship, firstLaunched, fleet, p string) (kept bool, err error
 	dir, ok1 := encode(ship)
 	name, ok2 := encode(firstLaunched)
 	if !ok1 || !ok2 {
+		s.refused(ship, firstLaunched)
 		return false, nil
 	}
 	// The ship wrote the file: never follow a link, never wait on a pipe.
@@ -104,7 +116,7 @@ func (s *Store) Keep(ship, firstLaunched, fleet, p string) (kept bool, err error
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	root, err := s.root()
+	root, err := s.root(true)
 	if err != nil {
 		return false, err
 	}
@@ -154,7 +166,7 @@ func (s *Store) Voyage(ship, firstLaunched string) (Voyage, bool) {
 	if !ok1 || !ok2 {
 		return Voyage{}, false
 	}
-	root, err := s.root()
+	root, err := s.root(false)
 	if err != nil {
 		return Voyage{}, false
 	}
@@ -172,7 +184,7 @@ func (s *Store) Latest(ship string) (Voyage, bool) {
 	if !ok {
 		return Voyage{}, false
 	}
-	root, err := s.root()
+	root, err := s.root(false)
 	if err != nil {
 		return Voyage{}, false
 	}

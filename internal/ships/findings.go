@@ -12,38 +12,38 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// Findings is the store of the findings ships kept at sail-off.
-func (s *Service) Findings() *findings.Store {
+func (s *Service) findingsKept() *findings.Store {
 	s.findingsOnce.Do(func() {
-		home, err := filepath.Abs(s.Launcher.Home)
-		if err != nil {
-			home = s.Launcher.Home
+		s.findingsHome = s.Launcher.Home
+		if home, err := filepath.Abs(s.Launcher.Home); err == nil {
+			s.findingsHome = home
 		}
-		s.findingsStore = findings.Open(home)
+		s.findingsStore = findings.Open(s.findingsHome)
 	})
 	return s.findingsStore
 }
 
+// Findings reads what ships kept at sail-off.
+func (s *Service) Findings() findings.Reader { return s.findingsKept() }
+
 // keepFindings copies the ship's findings file into the store before its files go. A scout that leaves none, in this
-// round or an earlier one, has failed.
+// round or an earlier one, has failed; a store error is not the scout's fault, so it fails nothing.
 func (s *Service) keepFindings(sess sessionhost.Session) (kept, failed bool) {
-	home, err := filepath.Abs(s.Launcher.Home)
-	if err != nil {
-		return false, sess.Options["scout"] != ""
-	}
-	path, ok := launcher.FindingsFile(home, sess.Name)
+	store := s.findingsKept()
+	path, ok := launcher.FindingsFile(s.findingsHome, sess.Name)
 	first := firstLaunched(sess.Options)
 	if ok && first != "" {
 		var kerr error
-		kept, kerr = s.Findings().Keep(sess.Name, first, sess.Options["fleet"], path)
+		kept, kerr = store.Keep(sess.Name, first, sess.Options["fleet"], path)
 		if kerr != nil {
 			fmt.Fprintf(os.Stderr, "admiral: ship %s: its findings are not kept: %v\n", sess.Name, kerr)
+			return false, false
 		}
 	}
 	if kept || sess.Options["scout"] == "" {
 		return kept, false
 	}
-	_, earlier := s.Findings().Voyage(sess.Name, first)
+	_, earlier := store.Voyage(sess.Name, first)
 	return false, !earlier
 }
 
@@ -56,9 +56,9 @@ func (s *Service) serveFindings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "first_launched must be an RFC 3339 time")
 			return
 		}
-		v, ok = s.Findings().Voyage(session, first)
+		v, ok = s.findingsKept().Voyage(session, first)
 	} else {
-		v, ok = s.Findings().Latest(session)
+		v, ok = s.findingsKept().Latest(session)
 	}
 	if !ok {
 		writeError(w, http.StatusNotFound, "no findings are kept for this ship")

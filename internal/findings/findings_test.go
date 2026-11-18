@@ -199,11 +199,15 @@ func TestAHostileShipNameCannotWriteOrReadOutsideTheStoreAndNamesThatLookAlikeSt
 		t.Errorf("a hostile name overwrote a file outside the store: %q", b)
 	}
 	// Names a naive encoding would fold together: whichever Keep accepts reads back its own body, and the rest read nothing.
-	for ship, body := range map[string]string{"a/b": "slash\n", "a_b": "underscore\n", "a%2Fb": "percent\n"} {
-		kept := r.keep(ship, first1, "work", r.file(body))
+	bodies := map[string]string{"a/b": "slash\n", "a_b": "underscore\n", "a%2Fb": "percent\n"}
+	kept := map[string]bool{}
+	for ship, body := range bodies {
+		kept[ship] = r.keep(ship, first1, "work", r.file(body))
+	}
+	for ship, body := range bodies {
 		got, ok := r.store.Voyage(ship, first1)
-		if kept != ok || (ok && got.Markdown != body) {
-			t.Errorf("Voyage(%q) = %+v, %v after Keep reported %v, want its own body %q when kept and nothing otherwise", ship, got, ok, kept, body)
+		if kept[ship] != ok || (ok && got.Markdown != body) {
+			t.Errorf("Voyage(%q) = %+v, %v after Keep reported %v, want its own body %q when kept and nothing otherwise", ship, got, ok, kept[ship], body)
 		}
 	}
 	r.mustKeep("a_b", first1, "work", "underscore\n")
@@ -237,5 +241,14 @@ func TestTheStoreKeepsFilesPrivateLikeTheOtherHomeStores(t *testing.T) {
 	}
 	if files == 0 {
 		t.Error("the store wrote no file under findings/")
+	}
+}
+
+func TestAReadNeverCreatesTheStoreDirectory(t *testing.T) {
+	r := newRig(t)
+	r.store.Voyage("dory", first1)
+	r.store.Latest("dory")
+	if _, err := os.Stat(filepath.Join(r.home, "findings")); !os.IsNotExist(err) {
+		t.Errorf("a read left %s/findings (%v)", r.home, err)
 	}
 }

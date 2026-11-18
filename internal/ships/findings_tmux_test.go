@@ -89,11 +89,6 @@ func (r *liveRig) wantFindings(t *testing.T, first string, want keptFindings) {
 	}
 }
 
-func (r *liveRig) wantNoFindings(t *testing.T, first string) {
-	t.Helper()
-	wantError(t, r.getFindings("saltpaw", first), http.StatusNotFound, "a ship with no kept findings")
-}
-
 func TestAQuickShipsFindingsAreServedAfterItSailsOffAndItsFilesAreGone(t *testing.T) {
 	r := scoutRig(t, false)
 	first := r.firstLaunched(t)
@@ -110,25 +105,20 @@ func TestAQuickShipsFindingsAreServedAfterItSailsOffAndItsFilesAreGone(t *testin
 	})
 	want := keptFindings{Ship: "saltpaw", FirstLaunched: first, Fleet: "work", Findings: "# Found\n\nthe race is in the cache\n"}
 	r.wantFindings(t, first, want)
-	r.wantFindings(t, "", want)
 }
 
-func TestAShipThatWroteNoFindingsHasNoneToServeAndIsNotMarkedFailed(t *testing.T) {
+func TestAShipThatWroteNoFindingsIsNotMarkedFailed(t *testing.T) {
 	r := scoutRig(t, false)
-	first := r.firstLaunched(t)
 	r.sailClean(t)
 	e := r.ended(t)
 	if _, has := e["result"]; has || e["findings"] != false {
 		t.Errorf("ended = %v, want findings false and no result field for a ship that is not a scout", e)
 	}
 	r.gone(t, "the ship to sail off")
-	r.wantNoFindings(t, "")
-	r.wantNoFindings(t, first)
 }
 
-func TestAScoutsFindingsAreKeptAndItsEndedRecordSaysFindingsAndLeavesTheReportAlone(t *testing.T) {
+func TestAScoutsEndedRecordSaysFindingsAndLeavesTheReportAlone(t *testing.T) {
 	r := scoutRig(t, true)
-	first := r.firstLaunched(t)
 	r.turn(t, "working", "")
 	r.writeFindings(t, "# Flaky test\n\nit sleeps\n")
 	r.writeReport(t, "partial")
@@ -141,7 +131,6 @@ func TestAScoutsFindingsAreKeptAndItsEndedRecordSaysFindingsAndLeavesTheReportAl
 		t.Errorf("ended report = %v, want the report as the scout left it", e["report"])
 	}
 	r.sailedOff(t)
-	r.wantFindings(t, first, keptFindings{Ship: "saltpaw", FirstLaunched: first, Fleet: "work", Findings: "# Flaky test\n\nit sleeps\n"})
 }
 
 func TestAScoutThatLeavesNoFindingsOrAnEmptyFileEndsFailedWithItsReportUntouched(t *testing.T) {
@@ -164,7 +153,6 @@ func TestAScoutThatLeavesNoFindingsOrAnEmptyFileEndsFailedWithItsReportUntouched
 				t.Errorf("ended report = %v, want null: a scout's report is never rewritten", rep)
 			}
 			r.gone(t, "the scout to be stopped")
-			r.wantNoFindings(t, "")
 		})
 	}
 }
@@ -179,25 +167,6 @@ func TestAFindingsFileThatIsAPipeDoesNotHangAdmiralAndTheShipStillSailsOff(t *te
 		t.Errorf("ended = %v, want findings false", e)
 	}
 	r.gone(t, "the ship to sail off")
-	r.wantNoFindings(t, "")
-}
-
-func TestALaterRoundThatWritesNoFindingsLeavesTheEarlierRoundsKeptFindingsServed(t *testing.T) {
-	r := scoutRig(t, false)
-	first := r.firstLaunched(t)
-	r.writeFindings(t, "round one found this\n")
-	r.sailClean(t)
-	r.ended(t)
-	r.sailedOff(t)
-	// Round two is a wake: same name, same first launch, a harness that exits cleanly at once and writes nothing.
-	if _, lerr := r.s.LaunchOrder(launcher.Request{Fleet: "work", Harness: "claude", Dir: r.checkout, Model: "opus", Name: "Saltpaw",
-		Session: "saltpaw", Round: 1, FirstLaunched: first, Prompt: "go on", Skill: launcher.Skill{Kind: "none"}, Autopilot: true}); lerr != nil {
-		t.Fatalf("LaunchOrder = %v", lerr)
-	}
-	r.started(t, 2)
-	waitUntil(t, "round two's ended record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "ended")) == 2 })
-	r.gone(t, "round two to sail off")
-	r.wantFindings(t, first, keptFindings{Ship: "saltpaw", FirstLaunched: first, Fleet: "work", Findings: "round one found this\n"})
 }
 
 // voyageRig is scoutRig's quick ship with a stamped first launch, so a later voyage under the name cannot share its second.
@@ -219,23 +188,21 @@ func voyageRig(t *testing.T, first string) *liveRig {
 	return l
 }
 
-func TestAReusedShipNameKeepsTheOldVoyagesFindingsUnderItsOwnFirstLaunchAndTheNewVoyageHasNone(t *testing.T) {
+func TestAWakeStartsWithoutTheFindingsFileTheLastRoundLeft(t *testing.T) {
 	const old = "2026-01-02T03:04:05Z"
 	r := voyageRig(t, old)
 	r.writeFindings(t, "old voyage\n")
 	r.sailClean(t)
 	r.ended(t)
 	r.sailedOff(t)
-	// A fresh launch under the same name: no FirstLaunched, so it is a new voyage.
+	r.writeFindings(t, "left behind\n")
+	// A wake: same name, same first launch.
 	if _, lerr := r.s.LaunchOrder(launcher.Request{Fleet: "work", Harness: "claude", Dir: r.checkout, Model: "opus", Name: "Saltpaw",
-		Session: "saltpaw", Prompt: "go", Skill: launcher.Skill{Kind: "none"}, Autopilot: true}); lerr != nil {
+		Session: "saltpaw", Round: 1, FirstLaunched: old, Prompt: "go", Skill: launcher.Skill{Kind: "none"}, Autopilot: true}); lerr != nil {
 		t.Fatalf("LaunchOrder = %v", lerr)
 	}
 	r.started(t, 2)
 	if _, err := os.Stat(r.findingsPath()); !os.IsNotExist(err) {
-		t.Errorf("the new voyage starts with a findings file (%v)", err)
+		t.Errorf("the woken ship starts with a findings file (%v)", err)
 	}
-	fresh := r.firstLaunched(t)
-	r.wantFindings(t, old, keptFindings{Ship: "saltpaw", FirstLaunched: old, Fleet: "work", Findings: "old voyage\n"})
-	r.wantNoFindings(t, fresh)
 }
