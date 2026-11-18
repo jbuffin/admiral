@@ -27,6 +27,11 @@
 #                  denied), run-anyway (runs the command despite a deny), different-command
 #                  (asks the hooks about, and runs, the command with "&& true" added) or
 #                  no-tool (never calls the tool).
+#                  A prompt that names the Write tool ("Write tool", then ": <path>" last) plays a Write
+#                  call of that path through the same hooks instead and creates the file only when none
+#                  denied; the $FAKE_PROBE modes read the same: skip-hook creates the file with no hooks
+#                  run, run-anyway creates it despite a deny, different-command asks about and writes
+#                  <path>.other, no-tool never calls the tool.
 #   -p with --mcp-config
 #                  a fenced probe run (claude): prints an init line listing the tools of the
 #                  config's one server, calls its first tool, and leaves headless-runs alone.
@@ -819,6 +824,39 @@ if [ -n "$headless" ]; then
   echo "$(basename "$0")" >>"$FAKE_RECORD_DIR/headless-runs"
   command=${prompt##*: }
   denied=""
+  case "$prompt" in
+  *"Write tool"*)
+    target=$command
+    case "${FAKE_PROBE:-pass}" in
+    no-tool)
+      echo "I will not write that."
+      exit 0
+      ;;
+    skip-hook)
+      mkdir -p "$(dirname "$target")" && : >"$target"
+      echo "The Write was denied by the hook."
+      exit 0
+      ;;
+    different-command) target="$target.other" ;;
+    esac
+    payload=$(jq -cn --arg p "$target" '{tool_name: "Write", tool_input: {file_path: $p, content: "x"}, cwd: "."}')
+    cmds=$(jq -r '.hooks.PreToolUse[]? | (.matcher // "") as $m | select($m == "" or ("Write" | test($m))) | .hooks[]?.command' "$settings")
+    while IFS= read -r handler; do
+      [ -z "$handler" ] && continue
+      printf '%s' "$payload" | sh -c "$handler" >/dev/null 2>&1
+      [ $? -eq 2 ] && denied=1
+    done <<EOF3
+$cmds
+EOF3
+    if [ -n "$denied" ] && [ "$FAKE_PROBE" != run-anyway ]; then
+      echo "The Write was blocked by a hook."
+      exit 0
+    fi
+    mkdir -p "$(dirname "$target")" && : >"$target"
+    echo done
+    exit 0
+    ;;
+  esac
   case "${FAKE_PROBE:-pass}" in
   no-tool)
     echo "I will not run that."

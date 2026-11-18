@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 )
 
 // The hook bundle is rewritten at every start and shared by all fleets.
@@ -21,6 +23,63 @@ func statusLine(flags string) map[string]any {
 // MergeToolMatcher spells the case out: a matcher is a JavaScript regular expression,
 // which has no (?i).
 const MergeToolMatcher = "^mcp__.*([Mm][Ee][Rr][Gg][Ee]|[Ee][Nn][Qq][Uu][Ee][Uu][Ee])"
+
+// ScoutEnv names the checkout of a scout, a ship that may read and look things up but changes nothing
+// in it: the guard (`admiral guard pretooluse`) is in scout mode while it is non-empty, and refuses every
+// call unless its value is a clean absolute path. The launcher sets it from the ship's own launch, so the
+// ship cannot switch it off.
+const ScoutEnv = "ADMIRAL_SCOUT"
+
+// ScoutEditMatcher is the harness's edit tools: a scout's guard refuses them inside its checkout.
+const ScoutEditMatcher = "^(Edit|Write|MultiEdit|NotebookEdit)$"
+
+// ScoutMCPMatcher matches the MCP tools whose name says they create or change a pull request, push, commit,
+// merge, review, or write a file or branch, and every tool of a GitHub server whose name does not start with
+// get_, list_ or search_. The guard decides with the same expression. It is both a JavaScript and an RE2
+// expression, so it has no lookahead and no (?i): the read verbs are spelled as their complement and the case out.
+var ScoutMCPMatcher = scoutMCPMatcher()
+
+func scoutMCPMatcher() string {
+	fold := func(s string) string {
+		var b strings.Builder
+		for _, r := range s {
+			if u := strings.ToUpper(string(r)); u != string(r) {
+				b.WriteString("[" + u + string(r) + "]")
+			} else {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	words := []string{"pull_request", "push", "merge", "branch", "commit", "review"}
+	for i, w := range words {
+		words[i] = fold(w)
+	}
+	verbs := fold("(create|update|delete|write|edit|upload|remove|move)")
+	kw := "(?:" + strings.Join(words, "|") + "|" + verbs + `\w*` + fold("file") + ")"
+	notRead := notPrefixed([]string{"get_", "list_", "search_"})
+	return "^mcp__(?:.*__(?:" + kw + "|" + notRead + ".*" + kw + ")|.*" + fold("github") + ".*__" + notRead + ")"
+}
+
+// notPrefixed matches a string that starts with none of prefixes, as a pattern with no lookahead.
+func notPrefixed(prefixes []string) string {
+	groups := map[byte][]string{}
+	var order []byte
+	for _, p := range prefixes {
+		if _, ok := groups[p[0]]; !ok {
+			order = append(order, p[0])
+		}
+		groups[p[0]] = append(groups[p[0]], p[1:])
+	}
+	alts := []string{"$", "[^" + string(order) + "]"}
+	for _, c := range order {
+		if slices.Contains(groups[c], "") {
+			continue
+		}
+		alts = append(alts, string(c)+notPrefixed(groups[c]))
+	}
+	return "(?:" + strings.Join(alts, "|") + ")"
+}
 
 // Claude Code lets a call through when a PreToolUse hook times out or fails, so onFailure
 // "block" (Claude Code 2.1.295 and later) turns both into a refusal.
@@ -44,9 +103,11 @@ func claudeSettings() any {
 		"PreToolUse": []any{
 			group("AskUserQuestion", "PreToolUse"),
 			group("^(?!AskUserQuestion$).*", "PreToolUse"),
-			guardGroup("Bash"),
+			guardGroup("Bash|Monitor"),
 			guardGroup("^mcp__.*pull_request_review.*$"),
 			guardGroup(MergeToolMatcher),
+			guardGroup(ScoutEditMatcher),
+			guardGroup(ScoutMCPMatcher),
 		},
 		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
 		"Stop":             []any{group("", "Stop")},

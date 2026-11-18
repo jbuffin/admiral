@@ -23,6 +23,7 @@ const (
 	AutopilotGuard    ID = "autopilot.guard_hook"
 	AutopilotArgs     ID = "autopilot.args_allowlist"
 	AutopilotAdvisor  ID = "autopilot.advisor"
+	ScoutGuard        ID = "scout.guard_hook"
 )
 
 // Status of a capability for one fleet and harness.
@@ -42,7 +43,7 @@ type Capability struct {
 
 // Feature groups the capabilities one Admiral extra needs.
 type Feature struct {
-	ID           string // judge, bot, restricted, autopilot
+	ID           string // judge, bot, restricted, autopilot, scout
 	Label        string
 	Capabilities []Capability
 }
