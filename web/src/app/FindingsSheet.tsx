@@ -29,13 +29,15 @@ export function FindingsSheet({ ship, firstLaunched, onClose }: { ship: string; 
     };
   }, [ship, firstLaunched]);
   return (
-    <Sheet label="Findings" kind="order-sheet" onClose={onClose}>
+    <Sheet label="Findings" kind="findings-backdrop" onClose={onClose}>
       <div ref={close} class="actions">
         <Button label="Close" onClick={onClose} />
       </div>
-      {state.kind === 'loading' ? <p class="sheet-sub">Loading findings…</p> : null}
-      {state.kind === 'error' ? <p class="sheet-sub">{UNAVAILABLE}</p> : null}
-      {state.kind === 'ready' ? <div class="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(state.markdown) }} /> : null}
+      <div class="findings-body">
+        {state.kind === 'loading' ? <p class="sheet-sub">Loading findings…</p> : null}
+        {state.kind === 'error' ? <p class="sheet-sub">{UNAVAILABLE}</p> : null}
+        {state.kind === 'ready' ? <div class="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(state.markdown) }} /> : null}
+      </div>
     </Sheet>
   );
 }

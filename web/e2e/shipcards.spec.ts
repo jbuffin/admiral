@@ -11,7 +11,7 @@ test("a moored ship and then a sailed-off one each post one card in their own fl
   const watch = watchPage(page, admiral.url);
 
   prAnswer(admiral, 7, { state: 'OPEN' });
-  const ship = await launchMooredShip(admiral, 7, { findings: '# Root cause\n\n- the cache\n- the lock\n\n```\nmutex.Lock()\n```\n' });
+  const ship = await launchMooredShip(admiral, 7, { findings: '# Root cause\n\n- the cache\n- the lock\n\n```\nmutex.Lock()\n```\n' + '\nA long closing paragraph of notes.\n'.repeat(80) });
   rmSync(join(admiral.home, 'cue'), { force: true });
 
   await page.goto(admiral.url + 'app/chat?fleet=zulu');
@@ -38,6 +38,11 @@ test("a moored ship and then a sailed-off one each post one card in their own fl
   await expect(sheet.getByRole('heading', { name: 'Root cause' })).toBeVisible();
   await expect(sheet.getByRole('listitem')).toHaveText(['the cache', 'the lock']);
   await expect(sheet.locator('pre')).toContainText('mutex.Lock()');
+  // A long body scrolls under Close, which stays in view.
+  await sheet.locator('.findings-body').evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await expect(sheet.getByRole('button', { name: 'Close' })).toBeInViewport();
   await sheet.getByRole('button', { name: 'Close' }).tap();
   await expect(sheet).toHaveCount(0);
 
