@@ -579,6 +579,7 @@ func serve(args []string) error {
 			return keys
 		}}
 	chatService.Notes().OnChange = commitmentRunner.Changed
+	shipCards := newShipCardRunner(absDir, chatService.PostShipCard, shipService.List, host.Ready())
 	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop, Launch: routineShips{shipService}.Launch}
 	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
 	routineService.Listed = listedShips(allShips)
@@ -613,6 +614,7 @@ func serve(args []string) error {
 		pushFeed.ShipsChanged()
 		routineScheduler.Changed()
 		commitmentRunner.Changed()
+		shipCards.Changed()
 	}
 	probeRunner := probes.NewDefault(dir)
 	tails := convService.Tails()
@@ -676,7 +678,7 @@ func serve(args []string) error {
 			}
 		}
 	}()
-	runs := []func(context.Context){s.WatchConfig, updateChecker.Run, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run, titler.Run, routineScheduler.Run, commitmentRunner.Run, func(ctx context.Context) {
+	runs := []func(context.Context){s.WatchConfig, updateChecker.Run, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run, titler.Run, routineScheduler.Run, commitmentRunner.Run, shipCards.Run, func(ctx context.Context) {
 		wakeOn(ctx, resourceSet.Changed, routineScheduler.Changed, commitmentRunner.Changed)
 	}}
 	if tmuxPath != "" {

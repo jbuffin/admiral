@@ -309,8 +309,25 @@ In `GET /api/config`, each fleet's `chat` object carries the AdmiralBot settings
 ```
 
 - `state` is `idle`, `working` or `waiting`, and `""` while the chat isn't running. `error` is present when something needs saying: why the last start was refused, or that the transcript can't be read.
-- `messages` is the newest 200 entries of the fleet's history (`HistoryWindow` in `internal/chat`), oldest first, served from Admiral's log whether or not the chat is running. `kind` is always set: `message` (with `role` `user` or `assistant`), `question` (a chat question as a card: `text` is its title and `card` is the question item as asked, without its answer) `reset` (a marker: `text` is `New chat` or `Context refreshed`) or `commitment` (a card the server posts when a commitment settles, with no chat turn: `id` is `commitment-<commitment id>-<outcome>`, `text` is the commitment's text and `card` is `{"commitment", "outcome", "ship", "reason"}`; `outcome` is `launched` (`ship` is the session), `reminded`, `cant_run` (`reason` says why) or `dropped` (`reason` says why) or `aged` (a commitment with no trigger turned 14 days old; it stays open and its card comes once)). or `answer` (what the engineer chose on a proposal the runner then removed: `id` is `a-<question id>`, `text` the chosen labels, no `card`; the thread folds it into that question's card). Each `id` appears once.
+- `messages` is the newest 200 entries of the fleet's history (`HistoryWindow` in `internal/chat`), oldest first, served from Admiral's log whether or not the chat is running. `kind` is always set: `message` (with `role` `user` or `assistant`), `question` (a chat question as a card: `text` is its title and `card` is the question item as asked, without its answer) `reset` (a marker: `text` is `New chat` or `Context refreshed`) or `commitment` (a card the server posts when a commitment settles, with no chat turn: `id` is `commitment-<commitment id>-<outcome>`, `text` is the commitment's text and `card` is `{"commitment", "outcome", "ship", "reason"}`; `outcome` is `launched` (`ship` is the session), `reminded`, `cant_run` (`reason` says why) or `dropped` (`reason` says why) or `aged` (a commitment with no trigger turned 14 days old; it stays open and its card comes once)). or `ship_card` (see below) or `answer` (what the engineer chose on a proposal the runner then removed: `id` is `a-<question id>`, `text` the chosen labels, no `card`; the thread folds it into that question's card). Each `id` appears once.
 - `questions` are the fleet's chat questions, each the inbox's question item with `session` `_chat-<fleet>` and `answer`: the engineer's answer or `null`. While one waits it is also an Inbox item (see Inbox below), except a proposal (id `campaign-…`), which only the chat shows.
+
+### Ship cards
+
+A ship card is a chat entry with `kind: "ship_card"` that the server posts in the chat of the ship's own fleet when the ship's result comes in. It starts no turn, sends no push and writes no digest line, so AdmiralBot never reads it. It reaches clients the way every entry does, through the `chat` WebSocket message.
+
+`id` is `ship-<ship>-<first_launched>-<result>`, so a result posts once per voyage and a reused ship name posts its own cards. `text` is the ship's name and `card` is:
+
+```json
+{"ship": "calm-otter", "fleet": "harbor", "skill": "tdd", "skill_kind": "skill", "result": "moored",
+ "prs": [{"url": "https://github.com/acme/api/pull/7", "number": 7}]}
+```
+
+- `ship` is the session name; `GET /api/v1/ships/<ship>/conversation` opens its conversation (`GET /api/v1/ships/<ship>/conversation`). `skill` is the skill's name, empty when none, and `skill_kind` is `commodore`, `skill` or `none`.
+- `result` is `sailed_off` (the ship ended clean with no PR to moor on, or its moored PRs all closed), `anchored` (it ended with an error), `moored` (it first moored with an open PR; a later re-moor posts nothing), `ready_to_merge` (a moored ship's stack became ready to merge; once per voyage), `returned` (it returned to port) or `lost` (accepted, but nothing posts it yet).
+- Only a ship AdmiralBot launched (`via: admiralbot`, which includes commitment and campaign launches) posts `ready_to_merge`; every ship posts the other results. Stop ship, Dismiss and a Hand to Commodore relaunch post no card.
+- `prs` are the ship's PRs as last seen, in order; `number` is read from the URL.
+- Ships already moored or anchored when the server first runs this feature post nothing. Admiral records them as seen in `$ADMIRAL_HOME/ship-cards.json`, which also keeps each voyage's posted results across restarts.
 
 ### The log
 
