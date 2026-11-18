@@ -4,7 +4,9 @@ import { fetchModulePage, fetchModuleRow, restartSource, type ModulePageData, ty
 import { Icon } from './Icon';
 import { ListGroup } from './ListGroup';
 import { chipTone, filterGroups, shouldRefetchRow } from './moduleView';
+import { closeRow, openRow } from './moduleNav';
 import { go, loc, moduleOf, modulePath } from './router';
+import { openableRow } from './modules';
 import { sources } from './shipsLink';
 
 const isWebUrl = (u?: string) => !!u && /^https?:\/\//i.test(u);
@@ -67,7 +69,7 @@ function ModuleActions({ one, many }: { one?: PageAction; many?: PageAction[] })
 function ModuleRow({ row, phone, selected, onOpen }: { row: PageRow; phone: boolean; selected: boolean; onOpen: (id: string) => void }) {
   return (
     <li class={`${phone ? 'orow-phone' : 'orow'}${selected ? ' selected' : ''}`}>
-      <button type="button" class="orow-open" aria-label={`Open ${row.title}`} aria-pressed={selected} onClick={() => onOpen(row.id)}>
+      <button type="button" class="orow-open" aria-label={`Open ${row.title}`} aria-pressed={selected} disabled={!openableRow(row.id)} onClick={() => onOpen(row.id)}>
         <span class="orow-main">
           <span class="orow-title">{row.title}</span>
           {row.subtitle || row.reason ? (
@@ -77,7 +79,11 @@ function ModuleRow({ row, phone, selected, onOpen }: { row: PageRow; phone: bool
             </span>
           ) : null}
         </span>
-        <Chips chips={row.chips} />
+        {(row.chips ?? []).length > 0 ? (
+          <span class="mchips">
+            <Chips chips={row.chips} />
+          </span>
+        ) : null}
       </button>
       <ModuleActions one={row.action} many={row.actions} />
     </li>
@@ -92,7 +98,7 @@ function Sections({ detail }: { detail: RowDetail }) {
           {sec.title ? <h3>{sec.title}</h3> : null}
           {sec.kind === 'links' ? (
             <ul class="mlinks">
-              {sec.links.map((l, j) => (
+              {(sec.links ?? []).map((l, j) => (
                 <li key={j}>
                   {isWebUrl(l.url) ? (
                     <a href={l.url} target="_blank" rel="noopener noreferrer">
@@ -107,7 +113,7 @@ function Sections({ detail }: { detail: RowDetail }) {
           ) : null}
           {sec.kind === 'steps' ? (
             <ul class="msteps">
-              {sec.steps.map((st) => (
+              {(sec.steps ?? []).map((st) => (
                 <li key={st.id}>
                   <span class="mstep-title">{st.title}</span>
                   <Chips chips={st.chips} />
@@ -118,7 +124,7 @@ function Sections({ detail }: { detail: RowDetail }) {
           ) : null}
           {sec.kind === 'fields' ? (
             <dl class="odetail-facts">
-              {sec.fields.map((f, j) => (
+              {(sec.fields ?? []).map((f, j) => (
                 <>
                   <dt key={`k${j}`}>{f.label}</dt>
                   <dd key={`v${j}`}>{f.value}</dd>
@@ -134,7 +140,7 @@ function Sections({ detail }: { detail: RowDetail }) {
 
 type Detail = { id: string; detail?: RowDetail; error?: string };
 
-function RowDetailView({ detail, onBack, phone }: { detail: Detail; onBack: () => void; phone: boolean }) {
+function RowDetailView({ detail, row, onBack, phone }: { detail: Detail; row?: PageRow; onBack: () => void; phone: boolean }) {
   return (
     <div class="odetail">
       <div class="odetail-top">
@@ -151,9 +157,20 @@ function RowDetailView({ detail, onBack, phone }: { detail: Detail; onBack: () =
           </>
         )}
       </div>
+      {row ? (
+        <>
+          <h2 class="odetail-title">{row.title}</h2>
+          {row.subtitle ? <p class="odetail-sub">{row.subtitle}</p> : null}
+          {(row.chips ?? []).length > 0 ? (
+            <div class="odetail-labels">
+              <Chips chips={row.chips} />
+            </div>
+          ) : null}
+        </>
+      ) : null}
       {detail.error ? (
         <p class="note error" role="alert">
-          {detail.error}
+          {`Couldn't load this row. ${detail.error}`}
         </p>
       ) : null}
       {detail.detail ? <Sections detail={detail.detail} /> : !detail.error ? <div class="skeleton" role="status" aria-label="Loading" /> : null}
@@ -188,18 +205,22 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
     };
   }, [sourceKey, version]);
 
-  const seen = useRef(version);
+  // While the plugin has no good page yet its rows answer 404, so the row waits and the selection stays.
+  const starting = source?.page?.state === 'starting';
+  const seen = useRef({ version, starting });
   useEffect(() => {
     const prev = seen.current;
-    seen.current = version;
-    if (selected && prev !== undefined && version !== undefined && shouldRefetchRow(selected, prev, { version, rows: source?.page?.rows })) setAgain((n) => n + 1);
-  }, [version]);
+    seen.current = { version, starting };
+    // The move out of starting refetches through the effect below already.
+    if (selected && !prev.starting && prev.version !== undefined && version !== undefined && shouldRefetchRow(selected, prev.version, { version, rows: source?.page?.rows })) setAgain((n) => n + 1);
+  }, [version, starting]);
 
   useEffect(() => {
     if (!selected) {
       setRow(null);
       return;
     }
+    if (starting) return;
     setGone('');
     let stale = false;
     setRow((cur) => (cur?.id === selected ? cur : { id: selected }));
@@ -215,10 +236,10 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
     return () => {
       stale = true;
     };
-  }, [sourceKey, selected, again]);
+  }, [sourceKey, selected, again, starting]);
 
-  const open = (id: string) => go(modulePath(sourceKey, id), loc.value.search);
-  const close = () => go(modulePath(sourceKey), loc.value.search);
+  const open = (id: string) => openRow(sourceKey, id);
+  const close = () => closeRow(sourceKey);
 
   const restart = async () => {
     setRestarting(true);
@@ -229,15 +250,16 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
 
   const groups = page ? filterGroups(page.groups, query) : [];
   const detail = selected ? (row?.id === selected ? row : { id: selected }) : null;
+  const named = selected ? page?.groups.flatMap((g) => g.rows).find((r) => r.id === selected) : undefined;
   if (phone && detail) {
     return (
       <main class="panel module-page phone">
-        <RowDetailView detail={detail} onBack={close} phone />
+        <RowDetailView detail={detail} row={named} onBack={close} phone />
       </main>
     );
   }
   return (
-    <div class="orders-split">
+    <div class={`orders-split${detail ? ' has-pane' : ''}`}>
       <main class={phone ? 'panel module-page phone' : 'panel module-page'}>
         {title ? <h1>{source?.name ?? sourceKey}</h1> : null}
         {(!page && !problem) || page?.state === 'starting' ? <div class="skeleton" role="status" aria-label="Loading" /> : null}
@@ -275,7 +297,7 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
       </main>
       {detail ? (
         <aside class="odetail-pane" aria-label="Selected row">
-          <RowDetailView detail={detail} onBack={close} phone={false} />
+          <RowDetailView detail={detail} row={named} onBack={close} phone={false} />
         </aside>
       ) : null}
     </div>

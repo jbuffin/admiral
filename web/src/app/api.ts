@@ -687,9 +687,9 @@ export interface RowStep {
   actions?: PageAction[];
 }
 export type RowSection =
-  | { kind: 'links'; title?: string; links: RowLink[] }
-  | { kind: 'steps'; title?: string; steps: RowStep[] }
-  | { kind: 'fields'; title?: string; fields: { label: string; value: string }[] };
+  | { kind: 'links'; title?: string; links?: RowLink[] }
+  | { kind: 'steps'; title?: string; steps?: RowStep[] }
+  | { kind: 'fields'; title?: string; fields?: { label: string; value: string }[] };
 export interface RowDetail {
   sections: RowSection[];
 }

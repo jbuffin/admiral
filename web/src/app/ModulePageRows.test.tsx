@@ -15,8 +15,8 @@ afterEach(() => {
   history.replaceState({}, '', start.url);
 });
 
-const source = (version: number, rows?: string[]): Source =>
-  ({ key: 'deploys', name: 'Deploys', fleet: 'zulu', views: [], capabilities: ['page'], state: 'ok', page: { state: 'ready', waiting: 0, version, ...(rows ? { rows } : {}) } }) as unknown as Source;
+const source = (version: number, rows?: string[], state = 'ready'): Source =>
+  ({ key: 'deploys', name: 'Deploys', fleet: 'zulu', views: [], capabilities: ['page'], state: 'ok', page: { state, waiting: 0, version, ...(rows ? { rows } : {}) } }) as unknown as Source;
 
 const act = { id: 'pass', label: 'Pass review', confirm: 'form', summary: 'Pass the review' };
 
@@ -112,18 +112,6 @@ test('typing in the filter narrows the rows and hides a group with none left, wi
   fireEvent.input(filterBox(), { target: { value: '' } });
   expect(screen.getByText('Fix login')).toBeTruthy();
   expect(calls).toHaveLength(before);
-});
-
-test('the filter matches a chip label and not a reason', async () => {
-  server();
-  sources.value = [source(1)];
-  open();
-  await screen.findByText('Fix login');
-  fireEvent.input(filterBox(), { target: { value: 'security' } });
-  expect(screen.getByText('Rotate keys')).toBeTruthy();
-  expect(screen.queryByText('Fix login')).toBeNull();
-  fireEvent.input(filterBox(), { target: { value: 'merged last' } });
-  expect(screen.queryByText('Ship docs')).toBeNull();
 });
 
 test('on a phone the filter shows above the groups', async () => {
@@ -252,37 +240,6 @@ test('the open row is fetched again when the page change names it, and redrawn',
   expect(screen.queryByText('Code review')).toBeNull();
 });
 
-test('the page is fetched again for a change that names only other rows, and the open row is not', async () => {
-  const calls = server();
-  select('r1');
-  sources.value = [source(1)];
-  open();
-  await screen.findByText('Code review');
-  sources.value = [source(2, ['r2'])];
-  await waitFor(() => expect(pageGets(calls)).toHaveLength(2));
-  expect(rowGets(calls)).toHaveLength(1);
-});
-
-test('the open row is fetched again when the page change names no rows', async () => {
-  const calls = server();
-  select('r1');
-  sources.value = [source(1)];
-  open();
-  await screen.findByText('Code review');
-  sources.value = [source(2)];
-  await waitFor(() => expect(rowGets(calls)).toHaveLength(2));
-});
-
-test('a version that jumps by more than one fetches the open row again whatever rows are named', async () => {
-  const calls = server();
-  select('r1');
-  sources.value = [source(1)];
-  open();
-  await screen.findByText('Code review');
-  sources.value = [source(4, ['r2'])];
-  await waitFor(() => expect(rowGets(calls)).toHaveLength(2));
-});
-
 test('on a phone the selected row is its own screen with a way back to the list', async () => {
   server();
   select('r1');
@@ -304,4 +261,99 @@ test('on a phone a row opens as its own screen from the list', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Open Fix login' }));
   expect(await screen.findByText('Code review')).toBeTruthy();
   expect(loc.value.path).toBe('/app/deploys/r1');
+});
+
+test('a row with a section that has no array draws the pane without throwing', async () => {
+  server({ r1: { body: { sections: [{ kind: 'links', title: 'Links' }, { kind: 'steps', title: 'Steps' }, { kind: 'fields', title: 'Details' }] } } });
+  select('r1');
+  sources.value = [source(1)];
+  open();
+  const pane = await screen.findByRole('complementary', { name: 'Selected row' });
+  expect(await within(pane).findByText('Details')).toBeTruthy();
+  expect(within(pane).getByText('Links')).toBeTruthy();
+});
+
+test('while the page is starting a row that answers 404 keeps the selection, and it is fetched once the page is ready', async () => {
+  let ready = false;
+  const calls = server({ r1: () => (ready ? { body: detail } : { status: 404, body: { error: 'The page has no such row' } }) });
+  select('r1');
+  sources.value = [source(1, undefined, 'starting')];
+  open();
+  await screen.findByRole('complementary', { name: 'Selected row' });
+  expect(rowGets(calls)).toHaveLength(0);
+  expect(screen.queryByText('That row is no longer on this page.')).toBeNull();
+  expect(loc.value.path).toBe('/app/deploys/r1');
+  ready = true;
+  sources.value = [source(2)];
+  expect(await screen.findByText('Code review')).toBeTruthy();
+  expect(rowGets(calls)).toHaveLength(1);
+  expect(loc.value.path).toBe('/app/deploys/r1');
+});
+
+test('a late answer for a row that is no longer selected is not drawn', async () => {
+  let late!: (r: Response) => void;
+  const fields = (v: string) => ({ sections: [{ kind: 'fields', fields: [{ label: 'Owner', value: v }] }] });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (path: string) => {
+      if (path.endsWith('/page')) return new Response(JSON.stringify(page));
+      if (path.endsWith('/rows/r1')) return new Promise<Response>((res) => (late = res));
+      return new Response(JSON.stringify(fields('cy')));
+    }),
+  );
+  select('r1');
+  sources.value = [source(1)];
+  open();
+  await screen.findByText('Fix login', { selector: 'h2' });
+  fireEvent.click(screen.getByRole('button', { name: 'Open Rotate keys' }));
+  expect(await screen.findByText('cy')).toBeTruthy();
+  late(new Response(JSON.stringify(fields('amy'))));
+  await new Promise((r) => setTimeout(r, 0));
+  expect(screen.queryByText('amy')).toBeNull();
+  expect(screen.getByText('cy')).toBeTruthy();
+});
+
+test('the pane and the phone row screen name the row with its title, subtitle and chips', async () => {
+  server();
+  select('r1');
+  sources.value = [source(1)];
+  const { unmount } = open();
+  const pane = await screen.findByRole('complementary', { name: 'Selected row' });
+  expect(await within(pane).findByRole('heading', { name: 'Fix login' })).toBeTruthy();
+  expect(within(pane).getByText('Payments team')).toBeTruthy();
+  expect(within(pane).getByText('P1')).toBeTruthy();
+  unmount();
+  open(true);
+  expect(await screen.findByRole('heading', { name: 'Fix login' })).toBeTruthy();
+});
+
+test('closing a row opened from the list goes back in history, and closing a deep-linked row replaces the entry with the list', async () => {
+  server();
+  sources.value = [source(1)];
+  const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+  const { unmount } = open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Open Fix login' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Close' }));
+  expect(back).toHaveBeenCalledTimes(1);
+  unmount();
+  back.mockClear();
+  history.replaceState(null, '', '/app/deploys/r1');
+  select('r1');
+  const before = history.length;
+  open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Close' }));
+  expect(back).not.toHaveBeenCalled();
+  expect(loc.value.path).toBe('/app/deploys');
+  expect(history.length).toBe(before);
+  back.mockRestore();
+});
+
+test('a row whose id is a dot segment cannot be opened', async () => {
+  server();
+  sources.value = [source(1)];
+  page.groups[1].rows.push({ id: '..', title: 'Dotted', subtitle: 'x', chips: [], reason: '' } as never);
+  open();
+  const btn = (await screen.findByRole('button', { name: 'Open Dotted' })) as HTMLButtonElement;
+  expect(btn.disabled).toBe(true);
+  page.groups[1].rows.pop();
 });

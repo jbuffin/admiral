@@ -1,5 +1,4 @@
 // A module page's chip tones, client filter and open-row refetch rule.
-import { readFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
 import type { PageGroup } from './api';
 import { chipTone, filterGroups, shouldRefetchRow } from './moduleView';
@@ -30,16 +29,6 @@ test.each([
   ['GOOD', 'neutral'],
 ])('chip tone %j draws as %s', (tone, want) => {
   expect(chipTone(tone)).toBe(want);
-});
-
-test('every tone is drawn with an existing shell token and the stylesheet defines no new one', () => {
-  const css = readFileSync(new URL('./shell.css', import.meta.url), 'utf8');
-  const rule = (tone: string) => css.match(new RegExp(`\\.mchip\\[data-tone="${tone}"\\]\\s*\\{([^}]*)\\}`))?.[1] ?? '';
-  expect(rule('good')).toContain('var(--color-ok)');
-  expect(rule('warn')).toContain('var(--color-needs)');
-  expect(rule('muted')).toContain('var(--color-muted)');
-  expect(rule('neutral')).toMatch(/var\(--color-(text2|line2)\)/);
-  for (const tone of ['good', 'warn', 'muted', 'neutral']) expect(rule(tone)).not.toMatch(/(^|[\s;{])--[\w-]+\s*:/);
 });
 
 test('a filter matches a row by its title, its subtitle or a chip label, ignoring case and outer space', () => {

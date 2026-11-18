@@ -85,6 +85,13 @@ describe('module paths', () => {
     expect(modulePath('my source', 'a/b c#1')).toBe('/app/my%20source/a%2Fb%20c%231');
   });
 
+  it('name no module for a row id that is a dot segment', () => {
+    expect(moduleOf('/app/deploys/..')).toBeNull();
+    expect(moduleOf('/app/deploys/.')).toBeNull();
+    expect(moduleOf('/app/deploys/%2E%2E')).toBeNull();
+    expect(moduleOf('/app/deploys/a..b')).toEqual({ key: 'deploys', row: 'a..b' });
+  });
+
   it('name no module on the root, a path below a row or a malformed escape', () => {
     expect(moduleOf('/app')).toBeNull();
     expect(moduleOf('/app/')).toBeNull();
