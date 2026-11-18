@@ -97,6 +97,9 @@ func TestAStrangersCommentBecomesOneProposalAndDoesNotWakeTheShip(t *testing.T) 
 	if first.Title != "Wake Saltpaw for @stranger-1's review?" || p.Ship != "Saltpaw" || p.Session != "saltpaw" || p.PR != wakePR || p.Login != "stranger-1" {
 		t.Errorf("proposal = %q %+v, want one for Saltpaw on the PR from stranger-1", first.Title, p)
 	}
+	if p.ShipTitle != "Fix it" {
+		t.Errorf("proposal ship_title = %q, want the moor record's title Fix it", p.ShipTitle)
+	}
 	if !wakeIDShape.MatchString(first.ID) {
 		t.Errorf("proposal id = %q, want wake- and 20 hex characters", first.ID)
 	}

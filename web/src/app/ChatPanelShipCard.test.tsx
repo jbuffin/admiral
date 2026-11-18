@@ -127,3 +127,28 @@ test('a result this build does not know shows the card without crashing', async 
   expect(el.textContent).toContain('Calm Otter');
   expect(el.textContent).not.toContain('teleported');
 });
+
+test("a ship card shows the ship's title beside its name", async () => {
+  chatWith({ title: 'Fix the login redirect' });
+  ships.value = [live()];
+  const el = await shown();
+  expect(el.textContent).toContain('Calm Otter');
+  expect(el.textContent).toContain('Fix the login redirect');
+});
+
+test.each([[undefined], ['']])('a ship card with title %j shows the name alone', async (title) => {
+  chatWith({ title });
+  ships.value = [live()];
+  const el = await shown();
+  expect(el.textContent).toContain('Calm Otter');
+  expect(el.textContent).not.toContain('undefined');
+});
+
+test('a ship card shows a title as text, never as markup', async () => {
+  const title = '<img src=x onerror="window.__xss=1"> <b>bold</b>';
+  chatWith({ title });
+  ships.value = [live()];
+  const el = await shown();
+  expect(el.textContent).toContain(title);
+  expect(el.querySelector('img, b')).toBeNull();
+});

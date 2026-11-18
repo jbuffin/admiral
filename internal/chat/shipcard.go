@@ -38,6 +38,7 @@ type ShipCardPR struct {
 type ShipCard struct {
 	Ship          string // the ship's session name, which names its conversation
 	Name          string // the ship's display name
+	Title         string
 	FirstLaunched string // with Ship, the voyage: a reused name starts a new one
 	Skill         string
 	SkillKind     string
@@ -82,6 +83,7 @@ type ShipRecord struct {
 type voyage struct {
 	Ship          string
 	Name          string
+	Title         string
 	Fleet         string
 	Via           string
 	Skill         string

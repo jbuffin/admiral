@@ -130,3 +130,28 @@ test('a commitment card renders its text and reason as markdown', async () => {
   expect(main.querySelector('code')!.textContent).toBe('codex');
   expect(main.textContent).not.toContain('**');
 });
+
+test("a launch line shows the ship's title beside its name", async () => {
+  chatWith({ title: 'Fix the login redirect' });
+  ships.value = [live()];
+  const main = await line('Sent a');
+  expect(main.textContent).toContain('Calm Otter');
+  expect(main.textContent).toContain('Fix the login redirect');
+});
+
+test.each([[undefined], ['']])('a launch line with title %j shows the name alone', async (title) => {
+  chatWith({ title });
+  ships.value = [live()];
+  const main = await line('Sent a');
+  expect(main.textContent).toContain('Calm Otter');
+  expect(main.textContent).not.toContain('undefined');
+});
+
+test('a launch line shows a title as text, never as markup', async () => {
+  const title = '<img src=x onerror="window.__xss=1"> <b>bold</b>';
+  chatWith({ title });
+  ships.value = [live()];
+  const main = await line('Sent a');
+  expect(main.textContent).toContain(title);
+  expect(main.querySelector('img, b')).toBeNull();
+});

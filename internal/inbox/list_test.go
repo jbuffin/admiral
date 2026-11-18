@@ -218,3 +218,40 @@ func TestOnChangeFiresWhenTheListChangesAndOnChanged(t *testing.T) {
 	s.Changed()
 	waitCall("Changed")
 }
+
+func TestInboxCarriesTheShipsTitleBesideItsNameAndLeavesItsOwnTitleAlone(t *testing.T) {
+	home := t.TempDir()
+	s := &inbox.Service{Home: home, Hub: server.NewHub(), Ship: func(session string) (inbox.ShipInfo, bool) {
+		return inbox.ShipInfo{Name: "Dory", Title: "Fix the login redirect", Harness: "claude"}, true
+	}}
+	dir := shipDir(t, home, "s1")
+	writeItem(t, dir, "q-1.json", question("q-1", "2026-10-22T10:00:00Z"))
+	writeItem(t, dir, "r-1.json", review("r-1", "2026-10-22T10:15:00Z"))
+	writeItem(t, dir, "f-1.json", map[string]any{"version": 1, "id": "f-1", "kind": "findings", "created": "2026-10-22T10:30:00Z", "title": "Two findings",
+		"findings": map[string]any{"pr_url": "https://example.com/pull/12", "cards": []any{map[string]any{"title": "a"}}}})
+
+	items := listed(t, s)
+	if len(items) != 3 {
+		t.Fatalf("items = %v, want the question, the review and the findings", idsOf(items))
+	}
+	for _, it := range items {
+		if it["name"] != "Dory" || it["ship_title"] != "Fix the login redirect" {
+			t.Errorf("%v item = %v, want name Dory and ship_title Fix the login redirect", it["kind"], it)
+		}
+	}
+	if items[0]["title"] != "Which way?" {
+		t.Errorf("the question's own title = %v, want Which way? untouched", items[0]["title"])
+	}
+}
+
+func TestInboxItemOfAShipWithNoTitleHasNoShipTitleKey(t *testing.T) {
+	s, home, _ := newInbox(t)
+	writeItem(t, shipDir(t, home, "s1"), "q-1.json", question("q-1", "2026-10-22T10:00:00Z"))
+	q := listed(t, s)[0]
+	if q["name"] != "Dory" {
+		t.Fatalf("the item = %v, want name Dory", q)
+	}
+	if _, has := q["ship_title"]; has {
+		t.Errorf("the item = %v, want no ship_title key", q)
+	}
+}

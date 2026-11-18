@@ -539,3 +539,22 @@ func TestTheKindOfAMooredShipsCardIsDecidedOnTheServer(t *testing.T) {
 		})
 	}
 }
+
+func TestTheCardOfATitledShipCarriesItsTitleAndAnUntitledShipsCarriesNone(t *testing.T) {
+	x := seeded(t)
+	titled := moored("calm-otter", "work", pr7)
+	titled.Name, titled.Title = "Calm Otter", "Fix the login redirect"
+	plain := moored("brisk-heron", "work", "https://github.com/acme/api/pull/8")
+	plain.Name = "Brisk Heron"
+	x.observe(time.Minute, []ships.Ship{titled, plain})
+	byShip := map[string]shipCardView{}
+	for _, c := range shipCardsIn(t, x.r, "work") {
+		byShip[c.Ship] = c
+	}
+	if c := byShip["calm-otter"]; c.Title != "Fix the login redirect" {
+		t.Errorf("titled ship's card = %+v, want its title", c)
+	}
+	if c := byShip["brisk-heron"]; c.Title != "" {
+		t.Errorf("untitled ship's card = %+v, want no title", c)
+	}
+}

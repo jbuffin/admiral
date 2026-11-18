@@ -43,6 +43,7 @@ export interface LaunchCard extends Omit<EventCard, keyof ReviewerFields> {
 export interface ShipCard {
   ship: string;
   name?: string;
+  title?: string;
   first_launched?: string;
   fleet: string;
   skill: string;
@@ -55,6 +56,7 @@ export interface ShipCard {
 export interface LaunchLine {
   ship: string;
   name?: string;
+  title?: string;
   first_launched?: string;
   fleet: string;
   kind: string;
