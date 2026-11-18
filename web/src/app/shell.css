@@ -18,6 +18,9 @@ a { color: inherit; text-decoration: none; }
 .side { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; background: var(--color-side); overflow-y: auto; }
 .side-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px 10px 2px; }
 .side-version { font-size: var(--font-size-meta); color: var(--color-muted); }
+/* Negative margins keep the 44px hit target from making the footer row taller. */
+.theme-toggle { margin: -10px -6px -10px auto; display: inline-flex; align-items: center; justify-content: center; min-width: var(--shape-min-touch-target, 44px); min-height: var(--shape-min-touch-target, 44px); padding: 0; color: var(--color-muted); }
+.theme-toggle:hover, .theme-toggle:active { color: var(--color-text); }
 .update-badge { padding: 2px 8px; border-radius: 999px; background: var(--color-sel); color: var(--color-accent); font-size: var(--font-size-meta); font-weight: 600; }
 @media (pointer: coarse) { .update-badge { min-height: var(--shape-min-touch-target); padding: 0 12px; } }
 .update-steps { margin: 0 0 10px; padding-left: 20px; display: grid; gap: 10px; }
@@ -1091,6 +1094,8 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 /* Button: the one definition. */
 :root { --press-shade: #000; }
 @media (prefers-color-scheme: dark) { :root { --press-shade: #fff; } }
+:root[data-theme='light'] { --press-shade: #000; color-scheme: light; }
+:root[data-theme='dark'] { --press-shade: #fff; color-scheme: dark; }
 .btn {
   position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: var(--shape-button-height); padding: 0 14px; margin: 0;

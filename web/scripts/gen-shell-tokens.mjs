@@ -61,6 +61,12 @@ ${[...common, ...light].join('\n')}
 ${dark.map((l) => `  ${l}`).join('\n')}
   }
 }
+:root[data-theme="light"] {
+${light.join('\n')}
+}
+:root[data-theme="dark"] {
+${dark.join('\n')}
+}
 `;
 writeFileSync(join(root, 'src', 'app', 'shell-tokens.css'), css);
 
