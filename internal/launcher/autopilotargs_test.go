@@ -77,6 +77,9 @@ func TestAutopilotArgs(t *testing.T) {
 		{"codex does not take claude's flags", "codex", nil, []string{"--effort", "high"}, "--effort"},
 
 		{"copilot allow-all-tools", "copilot", nil, []string{"--allow-all-tools"}, "--allow-all-tools"},
+		{"copilot allow-tool", "copilot", nil, []string{"--allow-tool", "shell(gh pr)"}, "--allow-tool"},
+		{"copilot allow-tool joined", "copilot", nil, []string{"--allow-tool=shell(gh pr)"}, "--allow-tool"},
+		{"copilot allow-tool over a dock's", "copilot", []string{"--allow-tool=shell(gh pr)"}, []string{"--allow-tool=shell(git push)"}, "--allow-tool"},
 	}
 	for _, tc := range refused {
 		err := AutopilotArgs(tc.harness, tc.dock, tc.args)

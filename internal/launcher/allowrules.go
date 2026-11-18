@@ -48,17 +48,15 @@ func (l *Launcher) allowWarn(err error) {
 func (l *Launcher) ruledFlags(fleet config.Fleet, harness, dir string) []string {
 	flags, _ := l.hookFlags(harness)
 	switch harness {
-	case "claude":
-		store := allowrules.Open(l.Home)
-		all, err := store.List(fleet.Key)
-		if err != nil {
-			l.allowWarn(err)
-		}
-		if !slices.ContainsFunc(all.Rules, func(r allowrules.Rule) bool { return r.Harness == harness }) {
-			return flags // no git call for a fleet with no Claude rules
-		}
-		rules, _ := store.For(fleet.Key, harness, RepoKey(dir))
+	case "claude", "copilot":
+		rules := l.repoRules(fleet.Key, harness, dir)
 		if len(rules) == 0 {
+			return flags
+		}
+		if harness == "copilot" {
+			for _, r := range rules {
+				flags = append(flags, "--allow-tool="+r.Rule)
+			}
 			return flags
 		}
 		path, err := writeClaudeRuled(l.Home, rules)
@@ -75,6 +73,20 @@ func (l *Launcher) ruledFlags(fleet config.Fleet, harness, dir string) []string 
 		}
 	}
 	return flags
+}
+
+// repoRules are fleet's rules for harness in the checkout dir's repo.
+func (l *Launcher) repoRules(fleet, harness, dir string) []allowrules.Rule {
+	store := allowrules.Open(l.Home)
+	all, err := store.List(fleet)
+	if err != nil {
+		l.allowWarn(err)
+	}
+	if !slices.ContainsFunc(all.Rules, func(r allowrules.Rule) bool { return r.Harness == harness }) {
+		return nil // no git call for a fleet with no rules for harness
+	}
+	rules, _ := store.For(fleet, harness, RepoKey(dir))
+	return rules
 }
 
 // writeClaudeRuled writes the ship settings with rules as permissions.allow, which Claude Code adds to the
