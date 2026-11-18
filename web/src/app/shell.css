@@ -728,8 +728,8 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .crew-notes { list-style: none; margin: 0; padding: 0; }
 .crew-note { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 4px 12px; padding: 4px 0; border-bottom: 1px solid var(--color-line); }
 .crew-note.editing { flex-direction: column; align-items: stretch; }
-.crew-note-text { flex: 1; min-width: 0; align-self: center; }
-.crew-note-text .md pre { max-width: 100%; }
+.crew-note-text { flex: 1; min-width: 0; }
+.crew-note:not(.editing) > .crew-note-text { align-self: center; }
 .crew-note .crew-actions { margin: 0; }
 .crew-note textarea, .crew-note select, .crew-note input[type='text'] { min-height: var(--shape-min-touch-target); box-sizing: border-box; width: 100%; padding: 8px 10px; font: inherit; font-size: 16px; color: var(--color-text); background: var(--color-panel); border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
 .crew-warnings { margin: 0 0 12px; padding-left: 18px; }

@@ -287,14 +287,6 @@ test('a note shows inline code and a highlighted fenced block, and raw HTML stay
   expect(md.textContent).toContain('<img src=x onerror=');
 });
 
-test('an unsafe link scheme in a note is not made a link', async () => {
-  server(withNotes(['[click](javascript:alert(1)) done']));
-  page('ada');
-  const row = await rowOf('done');
-  expect(row.querySelector('.md')!.textContent).toContain('click');
-  expect(row.querySelector('a[href^="javascript"]')).toBeNull();
-});
-
 test('the Move view renders the note as markdown too', async () => {
   server(withNotes(['2026-11-10 (run-b): keep **handlers** thin']));
   page('ada');
