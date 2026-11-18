@@ -35,8 +35,8 @@ test('only the PR icon names whether the order is a draft or ready for review', 
 });
 
 test('an order whose draft state is not known carries neither name', () => {
-  sources.value = [gh([order(3, undefined)])];
+  sources.value = [gh([order(3, undefined), order(4, true)])];
   render(<OrdersPanel phone={false} title={false} />);
-  expect(screen.queryByRole('img', { name: 'Draft pull request' })).toBeNull();
+  expect(screen.getAllByRole('img', { name: 'Draft pull request' })).toHaveLength(1);
   expect(screen.queryByRole('img', { name: 'Pull request ready for review' })).toBeNull();
 });

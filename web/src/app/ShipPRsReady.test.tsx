@@ -89,7 +89,12 @@ test('a draft on the ship own open PR offers Mark ready for review, and a PR alr
 
 test('a review ship and a merged draft get no Mark ready for review', async () => {
   serve({ [url(1)]: detail(1) });
-  const a = render(<PRTab ship={ship('mark-review', [pr(1, { reviewing: true })], { reviewing: true } as Partial<Ship>)} />);
+  const own = render(<PRTab ship={ship('mark-own', [pr(1)])} />);
+  expect(await screen.findByRole('button', { name: 'Mark ready for review' })).toBeTruthy();
+  own.unmount();
+
+  serve({ [url(1)]: detail(1) });
+  const a = render(<PRTab ship={ship('mark-review', [pr(1, { reviewing: true })])} />);
   await screen.findByText('Layer 1');
   expect(screen.queryByRole('button', { name: 'Mark ready for review' })).toBeNull();
   a.unmount();
