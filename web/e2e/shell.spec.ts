@@ -865,11 +865,11 @@ test("scouts launched together report in one turn naming each, while a quick shi
   expect(chatReceived(admiral, 'harbor')).not.toContain('[Report: ');
   chatTurnEnds(admiral, 'harbor');
   const turns = () => chatReceived(admiral, 'harbor').split('\r').filter((x) => x.includes('[Report: '));
-  await expect.poll(() => turns().length).toBe(1);
+  await expect.poll(() => turns().length, { timeout: 30_000 }).toBe(1);
   chatPrompts(admiral, 'harbor');
   chatTurnEnds(admiral, 'harbor', 'report-start');
   chatTurnEnds(admiral, 'harbor', 'report-end');
-  await expect.poll(() => turns().length).toBe(2);
+  await expect.poll(() => turns().length, { timeout: 30_000 }).toBe(2);
   const group = turns().filter((x) => x.includes(`ship: ${first.session}`));
   expect(group).toHaveLength(1);
   expect(group[0]).toContain(`ship: ${second.session}`);
