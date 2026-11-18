@@ -93,6 +93,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
     if (m.kind === 'commitment' && m.card) return [{ t, i, item: { kind: 'commitment', id: m.id, text: m.text, at: m.at, card: m.card as CommitmentCard } }];
     if (m.kind === 'event_card' && m.card) return [{ t, i, item: { kind: 'event', id: m.id, text: m.text, at: m.at, card: m.card as EventCard } }];
     if (m.kind === 'launch_card' && m.card) return [{ t, i, item: { kind: 'launch', id: m.id, text: m.text, at: m.at, card: m.card as LaunchCard } }];
+    if (m.kind === 'ship_card' && m.card) return [{ t, i, item: { kind: 'ship', id: m.id, text: m.text, at: m.at, card: m.card as ShipCard } }];
     if (m.kind === 'question' && m.card) {
       const card = m.card as InboxItem;
       const answer = answers.get(card.id);
@@ -140,7 +141,28 @@ export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment
 /** The eyebrow of an open question card: Admiral's own proposals read differently from AdmiralBot's questions. */
 export const questionEyebrow = (id: string): string => (id.startsWith('campaign-') ? 'Admiral asks' : 'AdmiralBot asks');
 
+const SHIP_RESULT: Record<ShipCard['result'], string> = { moored: 'Moored', anchored: 'Anchored', ready_to_merge: 'Ready to merge', sailed_off: 'Sailed off', returned: 'Returned to port', lost: 'Lost' };
+
+const httpsHref = (url: string): string => {
+  try {
+    return new URL(url).protocol === 'https:' ? url : '';
+  } catch {
+    return '';
+  }
+};
+
 /** What a ship card shows: the ship and its kind, the result in words, each PR and, while its voyage is still in the ships list, the ship's page. */
-export function shipCardView(_item: Extract<ThreadItem, { kind: 'ship' }>, _ships: Ship[]): { eyebrow: string; name: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string } {
-  return { eyebrow: '', name: '', kind: '', result: '', prs: [], shipHref: '' };
+export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships: Ship[]): { eyebrow: string; name: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string } {
+  const c = item.card;
+  const name = c.name || c.ship;
+  const kind = c.skill_kind === 'none' ? 'No skill' : c.skill || 'No skill';
+  const afloat = ships.some((s) => s.session === c.ship && s.first_launched === c.first_launched);
+  return {
+    eyebrow: `${name} · ${kind}`,
+    name,
+    kind,
+    result: Object.hasOwn(SHIP_RESULT, c.result) ? SHIP_RESULT[c.result] : 'Result unknown',
+    prs: c.prs.map((p) => ({ label: `PR #${p.number}`, url: p.url, href: httpsHref(p.url) })),
+    shipHref: afloat ? shipPath(c.ship) : '',
+  };
 }
