@@ -1,10 +1,12 @@
 package chat
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -299,4 +301,127 @@ func TestStopShipAfterACleanEndPostsNoSailedOffCard(t *testing.T) {
 	end := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Clean: true}
 	x.observe(5*time.Minute, nil, end, ShipRecord{At: t0.Add(2*time.Minute + time.Second), Ship: "calm-otter", Event: "stopped"})
 	x.wantResults("work")
+}
+
+func TestASailOffIsNotDecidedWhileTheShipIsStillInTheSnapshotSailingOff(t *testing.T) {
+	end := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Clean: true}
+	sailing := ship("calm-otter", "work", ships.StatusSailingOff)
+	t.Run("a restart before settle finishes, then a moor", func(t *testing.T) {
+		x := seeded(t)
+		x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
+		x.restart()
+		x.observe(3*time.Minute, []ships.Ship{sailing}, end)
+		x.wantResults("work")
+		x.observe(3*time.Minute+10*time.Second, []ships.Ship{moored("calm-otter", "work", pr7)}, end,
+			ShipRecord{At: t0.Add(3*time.Minute + 5*time.Second), Ship: "calm-otter", Event: "moored"})
+		x.wantResults("work", "moored")
+	})
+	t.Run("a sail-off with no moor posts once the session leaves the snapshot", func(t *testing.T) {
+		x := seeded(t)
+		x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
+		x.observe(3*time.Minute, []ships.Ship{sailing}, end)
+		x.wantResults("work")
+		x.observe(4*time.Minute, nil, end)
+		x.observe(5*time.Minute, nil, end)
+		x.wantResults("work", "sailed_off")
+	})
+	t.Run("a new voyage under the same name does not hold it", func(t *testing.T) {
+		x := seeded(t)
+		x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
+		again := ship("calm-otter", "work", ships.StatusUnderway)
+		again.Launched, again.FirstLaunched = "2026-11-17T10:03:00Z", "2026-11-17T10:03:00Z"
+		x.observe(4*time.Minute, []ships.Ship{again}, end)
+		x.wantResults("work", "sailed_off")
+	})
+}
+
+func TestAMergedReturnWhoseUnmooredAndReturningRecordsSplitAcrossASecondPostsOnlyReturned(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{moored("calm-otter", "work", pr7)})
+	unmoored := ShipRecord{At: t0.Add(2*time.Minute + 59*time.Second), Ship: "calm-otter", Event: "unmoored", Reason: "merged"}
+	returning := ShipRecord{At: t0.Add(3 * time.Minute), Ship: "calm-otter", Event: "returning"}
+	stopped := ShipRecord{At: t0.Add(4 * time.Minute), Ship: "calm-otter", Event: "stopped", Returned: true}
+	x.observe(3*time.Minute, nil, unmoored)
+	x.wantResults("work", "moored")
+	x.observe(3*time.Minute+20*time.Second, nil, unmoored, returning)
+	x.wantResults("work", "moored")
+	x.observe(5*time.Minute, nil, unmoored, returning, stopped)
+	x.wantResults("work", "moored", "returned")
+}
+
+func TestAReturnThatEndsCleanWithoutStoppingPostsSailedOff(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
+	returning := ShipRecord{At: t0.Add(90 * time.Second), Ship: "calm-otter", Event: "returning"}
+	end := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Clean: true}
+	x.observe(5*time.Minute, nil, returning, end)
+	x.wantResults("work", "sailed_off")
+}
+
+func TestAShipMooredAtTheSeedPostsNoReadyToMergeAtItsFirstAnsweredPoll(t *testing.T) {
+	x := newDetector(t)
+	old := viaBot(moored("calm-otter", "work", pr7))
+	x.observe(0, []ships.Ship{old})
+	x.restart()
+	x.observe(time.Minute, []ships.Ship{ready(old)})
+	x.wantResults("work")
+	fresh := viaBot(moored("new-otter", "work", "https://github.com/acme/api/pull/20"))
+	x.observe(2*time.Minute, []ships.Ship{ready(old), fresh})
+	x.observe(3*time.Minute, []ships.Ship{ready(old), ready(fresh)})
+	x.wantResults("work", "moored", "ready_to_merge")
+	if c := shipCardsIn(t, x.r, "work")[1]; c.Ship != "new-otter" {
+		t.Errorf("ready card is %+v, want the ship moored after the seed", c)
+	}
+}
+
+func TestACardCarriesItsVoyageAndTheShipsName(t *testing.T) {
+	x := seeded(t)
+	m := moored("calm-otter", "work", pr7)
+	m.Name = "Fix the login"
+	x.observe(time.Minute, []ships.Ship{m})
+	got, err := x.r.history().Recent("work", 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cards []struct {
+		Text string
+		Card struct {
+			Ship          string `json:"ship"`
+			Name          string `json:"name"`
+			FirstLaunched string `json:"first_launched"`
+		}
+	}
+	for _, e := range got {
+		if e.Kind == chatlog.KindShipCard {
+			var c struct {
+				Ship          string `json:"ship"`
+				Name          string `json:"name"`
+				FirstLaunched string `json:"first_launched"`
+			}
+			if err := json.Unmarshal(e.Card, &c); err != nil {
+				t.Fatal(err)
+			}
+			cards = append(cards, struct {
+				Text string
+				Card struct {
+					Ship          string `json:"ship"`
+					Name          string `json:"name"`
+					FirstLaunched string `json:"first_launched"`
+				}
+			}{e.Text, c})
+		}
+	}
+	if len(cards) != 1 || cards[0].Text != "calm-otter" || cards[0].Card.Ship != "calm-otter" || cards[0].Card.Name != "Fix the login" || cards[0].Card.FirstLaunched != "2026-11-17T10:00:00Z" {
+		t.Errorf("cards = %+v, want the session as text and ship, the name and the first_launched stamp", cards)
+	}
+}
+
+func TestAVoyageWithNoParsableLaunchStampPostsNoCard(t *testing.T) {
+	for _, stamp := range []string{"", "yesterday"} {
+		x := seeded(t)
+		m := moored("calm-otter", "work", pr7)
+		m.Launched, m.FirstLaunched = stamp, stamp
+		x.observe(time.Minute, []ships.Ship{m})
+		x.wantResults("work")
+	}
 }
