@@ -592,6 +592,21 @@ func (s *Service) gate(fleet config.Fleet, req launcher.Request) error {
 	return autopilotgate.Check(s.Launcher.Home, fleet, req.Harness)
 }
 
+// scoutGate is a scout's check: the scout and autopilot probes, then the advisor an autopilot ship needs too.
+// It posts no Inbox notice: the caller shows the 400.
+func (s *Service) scoutGate(fleet config.Fleet, req launcher.Request) error {
+	scout := s.Launcher.ScoutGate
+	if scout == nil {
+		scout = func(fleet config.Fleet, harness string) error {
+			return autopilotgate.CheckScout(s.Launcher.Home, fleet, harness)
+		}
+	}
+	if err := scout(fleet, req.Harness); err != nil {
+		return err
+	}
+	return autopilotgate.CheckQuiet(s.Launcher.Home, fleet, req.Harness)
+}
+
 // admit checks what a launch over HTTP may claim and takes its resources: autopilot
 // mode needs a guarded harness and room under max_ships. The caller holds admitMu
 // for an autopilot launch until LaunchOrder returns.
@@ -614,10 +629,7 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 		}
 		check := s.gate
 		if req.Scout {
-			// A scout's gate includes the autopilot proof and posts no Inbox notice: the caller shows the refusal.
-			check = func(fleet config.Fleet, req launcher.Request) error {
-				return autopilotgate.CheckScout(s.Launcher.Home, fleet, req.Harness)
-			}
+			check = s.scoutGate
 		}
 		if err := check(fleet, req); err != nil {
 			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: err.Error()}

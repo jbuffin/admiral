@@ -139,3 +139,20 @@ func TestACodexScoutOverTheCapGetsItsGuardRefusalNotTheCap(t *testing.T) {
 		t.Errorf("codex scout over the cap = %d %s, want the scout 400", rec.Code, rec.Body)
 	}
 }
+
+func TestAScoutIsRefusedWhereTheFleetHasNoAdvisor(t *testing.T) {
+	home := t.TempDir()
+	store, now := capabilities.Open(home), time.Now()
+	if err := store.RecordVersion("work", "claude", "2.1.300", now); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []capabilities.ID{capabilities.AutopilotGuard, capabilities.ScoutGuard} {
+		if err := store.Record("work", "claude", "2.1.300", id, capabilities.Result{Passed: true, At: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := launchPost(t, scoutService(t, home, 5), scoutBody(t, "claude", ""))
+	if msg := strings.ToLower(rec.Body.String()); rec.Code != http.StatusBadRequest || !strings.Contains(msg, "advisor") {
+		t.Errorf("scout with both probes and no advisor = %d %s, want 400 naming the advisor", rec.Code, rec.Body)
+	}
+}
