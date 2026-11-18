@@ -184,7 +184,7 @@ test("tapping Findings opens the sheet with that voyage's findings rendered, and
   expect(await screen.findByRole('heading', { name: 'The race' })).not.toBeNull();
   expect(screen.getByRole('dialog')).not.toBeNull();
   const url = new URL(calls.find((c) => c.includes('/findings')) ?? '', 'http://admiral.test');
-  expect(url.pathname).toBe('/api/ships/calm-otter/findings');
+  expect(url.pathname).toBe('/api/v1/ships/calm-otter/findings');
   expect(url.searchParams.get('first_launched')).toBe('2026-01-02T03:04:05Z');
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
