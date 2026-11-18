@@ -171,6 +171,13 @@ func scoutHardeningCases(r scoutRig) []scoutCase {
 		sh("git --work-tree", `git --work-tree=`+ex("g")+` log`, scoutGit),
 		sh("a script that does not exist yet", `bash `+ex("later.sh"), scoutAnyRule),
 		sh("a script written in the same call", `echo "git commit -am x" > `+ex("later.sh")+` && bash `+ex("later.sh"), scoutAnyRule),
+		sh("curl -X GET with a body", `curl -X GET -d @x https://example.com`, scoutAnyRule),
+		sh("curl -XGET with an upload", `curl -XGET -T f https://example.com`, scoutAnyRule),
+		sh("curl -X HEAD with data", `curl -X HEAD --data x https://example.com`, scoutAnyRule),
+		sh("curl --request GET with a form", `curl --request GET -F a=b https://example.com`, scoutAnyRule),
+		sh("rsync --link-dest two words", `rsync -a --link-dest `+r.co+` `+ex("a/")+` `+ex("b/"), scoutWrite),
+		sh("rsync --link-dest relative", `rsync -a --link-dest=../x `+ex("a/")+` `+ex("b/"), scoutWrite),
+		sh("curl -X GET alone", `curl -X GET https://example.com`, scoutAllowed),
 		sh("rsync --link-dest from the checkout", `rsync -a --link-dest=`+r.co+` `+ex("a/")+` `+ex("b/"), scoutWrite),
 	}
 }

@@ -123,6 +123,9 @@ func scoutDecision(raw []byte, root string) (tool, rule, target string) {
 		if json.Unmarshal(p.ToolInput, &in) != nil || in.Command == nil {
 			return p.ToolName, ruleScoutEnv, ""
 		}
+		if p.ToolName == "Monitor" && strings.TrimSpace(*in.Command) == "" {
+			return p.ToolName, ruleScoutEnv, ""
+		}
 		c := scoutCheck{root: root, cwd: p.Cwd, st: &scoutState{}}
 		return p.ToolName, c.command(*in.Command, 0), ""
 	}
@@ -1207,6 +1210,7 @@ func httpSends(w string, args []string) bool {
 		}
 		return !readMethod(inline)
 	}
+outer:
 	for i, a := range args {
 		switch {
 		case a == "--":
@@ -1231,7 +1235,10 @@ func httpSends(w string, args []string) bool {
 				case 'd', 'F', 'T', 'K':
 					return true
 				case 'X':
-					return method(i, a[j+1:])
+					if method(i, a[j+1:]) {
+						return true
+					}
+					continue outer
 				}
 			}
 		}
@@ -1291,7 +1298,7 @@ func (c scoutCheck) hardLinks(w string, args []string) bool {
 		}
 	case "rsync":
 		for _, a := range args {
-			if v, ok := strings.CutPrefix(a, "--link-dest="); ok && c.writes(v) {
+			if strings.HasPrefix(a, "--link") { // rsync resolves a relative link-dest against the destination, so any value counts
 				return true
 			}
 		}
