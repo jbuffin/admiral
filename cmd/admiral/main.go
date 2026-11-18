@@ -281,7 +281,7 @@ func serve(args []string) error {
 	}
 	defer cfg.Close()
 	cfg.SetChatProbe(capabilities.ChatProbe(capabilities.Open(dir)))
-	cfg.SetRepoLookup(fleetRepos(cfg))
+	cfg.SetRepoLookup(fleetRepos(cfg, ""))
 	listenOn, err := resolveListen(cfg, *listen, func() (bool, error) { return cli.OfferSetup(cli.Std()) })
 	if err != nil {
 		return err
@@ -607,7 +607,7 @@ func serve(args []string) error {
 	routineService.Listed = listedShips(allShips)
 	shipService.EventShip = eventShip(routineStore, listedShips(allShips))
 	routineScheduler.EndHarness = wallClockEnder(host)
-	lk := newLookout(absDir, cfg, fleetRepos(cfg), supervisor)
+	lk := newLookout(absDir, cfg, fleetRepos(cfg, ""), supervisor)
 	wireEvents(supervisor, routineStore, routineScheduler, allShips, lk, newReviewer(lk), lookoutActs)
 	inboxService.LaunchEvent = launchEvent(routineScheduler)
 	wireStandingOrders(shipService.Launcher, routineStore, routineService, cfg)
@@ -631,11 +631,11 @@ func serve(args []string) error {
 		}
 		return map[string]any{"session": t.Ship}, 0, ""
 	}
-	// A draft's repo is one of the fleet's projects that route to it, so every draft can be created.
+	// A draft's repo is one of the fleet's github.com projects that route to it, so every draft can be created.
 	inboxService.FleetRepos = func(fleet string) []string {
 		router := github.RouterFromFleets(cfg.Current().Fleets)
 		var out []string
-		for _, repo := range fleetRepos(cfg)(fleet) {
+		for _, repo := range fleetRepos(cfg, github.DefaultHost)(fleet) {
 			if router.Route(github.DefaultHost, repo) == fleet {
 				out = append(out, repo)
 			}
@@ -847,8 +847,8 @@ func moveListener(lis *listener, cfg *config.Manager, hub *server.Hub, guard *au
 	}
 }
 
-// fleetRepos lists the owner/name of every remote of the checkouts a fleet's search roots find.
-func fleetRepos(cfg *config.Manager) config.RepoLookup {
+// fleetRepos lists the owner/name of every remote of the checkouts a fleet's search roots find; a host keeps only its remotes.
+func fleetRepos(cfg *config.Manager, host string) config.RepoLookup {
 	return func(key string) []string {
 		f, ok := cfg.Current().Fleet(key)
 		if !ok {
@@ -857,7 +857,7 @@ func fleetRepos(cfg *config.Manager) config.RepoLookup {
 		var out []string
 		for _, e := range repofinder.List(repofinder.FleetRoots(f.SearchRoots, f.CloneRoot)) {
 			for _, id := range e.Remotes {
-				if _, nameWithOwner, ok := strings.Cut(id, "/"); ok {
+				if h, nameWithOwner, ok := strings.Cut(id, "/"); ok && (host == "" || h == host) {
 					out = append(out, nameWithOwner)
 				}
 			}

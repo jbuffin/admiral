@@ -169,31 +169,21 @@ func (s *Service) CreateCampaignItem(ctx context.Context, id string, req Campaig
 	}
 	draft.Repo, draft.Title, draft.Body = repo, strings.TrimSpace(req.Title), req.Body
 
-	key := AdmiralSession + "/" + id
-	s.actMu.Lock()
-	if s.acting[key] {
-		s.actMu.Unlock()
-		return CreatedCampaign{}, ErrBusy
-	}
-	if s.acting == nil {
-		s.acting = map[string]bool{}
-	}
-	s.acting[key] = true
-	s.actMu.Unlock()
-	defer func() {
-		s.actMu.Lock()
-		delete(s.acting, key)
-		s.actMu.Unlock()
-	}()
-	// An answer may have landed while this request waited for the item.
-	if _, err := s.open(AdmiralSession, id); err != nil {
+	release, err := s.beginAction(AdmiralSession, id)
+	if err != nil {
 		return CreatedCampaign{}, err
 	}
+	defer release()
 
-	created, status, msg := s.CreateCampaign(ctx, draft)
+	// A parent filed by an earlier press whose answer didn't save is answered again, never filed twice.
+	created, status, msg := s.filedParent(id)
+	if created.URL == "" {
+		created, status, msg = s.CreateCampaign(ctx, draft)
+	}
 	if status != 0 && created.URL == "" {
 		return CreatedCampaign{}, &refusedError{status, msg}
 	}
+	s.rememberParent(id, created, status, msg)
 	card := CampaignCard{ID: id, Title: draft.Title, URL: created.URL, Created: true}
 	if status != 0 {
 		card.Failed = msg
@@ -205,6 +195,9 @@ func (s *Service) CreateCampaignItem(ctx context.Context, id string, req Campaig
 		}
 		return file, []outcomes.Record{{Event: "campaign_draft_created", Fields: map[string]any{"item": id, "fleet": draft.Fleet}}}, nil
 	})
+	if werr == nil || errors.Is(werr, ErrAnswered) {
+		s.forgetParent(id)
+	}
 	// The campaign exists whether or not the answer was written, so the chat hears of it either way.
 	if s.PostCampaignCard != nil {
 		s.PostCampaignCard(draft.Fleet, card)
@@ -221,8 +214,13 @@ func (s *Service) CreateCampaignItem(ctx context.Context, id string, req Campaig
 
 // DismissCampaignDraft answers the item with a dismissal and posts the thrown-away card.
 func (s *Service) DismissCampaignDraft(id string) error {
+	release, err := s.beginAction(AdmiralSession, id)
+	if err != nil {
+		return err
+	}
+	defer release()
 	var dismissed CampaignDraft
-	err := s.writeAnswered(AdmiralSession, id, KindCampaignDraft, func(it Item) (any, []outcomes.Record, error) {
+	err = s.writeAnswered(AdmiralSession, id, KindCampaignDraft, func(it Item) (any, []outcomes.Record, error) {
 		dismissed, _ = it.CampaignDraft()
 		file := map[string]any{"version": 1, "id": id, "kind": KindCampaignDraft, "answered": time.Now().UTC().Format(time.RFC3339), "dismissed": true}
 		return file, []outcomes.Record{{Event: "campaign_draft_dismissed", Fields: map[string]any{"item": id, "fleet": dismissed.Fleet}}}, nil
@@ -258,3 +256,35 @@ func (s *Service) serveCreateCampaign(w http.ResponseWriter, r *http.Request) {
 
 // isCampaignDraft says whether item id, answered or not, is a campaign draft, which the dismiss route dispatches on.
 func (s *Service) isCampaignDraft(id string) bool { return s.isAdmiralKind(id, KindCampaignDraft) }
+
+type filedCampaign struct {
+	created CreatedCampaign
+	status  int
+	msg     string
+}
+
+func (s *Service) filedParent(id string) (CreatedCampaign, int, string) {
+	s.actMu.Lock()
+	defer s.actMu.Unlock()
+	f := s.filed[id]
+	return f.created, f.status, f.msg
+}
+
+// rememberParent keeps a filed parent in memory until its answer is written.
+func (s *Service) rememberParent(id string, created CreatedCampaign, status int, msg string) {
+	if created.URL == "" {
+		return
+	}
+	s.actMu.Lock()
+	defer s.actMu.Unlock()
+	if s.filed == nil {
+		s.filed = map[string]filedCampaign{}
+	}
+	s.filed[id] = filedCampaign{created, status, msg}
+}
+
+func (s *Service) forgetParent(id string) {
+	s.actMu.Lock()
+	delete(s.filed, id)
+	s.actMu.Unlock()
+}

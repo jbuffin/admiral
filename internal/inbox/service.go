@@ -73,14 +73,15 @@ type Service struct {
 
 	scanned atomic.Bool
 
-	answerMu sync.Mutex        // one answer at a time
-	actMu    sync.Mutex        // guards acting
-	acting   map[string]bool   // the items a gh action is running on
-	resumeMu sync.Mutex        // one pass over the resume texts at a time
-	lastErr  map[string]string // the last failure logged for a resume text; under resumeMu
-	resume   chan struct{}     // resume texts may be ready; buffered; under mu
-	scanMu   sync.Mutex        // one refresh at a time
-	mu       sync.Mutex        // guards items
+	answerMu sync.Mutex               // one answer at a time
+	actMu    sync.Mutex               // guards acting
+	acting   map[string]bool          // the items a gh action is running on
+	filed    map[string]filedCampaign // parents filed whose answer is not yet saved, by item id
+	resumeMu sync.Mutex               // one pass over the resume texts at a time
+	lastErr  map[string]string        // the last failure logged for a resume text; under resumeMu
+	resume   chan struct{}            // resume texts may be ready; buffered; under mu
+	scanMu   sync.Mutex               // one refresh at a time
+	mu       sync.Mutex               // guards items
 	items    []Item
 	notify   chan struct{} // a ship changed; buffered, so Notify never blocks
 	watched  map[string]os.FileInfo

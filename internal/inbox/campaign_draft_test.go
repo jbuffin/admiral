@@ -81,7 +81,16 @@ func draftAsBot(t *testing.T, mux *http.ServeMux, body string) string {
 
 func TestADraftFromAdmiralBotIsAnAdmiralItemCarryingTheDraftAndTheViaMarkerAndTouchesNoGitHub(t *testing.T) {
 	s, _, _, mux, h := draftInbox(t)
+	gh := t.TempDir()
+	ran := filepath.Join(gh, "ran")
+	if err := os.WriteFile(filepath.Join(gh, "gh"), []byte("#!/bin/sh\ntouch "+ran+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", gh+string(os.PathListSeparator)+os.Getenv("PATH"))
 	id := draftAsBot(t, mux, draftBody)
+	if _, err := os.Stat(ran); err == nil {
+		t.Error("drafting ran gh; it must write nothing to GitHub")
+	}
 
 	items := listed(t, s)
 	if got := idsOf(items); !reflect.DeepEqual(got, []string{id}) {
@@ -282,5 +291,91 @@ func TestADraftWhoseBodyIsAtTheCapAndFullOfEscapesStillListsAndCreates(t *testin
 	id := draftAsBot(t, mux, string(raw))
 	if got := idsOf(listed(t, s)); !reflect.DeepEqual(got, []string{id}) {
 		t.Errorf("items = %v, want the full-size draft listed", got)
+	}
+}
+
+// holdCreate makes the creator wait on the returned release, and signals on entered once it is inside gh.
+func holdCreate(s *inbox.Service) (entered chan struct{}, release func()) {
+	entered, gate := make(chan struct{}), make(chan struct{})
+	s.CreateCampaign = func(context.Context, inbox.CampaignDraft) (inbox.CreatedCampaign, int, string) {
+		close(entered)
+		<-gate
+		return inbox.CreatedCampaign{ID: "camp-1", URL: "https://github.com/acme/widgets/issues/99"}, 0, ""
+	}
+	return entered, func() { close(gate) }
+}
+
+func TestADismissOrRemoveWhileACreateIsRunningIsBusyAndTheItemEndsCreatedWithOneCard(t *testing.T) {
+	for _, action := range []string{"dismiss", "remove"} {
+		t.Run(action, func(t *testing.T) {
+			s, _, url, mux, h := draftInbox(t)
+			entered, release := holdCreate(s)
+			id := draftAsBot(t, mux, draftBody)
+
+			done := make(chan int, 1)
+			go func() {
+				code, _ := post(t, url+"/api/inbox/_admiral/"+id+"/create", draftBody)
+				done <- code
+			}()
+			<-entered
+			path := "/api/inbox/_admiral/" + id + "/" + action
+			if code, body := post(t, url+path, `{}`); code != http.StatusConflict {
+				t.Errorf("%s during a create = %d %s, want 409", action, code, body)
+			}
+			release()
+			if code := <-done; code != http.StatusCreated {
+				t.Fatalf("create = %d, want 201", code)
+			}
+			_, cards := h.snapshot()
+			if len(cards) != 1 || !cards[0].Created {
+				t.Errorf("cards = %+v, want the one created card", cards)
+			}
+		})
+	}
+}
+
+func TestARemoveOfADraftThrowsItAwayLikeDismiss(t *testing.T) {
+	s, _, url, mux, h := draftInbox(t)
+	id := draftAsBot(t, mux, draftBody)
+	if code, body := post(t, url+"/api/inbox/_admiral/"+id+"/remove", `{}`); code != http.StatusOK {
+		t.Fatalf("remove = %d %s, want 200", code, body)
+	}
+	created, cards := h.snapshot()
+	if want := []inbox.CampaignCard{{ID: id, Title: "Speed up the fleet map"}}; len(created) != 0 || !reflect.DeepEqual(cards, want) {
+		t.Errorf("created %v, cards %+v, want nothing filed and %+v", created, cards, want)
+	}
+	if got := idsOf(listed(t, s)); len(got) != 0 {
+		t.Errorf("items = %v, want the draft gone", got)
+	}
+}
+
+func TestAnAnswerThatCouldNotBeSavedAfterTheParentExistsIsRetriedWithoutFilingASecondParent(t *testing.T) {
+	s, home, url, mux, h := draftInbox(t)
+	id := draftAsBot(t, mux, draftBody)
+	dir := filepath.Join(home, "inbox", inbox.AdmiralSession)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	restored := false
+	restore := func() {
+		if !restored {
+			restored = true
+			_ = os.Chmod(dir, 0o700)
+		}
+	}
+	t.Cleanup(restore)
+
+	if code, body := post(t, url+"/api/inbox/_admiral/"+id+"/create", draftBody); code != http.StatusInternalServerError {
+		t.Fatalf("the answer write should have failed here (%d %s)", code, body)
+	}
+	restore()
+	if code, body := post(t, url+"/api/inbox/_admiral/"+id+"/create", draftBody); code != http.StatusCreated {
+		t.Fatalf("second create = %d %s, want 201", code, body)
+	}
+	if created, _ := h.snapshot(); len(created) != 1 {
+		t.Errorf("creator ran %d times, want once", len(created))
+	}
+	if got := idsOf(listed(t, s)); len(got) != 0 {
+		t.Errorf("items = %v, want the draft answered", got)
 	}
 }

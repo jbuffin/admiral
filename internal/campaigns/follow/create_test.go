@@ -2,7 +2,6 @@ package follow
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -481,37 +480,5 @@ func TestCreateWithTheReposOwnHostAndFleetFilesAsWithoutThem(t *testing.T) {
 				t.Errorf("writes = %d; want the parent and one link per issue", got)
 			}
 		})
-	}
-}
-
-func TestCreateCampaignFilesTheParentOnceAndFollowsItForADraftWithNoIssues(t *testing.T) {
-	r := newRig(t, fixtureTree())
-	r.gh.parentReady()
-
-	got, cerr := r.svc.CreateCampaign(context.Background(), CreateRequest{Repo: "acme/widgets", Fleet: "work", Title: "Speed up the fleet map", Body: "Load the map in under a second."})
-	if cerr != nil {
-		t.Fatalf("CreateCampaign = %+v, want the campaign", cerr)
-	}
-	if got.URL != newParentURL || got.Fleet != "work" || got.ID == "" {
-		t.Errorf("campaign = %+v, want the new parent %s followed on work", got, newParentURL)
-	}
-	w := posts(r.gh.restCalls())
-	var create struct{ Title, Body string }
-	if len(w) != 1 || w[0].Endpoint != parentEndpoint || json.Unmarshal([]byte(w[0].Stdin), &create) != nil ||
-		create.Title != "Speed up the fleet map" || create.Body != "Load the map in under a second." {
-		t.Errorf("writes = %+v, want exactly the parent created with the title and body on stdin", w)
-	}
-}
-
-func TestCreateCampaignRefusesARepoThatBelongsToAnotherFleetThanTheDraftsAndWritesNothing(t *testing.T) {
-	r := newRig(t, fixtureTree())
-	r.gh.parentReady()
-
-	_, cerr := r.svc.CreateCampaign(context.Background(), CreateRequest{Repo: "acme/widgets", Fleet: "personal", Title: "T", Body: "B"})
-	if cerr == nil || cerr.Status != http.StatusUnprocessableEntity || !strings.Contains(cerr.Msg, "work") {
-		t.Fatalf("CreateCampaign = %+v, want 422 naming the fleet that owns the repo", cerr)
-	}
-	if w := posts(r.gh.restCalls()); len(w) != 0 {
-		t.Errorf("writes = %+v; a repo outside the draft's fleet must stop the run before any write", w)
 	}
 }

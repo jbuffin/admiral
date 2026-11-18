@@ -293,10 +293,10 @@ func TestAnActorMayDraftACampaignOnlyInItsOwnFleet(t *testing.T) {
 	}
 }
 
-// Holds today because no allow entry covers these routes; it fails if one is ever added.
+// Holds today because no allow entry covers these routes; it fails if one for create, dismiss or remove is ever added.
 func TestAnActorIsNeverLetThroughToCreateOrDismissACampaignDraft(t *testing.T) {
 	for _, prefix := range []string{"/api", "/api/v1"} {
-		for _, path := range []string{"/inbox/_admiral/campaign-1/launch", "/inbox/_admiral/campaign-1/dismiss"} {
+		for _, path := range []string{"/inbox/_admiral/campaign-1/create", "/inbox/_admiral/campaign-1/dismiss", "/inbox/_admiral/campaign-1/remove"} {
 			r := newRig(t)
 			if code := r.do("POST", prefix+path, `{"repo":"acme/widgets","title":"T","body":"B"}`, "tok-work", local).Code; code != 403 || r.reached != 0 {
 				t.Errorf("POST %s%s as AdmiralBot: code %d, reached %d; want 403 and the handler not reached", prefix, path, code, r.reached)
