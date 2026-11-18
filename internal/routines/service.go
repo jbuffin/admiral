@@ -34,6 +34,8 @@ type Service struct {
 
 	undoMu sync.Mutex
 
+	drafts keptDrafts
+
 	// ordersMu holds a Copy's snapshot, store write, config write and restore apart from any other standing-orders save.
 	ordersMu sync.Mutex
 }
@@ -68,6 +70,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/fleets/{key}/standing-orders/copy", s.serveOrdersCopy)
 	mux.HandleFunc("POST /api/fleets/{key}/standing-orders/draft", s.serveOrdersDraft)
 	mux.HandleFunc("POST /api/fleets/{key}/routines/draft", s.serveRoutineDraft)
+	mux.HandleFunc("GET /api/fleets/{key}/routine-drafts/{id}", s.serveKeptDraft)
 	mux.HandleFunc("POST /api/fleets/{key}/campaigns/draft", s.serveCampaignDraft)
 	mux.HandleFunc("POST /api/fleets/{key}/worker-ships/stop", s.serveStopWorkerShips)
 	mux.HandleFunc("POST /api/worker-ships/stop", s.serveStopWorkerShips)

@@ -380,7 +380,12 @@ func (s *Service) serveRoutineDraft(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.validate(f, Routine{Name: d.Name, Enabled: d.Enabled, When: d.When, Do: d.Do, Before: d.Before, Notify: d.Notify}, false); err != nil {
 		problems = append(problems, routineProblem(err))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"draft": d, "problems": problems})
+	kept, err := s.drafts.keep(key, s.Store.now(), d, problems)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": kept.id, "draft": d, "problems": problems})
 }
 
 func (s *Service) serveCampaignDraft(w http.ResponseWriter, r *http.Request) {

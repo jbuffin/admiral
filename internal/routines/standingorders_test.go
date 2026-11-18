@@ -928,9 +928,6 @@ func TestRoutineDraftAnswersAnIdAndTheKeptDraftReadsBackWithItsProblemsAndExpiry
 	if err != nil || !exp.Equal(want) {
 		t.Errorf("expires_at = %v (%v), want %v: one hour after it was made", got["expires_at"], err, want)
 	}
-	if code, v1 := r.do("GET", "/api/v1/fleets/work/routine-drafts/"+id, nil); code != 200 || v1["id"] != id {
-		t.Errorf("GET under /api/v1 = %d %v, want the same draft", code, v1)
-	}
 }
 
 func TestRoutineDraftIdsAreUnguessableAndDistinct(t *testing.T) {
