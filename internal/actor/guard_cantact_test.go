@@ -27,6 +27,7 @@ var writes = []struct{ method, path, body string }{
 	{"POST", "/api/chat/questions", `{}`},
 	{"POST", "/api/fleets/work/routines/r1/off", ""},
 	{"POST", "/api/fleets/work/routines/draft", `{}`},
+	{"POST", "/api/fleets/work/campaign-drafts", `{"repo":"acme/widgets","title":"T","body":"B"}`},
 	{"POST", "/api/fleets/work/hold-fire/on", ""},
 	{"POST", "/api/chat/notes", `{}`},
 	{"POST", "/api/chat/commitments", `{}`},
