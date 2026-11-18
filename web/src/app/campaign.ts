@@ -174,9 +174,10 @@ export function pasteHint(text: string): string | null {
   return null;
 }
 
-/** The sidebar's second line: map number and progress. */
-export function campaignMeta(c: { number: number; progress: { closed: number; total: number } }): string {
-  return `Map #${c.number} · ${c.progress.closed} of ${c.progress.total}`;
+/** The second line of a sidebar row or list card: owner/repo#number and progress. */
+export function campaignMeta(c: { repo: string; number: number; progress: { closed: number; total: number } }): string {
+  const repo = c.repo.replace(/^[a-z]+:\/\/[^/]+\//i, '');
+  return `${repo}#${c.number} · ${c.progress.closed} of ${c.progress.total}`;
 }
 
 /** The ship a child's campaign launch started, if one is afloat. */
