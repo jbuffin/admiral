@@ -75,3 +75,19 @@ func TestRecordedConversationRejectsABadBefore(t *testing.T) {
 		t.Errorf("an unknown before = %d, want 400", status)
 	}
 }
+
+func TestRecordedConversationReadsACopilotBindingToo(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	path := f.copilotPath(sid)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	appendTo(t, path, copilotUser(1)+copilotAssistant(2, "Hi."))
+	start := "'/bin/copilot' '--session-id' '" + sid + "' '--' 'go'"
+	status, body := f.svc.RecordedConversation("copilot", "1700000000000000000 launch "+path, start, f.cfg, "")
+	var p pageJSON
+	if err := json.Unmarshal(body, &p); err != nil || status != http.StatusOK || p.State != "ok" || len(p.Items) != 2 {
+		t.Fatalf("recorded copilot read = %d %s (%v), want its two items", status, body, err)
+	}
+}

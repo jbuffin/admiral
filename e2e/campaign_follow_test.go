@@ -415,8 +415,8 @@ func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
 
 	// The second files a ref to the campaign the journey unfollowed, then names another issue.
 	stop := `event Stop {"background_tasks":[]}`
-	// Each Stop holds its needs_you and each turn works long enough to be seen: a turn end the poll cannot see is none.
-	w.swapCue("hook working", "wait filed", stop, "wait again", "hook working", "sleep 3", stop, "wait end", "exit 0")
+	// Each Stop holds its needs_you, and the second turn works until the test has seen it: a turn end the poll cannot see is none.
+	w.swapCue("hook working", "wait filed", stop, "wait again", "hook working", "wait seen", stop, "wait end", "exit 0")
 	d := w.launchDrafting()
 	w.waitDrafting(t, d.Session, true)
 	w.writeCampaignRef(d.Session, campIssueURL(20))
@@ -429,6 +429,8 @@ func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
 
 	w.writeCampaignRef(d.Session, campIssueURL(22))
 	w.release(d.Session, "again")
+	w.in.waitShipsList(t, 15*time.Second, "the ship working again", func(l []shipJSON) bool { return statusOf(l, d.Session) == "underway" })
+	w.release(d.Session, "seen")
 	w.in.waitShipsList(t, 15*time.Second, "a line on the ship about the other issue", func(l []shipJSON) bool {
 		s, ok := shipIn(l, d.Session)
 		return ok && (strings.Contains(s.DraftingNotice, "#22") || strings.Contains(s.DraftingNotice, "/issues/22"))

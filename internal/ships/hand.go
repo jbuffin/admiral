@@ -206,7 +206,7 @@ func checkHandText(text string) string {
 // conversationOf is the id of the Claude conversation the ship's start command gave it; the pane's transcript option
 // alone is not trusted, since the pane can write it.
 func (s *Service) conversationOf(sess sessionhost.Session) (string, bool) {
-	_, _, id, ok := s.conversationBinding(sess)
+	_, _, id, ok := s.conversationBinding(sess, "claude")
 	return id, ok
 }
 

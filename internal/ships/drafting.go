@@ -188,8 +188,8 @@ func (s *Service) captureDraftEnd(sess sessionhost.Session) *draftEnd {
 	if e.item.Harness == "" {
 		e.item.Harness = "claude"
 	}
-	if raw, cmd, _, ok := s.conversationBinding(sess); ok {
-		e.item.Transcript, e.item.StartCmd, e.item.ConfigDir = raw, cmd, s.dockConfig(o["fleet"], o["harness"])
+	if raw, cmd, _, ok := s.conversationBinding(sess, e.item.Harness); ok {
+		e.item.Transcript, e.item.StartCmd, e.item.ConfigDir = raw, cmd, s.dockConfig(o["fleet"], e.item.Harness)
 	}
 	return e
 }
@@ -241,7 +241,8 @@ func (s *Service) endDrafted(e *draftEnd) {
 func (s *Service) dropDrafting(session, first string) { s.drafters.Delete(draftKey(session, first)) }
 
 // conversationBinding is the ship's transcript option and start command, only when the start command binds the option to the conversation it gave the harness.
-func (s *Service) conversationBinding(sess sessionhost.Session) (raw, startCmd, id string, ok bool) {
+// Nothing binds a Codex ship's path to its launch, so a valid hook-written path is kept as shipconv takes it.
+func (s *Service) conversationBinding(sess sessionhost.Session, harness string) (raw, startCmd, id string, ok bool) {
 	if sess.PaneID == "" {
 		return "", "", "", false
 	}
@@ -253,6 +254,10 @@ func (s *Service) conversationBinding(sess sessionhost.Session) (raw, startCmd, 
 	if rerr != nil || cerr != nil {
 		return "", "", "", false
 	}
-	_, id, ok = transcriptfs.BindFor("claude", raw, cmd)
+	if harness == "codex" {
+		parts := strings.SplitN(raw, " ", 3)
+		return raw, cmd, "", len(parts) == 3 && sessionhost.ValidTranscriptPath(parts[2])
+	}
+	_, id, ok = transcriptfs.BindFor(harness, raw, cmd)
 	return raw, cmd, id, ok
 }
