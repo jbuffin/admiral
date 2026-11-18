@@ -183,7 +183,7 @@ test('a steps section shows each step with its title and chips, and a fields sec
   expect(pane.querySelector('b')).toBeNull();
 });
 
-test('a built-in action with a url is drawn disabled on a row and on a step, and a press makes no request', async () => {
+test('Open link is drawn as a link on a row and on a step, and a press makes no request', async () => {
   const docs = { id: 'docs', label: 'Open docs', confirm: 'click', url: 'https://tracker.example/docs' };
   const steps = { sections: [{ kind: 'steps', title: 'Steps', steps: [{ id: 's1', title: 'Code review', chips: [], actions: [docs] }] }] };
   const withDocs = { ...page, groups: [{ ...page.groups[0], rows: [{ ...page.groups[0].rows[0], actions: [docs] }, ...page.groups[0].rows.slice(1)] }, page.groups[1]] };
@@ -193,11 +193,11 @@ test('a built-in action with a url is drawn disabled on a row and on a step, and
   open();
   const pane = await screen.findByRole('complementary', { name: 'Selected row' });
   await within(pane).findByText('Code review');
-  const buttons = [within(screen.getByRole('button', { name: 'Open Fix login' }).closest('li') as HTMLElement).getByRole('button', { name: 'Open docs' }), within(pane).getByRole('button', { name: 'Open docs' })];
+  const links = [within(screen.getByRole('button', { name: 'Open Fix login' }).closest('li') as HTMLElement).getByRole('link', { name: 'Open docs' }), within(pane).getByRole('link', { name: 'Open docs' })];
   const before = calls.length;
-  for (const b of buttons) {
-    expect((b as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(b);
+  for (const a of links) {
+    expect(a.getAttribute('href')).toBe('https://tracker.example/docs');
+    fireEvent.click(a);
   }
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(calls).toHaveLength(before);
