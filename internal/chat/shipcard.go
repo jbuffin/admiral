@@ -99,6 +99,7 @@ type voyage struct {
 	Skill         string
 	SkillKind     string
 	Scout         bool
+	PromptKey     string // the engineer chat turn a scout launched in
 	Commitment    string
 	Routine       string
 	ReportResult  string

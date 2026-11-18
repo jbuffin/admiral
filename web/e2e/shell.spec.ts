@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatTurnEnds, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
@@ -840,6 +840,40 @@ test("a ship that sails off gets AdmiralBot's reply to its report turn threaded 
   await sent.tap();
   await expect(thread).toContainText('A ship you launched has reported back');
   expect(await pageFits(page)).toBe(true);
+
+  expect(watch.errors).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.unversioned()).toEqual([]);
+});
+
+test("scouts launched together report in one turn naming each, while a quick ship from the same prompt reports in its own", async ({ page, admiral }) => {
+  test.setTimeout(120_000);
+  seedFleets(admiral, { live: true, chat: true, turnChat: 'harbor' });
+  chatSays(admiral, 'harbor', [line.user('Look into the harbour log with two scouts and a quick ship')]);
+  await admiral.start({ env: mooringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+  await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  const main = page.getByRole('main');
+  await expect(main).toContainText('Look into the harbour log with two scouts and a quick ship');
+  const checked = await page.request.post(admiral.url + 'api/v1/harness-capabilities/check', { data: { fleet: 'harbor', harness: 'claude' } });
+  expect(checked.ok()).toBe(true);
+  chatPrompts(admiral, 'harbor');
+  const first = await launchAsAdmiralBot(admiral, 'harbor', 'Read the harbour log and report the newest error.', 'to read the harbour log', true, true);
+  const second = await launchAsAdmiralBot(admiral, 'harbor', 'Read the tide table and report the newest error.', 'to read the tide table', true, true);
+  const quick = await launchAsAdmiralBot(admiral, 'harbor', 'Fix the harbour log typo.', 'to fix the typo', true);
+  // Each scout and the quick ship get a card as they end; none of their report turns reaches the chat while the engineer's turn is open.
+  await expect(main.getByText(/^(Sailed off|Failed)$/)).toHaveCount(3, { timeout: 30_000 });
+  expect(chatReceived(admiral, 'harbor')).not.toContain('[Report: ');
+  chatTurnEnds(admiral, 'harbor');
+  const turns = () => chatReceived(admiral, 'harbor').split('\r').filter((x) => x.includes('[Report: '));
+  await expect.poll(() => turns().length, { timeout: 60_000 }).toBe(2);
+  const group = turns().filter((x) => x.includes(`ship: ${first.session}`));
+  expect(group).toHaveLength(1);
+  expect(group[0]).toContain(`ship: ${second.session}`);
+  expect(group[0]).not.toContain(`ship: ${quick.session}`);
+  const own = turns().filter((x) => x.includes(`ship: ${quick.session}`));
+  expect(own).toHaveLength(1);
+  expect(own[0]).not.toContain(`ship: ${first.session}`);
 
   expect(watch.errors).toEqual([]);
   expect(watch.foreign).toEqual([]);

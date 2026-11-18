@@ -61,6 +61,8 @@ type Ship struct {
 	// Via is "admiralbot" for a ship AdmiralBot launched; absent for the engineer's.
 	Via  string `json:"via,omitempty"`
 	Chat string `json:"-"`
+	// PromptKey is the engineer chat turn a scout was launched in; scouts of one turn report together.
+	PromptKey string `json:"-"`
 	// Routine is the routine:<id> key a routine's ship holds.
 	Routine string `json:"-"`
 	// Commitment is the commitment:<id> key a commitment's ship holds.
@@ -134,6 +136,8 @@ type LaunchLine struct {
 type Service struct {
 	// PostLaunchLine puts a chat launch's line in its fleet's chat; nil posts nothing.
 	PostLaunchLine func(fleet string, l LaunchLine) error
+	// PromptKey reads the engineer chat turn a fleet's chat is on; nil records none.
+	PromptKey func(fleet string) string
 	// answering holds one mutex per pane id, taken for the whole of an answer.
 	answering sync.Map
 	// returning holds the ships a Return to port step is running for.
