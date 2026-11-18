@@ -305,7 +305,31 @@ func launchAdmiralOnce(t *testing.T, home, listen string, env []string) (*fleetI
 
 // checkout makes a git checkout in the search root, since a launch is refused
 // for any other directory. The remotes a test needs are added with git.
+// checkout is a git checkout with a local bare origin and a first commit, since a no-skill launch fetches origin.
 func (w *world) checkout(name string) string {
+	w.t.Helper()
+	d := w.plainCheckout(name)
+	if _, err := os.Lstat(filepath.Join(d, ".git", "refs", "remotes", "origin")); err == nil {
+		return d
+	}
+	bare := filepath.Join(w.root, "origin-"+name+".git")
+	if err := os.MkdirAll(bare, 0o755); err != nil {
+		w.t.Fatal(err)
+	}
+	w.git(bare, "init", "-q", "--bare", "-b", "main")
+	w.git(d, "checkout", "-q", "-B", "main")
+	if err := os.WriteFile(filepath.Join(d, ".gitkeep"), nil, 0o644); err != nil {
+		w.t.Fatal(err)
+	}
+	w.git(d, "add", ".gitkeep")
+	w.git(d, "commit", "-q", "-m", "first")
+	w.git(d, "remote", "add", "origin", bare)
+	w.git(d, "push", "-q", "origin", "main")
+	return d
+}
+
+// plainCheckout is a git checkout with no remote and no commit.
+func (w *world) plainCheckout(name string) string {
 	w.t.Helper()
 	d := filepath.Join(w.work, name)
 	if err := os.MkdirAll(d, 0o755); err != nil {

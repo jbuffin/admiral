@@ -41,3 +41,7 @@ The engineer picks the ship's directory in launch orders from a list Admiral bui
 From [Grilling: how do order sources work per fleet, with GitHub built in?](https://github.com/jbuffin/admiral/issues/227): **Admiral clones a missing repo on launch.** Launching on a repo with no checkout in the fleet runs `gh repo clone` into the fleet's `clone_root` (by default its first search root), and launch orders says so beforehand. An existing folder at that path fails the launch visibly and is never overwritten. The new checkout makes the repo a project of that fleet ([ADR 0006](0006-order-sources-are-subprocess-plugins.md)). This replaces "Admiral never clones or creates directories" above. Admiral still makes no worktrees and takes no typed paths.
 
 From [Grilling: how does the campaign model work?](https://github.com/jbuffin/admiral/issues/229): a launch on a campaign child preselects the campaign's work repo first, before the order's `repo` hint ([ADR 0027](0027-campaigns-are-read-from-githubs-issue-tree.md)).
+
+## Amendment (2026-11-17)
+
+For a ship launched with no skill, Admiral now makes a git worktree of the picked checkout and the ship runs there ([ADR 0043](0043-an-idea-in-the-chat-becomes-a-pr-with-no-questions-on-the-way.md)). This replaces "it never creates its own worktrees" in the Decision and "Admiral still makes no worktrees" in the 2026-11-10 amendment, for those ships only. A ship launched with a skill still runs in the checkout. A future scout reads the checkout in place.

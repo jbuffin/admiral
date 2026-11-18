@@ -34,7 +34,7 @@ func (w *world) originCheckout(name string) (dir, tip string) {
 		w.git(scratch, "push", "-q", "origin", "trunk")
 	}
 	commit("a.txt")
-	dir = w.checkout(name)
+	dir = w.plainCheckout(name)
 	slug := "https://github.com/acme/" + name + ".git"
 	w.git(dir, "remote", "add", "origin", slug)
 	w.git(dir, "config", "url."+bare+".insteadOf", slug)
@@ -179,7 +179,8 @@ func TestALaunchFromACheckoutWithNoOriginIsRefusedAndNoShipPutToSea(t *testing.T
 	w.cueFleets(map[string][]string{"f": {"hook working"}})
 	w.start()
 
-	code, body := w.post(w.order("f", "claude", "bare", noSkill, "x"))
+	order := map[string]any{"fleet": "f", "harness": "claude", "dir": w.plainCheckout("bare"), "skill": noSkill, "order_id": "o-bare", "text": "x"}
+	code, body := w.post(order)
 	if code < 400 || code >= 500 {
 		t.Errorf("POST /api/ships = %d, want a refusal: %s", code, body)
 	}

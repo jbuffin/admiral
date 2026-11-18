@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -197,6 +198,8 @@ type Launcher struct {
 	Guidance func(fleet string) (string, error)
 	// Checkouts makes a restricted ship's own checkout; nil refuses a restricted launch.
 	Checkouts Checkouts
+	// Worktrees makes the worktree a no-skill ship works in; nil runs it in the checkout.
+	Worktrees Worktrees
 
 	mu sync.Mutex // one launch at a time, so two don't pick one name
 }
@@ -468,6 +471,20 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			return nil, err
 		}
 	}
+	if !restricted && !evented && !promoted {
+		wt, undo, err := l.shipWorktree(req, session)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if !launched {
+				undo()
+			}
+		}()
+		if wt != "" {
+			req.Dir = wt
+		}
+	}
 	if req.Before != nil {
 		if err := req.Before(req.Dir); err != nil {
 			return nil, err
@@ -557,7 +574,7 @@ func roundOption(round int) string {
 // the caller holds l.mu, so no other launch takes the name in between.
 func (l *Launcher) nameFor(req Request) (name, session string, err error) {
 	if req.Session == "" {
-		name, err = l.pickName()
+		name, err = l.pickNameIn(req.Dir)
 		return name, Slug(name), err
 	}
 	rows, err := l.server().SessionRows()
@@ -834,7 +851,10 @@ func crewDirNotDir(dir string, fi fs.FileInfo) error {
 
 // No tmux server yet means nothing is in use; any other error stops the launch, since a
 // name in use would end with a clash.
-func (l *Launcher) pickName() (string, error) {
+func (l *Launcher) pickName() (string, error) { return l.pickNameIn("") }
+
+// pickNameIn also skips a name whose admiral/<session> branch survives in dir's repo, which a new worktree would collide with.
+func (l *Launcher) pickNameIn(dir string) (string, error) {
 	rows, err := l.server().SessionRows()
 	if err != nil {
 		return "", refuse(http.StatusInternalServerError, "tmux could not list its sessions: %s", err)
@@ -850,6 +870,12 @@ func (l *Launcher) pickName() (string, error) {
 	// A restricted ship's clone outlives the ship, and Make refuses a path that exists.
 	kept := func(session string) bool {
 		if _, err := os.Lstat(filepath.Join(l.Home, "checkouts", session)); err == nil {
+			return true
+		}
+		if HasWorktree(l.Home, session) {
+			return true
+		}
+		if dir != "" && l.Worktrees != nil && exec.Command("git", "-C", dir, "show-ref", "--verify", "--quiet", "refs/heads/admiral/"+session).Run() == nil {
 			return true
 		}
 		return l.Kept != nil && l.Kept(session)
