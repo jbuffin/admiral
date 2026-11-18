@@ -306,9 +306,10 @@ var mcpTools = []mcpTool{
 			}
 			return c.post(path, nil)
 		}},
-	{"hold_fire_on", "Turn Hold fire on, so this fleet's routines propose instead of acting; with all_fleets, every fleet's. Only the engineer turns it off.",
-		obj(nil, map[string]any{"all_fleets": flag01("true to turn Hold fire on for every fleet, not only this one")}),
+	{"hold_fire_on", "Turn Hold fire on in this fleet, so its routines propose instead of acting. Only the engineer turns it off, or on for every fleet.",
+		obj(nil, nil),
 		func(c *mcpClient, raw json.RawMessage) (string, error) {
+			// decoded though out of the schema: dropping it would turn a refused ask into an own-fleet call
 			var a struct {
 				AllFleets bool `json:"all_fleets"`
 			}
@@ -316,7 +317,7 @@ var mcpTools = []mcpTool{
 				return "", err
 			}
 			if a.AllFleets {
-				return c.post("/api/hold-fire/on", nil)
+				return "", errors.New("AdmiralBot turns Hold fire on only in its own fleet; the engineer turns it on for every fleet")
 			}
 			path, err := c.fleetPath("/hold-fire/on")
 			if err != nil {
