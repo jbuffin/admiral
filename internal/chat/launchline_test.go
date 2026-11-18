@@ -11,6 +11,7 @@ import (
 type launchLineView struct {
 	Ship          string `json:"ship"`
 	Name          string `json:"name"`
+	Title         string `json:"title"`
 	FirstLaunched string `json:"first_launched"`
 	Fleet         string `json:"fleet"`
 	Kind          string `json:"kind"`
@@ -64,5 +65,42 @@ func TestALaunchLinePostsInItsOwnFleetAndNoOther(t *testing.T) {
 	}
 	if got := launchLinesIn(t, r, "home"); len(got) != 0 {
 		t.Errorf("the home chat holds %+v, want none", got)
+	}
+}
+
+func rawLaunchLine(t *testing.T, r *briefRig, fleet string) map[string]any {
+	t.Helper()
+	got, err := r.history().Recent(fleet, 500)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("chat = %v, %v, want one entry", got, err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(got[0].Card, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestALaunchLineCarriesTheShipsTitleBesideItsName(t *testing.T) {
+	r := newBriefRig(t)
+	line := ships.LaunchLine{Ship: "calm-otter", Name: "Calm Otter", Title: "Fix the login redirect", FirstLaunched: "2026-11-17T10:00:00Z", Kind: "scout", Reason: "to look", Text: "look"}
+	if err := r.PostLaunchLine("work", line); err != nil {
+		t.Fatal(err)
+	}
+	if m := rawLaunchLine(t, r, "work"); m["name"] != "Calm Otter" || m["title"] != "Fix the login redirect" {
+		t.Errorf("launch line = %v, want name Calm Otter and title Fix the login redirect", m)
+	}
+}
+
+func TestALaunchLineWithNoTitleHasNoTitleKey(t *testing.T) {
+	r := newBriefRig(t)
+	line := ships.LaunchLine{Ship: "calm-otter", Name: "Calm Otter", FirstLaunched: "2026-11-17T10:00:00Z", Kind: "scout", Reason: "to look", Text: "look"}
+	if err := r.PostLaunchLine("work", line); err != nil {
+		t.Fatal(err)
+	}
+	if m := rawLaunchLine(t, r, "work"); m["name"] != "Calm Otter" {
+		t.Fatalf("launch line = %v, want name Calm Otter", m)
+	} else if _, has := m["title"]; has {
+		t.Errorf("launch line = %v, want no title key", m)
 	}
 }

@@ -11,6 +11,7 @@ import (
 // shipCardView is a ship card as a client reads it.
 type shipCardView struct {
 	Ship      string `json:"ship"`
+	Title     string `json:"title"`
 	Fleet     string `json:"fleet"`
 	Skill     string `json:"skill"`
 	SkillKind string `json:"skill_kind"`
@@ -132,5 +133,45 @@ func TestAShipCardStartsNoTurnAndNeverReachesTheDigestOrTheBrief(t *testing.T) {
 		if strings.Contains(brief, s) {
 			t.Errorf("brief holds %q, which AdmiralBot would read:\n%s", s, brief)
 		}
+	}
+}
+
+// rawShipCard is the payload of the one ship card in the fleet's chat, as keys.
+func rawShipCard(t *testing.T, r *briefRig, fleet string) map[string]any {
+	t.Helper()
+	got, err := r.history().Recent(fleet, 500)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("chat = %v, %v, want one entry", got, err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(got[0].Card, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestAShipCardCarriesTheShipsTitleBesideItsName(t *testing.T) {
+	r := newBriefRig(t)
+	c := sampleShipCard()
+	c.Name, c.Title = "Calm Otter", "Fix the login redirect"
+	if err := r.PostShipCard("work", c); err != nil {
+		t.Fatal(err)
+	}
+	if m := rawShipCard(t, r, "work"); m["name"] != "Calm Otter" || m["title"] != "Fix the login redirect" {
+		t.Errorf("card = %v, want name Calm Otter and title Fix the login redirect", m)
+	}
+}
+
+func TestAShipCardOfAShipWithNoTitleHasNoTitleKey(t *testing.T) {
+	r := newBriefRig(t)
+	c := sampleShipCard()
+	c.Name = "Calm Otter"
+	if err := r.PostShipCard("work", c); err != nil {
+		t.Fatal(err)
+	}
+	if m := rawShipCard(t, r, "work"); m["name"] != "Calm Otter" {
+		t.Fatalf("card = %v, want name Calm Otter", m)
+	} else if _, has := m["title"]; has {
+		t.Errorf("card = %v, want no title key", m)
 	}
 }

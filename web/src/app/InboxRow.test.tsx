@@ -102,3 +102,97 @@ test('a notice title stays plain text', () => {
   expect(container.textContent).toContain('Use **care** now');
   expect(container.querySelector('strong')).toBeNull();
 });
+
+const titled = { session: 'calm-otter', name: 'Calm Otter', title: 'Fix the login redirect', status: 'moored', prs: [] };
+const mergeRow = (ship: Record<string, unknown>, folded: string | null = null) =>
+  ({ key: 'merge:calm-otter', type: 'merge', session: 'calm-otter', folded, since: 0, ship }) as unknown as Entry;
+
+test('a ready-to-merge row shows the ship name and its title', () => {
+  row(mergeRow(titled));
+  const li = screen.getByRole('listitem');
+  expect(li.textContent).toContain('Calm Otter');
+  expect(li.textContent).toContain('is ready to merge');
+  expect(screen.getByText('Fix the login redirect')).toBeTruthy();
+});
+
+test('a ready-to-merge row of a ship with no title shows its name alone, with nothing empty beside it', () => {
+  row(mergeRow({ ...titled, title: '' }));
+  const li = screen.getByRole('listitem');
+  expect(li.textContent).toContain('Calm Otter');
+  expect(Array.from(li.querySelectorAll('.ship-main *')).filter((n) => n.textContent?.trim() === '')).toEqual([]);
+});
+
+test('a folded ready-to-merge row keeps the ship name and its title beside the confirmation', () => {
+  row(mergeRow(titled, 'Merged'));
+  const li = screen.getByRole('listitem');
+  expect(screen.getByRole('status').textContent).toBe('Merged');
+  expect(li.textContent).toContain('Calm Otter');
+  expect(li.textContent).toContain('Fix the login redirect');
+});
+
+test('a folded row of a ship with no title shows its name and confirmation alone', () => {
+  row(mergeRow({ ...titled, title: '' }, 'Merged'));
+  const li = screen.getByRole('listitem');
+  expect(li.textContent).toContain('Calm Otter');
+  expect(Array.from(li.querySelectorAll('*')).filter((n) => n.textContent?.trim() === '')).toEqual([]);
+});
+
+const questionOf = (over: Record<string, unknown>) =>
+  ({
+    key: 'item:s-v/q-title',
+    type: 'item',
+    session: 's-v',
+    id: 'q-title',
+    folded: null,
+    since: 0,
+    ship: { session: 's-v', name: 'Visitor' },
+    item: { id: 'q-title', kind: 'question', name: 'Visitor', title: 'Which port should the visitor use?', ...over },
+  }) as unknown as Entry;
+
+test("a question row shows its ship's title beside the name and keeps the question's own heading", () => {
+  row(questionOf({ ship_title: 'Fix the login redirect' }));
+  const li = screen.getByRole('listitem');
+  for (const t of ['Visitor', 'asked', 'Fix the login redirect', 'Which port should the visitor use?']) expect(li.textContent).toContain(t);
+});
+
+test('a question row of a ship with no title shows the name and the heading alone', () => {
+  row(questionOf({}));
+  const li = screen.getByRole('listitem');
+  expect(li.textContent).toContain('Visitor');
+  expect(li.textContent).toContain('Which port should the visitor use?');
+  expect(Array.from(li.querySelectorAll('.ship-main *')).filter((n) => n.textContent?.trim() === '')).toEqual([]);
+});
+
+test('a ship title is shown as text, never as markup', () => {
+  row(questionOf({ ship_title: HOSTILE }));
+  const li = screen.getByRole('listitem');
+  expect(li.textContent).toContain(HOSTILE);
+  expect(li.querySelector('img, script')).toBeNull();
+});
+
+const wakeOf = (over: Record<string, unknown>) =>
+  ({
+    key: 'item:_admiral/wake-1',
+    type: 'item',
+    session: '_admiral',
+    id: 'wake-1',
+    folded: null,
+    since: 0,
+    item: { id: 'wake-1', kind: 'wake_proposal', name: 'Admiral', title: "Wake Saltpaw for @stranger's review?", wake_proposal: { ship: 'Saltpaw', session: 'saltpaw', pr: 'https://github.com/acme/widgets/pull/9', login: 'stranger', ...over } },
+  }) as unknown as Entry;
+
+test("a wake proposal row shows the moored ship's title", () => {
+  row(wakeOf({ ship_title: 'Fix the login redirect' }));
+  const li = screen.getByRole('listitem');
+  const text = li.textContent ?? '';
+  const heading = text.indexOf("Wake Saltpaw for @stranger's review?");
+  expect(heading).toBeGreaterThan(text.indexOf('Admiral'));
+  expect(text.indexOf('Fix the login redirect')).toBeGreaterThan(heading);
+});
+
+test("a wake proposal row of a ship with no title shows the proposal's own words alone", () => {
+  row(wakeOf({}));
+  const li = screen.getByRole('listitem');
+  expect(li.textContent).toContain('Saltpaw');
+  expect(Array.from(li.querySelectorAll('.ship-main *')).filter((n) => n.textContent?.trim() === '')).toEqual([]);
+});

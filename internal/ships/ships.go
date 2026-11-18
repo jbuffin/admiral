@@ -125,7 +125,7 @@ type Orders interface {
 
 // LaunchLine is what a chat launch tells the chat: the ship, what kind it is, why AdmiralBot launched it and the launch text as written.
 type LaunchLine struct {
-	Ship, Name, FirstLaunched, Kind, Reason, Text string
+	Ship, Name, Title, FirstLaunched, Kind, Reason, Text string
 }
 
 type Service struct {

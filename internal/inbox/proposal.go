@@ -30,11 +30,12 @@ type WakeProposalEvent struct {
 
 // WakeProposal is the item's wake_proposal object. Ship is the moored ship's name and Session its session, which wake takes.
 type WakeProposal struct {
-	Ship    string              `json:"ship"`
-	Session string              `json:"session"`
-	PR      string              `json:"pr"`
-	Login   string              `json:"login"`
-	Events  []WakeProposalEvent `json:"events"`
+	Ship      string              `json:"ship"`
+	ShipTitle string              `json:"ship_title,omitempty"`
+	Session   string              `json:"session"`
+	PR        string              `json:"pr"`
+	Login     string              `json:"login"`
+	Events    []WakeProposalEvent `json:"events"`
 }
 
 // LaunchProposalFunc starts the feedback round for p. status is 0 on success, else the refusal's HTTP status with msg.

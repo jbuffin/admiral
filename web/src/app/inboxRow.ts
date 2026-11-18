@@ -23,6 +23,18 @@ export function rowShip(e: Entry): string {
   return e.crew ? `${name} › ${e.crew.name}` : name;
 }
 
+// What the ship is about, shown beside its name. A crew boat's row has none, and an item of a ship that sailed off carries none.
+export function rowShipTitle(e: Entry): string {
+  if (e.crew) return '';
+  if (e.item) return e.item.ship_title || e.item.wake_proposal?.ship_title || '';
+  return e.ship?.title ?? '';
+}
+
+// A wake proposal's heading is what names the moored ship, so its title follows the heading; elsewhere the ship's title comes first.
+export function titleLines(e: Entry, heading: string, shipTitle: string): string[] {
+  return (e.item?.wake_proposal ? [heading, shipTitle] : [shipTitle, heading]).filter(Boolean);
+}
+
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 // The phrase reads after the ship name: "Dory asked", "Dory wants to run Bash".

@@ -11,7 +11,11 @@ import (
 
 // PostLaunchLine appends a chat launch's line to the fleet's chat log. It starts no turn, and AdmiralBot does not read it.
 func (s *Service) PostLaunchLine(fleet string, l ships.LaunchLine) error {
-	card, err := json.Marshal(map[string]any{"ship": l.Ship, "name": l.Name, "first_launched": l.FirstLaunched, "fleet": fleet, "kind": l.Kind, "reason": l.Reason, "text": l.Text})
+	body := map[string]any{"ship": l.Ship, "name": l.Name, "first_launched": l.FirstLaunched, "fleet": fleet, "kind": l.Kind, "reason": l.Reason, "text": l.Text}
+	if l.Title != "" {
+		body["title"] = l.Title
+	}
+	card, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}

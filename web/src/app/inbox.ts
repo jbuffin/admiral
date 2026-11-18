@@ -13,6 +13,7 @@ export interface InboxItem {
   created: string;
   title: string;
   name?: string;
+  ship_title?: string;
   harness?: string;
   fleet?: string;
   fleet_name?: string;
@@ -24,6 +25,7 @@ export interface InboxItem {
   notice?: { body?: string; entries?: { key: string; name: string; panel: string; fleet?: string }[] };
   routine_proposal?: { fleet?: string; routine?: string; routine_name?: string; trigger?: string; action?: string; reason?: string; expires_at?: string };
   event_proposal?: { fleet?: string; routine?: string; routine_name?: string; trigger?: string; tier?: string; expires_at?: string };
+  wake_proposal?: { ship?: string; ship_title?: string; session?: string; pr?: string; login?: string };
   crew_notes?: unknown;
   crew_member?: unknown;
   mission?: unknown;

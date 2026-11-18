@@ -31,7 +31,7 @@ const rescanEvery = 30 * time.Second
 
 // ShipInfo is what the inbox shows beside an item of a known ship.
 type ShipInfo struct {
-	Name, Harness, Fleet, FleetName, FleetColor string
+	Name, Title, Harness, Fleet, FleetName, FleetColor string
 }
 
 type Service struct {
@@ -131,7 +131,7 @@ func (s *Service) List() []Item {
 				continue
 			}
 			if info, ok := s.Ship(items[i].Session); ok {
-				items[i].Name, items[i].Harness = info.Name, info.Harness
+				items[i].Name, items[i].Harness, items[i].ShipTitle = info.Name, info.Harness, info.Title
 				items[i].Fleet, items[i].FleetName, items[i].FleetColor = info.Fleet, info.FleetName, info.FleetColor
 			}
 		}

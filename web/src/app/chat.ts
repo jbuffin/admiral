@@ -43,6 +43,7 @@ export interface LaunchCard extends Omit<EventCard, keyof ReviewerFields> {
 export interface ShipCard {
   ship: string;
   name?: string;
+  title?: string;
   first_launched?: string;
   fleet: string;
   skill: string;
@@ -55,6 +56,7 @@ export interface ShipCard {
 export interface LaunchLine {
   ship: string;
   name?: string;
+  title?: string;
   first_launched?: string;
   fleet: string;
   kind: string;
@@ -167,14 +169,14 @@ const httpsHref = (url: string): string => {
 const LAUNCH_KIND: Record<string, string> = { quick_ship: 'a quick ship', scout: 'a scout', commodore: 'a Commodore ship' };
 
 /** What a launch line shows: its sentence, the ship and, while the ship is afloat, its page. */
-export function launchLineView(item: Extract<ThreadItem, { kind: 'launch_line' }>, ships: Ship[]): { sentence: string; name: string; shipHref: string; text: string } {
+export function launchLineView(item: Extract<ThreadItem, { kind: 'launch_line' }>, ships: Ship[]): { sentence: string; name: string; title: string; shipHref: string; text: string } {
   const c = item.card;
   const kind = Object.hasOwn(LAUNCH_KIND, c.kind) ? LAUNCH_KIND[c.kind] : `${/^[aeiou]/i.test(c.kind) ? 'an' : 'a'} ${c.kind} ship`;
-  return { sentence: c.reason ? `Sent ${kind} ${c.reason}` : `Sent ${kind}`, name: c.name || c.ship, shipHref: ships.some((s) => s.session === c.ship && s.first_launched === c.first_launched) ? shipPath(c.ship) : '', text: c.text };
+  return { sentence: c.reason ? `Sent ${kind} ${c.reason}` : `Sent ${kind}`, name: c.name || c.ship, title: c.title ?? '', shipHref: ships.some((s) => s.session === c.ship && s.first_launched === c.first_launched) ? shipPath(c.ship) : '', text: c.text };
 }
 
 /** What a ship card shows: the ship and its kind, the result in words, each PR and, while its voyage is still in the ships list, the ship's page. */
-export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships: Ship[]): { eyebrow: string; name: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string } {
+export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships: Ship[]): { eyebrow: string; name: string; title: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string } {
   const c = item.card;
   const name = c.name || c.ship;
   const kind = c.skill_kind === 'commodore' ? 'Commodore' : c.skill_kind === 'scout' ? 'Scout' : c.skill_kind === 'quick' ? 'Quick ship' : c.skill_kind === 'none' ? 'No skill' : c.skill || 'No skill';
@@ -182,6 +184,7 @@ export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships:
   return {
     eyebrow: `${name} · ${kind}`,
     name,
+    title: c.title ?? '',
     kind,
     result: Object.hasOwn(SHIP_RESULT, c.result) ? SHIP_RESULT[c.result] : 'Result unknown',
     prs: c.prs.map((p) => ({ label: `PR #${p.number}`, url: p.url, href: httpsHref(p.url) })),

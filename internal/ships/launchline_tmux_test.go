@@ -102,3 +102,24 @@ func TestALaunchThatIsNotAChatLaunchAddsNoLaunchLine(t *testing.T) {
 		t.Errorf("launch lines = %+v, want only the chat launch's", lines)
 	}
 }
+
+func TestAChatLaunchFromAnOrderPostsItsLineWithTheOrdersTitle(t *testing.T) {
+	r := newWakeRig(t, 0)
+	caught := &lineCatcher{}
+	r.s.PostLaunchLine = caught.post
+	r.s.Titling = func(string) bool { return false }
+	r.launchBody(t, true, `,"skill":{"kind":"none"},"autopilot":true,"reason":"to fix it","source":"s","order_id":"o1"`)
+	if _, lines := caught.got(); len(lines) != 1 || lines[0].Title != "title" {
+		t.Errorf("launch lines = %+v, want one carrying the order's title", lines)
+	}
+}
+
+func TestAFreeformChatLaunchPostsItsLineWithNoTitle(t *testing.T) {
+	r := newWakeRig(t, 0)
+	caught := &lineCatcher{}
+	r.s.PostLaunchLine = caught.post
+	r.launchBody(t, true, `,"skill":{"kind":"none"},"autopilot":true,"reason":"to read the AWS logs"`)
+	if _, lines := caught.got(); len(lines) != 1 || lines[0].Title != "" {
+		t.Errorf("launch lines = %+v, want one with no title, not the prompt's first line", lines)
+	}
+}

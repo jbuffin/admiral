@@ -102,6 +102,7 @@ function ShipCardView({ item }: { item: Extract<ThreadItem, { kind: 'ship' }> })
       ) : (
         <p class="line">{v.name}</p>
       )}
+      {v.title ? <p class="line">{v.title}</p> : null}
       {v.prs.map((p) => (p.href ? <Button key={p.url} label={p.label} href={p.href} external /> : <p key={p.url} class="line">{p.url}</p>))}
     </div>
   );
@@ -128,6 +129,7 @@ function LaunchLineView({ item }: { item: Extract<ThreadItem, { kind: 'launch_li
       ) : (
         <p class="line">{v.name}</p>
       )}
+      {v.title ? <p class="line">{v.title}</p> : null}
       {v.text ? (
         <>
           <button type="button" class="tool-head" aria-expanded={open} onClick={() => setOpen(!open)}>
