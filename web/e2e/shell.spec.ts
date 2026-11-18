@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession, launchAsAdmiralBot, gitCheckout } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession, launchAsAdmiralBot, gitCheckout, dropFetchRedirect } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
@@ -504,6 +504,7 @@ test('a Copilot ship shows its conversation in the Conversation tab, shows a lin
   mkdirSync(commodoreSkill, { recursive: true });
   writeFileSync(join(commodoreSkill, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
   const design = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  dropFetchRedirect(join(admiral.home, 'proj'));
   setState(admiral, design, 'working');
   await say(admiral, design, 'The design is settled');
   await page.goto(admiral.url + 'app/ships?fleet=zulu');

@@ -339,6 +339,14 @@ export function gitCheckout(dir: string, githubUrl?: string) {
   git(dir, 'push', '-q', 'origin', 'main');
 }
 
+/** Undoes gitCheckout's redirect after the launch, so the checkout's GitHub origin reads as it is: `git remote get-url` expands insteadOf, and a hand names the repo from it. */
+export function dropFetchRedirect(dir: string) {
+  const key = spawnSync('git', ['config', '--name-only', '--get-regexp', '^url\\..*\\.insteadof$'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
+  expect(key).not.toBe('');
+  const r = spawnSync('git', ['config', '--unset-all', key], { cwd: dir, encoding: 'utf8' });
+  expect(r.status, r.stderr).toBe(0);
+}
+
 export async function launchShip(
   a: Admiral,
   req: { fleet: 'zulu' | 'alpha'; harness: Harness; source?: string; order?: string; anyway?: boolean; text?: string; exit?: 0 | 3; cue?: string; cues?: string[]; dir?: string; skill?: 'commodore' },
