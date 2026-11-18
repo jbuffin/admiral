@@ -295,11 +295,9 @@ func TestEachGitHubRowOfTheTriggerTable(t *testing.T) {
 				})
 			}
 			g.run()
-			// A poll that fires or drops closes the commitment, so no later poll has a subject to look up.
+			// A poll that fires or drops closes the commitment, so no later poll has a subject to look up: wantCard waits for the card instead.
 			if row.want == waits {
 				g.pollsMore(2)
-			} else {
-				g.pollsMore(1)
 			}
 			switch row.want {
 			case fires:
@@ -324,7 +322,6 @@ func TestAPRDroppedForNotMergedSaysItClosedWithoutMerging(t *testing.T) {
 	c := g.add(prCommitment(ledger.TriggerPRMerged, prURL))
 	g.gh.set(func() { g.gh.prs[prURL] = "CLOSED" })
 	g.run()
-	g.pollsMore(1)
 	card := g.wantCard(c.ID, commitments.OutcomeDropped)
 	if !strings.Contains(strings.ToLower(card.Why), "merg") {
 		t.Errorf("drop reason = %q, want it to say the PR closed without merging", card.Why)
@@ -368,10 +365,10 @@ func TestAGitHubReminderCardIsPostedOnceAcrossARestart(t *testing.T) {
 		}
 		t.Run(row.name, func(t *testing.T) {
 			g := newGHRig(t)
-			g.add(prCommitment(row.kind, row.subject))
+			c := g.add(prCommitment(row.kind, row.subject))
 			g.gh.set(func() { g.gh.prs[prURL], g.gh.issues[issueURL] = row.state, row.state })
 			stop := g.run()
-			g.pollsMore(1)
+			g.wantCard(c.ID, commitments.OutcomeReminded)
 			stop()
 			g.restart()
 			g.run()
