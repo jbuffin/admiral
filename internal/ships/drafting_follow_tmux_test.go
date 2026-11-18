@@ -2,6 +2,8 @@ package ships
 
 import (
 	"context"
+	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -346,6 +348,9 @@ func TestHandingAndReturningADraftingShipPostNoItemOnlyAStoppedOneDoes(t *testin
 	writeRef(t, ref, handIssue+"\n")
 	r.handRig.endTurn(t)
 	r.started(t, 3)
+	if sh := r.draftingJSON(t, "saltpaw"); sh["drafting"] == true {
+		t.Error("a ship handed to Commodore still shows as a drafting ship")
+	}
 
 	r.stopShip(t, "bramble")
 	item := r.waitEndedItem(t)
@@ -362,6 +367,8 @@ func TestReturningADraftingShipToPortPostsNoItem(t *testing.T) {
 		t.Fatalf("return = %d %s", rec.Code, rec.Body)
 	}
 	r.s.advanceReturns()
+	waitUntil(t, "the clean-up prompt at the ship's prompt", func() bool { return strings.Contains(r.pane(t), "Return to port") })
+	r.s.settleWG.Wait()
 	r.turnOf(t, "saltpaw", "needs_you", "stop")
 	r.s.advanceReturns()
 	waitUntil(t, "saltpaw to be stopped", func() bool { return !r.afloat() })
@@ -370,5 +377,30 @@ func TestReturningADraftingShipToPortPostsNoItem(t *testing.T) {
 	item := r.waitEndedItem(t)
 	if !strings.Contains(item, "Bramble") || strings.Contains(item, "Saltpaw") {
 		t.Errorf("the one item must name only the stopped ship Bramble: %s", item)
+	}
+}
+
+func TestAMooredDraftingShipKeepsDraftingAndPostsNoItem(t *testing.T) {
+	r := newWakeRig(t, 0)
+	first, _ := shipJSON(t, r.moorKeyed(t))["first_launched"].(string)
+	r.s.markDrafting("saltpaw", first)
+	r.s.settleWG.Wait()
+	if items := (&draftRig{handRig: &handRig{&nextRig{wakeRig: r}}}).endedItems(t); len(items) != 0 {
+		t.Errorf("a ship that moored posted %v, want no item", items)
+	}
+}
+
+func TestTheShipsListCarriesTheDraftingFieldsOverHTTP(t *testing.T) {
+	r := newDraftRig(t)
+	rec := httptest.NewRecorder()
+	r.mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/ships", nil))
+	var list []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list) == 0 {
+		t.Fatalf("GET /api/ships = %d %s (%v)", rec.Code, rec.Body, err)
+	}
+	for _, sh := range list {
+		if sh["session"] == "saltpaw" && sh["drafting"] != true {
+			t.Errorf("saltpaw over HTTP: drafting = %v, want true", sh["drafting"])
+		}
 	}
 }

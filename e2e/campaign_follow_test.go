@@ -403,6 +403,7 @@ func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
 		t.Errorf("the item %s does not name the ship %s", b, quiet.Name)
 	}
 	if code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/inbox/_admiral/"+id+"/conversation", nil); code != http.StatusOK || !strings.Contains(body, `"state"`) {
+		// The fake writes no transcript in this fleet, so the page says none; that the binding reads ok is a unit check.
 		t.Errorf("the item's conversation = %d %s, want 200 with a state", code, body)
 	}
 	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/inbox/_admiral/"+id+"/remove", nil); code != http.StatusOK {
@@ -429,10 +430,14 @@ func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
 	w.release(d.Session, "again")
 	w.in.waitShipsList(t, 15*time.Second, "a line on the ship about the other issue", func(l []shipJSON) bool {
 		s, ok := shipIn(l, d.Session)
-		return ok && strings.Contains(s.DraftingNotice, "22")
+		return ok && (strings.Contains(s.DraftingNotice, "#22") || strings.Contains(s.DraftingNotice, "/issues/22"))
 	})
-	if _, active := send(t, http.MethodGet, w.in.LocalURL+"/api/v1/campaigns?ended=false", nil); strings.Contains(active, "/issues/22") && !strings.Contains(active, "/issues/20") {
-		t.Errorf("the later ref to issue 22 was followed: %s", active)
+	_, active := send(t, http.MethodGet, w.in.LocalURL+"/api/v1/campaigns?ended=false", nil)
+	var open struct {
+		Campaigns []campJSON `json:"campaigns"`
+	}
+	if err := json.Unmarshal([]byte(active), &open); err != nil || len(open.Campaigns) != 1 || open.Campaigns[0].ID != ended {
+		t.Errorf("active campaigns = %s (%v), want only %s: the later ref to issue 22 is ignored", active, err, ended)
 	}
 
 	w.release(d.Session, "end")
