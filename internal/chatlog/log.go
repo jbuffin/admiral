@@ -41,8 +41,8 @@ const (
 
 const (
 	current = "conversation.jsonl"
-	// tailCap is how many of the newest entries a fleet keeps in memory.
-	tailCap = 500
+	// TailCap is how many of the newest entries a fleet keeps in memory.
+	TailCap = 500
 )
 
 var (
@@ -146,8 +146,8 @@ func (l *Log) Append(fleet string, e Entry) (bool, error) {
 	}
 	fl.seen[e.ID] = true
 	fl.tail = append(fl.tail, e)
-	if len(fl.tail) > tailCap {
-		fl.tail = append([]Entry(nil), fl.tail[len(fl.tail)-tailCap:]...)
+	if len(fl.tail) > TailCap {
+		fl.tail = append([]Entry(nil), fl.tail[len(fl.tail)-TailCap:]...)
 	}
 	return true, nil
 }
@@ -215,8 +215,8 @@ func (l *Log) load(fleet string) (*fleetLog, error) {
 			fl.seen[e.ID] = true
 		}
 		fl.tail = append(fl.tail, es...)
-		if len(fl.tail) > tailCap {
-			fl.tail = append([]Entry(nil), fl.tail[len(fl.tail)-tailCap:]...)
+		if len(fl.tail) > TailCap {
+			fl.tail = append([]Entry(nil), fl.tail[len(fl.tail)-TailCap:]...)
 		}
 		if name == current && len(es) > 0 {
 			fl.month = es[0].Logged.UTC().Format("2006-01")

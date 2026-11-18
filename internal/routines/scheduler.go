@@ -35,6 +35,10 @@ type Ships interface {
 // Chat sends a turn to a fleet's AdmiralBot; it errors when the chat is not running.
 type Chat interface {
 	Send(fleet, text string) error
+	// ChatOn is false for a fleet whose chat is off, where a queued turn would never be delivered.
+	ChatOn(fleet string) bool
+	// EnqueueTurn is chat.Service.EnqueueTurn: a turn that can't act, queued under a stable id.
+	EnqueueTurn(fleet, id, text string) error
 }
 
 // Proposer takes a run that needs the engineer's yes and makes it an Inbox proposal that closes at expires.
@@ -69,10 +73,12 @@ const (
 
 // Scheduler fires every fleet's enabled routines when their When comes up.
 type Scheduler struct {
-	Store    *Store
-	Clock    Clock
-	Ships    Ships
-	Chat     Chat
+	Store *Store
+	Clock Clock
+	Ships Ships
+	Chat  Chat
+	// Facts gathers a fleet digest's fact sheet; nil fails the digest run.
+	Facts    DigestFacts
 	Proposer Proposer
 	Notifier Notifier
 	// QuotaHold says why unattended launches of a fleet on a harness are held for quota; harness is "" for a prompt run. Nil holds nothing.
@@ -569,9 +575,12 @@ func (s *Scheduler) fire(ctx context.Context, fleet string, r Routine, due, now 
 		delete(s.waiting, r.ID)
 		s.propose(fleet, r, rec, now)
 	default: // Act
-		if l == nil {
+		switch {
+		case r.Do.Digest != nil:
+			_ = s.digest(fleet, r, rec)
+		case l == nil:
 			_ = s.prompt(fleet, r, rec)
-		} else {
+		default:
 			_ = s.launch(ctx, fleet, r, *l, rec, due, false, "")
 		}
 	}
@@ -751,6 +760,9 @@ func describe(r Routine) string {
 		}
 		return fmt.Sprintf("launch %s in %s: %s", l.Harness, l.Dir, text)
 	}
+	if r.Do.Digest != nil {
+		return "post a fleet digest"
+	}
 	return "send AdmiralBot a prompt"
 }
 
@@ -781,6 +793,10 @@ func (s *Scheduler) Accept(ctx context.Context, fleet, routineID, triggerID stri
 			return Trigger{}, ErrBusy
 		}
 		if err := s.launch(ctx, fleet, r, *l, rec, now, true, ""); err != nil {
+			return Trigger{}, err
+		}
+	} else if r.Do.Digest != nil {
+		if err := s.digest(fleet, r, rec); err != nil {
 			return Trigger{}, err
 		}
 	} else if err := s.prompt(fleet, r, rec); err != nil {
