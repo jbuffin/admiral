@@ -803,7 +803,10 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
 
   // A second ship sails off with no PR: its report turn is typed alone, and AdmiralBot's reply threads under its ship card, the turn behind a closed disclosure.
   await page.goto(admiral.url + 'app/chat?fleet=harbor');
-  const sailing = await launchAsAdmiralBot(admiral, 'harbor', 'Read the harbour log and report the newest error.', 'to look at the harbour log', true);
+  // A chat message launches one ship, so the engineer asks again.
+  chatSays(admiral, 'harbor', [line.user('Send another ship to read the harbour log')], true);
+  await expect(main).toContainText('Send another ship to read the harbour log');
+  const sailing =await launchAsAdmiralBot(admiral, 'harbor', 'Read the harbour log and report the newest error.', 'to look at the harbour log', true);
   await expect(main.getByText('Sailed off', { exact: true })).toHaveCount(1, { timeout: 30_000 });
   await expect.poll(() => chatReceived(admiral, 'harbor'), { timeout: 30_000 }).toContain(`[Report: ${sailing.name}]`);
   const turn = chatReceived(admiral, 'harbor').split('\r').find((x) => x.includes('[Report: ')) ?? '';
