@@ -146,6 +146,9 @@ func TestACrewBoatFromAScoutNeedsTheScoutGuardOfItsHarness(t *testing.T) {
 	ship := w.launch(w.scoutLaunch("claude", "scoutrepo"))
 	w.waitFile(ship.Session, "cues-done")
 	scoutDir := w.record(ship.Session).env["ADMIRAL_SCOUT"]
+	if scoutDir == "" {
+		t.Fatal("the scout ship has no ADMIRAL_SCOUT, so the boat below would not be a scout's")
+	}
 	dir := w.checkout("boatdir")
 	env := []string{"ADMIRAL_SHIP=" + ship.Session, "ADMIRAL_AUTOPILOT=1", "ADMIRAL_SCOUT=" + scoutDir}
 

@@ -18,7 +18,13 @@ func scoutRig(t *testing.T, scout bool) *liveRig {
 	t.Helper()
 	r := newWakeRig(t, 0)
 	req := launcher.Request{Fleet: "work", Harness: "claude", Dir: r.checkout, Model: "opus", Name: "Saltpaw", Session: "saltpaw",
-		Prompt: "go", Skill: launcher.Skill{Kind: "none"}, Autopilot: true, Scout: scout}
+		Prompt: "go", Skill: launcher.Skill{Kind: "none"}, Autopilot: true}
+	// Decoded, not set by field, so this file compiles before launcher.Request has Scout and the package stays runnable.
+	if scout {
+		if err := json.Unmarshal([]byte(`{"scout":true}`), &req); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, lerr := r.s.LaunchOrder(req); lerr != nil {
 		t.Fatalf("LaunchOrder = %v", lerr)
 	}
