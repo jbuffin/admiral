@@ -686,7 +686,7 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   seedFleets(admiral, { live: true, chat: true });
   chatSays(admiral, 'harbor', [line.user('Where are the ships'), line.assistant('Two are **afloat**.'), line.assistant(HOSTILE), line.assistant(`AdmiralBot status\n\n${TABLE}`)]);
   chatSays(admiral, 'lagoon', [line.user('Is the lagoon calm'), line.assistant('Glass flat.')]);
-  await admiral.start({ env: mooringEnv(admiral) });
+  await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
   const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
   seedInboxItem(admiral, login.session, {
@@ -801,11 +801,19 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   await expect(page.getByRole('heading', { name: launched.name, exact: true })).toBeVisible();
   expect(page.context().pages()).toHaveLength(1);
 
-  // A second ship sails off with no PR: its report turn is typed alone, and AdmiralBot's reply threads under its ship card, the turn behind a closed disclosure.
+  expect(watch.errors).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.unversioned()).toEqual([]);
+});
+
+test("a ship that sails off gets AdmiralBot's reply to its report turn threaded under its ship card, the turn behind a closed disclosure", async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true, chat: true });
+  chatSays(admiral, 'harbor', [line.user('Send a ship to read the harbour log')]);
+  await admiral.start({ env: mooringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
   await page.goto(admiral.url + 'app/chat?fleet=harbor');
-  // A chat message launches one ship, so the engineer asks again.
-  chatSays(admiral, 'harbor', [line.user('Send another ship to read the harbour log')], true);
-  await expect(main).toContainText('Send another ship to read the harbour log');
+  const main = page.getByRole('main');
+  await expect(main).toContainText('Send a ship to read the harbour log');
   chatPrompts(admiral, 'harbor');
   const sailing = await launchAsAdmiralBot(admiral, 'harbor', 'Read the harbour log and report the newest error.', 'to look at the harbour log', true);
   await expect(main.getByText('Sailed off', { exact: true })).toHaveCount(1, { timeout: 30_000 });
