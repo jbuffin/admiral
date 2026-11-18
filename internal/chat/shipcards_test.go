@@ -257,3 +257,46 @@ func TestARecordOfAShipTheDetectorNeverSawPostsNothing(t *testing.T) {
 	x.wantResults("work")
 	x.wantResults("home")
 }
+
+func TestAMergedShipReturnedToPortPostsOneReturnedCardAndNoSailedOffCard(t *testing.T) {
+	at := t0.Add(2 * time.Minute)
+	unmoored := ShipRecord{At: at, Ship: "calm-otter", Event: "unmoored", Reason: "merged"}
+	returning := ShipRecord{At: at, Ship: "calm-otter", Event: "returning"}
+	stopped := ShipRecord{At: at.Add(30 * time.Second), Ship: "calm-otter", Event: "stopped", Returned: true}
+	t.Run("one batch", func(t *testing.T) {
+		x := seeded(t)
+		x.observe(time.Minute, []ships.Ship{moored("calm-otter", "work", pr7)})
+		x.observe(5*time.Minute, nil, unmoored, returning, stopped)
+		x.wantResults("work", "moored", "returned")
+	})
+	t.Run("separate passes", func(t *testing.T) {
+		x := seeded(t)
+		x.observe(time.Minute, []ships.Ship{moored("calm-otter", "work", pr7)})
+		x.observe(3*time.Minute, nil, unmoored, returning)
+		x.wantResults("work", "moored")
+		x.observe(5*time.Minute, nil, unmoored, returning, stopped)
+		x.restart()
+		x.observe(6*time.Minute, nil, unmoored, returning, stopped)
+		x.wantResults("work", "moored", "returned")
+	})
+}
+
+func TestTheEngineersReturnOfALiveShipPostsOneReturnedCard(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
+	returning := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "returning"}
+	stopped := ShipRecord{At: t0.Add(3 * time.Minute), Ship: "calm-otter", Event: "stopped", Returned: true}
+	x.observe(150*time.Second, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)}, returning)
+	x.wantResults("work")
+	x.observe(4*time.Minute, nil, returning, stopped)
+	x.observe(5*time.Minute, nil, returning, stopped)
+	x.wantResults("work", "returned")
+}
+
+func TestStopShipAfterACleanEndPostsNoSailedOffCard(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
+	end := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Clean: true}
+	x.observe(5*time.Minute, nil, end, ShipRecord{At: t0.Add(2*time.Minute + time.Second), Ship: "calm-otter", Event: "stopped"})
+	x.wantResults("work")
+}
