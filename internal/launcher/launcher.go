@@ -408,6 +408,9 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	restricted := req.Restricted != ""
 	evented := req.eventShip()
 	promoted := req.StartFrom != nil
+	if !restricted {
+		flags = l.ruledFlags(fleet, req.Harness, req.Dir)
+	}
 	if (restricted || evented || promoted) && l.Checkouts == nil {
 		return nil, refuse(http.StatusServiceUnavailable, "event ships cannot be launched: no checkout maker is configured")
 	}

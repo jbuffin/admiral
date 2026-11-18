@@ -106,10 +106,15 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if !ok {
 		return fmt.Errorf("fleet %s has no %s dock", fleet.Name, req.Harness)
 	}
-	flags, known := l.hookFlags(req.Harness)
-	if !known {
+	if _, known := l.hookFlags(req.Harness); !known {
 		return fmt.Errorf("unknown harness %q", req.Harness)
 	}
+	// The ship's checkout names the repo, not the boat's directory, which may be its worktree.
+	shipDir, err := shipOpt("dir")
+	if err != nil {
+		return err
+	}
+	flags := l.ruledFlags(fleet, req.Harness, shipDir)
 	if err := RefuseHookArgs(req.Harness, req.Args); err != nil {
 		return err
 	}
