@@ -1,5 +1,5 @@
 // The crew Inbox items are written by ships and are untrusted: every reader degrades a wrong-typed field to an
-// empty value, and every string here is rendered as text.
+// empty value, and every string here is rendered as text or through renderMarkdown, never as HTML.
 
 export interface CrewNote {
   id: string;

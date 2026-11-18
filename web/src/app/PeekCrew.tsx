@@ -2,9 +2,11 @@ import { useRef, useState } from 'preact/hooks';
 import type { Entry } from './inbox';
 import { createNoteDecisions, crewMemberFold, missionFold, type MissionItem, type CrewMemberItem, type CrewNote, type NoteEdit, markHidden, noteEditProblems, NOTE_MAX, readCrewMember, readCrewNotes } from './crewItems';
 import { Actions, Button } from './Button';
+import { renderMarkdown } from './markdown';
+import { splitNote } from './crew';
 import { type Acting, itemKey } from './PeekItem';
 
-// Every string below was written by a ship and renders as text.
+// Every string below was written by a ship and never renders as HTML: markdown goes through renderMarkdown, which parses no raw HTML.
 
 export type MemberStep = 'idle' | 'keep' | 'drop';
 
@@ -26,6 +28,29 @@ const scopeLine = (n: Pick<CrewNote, 'scope' | 'repo'>) => (n.scope === 'repo' ?
 
 const shown = (text: string) => markHidden(text).text;
 
+const plain = (html: string) => html.replace(/<[^>]*>/g, '');
+const unescape = (t: string) => t.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+const escape = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// The card is where a person approves exactly what a ship wrote, so the rendering may not hide any of it: entities decode
+// to hidden characters after the source was checked, a link's target hides behind its text, and a lone reference
+// definition renders to nothing.
+function approvalMarkdown(src: string): string {
+  const html = renderMarkdown(src)
+    .replace(/<a href="([^"]*)"([^>]*)>(.*?)<\/a>/g, (m, href: string, rest: string, inner: string) => (unescape(plain(inner)) === unescape(href) ? m : `${m} <span class="crew-note-stamp">(${href})</span>`));
+  return markHidden(plain(html).trim() === '' && src.trim() !== '' ? `<p>${escape(src)}</p>` : html).text;
+}
+
+function Replaced({ line }: { line: string }) {
+  const { stamp, fact } = splitNote(shown(line));
+  return (
+    <div class="inbox-why">
+      <b>Replaces:</b> {stamp ? <span class="crew-note-stamp">{stamp}</span> : null}
+      <div class="md" dangerouslySetInnerHTML={{ __html: approvalMarkdown(fact) }} />
+    </div>
+  );
+}
+
 function NoteText({ n, edited }: { n: CrewNote; edited?: NoteEdit }) {
   const cur = edited ?? n;
   return (
@@ -36,12 +61,8 @@ function NoteText({ n, edited }: { n: CrewNote; edited?: NoteEdit }) {
         {edited ? ' · edited' : ''}
       </span>
       <span class="inbox-eyebrow">{scopeLine(cur)}</span>
-      <p class="inbox-why">{shown(cur.note)}</p>
-      {n.replaces !== null && (
-        <p class="inbox-why">
-          <b>Replaces:</b> {shown(n.replaces)}
-        </p>
-      )}
+      <div class="inbox-why md" dangerouslySetInnerHTML={{ __html: approvalMarkdown(cur.note) }} />
+      {n.replaces !== null && <Replaced line={n.replaces} />}
     </>
   );
 }

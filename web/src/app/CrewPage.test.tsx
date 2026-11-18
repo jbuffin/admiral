@@ -66,6 +66,14 @@ test('the crew is listed by layer, Fleet first, a customized built-in once and m
   expect(within(fleetGroup).getByRole('link', { name: /ada/ }).getAttribute('href')).toBe('/app/crew/ada');
 });
 
+test("a crew member's instructions field renders as markdown", async () => {
+  server({ members: [member('ada', 'Pick for parser work.', { instructions: 'Use **pnpm** and `make check`.' })] });
+  page('ada', true);
+  const strong = await screen.findByText('pnpm', { selector: 'strong' });
+  expect(strong.closest('dd')!.querySelector('code')!.textContent).toBe('make check');
+  expect(strong.closest('dd')!.textContent).not.toContain('**');
+});
+
 test('on the phone the detail replaces the list, and an unknown name says so with a way back', async () => {
   server({ members: [member('ada', 'Pick for parser work.', { instructions: 'Work as ada.' }), member('bosun', 'Pick for rigging.')] });
   const { unmount } = page('ada', true);

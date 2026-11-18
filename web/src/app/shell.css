@@ -708,7 +708,6 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .crew-facts { margin: 12px 0; }
 .crew-facts dt { margin-top: 10px; font-size: var(--font-size-meta); color: var(--color-muted); }
 .crew-facts dd { margin: 2px 0 0; }
-.crew-instructions { white-space: pre-wrap; }
 .crew-skills { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
 .crew-skills li { padding: 2px 8px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); font-family: var(--font-mono); font-size: var(--font-size-mono); }
 .commodore-offer { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }

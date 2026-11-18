@@ -25,6 +25,8 @@ Before writing code, read in this order:
 3. [Admiral MVP spec](https://github.com/jbuffin/admiral/issues/45): what to build, as user stories and implementation decisions. Behavior wins over the designs; the designs win on visual detail.
 4. `docs/adr/`. Open questions are GitHub issues. Do not build a part that depends on one until it is resolved and recorded.
 
+Wherever the UI shows markdown, render it with the shared renderer in `web/src/app/markdown.ts` (`renderMarkdown`, or its restricted variants for short text). Never show it as raw text and never add a second renderer.
+
 Touch must work on iPad Safari. Use the harnesses' official logos on flags; never redraw them.
 
 ### Tests

@@ -655,7 +655,7 @@ function Detail({ member, members, fleetKey, harness, reload, afterRename, after
           {member.instructions ? (
             <>
               <dt>Instructions</dt>
-              <dd class="crew-instructions">{member.instructions}</dd>
+              <dd class="crew-instructions md" dangerouslySetInnerHTML={{ __html: renderMarkdown(member.instructions) }} />
             </>
           ) : null}
         </dl>
