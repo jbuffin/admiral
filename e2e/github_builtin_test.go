@@ -105,7 +105,12 @@ func (w *world) checkoutOf(root, dir, repo string) {
 		w.t.Fatal(err)
 	}
 	w.git(d, "init", "-q")
-	w.git(d, "remote", "add", "origin", "https://github.com/"+repo+".git")
+	// The fetch a no-skill launch makes goes to a local bare repo, not to GitHub.
+	bare := w.bareOrigin(d, dir)
+	slug := "https://github.com/" + repo + ".git"
+	w.git(d, "remote", "add", "origin", slug)
+	w.git(d, "config", "url."+bare+".insteadOf", slug)
+	w.git(d, "push", "-q", "origin", "main")
 }
 
 func inFleetDef(d srcDef, fleet string) srcDef { d.Fleet = fleet; return d }

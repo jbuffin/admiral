@@ -309,10 +309,18 @@ func launchAdmiralOnce(t *testing.T, home, listen string, env []string) (*fleetI
 func (w *world) checkout(name string) string {
 	w.t.Helper()
 	d := w.plainCheckout(name)
-	if _, err := os.Lstat(filepath.Join(d, ".git", "refs", "remotes", "origin")); err == nil {
+	if w.git(d, "remote") != "" {
 		return d
 	}
-	bare := filepath.Join(w.root, "origin-"+name+".git")
+	w.git(d, "remote", "add", "origin", w.bareOrigin(d, name))
+	w.git(d, "push", "-q", "origin", "main")
+	return d
+}
+
+// bareOrigin makes a bare repo for the checkout d, whose first commit d gets on main, and returns its path.
+func (w *world) bareOrigin(d, name string) string {
+	w.t.Helper()
+	bare := filepath.Join(w.root, "bare-"+filepath.Base(filepath.Dir(d))+"-"+name+".git")
 	if err := os.MkdirAll(bare, 0o755); err != nil {
 		w.t.Fatal(err)
 	}
@@ -323,9 +331,7 @@ func (w *world) checkout(name string) string {
 	}
 	w.git(d, "add", ".gitkeep")
 	w.git(d, "commit", "-q", "-m", "first")
-	w.git(d, "remote", "add", "origin", bare)
-	w.git(d, "push", "-q", "origin", "main")
-	return d
+	return bare
 }
 
 // plainCheckout is a git checkout with no remote and no commit.

@@ -271,9 +271,18 @@ func TestReturnToPortOfAMooredNoSkillShipWhosePRMergedRemovesItsWorktreeAndKeeps
 		t.Fatalf("worktree %s: want it kept while the ship is moored", cwd)
 	}
 
+	// The return round's ship stays up until its turn ends, as a real harness does, so the clean-up wake ends in a Stop.
+	if err := os.WriteFile(filepath.Join(w.root, "cue-f"), []byte("hook working\nwait never\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.forgetRecord(ship.Session)
 	g.prState(mooredPR, "MERGED")
 	w.kickMoored()
 	w.waitEvent(ship.Session, "woken", 1)
+	w.waitCwd(ship.Session)
+	w.waitPaneState(ship.Session, "working")
+	pane := strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", "="+ship.Session+":0", "#{pane_id}"))
+	w.hookAt(pane, "Stop", hookStop)
 	waitUntil(t, "the moored record removed", func() bool { return !exists(w.mooredFile(ship.Name)) })
 	waitCond(t, 20*time.Second, "the worktree removed", func() bool { return !exists(cwd) })
 	if got := w.worktreesOf(dir); len(got) != 1 {
