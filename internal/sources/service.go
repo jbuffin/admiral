@@ -31,6 +31,10 @@ type Service struct {
 	Hub    *server.Hub
 	// MergeGuard wraps the stack route with its token check; with none the route refuses everything.
 	MergeGuard func(http.Handler) http.Handler
+	// IssueClaims maps each claimed GitHub issue (by ships.ClaimKey) to the ship holding it; with none, Launch is refused with 503.
+	IssueClaims func() map[string]string
+	// SendChat pastes text into the fleet's chat as the engineer; with none, a message is refused with 503.
+	SendChat func(fleet, text string) *launcher.Error
 
 	linkMu  sync.Mutex      // guards linking
 	linking map[string]bool // sources with a Stack on GitHub under way
@@ -234,6 +238,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/run", s.serveActionRun)
 	mux.HandleFunc("POST /api/sources/{key}/notices/{id}/actions/{action}/form", s.serveNoticeActionForm)
 	mux.HandleFunc("POST /api/sources/{key}/notices/{id}/actions/{action}/run", s.serveNoticeActionRun)
+	mux.HandleFunc("GET /api/sources/{key}/rows/{id}/actions/{action}/launch", s.serveBuiltinLaunch)
+	mux.HandleFunc("GET /api/sources/{key}/rows/{id}/actions/{action}/message", s.serveBuiltinMessage)
+	mux.HandleFunc("POST /api/sources/{key}/rows/{id}/actions/{action}/message", s.sendBuiltinMessage)
 	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("GET /api/sources/{key}/repos", s.serveRepos)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)

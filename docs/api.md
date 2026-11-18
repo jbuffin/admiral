@@ -745,7 +745,7 @@ Body: `{"query": "<GitHub search>"}` or `{"view": "<view id>"}` (a built-in's or
 
 A module's page and one row's detail view; the plugin side is in [A module's page](plugins.md#a-modules-page). Both answer `404 {"error"}` for a source that does not exist, and `404 {"error":"The source has no page"}` for one whose plugin does not declare `page` once the plugin has answered `initialize` without it. Until that first `initialize` answer, the page answers `starting` as below and a row answers `404 {"error":"The page has no such row"}`.
 
-The page answers `200 {"state","groups","waiting","notices","auth"?,"error"?}`. `notices` is a module's notices: `[{"id","text","tone","link"?,"action"?}]` in order, `[]` when there are none, with `tone` one of `info`, `warn` or `error` and `link` `{"label","url"}`, left out when there is none, and `action` an action as below, left out when there is none. They are part of the last good page and never count toward `waiting`. `state` is one of:
+The page answers `200 {"state","groups","waiting","notices","auth"?,"error"?}`. `notices` is a module's notices: `[{"id","text","tone","link"?,"action"?}]` in order, `[]` when there are none, with `tone` one of `info`, `warn` or `error` and `link` `{"label","url"}`, left out when there is none, and `action` a module action as below (a built-in action is dropped on a notice), left out when there is none. They are part of the last good page and never count toward `waiting`. `state` is one of:
 
 - `starting`, with `groups: []` and `waiting: 0`, until the plugin's first good `page.get`. An answer with `loading: true` is not good for this: the state stays `starting` and serves that answer's notices, while its groups and `waiting` are ignored. After a good page, a `loading: true` answer changes nothing. A restart after a good page keeps `ready` and its groups.
 - `ready`, once there is a good page.
@@ -764,7 +764,7 @@ Fetch a module action's form, and run the module action; the plugin side is in [
 
 Checked in this order, and the plugin is not asked until all pass:
 
-1. `404`: an unknown source; a source with no page; a row not on the last good page; a module action id the row does not have; `/form` on one whose `confirm` is not `form`; `/form` or `/run` on one with a `url`.
+1. `404`: an unknown source; a source with no page; a row not on the last good page; a module action id the row does not have; `/form` on one whose `confirm` is not `form`; `/form` or `/run` on a built-in action (Open link, Launch or Message AdmiralBot).
 2. `409`: the source is not running; the page's state is `error` (`auth_required` does not stop module actions); `/run` while another run is open on the row. The slot stays held until the plugin answers or the run timeout (60 seconds) passes, even when the client goes away.
 3. `400`, `/run` only: a body that is not one JSON object (anything after it, such as `{}x`, counts), over 1 MiB, or `values` that is not an object of strings and lists of strings or is over a limit (50 fields, 100 items in a list, 1,000 characters in a string), with a one-line message. An empty body, `null` and a missing or `null` `values` count as `values: {}`.
 4. The call: `action.form` within 10 seconds, `action.run` within 60. `422` when the plugin refuses it (its message, cut to one line of 300 characters), `504` when it does not answer in time, `502` when it can't be reached, or when its answer is invalid (a form over a limit or out of shape, such as a `choice` or `checklist` with no options, or a run answer with no `message`), with a one-line message.
@@ -774,6 +774,20 @@ A run changes the page through the plugin's own `page.changed`; no live message 
 ### `POST /api/sources/<key>/notices/<id>/actions/<action>/form` and `…/run`
 
 The same two routes for a notice's action, with the same bodies, answers and status codes, and the same check order. Both are the engineer's alone: AdmiralBot gets `403`. `<action>` is the `id` of the notice's one `action`, found among the notices Admiral serves, which include a `loading: true` answer's notices before the first good page. The `404` refusals are worded for the notice: `The page has no such notice` for an id that is not a notice (a row id is not one), and `The notice has no such module action` for a notice with no action or another id. `/run` while another run is open on the notice is `409 A module action is already running on this notice`. A notice and a row with the same id hold separate run slots. The plugin gets `action.form {"notice","action"}` and `action.run {"notice","action","values"}`, with `notice` where a row's call has `row`.
+
+### `GET /api/sources/<key>/rows/<id>/actions/<action>/launch`
+
+Looks up a Launch built-in action; the plugin side is in [A module's page](plugins.md#a-modules-page). The engineer's alone: AdmiralBot gets `403`. It reads the action from the stored page, so it works while the source is down or the page is in `error`, and never calls the plugin. Answers `200 {"url","fleet"}`: the issue in its claim form (`https`, lower case, no fragment) and the key of the fleet the issue routes to. The launch itself is the normal `POST /api/ships` with `issues: ["<url>"]` and that `fleet`.
+
+Errors: `404` for an unknown source, a row or action not on the page, or an action that is not a Launch; `400` when the `url` is not an `https` GitHub issue on a host that fleet uses, or when the issue routes to no fleet; `503` when Admiral cannot read the ships' claims; `409` when the issue already has a ship, a pending launch or a launch in flight.
+
+### `GET` and `POST /api/sources/<key>/rows/<id>/actions/<action>/message`
+
+Previews and sends a Message AdmiralBot built-in action. The engineer's alone: AdmiralBot gets `403`. Both compose the text from the stored page and the kind's declaration, with no plugin call, so they work while the source is down.
+
+`GET` answers `200 {"text","fleet","chat"}`: the exact text, the module's fleet, and the chat's shell path (`/app/chat?fleet=<fleet>`). The text is `*From the <page>:* <job> Row: <ref>`, `\n`, a fence of backticks (at least five, longer than any run in the title), `\n`, the title, `\n`, the same fence, `\n` and the link, with no trailing newline. `POST` takes `{"text"}`, the text the client showed, and posts it to that fleet's chat as the engineer only when it equals the text composed now, byte for byte. It answers `200 {"sent": true, "chat"}`.
+
+Errors: `404` for an unknown source, a row or action not on the page, an action that is not a message, or a kind the plugin did not declare; `409` when the page is in `error`, or on `POST` when the text is not the composed one (nothing is posted; ask `GET` again); `400` for a body that is not one JSON object (data after it counts); `503` when Admiral has no chat to send to. The chat's own refusal passes through: `404` for no such fleet, `409` when its chat is off or not running, `502` when the paste failed.
 
 ### `POST /api/sources/<key>/page/refresh`
 

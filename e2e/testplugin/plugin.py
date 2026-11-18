@@ -42,6 +42,10 @@ Files the test writes in flagdir:
   rows/<id>.json
                 the row.get answer for that row id, read on every row.get; a
                 row with no file answers a JSON-RPC error
+  message-kinds.json
+                the messageKinds initialize answers, [{"kind", "label", "job"}];
+                Admiral reads it only at initialize, so write it before the
+                source starts or restarts (no file: initialize answers none)
   forms/<module action id>.json
                 the action.form answer for that module action id, read on every
                 action.form; a module action with no file answers a JSON-RPC error
@@ -261,6 +265,9 @@ def handle(msg):
                   "settingsSchema": settings.get("settingsSchema", {"type": "object", "properties": {"flagdir": {"type": "string"}}})}
         if settings.get("noSettingsSchema"):
             del result["settingsSchema"]
+        kinds = read_json("message-kinds.json", None)
+        if kinds is not None:
+            result["messageKinds"] = kinds
     elif flagdir and flag("hang-" + str(method)):
         hang()
     elif method == "panels.list":

@@ -771,14 +771,19 @@ func (s *fleetChat) send(raw string) *launcher.Error {
 
 // Send pastes a turn into the fleet's running chat, as a routine's prompt does; it errors when the chat is off or not running.
 func (s *Service) Send(fleet, text string) error {
-	fc, lerr := s.chatFor(fleet)
-	if lerr != nil {
-		return errors.New(lerr.Msg)
-	}
-	if lerr := fc.send(text); lerr != nil {
+	if lerr := s.SendStatus(fleet, text); lerr != nil {
 		return errors.New(lerr.Msg)
 	}
 	return nil
+}
+
+// SendStatus is Send with the chat's own refusal: 404 for no fleet, 409 for a chat that is off or not running, 502 for a failed paste.
+func (s *Service) SendStatus(fleet, text string) *launcher.Error {
+	fc, lerr := s.chatFor(fleet)
+	if lerr != nil {
+		return lerr
+	}
+	return fc.send(text)
 }
 
 func (s *fleetChat) ready() (pane string, status int, msg string) {
