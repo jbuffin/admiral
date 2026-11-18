@@ -9,8 +9,10 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Fleet } from "./api";
 import type { Campaign, CampaignNode } from "./campaign";
-import { CampaignPage } from "./CampaignPage";
+import { addOpen, CampaignPage, CampaignsNav } from "./CampaignPage";
+import { campaignList } from "./campaignsLink";
 import { fleets } from "./fleets";
+import { go } from "./router";
 import { resources, ships } from "./shipsLink";
 
 const rootUrl = "https://github.com/acme/widgets/issues/20";
@@ -118,6 +120,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  addOpen.value = false;
+  campaignList.value = [];
   vi.unstubAllGlobals();
 });
 
@@ -172,4 +176,57 @@ test("a child's sheet still offers the Mode choice and Use labels", async () => 
   expect(
     within(sheet).getByRole("button", { name: "Use labels" }),
   ).toBeTruthy();
+});
+
+const nav = async () => {
+  go("/app/ships", "?fleet=zulu");
+  campaignList.value = [
+    { ...campaign, id: "camp-1" },
+    { ...campaign, id: "camp-2", title: "Old plan", ended: true },
+  ];
+  addOpen.value = false;
+  render(<CampaignsNav />);
+};
+
+test("the sidebar shows one Campaigns row, a link with the Add campaign button beside it, and no second Campaigns label", async () => {
+  await nav();
+  const links = screen.getAllByRole("link", { name: "Campaigns" });
+  expect(links).toHaveLength(1);
+  expect(links[0].getAttribute("href")).toBe("/app/campaigns?fleet=zulu");
+  expect(screen.getAllByRole("button", { name: "Add campaign" })).toHaveLength(
+    1,
+  );
+  expect(screen.getAllByText("Campaigns")).toHaveLength(1);
+  expect(
+    links[0].contains(screen.getByRole("button", { name: "Add campaign" })),
+  ).toBe(false);
+});
+
+test("clicking the Campaigns link opens the Campaigns page", async () => {
+  await nav();
+  fireEvent.click(screen.getByRole("link", { name: "Campaigns" }));
+  expect(location.pathname).toBe("/app/campaigns");
+  expect(location.search).toBe("?fleet=zulu");
+});
+
+test("clicking + toggles the Campaign issue field without leaving the page, and aria-expanded follows", async () => {
+  await nav();
+  const add = screen.getByRole("button", { name: "Add campaign" });
+  expect(add.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("textbox", { name: "Campaign issue" })).toBeNull();
+  fireEvent.click(add);
+  expect(screen.getByRole("textbox", { name: "Campaign issue" })).toBeTruthy();
+  expect(add.getAttribute("aria-expanded")).toBe("true");
+  expect(location.pathname).toBe("/app/ships");
+  expect(location.search).toBe("?fleet=zulu");
+  fireEvent.click(add);
+  expect(screen.queryByRole("textbox", { name: "Campaign issue" })).toBeNull();
+  expect(add.getAttribute("aria-expanded")).toBe("false");
+  expect(location.pathname).toBe("/app/ships");
+});
+
+test("the followed campaigns and Ended (n) still show under the row", async () => {
+  await nav();
+  expect(screen.getByRole("link", { name: /Widgets overhaul/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Ended (1)" })).toBeTruthy();
 });

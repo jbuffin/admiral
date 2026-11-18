@@ -154,6 +154,11 @@ export function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+/** The desktop sidebar's Campaigns row and what follows it. */
+export function CampaignsNav({ onNavigate }: { onNavigate?: () => void }) {
+  return <CampaignSidebar onNavigate={onNavigate} />;
+}
+
 /** The Campaigns surface: the followed campaigns of the fleet, or the ended ones; the phone also gets the paste field. */
 export function CampaignsList({ phone, title }: { phone: boolean; title: boolean }) {
   const fleet = activeFleet.value;
