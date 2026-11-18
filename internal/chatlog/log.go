@@ -31,6 +31,8 @@ const (
 	KindAnswer = "answer"
 	// KindLaunchCard is the card an event launch posts for its ship, shown to the engineer and never read by AdmiralBot.
 	KindLaunchCard = "launch_card"
+	// KindShipCard is the card a ship's result posts, shown to the engineer and never read by AdmiralBot.
+	KindShipCard = "ship_card"
 )
 
 const (
