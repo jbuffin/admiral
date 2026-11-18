@@ -1,6 +1,6 @@
 import { signal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
-import { chime, muted } from '../chime';
+import { chime, followStorage, muted } from '../chime';
 import { alertDestination, alertSearch, createAlertHandler, type Alert } from './alerts';
 import { go } from './router';
 import { inboxItems, onShipsMessage, ships } from './shipsLink';
@@ -46,6 +46,7 @@ export function ToastRegion() {
       handle(msg);
       sync();
     });
+    window.addEventListener('storage', followStorage);
     const tick = setInterval(() => {
       const before = queue.list().length;
       queue.expire();
@@ -53,6 +54,7 @@ export function ToastRegion() {
     }, 500);
     return () => {
       off();
+      window.removeEventListener('storage', followStorage);
       clearInterval(tick);
       // The queue is module state, so a region that goes takes its toasts, which a result toast would otherwise outlive.
       for (const t of queue.list()) queue.dismiss(t.id);

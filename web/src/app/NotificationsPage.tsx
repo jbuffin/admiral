@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { followStorage, muted, setMuted } from '../chime';
+import { muted, setMuted } from '../chime';
 import { fetchDevices, type Device } from './api';
 import { readPushDevice, turnOffPush, turnOnPush, type PushDeviceState } from './pushDevice';
 import { pushSwitchState, type PushSwitchKind } from './pushSwitch';
@@ -49,11 +49,6 @@ export function NotificationsPage() {
     if (seq === latest.current) setDevice(d);
   };
   useEffect(() => void refresh(), []);
-
-  useEffect(() => {
-    window.addEventListener('storage', followStorage);
-    return () => window.removeEventListener('storage', followStorage);
-  }, []);
 
   const kind = device ? pushSwitchState(device.inputs).kind : null;
   const on = kind === 'on';
@@ -107,6 +102,17 @@ export function NotificationsPage() {
           </button>
         )}
       </div>
+      <h2 class="h2" id="push-devices-title">
+        Devices
+      </h2>
+      {devices && devices.length === 0 ? <p class="line">No devices yet.</p> : null}
+      {devices && devices.length > 0 ? (
+        <ul class="box devices" aria-label="Devices">
+          {devices.map((d) => (
+            <DeviceLine key={d.id} device={d} />
+          ))}
+        </ul>
+      ) : null}
       <h2 class="h2" id="sound-title">
         This browser
       </h2>
@@ -121,17 +127,6 @@ export function NotificationsPage() {
           <span class="track" aria-hidden="true" />
         </button>
       </div>
-      <h2 class="h2" id="push-devices-title">
-        Devices
-      </h2>
-      {devices && devices.length === 0 ? <p class="line">No devices yet.</p> : null}
-      {devices && devices.length > 0 ? (
-        <ul class="box devices" aria-label="Devices">
-          {devices.map((d) => (
-            <DeviceLine key={d.id} device={d} />
-          ))}
-        </ul>
-      ) : null}
     </>
   );
 }

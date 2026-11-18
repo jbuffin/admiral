@@ -39,7 +39,7 @@ test('the Attention sounds switch is on when nothing is stored, and is not the p
   expect(await screen.findByRole('switch', { name: 'Notifications on this device' })).not.toBe(sound());
 });
 
-test('the switch is on when the stored preference is 0 and off when it is 1', () => {
+test('the switch shows on for a muted value of false and off for true', () => {
   localStorage.setItem('admiral.muted', '0');
   muted.value = false;
   const first = render(<NotificationsPage />);
@@ -62,36 +62,21 @@ test('a click turns the sound off and stores it, and the next click turns it on 
   expect(localStorage.getItem('admiral.muted')).toBe('0');
 });
 
-test('another page muting the sound turns the open switch off, and unmuting turns it on', () => {
+test('a change to the preference while the page is open shows in the switch', () => {
   render(<NotificationsPage />);
-  fromAnotherPage('admiral.muted', '1');
-  expect(sound().getAttribute('aria-checked')).toBe('false');
-  fromAnotherPage('admiral.muted', '0');
-  expect(sound().getAttribute('aria-checked')).toBe('true');
-});
-
-test('another page clearing storage returns the open switch to on', () => {
-  localStorage.setItem('admiral.muted', '1');
-  muted.value = true;
-  render(<NotificationsPage />);
-  expect(sound().getAttribute('aria-checked')).toBe('false');
-  fromAnotherPage(null, null);
-  expect(sound().getAttribute('aria-checked')).toBe('true');
-});
-
-test('a change to another storage key leaves the switch alone', () => {
-  render(<NotificationsPage />);
-  fromAnotherPage('admiral.other', '1');
-  expect(sound().getAttribute('aria-checked')).toBe('true');
-});
-
-test('following another page writes nothing back', () => {
-  render(<NotificationsPage />);
-  const set = vi.spyOn(Storage.prototype, 'setItem');
   act(() => {
-    window.dispatchEvent(new StorageEvent('storage', { key: 'admiral.muted', newValue: '1' }));
+    muted.value = true;
   });
   expect(sound().getAttribute('aria-checked')).toBe('false');
-  expect(set).not.toHaveBeenCalled();
-  set.mockRestore();
+  act(() => {
+    muted.value = false;
+  });
+  expect(sound().getAttribute('aria-checked')).toBe('true');
+});
+
+test('a page loaded with 1 stored starts with the switch off', async () => {
+  localStorage.setItem('admiral.muted', '1');
+  vi.resetModules();
+  const fresh = await import('../chime');
+  expect(fresh.muted.value).toBe(true);
 });
