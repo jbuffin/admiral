@@ -187,6 +187,8 @@ func (g *ghRig) restart() { g.rig.restart(); g.wire() }
 // run starts the runner and returns the function that stops it; the test's end stops it too.
 func (g *ghRig) run() (stop func()) {
 	g.t.Helper()
+	// A poll in a commitment's own second cannot judge it, so the first poll would race pollsMore's first clock move.
+	g.clk.set(g.clk.Now().Add(time.Second))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	r := g.r
