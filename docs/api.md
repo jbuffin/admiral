@@ -512,6 +512,8 @@ The engineer's confirm to make a campaign from issues. Needs a browser or CLI to
 
 The campaign with its tree. Opening it rereads in the background when the last attempt is 30 seconds old or more (never for an ended campaign). `404` for an unknown id.
 
+AdmiralBot reads it through `read_campaign {id}`; for AdmiralBot an unknown id or another fleet's campaign is the guard's `403`.
+
 ### `POST /api/campaigns/<id>/unfollow`
 
 Ends the campaign at once; it stays readable and is listed with `ended: true`. Answers the campaign.
