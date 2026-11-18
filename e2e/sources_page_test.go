@@ -22,7 +22,9 @@ type pageJSON struct {
 			Title string `json:"title"`
 		} `json:"rows"`
 	} `json:"groups"`
-	Waiting int `json:"waiting"`
+	Waiting int       `json:"waiting"`
+	Error   string    `json:"error"`
+	Auth    *authJSON `json:"auth"`
 }
 
 func (p *tplug) putRow(id string, detail string) {
@@ -163,5 +165,72 @@ func TestARestartThatBringsAnOverLimitPageKeepsServingTheLastGoodOne(t *testing.
 	got := w.getPage("m")
 	if got.State != "ready" || !reflect.DeepEqual(got.titles(), []string{"Needs review"}) || got.Waiting != 2 {
 		t.Errorf("page after the restart = %s, want the last good page (Needs review, waiting 2)", dump(got))
+	}
+}
+
+func pageWith(title string, waiting int) string {
+	return `{"groups":[{"id":"g","title":"` + title + `","rows":[{"id":"t1","title":"Fix login"},{"id":"t2","title":"Add search"}]}],"waiting":` + strconv.Itoa(waiting) + `}`
+}
+
+func (w *world) waitLive(key, what string, pred func(*livePage) bool) *livePage {
+	w.t.Helper()
+	return w.waitSource(key, 10*time.Second, what, func(s sourceJSON) bool { return s.Page != nil && pred(s.Page) }).Page
+}
+
+func TestAModulesPageStaysLiveWhenItsPluginSendsPageChanged(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	p := w.newTP("m")
+	p.put("page.json", pageWith("Before", 1))
+	o := w.newTP("o")
+	o.mainOrders(ord("o1", "First"))
+	w.startSources(tpSource("m", p, map[string]any{"capabilities": []string{"page"}}), tpSource("o", o, nil))
+
+	first := w.waitLive("m", "a ready page block", func(l *livePage) bool { return l.State == "ready" })
+	if first.Waiting != 1 {
+		t.Errorf("page block = %s, want waiting 1 from the page", dump(first))
+	}
+	if plain := w.waitSource("o", 10*time.Second, "state ok", isOK); plain.Page != nil {
+		t.Errorf("the source without a page has a page block: %s", dump(plain))
+	}
+
+	p.put("page.json", pageWith("After", 4))
+	p.do("page-changed", `{"rows":["t1"]}`)
+	named := w.waitLive("m", "a higher version after page.changed", func(l *livePage) bool { return l.Version > first.Version })
+	if !reflect.DeepEqual(named.Rows, []string{"t1"}) || named.Waiting != 4 {
+		t.Errorf("page block = %s, want rows [t1] and waiting 4", dump(named))
+	}
+	if got := w.getPage("m"); !reflect.DeepEqual(got.titles(), []string{"After"}) || got.Waiting != 4 {
+		t.Errorf("GET page right after the version moved = %s, want the new data", dump(got))
+	}
+	if n := len(p.callsOf("page.get")); n != 2 {
+		t.Errorf("page.get calls = %d, want the start and one for page.changed", n)
+	}
+
+	p.do("page-changed", "")
+	all := w.waitLive("m", "a higher version after an unnamed page.changed", func(l *livePage) bool { return l.Version > named.Version })
+	if len(all.Rows) != 0 {
+		t.Errorf("page block = %s, want no rows named: all rows changed", dump(all))
+	}
+
+	groups := make([]string, 101)
+	for i := range groups {
+		groups[i] = `{"id":"g` + strconv.Itoa(i) + `","title":"Over","rows":[]}`
+	}
+	p.put("page.json", `{"groups":[`+strings.Join(groups, ",")+`],"waiting":9}`)
+	p.do("page-changed", "")
+	refused := w.waitLive("m", "a higher version after page.changed whose page.get is over a limit", func(l *livePage) bool { return l.Version > all.Version })
+	if refused.State != "ready" {
+		t.Errorf("page block = %s, want it still ready on the last good page", dump(refused))
+	}
+	if got := w.getPage("m"); got.State != "ready" || !reflect.DeepEqual(got.titles(), []string{"After"}) || got.Waiting != 4 {
+		t.Errorf("GET page after an over-limit answer = %s, want the last good page (After, waiting 4)", dump(got))
+	}
+
+	w.mustOK(w.srcReq(http.MethodPost, "/m/page/refresh", nil))
+	p.waitCall(5*time.Second, "page.refresh", func(rpcCall) bool { return true })
+
+	if code, body := w.srcReq(http.MethodPost, "/o/page/refresh", nil); code != http.StatusNotFound || !strings.Contains(body, "The source has no page") {
+		t.Errorf("POST page/refresh of a source without a page = %d %s, want 404", code, body)
 	}
 }

@@ -157,6 +157,7 @@ Each kind has a `kind` and a `title`, and a `panel` (one of your panel ids) when
 | --- | --- |
 | `orders.changed` | Admiral asks `orders.list` again, for the panel in `params` or for every panel when there are none. Send it when your data changes, including after you handle `orders.add`. |
 | `panels.changed` | Admiral asks `panels.list` again, then each panel's orders. |
+| `page.changed` | A module's page changed. Admiral asks `page.get` again. `params` may be `{"rows": ["<id>", …]}`, the rows whose detail changed; none means every row. See [Writing a module](#writing-a-module). |
 | `auth.required` | The source shows as `auth_required` with the message, a link and a code to enter there. `message` is required; `url` and `code` are optional. Orders you listed stay. |
 | `auth.ok` | Clears `auth.required`; the source is `ok` again. |
 | `event` | Something happened upstream. `params` is `{"kind", "ref", "panel"?, "actor"?, "author"?}`: `kind` (and `panel`, when the catalog gave one) must match a catalog entry, `ref` is the `http(s):` URL of the item, `actor` is who did it and `author` who wrote the item, as logins. Admiral works out how far to trust it from those logins and the fleet's lists; a `tier`, `verified` or `viewer` you add is ignored, so an event from a plugin is never verified. |
@@ -170,6 +171,7 @@ One full line of each:
 ```json
 {"jsonrpc":"2.0","method":"orders.changed","params":{"panel":"orders"}}
 {"jsonrpc":"2.0","method":"panels.changed"}
+{"jsonrpc":"2.0","method":"page.changed","params":{"rows":["T-1"]}}
 {"jsonrpc":"2.0","method":"auth.required","params":{"message":"Sign in to Acme","url":"https://acme.example/device","code":"ABCD-1234"}}
 {"jsonrpc":"2.0","method":"auth.ok"}
 ```
@@ -217,6 +219,25 @@ A part that is bad is dropped by itself, and the rest of the answer stays:
 - a field whose `value` holds a control character other than a line break or tab.
 
 Two values are corrected: a negative or non-number `waiting` reads 0, and an unknown chip `tone` reads `neutral`. Titles, subtitles, reasons and labels are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
+
+## Writing a module
+
+A module is an ordinary plugin that also draws a page. This is the read side; the answers' shapes and limits are in [A module's page](#a-modules-page), and the routes a client reads are in [the API](api.md#get-apisourceskeypage-and-get-apisourceskeyrowsid).
+
+1. **Declare `page`.** List `"page"` in the `capabilities` of your `initialize` answer. A plugin that does not is never asked for a page. You may also answer `messageKinds` there, a list of `{kind, label, job}` for the messages you want Admiral to be able to send; Admiral only keeps them for now.
+2. **Answer `page.get`.** It comes during start-up, before the source is `ok`, and again after each `page.changed` and `page.refresh`. Answer the groups and the waiting count. A refused answer (over a limit, not valid) leaves the last good page served, and a call that fails with an error of yours shows the page as `error` with your message until the next good answer.
+3. **Answer `row.get`.** It comes when the engineer opens a row of the last good page.
+4. **Tell Admiral when your data changes.** Send `page.changed`. Name the rows whose detail changed to have open ones refetched, or send it without params to refetch every open row. Admiral asks `page.get` once for changes that arrive together, and drops a malformed list and an id that is not a valid id. A `rows` list of more than 5,000 items, or more than 5,000 distinct ids among the changes that coalesce into one `page.get`, counts as naming no rows, so every open row is refetched.
+
+   ```json
+   {"jsonrpc":"2.0","method":"page.changed","params":{"rows":["T-1","T-2"]}}
+   {"jsonrpc":"2.0","method":"page.changed"}
+   ```
+
+5. **Handle `page.refresh`.** It comes with `{}` when the engineer asks you to look again. Start looking, answer `{}` at once (within 10 seconds), and send `page.changed` when you have new data, the way `orders.refresh` works. An answer that is an error shows to the engineer.
+6. **Sign-in and crashes** work as for orders: send `auth.required` and the page shows `auth_required` with its last groups; a crash shows `error` and keeps them.
+
+Everything you send is checked against the [limits](#a-modules-page) and the last good page stays when an answer is refused. The example below declares a page.
 
 ## Limits
 
@@ -294,3 +315,49 @@ $ python3 plugins/notes/plugin.py
 ```
 
 To use it in Admiral, add a source for it to `config.json` (with its `fleet`) or from Admiral's Add source dialog.
+
+### A module
+
+This sibling declares a page: one group with two rows and a detail view for each. Its `page.refresh` marks the first row done and sends `page.changed` with the row it changed. Save it as `$ADMIRAL_HOME/plugins/tasks/plugin.py` with this manifest:
+
+```json
+{ "name": "tasks", "description": "Two tasks on a page.", "command": "python3", "args": ["plugin.py"] }
+```
+
+```python
+#!/usr/bin/env python3
+import json
+import sys
+
+tasks = {"t1": {"title": "Fix login", "done": False}, "t2": {"title": "Update docs", "done": False}}
+
+
+def page():
+    rows = [{"id": i, "title": t["title"], "chips": [{"label": "done" if t["done"] else "open", "tone": "good" if t["done"] else "warn"}]}
+            for i, t in tasks.items()]
+    return {"groups": [{"id": "tasks", "title": "Tasks", "rows": rows}], "waiting": sum(not t["done"] for t in tasks.values())}
+
+
+def handle(method, params):
+    if method == "initialize":
+        return {"protocolVersion": 1, "capabilities": ["page"], "settingsSchema": {"type": "object", "properties": {}}}
+    if method == "panels.list":
+        return []
+    if method == "page.get":
+        return page()
+    if method == "row.get":
+        t = tasks[params["id"]]
+        return {"sections": [{"kind": "fields", "title": "Details", "fields": [{"label": "Title", "value": t["title"]}]}]}
+    if method == "page.refresh":
+        tasks["t1"]["done"] = True
+    return {}
+
+
+for line in sys.stdin:
+    msg = json.loads(line)
+    if "id" in msg:
+        result = handle(msg["method"], msg.get("params") or {})
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}), flush=True)
+        if msg["method"] == "page.refresh":
+            print(json.dumps({"jsonrpc": "2.0", "method": "page.changed", "params": {"rows": ["t1"]}}), flush=True)
+```

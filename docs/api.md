@@ -682,9 +682,26 @@ Body: `{"query": "<GitHub search>"}` or `{"view": "<view id>"}` (a built-in's or
 
 A module's page and one row's detail view; the plugin side is in [A module's page](plugins.md#a-modules-page). Both answer `404 {"error"}` for a source that does not exist, and `404 {"error":"The source has no page"}` for one whose plugin does not declare `page` once the plugin has answered `initialize` without it. Until that first `initialize` answer, the page answers `starting` as below and a row answers `404 {"error":"The page has no such row"}`.
 
-The page answers `200 {"state","groups","waiting"}`. `state` is `starting` with `groups: []` and `waiting: 0` until the plugin's first good `page.get`, and `ready` after. The last good page stays served through a restart and when a later answer is refused. A group is `{"id","title","rows"}`, a row is `{"id","title","subtitle","chips":[{"label","tone"}],"reason","action","actions"}` and an action is `{"id","label","confirm","summary","url"}`, with `action`, `actions` and `url` left out when there are none.
+The page answers `200 {"state","groups","waiting","auth"?,"error"?}`. `state` is one of:
+
+- `starting`, with `groups: []` and `waiting: 0`, until the plugin's first good `page.get`. A restart after a good page keeps `ready` and its groups.
+- `ready`, once there is a good page.
+- `auth_required`, while the source is: `auth` is `{"message","url","code"}`, the same fields the source's `auth` shows.
+- `error`, when the source is in `error` (a crash, which is also `state: "error"` on the source, with `error` as its message) or when the plugin's last `page.get` failed with an error of its own (`error` is its message and the source stays `ok`). The next good `page.get` clears it.
+
+`auth_required` and `error` keep the last good groups and `waiting`, and are `groups: []` when there has been no good page. Restart is `POST /api/sources/<key>/restart`. A `page.get` that is refused (over a limit, not valid) or times out only logs: the state stays as it was, with the last good page. A group is `{"id","title","rows"}`, a row is `{"id","title","subtitle","chips":[{"label","tone"}],"reason","action","actions"}` and an action is `{"id","label","confirm","summary","url"}`, with `action`, `actions` and `url` left out when there are none.
 
 A row answers `200 {"sections":[...]}`, from `row.get`, and passes each repeated `include` query parameter (`?include=closed&include=queued`) to it as a list. An `{id}` that is not a row on the last good page answers `404` and the plugin is not asked. More than 10 `include` values, or one over 200 characters, answers `400`. A plugin that is not running, or a `row.get` that errors, times out or is over its limit answers `502 {"error"}` with a one-line message.
+
+### `POST /api/sources/<key>/page/refresh`
+
+Asks the plugin to look again now, with `page.refresh {}` within the 10-second call limit, then asks `page.get`. It answers `200 {"refreshing": "<key>"}` when the plugin has taken the call; the new page arrives afterwards as a live update. Errors: `404` for an unknown source or one with no page (`The source has no page`); `409` when the source is not running; `422` when the plugin refuses the call, `504` when it does not answer in time and `502` for any other failure.
+
+### A page's live update
+
+A source that declares `page` carries `page: {"state","waiting","version","rows"?}` in its entry of `GET /api/sources` and of the WebSocket `sources` message, which goes out on every change. A source with no page has no `page` key, and a source has none before its first `initialize` answer. `state` and `waiting` are the page's, as above (`waiting` is the count for the module's own nav badge).
+
+`version` goes up on every change of the page a client reads: a new good page, a change of `state`, and every `page.changed` the plugin sends, even when the `page.get` it caused is refused or fails. A client refetches `GET …/page` when `version` moves. `rows` holds the row ids the last `page.changed`s named, with the ones that coalesced into one `page.get` joined; it is absent when the last change named none (a `page.changed` without rows, a new page from a refresh or restart, a state change), and absent means every row. The server keeps no row details: a client asks `GET …/rows/<id>` again for each named row it has open, or for every open row when `rows` is absent. Two rules for a client: a `version` that jumps by more than 1 means every row, since the message may have joined several changes; and a named row that has left the page answers `404`. The `page` block keeps through a restart: while the source starts again it still shows the last `state`, `waiting` and `version`.
 
 ### `DELETE /api/sources/<key>` and `POST /api/sources/<key>/restart`
 

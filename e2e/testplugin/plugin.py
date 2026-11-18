@@ -36,7 +36,9 @@ Files the test writes in flagdir:
   orders.json   {"<panel id>": [order, ...]}, read on every orders.list
   page.json     the page.get answer {groups, waiting}, read on every page.get
                 (default: no groups, waiting 0); settings.capabilities must list
-                "page" for Admiral to ask
+                "page" for Admiral to ask. page.refresh answers {}; the calls log
+                shows it arrived, and do-page-changed is how a test has the
+                plugin announce new data
   rows/<id>.json
                 the row.get answer for that row id, read on every row.get; a
                 row with no file answers a JSON-RPC error
@@ -57,6 +59,8 @@ Files the test writes in flagdir:
                   do-auth-ok          sends auth.ok
                   do-orders-changed   sends orders.changed (content: params, or none)
                   do-panels-changed   sends panels.changed
+                  do-page-changed     sends page.changed (content: the JSON params,
+                                      e.g. {"rows": ["t1"]}, or none)
                   do-garbage          writes a line that is not JSON
                   do-oversize         writes a 17 MiB line of valid JSON
 """
@@ -191,6 +195,11 @@ def control_loop():
                 emit(note)
             elif cmd == "panels-changed":
                 emit({"jsonrpc": "2.0", "method": "panels.changed"})
+            elif cmd == "page-changed":
+                note = {"jsonrpc": "2.0", "method": "page.changed"}
+                if content:
+                    note["params"] = json.loads(content)
+                emit(note)
             elif cmd == "garbage":
                 raw_emit("this is not json\n")
             elif cmd == "oversize":
@@ -265,6 +274,8 @@ def handle(msg):
                                    for o in stored() if o["panel"] == params.get("panel")]
     elif method == "page.get":
         result = read_json("page.json", {"groups": [], "waiting": 0})
+    elif method == "page.refresh":
+        result = {}
     elif method == "row.get":
         row_id = str(params.get("id"))
         detail = None if "/" in row_id or ".." in row_id else read_json(os.path.join("rows", row_id + ".json"), None)
