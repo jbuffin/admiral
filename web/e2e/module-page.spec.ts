@@ -68,8 +68,7 @@ test('on the iPad a module has a nav entry after Crew with its waiting count, dr
   expect(text).toContain('Fix login');
   expect(text.endsWith(MESSAGE_LINK)).toBe(true);
   const confirm = page.getByRole('dialog');
-  await expect(confirm).toContainText(MESSAGE_JOB);
-  await expect(confirm).toContainText(MESSAGE_LINK);
+  await expect(confirm.locator('.mmessage')).toHaveText(text);
   expect(chatReceived(admiral, 'harbor')).not.toContain(MESSAGE_JOB);
   await confirm.getByRole('button', { name: 'Message AdmiralBot' }).tap();
   const sent = page.locator('.toasts');

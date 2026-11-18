@@ -6,7 +6,7 @@ import { go } from './router';
 import { inboxItems, onShipsMessage, ships } from './shipsLink';
 import { createToasts, type Toast, type ToastAlert } from './toasts';
 
-const isWebUrl = (u?: string) => !!u && /^https?:\/\//i.test(u);
+export const isWebUrl = (u?: string) => !!u && /^https?:\/\//i.test(u);
 // A path in this shell, such as the chat a message went to; never a protocol-relative address.
 const isShellPath = (u?: string) => !!u && /^\/app\/[^\\]*$/.test(u);
 

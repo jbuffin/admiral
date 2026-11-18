@@ -62,7 +62,7 @@ export function LaunchForm({ fleet, order: given, campaign, issues, onClose, onL
   const [dirs, setDirs] = useState<DirsAnswer | null>(null);
   const [dir, setDir] = useState(NONE);
   const picked = useRef(false);
-  const [text, setText] = useState(order?.text ?? '');
+  const [text, setText] = useState(order?.text ?? (campaign ? '' : (issues ?? []).join('\n')));
   // The answer carries the dock and checkout it was read for, so one read for another dock never counts.
   const [read, setRead] = useState<{ key: string; answer?: SkillsAnswer; error?: string } | null>(null);
   const [skill, setSkill] = useState<SkillChoice>((!campaign?.issues && viewChoice(campaign?.skill)) || { kind: 'none' });
@@ -281,6 +281,7 @@ export function LaunchForm({ fleet, order: given, campaign, issues, onClose, onL
       <form class="launch-inner" onSubmit={submit}>
         <h2 class="sheet-title">Launch</h2>
         {order ? <p class="launch-order">{order.title}</p> : null}
+        {!order && !campaign ? issues?.map((u) => <p class="launch-order" key={u}>{u}</p>) : null}
         {issues?.length && !campaign ? <p class="launch-note">{`Launches in ${fleet.name}.`}</p> : null}
         {order?.notes?.map((n) => (
           <p class="launch-note" key={n}>

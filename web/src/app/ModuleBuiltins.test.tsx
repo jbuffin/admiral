@@ -157,12 +157,14 @@ test('Launch opens the normal launch dialog in the fleet the issue routes to, an
   const dialog = await screen.findByRole('dialog', { name: 'Launch' });
   // The routed fleet (alpha), not the module's own (zulu).
   expect(within(dialog).getByText('Launches in Homeport.')).toBeTruthy();
+  expect(within(dialog).getByText(ISSUE, { selector: '.launch-order' })).toBeTruthy();
   const go = within(dialog).getByRole('button', { name: 'Launch' }) as HTMLButtonElement;
   await waitFor(() => expect(go.disabled).toBe(false));
   fireEvent.click(go);
   await waitFor(() => expect(posts(seen, '/ships')).toHaveLength(1));
   const body = posts(seen, '/ships')[0].body as Record<string, unknown>;
   expect(body).toMatchObject({ fleet: 'alpha', issues: [ISSUE] });
+  expect(body.text).toContain(ISSUE);
   expect(body).not.toHaveProperty('source');
   expect(body).not.toHaveProperty('order_id');
   expect(body).not.toHaveProperty('anyway');
@@ -253,6 +255,56 @@ test('a 409 on the send fetches the preview again, shows the new text and sends 
   expect(await screen.findByText('Sent to AdmiralBot')).toBeTruthy();
 });
 
+const yes = (scope: HTMLElement) => within(scope).getByRole('button', { name: 'Message AdmiralBot' }) as HTMLButtonElement;
+
+test('after a 409 with a changed text the sheet says the row changed, and the tap that sent the old text cannot confirm the new one', async () => {
+  let previews = 0;
+  const seen = server({
+    preview: () => ({ body: { text: previews++ === 0 ? TEXT : NEWER, fleet: 'zulu', chat: CHAT } }),
+    send: () => ({ status: 409, body: { error: 'The message changed since it was shown; ask again' } }),
+  });
+  open();
+  press(await rowItem(), 'Message AdmiralBot');
+  const first = await screen.findByRole('dialog');
+  const tap = yes(first);
+  fireEvent.click(tap);
+  fireEvent.click(tap);
+  await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain(NEWER));
+  const dialog = screen.getByRole('dialog');
+  expect(dialog.textContent).toMatch(/row changed/i);
+  // The earlier gesture's second tap lands on the old button, which is gone.
+  fireEvent.click(tap);
+  expect(posts(seen, '/message')).toHaveLength(1);
+  expect(yes(dialog).disabled).toBe(false);
+});
+
+test('Dismissing the sheet while the send is in flight keeps it closed when the 409 comes back with a changed text', async () => {
+  let previews = 0;
+  let answer: () => void = () => {};
+  const gate = new Promise<void>((r) => (answer = r));
+  const seen = server({
+    preview: () => ({ body: { text: previews++ === 0 ? TEXT : NEWER, fleet: 'zulu', chat: CHAT } }),
+    send: () => ({ status: 409, body: { error: 'The message changed since it was shown; ask again' } }),
+  });
+  const inner = globalThis.fetch;
+  vi.stubGlobal('fetch', vi.fn(async (path: string, init: RequestInit = {}) => {
+    if (init.method === 'POST' && /\/message$/.test(path)) await gate;
+    return inner(path, init);
+  }));
+  open();
+  press(await rowItem(), 'Message AdmiralBot');
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(yes(dialog));
+  // Cancel is disabled while the send is out; the backdrop still dismisses.
+  fireEvent.click(dialog.parentElement as HTMLElement);
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  answer();
+  await waitFor(() => expect(gets(seen, '/message')).toHaveLength(2));
+  await new Promise((r) => setTimeout(r, 20));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(posts(seen, '/message')).toHaveLength(1);
+});
+
 test("a 409 on the send with the same text again shows the chat's message and does not say it was sent", async () => {
   const error = 'The chat is not running';
   server({ send: () => ({ status: 409, body: { error } }) });
@@ -280,12 +332,18 @@ test('a preview the server refuses shows its message and offers no yes', async (
   open();
   press(await rowItem(), 'Message AdmiralBot');
   expect(await screen.findByText('The page is in error, so its message actions are off')).toBeTruthy();
-  const dialog = screen.queryByRole('dialog');
-  if (dialog) expect(within(dialog).queryByRole('button', { name: 'Message AdmiralBot' })).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
   expect(posts(seen, '/message')).toHaveLength(0);
 });
 
 // The error state
+
+test.each(['error', 'auth_required'])('while the page is %s Open link stays a link', async (state) => {
+  server({ state: () => state });
+  open(state);
+  const row = await rowItem();
+  expect(within(row).getByRole('link', { name: 'Open docs' }).getAttribute('href')).toBe(docs.url);
+});
 
 test('while the page is in error Open link and Launch stay enabled, and the message and module actions are disabled', async () => {
   const seen = server({ state: () => 'error' });

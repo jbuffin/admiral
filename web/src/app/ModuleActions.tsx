@@ -17,7 +17,7 @@ import { LaunchForm } from "./LaunchDialog";
 import { openableRow } from "./modules";
 import { go, shipPath } from "./router";
 import { Sheet, useCancelFocus } from "./Sheet";
-import { showResult } from "./ToastRegion";
+import { isWebUrl, showResult } from "./ToastRegion";
 
 type Values = Record<string, string | string[]>;
 type Run = {
@@ -33,9 +33,11 @@ export const UPDATING_FALLBACK_MS = 30_000;
 /** The action id a built-in action's first request is out for, per row. */
 type Pending = Record<string, string>;
 
-const isWeb = (u?: string) => !!u && /^https?:\/\//i.test(u);
 /** What an action does: a bare url is Open link, and a module action has no builtin. */
 export const builtinOf = (a: PageAction) => a.builtin ?? (a.url ? "open" : undefined);
+/** Open link and Launch work while the page is in error; the message and module actions don't. */
+const enabledFor = (kind: string | undefined, blocked: boolean) =>
+  kind === "open" || kind === "launch" || !blocked;
 
 interface Controller {
   runs: Record<string, Run>;
@@ -75,7 +77,12 @@ export function useModuleActions(
     text: string;
     chat: string;
     busy: boolean;
+    /** Names this sheet: a changed text opens a new one, so a tap meant for the old one can't land on it. */
+    ask: number;
+    changed: boolean;
   } | null>(null);
+  const asks = useRef(0);
+  const open = useRef(0);
   const current = useRef({ version, runs });
   current.current = { version, runs };
   const tokens = useRef(0);
@@ -165,7 +172,13 @@ export function useModuleActions(
     const r = await fetchMessagePreview(sourceKey, row, action.id);
     settle(row);
     if (!r.ok) return failed(action, row, r.error);
-    setMessage({ row, action, text: r.data.text, chat: r.data.chat, busy: false });
+    const ask = ++asks.current;
+    open.current = ask;
+    setMessage({ row, action, text: r.data.text, chat: r.data.chat, busy: false, ask, changed: false });
+  };
+  const closeMessage = () => {
+    open.current = 0;
+    setMessage(null);
   };
 
   // The server posts only the text it composes now: when it refuses the text, ask again with the new one.
@@ -175,7 +188,7 @@ export function useModuleActions(
     setMessage({ ...m, busy: true });
     const r = await sendMessage(sourceKey, m.row, m.action.id, m.text);
     if (r.ok) {
-      setMessage(null);
+      if (open.current === m.ask) closeMessage();
       return showResult({
         tag: `module-action:${sourceKey}:${m.row}`,
         name: m.action.label,
@@ -186,10 +199,15 @@ export function useModuleActions(
     }
     if (r.status === 409) {
       const again = await fetchMessagePreview(sourceKey, m.row, m.action.id);
-      if (again.ok && again.data.text !== m.text)
-        return setMessage({ ...m, text: again.data.text, chat: again.data.chat, busy: false });
+      // The engineer closed the sheet while the send was out: it stays closed.
+      if (open.current !== m.ask) return;
+      if (again.ok && again.data.text !== m.text) {
+        const ask = ++asks.current;
+        open.current = ask;
+        return setMessage({ ...m, text: again.data.text, chat: again.data.chat, busy: false, ask, changed: true });
+      }
     }
-    setMessage(null);
+    if (open.current === m.ask) closeMessage();
     failed(m.action, m.row, r.error);
   };
 
@@ -201,15 +219,13 @@ export function useModuleActions(
       if (!openableRow(target.id) || !openableRow(action.id)) return;
       const kind = builtinOf(action);
       const key = targetKey(target);
-      if (kind === "open" || runs[key]) return;
+      if (kind === "open" || pending[target.id] || runs[key]) return;
+      if (!enabledFor(kind, blocked)) return;
       if (kind) {
         // Built-in actions belong to rows; a notice never draws them.
-        if (target.notice || pending[target.id]) return;
-        if (kind === "launch") return void startLaunch(target.id, action);
-        if (!blocked) void startMessage(target.id, action);
-        return;
+        if (target.notice) return;
+        return void (kind === "launch" ? startLaunch : startMessage)(target.id, action);
       }
-      if (blocked) return;
       if (action.confirm === "yesno" || action.confirm === "form")
         setSheet({ target, action });
       else void run(target, action, {});
@@ -226,10 +242,12 @@ export function useModuleActions(
     />
   ) : message ? (
     <MessageSheet
+      key={message.ask}
       action={message.action}
       text={message.text}
       busy={message.busy}
-      onClose={() => setMessage(null)}
+      changed={message.changed}
+      onClose={closeMessage}
       onConfirm={() => void sendConfirmed()}
     />
   ) : sheet ? (
@@ -274,7 +292,7 @@ export function ModuleActions({
         const kind = builtinOf(a);
         if (kind && target.notice) return null;
         if (kind === "open")
-          return isWeb(a.url) ? (
+          return isWebUrl(a.url) ? (
             <a
               key={a.id}
               class="btn mact"
@@ -293,7 +311,7 @@ export function ModuleActions({
             class="btn mact"
             disabled={
               !ctl ||
-              (kind !== "launch" && ctl.blocked) ||
+              !enabledFor(kind, ctl.blocked) ||
               !!run ||
               !!ctl.pending[target.id] ||
               !openableRow(target.id) ||
@@ -341,12 +359,14 @@ function MessageSheet({
   action,
   text,
   busy,
+  changed,
   onClose,
   onConfirm,
 }: {
   action: PageAction;
   text: string;
   busy: boolean;
+  changed: boolean;
   onClose: () => void;
   onConfirm: () => void;
 }) {
@@ -357,6 +377,11 @@ function MessageSheet({
       kind="launch-backdrop stop-backdrop"
       onClose={onClose}
     >
+      {changed ? (
+        <p class="launch-note" role="status">
+          The row changed; this is the new message.
+        </p>
+      ) : null}
       <p class="line mmessage">{text}</p>
       <Actions class="launch-foot">
         <Button label="Cancel" onClick={onClose} />
