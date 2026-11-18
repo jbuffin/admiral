@@ -514,6 +514,7 @@ func serve(args []string) error {
 	chatService := &chat.Service{Actor: minter, Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	shipService.ChatPrompt = chatService.PromptKey
+	chatService.Findings = shipService.Findings()
 	chatService.Ships, chatService.Campaigns, chatService.Inbox = shipService.List, followStore.List, inboxService.List
 	sourceService.IssueClaims = shipService.Claims
 	sourceService.SendChat = chatService.SendStatus

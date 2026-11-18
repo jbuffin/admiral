@@ -181,7 +181,7 @@ export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment
 /** The eyebrow of an open question card: Admiral's own proposals read differently from AdmiralBot's questions. */
 export const questionEyebrow = (id: string): string => (id.startsWith('campaign-') ? 'Admiral asks' : 'AdmiralBot asks');
 
-const SHIP_RESULT: Record<ShipCard['result'], string> = { moored: 'Moored', anchored: 'Anchored', ready_to_merge: 'Ready to merge', sailed_off: 'Sailed off', returned: 'Returned to port', lost: 'Lost', failed: 'Result unknown' };
+const SHIP_RESULT: Record<ShipCard['result'], string> = { moored: 'Moored', anchored: 'Anchored', ready_to_merge: 'Ready to merge', sailed_off: 'Sailed off', returned: 'Returned to port', lost: 'Lost', failed: 'Failed' };
 
 const httpsHref = (url: string): string => {
   try {
@@ -201,7 +201,7 @@ export function launchLineView(item: Extract<ThreadItem, { kind: 'launch_line' }
 }
 
 /** What a ship card shows: the ship and its kind, the result in words, each PR and, while its voyage is still in the ships list, the ship's page. */
-export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships: Ship[]): { eyebrow: string; name: string; title: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string } {
+export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships: Ship[]): { eyebrow: string; name: string; title: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string; findings: boolean } {
   const c = item.card;
   const name = c.name || c.ship;
   const kind = c.skill_kind === 'commodore' ? 'Commodore' : c.skill_kind === 'scout' ? 'Scout' : c.skill_kind === 'quick' ? 'Quick ship' : c.skill_kind === 'none' ? 'No skill' : c.skill || 'No skill';
@@ -214,5 +214,6 @@ export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships:
     result: Object.hasOwn(SHIP_RESULT, c.result) ? SHIP_RESULT[c.result] : 'Result unknown',
     prs: c.prs.map((p) => ({ label: `PR #${p.number}`, url: p.url, href: httpsHref(p.url) })),
     shipHref: afloat ? shipPath(c.ship) : '',
+    findings: c.findings === true,
   };
 }

@@ -111,6 +111,7 @@ type voyage struct {
 	UnmooredAt    time.Time // the PRs all closed
 	StoppedAt     time.Time
 	ScoutEndedAt  time.Time // a scout's own end
+	FailedAt      time.Time // an end that carried result failed
 	ReturnedAt    time.Time
 	ReturningAt   time.Time
 	ReadyHeld     bool // moored at the seed: its first answered poll is not news
@@ -215,7 +216,7 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 		for _, v := range d.st.Voyages {
 			// An older build read a scout's stop as a plain one, so a stop already logged was never news.
 			if !d.st.Scouts && !v.ScoutEndedAt.IsZero() {
-				v.Done[ShipSailedOff] = true
+				v.Done[ShipSailedOff], v.Done[ShipFailed] = true, true
 			}
 			errs = append(errs, d.settle(v, mooredNow[v], inSnap[v], now))
 		}
@@ -281,6 +282,9 @@ func (d *ShipCards) voyageAt(ship string, at time.Time) *voyage {
 func (v *voyage) apply(r ShipRecord) {
 	switch r.Event {
 	case "ended":
+		if r.Result == "failed" && r.At.After(v.FailedAt) {
+			v.FailedAt = r.At
+		}
 		if r.Clean && r.At.After(v.EndedAt) {
 			v.EndedAt = r.At
 		}
@@ -325,7 +329,7 @@ func (d *ShipCards) settle(v *voyage, mooredNow, inSnap bool, now time.Time) err
 	case !v.ScoutEndedAt.IsZero():
 		// A scout's end is a kill, so only its own `stopped` mark tells it from an engineer's Stop ship.
 		if !inSnap && now.Sub(v.ScoutEndedAt) >= ShipSettleGrace {
-			errs = append(errs, d.emit(v, ShipSailedOff, false))
+			errs = append(errs, d.emit(v, v.offResult(), false))
 		}
 	case !v.UnmooredAt.IsZero():
 		// A return to port writes `unmoored` and then `returning`; the ship is not sailing off.
@@ -336,10 +340,18 @@ func (d *ShipCards) settle(v *voyage, mooredNow, inSnap bool, now time.Time) err
 		// A clean-ended ship stays in the snapshot until settle has moored it or let it sail off.
 		returning := !v.ReturningAt.IsZero() && now.Sub(v.ReturningAt) < ShipSettleGrace
 		if now.Sub(v.EndedAt) >= ShipSettleGrace && !returning {
-			errs = append(errs, d.emit(v, ShipSailedOff, false))
+			errs = append(errs, d.emit(v, v.offResult(), false))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// offResult is the card a sail-off posts: a scout that left no findings failed.
+func (v *voyage) offResult() string {
+	if !v.FailedAt.IsZero() {
+		return ShipFailed
+	}
+	return ShipSailedOff
 }
 
 // emit posts the card unless the voyage has settled that result; silent only records it. A failed post is tried again by the next pass.
