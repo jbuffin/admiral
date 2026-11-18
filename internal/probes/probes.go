@@ -47,7 +47,7 @@ func ValidEnv(dir, nonce string) bool { return nonceFormat.MatchString(nonce) &&
 func Command(dir, nonce string) string { return "touch " + SentinelPath(dir, nonce) }
 
 const (
-	defaultTimeout = 32 * time.Minute // worst case, in order: the guard and fence (2 minutes each), the sandbox probe's three runs each tried three times (9 x 2), the network run (2) and four judge calls of up to 90s each (6), with a little slack
+	defaultTimeout = 34 * time.Minute // worst case, in order: the guard, scout guard and fence (2 minutes each), the sandbox probe's three runs each tried three times (9 x 2), the network run (2) and four judge calls of up to 90s each (6), with a little slack
 	versionTimeout = 15 * time.Second
 )
 
@@ -202,9 +202,6 @@ func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness, version s
 	target := Target{Home: r.home, Fleet: fleet, Harness: harness, Version: version}
 	skipped := map[capabilities.ID]string{}
 	unrecorded := map[capabilities.ID]string{}
-	// The probes of a harness use their own directories and run side by side, so one
-	// more probe does not add its model call to the wait.
-	var due []Probe
 	for _, p := range r.probes {
 		if p.Harness != harness {
 			continue
@@ -214,31 +211,10 @@ func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness, version s
 			skipped[p.Capability] = fmt.Sprintf("version %s is older than %s, the first that claims it", version, cl.From)
 			continue
 		}
-		due = append(due, p)
-	}
-	outs := make([]Outcome, len(due))
-	panics := make([]any, len(due))
-	var wg sync.WaitGroup
-	for i, p := range due {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer func() { panics[i] = recover() }()
-			outs[i] = p.Run(ctx, target)
-		}()
-	}
-	wg.Wait()
-	// Run's caller recovers a panicking probe, so it must surface on this goroutine.
-	for _, v := range panics {
-		if v != nil {
-			panic(v)
+		out := p.Run(ctx, target)
+		if cancelled(ctx) {
+			return Report{}, ctx.Err()
 		}
-	}
-	if cancelled(ctx) {
-		return Report{}, ctx.Err()
-	}
-	for i, p := range due {
-		out := outs[i]
 		if out.Inconclusive {
 			unrecorded[p.Capability] = out.Detail
 			continue
