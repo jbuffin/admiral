@@ -235,14 +235,14 @@ func TestHandToCommodoreRefusesWhatCannotBeHanded(t *testing.T) {
 	t.Run("a restricted ship", func(t *testing.T) {
 		r := newHandRig(t)
 		r.turn(t, "needs_you", "stop")
-		r.s.EventShip = func(fleet, session string) (bool, bool, error) { return session == "saltpaw", false, nil }
+		r.s.EventShip = func(fleet, session string) (bool, bool, string, error) { return session == "saltpaw", false, "", nil }
 		note(t, "restricted", r.wantRefusedBeforeAnySideEffect(t, r.hand("saltpaw", `{"kind":"issue"}`), http.StatusConflict))
 	})
 
 	t.Run("a ship an outside event launched", func(t *testing.T) {
 		r := newHandRig(t)
 		r.turn(t, "needs_you", "stop")
-		r.s.EventShip = func(fleet, session string) (bool, bool, error) { return false, session == "saltpaw", nil }
+		r.s.EventShip = func(fleet, session string) (bool, bool, string, error) { return false, session == "saltpaw", "T0", nil }
 		note(t, "event", r.wantRefusedBeforeAnySideEffect(t, r.hand("saltpaw", `{"kind":"issue"}`), http.StatusConflict))
 	})
 }

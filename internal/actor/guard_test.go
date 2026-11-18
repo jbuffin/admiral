@@ -315,3 +315,11 @@ func TestTheGuardLetsAFindingsReadOfAnyShipReachTheHandlerWhichFencesIt(t *testi
 		}
 	}
 }
+
+func TestAnActorCannotAnswerAnAllowRuleProposal(t *testing.T) {
+	r := newRig(t)
+	rec := r.do("POST", "/api/inbox/_admiral/allow-rules-work/allow-rules", `{"cards":{"c1":{"decision":"add"}}}`, "tok-personal", local)
+	if rec.Code != 403 || r.reached != 0 {
+		t.Errorf("code %d, reached %d; want AdmiralBot refused with 403 and nothing reached", rec.Code, r.reached)
+	}
+}
