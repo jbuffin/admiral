@@ -38,7 +38,7 @@ func (s *Service) propose(r moor.Record, was moor.WakeState, d moor.Decision, no
 		return d.Next, nil, false
 	}
 	for _, b := range batches {
-		p := inbox.WakeProposal{Ship: r.Name, Session: r.Session, PR: b.PR, Login: b.Login}
+		p := inbox.WakeProposal{Ship: r.Name, ShipTitle: r.Title, Session: r.Session, PR: b.PR, Login: b.Login}
 		for _, e := range b.Events {
 			p.Events = append(p.Events, inbox.WakeProposalEvent{ID: e.ID, Kind: string(e.Kind), URL: e.URL, At: e.At, Body: e.Body})
 		}

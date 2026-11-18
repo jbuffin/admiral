@@ -377,7 +377,7 @@ func serve(args []string) error {
 	// A ship that sailed off with an item unanswered is known from its record.
 	inboxService := &inbox.Service{Home: absDir, Hub: hub, Outcomes: outcomeLog, Kept: st, Ship: func(session string) (inbox.ShipInfo, bool) {
 		if sh, ok := shipService.Get(session); ok {
-			return inbox.ShipInfo{Name: sh.Name, Harness: sh.Harness, Fleet: sh.Fleet, FleetName: sh.FleetName, FleetColor: sh.FleetColor}, true
+			return inbox.ShipInfo{Name: sh.Name, Title: sh.Title, Harness: sh.Harness, Fleet: sh.Fleet, FleetName: sh.FleetName, FleetColor: sh.FleetColor}, true
 		}
 		k, ok := st.KeptInbox(session)
 		return inbox.ShipInfo{Name: k.Name, Harness: k.Harness, Fleet: k.Fleet, FleetName: k.FleetName, FleetColor: k.FleetColor}, ok

@@ -10,7 +10,7 @@ import { REMOVED_FOLD } from './itemActions';
 import { bridgeSearch } from './peekLink';
 import { keyAction, keyHint } from './peekKeys';
 import { peekKey } from './peekLink';
-import { entryAge, fleetLabel, rowShip, rowVerb } from './inboxRow';
+import { entryAge, fleetLabel, rowShip, rowShipTitle, rowVerb } from './inboxRow';
 import { go, loc, peekOf, peekPath, type PeekTarget, shipPath, surfacePath } from './router';
 import { inboxItems, inboxLoaded, ships, shipsLoaded } from './shipsLink';
 import { orderLabel } from './moored';
@@ -49,7 +49,8 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
   const fleet = fleetLabel(e, fleets.value);
   const notice = e.item?.kind === 'notice';
   const ship = e.ship ?? ships.value.find((s) => s.session === e.session);
-  const title = e.item?.title ?? (e.crew ? '' : ship?.title ?? '');
+  const shipTitle = rowShipTitle(e);
+  const title = e.item?.title ?? '';
   const age = entryAge(e, now);
   const search = fleetSearch.value;
   const target: PeekTarget = targetOf(e);
@@ -61,6 +62,7 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
         <span class="inbox-who">
           <span class="ship-name">{rowShip(e)}</span> <span class="inbox-verb">{rowVerb(e)}</span>
         </span>
+        {shipTitle ? <span class="inbox-title">{shipTitle} </span> : null}
         {title ? <span class="inbox-title">{title} </span> : null}
         {ship?.order_id ? <span class="ship-order mono">{orderLabel(ship.order_id)} </span> : null}
         {fleet ? (
@@ -76,7 +78,7 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
   if (e.folded !== null) {
     return (
       <li class="ship-row inbox-row inbox-folded">
-        <span class="ship-name">{rowShip(e)}</span> <span class="inbox-confirm" role="status">{e.folded}</span>
+        <span class="ship-name">{rowShip(e)}</span> {shipTitle ? <span class="inbox-title">{shipTitle} </span> : null}<span class="inbox-confirm" role="status">{e.folded}</span>
         {fleet ? <span class="inbox-fleet">{fleet.name}</span> : null}
       </li>
     );

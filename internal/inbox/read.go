@@ -39,6 +39,7 @@ type Item struct {
 	Session string
 	// Name, Harness and the fleet fields are set only when the ship is known.
 	Name, Harness string
+	ShipTitle     string
 	Fleet         string
 	FleetName     string
 	FleetColor    string
@@ -57,6 +58,10 @@ func (it Item) MarshalJSON() ([]byte, error) {
 	out["session"], _ = json.Marshal(it.Session)
 	delete(out, "name")
 	delete(out, "harness")
+	delete(out, "ship_title")
+	if it.ShipTitle != "" {
+		out["ship_title"], _ = json.Marshal(it.ShipTitle)
+	}
 	if it.Name != "" {
 		out["name"], _ = json.Marshal(it.Name)
 	}

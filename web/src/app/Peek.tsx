@@ -5,7 +5,7 @@ import { Composer, useComposer } from './Composer';
 import { ConversationView } from './ConversationView';
 import { fleetSearch } from './fleets';
 import type { Entry } from './inbox';
-import { rowShip, rowVerb } from './inboxRow';
+import { rowShip, rowShipTitle, rowVerb } from './inboxRow';
 import { discardFold, lockedBy, submitFold } from './itemActions';
 import { Button } from './Button';
 import { CrewMemberBody, CrewNotesBody, MissionBody, isCrewKind, type MemberStep, readCrew, useCrewNotes } from './PeekCrew';
@@ -72,6 +72,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
   const fleetKey = entry.fleet?.key ?? ship?.fleet;
   const item = entry.type === 'item';
   const title = entry.item?.title;
+  const shipTitle = rowShipTitle(entry);
   const question = entry.item?.kind === 'question';
   // The draft lives here, above the ship's arrival, so it survives ShipTurn replacing the bare form.
   const [draft, setDraft] = useState<Draft>(blankDraft);
@@ -197,6 +198,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
           <h2>
             {rowShip(entry)} <span class="inbox-verb">{rowVerb(entry)}</span>
           </h2>
+          {shipTitle ? <p class="peek-title">{shipTitle}</p> : null}
           {title ? <p class="peek-title">{title}</p> : null}
           {entry.fleet?.name ? <p class="peek-fleet">{entry.fleet.name}</p> : null}
           {isCrewKind(kind) ? (

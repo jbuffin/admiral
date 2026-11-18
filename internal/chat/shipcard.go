@@ -56,9 +56,13 @@ func (s *Service) PostShipCard(fleet string, c ShipCard) error {
 	for _, p := range c.PRs {
 		prs = append(prs, pr{p.URL, p.Number})
 	}
-	card, err := json.Marshal(map[string]any{
+	body := map[string]any{
 		"ship": c.Ship, "name": c.Name, "first_launched": c.FirstLaunched, "fleet": fleet, "skill": c.Skill, "skill_kind": c.SkillKind, "result": c.Result, "prs": prs,
-	})
+	}
+	if c.Title != "" {
+		body["title"] = c.Title
+	}
+	card, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
@@ -216,7 +220,7 @@ func (d *ShipCards) voyageOf(s ships.Ship, now time.Time) *voyage {
 		v = &voyage{Ship: s.Session, Name: s.Name, FirstLaunched: stamp, Done: map[string]bool{}}
 		d.st.Voyages[key] = v
 	}
-	v.Name, v.Fleet, v.Via, v.SkillKind, v.Scout, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, s.Scout, now
+	v.Name, v.Title, v.Fleet, v.Via, v.SkillKind, v.Scout, v.LastSeen = s.Name, s.Title, s.Fleet, s.Via, s.SkillKind, s.Scout, now
 	if s.Skill != nil {
 		v.Skill = *s.Skill
 	}
@@ -316,7 +320,7 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 		return nil
 	}
 	if !silent {
-		if err := d.post(v.Fleet, ShipCard{Ship: v.Ship, Name: v.Name, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.cardKind(), Result: result, PRs: v.PRs}); err != nil {
+		if err := d.post(v.Fleet, ShipCard{Ship: v.Ship, Name: v.Name, Title: v.Title, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.cardKind(), Result: result, PRs: v.PRs}); err != nil {
 			return err
 		}
 	}
