@@ -112,7 +112,7 @@ function PasteField() {
 
 export const addOpen = signal(false);
 
-function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
+function CampaignSidebar() {
   const fleet = activeFleet.value;
   const mine = campaignList.value.filter((c) => c.fleet === fleet?.key);
   const active = mine.filter((c) => !c.ended);
@@ -124,7 +124,7 @@ function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
       <ul class="camp-list">
         {active.map((c) => (
           <li key={c.id}>
-            <a class="camp-row" href={campaignPath(c.id) + search(c.fleet)} aria-current={here.endsWith(`/campaigns/${c.id}`) ? 'page' : undefined} onClick={(e) => (open(e, c), onNavigate?.())}>
+            <a class="camp-row" href={campaignPath(c.id) + search(c.fleet)} aria-current={here.endsWith(`/campaigns/${c.id}`) ? 'page' : undefined} onClick={(e) => open(e, c)}>
               <Ring done={c.progress.closed} total={c.progress.total} />
               <span class="camp-name">{c.title}</span>
               <span class="camp-meta">{campaignMeta(c)}</span>
@@ -140,7 +140,6 @@ function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
           onClick={() => {
             endedOpen.value = true;
             go('/app/campaigns', `?fleet=${encodeURIComponent(fleet?.key ?? '')}`);
-            onNavigate?.();
           }}
         >
           Ended ({ended})
@@ -151,11 +150,11 @@ function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 /** The desktop sidebar's Campaigns row and what follows it. */
-export function CampaignsNav({ onNavigate }: { onNavigate?: () => void }) {
+export function CampaignsNav() {
   return (
     <>
       <div class="nav-row">
-        <Link surface={surfaceById('campaigns')} class="nav-link" onNavigate={onNavigate}>
+        <Link surface={surfaceById('campaigns')} class="nav-link">
           <Icon name="campaigns" />
           Campaigns
         </Link>
@@ -163,7 +162,7 @@ export function CampaignsNav({ onNavigate }: { onNavigate?: () => void }) {
           <Icon name="plus" size={14} />
         </Button>
       </div>
-      <CampaignSidebar onNavigate={onNavigate} />
+      <CampaignSidebar />
     </>
   );
 }

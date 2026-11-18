@@ -323,7 +323,6 @@ a { color: inherit; text-decoration: none; }
 
 /* Campaigns */
 .camp-side { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px 12px; }
-.camp-side .sec { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; font-size: var(--font-size-meta); color: var(--color-muted); }
 .paste { display: flex; flex-direction: column; gap: 6px; padding: 4px 6px 8px; }
 .paste-input { width: 100%; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-panel); color: var(--color-text); font: inherit; font-size: 16px; box-sizing: border-box; }
 .hint { margin: 0; }
