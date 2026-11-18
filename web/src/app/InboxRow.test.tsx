@@ -184,8 +184,10 @@ const wakeOf = (over: Record<string, unknown>) =>
 test("a wake proposal row shows the moored ship's title", () => {
   row(wakeOf({ ship_title: 'Fix the login redirect' }));
   const li = screen.getByRole('listitem');
-  expect(li.textContent).toContain('Saltpaw');
-  expect(li.textContent).toContain('Fix the login redirect');
+  const text = li.textContent ?? '';
+  const heading = text.indexOf("Wake Saltpaw for @stranger's review?");
+  expect(heading).toBeGreaterThan(text.indexOf('Admiral'));
+  expect(text.indexOf('Fix the login redirect')).toBeGreaterThan(heading);
 });
 
 test("a wake proposal row of a ship with no title shows the proposal's own words alone", () => {

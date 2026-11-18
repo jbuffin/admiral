@@ -114,11 +114,10 @@ func TestAChatLaunchFromAnOrderPostsItsLineWithTheOrdersTitle(t *testing.T) {
 	}
 }
 
-func TestAChatLaunchOfAShipTheTitlerIsStillNamingPostsItsLineWithNoTitle(t *testing.T) {
+func TestAFreeformChatLaunchPostsItsLineWithNoTitle(t *testing.T) {
 	r := newWakeRig(t, 0)
 	caught := &lineCatcher{}
 	r.s.PostLaunchLine = caught.post
-	r.s.Titling = func(string) bool { return true }
 	r.launchBody(t, true, `,"skill":{"kind":"none"},"autopilot":true,"reason":"to read the AWS logs"`)
 	if _, lines := caught.got(); len(lines) != 1 || lines[0].Title != "" {
 		t.Errorf("launch lines = %+v, want one with no title, not the prompt's first line", lines)

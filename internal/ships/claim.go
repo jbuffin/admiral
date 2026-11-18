@@ -225,7 +225,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.OnInstruction && s.PostLaunchLine != nil {
 		line := LaunchLine{Ship: got.Session, Name: got.Name, FirstLaunched: cmpFirst(got.FirstLaunched, got.Launched), Kind: launchKind(req), Reason: req.Reason, Text: req.Text}
-		if !got.Titling { // a titling ship's title is still its prompt's first line, which the line's text already shows
+		if got.Titled { // an untitled ship's title is its prompt's first line, which the line's text already shows
 			line.Title = got.Title
 		}
 		if err := s.PostLaunchLine(req.Fleet, line); err != nil {

@@ -56,7 +56,8 @@ const wake = (over: Record<string, unknown>) =>
 
 test("Peek of a wake proposal shows the moored ship's title", () => {
   peek(wake({ ship_title: TITLE }));
-  expect(screen.getByText(TITLE)).toBeTruthy();
+  const heading = screen.getByText("Wake Saltpaw for @stranger's review?");
+  expect(screen.getByText(TITLE).compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
 });
 
 test('Peek of a wake proposal of a ship with no title shows the proposal alone', () => {

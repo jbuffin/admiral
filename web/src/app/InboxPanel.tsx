@@ -10,7 +10,7 @@ import { REMOVED_FOLD } from './itemActions';
 import { bridgeSearch } from './peekLink';
 import { keyAction, keyHint } from './peekKeys';
 import { peekKey } from './peekLink';
-import { entryAge, fleetLabel, rowShip, rowShipTitle, rowVerb } from './inboxRow';
+import { entryAge, fleetLabel, rowShip, rowShipTitle, rowVerb, titleLines } from './inboxRow';
 import { go, loc, peekOf, peekPath, type PeekTarget, shipPath, surfacePath } from './router';
 import { inboxItems, inboxLoaded, ships, shipsLoaded } from './shipsLink';
 import { orderLabel } from './moored';
@@ -62,8 +62,9 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
         <span class="inbox-who">
           <span class="ship-name">{rowShip(e)}</span> <span class="inbox-verb">{rowVerb(e)}</span>
         </span>
-        {shipTitle ? <span class="inbox-title">{shipTitle} </span> : null}
-        {title ? <span class="inbox-title">{title} </span> : null}
+        {titleLines(e, title, shipTitle).map((t, i) => (
+          <span key={i} class="inbox-title">{t} </span>
+        ))}
         {ship?.order_id ? <span class="ship-order mono">{orderLabel(ship.order_id)} </span> : null}
         {fleet ? (
           <span class="inbox-fleet">

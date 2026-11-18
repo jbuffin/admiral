@@ -5,7 +5,7 @@ import { Composer, useComposer } from './Composer';
 import { ConversationView } from './ConversationView';
 import { fleetSearch } from './fleets';
 import type { Entry } from './inbox';
-import { rowShip, rowShipTitle, rowVerb } from './inboxRow';
+import { rowShip, rowShipTitle, rowVerb, titleLines } from './inboxRow';
 import { discardFold, lockedBy, submitFold } from './itemActions';
 import { Button } from './Button';
 import { CrewMemberBody, CrewNotesBody, MissionBody, isCrewKind, type MemberStep, readCrew, useCrewNotes } from './PeekCrew';
@@ -198,8 +198,9 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
           <h2>
             {rowShip(entry)} <span class="inbox-verb">{rowVerb(entry)}</span>
           </h2>
-          {shipTitle ? <p class="peek-title">{shipTitle}</p> : null}
-          {title ? <p class="peek-title">{title}</p> : null}
+          {titleLines(entry, title ?? '', shipTitle).map((t, i) => (
+            <p key={i} class="peek-title">{t}</p>
+          ))}
           {entry.fleet?.name ? <p class="peek-fleet">{entry.fleet.name}</p> : null}
           {isCrewKind(kind) ? (
             <>
