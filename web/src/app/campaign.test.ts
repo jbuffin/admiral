@@ -68,8 +68,13 @@ describe('labels', () => {
     expect(modeLabel('with-you')).toBe('With you');
     expect(modeLabel('without-you')).toBe('Without you');
   });
-  it('gives the sidebar row its map number and progress', () => {
-    expect(campaignMeta({ number: 230, progress: { closed: 6, total: 13 } })).toBe('Map #230 · 6 of 13');
+  it('gives a campaign its repo, issue number and progress, never a Map label', () => {
+    const meta = campaignMeta({ repo: 'https://github.com/jbuffin/admiral', number: 751, progress: { closed: 6, total: 13 } });
+    expect(meta).toBe('jbuffin/admiral#751 · 6 of 13');
+    expect(meta).not.toContain('Map');
+  });
+  it('reduces a GitHub Enterprise repo URL to owner/repo too', () => {
+    expect(campaignMeta({ repo: 'https://ghe.example.com/acme/widgets', number: 20, progress: { closed: 0, total: 1 } })).toBe('acme/widgets#20 · 0 of 1');
   });
 });
 
