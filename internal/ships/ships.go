@@ -99,6 +99,8 @@ type Ship struct {
 	Handing bool `json:"handing,omitempty"`
 	// HandRefusal is why the ship cannot be handed, when its own options say so.
 	HandRefusal string `json:"hand_refusal,omitempty"`
+	// Scout is set on a scout: an autopilot ship that changes nothing and ends by itself.
+	Scout bool `json:"scout,omitempty"`
 	// SkillKind is `commodore` on a Commodore ship.
 	SkillKind string `json:"skill_kind,omitempty"`
 	// HandFailed is why the last hand failed on a ship that stayed live, until the next hand starts.
@@ -287,7 +289,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], FirstLaunched: firstLaunched(o), Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "",
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], FirstLaunched: firstLaunched(o), Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Scout: o["scout"] != "", Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "",
 		Handing: o[sessionhost.OptHanding] != "", HandRefusal: handNotClaude(session, o["harness"]), HandFailed: o[sessionhost.OptHandFailed], SkillKind: o["skill-kind"]}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if sh.Status == "anchored" {
@@ -434,6 +436,7 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		s.observe(ctx)
 		s.advanceReturns()
+		s.advanceScouts()
 		s.advanceHands()
 		s.refreshOpenPRs(ctx)
 		s.autoMoor(ctx)
@@ -589,6 +592,21 @@ func (s *Service) gate(fleet config.Fleet, req launcher.Request) error {
 	return autopilotgate.Check(s.Launcher.Home, fleet, req.Harness)
 }
 
+// scoutGate is a scout's check: the scout and autopilot probes, then the advisor an autopilot ship needs too.
+// It posts no Inbox notice: the caller shows the 400.
+func (s *Service) scoutGate(fleet config.Fleet, req launcher.Request) error {
+	scout := s.Launcher.ScoutGate
+	if scout == nil {
+		scout = func(fleet config.Fleet, harness string) error {
+			return autopilotgate.CheckScout(s.Launcher.Home, fleet, harness)
+		}
+	}
+	if err := scout(fleet, req.Harness); err != nil {
+		return err
+	}
+	return autopilotgate.CheckQuiet(s.Launcher.Home, fleet, req.Harness)
+}
+
 // admit checks what a launch over HTTP may claim and takes its resources: autopilot
 // mode needs a guarded harness and room under max_ships. The caller holds admitMu
 // for an autopilot launch until LaunchOrder returns.
@@ -609,7 +627,11 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 		if _, ok := fleet.Harness(req.Harness); !ok {
 			return release, &launcher.Error{Status: http.StatusNotFound, Msg: "fleet " + fleet.Name + " has no " + req.Harness + " dock"}
 		}
-		if err := s.gate(fleet, req); err != nil {
+		check := s.gate
+		if req.Scout {
+			check = s.scoutGate
+		}
+		if err := check(fleet, req); err != nil {
 			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: err.Error()}
 		}
 	}
@@ -618,8 +640,8 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: "no resource named " + strconv.Quote(name)}
 		}
 	}
-	// A proposal launch and an instruction launch are the engineer's own act: like a hand wake they count toward the cap and are never blocked by it.
-	if req.Autopilot && req.By != "proposal" && !req.OnInstruction {
+	// A proposal launch and an instruction launch are the engineer's own act: like a hand wake they count toward the cap and are never blocked by it. A scout counts, and is never blocked.
+	if req.Autopilot && req.By != "proposal" && !req.OnInstruction && !req.Scout {
 		// Ships the host lists, ships launched but not listed yet, and launches
 		// still running (a hand launch is not counted twice by much: it errs
 		// towards refusing).

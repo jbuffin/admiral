@@ -62,7 +62,9 @@ type Request struct {
 	// ByFleet is the fleet AdmiralBot launches for; empty for the engineer. It shapes a refusal's wording only.
 	ByFleet string `json:"-"`
 	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
-	Autopilot bool     `json:"autopilot"`
+	Autopilot bool `json:"autopilot"`
+	// Scout is an autopilot ship that reads and reports back, changing nothing: its guard is in scout mode.
+	Scout     bool     `json:"scout"`
 	ExtraArgs []string `json:"-"`
 	// PRs are the pull requests a woken ship carries from its mooring; they are confirmed already.
 	PRs []string `json:"-"`
@@ -192,6 +194,8 @@ type Launcher struct {
 	// AutopilotGate decides whether a crew launch may carry autopilot mode. It lives
 	// outside this package because the Inbox it writes to imports the launcher.
 	AutopilotGate func(fleet config.Fleet, harness string) error
+	// ScoutGate decides whether a crew launch from a scout may run on the boat's harness; nil refuses it.
+	ScoutGate func(fleet config.Fleet, harness string) error
 	// Warn gets what a launch as a crew member left out (a dropped model, ignored skills, a bad note file);
 	// the server log when nil.
 	Warn func(msg string)
@@ -269,7 +273,7 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
 		{"order", req.OrderID}, {"launched", launched}, {"first-launched", firstLaunched}, {"title", orderTitle(req)}, {"url", cmp.Or(req.URL, req.EventURL)}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")},
-		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}}
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}, {"scout", scoutOption(req.Scout)}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return Checked{}, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
@@ -391,6 +395,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		prompt = req.Prompt
 	}
 	prompt = l.withGuidance(req, prompt)
+	prompt = withScoutContract(req, prompt)
 	flags, known := l.hookFlags(req.Harness)
 	if !known {
 		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)
@@ -499,7 +504,15 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if runCrew != "" {
 		ours["ADMIRAL_RUN_CREW"] = runCrew
 	}
-	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_CHAT_FLEET", "ADMIRAL_CHAT_HARNESS", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW"} {
+	if req.Scout {
+		// The guard reads the checkout from here, so it is the resolved path the ship really works in.
+		resolved, err := resolveScoutDir(req.Dir)
+		if err != nil {
+			return nil, refuse(http.StatusBadRequest, "a scout's directory cannot be resolved: %v", err)
+		}
+		ours[ScoutEnv] = resolved
+	}
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_CHAT_FLEET", "ADMIRAL_CHAT_HARNESS", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW", ScoutEnv} {
 		if v, ok := ours[k]; ok {
 			env[k] = v
 			continue

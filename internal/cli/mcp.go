@@ -274,7 +274,7 @@ var mcpTools = []mcpTool{
 			}
 			return c.get("/api/campaigns/" + url.PathEscape(a.ID))
 		}},
-	{"launch_ship", "Launch a ship, from an order (source and order_id) or freeform text. Every launch runs in autopilot mode unless with_me is true, and the max_ships cap never blocks it; the result says which mode the ship runs in. If autopilot is refused (the harness or fleet has no proven guard), tell the engineer the refusal as it came and that they can say \"with me\"; never relaunch interactive on your own. Set resources, model or effort only when the engineer names one or the fleet's map calls for a resource; otherwise the dock's defaults apply. A busy named resource refuses with its reason.",
+	{"launch_ship", "Launch a ship, from an order (source and order_id) or freeform text. Every launch runs in autopilot mode unless with_me is true, and the max_ships cap never blocks it; the result says which mode the ship runs in. A scout (scout true) reads and reports back, changes nothing and always runs in autopilot. If autopilot is refused (the harness or fleet has no proven guard), tell the engineer the refusal as it came and that they can say \"with me\"; never relaunch interactive on your own. Set resources, model or effort only when the engineer names one or the fleet's map calls for a resource; otherwise the dock's defaults apply. A busy named resource refuses with its reason.",
 		obj([]string{"harness"}, map[string]any{
 			"harness":    str("the harness: claude, codex or copilot"),
 			"dir":        str("a checkout or search root of the fleet"),
@@ -288,6 +288,7 @@ var mcpTools = []mcpTool{
 			"issues":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "GitHub issue URLs the ship claims; only on a launch with no source"},
 			"anyway":     flag01("launch again for a message that already has a freeform ship"),
 			"with_me":    flag01("true when the engineer said to work on it with them: the ship runs interactive; without it every launch runs in autopilot"),
+			"scout":      flag01("a ship that reads and reports back, changing nothing; runs in autopilot, never with the engineer; needs dir and text and takes no clone, skill, crew, issues, resources, source or order_id"),
 			"resources":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "names of resources the ship claims; a busy one refuses the launch"},
 			"model":      str("the model, only when the engineer names one"),
 			"effort":     str("the effort level, only when the engineer names one"),
@@ -465,6 +466,33 @@ func (c *mcpClient) shipsBody(a shipSpec, autopilot bool) (map[string]any, error
 	return body, nil
 }
 
+// checkScoutParams refuses what a scout never takes: it works freeform in the fleet's checkout, in autopilot.
+func checkScoutParams(a shipSpec, withMe bool) error {
+	switch {
+	case withMe:
+		return errors.New("with_me: a scout never runs with the engineer")
+	case a.Dir == "" || strings.TrimSpace(a.Text) == "":
+		return errors.New("a scout needs dir and text")
+	case a.Clone:
+		return errors.New("clone: a scout works in the fleet's existing checkout")
+	case a.CloneRepo != "":
+		return errors.New("clone_repo: a scout works in the fleet's existing checkout")
+	case a.Skill != "" && a.Skill != "none":
+		return errors.New("skill: a scout takes no skill")
+	case len(a.Crew) > 0:
+		return errors.New("crew: a scout takes no crew pins")
+	case len(a.Issues) > 0:
+		return errors.New("issues: a scout claims no issues")
+	case a.Source != "":
+		return errors.New("source: a scout is freeform, not from an order")
+	case a.OrderID != "":
+		return errors.New("order_id: a scout is freeform, not from an order")
+	case len(a.Resources) > 0:
+		return errors.New("resources: a scout claims no resources")
+	}
+	return nil
+}
+
 func skillKind(skill string) (kind, name string) {
 	switch skill {
 	case "", "none":
@@ -480,14 +508,24 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 		shipSpec
 		WithMe        bool `json:"with_me"`
 		Model, Effort string
+		Scout         bool
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return "", err
 	}
 	autopilot := !a.WithMe
+	if a.Scout {
+		if err := checkScoutParams(a.shipSpec, a.WithMe); err != nil {
+			return "", err
+		}
+		autopilot = true
+	}
 	body, err := c.shipsBody(a.shipSpec, autopilot)
 	if err != nil {
 		return "", err
+	}
+	if a.Scout {
+		body["scout"] = true
 	}
 	if a.Model != "" {
 		body["model"] = a.Model
@@ -500,7 +538,9 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 		return "", err
 	}
 	mode := "interactive"
-	if autopilot {
+	if a.Scout {
+		mode = "scout"
+	} else if autopilot {
 		mode = "autopilot"
 	}
 	res := map[string]any{"mode": mode, "launched": json.RawMessage(bytes.TrimSpace(out))}

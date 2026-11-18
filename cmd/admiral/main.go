@@ -337,6 +337,9 @@ func serve(args []string) error {
 		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok },
 		AutopilotGate: func(fleet config.Fleet, harness string) error {
 			return autopilotgate.Check(dir, fleet, harness)
+		},
+		ScoutGate: func(fleet config.Fleet, harness string) error {
+			return autopilotgate.CheckScout(dir, fleet, harness)
 		}}}
 
 	if err := sources.RemoveRetired(dir); err != nil {

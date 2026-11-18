@@ -94,6 +94,25 @@ func (s *Service) advanceReturns() {
 	}
 }
 
+// advanceScouts stops each scout whose own turn has ended: it has said what it found, and nothing carries it on.
+// The stop reads as sailed, so a scout never anchors or moors by it.
+func (s *Service) advanceScouts() {
+	for _, sess := range s.Host.Sessions() {
+		if !sess.IsShip() || sess.Options["scout"] == "" || sess.PaneDead || status(sess, time.Now()) != StatusNeedsYou || reasonOf(sess) != "stop" {
+			continue
+		}
+		if _, busy := s.returning.LoadOrStore(sess.Name, true); busy {
+			continue
+		}
+		s.settleWG.Add(1)
+		go func(name string) {
+			defer s.settleWG.Done()
+			defer s.returning.Delete(name)
+			_ = s.stopShip(name, map[string]any{"scout": true})
+		}(sess.Name)
+	}
+}
+
 // sendReturnPrompt types the prompt, then marks the pane working before it marks the prompt sent, so no pass sees a
 // sent ship still at the stop the prompt ended.
 func (s *Service) sendReturnPrompt(name string) {

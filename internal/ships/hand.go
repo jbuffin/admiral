@@ -116,6 +116,9 @@ func (s *Service) serveHand(w http.ResponseWriter, r *http.Request) {
 	case handNotClaude(session, o["harness"]) != "":
 		writeError(w, http.StatusConflict, handNotClaude(session, o["harness"]))
 		return
+	case o["scout"] != "":
+		writeError(w, http.StatusBadRequest, "a scout cannot be handed on: make it a fresh launch instead")
+		return
 	case o["skill-kind"] == "commodore":
 		writeError(w, http.StatusConflict, "ship "+session+" is already Commodore")
 		return
