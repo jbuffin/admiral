@@ -126,7 +126,7 @@ func (s *Service) messageFor(w http.ResponseWriter, r *http.Request) (text, flee
 		writeError(w, http.StatusConflict, errMessageInErr.Error())
 		return "", "", false
 	}
-	page := cleanLine(def.Name)
+	page := cleanLine(def.Name, maxTitleRunes)
 	if page == "" {
 		page = def.Key
 	}

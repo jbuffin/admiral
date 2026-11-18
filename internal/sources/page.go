@@ -156,7 +156,7 @@ func titleLine(raw json.RawMessage) string { return cappedLine(raw, maxTitleRune
 
 func cappedLine(raw json.RawMessage, runes int) string {
 	s, _ := rawString(raw)
-	return cleanLine(s)
+	return cleanLine(s, runes)
 }
 
 // invisible is a rune that no text sent on to a chat may hold: a control, a format character or a line or paragraph separator.
@@ -164,7 +164,7 @@ func invisible(r rune) bool {
 	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
 }
 
-func cleanLine(s string) string {
+func cleanLine(s string, runes int) string {
 	s = strings.Map(func(r rune) rune {
 		if invisible(r) {
 			return -1
