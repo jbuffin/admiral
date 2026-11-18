@@ -112,7 +112,7 @@ A line at the top of a module's page about the module itself rather than one row
 _Avoid_: note (that is a ledger entry), banner, alert
 
 **Module action**:
-Something the engineer does to a row or one of its steps that the module carries out upstream, such as claiming or closing a ticket. It runs on a click, after a yes/no or from a form.
+Something the engineer does to a row, one of its steps or a notice that the module carries out upstream, such as claiming or closing a ticket. It runs on a click, after a yes/no or from a form.
 _Avoid_: action (alone; that is the action ladder's word), command
 
 **Built-in action**:

@@ -3,6 +3,7 @@ import { useContext, useEffect, useId, useRef, useState } from "preact/hooks";
 import {
   fetchModuleForm,
   runModuleAction,
+  type ActionTarget,
   type FormField,
   type ModuleForm,
   type PageAction,
@@ -20,23 +21,26 @@ type Run = {
   token: number;
 };
 
-/** How long a row waits for the page to change after a run before its module actions come back. */
+/** How long a row or notice waits for the page to change after a run before its module actions come back. */
 export const UPDATING_FALLBACK_MS = 30_000;
 
 interface Controller {
   runs: Record<string, Run>;
   /** True while the page is in error: no module action runs. */
   blocked: boolean;
-  press: (row: string, action: PageAction) => void;
+  press: (target: ActionTarget, action: PageAction) => void;
 }
+
+/** A target's key in the run table; the kind prefix keeps a row and a notice with one id apart. */
+export const targetKey = (t: ActionTarget) => `${t.notice ? "notice" : "row"}:${t.id}`;
 
 const Ctx = createContext<Controller | null>(null);
 export const ModuleActionsProvider = Ctx.Provider;
 
-export const useUpdating = (row: string) =>
-  useContext(Ctx)?.runs[row]?.phase === "updating";
+export const useUpdating = (target: ActionTarget) =>
+  useContext(Ctx)?.runs[targetKey(target)]?.phase === "updating";
 
-/** A module action's sheet and run state for one page: one run per row, then "updating…" until the page's version moves. */
+/** A module action's sheet and run state for one page: one run per row or notice, then "updating…" until the page's version moves. */
 export function useModuleActions(
   sourceKey: string,
   version: number | undefined,
@@ -44,7 +48,7 @@ export function useModuleActions(
 ) {
   const [runs, setRuns] = useState<Record<string, Run>>({});
   const [sheet, setSheet] = useState<{
-    row: string;
+    target: ActionTarget;
     action: PageAction;
   } | null>(null);
   const current = useRef({ version, runs });
@@ -65,25 +69,26 @@ export function useModuleActions(
     });
   }, [version]);
 
-  const drop = (row: string, token: number) =>
+  const drop = (key: string, token: number) =>
     setRuns((r) => {
-      if (r[row]?.token !== token) return r;
-      const { [row]: _gone, ...rest } = r;
+      if (r[key]?.token !== token) return r;
+      const { [key]: _gone, ...rest } = r;
       return rest;
     });
 
-  const run = async (row: string, action: PageAction, values: Values) => {
+  const run = async (target: ActionTarget, action: PageAction, values: Values) => {
+    const key = targetKey(target);
     const token = ++tokens.current;
     const startVersion = current.current.version;
     setRuns((r) => ({
       ...r,
-      [row]: { phase: "running", action: action.id, token },
+      [key]: { phase: "running", action: action.id, token },
     }));
-    const res = await runModuleAction(sourceKey, row, action.id, values);
-    const tag = `module-action:${sourceKey}:${row}`;
+    const res = await runModuleAction(sourceKey, target, action.id, values);
+    const tag = `module-action:${sourceKey}:${target.notice ? `notice:${target.id}` : target.id}`;
     if (!res.ok) {
       showResult({ tag, name: action.label, line: res.error, error: true });
-      return drop(row, token);
+      return drop(key, token);
     }
     showResult({
       tag,
@@ -91,10 +96,10 @@ export function useModuleActions(
       line: res.data.message,
       url: res.data.url,
     });
-    if (current.current.version !== startVersion) return drop(row, token);
+    if (current.current.version !== startVersion) return drop(key, token);
     setRuns((r) => ({
       ...r,
-      [row]: {
+      [key]: {
         phase: "updating",
         action: action.id,
         version: startVersion,
@@ -102,19 +107,19 @@ export function useModuleActions(
       },
     }));
     timers.current.push(
-      setTimeout(() => drop(row, token), UPDATING_FALLBACK_MS),
+      setTimeout(() => drop(key, token), UPDATING_FALLBACK_MS),
     );
   };
 
   const controller: Controller = {
     runs,
     blocked,
-    press: (row, action) => {
-      if (!openableRow(row) || !openableRow(action.id)) return;
-      if (action.url || blocked || runs[row]) return;
+    press: (target, action) => {
+      if (!openableRow(target.id) || !openableRow(action.id)) return;
+      if (action.url || blocked || runs[targetKey(target)]) return;
       if (action.confirm === "yesno" || action.confirm === "form")
-        setSheet({ row, action });
-      else void run(row, action, {});
+        setSheet({ target, action });
+      else void run(target, action, {});
     },
   };
 
@@ -122,10 +127,10 @@ export function useModuleActions(
     sheet.action.confirm === "form" ? (
       <FormSheet
         sourceKey={sourceKey}
-        row={sheet.row}
+        target={sheet.target}
         action={sheet.action}
         onClose={() => setSheet(null)}
-        onSubmit={(v) => (setSheet(null), void run(sheet.row, sheet.action, v))}
+        onSubmit={(v) => (setSheet(null), void run(sheet.target, sheet.action, v))}
       />
     ) : (
       <ConfirmSheet
@@ -133,7 +138,7 @@ export function useModuleActions(
         onClose={() => setSheet(null)}
         onConfirm={() => (
           setSheet(null),
-          void run(sheet.row, sheet.action, {})
+          void run(sheet.target, sheet.action, {})
         )}
       />
     )
@@ -141,19 +146,19 @@ export function useModuleActions(
   return { controller, sheet: element };
 }
 
-/** A row's or step's module actions; a built-in action with a url stays an inert button. */
+/** A row's, step's or notice's module actions; a built-in action with a url stays an inert button. */
 export function ModuleActions({
-  row,
+  target,
   one,
   many,
 }: {
-  row: string;
+  target: ActionTarget;
   one?: PageAction;
   many?: PageAction[];
 }) {
   const ctl = useContext(Ctx);
   const all = [...(one ? [one] : []), ...(many ?? [])];
-  const run = ctl?.runs[row];
+  const run = ctl?.runs[targetKey(target)];
   return all.length === 0 ? null : (
     <span class="mactions">
       {all.map((a) => {
@@ -168,11 +173,11 @@ export function ModuleActions({
               !!a.url ||
               ctl.blocked ||
               !!run ||
-              !openableRow(row) ||
+              !openableRow(target.id) ||
               !openableRow(a.id)
             }
             aria-busy={running ? "true" : undefined}
-            onClick={() => ctl?.press(row, a)}
+            onClick={() => ctl?.press(target, a)}
           >
             {a.label}
             {running ? <span class="spinner" aria-hidden="true" /> : null}
@@ -241,13 +246,13 @@ function durationNote(f: FormField, value: string) {
 
 function FormSheet({
   sourceKey,
-  row,
+  target,
   action,
   onClose,
   onSubmit,
 }: {
   sourceKey: string;
-  row: string;
+  target: ActionTarget;
   action: PageAction;
   onClose: () => void;
   onSubmit: (v: Values) => void;
@@ -257,7 +262,7 @@ function FormSheet({
   const [values, setValues] = useState<Values>({});
   useEffect(() => {
     let stale = false;
-    void fetchModuleForm(sourceKey, row, action.id).then((r) => {
+    void fetchModuleForm(sourceKey, target, action.id).then((r) => {
       if (stale) return;
       if (r.ok) {
         const f = { ...r.data, fields: r.data.fields ?? [] };
@@ -268,7 +273,7 @@ function FormSheet({
     return () => {
       stale = true;
     };
-  }, [sourceKey, row, action.id]);
+  }, [sourceKey, target.notice, target.id, action.id]);
 
   const notes = form
     ? form.fields.map((f) =>

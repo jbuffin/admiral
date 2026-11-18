@@ -730,7 +730,7 @@ Body: `{"query": "<GitHub search>"}` or `{"view": "<view id>"}` (a built-in's or
 
 A module's page and one row's detail view; the plugin side is in [A module's page](plugins.md#a-modules-page). Both answer `404 {"error"}` for a source that does not exist, and `404 {"error":"The source has no page"}` for one whose plugin does not declare `page` once the plugin has answered `initialize` without it. Until that first `initialize` answer, the page answers `starting` as below and a row answers `404 {"error":"The page has no such row"}`.
 
-The page answers `200 {"state","groups","waiting","notices","auth"?,"error"?}`. `notices` is a module's notices: `[{"id","text","tone","link"?}]` in order, `[]` when there are none, with `tone` one of `info`, `warn` or `error` and `link` `{"label","url"}`, left out when there is none. They are part of the last good page and never count toward `waiting`. `state` is one of:
+The page answers `200 {"state","groups","waiting","notices","auth"?,"error"?}`. `notices` is a module's notices: `[{"id","text","tone","link"?,"action"?}]` in order, `[]` when there are none, with `tone` one of `info`, `warn` or `error` and `link` `{"label","url"}`, left out when there is none, and `action` an action as below, left out when there is none. They are part of the last good page and never count toward `waiting`. `state` is one of:
 
 - `starting`, with `groups: []` and `waiting: 0`, until the plugin's first good `page.get`. An answer with `loading: true` is not good for this: the state stays `starting` and serves that answer's notices, while its groups and `waiting` are ignored. After a good page, a `loading: true` answer changes nothing. A restart after a good page keeps `ready` and its groups.
 - `ready`, once there is a good page.
@@ -755,6 +755,10 @@ Checked in this order, and the plugin is not asked until all pass:
 4. The call: `action.form` within 10 seconds, `action.run` within 60. `422` when the plugin refuses it (its message, cut to one line of 300 characters), `504` when it does not answer in time, `502` when it can't be reached, or when its answer is invalid (a form over a limit or out of shape, such as a `choice` or `checklist` with no options, or a run answer with no `message`), with a one-line message.
 
 A run changes the page through the plugin's own `page.changed`; no live message is sent for it.
+
+### `POST /api/sources/<key>/notices/<id>/actions/<action>/form` and `…/run`
+
+The same two routes for a notice's action, with the same bodies, answers and status codes, and the same check order. Both are the engineer's alone: AdmiralBot gets `403`. `<action>` is the `id` of the notice's one `action`, found among the notices Admiral serves, which include a `loading: true` answer's notices before the first good page. The `404` refusals are worded for the notice: `The page has no such notice` for an id that is not a notice (a row id is not one), and `The notice has no such module action` for a notice with no action or another id. `/run` while another run is open on the notice is `409 A module action is already running on this notice`. A notice and a row with the same id hold separate run slots. The plugin gets `action.form {"notice","action"}` and `action.run {"notice","action","values"}`, with `notice` where a row's call has `row`.
 
 ### `POST /api/sources/<key>/page/refresh`
 

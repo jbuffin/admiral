@@ -155,13 +155,40 @@ func TestANoticeWhoseTextIsEmptyAfterCleaningIsDroppedAndTheRestOfTheAnswerStays
 	}
 }
 
-func TestANoticeActionIsIgnored(t *testing.T) {
-	ns := parsedNotices(t, noticesPage(`[{"id":"a","text":"A","action":{"id":"go","label":"Go","confirm":"click"}}]`))
-	if len(ns) != 1 {
-		t.Fatalf("notices = %s, want the notice kept", dump(ns))
+func TestANoticeKeepsItsOneActionParsedAsARowsMainActionIs(t *testing.T) {
+	ns := parsedNotices(t, noticesPage(`[
+		{"id":"a","text":"A","action":{"id":"go","label":"Go","confirm":"yesno","summary":"Sure?\nsecond"}},
+		{"id":"b","text":"B","action":{"id":"see","label":"See","confirm":"click","url":"https://acme.test/x"}},
+		{"id":"c","text":"C","action":{"id":"one","label":"One","confirm":"click"},"actions":[{"id":"two","label":"Two","confirm":"click"}]}]`))
+	if noticeIDs(ns) != "a,b,c" {
+		t.Fatalf("notices = %s, want all three", dump(ns))
 	}
-	if _, has := ns[0]["action"]; has {
-		t.Errorf("notice = %s, want no action on it", dump(ns[0]))
+	if act, _ := ns[0]["action"].(map[string]any); act == nil || act["id"] != "go" || act["label"] != "Go" || act["confirm"] != "yesno" || act["summary"] != "Sure?" {
+		t.Errorf("first action = %s, want id go, label Go, yesno, summary cut to its first line", dump(ns[0]["action"]))
+	}
+	if act, _ := ns[1]["action"].(map[string]any); act == nil || act["url"] != "https://acme.test/x" {
+		t.Errorf("second action = %s, want the https url kept", dump(ns[1]["action"]))
+	}
+	if _, has := ns[2]["actions"]; has {
+		t.Errorf("third notice = %s, want no actions list: a notice has one action", dump(ns[2]))
+	}
+}
+
+func TestANoticeActionThatARowActionWouldDropIsDroppedAndTheNoticeKept(t *testing.T) {
+	for name, action := range map[string]string{
+		"no id":            `{"label":"Go","confirm":"click"}`,
+		"no label":         `{"id":"go","confirm":"click"}`,
+		"a javascript url": `{"id":"go","label":"Go","confirm":"click","url":"javascript:alert(1)"}`,
+		"a file url":       `{"id":"go","label":"Go","confirm":"click","url":"file:///etc/passwd"}`,
+	} {
+		ns := parsedNotices(t, noticesPage(`[{"id":"a","text":"Kept","action":`+action+`},{"id":"b","text":"Next"}]`))
+		if noticeIDs(ns) != "a,b" || ns[0]["text"] != "Kept" {
+			t.Errorf("%s: notices = %s, want both kept", name, dump(ns))
+			continue
+		}
+		if _, has := ns[0]["action"]; has {
+			t.Errorf("%s: notice = %s, want the action dropped", name, dump(ns[0]))
+		}
 	}
 }
 

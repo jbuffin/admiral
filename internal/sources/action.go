@@ -13,12 +13,15 @@ import (
 )
 
 var (
-	errNoAction   = errors.New("The row has no such module action")
-	errNotAForm   = errors.New("The module action does not ask for a form")
-	errActionLink = errors.New("The module action opens a link, and Admiral does not run it")
-	errPageInErr  = errors.New("The page is in error, so its module actions are off")
-	errRunOpen    = errors.New("A module action is already running on this row")
-	errSourceDown = errors.New("The source is not running")
+	errNoAction       = errors.New("The row has no such module action")
+	errNoNotice       = errors.New("The page has no such notice")
+	errNoNoticeAction = errors.New("The notice has no such module action")
+	errNotAForm       = errors.New("The module action does not ask for a form")
+	errActionLink     = errors.New("The module action opens a link, and Admiral does not run it")
+	errPageInErr      = errors.New("The page is in error, so its module actions are off")
+	errRunOpen        = errors.New("A module action is already running on this row")
+	errNoticeRunOpen  = errors.New("A module action is already running on this notice")
+	errSourceDown     = errors.New("The source is not running")
 )
 
 var durationValue = regexp.MustCompile(`^\d{2}:[0-5]\d$`)
@@ -257,14 +260,46 @@ func (r *runner) forgetStepsLocked() {
 	}
 }
 
-// moduleAction is the first module action with this id on the row: its action, its actions, then its steps'.
-func (r *runner) moduleAction(row, id string) (Action, error) {
+// actionTarget is what a module action hangs on: a row or a notice. The two kinds keep apart, since their ids are separate namespaces.
+type actionTarget struct {
+	notice bool
+	id     string
+}
+
+// params is the plugin call's address: exactly one of row or notice.
+func (t actionTarget) params(action string) map[string]any {
+	key := "row"
+	if t.notice {
+		key = "notice"
+	}
+	return map[string]any{key: t.id, "action": action}
+}
+
+func (t actionTarget) runOpenErr() error {
+	if t.notice {
+		return errNoticeRunOpen
+	}
+	return errRunOpen
+}
+
+// moduleAction is the first module action with this id on the target. A row's are its action, its actions, then its steps'; a notice has its one action.
+func (r *runner) moduleAction(t actionTarget, id string) (Action, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.noPage {
 		return Action{}, errNoPage
 	}
-	rw := r.rowLocked(row)
+	if t.notice {
+		i := slices.IndexFunc(r.page.Notices, func(n Notice) bool { return n.ID == t.id })
+		if i < 0 {
+			return Action{}, errNoNotice
+		}
+		if a := r.page.Notices[i].Action; a != nil && a.ID == id {
+			return *a, nil
+		}
+		return Action{}, errNoNoticeAction
+	}
+	rw := r.rowLocked(t.id)
 	if rw == nil {
 		return Action{}, errNoRow
 	}
@@ -273,42 +308,42 @@ func (r *runner) moduleAction(row, id string) (Action, error) {
 		all = append(all, *rw.Action)
 	}
 	all = append(all, rw.Actions...)
-	all = append(all, r.stepActions[row]...)
+	all = append(all, r.stepActions[t.id]...)
 	if i := slices.IndexFunc(all, func(a Action) bool { return a.ID == id }); i >= 0 {
 		return all[i], nil
 	}
 	return Action{}, errNoAction
 }
 
-// openRun takes the row's run slot, or says another run holds it.
-func (r *runner) openRun(row string) bool {
+// openRun takes the target's run slot, or says another run holds it.
+func (r *runner) openRun(t actionTarget) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.runs[row] {
+	if r.runs[t] {
 		return false
 	}
 	if r.runs == nil {
-		r.runs = map[string]bool{}
+		r.runs = map[actionTarget]bool{}
 	}
-	r.runs[row] = true
+	r.runs[t] = true
 	return true
 }
 
-func (r *runner) closeRun(row string) {
+func (r *runner) closeRun(t actionTarget) {
 	r.mu.Lock()
-	delete(r.runs, row)
+	delete(r.runs, t)
 	r.mu.Unlock()
 }
 
 // moduleActionTarget runs the checks both routes share, in the order the docs give, and answers the live connection.
-func (s *Service) moduleActionTarget(w http.ResponseWriter, r *http.Request, verb string) (*runner, conn, string, string, bool) {
-	key, row, id := r.PathValue("key"), r.PathValue("id"), r.PathValue("action")
+func (s *Service) moduleActionTarget(w http.ResponseWriter, r *http.Request, verb string, notice bool) (*runner, conn, actionTarget, string, bool) {
+	key, t, id := r.PathValue("key"), actionTarget{notice: notice, id: r.PathValue("id")}, r.PathValue("action")
 	rn := s.Sup.runner(key)
 	if rn == nil {
 		writeError(w, http.StatusNotFound, "source "+key+" not found")
-		return nil, nil, "", "", false
+		return nil, nil, t, "", false
 	}
-	a, err := rn.moduleAction(row, id)
+	a, err := rn.moduleAction(t, id)
 	switch {
 	case err == nil && a.URL != "":
 		err = errActionLink
@@ -317,29 +352,35 @@ func (s *Service) moduleActionTarget(w http.ResponseWriter, r *http.Request, ver
 	}
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
-		return nil, nil, "", "", false
+		return nil, nil, t, "", false
 	}
 	p, live := rn.live()
 	if !live {
 		writeError(w, http.StatusConflict, errSourceDown.Error())
-		return nil, nil, "", "", false
+		return nil, nil, t, "", false
 	}
 	rn.mu.Lock()
 	inError := rn.pageStateLocked() == PageError
 	rn.mu.Unlock()
 	if inError {
 		writeError(w, http.StatusConflict, errPageInErr.Error())
-		return nil, nil, "", "", false
+		return nil, nil, t, "", false
 	}
-	return rn, p, row, id, true
+	return rn, p, t, id, true
 }
 
-func (s *Service) serveActionForm(w http.ResponseWriter, r *http.Request) {
-	_, p, row, id, ok := s.moduleActionTarget(w, r, "form")
+func (s *Service) serveActionForm(w http.ResponseWriter, r *http.Request) { s.serveForm(w, r, false) }
+
+func (s *Service) serveNoticeActionForm(w http.ResponseWriter, r *http.Request) {
+	s.serveForm(w, r, true)
+}
+
+func (s *Service) serveForm(w http.ResponseWriter, r *http.Request, notice bool) {
+	_, p, t, id, ok := s.moduleActionTarget(w, r, "form", notice)
 	if !ok {
 		return
 	}
-	res, err := p.call(r.Context(), "action.form", map[string]any{"row": row, "action": id}, callTimeout)
+	res, err := p.call(r.Context(), "action.form", t.params(id), callTimeout)
 	if err != nil {
 		callError(w, err)
 		return
@@ -352,16 +393,22 @@ func (s *Service) serveActionForm(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, form)
 }
 
-func (s *Service) serveActionRun(w http.ResponseWriter, r *http.Request) {
-	rn, p, row, id, ok := s.moduleActionTarget(w, r, "run")
+func (s *Service) serveActionRun(w http.ResponseWriter, r *http.Request) { s.serveRun(w, r, false) }
+
+func (s *Service) serveNoticeActionRun(w http.ResponseWriter, r *http.Request) {
+	s.serveRun(w, r, true)
+}
+
+func (s *Service) serveRun(w http.ResponseWriter, r *http.Request, notice bool) {
+	rn, p, t, id, ok := s.moduleActionTarget(w, r, "run", notice)
 	if !ok {
 		return
 	}
-	if !rn.openRun(row) {
-		writeError(w, http.StatusConflict, errRunOpen.Error())
+	if !rn.openRun(t) {
+		writeError(w, http.StatusConflict, t.runOpenErr().Error())
 		return
 	}
-	defer rn.closeRun(row)
+	defer rn.closeRun(t)
 	var body struct {
 		Values json.RawMessage `json:"values"`
 	}
@@ -379,7 +426,9 @@ func (s *Service) serveActionRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The run outlives a client that goes away, and so does its slot.
-	res, err := p.call(context.WithoutCancel(r.Context()), "action.run", map[string]any{"row": row, "action": id, "values": values}, runTimeout)
+	params := t.params(id)
+	params["values"] = values
+	res, err := p.call(context.WithoutCancel(r.Context()), "action.run", params, runTimeout)
 	if err != nil {
 		callError(w, err)
 		return
