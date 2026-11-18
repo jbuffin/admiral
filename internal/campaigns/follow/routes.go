@@ -550,6 +550,31 @@ type createdFailure struct {
 	Linked []string `json:"linked"`
 }
 
+// CreateRequest is a campaign to file. Fleet, when set, must be the fleet that owns Repo.
+type CreateRequest struct {
+	Repo   string
+	Title  string
+	Body   string
+	Issues []string
+	Host   string
+	Fleet  string
+}
+
+// CreateError is a refusal or a failure of CreateCampaign. Parent is set once the parent issue exists,
+// and Linked lists the children linked under it so far.
+type CreateError struct {
+	Status int
+	Msg    string
+	Parent string
+	Linked []string
+}
+
+func (e *CreateError) Error() string { return e.Msg }
+
+func createRefused(status int, msg string) *CreateError {
+	return &CreateError{Status: status, Msg: msg}
+}
+
 // serveCreate files a campaign's parent issue, links the chosen issues under it in order and follows it.
 // It never edits an existing tree: a child that already has a parent is refused, not moved.
 func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
@@ -564,19 +589,30 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	title := strings.TrimSpace(body.Title)
+	got, cerr := s.CreateCampaign(r.Context(), CreateRequest{Repo: body.Repo, Title: body.Title, Body: body.Body, Issues: body.Issues, Host: body.Host, Fleet: body.Fleet})
+	switch {
+	case cerr != nil && cerr.Parent != "":
+		writeJSON(w, cerr.Status, createdFailure{Error: cerr.Msg, Parent: cerr.Parent, Linked: cerr.Linked})
+	case cerr != nil:
+		writeError(w, cerr.Status, cerr.Msg)
+	default:
+		writeJSON(w, http.StatusCreated, s.json(got))
+	}
+}
+
+// CreateCampaign is the core of the create route, for the route and for a draft's Create. A refusal before any
+// GitHub write has no Parent; one with a Parent means the parent exists and nothing was undone.
+func (s *Service) CreateCampaign(ctx context.Context, req CreateRequest) (Followed, *CreateError) {
+	title := strings.TrimSpace(req.Title)
 	switch {
 	case title == "":
-		writeError(w, http.StatusBadRequest, "title: write a title for the campaign")
-		return
-	case len(body.Issues) > maxCreateIssues:
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("issues: at most %d", maxCreateIssues))
-		return
+		return Followed{}, createRefused(http.StatusBadRequest, "title: write a title for the campaign")
+	case len(req.Issues) > maxCreateIssues:
+		return Followed{}, createRefused(http.StatusBadRequest, fmt.Sprintf("issues: at most %d", maxCreateIssues))
 	}
-	owner, repoName, ok := strings.Cut(strings.TrimSpace(body.Repo), "/")
+	owner, repoName, ok := strings.Cut(strings.TrimSpace(req.Repo), "/")
 	if !ok || !repoPart.MatchString(owner) || !repoPart.MatchString(repoName) || owner == "." || owner == ".." || repoName == "." || repoName == ".." {
-		writeError(w, http.StatusBadRequest, "repo: write owner/name")
-		return
+		return Followed{}, createRefused(http.StatusBadRequest, "repo: write owner/name")
 	}
 	type child struct {
 		ref campaigns.IssueRef
@@ -584,29 +620,26 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	var kids []child
 	seen := map[string]bool{}
-	for _, raw := range body.Issues {
+	for _, raw := range req.Issues {
 		ref, err := campaigns.ParseIssueRef(raw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, raw+": "+err.Error())
-			return
+			return Followed{}, createRefused(http.StatusBadRequest, raw+": "+err.Error())
 		}
 		url := fmt.Sprintf("https://%s/%s/%s/issues/%d", hostOf(ref), ref.Owner, ref.Repo, ref.Number)
 		key := strings.ToLower(url)
 		if seen[key] {
-			writeError(w, http.StatusBadRequest, "issues: "+url+" is listed twice")
-			return
+			return Followed{}, createRefused(http.StatusBadRequest, "issues: "+url+" is listed twice")
 		}
 		seen[key] = true
 		kids = append(kids, child{ref, url})
 	}
-	host := strings.ToLower(strings.TrimSpace(body.Host))
+	host := strings.ToLower(strings.TrimSpace(req.Host))
 	switch {
 	case len(kids) > 0:
 		if issuesHost := hostOf(kids[0].ref); host == "" {
 			host = issuesHost
 		} else if host != issuesHost {
-			writeError(w, http.StatusUnprocessableEntity, "issues: every issue must be on the same GitHub host")
-			return
+			return Followed{}, createRefused(http.StatusUnprocessableEntity, "issues: every issue must be on the same GitHub host")
 		}
 	case host == "":
 		host = github.DefaultHost
@@ -616,78 +649,65 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 		fleet = s.Route(host, owner+"/"+repoName)
 	}
 	if fleet == "" {
-		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("No fleet owns %s/%s, so Admiral can't file the campaign there", owner, repoName))
-		return
+		return Followed{}, createRefused(http.StatusUnprocessableEntity, fmt.Sprintf("No fleet owns %s/%s, so Admiral can't file the campaign there", owner, repoName))
 	}
-	if want := strings.TrimSpace(body.Fleet); want != "" && want != fleet {
-		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s/%s belongs to fleet %s, not %s", owner, repoName, fleet, want))
-		return
+	if want := strings.TrimSpace(req.Fleet); want != "" && want != fleet {
+		return Followed{}, createRefused(http.StatusUnprocessableEntity, fmt.Sprintf("%s/%s belongs to fleet %s, not %s", owner, repoName, fleet, want))
 	}
 	for _, k := range kids {
 		switch {
 		case hostOf(k.ref) != host:
-			writeError(w, http.StatusUnprocessableEntity, "issues: every issue must be on the same GitHub host")
-			return
+			return Followed{}, createRefused(http.StatusUnprocessableEntity, "issues: every issue must be on the same GitHub host")
 		case !strings.EqualFold(k.ref.Owner, owner):
-			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s is not owned by %s, so it can't be linked under a parent in %s/%s", k.url, owner, owner, repoName))
-			return
+			return Followed{}, createRefused(http.StatusUnprocessableEntity, fmt.Sprintf("%s is not owned by %s, so it can't be linked under a parent in %s/%s", k.url, owner, owner, repoName))
 		case s.Route(host, k.ref.Owner+"/"+k.ref.Repo) != fleet:
-			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s belongs to another fleet than %s/%s", k.url, owner, repoName))
-			return
+			return Followed{}, createRefused(http.StatusUnprocessableEntity, fmt.Sprintf("%s belongs to another fleet than %s/%s", k.url, owner, repoName))
 		}
 	}
 	client, ok := s.Clients(fleet, host)
 	switch {
 	case !ok:
-		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("fleet %s has no GitHub source for %s", fleet, host))
-		return
+		return Followed{}, createRefused(http.StatusUnprocessableEntity, fmt.Sprintf("fleet %s has no GitHub source for %s", fleet, host))
 	case !strings.EqualFold(client.Host(), host):
-		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("the GitHub source of fleet %s reads %s, not %s", fleet, client.Host(), host))
-		return
+		return Followed{}, createRefused(http.StatusUnprocessableEntity, fmt.Sprintf("the GitHub source of fleet %s reads %s, not %s", fleet, client.Host(), host))
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
+	rctx, cancel := context.WithTimeout(ctx, readTimeout)
 	defer cancel()
 	ids := make([]int64, len(kids))
 	for i, k := range kids {
-		rec, err := client.IssueRecord(ctx, k.ref.Owner, k.ref.Repo, k.ref.Number)
+		rec, err := client.IssueRecord(rctx, k.ref.Owner, k.ref.Repo, k.ref.Number)
 		if err != nil {
-			writeError(w, http.StatusBadGateway, fmt.Sprintf("Could not read %s, so nothing was created: %v", k.url, err))
-			return
+			return Followed{}, createRefused(http.StatusBadGateway, fmt.Sprintf("Could not read %s, so nothing was created: %v", k.url, err))
 		}
 		if rec.PullRequest {
-			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s is a pull request, not an issue, so nothing was created", k.url))
-			return
+			return Followed{}, createRefused(http.StatusUnprocessableEntity, fmt.Sprintf("%s is a pull request, not an issue, so nothing was created", k.url))
 		}
 		if rec.ParentURL != "" {
-			writeError(w, http.StatusConflict, fmt.Sprintf("%s already has a parent, and Admiral never moves an issue, so nothing was created", k.url))
-			return
+			return Followed{}, createRefused(http.StatusConflict, fmt.Sprintf("%s already has a parent, and Admiral never moves an issue, so nothing was created", k.url))
 		}
 		ids[i] = rec.RESTID
 	}
 
-	wctx, wcancel := context.WithTimeout(context.WithoutCancel(r.Context()), createTimeout)
+	wctx, wcancel := context.WithTimeout(context.WithoutCancel(ctx), createTimeout)
 	defer wcancel()
-	parent, err := client.CreateIssue(wctx, owner, repoName, title, body.Body)
+	parent, err := client.CreateIssue(wctx, owner, repoName, title, req.Body)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Sprintf("Could not create the parent issue, so nothing was linked: %v", err))
-		return
+		return Followed{}, createRefused(http.StatusBadGateway, fmt.Sprintf("Could not create the parent issue, so nothing was linked: %v", err))
 	}
 	linked := []string{}
-	fail := func(msg string) {
-		writeJSON(w, http.StatusBadGateway, createdFailure{Error: msg, Parent: parent.URL, Linked: linked})
+	fail := func(msg string) *CreateError {
+		return &CreateError{Status: http.StatusBadGateway, Msg: msg, Parent: parent.URL, Linked: linked}
 	}
 	for i, k := range kids {
 		if err := client.AddSubIssue(wctx, owner, repoName, parent.Number, ids[i]); err != nil {
-			fail(fmt.Sprintf("Created %s but could not link %s: %v", parent.URL, k.url, err))
-			return
+			return Followed{}, fail(fmt.Sprintf("Created %s but could not link %s: %v", parent.URL, k.url, err))
 		}
 		linked = append(linked, k.url)
 	}
 	got, _, lerr := s.Follow(wctx, parent.URL)
 	if lerr != nil {
-		fail(fmt.Sprintf("Created and linked %s but could not follow it: %s", parent.URL, lerr.Msg))
-		return
+		return Followed{}, fail(fmt.Sprintf("Created and linked %s but could not follow it: %s", parent.URL, lerr.Msg))
 	}
-	writeJSON(w, http.StatusCreated, s.json(got))
+	return got, nil
 }

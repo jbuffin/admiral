@@ -76,7 +76,7 @@ type Commitment struct {
 }
 
 type Entry struct {
-	Kind string // "message", "question", "reset", "commitment", "event_card", "launch_card"
+	Kind string // "message", "question", "reset", "commitment", "event_card", "launch_card", "campaign_draft_card"
 	Role string // "user" or "assistant" for a message
 	Text string
 }

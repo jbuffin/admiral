@@ -631,6 +631,29 @@ func serve(args []string) error {
 		}
 		return map[string]any{"session": t.Ship}, 0, ""
 	}
+	// A draft's repo is one of the fleet's projects that route to it, so every draft can be created.
+	inboxService.FleetRepos = func(fleet string) []string {
+		router := github.RouterFromFleets(cfg.Current().Fleets)
+		var out []string
+		for _, repo := range fleetRepos(cfg)(fleet) {
+			if router.Route(github.DefaultHost, repo) == fleet {
+				out = append(out, repo)
+			}
+		}
+		return out
+	}
+	inboxService.CreateCampaign = func(ctx context.Context, d inbox.CampaignDraft) (inbox.CreatedCampaign, int, string) {
+		got, cerr := campaignService.CreateCampaign(ctx, follow.CreateRequest{Repo: d.Repo, Title: d.Title, Body: d.Body, Fleet: d.Fleet})
+		if cerr != nil {
+			return inbox.CreatedCampaign{URL: cerr.Parent}, cerr.Status, cerr.Msg
+		}
+		return inbox.CreatedCampaign{ID: got.ID, URL: got.URL}, 0, ""
+	}
+	inboxService.PostCampaignCard = func(fleet string, c inbox.CampaignCard) {
+		if err := chatService.PostCampaignDraftCard(fleet, chat.CampaignDraftCard{ID: c.ID, Title: c.Title, URL: c.URL, Created: c.Created, Failed: c.Failed}); err != nil {
+			log.Printf("admiral: campaign draft card for fleet %s: %v", fleet, err)
+		}
+	}
 	inboxService.DismissRoutine = func(p inbox.RoutineProposal) { routineScheduler.Dismiss(p.Fleet, p.Routine, p.Trigger) }
 	shipService.OnChange = func() {
 		campaignService.ShipsChanged()

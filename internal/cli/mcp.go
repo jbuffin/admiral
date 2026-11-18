@@ -260,6 +260,35 @@ func draftRoutine(c *mcpClient, raw json.RawMessage) (string, error) {
 	return b.String(), nil
 }
 
+// draftCampaign leaves a campaign draft in the Inbox and answers the item's link. It files nothing: the engineer creates it there.
+func draftCampaign(c *mcpClient, raw json.RawMessage) (string, error) {
+	var a struct{ Repo, Title, Body string }
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", err
+	}
+	switch {
+	case strings.TrimSpace(a.Repo) == "":
+		return "", errors.New("repo: name the owner/name repo the campaign belongs in")
+	case strings.TrimSpace(a.Title) == "":
+		return "", errors.New("title: write a title for the campaign")
+	}
+	path, err := c.fleetPath("/campaign-drafts")
+	if err != nil {
+		return "", err
+	}
+	out, err := c.do("POST", path, map[string]any{"repo": a.Repo, "title": a.Title, "body": a.Body}, 0)
+	if err != nil {
+		return "", err
+	}
+	var r struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(out, &r); err != nil || r.ID == "" {
+		return "", errors.New("the draft came back unreadable")
+	}
+	return "Left a campaign draft in the Inbox, not created: the engineer reviews it there and creates or dismisses it. Link it in your reply: /app/inbox/_admiral/item/" + url.PathEscape(r.ID), nil
+}
+
 // fleetGetHarness is fleetGet with the optional harness argument sent as ?harness=.
 func fleetGetHarness(rest string) func(*mcpClient, json.RawMessage) (string, error) {
 	return func(c *mcpClient, raw json.RawMessage) (string, error) {
@@ -387,6 +416,12 @@ var mcpTools = []mcpTool{
 	{"list_routines", "List this fleet's routines: when each runs, its mode, and whether it is on.", obj(nil, nil), fleetGet("/routines")},
 	{"draft_routine", "Draft a routine for this fleet from the engineer's words, and get back a summary and a link to the draft. It drafts and never saves: the engineer opens the link, reviews it and saves it. Turning a routine on, saving or editing one is the engineer's.",
 		obj([]string{"prose"}, map[string]any{"prose": str("what the engineer wants the routine to do and when, in their own words")}), draftRoutine},
+	{"draft_campaign", "Draft a campaign for the engineer, only when they tell you to: it leaves the draft (repo, title, body) in their Inbox and gives you a link to it. You never create the campaign: the engineer reviews the draft in the Inbox and creates or dismisses it. The repo must be one of this fleet's repos.",
+		obj([]string{"repo", "title", "body"}, map[string]any{
+			"repo":  str("the owner/name repo the campaign's parent issue is filed in; one of this fleet's repos"),
+			"title": str("the campaign's title, at most 100 characters"),
+			"body":  str("the campaign's description, in markdown"),
+		}), draftCampaign},
 	{"get_standing_orders", "Read this fleet's standing orders: its Checks, Guidance and Limits. You can't file or change them. When the engineer wants a Check, Guidance or a Limit, draft it as prose and link them to /app/routines, where they file it. For a routine, use draft_routine.",
 		obj(nil, nil), fleetGet("/standing-orders")},
 	{"turn_routine_off", "Turn one of this fleet's routines off. Turning one on, saving, editing or deleting a routine is the engineer's.",
@@ -463,7 +498,7 @@ var mcpTools = []mcpTool{
 				"resources":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "the configured resources the ship needs while it runs"},
 			}},
 		}), makeCommitment},
-	{"work_on_campaign", "Work on a campaign (a GitHub issue tree) for the engineer: Admiral follows it and launches each Without-you child ship unattended in autopilot, until the campaign ends. Use it only when the engineer tells you to work on an issue in this chat; then quote it back with its id. Admiral never edits the issue tree, and you cannot create a campaign. You cannot cancel it: only the engineer cancels, on Preferences.",
+	{"work_on_campaign", "Work on a campaign (a GitHub issue tree) for the engineer: Admiral follows it and launches each Without-you child ship unattended in autopilot, until the campaign ends. Use it only when the engineer tells you to work on an issue in this chat; then quote it back with its id. Admiral never edits the issue tree, and it never creates one: when the engineer wants a new campaign, use draft_campaign, and they create it from the Inbox. You cannot cancel it: only the engineer cancels, on Preferences.",
 		obj([]string{"reference"}, map[string]any{
 			"reference": str("the campaign's parent issue: a URL or owner/repo#n"),
 			"harness":   str("the harness the children run on: claude, codex or copilot"),

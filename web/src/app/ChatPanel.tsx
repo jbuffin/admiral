@@ -16,7 +16,7 @@ import { MuteRule } from './MuteRule';
 import { ReviewerNoteView } from './ReviewerNoteView';
 import { Peek } from './Peek';
 import { go, loc, chatMessageOf, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
-import { renderMarkdown } from './markdown';
+import { renderMarkdown, renderRestrictedMarkdown } from './markdown';
 import { PeekQuestions } from './PeekQuestions';
 import { useChat } from './useChat';
 import { MessageField } from './Composer';
@@ -356,6 +356,8 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           </div>
         ) : i.kind === 'ship' ? (
           <ShipCardView key={i.id} item={i} />
+        ) : i.kind === 'campaign_draft' ? (
+          <div key={i.id} class="msg assistant md" dangerouslySetInnerHTML={{ __html: renderRestrictedMarkdown(i.text) }} />
         ) : (
           <MessageView key={i.id} item={i} linkShips={linkShips} fleet={fleet} flash={flashId === i.id} />
         ),

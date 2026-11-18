@@ -27,6 +27,9 @@ func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 	if it.Kind == KindWakeProposal {
 		return ReviewResult{Forgotten: true}, s.DismissProposal(id)
 	}
+	if it.Kind == KindCampaignDraft {
+		return ReviewResult{Forgotten: true}, s.DismissCampaignDraft(id)
+	}
 	if it.Kind == KindCrewNotes {
 		return ReviewResult{Forgotten: true}, s.dropCrewNotes(id)
 	}
