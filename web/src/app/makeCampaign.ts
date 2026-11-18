@@ -20,6 +20,8 @@ export interface CreateFailure {
 
 export interface CreateBody {
   repo: string;
+  host?: string;
+  fleet?: string;
   title: string;
   body: string;
   issues: string[];
@@ -96,7 +98,52 @@ export interface SourceSettings {
 
 /** The account of the fleet's GitHub source for the issues' host, which is the one that writes; none when no source matches. */
 export function accountForHost(sources: SourceSettings[], host: string): { key: string; account: string } | undefined {
-  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
-  const found = sources.find((s) => (text(s.settings.host).toLowerCase() || DEFAULT_HOST) === host.toLowerCase());
-  return found && { key: found.key, account: text(found.settings.account) };
+  const found = sources.find((s) => sourceHost(s.settings) === host.toLowerCase());
+  return found && { key: found.key, account: settingText(found.settings.account) };
+}
+
+const settingText = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+
+/** The host a GitHub source's settings point at. */
+export const sourceHost = (settings: Record<string, unknown>): string => settingText(settings.host).toLowerCase() || DEFAULT_HOST;
+
+const NAME = '[A-Za-z0-9_.-]+';
+const REFERENCES = [new RegExp('^#\\d{1,9}$'), new RegExp(`^${NAME}/${NAME}#\\d{1,9}$`), new RegExp(`^https?://[A-Za-z0-9.-]+(?::\\d+)?/${NAME}/${NAME}/issues/\\d{1,9}$`)];
+
+/** True when the text is one the server's search reads as an issue reference, which a campaign's idea never carries over. */
+export const isReference = (text: string): boolean => REFERENCES.some((re) => re.test(text.trim()));
+
+export interface Project {
+  /** `host/owner/repo`. */
+  id: string;
+  host: string;
+  /** `owner/repo`. */
+  repo: string;
+  label: string;
+}
+
+/** One project per remote of the fleet's checkouts on a host it has a GitHub source for, by name. */
+export function projectChoices(repos: { kind: string; remotes: string[] | null }[], hosts: ReadonlySet<string>): Project[] {
+  const out = new Map<string, Project>();
+  for (const r of repos) {
+    if (r.kind !== 'checkout') continue;
+    for (const id of r.remotes ?? []) {
+      const at = id.indexOf('/');
+      const host = id.slice(0, at).toLowerCase();
+      const repo = id.slice(at + 1);
+      if (at < 0 || !hosts.has(host) || repo.split('/').length !== 2) continue;
+      out.set(id, { id, host, repo, label: host === DEFAULT_HOST ? repo : id });
+    }
+  }
+  return [...out.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+}
+
+/** The remembered project when it is still offered, else the first by name. */
+export function initialProject(projects: Project[], remembered: string | null): string {
+  return (projects.find((p) => p.id === remembered) ?? projects[0])?.id ?? '';
+}
+
+export function textCampaignNote(account: string | undefined): string {
+  const who = account ? `@${account}` : "the fleet's gh account";
+  return `Admiral creates a parent issue on GitHub as ${who} with no issues under it, then follows the campaign. Nothing launches.`;
 }

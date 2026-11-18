@@ -89,7 +89,7 @@ function auditRemote(a: Admiral): Record<number, string> {
   return { 71: log, 72: report, ...layers };
 }
 
-const NEW_PARENT = { number: 50, title: 'Pool: sensor and retry work' };
+export const NEW_PARENT = { number: 50, title: 'Pool: sensor and retry work' };
 const REST_IDS: Record<number, number> = { 41: 9041, 42: 9042 };
 const REVIEW: Item[] = [
   { number: 11, title: 'Review the cache layer', author: 'alice', pr: { review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' }, requested: true },
@@ -190,8 +190,8 @@ function chainDetail(a: Admiral, i: Item) {
   writeFileSync(join(dir, url.replace(/[/:]/g, '_')), JSON.stringify(detail) + '\n');
 }
 
-/** The fake gh's REST answers for creating a campaign: each child's id, the new parent, the link call, and the new parent's tree for following it. */
-function seedCampaignCreate(a: Admiral) {
+/** The fake gh's REST answers for creating a campaign: each child's id, the new parent, the link call, and the new parent's tree for following it; `children: false` seeds a parent with no sub-issues. */
+export function seedCampaignCreate(a: Admiral, opts: { children?: boolean } = {}) {
   const rest = join(a.fakeGh().dir, 'rest');
   const answer = (key: string, method: string, endpoint: string, body: unknown) => {
     writeFileSync(join(rest, `${key}.endpoint`), endpoint);
@@ -201,12 +201,12 @@ function seedCampaignCreate(a: Admiral) {
   for (const [n, id] of Object.entries(REST_IDS)) answer(`child${n}`, 'GET', `repos/acme/widgets/issues/${n}`, { id, number: Number(n), parent_issue_url: null });
   answer('create', 'POST', 'repos/acme/widgets/issues', { number: NEW_PARENT.number, html_url: `https://github.com/acme/widgets/issues/${NEW_PARENT.number}` });
   answer('link', 'POST', `repos/acme/widgets/issues/${NEW_PARENT.number}/sub_issues`, {});
-  const kids = POOL.slice(0, 2).map((i) => issueNode(i.number, i.title));
+  const kids = opts.children === false ? [] : POOL.slice(0, 2).map((i) => issueNode(i.number, i.title));
   fakeGhTrees(a).campaign(issueNode(NEW_PARENT.number, NEW_PARENT.title, { kids }));
 }
 
 /** Every REST write the fake gh recorded, oldest first (the fake names call dirs at random, so the order is their creation time). */
-function ghWrites(a: Admiral): { method: string; endpoint: string; host: string; stdin: unknown }[] {
+export function ghWrites(a: Admiral): { method: string; endpoint: string; host: string; stdin: unknown }[] {
   const dir = join(a.fakeGh().dir, 'calls');
   if (!existsSync(dir)) return [];
   const read = (d: string, f: string) => (existsSync(join(dir, d, f)) ? readFileSync(join(dir, d, f), 'utf8').trim() : '');

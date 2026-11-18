@@ -443,6 +443,14 @@ export async function fetchSources(): Promise<Result<Source[]>> {
   const r = await call<Source[] | null>('GET', '/sources');
   return r.ok ? { ok: true, data: (r.data ?? []).map((s) => ({ ...s, warnings: s.warnings ?? [] })) } : r;
 }
+export interface FleetRepo {
+  path: string;
+  name: string;
+  kind: string;
+  /** `host/owner/repo` ids. */
+  remotes: string[] | null;
+}
+export const fetchFleetRepos = (fleet: string) => call<{ repos: FleetRepo[] | null }>('GET', `/fleets/${encodeURIComponent(fleet)}/repos`);
 export const fetchPlugins = () => call<PluginInfo[]>('GET', '/plugins');
 export const fetchSchema = (key: string) => call<unknown>('GET', `${src(key)}/schema`);
 export const fetchSettings = (key: string) => call<{ name: string; settings: Record<string, unknown> }>('GET', `${src(key)}/settings`);
