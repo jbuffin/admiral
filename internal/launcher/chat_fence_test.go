@@ -462,20 +462,23 @@ func TestEveryChatPromptTeachesWorkOnAsAnInstructionOnlyAndItsLimits(t *testing.
 func TestEveryChatPromptSendsAWhatIsLeftQuestionToReadCampaign(t *testing.T) {
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
-		reads := strings.Index(prompt, "list_campaigns")
-		if reads < 0 || !strings.Contains(prompt[max(0, reads-200):min(len(prompt), reads+100)], "read_campaign") {
-			t.Errorf("%s prompt's reads line does not name read_campaign beside list_campaigns", harness)
-		}
-		i := strings.LastIndex(prompt, "read_campaign")
-		if i < 0 || i == strings.Index(prompt, "read_campaign") {
-			t.Errorf("%s prompt has no line telling the chat when to use read_campaign", harness)
+		start := strings.Index(prompt, "Read with")
+		if start < 0 {
+			t.Errorf("%s prompt has no reads sentence", harness)
 			continue
 		}
-		near := strings.ToLower(prompt[max(0, i-300):min(len(prompt), i+300)])
-		for _, want := range []string{"left", "campaign"} {
-			if !strings.Contains(near, want) {
-				t.Errorf("%s prompt near its read_campaign instruction lacks %q: %q", harness, want, near)
-			}
+		reads, _, _ := strings.Cut(prompt[start:], ". ")
+		if !strings.Contains(reads, "read_campaign") {
+			t.Errorf("%s prompt's reads sentence does not name read_campaign: %q", harness, reads)
+		}
+		left := strings.Index(strings.ToLower(prompt), "what is left")
+		if left < 0 {
+			t.Errorf("%s prompt never says what to do when asked what is left", harness)
+			continue
+		}
+		sentence, _, _ := strings.Cut(prompt[left:], ". ")
+		if !strings.Contains(sentence, "read_campaign") {
+			t.Errorf("%s prompt's what-is-left sentence does not send the chat to read_campaign: %q", harness, sentence)
 		}
 	}
 }
