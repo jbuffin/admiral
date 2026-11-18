@@ -264,6 +264,16 @@ describe('foldedLine', () => {
     expect(foldedLine('- [x] done')).toBe('done');
   });
 
+  it('drops markers repeatedly', () => {
+    expect(foldedLine('> - item')).toBe('item');
+    expect(foldedLine('## - [ ] mixed')).toBe('mixed');
+  });
+
+  it('drops a GitHub alert tag, and moves on when nothing is left', () => {
+    for (const tag of ['NOTE', 'TIP', 'IMPORTANT', 'WARNING', 'CAUTION']) expect(foldedLine(`> [!${tag}]\n> Real text`)).toBe('Real text');
+    expect(foldedLine('> [!NOTE] inline text')).toBe('inline text');
+  });
+
   it('skips a code-fence line and shows the first line after it', () => {
     expect(foldedLine('```ts\nconst a = 1;\n```')).toBe('const a = 1;');
     expect(foldedLine('~~~\nplain\n~~~')).toBe('plain');

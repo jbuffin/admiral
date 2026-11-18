@@ -135,17 +135,19 @@ export function Reviewers({ detail, session, reread }: { detail: PRDetail; sessi
 
 const itemId = (i: TimelineItem) => i.url;
 
-function Body({ body, folded }: { body: string; folded?: boolean }) {
-  const source = descriptionSource(body);
-  if (!source.trim()) return null;
-  return folded ? (
-    <p class="item-body" dangerouslySetInnerHTML={{ __html: renderRestrictedInline(foldedLine(body)) }} />
-  ) : (
+function Body({ source, line }: { source: string; line?: string }) {
+  return line === undefined ? (
     <div class="item-body md" dangerouslySetInnerHTML={{ __html: renderMarkdown(source) }} />
+  ) : (
+    <p class="item-body md" dangerouslySetInnerHTML={{ __html: renderRestrictedInline(line) }} />
   );
 }
 
 function Item({ item, now, folded, onToggle }: { item: TimelineItem; now: number; folded: boolean; onToggle: () => void }) {
+  const source = descriptionSource(item.body);
+  // A bot body that folds to nothing (only fences, say) shows nothing, and has no Show all to open it.
+  const line = item.author.bot ? foldedLine(source) : '';
+  const hasBody = source.trim() !== '' && (!item.author.bot || line !== '');
   const cls = `item${item.author.bot ? ' bot' : ''}${folded ? ' folded' : ''}${item.resolved ? ' resolved' : ''}`;
   return (
     <div class={cls}>
@@ -156,8 +158,8 @@ function Item({ item, now, folded, onToggle }: { item: TimelineItem; now: number
         {item.resolved ? <span class="pr-chip">Resolved</span> : null}
         <span class="when">{relativeTime(item.at, now)}</span>
       </div>
-      <Body body={item.body} folded={folded} />
-      {item.author.bot && descriptionSource(item.body).trim() ? (
+      {hasBody ? <Body source={source} line={folded ? line : undefined} /> : null}
+      {item.author.bot && hasBody ? (
         <Button label={folded ? 'Show all' : 'Show less'} variant="link" expanded={!folded} onClick={onToggle} />
       ) : null}
       {item.replies.map((r, i) => (
@@ -167,7 +169,7 @@ function Item({ item, now, folded, onToggle }: { item: TimelineItem; now: number
             <BotTag actor={r.author} />
             <span class="when">{relativeTime(r.at, now)}</span>
           </div>
-          <Body body={r.body} />
+          {descriptionSource(r.body).trim() ? <Body source={descriptionSource(r.body)} /> : null}
         </div>
       ))}
     </div>

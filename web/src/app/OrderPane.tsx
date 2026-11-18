@@ -143,7 +143,7 @@ export function OrderPane({ row, group, viewer, sources, now, heading, onLaunch,
           ))}
         </ol>
       ) : null}
-      {o.excerpt ? <p class="odetail-excerpt" dangerouslySetInnerHTML={{ __html: renderRestrictedInline(descriptionSource(o.excerpt)) }} /> : null}
+      {o.excerpt ? <p class="odetail-excerpt md" dangerouslySetInnerHTML={{ __html: renderRestrictedInline(descriptionSource(o.excerpt)) }} /> : null}
       {stack && onOrder.length > 0 ? <h3 class="odetail-sub">Ships on this stack</h3> : null}
       {onOrder.length > 0 ? (
         <ul class="odetail-ships" aria-label={stack ? 'Ships on this stack' : 'Ships on this order'}>

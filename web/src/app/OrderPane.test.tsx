@@ -1,8 +1,11 @@
 import { render } from '@testing-library/preact';
-import { expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Order } from './api';
 import { OrderPane } from './OrderPane';
 import type { OrderRow } from './ordersView';
+
+beforeEach(() => vi.stubGlobal('fetch', vi.fn(async () => new Response('{}'))));
+afterEach(() => vi.unstubAllGlobals());
 
 const pane = (excerpt: string) => {
   const order = { id: 'acme/api#7', title: 'Fix it', url: 'https://github.com/acme/api/pull/7', excerpt } as Order;

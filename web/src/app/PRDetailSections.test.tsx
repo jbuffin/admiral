@@ -1,7 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/preact';
-import { expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { PRActor, PRDetail } from './api';
 import { PRSections } from './PRDetailSections';
+
+beforeEach(() => vi.stubGlobal('fetch', vi.fn(async () => new Response('{}'))));
+afterEach(() => vi.unstubAllGlobals());
 
 const who = (login: string, bot = false): PRActor => ({ login, bot });
 const MD = 'Some **bold** and `inline` text\n\n```ts\nconst a = 1;\n```\n\n- one\n- two';
@@ -55,8 +58,9 @@ test('a comment that is only an HTML comment shows no body, and a bot one gets n
   });
   const { container } = render(<PRSections detail={d} />);
   const t = timeline(container);
-  expect(t.querySelectorAll('.item-body, .md')).toHaveLength(1);
   expect(t.textContent).toContain('real');
+  expect(t.textContent).not.toContain('marker');
+  expect(t.textContent).not.toContain('<!--');
   expect(screen.queryByRole('button', { name: /show all/i })).toBeNull();
 });
 
@@ -80,4 +84,10 @@ test('a folded bot comment shows only its first line, formatted, and Show all re
   fireEvent.click(screen.getByRole('button', { name: 'Show less' }));
   expect(t.textContent).not.toContain('second paragraph');
   expect(t.querySelector('pre')).toBeNull();
+});
+
+test('a bot body of only an empty fence shows no body and no Show all', () => {
+  const { container } = render(<PRSections detail={detail({ comments: [comment(who('ci-bot', true), '```\n```')] })} />);
+  expect(timeline(container).querySelector('.item-body')).toBeNull();
+  expect(screen.queryByRole('button', { name: /show all/i })).toBeNull();
 });
