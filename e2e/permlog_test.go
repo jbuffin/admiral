@@ -122,7 +122,7 @@ func TestPermissionLog_RecordsEachPromptOfAShipAndItsCrewWithWhoAnswered(t *test
 		if r.Answer != c.ans || r.By != permlog.Person || r.Via != c.via {
 			t.Errorf("%q: %s by %s via %s, want %s by a person via %s", c.key, r.Answer, r.By, r.Via, c.ans, c.via)
 		}
-		if r.Ship != ship.Session || r.Harness != "claude" || r.Fleet != "cl" || r.Repo != "acme/perms" || r.Call.Kind != "shell" {
+		if r.Ship != ship.Session || r.Harness != "claude" || r.Fleet != "cl" || r.Repo != w.repoKeyOf("perms") || r.Call.Kind != "shell" {
 			t.Errorf("%q: %+v", c.key, r)
 		}
 	}
@@ -134,6 +134,7 @@ func TestPermissionLog_RecordsEachPromptOfAShipAndItsCrewWithWhoAnswered(t *test
 		w.checkoutOf(w.work, "perms2", "acme/perms2")
 		co := w.launch(map[string]any{"fleet": "co", "harness": "copilot", "dir": filepath.Join(w.work, "perms2"), "skill": noSkill, "order_id": "o-perms2", "text": "go"})
 		recs := w.waitPrompts(co.Session, 3)
+		repo := w.repoKeyOf("perms2")
 		want := []struct {
 			cmd string
 			ans permlog.Answer
@@ -148,7 +149,7 @@ func TestPermissionLog_RecordsEachPromptOfAShipAndItsCrewWithWhoAnswered(t *test
 		}
 		for i, c := range want {
 			r := recs[i]
-			if r.Call.Command != c.cmd || r.Answer != c.ans || r.By != c.by || r.Harness != "copilot" || r.Fleet != "co" || r.Repo != "acme/perms2" {
+			if r.Call.Command != c.cmd || r.Answer != c.ans || r.By != c.by || r.Harness != "copilot" || r.Fleet != "co" || r.Repo != repo {
 				t.Errorf("prompt %d: %+v, want %q %s by %s", i, r, c.cmd, c.ans, c.by)
 			}
 		}
@@ -156,4 +157,15 @@ func TestPermissionLog_RecordsEachPromptOfAShipAndItsCrewWithWhoAnswered(t *test
 			t.Errorf("the person's prompt has identifiers %v", ids)
 		}
 	})
+}
+
+// repoKeyOf is how launch and the log name the checkout dir under w.work. Its insteadOf sends origin to a local
+// bare repo, which is no GitHub origin, so the key is the checkout's real path.
+func (w *world) repoKeyOf(dir string) string {
+	w.t.Helper()
+	p, err := filepath.EvalSymlinks(filepath.Join(w.work, dir))
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return p
 }
