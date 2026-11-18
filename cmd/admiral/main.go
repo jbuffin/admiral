@@ -29,6 +29,7 @@ import (
 	"github.com/jbuffin/admiral/internal/commitments"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/crewapi"
+	"github.com/jbuffin/admiral/internal/fleetmap"
 	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/harnesscaps"
 	"github.com/jbuffin/admiral/internal/home"
@@ -636,7 +637,7 @@ func serve(args []string) error {
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, &crewapi.Service{Home: absDir, Config: cfg}, routineService, campaignService, bridgeService, resourceService, lockRoute, chatService, convService,
 			&usageapi.Service{Home: absDir, Config: cfg.Current, Live: liveUsage, Ships: shipService.List, Now: time.Now, Zone: time.Local},
-			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, updateRoutes{updateChecker}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
+			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, &fleetmap.Service{Home: dir, Config: cfg.Current}, guardRoutes{guard}, updateRoutes{updateChecker}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "usage"}}
 	shipService.MergeGuard = s.MergeGuard
 	sourceService.MergeGuard = s.MergeGuard

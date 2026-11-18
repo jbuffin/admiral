@@ -220,8 +220,8 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 // The tools by name, with the route each calls. Anything not in this list is a tool the Never list forbids or one
 // nobody specified: approvals, typing mid-turn, config, sources, settings and Preferences have none.
 var wantTools = []string{
-	"add_order", "answer_item", "ask_question", "dismiss_ship", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_inbox",
-	"list_routines", "list_ships", "list_sources", "make_commitment", "next_prompt", "read_campaign", "read_conversation", "read_hold_fire", "read_outcomes",
+	"add_order", "answer_item", "ask_question", "dismiss_ship", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_cloneable_repos",
+	"list_crew", "list_docks", "list_inbox", "list_repos", "list_routines", "list_ships", "list_skills", "list_sources", "make_commitment", "next_prompt", "read_campaign", "read_conversation", "read_hold_fire", "read_outcomes",
 	"save_note", "stop_ship", "turn_routine_off", "wake_ship", "work_on_campaign",
 }
 
@@ -353,6 +353,13 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 		{"turn_routine_off", `{"routine":"r-1"}`, "POST", "/api/fleets/work/routines/r-1/off", "", nil},
 		{"hold_fire_on", `{}`, "POST", "/api/fleets/work/hold-fire/on", "", nil},
 		{"read_hold_fire", `{}`, "GET", "/api/fleets/work/hold-fire", "", nil},
+		{"list_repos", `{}`, "GET", "/api/fleets/work/repos", "", nil},
+		{"list_cloneable_repos", `{}`, "GET", "/api/fleets/work/cloneable", "", nil},
+		{"list_docks", `{}`, "GET", "/api/fleets/work/docks", "", nil},
+		{"list_crew", `{}`, "GET", "/api/fleets/work/crew", "", nil},
+		{"list_crew", `{"harness":"codex"}`, "GET", "/api/fleets/work/crew", "harness=codex", nil},
+		{"list_skills", `{}`, "GET", "/api/fleets/work/crew/skills", "", nil},
+		{"list_skills", `{"harness":"codex"}`, "GET", "/api/fleets/work/crew/skills", "harness=codex", nil},
 	} {
 		t.Run(c.tool, func(t *testing.T) {
 			a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"ok":true}` })
@@ -959,5 +966,39 @@ func TestWorkOnCampaignNeedsAReference(t *testing.T) {
 	}
 	if r := replies["2"]; r.Error == nil && !result(t, replies, "2").IsError {
 		t.Errorf("reply 2 = %+v, want an error", r)
+	}
+}
+
+// The fleet comes from the chat's environment, so a model-supplied fleet changes nothing.
+func TestTheFleetMapReadsNameOnlyTheChatsFleetEvenWhenTheModelNamesAnother(t *testing.T) {
+	for _, tool := range []string{"list_repos", "list_cloneable_repos", "list_docks", "list_crew", "list_skills"} {
+		t.Run(tool, func(t *testing.T) {
+			a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"ok":true}` })
+			a.env(t, mcpToken)
+			if _, _, err := serve(t, call(1, tool, `{"fleet":"home","key":"home"}`)); err != nil {
+				t.Fatal(err)
+			}
+			got := a.requests()
+			if len(got) != 1 || !strings.HasPrefix(got[0].Path, "/api/fleets/work/") || strings.Contains(got[0].Path+got[0].Query, "home") {
+				t.Errorf("requests = %+v, want one under /api/fleets/work/ and nothing of the model's fleet", got)
+			}
+		})
+	}
+}
+
+func TestTheFleetMapReadsRefuseAChatWithNoFleetWithoutAskingTheServer(t *testing.T) {
+	for _, tool := range []string{"list_repos", "list_cloneable_repos", "list_docks", "list_crew", "list_skills"} {
+		t.Run(tool, func(t *testing.T) {
+			a := newStandIn(t, nil)
+			a.env(t, mcpToken)
+			t.Setenv("ADMIRAL_CHAT_FLEET", "")
+			replies, _, err := serve(t, call(1, tool, `{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "no fleet") || len(a.requests()) != 0 {
+				t.Errorf("result = %+v, requests = %v; want a tool error saying the chat has no fleet and no request", tr, a.requests())
+			}
+		})
 	}
 }
