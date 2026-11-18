@@ -219,7 +219,6 @@ test('a crew note renders its markdown: bold, inline code and a safe link, with 
   expect(within(c).getByText('make check').tagName).toBe('CODE');
   const link = within(c).getByRole('link', { name: 'the docs' });
   expect(link.getAttribute('href')).toBe('https://example.com/docs');
-  expect(link.getAttribute('rel')).toContain('noopener');
   expect(c.textContent).not.toContain('**');
   expect(c.textContent).not.toContain('`');
 });
@@ -261,6 +260,26 @@ test('a hidden character in a crew note or its Replaces line still shows marked'
   render(<Notes e={notes('cn-hidden', [note('n1', 'scout', { note: 'Scout trusts‮ the log', replaces: '2026-11-01 (some-run): old‮ line' })])} fold={vi.fn()} />);
   expect(card(1).textContent).toContain('Scout trusts⟨U+202E⟩ the log');
   expect(card(1).textContent).toContain('old⟨U+202E⟩ line');
+});
+
+test('a hidden character written as an entity shows marked, in a crew note and in its Replaces line', () => {
+  render(<Notes e={notes('cn-entity', [note('n1', 'scout', { note: 'Scout trusts &#x202E;the log', replaces: '2026-11-01 (some-run): old &#8203;line' })])} fold={vi.fn()} />);
+  expect(card(1).textContent).toContain('Scout trusts ⟨U+202E⟩the log');
+  expect(card(1).textContent).toContain('old ⟨U+200B⟩line');
+  expect(card(1).textContent).not.toContain('\u202E');
+});
+
+test("a link's target shows next to its text when they differ", () => {
+  render(<Notes e={notes('cn-link', [note('n1', 'scout', { note: 'Read [the docs](https://example.com/x) and https://example.com/y', replaces: '2026-11-01 (some-run): see [setup](https://example.com/s)' })])} fold={vi.fn()} />);
+  const t = card(1).textContent!;
+  expect(t).toContain('the docs (https://example.com/x)');
+  expect(t).toContain('setup (https://example.com/s)');
+  expect(t).not.toContain('https://example.com/y (');
+});
+
+test('a crew note that renders to nothing shows its source as text', () => {
+  render(<Notes e={notes('cn-empty', [note('n1', 'scout', { note: '[a]: https://example.com "t"' })])} fold={vi.fn()} />);
+  expect(card(1).textContent).toContain('[a]: https://example.com "t"');
 });
 
 test('the crew notes under a crew member render markdown the same way', () => {

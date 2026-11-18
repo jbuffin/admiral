@@ -50,9 +50,9 @@ function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'co
   return (
     <div class="convo-card chat-card">
       <p class="chat-card-eyebrow">{v.eyebrow}</p>
-      <p class="line">{v.text}</p>
+      <div class="line md" dangerouslySetInnerHTML={{ __html: renderMarkdown(v.text) }} />
       {v.childLabel ? <p class="line">{v.childLabel}</p> : null}
-      {v.reason ? <p class="line">{v.reason}</p> : null}
+      {v.reason ? <div class="line md" dangerouslySetInnerHTML={{ __html: renderMarkdown(v.reason) }} /> : null}
       {v.shipHref ? (
         <Button
           label={`Open ship ${item.card.ship}`}

@@ -1,5 +1,5 @@
 import { Button } from './Button';
-import { renderMarkdown } from './markdown';
+import { renderMarkdown, renderRestrictedInline } from './markdown';
 import type { PendingKey } from './busy';
 import type { InboxQuestion } from './inbox';
 import { type AnswerBody, type Draft, answerBody, answeredQuestion, choose, chooseOther, pickOf, setOtherText } from '../questions';
@@ -29,7 +29,7 @@ function Option({
           {label}
           {recommended && <span class="inbox-recommended">Recommended</span>}
         </span>
-        {desc && <span class="inbox-option-desc">{desc}</span>}
+        {desc && <span class="inbox-option-desc md" dangerouslySetInnerHTML={{ __html: renderRestrictedInline(desc) }} />}
       </span>
     </button>
   );

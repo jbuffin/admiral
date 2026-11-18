@@ -118,3 +118,15 @@ test('a ship no longer afloat shows its name with no link', async () => {
   expect(el.textContent).toContain('Calm Otter');
   expect(screen.queryByRole('link', { name: /Calm Otter/ })).toBeNull();
 });
+
+test('a commitment card renders its text and reason as markdown', async () => {
+  vi.stubGlobal('fetch', async (url: string) =>
+    url.endsWith('/session')
+      ? new Response(JSON.stringify({ fleet: 'alpha', running: true, state: 'idle', questions: [], messages: [{ id: 'commitment-c1-cant_run-ab12cd34', kind: 'commitment', text: 'Run **the sweep** nightly', at: '2026-01-02T03:04:06Z', card: { commitment: 'c1', outcome: 'cant_run', reason: 'no dock for `codex`' } }] }))
+      : new Response('{}'),
+  );
+  const main = await line("AdmiralBot can't run this");
+  expect(main.querySelector('strong')!.textContent).toBe('the sweep');
+  expect(main.querySelector('code')!.textContent).toBe('codex');
+  expect(main.textContent).not.toContain('**');
+});

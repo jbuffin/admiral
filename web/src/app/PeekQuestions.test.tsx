@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/preact';
+import { cleanup, fireEvent, render, screen } from '@testing-library/preact';
 import { useState } from 'preact/hooks';
 import { expect, test, vi } from 'vitest';
 import { type AnswerBody, type Draft, blankDraft } from '../questions';
@@ -94,4 +94,16 @@ test('a script in the question text comes out as text', () => {
   const { container } = render(<PeekQuestions questions={qs} draft={blankDraft()} edit={() => {}} onSend={() => {}} />);
   expect(container.querySelector('script')).toBeNull();
   expect(container.textContent).toContain('<script>window.__xss=1</script>');
+});
+
+test("an option's description renders as inline markdown inside its button", () => {
+  render(<Form onSend={vi.fn()} />);
+  const option = screen.getByRole('radio', { name: /8080/ });
+  expect(option.querySelector('code, strong')).toBeNull();
+  cleanup();
+  render(<PeekQuestions questions={[{ id: 'q', text: 'Which tool?', options: [{ label: 'pnpm', description: 'Use `pnpm` for **speed**' }] }]} draft={blankDraft()} edit={() => {}} onSend={vi.fn()} />);
+  const radio = screen.getByRole('radio', { name: /pnpm/ });
+  expect(radio.querySelector('code')!.textContent).toBe('pnpm');
+  expect(radio.querySelector('strong')!.textContent).toBe('speed');
+  expect(radio.textContent).not.toContain('`');
 });
