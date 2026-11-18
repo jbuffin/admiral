@@ -209,13 +209,12 @@ func TestAutopilotLaunchOnAnUnknownFleetOrDockIs404AndPostsNoNotice(t *testing.T
 	}
 }
 
-// Only AdmiralBot's own request (its token's context), never a body field, lifts the cap for an
-// autopilot launch; the launch it makes still counts toward the cap.
+// Only AdmiralBot's own token context, never a body field, lifts the cap; its launch still counts.
 func TestAnAdmiralBotInstructionLaunchIsNeverBlockedByTheCapButStillCounts(t *testing.T) {
 	fl := fleets(t)
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: a launch that got past the cap is a 503
-		Launcher: &launcher.Launcher{Home: guardedHome(t), Config: func() *config.Config { return &config.Config{Fleets: fl, MaxShips: 1} }},
+		Launcher: &launcher.Launcher{Home: guardedHome(t), Config: func() *config.Config { return &config.Config{Fleets: fl, MaxShips: 2} }},
 	}
 	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p", nil)
 	body := `{"fleet":"work","harness":"claude","dir":"` + t.TempDir() + `","skill":{"kind":"none"},"autopilot":true}`
@@ -231,6 +230,12 @@ func TestAnAdmiralBotInstructionLaunchIsNeverBlockedByTheCapButStillCounts(t *te
 		return rec
 	}
 
+	if rec := post(body, false); rec.Code == http.StatusConflict {
+		t.Fatalf("a hand autopilot launch under the cap = %d %s, want it admitted", rec.Code, rec.Body)
+	}
+	// A ship the instruction launch left behind fills the cap.
+	s.holdUnlisted(OrderKey{"s", "o2"}, "ship-2", "p", nil)
+
 	if rec := post(body, true); rec.Code == http.StatusConflict {
 		t.Errorf("an AdmiralBot launch over the cap = %d %s, want it never refused by the cap", rec.Code, rec.Body)
 	}
@@ -241,9 +246,4 @@ func TestAnAdmiralBotInstructionLaunchIsNeverBlockedByTheCapButStillCounts(t *te
 		t.Errorf("a body claiming via admiralbot, with no AdmiralBot token, over the cap = %d %s, want 409", rec.Code, rec.Body)
 	}
 
-	// The instruction launch is listed like any ship: the cap now counts it too.
-	s.holdUnlisted(OrderKey{"s", "o2"}, "ship-2", "p", nil)
-	if rec := post(body, false); rec.Code != http.StatusConflict {
-		t.Errorf("a hand autopilot launch with the instruction launch listed = %d %s, want 409", rec.Code, rec.Body)
-	}
 }
