@@ -97,6 +97,12 @@ func worktreeWorld(t *testing.T, cues ...string) (w *world, dir, tip string) {
 func TestANoSkillShipRunsInAWorktreeCutFromOriginsTipAndTheCheckoutIsLeftAlone(t *testing.T) {
 	t.Parallel()
 	w, dir, tip := worktreeWorld(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "wip.txt"), []byte("wip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	head, branch, status := w.git(dir, "rev-parse", "HEAD"), w.git(dir, "branch", "--show-current"), w.git(dir, "status", "--porcelain")
 
 	ship := w.launchIn("f", "claude", "widgets")
@@ -128,6 +134,24 @@ func TestANoSkillShipRunsInAWorktreeCutFromOriginsTipAndTheCheckoutIsLeftAlone(t
 	}
 }
 
+// forgetRecord drops the launch's cwd and recorded files, so a later read sees only what the next launch writes.
+func (w *world) forgetRecord(session string) {
+	w.t.Helper()
+	for _, f := range []string{"cwd", "recorded"} {
+		if err := os.Remove(filepath.Join(w.rec, session, f)); err != nil {
+			w.t.Fatal(err)
+		}
+	}
+}
+
+// wantWorktree fails the test unless cwd is a worktree of dir rather than dir itself.
+func (w *world) wantWorktree(dir, cwd string) {
+	w.t.Helper()
+	if samePathOf(w.t, cwd, dir) || !w.isWorktreeOf(dir, cwd) {
+		w.t.Fatalf("the first launch ran in %s, want a worktree of %s", cwd, dir)
+	}
+}
+
 func (w *world) waitCwd(session string) string {
 	w.t.Helper()
 	w.waitFile(session, "recorded")
@@ -137,13 +161,16 @@ func (w *world) waitCwd(session string) string {
 func TestAShipLaunchedWithASkillStillRunsInTheCheckout(t *testing.T) {
 	t.Parallel()
 	w, dir, _ := worktreeWorld(t)
-	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
-	if cwd := w.waitCwd(ship.Session); !samePathOf(t, cwd, dir) {
+	skilled := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
+	if cwd := w.waitCwd(skilled.Session); !samePathOf(t, cwd, dir) {
 		t.Errorf("a Commodore ship ran in %s, want the checkout %s", cwd, dir)
 	}
 	if got := w.worktreesOf(dir); len(got) != 1 {
-		t.Errorf("worktrees = %v, want the checkout alone", got)
+		t.Errorf("worktrees = %v after the Commodore launch, want the checkout alone", got)
 	}
+	// Paired with a no-skill launch so the test is red until the worktree exists.
+	plain := w.launchIn("f", "claude", "widgets")
+	w.wantWorktree(dir, w.waitCwd(plain.Session))
 }
 
 func TestALaunchFromACheckoutWithNoOriginIsRefusedAndNoShipPutToSea(t *testing.T) {
@@ -198,6 +225,7 @@ func TestReturnToPortOfALiveNoSkillShipRemovesItsWorktreeAndKeepsItsBranch(t *te
 	w, dir, _ := worktreeWorld(t, "record", "bracketedpaste", "hook working", "wait go", `event Stop {"background_tasks":[]}`)
 	ship := w.launchIn("f", "claude", "widgets")
 	cwd := w.waitCwd(ship.Session)
+	w.wantWorktree(dir, cwd)
 	branch := w.git(cwd, "branch", "--show-current")
 	pane := strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", "="+ship.Session+":0", "#{pane_id}"))
 	w.touch(ship.Session, "go")
@@ -234,6 +262,7 @@ func TestReturnToPortOfAMooredNoSkillShipWhosePRMergedRemovesItsWorktreeAndKeeps
 
 	ship := w.launchIn("f", "claude", "widgets")
 	cwd := w.waitCwd(ship.Session)
+	w.wantWorktree(dir, cwd)
 	branch := w.git(cwd, "branch", "--show-current")
 	w.exitWith(ship, mooredReport(mooredPR))
 	w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
@@ -267,17 +296,18 @@ func TestAMooredNoSkillShipWakesInTheSameWorktreeItWasLaunchedIn(t *testing.T) {
 
 	ship := w.launchIn("f", "claude", "widgets")
 	cwd := w.waitCwd(ship.Session)
-	if samePathOf(t, cwd, dir) || !w.isWorktreeOf(dir, cwd) {
-		t.Fatalf("the first launch ran in %s, want a worktree of %s", cwd, dir)
-	}
+	w.wantWorktree(dir, cwd)
 	branches := w.branches(dir)
 	w.exitWith(ship, mooredReport(mooredPR))
 	w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
 
+	w.forgetRecord(ship.Session)
 	g.prState(mooredPR, "MERGED")
 	w.kickMoored()
 	w.waitEvent(ship.Session, "woken", 1)
-	holdFor(t, "the woken ship's cwd", func() bool { return samePathOf(t, w.shipCwd(ship.Session), cwd) })
+	if got := w.waitCwd(ship.Session); !samePathOf(t, got, cwd) {
+		t.Errorf("the woken ship ran in %s, want its worktree %s", got, cwd)
+	}
 	if got := w.branches(dir); got != branches {
 		t.Errorf("branches after the wake = %q, want %q: the wake makes no branch", got, branches)
 	}
@@ -310,6 +340,8 @@ func TestHandingANoSkillShipToCommodoreRelaunchesInItsWorktreeAndKeepsIt(t *test
 	seedRound(t, cfgDir, first, "the earlier design talk")
 	pane := strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", "="+ship.Session+":0", "#{pane_id}"))
 	w.waitPaneWorking(pane)
+	w.wantWorktree(dir, first.cwd)
+	w.forgetRecord(ship.Session)
 	if code, body := send(t, http.MethodPost, w.shipURL(ship.Session, "/commodore"), map[string]any{"kind": "issue"}); code != http.StatusAccepted {
 		t.Fatalf("hand = %d: %s", code, body)
 	}
@@ -333,10 +365,9 @@ func TestHandingANoSkillShipToCommodoreRelaunchesInItsWorktreeAndKeepsIt(t *test
 		raw, _ := os.ReadFile(argvPath)
 		return slices.Contains(strings.Split(string(raw), "\x00"), "--resume")
 	})
-	if !w.isWorktreeOf(dir, first.cwd) || samePathOf(t, first.cwd, dir) {
-		t.Fatalf("the first launch ran in %s, want a worktree of %s", first.cwd, dir)
+	if got := w.waitCwd(ship.Session); !samePathOf(t, got, first.cwd) {
+		t.Errorf("the relaunch ran in %s, want the ship's worktree %s", got, first.cwd)
 	}
-	holdFor(t, "the relaunch's cwd to be the ship's worktree", func() bool { return samePathOf(t, w.shipCwd(ship.Session), first.cwd) })
 	if !exists(first.cwd) || !w.isWorktreeOf(dir, first.cwd) {
 		t.Errorf("worktree %s: want it kept after the hand", first.cwd)
 	}
