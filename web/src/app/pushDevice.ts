@@ -11,6 +11,7 @@ export interface PushDeviceState {
 }
 
 const READ_MS = 5000;
+const REFUSED = "This browser's push service refused to sign up this device. Look in the browser's settings for a setting about push messaging, turn it on, relaunch the browser, then try again.";
 const UNREADABLE = 'This browser did not answer. Reload the page to try again.';
 
 const secureContext = () => typeof isSecureContext === 'boolean' && isSecureContext;
@@ -78,7 +79,13 @@ export async function turnOnPush(key: string): Promise<string | null> {
       await dropPushSubscription(old.endpoint);
       await old.unsubscribe();
     }
-    sub = await reg.pushManager.subscribe(options);
+    try {
+      sub = await reg.pushManager.subscribe(options);
+    } catch (e) {
+      // Browsers word this refusal differently, so only the error's name says the push service said no.
+      if (e instanceof DOMException && e.name === 'AbortError') return REFUSED;
+      throw e;
+    }
   }
   const json = sub.toJSON();
   const saved = await savePushSubscription({ endpoint: sub.endpoint, keys: { p256dh: json.keys?.p256dh ?? '', auth: json.keys?.auth ?? '' } });
