@@ -28,17 +28,18 @@ func (s *Service) Routes(mux *http.ServeMux) {
 // Connected sends nothing: these are reads.
 func (s *Service) Connected(*server.Client) {}
 
-func (s *Service) fleet(w http.ResponseWriter, r *http.Request) (config.Fleet, bool) {
+func (s *Service) fleet(w http.ResponseWriter, r *http.Request) (*config.Config, config.Fleet, bool) {
 	key := r.PathValue("key")
-	f, ok := s.Config().Fleet(key)
+	cfg := s.Config()
+	f, ok := cfg.Fleet(key)
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "fleet " + key + " not found"})
 	}
-	return f, ok
+	return cfg, f, ok
 }
 
 func (s *Service) repos(w http.ResponseWriter, r *http.Request) {
-	f, ok := s.fleet(w, r)
+	_, f, ok := s.fleet(w, r)
 	if !ok {
 		return
 	}
@@ -47,7 +48,7 @@ func (s *Service) repos(w http.ResponseWriter, r *http.Request) {
 
 // cloneable answers the rule for what Admiral clones, not a list: no network call is made.
 func (s *Service) cloneable(w http.ResponseWriter, r *http.Request) {
-	f, ok := s.fleet(w, r)
+	cfg, f, ok := s.fleet(w, r)
 	if !ok {
 		return
 	}
@@ -57,14 +58,14 @@ func (s *Service) cloneable(w http.ResponseWriter, r *http.Request) {
 		owners = []string{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"hosts":      launcher.GitHubHosts(s.Config(), f),
+		"hosts":      launcher.GitHubHosts(cfg, f),
 		"clone_root": repofinder.CloneRoot(f.CloneRoot, f.SearchRoots, home),
 		"owners":     owners,
 	})
 }
 
 func (s *Service) docks(w http.ResponseWriter, r *http.Request) {
-	f, ok := s.fleet(w, r)
+	_, f, ok := s.fleet(w, r)
 	if !ok {
 		return
 	}
