@@ -146,7 +146,8 @@ func TestANoticeWhoseTextIsEmptyAfterCleaningIsDroppedAndTheRestOfTheAnswerStays
 	got := jsonOf(t, p)
 	if ids := noticeIDs(noticeList(t, got)); ids != "kept,newline" {
 		t.Errorf("notices kept = %q, want kept and newline", ids)
-	}	if ns := noticeList(t, got); len(ns) == 2 && ns[1]["text"] != "later line" {
+	}
+	if ns := noticeList(t, got); len(ns) == 2 && ns[1]["text"] != "later line" {
 		t.Errorf("text = %q, want the first non-empty line", ns[1]["text"])
 	}
 	if len(list(t, got, "groups")) != 1 || got["waiting"] != float64(2) {
