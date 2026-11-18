@@ -632,3 +632,18 @@ func TestAFailedScoutStopAnOlderBuildSavedPostsNoLateFailedCardButALaterOneStill
 		ShipRecord{At: t0.Add(8*time.Minute + time.Second), Ship: "calm-lark", Event: "stopped", Scout: true})...)
 	x.wantResults("work", "failed")
 }
+
+func TestAScoutThatSailedOffBeforeTheResultWasReadPostsNoSecondFailedCardWhenItsRecordsGainOne(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	plain := []ShipRecord{
+		{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended"},
+		{At: t0.Add(2*time.Minute + time.Second), Ship: "calm-otter", Event: "stopped", Scout: true},
+	}
+	x.observe(5*time.Minute, nil, plain...)
+	x.wantResults("work", "sailed_off")
+	x.restart()
+	x.observe(6*time.Minute, nil, failedScoutEnd()...)
+	x.observe(7*time.Minute, nil, failedScoutEnd()...)
+	x.wantResults("work", "sailed_off")
+}

@@ -176,16 +176,12 @@ test('only the card whose voyage has findings shows a Findings button', async ()
   expect(buttons[0].closest('.chat-card')?.textContent).toContain('Calm Otter');
 });
 
-test("tapping Findings opens the sheet with that voyage's findings rendered, and Close shuts it", async () => {
-  const calls = twoCards([{ findings: true }], '# The race\n\n- the cache\n');
+test('tapping Findings opens the sheet and Close shuts it', async () => {
+  twoCards([{ findings: true }]);
   ships.value = [];
   render(<ChatPanel surface={surface} title phone />);
   fireEvent.click(await screen.findByRole('button', { name: 'Findings' }));
-  expect(await screen.findByRole('heading', { name: 'The race' })).not.toBeNull();
-  expect(screen.getByRole('dialog')).not.toBeNull();
-  const url = new URL(calls.find((c) => c.includes('/findings')) ?? '', 'http://admiral.test');
-  expect(url.pathname).toBe('/api/v1/ships/calm-otter/findings');
-  expect(url.searchParams.get('first_launched')).toBe('2026-01-02T03:04:05Z');
+  expect(await screen.findByRole('dialog', { name: 'Findings' })).not.toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 });

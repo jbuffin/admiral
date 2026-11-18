@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/chatlog"
+	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
@@ -282,7 +283,7 @@ func (d *ShipCards) voyageAt(ship string, at time.Time) *voyage {
 func (v *voyage) apply(r ShipRecord) {
 	switch r.Event {
 	case "ended":
-		if r.Result == "failed" && r.At.After(v.FailedAt) {
+		if r.Result == outcomes.ResultFailed && r.At.After(v.FailedAt) {
 			v.FailedAt = r.At
 		}
 		if r.Clean && r.At.After(v.EndedAt) {
@@ -356,7 +357,8 @@ func (v *voyage) offResult() string {
 
 // emit posts the card unless the voyage has settled that result; silent only records it. A failed post is tried again by the next pass.
 func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
-	if v.Done[result] {
+	// A sail-off card and a failed card are one slot: a replayed record that gained a result must not post a second.
+	if v.Done[result] || result == ShipFailed && v.Done[ShipSailedOff] || result == ShipSailedOff && v.Done[ShipFailed] {
 		return nil
 	}
 	reports := v.reportsOn(result)

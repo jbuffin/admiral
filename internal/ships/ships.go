@@ -380,7 +380,6 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/pr/rerequest", s.serveReRequest)
 	mux.HandleFunc("GET /api/outcomes", s.serveOutcomes)
 	mux.HandleFunc("GET /api/ships/{session}/findings", s.serveFindings)
-	mux.HandleFunc("GET /api/v1/ships/{session}/findings", s.serveFindings)
 	mux.Handle("POST /api/ships/{session}/merge", s.mergeGuarded(http.HandlerFunc(s.serveMerge)))
 	mux.Handle("POST /api/ships/{session}/update-branch", s.mergeGuarded(http.HandlerFunc(s.serveUpdateBranch)))
 	mux.Handle("POST /api/ships/{session}/ready-for-review", s.mergeGuarded(http.HandlerFunc(s.serveReadyForReview)))
