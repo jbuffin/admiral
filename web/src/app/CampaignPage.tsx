@@ -31,6 +31,7 @@ import {
   type Mode,
   type Row,
 } from './campaign';
+import { AddCampaignPrototype, draftingRow, PrototypeToast } from './AddCampaignPrototype';
 import { campaignList, endedOpen, followReference, noteCampaign, refreshCampaigns } from './campaignsLink';
 import { activeFleet, fleetPaint, fleets } from './fleets';
 import { Choice } from './Choice';
@@ -124,7 +125,14 @@ export function CampaignSidebar({ onNavigate }: { onNavigate?: () => void }) {
           <Icon name="plus" size={14} />
         </Button>
       </div>
-      {addOpen.value ? <PasteField /> : null}
+      {addOpen.value ? <AddCampaignPrototype onClose={() => (addOpen.value = false)} /> : null}
+      <PrototypeToast />
+      {draftingRow.value ? (
+        <div class="pc-drafting">
+          <span class="dot" />
+          Drafting a campaign · {draftingRow.value}
+        </div>
+      ) : null}
       <ul class="camp-list">
         {active.map((c) => (
           <li key={c.id}>
@@ -164,7 +172,13 @@ export function CampaignsList({ phone, title }: { phone: boolean; title: boolean
   return (
     <main class="panel">
       {title ? <h1>Campaigns</h1> : null}
-      {phone ? <PasteField /> : null}
+      {phone ? (
+        <>
+          <Button label="Add campaign" onClick={() => (addOpen.value = true)} />
+          {addOpen.value ? <AddCampaignPrototype onClose={() => (addOpen.value = false)} /> : null}
+          <PrototypeToast />
+        </>
+      ) : null}
       <div class="camp-tabs">
         <Button label={`Following (${mine.length - ended.length})`} pressed={!showEnded} onClick={() => (endedOpen.value = false)} />
         <Button label={`Ended (${ended.length})`} pressed={showEnded} onClick={() => (endedOpen.value = true)} />
