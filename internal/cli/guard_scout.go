@@ -356,6 +356,9 @@ func (c scoutCheck) words(words []string, redirs []*syntax.Redirect, depth int, 
 			return ruleScoutWrite // a command held in a variable
 		}
 		w, args := strings.TrimPrefix(filepath.Base(words[0]), "="), words[1:]
+		if slices.Contains(scoutRunners, w) {
+			return ruleScoutRunner
+		}
 		if spec, ok := wrappers[w]; ok {
 			if w == "xcrun" {
 				args = longSingleDash(args, "-sdk", "-toolchain")
