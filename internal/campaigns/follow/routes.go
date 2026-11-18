@@ -602,8 +602,11 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 	host := strings.ToLower(strings.TrimSpace(body.Host))
 	switch {
 	case len(kids) > 0:
-		if host == "" {
-			host = hostOf(kids[0].ref)
+		if issuesHost := hostOf(kids[0].ref); host == "" {
+			host = issuesHost
+		} else if host != issuesHost {
+			writeError(w, http.StatusUnprocessableEntity, "issues: every issue must be on the same GitHub host")
+			return
 		}
 	case host == "":
 		host = github.DefaultHost

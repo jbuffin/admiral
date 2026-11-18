@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	maxProseRunes  = 4000
-	draftBudgetUSD = 0.30
-	draftTimeout   = 2 * time.Minute
+	maxProseRunes        = 4000
+	maxCampaignTextRunes = 4000
+	draftBudgetUSD       = 0.30
+	draftTimeout         = 2 * time.Minute
 )
 
 //go:embed standingorders_writer.md
@@ -418,8 +419,8 @@ func (s *Service) serveCampaignDraft(w http.ResponseWriter, r *http.Request) {
 	case hasText && len(req.Issues) > 0, !hasText && len(req.Issues) == 0:
 		writeError(w, http.StatusBadRequest, "send either issues or text, not both and not neither")
 		return
-	case hasText && utf8.RuneCountInString(req.Text) > maxProseRunes:
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("text: at most %d characters", maxProseRunes))
+	case hasText && utf8.RuneCountInString(req.Text) > maxCampaignTextRunes:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("text: at most %d characters", maxCampaignTextRunes))
 		return
 	case hasText:
 		prompt, schema = fencedPrompt(campaignTextWriter, "The engineer's text:", req.Text), campaignTextSchema

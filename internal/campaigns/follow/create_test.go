@@ -380,6 +380,22 @@ func TestCreateWithNoIssuesFilesTheParentAloneOnTheRepoHostAndFollowsIt(t *testi
 	}
 }
 
+func TestCreateWithNoIssuesAndAHostFilesTheParentOnThatHost(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	// the fake files its parent under a github.com URL, which the follow then reads
+	r.hasHost = func(h string) bool { return h == "ghe.example.com" || h == "github.com" }
+	r.gh.parentReady()
+
+	code, body := r.create(map[string]any{"repo": "acme/widgets", "title": "T", "issues": []string{}, "host": "ghe.example.com"})
+	if code != http.StatusCreated {
+		t.Fatalf("create = %d %s, want 201", code, body)
+	}
+	w := posts(r.gh.restCalls())
+	if len(w) != 1 || w[0].Endpoint != parentEndpoint || w[0].Host != "ghe.example.com" {
+		t.Errorf("writes = %+v; want only the parent created on ghe.example.com", w)
+	}
+}
+
 func TestCreateWithNoIssuesRefusesARepoNoFleetOwnsAndWritesNothing(t *testing.T) {
 	r := newRig(t, fixtureTree())
 	r.svc.Route = func(host, nwo string) string { return "" }
@@ -417,8 +433,8 @@ func TestCreateRefusesAHostThatIsNotTheIssuesHostBeforeAnyGhCall(t *testing.T) {
 
 	body := createBody("acme/widgets#31")
 	body["host"] = "ghe.example.com"
-	if code, got := r.create(body); code != http.StatusUnprocessableEntity {
-		t.Errorf("create = %d %s; want 422: the parent is filed on the host its issues are on", code, got)
+	if code, got := r.create(body); code != http.StatusUnprocessableEntity || !strings.Contains(got, "every issue must be on the same GitHub host") {
+		t.Errorf("create = %d %s; want 422 \"every issue must be on the same GitHub host\": the parent is filed on the host its issues are on", code, got)
 	}
 	if n := r.gh.ghCalls(); n != 0 {
 		t.Errorf("gh ran %d times; want none", n)
