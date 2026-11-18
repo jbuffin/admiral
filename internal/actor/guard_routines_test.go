@@ -5,13 +5,15 @@ import (
 	"testing"
 )
 
-func TestAnActorMayReadRoutinesTurnOneOffAndHoldFireOnOnlyInItsOwnFleet(t *testing.T) {
+func TestAnActorMayReadRoutinesDraftOneTurnOneOffAndHoldFireOnOnlyInItsOwnFleet(t *testing.T) {
 	r := newRig(t)
 	for _, c := range []struct{ method, path string }{
 		{"GET", "/api/fleets/work/routines"},
 		{"GET", "/api/fleets/work/hold-fire"},
 		{"GET", "/api/hold-fire"},
 		{"POST", "/api/fleets/work/routines/r1/off"},
+		{"POST", "/api/fleets/work/routines/draft"},
+		{"POST", "/api/v1/fleets/work/routines/draft"},
 		{"POST", "/api/fleets/work/hold-fire/on"},
 	} {
 		if code := r.do(c.method, c.path, "", "tok-work", local).Code; code != 200 || r.reached != 1 || r.fleet != "work" || !r.acting {
@@ -28,6 +30,8 @@ func TestAnActorMayReadRoutinesTurnOneOffAndHoldFireOnOnlyInItsOwnFleet(t *testi
 		{"POST", "/api/hold-fire/off", "turning every fleet's Hold fire off"},
 		{"POST", "/api/hold-fire/on", "turning every fleet's Hold fire on"},
 		{"POST", "/api/v1/hold-fire/on", "turning every fleet's Hold fire on"},
+		{"POST", "/api/fleets/personal/routines/draft", "another fleet's routine drafter"},
+		{"GET", "/api/fleets/work/routine-drafts/abc", "reading a kept routine draft"},
 		{"POST", "/api/fleets/work/routines", "saving a routine"},
 		{"PUT", "/api/fleets/work/routines/r1", "editing a routine"},
 		{"DELETE", "/api/fleets/work/routines/r1", "deleting a routine"},
@@ -50,7 +54,6 @@ func TestAnActorMayReadItsOwnFleetsStandingOrdersAndNothingElseAboutThem(t *test
 		{"PUT", "/api/fleets/work/standing-orders", "filing standing orders"},
 		{"POST", "/api/fleets/work/standing-orders/copy", "copying standing orders"},
 		{"POST", "/api/fleets/work/standing-orders/draft", "the standing orders drafter"},
-		{"POST", "/api/fleets/work/routines/draft", "the routine drafter"},
 		{"POST", "/api/fleets/work/campaigns/draft", "the campaign drafter"},
 		{"PUT", "/api/fleets/work", "saving the fleet and its Limits"},
 		{"DELETE", "/api/fleets/work/standing-orders", "deleting standing orders"},

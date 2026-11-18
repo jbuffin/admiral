@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -31,6 +33,7 @@ type soRig struct {
 	srv   *httptest.Server
 
 	mu    sync.Mutex
+	now   time.Time
 	calls []judge.Call
 	reply func(judge.Call) (judge.Reply, error)
 }
@@ -63,14 +66,26 @@ func newSO(t *testing.T) *soRig {
 			t.Fatal(err)
 		}
 	}
-	r := &soRig{t: t, home: home, cfg: m}
-	r.store = &routines.Store{Home: home, Now: func() time.Time { return now }, ResourceKnown: func(string) bool { return false },
+	r := &soRig{t: t, home: home, cfg: m, now: now}
+	r.store = &routines.Store{Home: home, Now: r.clock, ResourceKnown: func(string) bool { return false },
 		Fleets: func(k string) (config.Fleet, bool) { return m.Current().Fleet(k) }}
 	mux := http.NewServeMux()
 	(&routines.Service{Store: r.store, Config: m, Judge: r.judge}).Routes(mux)
 	r.srv = httptest.NewServer(mux)
 	t.Cleanup(r.srv.Close)
 	return r
+}
+
+func (r *soRig) clock() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.now
+}
+
+func (r *soRig) advance(d time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.now = r.now.Add(d)
 }
 
 func (r *soRig) judge(_ context.Context, _ judge.Choice, call judge.Call) (judge.Reply, error) {
@@ -870,5 +885,153 @@ func TestHasChecksFollowsTheCurrentFileOnceValidOrdersAreSaved(t *testing.T) {
 	}
 	if !r.store.HasChecks("work") {
 		t.Error("valid orders with Checks: HasChecks = false, want true")
+	}
+}
+
+func (r *soRig) keptDraft(fleet, id string) (int, map[string]any) {
+	r.t.Helper()
+	return r.do("GET", "/api/fleets/"+fleet+"/routine-drafts/"+id, nil)
+}
+
+func (r *soRig) madeDraft(prose string) string {
+	r.t.Helper()
+	code, body := r.routineDraft(prose)
+	id, _ := body["id"].(string)
+	if code != 200 || id == "" {
+		r.t.Fatalf("draft = %d %v, want 200 with an id", code, body)
+	}
+	return id
+}
+
+func TestRoutineDraftAnswersAnIdAndTheKeptDraftReadsBackWithItsProblemsAndExpiry(t *testing.T) {
+	r := newSO(t)
+	fields := routineDraftFields()
+	fields["when"] = "every morning"
+	r.answers(fields)
+	code, made := r.routineDraft(routineProse)
+	id, _ := made["id"].(string)
+	if code != 200 || id == "" {
+		t.Fatalf("draft = %d %v, want 200 with an id", code, made)
+	}
+	code, got := r.keptDraft("work", id)
+	if code != 200 {
+		t.Fatalf("GET kept draft = %d %v, want 200", code, got)
+	}
+	if got["id"] != id || !reflect.DeepEqual(got["draft"], made["draft"]) || !reflect.DeepEqual(got["problems"], made["problems"]) {
+		t.Errorf("kept = %v, want the id, draft and problems the POST answered (%v)", got, made)
+	}
+	if p, _ := got["problems"].([]any); len(p) == 0 {
+		t.Errorf("problems = %v, want the problem on when kept", got["problems"])
+	}
+	want := r.clock().Add(time.Hour).UTC()
+	exp, err := time.Parse(time.RFC3339, fmt.Sprint(got["expires_at"]))
+	if err != nil || !exp.Equal(want) {
+		t.Errorf("expires_at = %v (%v), want %v: one hour after it was made", got["expires_at"], err, want)
+	}
+}
+
+func TestRoutineDraftIdsAreUnguessableAndDistinct(t *testing.T) {
+	r := newSO(t)
+	r.answers(routineDraftFields())
+	a, b := r.madeDraft(routineProse), r.madeDraft(routineProse)
+	if a == b {
+		t.Errorf("two drafts share the id %q", a)
+	}
+	for _, id := range []string{a, b} {
+		if len(id) < 22 || !regexp.MustCompile(`^[A-Za-z0-9_-]+$`).MatchString(id) {
+			t.Errorf("id %q: want URL-safe text of at least 128 bits (22 base64 characters)", id)
+		}
+	}
+}
+
+func TestAKeptRoutineDraftIsReadableOnlyInItsOwnFleet(t *testing.T) {
+	r := newSO(t)
+	r.answers(routineDraftFields())
+	id := r.madeDraft(routineProse)
+	code, other := r.keptDraft("play", id)
+	if code != 404 {
+		t.Errorf("GET under another fleet = %d %v, want 404", code, other)
+	}
+	_, unknown := r.keptDraft("play", "no-such-draft")
+	if !reflect.DeepEqual(other, unknown) {
+		t.Errorf("another fleet's id answers %v, an unknown id %v: they must look the same", other, unknown)
+	}
+	if code, body := r.keptDraft("work", id); code != 200 {
+		t.Errorf("the owning fleet's GET = %d %v, want 200", code, body)
+	}
+}
+
+func TestAnUnknownRoutineDraftOrFleetIs404(t *testing.T) {
+	r := newSO(t)
+	r.answers(routineDraftFields())
+	id := r.madeDraft(routineProse)
+	for name, c := range map[string][2]string{"unknown id": {"work", "no-such-draft"}, "unknown fleet": {"nowhere", id}} {
+		if code, body := r.keptDraft(c[0], c[1]); code != 404 {
+			t.Errorf("%s: %d %v, want 404", name, code, body)
+		}
+	}
+}
+
+func TestARoutineDraftExpiresAnHourAfterItWasMade(t *testing.T) {
+	r := newSO(t)
+	r.answers(routineDraftFields())
+	id := r.madeDraft(routineProse)
+	r.advance(time.Hour - time.Second)
+	if code, body := r.keptDraft("work", id); code != 200 {
+		t.Fatalf("just under an hour: %d %v, want 200", code, body)
+	}
+	r.advance(time.Second)
+	if code, body := r.keptDraft("work", id); code != 404 {
+		t.Errorf("after an hour: %d %v, want 404", code, body)
+	}
+}
+
+func TestAFailedRoutineDraftKeepsNothing(t *testing.T) {
+	r := newSO(t)
+	r.answers(routineDraftFields())
+	good := r.madeDraft(routineProse)
+	for i := 1; i < 49; i++ {
+		r.advance(time.Second)
+		r.madeDraft(routineProse)
+	}
+	if code, body := r.routineDraft(""); code != 400 || body["id"] != nil {
+		t.Errorf("blank prose = %d %v, want 400 and no id", code, body)
+	}
+	r.reply = func(judge.Call) (judge.Reply, error) {
+		return judge.Reply{}, &judge.Failure{Kind: judge.KindTimeout, Detail: "no answer"}
+	}
+	if code, body := r.routineDraft(routineProse); code != 502 || body["id"] != nil {
+		t.Errorf("failed draft = %d %v, want 502 and no id", code, body)
+	}
+	r.answers(routineDraftFields())
+	r.advance(time.Second)
+	r.madeDraft(routineProse)
+	// a kept failure would have been the 51st draft and pushed the first one out
+	if code, got := r.keptDraft("work", good); code != 200 {
+		t.Errorf("the first draft = %d %v, want it kept: a failed call kept something", code, got)
+	}
+}
+
+func TestAFleetKeepsAtMostFiftyRoutineDraftsAndTheOldestGoesFirst(t *testing.T) {
+	r := newSO(t)
+	r.answers(routineDraftFields())
+	first := r.madeDraft(routineProse)
+	ids := []string{first}
+	for i := 1; i < 50; i++ {
+		r.advance(time.Second)
+		ids = append(ids, r.madeDraft(routineProse))
+	}
+	if code, body := r.keptDraft("work", first); code != 200 {
+		t.Fatalf("50 drafts: the first = %d %v, want it kept", code, body)
+	}
+	r.advance(time.Second)
+	newest := r.madeDraft(routineProse)
+	if code, body := r.keptDraft("work", first); code != 404 {
+		t.Errorf("the 51st draft: the oldest = %d %v, want 404", code, body)
+	}
+	for _, id := range append(ids[1:], newest) {
+		if code, body := r.keptDraft("work", id); code != 200 {
+			t.Fatalf("draft %s = %d %v, want kept", id, code, body)
+		}
 	}
 }

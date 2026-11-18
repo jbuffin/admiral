@@ -199,6 +199,67 @@ func fleetGet(rest string) func(*mcpClient, json.RawMessage) (string, error) {
 	}
 }
 
+// draftRoutine posts the prose and answers a plain-words summary of the kept draft with the link where the engineer saves it.
+func draftRoutine(c *mcpClient, raw json.RawMessage) (string, error) {
+	var a struct{ Prose string }
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(a.Prose) == "" {
+		return "", errors.New("prose: write what the routine should do")
+	}
+	path, err := c.fleetPath("/routines/draft")
+	if err != nil {
+		return "", err
+	}
+	// The server's drafting call can take two minutes; the default 20 s would cancel it.
+	out, err := c.do("POST", path, map[string]any{"prose": a.Prose}, 150*time.Second)
+	if err != nil {
+		return "", err
+	}
+	var r struct {
+		ID    string `json:"id"`
+		Draft struct {
+			Name    string `json:"name"`
+			Enabled bool   `json:"enabled"`
+			When    string `json:"when"`
+			Before  string `json:"before_acting"`
+			Notify  bool   `json:"notify"`
+			Do      struct {
+				Prompt string `json:"prompt"`
+			} `json:"do"`
+		} `json:"draft"`
+		Problems []struct {
+			Field   string `json:"field"`
+			Message string `json:"message"`
+		} `json:"problems"`
+	}
+	if err := json.Unmarshal(out, &r); err != nil || r.ID == "" {
+		return "", errors.New("the draft came back unreadable")
+	}
+	d := r.Draft
+	oneLine := strings.NewReplacer("\r", " ", "\n", " ").Replace
+	before := map[string]string{"report_only": "only report what it finds", "ask_first": "ask the engineer first", "act": "act without asking"}[d.Before]
+	if before == "" {
+		before = oneLine(d.Before)
+	}
+	notify, state := "no notification", "off"
+	if d.Notify {
+		notify = "notify the engineer"
+	}
+	if d.Enabled {
+		state = "on"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Drafted a routine, unsaved: %q.\nWhen: %s\nWhat it does: %s\nBefore acting: %s\nNotify: %s\nOnce saved it will be %s.\n",
+		d.Name, oneLine(d.When), oneLine(d.Do.Prompt), before, notify, state)
+	for _, p := range r.Problems {
+		fmt.Fprintf(&b, "Problem with %s: %s\n", oneLine(p.Field), oneLine(p.Message))
+	}
+	fmt.Fprintf(&b, "The engineer reviews and saves it at /app/routines/new?fleet=%s&draft=%s", url.QueryEscape(c.fleet), url.QueryEscape(r.ID))
+	return b.String(), nil
+}
+
 // fleetGetHarness is fleetGet with the optional harness argument sent as ?harness=.
 func fleetGetHarness(rest string) func(*mcpClient, json.RawMessage) (string, error) {
 	return func(c *mcpClient, raw json.RawMessage) (string, error) {
@@ -320,7 +381,9 @@ var mcpTools = []mcpTool{
 	{"stop_ship", "Stop a ship.", obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}), shipPost("/stop", false)},
 	{"dismiss_ship", "Dismiss an anchored ship.", obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}), shipPost("/dismiss", false)},
 	{"list_routines", "List this fleet's routines: when each runs, its mode, and whether it is on.", obj(nil, nil), fleetGet("/routines")},
-	{"get_standing_orders", "Read this fleet's standing orders: its Checks, Guidance and Limits. You can't file or change them. When the engineer wants one, draft it as prose and link them to /app/routines (or /app/routines/new for a routine), where they file it.",
+	{"draft_routine", "Draft a routine for this fleet from the engineer's words, and get back a summary and a link to the draft. It drafts and never saves: the engineer opens the link, reviews it and saves it. Turning a routine on, saving or editing one is the engineer's.",
+		obj([]string{"prose"}, map[string]any{"prose": str("what the engineer wants the routine to do and when, in their own words")}), draftRoutine},
+	{"get_standing_orders", "Read this fleet's standing orders: its Checks, Guidance and Limits. You can't file or change them. When the engineer wants a Check, Guidance or a Limit, draft it as prose and link them to /app/routines, where they file it. For a routine, use draft_routine.",
 		obj(nil, nil), fleetGet("/standing-orders")},
 	{"turn_routine_off", "Turn one of this fleet's routines off. Turning one on, saving, editing or deleting a routine is the engineer's.",
 		obj([]string{"routine"}, map[string]any{"routine": str("the routine's id")}),
