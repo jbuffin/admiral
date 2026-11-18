@@ -229,7 +229,7 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           <LaunchCardView key={i.id} item={i} fleet={fleet} />
         ) : i.kind === 'commitment' ? (
           <CommitmentCard key={i.id} item={i} fleet={fleet} />
-        ) : i.role === 'user' ? (
+        ) : i.kind === 'ship' ? null : i.role === 'user' ? (
           <div key={i.id} class="msg user">
             {i.text}
           </div>

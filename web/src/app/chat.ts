@@ -1,3 +1,4 @@
+import type { Ship } from './api';
 import type { InboxItem } from './inbox';
 import type { ReviewerFields } from './reviewerNote';
 import type { AnswerBody } from '../questions';
@@ -38,13 +39,25 @@ export interface LaunchCard extends Omit<EventCard, keyof ReviewerFields> {
   restricted?: 'investigate' | 'draft_fix';
 }
 
+/** The card Admiral posts in a ship's fleet's chat when its result comes in. */
+export interface ShipCard {
+  ship: string;
+  name?: string;
+  first_launched?: string;
+  fleet: string;
+  skill: string;
+  skill_kind: 'commodore' | 'skill' | 'none';
+  result: 'sailed_off' | 'anchored' | 'moored' | 'ready_to_merge' | 'returned' | 'lost';
+  prs: { url: string; number: number }[];
+}
+
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer' | 'launch_card';
+  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
-  card?: InboxItem | CommitmentCard | EventCard | LaunchCard;
+  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard;
 }
 
 /** A fleet's chat as the server serves it: GET /api/chat/<fleet>/session and the `chat` socket message. */
@@ -63,6 +76,7 @@ export type ThreadItem =
   | { kind: 'commitment'; id: string; text: string; at: string; card: CommitmentCard }
   | { kind: 'event'; id: string; text: string; at: string; card: EventCard }
   | { kind: 'launch'; id: string; text: string; at: string; card: LaunchCard }
+  | { kind: 'ship'; id: string; text: string; at: string; card: ShipCard }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer; kept?: string };
 
 /** The snapshot's entries oldest first; entries with one time, or none that parses, keep the served order. */
@@ -125,3 +139,8 @@ export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment
 
 /** The eyebrow of an open question card: Admiral's own proposals read differently from AdmiralBot's questions. */
 export const questionEyebrow = (id: string): string => (id.startsWith('campaign-') ? 'Admiral asks' : 'AdmiralBot asks');
+
+/** What a ship card shows: the ship and its kind, the result in words, each PR and, while its voyage is still in the ships list, the ship's page. */
+export function shipCardView(_item: Extract<ThreadItem, { kind: 'ship' }>, _ships: Ship[]): { eyebrow: string; name: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string } {
+  return { eyebrow: '', name: '', kind: '', result: '', prs: [], shipHref: '' };
+}
