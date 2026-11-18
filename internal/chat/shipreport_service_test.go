@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jbuffin/admiral/internal/findings"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
@@ -68,5 +69,60 @@ func TestAReportTurnFallsBackToTheShipsTitleWhenItHasNoLaunchLine(t *testing.T) 
 	}
 	if got := queuedTexts(r, "work"); len(got) != 1 || !strings.Contains(got[0], "Fix the flaky login test") {
 		t.Errorf("queued turn = %q, want it to carry the ship's title", got)
+	}
+}
+
+func findingsLine(t *testing.T, r *briefRig, c ShipCard) string {
+	t.Helper()
+	if err := r.EnqueueShipReport("work", c, "done"); err != nil {
+		t.Fatalf("EnqueueShipReport = %v", err)
+	}
+	texts := queuedTexts(r, "work")
+	if len(texts) != 1 {
+		t.Fatalf("%d turns queued, want 1", len(texts))
+	}
+	for _, l := range strings.Split(texts[0], "\n") {
+		if strings.HasPrefix(l, "findings:") {
+			return l
+		}
+	}
+	t.Fatalf("no findings line in the report turn:\n%s", texts[0])
+	return ""
+}
+
+func TestTheReportTurnSaysFindingsWereKeptWhenTheCardsVoyageHasThem(t *testing.T) {
+	r := newBriefRig(t)
+	r.Service.Findings = findings.Open(r.home)
+	c := sampleCard()
+	keepFindings(t, r.home, c.Ship, c.FirstLaunched, "work")
+	if got := findingsLine(t, r, c); got != "findings: kept, read them with read_findings" {
+		t.Errorf("findings line = %q, want kept", got)
+	}
+}
+
+func TestTheReportTurnSaysNoFindingsWhenTheVoyageKeptNone(t *testing.T) {
+	r := newBriefRig(t)
+	r.Service.Findings = findings.Open(r.home)
+	if got := findingsLine(t, r, sampleCard()); got != "findings: none" {
+		t.Errorf("findings line = %q, want none", got)
+	}
+}
+
+func TestTheReportTurnSaysNoFindingsWhenTheServiceHasNoFindingsStore(t *testing.T) {
+	r := newBriefRig(t)
+	c := sampleCard()
+	keepFindings(t, r.home, c.Ship, c.FirstLaunched, "work")
+	if got := findingsLine(t, r, c); got != "findings: none" {
+		t.Errorf("findings line = %q, want none with a nil store", got)
+	}
+}
+
+func TestTheReportTurnIgnoresFindingsOfAnotherVoyageOfTheSameShipName(t *testing.T) {
+	r := newBriefRig(t)
+	r.Service.Findings = findings.Open(r.home)
+	c := sampleCard()
+	keepFindings(t, r.home, c.Ship, firstB, "work")
+	if got := findingsLine(t, r, c); got != "findings: none" {
+		t.Errorf("findings line = %q, want none: only another voyage kept findings", got)
 	}
 }

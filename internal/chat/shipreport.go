@@ -38,7 +38,7 @@ func (d *ShipCards) QueueReports(report func(fleet string, c ShipCard) error) {
 
 // ReportTurnText is the text of a ship's report turn; reportResult is the Admiral report's result, "" when it could not be read.
 // The ship's own words (name, title, launch text) are untrusted, so they sit in fences and never on the marker line.
-func ReportTurnText(c ShipCard, launchText, reportResult string) string {
+func ReportTurnText(c ShipCard, launchText, reportResult string, findingsKept bool) string {
 	if reportResult == "" {
 		reportResult = "unknown"
 	}
@@ -125,5 +125,5 @@ func (s *Service) EnqueueShipReport(fleet string, c ShipCard, reportResult strin
 	if text == "" {
 		text = c.Title
 	}
-	return s.EnqueueTurn(fleet, c.id(), ReportTurnText(c, text, reportResult))
+	return s.EnqueueTurn(fleet, c.id(), ReportTurnText(c, text, reportResult, false))
 }
