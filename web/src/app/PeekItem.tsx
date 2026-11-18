@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { call, SLOW_TIMEOUT_MS } from './api';
 import { Actions, Button } from './Button';
 import { refreshCampaigns } from './campaignsLink';
@@ -82,6 +82,8 @@ export function CampaignDraftBody({ entry, acting, fold }: { entry: Entry; actin
   const fleet = d?.fleet || entry.fleet?.key || '';
   const [filed, setFiled] = useState<Filed | null>(null);
   const [busy, setBusy] = useState(false);
+  const here = useRef(true);
+  useLayoutEffect(() => () => void (here.current = false), []);
   // The item's own Create follows the campaign here, not in the step: the Inbox push can unmount this Peek before the answer arrives.
   const create = async (body: { repo: string; title: string; body: string }) => {
     const r = await call<{ campaign: { id: string; url: string } }>('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/create`, body, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
@@ -89,8 +91,11 @@ export function CampaignDraftBody({ entry, acting, fold }: { entry: Entry; actin
       void refreshCampaigns();
       rememberFleet(fleet);
       go(campaignPath(r.data.campaign.id), `?fleet=${encodeURIComponent(fleet)}`);
+      return r;
     }
-    return r;
+    // The Inbox push usually closes the Peek before this answer: the folded row is then the one place the engineer sees the filed parent.
+    if (r.parent && !here.current) fold(`Filed ${r.parent} but did not follow it: ${r.error}`);
+    return !r.ok && r.status === 409 && !r.parent ? { ...r, error: 'This draft is being created already. Wait a moment and try again.' } : r;
   };
   return (
     <div class="campaign-draft">
@@ -100,6 +105,7 @@ export function CampaignDraftBody({ entry, acting, fold }: { entry: Entry; actin
         filed={filed}
         onFiled={setFiled}
         onClose={() => {}}
+        locked={acting.busy || acting.locked}
         onBusy={setBusy}
         onCreate={create}
         repoSeed={d?.repo ?? ''}

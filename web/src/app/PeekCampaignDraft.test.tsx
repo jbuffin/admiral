@@ -211,6 +211,32 @@ test('a failure after the parent exists links the parent, says it was not follow
   expect(nav.go).not.toHaveBeenCalled();
 });
 
+test('a failure after the parent exists still reaches the engineer when the Inbox push has closed the Peek first', async () => {
+  let answer: (r: Response) => void = () => {};
+  createAnswer = () => new Promise<Response>((r) => (answer = r));
+  const { fold } = open();
+  await title();
+  fireEvent.click(create());
+  await waitFor(() => expect(posts('/create')).toHaveLength(1));
+  cleanup();
+  answer(json({ error: 'follow failed: gh is signed out', parent: 'https://github.com/acme/widgets/issues/99', answered: true }, 502));
+  await waitFor(() => expect(fold).toHaveBeenCalledTimes(1));
+  expect(fold.mock.calls[0][0]).toContain('https://github.com/acme/widgets/issues/99');
+  expect(fold.mock.calls[0][0]).toContain('follow failed: gh is signed out');
+  expect(nav.go).not.toHaveBeenCalled();
+});
+
+test('Create is held while a Dismiss is running', async () => {
+  let answer: (r: Response) => void = () => {};
+  dismissAnswer = () => new Promise<Response>((r) => (answer = r));
+  open();
+  await title();
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+  await waitFor(() => expect(posts('/dismiss')).toHaveLength(1));
+  await waitFor(() => expect(create().disabled).toBe(true));
+  answer(new Response(null, { status: 204 }));
+});
+
 test('a busy item (409) says to try again and keeps Create', async () => {
   createAnswer = () => json({ error: 'busy' }, 409);
   open();

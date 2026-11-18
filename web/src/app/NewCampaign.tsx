@@ -232,6 +232,8 @@ interface ConfirmProps {
   onCreate?: (body: { repo: string; title: string; body: string }) => Promise<Result<unknown>>;
   /** The repo ("owner/name") to preselect, matched without regard to case; none is selected when it is not offered. */
   repoSeed?: string;
+  /** Holds Create while another action on the same item runs. */
+  locked?: boolean;
   /** False where the step opens from a link, so the page keeps the focus. */
   autoFocus?: boolean;
   /** Buttons that sit before Create in the foot. */
@@ -250,7 +252,7 @@ function ParentLink({ url }: { url: string }) {
 }
 
 /** The step that shows the title, description and repo before the parent issue is filed. */
-export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onBusy, onCreated, onCreate, repoSeed, autoFocus = true, foot }: ConfirmProps) {
+export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onBusy, onCreated, onCreate, repoSeed, autoFocus = true, foot, locked = false }: ConfirmProps) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState('');
   const [repoId, setRepoId] = useState('');
@@ -317,7 +319,7 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
       return onClose();
     }
     setCreating(false);
-    setError(r.status === 409 && !r.parent ? 'This draft is being created already. Wait a moment and try again.' : r.error);
+    setError(r.error);
     if (r.parent) onFiled({ parent: r.parent, error: r.error });
   };
 
@@ -355,7 +357,7 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
         <label class="field">
           <span>Repo for the parent issue</span>
           <select aria-label="Repo for the parent issue" value={repoId} onChange={(e) => setRepoId(e.currentTarget.value)}>
-            {repoId === '' ? (
+            {repoId === '' && repoSeed !== undefined ? (
               <option value="" disabled>
                 Choose a repo
               </option>
@@ -414,7 +416,7 @@ export function ConfirmStep({ fleet, start, filed, onFiled, onClose, onBack, onB
           </Button>
         ) : null}
         {foot}
-        <Button variant="primary" label="Create campaign" busyLabel="Creating campaign" busy={creating} disabled={!title.trim() || !project || creating || !!parentMade} onClick={() => void submit()}>
+        <Button variant="primary" label="Create campaign" busyLabel="Creating campaign" busy={creating} disabled={!title.trim() || !project || creating || !!parentMade || locked} onClick={() => void submit()}>
           Create campaign
         </Button>
       </div>
