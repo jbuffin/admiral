@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/probes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -55,6 +56,9 @@ const (
 )
 
 func reasonFor(rule string) string {
+	if isScoutRule(rule) {
+		return scoutReason
+	}
 	switch rule {
 	case ruleGhPrReview, ruleGhAPIEvent, ruleGhAPISubmit, ruleGraphqlReview, ruleMcpReview, ruleUnparsed:
 		return guardReason
@@ -71,12 +75,36 @@ type GuardDenied struct{ Rule, Reason string }
 func (e *GuardDenied) Error() string { return e.Reason }
 
 // Guard keeps an autopilot ship from submitting an APPROVE or REQUEST_CHANGES
-// review and from merging other than with `gh pr merge --auto`.
+// review and from merging other than with `gh pr merge --auto`, and a scout ship
+// (ADMIRAL_SCOUT names its checkout) from changing anything.
 func Guard(args []string, std IO) error {
-	if len(args) == 0 || args[0] != "pretooluse" || os.Getenv("ADMIRAL_AUTOPILOT") != "1" {
+	if len(args) == 0 || args[0] != "pretooluse" {
+		return nil
+	}
+	scout, autopilot := os.Getenv(launcher.ScoutEnv), os.Getenv("ADMIRAL_AUTOPILOT") == "1"
+	if scout == "" && !autopilot {
 		return nil
 	}
 	raw, _ := io.ReadAll(io.LimitReader(std.In, 1<<20))
+	deny := func(tool, rule, reason string) error {
+		recordGuardDenied(tool, rule)
+		_, _ = io.WriteString(std.Err, reason+"\n")
+		return &GuardDenied{Rule: rule, Reason: reason}
+	}
+	if scout != "" {
+		root, ok := scoutRoot(scout)
+		tool, rule, target := "", ruleScoutEnv, ""
+		if ok {
+			tool, rule, target = scoutDecision(raw, root)
+			scoutProbe(tool, rule, target)
+		}
+		if rule != "" {
+			return deny(tool, rule, reasonFor(rule))
+		}
+	}
+	if !autopilot {
+		return nil
+	}
 	if probeCommandCalled(raw) {
 		_, _ = io.WriteString(std.Err, probeReason+"\n")
 		return &GuardDenied{Rule: ruleProbe, Reason: probeReason}
@@ -85,10 +113,7 @@ func Guard(args []string, std IO) error {
 	if rule == "" {
 		return nil
 	}
-	recordGuardDenied(tool, rule)
-	reason := reasonFor(rule)
-	_, _ = io.WriteString(std.Err, reason+"\n")
-	return &GuardDenied{Rule: rule, Reason: reason}
+	return deny(tool, rule, reasonFor(rule))
 }
 
 const (

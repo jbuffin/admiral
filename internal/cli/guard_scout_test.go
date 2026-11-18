@@ -260,6 +260,7 @@ func scoutCases(r scoutRig) []scoutCase {
 		sh("rm relative", `rm a.go`, scoutWrite),
 		sh("rmdir", `rmdir `+in("sub"), scoutWrite),
 		sh("mv into the checkout", `mv `+ex("a")+` `+in("b"), scoutWrite),
+		sh("mv out of the checkout", `mv `+in("a.go")+` `+ex("b"), scoutWrite),
 		sh("cp into the checkout", `cp `+ex("a")+` `+in("b"), scoutWrite),
 		sh("ln", `ln -s a.go `+in("link"), scoutWrite),
 		sh("touch", `touch `+in("f"), scoutWrite),

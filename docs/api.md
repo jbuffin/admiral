@@ -840,7 +840,7 @@ What each fleet's harnesses were probed to do (ADR 0035). These are not the serv
       "status":"passed","checked_at":"2026-11-11T09:00:05Z","detail":"..."}]}]}]}]}
 ```
 
-Fleets and harnesses follow the config's order; features follow the table (judge, bot, restricted, autopilot). `status` is `passed`, `failed` or `not_checked`, against the last detected `version`. `version` is `""` when none was detected, and the guard's `detail` then says why. `checked_at` and `detected_at` are `null` when there is no time.
+Fleets and harnesses follow the config's order; features follow the table (judge, bot, restricted, autopilot, scout). `status` is `passed`, `failed` or `not_checked`, against the last detected `version`. `version` is `""` when none was detected, and the guard's `detail` then says why. `checked_at` and `detected_at` are `null` when there is no time.
 
 `judge` is the fleet's judge harness, from `judge.Choose` on the stored probes: the first of claude, codex and copilot that proved no tools and no network, with its Lookout and strong models and whether it proved a JSON schema flag and a per-call cap. A fleet with no such harness has `{"harness":null,"reason":"..."}`, the reason naming each harness and what it lacks, and runs no judge calls.
 
