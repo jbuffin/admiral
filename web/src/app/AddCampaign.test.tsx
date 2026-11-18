@@ -178,6 +178,18 @@ test("picking a row follows its reference in the modal's fleet and opens the cam
   expect(location.search).toBe("?fleet=zulu");
 });
 
+test("an unfollowed row can be picked, and picking it follows its reference again", async () => {
+  const dropped = { ...widgets, status: "unfollowed" as const };
+  answer = () => json({ results: [dropped] });
+  follow = () => json(followed, 200);
+  opened();
+  const mine = await screen.findByRole("button", { name: /Widgets overhaul/ });
+  expect((mine as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(mine);
+  await waitFor(() => expect(location.pathname).toBe("/app/campaigns/camp-9"));
+  expect(follows).toEqual([{ reference: "acme/widgets#20", fleet: "zulu" }]);
+});
+
 test("a refused follow shows its reason and keeps the modal open", async () => {
   answer = () => json({ results: [widgets] });
   follow = () => json({ error: "acme/widgets belongs to fleet yankee" }, 422);

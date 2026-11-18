@@ -215,6 +215,11 @@ test('on the iPad, a person follows a campaign by searching for it and another b
   await expect(survey().getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'With you', exact: true })).toBeEnabled();
   await press(survey().getByRole('button', { name: 'Close' }));
   await expect(main.getByRole('button', { name: 'github.com/acme/widgets' })).toBeVisible();
+  // Follow again brings it back to the sidebar, followed once more.
+  await press(main.getByRole('button', { name: 'Follow again' }));
+  await expect(nav.getByText(T.map)).toBeVisible();
+  await expect(main.getByRole('button', { name: 'Unfollow' })).toBeVisible();
+  await expect(main.getByRole('button', { name: 'Follow again' })).toHaveCount(0);
 
   // The child's ship names its issue on the Ships page and in its header, each a link to the issue.
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
