@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import type { Entry } from './inbox';
 import { lockedBy } from './itemActions';
 import { AllowRulesBody } from './PeekAllowRules';
-import { useActing } from './PeekItem';
+import { Failure, useActing } from './PeekItem';
 
 afterEach(() => {
   cleanup();
@@ -60,7 +60,12 @@ function serve(reply: () => Response | Promise<Response>) {
 
 function Proposal({ e, fold }: { e: Entry; fold: (t: string) => void }) {
   const acting = useActing(e, fold, lockedBy);
-  return <AllowRulesBody entry={e} acting={acting} fleet="Zulu Fleet" />;
+  return (
+    <>
+      <AllowRulesBody entry={e} acting={acting} fleet="Zulu Fleet" />
+      <Failure message={acting.error} />
+    </>
+  );
 }
 
 const card = (n: number) => screen.getByRole('region', { name: `Allow rule card ${n}` });
@@ -160,13 +165,15 @@ test('a 409 shows the error and locks Add, Skip and Send', async () => {
 });
 
 test('a bidi override in a rule and a zero-width character in a command show as visible tokens', () => {
-  const rule = 'Bash(ls‮:*)';
-  const e = entry('ar-8', [claude('c1', { rule, prompts: [{ ship: 'Dory', id: 'p1', command: 'ls​ -la' }] })]);
+  const rule = 'Bash(ls\u202e:*)';
+  const reason = 'safe\u200b read';
+  const e = entry('ar-8', [claude('c1', { rule, reason, prompts: [{ ship: 'Dory', id: 'p1', command: 'ls\u200b -la' }] })]);
   render(<Proposal e={e} fold={vi.fn()} />);
   const c = card(1);
   expect(c.textContent).toContain('Bash(ls⟨U+202E⟩:*)');
   expect(c.textContent).toContain('ls⟨U+200B⟩ -la');
-  expect(c.textContent).not.toMatch(/[‮​]/);
+  expect(c.textContent).toContain('safe⟨U+200B⟩ read');
+  expect(c.textContent).not.toMatch(/[\u202e\u200b]/);
 });
 
 test('a refused card set reloads the item, keeps the decisions of cards still there and asks for the new one', async () => {

@@ -21,6 +21,12 @@ export function AllowRulesBody({ entry, acting, fleet }: { entry: Entry; acting:
   const [stale, setStale] = useState(false);
   const cards = fresh ?? pushed;
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  // A push carries the newest item, so it replaces what a reload read.
+  useEffect(() => {
+    setFresh(null);
+    setStale(false);
+    setDecisions((m) => Object.fromEntries(pushed.filter((c) => m[c.id]).map((c) => [c.id, m[c.id]!])));
+  }, [entry.item]);
   // A round can add a card after the page read the item: the server refuses the old card set and the item is read again.
   useEffect(() => {
     if (!/^(card .+ has no decision|the item has no card .+)$/.test(acting.error)) return;
@@ -54,15 +60,15 @@ export function AllowRulesBody({ entry, acting, fleet }: { entry: Entry; acting:
         return (
           <section key={c.id} class="inbox-finding" aria-label={`Allow rule card ${i}`}>
             <span class="inbox-eyebrow">
-              <Flag harness={c.harness} size="row" label={harnessName(c.harness)} /> {c.every_repo || !c.repo ? `applies to every repo in ${fleet}` : c.repo}
+              <Flag harness={c.harness} size="row" label={harnessName(c.harness)} /> {c.every_repo || !c.repo ? `applies to every repo in ${hide(fleet)}` : hide(c.repo)}
             </span>
-            <code class="label set-text">{hide(ruleText(c))}</code>
+            <code class="label set-text allow-rule-text">{hide(ruleText(c))}</code>
             {c.count > 1 && <span class="inbox-hint">Asked {c.count} times</span>}
-            {ships.length > 0 && <span class="inbox-hint">From {ships.join(', ')}</span>}
+            {ships.length > 0 && <span class="inbox-hint">From {hide(ships.join(', '))}</span>}
             {(c.prompts ?? []).filter((p) => p.command).map((p) => (
               <code key={p.id} class="inbox-hint">{hide(p.command!)}</code>
             ))}
-            {c.reason && <p class="inbox-why" style={{ whiteSpace: 'pre-wrap' }}>{c.reason}</p>}
+            {c.reason && <p class="inbox-why allow-rule-reason">{hide(c.reason)}</p>}
             <div class="inbox-send-row" role="group" aria-label={`Decision for rule ${i}`}>
               <Button label="Add" pressed={decisions[c.id] === 'add'} disabled={off} onClick={() => pick(c.id, 'add')} />
               <Button label="Skip" pressed={decisions[c.id] === 'skip'} disabled={off} onClick={() => pick(c.id, 'skip')} />
@@ -71,11 +77,6 @@ export function AllowRulesBody({ entry, acting, fleet }: { entry: Entry; acting:
         );
       })}
       {stale && <p class="inbox-hint" role="status">This proposal changed while you read it. Decide any new rule and send again.</p>}
-      {acting.error && (
-        <p class="inbox-error" role="alert">
-          {acting.error}
-        </p>
-      )}
       <div class="inbox-send-row">
         <Button label="Send" variant="primary" busy={acting.busy} disabled={decided < cards.length || off} onClick={() => void send()} />
         <span class="inbox-progress">

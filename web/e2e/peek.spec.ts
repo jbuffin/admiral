@@ -449,7 +449,8 @@ test('an allow rule proposed after a hand-allowed prompt is added from Peek, lan
   // The fake never asks, so what "isn't prompted again" can show is the rule the next launch hands Claude.
   const next = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', dir: repo, cues: ['bracketedpaste'] });
   const argvFile = join(admiral.home, 'rec', next.session, 'argv');
-  await expect.poll(() => existsSync(argvFile)).toBe(true);
+  // The fake writes argv with a redirect, so the file can exist empty for a moment.
+  await expect.poll(() => existsSync(argvFile) && readFileSync(argvFile, 'utf8').includes('--settings')).toBe(true);
   const argv = readFileSync(argvFile, 'utf8').split('\0');
   const at = argv.indexOf('--settings');
   expect(at).toBeGreaterThanOrEqual(0);
