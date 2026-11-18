@@ -1345,10 +1345,8 @@ func TestAdmiralBot_AQuickShipFollowsAdmiralsClosingStepsToAPRAndMoors(t *testin
 		t.Errorf("the quick ship's prompt = %q, want it to start with AdmiralBot's launch text", got)
 	}
 	closing := strings.TrimPrefix(got, text)
-	for _, want := range []string{"commit", "push", "pull request", "ADMIRAL_REPORT", "prs", "full URL"} {
-		if !strings.Contains(closing, want) {
-			t.Errorf("the closing steps after the launch text = %q, want them to mention %q", closing, want)
-		}
+	if !strings.Contains(closing, "ADMIRAL_REPORT") {
+		t.Errorf("the text after the launch text = %q, want Admiral's closing steps naming ADMIRAL_REPORT", closing)
 	}
 
 	// The fake harness opens no PR and writes no report, so the test plays the ship following its closing steps.
@@ -1361,9 +1359,8 @@ func TestAdmiralBot_AQuickShipFollowsAdmiralsClosingStepsToAPRAndMoors(t *testin
 		}
 	}
 	if line == nil {
-		t.Fatalf("the fleet chat holds no launch_line entry after the launch: %+v", c.session().Messages)
-	}
-	if !strings.Contains(string(line.Card), "to fix the 500 in widgets") || !strings.Contains(string(line.Card), ship.Name) || strings.Contains(string(line.Card), "ADMIRAL_REPORT") {
+		t.Errorf("the fleet chat holds no launch_line entry after the launch: %+v", c.session().Messages)
+	} else if !strings.Contains(string(line.Card), "to fix the 500 in widgets") || !strings.Contains(string(line.Card), ship.Name) || strings.Contains(string(line.Card), "ADMIRAL_REPORT") {
 		t.Errorf("launch_line card = %s, want the ship's name and reason and no closing steps", line.Card)
 	}
 

@@ -58,6 +58,9 @@ func TestALaunchLinePostsInItsOwnFleetAndNoOther(t *testing.T) {
 	if err := r.PostLaunchLine("work", ships.LaunchLine{Ship: "calm-otter", Kind: "scout", Reason: "to look", Text: "look"}); err != nil {
 		t.Fatalf("PostLaunchLine = %v", err)
 	}
+	if got := launchLinesIn(t, r, "work"); len(got) != 1 {
+		t.Errorf("the work chat holds %d launch lines, want the one it was given", len(got))
+	}
 	if got := launchLinesIn(t, r, "home"); len(got) != 0 {
 		t.Errorf("the home chat holds %+v, want none", got)
 	}
