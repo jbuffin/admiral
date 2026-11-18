@@ -217,15 +217,23 @@ func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness, version s
 		due = append(due, p)
 	}
 	outs := make([]Outcome, len(due))
+	panics := make([]any, len(due))
 	var wg sync.WaitGroup
 	for i, p := range due {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() { panics[i] = recover() }()
 			outs[i] = p.Run(ctx, target)
 		}()
 	}
 	wg.Wait()
+	// Run's caller recovers a panicking probe, so it must surface on this goroutine.
+	for _, v := range panics {
+		if v != nil {
+			panic(v)
+		}
+	}
 	if cancelled(ctx) {
 		return Report{}, ctx.Err()
 	}
