@@ -80,6 +80,7 @@ type campaignView struct {
 	Repo            string `json:"repo"` // of the root issue, https://host/owner/repo
 	FollowedAt      string `json:"followed_at"`
 	EndedAt         string `json:"ended_at,omitempty"`
+	EndReason       string `json:"end_reason,omitempty"` // unfollowed or ended, while ended
 	ReadyWithYou    int    `json:"ready_with_you"`
 	ReadyWithoutYou int    `json:"ready_without_you"`
 	Reading         bool   `json:"reading"`
@@ -129,6 +130,7 @@ func (s *Service) json(f Followed) campaignView {
 	out.FollowedAt = f.FollowedAt.UTC().Format(time.RFC3339)
 	if f.Ended() {
 		out.EndedAt = f.EndedAt.UTC().Format(time.RFC3339)
+		out.EndReason = f.endState()
 	}
 	if v.Root != nil {
 		out.Title, out.Number = v.Root.Title, v.Root.Number
@@ -212,7 +214,7 @@ func (s *Service) serveFollow(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	got, created, lerr := s.Follow(r.Context(), body.Reference)
+	got, created, lerr := s.FollowAgain(r.Context(), body.Reference)
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
 		return

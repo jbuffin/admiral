@@ -530,6 +530,7 @@ A campaign also carries:
 
 - `title`, `number` and `repo` (`https://host/owner/repo`) of the root issue, so the list can name it without the tree;
 - `followed_at`, and `ended_at` once it has ended (absent while followed);
+- `end_reason`, once it has ended (absent while followed): `unfollowed` when the engineer stopped following it, `ended` when its tree closed. Only an `unfollowed` campaign can be followed again;
 - `ready_with_you` and `ready_without_you`: the launchable `ready` children by their resolved mode;
 - `reading`: `true` while a reread of this campaign is in flight, and `last_tried`, the time of the last attempt, good or bad, kept across restarts (absent before any). A failed attempt moves `last_tried` and not `last_read`, so a poller tells a read still under way from one that failed again.
 
@@ -541,7 +542,7 @@ Each node carries `labels` (names, `[]` when none; a parent's too, so the root's
 
 ### `POST /api/campaigns`
 
-Body `{"reference": "<issue URL or owner/repo#n>", "fleet": "<fleet key>"}`. `owner/repo#n` means github.com. `fleet` is optional: the fleet the engineer follows from. Reads the tree, stores the campaign and launches nothing. `201` with the campaign; `200` with the campaign already followed for that issue, ended included. `400` for a reference that is not an issue (the message says what to paste); `422` when no fleet owns the repo, the fleet has no GitHub source for the issue's host (a host is compared ignoring case and must be the source's own), or the read failed.
+Body `{"reference": "<issue URL or owner/repo#n>", "fleet": "<fleet key>"}`. `owner/repo#n` means github.com. `fleet` is optional: the fleet the engineer follows from. Reads the tree, stores the campaign and launches nothing. `201` with the campaign; `200` with the campaign already followed for that issue. Following a campaign the engineer unfollowed follows it again (Follow again): the tree is read first, then the end is cleared and rereads resume, and the answer is `200` with the same `id`; the campaign ends as `ended` at once if its whole tree is closed by then, and a failed read is `422` with the campaign still ended. A campaign whose tree closed is returned as it is, still ended. The campaign commitment the unfollow ended does not come back, and AdmiralBot's `work_on_campaign` does not follow an unfollowed campaign again. `400` for a reference that is not an issue (the message says what to paste); `422` when no fleet owns the repo, the fleet has no GitHub source for the issue's host (a host is compared ignoring case and must be the source's own), or the read failed.
 
 With `fleet`, the reference must belong to that fleet: the one that follows it already, else the one that routes its repo. Another fleet's is `422` with a message naming the owning fleet, and nothing is followed. This is the engineer's own request, so it is a `422`, where `POST /api/chat/campaign-commitments` answers the same check with an actor fence's `403`. A request without `fleet` follows into whichever fleet owns the repo.
 
@@ -577,7 +578,7 @@ AdmiralBot reads it through `read_campaign {id}`; for AdmiralBot an unknown id o
 
 ### `POST /api/campaigns/<id>/unfollow`
 
-Ends the campaign at once; it stays readable and is listed with `ended: true`. Answers the campaign.
+Ends the campaign at once; it stays readable and is listed with `ended: true` and `end_reason: "unfollowed"`. `POST /api/campaigns` follows it again. Answers the campaign.
 
 ### `PUT /api/campaigns/<id>/override`
 

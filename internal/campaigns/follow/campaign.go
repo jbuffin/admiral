@@ -64,6 +64,28 @@ func (s *Service) Follow(ctx context.Context, reference string) (Followed, bool,
 	return got, created, nil
 }
 
+// FollowAgain is the engineer's follow: like Follow, and a campaign they unfollowed is followed again on a fresh read of its tree.
+// A campaign whose tree closed stays ended.
+func (s *Service) FollowAgain(ctx context.Context, reference string) (Followed, bool, *launcher.Error) {
+	got, created, lerr := s.Follow(ctx, reference)
+	if lerr != nil || created || !got.Ended() || got.endState() != endUnfollowed {
+		return got, created, lerr
+	}
+	tree, err := s.readTree(ctx, got.Fleet, got.URL)
+	if err != nil {
+		return Followed{}, false, orderError(http.StatusUnprocessableEntity, err.Error())
+	}
+	if err := s.Store.Resume(got.ID, tree, s.now()); err != nil {
+		return Followed{}, false, orderError(http.StatusInternalServerError, err.Error())
+	}
+	if allClosed(tree) {
+		_ = s.Store.End(got.ID, s.now())
+	}
+	got, _ = s.Store.Get(got.ID)
+	s.changed()
+	return got, false, nil
+}
+
 // Snapshot is the campaign as a commitment pass reads it: the latest good tree, built the way the page's is.
 func (s *Service) Snapshot(id string) campaigns.Read {
 	f, ok := s.Store.Get(id)

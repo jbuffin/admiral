@@ -50,6 +50,7 @@ export interface Campaign {
   repo: string;
   followed_at: string;
   ended_at?: string;
+  end_reason?: 'unfollowed' | 'ended';
   ready_with_you: number;
   ready_without_you: number;
   reading: boolean;

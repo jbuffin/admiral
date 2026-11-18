@@ -220,6 +220,14 @@ func (s *Store) endFor(id string, at time.Time, reason string) error {
 	})
 }
 
+// Resume follows an ended campaign again on the tree just read.
+func (s *Store) Resume(id string, tree *github.TreeNode, at time.Time) error {
+	return s.update(id, func(f *Followed) {
+		f.EndedAt, f.EndReason = time.Time{}, ""
+		f.Tree, f.ReadAt, f.TriedAt, f.ReadError = tree, at, at, ""
+	})
+}
+
 // SetOverride stores o for the child; a zero override removes it.
 func (s *Store) SetOverride(id, childURL string, o campaigns.Override) error {
 	return s.update(id, func(f *Followed) {
