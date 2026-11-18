@@ -27,7 +27,11 @@ func newFleetFacts(store *routines.Store, chatSvc *chat.Service, shipList func()
 				if sh.Fleet != fleet {
 					continue
 				}
-				f := routines.ShipFact{Ship: sh.Session, Voyage: sh.FirstLaunched, Moored: sh.Status == ships.StatusMoored, Ready: sh.StackReady}
+				voyage := sh.FirstLaunched // the card detector's voyage stamp falls back to the launch the same way
+				if voyage == "" {
+					voyage = sh.Launched
+				}
+				f := routines.ShipFact{Ship: sh.Session, Voyage: voyage, Moored: sh.Status == ships.StatusMoored, Ready: sh.StackReady}
 				for _, pr := range sh.PRs {
 					f.MergeReasons = append(f.MergeReasons, pr.MergeReasons...)
 				}
