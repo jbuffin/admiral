@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Actions, Button } from './Button';
+import { Icon } from './Icon';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
 import { probeChatSession, type Fleet, type Result } from './api';
 import { computed } from '@preact/signals';
@@ -9,7 +10,7 @@ import { shipLinkSet, shipsOfLinkSet } from './shipLinkSet';
 import { fetchLaunchState, launchCardView, promoteLaunch, stopShip, undoLaunch } from './launchCard';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
-import { commitmentCardView, needsTerminal, shipCardView, questionEyebrow, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
+import { commitmentCardView, launchLineView, needsTerminal, shipCardView, questionEyebrow, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
 import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
 import { MuteRule } from './MuteRule';
 import { ReviewerNoteView } from './ReviewerNoteView';
@@ -102,6 +103,42 @@ function ShipCardView({ item }: { item: Extract<ThreadItem, { kind: 'ship' }> })
         <p class="line">{v.name}</p>
       )}
       {v.prs.map((p) => (p.href ? <Button key={p.url} label={p.label} href={p.href} external /> : <p key={p.url} class="line">{p.url}</p>))}
+    </div>
+  );
+}
+
+function LaunchLineView({ item }: { item: Extract<ThreadItem, { kind: 'launch_line' }> }) {
+  const v = launchLineView(item, ships.value);
+  const [open, setOpen] = useState(false);
+  return (
+    <div class="convo-card chat-card">
+      <p class="chat-card-eyebrow launch-sentence">{v.sentence}</p>
+      {v.shipHref ? (
+        <Button
+          label={`Open ship ${v.name}`}
+          href={v.shipHref + fleetSearch.value}
+          onClick={(e) => {
+            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            go(v.shipHref, fleetSearch.value);
+          }}
+        >
+          {v.name}
+        </Button>
+      ) : (
+        <p class="line">{v.name}</p>
+      )}
+      {v.text ? (
+        <>
+          <button type="button" class="tool-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+            <span class={`fold-chevron${open ? ' open' : ''}`}>
+              <Icon name="chevron" size={14} />
+            </span>
+            Launch text
+          </button>
+          {open ? <p class="line launch-text">{v.text}</p> : null}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -255,6 +292,8 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           <LaunchCardView key={i.id} item={i} fleet={fleet} />
         ) : i.kind === 'commitment' ? (
           <CommitmentCard key={i.id} item={i} fleet={fleet} />
+        ) : i.kind === 'launch_line' ? (
+          <LaunchLineView key={i.id} item={i} />
         ) : i.kind === 'ship' ? (
           <ShipCardView key={i.id} item={i} />
         ) : i.role === 'user' ? (

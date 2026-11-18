@@ -51,13 +51,24 @@ export interface ShipCard {
   prs: { url: string; number: number }[];
 }
 
+/** The line AdmiralBot's launch posts in the chat: what it sent and why, with its launch text as written. */
+export interface LaunchLine {
+  ship: string;
+  name?: string;
+  first_launched?: string;
+  fleet: string;
+  kind: string;
+  reason: string;
+  text: string;
+}
+
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card';
+  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
-  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard;
+  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard | LaunchLine;
 }
 
 /** A fleet's chat as the server serves it: GET /api/chat/<fleet>/session and the `chat` socket message. */
@@ -76,6 +87,7 @@ export type ThreadItem =
   | { kind: 'commitment'; id: string; text: string; at: string; card: CommitmentCard }
   | { kind: 'event'; id: string; text: string; at: string; card: EventCard }
   | { kind: 'launch'; id: string; text: string; at: string; card: LaunchCard }
+  | { kind: 'launch_line'; id: string; text: string; at: string; card: LaunchLine }
   | { kind: 'ship'; id: string; text: string; at: string; card: ShipCard }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer; kept?: string };
 
@@ -93,6 +105,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
     if (m.kind === 'commitment' && m.card) return [{ t, i, item: { kind: 'commitment', id: m.id, text: m.text, at: m.at, card: m.card as CommitmentCard } }];
     if (m.kind === 'event_card' && m.card) return [{ t, i, item: { kind: 'event', id: m.id, text: m.text, at: m.at, card: m.card as EventCard } }];
     if (m.kind === 'launch_card' && m.card) return [{ t, i, item: { kind: 'launch', id: m.id, text: m.text, at: m.at, card: m.card as LaunchCard } }];
+    if (m.kind === 'launch_line' && m.card) return [{ t, i, item: { kind: 'launch_line', id: m.id, text: m.text, at: m.at, card: m.card as LaunchLine } }];
     if (m.kind === 'ship_card' && m.card) return [{ t, i, item: { kind: 'ship', id: m.id, text: m.text, at: m.at, card: m.card as ShipCard } }];
     if (m.kind === 'question' && m.card) {
       const card = m.card as InboxItem;
@@ -150,6 +163,15 @@ const httpsHref = (url: string): string => {
     return '';
   }
 };
+
+const LAUNCH_KIND: Record<string, string> = { quick_ship: 'a quick ship', scout: 'a scout', commodore: 'a Commodore ship' };
+
+/** What a launch line shows: its sentence, the ship and, while the ship is afloat, its page. */
+export function launchLineView(item: Extract<ThreadItem, { kind: 'launch_line' }>, ships: Ship[]): { sentence: string; name: string; shipHref: string; text: string } {
+  const c = item.card;
+  const kind = Object.hasOwn(LAUNCH_KIND, c.kind) ? LAUNCH_KIND[c.kind] : `${/^[aeiou]/i.test(c.kind) ? 'an' : 'a'} ${c.kind} ship`;
+  return { sentence: c.reason ? `Sent ${kind} ${c.reason}` : `Sent ${kind}`, name: c.name || c.ship, shipHref: ships.some((s) => s.session === c.ship && s.first_launched === c.first_launched) ? shipPath(c.ship) : '', text: c.text };
+}
 
 /** What a ship card shows: the ship and its kind, the result in words, each PR and, while its voyage is still in the ships list, the ship's page. */
 export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships: Ship[]): { eyebrow: string; name: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string } {

@@ -338,9 +338,10 @@ A launch line is a chat entry with `kind: "launch_line"` that the server posts i
 `id` is `launch-line-<ship>-<stamp>`, and `text` is the ship's session name. `card` is:
 
 ```json
-{"ship": "calm-otter", "name": "Calm Otter", "fleet": "harbor", "kind": "quick_ship", "reason": "to read the AWS logs", "text": "Read the logs and fix the 500."}
+{"ship": "calm-otter", "name": "Calm Otter", "first_launched": "2026-11-17T10:00:00Z", "fleet": "harbor", "kind": "quick_ship", "reason": "to read the AWS logs", "text": "Read the logs and fix the 500."}
 ```
 
+- `ship` is the session name and `first_launched` the voyage's stamp, the same as on a ship card. A client links the line to the ship only while a ship in `GET /api/ships` has this `ship` and `first_launched`, since a session name can be reused.
 - `kind` is `scout`, `quick_ship`, `commodore`, or the name of the skill the ship runs (a drafting ship shows its skill's name).
 - `reason` is the one line AdmiralBot gave `launch_ship`, which requires it.
 - `text` is the launch text as AdmiralBot wrote it, without the closing steps Admiral adds to a quick ship's prompt. It is empty for a launch from an order (`source` and `order_id`), which has no launch text.

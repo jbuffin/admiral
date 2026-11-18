@@ -78,7 +78,7 @@ func TestAChatLaunchPostsOneLaunchLineWithTheShipsKindTheReasonAndTheLaunchTextA
 				t.Fatalf("launch lines = %+v, want exactly one", lines)
 			}
 			want := LaunchLine{Ship: session, Kind: c.kind, Reason: "to read the AWS logs", Text: "read the logs"}
-			if fleets[0] != "work" || lines[0].Ship != want.Ship || lines[0].Kind != want.Kind || lines[0].Reason != want.Reason || lines[0].Text != want.Text {
+			if fleets[0] != "work" || lines[0].Ship != want.Ship || lines[0].Kind != want.Kind || lines[0].Reason != want.Reason || lines[0].Text != want.Text || lines[0].FirstLaunched == "" {
 				t.Errorf("launch line = %s %+v, want fleet work and %+v", fleets[0], lines[0], want)
 			}
 		})
