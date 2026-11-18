@@ -44,6 +44,7 @@ type ShipCard struct {
 	SkillKind     string
 	Result        string
 	PRs           []ShipCardPR
+	ReportResult  string // the Admiral report's result when its ended record carried one; not part of the posted card
 }
 
 // PostShipCard appends the card to the fleet's chat log, once per voyage and result. It starts no turn and writes no digest line.
@@ -80,6 +81,8 @@ type ShipRecord struct {
 	Clean    bool   // an ended line's exit was clean
 	Returned bool   // a stopped line ended a return to port
 	Scout    bool   // a stopped line ended a scout that ran to its end
+	// ReportResult is the result of the report an ended line carried: the file itself is gone once the ship moors.
+	ReportResult string
 }
 
 // voyage is what the detector keeps of one ship's voyage: who it is, which cards it has settled and the record times that
@@ -95,6 +98,7 @@ type voyage struct {
 	Scout         bool
 	Commitment    string
 	Routine       string
+	ReportResult  string
 	Round         int  // the highest round seen: a feedback round or a wake keeps the voyage
 	Reported      bool // its report turn is queued, or its first event passed without one
 	FirstLaunched string
@@ -158,6 +162,20 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 	seeding := !d.st.Seeded
 	var errs []error
 	mooredNow, inSnap := map[*voyage]bool{}, map[*voyage]bool{}
+	if !seeding {
+		// A moor or an anchor in this snapshot is reported with the result its ended record carries, so the records are read first.
+		slices.SortStableFunc(records, func(a, b ShipRecord) int { return a.At.Compare(b.At) })
+		for _, s := range snap {
+			if s.Fleet != "" {
+				d.voyageOf(s, now)
+			}
+		}
+		for _, r := range records {
+			if v := d.voyageAt(r.Ship, r.At); v != nil && r.Event == "ended" && r.ReportResult != "" {
+				v.ReportResult = r.ReportResult
+			}
+		}
+	}
 	for _, s := range snap {
 		if s.Fleet == "" {
 			continue
@@ -187,7 +205,6 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 		}
 	}
 	if !seeding {
-		slices.SortStableFunc(records, func(a, b ShipRecord) int { return a.At.Compare(b.At) })
 		for _, r := range records {
 			if v := d.voyageAt(r.Ship, r.At); v != nil {
 				v.apply(r)
@@ -333,14 +350,14 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 		v.Reported = true
 	}
 	if !silent {
-		card := ShipCard{Ship: v.Ship, Name: v.Name, Title: v.Title, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.cardKind(), Result: result, PRs: v.PRs}
+		card := ShipCard{Ship: v.Ship, Name: v.Name, Title: v.Title, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.cardKind(), Result: result, PRs: v.PRs, ReportResult: v.ReportResult}
 		if reports && d.report != nil {
 			if err := d.report(v.Fleet, card); err != nil {
 				return err
 			}
 			v.Reported = true
 		}
-		if err := d.post(v.Fleet, ShipCard{Ship: v.Ship, Name: v.Name, Title: v.Title, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.cardKind(), Result: result, PRs: v.PRs}); err != nil {
+		if err := d.post(v.Fleet, card); err != nil {
 			return err
 		}
 	}
@@ -351,14 +368,14 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 // reportsOn says whether the result is a voyage's first reporting event. Only the ships AdmiralBot launched from the
 // chat report (scouts have their own report), and a sail-off after a moor is the end, which posts its card only.
 func (v *voyage) reportsOn(result string) bool {
-	if v.Reported || v.Via != "admiralbot" || v.Commitment != "" || v.Routine != "" || v.Scout || v.Round > 0 {
+	if v.Reported || v.Done[ShipAnchored] || v.Done[ShipMoored] || v.Done[ShipSailedOff] || v.Via != "admiralbot" || v.Commitment != "" || v.Routine != "" || v.Scout || v.Round > 0 {
 		return false
 	}
 	switch result {
 	case ShipAnchored, ShipMoored:
 		return true
 	case ShipSailedOff:
-		return !v.Done[ShipMoored] && v.UnmooredAt.IsZero()
+		return v.UnmooredAt.IsZero()
 	}
 	return false
 }
