@@ -488,7 +488,12 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		if err != nil {
 			return nil, refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
 		}
-		argv = addPrompt(argv, withCampaignRef(prompt, filepath.Join(home, "ships", session, CampaignRefFile)))
+		ref := filepath.Join(home, "ships", session, CampaignRefFile)
+		// A reused name must not inherit the ref of the ship that had it before.
+		if err := os.Remove(ref); err != nil && !os.IsNotExist(err) {
+			return nil, refuse(http.StatusInternalServerError, "could not clear %s: %v", ref, err)
+		}
+		argv = addPrompt(argv, withCampaignRef(prompt, ref))
 		if err := tooLong(); err != nil {
 			return nil, err
 		}

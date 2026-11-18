@@ -198,15 +198,20 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 		return Ship{}, lerr
 	}
 	if req.Drafting {
-		s.drafters.Store(got.Session, true)
+		s.markDrafting(got.Session, got.Options["launched"])
 	}
 	s.releaseWhenListed(got.Session, release)
 	return got, nil
 }
 
-// IsDrafting is whether Admiral launched the ship as a drafting ship since it started.
-func (s *Service) IsDrafting(session string) bool {
-	_, ok := s.drafters.Load(session)
+// markDrafting records a drafting ship by session and launch stamp, so a later ship that reuses the name is not one.
+func (s *Service) markDrafting(session, launched string) {
+	s.drafters.Store(session+"\x00"+launched, true)
+}
+
+// IsDrafting is whether the ship of this session and launch stamp (its `launched` option) was launched as a drafting ship since Admiral started.
+func (s *Service) IsDrafting(session, launched string) bool {
+	_, ok := s.drafters.Load(session + "\x00" + launched)
 	return ok
 }
 

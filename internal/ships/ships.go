@@ -138,7 +138,7 @@ type Service struct {
 	// handing holds the ships a Hand to Commodore step is running for; hands holds each hand's entry.
 	handing sync.Map
 	hands   sync.Map
-	// drafters is the ships Admiral launched as drafting ships, by session, in memory only: a ship can rewrite its own pane options.
+	// drafters is the ships Admiral launched as drafting ships, by session and launch stamp, in memory only: a ship can rewrite its own pane options.
 	drafters sync.Map
 	Host     *sessionhost.Host
 	Launcher *launcher.Launcher

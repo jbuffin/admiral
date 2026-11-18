@@ -142,8 +142,12 @@ func TestADraftingLaunchFindsAPluginSkillByItsBareName(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.installPlugin(t, "a", "wayfinder")
-	if _, err := r.check(r.request()); err != nil {
+	chk, err := r.check(r.request())
+	if err != nil {
 		t.Fatalf("CheckSpec = %v, want wayfinder to resolve to the one plugin skill", err)
+	}
+	if chk.Skill != "a:wayfinder" {
+		t.Errorf("resolved skill = %q, want a:wayfinder", chk.Skill)
 	}
 }
 

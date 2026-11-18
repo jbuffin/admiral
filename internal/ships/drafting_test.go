@@ -34,3 +34,14 @@ func TestADraftingLaunchIgnoresAutopilotSoTheCapAndTheGuardNeverRefuseIt(t *test
 		t.Errorf("a drafting launch over the autopilot cap = %d %s, want it never refused over autopilot", rec.Code, rec.Body)
 	}
 }
+
+func TestAShipReusingADraftingShipsNameIsNotADraftingShip(t *testing.T) {
+	s := &Service{}
+	s.markDrafting("ship-1", "2026-11-18T10:00:00Z")
+	if !s.IsDrafting("ship-1", "2026-11-18T10:00:00Z") {
+		t.Fatal("the drafting ship does not read as drafting")
+	}
+	if s.IsDrafting("ship-1", "2026-11-18T11:00:00Z") {
+		t.Error("a later ship with the same name reads as drafting")
+	}
+}
