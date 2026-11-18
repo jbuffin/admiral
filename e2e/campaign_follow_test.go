@@ -355,6 +355,9 @@ func (w *world) endedItemIDs() []string {
 	entries, _ := os.ReadDir(filepath.Join(w.home, "inbox", "_admiral"))
 	var ids []string
 	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".json") { // the server writes an item under a temp name first
+			continue
+		}
 		if b, err := os.ReadFile(filepath.Join(w.home, "inbox", "_admiral", e.Name())); err == nil && strings.Contains(string(b), draftedEnded) {
 			ids = append(ids, strings.TrimSuffix(e.Name(), ".json"))
 		}
@@ -402,9 +405,9 @@ func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
 	if b, _ := os.ReadFile(filepath.Join(w.home, "inbox", "_admiral", id+".json")); !strings.Contains(string(b), quiet.Name) {
 		t.Errorf("the item %s does not name the ship %s", b, quiet.Name)
 	}
-	if code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/inbox/_admiral/"+id+"/conversation", nil); code != http.StatusOK || !strings.Contains(body, `"state"`) {
+	if code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/inbox/_admiral/"+id+"/conversation", nil); code != http.StatusOK || !strings.Contains(body, `"state":"none"`) {
 		// The fake writes no transcript in this fleet, so the page says none; that the binding reads ok is a unit check.
-		t.Errorf("the item's conversation = %d %s, want 200 with a state", code, body)
+		t.Errorf("the item's conversation = %d %s, want 200 with state none", code, body)
 	}
 	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/inbox/_admiral/"+id+"/remove", nil); code != http.StatusOK {
 		t.Fatalf("remove the item = %d: %s", code, body)

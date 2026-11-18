@@ -11,7 +11,7 @@ import (
 
 func draftingEnded() inbox.DraftingEnded {
 	return inbox.DraftingEnded{Ship: "bramble", Name: "Bramble", Fleet: "work", Harness: "claude",
-		Transcript: "1700000000000000000 launch /cfg/projects/p/s.jsonl", StartCmd: "claude --session-id s", ConfigDir: "/cfg"}
+		Transcript: "1700000000000000000 launch /cfg/projects/p/s.jsonl", StartCmd: "claude --session-id s"}
 }
 
 func getConversation(mux http.Handler, id string) *httptest.ResponseRecorder {

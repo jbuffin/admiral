@@ -12,7 +12,7 @@ import (
 
 func recorded(t *testing.T, f *fixture, raw, startCmd, query string) (int, pageJSON) {
 	t.Helper()
-	status, body := f.svc.RecordedConversation("claude", raw, startCmd, f.cfg, query)
+	status, body := f.svc.RecordedConversation("claude", "fleet", raw, startCmd, query)
 	var p pageJSON
 	if err := json.Unmarshal(body, &p); err != nil {
 		t.Fatalf("body %s: %v", body, err)
@@ -85,7 +85,7 @@ func TestRecordedConversationReadsACopilotBindingToo(t *testing.T) {
 	}
 	appendTo(t, path, copilotUser(1)+copilotAssistant(2, "Hi."))
 	start := "'/bin/copilot' '--session-id' '" + sid + "' '--' 'go'"
-	status, body := f.svc.RecordedConversation("copilot", "1700000000000000000 launch "+path, start, f.cfg, "")
+	status, body := f.svc.RecordedConversation("copilot", "fleet", "1700000000000000000 launch "+path, start, "")
 	var p pageJSON
 	if err := json.Unmarshal(body, &p); err != nil || status != http.StatusOK || p.State != "ok" || len(p.Items) != 2 {
 		t.Fatalf("recorded copilot read = %d %s (%v), want its two items", status, body, err)

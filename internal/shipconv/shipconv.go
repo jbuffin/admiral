@@ -50,6 +50,7 @@ type Service struct {
 	// Tests replace these two lookups, which need a live tmux.
 	ship   func(session string) (ships.Ship, bool)
 	option func(sh ships.Ship) (raw, startCmd, configDir string, ok bool)
+	home   func(fleet, harness string) (string, bool)                        // a fleet's config dir for a harness
 	owns   func(sh ships.Ship, port int) bool                                // whether the ship's own Copilot listens on port
 	crew   func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) // the boat and its fleet's config dir for the boat's harness
 
@@ -171,6 +172,9 @@ func (s *Service) optionOf(sh ships.Ship) (raw, startCmd, configDir string, ok b
 }
 
 func (s *Service) configDir(sh ships.Ship, harness string) (string, bool) {
+	if s.home != nil {
+		return s.home(sh.Fleet, harness)
+	}
 	f, found := s.Config().Fleet(sh.Fleet)
 	if !found {
 		return "", false
@@ -437,8 +441,9 @@ func beforeOf(q url.Values) (before string, ok bool) {
 }
 
 // RecordedConversation reads the conversation a ship ended with, through the binding recorded then and the checks a
-// live ship's gets (ADR 0019): an option that fails them gives the no-conversation page.
-func (s *Service) RecordedConversation(harness, raw, startCmd, configDir, query string) (int, []byte) {
+// live ship's gets (ADR 0019): an option that fails them gives the no-conversation page. The config dir comes from the
+// fleet's current config, never from the record.
+func (s *Service) RecordedConversation(harness, fleet, raw, startCmd, query string) (int, []byte) {
 	q, _ := url.ParseQuery(query)
 	before, ok := beforeOf(q)
 	if !ok {
@@ -446,6 +451,10 @@ func (s *Service) RecordedConversation(harness, raw, startCmd, configDir, query 
 	}
 	page := Page{State: StateNone, Items: []conversation.Item{}}
 	if !ships.HasConversation(harness) {
+		return encodePage(http.StatusOK, page)
+	}
+	configDir, found := s.configDir(ships.Ship{Fleet: fleet}, harness)
+	if !found {
 		return encodePage(http.StatusOK, page)
 	}
 	loc, none := bindRecorded(harness, raw, startCmd, configDir)

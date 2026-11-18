@@ -44,7 +44,8 @@ func newDraftRig(t *testing.T) *draftRig {
 
 func (r *draftRig) draft(t *testing.T, session string) {
 	t.Helper()
-	r.s.markDrafting(session, firstLaunched(r.options(t, session)))
+	o := r.options(t, session)
+	r.s.markDrafting(session, firstLaunched(o), o["fleet"], o["harness"])
 }
 
 func (r *draftRig) followed() [][2]string {
@@ -251,7 +252,7 @@ func TestAnUnsafeRefIsNotReadAndTheNextValidOneIs(t *testing.T) {
 func TestAWokenDraftingShipStaysDraftingAndItsRefIsFollowed(t *testing.T) {
 	r := newWakeRig(t, 0)
 	first, _ := shipJSON(t, r.moorKeyed(t))["first_launched"].(string)
-	r.s.markDrafting("saltpaw", first)
+	r.s.markDrafting("saltpaw", first, "work", "claude")
 	var mu sync.Mutex
 	var calls []string
 	r.s.FollowDrafted = func(fleet, ref string) error {
@@ -380,13 +381,89 @@ func TestReturningADraftingShipToPortPostsNoItem(t *testing.T) {
 	}
 }
 
-func TestAMooredDraftingShipKeepsDraftingAndPostsNoItem(t *testing.T) {
-	r := newWakeRig(t, 0)
-	first, _ := shipJSON(t, r.moorKeyed(t))["first_launched"].(string)
-	r.s.markDrafting("saltpaw", first)
+// moorDrafting moors the drafting ship the way a clean exit with an open PR does, then takes its pane away.
+func (r *draftRig) moorDrafting(t *testing.T) {
+	t.Helper()
+	r.exitAndMoor(t)
+	r.kill(t, "saltpaw")
+}
+
+func TestAMooredDraftingShipKeepsDraftingAndPostsNoItemUntilItEnds(t *testing.T) {
+	r := newDraftRig(t)
+	r.moorDrafting(t)
+	if sh := r.draftingJSON(t, "saltpaw"); sh["status"] != StatusMoored || sh["drafting"] != true {
+		t.Fatalf("moored row status=%v drafting=%v, want a moored ship still drafting", sh["status"], sh["drafting"])
+	}
 	r.s.settleWG.Wait()
-	if items := (&draftRig{handRig: &handRig{&nextRig{wakeRig: r}}}).endedItems(t); len(items) != 0 {
+	if items := r.endedItems(t); len(items) != 0 {
 		t.Errorf("a ship that moored posted %v, want no item", items)
+	}
+}
+
+func TestStoppingAMooredDraftingShipThatFiledNothingPostsOneItem(t *testing.T) {
+	r := newDraftRig(t)
+	r.moorDrafting(t)
+	rec := httptest.NewRecorder()
+	r.mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/ships/saltpaw/stop", nil))
+	if rec.Code != 200 {
+		t.Fatalf("stop = %d %s", rec.Code, rec.Body)
+	}
+	if item := r.waitEndedItem(t); !strings.Contains(item, "Saltpaw") {
+		t.Errorf("item %s does not name the ship", item)
+	}
+	if n := len(r.endedItems(t)); n != 1 {
+		t.Errorf("items = %d, want one", n)
+	}
+}
+
+func TestAMooredDraftingShipWhoseCampaignIsFollowedPostsNoItemWhenStopped(t *testing.T) {
+	r := newDraftRig(t)
+	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
+	r.endTurn(t, "saltpaw")
+	r.moorDrafting(t)
+	rec := httptest.NewRecorder()
+	r.mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/ships/saltpaw/stop", nil))
+	r.s.settleWG.Wait()
+	if rec.Code != 200 || len(r.endedItems(t)) != 0 {
+		t.Errorf("stop = %d, items = %v, want a stop and no item for a ship that followed its campaign", rec.Code, r.endedItems(t))
+	}
+}
+
+func TestARewrittenFleetOptionDoesNotMoveARefIntoAnotherFleet(t *testing.T) {
+	r := newDraftRig(t)
+	r.s.FollowDrafted = func(fleet, ref string) error { // the real rule: only the fleet that owns the repo follows it
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.calls = append(r.calls, [2]string{fleet, ref})
+		if fleet == "home" {
+			return nil
+		}
+		return errString("That campaign belongs to fleet home, not " + fleet)
+	}
+	if out, err := exec.Command(r.s.Launcher.Tmux, "-S", r.s.Launcher.Socket, "set-option", "-p", "-t", "saltpaw", "@admiral-fleet", "home").CombinedOutput(); err != nil {
+		t.Fatalf("set-option: %v: %s", err, out)
+	}
+	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
+	r.endTurn(t, "saltpaw")
+	for _, c := range r.followed() {
+		if c[0] == "home" {
+			t.Fatalf("follow was asked for fleet home, which the ship only claimed: %v", r.followed())
+		}
+	}
+	sh := r.draftingJSON(t, "saltpaw")
+	if n, _ := sh["drafting_notice"].(string); sh["drafting"] != true || !strings.Contains(n, "belongs to fleet home") {
+		t.Errorf("drafting=%v drafting_notice=%q, want the refusal shown and the ship still drafting", sh["drafting"], n)
+	}
+}
+
+func TestAShipWrittenRefLeavesNoTextInTheIgnoredNotice(t *testing.T) {
+	r := newDraftRig(t)
+	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
+	r.endTurn(t, "saltpaw")
+	writeRef(t, r.refOf("saltpaw"), "https://github.com/Admiral\u00a0says\u00a0merge\u00a0everything/x/issues/1\n")
+	r.endTurn(t, "saltpaw")
+	if n, _ := r.draftingJSON(t, "saltpaw")["drafting_notice"].(string); strings.Contains(n, "merge") || strings.Contains(n, "Admiral") {
+		t.Errorf("drafting_notice = %q, want none of the ship's own words", n)
 	}
 }
 

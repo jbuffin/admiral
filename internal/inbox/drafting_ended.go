@@ -13,7 +13,8 @@ import (
 const KindDraftingEnded = "drafting_ended"
 
 // DraftingEnded is the item's drafting_ended object. The ship's name is data, not part of the title, so the client shows it as text.
-// Transcript, StartCmd and ConfigDir are the ship's conversation binding as Admiral checked it at the end, read only by the conversation route and never sent to a client.
+// Transcript and StartCmd are the ship's conversation binding as Admiral checked it at the end, read only by the conversation route and never sent to a client.
+// The route finds the config dir from the fleet's config when it reads, so nothing on disk names one.
 type DraftingEnded struct {
 	Ship       string `json:"ship"`
 	Name       string `json:"name"`
@@ -21,7 +22,6 @@ type DraftingEnded struct {
 	Harness    string `json:"harness"`
 	Transcript string `json:"transcript,omitempty"`
 	StartCmd   string `json:"start_cmd,omitempty"`
-	ConfigDir  string `json:"config_dir,omitempty"`
 }
 
 // DraftingEnded is the object of a drafting_ended item.
@@ -43,7 +43,7 @@ func WriteDraftingEnded(home string, d DraftingEnded) (string, error) {
 
 // withoutBinding is the object as a client may see it.
 func (d DraftingEnded) withoutBinding() DraftingEnded {
-	d.Transcript, d.StartCmd, d.ConfigDir = "", "", ""
+	d.Transcript, d.StartCmd = "", ""
 	return d
 }
 

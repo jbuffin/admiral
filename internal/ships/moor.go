@@ -117,6 +117,9 @@ func (s *Service) moorVia(ctx context.Context, sess sessionhost.Session, prs []s
 	s.setMoored(rec)
 	s.record(outcomes.Record{Ship: name, Event: "moored", Fields: withVia(map[string]any{"prs": prs}, via)}, nil)
 	s.endRound(sess, "moored")
+	if e := s.captureDraftEnd(sess); e != nil { // its pane goes with the session, so the end a later stop reports is read now
+		e.keepMoored()
+	}
 	return true
 }
 

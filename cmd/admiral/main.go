@@ -537,7 +537,7 @@ func serve(args []string) error {
 	}
 	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Asking: shipService.Asking}
 	inboxService.DraftingConversation = func(d inbox.DraftingEnded, query string) (int, []byte) {
-		return convService.RecordedConversation(d.Harness, d.Transcript, d.StartCmd, d.ConfigDir, query)
+		return convService.RecordedConversation(d.Harness, d.Fleet, d.Transcript, d.StartCmd, query)
 	}
 	// Live figures live in memory only; a restart starts empty.
 	liveUsage := usage.NewStore(time.Now)

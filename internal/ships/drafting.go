@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/campaigns"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -23,13 +24,19 @@ type draftState struct {
 	notice   string
 	handled  string // the turn end or end whose ref was last read
 	ended    bool
+	fleet    string // the launch's fleet and harness: the ship can rewrite its pane options, so these are what Admiral trusts
+	harness  string
+	moored   *draftEnd // what the end needs, kept when the ship moors, for a stop that ends it later
 }
 
 func draftKey(session, first string) string { return session + "\x00" + first }
 
 // markDrafting records a drafting ship by session and its first launch, so a woken ship stays one and a later ship that reuses the name is not.
-func (s *Service) markDrafting(session, first string) {
-	s.drafters.Store(draftKey(session, first), &draftState{})
+func (s *Service) markDrafting(session, first, fleet, harness string) {
+	if harness == "" {
+		harness = "claude"
+	}
+	s.drafters.Store(draftKey(session, first), &draftState{fleet: fleet, harness: harness})
 }
 
 // IsDrafting is whether the ship of this session and first launch stamp was launched as a drafting ship since Admiral started.
@@ -56,13 +63,13 @@ func (s *Service) showDrafting(sh *Ship) {
 	}
 }
 
-// issueLabel is owner/repo#n for an issue URL that issueRef matched.
-func issueLabel(url string) string {
-	m := issueRef.FindStringSubmatch(url)
-	if m == nil {
-		return url
+// issueLabel is owner/repo#n for an issue URL Admiral can parse, built from the parsed parts so ship-written text never reaches a notice.
+func issueLabel(url string) (string, bool) {
+	ref, err := campaigns.ParseIssueRef(url)
+	if err != nil {
+		return "", false
 	}
-	return m[1] + "#" + url[strings.LastIndex(url, "/")+1:]
+	return fmt.Sprintf("%s/%s#%d", ref.Owner, ref.Repo, ref.Number), true
 }
 
 // applyRef follows the issue a ship wrote, once: a later ref naming another issue is ignored and one the follow refuses
@@ -76,10 +83,14 @@ func (s *Service) applyRef(d *draftState, fleet, line string) {
 	d.mu.Unlock()
 	if followed != "" {
 		if !strings.EqualFold(followed, line) {
-			d.mu.Lock()
-			d.notice = fmt.Sprintf("Ignored %s: this ship already follows %s.", issueLabel(line), issueLabel(followed))
-			d.mu.Unlock()
-			s.broadcast()
+			ignored, ok := issueLabel(line)
+			kept, _ := issueLabel(followed)
+			if ok {
+				d.mu.Lock()
+				d.notice = fmt.Sprintf("Ignored %s: this ship already follows %s.", ignored, kept)
+				d.mu.Unlock()
+				s.broadcast()
+			}
 		}
 		return
 	}
@@ -145,7 +156,7 @@ func (s *Service) advanceDrafting() {
 		if skip {
 			continue
 		}
-		name, fleet := sess.Name, sess.Options["fleet"]
+		name, fleet := sess.Name, d.fleet
 		s.settleWG.Add(1)
 		go func() {
 			defer s.settleWG.Done()
@@ -163,11 +174,10 @@ type draftEnd struct {
 	d     *draftState
 	fleet string
 	item  inbox.DraftingEnded
-	ref   string
 }
 
-// captureDraftEnd is nil unless the ship is a drafting ship with no campaign followed. It reads the ref and the binding now,
-// since the ship's files and pane go with its end.
+// captureDraftEnd is nil unless the ship is a drafting ship with no campaign followed. It reads the binding now, since the
+// pane goes with the ship's end. The ref is read when the end is certain, by followEndRef.
 func (s *Service) captureDraftEnd(sess sessionhost.Session) *draftEnd {
 	d := s.draftOf(sess.Name, firstLaunched(sess.Options))
 	if d == nil {
@@ -179,28 +189,23 @@ func (s *Service) captureDraftEnd(sess sessionhost.Session) *draftEnd {
 	if skip {
 		return nil
 	}
-	o := sess.Options
-	e := &draftEnd{d: d, fleet: o["fleet"], ref: s.readDraftRef(sess.Name)}
-	e.item = inbox.DraftingEnded{Ship: sess.Name, Name: o["name"], Fleet: o["fleet"], Harness: o["harness"]}
+	e := &draftEnd{d: d, fleet: d.fleet}
+	e.item = inbox.DraftingEnded{Ship: sess.Name, Name: sess.Options["name"], Fleet: d.fleet, Harness: d.harness}
 	if e.item.Name == "" {
 		e.item.Name = sess.Name
 	}
-	if e.item.Harness == "" {
-		e.item.Harness = "claude"
-	}
-	if raw, cmd, _, ok := s.conversationBinding(sess, e.item.Harness); ok {
-		e.item.Transcript, e.item.StartCmd, e.item.ConfigDir = raw, cmd, s.dockConfig(o["fleet"], e.item.Harness)
+	if raw, cmd, _, ok := s.conversationBinding(sess, d.harness); ok {
+		e.item.Transcript, e.item.StartCmd = raw, cmd
 	}
 	return e
 }
 
-// followEndRef follows the ref the ship wrote last. It reports whether the ship still has no campaign.
+// followEndRef reads and follows the ref the ship wrote last. It reports whether the ship still has no campaign.
 func (s *Service) followEndRef(e *draftEnd) bool {
 	e.d.run.Lock()
 	defer e.d.run.Unlock()
-	if e.ref != "" {
-		s.applyRef(e.d, e.fleet, e.ref)
-		e.ref = ""
+	if ref := s.readDraftRef(e.item.Ship); ref != "" {
+		s.applyRef(e.d, e.fleet, ref)
 	}
 	drafting, _ := e.d.view()
 	return drafting
@@ -235,6 +240,27 @@ func (s *Service) endDrafted(e *draftEnd) {
 		}
 		s.broadcast()
 	}()
+}
+
+// keepMoored holds what a moored ship's later end needs, since its pane is gone by then.
+func (e *draftEnd) keepMoored() {
+	e.d.mu.Lock()
+	e.d.moored = e
+	e.d.mu.Unlock()
+}
+
+// mooredDraftEnd is what a moored drafting ship's end posts from, nil for a ship that is not one or has no campaign to follow.
+func (s *Service) mooredDraftEnd(session, first string) *draftEnd {
+	d := s.draftOf(session, first)
+	if d == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.followed != "" || d.ended {
+		return nil
+	}
+	return d.moored
 }
 
 // dropDrafting ends the drafting record, as a hand to Commodore does: its relaunch carries the first launch stamp.
