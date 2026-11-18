@@ -4,7 +4,7 @@ import { Button } from './Button';
 import type { Campaign } from './campaign';
 import { openCampaign } from './campaignsLink';
 import { capabilities, capabilitiesLoaded, loadCapabilities } from './capabilities';
-import { plainName, type DraftingPick } from './draftingPick';
+import type { DraftingPick } from './draftingPick';
 import { draftingOff, MAX_PROSE_RUNES } from './filing';
 import { CheckoutSelect, cap, DockPicker } from './LaunchPickers';
 import { accountForHost, type CreateBody, initialProject, projectChoices, safeHref, sourceHost, textCampaignNote, type Project } from './makeCampaign';
@@ -51,10 +51,7 @@ const NO_SKILL = '';
 function DraftingSkill({ pick }: { pick: DraftingPick }) {
   const [changing, setChanging] = useState(false);
   const mark = pick.skills?.mark ?? '/';
-  const plains = [...new Set((pick.skills?.skills ?? []).map((s) => plainName(s.name)))];
-  const listed = [...plains];
-  for (const n of [pick.skill, pick.saved]) if (n && !listed.includes(n)) listed.push(n);
-  const missing = (n: string) => !pick.loading && (n === pick.skill ? !pick.installed : !plains.includes(n));
+  const missing = (n: string) => !pick.loading && !pick.options.find((o) => o.name === n)?.installed;
   const checkouts = pick.dirs ? { ...pick.dirs, clone: null } : null;
   const repo = checkouts?.entries.find((e) => e.path === pick.dir)?.name ?? pick.dir;
   return (
@@ -63,7 +60,7 @@ function DraftingSkill({ pick }: { pick: DraftingPick }) {
         <span>Drafting skill</span>
         <select aria-label="Drafting skill" value={pick.skill} onChange={(e) => pick.setSkill(e.currentTarget.value)}>
           <option value={NO_SKILL}>No skill: Admiral drafts a title and description</option>
-          {listed.map((n) => (
+          {pick.options.map(({ name: n }) => (
             <option key={n} value={n}>
               {`${mark}${n}: ${missing(n) ? 'not installed' : 'a drafting ship runs it with you'}`}
             </option>
@@ -79,7 +76,7 @@ function DraftingSkill({ pick }: { pick: DraftingPick }) {
         <>
           <p class="note">
             {`Ship: ${cap(pick.harness)} · ${repo} · own worktree${!pick.loading && !pick.installed ? ' · not installed' : ''} · `}
-            <button type="button" class="btn link" aria-expanded={changing} onClick={() => setChanging(!changing)}>
+            <button type="button" class="btn link ship-change" aria-expanded={changing} onClick={() => setChanging(!changing)}>
               Change
             </button>
           </p>
@@ -157,8 +154,11 @@ export function TextStep({ fleet, text, onText, onBack, onConfirm, onBusy, pick,
   };
 
   const drafts = !!pick && pick.skill !== NO_SKILL;
+  const canLaunch = !!pick?.launchable && text.trim() !== '' && !tooLong;
+  // A refusal belongs to the pick that drew it.
+  useEffect(() => setLaunchError(''), [pick?.skill, pick?.harness, pick?.dir]);
   const launch = async () => {
-    if (!pick || busy || text.trim() === '' || tooLong || pick.loading || !pick.installed || !pick.name || !pick.dir) return;
+    if (!pick || busy || !canLaunch) return;
     setBusy(true);
     onBusy(true);
     setLaunchError('');
@@ -192,11 +192,11 @@ export function TextStep({ fleet, text, onText, onBack, onConfirm, onBusy, pick,
           Back
         </Button>
         {drafts ? (
-          <Button variant="primary" label="Launch drafting ship" busyLabel="Launching" busy={busy} disabled={text.trim() === '' || tooLong || pick.loading || !pick.installed || !pick.name || !pick.dir} onClick={() => void launch()}>
+          <Button variant="primary" label="Launch drafting ship" busyLabel="Launching" busy={busy} disabled={!canLaunch} onClick={() => void launch()}>
             Launch drafting ship
           </Button>
         ) : (
-        <Button variant="primary" label={plain ? 'Next' : 'Draft'} busyLabel="Drafting" busy={busy} disabled={text.trim() === '' || tooLong || !capabilitiesLoaded.value} onClick={() => void next()}>
+        <Button variant="primary" label={plain ? 'Next' : 'Draft'} busyLabel="Drafting" busy={busy} disabled={text.trim() === '' || tooLong || !capabilitiesLoaded.value || !!pick?.pending} onClick={() => void next()}>
           {plain ? 'Next' : 'Draft'}
         </Button>
         )}

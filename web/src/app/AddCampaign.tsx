@@ -162,7 +162,7 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
             }}
           />
         ) : confirmed ? (
-          <ConfirmStep fleet={fleet} start={confirmed} filed={filed} onFiled={setFiled} onClose={onClose} onBack={() => setStep('text')} onBusy={setBusy} onCreated={drafting ? () => void saveDraftingSkill(fleet, '') : undefined} />
+          <ConfirmStep fleet={fleet} start={confirmed} filed={filed} onFiled={setFiled} onClose={onClose} onBack={() => setStep('text')} onBusy={setBusy} onCreated={drafting?.known ? () => void saveDraftingSkill(fleet, '') : undefined} />
         ) : null}
       </div>
     </div>

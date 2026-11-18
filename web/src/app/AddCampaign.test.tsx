@@ -102,6 +102,8 @@ let skillsFor: (
 ) => SkillsAnswer | Promise<SkillsAnswer>;
 let shipAnswer: () => Response | Promise<Response>;
 let saveAnswer: () => Response | Promise<Response>;
+let draftingGate: Promise<void> | null;
+let draftingFails: boolean;
 
 const checkout = (name: string, ...remotes: string[]) => ({
   path: `/work/${name}`,
@@ -163,6 +165,8 @@ beforeEach(() => {
     skillsOf(harness === "codex" ? "$" : "/", "wayfinder", "review");
   shipAnswer = () => json({ ship: { session: "zulu-7" } }, 201);
   saveAnswer = () => json({}, 200);
+  draftingGate = null;
+  draftingFails = false;
   localStorage.clear();
   answer = () => json({ results: [] });
   follow = () => json(followed, 201);
@@ -204,6 +208,8 @@ beforeEach(() => {
       ) {
         const dir = url.searchParams.get("dir") ?? "";
         log.push(`drafting:${dir}`);
+        await draftingGate;
+        if (draftingFails) return json({ error: "drafting is down" }, 500);
         return json(draftingFor(dir));
       }
       if (route === "/fleets/zulu/drafting" && init.method === "PUT") {
@@ -1339,4 +1345,89 @@ test("Back from the confirm step keeps the pick, the Ship line's harness and its
     expect(line).toMatch(/codex/i);
     expect(line).toContain("tools");
   });
+});
+
+test("Draft waits for the drafting read, so a Create can't save a pick the engineer never saw", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  let release!: () => void;
+  draftingGate = new Promise((resolve) => (release = resolve));
+  opened();
+  await toSkillStep();
+  await waitFor(() => expect(log).toContain("drafting:/work/widgets"));
+  const draft = (await screen.findByRole("button", {
+    name: "Draft",
+  })) as HTMLButtonElement;
+  expect(draft.disabled).toBe(true);
+  release();
+  await launch();
+  expect(selectedLabel(await skillBox())).toBe(
+    "/wayfinder: a drafting ship runs it with you",
+  );
+  expect(saves).toEqual([]);
+});
+
+test("a failed drafting read leaves Draft working and Create saves nothing", async () => {
+  docked("claude");
+  draftingFails = true;
+  opened();
+  await toSkillStep();
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "drafting is down",
+  );
+  await waitFor(async () =>
+    expect(
+      ((await screen.findByRole("button", { name: "Draft" })) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Draft" }));
+  await repoSelect();
+  fireEvent.click(screen.getByRole("button", { name: "Create campaign" }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  expect(creates).toHaveLength(1);
+  await act(async () => {});
+  expect(saves).toEqual([]);
+});
+
+test("a saved plugin skill stays installed in its option after the plain name is picked", async () => {
+  docked("claude");
+  skillsFor = () => skillsOf("/", "acme:wayfinder");
+  withSaved("acme:wayfinder", ["claude", "acme:wayfinder"]);
+  opened();
+  await toSkillStep();
+  const sel = await skillBox();
+  await waitFor(() => expect(selectedLabel(sel)).toContain("acme:wayfinder"));
+  pickOption(sel, "/wayfinder");
+  await waitFor(() => expect(selectedLabel(sel)).toContain("wayfinder"));
+  expect(optionLabels(sel).join("\n")).not.toMatch(/not installed/i);
+  expect(optionLabels(sel)).toContain(
+    "/acme:wayfinder: a drafting ship runs it with you",
+  );
+});
+
+test("a skill other than the saved one offers every dock in Change", async () => {
+  docked("claude", "codex", "copilot");
+  withSaved(wayfinder, ["claude", wayfinder], ["codex", wayfinder]);
+  opened();
+  await toSkillStep();
+  pickOption(await skillBox(), "/review");
+  await shipLine();
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  expect(
+    dockRadios().map((r) => r.closest("label")?.textContent?.trim().toLowerCase()),
+  ).toEqual(["claude", "codex", "copilot"]);
+});
+
+test("a refused launch's reason goes away when the pick changes", async () => {
+  docked("claude");
+  withSaved(wayfinder, ["claude", wayfinder]);
+  shipAnswer = () => json({ error: "no installed skill carries wayfinder" }, 400);
+  opened();
+  await toSkillStep();
+  await shipLine();
+  fireEvent.click(await launch());
+  await screen.findByRole("alert");
+  pickOption(await skillBox(), "No skill");
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 });

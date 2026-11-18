@@ -10,31 +10,36 @@ export interface Drafting {
 
 export const plainName = (name: string) => name.slice(name.lastIndexOf(':') + 1);
 
-const checkouts = (d: DirsAnswer) => d.entries.filter((e) => e.kind === 'checkout');
-const startDir = (d: DirsAnswer) => {
-  const list = checkouts(d);
-  return list.find((e) => e.path === d.selected)?.path ?? list[0]?.path ?? '';
-};
+export interface DraftingOption {
+  name: string;
+  installed: boolean;
+}
 
 export interface DraftingPick {
   harness: string;
   dir: string;
-  /** The fleet's dirs for the harness, checkouts only. */
+  /** The fleet's checkouts for the harness. */
   dirs: DirsAnswer | null;
-  /** The plain name or saved name the select holds; '' is No skill. */
+  /** The name the select holds; '' is No skill. */
   skill: string;
-  saved: string;
   skills: SkillsAnswer | null;
+  /** True until the first drafting read has answered, so Create can't save a pick the engineer never saw. */
+  pending: boolean;
+  /** True once the saved skill is known: only then may a Create save the pick. */
+  known: boolean;
   loading: boolean;
   error: string;
   /** The docks a Change may offer. */
   docks: { harness: string }[];
-  /** Installed invocation names for the selected skill on the Ship line's harness and repo. */
-  names: string[];
+  /** The select's skill options after No skill, each with whether it is installed on the Ship line's harness and repo. */
+  options: DraftingOption[];
   installed: boolean;
+  names: string[];
   ambiguous: boolean;
   picked: string;
-  /** The name a launch sends, '' while an ambiguity is unanswered. */
+  /** Whether a drafting ship can launch now, apart from the text. */
+  launchable: boolean;
+  /** The name a launch sends. */
   name: string;
   setSkill: (s: string) => void;
   setPicked: (n: string) => void;
@@ -53,53 +58,59 @@ export function useDraftingPick(fleet: string, enabled: boolean): DraftingPick |
   const [skill, setSkillState] = useState('');
   const [picked, setPicked] = useState('');
   const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(true);
+  const [known, setKnown] = useState(false);
   const [error, setError] = useState('');
   const gen = useRef(0);
   const started = useRef(false);
   const first = all[0]?.harness ?? '';
 
-  const readDirs = async (h: string) => {
-    const r = await call<DirsAnswer>('POST', '/launch-orders/dirs', { fleet, harness: h });
-    return r.ok ? r.data : r.error;
+  const fail = (message: string) => {
+    setError(message);
+    setLoading(false);
+    setPending(false);
   };
-  const q = (h: string, d: string) => new URLSearchParams({ fleet, harness: h, dir: d });
-  const readDrafting = (d: string) => call<Drafting>('GET', `/fleets/${encodeURIComponent(fleet)}/drafting?${new URLSearchParams({ dir: d })}`);
-  const readSkills = (h: string, d: string) => call<SkillsAnswer>('GET', `/launch-orders/skills?${q(h, d)}`);
+  // Reads a dock's dirs and settles the harness and repo on its last-used checkout; null when it can't.
+  const settle = async (h: string, mine: number): Promise<string | null> => {
+    const r = await call<DirsAnswer>('POST', '/launch-orders/dirs', { fleet, harness: h });
+    if (mine !== gen.current) return null;
+    if (!r.ok) return void fail(r.error), null;
+    const list = r.data.entries.filter((e) => e.kind === 'checkout');
+    setHarnessState(h);
+    setDirs({ ...r.data, entries: list });
+    const d = list.find((e) => e.path === r.data.selected)?.path ?? list[0]?.path ?? '';
+    setDirState(d);
+    if (!d) return void fail('This dock has no git checkout to run a drafting ship in.'), null;
+    return d;
+  };
 
-  // Reads the drafting skill and the dock's skills for a repo; a saved skill that is installed only elsewhere moves the harness once when switching is allowed.
+  // Reads the drafting skill and the dock's skills for a repo; a saved skill installed only elsewhere moves the harness once.
   const read = async (h: string, d: string, mine: number, initial: boolean, movable = initial) => {
     setLoading(true);
     setError('');
-    const dp = readDrafting(d);
-    const sp = readSkills(h, d);
+    const dp = call<Drafting>('GET', `/fleets/${encodeURIComponent(fleet)}/drafting?${new URLSearchParams({ dir: d })}`);
+    const sp = call<SkillsAnswer>('GET', `/launch-orders/skills?${new URLSearchParams({ fleet, harness: h, dir: d })}`);
     const dr = await dp;
     if (mine !== gen.current) return;
     if (!dr.ok) {
       setDrafting(null);
       setSkills(null);
-      setError(dr.error);
-      setLoading(false);
-      return;
+      return fail(dr.error);
     }
     if (movable && dr.data.skill && !dr.data.harnesses.some((x) => x.harness === h)) {
       const move = dr.data.harnesses.find((x) => all.some((a) => a.harness === x.harness));
       if (move) {
-        const ans = await readDirs(move.harness);
-        if (mine !== gen.current) return;
-        if (typeof ans === 'string') {
-          setError(ans);
-          setLoading(false);
-          return;
-        }
-        setHarnessState(move.harness);
-        setDirs({ ...ans, entries: checkouts(ans) });
-        const next = startDir(ans);
-        setDirState(next);
+        const next = await settle(move.harness, mine);
+        if (next === null) return;
         return read(move.harness, next, mine, true, false);
       }
     }
     setDrafting(dr.data);
-    if (initial) setSkillState(dr.data.skill);
+    if (initial) {
+      setSkillState(dr.data.skill);
+      setKnown(true);
+      setPending(false);
+    }
     const sk = await sp;
     if (mine !== gen.current) return;
     setSkills(sk.ok ? sk.data : null);
@@ -112,21 +123,8 @@ export function useDraftingPick(fleet: string, enabled: boolean): DraftingPick |
     started.current = true;
     const mine = ++gen.current;
     void (async () => {
-      const ans = await readDirs(first);
-      if (mine !== gen.current) return;
-      if (typeof ans === 'string') {
-        setError(ans);
-        return setLoading(false);
-      }
-      setHarnessState(first);
-      setDirs({ ...ans, entries: checkouts(ans) });
-      const d = startDir(ans);
-      setDirState(d);
-      if (!d) {
-        setError('This fleet has no git checkout to run a drafting ship in.');
-        return setLoading(false);
-      }
-      await read(first, d, mine, true);
+      const d = await settle(first, mine);
+      if (d !== null) await read(first, d, mine, true);
     })();
   }, [enabled, first]);
 
@@ -140,43 +138,37 @@ export function useDraftingPick(fleet: string, enabled: boolean): DraftingPick |
   if (!first) return null;
 
   const saved = drafting?.skill ?? '';
-  const names = (() => {
-    if (!skill) return [];
-    if (skill === saved) return drafting?.harnesses.find((h) => h.harness === harness)?.names ?? [];
-    return (skills?.skills ?? []).map((s) => s.name).filter((n) => n === skill || plainName(n) === plainName(skill));
-  })();
+  // The drafting route reports installs only for the saved name; any other name is read off the dock's skills.
+  const namesOf = (n: string) => {
+    if (!n) return [];
+    if (n === saved) return drafting?.harnesses.find((h) => h.harness === harness)?.names ?? [];
+    return (skills?.skills ?? []).map((s) => s.name).filter((x) => x === n || plainName(x) === plainName(n));
+  };
+  const names = namesOf(skill);
   const ambiguous = names.length >= 2;
+  const listed = [...new Set((skills?.skills ?? []).map((s) => plainName(s.name)))];
+  for (const n of [skill, saved]) if (n && !listed.includes(n)) listed.push(n);
   const carry = skill === saved && drafting ? drafting.harnesses.filter((h) => all.some((a) => a.harness === h.harness)) : [];
-  const docks = carry.length > 0 ? carry.map((h) => ({ harness: h.harness })) : all;
+  const name = ambiguous ? picked : skill;
+  const installed = names.length > 0;
 
+  const moved = () => {
+    setPicked('');
+    return ++gen.current;
+  };
   const setHarness = (h: string) => {
     if (h === harness) return;
-    const mine = ++gen.current;
-    setHarnessState(h);
-    setPicked('');
+    const mine = moved();
     setLoading(true);
     void (async () => {
-      const ans = await readDirs(h);
-      if (mine !== gen.current) return;
-      if (typeof ans === 'string') {
-        setError(ans);
-        return setLoading(false);
-      }
-      setDirs({ ...ans, entries: checkouts(ans) });
-      const d = startDir(ans);
-      setDirState(d);
-      if (!d) {
-        setError('This dock has no git checkout to run a drafting ship in.');
-        return setLoading(false);
-      }
-      await read(h, d, mine, false);
+      const d = await settle(h, mine);
+      if (d !== null) await read(h, d, mine, false);
     })();
   };
   const setDir = (d: string) => {
     if (d === dir) return;
-    const mine = ++gen.current;
+    const mine = moved();
     setDirState(d);
-    setPicked('');
     void read(harness, d, mine, false);
   };
 
@@ -185,16 +177,19 @@ export function useDraftingPick(fleet: string, enabled: boolean): DraftingPick |
     dir,
     dirs,
     skill,
-    saved,
     skills,
+    pending,
+    known,
     loading,
     error,
-    docks,
+    docks: carry.length > 0 ? carry.map((h) => ({ harness: h.harness })) : all,
+    options: listed.map((n) => ({ name: n, installed: namesOf(n).length > 0 })),
+    installed,
     names,
-    installed: names.length > 0,
     ambiguous,
     picked,
-    name: ambiguous ? picked : skill,
+    launchable: !loading && installed && !!name && !!dir,
+    name,
     setSkill: (s) => {
       setSkillState(s);
       setPicked('');
