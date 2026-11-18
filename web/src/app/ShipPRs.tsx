@@ -20,6 +20,8 @@ const REFRESH_MS = 30_000;
 
 // What the tab last read, so reopening it shows the stack in order at once and the refresh only updates it.
 const lastRead = new Map<string, PRDetail>();
+// The newest read per PR; a slower, older answer must not overwrite a newer one.
+const readSeq = new Map<string, number>();
 const seen = (urls: string[]) => Object.fromEntries(urls.flatMap((u) => (lastRead.has(u) ? [[u, lastRead.get(u)!]] : [])));
 
 /** Each carried PR's detail, read when the tab opens and every 30s while it stays open; a failed read keeps the last good detail, and a PR never read has none. `failed` holds the PRs whose last read failed. */
@@ -37,14 +39,17 @@ function useDetails(session: string, urls: string[]): { details: Record<string, 
       else n.delete(url);
       return n;
     });
-  const readOne = (url: string, alive: () => boolean) =>
-    fetchPRDetail(session, url).then((r) => {
-      if (!alive()) return;
+  const readOne = (url: string, alive: () => boolean) => {
+    const mine = (readSeq.get(url) ?? 0) + 1;
+    readSeq.set(url, mine);
+    return fetchPRDetail(session, url).then((r) => {
+      if (!alive() || readSeq.get(url) !== mine) return;
       mark(url, !r.ok);
       if (!r.ok) return;
       lastRead.set(url, r.data);
       setDetails((d) => ({ ...d, [url]: r.data }));
     });
+  };
   useEffect(() => {
     mounted.current = true;
     return () => {
