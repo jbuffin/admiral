@@ -57,6 +57,7 @@ func TestACrewBoatDoesNotKeepItsShipsFindingsPath(t *testing.T) {
 		t.Fatalf("Launch: %v", err)
 	}
 	p.allowGates()
+	p.recorded(t, "claude") // the ship's own record; the next one is the boat's
 	// The session holds the ship's own variables; the boat must not inherit this one.
 	if out, err := execTmux(p.l, "set-environment", "-t", "="+ship.Session+":", "ADMIRAL_FINDINGS", "/ship/findings.md"); err != nil {
 		t.Fatalf("set-environment: %v: %s", err, out)

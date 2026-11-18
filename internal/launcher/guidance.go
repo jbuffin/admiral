@@ -34,8 +34,11 @@ func scoutOption(scout bool) string {
 
 const scoutContract = "## Scout\n\n" +
 	"A scout changes nothing: your guard refuses commits, pushes, pull request changes and edits in your checkout, " +
-	"so read, run and look things up, and write what you found to your report. " +
-	"Anything you cannot settle goes in your report as an open question; do not ask the engineer."
+	"so read, run and look things up. " +
+	"Write what you found, in markdown, to the file named by $ADMIRAL_FINDINGS. " +
+	"Run `echo $ADMIRAL_FINDINGS` to read the path, then write the file with your file-writing tool at that absolute path; a shell write to $ADMIRAL_FINDINGS is refused. " +
+	"A scout that leaves no findings ends failed. " +
+	"Anything you cannot settle goes in your findings as an open question; do not ask the engineer."
 
 // withScoutContract puts a scout's contract after its prompt.
 func withScoutContract(req Request, prompt string) string {
@@ -51,7 +54,8 @@ func withScoutContract(req Request, prompt string) string {
 const closingSteps = "## Closing steps\n\n" +
 	"When the work is done: commit it on your branch, push the branch, and open a pull request. " +
 	"Then write your Admiral report to the file named by $ADMIRAL_REPORT as JSON with version 2, a result of done, partial or failed, " +
-	"and prs listing the pull request you opened as [{\"url\": ...}], each url the full URL (https://host/owner/repo/pull/N)."
+	"and prs listing the pull request you opened as [{\"url\": ...}], each url the full URL (https://host/owner/repo/pull/N). " +
+	"If you found something worth reading later, write it in markdown to the file named by $ADMIRAL_FINDINGS."
 
 // withClosingSteps puts Admiral's closing steps after a fresh quick ship's launch text: a chat launch, no skill, not a scout, not a wake.
 func withClosingSteps(req Request, prompt string) string {

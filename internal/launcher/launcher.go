@@ -806,7 +806,17 @@ func ShipFiles(home, session string) (report, inbox string, ok bool) {
 	return filepath.Join(home, "reports", session+".json"), filepath.Join(home, "inbox", session), true
 }
 
-// RemoveShipFiles deletes a ship's report, inbox and run layer. The deletes go through a
+// FindingsFile is the path ADMIRAL_FINDINGS names, beside the report. ok is false for a session name
+// that would reach outside reports/.
+func FindingsFile(home, session string) (path string, ok bool) {
+	report, _, ok := ShipFiles(home, session)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSuffix(report, ".json") + ".md", true
+}
+
+// RemoveShipFiles deletes a ship's report, findings, inbox and run layer. The deletes go through a
 // root on home, so none leaves it, and each is skipped unless reports/ or
 // inbox/ is a real directory and not a link.
 func RemoveShipFiles(home, session string) {
@@ -821,6 +831,11 @@ func RemoveShipFiles(home, session string) {
 	defer root.Close()
 	if rel, err := filepath.Rel(home, report); err == nil && realDir(root, filepath.Dir(rel)) {
 		_ = root.Remove(rel)
+	}
+	if findings, ok := FindingsFile(home, session); ok {
+		if rel, err := filepath.Rel(home, findings); err == nil && realDir(root, filepath.Dir(rel)) {
+			_ = root.Remove(rel)
+		}
 	}
 	if rel, err := filepath.Rel(home, inbox); err == nil && realDir(root, filepath.Dir(rel)) {
 		_ = root.RemoveAll(rel)
@@ -857,7 +872,8 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 	if err := removeRunCrew(home, session); err != nil {
 		return refuse(http.StatusInternalServerError, "could not clear the run layer of %s: %v", session, err)
 	}
-	for _, p := range []string{report, inbox} {
+	findings, _ := FindingsFile(home, session)
+	for _, p := range []string{report, findings, inbox} {
 		if err := os.RemoveAll(p); err != nil {
 			return refuse(http.StatusInternalServerError, "could not clear %s: %v", p, err)
 		}
@@ -871,6 +887,7 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 	env["ADMIRAL_MISSIONS_DIR"] = missionsDir
 	env["ADMIRAL_SHIP"] = session
 	env["ADMIRAL_REPORT"] = report
+	env["ADMIRAL_FINDINGS"] = findings
 	env["ADMIRAL_INBOX"] = inbox + string(os.PathSeparator)
 	return nil
 }

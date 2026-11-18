@@ -1,4 +1,26 @@
+// Package findings keeps what a ship wrote to its findings file after the ship sails off.
 package findings
+
+import (
+	"bytes"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"sync"
+	"syscall"
+	"time"
+)
+
+// MaxBytes is the largest findings file Admiral keeps.
+const MaxBytes = 1 << 20
+
+// maxName bounds the ship and first-launch strings, so an encoded file name stays within a file system's limit.
+const maxName = 100
 
 // Voyage is the findings one voyage of a ship left, kept after it sailed off.
 type Voyage struct {
@@ -14,17 +36,171 @@ type Reader interface {
 	Latest(ship string) (Voyage, bool)
 }
 
-// Store keeps findings under <home>/findings.
-type Store struct{ home string }
+// Store keeps findings under <home>/findings/<ship>/<first launch>.json. Names are hex-encoded, so no ship name or
+// timestamp can reach outside the store or fold into another's file.
+type Store struct {
+	home string
+	mu   sync.Mutex
+}
 
 func Open(home string) *Store { return &Store{home: home} }
 
-// Keep copies the findings file at path into the store as the voyage's findings. kept is false when the file is
-// missing, empty, not a regular file or over the cap.
-func (s *Store) Keep(ship, firstLaunched, fleet, path string) (kept bool, err error) {
-	return false, nil
+type record struct {
+	Ship          string `json:"ship"`
+	FirstLaunched string `json:"first_launched"`
+	Fleet         string `json:"fleet"`
+	Markdown      string `json:"markdown"`
 }
 
-func (s *Store) Voyage(ship, firstLaunched string) (Voyage, bool) { return Voyage{}, false }
+func encode(s string) (string, bool) {
+	if s == "" || len(s) > maxName {
+		return "", false
+	}
+	return hex.EncodeToString([]byte(s)), true
+}
 
-func (s *Store) Latest(ship string) (Voyage, bool) { return Voyage{}, false }
+func (s *Store) root() (*os.Root, error) {
+	home, err := os.OpenRoot(s.home)
+	if err != nil {
+		return nil, err
+	}
+	defer home.Close()
+	if err := home.MkdirAll("findings", 0o700); err != nil {
+		return nil, err
+	}
+	return home.OpenRoot("findings")
+}
+
+// Keep copies the findings file at p into the store as the voyage's findings. kept is false when the file is
+// missing, empty or blank, not a regular file or over the cap; a voyage's earlier copy then stays.
+func (s *Store) Keep(ship, firstLaunched, fleet, p string) (kept bool, err error) {
+	dir, ok1 := encode(ship)
+	name, ok2 := encode(firstLaunched)
+	if !ok1 || !ok2 {
+		return false, nil
+	}
+	// The ship wrote the file: never follow a link, never wait on a pipe.
+	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return false, nil
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return false, nil
+	}
+	b, err := io.ReadAll(io.LimitReader(f, MaxBytes+1))
+	switch {
+	case err != nil:
+		return false, nil
+	case len(b) > MaxBytes:
+		fmt.Fprintf(os.Stderr, "admiral: ship %q: its findings are larger than %d bytes, so they are not kept\n", ship, MaxBytes)
+		return false, nil
+	case len(bytes.TrimSpace(b)) == 0:
+		return false, nil
+	}
+	data, err := json.Marshal(record{Ship: ship, FirstLaunched: firstLaunched, Fleet: fleet, Markdown: string(b)})
+	if err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	root, err := s.root()
+	if err != nil {
+		return false, err
+	}
+	defer root.Close()
+	if err := root.MkdirAll(dir, 0o700); err != nil {
+		return false, err
+	}
+	tmp := path.Join(dir, "."+name+".tmp")
+	if err := writeFile(root, tmp, data); err != nil {
+		_ = root.Remove(tmp)
+		return false, err
+	}
+	if err := root.Rename(tmp, path.Join(dir, name+".json")); err != nil {
+		_ = root.Remove(tmp)
+		return false, err
+	}
+	return true, nil
+}
+
+func writeFile(root *os.Root, name string, data []byte) error {
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+func (s *Store) read(root *os.Root, name string) (Voyage, bool) {
+	b, err := root.ReadFile(name)
+	if err != nil {
+		return Voyage{}, false
+	}
+	var r record
+	if json.Unmarshal(b, &r) != nil {
+		return Voyage{}, false
+	}
+	return Voyage{Ship: r.Ship, FirstLaunched: r.FirstLaunched, Fleet: r.Fleet, Markdown: r.Markdown}, true
+}
+
+func (s *Store) Voyage(ship, firstLaunched string) (Voyage, bool) {
+	dir, ok1 := encode(ship)
+	name, ok2 := encode(firstLaunched)
+	if !ok1 || !ok2 {
+		return Voyage{}, false
+	}
+	root, err := s.root()
+	if err != nil {
+		return Voyage{}, false
+	}
+	defer root.Close()
+	v, ok := s.read(root, path.Join(dir, name+".json"))
+	if !ok || v.Ship != ship || v.FirstLaunched != firstLaunched {
+		return Voyage{}, false
+	}
+	return v, true
+}
+
+// Latest is the ship's voyage with the newest first launch.
+func (s *Store) Latest(ship string) (Voyage, bool) {
+	dir, ok := encode(ship)
+	if !ok {
+		return Voyage{}, false
+	}
+	root, err := s.root()
+	if err != nil {
+		return Voyage{}, false
+	}
+	defer root.Close()
+	d, err := root.Open(dir)
+	if err != nil {
+		return Voyage{}, false
+	}
+	defer d.Close()
+	entries, err := d.ReadDir(-1)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return Voyage{}, false
+	}
+	var best Voyage
+	var bestAt time.Time
+	found := false
+	for _, e := range entries {
+		if e.IsDir() || path.Ext(e.Name()) != ".json" {
+			continue
+		}
+		v, ok := s.read(root, path.Join(dir, e.Name()))
+		if !ok || v.Ship != ship {
+			continue
+		}
+		at, _ := time.Parse(time.RFC3339, v.FirstLaunched)
+		if !found || at.After(bestAt) || (at.Equal(bestAt) && v.FirstLaunched > best.FirstLaunched) {
+			best, bestAt, found = v, at, true
+		}
+	}
+	return best, found
+}

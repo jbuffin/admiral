@@ -64,7 +64,7 @@ func TestAScoutsPromptEndsWithItsContractAndAnotherShipsDoesNot(t *testing.T) {
 	if !strings.HasPrefix(scoutPrompt, "find the flaky test") {
 		t.Errorf("a scout's prompt = %q, want the engineer's text first", scoutPrompt)
 	}
-	for _, want := range []string{"## Scout", "changes nothing", "report", "open question"} {
+	for _, want := range []string{"## Scout", "changes nothing", "findings", "open question"} {
 		if !strings.Contains(scoutPrompt, want) {
 			t.Errorf("a scout's prompt = %q, want it to contain %q", scoutPrompt, want)
 		}

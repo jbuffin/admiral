@@ -18,6 +18,7 @@ import (
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
+	"github.com/jbuffin/admiral/internal/findings"
 	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -168,6 +169,9 @@ type Service struct {
 	// Approving is whether a Codex ship's app-server is waiting on an approval: a bell then may be for it, not for a question.
 	Approving func(session, crew string) bool
 	Outcomes  *outcomes.Writer
+
+	findingsOnce  sync.Once
+	findingsStore *findings.Store
 	// ChatPrompt names the prompt a fleet's chat is answering; an actor's freeform launch is keyed on it.
 	ChatPrompt func(fleet string) string
 	// UsageRead replaces the transcript reading at a ship's exit, for tests.
@@ -374,9 +378,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/rereview", s.serveRereview)
 	mux.HandleFunc("POST /api/ships/{session}/pr/rerequest", s.serveReRequest)
 	mux.HandleFunc("GET /api/outcomes", s.serveOutcomes)
-	mux.HandleFunc("GET /api/ships/{session}/findings", func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, http.StatusNotImplemented, "findings are not kept yet")
-	})
+	mux.HandleFunc("GET /api/ships/{session}/findings", s.serveFindings)
 	mux.Handle("POST /api/ships/{session}/merge", s.mergeGuarded(http.HandlerFunc(s.serveMerge)))
 	mux.Handle("POST /api/ships/{session}/update-branch", s.mergeGuarded(http.HandlerFunc(s.serveUpdateBranch)))
 	mux.Handle("POST /api/ships/{session}/ready-for-review", s.mergeGuarded(http.HandlerFunc(s.serveReadyForReview)))

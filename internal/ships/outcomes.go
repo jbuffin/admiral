@@ -244,10 +244,15 @@ func (s *Service) queueEnded(e ending) {
 	report := s.readReport(name)
 	s.writeCrewItems(sess, report)
 	s.queueUsage(sess, end)
-	s.record(outcomes.Record{Ship: name, Event: "ended", Fields: map[string]any{
+	kept, failed := s.keepFindings(sess)
+	fields := map[string]any{
 		"exit_code": code, "signal": sig, "duration_s": duration,
-		"needs_you_count": t.Count, "needs_you_s": seconds(t.Seconds), "report": report,
-	}}, func(err error) {
+		"needs_you_count": t.Count, "needs_you_s": seconds(t.Seconds), "report": report, "findings": kept,
+	}
+	if failed {
+		fields["result"] = "failed"
+	}
+	s.record(outcomes.Record{Ship: name, Event: "ended", Fields: fields}, func(err error) {
 		if err != nil {
 			s.mu.Lock()
 			end.failed = true
