@@ -103,6 +103,7 @@ type voyage struct {
 
 type shipCardState struct {
 	Seeded   bool
+	Scouts   bool // saved by a build that reads a scout's stop
 	Voyages  map[string]*voyage
 	lastSent []byte
 }
@@ -121,10 +122,11 @@ func NewShipCards(home string, post func(fleet string, c ShipCard) error) *ShipC
 	if b, err := os.ReadFile(d.path); err == nil {
 		var saved struct {
 			Seeded  bool
+			Scouts  bool
 			Voyages map[string]*voyage
 		}
 		if json.Unmarshal(b, &saved) == nil {
-			d.st.Seeded, d.st.Voyages, d.st.lastSent = saved.Seeded, saved.Voyages, b
+			d.st.Seeded, d.st.Scouts, d.st.Voyages, d.st.lastSent = saved.Seeded, saved.Scouts, saved.Voyages, b
 		}
 	}
 	if d.st.Voyages == nil {
@@ -181,6 +183,10 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 			}
 		}
 		for _, v := range d.st.Voyages {
+			// An older build read a scout's stop as a plain one, so a stop already logged was never news.
+			if !d.st.Scouts && !v.ScoutEndedAt.IsZero() {
+				v.Done[ShipSailedOff] = true
+			}
 			errs = append(errs, d.settle(v, mooredNow[v], inSnap[v], now))
 		}
 	}
@@ -189,7 +195,7 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 			delete(d.st.Voyages, k)
 		}
 	}
-	d.st.Seeded = true
+	d.st.Seeded, d.st.Scouts = true, true
 	errs = append(errs, d.save())
 	return errors.Join(errs...)
 }
@@ -263,6 +269,7 @@ func (v *voyage) apply(r ShipRecord) {
 		if r.Returned {
 			v.ReturnedAt = r.At
 		} else if r.Scout {
+			v.Scout = true
 			if r.At.After(v.ScoutEndedAt) {
 				v.ScoutEndedAt = r.At
 			}
@@ -336,8 +343,9 @@ func (v *voyage) cardKind() string {
 func (d *ShipCards) save() error {
 	b, err := json.Marshal(struct {
 		Seeded  bool
+		Scouts  bool
 		Voyages map[string]*voyage
-	}{d.st.Seeded, d.st.Voyages})
+	}{d.st.Seeded, d.st.Scouts, d.st.Voyages})
 	if err != nil || slices.Equal(b, d.st.lastSent) {
 		return err
 	}

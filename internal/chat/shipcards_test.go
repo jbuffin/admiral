@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -462,6 +463,48 @@ func TestAScoutStillInTheSnapshotPostsNoSailedOffCardYet(t *testing.T) {
 	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
 	x.observe(5*time.Minute, []ships.Ship{scout("calm-otter", "work")}, scoutEnd()...)
 	x.wantResults("work")
+	x.observe(6*time.Minute, nil, scoutEnd()...)
+	x.observe(7*time.Minute, nil, scoutEnd()...)
+	x.wantResults("work", "sailed_off")
+}
+
+func TestAScoutStopAloneMakesTheCardAScoutsEvenWhenTheShipWasNeverListedAsOne(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
+	x.observe(5*time.Minute, nil, scoutEnd()...)
+	if cards := shipCardsIn(t, x.r, "work"); len(cards) != 1 || cards[0].SkillKind != "scout" {
+		t.Errorf("cards = %+v, want one with skill_kind scout", cards)
+	}
+}
+
+func TestAScoutStopAnOlderBuildSavedPostsNothingAfterTheUpgradeButALaterOneStillPosts(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	x.observe(2*time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	old, err := os.ReadFile(x.d.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]json.RawMessage
+	if err := json.Unmarshal(old, &state); err != nil {
+		t.Fatal(err)
+	}
+	delete(state, "Scouts")
+	if old, err = json.Marshal(state); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(x.d.path, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	x.restart()
+	x.observe(5*time.Minute, nil, scoutEnd()...)
+	x.observe(6*time.Minute, nil, scoutEnd()...)
+	x.wantResults("work")
+	later := ship("calm-lark", "work", ships.StatusUnderway)
+	later.Scout = true
+	x.observe(7*time.Minute, []ships.Ship{later})
+	x.observe(10*time.Minute, nil, append(scoutEnd(), ShipRecord{At: t0.Add(8 * time.Minute), Ship: "calm-lark", Event: "stopped", Scout: true})...)
+	x.wantResults("work", "sailed_off")
 }
 
 func TestStopShipOfALiveShipPostsNoCardAlthoughItsKilledEndIsLogged(t *testing.T) {
