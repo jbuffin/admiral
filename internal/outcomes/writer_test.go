@@ -267,6 +267,19 @@ func TestWriterDropsOnOverflowAndLogsOncePerFill(t *testing.T) {
 		}
 	}
 
+	// The writer clears the flag after its last record is on disk; a record queued before then would keep it set.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		w.mu.Lock()
+		over := w.overflowing
+		w.mu.Unlock()
+		if !over {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the writer never cleared its overflow flag after the queue drained")
+		}
+	}
+
 	release = make(chan struct{})
 	stall(release)
 	fill(1024 + 1)
