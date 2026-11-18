@@ -16,6 +16,7 @@ vi.mock('./api', async (orig) => ({
 const RAW = 'Registration failed - push service error';
 
 let subscribe: ReturnType<typeof vi.fn>;
+let held: unknown;
 
 const rejectWith = (name: string, message: string) => () => Promise.reject(new DOMException(message, name));
 
@@ -37,10 +38,11 @@ beforeEach(() => {
   vi.mocked(api.savePushSubscription).mockResolvedValue({ ok: true, data: null });
   vi.mocked(api.dropPushSubscription).mockResolvedValue({ ok: true, data: null });
   subscribe = vi.fn();
+  held = null;
   vi.stubGlobal('isSecureContext', true);
   vi.stubGlobal('PushManager', class {});
   vi.stubGlobal('Notification', { permission: 'default', requestPermission: vi.fn(async () => 'granted') });
-  const registration = { pushManager: { subscribe, getSubscription: vi.fn(async () => null) } };
+  const registration = { pushManager: { subscribe, getSubscription: vi.fn(async () => held) } };
   Object.defineProperty(navigator, 'serviceWorker', { value: { ready: Promise.resolve(registration) }, configurable: true });
 });
 afterEach(() => {
@@ -135,7 +137,7 @@ test('any other subscribe failure still shows its own message', async () => {
 test('a failed save still shows the server error', async () => {
   const sub = { endpoint: 'https://push.example/abc', toJSON: () => ({ keys: { p256dh: 'p', auth: 'a' } }), unsubscribe: vi.fn(async () => true) };
   subscribe.mockResolvedValue(sub);
-  vi.mocked(api.savePushSubscription).mockResolvedValue({ ok: false, error: 'The Mac refused this device.' } as never);
+  vi.mocked(api.savePushSubscription).mockResolvedValue({ ok: false, error: 'The Mac refused this device.' });
   render(<NotificationsPage />);
   await tapSwitch();
   expect((await screen.findByRole('alert')).textContent).toBe('The Mac refused this device.');
@@ -145,9 +147,14 @@ test('a failed save still shows the server error', async () => {
 test('a first subscribe that fails and a second that succeeds still turns push on', async () => {
   const sub = { endpoint: 'https://push.example/abc', toJSON: () => ({ keys: { p256dh: 'p', auth: 'a' } }), unsubscribe: vi.fn(async () => true) };
   subscribe.mockImplementationOnce(rejectWith('AbortError', RAW)).mockResolvedValue(sub);
+  vi.mocked(api.savePushSubscription).mockImplementation(async () => {
+    held = sub;
+    return { ok: true, data: null };
+  });
   render(<NotificationsPage />);
-  await tapSwitch();
+  const toggle = await tapSwitch();
   await waitFor(() => expect(api.savePushSubscription).toHaveBeenCalledTimes(1));
   expect(api.savePushSubscription).toHaveBeenCalledWith({ endpoint: 'https://push.example/abc', keys: { p256dh: 'p', auth: 'a' } });
   expect(screen.queryByRole('alert')).toBeNull();
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
 });
