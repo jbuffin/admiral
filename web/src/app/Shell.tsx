@@ -30,7 +30,7 @@ import { RoutinesPage } from './RoutinesPage';
 import { StandingOrdersPage } from './StandingOrdersPage';
 import { holdFire } from './holdFireLink';
 import { holdFireBanner } from './routines';
-import { campaignOf, crewOf, go, loc, moduleOf, modulePath, routineCreating, routineOf, shipPath, shipSession, standingOrdersTab, surfaceOf, surfacePath } from './router';
+import { campaignOf, crewOf, go, loc, moduleOf, modulePath, routineCreating, routineOf, shipPath, shipSession, standingOrdersTab, surfaceOf } from './router';
 import { resolveModule } from './modules';
 import { ModulePage, ModuleSkeleton } from './ModulePage';
 import { WaitingBadge } from './WaitingBadge';
