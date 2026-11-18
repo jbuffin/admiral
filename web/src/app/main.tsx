@@ -6,7 +6,8 @@ import { watchFleets } from './fleets';
 import { watchCampaigns } from './campaignsLink';
 import { watchHoldFire } from './holdFireLink';
 import { listenForInstall } from './install';
-import { startRouter } from './router';
+import { effect } from '@preact/signals';
+import { settleRoute, startRouter } from './router';
 import { Shell } from './Shell';
 import { checkBuild } from './buildCheck';
 import { onShipsOpen, watchShips } from './shipsLink';
@@ -16,6 +17,7 @@ document.addEventListener('touchstart', () => {}, { passive: true });
 
 listenForInstall();
 startRouter();
+effect(settleRoute);
 watchFleets();
 watchShips();
 watchCampaigns();

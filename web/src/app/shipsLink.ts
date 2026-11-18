@@ -17,6 +17,8 @@ export const inboxLoaded = signal(false);
 export const shipsFresh = signal(false);
 export const inboxFresh = signal(false);
 export const sources = signal<Source[]>([]);
+// False until the first sources message, so a module path isn't judged against an empty list.
+export const sourcesLoaded = signal(false);
 export const resources = signal<Resource[]>([]);
 // Each fleet's latest chat message, keyed by fleet; a message replaces only its own fleet's.
 export const chats = signal<Record<string, ChatSnapshot>>({});
@@ -112,7 +114,10 @@ export function watchShips(): () => void {
       } else if (msg.type === 'chat' && typeof msg.fleet === 'string') {
         const { type: _type, ...snap } = msg;
         chats.value = { ...chats.value, [msg.fleet]: snap };
-      } else if (msg.type === 'sources') sources.value = msg.sources ?? [];
+      } else if (msg.type === 'sources') {
+        sources.value = msg.sources ?? [];
+        sourcesLoaded.value = true;
+      }
       else if (msg.type === 'resources') resources.value = msg.resources ?? [];
     };
     s.onclose = () => {

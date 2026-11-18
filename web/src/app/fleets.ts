@@ -1,6 +1,7 @@
 import { computed, effect, signal } from '@preact/signals';
 import { fetchFleets, type Fleet } from './api';
-import { chatTerminalOf, go, loc } from './router';
+import { chatTerminalOf, go, loc, pathAfterFleetSwitch, provideFleets } from './router';
+import { sources, sourcesLoaded } from './shipsLink';
 import { fleetPaint } from './fleetPaint';
 
 export { fleetPaint };
@@ -38,6 +39,8 @@ export const activeFleet = computed(() =>
   resolveFleet(fleets.value, new URLSearchParams(loc.value.search).get('fleet'), store.get()),
 );
 
+provideFleets(() => ({ active: activeFleet.value?.key ?? null, keys: fleets.value.map((f) => f.key) }));
+
 export const fleetSearch = computed(() => {
   // Until a fleet resolves (config loading or failed), the URL's own ?fleet= passes through.
   const key = activeFleet.value?.key ?? new URLSearchParams(loc.value.search).get('fleet');
@@ -50,7 +53,8 @@ export const rememberFleet = (key: string) => store.set(key);
 export function chooseFleet(key: string) {
   store.set(key);
   // The terminal path names one fleet's chat session; another fleet opens on its conversation.
-  go(chatTerminalOf(loc.value.path) === null ? loc.value.path : '/app/chat', `?fleet=${encodeURIComponent(key)}`);
+  const path = chatTerminalOf(loc.value.path) === null ? loc.value.path : '/app/chat';
+  go(pathAfterFleetSwitch(path, loc.value.search, key, sources.value, sourcesLoaded.value), `?fleet=${encodeURIComponent(key)}`);
 }
 
 export async function loadFleets() {

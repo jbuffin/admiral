@@ -642,12 +642,50 @@ export interface OrderView {
   /** RFC 3339: the view's last successful answer; absent before the first. */
   refreshed_at?: string;
 }
+export type PageState = 'starting' | 'ready' | 'auth_required' | 'error';
+export interface PageAction {
+  id: string;
+  label: string;
+  confirm?: string;
+  summary?: string;
+  url?: string;
+}
+export interface PageChip {
+  label: string;
+  tone?: string;
+}
+export interface PageRow {
+  id: string;
+  title: string;
+  subtitle?: string;
+  chips?: PageChip[];
+  reason?: string;
+  action?: PageAction;
+  actions?: PageAction[];
+}
+export interface PageGroup {
+  id: string;
+  title: string;
+  rows: PageRow[];
+}
+export interface ModulePageData {
+  state: PageState;
+  groups: PageGroup[];
+  waiting: number;
+  auth?: { message: string; url?: string; code?: string };
+  error?: string;
+}
+export const fetchModulePage = (key: string) => call<ModulePageData>('GET', `${src(key)}/page`);
+
 export interface Source {
   key: string;
   name: string;
   fleet: string;
   /** What the source can do, such as `refresh`. */
   capabilities?: string[];
+  auth?: { message: string; url?: string; code?: string } | null;
+  /** A module's page summary; absent for a source with no page. */
+  page?: { state: PageState; waiting: number; version: number; rows?: string[] };
   /** True while the source pulls orders, asked for or on its timer; absent from an older server. */
   refreshing?: boolean;
   /** The login the source's account has on its service; only the GitHub source serves it, so a plugin's layers count as not yours. */
