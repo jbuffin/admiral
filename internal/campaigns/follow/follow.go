@@ -37,6 +37,8 @@ type Service struct {
 	Route func(host, nameWithOwner string) string
 	// Clients gives the fleet's GitHub client for a host, read fresh on each call.
 	Clients func(fleet, host string) (*github.Client, bool)
+	// FleetScope gives the GitHub host of a fleet's source and what the fleet claims there, as github.Router.Claims does; false for an unknown fleet.
+	FleetScope func(fleet string) (host string, claims github.FleetClaims, ok bool)
 	// Ships lists the ships now, to see which child's ship anchored or left.
 	Ships func() []ships.Ship
 	// Claims maps a ClaimKey to the ship holding that issue.

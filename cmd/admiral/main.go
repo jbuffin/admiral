@@ -453,6 +453,14 @@ func serve(args []string) error {
 	campaignService := &follow.Service{Store: followStore, Next: sourceService,
 		Route:   func(host, nwo string) string { return github.RouterFromFleets(cfg.Current().Fleets).Route(host, nwo) },
 		Clients: supervisor.GitHubClient, Ships: allShips,
+		FleetScope: func(fleet string) (string, github.FleetClaims, bool) {
+			current := cfg.Current()
+			client := sources.FleetGitHub(current, fleet)
+			if client == nil {
+				return "", github.FleetClaims{}, false
+			}
+			return client.Host(), github.RouterFromFleets(current.Fleets).Claims(fleet, client.Host()), true
+		},
 		Claims: shipService.Claims, Launch: shipService.Launch}
 	defer campaignService.Close()
 	shipService.Orders = campaignService

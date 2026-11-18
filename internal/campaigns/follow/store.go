@@ -24,6 +24,7 @@ type Followed struct {
 	Overrides  map[string]campaigns.Override
 	FollowedAt time.Time
 	EndedAt    time.Time // zero while the campaign is followed
+	EndReason  string    // endUnfollowed or endEnded; empty on a record written before it was kept
 	Tree       *github.TreeNode
 	ReadAt     time.Time // of the last good read
 	TriedAt    time.Time // of the last attempt, good or bad
@@ -31,6 +32,23 @@ type Followed struct {
 }
 
 func (f Followed) Ended() bool { return !f.EndedAt.IsZero() }
+
+// Why a campaign stopped being followed.
+const (
+	endUnfollowed = "unfollowed" // the engineer stopped following it
+	endEnded      = "ended"      // its tree closed
+)
+
+// endState says why an ended campaign ended; a record with no reason reads by its tree.
+func (f Followed) endState() string {
+	switch {
+	case f.EndReason != "":
+		return f.EndReason
+	case allClosed(f.Tree):
+		return endEnded
+	}
+	return endUnfollowed
+}
 
 // Store is the file of followed campaigns, campaigns.json under the home.
 type Store struct {
@@ -188,10 +206,16 @@ func (s *Store) update(id string, change func(f *Followed)) error {
 	return errUnknown
 }
 
-func (s *Store) End(id string, at time.Time) error {
+// End ends a campaign whose tree closed.
+func (s *Store) End(id string, at time.Time) error { return s.endFor(id, at, endEnded) }
+
+// Unfollow ends a campaign the engineer stopped following.
+func (s *Store) Unfollow(id string, at time.Time) error { return s.endFor(id, at, endUnfollowed) }
+
+func (s *Store) endFor(id string, at time.Time, reason string) error {
 	return s.update(id, func(f *Followed) {
 		if f.EndedAt.IsZero() {
-			f.EndedAt = at
+			f.EndedAt, f.EndReason = at, reason
 		}
 	})
 }

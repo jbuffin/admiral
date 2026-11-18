@@ -534,9 +534,19 @@ func (c *Client) graphql(ctx context.Context, token, ref string, vars []string) 
 	return body.Data, nil
 }
 
-func (c *Client) notFound(ref string) error {
-	return fmt.Errorf("%s was not found, or you don't have access to it", ref)
+type notFoundError struct{ ref string }
+
+func (e *notFoundError) Error() string {
+	return fmt.Sprintf("%s was not found, or you don't have access to it", e.ref)
 }
+
+// IsNotFound reports an error that says the issue is missing or unreadable, as opposed to a read that failed.
+func IsNotFound(err error) bool {
+	var nf *notFoundError
+	return errors.As(err, &nf)
+}
+
+func (c *Client) notFound(ref string) error { return &notFoundError{ref} }
 
 // treeError turns gh's or GraphQL's message into one to show.
 func (c *Client) treeError(ref, msg string) error {

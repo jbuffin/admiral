@@ -526,7 +526,22 @@ Each node carries `labels` (names, `[]` when none; a parent's too, so the root's
 
 ### `POST /api/campaigns`
 
-Body `{"reference": "<issue URL or owner/repo#n>"}`. `owner/repo#n` means github.com. Reads the tree, stores the campaign and launches nothing. `201` with the campaign; `200` with the campaign already followed for that issue, ended included. `400` for a reference that is not an issue (the message says what to paste); `422` when no fleet owns the repo, the fleet has no GitHub source for the issue's host (a host is compared ignoring case and must be the source's own), or the read failed.
+Body `{"reference": "<issue URL or owner/repo#n>", "fleet": "<fleet key>"}`. `owner/repo#n` means github.com. `fleet` is optional: the fleet the engineer follows from. Reads the tree, stores the campaign and launches nothing. `201` with the campaign; `200` with the campaign already followed for that issue, ended included. `400` for a reference that is not an issue (the message says what to paste); `422` when no fleet owns the repo, the fleet has no GitHub source for the issue's host (a host is compared ignoring case and must be the source's own), or the read failed.
+
+With `fleet`, the reference must belong to that fleet: the one that follows it already, else the one that routes its repo. Another fleet's is `422` with a message naming the owning fleet, and nothing is followed. This is the engineer's own request, so it is a `422`, where `POST /api/chat/campaign-commitments` answers the same check with an actor fence's `403`. A request without `fleet` follows into whichever fleet owns the repo.
+
+### `GET /api/fleets/<key>/campaigns/search?q=<text>`
+
+Finds issues to follow in one fleet, for the Add campaign modal. `404` for an unknown fleet. `{"results": [...]}`, at most 20 issues from each of two GitHub searches. Both are scoped to the repos and owners the fleet's GitHub source claims (`is:issue (repo:a/b OR user:o) <text>`), and a hit in a repo that routes to another fleet is dropped, which an owner scope can reach. One search asks for parents only (`has:sub-issue`), the other for all issues. Parents come first and an issue both found shows once. Closed issues are in the list when `q` has text.
+
+- Empty `q` lists only the fleet's open parents.
+- `owner/repo#n` or an issue URL runs as a search too. When it has no hit, one read resolves it and its row comes first. A pull request, a missing issue and a repo of another fleet get no row.
+- A bare `#n` searches the number and keeps only issues numbered `n`, across all the fleet's repos. (`POST /api/campaigns` still refuses a bare `#n`.) Digits alone search as plain text.
+- A fleet with no repos and no owners answers `[]` without calling GitHub.
+
+A row is `{"title", "reference": "owner/repo#n", "url", "state": "open"|"closed", "parent": bool, "progress": {"closed", "total"}, "status"}`. `progress` counts the sub-issues a parent has, `0` and `0` for a leaf. `status` is `followed`, `unfollowed` (the engineer stopped following it), `ended` (its tree closed), or `""` for a campaign not followed. A campaign stored without a reason reads `ended` when its whole tree is closed, else `unfollowed`.
+
+`422` with `{"error"}` when gh is signed out, GitHub refuses the search or it times out (8 seconds). Not an AdmiralBot route: the guard refuses it.
 
 ### `POST /api/campaigns/create`
 
