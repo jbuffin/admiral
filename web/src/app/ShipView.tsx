@@ -10,6 +10,7 @@ import { ConversationView } from './ConversationView';
 import { hasConversationAdapter } from './conversationGate';
 import { Actions, Button } from './Button';
 import { InboxWaiting } from './InboxWaiting';
+import { DraftingLine } from './DraftingLine';
 import { Composer, InterruptButton, useComposer, type Target } from './Composer';
 import { boatBoxState, chipState, flotilla } from './flotilla';
 import { Icon } from './Icon';
@@ -408,6 +409,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
             <StopShip ship={ship} />
           </div>
         )}
+        <DraftingLine ship={ship} />
         {!moored && handAction(ship).show && ship.hand_refusal ? <p class="note hand-note">{ship.hand_refusal}</p> : null}
         {!moored && handFailure(ship) ? (
           <p class="note warn hand-note">{`Not handed to Commodore: ${handFailure(ship)}`}</p>

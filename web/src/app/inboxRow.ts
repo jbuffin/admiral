@@ -65,6 +65,8 @@ export function rowVerb(e: Entry): string {
       return e.item.routine_proposal?.reason ? `proposes a routine run, ${lower(e.item.routine_proposal.reason.split(':')[0])}` : 'proposes a routine run';
     case 'campaign_draft':
       return 'drafted a campaign';
+    case 'drafting_ended':
+      return 'a drafting ship ended';
     case 'event_proposal':
       return 'proposes a routine run for an outside event';
     case 'crew_notes':

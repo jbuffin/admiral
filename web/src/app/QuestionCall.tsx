@@ -52,7 +52,7 @@ const answered = (q: CardQuestion, p: Pick) => (q.multiSelect ? p.picked.length 
 const chosen = (q: CardQuestion, p: Pick) => [...p.picked.map((n) => q.options[n - 1]), ...(p.otherOn && p.other.trim() ? [p.other.trim()] : [])].join(', ');
 
 /** A pending call: one question at a time, a review, then one request with every answer. */
-function Answering({ items, card, session, crew, openTerminal }: { items: Item[]; card: Extract<AnswerCard, { kind: 'question' }>; session: string; crew?: string; openTerminal: () => void }) {
+function Answering({ items, card, session, crew, openTerminal }: { items: Item[]; card: Extract<AnswerCard, { kind: 'question' }>; session: string; crew?: string; openTerminal?: () => void }) {
   const views = questionCallView(items);
   const qs = card.questions;
   const [step, setStep] = useState(0);
@@ -166,7 +166,7 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
   );
 }
 
-function Record({ views, note, openTerminal }: { views: QuestionView[]; note?: string; openTerminal: () => void }) {
+function Record({ views, note, openTerminal }: { views: QuestionView[]; note?: string; openTerminal?: () => void }) {
   return (
     <div class="convo-card q-card q-record">
       {views.map((v) => (
@@ -177,7 +177,7 @@ function Record({ views, note, openTerminal }: { views: QuestionView[]; note?: s
           <p class="muted q-note" role="alert">
             {note}
           </p>
-          <Button label="Open terminal" onClick={openTerminal} />
+          {openTerminal ? <Button label="Open terminal" onClick={openTerminal} /> : null}
         </div>
       ) : null}
     </div>
@@ -185,7 +185,7 @@ function Record({ views, note, openTerminal }: { views: QuestionView[]; note?: s
 }
 
 /** A question call in the transcript: the card that answers it while the pane asks, else the read-only record. */
-export function QuestionCall({ items, card, session, crew, openTerminal }: { items: Item[]; card: AnswerCard; session: string; crew?: string; openTerminal: () => void }) {
+export function QuestionCall({ items, card, session, crew, openTerminal }: { items: Item[]; card: AnswerCard; session: string; crew?: string; openTerminal?: () => void }) {
   if (card.kind === 'question' && card.item === items[0].id) return <Answering items={items} card={card} session={session} crew={crew} openTerminal={openTerminal} />;
   return <Record views={questionCallView(items)} openTerminal={openTerminal} />;
 }

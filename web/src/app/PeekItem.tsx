@@ -402,7 +402,9 @@ export function FindingsBody({ entry, acting, state }: { entry: Entry; acting: A
 }
 
 const removeCopy = (kind: string | undefined, review: boolean) =>
-  kind === 'crew_notes'
+  kind === 'drafting_ended'
+    ? 'Remove this item from the inbox? The ship is already gone.'
+    : kind === 'crew_notes'
     ? 'Remove this item? It counts as Drop: its notes are discarded.'
     : kind === 'mission'
       ? 'Remove this item? It counts as Drop: nothing is saved.'

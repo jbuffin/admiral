@@ -147,3 +147,16 @@ test("Remove from inbox is offered with its own confirm copy, and Remove sends o
   await waitFor(() => expect(fold).toHaveBeenCalledTimes(1));
   expect(sent.filter((s) => s.method === 'POST').map((s) => s.path)).toEqual([`/inbox/_admiral/${id}/remove`]);
 });
+
+test('a conversation that reads none is read once, not asked about again', async () => {
+  page = () => json({ state: 'none', more: false, items: [] });
+  open();
+  await screen.findByText('No conversation recorded');
+  vi.useFakeTimers();
+  try {
+    await vi.advanceTimersByTimeAsync(10_000);
+  } finally {
+    vi.useRealTimers();
+  }
+  expect(convoRequests()).toHaveLength(1);
+});
