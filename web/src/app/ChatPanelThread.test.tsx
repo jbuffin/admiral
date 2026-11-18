@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Fleet } from './api';
 import type { ChatEntry, ShipCard } from './chat';
 import { ChatPanel } from './ChatPanel';
 import { fleets } from './fleets';
+import { chats } from './shipsLink';
 import { chatMessagePath, loc } from './router';
 import type { Surface } from './surfaces';
 
@@ -19,22 +20,34 @@ const shipCard = entry(CARD, '2026-01-02T03:04:05Z', { kind: 'ship_card', text: 
 const turn = (thread = CARD) => entry('t1', '2026-01-02T03:05:00Z', { role: 'user', text: TURN, thread });
 const reply = (id = 'r1', text = REPLY, thread = CARD) => entry(id, '2026-01-02T03:05:30Z', { role: 'assistant', text, thread });
 
-const chatWith = (messages: ChatEntry[]) =>
-  vi.stubGlobal('fetch', async (url: string) =>
-    url.endsWith('/session') ? new Response(JSON.stringify({ fleet: 'alpha', running: true, state: 'idle', questions: [], messages })) : new Response('{}'),
-  );
+// What the server answers a session read with; a test that changes it also pushes the same snapshot, as the socket does.
+let served: ChatEntry[] = [];
+let sessionReads = 0;
+const chatWith = (messages: ChatEntry[]) => {
+  served = messages;
+  sessionReads = 0;
+  vi.stubGlobal('fetch', async (url: string) => {
+    if (!url.endsWith('/session')) return new Response('{}');
+    sessionReads++;
+    return new Response(JSON.stringify({ fleet: 'alpha', running: true, state: 'idle', questions: [], messages: served }));
+  });
+};
+// The chat reads its session before and after starting it; a later push must not race the second read.
+const settled = () => waitFor(() => expect(sessionReads).toBe(2));
 
-const start = { loc: loc.value, fleets: fleets.value };
+const start = { loc: loc.value, fleets: fleets.value, chats: chats.value };
 const scroll = Element.prototype.scrollIntoView;
 beforeEach(() => {
   fleets.value = [alpha];
   loc.value = { path: '/app/chat', search: '?fleet=alpha' };
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   Element.prototype.scrollIntoView = scroll;
   loc.value = start.loc;
   fleets.value = start.fleets;
+  chats.value = start.chats;
 });
 
 const shown = async (ready: () => unknown) => {
@@ -106,15 +119,60 @@ test('opening the chat at a message scrolls to it and highlights it for a moment
   expect(byId('r1')?.classList.contains('flash')).toBe(false);
 });
 
-test('a message outside the window opens the chat at the bottom without scrolling to anything', async () => {
+const pushSnapshot = (messages: ChatEntry[]) =>
+  act(() => {
+    served = messages;
+    chats.value = { alpha: { fleet: 'alpha', running: true, state: 'idle', questions: [], messages } } as unknown as typeof chats.value;
+  });
+const convo = () => document.querySelector('.convo') as HTMLElement;
+
+test('a message outside the window opens the chat pinned to the bottom, and later messages change nothing', async () => {
   const scrolled: Element[] = [];
   Element.prototype.scrollIntoView = function (this: Element) {
     scrolled.push(this);
   };
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(900);
   chatWith([shipCard, turn(), reply()]);
   loc.value = { path: chatMessagePath('alpha', 'gone'), search: '?fleet=alpha' };
   await shown(ready);
+  await settled();
   expect(screen.getByRole('button', { name: 'Report sent to AdmiralBot' })).not.toBeNull();
+  // A later render runs the focus effect again, so the check holds for the whole of its window.
+  await pushSnapshot([shipCard, turn(), reply(), reply('r2', 'More')]);
+  expect(byId('r2')).not.toBeNull();
+  expect(scrolled).toHaveLength(0);
+  expect(document.querySelector('.flash')).toBeNull();
+  expect(convo().scrollTop).toBe(900);
+});
+
+test('a tap before the reply arrives scrolls to it and lights it once it renders', async () => {
+  const scrolled: Element[] = [];
+  Element.prototype.scrollIntoView = function (this: Element) {
+    scrolled.push(this);
+  };
+  chatWith([shipCard, turn()]);
+  loc.value = { path: chatMessagePath('alpha', 'r1'), search: '?fleet=alpha' };
+  await shown(() => document.querySelector('.report-sent'));
+  await settled();
+  expect(scrolled).toHaveLength(0);
+  await pushSnapshot([shipCard, turn(), reply()]);
+  await waitFor(() => expect(scrolled).toContain(byId('r1')));
+  expect(byId('r1')?.classList.contains('flash')).toBe(true);
+});
+
+test('an engineer who scrolls off the bottom before the reply arrives is not pulled to it', async () => {
+  const scrolled: Element[] = [];
+  Element.prototype.scrollIntoView = function (this: Element) {
+    scrolled.push(this);
+  };
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(900);
+  chatWith([shipCard, turn()]);
+  loc.value = { path: chatMessagePath('alpha', 'r1'), search: '?fleet=alpha' };
+  await shown(() => document.querySelector('.report-sent'));
+  await settled();
+  fireEvent.scroll(convo(), { target: { scrollTop: 100 } });
+  await pushSnapshot([shipCard, turn(), reply()]);
+  expect(byId('r1')).not.toBeNull();
   expect(scrolled).toHaveLength(0);
   expect(document.querySelector('.flash')).toBeNull();
 });

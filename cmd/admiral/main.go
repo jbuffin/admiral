@@ -605,17 +605,12 @@ func serve(args []string) error {
 	wireEvents(supervisor, routineStore, routineScheduler, allShips, lk, newReviewer(lk), lookoutActs)
 	inboxService.LaunchEvent = launchEvent(routineScheduler)
 	wireStandingOrders(shipService.Launcher, routineStore, routineService, cfg)
-	chatService.OnReply = func(fleet string, r chat.ReportReply) {
-		name, result, ok := chatService.ShipCardOf(fleet, r.CardID)
-		if !ok {
-			return
-		}
-		fleetName := fleet
+	chatService.OnReply = reportReplyPush(chatService, func(fleet string) string {
 		if f, _, found := cfg.Current().ChatFleet(fleet); found {
-			fleetName = f.Name
+			return f.Name
 		}
-		pushFeed.Watcher.Emit(push.ReportReplyEvent(push.Reply{Fleet: fleet, FleetName: fleetName, Ship: name, Result: result, Card: r.CardID, Message: r.MessageID, Text: r.Text}))
-	}
+		return fleet
+	}, pushFeed.Watcher.Emit)
 	chatService.OnQuestions = func() { inboxService.Changed(); commitmentRunner.Changed() }
 	chatService.FollowCampaign, chatService.CampaignFleet, commitmentRunner.Campaign, campaignService.OnRead = campaignService.Follow, campaignService.Owner, campaignService.Snapshot, commitmentRunner.Changed
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
@@ -839,5 +834,19 @@ func fleetRepos(cfg *config.Manager) config.RepoLookup {
 			}
 		}
 		return out
+	}
+}
+
+// reportReplyPush turns AdmiralBot's reply to a report turn into the push that opens the chat at it. It writes nothing
+// else: a reply is no Inbox item.
+func reportReplyPush(cards interface {
+	ShipCardOf(fleet, id string) (name, result string, ok bool)
+}, fleetName func(fleet string) string, emit func(push.Event)) func(string, chat.ReportReply) {
+	return func(fleet string, r chat.ReportReply) {
+		name, result, ok := cards.ShipCardOf(fleet, r.CardID)
+		if !ok {
+			return
+		}
+		emit(push.ReportReplyEvent(push.Reply{Fleet: fleet, FleetName: fleetName(fleet), Ship: name, Result: result, Card: r.CardID, Message: r.MessageID, Text: r.Text}))
 	}
 }

@@ -1,22 +1,28 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
+
+	"github.com/jbuffin/admiral/internal/server"
 )
 
 // A report turn's reply threads under its ship card in the chat log and is handed to the push once.
 
 const (
 	replyCard = "ship-calm-otter-2026-11-17T10:00:00Z-moored"
-	replyTurn = "[Report: Calm Otter] REPORT-TURN-TEXT"
+	replyTurn = "[Report: Calm Otter] REPORT-TURN-TEXT\n\ncard: " + replyCard
 )
 
 type replyRig struct {
@@ -55,7 +61,23 @@ func (r *replyRig) say(kind, text string) string {
 		r.t.Fatal(err)
 	}
 	defer f.Close()
-	if _, err := f.WriteString(claudeLine(r.t, kind, id, text)); err != nil {
+	if _, err := f.WriteString(claudeLineAt(r.t, kind, id, text, time.Now().UTC().Format(time.RFC3339Nano))); err != nil {
+		r.t.Fatal(err)
+	}
+	return id
+}
+
+// sayAt is say with the line stamped at.
+func (r *replyRig) sayAt(kind, text string, at time.Time) string {
+	r.t.Helper()
+	r.n++
+	id := fmt.Sprintf("44444444-4444-4444-8444-%012d", r.n)
+	f, err := os.OpenFile(r.path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(claudeLineAt(r.t, kind, id, text, at.UTC().Format(time.RFC3339Nano))); err != nil {
 		r.t.Fatal(err)
 	}
 	return id
@@ -187,20 +209,7 @@ func TestTheThreadIsServedOnTheSessionEndpointAndInTheChatMessage(t *testing.T) 
 		served[m.ID] = m.Thread
 	}
 	r.wantThread(served, turn, replyCard, "the turn on GET /api/chat/work/session")
-	raw, _ := json.Marshal(wire{Type: "chat", Snapshot: r.fc.currentFresh()})
-	var ws struct {
-		Messages []struct {
-			ID     string `json:"id"`
-			Thread string `json:"thread"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(raw, &ws); err != nil {
-		t.Fatal(err)
-	}
-	onSocket := map[string]string{}
-	for _, m := range ws.Messages {
-		onSocket[m.ID] = m.Thread
-	}
+	onSocket := r.socketThreads()
 	r.wantThread(onSocket, turn, replyCard, "the turn on the chat socket message")
 }
 
@@ -260,7 +269,7 @@ func TestADroppedTurnHandsNothingOverEvenWithAReplyLogged(t *testing.T) {
 	r.sendReport()
 	reply := r.say("assistant", "Calm Otter is done")
 	r.wantThread(r.threads(), reply, replyCard, "a reply logged in a turn that is then dropped")
-	r.fc.endTurn(replyCard, TurnDropped)
+	r.sessionGoesAway()
 	r.hold("a dropped turn handed over a reply", func() bool { return len(r.replies()) != 0 })
 }
 
@@ -274,10 +283,11 @@ func TestARepeatedEndHandsOverOnceEvenAfterTheQueueFileIsReloaded(t *testing.T) 
 		t.Fatalf("replies after the end = %d, want 1", len(got))
 	}
 	r.fc.endTurn(replyCard, TurnEndedNormally)
-	r.fc.tq = turnState{}
-	r.fc.endTurn(replyCard, TurnEndedNormally)
+	again := r.restart()
+	again.OnReply = r.svc.OnReply
+	again.chat("work").endTurn(replyCard, TurnEndedNormally)
 	if got := r.replies(); len(got) != 1 {
-		t.Errorf("replies after repeated ends and a reload = %d, want 1", len(got))
+		t.Errorf("replies after repeated ends and a restart = %d, want 1", len(got))
 	}
 }
 
@@ -302,4 +312,138 @@ func TestAReplyLoggedAfterTheTurnEndsIsThreadedButPushesNothing(t *testing.T) {
 	r.wantThread(r.threads(), late, replyCard, "a reply logged after the end")
 	r.wantThread(r.threads(), turn, replyCard, "the pasted turn")
 	r.hold("a reply logged after the end pushed late", func() bool { return len(r.replies()) != 0 })
+}
+
+// sessionGoesAway kills the chat's tmux session, the way a crash does, and lets the turn queue see it.
+func (r *replyRig) sessionGoesAway() {
+	r.t.Helper()
+	if out, err := exec.Command(r.svc.Tmux, "-S", r.svc.Socket, "kill-session", "-t", "="+r.fc.name()).CombinedOutput(); err != nil {
+		r.t.Fatalf("kill-session: %v: %s", err, out)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := r.svc.Host.Sync(ctx); err != nil {
+		r.t.Fatal(err)
+	}
+	r.ticks(2)
+}
+
+// socketThreads is the thread of each message on the chat message a new browser connection is sent.
+func (r *replyRig) socketThreads() map[string]string {
+	r.t.Helper()
+	srv := httptest.NewServer((&server.Server{Hub: server.NewHub(), Modules: []server.Module{r.svc}}).Handler())
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, "ws"+srv.URL[len("http"):]+"/ws", nil)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	for {
+		_, raw, err := conn.Read(ctx)
+		if err != nil {
+			r.t.Fatalf("no chat message came on the socket: %v", err)
+		}
+		var m struct {
+			Type     string `json:"type"`
+			Messages []struct {
+				ID     string `json:"id"`
+				Thread string `json:"thread"`
+			} `json:"messages"`
+		}
+		if json.Unmarshal(raw, &m) != nil || m.Type != "chat" {
+			continue
+		}
+		out := map[string]string{}
+		for _, x := range m.Messages {
+			out[x.ID] = x.Thread
+		}
+		return out
+	}
+}
+
+const aNotice = "<task-notification>\n<summary>subagent finished</summary>\n</task-notification>"
+
+func TestANoticeAfterTheTurnEndsClosesTheThread(t *testing.T) {
+	r := newReplyRig(t)
+	r.sendReport()
+	reply := r.say("assistant", "Calm Otter is done")
+	r.turnEnds()
+	r.ticks(2)
+	notice := r.say("user", aNotice)
+	next := r.say("assistant", "The sub-agent finished")
+	th := r.threads()
+	r.wantThread(th, reply, replyCard, "the reply before the end")
+	r.wantThread(th, notice, "", "the notice after the end")
+	r.wantThread(th, next, "", "the new turn's reply after the notice")
+}
+
+func TestANoticeThatStartedTheNextTurnClosesTheThreadEvenWhenNothingReadItBeforeTheEnd(t *testing.T) {
+	r := newReplyRig(t)
+	r.sendReport()
+	reply := r.say("assistant", "Calm Otter is done")
+	notice := r.say("user", aNotice)
+	r.promptStarts()
+	r.ticks(3)
+	next := r.say("assistant", "The sub-agent finished")
+	th := r.threads()
+	r.wantThread(th, reply, replyCard, "the reply before the notice")
+	r.wantThread(th, notice, "", "the notice that started the next turn")
+	r.wantThread(th, next, "", "the next turn's reply")
+}
+
+func TestOnlyTheTurnsOwnCardLineAfterThePasteIsTakenForTheTurn(t *testing.T) {
+	r := newReplyRig(t)
+	r.enqueue(replyCard, replyTurn)
+	r.tickUntil("the report turn typed", r.typedOnce("REPORT-TURN-TEXT"))
+	r.promptStarts()
+	r.ticks(2)
+	bare := r.say("user", "[Report: Calm Otter]")
+	open := r.say("user", "[")
+	other := r.say("user", "[Report: Calm Otter] REPORT-TURN-TEXT\n\ncard: ship-someone-else-2026-11-17T10:00:00Z-moored")
+	stale := r.sayAt("user", replyTurn, time.Now().Add(-time.Hour))
+	turn := r.say("user", replyTurn)
+	reply := r.say("assistant", "Calm Otter is done")
+	th := r.threads()
+	r.wantThread(th, bare, "", "a line that is only the report marker")
+	r.wantThread(th, open, "", "a line that is only a bracket")
+	r.wantThread(th, other, "", "a report turn for another ship card")
+	r.wantThread(th, stale, "", "the turn's text logged before the paste")
+	r.wantThread(th, turn, replyCard, "the pasted turn")
+	r.wantThread(th, reply, replyCard, "the reply")
+}
+
+func TestARestartBetweenThePasteAndTheRecordStillMarksTheTurnAndPushesNothing(t *testing.T) {
+	r := newReplyRig(t)
+	r.enqueue(replyCard, replyTurn)
+	r.tickUntil("the report turn typed", r.typedOnce("REPORT-TURN-TEXT"))
+	r.promptStarts()
+	r.ticks(2)
+	again := r.restart()
+	var got []ReportReply
+	again.OnReply = func(_ string, rep ReportReply) { got = append(got, rep) }
+	turn := r.say("user", replyTurn)
+	reply := r.say("assistant", "Calm Otter is done")
+	notice := r.say("user", aNotice)
+	next := r.say("assistant", "The sub-agent finished")
+	snap, err := again.chat("work").refresh(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	th := map[string]string{}
+	for _, m := range snap.Messages {
+		th[m.ID] = m.Thread
+	}
+	r.wantThread(th, turn, replyCard, "the pasted turn after a restart")
+	r.wantThread(th, reply, replyCard, "the reply after a restart")
+	r.wantThread(th, notice, "", "the notice after a restart")
+	r.wantThread(th, next, "", "the next turn's reply after a restart")
+	r.turnEnds()
+	for range 3 {
+		again.TurnTick()
+	}
+	if len(got) != 0 {
+		t.Errorf("a restart handed %d replies over, want none", len(got))
+	}
 }

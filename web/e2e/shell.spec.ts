@@ -807,7 +807,7 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   chatSays(admiral, 'harbor', [line.user('Send another ship to read the harbour log')], true);
   await expect(main).toContainText('Send another ship to read the harbour log');
   chatPrompts(admiral, 'harbor');
-  const sailing =await launchAsAdmiralBot(admiral, 'harbor', 'Read the harbour log and report the newest error.', 'to look at the harbour log', true);
+  const sailing = await launchAsAdmiralBot(admiral, 'harbor', 'Read the harbour log and report the newest error.', 'to look at the harbour log', true);
   await expect(main.getByText('Sailed off', { exact: true })).toHaveCount(1, { timeout: 30_000 });
   await expect.poll(() => new RegExp(`\\[Report: ${sailing.name}\\][^\\r]*\\r`).test(chatReceived(admiral, 'harbor')), { timeout: 30_000 }).toBe(true);
   const turn = chatReceived(admiral, 'harbor').split('\r').find((x) => x.includes('[Report: ')) ?? '';

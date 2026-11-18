@@ -78,6 +78,9 @@ func TestAReplyLineIsItsFirstLineAsPlainText(t *testing.T) {
 		{"emphasis and code marks drop", "**Done**: _two_ PRs, `make check` green", "Done: two PRs, make check green"},
 		{"only the first line", "First line\n\nSecond line with [a](https://x.test)", "First line"},
 		{"control and bidi characters drop", "Done‮\x07 now\x1b", "Done now"},
+		{"a name with double underscores survives", "Fixed __init__ in the loader", "Fixed __init__ in the loader"},
+		{"a lone star in a sum survives", "Checked 2 * 3 = 6 and 4 * 5", "Checked 2 * 3 = 6 and 4 * 5"},
+		{"paired stars and strikethrough drop", "*one* and **two** and ~~three~~", "one and two and three"},
 		{"a heading mark drops", "## Calm Otter finished", "Calm Otter finished"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

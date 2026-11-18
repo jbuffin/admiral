@@ -15,10 +15,11 @@ import (
 func (s *fleetChat) record(snap Snapshot) {
 	l := s.history()
 	var err error
+	restored := s.restoredCheck()
 	s.th.mu.Lock()
 	for _, m := range snap.Messages {
 		at, _ := time.Parse(time.RFC3339Nano, m.At)
-		thread, advance := s.th.classify(m)
+		thread, advance := s.th.classify(m, restored)
 		isNew, e := l.Append(s.key, chatlog.Entry{ID: m.ID, Kind: chatlog.KindMessage, Role: m.Role, Text: m.Text, At: at, Thread: thread})
 		if e != nil {
 			err = e

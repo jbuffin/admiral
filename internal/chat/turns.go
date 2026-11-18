@@ -340,12 +340,12 @@ func (s *fleetChat) deliver(q queuedTurn) {
 		return
 	}
 	s.th.mu.Lock()
-	prev := threadState{id: s.th.id, head: s.th.head, seen: s.th.seen}
-	s.th.open(q.ID, q.Text)
+	prev := threadState{id: s.th.id, since: s.th.since, seen: s.th.seen, ended: s.th.ended}
+	s.th.open(q.ID)
 	s.th.mu.Unlock()
 	if err := s.pasteMessage(pane, q.Text); err != nil {
 		s.th.mu.Lock()
-		s.th.id, s.th.head, s.th.seen = prev.id, prev.head, prev.seen
+		s.th.id, s.th.since, s.th.seen, s.th.ended = prev.id, prev.since, prev.seen, prev.ended
 		s.th.mu.Unlock()
 		s.turns(func(t *turnState) {
 			if msg := err.Error(); msg != t.lastErr {

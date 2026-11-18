@@ -278,21 +278,29 @@ function MessageView({ item, linkShips, fleet, flash }: { item: ThreadMessage; l
   );
 }
 
-/** Scrolls to the message a push or toast named, once the thread has it, and lights it for a moment. A message that has left the window opens the chat at the bottom. */
-function useFocusMessage(scroller: { current: HTMLDivElement | null }, pinned: { current: boolean }, focusId: string | null, ready: boolean) {
+/** Scrolls to the message a push or toast named once the thread has it, and lights it for a moment. It keeps looking as items render until the engineer scrolls off the bottom or the route changes; a message that has left the window leaves the chat at the bottom. */
+function useFocusMessage(scroller: { current: HTMLDivElement | null }, pinned: { current: boolean }, focusId: string | null, items: ThreadItem[]) {
   const [flashId, setFlashId] = useState<string | null>(null);
   const done = useRef<string | null>(null);
+  const started = useRef<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
-    if (!focusId || !ready || done.current === focusId) return;
-    done.current = focusId;
+    if (!focusId || items.length === 0 || done.current === focusId) return;
+    if (started.current === focusId && !pinned.current) {
+      done.current = focusId;
+      return;
+    }
+    started.current = focusId;
     const el = Array.from(scroller.current?.querySelectorAll('[data-message-id]') ?? []).find((e) => e.getAttribute('data-message-id') === focusId);
     if (!el) return;
+    done.current = focusId;
     pinned.current = false;
     el.scrollIntoView({ block: 'center' });
     setFlashId(focusId);
-    const t = setTimeout(() => setFlashId(null), 2500);
-    return () => clearTimeout(t);
-  }, [focusId, ready]);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setFlashId(null), 2500);
+  }, [focusId, items]);
+  useEffect(() => () => clearTimeout(timer.current), []);
   return flashId;
 }
 
@@ -300,7 +308,7 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const target = chatMessageOf(loc.value.path);
-  const flashId = useFocusMessage(scroller, pinned, target?.fleet === fleet ? target.message : null, items.length > 0);
+  const flashId = useFocusMessage(scroller, pinned, target?.fleet === fleet ? target.message : null, items);
   const linkSet = useMemo(() => computed(() => shipLinkSet(ships.value, fleet)), [fleet]).value;
   const linkShips = useMemo(() => shipsOfLinkSet(linkSet), [linkSet]);
   useLayoutEffect(() => {

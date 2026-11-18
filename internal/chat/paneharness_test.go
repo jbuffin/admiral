@@ -200,13 +200,18 @@ const claudeSession = "e959a44e-ab9a-4187-94ce-70d9a302497e"
 
 func claudeLine(t *testing.T, kind, id, text string) string {
 	t.Helper()
+	return claudeLineAt(t, kind, id, text, "2026-11-12T10:00:00.000Z")
+}
+
+func claudeLineAt(t *testing.T, kind, id, text, at string) string {
+	t.Helper()
 	msg := map[string]any{"role": kind, "content": text}
 	if kind == "assistant" {
 		msg["content"] = []map[string]any{{"type": "text", "text": text}}
 		msg["stop_reason"] = "end_turn"
 	}
 	b, _ := json.Marshal(map[string]any{"type": kind, "uuid": id, "sessionId": claudeSession, "message": msg,
-		"timestamp": "2026-11-12T10:00:00.000Z", "origin": map[string]any{"kind": "human"}, "promptSource": "typed"})
+		"timestamp": at, "origin": map[string]any{"kind": "human"}, "promptSource": "typed"})
 	return string(b) + "\n"
 }
 

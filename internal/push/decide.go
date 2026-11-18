@@ -86,19 +86,26 @@ func firstLine(s string) string {
 }
 
 var (
-	mdLink    = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+	mdLink = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
 	// Not #{1,6}: the tmux boundary test reads that as a tmux format.
-	mdHeading =regexp.MustCompile(`^\s*(##?#?#?#?#?|>)\s+`)
-	mdEmph    = regexp.MustCompile(`(\*\*|__|\*|` + "`" + `|~~)`)
-	mdUnder   = regexp.MustCompile(`(^|\s)_([^_]+)_(\s|[.,;:!?]|$)`)
+	mdHeading = regexp.MustCompile(`^\s*(##?#?#?#?#?|>)\s+`)
+	// Marks drop only where they pair around text, so `__init__` and `2 * 3 = 6` stay as written.
+	mdBold   = regexp.MustCompile(`\*\*(\S(?:[^*]*\S)?)\*\*`)
+	mdStar   = regexp.MustCompile(`\*(\S(?:[^*]*\S)?)\*`)
+	mdStrike = regexp.MustCompile(`~~(\S(?:[^~]*\S)?)~~`)
+	mdCode   = regexp.MustCompile("`([^`]+)`")
+	mdUnder  = regexp.MustCompile(`(^|\s)_([^_]+)_(\s|[.,;:!?]|$)`)
 )
 
-// plainText turns a line of markdown into the text a lock screen shows: links keep their text, marks drop.
+// plainText turns a line of markdown into the text a lock screen shows: links keep their text, paired marks drop.
 func plainText(s string) string {
 	s = mdLink.ReplaceAllString(s, "$1")
 	s = mdHeading.ReplaceAllString(s, "")
-	s = mdUnder.ReplaceAllString(s, "$1$2$3")
-	return mdEmph.ReplaceAllString(s, "")
+	s = mdCode.ReplaceAllString(s, "$1")
+	s = mdBold.ReplaceAllString(s, "$1")
+	s = mdStar.ReplaceAllString(s, "$1")
+	s = mdStrike.ReplaceAllString(s, "$1")
+	return mdUnder.ReplaceAllString(s, "$1$2$3")
 }
 
 type Outcome int
