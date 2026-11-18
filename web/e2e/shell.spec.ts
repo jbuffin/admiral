@@ -242,8 +242,14 @@ test('talking to a ship: the box sends, the message shows dimmed until the conve
   await expect(messageBox(page)).toBeEnabled();
   // A draft survives a visit to another tab.
   await messageBox(page).fill('A draft to keep');
+  // Leaving Terminal before the bridge joined, or letting its socket outlive the ship, logs a socket error.
+  const joined = page.waitForEvent('websocket', (ws) => /\/bridge\//.test(ws.url()));
   await viewTab(page, 'Terminal').tap();
+  const bridge = await joined;
+  await bridge.waitForEvent('framereceived');
+  const closed = bridge.waitForEvent('close');
   await viewTab(page, 'Conversation').tap();
+  await closed;
   await expect(messageBox(page)).toHaveValue('A draft to keep');
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
