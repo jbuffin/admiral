@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
 import { InstallPage } from './InstallPrompts';
-import { capabilitiesPath, chatSettingsPath, fleetPath, githubPath, go, installPath, limitsPath, loc, notificationsPath, preferencesBare, preferencesFleet, preferencesPath, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
+import { allowRulesPath, capabilitiesPath, chatSettingsPath, fleetPath, githubPath, go, installPath, limitsPath, loc, notificationsPath, preferencesBare, preferencesFleet, preferencesPath, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
 import { AllUsagePage, FleetUsagePage } from './UsagePage';
 import { NotificationsPage } from './NotificationsPage';
 import { RemoteAccess } from './RemoteAccessPage';
@@ -9,11 +9,12 @@ import { ChatSettingsPage } from './ChatSettingsPage';
 import { FleetPage } from './FleetPage';
 import { HarnessCapabilities } from './HarnessCapabilities';
 import { LimitsPage } from './LimitsPage';
+import { AllowRulesPage } from './AllowRulesPage';
 import { OrderSources } from './OrderSources';
 import { GitHubPage, githubSource } from './GitHubPage';
 import { needsSignIn } from './githubViews';
 
-const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', admiralbot: 'AdmiralBot', github: 'GitHub', sources: 'Plugin sources', capabilities: 'Harness capabilities', usage: 'Usage', 'all-usage': 'Usage', remote: 'Remote access', install: 'Install app', notifications: 'Notifications', limits: 'Limits and quiet hours' };
+const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', admiralbot: 'AdmiralBot', github: 'GitHub', sources: 'Plugin sources', capabilities: 'Harness capabilities', usage: 'Usage', 'all-usage': 'Usage', remote: 'Remote access', install: 'Install app', notifications: 'Notifications', limits: 'Limits and quiet hours', 'allow-rules': 'Allow rules' };
 
 function NavLink({ path, current, children, dot }: { path: string; current: boolean; children: string; dot?: { label: string } }) {
   const search = fleetSearch.value;
@@ -80,6 +81,9 @@ function PreferencesNav({ current, page }: { current: string; page: PreferencesP
           </NavLink>
           <NavLink path={limitsPath(f.key)} current={f.key === current && page === 'limits'}>
             Limits and quiet hours
+          </NavLink>
+          <NavLink path={allowRulesPath(f.key)} current={f.key === current && page === 'allow-rules'}>
+            Allow rules
           </NavLink>
         </div>
       ))}
@@ -149,7 +153,7 @@ export function Preferences({ phone }: { phone: boolean }) {
                 <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
                 {fleet.name} fleet
               </p>
-              {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'admiralbot' ? <ChatSettingsPage key={fleet.key} fleet={fleet} /> : page === 'usage' ? <FleetUsagePage key={fleet.key} fleetKey={fleet.key} phone={phone} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : page === 'limits' ? <LimitsPage key={fleet.key} fleet={fleet} /> : page === 'github' ? <GitHubPage key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
+              {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'admiralbot' ? <ChatSettingsPage key={fleet.key} fleet={fleet} /> : page === 'usage' ? <FleetUsagePage key={fleet.key} fleetKey={fleet.key} phone={phone} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : page === 'limits' ? <LimitsPage key={fleet.key} fleet={fleet} /> : page === 'allow-rules' ? <AllowRulesPage key={fleet.key} fleet={fleet} /> : page === 'github' ? <GitHubPage key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
             </>
           ) : null}
         </div>
