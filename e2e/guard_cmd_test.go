@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -154,6 +155,47 @@ func TestShipGuardRefusesOnAnAutopilotShip(t *testing.T) {
 			t.Errorf("an outcome line holds the command: %s", b)
 		}
 	}
+}
+
+// A scout's guard runs from the built binary with only ADMIRAL_SCOUT naming the checkout: a Write into it
+// exits 2 with a reason that names no path and leaves a guard_denied line with the scout rule, a Write
+// outside it passes.
+func TestScoutGuardRefusesAWriteIntoTheCheckoutThroughTheBinary(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout := filepath.Join(root, "checkout")
+	if err := os.Mkdir(checkout, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(path string) string {
+		b, _ := json.Marshal(map[string]any{"hook_event_name": "PreToolUse", "tool_name": "Write",
+			"tool_input": map[string]any{"file_path": path, "content": "x"}, "cwd": checkout})
+		return string(b)
+	}
+	env := shipEnv(w.home, "scoutship", "ADMIRAL_SCOUT="+checkout)
+
+	res := w.runGuardCmd(write(filepath.Join(checkout, "secret-name.txt")), env...)
+	if res.code != 2 || res.stdout != "" || strings.TrimSpace(res.stderr) == "" || strings.Contains(res.stderr, "secret-name") {
+		t.Errorf("Write into the checkout: exit %d, stdout %q, stderr %q, want exit 2, no stdout and a reason that names no path", res.code, res.stdout, res.stderr)
+	}
+	var denied []outRec
+	for _, m := range w.outcomeLog() {
+		if m["event"] == "guard_denied" {
+			denied = append(denied, m)
+		}
+	}
+	if len(denied) != 1 || denied[0]["ship"] != "scoutship" || denied[0]["tool"] != "Write" || denied[0]["rule"] != "scout_edit" {
+		t.Errorf("guard_denied lines = %v, want one for scoutship, tool Write, rule scout_edit", denied)
+	}
+	if b, _ := json.Marshal(w.outcomeLog()); strings.Contains(string(b), "secret-name") {
+		t.Errorf("an outcome line holds the path: %s", b)
+	}
+
+	w.runGuardCmd(write(filepath.Join(root, "notes.md")), env...).requireQuiet(t)
 }
 
 // The same cue on a ship launched by hand: the guard runs and lets it through,
