@@ -66,6 +66,11 @@ func (c *Client) UpdateBranch(ctx context.Context, url string) error {
 	return c.runMutation(ctx, "", nil, []string{"pr", "update-branch", url}, "gh could not update the branch")
 }
 
+// MarkReadyForReview is not built yet.
+func (c *Client) MarkReadyForReview(ctx context.Context, url string) error {
+	return errors.New("marking a pull request ready for review is not built yet")
+}
+
 // MergeStack runs `gh stack merge N --yes --merge-method METHOD` for GitHub's stack number N, in an empty folder of its
 // own so gh-stack reads no repository's git config; N is an integer from GitHub, never text from a request.
 func (c *Client) MergeStack(ctx context.Context, repo string, stackNumber int, method string) error {

@@ -48,7 +48,7 @@ func TestGitHubSourceServesAPullRequestOrderWithItsStateAndAnIssueWithout(t *tes
 			if !has || json.Unmarshal(pr, &got) != nil {
 				t.Fatalf("the pull request order has no pr object: %+v", served(t, o))
 			}
-			want := map[string]any{"state": "OPEN", "review": "APPROVED", "checks": "SUCCESS", "mergeable": "MERGEABLE", "conflicts": false, "ready": true}
+			want := map[string]any{"state": "OPEN", "review": "APPROVED", "checks": "SUCCESS", "mergeable": "MERGEABLE", "conflicts": false, "ready": true, "draft": false}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("pr = %v, want %v (a ship's prs[] fields, without the url)", got, want)
 			}
@@ -56,6 +56,31 @@ func TestGitHubSourceServesAPullRequestOrderWithItsStateAndAnIssueWithout(t *tes
 			if has {
 				t.Errorf("the issue order carries pr %s, want none", pr)
 			}
+		}
+	}
+}
+
+func TestGitHubSourceServesWhetherAPullRequestOrderIsADraft(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	node := func(n int, draft string) string {
+		return fmt.Sprintf(`{"number":%d,"title":"PR %d","url":"https://github.com/acme/widgets/pull/%d","repository":{"nameWithOwner":"acme/widgets","url":"https://github.com/acme/widgets"},"labels":{"nodes":[]},`+
+			`"state":"OPEN","isDraft":%s,"reviewDecision":null,"mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","statusCheckRollup":null}`, n, n, n, draft)
+	}
+	g.write("search/bugs.match", "label:bug")
+	g.write("search/bugs.json", `{"data":{"search":{"nodes":[`+node(20, "true")+`,`+node(21, "false")+`]}}}`)
+	f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
+	f.startSources()
+	src := f.waitView("gha", "the bugs", func(s SourceView) bool { return len(s.orders("bugs")) == 2 })
+
+	want := map[string]bool{"acme/widgets#20": true, "acme/widgets#21": false}
+	for _, o := range src.view("bugs").Orders {
+		var pr map[string]any
+		if raw, has := served(t, o)["pr"]; !has || json.Unmarshal(raw, &pr) != nil {
+			t.Fatalf("order %s has no pr object", o.ID)
+		}
+		if got, has := pr["draft"]; !has || got != want[o.ID] {
+			t.Errorf("order %s pr.draft = %v (present %v), want %v", o.ID, got, has, want[o.ID])
 		}
 	}
 }

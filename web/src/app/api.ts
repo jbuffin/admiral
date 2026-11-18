@@ -113,6 +113,8 @@ export interface MooredPR {
   /** The branch the whole stack conflicts with, set on its top PR when the server's check found it. */
   conflicts_with_base?: string;
   ready?: boolean;
+  /** True while the PR is a draft; GitHub's own word, not Admiral's ready-to-merge. */
+  draft?: boolean;
   // New waking events since the ship's last round, and the command that answers them; both only on a moored ship's open PR.
   feedback?: number;
   answer?: string;

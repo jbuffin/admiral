@@ -39,6 +39,8 @@ type GitHub interface {
 	LinkStack(ctx context.Context, repo, base string, numbers []int) error
 	// UpdateBranch merges the base into the PR's head with gh pr update-branch. Only the engineer's Update branch act calls it. Its errors are MergePR's.
 	UpdateBranch(ctx context.Context, url string) error
+	// MarkReadyForReview takes the draft PR at url out of draft with gh pr ready. Only the engineer's Mark ready for review act calls it. Its errors are MergePR's.
+	MarkReadyForReview(ctx context.Context, url string) error
 	// ReRequestReview asks GitHub to request another review from login, a GitHub reviewer of the pull request at prURL.
 	// An error is GitHub's own refusal, a failed lookup of the ids, a reviewer that is not a User or a Bot, no review of login in
 	// the window the lookup reads, or says the call did not finish in time.
