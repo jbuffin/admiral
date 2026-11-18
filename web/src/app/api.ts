@@ -673,6 +673,7 @@ export interface PageNotice {
   text: string;
   tone?: string;
   link?: { label: string; url: string } | null;
+  action?: PageAction;
 }
 export interface ModulePageData {
   state: PageState;
@@ -719,10 +720,16 @@ export interface RunAnswer {
 }
 /** Above the server's 60 s run timeout, so its own timeout message reaches the page. */
 const RUN_TIMEOUT_MS = 90_000;
-const actionPath = (key: string, row: string, action: string, leaf: string) => `${src(key)}/rows/${encodeURIComponent(row)}/actions/${encodeURIComponent(action)}/${leaf}`;
-export const fetchModuleForm = (key: string, row: string, action: string) => call<ModuleForm>('POST', actionPath(key, row, action, 'form'), {});
-export const runModuleAction = (key: string, row: string, action: string, values: Record<string, string | string[]>) =>
-  call<RunAnswer>('POST', actionPath(key, row, action, 'run'), { values }, undefined, { timeoutMs: RUN_TIMEOUT_MS });
+/** What a module action hangs on: a row, or a notice. */
+export interface ActionTarget {
+  notice?: boolean;
+  id: string;
+}
+const actionPath = (key: string, t: ActionTarget, action: string, leaf: string) =>
+  `${src(key)}/${t.notice ? 'notices' : 'rows'}/${encodeURIComponent(t.id)}/actions/${encodeURIComponent(action)}/${leaf}`;
+export const fetchModuleForm = (key: string, target: ActionTarget, action: string) => call<ModuleForm>('POST', actionPath(key, target, action, 'form'), {});
+export const runModuleAction = (key: string, target: ActionTarget, action: string, values: Record<string, string | string[]>) =>
+  call<RunAnswer>('POST', actionPath(key, target, action, 'run'), { values }, undefined, { timeoutMs: RUN_TIMEOUT_MS });
 export const fetchModulePage = (key: string) => call<ModulePageData>('GET', `${src(key)}/page`);
 
 export interface Source {

@@ -81,10 +81,11 @@ type Group struct {
 
 // Notice is a line a module says about itself, drawn above its groups.
 type Notice struct {
-	ID   string `json:"id"`
-	Text string `json:"text"`
-	Tone string `json:"tone"`
-	Link *Link  `json:"link,omitempty"`
+	ID     string  `json:"id"`
+	Text   string  `json:"text"`
+	Tone   string  `json:"tone"`
+	Link   *Link   `json:"link,omitempty"`
+	Action *Action `json:"action,omitempty"`
 }
 
 type Page struct {
@@ -288,10 +289,11 @@ func parseNotices(raw []json.RawMessage) ([]Notice, error) {
 	seen := map[string]bool{}
 	for _, n := range raw {
 		var item struct {
-			ID   json.RawMessage `json:"id"`
-			Text json.RawMessage `json:"text"`
-			Tone json.RawMessage `json:"tone"`
-			Link json.RawMessage `json:"link"`
+			ID     json.RawMessage `json:"id"`
+			Text   json.RawMessage `json:"text"`
+			Tone   json.RawMessage `json:"tone"`
+			Link   json.RawMessage `json:"link"`
+			Action json.RawMessage `json:"action"`
 		}
 		if err := decodeInto(n, &item); err != nil {
 			return nil, err
@@ -314,6 +316,9 @@ func parseNotices(raw []json.RawMessage) ([]Notice, error) {
 		}
 		notice := Notice{ID: id, Text: text, Tone: tone}
 		notice.Link, _ = parseLink(item.Link)
+		if len(item.Action) > 0 && string(item.Action) != "null" {
+			notice.Action = parseAction(item.Action)
+		}
 		out = append(out, notice)
 	}
 	return out, nil

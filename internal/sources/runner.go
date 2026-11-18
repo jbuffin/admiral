@@ -65,13 +65,13 @@ type runner struct {
 	kinds       []MessageKind
 	page        Page // the last good page.get; it outlives the plugin's restarts
 	hasPage     bool
-	stepActions map[string][]Action // per row, the module actions in its last good row.get
-	runs        map[string]bool     // rows with a module action running
-	pageErr     string              // the last page.get the plugin failed, until a good one
-	pageVer     int                 // moves on every change of the page a client reads
-	pageRows    []string            // what the last bump named, none meaning every row
-	pageState   string              // the state the last bump saw
-	noPage      bool                // an initialize answer has been read and it did not list page
+	stepActions map[string][]Action   // per row, the module actions in its last good row.get
+	runs        map[actionTarget]bool // rows and notices with a module action running
+	pageErr     string                // the last page.get the plugin failed, until a good one
+	pageVer     int                   // moves on every change of the page a client reads
+	pageRows    []string              // what the last bump named, none meaning every row
+	pageState   string                // the state the last bump saw
+	noPage      bool                  // an initialize answer has been read and it did not list page
 	schema      json.RawMessage
 	panels      []Panel
 	warnings    []string   // the router's, for a built-in GitHub source

@@ -41,18 +41,27 @@ export function ModuleSkeleton({ name, title, phone }: { name: string; title: bo
   );
 }
 
+function NoticeLine({ n }: { n: PageNotice }) {
+  const updating = useUpdating({ notice: true, id: n.id });
+  return (
+    <li class="mnotice" data-tone={noticeTone(n.tone)}>
+      <span class="mnotice-text">{n.text}</span>
+      {n.link && isWebUrl(n.link.url) ? (
+        <a href={n.link.url} target="_blank" rel="noopener noreferrer">
+          {n.link.label}
+        </a>
+      ) : null}
+      {updating ? <span class="mact-updating">updating…</span> : null}
+      <ModuleActions row={n.id} notice one={n.action} />
+    </li>
+  );
+}
+
 function Notices({ notices }: { notices: PageNotice[] }) {
   return notices.length === 0 ? null : (
     <ul class="mnotices">
       {notices.map((n) => (
-        <li key={n.id} class="mnotice" data-tone={noticeTone(n.tone)}>
-          <span class="mnotice-text">{n.text}</span>
-          {n.link && isWebUrl(n.link.url) ? (
-            <a href={n.link.url} target="_blank" rel="noopener noreferrer">
-              {n.link.label}
-            </a>
-          ) : null}
-        </li>
+        <NoticeLine key={n.id} n={n} />
       ))}
     </ul>
   );
@@ -71,7 +80,7 @@ function Chips({ chips }: { chips?: PageChip[] }) {
 }
 
 function ModuleRow({ row, phone, selected, onOpen }: { row: PageRow; phone: boolean; selected: boolean; onOpen: (id: string) => void }) {
-  const updating = useUpdating(row.id);
+  const updating = useUpdating({ id: row.id });
   return (
     <li class={`${phone ? 'orow-phone' : 'orow'}${selected ? ' selected' : ''}`}>
       <button type="button" class="orow-open" aria-label={`Open ${row.title}`} aria-pressed={selected} disabled={!openableRow(row.id)} onClick={() => onOpen(row.id)}>
