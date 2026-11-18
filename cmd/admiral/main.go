@@ -514,6 +514,7 @@ func serve(args []string) error {
 	chatService := &chat.Service{Actor: minter, Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	shipService.ChatPrompt = chatService.PromptKey
+	shipService.PromptKey = chatService.PromptKey
 	chatService.Findings = shipService.Findings()
 	chatService.Ships, chatService.Campaigns, chatService.Inbox = shipService.List, followStore.List, inboxService.List
 	sourceService.IssueClaims = shipService.Claims
@@ -604,6 +605,9 @@ func serve(args []string) error {
 	shipService.PostLaunchLine = chatService.PostLaunchLine
 	shipCards := newShipCardRunner(absDir, chatService.PostShipCard, shipService.List, host.Ready())
 	shipCards.cards.QueueReports(shipReportHook(chatService.EnqueueShipReport, shipService.ReportResult))
+	shipCards.cards.QueueScoutReports(chatService.EnqueueScoutReport)
+	shipCards.cards.TurnOver(chatService.TurnOver)
+	shipCards.cards.KeptFindings(chatService.KeptFindings)
 	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop, Launch: routineShips{shipService}.Launch}
 	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
 	routineService.Listed = listedShips(allShips)

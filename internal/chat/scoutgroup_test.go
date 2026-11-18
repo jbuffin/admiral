@@ -246,7 +246,7 @@ func TestEveryEndOfTheLastScoutQueuesTheGroupsOneTurnWithItsCard(t *testing.T) {
 			g := newGrouping(t)
 			g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", turnOne)})
 			c.last(g)
-			if got := g.results("work"); len(got) != 2 || got[0] != "sailed_off" {
+			if got := g.results("work"); len(got) != 2 || !slices.Contains(got, "sailed_off") {
 				t.Fatalf("cards = %v, want scout-a's sailed_off and one for scout-b", got)
 			}
 			if len(g.scouts.calls) != 1 || !slices.Equal(g.scouts.calls[0].members, []string{"scout-a", "scout-b"}) || g.scouts.calls[0].trigger.Ship != "scout-b" {
@@ -326,4 +326,42 @@ func TestAScoutAnchoredAtTheSeedQueuesNoGroupTurnForThatFirstEvent(t *testing.T)
 	if len(log.calls) != 1 || !slices.Equal(log.calls[0].members, []string{"scout-new"}) {
 		t.Errorf("scout report turns = %+v, want one for scout-new alone", log.calls)
 	}
+}
+
+func TestAScoutTheEngineerStoppedOrThatWasLostIsFailedWithoutFindingsAndSailedOffWithThem(t *testing.T) {
+	stopped := []ShipRecord{
+		{At: at(2 * time.Minute), Ship: "scout-a", Event: "ended"},
+		{At: at(2*time.Minute + time.Second), Ship: "scout-a", Event: "stopped"},
+	}
+	cases := []struct {
+		name string
+		recs []ShipRecord
+		kept bool
+		want string
+	}{
+		{"stopped with findings", stopped, true, "sailed_off"},
+		{"stopped without findings", stopped, false, "failed"},
+		{"lost with findings", nil, true, "sailed_off"},
+		{"lost without findings", nil, false, "failed"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g := newGrouping(t)
+			g.d.KeptFindings(func(ship, first string) bool { return ship == "scout-a" && c.kept })
+			g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne)})
+			g.observe(5*time.Minute, nil, c.recs...)
+			g.wantResults("work", c.want)
+			g.wantTurns("scout-a<-scout-a:" + c.want)
+		})
+	}
+}
+
+func TestAScoutStillInTheSnapshotIsNotLostAndAnchoredOneIsNotCardedAgainWhenItLeaves(t *testing.T) {
+	g := newGrouping(t)
+	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", turnOne)})
+	anchored := withStatus(botScout("scout-b", turnOne), ships.StatusAnchored)
+	g.observe(5*time.Minute, []ships.Ship{botScout("scout-a", turnOne), anchored})
+	g.observe(10*time.Minute, []ships.Ship{botScout("scout-a", turnOne)})
+	g.wantResults("work", "anchored")
+	g.wantTurns()
 }

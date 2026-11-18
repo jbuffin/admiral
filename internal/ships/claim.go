@@ -125,7 +125,10 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 	if f, ok := actor.FleetOf(ctx); ok {
 		req.ByFleet = f
 		// The server keys an actor's freeform launch on the chat prompt in force; a client-sent id is dropped.
-		req.ChatMessage = ""
+		req.ChatMessage, req.PromptKey = "", ""
+		if req.Scout && s.PromptKey != nil {
+			req.PromptKey = s.PromptKey(f)
+		}
 		if req.Source == "" && req.OrderID == "" && len(req.Issues) == 0 && s.ChatPrompt != nil {
 			req.ChatMessage = s.ChatPrompt(f)
 		}
