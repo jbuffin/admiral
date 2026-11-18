@@ -570,6 +570,7 @@ test("a browser that blocks storage still shows the confirm step and files the c
   };
   vi.spyOn(Storage.prototype, "getItem").mockImplementation(blocked);
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(blocked);
+  expect(() => localStorage.getItem("x")).toThrow();
   opened();
   expect(chosen(await toConfirm())).toBe("acme/gadgets");
   fireEvent.click(screen.getByRole("button", { name: "Create campaign" }));

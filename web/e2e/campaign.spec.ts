@@ -251,13 +251,14 @@ test('on the iPad, a person follows a campaign by searching for it and another b
   await repoSelect.selectOption((await repoSelect.locator('option', { hasText: /acme\/widgets$/ }).getAttribute('value')) as string);
   await draftedTitle.fill(NEW_PARENT.title);
   await expect(modal.getByText('Drafted', { exact: true })).toHaveCount(1);
+  const writesBefore = ghWrites(admiral).length;
   await press(modal.getByRole('button', { name: 'Create campaign', exact: true }));
   await expect(modal).toBeHidden();
   await expect(main.getByRole('heading', { name: NEW_PARENT.title })).toBeVisible();
   await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
   await expect.poll(followedIn).toContain(NEW_PARENT.title);
   // One issue was filed on the chosen repo, with the engineer's title and no sub-issue link.
-  expect(ghWrites(admiral).filter((w) => w.endpoint.startsWith('repos/'))).toEqual([
+  await expect.poll(() => ghWrites(admiral).slice(writesBefore)).toEqual([
     { method: 'POST', endpoint: 'repos/acme/widgets/issues', host: 'github.com', stdin: { title: NEW_PARENT.title, body: expect.any(String) } },
   ]);
 
