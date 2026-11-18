@@ -99,6 +99,7 @@ func newTwoFleets(t *testing.T) *twoFleets {
 		FleetKeys:  func() []string { return []string{"work", "home"} },
 		ActorToken: func(fleet string) string { return minter.Token(fleet, "nonce-"+fleet) },
 		ShipFleet:  shipService.FleetOf,
+		ShipFound:  shipService.Exists,
 		Inbox:      inboxService.List,
 		Source:     func(string) (string, bool) { return "", false },
 		Campaign:   store.Get,
@@ -138,6 +139,16 @@ func TestTheServersGuardRefusesAnotherFleetsShipAndLetsItsOwnThrough(t *testing.
 	refusedNaming(t, f.as("work", "POST", "/api/ships/dory/dismiss", ""), "work dismissing home's ship", "home")
 	if rec := f.as("work", "POST", "/api/ships/saltpaw/dismiss", ""); rec.Code != http.StatusOK {
 		t.Errorf("work dismissing its own moored ship: %d %s; want 200", rec.Code, rec.Body)
+	}
+}
+
+func TestTheServersGuardRefusesAShipItCannotFindAsNotFound(t *testing.T) {
+	f := newTwoFleets(t)
+	for _, id := range []string{"Dory", "Salt%20Paw", "sailed-off"} {
+		rec := f.as("work", "GET", "/api/ships/"+id+"/conversation", "")
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "not found") || !strings.Contains(rec.Body.String(), "list_ships") {
+			t.Errorf("%s: %d %s; want 403 saying the ship was not found and to use list_ships", id, rec.Code, rec.Body)
+		}
 	}
 }
 

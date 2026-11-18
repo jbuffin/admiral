@@ -278,6 +278,9 @@ func fleetGetHarness(rest string) func(*mcpClient, json.RawMessage) (string, err
 	}
 }
 
+// The session is the tmux name list_ships gives; the display name is not a key.
+const sessionDoc = "the ship's session, as list_ships gives it (for example vesper-vane, not the display name Vesper Vane)"
+
 func plainGet(path string) func(*mcpClient, json.RawMessage) (string, error) {
 	return func(c *mcpClient, _ json.RawMessage) (string, error) { return c.get(path) }
 }
@@ -285,7 +288,7 @@ func plainGet(path string) func(*mcpClient, json.RawMessage) (string, error) {
 var mcpTools = []mcpTool{
 	{"list_ships", "List the ships of this fleet with their status, what they are working on and what they need.", obj(nil, nil), plainGet("/api/ships")},
 	{"read_conversation", "Read a ship's conversation: what the engineer and the agent said, its tool calls and its pending questions.",
-		obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}),
+		obj([]string{"session"}, map[string]any{"session": str(sessionDoc)}),
 		func(c *mcpClient, raw json.RawMessage) (string, error) {
 			var a struct{ Session string }
 			if err := json.Unmarshal(raw, &a); err != nil {
@@ -376,11 +379,11 @@ var mcpTools = []mcpTool{
 			return c.post("/api/inbox/"+url.PathEscape(a.Session)+"/"+url.PathEscape(a.ID)+"/answer", map[string]json.RawMessage{"answers": a.Answers})
 		}},
 	{"next_prompt", "Give a ship whose turn has ended its next prompt. Refused while the ship is mid-turn or waiting on something else; a moored ship takes wake_ship.",
-		obj([]string{"session", "text"}, map[string]any{"session": str("the ship's session name"), "text": str("the prompt")}), shipPost("/next", true)},
+		obj([]string{"session", "text"}, map[string]any{"session": str(sessionDoc), "text": str("the prompt")}), shipPost("/next", true)},
 	{"wake_ship", "Wake a moored ship, optionally with text after its resume prompt.",
-		obj([]string{"session"}, map[string]any{"session": str("the moored ship's session name"), "text": str("optional text for the new round")}), shipPost("/wake", true)},
-	{"stop_ship", "Stop a ship.", obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}), shipPost("/stop", false)},
-	{"dismiss_ship", "Dismiss an anchored ship.", obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}), shipPost("/dismiss", false)},
+		obj([]string{"session"}, map[string]any{"session": str("the moored ship's session, as list_ships gives it (for example vesper-vane, not Vesper Vane)"), "text": str("optional text for the new round")}), shipPost("/wake", true)},
+	{"stop_ship", "Stop a ship.", obj([]string{"session"}, map[string]any{"session": str(sessionDoc)}), shipPost("/stop", false)},
+	{"dismiss_ship", "Dismiss an anchored ship.", obj([]string{"session"}, map[string]any{"session": str(sessionDoc)}), shipPost("/dismiss", false)},
 	{"list_routines", "List this fleet's routines: when each runs, its mode, and whether it is on.", obj(nil, nil), fleetGet("/routines")},
 	{"draft_routine", "Draft a routine for this fleet from the engineer's words, and get back a summary and a link to the draft. It drafts and never saves: the engineer opens the link, reviews it and saves it. Turning a routine on, saving or editing one is the engineer's.",
 		obj([]string{"prose"}, map[string]any{"prose": str("what the engineer wants the routine to do and when, in their own words")}), draftRoutine},

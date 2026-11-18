@@ -127,12 +127,19 @@ func hookDecision(event string, p hookPayload) hookWrite {
 	switch event {
 	case "PermissionRequest":
 		return hookWrite{state: "needs_you", reason: withToken("permission", p.ToolName)}
-	case "PreToolUse":
+	case "PreToolUse", "PostToolUse":
+		// A background subagent keeps running tools while the lead waits on a question; its hooks must not undo needs_you.
+		if p.SubagentID != "" {
+			return hookWrite{}
+		}
+		if event == "PostToolUse" {
+			return hookWrite{state: "working"}
+		}
 		if p.ToolName == "AskUserQuestion" {
 			return hookWrite{state: "needs_you", reason: "question"}
 		}
 		return hookWrite{state: "working"}
-	case "UserPromptSubmit", "PostToolUse", "postToolUse":
+	case "UserPromptSubmit", "postToolUse":
 		return hookWrite{state: "working"}
 	case "Interrupt":
 		// Codex runs this hook as it aborts the turn, so it is idle at its prompt: the same as a Stop, and it covers an Esc typed in the terminal.

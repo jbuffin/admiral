@@ -16,6 +16,9 @@ func TestHookState(t *testing.T) {
 		{"PermissionRequest", "PermissionRequest", `{"tool_name":"Bash"}`, "needs_you"},
 		{"AskUserQuestion", "PreToolUse", `{"tool_name":"AskUserQuestion"}`, "needs_you"},
 		{"PreToolUse of another tool", "PreToolUse", `{"tool_name":"Bash"}`, "working"},
+		// Recorded on Claude Code 2.1.327: a background subagent's tool hooks carry agent_id and fire while the lead's question waits.
+		{"PreToolUse inside a subagent", "PreToolUse", `{"tool_name":"Bash","agent_id":"a0f790cb4a518e0f9","agent_type":"general-purpose"}`, ""},
+		{"PostToolUse inside a subagent", "PostToolUse", `{"tool_name":"Bash","agent_id":"a0f790cb4a518e0f9","agent_type":"general-purpose"}`, ""},
 		{"UserPromptSubmit", "UserPromptSubmit", `{"prompt":"go"}`, "working"},
 		{"PostToolUse whose tool_response is a string", "PostToolUse", `{"tool_name":"Read","tool_response":"file text"}`, "working"},
 		{"codex Interrupt", "Interrupt", `{"turn_id":"01a15222-ed87"}`, "needs_you"},

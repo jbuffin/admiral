@@ -30,6 +30,7 @@ func newRig(t *testing.T) *rig {
 		}
 		return "", false
 	}
+	of2 := func(id string) bool { _, ok := of(id); return ok }
 	r.g = &actor.Guard{
 		Tokens: func(tok string) (string, bool) {
 			switch tok {
@@ -41,6 +42,7 @@ func newRig(t *testing.T) *rig {
 			return "", false
 		},
 		ShipFleet:     of,
+		ShipFound:     func(id string) bool { return id == "ghost" || id != "" && of2(id) },
 		ItemFleet:     func(session, _ string) (string, bool) { return of(session) },
 		SourceFleet:   of,
 		CampaignFleet: of,
@@ -210,6 +212,24 @@ func TestAnActorTouchingAnotherFleetIsRefusedByNamingIt(t *testing.T) {
 		rec := r.do(c.method, c.target, c.body, "tok-personal", local)
 		if rec.Code != 403 || r.reached != 0 || !strings.Contains(rec.Body.String(), "work") {
 			t.Errorf("%s %s %s: code %d, reached %d, body %q; want 403 naming fleet work and nothing reached", c.method, c.target, c.body, rec.Code, r.reached, rec.Body)
+		}
+	}
+}
+
+func TestAShipThatCannotBeFoundIsRefusedAsNotFoundNotAsAnUnknownFleet(t *testing.T) {
+	for _, c := range []struct{ id, want string }{
+		{"Vesper%20Vane", "not found"},
+		{"sailed-off", "not found"},
+		{"ghost", "unknown fleet"},
+	} {
+		r := newRig(t)
+		rec := r.do("GET", "/api/ships/"+c.id+"/conversation", "", "tok-personal", local)
+		body := rec.Body.String()
+		if rec.Code != 403 || r.reached != 0 || !strings.Contains(body, c.want) {
+			t.Errorf("%s: code %d, reached %d, body %q; want 403 saying %q", c.id, rec.Code, r.reached, body, c.want)
+		}
+		if c.want == "not found" && !strings.Contains(body, "list_ships") {
+			t.Errorf("%s: body %q does not point at list_ships", c.id, body)
 		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -286,9 +287,14 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	defer mu.(*sync.Mutex).Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+	// The card shows from the transcript while the answer checks the pane, so the log is where a refusal says which one disagreed.
+	refuse := func(status int, why string) {
+		log.Printf("admiral: answer to %s refused: %d %s (card %s, reason %q)", t.what, status, why, req.Card, req.Reason)
+		writeError(w, status, why)
+	}
 	keys, plan, why := s.answerKeys(ctx, t, session, req)
 	if why != "" {
-		writeError(w, http.StatusConflict, why)
+		refuse(http.StatusConflict, why)
 		return
 	}
 	if plan != nil {
@@ -296,7 +302,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		// Claude clips its menu to the pane, and a phone's terminal leaves the pane too short for the plan to read the menu.
 		restore, err := tm.GrowWindow(ctx, t.pane, planCols, planRows)
 		if err != nil {
-			writeError(w, http.StatusBadGateway, "could not send the answer: "+err.Error())
+			refuse(http.StatusBadGateway, "could not send the answer: "+err.Error())
 			return
 		}
 		why, err := runPlan(ctx, *plan, paneIO{
@@ -306,14 +312,14 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		_ = restore(ctx)
 		switch {
 		case err != nil:
-			writeError(w, http.StatusBadGateway, "could not send the answer: "+err.Error())
+			refuse(http.StatusBadGateway, "could not send the answer: "+err.Error())
 			return
 		case why != "":
-			writeError(w, http.StatusConflict, why)
+			refuse(http.StatusConflict, why)
 			return
 		}
 	} else if err := s.tmux().SendLiteral(ctx, t.pane, keys); err != nil {
-		writeError(w, http.StatusBadGateway, "could not send the answer: "+err.Error())
+		refuse(http.StatusBadGateway, "could not send the answer: "+err.Error())
 		return
 	}
 	if req.Choice == "deny" {
