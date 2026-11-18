@@ -7,7 +7,7 @@ import (
 )
 
 func scoutArgs(extra string) string {
-	return `{"dir":"/code/widget","harness":"claude","text":"find the flaky test","scout":true` + extra + `}`
+	return `{"dir":"/code/widget","harness":"claude","text":"find the flaky test","scout":true,"reason":"to find the flaky test"` + extra + `}`
 }
 
 func TestAScoutLaunchPostsAnAutopilotScoutAndSaysSo(t *testing.T) {

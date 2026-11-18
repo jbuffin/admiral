@@ -102,6 +102,8 @@ type Request struct {
 	Unattended bool `json:"-"`
 	// OnInstruction marks a launch AdmiralBot makes on the engineer's instruction in the chat; set only by the launch route from the caller's token, never from the body.
 	OnInstruction bool `json:"-"`
+	// Reason is the one line AdmiralBot gives for a chat launch, shown in the chat as the launch line.
+	Reason string `json:"reason"`
 	// TriggerID is the id of the trigger-log record the launch answers; the `launched` outcome points at it.
 	TriggerID string `json:"-"`
 	// WorkerLaunched marks a ship started by an outside event, which gets the fleet's Guidance in its prompt.

@@ -468,7 +468,7 @@ func TestReadCampaignWithNoIdIsRefusedWithoutCallingTheServer(t *testing.T) {
 }
 
 func launchArgs(skill string, extra string) string {
-	return `{"dir":"/code/widget","harness":"claude","skill":"` + skill + `","text":"fix the build"` + extra + `}`
+	return `{"dir":"/code/widget","harness":"claude","skill":"` + skill + `","text":"fix the build","reason":"to fix the build"` + extra + `}`
 }
 
 func TestEveryLaunchIsAutopilotUnlessTheEngineerSaidWithMe(t *testing.T) {
@@ -642,7 +642,7 @@ func TestAskQuestionReportsAWithdrawnQuestion(t *testing.T) {
 func TestALaunchSendsEveryInputItWasGivenAndOmitsTheRest(t *testing.T) {
 	a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })
 	a.env(t, mcpToken)
-	args := `{"dir":"/code/widget","harness":"claude","skill":"commodore","text":"fix the build","source":"notes","order_id":"o-1",` +
+	args := `{"dir":"/code/widget","harness":"claude","skill":"commodore","text":"fix the build","reason":"to fix the build","source":"notes","order_id":"o-1",` +
 		`"clone":true,"clone_repo":"jbuffin/widget","anyway":true,"crew":["a","b"],"resources":["phone","bench"],"model":"opus","effort":"high"}`
 	if _, _, err := serve(t, call(1, "launch_ship", args)); err != nil {
 		t.Fatal(err)
@@ -653,7 +653,7 @@ func TestALaunchSendsEveryInputItWasGivenAndOmitsTheRest(t *testing.T) {
 	}
 	want := map[string]any{"dir": "/code/widget", "harness": "claude", "text": "fix the build", "source": "notes", "order_id": "o-1",
 		"clone": true, "clone_repo": "jbuffin/widget", "anyway": true, "crew": []any{"a", "b"}, "fleet": "work",
-		"resources": []any{"phone", "bench"}, "model": "opus", "effort": "high"}
+		"resources": []any{"phone", "bench"}, "model": "opus", "effort": "high", "reason": "to fix the build"}
 	for k, v := range want {
 		if mustJSON(got[0].Body[k]) != mustJSON(v) {
 			t.Errorf("body %s = %s, want %s", k, mustJSON(got[0].Body[k]), mustJSON(v))
