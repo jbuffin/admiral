@@ -478,3 +478,14 @@ func bareName(n string) string {
 	}
 	return b
 }
+
+// Carrying returns the installed invocation names on a harness that carry name: the installed name equals it, or its part after "plugin:" does.
+func Carrying(harness string, environ []string, dir, name string) []string {
+	var out []string
+	for _, n := range Installed(harness, environ, dir) {
+		if n == name || bareName(n) == name {
+			out = append(out, n)
+		}
+	}
+	return out
+}

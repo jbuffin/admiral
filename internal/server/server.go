@@ -101,6 +101,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/ws", s.serveWS)
 	mux.HandleFunc("GET /api/config", s.serveConfig)
 	mux.HandleFunc("PUT /api/fleets/{key}", s.serveFleetSave)
+	mux.HandleFunc("GET /api/fleets/{key}/drafting", s.serveDraftingGet)
+	mux.HandleFunc("PUT /api/fleets/{key}/drafting", s.serveDraftingPut)
 	mux.HandleFunc("GET /api/version", s.serveVersion)
 	mux.HandleFunc("GET /api/logos/{harness}", serveLogo)
 	for _, m := range s.Modules {
