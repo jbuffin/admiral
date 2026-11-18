@@ -70,6 +70,11 @@ func (s *Service) writeAnswered(session, id, kind string, build func(Item) (file
 	}
 	s.answerMu.Lock()
 	defer s.answerMu.Unlock()
+	if session == AdmiralSession {
+		// Orders an answer or a Remove against a round refreshing an allow rule item; answerMu comes first, always.
+		proposalMu.Lock()
+		defer proposalMu.Unlock()
+	}
 	dir, err := openShipDir(s.Home, session)
 	if err != nil {
 		return ErrNotFound

@@ -121,12 +121,20 @@ func promptOf(r permlog.Record) RulePrompt {
 	return RulePrompt{Ship: r.Ship, ID: r.ID, Crew: r.Crew, At: r.At, Tool: r.Call.Tool, Command: r.Call.Command}
 }
 
-// proposalMu keeps two rounds ending together from each finding no open item and writing their own.
+// proposalMu orders the writer against every answer and Remove in the _admiral inbox (writeAnswered holds it too), and
+// keeps two rounds ending together from each finding no open item and writing their own.
 var proposalMu sync.Mutex
+
+// beforeProposalWrite is a test seam: it runs once the writer has chosen its item and not yet checked for an answer.
+var beforeProposalWrite func(dir, id string)
+
+// maxCardPrompts is how many prompts a card keeps, the newest; its count goes on counting all of them.
+const maxCardPrompts = 20
 
 // WriteAllowRuleProposals puts a round's candidate rules on the fleet's open allow rule proposal, or on a new item when
 // none is open. A rule already on a card has its prompts added and its count raised; an item with an answer file is
-// never touched. reasons maps a rule's text to the report's reason for it, and adds no card.
+// never touched, and the round's rules go on a new item. reasons maps a rule's text to the report's reason for it, and
+// adds no card.
 func WriteAllowRuleProposals(home, fleet string, cands []allowrules.Candidate, reasons map[string]string) error {
 	if fleet == "" || len(cands) == 0 {
 		return nil
@@ -138,10 +146,31 @@ func WriteAllowRuleProposals(home, fleet string, cands []allowrules.Candidate, r
 		return err
 	}
 	id, created, obj := openAllowRulesItem(dir, fleet)
-	if id == "" {
-		now := time.Now().UTC()
-		id, created, obj = "allow-rules-"+itemHash(fleet, now.Format(time.RFC3339Nano)), now.Format(time.RFC3339), AllowRulesObject{Fleet: fleet}
+	for attempt := 0; ; attempt++ {
+		if id == "" {
+			now := time.Now().UTC()
+			id, created, obj = "allow-rules-"+itemHash(fleet, now.Format(time.RFC3339Nano)), now.Format(time.RFC3339), AllowRulesObject{Fleet: fleet}
+		}
+		mergeCandidates(&obj, cands, reasons)
+		b, err := json.Marshal(map[string]any{"version": 1, "id": id, "kind": KindAllowRules, "created": created,
+			"title": "Allow rules for " + fleet, KindAllowRules: obj})
+		if err != nil {
+			return err
+		}
+		if beforeProposalWrite != nil {
+			beforeProposalWrite(dir, id)
+		}
+		if _, err := os.Lstat(filepath.Join(dir, answerName(id))); err == nil && attempt == 0 {
+			id, obj = "", AllowRulesObject{} // answered meanwhile: this round's rules go on a new item
+			continue
+		} else if err == nil {
+			return nil
+		}
+		return allowrules.WriteFile(filepath.Join(dir, id+".json"), b)
 	}
+}
+
+func mergeCandidates(obj *AllowRulesObject, cands []allowrules.Candidate, reasons map[string]string) {
 	for _, c := range cands {
 		rule := c.Rule
 		i := slices.IndexFunc(obj.Cards, func(k RuleCard) bool { return k.allowRule().Same(rule) })
@@ -154,23 +183,16 @@ func WriteAllowRuleProposals(home, fleet string, cands []allowrules.Candidate, r
 		for _, p := range c.Prompts {
 			if !slices.ContainsFunc(card.Prompts, func(q RulePrompt) bool { return q.Ship == p.Ship && q.ID == p.ID }) {
 				card.Prompts = append(card.Prompts, promptOf(p))
+				card.Count++
 			}
 		}
-		card.Count = len(card.Prompts)
+		if len(card.Prompts) > maxCardPrompts {
+			card.Prompts = slices.Clone(card.Prompts[len(card.Prompts)-maxCardPrompts:])
+		}
 		if reason := reasons[ruleText(rule)]; reason != "" {
 			card.Reason = reason
 		}
 	}
-	title := "Allow rules for " + fleet
-	b, err := json.Marshal(map[string]any{"version": 1, "id": id, "kind": KindAllowRules, "created": created,
-		"title": title, KindAllowRules: obj})
-	if err != nil {
-		return err
-	}
-	if _, err := os.Lstat(filepath.Join(dir, answerName(id))); err == nil {
-		return nil
-	}
-	return allowrules.WriteFile(filepath.Join(dir, id+".json"), b)
 }
 
 // openAllowRulesItem finds the fleet's newest allow rule item that has no answer file.

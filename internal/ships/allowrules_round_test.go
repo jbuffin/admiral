@@ -378,6 +378,29 @@ func TestAFeedbackRoundCountsOnlyItsOwnPrompts(t *testing.T) {
 	}
 }
 
+func TestAFeedbackRoundReadsOnlyItsOwnPromptsEvenWhenTheEarlierItemIsGone(t *testing.T) {
+	r := newRuleRig(t)
+	r.launch(t, "saltpaw", "2026-11-11T10:00:00Z", "claude")
+	r.handAllowed(t, "saltpaw", "p1", "gh pr view:*")
+	r.end("saltpaw")
+	for _, p := range r.proposals(t) {
+		if err := os.Remove(p.file); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.launch(t, "saltpaw", "2026-11-11T12:00:00Z", "claude")
+	r.handAllowed(t, "saltpaw", "p2", "gh pr view:*")
+	r.end("saltpaw")
+
+	cards := r.cards(t)
+	if len(cards) != 1 || cards[0]["count"] != float64(1) {
+		t.Fatalf("cards = %v, want one card counting only the feedback round's prompt", cards)
+	}
+	if ids := promptIDs(cards[0]); len(ids) != 1 || ids[0] != "p2" {
+		t.Errorf("card prompts = %v, want p2 only: the earlier round's p1 is not read again", ids)
+	}
+}
+
 func TestANewShipReusingAnOldNameDoesNotProposeTheOldShipsPromptsAgain(t *testing.T) {
 	r := newRuleRig(t)
 	r.launch(t, "saltpaw", "2026-11-11T10:00:00Z", "claude")

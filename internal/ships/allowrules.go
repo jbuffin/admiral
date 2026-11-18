@@ -31,10 +31,12 @@ func (s *Service) proposeAllowRules(sess sessionhost.Session, report []byte) {
 		var fromEvent bool
 		var tierText string
 		if restricted, fromEvent, tierText, err = s.EventShip(fleet, sess.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "admiral: ship %s: no allow rules proposed, its launch cannot be read: %v\n", sess.Name, err)
 			return
 		}
 		if fromEvent {
 			if tier, err = parseTier(tierText); err != nil {
+				fmt.Fprintf(os.Stderr, "admiral: ship %s: no allow rules proposed, its trigger's tier is unreadable: %v\n", sess.Name, err)
 				return
 			}
 		}
