@@ -136,6 +136,8 @@ type FleetFields struct {
 	CloneRoot     *string
 	Color         *string
 	Notify        *bool
+	// DraftingSkill is drafting.skill (stub: nothing reads it yet); "" clears it.
+	DraftingSkill *string
 	// Chat holds the chat settings to change, by key; nil leaves them as stored.
 	Chat map[string]json.RawMessage
 	// Preset is work or home; switching it clears the Limit values and keeps quiet hours.

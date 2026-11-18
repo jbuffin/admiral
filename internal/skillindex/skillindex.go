@@ -478,3 +478,6 @@ func bareName(n string) string {
 	}
 	return b
 }
+
+// Carrying is a stub: the installed invocation names that carry name on a harness.
+func Carrying(harness string, environ []string, dir, name string) []string { return nil }

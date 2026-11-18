@@ -66,7 +66,9 @@ type Request struct {
 	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
 	Autopilot bool `json:"autopilot"`
 	// Scout is an autopilot ship that reads and reports back, changing nothing: its guard is in scout mode.
-	Scout     bool     `json:"scout"`
+	Scout bool `json:"scout"`
+	// Drafting is a stub: a drafting ship's launch; nothing reads it yet.
+	Drafting  bool     `json:"drafting"`
 	ExtraArgs []string `json:"-"`
 	// PRs are the pull requests a woken ship carries from its mooring; they are confirmed already.
 	PRs []string `json:"-"`

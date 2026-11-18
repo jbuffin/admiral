@@ -69,6 +69,7 @@ type Fleet struct {
 	Preset        standing.Preset   // work unless config.json says home
 	Limits        standing.Limits   // resolved: the preset's values under the fleet's own
 	Overridden    []string          // the Limits the fleet stores itself, as sentence field paths
+	DraftingSkill string            // stub: drafting.skill; empty means no skill
 }
 
 func (c *Config) clone() *Config {
