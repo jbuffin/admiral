@@ -866,6 +866,7 @@ test("scouts launched together report in one turn naming each, while a quick shi
   chatTurnEnds(admiral, 'harbor');
   const turns = () => chatReceived(admiral, 'harbor').split('\r').filter((x) => x.includes('[Report: '));
   await expect.poll(() => turns().length).toBe(1);
+  chatPrompts(admiral, 'harbor');
   chatTurnEnds(admiral, 'harbor', 'report-start');
   chatTurnEnds(admiral, 'harbor', 'report-end');
   await expect.poll(() => turns().length).toBe(2);
