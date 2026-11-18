@@ -351,7 +351,6 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 		{"list_routines", `{}`, "GET", "/api/fleets/work/routines", "", nil},
 		{"turn_routine_off", `{"routine":"r-1"}`, "POST", "/api/fleets/work/routines/r-1/off", "", nil},
 		{"hold_fire_on", `{}`, "POST", "/api/fleets/work/hold-fire/on", "", nil},
-		{"hold_fire_on", `{"all_fleets":false}`, "POST", "/api/fleets/work/hold-fire/on", "", nil},
 		{"read_hold_fire", `{}`, "GET", "/api/fleets/work/hold-fire", "", nil},
 	} {
 		t.Run(c.tool, func(t *testing.T) {

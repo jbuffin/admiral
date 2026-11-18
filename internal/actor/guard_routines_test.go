@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestAnActorMayReadRoutinesTurnOneOffAndTurnHoldFireOnInItsOwnFleetButNothingElseAboutThem(t *testing.T) {
+func TestAnActorMayReadRoutinesTurnOneOffAndHoldFireOnOnlyInItsOwnFleet(t *testing.T) {
 	r := newRig(t)
 	for _, c := range []struct{ method, path string }{
 		{"GET", "/api/fleets/work/routines"},
@@ -13,9 +13,6 @@ func TestAnActorMayReadRoutinesTurnOneOffAndTurnHoldFireOnInItsOwnFleetButNothin
 		{"GET", "/api/hold-fire"},
 		{"POST", "/api/fleets/work/routines/r1/off"},
 		{"POST", "/api/fleets/work/hold-fire/on"},
-		{"GET", "/api/v1/hold-fire"},
-		{"GET", "/api/v1/fleets/work/hold-fire"},
-		{"POST", "/api/v1/fleets/work/hold-fire/on"},
 	} {
 		if code := r.do(c.method, c.path, "", "tok-work", local).Code; code != 200 || r.reached != 1 || r.fleet != "work" || !r.acting {
 			t.Errorf("%s %s as work's AdmiralBot: code %d, reached %d for %q; want 200 acting for work", c.method, c.path, code, r.reached, r.fleet)

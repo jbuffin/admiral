@@ -309,7 +309,7 @@ var mcpTools = []mcpTool{
 	{"hold_fire_on", "Turn Hold fire on in this fleet, so its routines propose instead of acting. Only the engineer turns it off, or on for every fleet.",
 		obj(nil, nil),
 		func(c *mcpClient, raw json.RawMessage) (string, error) {
-			// decoded though out of the schema: dropping it would turn a refused ask into an own-fleet call
+			// all_fleets left the schema but is still decoded, so asking for every fleet is refused, not narrowed to this fleet
 			var a struct {
 				AllFleets bool `json:"all_fleets"`
 			}
