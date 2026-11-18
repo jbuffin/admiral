@@ -233,6 +233,13 @@ func (s *Service) markRunStale(sess sessionhost.Session) {
 	s.runState(sess).poll.stale = true
 }
 
+// carriedAll is every PR the ship carries, polled or not, for a check that asks GitHub itself.
+func (s *Service) carriedAll(sess sessionhost.Session) []string {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	return s.carried(sess)
+}
+
 // carriedOpen is the PRs the last poll saw open on a live ship that exits; the exit asks GitHub again before they moor.
 func (s *Service) carriedOpen(sess sessionhost.Session) []string {
 	s.mooredMu.Lock()

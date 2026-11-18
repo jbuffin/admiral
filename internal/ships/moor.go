@@ -65,7 +65,7 @@ func (s *Service) countedPRs(ctx context.Context, sess sessionhost.Session) []st
 		return nil
 	}
 	carried := s.carriedOpen(sess)
-	prs, answered := s.countedFrom(ctx, sess, withCarried(carried, s.report(sess.Name).PRs))
+	prs, answered := s.countedFrom(ctx, sess, withCarried(s.carriedAll(sess), s.report(sess.Name).PRs))
 	if !answered || s.GitHub == nil {
 		return carried
 	}
