@@ -60,6 +60,12 @@ export function toggleSound(): void {
   setMuted(!muted.value);
 }
 
+// For the new shell only: follows another page's change without playing or writing back.
+export function followStorage(e: StorageEvent): void {
+  if (e.key === null) muted.value = false;
+  else if (e.key === KEY) muted.value = e.newValue === '1';
+}
+
 export function setMuted(next: boolean): void {
   muted.value = next;
   try {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { followStorage, muted, setMuted } from '../chime';
 import { fetchDevices, type Device } from './api';
 import { readPushDevice, turnOffPush, turnOnPush, type PushDeviceState } from './pushDevice';
 import { pushSwitchState, type PushSwitchKind } from './pushSwitch';
@@ -48,6 +49,11 @@ export function NotificationsPage() {
     if (seq === latest.current) setDevice(d);
   };
   useEffect(() => void refresh(), []);
+
+  useEffect(() => {
+    window.addEventListener('storage', followStorage);
+    return () => window.removeEventListener('storage', followStorage);
+  }, []);
 
   const kind = device ? pushSwitchState(device.inputs).kind : null;
   const on = kind === 'on';
@@ -100,6 +106,20 @@ export function NotificationsPage() {
             <span class="track" aria-hidden="true" />
           </button>
         )}
+      </div>
+      <h2 class="h2" id="sound-title">
+        This browser
+      </h2>
+      <div class="set box" role="group" aria-labelledby="sound-title">
+        <div class="t">
+          <span id="sound-label" class="label">
+            Attention sounds
+          </span>
+          <span id="sound-hint">A chime in this browser when something needs you.</span>
+        </div>
+        <button type="button" class="switch" role="switch" aria-checked={!muted.value} aria-labelledby="sound-label" aria-describedby="sound-hint" onClick={() => setMuted(!muted.value)}>
+          <span class="track" aria-hidden="true" />
+        </button>
       </div>
       <h2 class="h2" id="push-devices-title">
         Devices
