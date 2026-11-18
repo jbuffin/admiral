@@ -87,6 +87,7 @@ export interface PRDetail {
   mergeable: string;
   merge_state: string;
   failing_checks: { name: string; url: string }[];
+  author: PRActor;
   reviews: { author: PRActor; state: string }[];
   requested: PRActor[];
   threads: { path: string; line: number; resolved: boolean; comments: { author: PRActor; body: string; url: string; created_at: string }[] }[];
@@ -291,6 +292,8 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: string; stat
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const SLOW_TIMEOUT_MS = 3 * 60_000;
+/** Above the server's 45 s budget for a re-request, so its timeout message reaches the page. */
+const REREQUEST_TIMEOUT_MS = 60_000;
 export const LAUNCH_TIMEOUT_MS = 10 * 60_000;
 
 const limitText = (ms: number) => (ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`);
@@ -383,6 +386,11 @@ export function linkSourceStack(source: string, prs: string[]): Promise<Result<S
 /** One PR a ship carries, read from GitHub: 404 when the ship doesn't carry it, 502 when GitHub fails. */
 export function fetchPRDetail(session: string, url: string): Promise<Result<PRDetail>> {
   return call<PRDetail>('GET', `/ships/${encodeURIComponent(session)}/pr?url=${encodeURIComponent(url)}`);
+}
+
+/** Ask GitHub to request another review from `login`, a GitHub reviewer who already reviewed the PR. */
+export function reRequestReview(session: string, pr: string, login: string): Promise<Result<unknown>> {
+  return call<unknown>('POST', `/ships/${encodeURIComponent(session)}/pr/rerequest`, { pr, login }, undefined, { timeoutMs: REREQUEST_TIMEOUT_MS });
 }
 
 export interface Source {

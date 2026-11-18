@@ -354,6 +354,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/fix", s.serveFix)
 	mux.HandleFunc("POST /api/ships/{session}/next", s.serveNext)
 	mux.HandleFunc("POST /api/ships/{session}/rereview", s.serveRereview)
+	mux.HandleFunc("POST /api/ships/{session}/pr/rerequest", s.serveReRequest)
 	mux.HandleFunc("GET /api/outcomes", s.serveOutcomes)
 	mux.Handle("POST /api/ships/{session}/merge", s.mergeGuarded(http.HandlerFunc(s.serveMerge)))
 	mux.Handle("POST /api/ships/{session}/update-branch", s.mergeGuarded(http.HandlerFunc(s.serveUpdateBranch)))

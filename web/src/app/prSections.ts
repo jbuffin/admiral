@@ -41,7 +41,7 @@ const VERDICTS: Record<string, [Verdict, Tone]> = {
   COMMENTED: ['Commented', 'muted'],
 };
 
-/** One row per person: the latest verdict, in the order they first reviewed, then the requested reviewers who have not. */
+/** One row per person: the latest verdict, in the order they first reviewed, then the requested reviewers who have not; someone requested again reads Waiting. */
 export function reviewerRows(reviews: PRDetail['reviews'], requested: PRActor[]): ReviewerRow[] {
   const latest = new Map<string, { bot: boolean; state: string }>();
   for (const r of reviews) {
@@ -51,7 +51,9 @@ export function reviewerRows(reviews: PRDetail['reviews'], requested: PRActor[])
     if (!seen) latest.set(login, { bot: r.author.bot, state: r.state });
     else if (DECIDED.has(r.state) || !DECIDED.has(seen.state)) seen.state = r.state;
   }
+  const pending = new Set(requested.map(loginOf));
   const rows: ReviewerRow[] = [...latest].map(([login, { bot, state }]) => {
+    if (pending.has(login)) return { login, bot, verdict: 'Waiting', tone: 'muted' };
     const [verdict, tone] = VERDICTS[state] ?? VERDICTS.COMMENTED;
     return { login, bot, verdict, tone };
   });
@@ -60,6 +62,13 @@ export function reviewerRows(reviews: PRDetail['reviews'], requested: PRActor[])
     if (!latest.has(login)) rows.push({ login, bot: a.bot, verdict: 'Waiting', tone: 'muted' });
   }
   return rows;
+}
+
+/** Whether GitHub's PR page offers Re-request review beside `login`: a submitted review, not pending again, not the PR's author. */
+export function canReRequest(detail: Pick<PRDetail, 'author' | 'reviews' | 'requested'>, login: string): boolean {
+  if (!login || login === 'ghost' || login === detail.author.login) return false;
+  if (detail.requested.some((a) => a.login === login)) return false;
+  return detail.reviews.some((r) => r.author.login === login && r.state !== 'PENDING');
 }
 
 const SUMMARY_ORDER: Verdict[] = ['Approved', 'Changes requested', 'Commented', 'Dismissed', 'Waiting'];

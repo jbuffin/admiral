@@ -68,6 +68,10 @@ type pollGitHub struct {
 	updated     []string      // the URL of each UpdateBranch call
 	updateErr   error         // what UpdateBranch answers
 	updateBlock chan struct{} // when set, UpdateBranch waits for it to close
+
+	reRequested   []string // each ReRequestReview as "PR URL login"
+	reRequestErr  error    // what ReRequestReview answers
+	reRequestWait bool     // ReRequestReview blocks until its context ends
 }
 
 func (g *pollGitHub) Host() string { return "github.com" }
@@ -220,6 +224,23 @@ func (g *pollGitHub) updateLog() []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return append([]string(nil), g.updated...)
+}
+
+func (g *pollGitHub) ReRequestReview(ctx context.Context, prURL, login string) error {
+	if g.reRequestWait {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.reRequested = append(g.reRequested, prURL+" "+login)
+	return g.reRequestErr
+}
+
+func (g *pollGitHub) reRequestLog() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string(nil), g.reRequested...)
 }
 
 func (g *pollGitHub) set(url string, st moor.Status) {

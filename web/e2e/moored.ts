@@ -1,6 +1,6 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 import type { Admiral } from './fixtures';
-import { expectChipTone, ghMergeSlow, launchMooredShip, mergeCalls, PR_BASE, prAnswer, prBehindStrictBase, prReview, readyOnTheServer, readyToWake, RESUME, rowLink, seedMergeMethod, shipViewUrl, updateBranchCalls, viewPanel, viewTab, wakeButton, wokenPrompt, type LaunchedShip } from './shell';
+import { expectChipTone, ghMergeSlow, launchMooredShip, mergeCalls, PR_BASE, prAnswer, prBehindStrictBase, prReview, readyOnTheServer, reRequestCalls, seedReviewedPR, readyToWake, RESUME, rowLink, seedMergeMethod, shipViewUrl, updateBranchCalls, viewPanel, viewTab, wakeButton, wokenPrompt, type LaunchedShip } from './shell';
 
 type ShipRow = LaunchedShip & { status: string; prs?: { url: string; review: string; answer?: string }[] };
 
@@ -131,6 +131,7 @@ export async function answerReviewFromThePRTab(page: Page, a: Admiral) {
   prAnswer(a, 7, { state: 'OPEN', review: 'CHANGES_REQUESTED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
   const ship = await launchMooredShip(a, 7);
   prReview(a, 7, { author: 'alice', body: 'please rename the helper', state: 'CHANGES_REQUESTED' });
+  seedReviewedPR(a, 7);
   await polledWithAnswer(a, ship, 7);
   const command = `${RESUME} feedback round 1 on ${PR_BASE}/7`;
 
@@ -140,6 +141,24 @@ export async function answerReviewFromThePRTab(page: Page, a: Admiral) {
   const answer = bar.getByRole('button', { name: 'Answer review', exact: true });
   expect((await answer.boundingBox())!.height, 'Answer review height').toBeGreaterThanOrEqual(44);
   await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0);
+
+  // alice's review stands, so her row offers Re-request review; one tap asks GitHub once, and her row then reads Waiting with no button.
+  const alice = panel.locator('li.reviewer').filter({ hasText: 'alice' });
+  const reRequest = alice.getByRole('button', { name: /re-request review/i });
+  await expect(alice).toContainText('Changes requested');
+  await expect(reRequest).toBeVisible();
+  expect((await reRequest.boundingBox())!.height, 'Re-request review height').toBeGreaterThanOrEqual(44);
+  expect(reRequestCalls(a)).toEqual([]);
+  const requested = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/pr/rerequest`);
+  await reRequest.tap();
+  expect((await requested).status()).toBe(200);
+  await expect(alice).toContainText('Waiting');
+  await expect(reRequest).toHaveCount(0);
+  const asked = reRequestCalls(a);
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toMatch(/pullRequestId:\s*"PR_fake1"/);
+  expect(asked[0]).toMatch(/userIds:\s*\[\s*"U_fake1"\s*\]/);
+  await expect(page.getByRole('alert')).toHaveCount(0);
 
   readyToWake(a, ship);
   await answer.tap();

@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
-import type { PRActor, PRDetail } from './api';
+import { reRequestReview, type PRActor, type PRDetail } from './api';
 import { renderMarkdown } from './markdown';
-import { checksLine, descriptionSource, firstLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary, type TimelineItem } from './prSections';
+import { canReRequest, checksLine, descriptionSource, firstLine, logHref, prTimeline, relativeTime, resolvedLabel, reviewerRows, reviewSummary, type TimelineItem } from './prSections';
 
 const initials = (login: string) => login.replace(/[^a-z]/gi, '').slice(0, 2).toUpperCase();
 const BotTag = ({ actor }: { actor: PRActor }) => (actor.bot ? <span class="bot-tag">bot</span> : null);
@@ -71,7 +71,33 @@ function Description({ body }: { body: string }) {
   );
 }
 
-function Reviewers({ detail }: { detail: PRDetail }) {
+function ReRequest({ session, pr, login, reread }: { session: string; pr: string; login: string; reread: () => void }) {
+  const [error, setError] = useState('');
+  // Stays busy after success: the row leaves when the re-read lands, and a second tap before then would ask again.
+  const [sent, setSent] = useState(false);
+  const run = async () => {
+    setError('');
+    const r = await reRequestReview(session, pr, login);
+    if (r.ok) {
+      setSent(true);
+      reread();
+    } else setError(r.error);
+  };
+  return (
+    <>
+      <Button label={`Re-request review from ${login}`} class="rerequest" busy={sent} onClick={run}>
+        Re-request review
+      </Button>
+      {error ? (
+        <p class="alert rerequest-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+export function Reviewers({ detail, session, reread }: { detail: PRDetail; session?: string; reread?: () => void }) {
   const [open, setOpen] = useState(false);
   const rows = reviewerRows(detail.reviews, detail.requested);
   return (
@@ -91,6 +117,7 @@ function Reviewers({ detail }: { detail: PRDetail }) {
                     {r.login} {r.bot ? <span class="bot-tag">bot</span> : null}
                   </span>
                   <span class={`pr-chip ${r.tone === 'muted' ? '' : r.tone}`}>{r.verdict}</span>
+                  {session && reread && canReRequest(detail, r.login) ? <ReRequest session={session} pr={detail.url} login={r.login} reread={reread} /> : null}
                 </li>
               ))}
             </ul>
@@ -169,7 +196,7 @@ function PRTimeline({ detail }: { detail: PRDetail }) {
 }
 
 /** A PR's checks, description, reviewers and conversation, read-only; its fold state lives here, so a refresh of `detail` keeps it. */
-export function PRSections({ detail }: { detail: PRDetail }) {
+export function PRSections({ detail, session, reread }: { detail: PRDetail; session?: string; reread?: () => void }) {
   return (
     <>
       <div class="pr-cols">
@@ -177,7 +204,7 @@ export function PRSections({ detail }: { detail: PRDetail }) {
           <Checks detail={detail} />
           <Description body={detail.body} />
         </div>
-        <Reviewers detail={detail} />
+        <Reviewers detail={detail} session={session} reread={reread} />
       </div>
       <PRTimeline detail={detail} />
     </>

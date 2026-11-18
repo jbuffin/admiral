@@ -139,6 +139,7 @@ func TestAnActorIsRefusedEverythingOffTheList(t *testing.T) {
 	for _, prefix := range []string{"/api", "/api/v1"} {
 		for _, c := range []struct{ method, path string }{
 			{"POST", "/ships/p-1/answer"},
+			{"POST", "/ships/p-1/pr/rerequest"},
 			{"POST", "/ships/p-1/crew/boat/answer"},
 			{"POST", "/ships/p-1/messages"},
 			{"POST", "/ships/p-1/interrupt"},

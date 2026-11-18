@@ -125,6 +125,16 @@
 #     (its content on stderr, exit 1) and $FAKEGH_DIR/pr_detail.sleep (seconds
 #     to wait first) make the call fail or run long.
 #
+#   gh api graphql ...   (a review request: `requestReviews`, and the lookup of node ids before it)
+#     A call holding `requestReviews` is recorded like any call (argv has the
+#     mutation) and answers {"data":{"requestReviews":{"pullRequest":{"id":"PR_fake1"}}}};
+#     with $FAKEGH_DIR/rerequest.fail it exits 1 and prints that file on stderr.
+#     It then moves each file in $FAKEGH_DIR/pr_detail_after/ over the same name in
+#     pr_detail/, so a test scripts what the next detail read shows once GitHub has
+#     the request. The lookup is a call holding `on User { id`, answered like the
+#     single-PR detail query from pr_detail/KEY, whose nodes may carry `id`s (the
+#     PR's and each review author's).
+#
 #   gh api graphql ...   (the moor poll's batched pull request query)
 #     Taken when an argument holds `pullRequest(number:`, before the search
 #     match below. It reads each `ALIAS: repository(owner: "O", name: "N")
@@ -526,6 +536,22 @@ api)
 			dm=MERGE
 			[ -s "$FAKEGH_DIR/default_merge_method" ] && dm=$(cat "$FAKEGH_DIR/default_merge_method")
 			printf '{"data":{"repository":{"viewerDefaultMergeMethod":"%s"}}}\n' "$dm"
+			exit 0
+			;;
+		esac
+	done
+	for a in "$@"; do
+		case "$a" in
+		*requestReviews*)
+			if [ -e "$FAKEGH_DIR/rerequest.fail" ]; then
+				cat "$FAKEGH_DIR/rerequest.fail" >&2
+				exit 1
+			fi
+			for after in "$FAKEGH_DIR"/pr_detail_after/*; do
+				[ -e "$after" ] || continue
+				mv "$after" "$FAKEGH_DIR/pr_detail/$(basename "$after")"
+			done
+			printf '{"data":{"requestReviews":{"pullRequest":{"id":"PR_fake1"}}}}\n'
 			exit 0
 			;;
 		esac
