@@ -184,11 +184,18 @@ func (g *ghRig) wire() {
 
 func (g *ghRig) restart() { g.rig.restart(); g.wire() }
 
-// run starts the runner and returns the function that stops it; the test's end stops it too.
+// run starts the runner, waits for its first poll to finish, and returns the function that stops it; the test's end stops it too.
 func (g *ghRig) run() (stop func()) {
 	g.t.Helper()
-	// A poll in a commitment's own second cannot judge it, so the first poll would race pollsMore's first clock move.
-	g.clk.set(g.clk.Now().Add(time.Second))
+	stop = g.start()
+	// pollLoop arms After(GHPoll) only after it stored the answers and called Changed, so this deadline means the first poll is over.
+	waitFor(g.t, "the first poll to finish", func() bool { return g.clk.hasDeadline(g.clk.Now().Add(commitments.GHPoll)) })
+	return stop
+}
+
+// start runs the runner without waiting for its first poll, for a test whose poll is held.
+func (g *ghRig) start() (stop func()) {
+	g.t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	r := g.r
@@ -287,11 +294,9 @@ func TestEachGitHubRowOfTheTriggerTable(t *testing.T) {
 				})
 			}
 			g.run()
-			// A poll that fires or drops closes the commitment, so no later poll has a subject to look up.
+			// A poll that fires or drops closes the commitment, so no later poll has a subject to look up: wantCard waits for the card instead.
 			if row.want == waits {
 				g.pollsMore(2)
-			} else {
-				g.pollsMore(1)
 			}
 			switch row.want {
 			case fires:
@@ -316,7 +321,6 @@ func TestAPRDroppedForNotMergedSaysItClosedWithoutMerging(t *testing.T) {
 	c := g.add(prCommitment(ledger.TriggerPRMerged, prURL))
 	g.gh.set(func() { g.gh.prs[prURL] = "CLOSED" })
 	g.run()
-	g.pollsMore(1)
 	card := g.wantCard(c.ID, commitments.OutcomeDropped)
 	if !strings.Contains(strings.ToLower(card.Why), "merg") {
 		t.Errorf("drop reason = %q, want it to say the PR closed without merging", card.Why)
@@ -360,10 +364,10 @@ func TestAGitHubReminderCardIsPostedOnceAcrossARestart(t *testing.T) {
 		}
 		t.Run(row.name, func(t *testing.T) {
 			g := newGHRig(t)
-			g.add(prCommitment(row.kind, row.subject))
+			c := g.add(prCommitment(row.kind, row.subject))
 			g.gh.set(func() { g.gh.prs[prURL], g.gh.issues[issueURL] = row.state, row.state })
 			stop := g.run()
-			g.pollsMore(1)
+			g.wantCard(c.ID, commitments.OutcomeReminded)
 			stop()
 			g.restart()
 			g.run()
@@ -521,7 +525,7 @@ func TestAPollerBlockedOnGitHubDoesNotStopATimeTriggerFiring(t *testing.T) {
 	g.add(prCommitment(ledger.TriggerPRMerged, prURL))
 	block := make(chan struct{})
 	g.gh.set(func() { g.gh.block = block })
-	g.run()
+	g.start()
 	g.t.Cleanup(func() { close(block) })
 	g.advanceUntil("the poll never reached GitHub", func() bool { return len(g.ghCalls()) >= 1 })
 
