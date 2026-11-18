@@ -220,7 +220,10 @@ func (d *ShipCards) voyageOf(s ships.Ship, now time.Time) *voyage {
 		v = &voyage{Ship: s.Session, Name: s.Name, FirstLaunched: stamp, Done: map[string]bool{}}
 		d.st.Voyages[key] = v
 	}
-	v.Name, v.Title, v.Fleet, v.Via, v.SkillKind, v.Scout, v.LastSeen = s.Name, s.Title, s.Fleet, s.Via, s.SkillKind, s.Scout, now
+	v.Name, v.Fleet, v.Via, v.SkillKind, v.Scout, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, s.Scout, now
+	if s.Titled { // before that a ship's title is its prompt's first line
+		v.Title = s.Title
+	}
 	if s.Skill != nil {
 		v.Skill = *s.Skill
 	}
