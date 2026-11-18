@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -227,6 +228,96 @@ func (c *Client) search(ctx context.Context, token, query, gql, actorKind string
 		items = items[:MaxItems]
 	}
 	return items, login, nil
+}
+
+// IssueHit is one issue as the campaign search shows it.
+type IssueHit struct {
+	Number    int
+	Title     string
+	URL       string
+	Repo      string // nameWithOwner
+	Closed    bool
+	SubIssues int // total sub-issues; 0 for a leaf
+	SubClosed int
+}
+
+// lookupMax is how many issues one lookup reads, enough for a type-ahead list.
+const lookupMax = 20
+
+const lookupFields = "number title url state repository { nameWithOwner } subIssuesSummary { total completed }"
+
+var lookupQuery = fmt.Sprintf("query($q: String!) { search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { ... on Issue { %s } } } }", lookupMax, lookupFields)
+
+const lookupOneQuery = `query($owner: String!, $repo: String!, $number: Int!) {
+	repository(owner: $owner, name: $repo) { issueOrPullRequest(number: $number) { __typename ... on Issue { ` + lookupFields + ` } } } }`
+
+type lookupNode struct {
+	Typename   string `json:"__typename"`
+	Number     int    `json:"number"`
+	Title      string `json:"title"`
+	URL        string `json:"url"`
+	State      string `json:"state"`
+	Repository struct {
+		NameWithOwner string `json:"nameWithOwner"`
+	} `json:"repository"`
+	SubIssuesSummary *struct {
+		Total     int `json:"total"`
+		Completed int `json:"completed"`
+	} `json:"subIssuesSummary"`
+}
+
+func (n lookupNode) hit() IssueHit {
+	h := IssueHit{Number: n.Number, Title: n.Title, URL: n.URL, Repo: n.Repository.NameWithOwner, Closed: n.State == "CLOSED"}
+	if n.SubIssuesSummary != nil {
+		h.SubIssues, h.SubClosed = n.SubIssuesSummary.Total, n.SubIssuesSummary.Completed
+	}
+	return h
+}
+
+// SearchIssues runs one GitHub search light enough for a type-ahead: at most lookupMax issues in the order GitHub ranks
+// them, under the quick-call limit and cancelled through ctx. Pull requests are left out.
+func (c *Client) SearchIssues(ctx context.Context, token, query string) ([]IssueHit, error) {
+	data, err := c.runQuery(ctx, token, lookupQuery, false, 0, "q="+query)
+	if err != nil {
+		return nil, err
+	}
+	search, _ := data["search"].(map[string]any)
+	raw, ok := search["nodes"].([]any)
+	if !ok {
+		return nil, errNotUnderstood
+	}
+	var out []IssueHit
+	for _, r := range raw {
+		b, _ := json.Marshal(r)
+		var n lookupNode
+		if json.Unmarshal(b, &n) != nil || n.Number == 0 || n.Repository.NameWithOwner == "" {
+			continue // a pull request answers an empty node
+		}
+		out = append(out, n.hit())
+	}
+	return out, nil
+}
+
+// LookupIssue reads one issue by number. It answers nil for a pull request and for an issue GitHub can't find.
+func (c *Client) LookupIssue(ctx context.Context, token, owner, repo string, number int) (*IssueHit, error) {
+	ref := fmt.Sprintf("%s/%s#%d", owner, repo, number)
+	raw, err := c.graphql(ctx, token, ref, []string{"-f", "query=" + lookupOneQuery, "-f", "owner=" + owner, "-f", "repo=" + repo, "-F", "number=" + strconv.Itoa(number)})
+	if IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var d struct {
+		Repository *struct {
+			Issue *lookupNode `json:"issueOrPullRequest"`
+		} `json:"repository"`
+	}
+	if json.Unmarshal(raw, &d) != nil || d.Repository == nil || d.Repository.Issue == nil || d.Repository.Issue.Typename != "Issue" {
+		return nil, nil
+	}
+	h := d.Repository.Issue.hit()
+	return &h, nil
 }
 
 const countQuery = "query($q: String!) { search(query: $q, type: ISSUE_ADVANCED, first: 1) { issueCount } }"

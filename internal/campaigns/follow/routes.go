@@ -193,20 +193,32 @@ func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"campaigns": out})
 }
 
-func (s *Service) serveSearch(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "campaign search is not built")
-}
-
 func (s *Service) serveFollow(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reference string `json:"reference"`
+		Fleet     string `json:"fleet"` // optional: the fleet the engineer follows from
 	}
 	if !decode(w, r, &body) {
 		return
 	}
+	if body.Fleet != "" {
+		owner, lerr := s.Owner(body.Reference)
+		if lerr != nil {
+			writeError(w, lerr.Status, lerr.Msg)
+			return
+		}
+		if owner != body.Fleet {
+			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("That campaign belongs to fleet %s, not %s", owner, body.Fleet))
+			return
+		}
+	}
 	got, created, lerr := s.Follow(r.Context(), body.Reference)
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
+		return
+	}
+	if body.Fleet != "" && got.Fleet != body.Fleet {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("That campaign belongs to fleet %s, not %s", got.Fleet, body.Fleet))
 		return
 	}
 	status := http.StatusOK
@@ -240,7 +252,7 @@ func (s *Service) serveUnfollow(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.Store.End(f.ID, s.now()); err != nil {
+	if err := s.Store.Unfollow(f.ID, s.now()); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
