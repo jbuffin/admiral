@@ -396,7 +396,10 @@ func parseNotices(raw []json.RawMessage) ([]Notice, error) {
 		}
 		notice := Notice{ID: id, Text: text, Tone: tone}
 		notice.Link, _ = parseLink(item.Link)
-		notice.Action = parseAction(item.Action)
+		// Launch and Message AdmiralBot hang on a row; a notice keeps only a module action or Open link.
+		if a := parseAction(item.Action); a != nil && (a.Builtin == "" || a.Builtin == "open") {
+			notice.Action = a
+		}
 		out = append(out, notice)
 	}
 	return out, nil

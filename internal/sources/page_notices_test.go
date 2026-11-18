@@ -192,6 +192,27 @@ func TestANoticeActionThatARowActionWouldDropIsDroppedAndTheNoticeKept(t *testin
 	}
 }
 
+func TestANoticeKeepsOpenLinkAndModuleActionsButDropsLaunchAndMessage(t *testing.T) {
+	ns := parsedNotices(t, noticesPage(`[
+		{"id":"a","text":"A","action":{"id":"go","label":"Go","builtin":"launch","url":"https://github.com/acme/app/issues/1"}},
+		{"id":"b","text":"B","action":{"id":"say","label":"Say","builtin":"message","kind":"k","ref":"r","title":"t","link":"https://acme.test/x"}},
+		{"id":"c","text":"C","action":{"id":"see","label":"See","builtin":"open","url":"https://acme.test/x"}},
+		{"id":"d","text":"D","action":{"id":"one","label":"One","confirm":"click"}}]`))
+	if noticeIDs(ns) != "a,b,c,d" {
+		t.Fatalf("notices = %s, want all four kept", dump(ns))
+	}
+	for _, i := range []int{0, 1} {
+		if _, has := ns[i]["action"]; has {
+			t.Errorf("notice %d = %s, want a row-only built-in action dropped", i, dump(ns[i]))
+		}
+	}
+	for _, i := range []int{2, 3} {
+		if act, _ := ns[i]["action"].(map[string]any); act == nil {
+			t.Errorf("notice %d = %s, want its action kept", i, dump(ns[i]))
+		}
+	}
+}
+
 func TestABadNoticeLinkDropsOnlyTheLink(t *testing.T) {
 	for name, link := range map[string]string{
 		"a javascript url":   `{"label":"L","url":"javascript:alert(1)"}`,
