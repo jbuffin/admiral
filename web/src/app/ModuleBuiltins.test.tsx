@@ -253,6 +253,16 @@ test('a 409 on the send fetches the preview again, shows the new text and sends 
   expect(await screen.findByText('Sent to AdmiralBot')).toBeTruthy();
 });
 
+test("a 409 on the send with the same text again shows the chat's message and does not say it was sent", async () => {
+  const error = 'The chat is not running';
+  server({ send: () => ({ status: 409, body: { error } }) });
+  open();
+  press(await rowItem(), 'Message AdmiralBot');
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Message AdmiralBot' }));
+  expect(await screen.findByText(error)).toBeTruthy();
+  expect(screen.queryByText('Sent to AdmiralBot')).toBeNull();
+});
+
 test.each([
   [404, 'No such fleet'],
   [502, 'The paste into the chat failed'],
