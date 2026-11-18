@@ -141,12 +141,15 @@ func TestACompoundCopilotCommandProposesEachSafeIdentifier(t *testing.T) {
 
 func TestWritesReachOnlyTheWorktreeAndAdmiralsReportAndInbox(t *testing.T) {
 	write := func(p string) Prompt {
-		return allowed("a", p, "copilot", permlog.Call{Tool: "write", Kind: "write", Paths: []string{p}})
+		return allowed("alpha", p, "copilot", permlog.Call{Tool: "write", Kind: "write", Paths: []string{p}})
 	}
 	for p, want := range map[string]bool{
-		home + "/reports/alpha.md":            true,
+		home + "/reports/alpha.json":          true,
 		home + "/inbox/alpha/note.md":         true,
 		home + "/inbox/_admiral/forged.json":  false, // where Admiral's own proposals live
+		home + "/inbox/_ADMIRAL/forged.json":  false, // the same directory on a case-insensitive disk
+		home + "/inbox/other-ship/note.md":    false,
+		home + "/reports/other-ship.json":     false,
 		home + "/allow-rules.json":            false,
 		"/Users/me/other-repo/main.go":        false,
 		home + "/reports/../allow-rules.json": false,
@@ -166,5 +169,103 @@ func TestAWholeToolRuleIsNeverProposed(t *testing.T) {
 		if got, refused := Candidates([]Prompt{p}, nil, home); len(got) != 0 || len(refused) != 1 {
 			t.Errorf("%s: candidates %v, refusals %v", p.Call.Suggestions, got, refused)
 		}
+	}
+}
+
+// refusedFor checks that the prompt gives no candidate and one refusal whose reason holds want.
+func refusedFor(t *testing.T, p Prompt, want string) {
+	t.Helper()
+	got, refused := Candidates([]Prompt{p}, nil, home)
+	if len(got) != 0 {
+		t.Errorf("%s: proposed %+v", want, got[0].Rule)
+		return
+	}
+	if len(refused) != 1 || !strings.Contains(refused[0].Reason, want) {
+		t.Errorf("refusals %+v, want one containing %q", refused, want)
+	}
+}
+
+func TestTheNeverListIgnoresTheCaseOfACommand(t *testing.T) {
+	for _, p := range []Prompt{
+		claude("a", "1", "Bash", "GIT push:*"), claude("a", "2", "Bash", "RM -rf x"), claude("a", "3", "Bash", "CURL:*"),
+		claude("a", "4", "Bash", "PYTHON3 -c x"), claude("a", "5", "Bash", "Python3:*"),
+		copilotShell("a", "6", "GIT push"), copilotShell("a", "7", "CURL"), copilotShell("a", "8", "Python3"),
+		codex("a", "9", "GIT push origin main"), codex("a", "10", "RM -rf x"), codex("a", "11", "CURL -s x"),
+		codex("a", "12", "PYTHON3 -c x"),
+	} {
+		refusedFor(t, p, "on the never list")
+	}
+}
+
+func TestAnOptionBeforeTheSubcommandIsRefused(t *testing.T) {
+	for _, content := range []string{"git -C . push:*", "git --no-pager push origin main", "npm -w x publish",
+		"npm --registry=x publish", "docker --context x push", "cargo +nightly publish"} {
+		refusedFor(t, claude("a", "1", "Bash", content), "an option before the subcommand hides what it runs")
+	}
+	refusedFor(t, copilotShell("a", "2", "git --no-pager push"), "an option before the subcommand")
+	refusedFor(t, codex("a", "3", "git --no-pager push origin main"), "never list")
+}
+
+func TestTheNeverListCoversEachGroupsOtherMembers(t *testing.T) {
+	for group, contents := range map[string][]string{
+		NeverPushMerge:   {"git subtree push:*", "git lfs push:*", "git send-pack:*"},
+		NeverNetwork:     {"npm ci:*", "go mod download:*", "uv sync:*", "bundle install:*"},
+		NeverWiring:      {"gh extension install:*", "gh alias set:*", "gh config set:*"},
+		NeverSecret:      {"jq:*", "sort:*", "diff:*", "nl:*", "tac:*"},
+		NeverDelete:      {"kubectl delete:*", "terraform destroy:*", "helm uninstall:*", "git checkout -B x"},
+		NeverInterpreter: {"sqlite3:*", "vim:*", "vi:*", "nvim:*", "ex:*", "view:*", "emacs:*", "gdb:*", "lldb:*", "psql:*", "mysql:*", "R:*", "Rscript:*", "julia:*", "swift:*", "java:*", "jshell:*", "git bisect:*", "arch:*", "caffeinate:*", "xcrun:*", "stdbuf:*", "flock:*", "sandbox-exec:*", "chroot:*", "make --eval=x"},
+	} {
+		for _, c := range contents {
+			refusedFor(t, claude("a", "1", "Bash", c), "never list ("+group+")")
+		}
+	}
+}
+
+func TestAnAbbreviatedLongOptionCountsAsTheOption(t *testing.T) {
+	for _, c := range []string{"git commit --amen -m x", "git branch --delet x", "git switch --discard x"} {
+		refusedFor(t, claude("a", "1", "Bash", c), "never list ("+NeverDelete+")")
+	}
+}
+
+func TestAClaudeEditCannotReachAnotherShipsPathsOrAGlobInTheSessionSegment(t *testing.T) {
+	for _, c := range []string{"//Users/me/.admiral/inbox/*/**", "//Users/me/.admiral/inbox/_ADMIRAL/x.json",
+		"//Users/me/.admiral/inbox/other-ship/x.md", "//Users/me/.admiral/reports/other-ship.json", "//Users/me/.admiral/reports/*"} {
+		refusedFor(t, claude("alpha", "1", "Edit", c), "never list")
+	}
+	got, _ := Candidates([]Prompt{claude("alpha", "1", "Edit", "//Users/me/.admiral/inbox/alpha/**")}, nil, home)
+	if len(got) != 1 {
+		t.Errorf("a ship's own inbox gave candidates %v", got)
+	}
+}
+
+func TestACodexPatternKeepsOptionsThatTakeNoValue(t *testing.T) {
+	for command, want := range map[string][]string{
+		"git log --oneline":           {"git", "log", "--oneline"},
+		"git diff --stat src/":        {"git", "diff", "--stat"},
+		"go build -o bin/x ./...":     {"go", "build"},
+		"git log --oneline --since=1": {"git", "log", "--oneline"},
+	} {
+		got, _ := Candidates([]Prompt{codex("a", "1", command)}, nil, home)
+		if len(got) != 1 || !slices.Equal(got[0].Rule.Pattern, want) {
+			t.Errorf("%s: candidates %+v, want pattern %v", command, got, want)
+		}
+	}
+	refusedFor(t, codex("a", "2", "git log --output=/Users/me/notes"), "never list ("+NeverOutside+")")
+	refusedFor(t, codex("a", "3", "git diff --output /Users/me/notes"), "never list ("+NeverOutside+")")
+	refusedFor(t, claude("a", "4", "Bash", "git log --output=x"), "never list ("+NeverOutside+")")
+}
+
+func TestARepeatedCopilotIdentifierCountsThePromptOnce(t *testing.T) {
+	got, _ := Candidates([]Prompt{copilotShell("a", "1", "git status", "git status")}, nil, home)
+	if len(got) != 1 || got[0].Count() != 1 {
+		t.Errorf("candidates %+v, want one with a count of 1", got)
+	}
+}
+
+func TestAnAbsoluteCopilotWriteInTheWorktreeIsNotCalledOutsideIt(t *testing.T) {
+	p := allowed("a", "1", "copilot", permlog.Call{Tool: "write", Kind: "write", Cwd: "/Users/me/widgets", Paths: []string{"/Users/me/widgets/main.go"}})
+	got, refused := Candidates([]Prompt{p}, nil, home)
+	if len(got) != 0 || len(refused) != 1 || strings.Contains(refused[0].Reason, NeverOutside) {
+		t.Errorf("candidates %v, refusals %+v, want one refusal that doesn't say outside the worktree", got, refused)
 	}
 }

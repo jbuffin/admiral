@@ -37,8 +37,9 @@ type Refusal struct {
 }
 
 // Candidates turns logged prompts into the allow rules worth proposing, in the order their first prompt came.
-// fleets holds each fleet's rules and skips; home is Admiral's home, whose report and inbox paths a ship may write.
-// Every prompt that yields no candidate comes back as a refusal with its reason.
+// fleets holds each fleet's rules and skips; home is Admiral's home, where a ship may write only its own report and inbox.
+// Each prompt that yields no candidate comes back as a refusal with its reason, except a log line read again (same
+// ship and ID), and a suggestion that is no allow rule when another suggestion of the same prompt gave one.
 func Candidates(prompts []Prompt, fleets map[string]Fleet, home string) ([]Candidate, []Refusal) {
 	var out []Candidate
 	var refused []Refusal
@@ -54,7 +55,7 @@ func Candidates(prompts []Prompt, fleets map[string]Fleet, home string) ([]Candi
 			refused = append(refused, Refusal{Prompt: rec, Reason: why})
 			continue
 		}
-		rules, why := rulesFor(rec, home)
+		rules, why := rulesFor(rec, place{home: home, ship: rec.Ship})
 		if why != "" {
 			refused = append(refused, Refusal{Prompt: rec, Reason: why})
 			continue
@@ -82,7 +83,10 @@ func Candidates(prompts []Prompt, fleets map[string]Fleet, home string) ([]Candi
 				out = append(out, Candidate{Fleet: rec.Fleet, Rule: r.Rule})
 				i = len(out) - 1
 			}
-			out[i].Prompts = append(out[i].Prompts, rec)
+			// One prompt can draw the same rule twice, as Copilot's identifiers can repeat.
+			if !slices.ContainsFunc(out[i].Prompts, func(q permlog.Record) bool { return q.Ship == rec.Ship && q.ID == rec.ID }) {
+				out[i].Prompts = append(out[i].Prompts, rec)
+			}
 		}
 	}
 	return out, refused
@@ -115,25 +119,25 @@ type drawn struct {
 }
 
 // rulesFor is the narrowest rules the prompt's harness itself offers for it, or why it offers none.
-func rulesFor(rec permlog.Record, home string) ([]drawn, string) {
+func rulesFor(rec permlog.Record, at place) ([]drawn, string) {
 	switch rec.Harness {
 	case "claude":
 		if rec.Repo == "" {
 			return nil, "the log names no repo"
 		}
-		return claudeRules(rec, home)
+		return claudeRules(rec, at)
 	case "copilot":
 		if rec.Repo == "" {
 			return nil, "the log names no repo"
 		}
-		return copilotRules(rec, home)
+		return copilotRules(rec, at)
 	case "codex":
-		return codexRule(rec, home)
+		return codexRule(rec, at)
 	}
 	return nil, "no allow rules for harness " + rec.Harness
 }
 
-func claudeRules(rec permlog.Record, home string) ([]drawn, string) {
+func claudeRules(rec permlog.Record, at place) ([]drawn, string) {
 	var sugs []struct {
 		Type     string `json:"type"`
 		Behavior string `json:"behavior"`
@@ -157,7 +161,7 @@ func claudeRules(rec permlog.Record, home string) ([]drawn, string) {
 			}
 			out = append(out, drawn{
 				Rule:   Rule{Harness: "claude", Repo: rec.Repo, Rule: text},
-				reason: refuseClaude(r.Tool, r.Content, home),
+				reason: refuseClaude(r.Tool, r.Content, at),
 			})
 		}
 	}
@@ -167,7 +171,7 @@ func claudeRules(rec permlog.Record, home string) ([]drawn, string) {
 	return out, ""
 }
 
-func refuseClaude(tool, content, home string) string {
+func refuseClaude(tool, content string, at place) string {
 	switch {
 	case tool == "WebFetch" || tool == "WebSearch":
 		return refusal(NeverNetwork, tool)
@@ -180,16 +184,16 @@ func refuseClaude(tool, content, home string) string {
 		if !ok {
 			return "Admiral can't read the rule's command: " + content
 		}
-		return refuseShell(r, home)
+		return refuseShell(r, at)
 	case tool == "Read" || tool == "Edit" || tool == "Write" || tool == "MultiEdit" || tool == "NotebookEdit":
 		// Claude Code reads //path as absolute, /path as relative to the settings file, and a bare path as relative.
 		switch {
 		case strings.HasPrefix(content, "//"):
-			return refusePath("", content[1:], home)
+			return refusePath("", content[1:], at)
 		case strings.HasPrefix(content, "/"):
 			return refusal(NeverOutside, content)
 		}
-		return refusePath(content, "", home)
+		return refusePath(content, "", at)
 	}
 	return "no narrow rule form for " + tool
 }
@@ -210,7 +214,7 @@ func claudeShell(content string) (shellRule, bool) {
 	return shellRule{words: words, prefix: prefix}, ok
 }
 
-func copilotRules(rec permlog.Record, home string) ([]drawn, string) {
+func copilotRules(rec permlog.Record, at place) ([]drawn, string) {
 	c := rec.Call
 	switch c.Kind {
 	case "shell":
@@ -226,7 +230,7 @@ func copilotRules(rec permlog.Record, home string) ([]drawn, string) {
 			case !ok || strings.ContainsAny(id, ":*()"):
 				d.reason = "Admiral can't read the identifier: " + id
 			default:
-				d.reason = refuseShell(shellRule{words: words, prefix: true}, home)
+				d.reason = refuseShell(shellRule{words: words, prefix: true}, at)
 			}
 			out = append(out, d)
 		}
@@ -237,8 +241,12 @@ func copilotRules(rec permlog.Record, home string) ([]drawn, string) {
 			return nil, "Copilot named no single absolute file"
 		}
 		p := c.Paths[0]
-		return []drawn{{Rule: Rule{Harness: "copilot", Repo: rec.Repo, Rule: "write(" + p + ")"},
-			reason: refusePath("", p, home)}}, ""
+		reason := refusePath("", p, at)
+		if c.Cwd != "" && strings.HasPrefix(p, strings.TrimSuffix(c.Cwd, "/")+"/") && !strings.Contains(p, "..") &&
+			strings.HasPrefix(reason, "on the never list ("+NeverOutside+")") {
+			reason = "a write rule names one absolute file, which no other checkout of the repo shares"
+		}
+		return []drawn{{Rule: Rule{Harness: "copilot", Repo: rec.Repo, Rule: "write(" + p + ")"}, reason: reason}}, ""
 	case "url":
 		return nil, refusal(NeverNetwork, strings.Join(c.URLs, " "))
 	case "mcp":
@@ -248,10 +256,12 @@ func copilotRules(rec permlog.Record, home string) ([]drawn, string) {
 }
 
 var plainWord = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+var longFlag = regexp.MustCompile(`^--[a-z][a-z0-9-]*$`)
 var programWord = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._+-]*$`)
 
-// codexRule is the command's argv up to its first argument that names a path or a value, as a prefix rule.
-func codexRule(rec permlog.Record, home string) ([]drawn, string) {
+// codexRule is the command's argv as a prefix rule, up to its first argument that isn't a plain word or a long option
+// without a value: a short option, an option with =value, a path or a number ends it.
+func codexRule(rec permlog.Record, at place) ([]drawn, string) {
 	if rec.Call.Kind != "shell" {
 		return nil, "Codex rules cover commands only"
 	}
@@ -267,10 +277,13 @@ func codexRule(rec permlog.Record, home string) ([]drawn, string) {
 		return nil, "the command names its program by path: " + words[0]
 	}
 	n := 1
-	for n < len(words) && plainWord.MatchString(words[n]) {
+	for n < len(words) && (plainWord.MatchString(words[n]) || longFlag.MatchString(words[n])) {
 		n++
 	}
 	pattern := slices.Clone(words[:n])
-	return []drawn{{Rule: Rule{Harness: "codex", Pattern: pattern},
-		reason: refuseShell(shellRule{words: pattern, prefix: true}, home)}}, ""
+	reason := refuseShell(shellRule{words: pattern, prefix: true}, at)
+	if reason == "" && writesOutput(words) {
+		reason = refusal(NeverOutside, "--output")
+	}
+	return []drawn{{Rule: Rule{Harness: "codex", Pattern: pattern}, reason: reason}}, ""
 }

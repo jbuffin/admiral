@@ -37,7 +37,7 @@ func nv(group string, cmds ...string) []never {
 }
 
 var neverList = slices.Concat(
-	nv(NeverPushMerge, "git push", "git merge", "git pull", "gh pr merge", "gh repo sync", "gh merge"),
+	nv(NeverPushMerge, "git push", "git subtree push", "git lfs push", "git send-pack", "git merge", "git pull", "gh pr merge", "gh repo sync", "gh merge"),
 	nv(NeverGHAPI, "gh api", "gh pr close", "gh pr lock", "gh issue close", "gh issue delete", "gh issue lock",
 		"gh issue transfer", "gh repo delete", "gh repo edit", "gh repo rename", "gh repo archive",
 		"gh repo unarchive", "gh repo deploy-key", "gh secret", "gh variable", "gh ruleset", "gh workflow run",
@@ -53,33 +53,37 @@ var neverList = slices.Concat(
 		"nice", "timeout", "time", "watch", "command", "builtin", "find", "fd", "script", "expect", "tmux", "screen",
 		"npx", "bunx", "uvx", "pnpm dlx", "pnpm exec", "npm exec", "yarn dlx", "yarn exec", "uv run", "pipx",
 		"poetry run", "bundle exec", "go run", "git -c", "docker run", "docker exec", "podman run", "podman exec",
-		"kubectl exec", "claude", "codex", "copilot", "gemini", "ssh"),
+		"kubectl exec", "claude", "codex", "copilot", "gemini", "ssh", "sqlite3", "vi", "vim", "nvim", "ex", "view", "emacs",
+		"gdb", "lldb", "psql", "mysql", "r", "rscript", "julia", "swift", "java", "jshell", "git bisect", "arch",
+		"caffeinate", "xcrun", "stdbuf", "flock", "sandbox-exec", "chroot"),
 	nv(NeverDelete, "rm", "rmdir", "unlink", "shred", "srm", "trash", "git rm", "git clean", "git reset",
 		"git restore", "git rebase", "git filter-branch", "git filter-repo", "git reflog", "git update-ref",
 		"git replace", "git gc", "git prune", "git stash drop", "git stash clear", "git worktree remove",
-		"git worktree prune"),
+		"git worktree prune", "kubectl delete", "terraform destroy", "helm uninstall"),
 	[]never{
 		{group: NeverDelete, prefix: []string{"git", "branch"}, args: []string{"-d", "-D", "--delete", "-m", "-M", "--move", "-f", "--force"}},
 		{group: NeverDelete, prefix: []string{"git", "tag"}, args: []string{"-d", "--delete", "-f", "--force"}},
 		{group: NeverDelete, prefix: []string{"git", "commit"}, args: []string{"--amend"}},
-		{group: NeverDelete, prefix: []string{"git", "checkout"}, args: []string{"-f", "--force", "--", "."}},
+		{group: NeverDelete, prefix: []string{"git", "checkout"}, args: []string{"-f", "--force", "-B", "--", "."}},
 		{group: NeverDelete, prefix: []string{"git", "switch"}, args: []string{"-f", "--force", "--discard-changes", "-C", "--force-create"}},
+		{group: NeverInterpreter, prefix: []string{"make"}, args: []string{"--eval"}},
+		{group: NeverOutside, prefix: []string{"git"}, args: []string{"--output"}},
 	},
 	nv(NeverNetwork, "curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "socat", "telnet", "scp",
-		"sftp", "ftp", "rsync", "git clone", "git fetch", "git remote", "git ls-remote", "git submodule",
+		"sftp", "ftp", "rsync", "git clone", "git fetch", "git remote", "git ls-remote", "git submodule", "npm ci", "go mod download", "uv sync", "bundle install",
 		"npm install", "npm i", "npm add", "npm update", "yarn add", "yarn install", "pnpm add", "pnpm install",
 		"pnpm i", "bun add", "bun install", "pip", "pip3", "uv pip", "uv add", "poetry add", "go get", "go install",
 		"cargo install", "cargo add", "gem install", "brew", "apt", "apt-get", "docker pull", "open"),
 	nv(NeverSecret, "security", "gh auth", "git config", "git credential", "ssh-keygen", "ssh-add", "gpg", "op",
 		"pass", "printenv", "export", "aws", "gcloud", "az", "npm login", "npm token", "npm adduser", "docker login",
 		"vault", "keychain", "cat", "head", "tail", "less", "more", "bat", "strings", "xxd", "od", "hexdump",
-		"base64", "grep", "rg", "ag", "git send-email"),
+		"base64", "grep", "rg", "ag", "git send-email", "jq", "sort", "diff", "nl", "tac"),
 	nv(NeverOutside, "cp", "mv", "tee", "ln", "dd", "install", "truncate", "touch", "mkdir", "ditto", "tar", "unzip",
 		"zip", "patch"),
 	nv(NeverWiring, "chmod", "chown", "chgrp", "chflags", "xattr", "setfacl", "umask", "launchctl", "crontab",
 		"defaults", "git hook", "git init", "admiral setup", "admiral service", "admiral config", "admiral fleet",
 		"admiral pair", "admiral devices", "admiral hook", "admiral guard", "admiral mcp", "admiral statusline",
-		"admiral update", "admiral completion", "codex-pane"),
+		"admiral update", "admiral completion", "codex-pane", "gh extension install", "gh alias set", "gh config set"),
 )
 
 // interpreterStems catch the versioned names of interpreters, such as python3.12 or node22.
@@ -92,22 +96,43 @@ type shellRule struct {
 	prefix bool
 }
 
+// place is where a rule's paths are judged: Admiral's home, and the ship whose report and inbox are its own.
+type place struct{ home, ship string }
+
 // refuseShell is the never list's reason to refuse r, or "" when it may become an allow rule.
-func refuseShell(r shellRule, home string) string {
+func refuseShell(r shellRule, at place) string {
 	if len(r.words) == 0 {
 		return "it would allow every command"
 	}
-	words := slices.Clone(r.words)
-	words[0] = path.Base(words[0])
 	if strings.Contains(r.words[0], "=") {
 		return refusal(NeverInterpreter, "sets the environment for the command")
 	}
+	// A case-insensitive disk runs RM and Python3 as rm and python3.
+	words := make([]string, len(r.words))
+	for i, w := range r.words {
+		words[i] = strings.ToLower(w)
+	}
+	words[0] = path.Base(words[0])
 	for _, stem := range interpreterStems {
 		if strings.HasPrefix(words[0], stem) {
 			return refusal(NeverInterpreter, words[0])
 		}
 	}
+	if len(words) > 1 && strings.ContainsAny(words[1][:min(1, len(words[1]))], "-+") {
+		for _, n := range neverList {
+			if len(n.prefix) > 1 && n.prefix[0] == words[0] {
+				return refusal(n.group, "an option before the subcommand hides what it runs")
+			}
+		}
+	}
 	for _, n := range neverList {
+		if len(n.args) > 0 && len(n.prefix) == 1 && n.prefix[0] == words[0] {
+			// An option every subcommand takes: refused where the command carries it, not for the program as a whole.
+			if slices.ContainsFunc(r.words[1:], func(w string) bool { return carries(w, n.args) }) {
+				return refusal(n.group, strings.Join(n.args, " "))
+			}
+			continue
+		}
 		if r.prefix {
 			// A prefix rule allows everything under it, so it is refused when it reaches any never-listed command.
 			if hasPrefix(words, n.prefix) || hasPrefix(n.prefix, words) {
@@ -115,16 +140,22 @@ func refuseShell(r shellRule, home string) string {
 			}
 			continue
 		}
-		if hasPrefix(words, n.prefix) && (len(n.args) == 0 || slices.ContainsFunc(words[len(n.prefix):], func(w string) bool { return carries(w, n.args) })) {
+		if hasPrefix(words, n.prefix) && (len(n.args) == 0 || slices.ContainsFunc(r.words[len(n.prefix):], func(w string) bool { return carries(w, n.args) })) {
 			return refusal(n.group, strings.Join(n.prefix, " "))
 		}
 	}
 	for _, w := range r.words[1:] {
-		if why := refusePathWord(w, home); why != "" {
+		if why := refusePathWord(w, at); why != "" {
 			return why
 		}
 	}
 	return ""
+}
+
+// writesOutput is whether a git command names --output, which writes a file wherever it points.
+func writesOutput(words []string) bool {
+	return strings.EqualFold(path.Base(words[0]), "git") &&
+		slices.ContainsFunc(words[1:], func(w string) bool { return carries(w, []string{"--output"}) })
 }
 
 func refusal(group, what string) string { return "on the never list (" + group + "): " + what }
@@ -138,6 +169,10 @@ func carries(word string, flags []string) bool {
 	for _, f := range flags {
 		switch {
 		case word == f, strings.HasPrefix(f, "--") && strings.HasPrefix(word, f+"="):
+			return true
+		// Git takes any unambiguous prefix of a long option, so three letters after the dashes count.
+		case strings.HasPrefix(f, "--") && strings.HasPrefix(word, "--") && len(word) >= 5 &&
+			strings.HasPrefix(f, strings.SplitN(word, "=", 2)[0]):
 			return true
 		case len(f) == 2 && f[0] == '-' && f[1] != '-' && len(word) > 2 && word[0] == '-' && word[1] != '-' &&
 			strings.ContainsRune(word[1:], rune(f[1])):
@@ -156,14 +191,14 @@ var wiringMarks = []string{".claude", ".codex", ".copilot", ".git/hooks", ".git/
 	".zprofile", ".bash_profile", ".zshenv", "launchagents"}
 
 // refusePathWord refuses an argument that names a secret or Admiral's or a harness's wiring.
-func refusePathWord(w, home string) string {
+func refusePathWord(w string, at place) string {
 	lw := strings.ToLower(w)
 	for _, m := range secretMarks {
 		if strings.Contains(lw, m) {
 			return refusal(NeverSecret, w)
 		}
 	}
-	if adm := admiralPath(w, home); adm == admiralOther {
+	if adm := admiralPath(w, at); adm == admiralOther {
 		return refusal(NeverWiring, w)
 	} else if adm != notAdmiral {
 		return ""
@@ -180,36 +215,45 @@ type admiralPlace int
 
 const (
 	notAdmiral   admiralPlace = iota
-	admiralOwn                // a report, or a ship's inbox: the files a ship may write
+	admiralOwn                // the ship's own report and inbox: the files it may write
 	admiralOther              // anything else in Admiral's home, its proposals included
 )
 
-func admiralPath(p, home string) admiralPlace {
-	if home == "" || !filepath.IsAbs(p) {
+func admiralPath(p string, at place) admiralPlace {
+	if at.home == "" || !filepath.IsAbs(p) {
 		return notAdmiral
 	}
-	rel, err := filepath.Rel(filepath.Clean(home), filepath.Clean(p))
+	rel, err := filepath.Rel(filepath.Clean(at.home), filepath.Clean(p))
 	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
 		return notAdmiral
 	}
 	parts := strings.Split(rel, "/")
+	// A glob in the segment that picks the ship or the Admiral session could match any of them.
+	for _, seg := range parts[:min(len(parts), 2)] {
+		if strings.ContainsAny(seg, "*?[") {
+			return admiralOther
+		}
+	}
+	// Segments compare folded: a case-insensitive disk finds inbox/_ADMIRAL at inbox/_admiral.
 	switch {
-	case len(parts) >= 2 && parts[0] == "reports":
+	case at.ship == "" || len(parts) < 2:
+	case len(parts) == 2 && strings.EqualFold(parts[0], "reports") && strings.EqualFold(parts[1], at.ship+".json"):
 		return admiralOwn
-	case len(parts) >= 3 && parts[0] == "inbox" && parts[1] != "_admiral":
+	case len(parts) >= 3 && strings.EqualFold(parts[0], "inbox") && strings.EqualFold(parts[1], at.ship) &&
+		!strings.EqualFold(parts[1], "_admiral"):
 		return admiralOwn
 	}
 	return admiralOther
 }
 
-// refusePath refuses a file rule's path unless it stays in the worktree or in Admiral's report and inbox paths.
+// refusePath refuses a file rule's path unless it stays in the worktree or in the ship's own report and inbox paths.
 // rel is a path relative to the ship's working directory; abs is an absolute one. Exactly one is set.
-func refusePath(rel, abs, home string) string {
+func refusePath(rel, abs string, at place) string {
 	if abs != "" {
-		if why := refusePathWord(abs, home); why != "" {
+		if why := refusePathWord(abs, at); why != "" {
 			return why
 		}
-		if admiralPath(abs, home) == admiralOwn && !strings.Contains(abs, "..") {
+		if admiralPath(abs, at) == admiralOwn && !strings.Contains(abs, "..") {
 			return ""
 		}
 		return refusal(NeverOutside, abs)
@@ -222,7 +266,7 @@ func refusePath(rel, abs, home string) string {
 			return refusal(NeverOutside, rel)
 		}
 	}
-	if why := refusePathWord(rel, home); why != "" {
+	if why := refusePathWord(rel, at); why != "" {
 		return why
 	}
 	if rel == "**" || rel == "*" || rel == "./**" || rel == "." || rel == "./" {
