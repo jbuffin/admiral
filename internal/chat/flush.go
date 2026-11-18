@@ -76,7 +76,8 @@ func (s *fleetChat) resetTick(now time.Time) {
 	} else {
 		rs.idleSince = time.Time{}
 	}
-	busy := rs.running || now.Before(rs.holdUntil) || s.resetting.Load()
+	// A report turn queued or running holds the reset back, as an open question does.
+	busy := rs.running || now.Before(rs.holdUntil) || s.resetting.Load() || s.turnBusy()
 	idleSince, lastReset := rs.idleSince, rs.lastReset
 	rs.mu.Unlock()
 	fleet, off, ok := s.Config().ChatFleet(s.key)

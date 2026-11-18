@@ -722,12 +722,13 @@ func serve(args []string) error {
 			}
 			return keys
 		},
-		ActorToken: chatService.ActorToken,
-		ShipFleet:  shipService.FleetOf,
-		ShipFound:  shipService.Exists,
-		Inbox:      inboxService.List,
-		Source:     sourceService.FleetOf,
-		Campaign:   followStore.Get,
+		ActorToken:  chatService.ActorToken,
+		ShipFleet:   shipService.FleetOf,
+		ShipFound:   shipService.Exists,
+		TurnCantAct: chatService.TurnCantAct,
+		Inbox:       inboxService.List,
+		Source:      sourceService.FleetOf,
+		Campaign:    followStore.Get,
 	})
 	srv := &http.Server{Handler: guard.Middleware(actorGuard.Middleware(s.Handler()))}
 	srv.RegisterOnShutdown(func() { close(stopping) }) // a held lock would hold up the shutdown

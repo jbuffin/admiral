@@ -325,7 +325,7 @@ func TestAnEngineerSendDuringAReportTurnAndStartAreNotBlockedByTheQueue(t *testi
 func TestAnEngineerMessageRacingADeliveryIsNeverTypedIntoTheReportsMessage(t *testing.T) {
 	r := newTurnRig(t, "claude")
 	r.enqueue("a", "REPORT-A")
-	sent := make(chan error, 1)
+	sent := make(chan *launcher.Error, 1)
 	go func() { sent <- r.fc.send("ENGINEER-HELLO") }()
 	r.tickUntil("REPORT-A typed", r.typedOnce("REPORT-A"))
 	if err := <-sent; err != nil {

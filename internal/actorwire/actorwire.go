@@ -26,8 +26,9 @@ func Guard(d Deps) *actor.Guard {
 		Tokens: func(token string) (string, bool) {
 			return actor.Lookup(token, d.FleetKeys(), d.ActorToken)
 		},
-		ShipFleet: d.ShipFleet,
-		ShipFound: d.ShipFound,
+		ShipFleet:   d.ShipFleet,
+		ShipFound:   d.ShipFound,
+		TurnCantAct: d.TurnCantAct,
 		ItemFleet: func(session, id string) (string, bool) {
 			for _, it := range d.Inbox() {
 				if it.Session == session && it.ID == id {

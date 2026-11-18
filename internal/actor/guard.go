@@ -103,6 +103,10 @@ func (g *Guard) Middleware(next http.Handler) http.Handler {
 			refuse(w, status, msg)
 			return
 		}
+		if r.Method != http.MethodGet && g.TurnCantAct != nil && g.TurnCantAct(fleet) {
+			refuse(w, http.StatusForbidden, "this turn can only read and talk, so AdmiralBot can't act now: offer the action to the engineer in plain text instead")
+			return
+		}
 		r.Header.Del(Header)
 		next.ServeHTTP(w, r.WithContext(WithFleet(r.Context(), fleet)))
 	})
