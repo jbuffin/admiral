@@ -1,6 +1,20 @@
 package chat
 
-import "github.com/jbuffin/admiral/internal/ships"
+import (
+	"encoding/json"
+	"strconv"
+	"time"
 
-// PostLaunchLine appends a chat launch's line to the fleet's chat log.
-func (s *Service) PostLaunchLine(fleet string, l ships.LaunchLine) error { return nil }
+	"github.com/jbuffin/admiral/internal/chatlog"
+	"github.com/jbuffin/admiral/internal/ships"
+)
+
+// PostLaunchLine appends a chat launch's line to the fleet's chat log. It starts no turn, and AdmiralBot does not read it.
+func (s *Service) PostLaunchLine(fleet string, l ships.LaunchLine) error {
+	card, err := json.Marshal(map[string]any{"ship": l.Ship, "name": l.Name, "fleet": fleet, "kind": l.Kind, "reason": l.Reason, "text": l.Text})
+	if err != nil {
+		return err
+	}
+	_, err = s.history().Append(fleet, chatlog.Entry{ID: "launch-line-" + l.Ship + "-" + strconv.FormatInt(time.Now().UnixNano(), 36), Kind: chatlog.KindLaunchLine, Text: l.Ship, Card: card})
+	return err
+}

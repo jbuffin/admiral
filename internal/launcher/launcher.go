@@ -400,6 +400,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	prompt = l.withGuidance(req, prompt)
 	prompt = withScoutContract(req, prompt)
+	prompt = withClosingSteps(req, prompt)
 	flags, known := l.hookFlags(req.Harness)
 	if !known {
 		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)

@@ -331,6 +331,20 @@ A ship card is a chat entry with `kind: "ship_card"` that the server posts in th
 - `prs` are the ship's PRs as last seen, in order; `number` is read from the URL.
 - Ships already moored or anchored when the server first runs this feature post nothing, and a moored one's `ready_to_merge` waits out its first answered poll: if that poll shows the stack ready, no card. Admiral records them as seen in `$ADMIRAL_HOME/ship-cards.json`, which also keeps each voyage's posted results across restarts.
 
+### Launch lines
+
+A launch line is a chat entry with `kind: "launch_line"` that the server posts in the chat of the ship's fleet when AdmiralBot launches a ship the engineer asked for in the chat. It starts no turn, sends no push and writes no digest line, so AdmiralBot never reads it. Commitment and campaign launches, launches from the UI and event launches (which post a launch card) post none. It reaches clients through the `chat` WebSocket message.
+
+`id` is `launch-line-<ship>-<stamp>`, and `text` is the ship's session name. `card` is:
+
+```json
+{"ship": "calm-otter", "name": "Calm Otter", "fleet": "harbor", "kind": "quick_ship", "reason": "to read the AWS logs", "text": "Read the logs and fix the 500."}
+```
+
+- `kind` is `scout`, `quick_ship`, `commodore`, or the name of the skill the ship runs (a drafting ship shows its skill's name).
+- `reason` is the one line AdmiralBot gave `launch_ship`, which requires it.
+- `text` is the launch text as AdmiralBot wrote it, without the closing steps Admiral adds to a quick ship's prompt.
+
 ### The log
 
 Admiral appends the history to `$ADMIRAL_HOME/chat/<fleet>/conversation.jsonl`, one JSON entry a line: `id`, `kind`, `role`, `text`, `at`, `card`, and `logged`, when Admiral wrote it. An entry whose `id` is already in the log is skipped, so reading the transcript again, after a restart too, adds nothing. On the first append of a new month (UTC) the file is renamed `conversation-YYYY-MM.jsonl`; old months are kept. The log is Admiral's: nothing in it is fed back to the model, though the chat can read its own file in its working directory.
