@@ -220,7 +220,7 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 // The tools by name, with the route each calls. Anything not in this list is a tool the Never list forbids or one
 // nobody specified: approvals, typing mid-turn, config, sources, settings and Preferences have none.
 var wantTools = []string{
-	"add_order", "answer_item", "ask_question", "dismiss_ship", "draft_routine", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_cloneable_repos",
+	"add_order", "answer_item", "ask_question", "dismiss_ship", "draft_campaign", "draft_routine", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_cloneable_repos",
 	"list_crew", "list_docks", "list_inbox", "list_repos", "list_routines", "list_ships", "list_skills", "list_sources", "make_commitment", "next_prompt", "read_campaign", "read_conversation", "read_hold_fire", "read_outcomes",
 	"save_note", "stop_ship", "turn_routine_off", "wake_ship", "work_on_campaign",
 }
@@ -1137,5 +1137,96 @@ func TestTheFleetMapReadsRefuseAChatWithNoFleetWithoutAskingTheServer(t *testing
 				t.Errorf("result = %+v, requests = %v; want a tool error saying the chat has no fleet and no request", tr, a.requests())
 			}
 		})
+	}
+}
+
+func TestDraftCampaignPostsTheRepoTitleAndBodyToItsOwnFleetAndAnswersTheItemLink(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"id":"campaign-Ab12"}` })
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "draft_campaign", `{"repo":"acme/widgets","title":"Speed up the fleet map","body":"Load the map in under a second."}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := a.requests()
+	if len(got) != 1 || got[0].Method != "POST" || got[0].Path != "/api/fleets/work/campaign-drafts" || got[0].Actor != mcpToken ||
+		got[0].Body["repo"] != "acme/widgets" || got[0].Body["title"] != "Speed up the fleet map" || got[0].Body["body"] != "Load the map in under a second." {
+		t.Fatalf("requests = %+v, want the one POST of repo, title and body to /api/fleets/work/campaign-drafts as the actor and no other route (no GitHub write, no drafter)", got)
+	}
+	tr := result(t, replies, "1")
+	if tr.IsError || !strings.Contains(tr.text(), "/app/inbox/_admiral/item/campaign-Ab12") {
+		t.Errorf("result = %+v, want no error and the link /app/inbox/_admiral/item/campaign-Ab12 for the reply", tr)
+	}
+}
+
+func TestDraftCampaignPassesARefusalThroughAsTheToolsErrorWithNoLink(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) {
+		return 422, `{"error":"acme/other is not one of fleet work's repos"}`
+	})
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "draft_campaign", `{"repo":"acme/other","title":"T","body":"B"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr := result(t, replies, "1"); !tr.IsError || strings.Contains(tr.text(), "/app/inbox") || !strings.Contains(tr.text(), "not one of fleet work's repos") {
+		t.Errorf("result = %+v, want isError with the server's message and no link", tr)
+	}
+}
+
+func TestDraftCampaignWithoutARepoOrATitleIsAnErrorAndPostsNothing(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"id":"campaign-x"}` })
+	a.env(t, mcpToken)
+	for _, args := range []string{`{"title":"T","body":"B"}`, `{"repo":"acme/widgets","body":"B"}`, `{"repo":"acme/widgets","title":"  ","body":"B"}`} {
+		replies, _, err := serve(t, call(1, "draft_campaign", args))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tr := result(t, replies, "1"); !tr.IsError {
+			t.Errorf("%s: result = %+v, want isError", args, tr)
+		}
+	}
+	if n := len(a.requests()); n != 0 {
+		t.Errorf("requests = %d, want none when the repo or the title is missing", n)
+	}
+}
+
+func TestDraftCampaignToolDescriptionSaysItOnlyDraftsForTheEngineerToConfirm(t *testing.T) {
+	a := newStandIn(t, nil)
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, rpc(1, "tools/list", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Tools []struct {
+			Name, Description string
+			InputSchema       json.RawMessage `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(replies["1"].Result, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range list.Tools {
+		switch tl.Name {
+		case "draft_campaign":
+			d := strings.ToLower(tl.Description)
+			if !strings.Contains(d, "engineer") || !strings.Contains(d, "inbox") || !strings.Contains(d, "never") {
+				t.Errorf("description = %q, want it to say the draft waits in the Inbox for the engineer and that AdmiralBot never files the campaign", tl.Description)
+			}
+			for _, field := range []string{"repo", "title", "body"} {
+				if !strings.Contains(string(tl.InputSchema), field) {
+					t.Errorf("schema = %s, want a %s input", tl.InputSchema, field)
+				}
+			}
+		case "work_on_campaign":
+			if d := strings.ToLower(tl.Description); strings.Contains(d, "you cannot create a campaign") || !strings.Contains(d, "draft_campaign") {
+				t.Errorf("work_on_campaign description = %q, want it to point at draft_campaign instead of saying a campaign can't be created", tl.Description)
+			}
+		}
+	}
+}
+
+func TestTheCopilotChatsAllowlistIncludesTheCampaignDrafter(t *testing.T) {
+	if !slices.Contains(launcher.ChatTools, "draft_campaign") {
+		t.Errorf("launcher.ChatTools = %v, want it to name draft_campaign", launcher.ChatTools)
 	}
 }
