@@ -1,6 +1,9 @@
 import type { Source } from './api';
 import { isModule, SURFACES } from './surfaces';
 
+/** A row id of `.` or `..` would be read as a path step, so such a row has no page of its own. */
+export const openableRow = (id: string) => id !== '.' && id !== '..';
+
 export const modulePath = (key: string, row?: string) => `/app/${encodeURIComponent(key)}${row === undefined ? '' : `/${encodeURIComponent(row)}`}`;
 
 /** The source key and selected row a path names, if it has the shape of a module path. */
@@ -8,7 +11,9 @@ export function moduleOf(path: string): { key: string; row: string | null } | nu
   const [key, row, ...rest] = path.replace(/^\/app\/?/, '').replace(/\/$/, '').split('/');
   if (!key || rest.length > 0) return null;
   try {
-    return { key: decodeURIComponent(key), row: row === undefined ? null : decodeURIComponent(row) };
+    const id = row === undefined ? null : decodeURIComponent(row);
+    if (id !== null && !openableRow(id)) return null;
+    return { key: decodeURIComponent(key), row: id };
   } catch {
     return null;
   }

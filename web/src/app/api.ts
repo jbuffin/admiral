@@ -675,6 +675,25 @@ export interface ModulePageData {
   auth?: { message: string; url?: string; code?: string };
   error?: string;
 }
+export interface RowLink {
+  label: string;
+  url: string;
+}
+export interface RowStep {
+  id: string;
+  title: string;
+  chips?: PageChip[];
+  action?: PageAction;
+  actions?: PageAction[];
+}
+export type RowSection =
+  | { kind: 'links'; title?: string; links?: RowLink[] }
+  | { kind: 'steps'; title?: string; steps?: RowStep[] }
+  | { kind: 'fields'; title?: string; fields?: { label: string; value: string }[] };
+export interface RowDetail {
+  sections: RowSection[];
+}
+export const fetchModuleRow = (key: string, id: string) => call<RowDetail>('GET', `${src(key)}/rows/${encodeURIComponent(id)}`);
 export const fetchModulePage = (key: string) => call<ModulePageData>('GET', `${src(key)}/page`);
 
 export interface Source {

@@ -386,7 +386,7 @@ export function Shell() {
   const known = surfaceOf(loc.value.path);
   const route = known ? null : resolveModule(loc.value.path, sources.value, sourcesLoaded.value);
   const pendingKey = moduleOf(loc.value.path)?.key ?? '';
-  const mod: ModuleView | null = route?.state === 'open' ? { key: route.source.key, name: route.source.name, pending: false } : route?.state === 'pending' ? { key: pendingKey, name: pendingKey, pending: true } : null;
+  const mod: ModuleView | null = route?.state === 'open' ? { key: route.source.key, name: route.source.name, pending: false } : route?.state === 'pending' ? { key: pendingKey, name: sources.value.find((s) => s.key === pendingKey)?.name || pendingKey, pending: true } : null;
   const surface = known ?? SURFACES[0];
   const gate = signedOut.value ? 'pair' : gateOf(shipsLink.value);
   // An overlay, not a replacement: a blip must not unmount a Launch sheet with typed work in it.

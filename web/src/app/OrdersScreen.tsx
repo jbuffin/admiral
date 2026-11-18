@@ -4,6 +4,7 @@ import { Button } from './Button';
 import { isExpanded, toggleExpanded } from './expandedParents';
 import { activeFleet, fleetSearch } from './fleets';
 import { Icon } from './Icon';
+import { ListGroup } from './ListGroup';
 import { OrderPane } from './OrderPane';
 import { selectedRow, selectionGone, withSelectedOrder } from './orderDetail';
 import { AnswerReviewSheet } from './AnswerReview';
@@ -212,17 +213,11 @@ function ChainRow({ group, phone, open, onToggle, onStack }: { group: ViewGroup;
 function Group({ id, title, rows, phone, muted, chosen, onOpen, onLaunch, onAgain }: { id: string; title: string; rows: OrderRow[]; phone: boolean; muted: boolean; chosen?: string; onOpen: (r: OrderRow) => void; onLaunch: (o: OrderRef) => void; onAgain: RowProps['onAgain'] }) {
   if (rows.length === 0) return null;
   return (
-    <section class="ogroup" aria-labelledby={id}>
-      <h2 id={id} class="ogroup-head">
-        {muted ? null : <span class="dot needs" aria-hidden="true" />}
-        {title} <span class="count">{rows.length}</span>
-      </h2>
-      <ul class="ship-list">
-        {rows.map((r) => (
-          <Row key={r.key} row={r} phone={phone} muted={muted} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} note />
-        ))}
-      </ul>
-    </section>
+    <ListGroup id={id} title={title} count={rows.length} muted={muted}>
+      {rows.map((r) => (
+        <Row key={r.key} row={r} phone={phone} muted={muted} selected={r.key === chosen} onOpen={onOpen} onLaunch={onLaunch} onAgain={onAgain} note />
+      ))}
+    </ListGroup>
   );
 }
 
