@@ -168,7 +168,7 @@ test('a note edits inline keeping its stamp out of the text, moves to another sc
   const calls = server(state);
   page('ada');
   const scope = async (name: RegExp) => await screen.findByRole('region', { name });
-  const note = async (text: string) => (await screen.findByText(text, { exact: false })).closest('li.crew-note')!;
+  const note = async (text: string) => (await screen.findByText(text, { exact: false })).closest('li.crew-note')! as HTMLElement;
 
   fireEvent.click(within(await note('ada keeps handlers thin')).getByRole('button', { name: 'Edit note' }));
   const text = screen.getByRole('textbox', { name: 'Note text' }) as HTMLTextAreaElement;
