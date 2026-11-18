@@ -107,6 +107,10 @@ _Avoid_: app, extension, page plugin
 One thing on a module's page, such as a ticket, listed in a group that says why it is there and opened in the side pane for its detail. It is not an order and never launches a ship itself.
 _Avoid_: item (that is the Inbox's word), ticket, card
 
+**Notice**:
+A line at the top of a module's page about the module itself rather than one row: an update waiting, a setting still to choose, an upstream read that keeps failing. The module shows it until it stops sending it.
+_Avoid_: note (that is a ledger entry), banner, alert
+
 **Module action**:
 Something the engineer does to a row or one of its steps that the module carries out upstream, such as claiming or closing a ticket. It runs on a click, after a yes/no or from a form.
 _Avoid_: action (alone; that is the action ladder's word), command
