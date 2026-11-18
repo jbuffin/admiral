@@ -126,6 +126,9 @@ func scoutDecision(raw []byte, root string) (tool, rule, target string) {
 		if p.ToolName == "Monitor" && strings.TrimSpace(*in.Command) == "" {
 			return p.ToolName, ruleScoutEnv, ""
 		}
+		if r := scoutEnvOverrideRule(*in.Command, 0); r != "" {
+			return p.ToolName, r, ""
+		}
 		c := scoutCheck{root: root, cwd: p.Cwd, st: &scoutState{}}
 		return p.ToolName, c.command(*in.Command, 0), ""
 	}

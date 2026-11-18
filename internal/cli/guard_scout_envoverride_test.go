@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -49,8 +50,8 @@ func TestScoutModeRefusesAShellCommandThatUnsetsOrOverridesItsModeVariables(t *t
 			if denied.Rule != scoutEnvOverride {
 				t.Errorf("rule = %q for %q, want %q", denied.Rule, c.cmd, scoutEnvOverride)
 			}
-			if out != "" || errb != "" {
-				t.Errorf("stdout %q, stderr %q: Guard prints nothing itself, main prints the reason", out, errb)
+			if out != "" || strings.TrimSuffix(errb, "\n") != denied.Reason {
+				t.Errorf("stdout %q, stderr %q: want stdout empty and stderr the reason %q alone", out, errb, denied.Reason)
 			}
 		})
 	}
