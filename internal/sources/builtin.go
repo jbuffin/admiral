@@ -35,7 +35,7 @@ func (s *Service) builtinTarget(w http.ResponseWriter, r *http.Request, builtin 
 		writeError(w, http.StatusNotFound, "source "+key+" not found")
 		return nil, Action{}, false
 	}
-	a, err := rn.moduleAction(r.PathValue("id"), r.PathValue("action"))
+	a, err := rn.moduleAction(actionTarget{id: r.PathValue("id")}, r.PathValue("action"))
 	if err == nil && a.Builtin != builtin {
 		err = errNotBuiltin
 	}
