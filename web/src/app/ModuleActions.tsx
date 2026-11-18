@@ -1,17 +1,23 @@
 import { createContext } from "preact";
 import { useContext, useEffect, useId, useRef, useState } from "preact/hooks";
 import {
+  fetchLaunchTarget,
+  fetchMessagePreview,
   fetchModuleForm,
   runModuleAction,
+  sendMessage,
   type ActionTarget,
   type FormField,
   type ModuleForm,
   type PageAction,
 } from "./api";
 import { Actions, Button } from "./Button";
+import { fleets, fleetSearch } from "./fleets";
+import { LaunchForm } from "./LaunchDialog";
 import { openableRow } from "./modules";
+import { go, shipPath } from "./router";
 import { Sheet, useCancelFocus } from "./Sheet";
-import { showResult } from "./ToastRegion";
+import { isWebUrl, showResult } from "./ToastRegion";
 
 type Values = Record<string, string | string[]>;
 type Run = {
@@ -24,8 +30,18 @@ type Run = {
 /** How long a row or notice waits for the page to change after a run before its module actions come back. */
 export const UPDATING_FALLBACK_MS = 30_000;
 
+/** The action id a built-in action's first request is out for, keyed by `targetKey` like `runs`. */
+type Pending = Record<string, string>;
+
+/** What an action does: a bare url is Open link, and a module action has no builtin. */
+export const builtinOf = (a: PageAction) => a.builtin ?? (a.url ? "open" : undefined);
+/** Open link and Launch work while the page is in error; the message and module actions don't. */
+const enabledFor = (kind: string | undefined, blocked: boolean) =>
+  kind === "open" || kind === "launch" || !blocked;
+
 interface Controller {
   runs: Record<string, Run>;
+  pending: Pending;
   /** True while the page is in error: no module action runs. */
   blocked: boolean;
   press: (target: ActionTarget, action: PageAction) => void;
@@ -51,6 +67,22 @@ export function useModuleActions(
     target: ActionTarget;
     action: PageAction;
   } | null>(null);
+  const [pending, setPending] = useState<Pending>({});
+  const [launch, setLaunch] = useState<{ url: string; fleet: string } | null>(
+    null,
+  );
+  const [message, setMessage] = useState<{
+    row: string;
+    action: PageAction;
+    text: string;
+    chat: string;
+    busy: boolean;
+    /** Names this sheet: a changed text opens a new one, so a tap meant for the old one can't land on it. */
+    ask: number;
+    changed: boolean;
+  } | null>(null);
+  const asks = useRef(0);
+  const open = useRef(0);
   const current = useRef({ version, runs });
   current.current = { version, runs };
   const tokens = useRef(0);
@@ -111,19 +143,114 @@ export function useModuleActions(
     );
   };
 
+  const failed = (action: PageAction, row: string, error: string) =>
+    showResult({
+      tag: `module-action:${sourceKey}:${row}`,
+      name: action.label,
+      line: error,
+      error: true,
+    });
+  const settle = (row: string) =>
+    setPending((p) => {
+      const { [targetKey({ id: row })]: _gone, ...rest } = p;
+      return rest;
+    });
+
+  // Launch asks the server which fleet the issue routes to; a refusal shows its reason and opens nothing.
+  const startLaunch = async (row: string, action: PageAction) => {
+    setPending((p) => ({ ...p, [targetKey({ id: row })]: action.id }));
+    const r = await fetchLaunchTarget(sourceKey, row, action.id);
+    settle(row);
+    if (!r.ok) return failed(action, row, r.error);
+    if (!fleets.value.some((f) => f.key === r.data.fleet))
+      return failed(action, row, `Fleet ${r.data.fleet} is not available.`);
+    setLaunch(r.data);
+  };
+
+  const startMessage = async (row: string, action: PageAction) => {
+    setPending((p) => ({ ...p, [targetKey({ id: row })]: action.id }));
+    const r = await fetchMessagePreview(sourceKey, row, action.id);
+    settle(row);
+    if (!r.ok) return failed(action, row, r.error);
+    const ask = ++asks.current;
+    open.current = ask;
+    setMessage({ row, action, text: r.data.text, chat: r.data.chat, busy: false, ask, changed: false });
+  };
+  const closeMessage = () => {
+    open.current = 0;
+    setMessage(null);
+  };
+
+  // The server posts only the text it composes now: when it refuses the text, ask again with the new one.
+  const sendConfirmed = async () => {
+    const m = message;
+    if (!m || m.busy) return;
+    setMessage({ ...m, busy: true });
+    const r = await sendMessage(sourceKey, m.row, m.action.id, m.text);
+    if (r.ok) {
+      if (open.current === m.ask) closeMessage();
+      return showResult({
+        tag: `module-action:${sourceKey}:${m.row}`,
+        name: m.action.label,
+        line: "Sent to AdmiralBot",
+        url: r.data.chat,
+        linkLabel: "Open the chat",
+      });
+    }
+    if (r.status === 409) {
+      const again = await fetchMessagePreview(sourceKey, m.row, m.action.id);
+      // The engineer closed the sheet while the send was out: it stays closed.
+      if (open.current !== m.ask) return;
+      if (again.ok && again.data.text !== m.text) {
+        const ask = ++asks.current;
+        open.current = ask;
+        return setMessage({ ...m, text: again.data.text, chat: again.data.chat, busy: false, ask, changed: true });
+      }
+    }
+    if (open.current === m.ask) closeMessage();
+    failed(m.action, m.row, r.error);
+  };
+
   const controller: Controller = {
     runs,
+    pending,
     blocked,
     press: (target, action) => {
       if (!openableRow(target.id) || !openableRow(action.id)) return;
-      if (action.url || blocked || runs[targetKey(target)]) return;
+      const kind = builtinOf(action);
+      const key = targetKey(target);
+      if (kind === "open" || pending[key] || runs[key]) return;
+      if (!enabledFor(kind, blocked)) return;
+      if (kind) {
+        // Built-in actions belong to rows; a notice never draws them.
+        if (target.notice) return;
+        return void (kind === "launch" ? startLaunch : startMessage)(target.id, action);
+      }
       if (action.confirm === "yesno" || action.confirm === "form")
         setSheet({ target, action });
       else void run(target, action, {});
     },
   };
 
-  const element = sheet ? (
+  const fleet = launch && fleets.value.find((f) => f.key === launch.fleet);
+  const element = launch && fleet ? (
+    <LaunchForm
+      fleet={fleet}
+      issues={[launch.url]}
+      onClose={() => setLaunch(null)}
+      onLaunched={(session) => go(shipPath(session), fleetSearch.value)}
+    />
+  ) : message ? (
+    <MessageSheet
+      key={message.ask}
+      action={message.action}
+      text={message.text}
+      busy={message.busy}
+      changed={message.changed}
+      onClose={closeMessage}
+      onConfirm={() => void sendConfirmed()}
+    />
+  ) : sheet ? (
     sheet.action.confirm === "form" ? (
       <FormSheet
         sourceKey={sourceKey}
@@ -146,7 +273,7 @@ export function useModuleActions(
   return { controller, sheet: element };
 }
 
-/** A row's, step's or notice's module actions; a built-in action with a url stays an inert button. */
+/** A row's, step's or notice's actions: on a row Open link is a link, Launch and the AdmiralBot message are buttons; a module action runs in the module. A notice draws module actions only. */
 export function ModuleActions({
   target,
   one,
@@ -162,6 +289,20 @@ export function ModuleActions({
   return all.length === 0 ? null : (
     <span class="mactions">
       {all.map((a) => {
+        const kind = builtinOf(a);
+        if (kind && target.notice) return null;
+        if (kind === "open")
+          return isWebUrl(a.url) ? (
+            <a
+              key={a.id}
+              class="btn mact"
+              href={a.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {a.label}
+            </a>
+          ) : null;
         const running = run?.phase === "running" && run.action === a.id;
         return (
           <button
@@ -170,13 +311,13 @@ export function ModuleActions({
             class="btn mact"
             disabled={
               !ctl ||
-              !!a.url ||
-              ctl.blocked ||
+              !enabledFor(kind, ctl.blocked) ||
               !!run ||
+              !!ctl.pending[targetKey(target)] ||
               !openableRow(target.id) ||
               !openableRow(a.id)
             }
-            aria-busy={running ? "true" : undefined}
+            aria-busy={running || ctl?.pending[targetKey(target)] === a.id ? "true" : undefined}
             onClick={() => ctl?.press(target, a)}
           >
             {a.label}
@@ -208,6 +349,48 @@ function ConfirmSheet({
       <Actions class="launch-foot">
         <Button label="Cancel" onClick={onClose} />
         <Button label={action.label} variant="primary" onClick={onConfirm} />
+      </Actions>
+    </Sheet>
+  );
+}
+
+/** The whole composed message as text, asked yes or no; the text shown is the text sent. */
+function MessageSheet({
+  action,
+  text,
+  busy,
+  changed,
+  onClose,
+  onConfirm,
+}: {
+  action: PageAction;
+  text: string;
+  busy: boolean;
+  changed: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  useCancelFocus(true);
+  return (
+    <Sheet
+      label={action.label}
+      kind="launch-backdrop stop-backdrop"
+      onClose={onClose}
+    >
+      {changed ? (
+        <p class="launch-note" role="status">
+          The row changed; this is the new message.
+        </p>
+      ) : null}
+      <p class="line mmessage">{text}</p>
+      <Actions class="launch-foot">
+        <Button label="Cancel" onClick={onClose} />
+        <Button
+          label={action.label}
+          variant="primary"
+          busy={busy}
+          onClick={onConfirm}
+        />
       </Actions>
     </Sheet>
   );

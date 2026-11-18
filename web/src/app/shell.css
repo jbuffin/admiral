@@ -1278,6 +1278,7 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .mchip[data-tone="neutral"] { color: var(--color-text2); border-color: var(--color-line2); }
 .mactions { flex: none; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .mact .spinner { position: static; inset: auto; margin: 0 0 0 6px; width: 12px; height: 12px; display: inline-block; vertical-align: -2px; }
+.mmessage { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 10px; }
 .mact-updating { color: var(--color-muted); font-size: var(--font-size-meta); }
 .mform { display: flex; flex-direction: column; gap: 14px; margin: 0 10px; }
 .sheet .skeleton { margin: 0 10px; }
@@ -1303,4 +1304,8 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .orders-split > .module-page { flex: 1; min-width: 0; min-height: 0; }
 .module-page .orow-open { flex-wrap: wrap; }
 .module-page .orow-main { flex: 1 1 12em; }
+/* A phone row has no room for its actions beside the title: they wrap onto their own right-aligned line. */
+.module-page .orow-phone { flex-wrap: wrap; row-gap: 0; }
+.module-page .orow-phone .orow-open { flex: 1 1 12em; }
+.module-page .orow-phone .mactions { flex: 0 1 auto; max-width: 100%; justify-content: flex-end; margin: 0 14px 8px auto; }
 .mchips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 7px; }

@@ -116,6 +116,9 @@ const openForm = async () => {
   return screen.findByRole('dialog');
 };
 
+// The row's own Open link is also a link, so a result's link is looked for in the toasts.
+const toasts = () => within(document.querySelector('.toasts') as HTMLElement);
+
 test('a click module action on a row runs at once with no values and no sheet', async () => {
   const posts = server({ run: () => ({ body: { message: 'Owner pinged' } }) });
   open();
@@ -326,7 +329,7 @@ test('a successful run shows its message as a toast with its link, which opens i
   open();
   press(await rowItem(), 'Ping owner');
   expect(await screen.findByText('Review passed')).toBeTruthy();
-  const link = screen.getByRole('link') as HTMLAnchorElement;
+  const link = toasts().getByRole('link') as HTMLAnchorElement;
   expect(link.getAttribute('href')).toBe('https://example.com/t/1');
   expect(link.getAttribute('target')).toBe('_blank');
   expect(link.getAttribute('rel')).toBe('noopener noreferrer');
@@ -339,12 +342,12 @@ test('a result with no link, or a link that is not http or https, shows its mess
   open();
   press(await rowItem(), 'Ping owner');
   expect(await screen.findByText('Plain result')).toBeTruthy();
-  expect(screen.queryByRole('link')).toBeNull();
+  expect(toasts().queryByRole('link')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
   await waitFor(() => expect(screen.queryByText('Plain result')).toBeNull());
   press(await rowItem('Ship docs'), 'Archive');
   expect(await screen.findByText('Sneaky result')).toBeTruthy();
-  expect(screen.queryByRole('link')).toBeNull();
+  expect(toasts().queryByRole('link')).toBeNull();
 });
 
 test('plugin text in a result is drawn as text', async () => {
@@ -376,7 +379,7 @@ test.each([
   open();
   press(await rowItem(), 'Ping owner');
   expect(await screen.findByText(error)).toBeTruthy();
-  expect(screen.queryByRole('link')).toBeNull();
+  expect(toasts().queryByRole('link')).toBeNull();
 });
 
 test('a form run that fails shows its error toast and the row comes back, not updating', async () => {
@@ -439,17 +442,6 @@ test('with no page change after a run, the row\'s module actions come back after
   expect((within(row).getByRole('button', { name: 'Ping owner' }) as HTMLButtonElement).disabled).toBe(false);
   expect(pageGets()).toBe(before);
   expect(runPosts(posts)).toHaveLength(1);
-});
-
-test.each(['ready', 'auth_required', 'error'])('a built-in module action with a url stays a disabled button when the page is %s and a press sends nothing', async (state) => {
-  const posts = server({ page: () => pageOf(state) });
-  open(state);
-  const row = await rowItem();
-  const b = within(row).getByRole('button', { name: 'Open docs' }) as HTMLButtonElement;
-  expect(b.disabled).toBe(true);
-  fireEvent.click(b);
-  expect(screen.queryByRole('dialog')).toBeNull();
-  expect(posts).toHaveLength(0);
 });
 
 test('while the page is in error every module action on rows and steps is disabled, and a press sends nothing', async () => {
@@ -675,13 +667,16 @@ test('a row and a notice with the same id each keep their own result toast', asy
   expect(screen.getByText('Row pinged')).toBeTruthy();
 });
 
-test('a url action on a notice stays a disabled button and a press sends nothing', async () => {
-  const posts = server({ page: withNotices('ready', notices) });
+test.each([
+  ['Open link', { id: 'o', label: 'Open it', builtin: 'open', url: 'https://tracker.example/docs' }],
+  ['Launch', { id: 'l', label: 'Start ship', builtin: 'launch', url: 'https://github.com/acme/widgets/issues/7' }],
+  ['Message AdmiralBot', { id: 'm', label: 'Tell the bot', builtin: 'message', kind: 'review', ref: 'A-1', title: 'T', link: 'https://tracker.example/t/1' }],
+])('a %s action on a notice is not drawn: built-in actions belong to rows', async (_kind, action) => {
+  const posts = server({ page: withNotices('ready', [{ id: 'bi', text: 'Built-in here', tone: 'info', action }]) });
   open();
-  const b = within(await noticeItem('Read the docs')).getByRole('button', { name: 'Open docs' }) as HTMLButtonElement;
-  expect(b.disabled).toBe(true);
-  fireEvent.click(b);
-  expect(screen.queryByRole('dialog')).toBeNull();
+  const item = await noticeItem('Built-in here');
+  expect(within(item).queryByText(action.label)).toBeNull();
+  expect(within(item).queryByRole('button')).toBeNull();
   expect(posts).toHaveLength(0);
 });
 

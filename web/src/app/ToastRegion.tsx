@@ -6,7 +6,9 @@ import { go } from './router';
 import { inboxItems, onShipsMessage, ships } from './shipsLink';
 import { createToasts, type Toast, type ToastAlert } from './toasts';
 
-const isWebUrl = (u?: string) => !!u && /^https?:\/\//i.test(u);
+export const isWebUrl = (u?: string) => !!u && /^https?:\/\//i.test(u);
+// A path in this shell, such as the chat a message went to; never a protocol-relative address.
+const isShellPath = (u?: string) => !!u && /^\/app\/[^\\]*$/.test(u);
 
 const queue = createToasts<Alert | ResultAlert>({ now: Date.now });
 const shown = signal<Toast<Alert | ResultAlert>[]>([]);
@@ -23,6 +25,8 @@ function open(t: Toast<Alert | ResultAlert>) {
 /** What a module action's result puts on the queue. */
 export interface ResultAlert extends ToastAlert {
   error?: boolean;
+  /** The link's text; the address itself when absent. */
+  linkLabel?: string;
 }
 
 export interface ResultToast {
@@ -30,12 +34,13 @@ export interface ResultToast {
   name: string;
   line: string;
   url?: string;
+  linkLabel?: string;
   error?: boolean;
 }
 
 /** Shows a module action's result as a toast that stays until dismissed. */
 export function showResult(r: ResultToast) {
-  queue.pushResult({ tag: r.tag, name: r.name, line: r.line, url: r.url, error: r.error });
+  queue.pushResult({ tag: r.tag, name: r.name, line: r.line, url: r.url, linkLabel: r.linkLabel, error: r.error });
   sync();
 }
 
@@ -71,7 +76,21 @@ export function ToastRegion() {
               <span class="toast-line">{t.line}</span>
               {isWebUrl(t.url) ? (
                 <a class="toast-link" href={t.url} target="_blank" rel="noopener noreferrer">
-                  {t.url}
+                  {('linkLabel' in t.alert && t.alert.linkLabel) || t.url}
+                </a>
+              ) : isShellPath(t.url) ? (
+                <a
+                  class="toast-link"
+                  href={t.url}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const [path, query] = t.url!.split('?');
+                    queue.dismiss(t.id);
+                    sync();
+                    go(path, query ? `?${query}` : '');
+                  }}
+                >
+                  {('linkLabel' in t.alert && t.alert.linkLabel) || t.url}
                 </a>
               ) : null}
             </div>

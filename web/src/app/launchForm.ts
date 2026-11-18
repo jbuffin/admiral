@@ -33,6 +33,8 @@ export interface LaunchFormState {
   anyway?: boolean;
   /** Launch on the GitHub stack `orderId`'s layer sits in. */
   stack?: boolean;
+  /** The GitHub issues a ship launched by hand holds, so the one-ship rule applies. */
+  issues?: string[];
   crew?: string[];
   // The "Launch as" member and the harness it is locked to, if any.
   member?: string;
@@ -121,6 +123,7 @@ export function launchBody(form: LaunchFormState): Record<string, unknown> {
     ...(form.orderId && { order_id: form.orderId }),
     ...(form.anyway && { anyway: true }),
     ...(form.stack && { stack: true }),
+    ...(form.issues?.length && { issues: form.issues }),
     ...(form.skill.kind === 'commodore' && form.crew?.length && { crew: form.crew }),
     ...(member && { member }),
   };

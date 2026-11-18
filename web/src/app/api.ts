@@ -649,6 +649,8 @@ export interface PageAction {
   confirm?: string;
   summary?: string;
   url?: string;
+  /** A built-in action: Admiral does it, not the module. Absent on a module action. */
+  builtin?: 'open' | 'launch' | 'message';
 }
 export interface PageChip {
   label: string;
@@ -730,6 +732,19 @@ const actionPath = (key: string, t: ActionTarget, action: string, leaf: string) 
 export const fetchModuleForm = (key: string, target: ActionTarget, action: string) => call<ModuleForm>('POST', actionPath(key, target, action, 'form'), {});
 export const runModuleAction = (key: string, target: ActionTarget, action: string, values: Record<string, string | string[]>) =>
   call<RunAnswer>('POST', actionPath(key, target, action, 'run'), { values }, undefined, { timeoutMs: RUN_TIMEOUT_MS });
+export interface LaunchTarget {
+  url: string;
+  fleet: string;
+}
+export interface MessagePreview {
+  text: string;
+  fleet: string;
+  chat: string;
+}
+export const fetchLaunchTarget = (key: string, row: string, action: string) => call<LaunchTarget>('GET', actionPath(key, { id: row }, action, 'launch'));
+export const fetchMessagePreview = (key: string, row: string, action: string) => call<MessagePreview>('GET', actionPath(key, { id: row }, action, 'message'));
+/** Posts exactly the text the confirm showed; the server refuses it with 409 when the composed text has moved on. */
+export const sendMessage = (key: string, row: string, action: string, text: string) => call<{ sent: true; chat: string }>('POST', actionPath(key, { id: row }, action, 'message'), { text });
 export const fetchModulePage = (key: string) => call<ModulePageData>('GET', `${src(key)}/page`);
 
 export interface Source {

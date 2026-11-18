@@ -4,6 +4,15 @@ import { join } from 'node:path';
 import type { Admiral } from './fixtures';
 import { seedFleets } from './shell';
 
+export const MESSAGE_JOB = 'Please review this change.';
+export const MESSAGE_LINK = 'https://tracker.example/t/1';
+/** The built-in actions on row t1 when a module is seeded with them: Open link, Launch on an issue and the AdmiralBot message. */
+export const BUILTINS = [
+  { id: 'docs', label: 'Open docs', builtin: 'open', url: 'https://tracker.example/docs' },
+  { id: 'dock', label: 'Start ship', builtin: 'launch', url: 'https://github.com/acme/widgets/issues/7' },
+  { id: 'tell', label: 'Message AdmiralBot', builtin: 'message', kind: 'review', ref: 'T-1', title: 'Fix login', link: MESSAGE_LINK },
+];
+
 const chip = (label: string, tone?: string) => ({ label, ...(tone ? { tone } : {}) });
 const action = { id: 'pass', label: 'Pass review', confirm: 'form', summary: 'Pass the review' };
 // A module action id is unique within a row and its steps, so the step's differs from the row's.
@@ -44,9 +53,9 @@ export interface Module {
   changed(rows?: string[]): void;
 }
 
-/** A module named Deploys in the Westwind fleet, served by the test plugin; the shell is seeded and Admiral is not yet started. */
-export function seedModule(a: Admiral): Module {
-  seedFleets(a);
+/** A module named Deploys in the Westwind fleet (the Harborlight fleet, with a running-capable AdmiralBot chat, when `chat`), served by the test plugin; the shell is seeded and Admiral is not yet started. */
+export function seedModule(a: Admiral, opts: { chat?: boolean } = {}): Module {
+  seedFleets(a, { chat: opts.chat });
   a.installTestPlugin();
   const f = a.flags('deploys');
   for (const d of ['rows', 'forms', 'runs']) mkdirSync(join(f.dir, d), { recursive: true });
@@ -63,11 +72,16 @@ export function seedModule(a: Admiral): Module {
     run: (id, d) => put('runs', id, d),
     changed: (rows) => f.put('do-page-changed', rows ? JSON.stringify({ rows }) : ''),
   };
-  m.page(PAGE);
+  if (opts.chat) {
+    // Admiral reads the kinds only at initialize, so they are written before the source starts.
+    f.put('message-kinds.json', JSON.stringify([{ kind: 'review', label: 'Review', job: MESSAGE_JOB }]));
+    const [first, ...rest] = PAGE.groups[0].rows;
+    m.page({ ...PAGE, groups: [{ ...PAGE.groups[0], rows: [{ ...first, actions: BUILTINS }, ...rest] }, PAGE.groups[1]] });
+  } else m.page(PAGE);
   m.row('t1', detail('amy'));
   const path = join(a.home, 'config.json');
   const config = JSON.parse(readFileSync(path, 'utf8'));
-  config.sources = { deploys: { plugin: 'testplug', fleet: 'zulu', name: 'Deploys', settings: { flagdir: f.dir, capabilities: ['page'] } } };
+  config.sources = { deploys: { plugin: 'testplug', fleet: opts.chat ? 'harbor' : 'zulu', name: 'Deploys', settings: { flagdir: f.dir, capabilities: ['page'] } } };
   a.writeConfig(config);
   return m;
 }

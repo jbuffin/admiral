@@ -766,3 +766,42 @@ test('a campaign child on wayfinder keeps the bare name, and the warning, when t
   await waitFor(() => expect(dialogText()).toContain('not installed on claude'));
   expect(box().value).toBe('/wayfinder');
 });
+
+const ISSUE = 'https://github.com/acme/widgets/issues/7';
+const named = { ...fleet, name: 'Westwind' } as Fleet;
+
+test('a dialog opened for an issue launches with issues, no order and its fleet, and names the fleet it launches in', async () => {
+  const posts = serve();
+  render(<LaunchForm fleet={named} issues={[ISSUE]} onClose={vi.fn()} onLaunched={vi.fn()} />);
+  expect(screen.getByText('Launches in Westwind.')).toBeTruthy();
+  await waitFor(() => expect(checkout().value).not.toBe(''));
+  await waitFor(() => expect(launch().disabled).toBe(false));
+  fireEvent.click(launch());
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ fleet: 'zulu', issues: [ISSUE] });
+  expect(posts[0]).not.toHaveProperty('source');
+  expect(posts[0]).not.toHaveProperty('order_id');
+});
+
+test('a dialog opened for an issue shows the issue and prefills the text with it, so a launch with nothing typed still names it', async () => {
+  const posts = serve();
+  render(<LaunchForm fleet={named} issues={[ISSUE]} onClose={vi.fn()} onLaunched={vi.fn()} />);
+  expect(screen.getByText(ISSUE, { selector: '.launch-order' })).toBeTruthy();
+  expect((screen.getByLabelText('Text') as HTMLTextAreaElement).value).toContain(ISSUE);
+  await waitFor(() => expect(checkout().value).not.toBe(''));
+  await waitFor(() => expect(launch().disabled).toBe(false));
+  fireEvent.click(launch());
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect((posts[0] as { text: string }).text).toContain(ISSUE);
+});
+
+test('a dialog opened with no issue shows no fleet line and sends no issues', async () => {
+  const posts = serve();
+  render(<LaunchForm fleet={named} onClose={vi.fn()} onLaunched={vi.fn()} />);
+  expect(screen.queryByText(/^Launches in /)).toBeNull();
+  await waitFor(() => expect(checkout().value).not.toBe(''));
+  await waitFor(() => expect(launch().disabled).toBe(false));
+  fireEvent.click(launch());
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).not.toHaveProperty('issues');
+});
