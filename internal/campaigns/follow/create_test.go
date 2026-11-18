@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -192,7 +193,6 @@ func TestCreateRefusesABadRequestBeforeAnyGhCall(t *testing.T) {
 		{"bad JSON", `{"repo":`, nil, 400},
 		{"no title", "", map[string]any{"repo": "acme/widgets", "title": "", "issues": []string{"acme/widgets#31"}}, 400},
 		{"a blank title", "", map[string]any{"repo": "acme/widgets", "title": "  \t ", "issues": []string{"acme/widgets#31"}}, 400},
-		{"no issues", "", createBody(), 400},
 		{"51 issues", "", createBody(fifty1...), 400},
 		{"a repeated ref", "", createBody("acme/widgets#31", "acme/widgets#32", "acme/widgets#31"), 400},
 		{"an unparseable ref", "", createBody("acme/widgets#31", "not an issue"), 400},
@@ -353,5 +353,116 @@ func TestCreateAnswers502AndLinksNothingWhenTheParentCannotBeCreated(t *testing.
 		if strings.HasSuffix(c.Endpoint, "/sub_issues") {
 			t.Errorf("link %+v ran although no parent exists", c)
 		}
+	}
+}
+
+func TestCreateWithNoIssuesFilesTheParentAloneOnTheRepoHostAndFollowsIt(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	r.gh.parentReady()
+
+	code, body := r.create(createBody())
+	if code != http.StatusCreated {
+		t.Fatalf("create with issues [] = %d %s, want 201", code, body)
+	}
+	var c campaignJSON
+	if err := json.Unmarshal([]byte(body), &c); err != nil || c.URL != newParentURL || c.Fleet != "work" || c.Root == nil || c.Root.Number != 99 {
+		t.Errorf("campaign = %+v (%v); want the new parent %s followed on work", c, err, newParentURL)
+	}
+	if _, ok := r.svc.Store.Lookup(newParentURL); !ok {
+		t.Error("the parent is not followed")
+	}
+	w := posts(r.gh.restCalls())
+	if len(w) != 1 || w[0].Endpoint != parentEndpoint || w[0].Host != "github.com" {
+		t.Errorf("writes = %+v; want only the parent created in acme/widgets on github.com, with no sub-issue link", w)
+	}
+	if !slices.Contains(r.routed, "github.com acme/widgets") || !slices.Contains(r.hostSeen, "github.com") {
+		t.Errorf("routed %v, client hosts %v; want the repo routed and its client asked for on github.com", r.routed, r.hostSeen)
+	}
+}
+
+func TestCreateWithNoIssuesRefusesARepoNoFleetOwnsAndWritesNothing(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	r.svc.Route = func(host, nwo string) string { return "" }
+	r.gh.parentReady()
+
+	code, body := r.create(map[string]any{"repo": "nobody/nothing", "title": "T", "issues": []string{}})
+	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "No fleet owns") {
+		t.Errorf("create = %d %s; want 422 \"No fleet owns\"", code, body)
+	}
+	if n := r.gh.ghCalls(); n != 0 {
+		t.Errorf("gh ran %d times; want none", n)
+	}
+}
+
+func TestCreateWithNoIssuesRefusesAHostTheFleetHasNoSourceForAndWritesNothing(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	r.gh.parentReady()
+
+	code, body := r.create(map[string]any{"repo": "acme/widgets", "title": "T", "issues": []string{}, "host": "ghe.example.com"})
+	if code != http.StatusUnprocessableEntity || !strings.Contains(body, "ghe.example.com") {
+		t.Errorf("create = %d %s; want 422 naming ghe.example.com", code, body)
+	}
+	if !slices.Contains(r.hostSeen, "ghe.example.com") {
+		t.Errorf("client hosts asked for = %v; the fleet's source is looked up on the given host", r.hostSeen)
+	}
+	if n := r.gh.ghCalls(); n != 0 {
+		t.Errorf("gh ran %d times; want none", n)
+	}
+}
+
+func TestCreateRefusesAHostThatIsNotTheIssuesHostBeforeAnyGhCall(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	r.gh.child("acme/widgets", 31, "")
+	r.gh.parentReady(31)
+
+	body := createBody("acme/widgets#31")
+	body["host"] = "ghe.example.com"
+	if code, got := r.create(body); code != http.StatusUnprocessableEntity {
+		t.Errorf("create = %d %s; want 422: the parent is filed on the host its issues are on", code, got)
+	}
+	if n := r.gh.ghCalls(); n != 0 {
+		t.Errorf("gh ran %d times; want none", n)
+	}
+}
+
+func TestCreateRefusesAFleetThatIsNotTheReposRoutedFleetAndWritesNothing(t *testing.T) {
+	for name, issues := range map[string][]string{"with an issue": {"acme/widgets#31"}, "with no issues": {}} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, fixtureTree())
+			r.gh.child("acme/widgets", 31, "")
+			r.gh.parentReady(31)
+
+			body := createBody(issues...)
+			body["fleet"] = "personal"
+			if code, got := r.create(body); code != http.StatusUnprocessableEntity || !strings.Contains(got, "personal") {
+				t.Errorf("create = %d %s; want 422 naming fleet personal: acme/widgets routes to work", code, got)
+			}
+			if n := r.gh.ghCalls(); n != 0 {
+				t.Errorf("gh ran %d times; nothing is written for another fleet", n)
+			}
+		})
+	}
+}
+
+func TestCreateWithTheReposOwnHostAndFleetFilesAsWithoutThem(t *testing.T) {
+	for name, issues := range map[string][]string{"with an issue": {"acme/widgets#31"}, "with no issues": {}} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, fixtureTree())
+			r.gh.child("acme/widgets", 31, "")
+			if len(issues) > 0 {
+				r.gh.parentReady(31)
+			} else {
+				r.gh.parentReady()
+			}
+
+			body := createBody(issues...)
+			body["host"], body["fleet"] = "github.com", "work"
+			if code, got := r.create(body); code != http.StatusCreated {
+				t.Errorf("create = %d %s; want 201", code, got)
+			}
+			if got := len(posts(r.gh.restCalls())); got != 1+len(issues) {
+				t.Errorf("writes = %d; want the parent and one link per issue", got)
+			}
+		})
 	}
 }
