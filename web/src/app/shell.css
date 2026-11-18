@@ -19,8 +19,9 @@ a { color: inherit; text-decoration: none; }
 .side-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px 10px 2px; }
 .side-version { font-size: var(--font-size-meta); color: var(--color-muted); }
 /* Negative margins keep the 44px hit target from making the footer row taller. */
-.theme-toggle { margin: -10px -6px -10px auto; display: inline-flex; align-items: center; justify-content: center; min-width: var(--shape-min-touch-target, 44px); min-height: var(--shape-min-touch-target, 44px); padding: 0; color: var(--color-muted); }
-.theme-toggle:hover, .theme-toggle:active { color: var(--color-text); }
+.theme-toggle { margin: -13px -6px -13px auto; display: inline-flex; align-items: center; justify-content: center; min-width: var(--shape-min-touch-target, 44px); min-height: var(--shape-min-touch-target, 44px); padding: 0; color: var(--color-muted); }
+.theme-toggle:active { color: var(--color-text); }
+@media (hover: hover) { .theme-toggle:hover { color: var(--color-text); } }
 .update-badge { padding: 2px 8px; border-radius: 999px; background: var(--color-sel); color: var(--color-accent); font-size: var(--font-size-meta); font-weight: 600; }
 @media (pointer: coarse) { .update-badge { min-height: var(--shape-min-touch-target); padding: 0 12px; } }
 .update-steps { margin: 0 0 10px; padding-left: 20px; display: grid; gap: 10px; }

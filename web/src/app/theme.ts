@@ -18,9 +18,11 @@ const systemQuery = () => (typeof matchMedia === 'function' ? matchMedia(DARK) :
 
 /** The explicit choice, or null while the shell follows the system. */
 const choice = signal<Theme | null>(stored());
-const systemDark = signal(systemQuery()?.matches ?? false);
-systemQuery()?.addEventListener('change', () => {
-  systemDark.value = systemQuery()?.matches ?? false;
+// Held in a const: some engines drop the listeners of a query list nothing references.
+const system = systemQuery();
+const systemDark = signal(system?.matches ?? false);
+system?.addEventListener('change', () => {
+  systemDark.value = system.matches;
 });
 
 /** The theme showing now. */
