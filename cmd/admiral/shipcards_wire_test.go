@@ -24,6 +24,8 @@ func TestTheShipCardRunnerReadsTheOutcomeLogsRealRecordShapes(t *testing.T) {
 		{Ship: "failed", Event: "ended", Fields: map[string]any{"exit_code": 1}},
 		{Ship: "merged", Event: "unmoored", Fields: map[string]any{"reason": "merged", "prs": []map[string]string{{"url": "u", "state": "MERGED"}}}},
 		{Ship: "back", Event: "stopped", Fields: map[string]any{"returned": true}},
+		{Ship: "scouted", Event: "stopped", Fields: map[string]any{"scout": true}},
+		{Ship: "halted", Event: "stopped"},
 	} {
 		w.Enqueue(r, nil)
 	}
@@ -37,6 +39,8 @@ func TestTheShipCardRunnerReadsTheOutcomeLogsRealRecordShapes(t *testing.T) {
 		{At: at, Ship: "failed", Event: "ended"},
 		{At: at, Ship: "merged", Event: "unmoored", Reason: "merged"},
 		{At: at, Ship: "back", Event: "stopped", Returned: true},
+		{At: at, Ship: "scouted", Event: "stopped", Scout: true},
+		{At: at, Ship: "halted", Event: "stopped"},
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("records = %+v, want %+v", got, want)

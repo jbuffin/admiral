@@ -51,6 +51,15 @@ describe('the ship card view', () => {
     expect(shipCardView(item({ skill: '', skill_kind: 'none' }), []).eyebrow).not.toContain('Quick');
   });
 
+  it('reads Scout for a scout and Quick ship for a quick ship', () => {
+    const scout = shipCardView(item({ skill: '', skill_kind: 'scout' as ShipCard['skill_kind'] }), []);
+    expect(scout.kind).toBe('Scout');
+    expect(scout.eyebrow).toBe('Calm Otter · Scout');
+    const quick = shipCardView(item({ skill: '', skill_kind: 'quick' as ShipCard['skill_kind'] }), []);
+    expect(quick.kind).toBe('Quick ship');
+    expect(quick.eyebrow).toBe('Calm Otter · Quick ship');
+  });
+
   it('shows the ship’s name, and the session slug when the name is empty or missing', () => {
     expect(shipCardView(item(), []).name).toBe('Calm Otter');
     expect(shipCardView(item({ name: '' }), []).name).toBe('calm-otter');

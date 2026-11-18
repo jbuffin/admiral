@@ -74,6 +74,7 @@ type ShipRecord struct {
 	Reason   string // an unmoored line's reason
 	Clean    bool   // an ended line's exit was clean
 	Returned bool   // a stopped line ended a return to port
+	Scout    bool   // a stopped line ended a scout that ran to its end
 }
 
 // voyage is what the detector keeps of one ship's voyage: who it is, which cards it has settled and the record times that

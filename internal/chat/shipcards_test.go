@@ -425,3 +425,74 @@ func TestAVoyageWithNoParsableLaunchStampPostsNoCard(t *testing.T) {
 		x.wantResults("work")
 	}
 }
+
+func scout(name, fleet string) ships.Ship {
+	s := ship(name, fleet, ships.StatusUnderway)
+	s.Skill, s.SkillKind, s.Scout = nil, "none", true
+	return s
+}
+
+// A scout's end writes a KILL `ended` and then a `stopped` marked scout; a clean `ended` is never what it writes.
+func scoutEnd() []ShipRecord {
+	return []ShipRecord{
+		{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended"},
+		{At: t0.Add(2*time.Minute + time.Second), Ship: "calm-otter", Event: "stopped", Scout: true},
+	}
+}
+
+func TestAScoutThatRunsToItsEndPostsOneSailedOffCardInItsFleetOnly(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	end := scoutEnd()
+	x.observe(2*time.Minute+10*time.Second, nil, end...)
+	x.wantResults("work")
+	x.observe(5*time.Minute, nil, end...)
+	x.observe(6*time.Minute, nil, end...)
+	x.restart()
+	x.observe(7*time.Minute, nil, end...)
+	x.wantResults("work", "sailed_off")
+	x.wantResults("home")
+	if cards := shipCardsIn(t, x.r, "work"); len(cards) != 1 || cards[0].Ship != "calm-otter" || cards[0].SkillKind != "scout" {
+		t.Errorf("cards = %+v, want the scout's own with skill_kind scout", cards)
+	}
+}
+
+func TestAScoutStillInTheSnapshotPostsNoSailedOffCardYet(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
+	x.observe(5*time.Minute, []ships.Ship{scout("calm-otter", "work")}, scoutEnd()...)
+	x.wantResults("work")
+}
+
+func TestStopShipOfALiveShipPostsNoCardAlthoughItsKilledEndIsLogged(t *testing.T) {
+	x := seeded(t)
+	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
+	x.observe(5*time.Minute, nil,
+		ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended"},
+		ShipRecord{At: t0.Add(2*time.Minute + time.Second), Ship: "calm-otter", Event: "stopped"})
+	x.wantResults("work")
+}
+
+func TestTheKindOfAMooredShipsCardIsDecidedOnTheServer(t *testing.T) {
+	noSkill := func(s ships.Ship, kind string) ships.Ship { s.Skill, s.SkillKind = nil, kind; return s }
+	for name, tc := range map[string]struct {
+		ship ships.Ship
+		want string
+	}{
+		"an AdmiralBot ship with no skill is a quick ship":               {viaBot(noSkill(moored("calm-otter", "work", pr7), "")), "quick"},
+		"an AdmiralBot ship whose skill kind reads none is a quick ship": {viaBot(noSkill(moored("calm-otter", "work", pr7), "none")), "quick"},
+		"an AdmiralBot ship with a skill keeps its skill":                {viaBot(moored("calm-otter", "work", pr7)), "skill"},
+		"a Commodore ship is Commodore, even launched by AdmiralBot":     {viaBot(noSkill(moored("calm-otter", "work", pr7), "commodore")), "commodore"},
+		"a Commodore ship the engineer launched is Commodore":            {noSkill(moored("calm-otter", "work", pr7), "commodore"), "commodore"},
+		"an engineer's ship with no skill has none":                      {noSkill(moored("calm-otter", "work", pr7), ""), "none"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			x := seeded(t)
+			x.observe(time.Minute, []ships.Ship{tc.ship})
+			got := shipCardsIn(t, x.r, "work")
+			if len(got) != 1 || got[0].SkillKind != tc.want {
+				t.Errorf("cards = %+v, want one with skill_kind %q", got, tc.want)
+			}
+		})
+	}
+}
