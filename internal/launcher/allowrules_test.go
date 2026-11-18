@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,11 +13,16 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// claudeArgv waits for the Claude recorder and returns the argv it ran with.
 func (r *crewDirRig) claudeArgv(t *testing.T) []string {
 	t.Helper()
-	r.recorded(t, "claude")
-	b, err := os.ReadFile(filepath.Join(r.rec, "claude.argv"))
+	return r.argv(t, "claude")
+}
+
+// argv waits for the harness's recorder and returns the argv it ran with.
+func (r *crewDirRig) argv(t *testing.T, harness string) []string {
+	t.Helper()
+	r.recorded(t, harness)
+	b, err := os.ReadFile(filepath.Join(r.rec, harness+".argv"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +93,67 @@ func TestAClaudeShipInAnotherRepoGetsNoneOfTheRules(t *testing.T) {
 	r.launch(t)
 	if path := settingsPath(r.claudeArgv(t)); path != ClaudeSettingsPath(r.home) {
 		t.Errorf("a ship in %s runs with %s, want the shared %s", r.work, path, ClaudeSettingsPath(r.home))
+	}
+}
+
+func allowTools(argv []string) []string {
+	var out []string
+	for _, a := range argv {
+		if v, ok := strings.CutPrefix(a, "--allow-tool="); ok {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func TestACopilotShipAndCrewBoatGetOnlyTheirReposAllowRules(t *testing.T) {
+	r := newCrewDirRig(t, nil)
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "git@github.com:acme/widgets.git"}} {
+		if out, err := exec.Command("git", append([]string{"-C", r.work}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	store := r.l.AllowRules()
+	for _, rule := range []allowrules.Rule{
+		{Harness: "copilot", Repo: "acme/widgets", Rule: "shell(gh pr)"},
+		{Harness: "copilot", Repo: "acme/widgets", Rule: "url(api.example.com)"},
+		{Harness: "copilot", Repo: "acme/other", Rule: "shell(make check)"},
+		{Harness: "claude", Repo: "acme/widgets", Rule: "Bash(gh pr view:*)"}} {
+		if err := store.Add("work", rule); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{"shell(gh pr)", "url(api.example.com)"}
+
+	ship, err := r.l.Launch(Request{Fleet: "work", Harness: "copilot", Dir: r.work, Skill: Skill{Kind: "none"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	argv := r.argv(t, "copilot")
+	if got := allowTools(argv); !reflect.DeepEqual(got, want) {
+		t.Errorf("a Copilot ship in acme/widgets runs with --allow-tool %q, want only its repo's Copilot rules %q", got, want)
+	}
+	if !slices.Contains(argv, "--plugin-dir") {
+		t.Errorf("a Copilot ship with allow rules lost Admiral's plugin: %q", argv)
+	}
+	if err := r.l.LaunchCrew(CrewRequest{Session: ship.Session, Name: "boat", Harness: "copilot", Dir: t.TempDir(), Prompt: "go"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := allowTools(r.argv(t, "copilot")); !reflect.DeepEqual(got, want) {
+		t.Errorf("its crew boat runs with --allow-tool %q, want the ship's repo's rules %q", got, want)
+	}
+}
+
+func TestACopilotShipInAnotherRepoGetsNoneOfTheRules(t *testing.T) {
+	r := newCrewDirRig(t, nil)
+	if err := r.l.AllowRules().Add("work", allowrules.Rule{Harness: "copilot", Repo: filepath.Join(r.work, "elsewhere"), Rule: "shell(make check)"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.l.Launch(Request{Fleet: "work", Harness: "copilot", Dir: r.work, Skill: Skill{Kind: "none"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := allowTools(r.argv(t, "copilot")); len(got) > 0 {
+		t.Errorf("a Copilot ship in %s runs with --allow-tool %q, want none", r.work, got)
 	}
 }
 
