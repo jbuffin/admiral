@@ -93,8 +93,8 @@ export function AddCampaign({ fleet, onClose }: { fleet: string; onClose: () => 
   const parents = list.filter((h) => h.parent);
   const rest = list.filter((h) => !h.parent);
   return (
-    <div class="backdrop launch-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div class="sheet launch-form ac-form" role="dialog" aria-modal="true" aria-label="Add campaign" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
+    <div class="backdrop launch-backdrop" onClick={(e) => e.target === e.currentTarget && !busy && onClose()}>
+      <div class="sheet launch-form ac-form" role="dialog" aria-modal="true" aria-label="Add campaign" onKeyDown={(e) => e.key === 'Escape' && !busy && onClose()}>
         <h2 class="sheet-title">Add campaign</h2>
         <div class="launch-body">
           <div class="ac-search">

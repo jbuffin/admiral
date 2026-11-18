@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -68,7 +69,7 @@ let searches: string[];
 let follows: Record<string, unknown>[];
 // What the stub answers for a search with this text; a function lets a test hold an answer back.
 let answer: (q: string) => Response | Promise<Response>;
-let follow: () => Response;
+let follow: () => Response | Promise<Response>;
 let onClose: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -220,12 +221,35 @@ test("a slow answer for older input never overwrites the newer one", async () =>
   expect(
     await screen.findByRole("button", { name: /Fix the widget hinge/ }),
   ).toBeTruthy();
-  held.wid(json({ results: [widgets] }));
-  await new Promise((r) => setTimeout(r, 50));
+  const stale = json({ results: [widgets] });
+  const read = stale.text.bind(stale);
+  let consumed!: Promise<string>;
+  stale.text = () => (consumed = read());
+  held.wid(stale);
+  await waitFor(() => expect(consumed).toBeDefined());
+  await consumed;
+  await act(async () => {});
   expect(screen.queryByRole("button", { name: /Widgets overhaul/ })).toBeNull();
   expect(
     screen.getByRole("button", { name: /Fix the widget hinge/ }),
   ).toBeTruthy();
+});
+
+test("Escape and a backdrop tap leave the modal open while a follow is in flight", async () => {
+  answer = () => json({ results: [widgets] });
+  let release!: (r: Response) => void;
+  follow = () => new Promise((resolve) => (release = resolve));
+  opened();
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Widgets overhaul/ }),
+  );
+  await waitFor(() => expect(follows).toHaveLength(1));
+  const dialog = screen.getByRole("dialog", { name: "Add campaign" });
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  fireEvent.click(dialog.parentElement!);
+  expect(onClose).not.toHaveBeenCalled();
+  release(json(followed, 201));
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
 });
 
 test("Start a new campaign is the last row and disabled", async () => {
