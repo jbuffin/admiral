@@ -265,6 +265,12 @@ func scoutCases(r scoutRig) []scoutCase {
 		sh("mv into the checkout", `mv `+ex("a")+` `+in("b"), scoutWrite),
 		sh("mv out of the checkout", `mv `+in("a.go")+` `+ex("b"), scoutWrite),
 		sh("mv -t into the checkout", `mv -t `+r.co+` `+ex("a"), scoutWrite),
+		sh("mv with clustered flags and -t", `mv -vt `+r.co+` `+ex("a"), scoutWrite),
+		sh("mv -t with the directory attached", `mv -t`+r.co+` `+ex("a"), scoutWrite),
+		sh("cp -rt into the checkout", `cp -rt `+r.co+` `+ex("a"), scoutWrite),
+		sh("mv with an abbreviated long option", `mv --target=`+r.co+` `+ex("a"), scoutWrite),
+		sh("git env exported before a nested shell", "export GIT_EXTERNAL_DIFF=x; bash -c 'git diff'", scoutGit),
+		sh("git config home moved", `HOME=/tmp git status`, scoutGit),
 		sh("git remote -v then a change", `git remote -v remove origin`, scoutGit),
 		sh("git remote set-url", `git remote set-url origin https://example.test/r.git`, scoutGit),
 		sh("git run by an external diff program", `GIT_EXTERNAL_DIFF=/bin/true git diff`, scoutGit),
@@ -546,13 +552,17 @@ func TestScoutModeRefusesAPathThatNamesTheCheckoutByAnotherSpelling(t *testing.T
 		t.Skip("a case-insensitive volume and firmlinks are a Mac's")
 	}
 	r := newScoutRig(t)
+	realCo, err := filepath.EvalSymlinks(r.co)
+	if err != nil {
+		t.Fatal(err)
+	}
 	upper := strings.ToUpper(r.co)
 	if _, err := os.Stat(upper); err != nil {
 		t.Skip("the volume is case-sensitive")
 	}
 	for name, p := range map[string]string{
 		"another letter case": filepath.Join(upper, "a.go"),
-		"the data volume":     "/System/Volumes/Data" + strings.TrimPrefix(r.co, "/private") + "/a.go",
+		"the data volume":     "/System/Volumes/Data" + realCo + "/a.go",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := os.Stat(p); err != nil {

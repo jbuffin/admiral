@@ -85,8 +85,7 @@ func resolvePath(p string) (string, bool) {
 	return cur, true
 }
 
-// inside also compares by file identity: on a Mac a path can name the checkout with other
-// letter case or through /System/Volumes/Data, which no string prefix shows.
+// inside also compares by file identity: on a Mac other letter case or /System/Volumes/Data names the same checkout.
 func inside(p, root string) bool {
 	if p == root || strings.HasPrefix(p, root+"/") {
 		return true
@@ -194,8 +193,11 @@ type scoutState struct {
 
 var gitSafeEnv = []string{"GIT_TERMINAL_PROMPT", "GIT_OPTIONAL_LOCKS"}
 
+// Where git finds its global config, whose core.fsmonitor or pager runs a program.
+var gitConfigEnv = []string{"HOME", "XDG_CONFIG_HOME"}
+
 func (st *scoutState) assigned(name string) {
-	st.gitEnv = st.gitEnv || strings.HasPrefix(name, "GIT_") && !slices.Contains(gitSafeEnv, name)
+	st.gitEnv = st.gitEnv || strings.HasPrefix(name, "GIT_") && !slices.Contains(gitSafeEnv, name) || slices.Contains(gitConfigEnv, name)
 	st.shellEnv = st.shellEnv || slices.Contains(startupNames, name)
 }
 
@@ -409,7 +411,7 @@ func (c scoutCheck) targets(w string, args []string) []string {
 	case "tee":
 		return operands(args, "", nil)
 	case "mv":
-		return append(operands(args, "tS", []string{"target-directory", "suffix"}), targetDir(args)...)
+		return append(operands(args, "tS", []string{"target-directory", "suffix"}), targetDir(w, args)...)
 	case "cp", "install", "ln", "rsync":
 		return destination(w, args)
 	case "dd":
@@ -459,19 +461,38 @@ func operands(args []string, short string, long []string) []string {
 	return out
 }
 
-// targetDir is the directory -t names, when there is one.
-func targetDir(args []string) []string {
+// targetDir is the directory -t or --target-directory names, in any spelling GNU accepts
+// (a cluster like -vt, -tDIR, an abbreviated --target). rsync's -t takes no value.
+func targetDir(w string, args []string) []string {
+	if w == "rsync" {
+		return nil
+	}
 	for i, a := range args {
 		switch {
 		case a == "--":
 			return nil
-		case a == "-t" || a == "--target-directory":
-			if i+1 < len(args) {
+		case strings.HasPrefix(a, "--"):
+			name, val, has := strings.Cut(a[2:], "=")
+			if len(name) < 1 || !strings.HasPrefix("target-directory", name) {
+				continue
+			}
+			switch {
+			case has:
+				return []string{val}
+			case i+1 < len(args):
 				return []string{args[i+1]}
 			}
 			return []string{placeholder}
-		case strings.HasPrefix(a, "--target-directory="):
-			return []string{strings.TrimPrefix(a, "--target-directory=")}
+		case len(a) > 1 && a[0] == '-':
+			if j := strings.IndexByte(a, 't'); j > 0 {
+				switch {
+				case j+1 < len(a):
+					return []string{a[j+1:]}
+				case i+1 < len(args):
+					return []string{args[i+1]}
+				}
+				return []string{placeholder}
+			}
 		}
 	}
 	return nil
@@ -480,7 +501,7 @@ func targetDir(args []string) []string {
 // destination is the one path cp, install, ln and rsync write: -t's directory, else
 // the last operand. ln with one operand links into the current directory.
 func destination(w string, args []string) []string {
-	if dir := targetDir(args); dir != nil {
+	if dir := targetDir(w, args); dir != nil {
 		return dir
 	}
 	pos := operands(args, "tS", []string{"suffix"})
