@@ -441,17 +441,6 @@ test('with no page change after a run, the row\'s module actions come back after
   expect(runPosts(posts)).toHaveLength(1);
 });
 
-test.each(['ready', 'auth_required', 'error'])('a built-in module action with a url stays a disabled button when the page is %s and a press sends nothing', async (state) => {
-  const posts = server({ page: () => pageOf(state) });
-  open(state);
-  const row = await rowItem();
-  const b = within(row).getByRole('button', { name: 'Open docs' }) as HTMLButtonElement;
-  expect(b.disabled).toBe(true);
-  fireEvent.click(b);
-  expect(screen.queryByRole('dialog')).toBeNull();
-  expect(posts).toHaveLength(0);
-});
-
 test('while the page is in error every module action on rows and steps is disabled, and a press sends nothing', async () => {
   let state = 'ready';
   const posts = server({ page: () => pageOf(state) });

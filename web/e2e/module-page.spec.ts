@@ -1,8 +1,9 @@
 import { expect, test } from './fixtures';
-import { entry, expectRowsDrawn, PAGE, rowDetail, seedModule } from './modulePage';
+import { chatReceived } from './shell';
+import { entry, expectRowsDrawn, MESSAGE_JOB, MESSAGE_LINK, PAGE, rowDetail, seedModule } from './modulePage';
 
 test('on the iPad a module has a nav entry after Crew with its waiting count, draws its groups and rows, filters them, opens a row in the side pane that a reload keeps, and redraws on a page change', async ({ page, admiral }) => {
-  const mod = seedModule(admiral);
+  const mod = seedModule(admiral, { chat: true });
   mod.form('pass', {
     title: 'Pass this review',
     fields: [
@@ -13,7 +14,10 @@ test('on the iPad a module has a nav entry after Crew with its waiting count, dr
   });
   mod.run('pass', { message: 'Review passed', url: 'https://example.com/review/t1' });
   await admiral.start();
-  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  // Opening the module's fleet chat starts it, so the message below has a running chat to reach.
+  await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  await expect(page.getByRole('main').getByRole('button', { name: 'Open terminal', exact: true })).toHaveCount(1);
+  await page.goto(admiral.url + 'app/ships?fleet=harbor');
 
   const side = page.getByRole('navigation', { name: 'Main' });
   await expect(side.getByRole('link').filter({ hasText: /^(Crew|Deploys|Preferences)/ })).toHaveText([/^Crew/, /^Deploys\s*2$/, /^Preferences/]);
@@ -46,6 +50,33 @@ test('on the iPad a module has a nav entry after Crew with its waiting count, dr
   await expect(page).toHaveURL(/\/app\/deploys\/t1(\?|$)/);
   await expect(page.getByRole('complementary', { name: 'Selected row' }).getByText('Code review')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open Fix login' })).toHaveAttribute('aria-pressed', 'true');
+
+  // Built-in actions: Open link is a link.
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Fix login' });
+  const open = row.getByRole('link', { name: 'Open docs' });
+  await expect(open).toHaveAttribute('href', 'https://tracker.example/docs');
+  await expect(open).toHaveAttribute('target', '_blank');
+  await expect(open).toHaveAttribute('rel', /noopener/);
+  await expect(open).toHaveAttribute('rel', /noreferrer/);
+
+  // Message AdmiralBot: the confirm shows the composed text, and the chat receives exactly that text.
+  const preview = page.waitForResponse((r) => /\/actions\/tell\/message$/.test(r.url()) && r.request().method() === 'GET');
+  await row.getByRole('button', { name: 'Message AdmiralBot' }).tap();
+  const { text, chat } = (await (await preview).json()) as { text: string; chat: string };
+  expect(text).toContain(MESSAGE_JOB);
+  expect(text).toContain('T-1');
+  expect(text).toContain('Fix login');
+  expect(text.endsWith(MESSAGE_LINK)).toBe(true);
+  const confirm = page.getByRole('dialog');
+  await expect(confirm).toContainText(MESSAGE_JOB);
+  await expect(confirm).toContainText(MESSAGE_LINK);
+  expect(chatReceived(admiral, 'harbor')).not.toContain(MESSAGE_JOB);
+  await confirm.getByRole('button', { name: 'Message AdmiralBot' }).tap();
+  const sent = page.locator('.toasts');
+  await expect(sent.getByText('Sent to AdmiralBot')).toBeVisible();
+  await expect(sent.getByRole('link')).toHaveAttribute('href', chat);
+  await expect.poll(() => chatReceived(admiral, 'harbor')).toContain(text);
+  await sent.getByRole('button', { name: 'Dismiss' }).tap();
 
   // A form module action on the row opens its fetched form, and its result shows as a toast with its link.
   const fix = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Fix login' });

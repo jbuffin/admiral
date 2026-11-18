@@ -44,6 +44,10 @@ describe('launchBody', () => {
     resources: [],
   };
 
+  it('sends the issues the ship is launched on, and none when there are none', () => {
+    expect(launchBody({ ...form, issues: ['https://github.com/acme/widgets/issues/7'] })).toMatchObject({ issues: ['https://github.com/acme/widgets/issues/7'] });
+    expect(launchBody(form)).not.toHaveProperty('issues');
+  });
   it('sends the fields the server reads, with the dir', () => {
     expect(launchBody({ ...form, model: 'opus', effort: 'high', autopilot: true, resources: ['db'] })).toMatchObject({
       fleet: 'work',
