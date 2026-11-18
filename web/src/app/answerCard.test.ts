@@ -184,6 +184,12 @@ describe('answerCard: Copilot', () => {
     }
   });
 
+  it('names the call Copilot asks permission for, among several open ones', () => {
+    const asked: Item = { id: 'c2', kind: 'tool_call', tool: { name: 'bash', summary: 'touch x', done: false, approving: true, input: 'touch x' } };
+    const card = copilot('notification:permission_prompt', ok(call('c1', 'view', 'a'), asked, call('c3', 'task', 'Explore')));
+    expect(card).toMatchObject({ kind: 'permission', tool: 'bash', call: { id: 'c2' } });
+  });
+
   it('ignores an open call left over from an earlier turn', () => {
     const conv = ok(call('old', 'bash', 'orphan'), { id: 'e', kind: 'turn_end' }, { id: 'u', kind: 'user', text: 'next' }, call('new', 'bash', 'touch x'));
     expect(copilot('notification:permission_prompt', conv)).toMatchObject({ call: { id: 'new' } });

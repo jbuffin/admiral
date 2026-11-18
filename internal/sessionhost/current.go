@@ -78,6 +78,11 @@ func CurrentHarnessCall(pane string) []string {
 	return []string{"display", "-p", "-t", pane, "#{" + HarnessOption + "}"}
 }
 
+// BoatCall reads the pane's harness, crew name and session name, separated by RowSeparator.
+func BoatCall(pane string) []string {
+	return []string{"display", "-p", "-t", pane, "#{" + HarnessOption + "}" + sep + CrewNameFormat + sep + "#{session_name}"}
+}
+
 // PaneOptionCall does not fall back to the window's and the session's option.
 func PaneOptionCall(pane, option string) []string {
 	return []string{"show-options", "-pqv", "-t", pane, option}

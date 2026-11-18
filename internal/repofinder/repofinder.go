@@ -129,6 +129,42 @@ func Remotes(dir string) []string {
 	return out
 }
 
+// Origin is the identity of the checkout's origin remote, or of its first remote when it has no origin.
+func Origin(dir string) (string, bool) {
+	cfg := configPath(dir)
+	if cfg == "" {
+		return "", false
+	}
+	data, err := os.ReadFile(cfg)
+	if err != nil {
+		return "", false
+	}
+	first, name := "", ""
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			name = ""
+			if rest, ok := strings.CutPrefix(line, "[remote "); ok {
+				name = strings.Trim(strings.TrimSuffix(rest, "]"), `" `)
+			}
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if name == "" || !ok || strings.TrimSpace(k) != "url" {
+			continue
+		}
+		id, ok := Identity(strings.Trim(strings.TrimSpace(v), `"`))
+		switch {
+		case !ok:
+		case name == "origin":
+			return id, true
+		case first == "":
+			first = id
+		}
+	}
+	return first, first != ""
+}
+
 func configPath(dir string) string {
 	dotgit := filepath.Join(dir, ".git")
 	st, err := os.Lstat(dotgit)

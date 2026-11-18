@@ -80,6 +80,7 @@ func Hook(args []string, std IO) error {
 			rolloutsCall(pane, args[0], p),
 			// Last, so a failure here can't undo the writes before it.
 			crewTranscriptCall(pane, args[0], p))
+		recordPermission(pane, args[0], p)
 	}
 	// Outside the payload check: the context printed whether or not the payload parsed.
 	call = sessionhost.Join(call, digestSeqCall(pane, printed))
@@ -108,18 +109,21 @@ func paneReason(pane string) string {
 func tmuxOut(args ...string) (string, error) { return sessionhost.ReadCurrent(args...) }
 
 type hookPayload struct {
-	ToolName          string          `json:"tool_name"`         // Claude Code
-	ToolNameCopilot   string          `json:"toolName"`          // Copilot
-	NotificationType  string          `json:"notification_type"` // Claude Code, Copilot
-	AgentID           string          `json:"agentId"`           // Copilot: set inside a subagent
-	AgentTypeCopilot  string          `json:"agentType"`         // Copilot
-	SubagentID        string          `json:"agent_id"`          // Claude Code, Codex: SubagentStart and SubagentStop
-	SubagentType      string          `json:"agent_type"`        // Claude Code, Codex
-	TranscriptPath    string          `json:"transcript_path"`   // Claude Code, Codex: any event (null reads "")
-	TranscriptCopilot string          `json:"transcriptPath"`    // Copilot: a lead agentStop's, for a crew boat
-	Source            string          `json:"source"`            // SessionStart (Claude Code: startup, resume, clear, compact; Copilot: new, resume)
-	SessionIDCopilot  string          `json:"sessionId"`         // Copilot: any event
-	ToolResponse      json.RawMessage `json:"tool_response"`
+	ToolName              string          `json:"tool_name"`         // Claude Code
+	ToolNameCopilot       string          `json:"toolName"`          // Copilot
+	NotificationType      string          `json:"notification_type"` // Claude Code, Copilot
+	AgentID               string          `json:"agentId"`           // Copilot: set inside a subagent
+	AgentTypeCopilot      string          `json:"agentType"`         // Copilot
+	SubagentID            string          `json:"agent_id"`          // Claude Code, Codex: SubagentStart and SubagentStop
+	SubagentType          string          `json:"agent_type"`        // Claude Code, Codex
+	TranscriptPath        string          `json:"transcript_path"`   // Claude Code, Codex: any event (null reads "")
+	TranscriptCopilot     string          `json:"transcriptPath"`    // Copilot: a lead agentStop's, for a crew boat
+	Source                string          `json:"source"`            // SessionStart (Claude Code: startup, resume, clear, compact; Copilot: new, resume)
+	SessionIDCopilot      string          `json:"sessionId"`         // Copilot: any event
+	ToolResponse          json.RawMessage `json:"tool_response"`
+	ToolInput             json.RawMessage `json:"tool_input"`             // Claude Code, Codex
+	PermissionSuggestions json.RawMessage `json:"permission_suggestions"` // Claude Code: PermissionRequest
+	Cwd                   string          `json:"cwd"`
 	// A nil slice is "absent" and an empty one is `[]`: Codex's Stop sends none,
 	// which tells it from Claude's.
 	BackgroundTasks []backgroundTask `json:"background_tasks"`
@@ -150,13 +154,13 @@ func hookDecision(event string, p hookPayload) hookWrite {
 	switch event {
 	case "PermissionRequest":
 		return hookWrite{state: "needs_you", reason: withToken("permission", p.ToolName)}
-	case "PreToolUse", "PostToolUse":
+	case "PreToolUse", "PostToolUse", "PostToolUseFailure":
 		// A background subagent keeps running tools while the lead waits on a question; its hooks must not undo that.
 		// They do clear a prompt of the subagent's own that the engineer answered in the terminal.
 		if p.SubagentID != "" {
 			return hookWrite{state: "working", unlessAsking: true}
 		}
-		if event == "PostToolUse" {
+		if event != "PreToolUse" {
 			return hookWrite{state: "working"}
 		}
 		if p.ToolName == "AskUserQuestion" {

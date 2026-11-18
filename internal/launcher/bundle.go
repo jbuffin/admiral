@@ -109,12 +109,13 @@ func claudeSettings() any {
 			guardGroup(ScoutEditMatcher),
 			guardGroup(ScoutMCPMatcher),
 		},
-		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
-		"Stop":             []any{group("", "Stop")},
-		"UserPromptSubmit": []any{group("", "UserPromptSubmit")},
-		"PostToolUse":      []any{group("", "PostToolUse")},
-		"SubagentStart":    []any{group("", "SubagentStart")},
-		"SubagentStop":     []any{group("", "SubagentStop")},
+		"Notification":       []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
+		"Stop":               []any{group("", "Stop")},
+		"UserPromptSubmit":   []any{group("", "UserPromptSubmit")},
+		"PostToolUse":        []any{group("", "PostToolUse")},
+		"PostToolUseFailure": []any{group("", "PostToolUseFailure")},
+		"SubagentStart":      []any{group("", "SubagentStart")},
+		"SubagentStop":       []any{group("", "SubagentStop")},
 	}}
 }
 

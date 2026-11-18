@@ -16,6 +16,7 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/moor"
+	"github.com/jbuffin/admiral/internal/permlog"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -56,6 +57,9 @@ type Service struct {
 
 	// LiveFrame gets every frame an observer reads, for the live usage store; it must not block.
 	LiveFrame func(session string, frame []byte)
+
+	// Permissions gets the permission log events a Codex ship's app-server tells of.
+	Permissions func(session string, evs []permlog.Event)
 
 	// Tests replace these lookups of a ship's rounds.
 	moored    func(session string) (ships.Ship, bool)   // a ship with no live session but a moored record

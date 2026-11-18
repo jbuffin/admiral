@@ -11,6 +11,7 @@ import (
 	"github.com/jbuffin/admiral/internal/codexlive"
 	"github.com/jbuffin/admiral/internal/codexpane"
 	"github.com/jbuffin/admiral/internal/conversation"
+	"github.com/jbuffin/admiral/internal/permlog"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -25,7 +26,8 @@ type observer struct {
 	prefer            string // the thread the server last told of, kept across reconnects; only observe reads it
 	asking            bool   // the pane was told a question waits; only the observer's goroutine touches it
 	cancel            context.CancelFunc
-	live              *conversation.Live // set while connected; guarded by Service.mu
+	live              *conversation.Live    // set while connected; guarded by Service.mu
+	perms             *permlog.CodexTracker // only the observer's goroutine touches it
 }
 
 // liveRead is what the panes said about a ship at, so the tmux reads are not repeated every tick.
@@ -172,7 +174,7 @@ func (s *Service) reconcile(ctx context.Context, reads map[string]liveRead) {
 			continue
 		}
 		octx, cancel := context.WithCancel(ctx)
-		o := &observer{session: sh.Session, launched: sh.Launched, sock: r.sock, startCmd: r.startCmd, rollout: r.rollout, cancel: cancel}
+		o := &observer{session: sh.Session, launched: sh.Launched, sock: r.sock, startCmd: r.startCmd, rollout: r.rollout, cancel: cancel, perms: permlog.NewCodexTracker()}
 		s.mu.Lock()
 		s.observers[k] = o
 		s.mu.Unlock()
@@ -277,6 +279,9 @@ func (s *Service) serveObserved(ctx context.Context, o *observer, conn *codexliv
 		}
 		if s.LiveFrame != nil {
 			s.LiveFrame(o.session, frame)
+		}
+		if evs := o.perms.Frame(frame); len(evs) > 0 && s.Permissions != nil {
+			s.Permissions(o.session, evs)
 		}
 		if id := moved(frame, conn.Thread); id != "" {
 			o.prefer = id
