@@ -351,7 +351,7 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 		{"list_routines", `{}`, "GET", "/api/fleets/work/routines", "", nil},
 		{"turn_routine_off", `{"routine":"r-1"}`, "POST", "/api/fleets/work/routines/r-1/off", "", nil},
 		{"hold_fire_on", `{}`, "POST", "/api/fleets/work/hold-fire/on", "", nil},
-		{"hold_fire_on", `{"all_fleets":true}`, "POST", "/api/hold-fire/on", "", nil},
+		{"hold_fire_on", `{"all_fleets":false}`, "POST", "/api/fleets/work/hold-fire/on", "", nil},
 		{"read_hold_fire", `{}`, "GET", "/api/fleets/work/hold-fire", "", nil},
 	} {
 		t.Run(c.tool, func(t *testing.T) {
@@ -382,6 +382,50 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 }
 
 func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
+
+func TestHoldFireOnRefusesAllFleetsAndSendsNothing(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"ok":true}` })
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "hold_fire_on", `{"all_fleets":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "own fleet") {
+		t.Errorf("result = %+v, want isError saying AdmiralBot turns Hold fire on only in its own fleet", tr)
+	}
+	if got := a.requests(); len(got) != 0 {
+		t.Errorf("requests = %+v, want none", got)
+	}
+}
+
+func TestHoldFireOnOffersNoAllFleetsOption(t *testing.T) {
+	a := newStandIn(t, nil)
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, rpc(1, "tools/list", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Tools []struct {
+			Name        string
+			Description string
+			InputSchema json.RawMessage
+		}
+	}
+	if err := json.Unmarshal(replies["1"].Result, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range list.Tools {
+		if tl.Name != "hold_fire_on" {
+			continue
+		}
+		if strings.Contains(string(tl.InputSchema), "all_fleets") || strings.Contains(tl.Description, "all_fleets") {
+			t.Errorf("hold_fire_on offers all_fleets: %s / %s", tl.InputSchema, tl.Description)
+		}
+		return
+	}
+	t.Error("tools/list has no hold_fire_on")
+}
 
 func TestAServerErrorBecomesAToolErrorCarryingItsMessage(t *testing.T) {
 	a := newStandIn(t, func(mcpReq) (int, string) {
