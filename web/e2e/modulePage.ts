@@ -70,7 +70,7 @@ export const pipelineDetail = {
       title: 'Commits',
       links: [
         { label: 'a1b2c3d', url: 'https://ci.example/commit/a1b2c3d', subtitle: 'Raise the retry limit', chips: [chip('Merged', 'good')] },
-        { label: 'e4f5a6b', url: 'https://ci.example/commit/e4f5a6b', subtitle: 'Fix the cache key', chips: [chip('Open', 'warn'), chip('2 checks', 'muted')] },
+        { label: 'e4f5a6b', url: 'https://ci.example/commit/e4f5a6b', subtitle: 'Fix the cache key', chips: [chip('Open', 'warn'), chip('2 reviews', 'muted')] },
       ],
     },
     {

@@ -1345,7 +1345,7 @@ a.mlink:hover { text-decoration: underline; }
 .mchip.mnext { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); font-weight: 600; }
 .btn.mact-small { min-height: 30px; padding: 0 10px; font-size: 13px; font-weight: 500; }
 .btn.mact-small.lead, .btn.mact-small[aria-pressed="true"] { color: var(--color-accent); border-color: color-mix(in srgb, var(--color-accent) 50%, transparent); font-weight: 600; }
-@media (pointer: coarse) { .btn.mact-small { min-height: var(--shape-min-touch-target); } }
+@media (pointer: coarse) { .btn.mact-small { min-height: var(--shape-min-touch-target); } .odetail .mlinks a.mlink { display: inline-flex; align-items: center; min-height: var(--shape-min-touch-target); } }
 /* A row with a target says what its actions act on, on a line of its own under the row. */
 .module-page .mrow-target { flex-direction: column; align-items: stretch; gap: 0; }
 /* In a column, a row button's 12em basis would be its height. */

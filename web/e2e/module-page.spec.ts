@@ -36,6 +36,19 @@ test('on the iPad a module has a nav entry after Crew with its waiting count, dr
   await main.getByRole('searchbox', { name: /filter/i }).fill('');
   await expect(main.getByText('Fix login')).toBeVisible();
 
+  // A module action's step, a link's chips and its subtitle reach the page from the plugin.
+  const run = main.getByRole('listitem').filter({ hasText: 'Release build' });
+  const onTarget = run.getByRole('group', { name: 'Acts on Deploy stage' });
+  await expect(onTarget.getByRole('button', { name: 'Rerun stage' })).toBeVisible();
+  await expect(onTarget.getByRole('button', { name: 'Cancel run' })).toHaveCount(0);
+  await expect(run.getByRole('button', { name: 'Cancel run' })).toBeVisible();
+  await expect(run.getByRole('button', { name: 'Skip smoke test' })).toHaveCount(0);
+  await main.getByRole('button', { name: 'Open Release build' }).tap();
+  const stages = page.getByRole('complementary', { name: 'Selected row' });
+  await expect(stages.getByText('Raise the retry limit')).toBeVisible();
+  await expect(stages.getByText('Merged')).toBeVisible();
+  await expect(stages.getByRole('button', { name: 'Skip smoke test' })).toBeVisible();
+
   // A row opens in the side pane, with its id in the URL.
   await main.getByRole('button', { name: 'Open Fix login' }).tap();
   await expect(page).toHaveURL(/\/app\/deploys\/t1(\?|$)/);

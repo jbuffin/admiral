@@ -261,16 +261,16 @@ A group:
 
 **An action** is a button. It is the `action` of a row, one of its `actions`, an action of a step, or the `action` of a notice.
 
-| Field | Type | Required | Applies to | Meaning | When bad |
-| --- | --- | --- | --- | --- | --- |
-| `id` | string | yes | all | The action's id, unique within a row and its steps (see [Module actions](#module-actions-actionform-and-actionrun)). | Missing: the action is dropped. |
-| `label` | string | yes | all | The button's text. | Missing: the action is dropped. |
-| `confirm` | string | no | module actions | `click` runs at once, `yesno` asks first, `form` asks `action.form` and shows its fields. | Any other value reads `yesno`. A message action always asks. |
-| `summary` | string | no | module actions | A line of what the action does, shown in its confirm. | Cleaned of control characters. |
-| `step` | string | no | module actions | The `id` of the step in the row's detail view that the action acts on; see [how a row is drawn](#how-a-row-is-drawn). | Not a usable id: dropped by itself, the action stays. Dropped on a built-in action and on a notice's action. A step the detail lacks is not an error. |
-| `builtin` | string | no | built-in actions | `open`, `launch` or `message`: Admiral handles the action itself and never sends it to the plugin. | Any other value, or `open` or `launch` with no `url`: the action is dropped. |
-| `url` | string | for `open`, `launch` | built-in actions | An `http(s):` link. A bare `url` with no `builtin` is `open`. | Not `http(s):`, or holding whitespace of any script or an invisible character: the action is dropped. |
-| `kind`, `ref`, `title`, `link` | strings | for `message` | message actions | See below. | Any missing, or `link` unacceptable: the action is dropped. |
+| Field | Type | Required | Applies to | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- | --- |
+| `id` | string | yes | all | The action's id, unique within a row and its steps (see [Module actions](#module-actions-actionform-and-actionrun)). | Not shown. | Missing: the action is dropped. |
+| `label` | string | yes | all | The button's text. | The button's text. | Missing: the action is dropped. |
+| `confirm` | string | no | module actions | `click` runs at once, `yesno` asks first, `form` asks `action.form` and shows its fields. | Decides what a press does first. | Any other value reads `yesno`. A message action always asks. |
+| `summary` | string | no | module actions | A line of what the action does, shown in its confirm. | In the confirm. | Cleaned of control characters. |
+| `step` | string | no | module actions | The `id` of the step in the row's detail view that the action acts on; see [how a row is drawn](#how-a-row-is-drawn). | Places the button; see how a row is drawn. | Not a usable id: dropped by itself, the action stays. Dropped on a built-in action and on a notice's action. A step the detail lacks is not an error. |
+| `builtin` | string | no | built-in actions | `open`, `launch` or `message`: Admiral handles the action itself and never sends it to the plugin. | A link or a dialog, not a plugin call. | Any other value, or `open` or `launch` with no `url`: the action is dropped. |
+| `url` | string | for `open`, `launch` | built-in actions | An `http(s):` link. A bare `url` with no `builtin` is `open`. | The link or issue the button opens. | Not `http(s):`, or holding whitespace of any script or an invisible character: the action is dropped. |
+| `kind`, `ref`, `title`, `link` | strings | for `message` | message actions | See below. | In the message confirm. | Any missing, or `link` unacceptable: the action is dropped. |
 
 An action with no `builtin` is a module action: Admiral runs it through `action.form` and `action.run`. The built-in actions are:
 
