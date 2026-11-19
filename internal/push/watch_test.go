@@ -212,6 +212,9 @@ func item(t *testing.T, session, id, kind, title string) inbox.Item {
 		body[kind] = map[string]any{"pr_url": "https://example.com/pull/1", "review_id": 1}
 	case "notice":
 		body[kind] = map[string]any{"body": "FYI"}
+	case "allow_rules":
+		body[kind] = map[string]any{"fleet": "work", "cards": []any{map[string]any{"id": "c1", "harness": "claude", "repo": "acme/widgets",
+			"rule": "Bash(gh pr view:*)", "count": 1, "prompts": []any{map[string]any{"ship": "dory", "id": "p1"}}}}}
 	case "routine_proposal":
 		body[kind] = map[string]any{"fleet": "work", "routine": "r1", "routine_name": "Nightly sweep", "trigger": "t1", "action": "launch", "expires_at": "2099-01-01T00:00:00Z"}
 	case "wake_proposal":
@@ -254,6 +257,7 @@ func TestInboxItemsThatOnlyCountNeverMakeAnEvent(t *testing.T) {
 	r.w.Inbox([]inbox.Item{
 		item(t, inbox.AdmiralSession, "n-1", "notice", "Config migrated"),
 		item(t, "s-Dory", "r-1", "review", "Review PR 1"),
+		item(t, inbox.AdmiralSession, "allow-rules-work", "allow_rules", "Allow rules for work"),
 	})
 	if r.count() != 0 {
 		t.Errorf("a notice and a review made %d events, want none", r.count())

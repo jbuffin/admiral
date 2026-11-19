@@ -3,6 +3,7 @@ package permlog_test
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,7 +24,8 @@ func readBack(t *testing.T, home, ship string) []permlog.Record {
 
 func TestARecordCarriesTheLaunchItCameInAndItsAnswer(t *testing.T) {
 	home := t.TempDir()
-	dir := t.TempDir() // a checkout with no remote is named by its path
+	dir, err := filepath.EvalSymlinks(t.TempDir()) // a checkout with no remote is named by its real path
+	must(t, err)
 	if err := permlog.Launched(home, "alpha", "claude", "work", dir); err != nil {
 		t.Fatal(err)
 	}
@@ -54,10 +56,13 @@ func TestARecordCarriesTheLaunchItCameInAndItsAnswer(t *testing.T) {
 
 func TestARemoteNamesTheRepoByOwnerAndName(t *testing.T) {
 	dir := t.TempDir()
-	must(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o700))
-	must(t, os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[remote \"upstream\"]\n\turl = https://github.com/other/fork.git\n[remote \"origin\"]\n\turl = git@github.com:Acme/API.git\n"), 0o600))
-	if got := permlog.Repo(dir); got != "acme/api" {
-		t.Errorf("Repo = %q, want the origin's acme/api", got)
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "upstream", "https://github.com/other/fork.git"}, {"remote", "add", "origin", "git@github.com:Acme/API.git"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if got := permlog.Repo(dir); got != "Acme/API" {
+		t.Errorf("Repo = %q, want the origin's Acme/API", got)
 	}
 }
 

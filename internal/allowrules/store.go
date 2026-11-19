@@ -23,7 +23,7 @@ const FileName = "allow-rules.json"
 // for every repo of the fleet, so it has no repo.
 type Rule struct {
 	Harness string `json:"harness"`
-	// Repo is the remote's owner/repo, else the checkout's absolute path (RepoKey).
+	// Repo is the GitHub origin's owner/repo, else the checkout's real path (repokey.Key).
 	Repo    string    `json:"repo,omitempty"`
 	Rule    string    `json:"rule,omitempty"`
 	Pattern []string  `json:"pattern,omitempty"`

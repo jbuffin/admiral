@@ -81,8 +81,8 @@ func TestEventShipTellsRestrictedAndOutsideEventShipsAndFailsClosedOnAnUnreadabl
 		ResourceKnown: func(string) bool { return false }}
 	now := time.Now()
 	for _, rec := range []routines.Trigger{
-		{ID: "t-open", At: now, Routine: "r1", Event: "issue.opened", Ship: "outside", Outcome: routines.Outcome("launched")},
-		{ID: "t-locked", At: now, Routine: "r2", Event: "issue.opened", Ship: "locked", Restricted: "no-network", Outcome: routines.Outcome("launched")},
+		{ID: "t-open", Tier: "T1", At: now, Routine: "r1", Event: "issue.opened", Ship: "outside", Outcome: routines.Outcome("launched")},
+		{ID: "t-locked", Tier: "T3", At: now, Routine: "r2", Event: "issue.opened", Ship: "locked", Restricted: "no-network", Outcome: routines.Outcome("launched")},
 	} {
 		if _, err := store.AppendTrigger("work", rec); err != nil {
 			t.Fatal(err)
@@ -99,13 +99,17 @@ func TestEventShipTellsRestrictedAndOutsideEventShipsAndFailsClosedOnAnUnreadabl
 	for _, c := range []struct {
 		session            string
 		restricted, fromEv bool
-	}{{"outside", false, true}, {"locked", true, true}, {"own", false, false}} {
-		restricted, fromEv, err := ask("work", c.session)
-		if err != nil || restricted != c.restricted || fromEv != c.fromEv {
-			t.Errorf("%s: restricted=%v fromEvent=%v err=%v; want %v %v", c.session, restricted, fromEv, err, c.restricted, c.fromEv)
+		tier               string
+	}{{"outside", false, true, "T1"}, {"locked", true, true, "T3"}, {"own", false, false, ""}} {
+		restricted, fromEv, tier, err := ask("work", c.session)
+		if err != nil || restricted != c.restricted || fromEv != c.fromEv || tier != c.tier {
+			t.Errorf("%s: restricted=%v fromEvent=%v tier=%q err=%v; want %v %v %q", c.session, restricted, fromEv, tier, err, c.restricted, c.fromEv, c.tier)
 		}
 	}
-	if _, _, err := ask("nowhere", "own"); err == nil {
+	if _, fromEv, _, err := ask("work", "gone"); err == nil || fromEv {
+		t.Errorf("a ship that is not listed answered fromEvent=%v err=%v; want a refusal, so no proposal reads it as an own ship", fromEv, err)
+	}
+	if _, _, _, err := ask("nowhere", "own"); err == nil {
 		t.Error("an unreadable trigger log answered without an error; want a refusal")
 	}
 }

@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
@@ -103,26 +105,31 @@ func listedShips(list func() []ships.Ship) func() []routines.ListedShip {
 }
 
 // eventShip answers from the fleet's trigger log whether a listed ship was launched from an outside event, and whether
-// that launch was restricted. The record must still match the ship, as session names are reused. A log that cannot be
-// read is an error, so the caller can refuse rather than guess.
-func eventShip(store *routines.Store, listed func() []routines.ListedShip) func(fleet, session string) (restricted, fromEvent bool, err error) {
-	return func(fleet, session string) (bool, bool, error) {
+// that launch was restricted, and its trigger's tier. The record must still match the ship, as session names are reused. A log that cannot be
+// read is an error, so the caller can refuse rather than guess, and so is a session that is not listed at all: without
+// the ship's own launch there is no telling an event ship from another.
+func eventShip(store *routines.Store, listed func() []routines.ListedShip) func(fleet, session string) (restricted, fromEvent bool, tier string, err error) {
+	return func(fleet, session string) (bool, bool, string, error) {
 		recs, err := store.Records(fleet)
 		if err != nil {
-			return false, false, err
+			return false, false, "", err
 		}
-		for _, sh := range routines.EventLaunchedShips(fleet, recs, listed()) {
+		all := listed()
+		if !slices.ContainsFunc(all, func(sh routines.ListedShip) bool { return sh.Session == session && sh.Fleet == fleet }) {
+			return false, false, "", fmt.Errorf("ship %s is not listed in fleet %s", session, fleet)
+		}
+		for _, sh := range routines.EventLaunchedShips(fleet, recs, all) {
 			if sh.Session != session {
 				continue
 			}
 			for _, r := range recs {
 				if r.ID == sh.Trigger {
-					return r.Restricted != "", true, nil
+					return r.Restricted != "", true, r.Tier, nil
 				}
 			}
-			return false, true, nil
+			return false, true, "", nil
 		}
-		return false, false, nil
+		return false, false, "", nil
 	}
 }
 

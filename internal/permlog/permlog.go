@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/jbuffin/admiral/internal/repofinder"
+	"github.com/jbuffin/admiral/internal/repokey"
 )
 
 // Dir is the folder under Admiral's home that holds the logs.
@@ -164,15 +164,8 @@ func Append(home, ship string, evs ...Event) error {
 	return err
 }
 
-// Repo is how a log names a checkout's repo: its remote's owner/repo, or its path when it has none.
-func Repo(dir string) string {
-	if id, ok := repofinder.Origin(dir); ok {
-		if _, ownerRepo, ok := strings.Cut(id, "/"); ok {
-			return ownerRepo
-		}
-	}
-	return dir
-}
+// Repo is how a log names a checkout's repo: the key launch looks allow rules up by.
+func Repo(dir string) string { return repokey.Key(dir) }
 
 // Launched starts a launch's part of the ship's log: what every prompt after it shares.
 func Launched(home, ship, harness, fleet, dir string) error {
@@ -218,6 +211,30 @@ func cut(s string, n int) string {
 
 // Read folds the ship's log into its prompts, oldest first. A missing log is no prompts.
 func Read(home, ship string) ([]Record, error) {
+	evs, err := readEvents(home, ship)
+	return Fold(ship, evs), err
+}
+
+// ReadRound is the prompts of the ship's newest launch only. The log outlives the ship, so it also holds earlier
+// rounds and earlier ships of the same name.
+func ReadRound(home, ship string) ([]Record, error) {
+	evs, err := readEvents(home, ship)
+	last := ""
+	for _, ev := range evs {
+		if ev.Ev == "launch" {
+			last = ev.At
+		}
+	}
+	var out []Record
+	for _, r := range Fold(ship, evs) {
+		if r.Launched == last {
+			out = append(out, r)
+		}
+	}
+	return out, err
+}
+
+func readEvents(home, ship string) ([]Event, error) {
 	p, ok := Path(home, ship)
 	if !ok {
 		return nil, errors.New("permlog: not a ship name: " + ship)
@@ -239,7 +256,7 @@ func Read(home, ship string) ([]Record, error) {
 			evs = append(evs, ev)
 		}
 	}
-	return Fold(ship, evs), sc.Err()
+	return evs, sc.Err()
 }
 
 // Fold turns a log's events into its prompts. A person's answer counts as the card's when the card answered that
