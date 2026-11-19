@@ -366,3 +366,87 @@ test('a row whose id is a dot segment cannot be opened', async () => {
   expect(btn.disabled).toBe(true);
   page.groups[1].rows.pop();
 });
+
+const targeted = {
+  state: 'ready',
+  waiting: 1,
+  groups: [
+    {
+      id: 'review',
+      title: 'Needs review',
+      rows: [
+        {
+          id: 't1',
+          title: 'Fix login',
+          subtitle: 'T-1',
+          url: 'https://tracker.example/t/1',
+          chips: [],
+          reason: 'You approved the change',
+          target: { label: 'Code review', chips: [{ label: 'Paused', tone: 'warn' }], step: 's2' },
+          action: act,
+          actions: [{ id: 'resume', label: 'Resume', confirm: 'click' }, { id: 'docs', label: 'Open docs', confirm: 'click', url: 'https://tracker.example/docs' }],
+        },
+      ],
+    },
+  ],
+};
+const targetedDetail = {
+  sections: [
+    {
+      kind: 'steps',
+      title: 'Tasks',
+      steps: [
+        { id: 's1', title: 'Write docs', subtitle: 'Docs pass', chips: [{ label: 'Unclaimed', tone: 'muted' }], actions: [{ id: 'claim', label: 'Claim', confirm: 'click' }] },
+        { id: 's2', title: 'Code review', subtitle: 'With a pair, Amy Lee', chips: [{ label: 'Paused', tone: 'warn' }], actions: [{ id: 'resume', label: 'Resume', confirm: 'click' }, { id: 'assign', label: 'Assign…', confirm: 'form' }] },
+      ],
+    },
+  ],
+};
+
+test('a row with a target names what its module actions act on, with them beside it, and keeps an Open link apart', async () => {
+  server({ t1: { body: targetedDetail } }, targeted);
+  sources.value = [source(1)];
+  open();
+  const group = await screen.findByRole('group', { name: 'Acts on Code review' });
+  expect(within(group).getByText('Paused')).toBeTruthy();
+  expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual(['Pass review', 'Resume']);
+  const row = screen.getByRole('button', { name: 'Open Fix login' }).closest('li') as HTMLElement;
+  expect(within(row).getByRole('link', { name: 'Open docs' })).toBeTruthy();
+});
+
+test('in the detail the target step comes first, marked Next up, with the row\'s module actions and its own, each once', async () => {
+  server({ t1: { body: targetedDetail } }, targeted);
+  select('t1');
+  sources.value = [source(1)];
+  open();
+  const pane = await screen.findByRole('complementary', { name: 'Selected row' });
+  await within(pane).findByText('Write docs');
+  const cards = within(pane).getAllByRole('listitem').filter((li) => li.classList.contains('mstep'));
+  expect(cards.map((c) => c.querySelector('.mstep-title')?.textContent)).toEqual(['Code review', 'Write docs']);
+  expect(within(cards[0]).getByText('Next up')).toBeTruthy();
+  expect(within(cards[0]).getByText('With a pair, Amy Lee')).toBeTruthy();
+  expect(within(cards[0]).getByText('You approved the change')).toBeTruthy();
+  expect(within(cards[0]).getAllByRole('button').map((b) => b.textContent)).toEqual(['Pass review', 'Resume', 'Assign…']);
+  expect(within(cards[1]).queryByText('Next up')).toBeNull();
+  expect(within(cards[1]).getAllByRole('button').map((b) => b.textContent)).toEqual(['Claim']);
+});
+
+test('the row\'s link is its subtitle at the top of the detail, opening outside the app, and a link that is not http is plain text', async () => {
+  server({ t1: { body: targetedDetail } }, targeted);
+  select('t1');
+  sources.value = [source(1)];
+  const { unmount } = open();
+  const pane = await screen.findByRole('complementary', { name: 'Selected row' });
+  const link = (await within(pane).findByRole('link', { name: /T-1/ })) as HTMLAnchorElement;
+  expect(link.getAttribute('href')).toBe('https://tracker.example/t/1');
+  expect(link.getAttribute('target')).toBe('_blank');
+  unmount();
+  const bad = structuredClone(targeted);
+  bad.groups[0].rows[0].url = 'javascript:alert(1)';
+  server({ t1: { body: targetedDetail } }, bad);
+  open();
+  const pane2 = await screen.findByRole('complementary', { name: 'Selected row' });
+  await within(pane2).findByText('Write docs');
+  expect(within(pane2).queryByRole('link', { name: /T-1/ })).toBeNull();
+  expect(within(pane2).getByText('T-1')).toBeTruthy();
+});

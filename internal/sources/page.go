@@ -77,10 +77,19 @@ type Row struct {
 	ID       string   `json:"id"`
 	Title    string   `json:"title"`
 	Subtitle string   `json:"subtitle"`
+	URL      string   `json:"url,omitempty"`
 	Chips    []Chip   `json:"chips"`
 	Reason   string   `json:"reason"`
+	Target   *Target  `json:"target,omitempty"`
 	Action   *Action  `json:"action,omitempty"`
 	Actions  []Action `json:"actions,omitempty"`
+}
+
+// Target names what a row's module actions act on, such as one step of its detail.
+type Target struct {
+	Label string `json:"label"`
+	Chips []Chip `json:"chips"`
+	Step  string `json:"step,omitempty"`
 }
 
 type Group struct {
@@ -121,10 +130,11 @@ type Link struct {
 }
 
 type Step struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title"`
-	Chips   []Chip   `json:"chips"`
-	Actions []Action `json:"actions"`
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Subtitle string   `json:"subtitle,omitempty"`
+	Chips    []Chip   `json:"chips"`
+	Actions  []Action `json:"actions"`
 }
 
 type Field struct {
@@ -317,8 +327,10 @@ func parseRow(raw json.RawMessage) (Row, error) {
 		ID       json.RawMessage   `json:"id"`
 		Title    json.RawMessage   `json:"title"`
 		Subtitle json.RawMessage   `json:"subtitle"`
+		URL      json.RawMessage   `json:"url"`
 		Chips    []json.RawMessage `json:"chips"`
 		Reason   json.RawMessage   `json:"reason"`
+		Target   json.RawMessage   `json:"target"`
 		Action   json.RawMessage   `json:"action"`
 		Actions  []json.RawMessage `json:"actions"`
 	}
@@ -338,6 +350,12 @@ func parseRow(raw json.RawMessage) (Row, error) {
 	if row.Chips, err = parseChips(item.Chips); err != nil {
 		return Row{}, err
 	}
+	if u, _ := rawString(item.URL); safeURL(u) != "" && plainURL(safeURL(u)) {
+		row.URL = safeURL(u)
+	}
+	if row.Target, err = parseTarget(item.Target); err != nil {
+		return Row{}, err
+	}
 	if hasMain {
 		row.Action = parseAction(item.Action)
 	}
@@ -345,6 +363,28 @@ func parseRow(raw json.RawMessage) (Row, error) {
 		return Row{}, err
 	}
 	return row, nil
+}
+
+// parseTarget is nil for no target or one with no label; only too many chips refuse the page.
+func parseTarget(raw json.RawMessage) (*Target, error) {
+	var it struct {
+		Label json.RawMessage   `json:"label"`
+		Chips []json.RawMessage `json:"chips"`
+		Step  json.RawMessage   `json:"step"`
+	}
+	if len(raw) == 0 || string(raw) == "null" || json.Unmarshal(raw, &it) != nil {
+		return nil, nil
+	}
+	chips, err := parseChips(it.Chips)
+	if err != nil {
+		return nil, err
+	}
+	label := titleLine(it.Label)
+	if label == "" {
+		return nil, nil
+	}
+	step, _ := parseID(it.Step)
+	return &Target{Label: label, Chips: chips, Step: step}, nil
 }
 
 // parseLink is raw as a link; false for one with no label or a url that is not http(s).
@@ -485,10 +525,11 @@ func parseSection(raw json.RawMessage, stepIDs map[string]bool) (*Section, error
 	case "steps":
 		for _, s := range item.Steps {
 			var it struct {
-				ID      json.RawMessage   `json:"id"`
-				Title   json.RawMessage   `json:"title"`
-				Chips   []json.RawMessage `json:"chips"`
-				Actions []json.RawMessage `json:"actions"`
+				ID       json.RawMessage   `json:"id"`
+				Title    json.RawMessage   `json:"title"`
+				Subtitle json.RawMessage   `json:"subtitle"`
+				Chips    []json.RawMessage `json:"chips"`
+				Actions  []json.RawMessage `json:"actions"`
 			}
 			if json.Unmarshal(s, &it) != nil {
 				continue
@@ -501,7 +542,7 @@ func parseSection(raw json.RawMessage, stepIDs map[string]bool) (*Section, error
 				return nil, fmt.Errorf("step id %q is used twice", id)
 			}
 			stepIDs[id] = true
-			step := Step{ID: id, Title: titleLine(it.Title)}
+			step := Step{ID: id, Title: titleLine(it.Title), Subtitle: titleLine(it.Subtitle)}
 			var err error
 			if step.Chips, err = parseChips(it.Chips); err != nil {
 				return nil, err

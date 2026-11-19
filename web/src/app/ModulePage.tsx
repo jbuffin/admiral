@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
-import { fetchModulePage, fetchModuleRow, restartSource, type ModulePageData, type PageAction, type PageChip, type PageNotice, type PageRow, type RowDetail } from './api';
+import { fetchModulePage, fetchModuleRow, restartSource, type ModulePageData, type PageAction, type PageChip, type PageNotice, type PageRow, type RowDetail, type RowStep } from './api';
 import { Icon } from './Icon';
-import { ModuleActions, ModuleActionsProvider, useModuleActions, useUpdating } from './ModuleActions';
+import { builtinOf, ModuleActions, ModuleActionsProvider, useModuleActions, useUpdating } from './ModuleActions';
 import { ListGroup } from './ListGroup';
 import { chipTone, filterGroups, noticeTone, shouldRefetchRow } from './moduleView';
 import { closeRow, openRow } from './moduleNav';
@@ -79,10 +79,33 @@ function Chips({ chips }: { chips?: PageChip[] }) {
   );
 }
 
+/** A row's actions split into the module actions, which act on its target, and the built-in ones, which act on the row. */
+function rowActions(row: PageRow) {
+  const all = [...(row.action ? [row.action] : []), ...(row.actions ?? [])];
+  return { module: all.filter((a) => !builtinOf(a)), builtin: all.filter((a) => builtinOf(a)) };
+}
+
+function TargetLine({ row }: { row: PageRow & { target: NonNullable<PageRow['target']> } }) {
+  const { module, builtin } = rowActions(row);
+  return (
+    <div class="mtarget" role="group" aria-label={`Acts on ${row.target.label}`}>
+      <span class="mtarget-label">
+        <span class="mtarget-arrow" aria-hidden="true">
+          ↳
+        </span>
+        <strong>{row.target.label}</strong>
+        <Chips chips={row.target.chips} />
+      </span>
+      <ModuleActions target={{ id: row.id }} many={module} lead={row.action?.id} />
+      <ModuleActions target={{ id: row.id }} many={builtin} />
+    </div>
+  );
+}
+
 function ModuleRow({ row, phone, selected, onOpen }: { row: PageRow; phone: boolean; selected: boolean; onOpen: (id: string) => void }) {
   const updating = useUpdating({ id: row.id });
   return (
-    <li class={`${phone ? 'orow-phone' : 'orow'}${selected ? ' selected' : ''}`}>
+    <li class={`${phone ? 'orow-phone' : 'orow'}${row.target ? ' mrow-target' : ''}${selected ? ' selected' : ''}`}>
       <button type="button" class="orow-open" aria-label={`Open ${row.title}`} aria-pressed={selected} disabled={!openableRow(row.id)} onClick={() => onOpen(row.id)}>
         <span class="orow-main">
           <span class="orow-title">{row.title}</span>
@@ -100,40 +123,67 @@ function ModuleRow({ row, phone, selected, onOpen }: { row: PageRow; phone: bool
         ) : null}
       </button>
       {updating ? <span class="mact-updating">updating…</span> : null}
-      <ModuleActions target={{ id: row.id }} one={row.action} many={row.actions} />
+      {row.target ? <TargetLine row={{ ...row, target: row.target }} /> : <ModuleActions target={{ id: row.id }} one={row.action} many={row.actions} />}
     </li>
   );
 }
 
-function Sections({ detail, rowId }: { detail: RowDetail; rowId: string }) {
+function OutLink({ url, children }: { url: string; children: preact.ComponentChildren }) {
+  return (
+    <a class="mlink" href={url} target="_blank" rel="noopener noreferrer">
+      {children}
+      <span class="mlink-out" aria-hidden="true">
+        ↗
+      </span>
+    </a>
+  );
+}
+
+const sectionCount = (sec: RowDetail['sections'][number]) => (sec.kind === 'links' ? sec.links?.length : sec.kind === 'steps' ? sec.steps?.length : undefined);
+
+function StepCard({ step, rowId, row }: { step: RowStep; rowId: string; row?: PageRow }) {
+  const next = !!row?.target?.step && row.target.step === step.id;
+  const own = [...(step.action ? [step.action] : []), ...(step.actions ?? [])];
+  // The row's module actions act on its target step, so that step's card carries them too, each once.
+  const lead = next ? rowActions(row!).module : [];
+  const actions = [...lead, ...own.filter((a) => !lead.some((l) => l.id === a.id))];
+  return (
+    <li class={`mstep${next ? ' next' : ''}`}>
+      <div class="mstep-head">
+        <span class="mstep-title">{step.title}</span>
+        {next ? <span class="mchip mnext">Next up</span> : null}
+        <Chips chips={step.chips} />
+      </div>
+      {step.subtitle ? <p class="mstep-sub">{step.subtitle}</p> : null}
+      {next && row?.reason ? <p class="mstep-sub">{row.reason}</p> : null}
+      <ModuleActions target={{ id: rowId }} many={actions} lead={next ? row?.action?.id : undefined} small />
+    </li>
+  );
+}
+
+function Sections({ detail, rowId, row }: { detail: RowDetail; rowId: string; row?: PageRow }) {
+  const next = row?.target?.step;
   return (
     <>
       {detail.sections.map((sec, i) => (
         <section key={i} class="msection">
-          {sec.title ? <h3>{sec.title}</h3> : null}
+          {sec.title ? (
+            <h3>
+              {sec.title}
+              {sectionCount(sec) ? <span class="mcount">{sectionCount(sec)}</span> : null}
+            </h3>
+          ) : null}
           {sec.kind === 'links' ? (
             <ul class="mlinks">
               {(sec.links ?? []).map((l, j) => (
-                <li key={j}>
-                  {isWebUrl(l.url) ? (
-                    <a href={l.url} target="_blank" rel="noopener noreferrer">
-                      {l.label}
-                    </a>
-                  ) : (
-                    l.label
-                  )}
-                </li>
+                <li key={j}>{isWebUrl(l.url) ? <OutLink url={l.url}>{l.label}</OutLink> : l.label}</li>
               ))}
             </ul>
           ) : null}
           {sec.kind === 'steps' ? (
             <ul class="msteps">
-              {(sec.steps ?? []).map((st) => (
-                <li key={st.id}>
-                  <span class="mstep-title">{st.title}</span>
-                  <Chips chips={st.chips} />
-                  <ModuleActions target={{ id: rowId }} one={st.action} many={st.actions} />
-                </li>
+              {[...(sec.steps ?? []).filter((st) => st.id === next), ...(sec.steps ?? []).filter((st) => st.id !== next)].map((st) => (
+                <StepCard key={st.id} step={st} rowId={rowId} row={row} />
               ))}
             </ul>
           ) : null}
@@ -174,8 +224,8 @@ function RowDetailView({ detail, row, onBack, phone }: { detail: Detail; row?: P
       </div>
       {row ? (
         <>
+          {row.subtitle || isWebUrl(row.url) ? <p class="odetail-sub">{isWebUrl(row.url) ? <OutLink url={row.url!}>{row.subtitle || 'Open'}</OutLink> : row.subtitle}</p> : null}
           <h2 class="odetail-title">{row.title}</h2>
-          {row.subtitle ? <p class="odetail-sub">{row.subtitle}</p> : null}
           {(row.chips ?? []).length > 0 ? (
             <div class="odetail-labels">
               <Chips chips={row.chips} />
@@ -188,7 +238,7 @@ function RowDetailView({ detail, row, onBack, phone }: { detail: Detail; row?: P
           {`Couldn't load this row. ${detail.error}`}
         </p>
       ) : null}
-      {detail.detail ? <Sections detail={detail.detail} rowId={detail.id} /> : !detail.error ? <div class="skeleton" role="status" aria-label="Loading" /> : null}
+      {detail.detail ? <Sections detail={detail.detail} rowId={detail.id} row={row} /> : !detail.error ? <div class="skeleton" role="status" aria-label="Loading" /> : null}
     </div>
   );
 }

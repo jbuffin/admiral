@@ -213,11 +213,44 @@ func TestAnActionWhoseURLIsNotHTTPIsDroppedAndTheRestOfThePageStays(t *testing.T
 	}
 }
 
+func TestARowKeepsAnHTTPLinkAndDropsAnyOtherWithTheRowKept(t *testing.T) {
+	row := firstRow(t, oneRow(`{"id":"r","title":"R","url":"https://example.com/item/1"}`))
+	if row["url"] != "https://example.com/item/1" {
+		t.Errorf("url = %v, want the https link kept", row["url"])
+	}
+	for _, bad := range []string{"javascript:alert(1)", "file:///etc/passwd", "https://exa mple.com"} {
+		row := firstRow(t, oneRow(`{"id":"r","title":"Kept","url":`+quote(bad)+`}`))
+		if row["title"] != "Kept" || row["url"] != nil {
+			t.Errorf("url %q: row = %s, want the row kept without its link", bad, dump(row))
+		}
+	}
+}
+
+func TestARowTargetKeepsItsLabelChipsAndStepAndDropsWhatIsUnusable(t *testing.T) {
+	row := firstRow(t, oneRow(`{"id":"r","title":"R","target":{"label":"Code review\nmore","chips":[{"label":"Paused","tone":"warn"}],"step":"s1"}}`))
+	tg, _ := row["target"].(map[string]any)
+	if tg == nil || tg["label"] != "Code review" || tg["step"] != "s1" || list(t, tg, "chips")[0].(map[string]any)["label"] != "Paused" {
+		t.Fatalf("target = %s, want its one-line label, chip and step", dump(row["target"]))
+	}
+	noStep := firstRow(t, oneRow(`{"id":"r","title":"R","target":{"label":"Review","step":"a\nb"}}`))
+	if tg, _ := noStep["target"].(map[string]any); tg == nil || tg["label"] != "Review" || tg["step"] != nil {
+		t.Errorf("a target with a bad step id = %s, want the label kept and the step dropped", dump(noStep["target"]))
+	}
+	for _, bad := range []string{`{"chips":[]}`, `{"label":""}`, `"Review"`, `[1]`} {
+		if row := firstRow(t, oneRow(`{"id":"r","title":"Kept","target":`+bad+`}`)); row["title"] != "Kept" || row["target"] != nil {
+			t.Errorf("target %s: row = %s, want the row kept without a target", bad, dump(row))
+		}
+	}
+	if p, err := parsePage(json.RawMessage(oneRow(`{"id":"r","title":"R","target":{"label":"L","chips":` + repeat(`{"label":"c"}`, maxChips+1) + `}}`))); err == nil {
+		t.Errorf("a target over the chip limit: parsePage = %s, want the page refused like a row over it", dump(p))
+	}
+}
+
 func quote(s string) string { b, _ := json.Marshal(s); return string(b) }
 
 const detailJSON = `{"sections":[
  {"kind":"links","title":"Links","links":[{"label":"Ticket","url":"https://example.com/t/1"},{"label":"Bad","url":"javascript:alert(1)"},{"label":"Plain","url":"http://example.com/p"}]},
- {"kind":"steps","title":"Steps","steps":[{"id":"s1","title":"Code review","chips":[{"label":"open","tone":"odd"}],"actions":[{"id":"pass","label":"Pass","confirm":"form"}]}]},
+ {"kind":"steps","title":"Steps","steps":[{"id":"s1","title":"Code review","subtitle":"With a pair\nsecond line","chips":[{"label":"open","tone":"odd"}],"actions":[{"id":"pass","label":"Pass","confirm":"form"}]}]},
  {"kind":"fields","title":"Details","fields":[{"label":"Owner","value":"amy"}]}]}`
 
 func TestARowDetailKeepsItsSectionsAndDropsOnlyTheLinksWithBadURLs(t *testing.T) {
@@ -237,8 +270,8 @@ func TestARowDetailKeepsItsSectionsAndDropsOnlyTheLinksWithBadURLs(t *testing.T)
 		t.Errorf("links kept = %v, want Ticket and Plain, the javascript link dropped by itself", labels)
 	}
 	step := list(t, secs[1], "steps")[0].(map[string]any)
-	if step["id"] != "s1" || step["title"] != "Code review" || len(list(t, step, "actions")) != 1 {
-		t.Errorf("step = %s, want its id, title and action", dump(step))
+	if step["id"] != "s1" || step["title"] != "Code review" || step["subtitle"] != "With a pair" || len(list(t, step, "actions")) != 1 {
+		t.Errorf("step = %s, want its id, title, one-line subtitle and action", dump(step))
 	}
 	if tone := list(t, step, "chips")[0].(map[string]any)["tone"]; tone != "neutral" {
 		t.Errorf("a step chip's tone = %v, want an unknown tone read as neutral", tone)

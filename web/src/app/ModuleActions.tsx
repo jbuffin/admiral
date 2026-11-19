@@ -15,6 +15,7 @@ import { Actions, Button } from "./Button";
 import { fleets, fleetSearch } from "./fleets";
 import { LaunchForm } from "./LaunchDialog";
 import { openableRow } from "./modules";
+import { durationLabel, MAX_DURATION, parseDuration, toHHMM } from "./moduleView";
 import { go, shipPath } from "./router";
 import { Sheet, useCancelFocus } from "./Sheet";
 import { isWebUrl, showResult } from "./ToastRegion";
@@ -278,13 +279,19 @@ export function ModuleActions({
   target,
   one,
   many,
+  lead,
+  small,
 }: {
   target: ActionTarget;
   one?: PageAction;
   many?: PageAction[];
+  /** The action drawn as the one to press: filled on a row, outlined in the accent when small. */
+  lead?: string;
+  small?: boolean;
 }) {
   const ctl = useContext(Ctx);
   const all = [...(one ? [one] : []), ...(many ?? [])];
+  const cls = (a: PageAction) => `btn mact${small ? " mact-small" : ""}${a.id === lead ? (small ? " lead" : " primary") : ""}`;
   const run = ctl?.runs[targetKey(target)];
   return all.length === 0 ? null : (
     <span class="mactions">
@@ -295,7 +302,7 @@ export function ModuleActions({
           return isWebUrl(a.url) ? (
             <a
               key={a.id}
-              class="btn mact"
+              class={cls(a)}
               href={a.url}
               target="_blank"
               rel="noopener noreferrer"
@@ -308,7 +315,7 @@ export function ModuleActions({
           <button
             key={a.id}
             type="button"
-            class="btn mact"
+            class={cls(a)}
             disabled={
               !ctl ||
               !enabledFor(kind, ctl.blocked) ||
@@ -396,11 +403,6 @@ function MessageSheet({
   );
 }
 
-const minutes = (hhmm: string) => {
-  const m = /^(\d{1,2}):([0-5]\d)$/.exec(hhmm.trim());
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-};
-
 function startValues(form: ModuleForm): Values {
   const v: Values = {};
   for (const f of form.fields) {
@@ -419,13 +421,24 @@ function startValues(form: ModuleForm): Values {
   return v;
 }
 
-/** The note under a duration that can't be submitted, or '' when it can. */
-function durationNote(f: FormField, value: string) {
-  const m = minutes(value);
-  if (m === null) return "Use hh:mm.";
-  const min = f.min ? minutes(f.min) : null;
-  return min !== null && m < min ? `At least ${f.min}.` : "";
+interface Check {
+  ok: boolean;
+  /** Why a typed value can't be sent; none while the field is still empty. */
+  note: string;
+  minutes?: number;
 }
+
+function durationCheck(f: FormField, value: string): Check {
+  if (!value.trim()) return { ok: false, note: "" };
+  const n = parseDuration(value);
+  if (n === null) return { ok: false, note: "Couldn't read that. Try 1:30, 90, 1h30 or 1.5." };
+  const min = f.min ? parseDuration(f.min) : null;
+  if (min !== null && n < min) return { ok: false, note: `At least ${durationLabel(min)}.` };
+  if (n > MAX_DURATION) return { ok: false, note: `At most ${durationLabel(MAX_DURATION)}.` };
+  return { ok: true, note: "", minutes: n };
+}
+
+const QUICK_PICKS: [string, number][] = [["15m", 15], ["30m", 30], ["1h", 60], ["1h 30m", 90], ["2h", 120]];
 
 function FormSheet({
   sourceKey,
@@ -458,19 +471,32 @@ function FormSheet({
     };
   }, [sourceKey, target.notice, target.id, action.id]);
 
-  const notes = form
+  const checks: Check[] = form
     ? form.fields.map((f) =>
         f.type === "duration"
-          ? durationNote(f, String(values[f.id] ?? ""))
-          : "",
+          ? durationCheck(f, String(values[f.id] ?? ""))
+          : { ok: true, note: "" },
       )
     : [];
+  const ready = checks.every((c) => c.ok);
+  // The plugin takes hh:mm whatever the engineer typed.
+  const submit = () =>
+    ready &&
+    onSubmit(
+      Object.fromEntries(
+        Object.entries(values).map(([k, v]) => {
+          const i = form?.fields.findIndex((f) => f.id === k) ?? -1;
+          const n = i >= 0 ? checks[i].minutes : undefined;
+          return [k, n === undefined ? v : toHHMM(n)];
+        }),
+      ),
+    );
   const set = (id: string, v: string | string[]) =>
     setValues((cur) => ({ ...cur, [id]: v }));
   return (
     <Sheet
       label={form?.title || action.label}
-      kind="launch-backdrop"
+      kind="launch-backdrop stop-backdrop"
       onClose={onClose}
     >
       {error ? (
@@ -486,7 +512,7 @@ function FormSheet({
           class="mform"
           onSubmit={(e) => {
             e.preventDefault();
-            if (notes.every((n) => !n)) onSubmit(values);
+            submit();
           }}
         >
           {form.fields.map((f, i) => (
@@ -494,7 +520,7 @@ function FormSheet({
               key={f.id}
               field={f}
               value={values[f.id]}
-              note={notes[i]}
+              check={checks[i]}
               onChange={(v) => set(f.id, v)}
             />
           ))}
@@ -503,8 +529,8 @@ function FormSheet({
             <Button
               label="Submit"
               variant="primary"
-              disabled={notes.some((n) => n)}
-              onClick={() => notes.every((n) => !n) && onSubmit(values)}
+              disabled={!ready}
+              onClick={submit}
             />
           </Actions>
         </form>
@@ -520,29 +546,61 @@ function FormSheet({
 function Field({
   field,
   value,
-  note,
+  check,
   onChange,
 }: {
   field: FormField;
   value: string | string[] | undefined;
-  note: string;
+  check: Check;
   onChange: (v: string | string[]) => void;
 }) {
   const id = useId();
   if (field.type === "duration") {
+    const min = field.min ? parseDuration(field.min) : null;
     return (
       <div class="mform-field">
         <label class="mform-label" for={id}>
           {field.label}
         </label>
-        <input
-          id={id}
-          type="text"
-          autocomplete="off"
-          value={String(value ?? "")}
-          onInput={(e) => onChange(e.currentTarget.value)}
-        />
-        {note ? <p class="mform-note">{note}</p> : null}
+        <div class="mform-duration">
+          {/* Plain text, not numeric: an iPhone's number pad has no ":". */}
+          <input
+            id={id}
+            type="text"
+            autocomplete="off"
+            spellcheck={false}
+            placeholder="1:30, 90, 1h30, 1.5"
+            aria-describedby={`${id}-note`}
+            value={String(value ?? "")}
+            onInput={(e) => onChange(e.currentTarget.value)}
+          />
+          <span class="mform-read" aria-live="polite">
+            {check.minutes !== undefined ? `= ${durationLabel(check.minutes)}` : ""}
+          </span>
+        </div>
+        <div class="mform-picks">
+          {QUICK_PICKS.filter(([, n]) => min === null || n >= min).map(([label, n]) => (
+            <button
+              key={label}
+              type="button"
+              class="btn mact-small"
+              aria-pressed={check.minutes === n}
+              onClick={() => onChange(label)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {check.note ? (
+          <p id={`${id}-note`} class="mform-note">
+            {check.note}
+          </p>
+        ) : (
+          <p id={`${id}-note`} class="mform-hint">
+            A plain number is minutes; a decimal is hours.
+            {check.minutes !== undefined ? ` Saved as ${toHHMM(check.minutes)}.` : ""}
+          </p>
+        )}
       </div>
     );
   }
