@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -49,6 +50,7 @@ type Service struct {
 	// Tests replace these two lookups, which need a live tmux.
 	ship   func(session string) (ships.Ship, bool)
 	option func(sh ships.Ship) (raw, startCmd, configDir string, ok bool)
+	home   func(fleet, harness string) (string, bool)                        // a fleet's config dir for a harness
 	owns   func(sh ships.Ship, port int) bool                                // whether the ship's own Copilot listens on port
 	crew   func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) // the boat and its fleet's config dir for the boat's harness
 
@@ -170,6 +172,9 @@ func (s *Service) optionOf(sh ships.Ship) (raw, startCmd, configDir string, ok b
 }
 
 func (s *Service) configDir(sh ships.Ship, harness string) (string, bool) {
+	if s.home != nil {
+		return s.home(sh.Fleet, harness)
+	}
 	f, found := s.Config().Fleet(sh.Fleet)
 	if !found {
 		return "", false
@@ -245,30 +250,38 @@ func (s *Service) locateShip(sh ships.Ship, crew string) (w where, ok, none bool
 	if !has {
 		return w, true, true
 	}
+	bound, none := bindRecorded(sh.Harness, raw, startCmd, configDir)
+	w.raw, w.path, w.id, w.configDir, w.port = bound.raw, bound.path, bound.id, bound.configDir, bound.port
+	return w, true, none
+}
+
+// bindRecorded is ADR 0019's check of a ship's transcript option against its start command; none when the option
+// does not bind to the conversation the launch gave the harness.
+func bindRecorded(harness, raw, startCmd, configDir string) (w where, none bool) {
 	// "<unix ns> <source> <path>"; a Claude ship's is recorded by its launch.
 	parts := strings.SplitN(raw, " ", 3)
 	if len(parts) != 3 || !sessionhost.ValidTranscriptPath(parts[2]) {
-		return w, true, true
+		return w, true
 	}
-	if sh.Harness == "codex" {
+	if harness == "codex" {
 		// Nothing binds a Codex ship's path to its launch, so any hook-written source is taken; a pane can point it at
 		// another rollout under the same sessions/, the trust locateCrew already accepts.
 		w.raw, w.path, w.configDir = raw, parts[2], configDir
-		return w, true, false
+		return w, false
 	}
 	if parts[1] != "launch" {
-		return w, true, true
+		return w, true
 	}
-	id, valid := transcriptfs.SessionIDFor(sh.Harness, parts[2])
+	id, valid := transcriptfs.SessionIDFor(harness, parts[2])
 	// The option is writable from the pane and the start command is not, so the id the launch gave the harness decides.
-	if started, found := transcriptfs.StartedSession(sh.Harness, startCmd); !valid || !found || started != id {
-		return w, true, true
+	if started, found := transcriptfs.StartedSession(harness, startCmd); !valid || !found || started != id {
+		return w, true
 	}
-	if sh.Harness == "copilot" {
+	if harness == "copilot" {
 		w.port, _ = uiServerPort(startCmd)
 	}
 	w.raw, w.path, w.id, w.configDir = raw, parts[2], id, configDir
-	return w, true, false
+	return w, false
 }
 
 // locateCrew has no start command to bind the boat's path to, since the path comes from a hook payload
@@ -347,13 +360,10 @@ func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
-	before := ""
-	if v, has := r.URL.Query()["before"]; has {
-		before = v[0]
-		if before == "" || len(before) > maxBefore || !utf8.ValidString(before) || strings.ContainsAny(before, "\x00\n\r") {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "before must be the id of an item"})
-			return
-		}
+	before, okBefore := beforeOf(r.URL.Query())
+	if !okBefore {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "before must be the id of an item"})
+		return
 	}
 	page := Page{State: StateNone, Items: []conversation.Item{}}
 	if segs != nil {
@@ -378,39 +388,87 @@ func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, page)
 		return
 	}
+	status, v := s.pageOf(k, loc, before, page)
+	writeJSON(w, status, v)
+}
+
+// pageOf reads one page of the conversation at loc; page carries the no-conversation default. An empty k is a read with no ship to remember.
+func (s *Service) pageOf(k string, loc where, before string, page Page) (int, any) {
 	f, info, _, err := loc.open(true)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		s.mu.Lock()
-		was := s.seen[k] == loc.raw
+		was := k != "" && s.seen[k] == loc.raw
 		s.mu.Unlock()
 		if was {
 			page.State = StateGone
 		}
-		writeJSON(w, http.StatusOK, page)
-		return
+		return http.StatusOK, page
 	case err != nil:
 		page.State = StateUnreadable
-		writeJSON(w, http.StatusOK, page)
-		return
+		return http.StatusOK, page
 	}
 	defer f.Close()
-	s.markSeen(k, loc.raw)
+	if k != "" { // a recorded binding has no ship to remember
+		s.markSeen(k, loc.raw)
+	}
 	items, more, err := conversation.Page(f, info, conversation.Options{Harness: loc.harness}, before, pageSize)
 	switch {
 	case errors.Is(err, conversation.ErrUnknownID):
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "before is not the id of an item"})
-		return
+		return http.StatusBadRequest, map[string]string{"error": "before is not the id of an item"}
 	case err != nil:
 		page.State = StateUnreadable
-		writeJSON(w, http.StatusOK, page)
-		return
+		return http.StatusOK, page
 	}
 	page.State, page.More = StateOK, more
 	if items != nil {
 		page.Items = items
 	}
-	writeJSON(w, http.StatusOK, page)
+	return http.StatusOK, page
+}
+
+// beforeOf is the validated "before" query value; ok is false when it is not an item id's shape.
+func beforeOf(q url.Values) (before string, ok bool) {
+	v, has := q["before"]
+	if !has {
+		return "", true
+	}
+	before = v[0]
+	if before == "" || len(before) > maxBefore || !utf8.ValidString(before) || strings.ContainsAny(before, "\x00\n\r") {
+		return "", false
+	}
+	return before, true
+}
+
+// RecordedConversation reads the conversation a ship ended with, through the binding recorded then and the checks a
+// live ship's gets (ADR 0019): an option that fails them gives the no-conversation page. The config dir comes from the
+// fleet's current config, never from the record.
+func (s *Service) RecordedConversation(harness, fleet, raw, startCmd, query string) (int, []byte) {
+	q, _ := url.ParseQuery(query)
+	before, ok := beforeOf(q)
+	if !ok {
+		return encodePage(http.StatusBadRequest, map[string]string{"error": "before must be the id of an item"})
+	}
+	page := Page{State: StateNone, Items: []conversation.Item{}}
+	if !ships.HasConversation(harness) {
+		return encodePage(http.StatusOK, page)
+	}
+	configDir, found := s.configDir(ships.Ship{Fleet: fleet}, harness)
+	if !found {
+		return encodePage(http.StatusOK, page)
+	}
+	loc, none := bindRecorded(harness, raw, startCmd, configDir)
+	if none {
+		return encodePage(http.StatusOK, page)
+	}
+	loc.harness = harness
+	status, v := s.pageOf("", loc, before, page)
+	return encodePage(status, v)
+}
+
+func encodePage(status int, v any) (int, []byte) {
+	b, _ := json.Marshal(v)
+	return status, append(b, '\n')
 }
 
 func (s *Service) markSeen(session, raw string) {

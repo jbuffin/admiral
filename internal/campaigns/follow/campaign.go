@@ -2,8 +2,10 @@ package follow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/campaigns"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -85,6 +87,24 @@ func (s *Service) FollowAgain(ctx context.Context, reference string) (Followed, 
 	got, _ = s.Store.Get(got.ID)
 	s.changed()
 	return got, false, nil
+}
+
+// FollowDrafted follows the campaign a drafting ship of fleet filed, or follows it again when the fleet unfollowed it. A campaign that
+// belongs to another fleet, or to none, is refused with the reason as the error.
+func (s *Service) FollowDrafted(fleet, reference string) error {
+	owner, lerr := s.Owner(reference)
+	if lerr != nil {
+		return errors.New(lerr.Msg)
+	}
+	if owner != fleet {
+		return fmt.Errorf("That campaign belongs to fleet %s, not %s", owner, fleet)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if _, _, lerr := s.FollowAgain(ctx, reference); lerr != nil {
+		return errors.New(lerr.Msg)
+	}
+	return nil
 }
 
 // Snapshot is the campaign as a commitment pass reads it: the latest good tree, built the way the page's is.

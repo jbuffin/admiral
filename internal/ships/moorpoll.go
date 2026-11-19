@@ -449,7 +449,7 @@ func (s *Service) endMooredVia(session, reason, via string) (bool, error) {
 }
 
 // endByRequest ends a moored ship for a request and answers it: 404 for an ending that lost the race, 500 for a record that stays (the cause is in the log, not the answer, since it names a path).
-func (s *Service) endByRequest(w http.ResponseWriter, r *http.Request, session, reason, key string) {
+func (s *Service) endByRequest(w http.ResponseWriter, r *http.Request, session, reason, key string) bool {
 	ended, err := s.endMooredVia(session, reason, viaOf(r))
 	switch {
 	case err != nil:
@@ -459,6 +459,7 @@ func (s *Service) endByRequest(w http.ResponseWriter, r *http.Request, session, 
 	default:
 		writeJSON(w, http.StatusOK, map[string]any{key: session})
 	}
+	return err == nil && ended
 }
 
 func (s *Service) serveMooredRefresh(w http.ResponseWriter, r *http.Request) {

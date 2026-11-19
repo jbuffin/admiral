@@ -108,6 +108,10 @@ type Ship struct {
 	SkillKind string `json:"skill_kind,omitempty"`
 	// HandFailed is why the last hand failed on a ship that stayed live, until the next hand starts.
 	HandFailed string `json:"hand_failed,omitempty"`
+	// Drafting is set on a drafting ship that has filed no campaign the fleet follows yet.
+	Drafting bool `json:"drafting,omitempty"`
+	// DraftingNotice is the line about the last campaign a drafting ship named that was refused or ignored.
+	DraftingNotice string `json:"drafting_notice,omitempty"`
 	// CarriesPRs is set on a live ship that carries a PR still open, which returns to port only once its PRs are merged.
 	CarriesPRs bool `json:"carries_prs,omitempty"`
 	// OpenPRs is the PRs a live ship carries that are open, then its report's that GitHub confirms open, each once.
@@ -141,12 +145,15 @@ type Service struct {
 	// handing holds the ships a Hand to Commodore step is running for; hands holds each hand's entry.
 	handing sync.Map
 	hands   sync.Map
-	// drafters is the ships Admiral launched as drafting ships, by session and launch stamp, in memory only: a ship can rewrite its own pane options.
+	// drafters is the ships Admiral launched as drafting ships, by session and first launch stamp, in memory only: a ship can rewrite its own pane options.
+	// It is lost when Admiral restarts, so a drafting ship that outlives a restart is no longer followed or reported.
 	drafters sync.Map
-	Host     *sessionhost.Host
-	Launcher *launcher.Launcher
-	State    *state.Store
-	Hub      *server.Hub
+	// FollowDrafted follows the campaign a drafting ship of the fleet filed; its error is the reason it was refused and is shown on the ship.
+	FollowDrafted func(fleet, ref string) error
+	Host          *sessionhost.Host
+	Launcher      *launcher.Launcher
+	State         *state.Store
+	Hub           *server.Hub
 	// MergeGuard wraps the Merge route with its token check; with none the route refuses everything.
 	MergeGuard func(http.Handler) http.Handler
 	Orders     Orders
@@ -260,6 +267,7 @@ const NotKnownMsg = "ships are not known yet"
 
 func (s *Service) ship(sess sessionhost.Session) Ship {
 	sh := FromSession(sess, time.Now())
+	s.showDrafting(&sh)
 	if sh.Status == StatusNeedsYou {
 		// The track's Since is set in the same pass as its status; before that
 		// pass the stop is just beginning.
@@ -461,6 +469,7 @@ func (s *Service) Run(ctx context.Context) {
 		s.advanceReturns()
 		s.advanceScouts()
 		s.advanceHands()
+		s.advanceDrafting()
 		s.refreshOpenPRs(ctx)
 		s.autoMoor(ctx)
 		s.sailOff(ctx, sailing)
@@ -1122,6 +1131,7 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "ship "+session+" is "+st+", and only an anchored ship can be dismissed")
 		return
 	}
+	drafted := s.captureDraftEnd(sess)
 	s.observe(ctx) // the ship's `ended` goes into the log before `dismissed`
 	s.retryEnded(sess)
 	s.record(outcomes.Record{Ship: session, Event: "dismissed", Fields: withVia(nil, viaOf(r))}, nil)
@@ -1129,6 +1139,7 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.endDrafted(drafted)
 	if name := sess.Options["name"]; name != "" { // an anchored woken ship's mooring will not come back
 		s.removeWake(name)
 	}

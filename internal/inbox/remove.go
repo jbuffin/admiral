@@ -21,7 +21,7 @@ func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 	if it.Kind == KindReview {
 		return s.ForgetReview(session, id)
 	}
-	if it.Kind == KindNotice {
+	if it.Kind == KindNotice || it.Kind == KindDraftingEnded {
 		return ReviewResult{Forgotten: true}, s.dismissNotice(session, id)
 	}
 	if it.Kind == KindWakeProposal {

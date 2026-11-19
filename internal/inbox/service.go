@@ -62,6 +62,8 @@ type Service struct {
 	// CreateCampaign files a campaign draft; PostCampaignCard tells the fleet's chat the outcome.
 	CreateCampaign   CreateCampaignFunc
 	PostCampaignCard func(fleet string, c CampaignCard)
+	// DraftingConversation reads a drafting ship's conversation through the binding its item recorded: the HTTP status and body of the page.
+	DraftingConversation func(d DraftingEnded, query string) (status int, body []byte)
 	// DismissRoutine hears that a routine proposal was dismissed, after the item is answered.
 	DismissRoutine func(p RoutineProposal)
 	// ChatQuestions lists the waiting AdmiralBot chat questions, named and tagged with their fleet.
@@ -115,6 +117,12 @@ func (s *Service) List() []Item {
 			}
 			if d, ok := items[i].CampaignDraft(); ok {
 				items[i].Name = "AdmiralBot"
+				items[i].Fleet = d.Fleet
+				if f, ok := s.fleetOf(d.Fleet); ok {
+					items[i].FleetName, items[i].FleetColor = f.Name, f.Color
+				}
+			}
+			if d, ok := items[i].DraftingEnded(); ok {
 				items[i].Fleet = d.Fleet
 				if f, ok := s.fleetOf(d.Fleet); ok {
 					items[i].FleetName, items[i].FleetColor = f.Name, f.Color
@@ -207,6 +215,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/launch", s.serveLaunchProposal)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/dismiss", s.serveDismissProposal)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/create", s.serveCreateCampaign)
+	mux.HandleFunc("GET /api/inbox/"+AdmiralSession+"/{id}/conversation", s.serveDraftingConversation)
 	mux.HandleFunc("POST /api/fleets/{fleet}/campaign-drafts", s.serveCampaignDraft)
 }
 
@@ -251,7 +260,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	it, err := s.open(session, id)
 	if err == nil && it.Kind != KindQuestion {
-		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings", KindCrewNotes: "crew-notes", KindCrewMember: "crew-member", KindMission: "mission", KindRoutineProposal: "launch or dismiss", KindEventProposal: "launch or dismiss", KindWakeProposal: "launch or dismiss", KindCampaignDraft: "create or dismiss"}[it.Kind])
+		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings", KindCrewNotes: "crew-notes", KindCrewMember: "crew-member", KindMission: "mission", KindRoutineProposal: "launch or dismiss", KindEventProposal: "launch or dismiss", KindWakeProposal: "launch or dismiss", KindCampaignDraft: "create or dismiss", KindDraftingEnded: "remove"}[it.Kind])
 	}
 	if err == nil {
 		var req QuestionRequest

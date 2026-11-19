@@ -91,6 +91,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	f := &fixture{t: t, cfg: cfg, codex: codex, options: map[string]string{}, starts: map[string]string{}, harness: map[string]string{}, boats: map[string][]string{}}
 	f.svc = &Service{
+		home: func(_, harness string) (string, bool) { return f.homeOf(harness), true },
 		owns: func(ships.Ship, int) bool { return true }, // the fakes listen in this process, not under a pane
 		ship: func(session string) (ships.Ship, bool) {
 			f.mu.Lock()

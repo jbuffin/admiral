@@ -130,8 +130,11 @@ func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	sess, ok := s.find(session)
 	if !ok {
-		if _, moored := s.mooredRecord(session); moored {
-			s.endByRequest(w, r, session, "stopped", "stopped")
+		if rec, moored := s.mooredRecord(session); moored {
+			drafted := s.mooredDraftEnd(session, cmpFirst(rec.FirstLaunched, rec.Launched))
+			if s.endByRequest(w, r, session, "stopped", "stopped") {
+				s.endDrafted(drafted)
+			}
 			return
 		}
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
@@ -145,10 +148,12 @@ func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 		s.serveMoor(w, r, sess)
 		return
 	}
+	drafted := s.captureDraftEnd(sess)
 	if err := s.stopShip(session, withVia(nil, viaOf(r))); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.endDrafted(drafted)
 	writeJSON(w, http.StatusOK, map[string]any{"stopped": session})
 }
 

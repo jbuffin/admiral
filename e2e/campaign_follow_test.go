@@ -166,6 +166,8 @@ func TestCampaignFollowJourney(t *testing.T) {
 		t.Errorf("ended=false lists %s; ended=true lists %s; want the campaign only under ended", active, ended)
 	}
 
+	w.draftingShipsFollowTheirCampaign(t, c.ID)
+
 	for _, call := range g.calls() {
 		if slices.ContainsFunc(call.Argv, func(a string) bool { return strings.Contains(a, "mutation") }) {
 			t.Errorf("gh was asked for a mutation: %v", call.Argv)
@@ -321,4 +323,130 @@ func TestAdmiralBot_WorkOnACampaignLaunchesItsWithoutYouChildrenAndEndsWithIt(t 
 			t.Errorf("gh made a REST write: %s %s", r.Method, r.Endpoint)
 		}
 	}
+}
+
+const draftedEnded = "ended without filing a campaign"
+
+// swapCue replaces the cue file with a new inode, so a ship still playing the old one reads on undisturbed.
+func (w *world) swapCue(lines ...string) {
+	w.t.Helper()
+	next := w.cue + ".next"
+	if err := os.WriteFile(next, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		w.t.Fatal(err)
+	}
+	if err := os.Rename(next, w.cue); err != nil {
+		w.t.Fatal(err)
+	}
+}
+
+func (w *world) writeCampaignRef(session, url string) {
+	w.t.Helper()
+	dir := filepath.Join(w.home, "ships", session)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		w.t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "campaign-ref"), []byte(url+"\n"), 0o600); err != nil {
+		w.t.Fatal(err)
+	}
+}
+
+// endedItemIDs lists the ids of the Admiral inbox items that say a drafting ship ended without filing.
+func (w *world) endedItemIDs() []string {
+	entries, _ := os.ReadDir(filepath.Join(w.home, "inbox", "_admiral"))
+	var ids []string
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".json") { // the server writes an item under a temp name first
+			continue
+		}
+		if b, err := os.ReadFile(filepath.Join(w.home, "inbox", "_admiral", e.Name())); err == nil && strings.Contains(string(b), draftedEnded) {
+			ids = append(ids, strings.TrimSuffix(e.Name(), ".json"))
+		}
+	}
+	return ids
+}
+
+func (w *world) launchDrafting() shipJSON {
+	w.t.Helper()
+	return w.launch(map[string]any{"fleet": "alpha", "harness": "claude", "dir": w.checkout("widgets"),
+		"skill": customSkill("campaign-drafter"), "drafting": true, "text": "draft a campaign"})
+}
+
+func (w *world) waitDrafting(t *testing.T, session string, want bool) []shipJSON {
+	t.Helper()
+	return w.in.waitShipsList(t, 15*time.Second, "the drafting flag of "+session, func(l []shipJSON) bool {
+		s, ok := shipIn(l, session)
+		return ok && s.Drafting == want
+	})
+}
+
+// A drafting ship that ends without filing leaves an Inbox item with its conversation; one that files is followed,
+// even a campaign that was unfollowed, and a later ref to another issue is ignored with a line on the ship.
+func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
+	t.Helper()
+	skillDir := filepath.Join(w.userHom, ".claude", "skills", "campaign-drafter")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: campaign-drafter\ndescription: a fake drafting skill\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The first drafting ship sails off having filed nothing.
+	w.swapCue("hook working", "wait end", "exit 0")
+	quiet := w.launchDrafting()
+	list := w.waitDrafting(t, quiet.Session, true)
+	if s, _ := shipIn(list, quiet.Session); s.DraftingNotice != "" {
+		t.Errorf("a ship that has written nothing shows the notice %q", s.DraftingNotice)
+	}
+	w.release(quiet.Session, "end")
+	w.in.waitShipsList(t, 15*time.Second, "the drafting ship sailed off", func(l []shipJSON) bool { return statusOf(l, quiet.Session) == "" })
+	waitCond(t, 15*time.Second, "an Inbox item that "+quiet.Name+" ended without filing", func() bool { return len(w.endedItemIDs()) == 1 })
+	id := w.endedItemIDs()[0]
+	if b, _ := os.ReadFile(filepath.Join(w.home, "inbox", "_admiral", id+".json")); !strings.Contains(string(b), quiet.Name) {
+		t.Errorf("the item %s does not name the ship %s", b, quiet.Name)
+	}
+	if code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/inbox/_admiral/"+id+"/conversation", nil); code != http.StatusOK || !strings.Contains(body, `"state":"none"`) {
+		// The fake writes no transcript in this fleet, so the page says none; that the binding reads ok is a unit check.
+		t.Errorf("the item's conversation = %d %s, want 200 with state none", code, body)
+	}
+	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/inbox/_admiral/"+id+"/remove", nil); code != http.StatusOK {
+		t.Fatalf("remove the item = %d: %s", code, body)
+	}
+	if code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/inbox/_admiral/"+id+"/conversation", nil); code != http.StatusNotFound {
+		t.Errorf("the conversation of the removed item = %d %s, want 404", code, body)
+	}
+
+	// The second files a ref to the campaign the journey unfollowed, then names another issue.
+	stop := `event Stop {"background_tasks":[]}`
+	// Each Stop holds its needs_you, and the second turn works until the test has seen it: a turn end the poll cannot see is none.
+	w.swapCue("hook working", "wait filed", stop, "wait again", "hook working", "wait seen", stop, "wait end", "exit 0")
+	d := w.launchDrafting()
+	w.waitDrafting(t, d.Session, true)
+	w.writeCampaignRef(d.Session, campIssueURL(20))
+	w.release(d.Session, "filed")
+	waitCond(t, 20*time.Second, "the unfollowed campaign followed again", func() bool { return !w.campaign(ended).Ended })
+	w.waitDrafting(t, d.Session, false)
+	if _, err := os.Stat(filepath.Join(w.home, "ships", d.Session, "campaign-ref")); err == nil {
+		t.Error("the ref file was left after it was followed")
+	}
+
+	w.writeCampaignRef(d.Session, campIssueURL(22))
+	w.release(d.Session, "again")
+	w.in.waitShipsList(t, 15*time.Second, "the ship working again", func(l []shipJSON) bool { return statusOf(l, d.Session) == "underway" })
+	w.release(d.Session, "seen")
+	w.in.waitShipsList(t, 15*time.Second, "a line on the ship about the other issue", func(l []shipJSON) bool {
+		s, ok := shipIn(l, d.Session)
+		return ok && (strings.Contains(s.DraftingNotice, "#22") || strings.Contains(s.DraftingNotice, "/issues/22"))
+	})
+	_, active := send(t, http.MethodGet, w.in.LocalURL+"/api/v1/campaigns?ended=false", nil)
+	var open struct {
+		Campaigns []campJSON `json:"campaigns"`
+	}
+	if err := json.Unmarshal([]byte(active), &open); err != nil || len(open.Campaigns) != 1 || open.Campaigns[0].ID != ended {
+		t.Errorf("active campaigns = %s (%v), want only %s: the later ref to issue 22 is ignored", active, err, ended)
+	}
+
+	w.release(d.Session, "end")
+	w.in.waitShipsList(t, 15*time.Second, "the drafting ship sailed off", func(l []shipJSON) bool { return statusOf(l, d.Session) == "" })
+	holdThat(t, "a ship that filed has no ended-without-filing item", func() bool { return len(w.endedItemIDs()) == 0 })
 }

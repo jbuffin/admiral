@@ -395,7 +395,11 @@ type shipJSON struct {
 	PolledAt   string   `json:"polled_at"`
 	Stale      bool     `json:"stale"`
 	StopSince  string   `json:"stop_since"`
-	Seen       bool     `json:"seen"`
+
+	// Drafting is set on a drafting ship whose campaign is not followed yet; DraftingNotice says why a ref it wrote was not.
+	Drafting       bool   `json:"drafting"`
+	DraftingNotice string `json:"drafting_notice"`
+	Seen           bool   `json:"seen"`
 
 	// ExitSignal and StoppedBy are set on an anchored ship: the signal that ended its harness, and why Admiral did (wall_clock:<minutes>).
 	ExitSignal *string `json:"exit_signal"`
