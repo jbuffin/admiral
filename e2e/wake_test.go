@@ -67,10 +67,20 @@ func seedRound(t *testing.T, cfgDir string, r record, text string) {
 	t.Fatalf("argv %q has no --session-id", r.argv)
 }
 
+// wakePRsSection is the section a hand wake appends for one own open PR.
+func wakePRsSection(url string) string {
+	return "\n\n## Your pull requests\n\nYou opened these pull requests and they are still open. Check them before anything else:\n\n- " + url +
+		"\n\nFor each one, run `gh pr view <url> --json headRefName,baseRefName,mergeable,mergeStateStatus,statusCheckRollup`. " +
+		"If it is behind or conflicts with its base, check out its head branch and rebase that branch onto its base branch, never local main. " +
+		"Resolve any conflicts, fix any failing checks, re-run the tests and push the PR branch."
+}
+
 func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 	t.Parallel()
 	w, g := mooring(t, "exit 0")
 	g.prState(mooredPR, "OPEN")
+	// Clean chips keep the PR's line the same whether or not a poll has answered before the wake.
+	g.prChips(mooredPR, "APPROVED", "SUCCESS", "MERGEABLE")
 	cfgDir := filepath.Join(w.root, "claude-cfg")
 	if err := os.MkdirAll(filepath.Join(cfgDir, "projects", "zz"), 0o755); err != nil {
 		t.Fatal(err)
@@ -102,8 +112,8 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 		t.Errorf("woken ship = %s (%s), want %s (%s)", woken.Name, woken.Session, ship.Name, ship.Session)
 	}
 	r := w.record(ship.Session)
-	if got := promptWithHooks(t, w, r); got != "/commodore resume run-7 also check the docs" {
-		t.Errorf("prompt = %q, want the resume text verbatim and the engineer's text", got)
+	if got, want := promptWithHooks(t, w, r), "/commodore resume run-7 also check the docs"+wakePRsSection(mooredPR); got != want {
+		t.Errorf("prompt = %q, want %q", got, want)
 	}
 	w.in.waitShipsList(t, 20*time.Second, "the ship underway under its own name", func(l []shipJSON) bool {
 		s := byName(l)[ship.Name]
@@ -161,8 +171,8 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 	}
 
 	w.wake(ship.Session, "")
-	if got := promptWithHooks(t, w, w.record(ship.Session)); got != "/commodore resume run-7" {
-		t.Errorf("second wake prompt = %q, want the resume text alone", got)
+	if got, want := promptWithHooks(t, w, w.record(ship.Session)), "/commodore resume run-7"+wakePRsSection(mooredPR); got != want {
+		t.Errorf("second wake prompt = %q, want %q", got, want)
 	}
 	if e := lastOf(w.waitEvent(ship.Session, "woken", 2), "woken"); e["round"] != float64(2) {
 		t.Errorf("second woken event = %v, want round 2", e)
