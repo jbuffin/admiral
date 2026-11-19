@@ -187,7 +187,7 @@ func (s *Service) finishLocal(ctx context.Context) {
 	}
 }
 
-// finishShip ends a live ship as finished: the `ended` of a kill, then `finished`, which the ship card reads as done.
+// finishShip ends a live ship with a `finished` record, which the ship card reads as done; a killed `ended` would post no card.
 // It holds the ship's lock, so a Stop that came first leaves nothing to finish.
 func (s *Service) finishShip(ctx context.Context, sess sessionhost.Session) {
 	unlock := s.lockShip(sess.Name)
@@ -196,7 +196,6 @@ func (s *Service) finishShip(ctx context.Context, sess sessionhost.Session) {
 	if !ok || cur.PaneDead || cur.Options[sessionhost.OptReturning] != "" || s.beingHanded(cur) {
 		return
 	}
-	s.recordKilled(cur)
 	s.record(outcomes.Record{Ship: sess.Name, Event: "finished"}, nil)
 	_ = s.endSession(ctx, sess.Name, true)
 }

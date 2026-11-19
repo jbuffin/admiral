@@ -119,11 +119,7 @@ func (g GitWorktrees) localDefault(dir string) (string, error) {
 // originURL is the URL configured for origin, "" when there is none. It reads the config, not git remote get-url,
 // which applies url.<x>.insteadOf and so shows a rewritten GitHub origin as whatever it was rewritten to.
 func originURL(dir string) string {
-	args := []string{"config", "--get", "remote.origin.url"}
-	if fi, err := os.Stat(filepath.Join(dir, ".git")); err == nil && fi.IsDir() {
-		args = []string{"config", "--file", filepath.Join(dir, ".git", "config"), "--get", "remote.origin.url"}
-	}
-	out, err := boundedGit(0, dir, args...)
+	out, err := boundedGit(0, dir, "config", "--get", "remote.origin.url")
 	if err != nil {
 		return ""
 	}
@@ -132,6 +128,9 @@ func originURL(dir string) string {
 
 // LocalOnly reports whether dir is a working git checkout with no GitHub origin: no origin at all, or one that is not a GitHub repo.
 func LocalOnly(dir string) bool {
+	if _, err := os.Lstat(filepath.Join(dir, ".git")); err != nil {
+		return false
+	}
 	if _, err := boundedGit(0, dir, "rev-parse", "--git-dir"); err != nil {
 		return false
 	}
