@@ -57,15 +57,24 @@ const closingSteps = "## Closing steps\n\n" +
 	"and prs listing the pull request you opened as [{\"url\": ...}], each url the full URL (https://host/owner/repo/pull/N). " +
 	"If you found something worth reading later, write it in markdown to the file named by $ADMIRAL_FINDINGS."
 
+const localClosingSteps = "## Closing steps\n\n" +
+	"When the work is done: commit it on your branch. This checkout has no GitHub remote, so do not push and do not open a pull request. " +
+	"Then write your Admiral report to the file named by $ADMIRAL_REPORT as JSON with version 2, a result of done, partial or failed, and prs: [] because there is no pull request. " +
+	"If you found something worth reading later, write it in markdown to the file named by $ADMIRAL_FINDINGS."
+
 // withClosingSteps puts Admiral's closing steps after a fresh quick ship's launch text: a chat launch, no skill, not a scout, not a wake.
-func withClosingSteps(req Request, prompt string) string {
+func withClosingSteps(req Request, prompt string, localOnly bool) string {
 	if !req.OnInstruction || req.Skill.Kind != "none" || req.Scout || req.Prompt != "" || req.Bare {
 		return prompt
 	}
-	if prompt == "" {
-		return closingSteps
+	steps := closingSteps
+	if localOnly {
+		steps = localClosingSteps
 	}
-	return prompt + "\n\n" + closingSteps
+	if prompt == "" {
+		return steps
+	}
+	return prompt + "\n\n" + steps
 }
 
 // resolveScoutDir is the checkout path a scout's ADMIRAL_SCOUT names: absolute, with symlinks resolved.

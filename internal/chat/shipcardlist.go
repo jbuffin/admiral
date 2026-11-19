@@ -15,7 +15,7 @@ type PostedShipCard struct {
 	Name   string
 	Result string
 	PRs    []string
-	Branch string // stub: the card's branch, not yet read
+	Branch string
 }
 
 // PostedShipCards are the ship cards the fleet's chat log holds that were logged after since, oldest first. A card has no At of its own, so At is when it was logged.
@@ -34,6 +34,7 @@ func (s *Service) PostedShipCards(fleet string, since time.Time) []PostedShipCar
 			Voyage string `json:"first_launched"`
 			Name   string `json:"name"`
 			Result string `json:"result"`
+			Branch string `json:"branch"`
 			PRs    []struct {
 				URL string `json:"url"`
 			} `json:"prs"`
@@ -45,7 +46,7 @@ func (s *Service) PostedShipCards(fleet string, since time.Time) []PostedShipCar
 		if at.IsZero() {
 			at = e.Logged
 		}
-		card := PostedShipCard{At: at, Ship: body.Ship, Voyage: body.Voyage, Name: body.Name, Result: body.Result}
+		card := PostedShipCard{At: at, Ship: body.Ship, Voyage: body.Voyage, Name: body.Name, Result: body.Result, Branch: body.Branch}
 		for _, p := range body.PRs {
 			card.PRs = append(card.PRs, p.URL)
 		}

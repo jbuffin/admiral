@@ -17,7 +17,7 @@ func newFleetFacts(store *routines.Store, chatSvc *chat.Service, shipList func()
 		Cards: func(fleet string, since time.Time) []routines.CardFact {
 			var out []routines.CardFact
 			for _, c := range chatSvc.PostedShipCards(fleet, since) {
-				out = append(out, routines.CardFact{At: c.At, Ship: c.Ship, Voyage: c.Voyage, Name: c.Name, Result: c.Result, PRs: c.PRs})
+				out = append(out, routines.CardFact{At: c.At, Ship: c.Ship, Voyage: c.Voyage, Name: c.Name, Result: c.Result, PRs: c.PRs, Branch: c.Branch})
 			}
 			return out
 		},

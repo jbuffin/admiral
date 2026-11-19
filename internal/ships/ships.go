@@ -335,6 +335,9 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
 		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], FirstLaunched: firstLaunched(o), Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Scout: o["scout"] != "", PromptKey: o["prompt-key"], Round: roundOf(o), Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "",
 		Handing: o[sessionhost.OptHanding] != "", HandRefusal: handNotClaude(session, o["harness"]), HandFailed: o[sessionhost.OptHandFailed], SkillKind: o["skill-kind"]}
+	if o["local-only"] != "" {
+		sh.LocalOnly, sh.Branch = true, o["branch"]
+	}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if sh.Status == "anchored" {
 		sh.StoppedBy = o[sessionhost.OptStoppedBy]
@@ -487,6 +490,7 @@ func (s *Service) Run(ctx context.Context) {
 		s.advanceDrafting()
 		s.refreshOpenPRs(ctx)
 		s.autoMoor(ctx)
+		s.finishLocal(ctx)
 		s.sailOff(ctx, sailing)
 		if gone {
 			s.keep()

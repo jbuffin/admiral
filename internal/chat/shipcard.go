@@ -26,6 +26,7 @@ const (
 	ShipReadyToMerge = "ready_to_merge"
 	ShipReturned     = "returned"
 	ShipFailed       = "failed"
+	ShipDone         = "done"
 )
 
 // ShipSettleGrace is how long a clean end waits for a moor before the ship counts as sailed off; the ships service moors a ship with open PRs a few seconds after it ends.
@@ -47,7 +48,7 @@ type ShipCard struct {
 	SkillKind     string
 	Result        string
 	PRs           []ShipCardPR
-	Branch        string // the branch of a local-only ship's work; stub, not yet posted
+	Branch        string // the branch a local-only ship committed its work on
 	ReportResult  string // the Admiral report's result when its ended record carried one; not part of the posted card
 }
 
@@ -67,6 +68,9 @@ func (s *Service) PostShipCard(fleet string, c ShipCard) error {
 	if c.Title != "" {
 		body["title"] = c.Title
 	}
+	if c.Branch != "" {
+		body["branch"] = c.Branch
+	}
 	card, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -80,7 +84,7 @@ func (s *Service) PostShipCard(fleet string, c ShipCard) error {
 type ShipRecord struct {
 	At       time.Time
 	Ship     string
-	Event    string // ended, moored, unmoored, returning, stopped
+	Event    string // ended, finished, moored, unmoored, returning, stopped
 	Reason   string // an unmoored line's reason
 	Clean    bool   // an ended line's exit was clean
 	Returned bool   // a stopped line ended a return to port
@@ -105,8 +109,10 @@ type voyage struct {
 	Commitment    string
 	Routine       string
 	ReportResult  string
-	Round         int  // the highest round seen: a feedback round or a wake keeps the voyage
-	Reported      bool // its report turn is queued, or its first event passed without one
+	LocalOnly     bool   // a ship with no GitHub origin, which is done on its branch and has no PR
+	Branch        string // the branch of a local-only ship's worktree
+	Round         int    // the highest round seen: a feedback round or a wake keeps the voyage
+	Reported      bool   // its report turn is queued, or its first event passed without one
 	FirstLaunched string
 	PRs           []ShipCardPR
 	Done          map[string]bool
@@ -114,6 +120,7 @@ type voyage struct {
 	MooredAt      time.Time
 	UnmooredAt    time.Time // the PRs all closed
 	StoppedAt     time.Time
+	FinishedAt    time.Time // Admiral ended a local-only ship on its done report
 	ScoutEndedAt  time.Time // a scout's own end
 	ScoutEnd      time.Time // when a scout's card posted its end, which orders a group's last scout
 	FailedAt      time.Time // an end that carried result failed
@@ -299,6 +306,10 @@ func (d *ShipCards) voyageOf(s ships.Ship, now time.Time) *voyage {
 		d.st.Voyages[key] = v
 	}
 	v.Name, v.Fleet, v.Via, v.SkillKind, v.Scout, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, s.Scout, now
+	if s.LocalOnly {
+		v.LocalOnly = true
+		v.Branch = cmp.Or(s.Branch, v.Branch)
+	}
 	v.Commitment, v.Routine, v.Round = s.Commitment, s.Routine, max(v.Round, s.Round)
 	if s.Titled { // before that a ship's title is its prompt's first line
 		v.Title = s.Title
@@ -341,6 +352,10 @@ func (v *voyage) apply(r ShipRecord) {
 		if r.Clean && r.At.After(v.EndedAt) {
 			v.EndedAt = r.At
 		}
+	case "finished":
+		if r.At.After(v.FinishedAt) {
+			v.FinishedAt = r.At
+		}
 	case "moored":
 		if r.At.After(v.MooredAt) {
 			v.MooredAt = r.At
@@ -379,6 +394,8 @@ func (d *ShipCards) settle(v *voyage, mooredNow, inSnap bool, now time.Time) err
 		return errors.Join(errs...)
 	}
 	switch {
+	case !v.FinishedAt.IsZero():
+		errs = append(errs, d.emit(v, ShipDone, false))
 	case !v.ScoutEndedAt.IsZero():
 		// A scout's end is a kill, so only its own `stopped` mark tells it from an engineer's Stop ship.
 		if !inSnap && now.Sub(v.ScoutEndedAt) >= ShipSettleGrace {
@@ -423,18 +440,21 @@ func (v *voyage) endCarded() bool {
 	return v.Done[ShipSailedOff] || v.Done[ShipFailed] || v.Done[ShipAnchored]
 }
 
-// offResult is the card a sail-off posts: a scout that left no findings failed.
+// offResult is the card a sail-off posts: a scout that left no findings failed, and a local-only ship that reported done is done.
 func (v *voyage) offResult() string {
 	if !v.FailedAt.IsZero() {
 		return ShipFailed
+	}
+	if v.LocalOnly && v.ReportResult == ShipDone {
+		return ShipDone
 	}
 	return ShipSailedOff
 }
 
 // emit posts the card unless the voyage has settled that result; silent only records it. A failed post is tried again by the next pass.
 func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
-	// A sail-off card and a failed card are one slot: a replayed record that gained a result must not post a second.
-	if v.Done[result] || result == ShipFailed && v.Done[ShipSailedOff] || result == ShipSailedOff && v.Done[ShipFailed] {
+	// A sail-off card, a failed card and a done card are one slot: a replayed record that gained a result must not post a second.
+	if v.Done[result] || v.endSlot(result) && (v.Done[ShipSailedOff] || v.Done[ShipFailed] || v.Done[ShipDone]) {
 		return nil
 	}
 	reports := v.reportsOn(result)
@@ -444,6 +464,9 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 	}
 	if !silent {
 		card := ShipCard{Ship: v.Ship, Name: v.Name, Title: v.Title, FirstLaunched: v.FirstLaunched, Skill: v.Skill, SkillKind: v.cardKind(), Result: result, PRs: v.PRs, ReportResult: v.ReportResult}
+		if result == ShipDone {
+			card.Branch = v.Branch
+		}
 		if reports && d.report != nil {
 			if err := d.report(v.Fleet, card); err != nil {
 				return err
@@ -461,6 +484,10 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 	return nil
 }
 
+func (*voyage) endSlot(result string) bool {
+	return result == ShipSailedOff || result == ShipFailed || result == ShipDone
+}
+
 func latest(ts ...time.Time) time.Time {
 	var out time.Time
 	for _, t := range ts {
@@ -474,7 +501,7 @@ func latest(ts ...time.Time) time.Time {
 // reportsOn says whether the result is a voyage's first reporting event. Only the ships AdmiralBot launched from the
 // chat report (scouts report with their group), and a sail-off after a moor is the end, which posts its card only.
 func (v *voyage) reportsOn(result string) bool {
-	if v.Reported || v.Done[ShipAnchored] || v.Done[ShipMoored] || v.Done[ShipSailedOff] || v.Via != "admiralbot" || v.Commitment != "" || v.Routine != "" || v.Scout || v.Round > 0 {
+	if v.Reported || v.Done[ShipAnchored] || v.Done[ShipMoored] || v.Done[ShipSailedOff] || v.Done[ShipDone] || v.Via != "admiralbot" || v.Commitment != "" || v.Routine != "" || v.Scout || v.Round > 0 {
 		return false
 	}
 	switch result {
@@ -482,6 +509,8 @@ func (v *voyage) reportsOn(result string) bool {
 		return true
 	case ShipSailedOff:
 		return v.UnmooredAt.IsZero()
+	case ShipDone:
+		return true
 	}
 	return false
 }

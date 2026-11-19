@@ -14,6 +14,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/moor"
+	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
@@ -157,6 +158,47 @@ func (s *Service) autoMoor(ctx context.Context) {
 			s.moorShip(ctx, sess, prs, "", true)
 		}()
 	}
+}
+
+// finishLocal ends each live local-only quick ship whose own turn has ended on a done report with no PRs: there is no PR
+// to moor, so the ship sails off as finished and keeps its worktree and branch.
+func (s *Service) finishLocal(ctx context.Context) {
+	for _, sess := range s.Host.Sessions() {
+		o := sess.Options
+		if !sess.IsShip() || sess.PaneDead || o["local-only"] == "" || o["scout"] != "" || o["skill-kind"] != "" && o["skill-kind"] != "none" ||
+			o[sessionhost.OptReturning] != "" || s.beingHanded(sess) || status(sess, time.Now()) != StatusNeedsYou || reasonOf(sess) != "stop" {
+			continue
+		}
+		s.openMu.Lock()
+		st := s.open[sess.Name]
+		due := st != nil && !st.tried && st.result == "done" && len(st.pending) == 0 && len(st.prs) == 0
+		if due {
+			st.tried = true
+		}
+		s.openMu.Unlock()
+		if !due {
+			continue
+		}
+		s.settleWG.Add(1)
+		go func() {
+			defer s.settleWG.Done()
+			s.finishShip(ctx, sess)
+		}()
+	}
+}
+
+// finishShip ends a live ship as finished: the `ended` of a kill, then `finished`, which the ship card reads as done.
+// It holds the ship's lock, so a Stop that came first leaves nothing to finish.
+func (s *Service) finishShip(ctx context.Context, sess sessionhost.Session) {
+	unlock := s.lockShip(sess.Name)
+	defer unlock()
+	cur, ok := s.find(sess.Name)
+	if !ok || cur.PaneDead || cur.Options[sessionhost.OptReturning] != "" || s.beingHanded(cur) {
+		return
+	}
+	s.recordKilled(cur)
+	s.record(outcomes.Record{Ship: sess.Name, Event: "finished"}, nil)
+	_ = s.endSession(ctx, sess.Name, true)
 }
 
 // moorShip moors a live ship: its record first, then the end of its session, so a crash between leaves it in one place or both.
