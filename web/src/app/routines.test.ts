@@ -243,6 +243,37 @@ describe('the form and the request body', () => {
     expect(routineBody(f)).toMatchObject({ do: { prompt: 'summarise the night' } });
     expect((routineBody(f).do as Record<string, unknown>).launch).toBeUndefined();
   });
+
+  it('sends a digest routine with its extra words and neither a launch nor a prompt', () => {
+    const f = formOfRoutine({ ...stored, do: { digest: { extra: 'lead with PRs' } } });
+    expect(f.mode).toBe('digest');
+    expect(routineBody(f).do).toEqual({ digest: { extra: 'lead with PRs' } });
+  });
+
+  it('sends a digest with no extra words as an empty digest, which is still a digest', () => {
+    const f = formOfRoutine({ ...stored, do: { digest: {} } });
+    expect(f.mode).toBe('digest');
+    expect(routineBody(f).do).toEqual({ digest: {} });
+  });
+});
+
+describe('a digest in the run and error words', () => {
+  it('says a queued digest run is a digest on its way, not a prompt sent', () => {
+    const l = runLine(run({ outcome: 'queued' } as Partial<RoutineRun>));
+    expect(l.text).toMatch(/digest/i);
+    expect(l.text).not.toMatch(/prompt/i);
+    expect(l.dot).not.toBe('bad');
+  });
+
+  it('says a fleet with nothing new was skipped for that reason', () => {
+    expect(runLine(run({ outcome: 'skipped', reason: 'nothing new' }))).toMatchObject({ dot: 'idle', text: expect.stringContaining('nothing new') });
+  });
+
+  it('puts the digest refusals on the Do field, the field the server names', () => {
+    expect(errorField('invalid routine: a digest runs on a schedule, never on a source event')).toBe('do');
+    expect(errorField("invalid routine: the digest's extra words are longer than 1000 characters")).toBe('do');
+    expect(errorField('invalid routine: do takes one of a launch, a prompt or a digest')).toBe('do');
+  });
 });
 
 describe('the list row and the run time', () => {
