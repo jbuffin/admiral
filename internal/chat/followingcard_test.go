@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/chatlog"
@@ -62,5 +63,33 @@ func TestAFollowingCardForTheSameShipAndCampaignAddsNothingTheSecondTime(t *test
 	}
 	if got, _ := followingCardsIn(t, r, "work"); len(got) != 1 {
 		t.Errorf("cards = %+v, want one", got)
+	}
+}
+
+func TestAFollowingCardForALaterShipThatReusesTheNameStillPosts(t *testing.T) {
+	r := newBriefRig(t)
+	for _, first := range []string{"2026-11-19T05:00:00Z", "2026-11-19T06:00:00Z"} {
+		if err := r.PostFollowingCard("work", ships.FollowingCard{Ship: "saltpaw", First: first, CampaignID: "c-7", Title: "Map"}); err != nil {
+			t.Fatalf("PostFollowingCard = %v", err)
+		}
+	}
+	if got, _ := followingCardsIn(t, r, "work"); len(got) != 2 {
+		t.Errorf("cards = %+v, want one for each launch of the name", got)
+	}
+}
+
+func TestAFollowingCardStripsBidiZeroWidthAndControlCharactersFromTheTitleAndText(t *testing.T) {
+	r := newBriefRig(t)
+	hostile := "Make\u202e the\u200b map\x1b[31m load\x00 faster\n now"
+	if err := r.PostFollowingCard("work", ships.FollowingCard{Ship: "saltpaw", CampaignID: "c-7", Title: hostile}); err != nil {
+		t.Fatalf("PostFollowingCard = %v", err)
+	}
+	got, entries := followingCardsIn(t, r, "work")
+	if len(got) != 1 {
+		t.Fatalf("cards = %+v, want one", got)
+	}
+	const want = "Make the map load faster now"
+	if got[0].Title != want || !strings.Contains(entries[0].Text, want) {
+		t.Errorf("title = %q, text = %q, want %q in both with the invisible characters gone", got[0].Title, entries[0].Text, want)
 	}
 }

@@ -103,7 +103,7 @@ function FollowingCardView({ item }: { item: Extract<ThreadItem, { kind: 'follow
       <p class="chat-card-eyebrow">Following</p>
       <Button
         label={`Open the campaign ${item.card.title}`}
-        href={href}
+        href={href + fleetSearch.value}
         onClick={(e) => {
           if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();

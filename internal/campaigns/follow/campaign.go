@@ -89,35 +89,26 @@ func (s *Service) FollowAgain(ctx context.Context, reference string) (Followed, 
 	return got, false, nil
 }
 
-// FollowDrafted follows the campaign a drafting ship of fleet filed, or follows it again when the fleet unfollowed it. A campaign that
-// belongs to another fleet, or to none, is refused with the reason as the error.
-func (s *Service) FollowDrafted(fleet, reference string) error {
+// FollowDrafted follows the campaign a drafting ship of fleet filed, or follows it again when the fleet unfollowed it, and returns its id and
+// the title Admiral read. A campaign that belongs to another fleet, or to none, is refused with the reason as the error.
+func (s *Service) FollowDrafted(fleet, reference string) (id, title string, err error) {
 	owner, lerr := s.Owner(reference)
 	if lerr != nil {
-		return errors.New(lerr.Msg)
+		return "", "", errors.New(lerr.Msg)
 	}
 	if owner != fleet {
-		return fmt.Errorf("That campaign belongs to fleet %s, not %s", owner, fleet)
+		return "", "", fmt.Errorf("That campaign belongs to fleet %s, not %s", owner, fleet)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	if _, _, lerr := s.FollowAgain(ctx, reference); lerr != nil {
-		return errors.New(lerr.Msg)
+	got, _, lerr := s.FollowAgain(ctx, reference)
+	if lerr != nil {
+		return "", "", errors.New(lerr.Msg)
 	}
-	return nil
-}
-
-// FollowedCampaign is the id and title of the campaign a reference names, from the tree Admiral read; ok is false when it is not followed.
-func (s *Service) FollowedCampaign(_, reference string) (id, title string, ok bool) {
-	ref, err := campaigns.ParseIssueRef(reference)
-	if err != nil {
-		return "", "", false
+	if got.Tree != nil {
+		title = got.Tree.Title
 	}
-	have, found := s.Store.Lookup(fmt.Sprintf("https://%s/%s/%s/issues/%d", hostOf(ref), ref.Owner, ref.Repo, ref.Number))
-	if !found || have.Tree == nil {
-		return "", "", false
-	}
-	return have.ID, have.Tree.Title, true
+	return got.ID, title, nil
 }
 
 // Snapshot is the campaign as a commitment pass reads it: the latest good tree, built the way the page's is.

@@ -50,3 +50,41 @@ func TestEveryChatPromptKeepsWayfinderForChartingAnExistingCampaignAndDraftingFo
 		}
 	}
 }
+
+// sentenceAround is the sentence of s holding the byte at i, cut at ". ".
+func sentenceAround(s string, i int) string {
+	start := strings.LastIndex(s[:i], ". ") + 1
+	end := len(s)
+	if k := strings.Index(s[i:], ". "); k >= 0 {
+		end = i + k + 1
+	}
+	return strings.TrimSpace(s[start:end])
+}
+
+func TestEveryChatPromptSendsEachDraftRequestToOnePathNotTwo(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		for i, from := 0, 0; ; from = i + 1 {
+			k := strings.Index(prompt[from:], "draft_campaign")
+			if k < 0 {
+				break
+			}
+			i = from + k
+			if s := sentenceAround(prompt, i); !strings.Contains(s, "quick draft") {
+				t.Errorf("%s prompt sends drafting to draft_campaign without tying it to a quick draft: %q", harness, s)
+			}
+		}
+		n := strings.Index(prompt, "names a skill")
+		if n < 0 {
+			t.Errorf("%s prompt never says what a named skill does", harness)
+			continue
+		}
+		if s := sentenceAround(prompt, n); !strings.Contains(s, "launch_ship") || !strings.Contains(s, "drafting") || strings.Contains(s, "draft_campaign") {
+			t.Errorf("%s prompt does not send a named skill to launch_ship with drafting: %q", harness, s)
+		}
+		d := strings.Index(prompt, "get_drafting_skill")
+		if s := sentenceAround(prompt, d); !strings.Contains(s, "launch_ship") || !strings.Contains(s, "drafting") {
+			t.Errorf("%s prompt reads the fleet's drafting skill but does not launch the drafting ship with it: %q", harness, s)
+		}
+	}
+}

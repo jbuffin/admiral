@@ -139,14 +139,12 @@ type LaunchLine struct {
 
 // FollowingCard is the campaign a chat-launched drafting ship's ref was followed to.
 type FollowingCard struct {
-	Ship, CampaignID, Title string
+	Ship, First, CampaignID, Title string
 }
 
 type Service struct {
 	// PostFollowingCard puts the Following card in the fleet's chat; nil posts nothing.
 	PostFollowingCard func(fleet string, c FollowingCard) error
-	// FollowedCampaign names the campaign FollowDrafted followed for the ref, from what Admiral read of it.
-	FollowedCampaign func(fleet, ref string) (id, title string, ok bool)
 	// PostLaunchLine puts a chat launch's line in its fleet's chat; nil posts nothing.
 	PostLaunchLine func(fleet string, l LaunchLine) error
 	// answering holds one mutex per pane id, taken for the whole of an answer.
@@ -159,8 +157,8 @@ type Service struct {
 	// drafters is the ships Admiral launched as drafting ships, by session and first launch stamp, in memory only: a ship can rewrite its own pane options.
 	// It is lost when Admiral restarts, so a drafting ship that outlives a restart is no longer followed or reported.
 	drafters sync.Map
-	// FollowDrafted follows the campaign a drafting ship of the fleet filed; its error is the reason it was refused and is shown on the ship.
-	FollowDrafted func(fleet, ref string) error
+	// FollowDrafted follows the campaign a drafting ship of the fleet filed and returns its id and the title Admiral read; its error is the reason it was refused and is shown on the ship.
+	FollowDrafted func(fleet, ref string) (id, title string, err error)
 	Host          *sessionhost.Host
 	Launcher      *launcher.Launcher
 	State         *state.Store

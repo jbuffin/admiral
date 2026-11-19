@@ -1443,13 +1443,15 @@ func TestALaunchWithoutDraftingSendsNoDraftingFlag(t *testing.T) {
 	}
 }
 
-func TestADraftingLaunchIsRefusedBeforeAnyCallWithoutASkillOrWithAScoutOrAClone(t *testing.T) {
+func TestADraftingLaunchIsRefusedBeforeAnyCallWithoutASkillOrWithAScoutACloneOrAnOrder(t *testing.T) {
 	for name, args := range map[string]string{
 		"no skill":        launchArgs("", `,"drafting":true`),
 		"skill none":      launchArgs("none", `,"drafting":true`),
 		"skill commodore": launchArgs("commodore", `,"drafting":true`),
 		"a scout":         launchArgs("wayfinder", `,"drafting":true,"scout":true`),
 		"a clone":         launchArgs("wayfinder", `,"drafting":true,"clone":true`),
+		"an order":        launchArgs("wayfinder", `,"drafting":true,"source":"gh","order_id":"o1"`),
+		"issues":          launchArgs("wayfinder", `,"drafting":true,"issues":["https://github.com/o/r/issues/1"]`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })

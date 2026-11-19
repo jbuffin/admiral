@@ -1,6 +1,8 @@
 package ships
 
 import (
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 )
@@ -26,16 +28,16 @@ func (c *cardCatcher) got() ([]string, []FollowingCard) {
 	return append([]string(nil), c.fleets...), append([]FollowingCard(nil), c.cards...)
 }
 
-// cardRig is a draft rig whose follow reads campaign c-7, titled by Admiral, from GitHub; saltpaw was launched from the chat when fromChat.
+// newCardRig is a draft rig whose follow reads campaign c-7, titled by Admiral, from GitHub; saltpaw was launched from the chat when fromChat.
 func newCardRig(t *testing.T, fromChat bool) (*draftRig, *cardCatcher) {
 	t.Helper()
 	r := newDraftRig(t)
 	cc := &cardCatcher{}
 	r.s.PostFollowingCard = cc.post
-	r.s.FollowedCampaign = func(fleet, ref string) (string, string, bool) { return "c-7", mapCampaignTitle, true }
+	r.id, r.title = "c-7", mapCampaignTitle
 	if fromChat {
 		o := r.options(t, "saltpaw")
-		r.s.markDraftingFromChat("saltpaw", firstLaunched(o), o["fleet"], o["harness"])
+		r.s.markDrafting("saltpaw", firstLaunched(o), o["fleet"], o["harness"], true)
 	}
 	return r, cc
 }
@@ -49,7 +51,8 @@ func TestAChatLaunchedDraftingShipsFollowedRefPostsOneFollowingCardNamingTheCamp
 	if len(cards) != 1 || fleets[0] != "work" {
 		t.Fatalf("cards = %+v in fleets %v, want one in the ship's fleet work", cards, fleets)
 	}
-	if want := (FollowingCard{Ship: "saltpaw", CampaignID: "c-7", Title: mapCampaignTitle}); cards[0] != want {
+	first := firstLaunched(r.options(t, "saltpaw"))
+	if want := (FollowingCard{Ship: "saltpaw", First: first, CampaignID: "c-7", Title: mapCampaignTitle}); first == "" || cards[0] != want {
 		t.Errorf("card = %+v, want %+v", cards[0], want)
 	}
 }
@@ -77,15 +80,27 @@ func TestAChatLaunchedDraftingShipThatFilesAtItsEndPostsTheFollowingCard(t *test
 	}
 }
 
-func TestADraftingShipNotLaunchedFromTheChatFollowsItsRefAndPostsNoCard(t *testing.T) {
+func TestOnlyADraftingShipAdmiralBotLaunchesFromTheChatPostsAFollowingCard(t *testing.T) {
 	r, cc := newCardRig(t, false)
-	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
-	r.endTurn(t, "saltpaw")
-	if got := r.followed(); len(got) != 1 {
-		t.Fatalf("follow calls = %v, want the ref followed as before", got)
+	skill := filepath.Join(r.checkout, ".claude", "skills", "wayfinder", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if _, cards := cc.got(); len(cards) != 0 {
-		t.Errorf("cards = %+v, want none for a ship launched from the Add campaign modal", cards)
+	if err := os.WriteFile(skill, []byte("---\nname: wayfinder\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const draft = `,"drafting":true,"skill":{"kind":"skill","name":"wayfinder"}`
+	fromBot := r.launchBody(t, true, draft)
+	fromEngineer := r.launchBody(t, false, draft)
+	for _, session := range []string{fromBot, fromEngineer} {
+		writeRef(t, r.refOf(session), campaignIssue+"\n")
+		r.endTurn(t, session)
+	}
+	if got := r.followed(); len(got) != 2 {
+		t.Fatalf("follow calls = %v, want both ships' refs followed", got)
+	}
+	if _, cards := cc.got(); len(cards) != 1 || cards[0].Ship != fromBot {
+		t.Errorf("cards = %+v, want one, for the ship AdmiralBot launched (%s) and none for the engineer's (%s)", cards, fromBot, fromEngineer)
 	}
 }
 

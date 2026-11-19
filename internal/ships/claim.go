@@ -201,11 +201,7 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 		return Ship{}, lerr
 	}
 	if req.Drafting {
-		mark := s.markDrafting
-		if req.OnInstruction {
-			mark = s.markDraftingFromChat
-		}
-		mark(got.Session, cmpFirst(got.FirstLaunched, got.Launched), cmpFirst(got.Fleet, req.Fleet), cmpFirst(got.Harness, req.Harness))
+		s.markDrafting(got.Session, cmpFirst(got.FirstLaunched, got.Launched), cmpFirst(got.Fleet, req.Fleet), cmpFirst(got.Harness, req.Harness), req.OnInstruction)
 	}
 	s.releaseWhenListed(got.Session, release)
 	return got, nil

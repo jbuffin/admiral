@@ -41,12 +41,12 @@ test('a Following card names the campaign and links its page', async () => {
   const main = await shown('Make the fleet map load faster');
   expect(main.textContent).toContain('Following');
   const links = Array.from(main.querySelectorAll<HTMLAnchorElement>('.chat-card a'));
-  expect(links.map((a) => a.getAttribute('href'))).toEqual(['/app/campaigns/c-7']);
+  expect(links.map((a) => a.getAttribute('href'))).toEqual(['/app/campaigns/c-7?fleet=alpha']);
 });
 
 test('a hostile campaign title in a Following card is text: no element and no link of its own', async () => {
   chatWith({ ship: 'saltpaw', campaign_id: 'c-7', title: HOSTILE });
   const main = await shown('<img src=x');
   expect(main.querySelector('img')).toBeNull();
-  expect(Array.from(main.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['/app/campaigns/c-7']);
+  expect(Array.from(main.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['/app/campaigns/c-7?fleet=alpha']);
 });

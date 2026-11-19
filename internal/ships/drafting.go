@@ -27,6 +27,7 @@ type draftState struct {
 	ended    bool
 	fleet    string // the launch's fleet and harness: the ship can rewrite its pane options, so these are what Admiral trusts
 	harness  string
+	first    string    // the first launch stamp, which keeps a later ship that reuses the name apart
 	fromChat bool      // launched by AdmiralBot from the chat, so a followed campaign posts its card
 	moored   *draftEnd // what the end needs, kept when the ship moors, for a stop that ends it later
 }
@@ -34,17 +35,12 @@ type draftState struct {
 func draftKey(session, first string) string { return session + "\x00" + first }
 
 // markDrafting records a drafting ship by session and its first launch, so a woken ship stays one and a later ship that reuses the name is not.
-func (s *Service) markDrafting(session, first, fleet, harness string) {
+// fromChat is a ship AdmiralBot launched from the chat, whose followed campaign posts a card.
+func (s *Service) markDrafting(session, first, fleet, harness string, fromChat bool) {
 	if harness == "" {
 		harness = "claude"
 	}
-	s.drafters.Store(draftKey(session, first), &draftState{fleet: fleet, harness: harness})
-}
-
-// markDraftingFromChat is markDrafting for a ship AdmiralBot launched from the chat.
-func (s *Service) markDraftingFromChat(session, first, fleet, harness string) {
-	s.markDrafting(session, first, fleet, harness)
-	s.draftOf(session, first).fromChat = true
+	s.drafters.Store(draftKey(session, first), &draftState{fleet: fleet, harness: harness, first: first, fromChat: fromChat})
 }
 
 // IsDrafting is whether the ship of this session and first launch stamp was launched as a drafting ship since Admiral started.
@@ -102,7 +98,7 @@ func (s *Service) applyRef(d *draftState, ship, fleet, line string) {
 		}
 		return
 	}
-	err := s.FollowDrafted(fleet, line)
+	id, title, err := s.FollowDrafted(fleet, line)
 	d.mu.Lock()
 	if err != nil {
 		d.notice = err.Error()
@@ -111,22 +107,11 @@ func (s *Service) applyRef(d *draftState, ship, fleet, line string) {
 	}
 	d.mu.Unlock()
 	s.broadcast()
-	if err == nil && d.fromChat {
-		s.postFollowingCard(ship, fleet, line)
-	}
-}
-
-// postFollowingCard tells the chat which campaign the ship followed, by the title Admiral read, never the ship's words.
-func (s *Service) postFollowingCard(ship, fleet, ref string) {
-	if s.PostFollowingCard == nil || s.FollowedCampaign == nil {
-		return
-	}
-	id, title, ok := s.FollowedCampaign(fleet, ref)
-	if !ok {
-		return
-	}
-	if err := s.PostFollowingCard(fleet, FollowingCard{Ship: ship, CampaignID: id, Title: title}); err != nil {
-		log.Printf("ships: following card for %s: %v", ship, err)
+	if err == nil && d.fromChat && s.PostFollowingCard != nil {
+		// the title is Admiral's read of the issue, never the ship's words
+		if err := s.PostFollowingCard(fleet, FollowingCard{Ship: ship, First: d.first, CampaignID: id, Title: title}); err != nil {
+			log.Printf("ships: following card for %s: %v", ship, err)
+		}
 	}
 }
 

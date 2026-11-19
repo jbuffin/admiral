@@ -6,17 +6,22 @@ import "testing"
 
 func TestFollowDraftedFollowsAFreshCampaignInTheShipsFleet(t *testing.T) {
 	r := newRig(t, fixtureTree())
-	if err := r.svc.FollowDrafted("work", rootURL); err != nil {
+	id, title, err := r.svc.FollowDrafted("work", rootURL)
+	if err != nil {
 		t.Fatalf("FollowDrafted = %v, want nil", err)
 	}
-	if have, ok := r.svc.Store.Lookup(rootURL); !ok || have.Ended() || have.Fleet != "work" {
-		t.Errorf("campaign after FollowDrafted = %+v, %v; want followed in work", have, ok)
+	have, ok := r.svc.Store.Lookup(rootURL)
+	if !ok || have.Ended() || have.Fleet != "work" {
+		t.Fatalf("campaign after FollowDrafted = %+v, %v; want followed in work", have, ok)
+	}
+	if title == "" || id != have.ID || title != have.Tree.Title {
+		t.Errorf("FollowDrafted answered id %q title %q, want the stored campaign's %q and %q", id, title, have.ID, have.Tree.Title)
 	}
 }
 
 func TestFollowDraftedRefusesACampaignOfAnotherFleetAndFollowsNothing(t *testing.T) {
 	r := newRig(t, fixtureTree())
-	err := r.svc.FollowDrafted("home", rootURL)
+	_, _, err := r.svc.FollowDrafted("home", rootURL)
 	if err == nil || err.Error() != "That campaign belongs to fleet work, not home" {
 		t.Fatalf("FollowDrafted = %v, want the fleet refusal", err)
 	}
@@ -28,7 +33,7 @@ func TestFollowDraftedRefusesACampaignOfAnotherFleetAndFollowsNothing(t *testing
 func TestFollowDraftedRefusesACampaignNoFleetOwns(t *testing.T) {
 	r := newRig(t, fixtureTree())
 	r.svc.Route = func(string, string) string { return "" }
-	err := r.svc.FollowDrafted("work", rootURL)
+	_, _, err := r.svc.FollowDrafted("work", rootURL)
 	if err == nil || err.Error() != "No fleet owns acme/widgets, so Admiral can't read it" {
 		t.Fatalf("FollowDrafted = %v, want the no-fleet refusal", err)
 	}
@@ -41,8 +46,8 @@ func TestFollowDraftedFollowsAnUnfollowedCampaignAgain(t *testing.T) {
 	r := newRig(t, fixtureTree())
 	c := r.follow(rootURL)
 	r.unfollow(c.ID)
-	if err := r.svc.FollowDrafted("work", rootURL); err != nil {
-		t.Fatalf("FollowDrafted = %v, want nil", err)
+	if id, _, err := r.svc.FollowDrafted("work", rootURL); err != nil || id != c.ID {
+		t.Fatalf("FollowDrafted = %q, %v, want the same campaign %q again", id, err, c.ID)
 	}
 	if got := r.get(c.ID); got.Ended || got.EndReason != "" {
 		t.Errorf("campaign after FollowDrafted = %+v; want followed again, not ended", got)

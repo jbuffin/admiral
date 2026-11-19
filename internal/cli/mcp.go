@@ -702,6 +702,10 @@ func checkDraftingParams(a shipSpec, scout bool) error {
 		return errors.New("skill: a drafting ship needs the name of the skill that drafts; ask get_drafting_skill for the fleet's")
 	case a.Clone || a.CloneRepo != "":
 		return errors.New("clone: a drafting ship works in the fleet's existing checkout")
+	case a.Source != "" || a.OrderID != "":
+		return errors.New("source: a drafting ship is freeform, not from an order")
+	case len(a.Issues) > 0:
+		return errors.New("issues: a drafting ship claims no issues")
 	}
 	return nil
 }

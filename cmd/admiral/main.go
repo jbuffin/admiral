@@ -467,7 +467,6 @@ func serve(args []string) error {
 	defer campaignService.Close()
 	shipService.Orders = campaignService
 	shipService.FollowDrafted = campaignService.FollowDrafted
-	shipService.FollowedCampaign = campaignService.FollowedCampaign
 	// An unreadable key file is logged and leaves push off, never replaced: devices subscribe against the key.
 	vapidKey, err := push.LoadKey(dir)
 	if err != nil {

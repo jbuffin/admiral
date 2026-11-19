@@ -27,16 +27,18 @@ type draftRig struct {
 	mu    sync.Mutex
 	calls [][2]string // fleet, ref
 	err   error       // what the follow func answers
+	id    string      // the campaign the follow func answers with
+	title string
 }
 
 func newDraftRig(t *testing.T) *draftRig {
 	t.Helper()
 	r := &draftRig{handRig: newHandRig(t)}
-	r.s.FollowDrafted = func(fleet, ref string) error {
+	r.s.FollowDrafted = func(fleet, ref string) (string, string, error) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		r.calls = append(r.calls, [2]string{fleet, ref})
-		return r.err
+		return r.id, r.title, r.err
 	}
 	r.draft(t, "saltpaw")
 	return r
@@ -45,7 +47,7 @@ func newDraftRig(t *testing.T) *draftRig {
 func (r *draftRig) draft(t *testing.T, session string) {
 	t.Helper()
 	o := r.options(t, session)
-	r.s.markDrafting(session, firstLaunched(o), o["fleet"], o["harness"])
+	r.s.markDrafting(session, firstLaunched(o), o["fleet"], o["harness"], false)
 }
 
 func (r *draftRig) followed() [][2]string {
@@ -252,14 +254,14 @@ func TestAnUnsafeRefIsNotReadAndTheNextValidOneIs(t *testing.T) {
 func TestAWokenDraftingShipStaysDraftingAndItsRefIsFollowed(t *testing.T) {
 	r := newWakeRig(t, 0)
 	first, _ := shipJSON(t, r.moorKeyed(t))["first_launched"].(string)
-	r.s.markDrafting("saltpaw", first, "work", "claude")
+	r.s.markDrafting("saltpaw", first, "work", "claude", false)
 	var mu sync.Mutex
 	var calls []string
-	r.s.FollowDrafted = func(fleet, ref string) error {
+	r.s.FollowDrafted = func(fleet, ref string) (string, string, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		calls = append(calls, ref)
-		return nil
+		return "", "", nil
 	}
 	if err := os.Remove(filepath.Join(r.rec, "exit")); err != nil {
 		t.Fatal(err)
@@ -431,14 +433,14 @@ func TestAMooredDraftingShipWhoseCampaignIsFollowedPostsNoItemWhenStopped(t *tes
 
 func TestARewrittenFleetOptionDoesNotMoveARefIntoAnotherFleet(t *testing.T) {
 	r := newDraftRig(t)
-	r.s.FollowDrafted = func(fleet, ref string) error { // the real rule: only the fleet that owns the repo follows it
+	r.s.FollowDrafted = func(fleet, ref string) (string, string, error) { // the real rule: only the fleet that owns the repo follows it
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		r.calls = append(r.calls, [2]string{fleet, ref})
 		if fleet == "home" {
-			return nil
+			return "", "", nil
 		}
-		return errString("That campaign belongs to fleet home, not " + fleet)
+		return "", "", errString("That campaign belongs to fleet home, not " + fleet)
 	}
 	if out, err := exec.Command(r.s.Launcher.Tmux, "-S", r.s.Launcher.Socket, "set-option", "-p", "-t", "saltpaw", "@admiral-fleet", "home").CombinedOutput(); err != nil {
 		t.Fatalf("set-option: %v: %s", err, out)
