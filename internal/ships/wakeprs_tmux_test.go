@@ -22,7 +22,7 @@ func wakePRsSection(lines ...string) string {
 	return "\n\n## Your pull requests\n\nYou opened these pull requests and they are still open. Check them before anything else:\n\n" +
 		strings.Join(lines, "\n") +
 		"\n\nFor each one, run `gh pr view <url> --json headRefName,baseRefName,mergeable,mergeStateStatus,statusCheckRollup`. " +
-		"If it is behind or conflicts with its base, check out its head branch and rebase that branch onto its base branch, never local main. " +
+		"If it is behind or conflicts with its base, run `git fetch origin`, check out its head branch and rebase that branch onto `origin/<baseRefName>`, never local main. " +
 		"Resolve any conflicts, fix any failing checks, re-run the tests and push the PR branch."
 }
 
