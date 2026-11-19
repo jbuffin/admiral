@@ -137,7 +137,16 @@ type LaunchLine struct {
 	Ship, Name, Title, FirstLaunched, Kind, Reason, Text string
 }
 
+// FollowingCard is the campaign a chat-launched drafting ship's ref was followed to.
+type FollowingCard struct {
+	Ship, CampaignID, Title string
+}
+
 type Service struct {
+	// PostFollowingCard puts the Following card in the fleet's chat; nil posts nothing.
+	PostFollowingCard func(fleet string, c FollowingCard) error
+	// FollowedCampaign names the campaign FollowDrafted followed for the ref, from what Admiral read of it.
+	FollowedCampaign func(fleet, ref string) (id, title string, ok bool)
 	// PostLaunchLine puts a chat launch's line in its fleet's chat; nil posts nothing.
 	PostLaunchLine func(fleet string, l LaunchLine) error
 	// answering holds one mutex per pane id, taken for the whole of an answer.

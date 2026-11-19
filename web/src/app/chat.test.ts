@@ -33,6 +33,12 @@ describe('the thread', () => {
     expect(t).toEqual([{ kind: 'campaign_draft', id: 'c-1', text: 'Created "Map".', at: '2026-01-02T03:04:05Z', card }]);
   });
 
+  it('carries a Following card with the ship, the campaign and its title', () => {
+    const card = { ship: 'saltpaw', campaign_id: 'c-7', title: 'Map' };
+    const t = threadOf(snap({ messages: [{ id: 'f-1', kind: 'following_card', text: 'Following Map', at: '2026-01-02T03:04:05Z', card }] }));
+    expect(t).toEqual([{ kind: 'following', id: 'f-1', text: 'Following Map', at: '2026-01-02T03:04:05Z', card }]);
+  });
+
   it('keeps the served order for entries with one time', () => {
     const at = '2026-01-02T03:04:05Z';
     const t = threadOf(

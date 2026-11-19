@@ -39,6 +39,11 @@ func (s *Service) markDrafting(session, first, fleet, harness string) {
 	s.drafters.Store(draftKey(session, first), &draftState{fleet: fleet, harness: harness})
 }
 
+// markDraftingFromChat is markDrafting for a ship AdmiralBot launched from the chat.
+func (s *Service) markDraftingFromChat(session, first, fleet, harness string) {
+	s.markDrafting(session, first, fleet, harness)
+}
+
 // IsDrafting is whether the ship of this session and first launch stamp was launched as a drafting ship since Admiral started.
 func (s *Service) IsDrafting(session, first string) bool { return s.draftOf(session, first) != nil }
 
