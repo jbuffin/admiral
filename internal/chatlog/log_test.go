@@ -1,6 +1,7 @@
 package chatlog
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -190,5 +191,40 @@ func TestNothingIsWrittenOutsideTheFleetsDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "escape")); err == nil {
 		t.Errorf("a fleet key with .. wrote outside chat/")
+	}
+}
+
+func TestSinceGoesBackThroughTheMonthFilesPastTheInMemoryTail(t *testing.T) {
+	c := &clock{}
+	c.at("2026-10-30T10:00:00Z")
+	l, home := newLog(t, c)
+	for i := 0; i < 20; i++ {
+		c.now = c.now.Add(time.Minute)
+		appendOK(t, l, "work", msg(fmt.Sprintf("oct-%02d", i), "user", "old"))
+	}
+	c.at("2026-11-02T10:00:00Z")
+	from := c.now
+	for i := 0; i < tailCap+10; i++ {
+		c.now = c.now.Add(time.Second)
+		appendOK(t, l, "work", msg(fmt.Sprintf("nov-%03d", i), "user", "new"))
+	}
+	for _, log := range []*Log{l, New(home, func() time.Time { return c.now })} {
+		got, err := log.Since("work", from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != tailCap+10 || got[0].ID != "nov-000" || got[len(got)-1].ID != fmt.Sprintf("nov-%03d", tailCap+9) {
+			t.Fatalf("Since(from) = %d entries from %s, want all %d of the window, oldest first (the tail holds only %d)", len(got), ids(got[:1]), tailCap+10, tailCap)
+		}
+	}
+	everything, err := l.Since("work", time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(everything) != 20+tailCap+10 || everything[0].ID != "oct-00" {
+		t.Errorf("Since(before the first entry) = %d entries (%v), want all %d, from the October file", len(everything), err, 20+tailCap+10)
+	}
+	if got, _ := l.Since("work", c.now); len(got) != 0 {
+		t.Errorf("Since(now) = %v, want none: an entry logged at t is not after it", ids(got))
+	}
+	if got, err := l.Since("quiet", from); err != nil || len(got) != 0 {
+		t.Errorf("Since on a fleet with no log = %v, %v, want none", ids(got), err)
 	}
 }

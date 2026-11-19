@@ -567,7 +567,7 @@ func serve(args []string) error {
 	routineStore := &routines.Store{Home: absDir, Fleets: func(k string) (config.Fleet, bool) { return cfg.Current().Fleet(k) },
 		ResourceKnown: func(name string) bool { _, ok := cfg.Current().Resources[name]; return ok }}
 	cfg.RoutineNamer = func(fleet string) standing.RoutineNamer { return routineStore.Namer(fleet) }
-	routineScheduler := &routines.Scheduler{Store: routineStore, Clock: realClock{}, Ships: routineShips{shipService}, Chat: chatService, Proposer: routineProposer{inboxService}, Zone: time.Local, Ready: host.Ready(), HostKnown: host.Known,
+	routineScheduler := &routines.Scheduler{Store: routineStore, Clock: realClock{}, Ships: routineShips{shipService}, Chat: chatService, Facts: newFleetFacts(routineStore, chatService, shipService.List, inboxService, campaignService), Proposer: routineProposer{inboxService}, Zone: time.Local, Ready: host.Ready(), HostKnown: host.Known,
 		GitHubHosts: func(fleet string) []string {
 			c := cfg.Current()
 			if f, ok := c.Fleet(fleet); ok {

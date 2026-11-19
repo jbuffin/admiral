@@ -140,10 +140,38 @@ func (f *fakeShips) callsFor(key string) int {
 	return n
 }
 
+type queuedTurn struct{ fleet, id, text string }
+
 type fakeChat struct {
 	mu   sync.Mutex
 	sent [][2]string
 	err  error
+	// off is a fleet whose chat is off; queued is every turn EnqueueTurn took.
+	off        map[string]bool
+	queued     []queuedTurn
+	enqueueErr error
+}
+
+func (f *fakeChat) ChatOn(fleet string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.off[fleet]
+}
+
+func (f *fakeChat) EnqueueTurn(fleet, id, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.enqueueErr != nil {
+		return f.enqueueErr
+	}
+	f.queued = append(f.queued, queuedTurn{fleet, id, text})
+	return nil
+}
+
+func (f *fakeChat) turns() []queuedTurn {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]queuedTurn(nil), f.queued...)
 }
 
 func (f *fakeChat) Send(fleet, text string) error {

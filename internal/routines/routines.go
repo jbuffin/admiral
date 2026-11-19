@@ -56,11 +56,20 @@ type Launch struct {
 	Resources []string       `json:"resources,omitempty"`
 }
 
-// Do is a launch or an AdmiralBot prompt, never both.
+// Do is exactly one of a launch, an AdmiralBot prompt and a fleet digest.
 type Do struct {
 	Launch *Launch `json:"launch,omitempty"`
 	Prompt string  `json:"prompt,omitempty"`
+	Digest *Digest `json:"digest,omitempty"`
 }
+
+// Digest is the fleet digest action; Extra is the engineer's optional words for AdmiralBot ("lead with PRs").
+type Digest struct {
+	Extra string `json:"extra,omitempty"`
+}
+
+// maxDigestExtra caps Extra so the whole turn fits the paste limit.
+const maxDigestExtra = 1000
 
 type Routine struct {
 	ID      string `json:"id"`
@@ -214,11 +223,22 @@ func (s *Store) validate(f config.Fleet, r Routine, onKept bool) error {
 	default:
 		return invalidf("before_acting must be report_only, ask_first or act, not %q", r.Before)
 	}
+	kinds := 0
+	for _, set := range []bool{r.Do.Launch != nil, r.Do.Prompt != "", r.Do.Digest != nil} {
+		if set {
+			kinds++
+		}
+	}
 	switch l := r.Do.Launch; {
-	case l != nil && r.Do.Prompt != "":
-		return invalidf("do takes a launch or a prompt, not both")
-	case l == nil && r.Do.Prompt == "":
-		return invalidf("do needs a launch or a prompt")
+	case kinds > 1:
+		return invalidf("do takes one of a launch, a prompt or a digest")
+	case kinds == 0:
+		return invalidf("do needs a launch, a prompt or a digest")
+	case r.Do.Digest != nil:
+		if utf8.RuneCountInString(r.Do.Digest.Extra) > maxDigestExtra {
+			return invalidf("the digest's extra words are longer than %d characters", maxDigestExtra)
+		}
+		return nil
 	case l == nil && strings.TrimSpace(r.Do.Prompt) == "":
 		return invalidf("the prompt is empty")
 	case l == nil:
@@ -439,6 +459,8 @@ type Outcome string
 
 const (
 	Launched Outcome = "launched"
+	// Queued is a fleet digest turn waiting on the fleet's report-turn queue; it sends no routine push, since the reply pushes.
+	Queued   Outcome = "queued"
 	Proposed Outcome = "proposed"
 	Skipped  Outcome = "skipped"
 	Missed   Outcome = "missed"
@@ -708,6 +730,9 @@ func (s *Store) validateOn(f config.Fleet, r Routine, onKept bool) error {
 	}
 	if r.Do.Prompt != "" {
 		return invalidf("an event routine launches a ship; a source event never prompts AdmiralBot")
+	}
+	if r.Do.Digest != nil {
+		return invalidf("a digest runs on a schedule, never on a source event")
 	}
 	on := *r.On
 	if on.Source == "" || on.Kind == "" {
