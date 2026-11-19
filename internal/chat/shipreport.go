@@ -133,6 +133,6 @@ func (s *Service) EnqueueShipReport(fleet string, c ShipCard, reportResult strin
 	if text == "" {
 		text = c.Title
 	}
-	kept := s.Findings != nil && s.Findings.Has(c.Ship, c.FirstLaunched)
+	kept := s.KeptFindings(c.Ship, c.FirstLaunched)
 	return s.EnqueueTurn(fleet, c.id(), ReportTurnText(c, text, reportResult, kept))
 }

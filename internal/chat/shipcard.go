@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"os"
@@ -99,6 +100,7 @@ type voyage struct {
 	Skill         string
 	SkillKind     string
 	Scout         bool
+	PromptKey     string // the engineer chat turn a scout launched in
 	Commitment    string
 	Routine       string
 	ReportResult  string
@@ -112,6 +114,7 @@ type voyage struct {
 	UnmooredAt    time.Time // the PRs all closed
 	StoppedAt     time.Time
 	ScoutEndedAt  time.Time // a scout's own end
+	ScoutEnd      time.Time // when a scout's card posted its end, which orders a group's last scout
 	FailedAt      time.Time // an end that carried result failed
 	ReturnedAt    time.Time
 	ReturningAt   time.Time
@@ -122,6 +125,7 @@ type voyage struct {
 type shipCardState struct {
 	Seeded   bool
 	Scouts   bool // saved by a build that reads a scout's stop
+	Groups   bool // saved by a build that reports scout groups
 	Voyages  map[string]*voyage
 	lastSent []byte
 }
@@ -132,6 +136,11 @@ type ShipCards struct {
 	path   string
 	post   func(fleet string, c ShipCard) error
 	report func(fleet string, c ShipCard) error
+	at     time.Time // the pass's time
+	scouts func(fleet string, trigger ShipCard, group []ShipCard) error
+	over   func(fleet, promptKey string) bool
+	kept   func(ship, firstLaunched string) bool
+	host   func() (lost bool, unreadable []string)
 	st     shipCardState
 }
 
@@ -142,10 +151,11 @@ func NewShipCards(home string, post func(fleet string, c ShipCard) error) *ShipC
 		var saved struct {
 			Seeded  bool
 			Scouts  bool
+			Groups  bool
 			Voyages map[string]*voyage
 		}
 		if json.Unmarshal(b, &saved) == nil {
-			d.st.Seeded, d.st.Scouts, d.st.Voyages, d.st.lastSent = saved.Seeded, saved.Scouts, saved.Voyages, b
+			d.st.Seeded, d.st.Scouts, d.st.Groups, d.st.Voyages, d.st.lastSent = saved.Seeded, saved.Scouts, saved.Groups, saved.Voyages, b
 		}
 	}
 	if d.st.Voyages == nil {
@@ -164,7 +174,11 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	seeding := !d.st.Seeded
+	d.at = now
 	var errs []error
+	if !seeding && !d.st.Groups {
+		d.settleScoutsOfOlderBuild(snap)
+	}
 	mooredNow, inSnap := map[*voyage]bool{}, map[*voyage]bool{}
 	if !seeding {
 		// A moor or an anchor in this snapshot is reported with the result its ended record carries, so the records are read first.
@@ -209,6 +223,7 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 		}
 	}
 	if !seeding {
+		d.keepHiddenShipsSeen(now)
 		for _, r := range records {
 			if v := d.voyageAt(r.Ship, r.At); v != nil {
 				v.apply(r)
@@ -227,9 +242,44 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 			delete(d.st.Voyages, k)
 		}
 	}
-	d.st.Seeded, d.st.Scouts = true, true
+	if !seeding {
+		errs = append(errs, d.reportScoutGroups())
+	}
+	d.st.Seeded, d.st.Scouts, d.st.Groups = true, true, true
 	errs = append(errs, d.save())
 	return errors.Join(errs...)
+}
+
+// keepHiddenShipsSeen stops a ship from aging toward lost while the snapshot can't show it: tmux is lost, or the ship's options could not be read.
+func (d *ShipCards) keepHiddenShipsSeen(now time.Time) {
+	if d.host == nil {
+		return
+	}
+	lost, unreadable := d.host()
+	for _, v := range d.st.Voyages {
+		if lost || slices.Contains(unreadable, v.Ship) {
+			v.LastSeen = now
+		}
+	}
+}
+
+// settleScoutsOfOlderBuild leaves the scouts an older build ended without a card, and the ones it carded, out of group reports and out of the new stop and loss cards.
+func (d *ShipCards) settleScoutsOfOlderBuild(snap []ships.Ship) {
+	listed := map[string]bool{}
+	for _, s := range snap {
+		listed[s.Session+"|"+cmp.Or(s.FirstLaunched, s.Launched)] = true
+	}
+	for k, v := range d.st.Voyages {
+		if !v.Scout {
+			continue
+		}
+		if !v.endCarded() && !listed[k] {
+			v.Done[ShipSailedOff], v.Done[ShipFailed] = true, true
+		}
+		if v.endCarded() {
+			v.Reported = true
+		}
+	}
 }
 
 func (d *ShipCards) voyageOf(s ships.Ship, now time.Time) *voyage {
@@ -243,7 +293,8 @@ func (d *ShipCards) voyageOf(s ships.Ship, now time.Time) *voyage {
 	key := s.Session + "|" + stamp
 	v := d.st.Voyages[key]
 	if v == nil {
-		v = &voyage{Ship: s.Session, Name: s.Name, FirstLaunched: stamp, Done: map[string]bool{}}
+		// Fixed at first sighting: another ship rewriting the option must not move a scout between groups.
+		v = &voyage{Ship: s.Session, Name: s.Name, FirstLaunched: stamp, PromptKey: s.PromptKey, Done: map[string]bool{}}
 		d.st.Voyages[key] = v
 	}
 	v.Name, v.Fleet, v.Via, v.SkillKind, v.Scout, v.LastSeen = s.Name, s.Fleet, s.Via, s.SkillKind, s.Scout, now
@@ -332,6 +383,14 @@ func (d *ShipCards) settle(v *voyage, mooredNow, inSnap bool, now time.Time) err
 		if !inSnap && now.Sub(v.ScoutEndedAt) >= ShipSettleGrace {
 			errs = append(errs, d.emit(v, v.offResult(), false))
 		}
+	case v.Scout && !inSnap && !v.endCarded() && !v.StoppedAt.IsZero():
+		// An engineer's Stop kills the scout without its own mark.
+		if now.Sub(v.StoppedAt) >= ShipSettleGrace {
+			errs = append(errs, d.emit(v, d.scoutResult(v), false))
+		}
+	case v.Scout && !inSnap && !v.endCarded() && v.EndedAt.IsZero() && v.FailedAt.IsZero() && now.Sub(v.LastSeen) >= ShipSettleGrace:
+		// Gone from the snapshot with no end record: lost.
+		errs = append(errs, d.emit(v, d.scoutResult(v), false))
 	case !v.UnmooredAt.IsZero():
 		// A return to port writes `unmoored` and then `returning`; the ship is not sailing off.
 		if v.ReturningAt.Before(v.UnmooredAt) && now.Sub(v.UnmooredAt) >= ShipSettleGrace {
@@ -345,6 +404,22 @@ func (d *ShipCards) settle(v *voyage, mooredNow, inSnap bool, now time.Time) err
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// scoutResult is the card a scout's Stop or loss posts: failed when it kept no findings. The ended record's failed result stands in where findings can't be read.
+func (d *ShipCards) scoutResult(v *voyage) string {
+	if d.kept != nil {
+		if d.kept(v.Ship, v.FirstLaunched) {
+			return ShipSailedOff
+		}
+		return ShipFailed
+	}
+	return v.offResult()
+}
+
+// endCarded says a scout's end card has posted.
+func (v *voyage) endCarded() bool {
+	return v.Done[ShipSailedOff] || v.Done[ShipFailed] || v.Done[ShipAnchored]
 }
 
 // offResult is the card a sail-off posts: a scout that left no findings failed.
@@ -362,7 +437,8 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 		return nil
 	}
 	reports := v.reportsOn(result)
-	if reports && silent {
+	scoutEnd := v.Scout && (result == ShipSailedOff || result == ShipFailed || result == ShipAnchored)
+	if (reports || scoutEnd) && silent {
 		v.Reported = true
 	}
 	if !silent {
@@ -377,12 +453,25 @@ func (d *ShipCards) emit(v *voyage, result string, silent bool) error {
 			return err
 		}
 	}
+	if scoutEnd && !silent {
+		v.ScoutEnd = cmp.Or(latest(v.ScoutEndedAt, v.StoppedAt, v.EndedAt), d.at)
+	}
 	v.Done[result] = true
 	return nil
 }
 
+func latest(ts ...time.Time) time.Time {
+	var out time.Time
+	for _, t := range ts {
+		if t.After(out) {
+			out = t
+		}
+	}
+	return out
+}
+
 // reportsOn says whether the result is a voyage's first reporting event. Only the ships AdmiralBot launched from the
-// chat report (scouts have their own report), and a sail-off after a moor is the end, which posts its card only.
+// chat report (scouts report with their group), and a sail-off after a moor is the end, which posts its card only.
 func (v *voyage) reportsOn(result string) bool {
 	if v.Reported || v.Done[ShipAnchored] || v.Done[ShipMoored] || v.Done[ShipSailedOff] || v.Via != "admiralbot" || v.Commitment != "" || v.Routine != "" || v.Scout || v.Round > 0 {
 		return false
@@ -418,8 +507,9 @@ func (d *ShipCards) save() error {
 	b, err := json.Marshal(struct {
 		Seeded  bool
 		Scouts  bool
+		Groups  bool
 		Voyages map[string]*voyage
-	}{d.st.Seeded, d.st.Scouts, d.st.Voyages})
+	}{d.st.Seeded, d.st.Scouts, d.st.Groups, d.st.Voyages})
 	if err != nil || slices.Equal(b, d.st.lastSent) {
 		return err
 	}

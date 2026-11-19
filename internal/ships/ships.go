@@ -61,6 +61,8 @@ type Ship struct {
 	// Via is "admiralbot" for a ship AdmiralBot launched; absent for the engineer's.
 	Via  string `json:"via,omitempty"`
 	Chat string `json:"-"`
+	// PromptKey is the engineer chat turn a scout was launched in; scouts of one turn report together.
+	PromptKey string `json:"-"`
 	// Routine is the routine:<id> key a routine's ship holds.
 	Routine string `json:"-"`
 	// Commitment is the commitment:<id> key a commitment's ship holds.
@@ -180,6 +182,8 @@ type Service struct {
 	findingsOnce  sync.Once
 	findingsStore *findings.Store
 	findingsHome  string
+	// PromptKey reads the engineer chat turn a fleet's chat is on; nil records none. Unlike ChatPrompt it keys no hold, so a launch with anyway records it too.
+	PromptKey func(fleet string) string
 	// ChatPrompt names the prompt a fleet's chat is answering; an actor's freeform launch is keyed on it.
 	ChatPrompt func(fleet string) string
 	// UsageRead replaces the transcript reading at a ship's exit, for tests.
@@ -318,7 +322,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], FirstLaunched: firstLaunched(o), Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Scout: o["scout"] != "", Round: roundOf(o), Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "",
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], FirstLaunched: firstLaunched(o), Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Scout: o["scout"] != "", PromptKey: o["prompt-key"], Round: roundOf(o), Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "",
 		Handing: o[sessionhost.OptHanding] != "", HandRefusal: handNotClaude(session, o["harness"]), HandFailed: o[sessionhost.OptHandFailed], SkillKind: o["skill-kind"]}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if sh.Status == "anchored" {

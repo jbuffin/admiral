@@ -614,3 +614,24 @@ func TestADeferredNewChatIsDroppedWhenTheChatIsNoLongerTheOneItWasAskedIn(t *tes
 		r.hold("the deferred New chat ran after the engineer's send", flushed(r))
 	})
 }
+
+func TestATurnReadsAsOverWhenItsKeyMovedAndNotWhenItsKeyCannotBeReadWhileTheChatRuns(t *testing.T) {
+	r := newTurnRig(t, "claude")
+	r.promptStarts()
+	key, ok := r.svc.promptKey("work")
+	if !ok {
+		t.Fatal("the stamp can't be read")
+	}
+	if r.svc.TurnOver("work", key) {
+		t.Error("a working turn reads as over")
+	}
+	restore := r.failReads()
+	if r.svc.TurnOver("work", key) {
+		t.Error("a turn reads as over because one stamp read failed")
+	}
+	restore()
+	r.promptStarts()
+	if !r.svc.TurnOver("work", key) {
+		t.Error("a turn whose key moved reads as not over")
+	}
+}

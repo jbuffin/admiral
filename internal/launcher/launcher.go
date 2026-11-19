@@ -61,6 +61,8 @@ type Request struct {
 	Stack bool `json:"stack"`
 	// ChatKey is a woken ship's stored chat key, which a wake carries over as it is.
 	ChatKey string `json:"-"`
+	// PromptKey is the engineer chat turn a scout AdmiralBot launches answers; scouts of one turn report together.
+	PromptKey string `json:"-"`
 	// ByFleet is the fleet AdmiralBot launches for; empty for the engineer. It shapes a refusal's wording only.
 	ByFleet string `json:"-"`
 	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
@@ -287,7 +289,7 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
 		{"order", req.OrderID}, {"launched", launched}, {"first-launched", firstLaunched}, {"title", orderTitle(req)}, {"url", cmp.Or(req.URL, req.EventURL)}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")},
-		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}, {"scout", scoutOption(req.Scout)}, {"drafting", scoutOption(req.Drafting)}}
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}, {"scout", scoutOption(req.Scout)}, {"drafting", scoutOption(req.Drafting)}, {"prompt-key", req.PromptKey}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return Checked{}, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
