@@ -42,12 +42,12 @@ test('on the iPad a module has a nav entry after Crew with its waiting count, dr
   await expect(onTarget.getByRole('button', { name: 'Rerun stage' })).toBeVisible();
   await expect(onTarget.getByRole('button', { name: 'Cancel run' })).toHaveCount(0);
   await expect(run.getByRole('button', { name: 'Cancel run' })).toBeVisible();
-  await expect(run.getByRole('button', { name: 'Skip smoke test' })).toHaveCount(0);
+  await expect(run.getByRole('button', { name: 'Skip stage' })).toHaveCount(0);
   await main.getByRole('button', { name: 'Open Release build' }).tap();
   const stages = page.getByRole('complementary', { name: 'Selected row' });
   await expect(stages.getByText('Raise the retry limit')).toBeVisible();
   await expect(stages.getByText('Merged')).toBeVisible();
-  await expect(stages.getByRole('button', { name: 'Skip smoke test' })).toBeVisible();
+  await expect(stages.getByRole('button', { name: 'Skip stage' })).toBeVisible();
 
   // A row opens in the side pane, with its id in the URL.
   await main.getByRole('button', { name: 'Open Fix login' }).tap();
