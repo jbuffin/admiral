@@ -34,6 +34,7 @@ export const PAGE = {
         { id: 't2', title: 'Rotate keys', subtitle: '', chips: [chip('security', 'good')], reason: '' },
       ],
     },
+    { id: 'done', title: 'Done', rows: [{ id: 't3', title: 'Ship docs', subtitle: 'Docs', chips: [chip('closed', 'muted')], reason: 'Merged last week' }] },
     {
       id: 'pipeline',
       title: 'Pipeline',
@@ -50,7 +51,6 @@ export const PAGE = {
         },
       ],
     },
-    { id: 'done', title: 'Done', rows: [{ id: 't3', title: 'Ship docs', subtitle: 'Docs', chips: [chip('closed', 'muted')], reason: 'Merged last week' }] },
   ],
 };
 
@@ -120,7 +120,7 @@ export function seedModule(a: Admiral, opts: { chat?: boolean } = {}): Module {
     // Admiral reads the kinds only at initialize, so they are written before the source starts.
     f.put('message-kinds.json', JSON.stringify([{ kind: 'review', label: 'Review', job: MESSAGE_JOB }]));
     const [first, ...rest] = PAGE.groups[0].rows;
-    m.page({ ...PAGE, groups: [{ ...PAGE.groups[0], rows: [{ ...first, actions: BUILTINS }, ...rest] }, PAGE.groups[1]] });
+    m.page({ ...PAGE, groups: [{ ...PAGE.groups[0], rows: [{ ...first, actions: BUILTINS }, ...rest] }, ...PAGE.groups.slice(1)] });
   } else m.page(PAGE);
   m.row('t1', detail('amy'));
   m.row('t4', pipelineDetail);
