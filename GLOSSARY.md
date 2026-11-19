@@ -158,7 +158,7 @@ A named setup such as Work Fleet or Home Fleet. It decides which harnesses its d
 _Avoid_: profile, workspace, account, group
 
 **Project**:
-A GitHub repo a fleet owns because it is checked out under the fleet's search roots, so the repo's issues and PRs show in that fleet.
+A GitHub repo a fleet owns because it is checked out under the fleet's search roots, so the repo's issues and PRs show in that fleet. Adding a project to a fleet means Admiral clones the repo into the fleet's clone root; a repo is a project of at most one fleet.
 
 **Owner**:
 An org or user account a fleet claims, so its repos route to that fleet when no fleet has them as a project.
