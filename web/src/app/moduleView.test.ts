@@ -1,7 +1,7 @@
-// A module page's chip tones, client filter and open-row refetch rule.
+// A module page's chip tones, client filter, open-row refetch rule and how a typed duration reads.
 import { expect, test } from 'vitest';
 import type { PageGroup } from './api';
-import { chipTone, filterGroups, shouldRefetchRow } from './moduleView';
+import { chipTone, durationLabel, filterGroups, parseDuration, shouldRefetchRow, toHHMM } from './moduleView';
 
 const groups: PageGroup[] = [
   {
@@ -85,4 +85,35 @@ test('an empty list of named rows names none of them', () => {
 test('nothing is refetched while the version has not moved', () => {
   expect(shouldRefetchRow('r1', 2, { version: 2 })).toBe(false);
   expect(shouldRefetchRow('r1', 2, { version: 2, rows: ['r1'] })).toBe(false);
+});
+
+test.each([
+  ['1:30', 90],
+  ['01:30', 90],
+  ['0:1', 1],
+  ['0:90', 90],
+  ['90', 90],
+  ['1', 1],
+  ['1.5', 90],
+  ['.5', 30],
+  ['1h30', 90],
+  ['1h 30m', 90],
+  ['1hr30', 90],
+  ['1h', 60],
+  ['45m', 45],
+  ['1.5h', 90],
+  ['90 min', 90],
+  ['2 hours', 120],
+  [' 1 Hour 30 Minutes ', 90],
+])('a duration typed as %j reads as %i minutes', (typed, want) => {
+  expect(parseDuration(typed)).toBe(want);
+});
+
+test.each(['', '  ', 'abc', '1:', ':30', '1:2:3', 'h', '30m 1h', '-5', '1,5', '100:00'])('a duration typed as %j cannot be read', (typed) => {
+  expect(parseDuration(typed)).toBeNull();
+});
+
+test('minutes read back as hours and minutes, and go to the plugin as two-digit hh:mm', () => {
+  expect([1, 45, 60, 90, 125].map(durationLabel)).toEqual(['1 min', '45 min', '1 h', '1 h 30 min', '2 h 5 min']);
+  expect([1, 90, 600, 5999].map(toHHMM)).toEqual(['00:01', '01:30', '10:00', '99:59']);
 });

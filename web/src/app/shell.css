@@ -1309,6 +1309,11 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .mform .mform-option { display: flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); }
 .mform input[type="text"] { font: inherit; min-height: var(--shape-min-touch-target); padding: 0 10px; }
 .mform .mform-note { margin: 0; color: var(--color-needs); font-size: var(--font-size-meta); }
+.mform .mform-duration { display: flex; align-items: center; gap: 12px; }
+.mform .mform-duration input { flex: 0 1 220px; min-width: 0; }
+.mform-read { font-weight: 600; color: var(--color-ok); }
+.mform-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.mform .mform-hint { margin: 0; color: var(--color-muted); font-size: var(--font-size-meta); }
 .mnotices { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .mnotice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 8px 12px; border: 1px solid var(--color-accent); border-radius: var(--shape-radius-sm); color: var(--color-text); overflow-wrap: anywhere; }
 .mnotice a { color: var(--color-accent); min-height: 24px; }
@@ -1319,8 +1324,38 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .module-filter { width: auto; margin: 12px 20px; }
 .module-page .msection h3 { margin: 0 0 8px; font-size: var(--font-size-meta); font-weight: 600; color: var(--color-text2); }
 .module-page .mlinks, .odetail .mlinks, .odetail .msteps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.odetail .msteps li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: var(--shape-min-touch-target); }
-.odetail .msection h3 { margin: 0 0 8px; font-size: var(--font-size-meta); font-weight: 600; color: var(--color-text2); }
+.odetail .msection { padding-top: 16px; border-top: 1px solid var(--color-line); }
+.odetail .msection h3 { margin: 0 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--color-muted); }
+.odetail .msection .mcount { margin-left: 6px; font-weight: 600; }
+.odetail .mlinks { gap: 0; }
+.odetail .mlinks li { padding: 8px 0; border-bottom: 1px solid var(--color-line); overflow-wrap: anywhere; }
+.odetail .mlinks li:last-child { border-bottom: 0; }
+a.mlink { color: var(--color-accent); font-weight: 600; text-decoration: none; }
+a.mlink:hover { text-decoration: underline; }
+.mlink-out { margin-left: 3px; font-size: .85em; opacity: .8; }
+/* Each step is a card, so a step's chips and actions never run into the next step's. */
+.odetail .msteps { gap: 10px; }
+.odetail .mstep { padding: 10px 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); }
+.odetail .mstep.next { border-color: color-mix(in srgb, var(--color-accent) 55%, transparent); box-shadow: inset 3px 0 0 var(--color-accent); background: color-mix(in srgb, var(--color-accent) 4%, var(--color-panel)); }
+.mstep-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mstep-title { font-weight: 600; margin-right: 2px; }
+.mstep-sub { margin: 4px 0 0; font-size: var(--font-size-meta); color: var(--color-muted); overflow-wrap: anywhere; }
+.mstep .mchip { white-space: normal; }
+.mstep .mactions { display: flex; margin-top: 10px; }
+.mchip.mnext { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); font-weight: 600; }
+.btn.mact-small { min-height: 30px; padding: 0 10px; font-size: 13px; font-weight: 500; }
+.btn.mact-small.lead, .btn.mact-small[aria-pressed="true"] { color: var(--color-accent); border-color: color-mix(in srgb, var(--color-accent) 50%, transparent); font-weight: 600; }
+@media (pointer: coarse) { .btn.mact-small { min-height: var(--shape-min-touch-target); } }
+/* A row with a target says what its actions act on, on a line of its own under the row. */
+.module-page .mrow-target { flex-direction: column; align-items: stretch; gap: 0; }
+/* In a column, a row button's 12em basis would be its height. */
+.module-page .orow.mrow-target .orow-open, .module-page .orow-phone.mrow-target .orow-open { flex: none; }
+.mtarget { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0 10px; border-top: 1px dashed var(--color-line); }
+.module-page .orow-phone.mrow-target .mtarget { margin-right: 10px; }
+.module-page .mtarget .mactions { margin: 0; }
+.mtarget-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-right: auto; font-size: var(--font-size-meta); color: var(--color-text2); }
+.mtarget-label strong { font-weight: 600; color: var(--color-text); }
+.mtarget-arrow { color: var(--color-accent); font-weight: 700; }
 .phone .module-page .odetail { padding: 8px 14px; }
 .orders-split > .module-page { flex: 1; min-width: 0; min-height: 0; }
 .module-page .orow-open { flex-wrap: wrap; }

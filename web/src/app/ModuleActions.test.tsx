@@ -248,12 +248,58 @@ test('a duration below its minimum keeps Submit disabled with a note, and a vali
   expect(submit.disabled).toBe(false);
   fireEvent.input(within(dialog).getByLabelText('Time'), { target: { value: '00:05' } });
   expect(submit.disabled).toBe(true);
-  expect(within(dialog).getByText(/00:15/)).toBeTruthy();
+  expect(within(dialog).getByText('At least 15 min.')).toBeTruthy();
   fireEvent.click(submit);
   expect(runPosts(posts)).toHaveLength(0);
   fireEvent.input(within(dialog).getByLabelText('Time'), { target: { value: '00:15' } });
   expect(submit.disabled).toBe(false);
-  expect(within(dialog).queryByText(/00:15/)).toBeNull();
+  expect(within(dialog).queryByText('At least 15 min.')).toBeNull();
+});
+
+const durationForm = (extra: Record<string, unknown> = {}) => () => ({ body: { title: 'Close task', fields: [{ id: 'time', label: 'Time spent', type: 'duration', ...extra }] } });
+
+test('a duration reads 1:30, 0:1, 90, 1h30 and 1.5 alike, says what it read, and sends the plugin hh:mm', async () => {
+  const posts = server({ form: durationForm() });
+  open();
+  const dialog = await openForm();
+  const time = await within(dialog).findByLabelText('Time spent');
+  for (const [typed, read] of [['1:30', '= 1 h 30 min'], ['0:1', '= 1 min'], ['90', '= 1 h 30 min'], ['1h30', '= 1 h 30 min'], ['1.5', '= 1 h 30 min']]) {
+    fireEvent.input(time, { target: { value: typed } });
+    expect(within(dialog).getByText(read)).toBeTruthy();
+  }
+  fireEvent.input(time, { target: { value: '1h 5m' } });
+  expect(within(dialog).getByText(/Saved as 01:05/)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Submit' }));
+  await waitFor(() => expect(runPosts(posts)).toHaveLength(1));
+  expect(runPosts(posts)[0].body).toEqual({ values: { time: '01:05' } });
+});
+
+test('an empty duration keeps Submit disabled with no note, and one it cannot read says how to type it', async () => {
+  server({ form: durationForm() });
+  open();
+  const dialog = await openForm();
+  const time = await within(dialog).findByLabelText('Time spent');
+  const submit = within(dialog).getByRole('button', { name: 'Submit' }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  expect(dialog.querySelector('.mform-note')).toBeNull();
+  fireEvent.input(time, { target: { value: 'soon' } });
+  expect(within(dialog).getByText(/Couldn't read that/)).toBeTruthy();
+  expect(submit.disabled).toBe(true);
+  fireEvent.input(time, { target: { value: '100:00' } });
+  expect(submit.disabled).toBe(true);
+});
+
+test('a quick pick fills the duration and shows as picked, and no pick under the minimum is offered', async () => {
+  const posts = server({ form: durationForm({ min: '00:30' }) });
+  open();
+  const dialog = await openForm();
+  await within(dialog).findByLabelText('Time spent');
+  expect(within(dialog).queryByRole('button', { name: '15m' })).toBeNull();
+  fireEvent.click(within(dialog).getByRole('button', { name: '1h' }));
+  expect((within(dialog).getByLabelText('Time spent') as HTMLInputElement).value).toBe('1h');
+  expect(within(dialog).getByRole('button', { name: '1h' }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Submit' }));
+  await waitFor(() => expect(runPosts(posts)[0].body).toEqual({ values: { time: '01:00' } }));
 });
 
 test('a form that fails to load shows its message in the sheet with a way to close it, and runs nothing', async () => {

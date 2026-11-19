@@ -712,12 +712,21 @@ export interface PageChip {
   label: string;
   tone?: string;
 }
+/** What a row's module actions act on; `step` names the step of the row's detail it is. */
+export interface PageTarget {
+  label: string;
+  chips?: PageChip[];
+  step?: string;
+}
 export interface PageRow {
   id: string;
   title: string;
   subtitle?: string;
+  /** The row's own page upstream, linked from its subtitle in the detail. */
+  url?: string;
   chips?: PageChip[];
   reason?: string;
+  target?: PageTarget;
   action?: PageAction;
   actions?: PageAction[];
 }
@@ -748,6 +757,7 @@ export interface RowLink {
 export interface RowStep {
   id: string;
   title: string;
+  subtitle?: string;
   chips?: PageChip[];
   action?: PageAction;
   actions?: PageAction[];
