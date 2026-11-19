@@ -950,7 +950,7 @@ A Check or the Guidance that the prose does not hold (compared after whitespace 
 
 ### `POST /api/fleets/<key>/routines/draft`
 
-`{"prose": "…"}`. The same judge call, for a routine: `{"draft": {"name", "enabled", "when", "do": {"prompt": "…"}, "before_acting", "notify"}, "problems": [{"field": "name|when|before_acting|do", "message": "…"}]}`. The draft is a prompt routine and is checked as a save would be; it is not saved as a routine. The 400, 409 and 502 answers are the standing-orders draft's.
+`{"prose": "…"}`. The same judge call, for a routine: `{"draft": {"name", "enabled", "when", "do": {"prompt": "…"} or {"digest": {"extra": "…"}}, "before_acting", "notify"}, "problems": [{"field": "name|when|before_acting|do", "message": "…"}]}`. The draft is a prompt routine, or a fleet digest when the description asks for a summary of what changed (`do.digest`, with `extra` only when the engineer gave words), and is checked as a save would be; it is not saved as a routine. The 400, 409 and 502 answers are the standing-orders draft's.
 
 The 200 answer is `{"id": "…", "draft": {…}, "problems": […]}`: the server also keeps the routine draft, in memory, for that fleet. `id` is unguessable URL-safe text and the `draft` object has no id. A routine draft is kept for 1 hour, a fleet keeps at most 50 (the oldest goes first), and a restart drops them all. A call that fails (400, 404, 409, 502) keeps nothing. Both "Describe a routine" and AdmiralBot's `draft_routine` tool come through here. The Routines screen opens a kept draft at `/app/routines/new?fleet=<key>&draft=<id>`, filled in and unsaved; an expired or unknown draft opens the empty form with a note saying so.
 

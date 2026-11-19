@@ -3,7 +3,7 @@ import type { Dock, FleetCapabilities, Source } from './api';
 import { effortsFor, sourcesForFleet, type SkillChoice } from './launchForm';
 
 export type Before = 'report_only' | 'ask_first' | 'act';
-export type Outcome = 'launched' | 'proposed' | 'skipped' | 'missed' | 'failed' | 'reported' | 'breaker';
+export type Outcome = 'launched' | 'proposed' | 'skipped' | 'missed' | 'failed' | 'reported' | 'breaker' | 'queued';
 
 export interface RoutineLaunch {
   harness: string;
@@ -22,7 +22,7 @@ export interface Routine {
   when: string;
   /** A source event the routine runs on, instead of a schedule; `when` is empty then. */
   on?: { source: string; kind: string; panel?: string };
-  do: { launch?: RoutineLaunch; prompt?: string };
+  do: { launch?: RoutineLaunch; prompt?: string; digest?: { extra?: string } };
   before_acting: Before;
   notify: boolean;
   off_by?: string;
@@ -72,9 +72,10 @@ export interface RoutineForm {
   enabled: boolean;
   when: string;
   on?: Routine['on'];
-  mode: 'launch' | 'prompt';
+  mode: 'launch' | 'prompt' | 'digest';
   launch: { harness: string; dir: string; text: string; model: string; effort: string; args: string; skill: SkillChoice; resources: string[] };
   prompt: string;
+  extra: string;
   before: Before;
   notify: boolean;
 }
@@ -112,6 +113,8 @@ export function runLine(run: RoutineRun): { dot: RunDot; text: string; ship?: st
       if (run.ship) return { dot: 'ok', text: `Launched ${run.ship}${from}${undone}`, ship: run.ship };
       return { dot: 'ok', text: `AdmiralBot prompt sent${from}${undone}` };
     }
+    case 'queued':
+      return { dot: 'ok', text: 'Digest posted to AdmiralBot' };
     case 'proposed':
       return { dot: 'ok', text: 'Proposed, waiting in the Inbox for your go-ahead' };
     case 'reported':
@@ -181,7 +184,7 @@ export function errorField(message: string): RoutineField | 'form' {
   if (/^Text\b/.test(m)) return 'text';
   if (/^name\b/.test(m)) return 'name';
   if (/^when\b|^on\b|^an event routine has no when/.test(m)) return 'when';
-  if (/^an event routine launches a ship/.test(m)) return 'do';
+  if (/^an event routine launches a ship|^a digest\b|^the digest/.test(m)) return 'do';
   if (/^before_acting\b|^before acting\b/i.test(m)) return 'before_acting';
   if (/^(do\b|the prompt|autopilot|args|skill|no resource|fleet \S+ has no)/.test(m)) return 'do';
   return 'form';
@@ -259,7 +262,7 @@ export function holdFireNote(before: Before, holdFireOn: boolean): string | null
 }
 
 export function blankForm(): RoutineForm {
-  return { name: '', enabled: true, when: '', mode: 'launch', launch: { harness: '', dir: '', text: '', model: '', effort: '', args: '', skill: { kind: 'none' }, resources: [] }, prompt: '', before: 'ask_first', notify: false };
+  return { name: '', enabled: true, when: '', mode: 'launch', launch: { harness: '', dir: '', text: '', model: '', effort: '', args: '', skill: { kind: 'none' }, resources: [] }, prompt: '', extra: '', before: 'ask_first', notify: false };
 }
 
 /** The request body for create and update. */
@@ -276,13 +279,14 @@ export function routineBody(form: RoutineForm): Record<string, unknown> {
     ...(l.skill.kind !== 'none' ? { skill: l.skill } : {}),
     ...(l.resources.length ? { resources: l.resources } : {}),
   };
-  return { name: form.name, enabled: form.enabled, ...(form.on ? { on: form.on } : { when: form.when }), do: form.mode === 'prompt' ? { prompt: form.prompt } : { launch }, before_acting: form.before, notify: form.notify };
+  return { name: form.name, enabled: form.enabled, ...(form.on ? { on: form.on } : { when: form.when }), do: form.mode === 'digest' ? { digest: form.extra.trim() ? { extra: form.extra } : {} } : form.mode === 'prompt' ? { prompt: form.prompt } : { launch }, before_acting: form.before, notify: form.notify };
 }
 
 /** The form a stored routine opens in. */
 export function formOfRoutine(r: Routine): RoutineForm {
   const l = r.do.launch;
   const form = { ...blankForm(), name: r.name, enabled: r.enabled, when: r.when, ...(r.on ? { on: r.on } : {}), before: r.before_acting, notify: r.notify };
+  if (r.do.digest) return { ...form, mode: 'digest', extra: r.do.digest.extra ?? '' };
   if (!l) return { ...form, mode: 'prompt', prompt: r.do.prompt ?? '' };
   return {
     ...form,

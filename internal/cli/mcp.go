@@ -227,6 +227,9 @@ func draftRoutine(c *mcpClient, raw json.RawMessage) (string, error) {
 			Notify  bool   `json:"notify"`
 			Do      struct {
 				Prompt string `json:"prompt"`
+				Digest *struct {
+					Extra string `json:"extra"`
+				} `json:"digest"`
 			} `json:"do"`
 		} `json:"draft"`
 		Problems []struct {
@@ -250,9 +253,16 @@ func draftRoutine(c *mcpClient, raw json.RawMessage) (string, error) {
 	if d.Enabled {
 		state = "on"
 	}
+	does := oneLine(d.Do.Prompt)
+	if d.Do.Digest != nil {
+		does = "post a fleet digest to the chat; it reads only and cannot act"
+		if extra := oneLine(d.Do.Digest.Extra); extra != "" {
+			does += ", with the extra words: " + extra
+		}
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Drafted a routine, unsaved: %q.\nWhen: %s\nWhat it does: %s\nBefore acting: %s\nNotify: %s\nOnce saved it will be %s.\n",
-		d.Name, oneLine(d.When), oneLine(d.Do.Prompt), before, notify, state)
+		d.Name, oneLine(d.When), does, before, notify, state)
 	for _, p := range r.Problems {
 		fmt.Fprintf(&b, "Problem with %s: %s\n", oneLine(p.Field), oneLine(p.Message))
 	}

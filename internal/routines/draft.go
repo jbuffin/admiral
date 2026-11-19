@@ -61,7 +61,7 @@ const routineSchema = `{"type":"object","properties":{` +
 	`"when":{"type":"string"},` +
 	`"before_acting":{"type":"string","enum":["report_only","ask_first","act"]},` +
 	`"notify":{"type":"boolean"},` +
-	`"do":{"type":"object","properties":{"prompt":{"type":"string"}},"required":["prompt"],"additionalProperties":false}` +
+	`"do":{"type":"object","properties":{"prompt":{"type":"string"},"digest":{"type":"object","properties":{"extra":{"type":"string"}},"additionalProperties":false}},"additionalProperties":false}` +
 	`},"required":["name","enabled","when","before_acting","notify","do"],"additionalProperties":false}`
 
 type problem struct {
