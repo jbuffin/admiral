@@ -15,6 +15,7 @@ type PostedShipCard struct {
 	Name   string
 	Result string
 	PRs    []string
+	Branch string // stub: the card's branch, not yet read
 }
 
 // PostedShipCards are the ship cards the fleet's chat log holds that were logged after since, oldest first. A card has no At of its own, so At is when it was logged.

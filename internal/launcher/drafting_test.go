@@ -170,7 +170,7 @@ func launchedDrafting(t *testing.T, p *pinRig, req Request) (out *Launched, cwd,
 
 func draftingWorktreeRig(t *testing.T) *pinRig {
 	t.Helper()
-	p, _, _ := worktreeRig(t)
+	p := githubRig(t, "https://github.com/acme/api.git")
 	putFile(t, filepath.Join(p.work, "wip.txt"), "untracked\n")
 	skill := filepath.Join(p.work, ".claude", "skills", "wayfinder")
 	mustMkdir(t, skill)

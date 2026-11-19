@@ -25,6 +25,7 @@ type CardFact struct {
 	Name   string
 	Result string
 	PRs    []string
+	Branch string // stub: a local-only done card's branch, not yet shown
 }
 
 // ShipFact is a ship's current state; only a moored ship has a merge state to show.

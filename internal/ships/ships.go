@@ -112,6 +112,9 @@ type Ship struct {
 	HandFailed string `json:"hand_failed,omitempty"`
 	// Drafting is set on a drafting ship that has filed no campaign the fleet follows yet.
 	Drafting bool `json:"drafting,omitempty"`
+	// LocalOnly is set on a ship launched from a checkout with no GitHub origin; Branch is the branch its worktree holds.
+	LocalOnly bool   `json:"local_only,omitempty"`
+	Branch    string `json:"branch,omitempty"`
 	// DraftingNotice is the line about the last campaign a drafting ship named that was refused or ignored.
 	DraftingNotice string `json:"drafting_notice,omitempty"`
 	// CarriesPRs is set on a live ship that carries a PR still open, which returns to port only once its PRs are merged.

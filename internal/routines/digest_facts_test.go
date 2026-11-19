@@ -300,3 +300,17 @@ func TestTwoDigestRoutinesInOneFleetEachSeeTheSameCampaignChangeAndAFailedRunKee
 		t.Errorf("weekly digest again = %q, want nothing: its run was committed", got)
 	}
 }
+
+func TestAShipDoneOnItsBranchInTheWindowIsAFactNamingTheBranchAndOutOfWindowOnesAreNot(t *testing.T) {
+	in := &factInputs{cards: []routines.CardFact{
+		{At: inWindow(), Ship: "s-dory", Name: "dory", Result: "done", Branch: "admiral/s-dory"},
+		{At: winFrom.Add(-time.Hour), Ship: "s-old", Name: "old-skiff", Result: "done", Branch: "admiral/s-old"},
+	}}
+	got := joined(in.facts(t))
+	if !strings.Contains(got, "dory") || !strings.Contains(got, "admiral/s-dory") || !strings.Contains(strings.ToLower(got), "done") {
+		t.Errorf("facts = %q, want dory listed as done on admiral/s-dory", got)
+	}
+	if strings.Contains(got, "old-skiff") {
+		t.Errorf("facts = %q, want no ship done before the window", got)
+	}
+}

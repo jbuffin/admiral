@@ -47,6 +47,7 @@ type ShipCard struct {
 	SkillKind     string
 	Result        string
 	PRs           []ShipCardPR
+	Branch        string // the branch of a local-only ship's work; stub, not yet posted
 	ReportResult  string // the Admiral report's result when its ended record carried one; not part of the posted card
 }
 

@@ -277,26 +277,6 @@ func TestAFailedFirstLaunchRemovesTheWorktreeItMade(t *testing.T) {
 	}
 }
 
-func TestALaunchFromACheckoutWithNoOriginFailsVisiblyAndPutsNoShipToSea(t *testing.T) {
-	p := newPinRig(t, nil)
-	p.l.Worktrees = GitWorktrees{}
-	commitRepo(t, p.work)
-	_, err := p.l.Launch(p.noSkill())
-	var lerr *Error
-	if !errors.As(err, &lerr) {
-		t.Fatalf("Launch error = %v, want a launch refusal", err)
-	}
-	if !strings.Contains(lerr.Msg, "origin") {
-		t.Errorf("refusal = %q, want it to name origin", lerr.Msg)
-	}
-	if got := p.sessionNames(t); len(got) != 0 {
-		t.Errorf("tmux sessions = %v, want no ship put to sea", got)
-	}
-	if got := worktreePaths(t, p.work); len(got) != 1 {
-		t.Errorf("git worktree list = %v, want the checkout alone", got)
-	}
-}
-
 func TestALaunchWhoseFetchFailsFailsVisiblyInsteadOfFallingBackToTheLocalHead(t *testing.T) {
 	p := newPinRig(t, nil)
 	p.l.Worktrees = GitWorktrees{}
