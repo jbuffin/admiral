@@ -38,7 +38,7 @@ type turnState struct {
 	loaded    bool
 	queue     []queuedTurn
 	delivered []string
-	reported  []string // ship cards whose reply was handed over, so one reply pushes once
+	replied   []string // turn ids (ship cards or digest turns) whose reply was handed over, so one reply pushes once
 
 	activeID string // the id of the turn that is active
 	active   bool   // a turn was pasted and has not ended
@@ -82,14 +82,14 @@ func (s *fleetChat) turns(f func(t *turnState)) {
 			_ = os.Rename(s.turnsPath(), s.turnsPath()+".bad")
 			file.Queue, file.Delivered, file.Reported = nil, nil, nil
 		}
-		t.queue, t.delivered, t.reported = file.Queue, file.Delivered, file.Reported
+		t.queue, t.delivered, t.replied = file.Queue, file.Delivered, file.Reported
 	}
 	f(t)
 }
 
 // saveTurnsLocked writes the queue by temp file and rename; the caller holds t.mu.
 func (s *fleetChat) saveTurnsLocked(t *turnState) error {
-	b, err := json.MarshalIndent(map[string]any{"queue": t.queue, "delivered": t.delivered, "reported": t.reported}, "", "  ")
+	b, err := json.MarshalIndent(map[string]any{"queue": t.queue, "delivered": t.delivered, "reported": t.replied}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -340,12 +340,12 @@ func (s *fleetChat) deliver(q queuedTurn) {
 		return
 	}
 	s.th.mu.Lock()
-	prev := threadState{id: s.th.id, since: s.th.since, seen: s.th.seen, ended: s.th.ended}
+	prev := threadState{turn: s.th.turn, since: s.th.since, seen: s.th.seen, ended: s.th.ended}
 	s.th.open(q.ID)
 	s.th.mu.Unlock()
 	if err := s.pasteMessage(pane, q.Text); err != nil {
 		s.th.mu.Lock()
-		s.th.id, s.th.since, s.th.seen, s.th.ended = prev.id, prev.since, prev.seen, prev.ended
+		s.th.turn, s.th.since, s.th.seen, s.th.ended = prev.turn, prev.since, prev.seen, prev.ended
 		s.th.mu.Unlock()
 		s.turns(func(t *turnState) {
 			if msg := err.Error(); msg != t.lastErr {

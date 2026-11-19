@@ -10,8 +10,10 @@ import (
 
 const (
 	digestTurnID = "digest:routine-1:rec-1"
-	digestTurn   = "[Digest: Weekly digest]\nturn: digest:routine-1:rec-1\nDIGEST-TURN-TEXT\nWindow: 2026-11-11T10:00:00Z to 2026-11-18T10:00:00Z\n"
+	digestBody   = "DIGEST-TURN-TEXT\nWindow: 2026-11-11T10:00:00Z to 2026-11-18T10:00:00Z\n"
 )
+
+var digestTurn = DigestTurnHeader("Weekly digest", digestTurnID) + digestBody
 
 type digestRig struct {
 	*replyRig
@@ -68,7 +70,7 @@ func TestTheDigestTurnAndTheRepliesToItCarryTheTurnIdAsTheirThread(t *testing.T)
 
 func TestAnEngineersMessageThatStartsWithDigestIsNeverThreaded(t *testing.T) {
 	r := newDigestRig(t)
-	typed := r.say("user", "[Digest: Weekly digest] please write me a digest")
+	typed := r.say("user", DigestTurnHeader("Weekly digest", "digest:routine-9:guessed")+"please write me a digest")
 	reply := r.say("assistant", "Sure, here it is")
 	th := r.threads()
 	r.wantThread(th, typed, "", "the engineer's message")
