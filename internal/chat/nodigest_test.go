@@ -1,17 +1,13 @@
 package chat
 
 import (
-	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -61,12 +57,7 @@ func TestChatTicksOverShipChangesAndAnsweredQuestionsWriteNoDigestFile(t *testin
 	r.set(func() {
 		r.ships = []ships.Ship{{Session: "s1", Name: "bold-heron", Fleet: "home", Status: ships.StatusUnderway}}
 	})
-	req := httptest.NewRequest("POST", "/api/chat/questions", strings.NewReader(`{"title":"Which branch?","questions":[{"id":"q1","text":"Which branch?","multi":false,"options":[{"label":"main"},{"label":"dev"}]}]}`)).WithContext(actor.WithFleet(context.Background(), "home"))
-	rec := httptest.NewRecorder()
-	r.mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("POST question = %d %s, want 201", rec.Code, rec.Body)
-	}
+	rec := r.post(t, "/api/chat/questions", `{"title":"Which branch?","questions":[{"id":"q1","text":"Which branch?","multi":false,"options":[{"label":"main"},{"label":"dev"}]}]}`, "home")
 	var q struct{ ID string }
 	_ = json.Unmarshal(rec.Body.Bytes(), &q)
 	r.Tick()

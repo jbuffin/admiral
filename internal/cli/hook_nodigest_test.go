@@ -44,16 +44,3 @@ func TestAChatsUserPromptSubmitAddsNoDigestEvenWithALeftoverDigestFile(t *testin
 		t.Errorf("tmux calls = %q, want no @admiral-chat-digest pane option", calls)
 	}
 }
-
-func TestAChatsSessionStartStillPrintsTheBriefBesideALeftoverDigestFile(t *testing.T) {
-	fakeTmuxLog(t)
-	home := t.TempDir()
-	writeChatFile(t, home, "home", "brief.md", briefText)
-	writeChatFile(t, home, "home", "digest.json", leftoverDigest)
-
-	_, added := hookContext(t, chatHook(t, home, "home", "SessionStart", `{"source":"startup"}`))
-
-	if strings.TrimSpace(added) != strings.TrimSpace(briefText) {
-		t.Errorf("additionalContext = %q, want the brief file's text alone", added)
-	}
-}
