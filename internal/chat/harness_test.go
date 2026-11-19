@@ -140,7 +140,7 @@ func TestTheChatReaderDecodesWithTheFleetsChatHarness(t *testing.T) {
 	}
 }
 
-func TestOnlyAClaudeChatGetsABriefAndADigest(t *testing.T) {
+func TestOnlyAClaudeChatGetsABrief(t *testing.T) {
 	s := harnessService(t, copilotChat, fakeProbes{"cop/copilot/bot.mcp_fence": {"passed", ""}, "cop/copilot/bot.config_home": {"passed", ""}})
 	s.Ships = func() []ships.Ship { return nil }
 	for _, fleet := range []string{"cl", "cop"} {

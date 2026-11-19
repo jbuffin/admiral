@@ -23,8 +23,7 @@ type LaunchCard struct {
 	Restricted  string // investigate or draft_fix at A3, else empty
 }
 
-// PostLaunchCard appends the card to the fleet's chat log; a card whose ID the log holds adds nothing. It writes nothing to
-// the digest, which AdmiralBot reads.
+// PostLaunchCard appends the card to the fleet's chat log; a card whose ID the log holds adds nothing.
 func (s *Service) PostLaunchCard(fleet string, c LaunchCard) error {
 	card, err := json.Marshal(map[string]any{
 		"routine": c.Routine, "routine_name": c.RoutineName, "tier": c.Tier, "sender": c.Sender,

@@ -517,7 +517,7 @@ func serve(args []string) error {
 	shipService.ChatPrompt = chatService.PromptKey
 	shipService.PromptKey = chatService.PromptKey
 	chatService.Findings = shipService.Findings()
-	chatService.Ships, chatService.Campaigns, chatService.Inbox = shipService.List, followStore.List, inboxService.List
+	chatService.Ships, chatService.Campaigns = shipService.List, followStore.List
 	sourceService.IssueClaims = shipService.Claims
 	sourceService.SendChat = chatService.SendStatus
 	chatService.SourceFleet = func(key string) (string, bool) {

@@ -50,7 +50,7 @@ type ShipCard struct {
 	ReportResult  string // the Admiral report's result when its ended record carried one; not part of the posted card
 }
 
-// PostShipCard appends the card to the fleet's chat log, once per voyage and result. It starts no turn and writes no digest line.
+// PostShipCard appends the card to the fleet's chat log, once per voyage and result. It starts no turn.
 func (s *Service) PostShipCard(fleet string, c ShipCard) error {
 	type pr struct {
 		URL    string `json:"url"`

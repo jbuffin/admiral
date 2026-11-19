@@ -25,8 +25,7 @@ type EventCard struct {
 	ReviewerReason string
 }
 
-// PostEventCard appends the card to the fleet's chat log; a card whose ID the log holds adds nothing. It writes nothing to
-// the digest, which AdmiralBot reads.
+// PostEventCard appends the card to the fleet's chat log; a card whose ID the log holds adds nothing.
 func (s *Service) PostEventCard(fleet string, c EventCard) error {
 	card, err := json.Marshal(map[string]any{
 		"routine": c.Routine, "routine_name": c.RoutineName, "tier": c.Tier, "sender": c.Sender,

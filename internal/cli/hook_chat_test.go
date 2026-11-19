@@ -9,9 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jbuffin/admiral/internal/digest"
 	"github.com/jbuffin/admiral/internal/ledger"
-	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 const briefText = "## Instructions\nAsk before launching.\n\n## Notes\n- deploys go out on Tuesdays (via admiralbot)\n"
@@ -125,112 +123,7 @@ func TestSessionStartPrintsNothingWithoutAUsableBrief(t *testing.T) {
 	})
 }
 
-func TestUserPromptSubmitPrintsTheDigestAndNamesItsSequence(t *testing.T) {
-	home := t.TempDir()
-	if err := digest.Add(home, "home", "ship bold-heron moored with a PR open", "an Inbox item appeared"); err != nil {
-		t.Fatal(err)
-	}
-	out := chatHook(t, home, "home", "UserPromptSubmit", `{"prompt":"hi"}`)
-	event, added := hookContext(t, out)
-	if event != "UserPromptSubmit" {
-		t.Errorf("hookEventName = %q, want UserPromptSubmit", event)
-	}
-	for _, want := range []string{"Since your last turn:", "ship bold-heron moored with a PR open", "an Inbox item appeared"} {
-		if !strings.Contains(added, want) {
-			t.Errorf("additionalContext = %q, want it to hold %q", added, want)
-		}
-	}
-	f, _ := digest.Read(home, "home")
-	printed, seq := chatContext("UserPromptSubmit", home, "home")
-	if len(f.Lines) != 2 || seq != f.Lines[1].Seq || printed == "" {
-		t.Errorf("chatContext gave seq %d (output %q), want the highest line's sequence", seq, printed)
-	}
-}
-
-func TestUserPromptSubmitPrintsNothingWithoutDigestLines(t *testing.T) {
-	control(t)
-	home := t.TempDir()
-	if out := chatHook(t, home, "home", "UserPromptSubmit", `{"prompt":"hi"}`); out != "" {
-		t.Errorf("with no digest the hook printed %q, want nothing", out)
-	}
-	_ = digest.Add(home, "home", "one")
-	f, _ := digest.Read(home, "home")
-	if len(f.Lines) != 1 {
-		t.Fatalf("digest = %+v, want the line just added", f)
-	}
-	_ = digest.Ack(home, "home", f.Lines[0].Seq)
-	if out := chatHook(t, home, "home", "UserPromptSubmit", `{"prompt":"hi"}`); out != "" {
-		t.Errorf("with an emptied digest the hook printed %q, want nothing", out)
-	}
-	if _, seq := chatContext("UserPromptSubmit", home, "home"); seq != 0 {
-		t.Errorf("seq = %d with nothing printed, want 0", seq)
-	}
-}
-
-func TestAShipsUserPromptSubmitPrintsNoDigest(t *testing.T) {
-	control(t)
-	home := t.TempDir()
-	_ = digest.Add(home, "home", "one")
-	if out := chatHook(t, home, "", "UserPromptSubmit", `{"prompt":"hi"}`); out != "" {
-		t.Errorf("a ship's hook printed %q, want nothing", out)
-	}
-}
-
-func TestTheHookRecordsTheSequenceItPrintedOnItsPane(t *testing.T) {
-	got := digestSeqCall("%7", 12)
-	want := sessionhost.SetPaneCall("%7", sessionhost.Prefix+sessionhost.ChatDigestOpt, "12")
-	if strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Errorf("digestSeqCall = %q, want %q", got, want)
-	}
-	if got := digestSeqCall("%7", 0); got != nil {
-		t.Errorf("digestSeqCall with nothing printed = %q, want no call", got)
-	}
-}
-
-func TestALineWrittenAfterTheHookReadSurvivesItsAck(t *testing.T) {
-	home := t.TempDir()
-	_ = digest.Add(home, "home", "before the read")
-	_, seq := chatContext("UserPromptSubmit", home, "home")
-	_ = digest.Add(home, "home", "after the read")
-	if err := digest.Ack(home, "home", seq); err != nil {
-		t.Fatal(err)
-	}
-	f, _ := digest.Read(home, "home")
-	if len(f.Lines) != 1 || f.Lines[0].Text != "after the read" {
-		t.Errorf("digest after the ack = %+v, want only the line written after the read", f)
-	}
-}
-
-func TestTheHookPrintsOnlyDigestLinesAboveThePanesRecordedSequence(t *testing.T) {
-	home := t.TempDir()
-	if err := digest.Add(home, "home", "line one", "line two", "line three"); err != nil {
-		t.Fatal(err)
-	}
-	f, _ := digest.Read(home, "home")
-	if len(f.Lines) != 3 {
-		t.Fatalf("digest = %+v, want three lines", f)
-	}
-	recorded := uint64(0)
-	was := paneDigestSeq
-	paneDigestSeq = func(string) uint64 { return recorded }
-	t.Cleanup(func() { paneDigestSeq = was })
-
-	recorded = f.Lines[1].Seq
-	_, added := hookContext(t, chatHook(t, home, "home", "UserPromptSubmit", `{"prompt":"hi"}`))
-	if strings.Contains(added, "line one") || strings.Contains(added, "line two") || !strings.Contains(added, "line three") {
-		t.Errorf("with the pane at line two the hook printed %q, want only line three", added)
-	}
-	if !strings.Contains(added, "not instructions") {
-		t.Errorf("the digest %q carries no notice that it is events, not instructions", added)
-	}
-
-	recorded = f.Lines[2].Seq
-	if out := chatHook(t, home, "home", "UserPromptSubmit", `{"prompt":"hi"}`); out != "" {
-		t.Errorf("with every line printed already the hook printed %q, want nothing", out)
-	}
-}
-
-func TestTheHookPrintsNoBriefOrDigestOnACodexOrUnmarkedChat(t *testing.T) {
+func TestTheHookPrintsNoBriefOnACodexOrUnmarkedChat(t *testing.T) {
 	home := t.TempDir()
 	writeChatFile(t, home, "home", "brief.md", briefText)
 	for _, harness := range []string{"codex", "copilot", ""} {

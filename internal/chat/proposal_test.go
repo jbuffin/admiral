@@ -313,28 +313,6 @@ func TestARemovedAnsweredProposalKeepsItsAnswerInTheThreadSoItsCardReadsAnswered
 	}
 }
 
-func TestNoAnsweredYourQuestionLineIsMadeForAProposalButIsForAdmiralBotsOwn(t *testing.T) {
-	r := newBriefRig(t)
-	own := r.post(t, "/api/chat/questions", askBody, "home")
-	var asked struct{ ID string }
-	_ = json.Unmarshal(own.Body.Bytes(), &asked)
-	propose(t, r, "home")
-	r.Tick()
-	r.reply(t, "home", propID, choice(commitments.ProposalYes))
-	req := inbox.QuestionRequest{Answers: map[string]inbox.QuestionAnswer{"q1": choice("main")}}
-	if err := r.AnswerQuestion(sessionhost.ChatSession("home"), asked.ID, req); err != nil {
-		t.Fatal(err)
-	}
-	r.Tick()
-	lines := lineTexts(r.digest(t, "home"))
-	if !strings.Contains(lines, "answered your question: Which branch?") {
-		t.Fatalf("digest %q; want the line for AdmiralBot's own question", lines)
-	}
-	if strings.Contains(lines, "Annex doors") {
-		t.Errorf("digest %q; want no line for the proposal's answer", lines)
-	}
-}
-
 func TestCancellingACampaignCommitmentWithdrawsItsOpenProposal(t *testing.T) {
 	r := newBriefRig(t)
 	c, _, err := r.notes().AddCampaignCommitment("home", ledger.Commitment{Text: "work on acme/widgets#20", Trigger: ledger.Trigger{Kind: ledger.TriggerCampaign, Subject: "camp-1"}, Action: ledger.ActionWork, Harness: "claude"}, "admiralbot")

@@ -22,7 +22,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/findings"
-	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/outcomes"
@@ -90,10 +89,9 @@ type Service struct {
 	Actor *actor.Minter
 	// OnQuestions runs when a chat's questions may have changed, for the Inbox that lists them.
 	OnQuestions func()
-	// Ships, Campaigns and Inbox feed the brief and the digest; nil reads as empty.
+	// Ships and Campaigns feed the brief; nil reads as empty.
 	Ships     func() []ships.Ship
 	Campaigns func() []follow.Followed
-	Inbox     func() []inbox.Item
 	// FollowCampaign follows the campaign a reference names, or returns the one already followed; created says which.
 	FollowCampaign func(ctx context.Context, reference string) (follow.Followed, bool, *launcher.Error)
 	// CampaignFleet is the fleet a reference's campaign belongs to, resolved without reading it.
@@ -111,8 +109,6 @@ type Service struct {
 	readPromptKey func(fleet string) (string, bool)
 	// Findings says which voyages kept findings, for the ship cards; nil reads as none.
 	Findings findings.Reader
-	// DigestAcked replaces the digest sequence read from the chat's pane options; a test seam.
-	DigestAcked func(fleet string) uint64
 
 	logOnce sync.Once
 	log     *chatlog.Log
@@ -151,7 +147,7 @@ type fleetChat struct {
 	rst       resetState
 	resetting atomic.Bool // a flush and clear are running: a send is refused
 
-	tmu sync.Mutex // the brief and digest state below
+	tmu sync.Mutex // the brief state below
 	tk  tickState
 }
 
@@ -224,7 +220,6 @@ type state struct {
 type chatOptions struct {
 	model, effort, fleet string
 	harness              string // the harness the session was launched under; "" for one started before it was recorded
-	digest               string // the digest sequence the hook last printed, as the pane holds it
 	transcript           string // "<unix ns> <source> <path>", "" before the first SessionStart
 	screen               string // a Codex chat's pane text while it has no transcript
 }
@@ -286,7 +281,7 @@ func (s *Service) Run(ctx context.Context) {
 	}
 	events, cancel := s.Host.Subscribe()
 	defer cancel()
-	// Its own goroutine, one tick at a time: the brief and the digest never hold up a broadcast.
+	// Its own goroutine, one tick at a time: the brief never holds up a broadcast.
 	var done sync.WaitGroup
 	done.Add(1)
 	go func() {
@@ -628,7 +623,7 @@ func (s *fleetChat) readOptions(pane string) (chatOptions, error) {
 	if err != nil {
 		return chatOptions{}, err
 	}
-	opts := chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, harness: o.Harness, digest: o.Digest, transcript: o.Transcript}
+	opts := chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, harness: o.Harness, transcript: o.Transcript}
 	if o.Transcript == "" && (s.harness() == "codex" || s.harness() == "copilot") {
 		opts.screen = s.readScreen(pane)
 	}

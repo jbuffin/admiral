@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -16,13 +15,11 @@ import (
 	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/campaigns/follow"
 	"github.com/jbuffin/admiral/internal/config"
-	"github.com/jbuffin/admiral/internal/digest"
 	"github.com/jbuffin/admiral/internal/github"
-	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
-// briefRig is a Service with fleets home and work (chat on), whose ships, campaigns and Inbox a test sets.
+// briefRig is a Service with fleets home and work (chat on), whose ships and campaigns a test sets.
 type briefRig struct {
 	*Service
 	home string
@@ -31,8 +28,6 @@ type briefRig struct {
 	mu        sync.Mutex
 	ships     []ships.Ship
 	campaigns []follow.Followed
-	items     []inbox.Item
-	acked     uint64
 }
 
 func newBriefRig(t *testing.T) *briefRig {
@@ -55,8 +50,6 @@ func newBriefRig(t *testing.T) *briefRig {
 			defer r.mu.Unlock()
 			return append([]follow.Followed(nil), r.campaigns...)
 		},
-		Inbox:       func() []inbox.Item { r.mu.Lock(); defer r.mu.Unlock(); return append([]inbox.Item(nil), r.items...) },
-		DigestAcked: func(string) uint64 { r.mu.Lock(); defer r.mu.Unlock(); return r.acked },
 	}
 	r.Routes(r.mux)
 	return r
@@ -78,23 +71,6 @@ func (r *briefRig) post(t *testing.T, target, body, fleet string) *httptest.Resp
 func (r *briefRig) brief(fleet string) string {
 	b, _ := os.ReadFile(filepath.Join(r.home, "chat", fleet, "brief.md"))
 	return string(b)
-}
-
-func (r *briefRig) digest(t *testing.T, fleet string) digest.File {
-	t.Helper()
-	f, err := digest.Read(r.home, fleet)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return f
-}
-
-func lineTexts(f digest.File) string {
-	var out []string
-	for _, l := range f.Lines {
-		out = append(out, l.Text)
-	}
-	return strings.Join(out, "\n")
 }
 
 func TestABriefHoldsANoteSavedThroughTheActorRoute(t *testing.T) {
@@ -177,146 +153,6 @@ func TestABriefHoldsTheFleetsWaitingChatQuestion(t *testing.T) {
 	}
 }
 
-func TestShipChangesBecomeDigestLinesForTheShipsFleet(t *testing.T) {
-	cases := []struct{ from, to string }{
-		{ships.StatusUnderway, ships.StatusSailingOff},
-		{ships.StatusUnderway, ships.StatusMoored},
-		{ships.StatusUnderway, ships.StatusAnchored},
-		{ships.StatusUnderway, ships.StatusNeedsYou},
-	}
-	for _, via := range []string{"", "admiralbot"} {
-		for _, c := range cases {
-			t.Run(via+" "+c.from+" to "+c.to, func(t *testing.T) {
-				r := newBriefRig(t)
-				ship := func(status string) []ships.Ship {
-					return []ships.Ship{
-						{Session: "s1", Name: "bold-heron", Fleet: "home", Via: via, Status: status},
-						{Session: "s2", Name: "other-fleet-ship", Fleet: "work", Status: c.from},
-					}
-				}
-				r.set(func() { r.ships = ship(c.from) })
-				r.Tick()
-				if f := r.digest(t, "home"); len(f.Lines) != 0 {
-					t.Fatalf("the first tick wrote %q: the ships it finds are the baseline, not events", lineTexts(f))
-				}
-				r.set(func() {
-					r.ships = []ships.Ship{
-						{Session: "s1", Name: "bold-heron", Fleet: "home", Via: via, Status: c.to},
-						{Session: "s2", Name: "other-fleet-ship", Fleet: "work", Status: c.to},
-					}
-				})
-				r.Tick()
-				f := r.digest(t, "home")
-				if len(f.Lines) != 1 || !strings.Contains(f.Lines[0].Text, "bold-heron") {
-					t.Fatalf("home's digest = %q, want one line naming bold-heron", lineTexts(f))
-				}
-				if strings.Contains(lineTexts(f), "other-fleet-ship") {
-					t.Errorf("home's digest holds another fleet's ship")
-				}
-				if w := r.digest(t, "work"); len(w.Lines) != 1 || !strings.Contains(w.Lines[0].Text, "other-fleet-ship") {
-					t.Errorf("work's digest = %q, want its own ship's line", lineTexts(w))
-				}
-				r.Tick()
-				if again := r.digest(t, "home"); len(again.Lines) != 1 {
-					t.Errorf("a tick with no change added a line: %q", lineTexts(again))
-				}
-			})
-		}
-	}
-}
-
-func TestAShipThatKeepsRunningOrIsWokenWritesNoDigestLine(t *testing.T) {
-	r := newBriefRig(t)
-	r.set(func() {
-		r.ships = []ships.Ship{{Session: "s1", Name: "bold-heron", Fleet: "home", Status: ships.StatusMoored}}
-	})
-	r.Tick()
-	r.set(func() {
-		r.ships = []ships.Ship{{Session: "s1", Name: "bold-heron", Fleet: "home", Status: ships.StatusUnderway}}
-	})
-	r.Tick()
-	if f := r.digest(t, "home"); len(f.Lines) != 0 {
-		t.Errorf("a moored ship woken to underway wrote %q, want nothing", lineTexts(f))
-	}
-}
-
-func TestANewInboxItemOfTheFleetBecomesADigestLine(t *testing.T) {
-	r := newBriefRig(t)
-	r.set(func() { r.items = []inbox.Item{{ID: "old", Kind: "question", Session: "s0", Fleet: "home"}} })
-	r.Tick()
-	if f := r.digest(t, "home"); len(f.Lines) != 0 {
-		t.Fatalf("an item already in the Inbox wrote %q, want it as the baseline", lineTexts(f))
-	}
-	r.set(func() {
-		r.items = append(r.items,
-			inbox.Item{ID: "new", Kind: "question", Session: "s1", Name: "bold-heron", Fleet: "home"},
-			inbox.Item{ID: "elsewhere", Kind: "question", Session: "s2", Fleet: "work"})
-	})
-	r.Tick()
-	if f := r.digest(t, "home"); len(f.Lines) != 1 {
-		t.Errorf("home's digest = %q, want one line for the new item", lineTexts(f))
-	}
-	if f := r.digest(t, "work"); len(f.Lines) != 1 {
-		t.Errorf("work's digest = %q, want one line for its own item", lineTexts(f))
-	}
-	r.Tick()
-	if f := r.digest(t, "home"); len(f.Lines) != 1 {
-		t.Errorf("a tick with no change added a line: %q", lineTexts(f))
-	}
-}
-
-func TestTheEngineerAnsweringAChatQuestionBecomesADigestLine(t *testing.T) {
-	r := newBriefRig(t)
-	rec := r.post(t, "/api/chat/questions", `{"title":"Which branch?","questions":[{"id":"q1","text":"Which branch?","multi":false,"options":[{"label":"main"},{"label":"dev"}]}]}`, "home")
-	var q struct{ ID string }
-	_ = json.Unmarshal(rec.Body.Bytes(), &q)
-	r.Tick()
-	if f := r.digest(t, "home"); len(f.Lines) != 0 {
-		t.Fatalf("asking wrote %q: only the answer is an event", lineTexts(f))
-	}
-	path := filepath.Join(r.home, "chat", "home", "questions", inbox.AnswerName(q.ID))
-	if err := os.WriteFile(path, []byte(`{"answered":"2026-11-12T10:00:00Z","answers":{"q1":{"selected":["main"]}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// The question cache refreshes on its own clock.
-	for end := time.Now().Add(5 * time.Second); len(r.digest(t, "home").Lines) == 0; time.Sleep(50 * time.Millisecond) {
-		r.Tick()
-		if time.Now().After(end) {
-			t.Fatal("within 5s the answer never became a digest line")
-		}
-	}
-	r.Tick()
-	if f := r.digest(t, "home"); len(f.Lines) != 1 {
-		t.Errorf("digest = %q, want exactly one line for the answer", lineTexts(f))
-	}
-}
-
-func TestATickDropsTheDigestLinesTheChatHasPrinted(t *testing.T) {
-	r := newBriefRig(t)
-	if err := digest.Add(r.home, "home", "one", "two"); err != nil {
-		t.Fatal(err)
-	}
-	f := r.digest(t, "home")
-	if len(f.Lines) != 2 {
-		t.Fatalf("digest = %+v, want two lines", f)
-	}
-	r.set(func() { r.acked = f.Lines[0].Seq })
-	if err := digest.Add(r.home, "home", "three, written after the hook read"); err != nil {
-		t.Fatal(err)
-	}
-	r.Tick()
-	got := r.digest(t, "home")
-	if len(got.Lines) != 2 || got.Lines[0].Text != "two" || !strings.HasPrefix(got.Lines[1].Text, "three") {
-		t.Errorf("digest after the tick = %q, want lines two and three: only those at or below the printed sequence go", lineTexts(got))
-	}
-	r.set(func() { r.acked = got.Lines[1].Seq })
-	r.Tick()
-	end := r.digest(t, "home")
-	if len(end.Lines) != 0 || end.NextSeq <= got.Lines[1].Seq {
-		t.Errorf("emptied digest = %+v, want no lines and next_seq kept above %d", end, got.Lines[1].Seq)
-	}
-}
-
 func TestABriefListsWaitingQuestionsNewestFirst(t *testing.T) {
 	r := newBriefRig(t)
 	q := func(title string) string {
@@ -354,41 +190,6 @@ func TestANewChatsBriefHoldsNoQuestionTheStartWithdrew(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(home, "chat", "work", "brief.md")); strings.Contains(string(b), "Which branch?") || strings.Contains(string(b), "waiting questions") {
 		t.Errorf("the new chat's brief = %q, want no questions section: the start withdrew them", b)
-	}
-}
-
-func TestAShipThatLeavesAndReturnsIsAnEventAgain(t *testing.T) {
-	r := newBriefRig(t)
-	ship := func(status string) []ships.Ship {
-		return []ships.Ship{{Session: "s1", Name: "bold-heron", Fleet: "home", Status: status}}
-	}
-	r.set(func() { r.ships = ship(ships.StatusUnderway) })
-	r.Tick()
-	r.set(func() { r.ships = ship(ships.StatusMoored) })
-	r.Tick()
-	r.set(func() { r.ships = nil })
-	r.Tick()
-	r.set(func() { r.ships = ship(ships.StatusMoored) })
-	r.Tick()
-	if f := r.digest(t, "home"); len(f.Lines) != 2 {
-		t.Errorf("digest = %q, want a line for each time the ship moored: a session that left is forgotten", lineTexts(f))
-	}
-}
-
-func TestATickAcksWhatThePaneOptionsSayTheChatPrinted(t *testing.T) {
-	r := newBriefRig(t)
-	r.Service.DigestAcked = nil
-	if err := digest.Add(r.home, "home", "one", "two"); err != nil {
-		t.Fatal(err)
-	}
-	f := r.digest(t, "home")
-	fc := r.chat("home")
-	fc.mu.Lock()
-	fc.st.opts.digest = strconv.FormatUint(f.Lines[0].Seq, 10)
-	fc.mu.Unlock()
-	r.Tick()
-	if got := r.digest(t, "home"); len(got.Lines) != 1 || got.Lines[0].Text != "two" {
-		t.Errorf("digest = %q, want only line two after the pane said line one was printed", lineTexts(got))
 	}
 }
 

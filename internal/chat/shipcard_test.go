@@ -112,7 +112,7 @@ func TestAShipCardAcceptsALostResult(t *testing.T) {
 	}
 }
 
-func TestAShipCardStartsNoTurnAndNeverReachesTheDigestOrTheBrief(t *testing.T) {
+func TestAShipCardStartsNoTurnAndNeverReachesTheBrief(t *testing.T) {
 	r := newBriefRig(t)
 	if _, err := r.history().Append("work", chatlog.Entry{ID: "m1", Kind: chatlog.KindMessage, Role: "user", Text: "where are the lanterns"}); err != nil {
 		t.Fatal(err)
@@ -121,15 +121,11 @@ func TestAShipCardStartsNoTurnAndNeverReachesTheDigestOrTheBrief(t *testing.T) {
 		t.Fatalf("PostShipCard = %v", err)
 	}
 	r.Tick()
-	digest := lineTexts(r.digest(t, "work"))
 	brief := r.brief("work")
 	if !strings.Contains(brief, "where are the lanterns") {
 		t.Fatalf("the brief holds no recent message, so the check below proves nothing:\n%s", brief)
 	}
 	for _, s := range []string{"calm-otter", "pull/7"} {
-		if strings.Contains(digest, s) {
-			t.Errorf("digest %q holds %q, which AdmiralBot would read", digest, s)
-		}
 		if strings.Contains(brief, s) {
 			t.Errorf("brief holds %q, which AdmiralBot would read:\n%s", s, brief)
 		}
