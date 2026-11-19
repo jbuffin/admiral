@@ -705,6 +705,8 @@ export interface PageAction {
   confirm?: string;
   summary?: string;
   url?: string;
+  /** The id of the step in the row's detail a module action acts on. */
+  step?: string;
   /** A built-in action: Admiral does it, not the module. Absent on a module action. */
   builtin?: 'open' | 'launch' | 'message';
 }
@@ -753,6 +755,9 @@ export interface ModulePageData {
 export interface RowLink {
   label: string;
   url: string;
+  /** A second line, such as a pull request's title. */
+  subtitle?: string;
+  chips?: PageChip[];
 }
 export interface RowStep {
   id: string;

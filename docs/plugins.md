@@ -180,41 +180,197 @@ One full line of each:
 
 ## A module's page
 
-A plugin that lists `page` in its `initialize` capabilities is a **module**: it declares a page of groups and rows with a detail view for each row. It stays on protocol version 1, and a plugin without `page` is not asked for any of this. Admiral draws everything from the answers below; a plugin never sends HTML or a color.
+A plugin that lists `page` in its `initialize` capabilities is a **module**: it declares a page of groups and rows with a detail view for each row. It stays on protocol version 1, and a plugin without `page` is not asked for any of this. Admiral draws everything from the answers below; a plugin never sends HTML or a color. This section is the whole contract: the calls, one table per object, how a row is drawn, a worked example and the limits. [Writing a module](#writing-a-module) is the checklist to build one.
 
-**`page.get`**: sent once the plugin is up, with no params. Answer the groups in order and the waiting count:
+### The calls
+
+| Call | Direction | When | Answer |
+| --- | --- | --- | --- |
+| `page.get` | Admiral → plugin | Once the plugin is up, and again after each `page.changed` and `page.refresh`. | The page. |
+| `row.get` | Admiral → plugin | The engineer opens a row of the last good page. | The row's detail. |
+| `page.refresh` | Admiral → plugin | The engineer asks you to look again. | `{}` at once; send `page.changed` when you have new data. |
+| `action.form` | Admiral → plugin | The engineer opens a module action whose `confirm` is `form`. | The form to fill in. |
+| `action.run` | Admiral → plugin | The engineer confirms a module action. | `{message, url}`. |
+| `page.changed` | plugin → Admiral | Your data changed. | None. |
+
+**`page.get`** has no params. Answer the groups in order and the waiting count:
 
 ```json
 {"jsonrpc":"2.0","id":5,"method":"page.get","params":{}}
 {"jsonrpc":"2.0","id":5,"result":{"groups":[{"id":"review","title":"Needs review","rows":[{"id":"T-1","title":"Fix login","subtitle":"Acme","chips":[{"label":"P1","tone":"warn"}],"reason":"Review is open","action":{"id":"pass","label":"Pass review","confirm":"form","summary":"Pass the review"}}]}],"waiting":1}}
 ```
 
-A row is `{id, title, subtitle, url, chips, reason, target, action, actions}`. `id` is required and the other fields are optional. `reason` says why the row is in its group, and `action` is the row's one main action. `actions` is an optional list of further actions. `url` is the row's own page upstream: the detail view links its `subtitle` (or "Open" when there is none) to it, so you need no separate link to it. A `url` that is not http(s) is dropped and the row stays. `target` says what the row's module actions act on, such as one step of its work: `{label, chips, step}`, where `label` is required, `chips` follow the chip rules below and `step` is the `id` of that step in the row's detail view. The row then shows the label and chips on a line of its own with the module actions beside it, its built-in actions apart, and the detail view puts that step first, marked as next, with the row's module actions on it. A target with no label is dropped, a bad `step` is dropped by itself, and a target over 10 chips refuses the page like a row over 10 chips. A chip is `{label, tone}`, and `tone` is one of `neutral`, `good`, `warn` or `muted`; any other value reads as `neutral`. An action is `{id, label, confirm, summary, url, builtin, kind, ref, title, link}`. `confirm` is `click`, `yesno` or `form` (anything else reads as `yesno`). An action with no `builtin` is a module action: Admiral runs it through `action.form` and `action.run` below. An action with a `builtin` is a built-in action, which Admiral handles itself and never sends to the plugin:
-
-- **Open link** (`builtin: "open"` with an http(s) `url`; a bare `url` with no `builtin` is the same thing). It opens the link. A `url` that is not http(s), or that holds whitespace of any script or an invisible character, drops the action; so does an empty `builtin` with no `url`.
-- **Launch** (`builtin: "launch"` with an http(s) `url`). It opens the launch dialog on a GitHub issue. Admiral refuses, with a reason the page shows, a `url` that is not an `https` GitHub issue on a host the routed fleet uses, and an issue that already has a ship (there is no "anyway"). The dialog shows the fleet the issue routes to. A module never launches on its own rows, so a `url` is always a GitHub issue.
-- **Message AdmiralBot** (`builtin: "message"` with `kind`, `ref`, `title` and `link`). `kind` must be one you declared in `messageKinds`, `link` is an http(s) URL of at most 500 bytes with no whitespace or invisible character, and `ref` is cut to at most 40 characters with its spaces collapsed. The action is dropped when any field is missing, the link is not acceptable, or the kind is not one you declared. Admiral composes the text itself from the kind's `job`, the `ref`, the `title` and the `link`, and shows it all in a yes/no confirm whatever `confirm` says; no other text of yours reaches AdmiralBot. The `title` is cut to one line of at most 120 characters and sent fenced as quoted data, and invisible characters are stripped. The engineer's confirm posts exactly the text it showed to the chat of the module's fleet, marked `*From the <page>:*`.
-
-A built-in action needs no live plugin. While the page is in `error`, Open link and Launch still work and module actions and messages are off. `waiting` is the count of rows waiting on the engineer.
-
-**A module's notices.** The `page.get` result may also carry `notices`, a list of `{id, text, tone, link, action}` in the order to draw them: lines about the module itself (an update is waiting, a setting to choose, an upstream read is failing), drawn above the groups. `id` is required and follows the row id rules, unique among the page's notices. `tone` is `info`, `warn` or `error`; any other value reads as `info`. `link` is optional, `{label, url}` like a detail-view link, and opens in a new tab. `action` is optional, one module action in the shape of a row's `action` (the built-in actions, Open link, Launch and Message AdmiralBot, are row-only and are dropped on a notice; a notice links through its `link`), so a module can put a choice in front of the engineer (a setup choice such as "Pick your project"); a notice has no `actions` list. The engineer can't dismiss a notice, and a notice never counts toward `waiting` or the nav badge, whatever its tone. Notices belong to the last good page: they stay while the source is `auth_required` or `error`.
-
-```json
-{"jsonrpc":"2.0","id":5,"result":{"groups":[],"waiting":0,"notices":[{"id":"update","text":"An update is waiting","tone":"warn","link":{"label":"Release notes","url":"https://example.com/releases"}}]}}
-```
-
-**Loading.** `loading: true` says the plugin has not finished its first upstream read. While the source has no good page, the page stays `starting` and the shell draws its notices above the starting skeleton, so a plugin can say "Pick your project" before it has data; its `groups` and `waiting` are ignored. After a page has been shown, a `loading: true` answer changes nothing and the last good groups and notices stay. The next answer without `loading`, after a `page.changed`, draws normally. Admiral sets no time limit on loading.
-
-**`row.get`**: sent when the engineer opens a row of the last good page. The `id` and the `include` values come from a client through Admiral, which checks only their length and that the id is on the page, so treat both as untrusted (never build a file path from them without checking). `include` is optional and lists parts you leave out by default, such as closed or queued steps; it is left out of the params when the engineer asked for none.
+**`row.get`** carries the row `id` and, optionally, `include`. The `id` and the `include` values come from a client through Admiral, which checks only their length and that the id is on the page, so treat both as untrusted (never build a file path from them without checking). `include` lists parts you leave out by default, such as closed or queued steps; it is left out of the params when the engineer asked for none. The new shell asks for none today, so a part you hide by default stays hidden; `include` is for a client that asks (the route passes it on, see [the API](api.md)).
 
 ```json
 {"jsonrpc":"2.0","id":6,"method":"row.get","params":{"id":"T-1","include":["closed"]}}
 {"jsonrpc":"2.0","id":6,"result":{"sections":[{"kind":"links","title":"Links","links":[{"label":"Ticket","url":"https://example.com/t/1"}]},{"kind":"steps","title":"Steps","steps":[{"id":"s1","title":"Code review","chips":[{"label":"open","tone":"warn"}],"actions":[{"id":"pass","label":"Pass","confirm":"form"}]}]},{"kind":"fields","title":"Details","fields":[{"label":"Owner","value":"amy"}]}]}}
 ```
 
-A detail view is a list of sections. A section has a `kind` and a `title`: `links` holds `links`, a list of `{label, url}`; `steps` holds `steps`, a list of `{id, title, subtitle, chips, actions}`, where `subtitle` is an optional line shown under the title, such as who holds the step; `fields` holds `fields`, a list of `{label, value}`. A section of any other `kind` is dropped.
+**`action.form`** and **`action.run`** are described under [Module actions](#module-actions-actionform-and-actionrun). **`page.changed`** and **`page.refresh`** are in [Writing a module](#writing-a-module).
 
-**Module actions: `action.form` and `action.run`.** A module action is the `action` of a row, one of its `actions`, an action of one of its steps, or the `action` of a notice (never a built-in). Its `id` is unique within a row and its steps: when several carry the same `id`, the first wins, in the order the row's `action`, its `actions`, then each step's actions in section and step order, and Admiral ignores the later ones. Admiral knows a step's module actions only from the last good `row.get` of that row, and forgets them when the row leaves the page. A notice's action is known from the notices Admiral serves, so a notice on a `loading: true` answer before the first good page can be acted on once the source is running. Admiral never asks you about an `id` it does not know, a built-in action (Open link, Launch or Message AdmiralBot), or (for `action.form`) one whose `confirm` is not `form`.
+### The objects
+
+Each table says whether a field is required, what Admiral does with it and what happens when it is bad. "Dropped" means that part goes away and the rest of the answer stays; "refuses" means the whole answer is refused and the last good page stays served. Text fields (titles, subtitles, reasons and the like) are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
+
+**The page** is the result of `page.get`.
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `groups` | list of groups | yes | The groups in order. | Each group is a heading with its rows. | Not a list, over 100 groups: refuses. |
+| `waiting` | number | no | Rows waiting on the engineer. | The module's badge in the navigation. | Negative or not a number: reads 0. |
+| `notices` | list of notices | no | Lines about the module itself. | Above the groups. | Not a list, over 20 notices: refuses. |
+| `loading` | boolean | no | `true` while your first upstream read runs. | While the source has no good page it stays `starting` and the notices show above a skeleton; `groups` and `waiting` are ignored. After a page was shown it changes nothing and the last good page stays. | Not a boolean: refuses. |
+
+A group:
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `id` | string | yes | The group's id, unique among the page's groups. | Not shown. | Missing, not a string, holding a control character, over 200 characters or used twice: refuses. |
+| `title` | string | no | The group's name. | The heading, with its row count. | Cut to one line. |
+| `rows` | list of rows | yes | The rows in order. | One line each. | Not a list, over 5,000 rows across the page: refuses. |
+
+**A row** is one item of a group.
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `id` | string | yes | The row's id, unique across the whole page. | Names the row in `row.get`, in the address and in module action calls. | As a group's `id`: refuses. |
+| `title` | string | no | What the row is. | The row's first line. | Cut to one line. |
+| `subtitle` | string | no | A second line, such as an owner. | Under the title. In the detail view it links to `url`. | Cut to one line. |
+| `url` | string | no | The row's own page upstream. | The detail view links the `subtitle` (or "Open" when there is none) to it, so you need no separate link. | Not `http(s):`: dropped, the row stays. |
+| `chips` | list of chips | no | Short statuses. | Pills on the row and in the detail view. | Over 10: refuses. |
+| `reason` | string | no | Why the row is in its group. | After the subtitle; also on the next step's card. | Cut to one line. |
+| `target` | target | no | What the row's module actions act on. | A line of its own; see [how a row is drawn](#how-a-row-is-drawn). | See the target table. |
+| `action` | action | no | The row's one main action. | Leads the buttons it sits with, filled. | See the action table. |
+| `actions` | list of actions | no | Further actions. | Buttons on the row. | Over 10 actions on the row (its `action` counts as one): refuses. |
+
+**A target** says what a row's module actions act on, such as the one stage of its work that is waiting.
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `label` | string | yes | The thing acted on. | Bold on the target line, after an arrow. | Missing: the whole target is dropped. |
+| `chips` | list of chips | no | Its statuses. | Pills after the label. | Over 10: refuses. |
+| `step` | string | no | The `id` of that step in the row's detail view. | Puts that step first in the detail view, marked "Next up". | Not a usable id: dropped by itself, the target stays. |
+
+**A chip** is a short status pill.
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `label` | string | yes | The chip's text. | Inside the pill. | Missing: the chip is dropped. |
+| `tone` | string | no | `neutral`, `good`, `warn` or `muted`. | The pill's color. | Any other value reads `neutral`. |
+
+**An action** is a button. It is the `action` of a row, one of its `actions`, an action of a step, or the `action` of a notice.
+
+| Field | Type | Required | Applies to | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- | --- |
+| `id` | string | yes | all | The action's id, unique within a row and its steps (see [Module actions](#module-actions-actionform-and-actionrun)). It is cleaned and capped like a title (one line, no invisible characters, at most 200 characters), never refused for its length or a control character; the cleaned id is what `action.run` carries. | Not shown. | Missing, not a string or empty after cleaning: the action is dropped. |
+| `label` | string | yes | all | The button's text. | The button's text. | Missing: the action is dropped. |
+| `confirm` | string | no | module actions | `click` runs at once, `yesno` asks first, `form` asks `action.form` and shows its fields. | Decides what a press does first. | Any other value reads `yesno`. A message action always asks. |
+| `summary` | string | no | module actions | A line of what the action does, shown in its confirm. | In the confirm. | Cleaned of control characters. |
+| `step` | string | no | module actions | The `id` of the step in the row's detail view that the action acts on; see [how a row is drawn](#how-a-row-is-drawn). | Places the button; see how a row is drawn. | Not a usable id: dropped by itself, the action stays. Dropped on a built-in action and on a notice's action. A step the detail lacks is not an error. |
+| `builtin` | string | no | built-in actions | `open`, `launch` or `message`: Admiral handles the action itself and never sends it to the plugin. | A link or a dialog, not a plugin call. | Any other value, or `open` or `launch` with no `url`: the action is dropped. |
+| `url` | string | for `open`, `launch` | built-in actions | An `http(s):` link. A bare `url` with no `builtin` is `open`. | The link or issue the button opens. | Not `http(s):`, or holding whitespace of any script or an invisible character: the action is dropped. |
+| `kind`, `ref`, `title`, `link` | strings | for `message` | message actions | See below. | In the message confirm. | Any missing, or `link` unacceptable: the action is dropped. |
+
+An action with no `builtin` is a module action: Admiral runs it through `action.form` and `action.run`. The built-in actions are:
+
+- **Open link** (`builtin: "open"` with an http(s) `url`; a bare `url` with no `builtin` is the same thing). It opens the link. A `url` that is not http(s), or that holds whitespace of any script or an invisible character, drops the action; so does an empty `builtin` with no `url`.
+- **Launch** (`builtin: "launch"` with an http(s) `url`). It opens the launch dialog on a GitHub issue. Admiral refuses, with a reason the page shows, a `url` that is not an `https` GitHub issue on a host the routed fleet uses, and an issue that already has a ship (there is no "anyway"). The dialog shows the fleet the issue routes to. A module never launches on its own rows, so a `url` is always a GitHub issue.
+- **Message AdmiralBot** (`builtin: "message"` with `kind`, `ref`, `title` and `link`). `kind` must be one you declared in `messageKinds`, `link` is an http(s) URL of at most 500 bytes with no whitespace or invisible character, and `ref` is cut to at most 40 characters with its spaces collapsed. The action is dropped when any field is missing, the link is not acceptable, or the kind is not one you declared. Admiral composes the text itself from the kind's `job`, the `ref`, the `title` and the `link`, and shows it all in a yes/no confirm whatever `confirm` says; no other text of yours reaches AdmiralBot. The `title` is cut to one line of at most 120 characters and sent fenced as quoted data, and invisible characters are stripped. The engineer's confirm posts exactly the text it showed to the chat of the module's fleet, marked `*From the <page>:*`.
+
+A built-in action needs no live plugin. While the page is in `error`, Open link and Launch still work and module actions and messages are off.
+
+**A notice** is a line about the module itself (an update is waiting, a setting to choose, an upstream read is failing).
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `id` | string | yes | Follows the row id rules, unique among the notices. | Not shown. | Missing, invalid or used twice: refuses. |
+| `text` | string | yes | What to say. | One line of at most 300 characters. | Empty after cleaning: the notice is dropped. |
+| `tone` | string | no | `info`, `warn` or `error`. | The line's color. | Any other value reads `info`. |
+| `link` | `{label, url}` | no | A link. | Opens in a new tab. A notice's link carries no subtitle or chips. | No label or a `url` that is not `http(s):`: the link is dropped, the notice stays. |
+| `action` | action | no | One module action, for a choice in front of the engineer (such as "Pick your project"). | A button. A notice has no `actions` list. | Built-in actions are dropped; one with no `id` or `label`, or a bad `url`, is dropped; the notice stays. `step` is dropped. It counts toward no action limit. |
+
+The engineer can't dismiss a notice, and a notice never counts toward `waiting` or the navigation badge, whatever its tone. Notices belong to the last good page: they stay while the source is `auth_required` or `error`.
+
+```json
+{"jsonrpc":"2.0","id":5,"result":{"groups":[],"waiting":0,"notices":[{"id":"update","text":"An update is waiting","tone":"warn","link":{"label":"Release notes","url":"https://example.com/releases"}}]}}
+```
+
+**The detail** is the result of `row.get`.
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `sections` | list of sections | yes | The sections in order. | Under the row's title and chips. | Over 1 MiB in all: refuses. A section of an unknown `kind` is dropped. |
+
+**A section** has a `kind` and a `title`, and holds the list its kind names.
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `kind` | string | yes | `links`, `steps` or `fields`. | Picks the layout. | Any other value: the section is dropped. |
+| `title` | string | no | The section's heading. | A heading with the item count. | Cut to one line. |
+| `links` | list of links | for `links` | The links. | A list of links. | A link that is bad drops itself. |
+| `steps` | list of steps | for `steps` | The steps. | A card each. | A step that is bad drops itself. |
+| `fields` | list of fields | for `fields` | The facts. | Pairs of name and value. | A field that is bad drops itself. |
+
+**A step** is one stage of the row's work.
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `id` | string | yes | The step's id, unique across the detail. | Not shown; named by `target.step` and `action.step`. | Not usable: the step is dropped. Used twice: refuses. |
+| `title` | string | no | What the step is. | The card's heading. | Cut to one line. |
+| `subtitle` | string | no | A line under the title, such as who holds the step. | Under the heading. | Cut to one line. |
+| `chips` | list of chips | no | Its statuses. | Pills beside the heading. | Over 10: refuses. |
+| `actions` | list of actions | no | The step's own module actions. | Buttons on the card, always. A `step` on them is ignored for placement. | Over 10: refuses. |
+
+**A link** is one item of a `links` section.
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `label` | string | yes | The link's text. | The link, opening in a new tab. | Missing: the link is dropped. |
+| `url` | string | yes | Where it goes. | The link's target. | Not `http(s):`: the link is dropped. |
+| `subtitle` | string | no | A second line, such as a pull request's title. | Muted, under the link. | Cut to one line. |
+| `chips` | list of chips | no | Statuses, such as "Merged". | Pills before the link. | Over 10: refuses the detail view, even when the link's `url` is bad. |
+
+**A field** is one fact in a `fields` section.
+
+| Field | Type | Required | Meaning | Drawn as | When bad |
+| --- | --- | --- | --- | --- | --- |
+| `label` | string | yes | The fact's name. | Beside the value. | Missing: the field is dropped. |
+| `value` | string | no | The fact. | Beside the name. | Holding a control character other than a line break or tab: the field is dropped. |
+
+### How a row is drawn
+
+A row with no `target` shows its `action` and `actions` as one set of buttons, whatever `step` they carry. A row with a `target` draws its module actions by what they act on:
+
+- **On the row, beside the target:** the module actions whose `step` equals `target.step`. The row's `action` leads (filled) when it is one of them. A `target` with no `step` holds none.
+- **On the row, after a divider:** the module actions with no `step`, which act on the whole row, and the row's `action` leads them when it is one. When the `target` has no `step`, every module action is here. These sit outside the target's group, so its accessible name ("Acts on" and its label) doesn't claim they act on the target. The built-in actions come last, apart.
+- **Not on the row:** a module action whose `step` names another step. It shows only in the detail view, on that step's card.
+- **In the detail view, on a step's card:** the row's module actions naming that step, then the step's own `actions`. The step `target.step` names comes first, marked "Next up", with the row's `reason`, and its lead is the row's `action` when that names it.
+- **In the detail view, after the steps:** the module actions with no `step`, and the ones whose `step` names no step of the detail.
+
+An `id` shows once on the whole row, in the order the row's `action`, its `actions`, then each step's actions in step order. An action whose `id` already showed earlier in that order shows nowhere else.
+
+### A worked example
+
+A made-up tool, a CI pipeline. A row is one pipeline run, its steps are the run's stages, and the target is the failing stage. "Rerun stage" acts on that stage, "Skip smoke test" on another stage and "Cancel run" on the whole run. The commits that triggered it are links with chips and a subtitle.
+
+`page.get` answers one group with one row:
+
+```json
+{"jsonrpc":"2.0","id":5,"result":{"groups":[{"id":"runs","title":"Runs","rows":[{"id":"run-41","title":"Release build","subtitle":"Run 41 on main","url":"https://ci.example/runs/41","chips":[{"label":"Failed","tone":"warn"}],"reason":"The deploy stage failed","target":{"label":"Deploy stage","chips":[{"label":"Timed out","tone":"warn"}],"step":"deploy"},"action":{"id":"rerun","label":"Rerun stage","confirm":"click","step":"deploy"},"actions":[{"id":"cancel","label":"Cancel run","confirm":"yesno"},{"id":"skip","label":"Skip smoke test","confirm":"yesno","step":"smoke"}]}]}],"waiting":1}}
+```
+
+On the row, "Rerun stage" sits beside "Deploy stage" and leads. "Cancel run" follows a divider. "Skip smoke test" names another stage, so it isn't on the row. `row.get` answers the detail:
+
+```json
+{"jsonrpc":"2.0","id":6,"result":{"sections":[{"kind":"links","title":"Commits","links":[{"label":"a1b2c3d","url":"https://ci.example/commit/a1b2c3d","subtitle":"Raise the retry limit","chips":[{"label":"Merged","tone":"good"}]},{"label":"e4f5a6b","url":"https://ci.example/commit/e4f5a6b","subtitle":"Fix the cache key","chips":[{"label":"Open","tone":"warn"},{"label":"2 reviews","tone":"muted"}]}]},{"kind":"steps","title":"Stages","steps":[{"id":"build","title":"Build","subtitle":"Finished in 3 minutes","chips":[{"label":"Passed","tone":"good"}]},{"id":"smoke","title":"Smoke test","subtitle":"Waiting for the deploy","chips":[{"label":"Pending","tone":"muted"}]},{"id":"deploy","title":"Deploy","subtitle":"Timed out talking to the registry","chips":[{"label":"Failed","tone":"warn"}],"actions":[{"id":"logs","label":"Fetch logs","confirm":"click"}]}]},{"kind":"fields","title":"Details","fields":[{"label":"Branch","value":"main"}]}]}}
+```
+
+The detail view lists the commits with their chips and subtitles, then the stages with Deploy first ("Next up", "Rerun stage" leading, then "Fetch logs"), then Build, then Smoke test with "Skip smoke test". "Cancel run" sits after the stages.
+
+### Module actions: `action.form` and `action.run`
+
+A module action is the `action` of a row, one of its `actions`, an action of one of its steps, or the `action` of a notice (never a built-in). Its `id` is unique within a row and its steps: when several carry the same `id`, the first wins, in the order the row's `action`, its `actions`, then each step's actions in section and step order, and Admiral ignores the later ones. Admiral knows a step's module actions only from the last good `row.get` of that row, and forgets them when the row leaves the page. A notice's action is known from the notices Admiral serves, so a notice on a `loading: true` answer before the first good page can be acted on once the source is running. Admiral never asks you about an `id` it does not know, a built-in action (Open link, Launch or Message AdmiralBot), or (for `action.form`) one whose `confirm` is not `form`.
 
 `action.form` is sent when the engineer opens a module action whose `confirm` is `form`, and answers the form to fill in. It must answer within the 10-second call limit.
 
@@ -223,7 +379,7 @@ A detail view is a list of sections. A section has a `kind` and a `title`: `link
 {"jsonrpc":"2.0","id":7,"result":{"title":"Pass review","fields":[{"id":"whose","label":"Whose work","type":"choice","options":[{"id":"a","label":"Amy"},{"id":"b","label":"Bo"}],"default":"b"},{"id":"files","label":"Files","type":"checklist","options":[{"id":"x","label":"X"},{"id":"y","label":"Y"}],"default":["y"]},{"id":"time","label":"Time","type":"duration","default":"01:30","min":"00:15"}]}}
 ```
 
-A form is `{title, fields}`; `title` is optional. A field is `{id, label, type, options, default, min}`, and `type` is `choice` (pick one of `options`), `checklist` (tick any of `options`) or `duration`. An option is `{id, label}`. A duration value is `"hh:mm"` (two digits, minutes 00 to 59). The engineer may type it as `1:30`, `0:1`, `90` (minutes), `1.5` (hours), `1h30` or `45m`; Admiral always sends you `"hh:mm"`, so a label needs no format hint. `default` is optional: a choice's is an option id, a checklist's is a list of option ids, a duration's is `"hh:mm"`. A checklist with no `default` starts all ticked. `min` is the least duration, `"hh:mm"`, and only a duration has it. There is no text field yet. Titles and labels are cut to one line of at most 200 characters. Admiral drops a `default` that does not fit its field (a choice default that is not one of the options, a checklist default naming an id that is not an option); the field stays, with no default. Admiral refuses the whole answer, and the engineer sees a one-line error, when:
+A form is `{title, fields}`; `title` is optional. A form field is `{id, label, type, options, default, min}`, and `type` is `choice` (pick one of `options`), `checklist` (tick any of `options`) or `duration`. An option is `{id, label}`. A duration value is `"hh:mm"` (two digits, minutes 00 to 59). The engineer may type it as `1:30`, `0:1`, `90` (minutes), `1.5` (hours), `1h30` or `45m`; Admiral always sends you `"hh:mm"`, so a label needs no format hint. `default` is optional: a choice's is an option id, a checklist's is a list of option ids, a duration's is `"hh:mm"`. A checklist with no `default` starts all ticked. `min` is the least duration, `"hh:mm"`, and only a duration has it. There is no text field yet. Titles and labels are cut to one line of at most 200 characters. Admiral drops a `default` that does not fit its field (a choice default that is not one of the options, a checklist default naming an id that is not an option); the field stays, with no default. Admiral refuses the whole answer, and the engineer sees a one-line error, when:
 
 - it is over **64 KiB**, is not an object, or `fields` is not a list;
 - there are more than **20 fields**, or a field has more than **100 options**;
@@ -246,30 +402,38 @@ The calls for a notice's action name the notice in place of the row: `action.for
 
 **Page route.** The shell opens a module at `/app/<source key>`, and a row at `/app/<source key>/<row id>`. A source whose key equals a built-in surface id (`inbox`, `ships`, `orders`, `chat`, `campaigns`, `routines`, `crew`, `preferences`) gets no nav entry and its page can't be reached; the surface keeps its path.
 
-**Page limits.** Admiral keeps the last good page. A `page.get` or `row.get` that gets no answer within 10 seconds fails like any other call. A page in the `error` state turns the module's module actions off.
+### Page limits
 
-An answer is dropped whole, and the last good page stays served, when:
+Admiral keeps the last good page. A `page.get` or `row.get` that gets no answer within 10 seconds fails like any other call. A page in the `error` state turns the module's module actions off.
 
-- there are more than **5,000 rows** or **100 groups**, or `groups` or `rows` is not a list;
-- a group or row has no `id`, or an `id` that is not a string, holds a control character or is over **200 characters**, or a group id or a row id (across the whole page) is used twice;
-- there are more than **20 notices**, or a notice has no `id`, an `id` that is not a valid id (the rule above), or an `id` used twice among the notices;
-- a row, its target or a step has more than **10 chips**, or a row or step has more than **10 actions** (a row's main `action` counts as one);
-- a detail view is over **1 MiB**, or uses a step `id` twice;
-- `notices` is not a list, or `loading` is not a boolean;
-- the answer is not an object.
+| Over this, or this | Result |
+| --- | --- |
+| More than **5,000 rows** or **100 groups**; `groups` or `rows` not a list | The answer is dropped whole, and the last good page stays served. |
+| A group or row with no `id`, or one that is not a string, holds a control character or is over **200 characters**; a group id or a row id (across the whole page) used twice | Dropped whole. |
+| More than **20 notices**; a notice with no valid `id`, or an `id` used twice | Dropped whole. |
+| More than **10 chips** on a row, its target, a step or a link; more than **10 actions** on a row (its `action` counts as one) or a step | Dropped whole (the detail view, for a step or a link). |
+| A detail view over **1 MiB**, or a step `id` used twice | The detail view is refused. |
+| `notices` not a list, `loading` not a boolean, or an answer that is not an object | Dropped whole. |
+| A notice whose text is empty after cleaning; a chip with no text; an action with no `id` or `label`; a link, field or step that is unusable; a section of an unknown `kind`; a link or action whose `url` is not `http:` or `https:`; a field whose `value` holds a control character other than a line break or tab | That part is dropped by itself, and the rest of the answer stays. |
+| A negative or non-number `waiting`; an unknown chip `tone`; an unknown notice `tone` | Corrected: 0, `neutral`, `info`. |
 
-A part that is bad is dropped by itself, and the rest of the answer stays:
+#### A value of the wrong JSON type
 
-- a notice whose text is empty after cleaning, which drops itself;
-- a chip with no label, an action with no `id` or `label`, a link with no label, a field with no label, a step with no usable `id`, and a section of an unknown `kind`;
-- a link or an action whose `url` is not `http:` or `https:`, and a notice's link with no label or such a url, which drops the link and keeps the notice;
-- a field whose `value` holds a control character other than a line break or tab.
+What a wrong type does depends on where it sits. Read it from the table's three results:
 
-Three values are corrected: a negative or non-number `waiting` reads 0, an unknown chip `tone` reads `neutral`, and an unknown notice `tone` reads `info`. A notice's text is cut to one line of at most 300 characters, without invisible or bidirectional-control characters. A notice's `action` is read like a row's main action, except that a built-in action (Open link, Launch or Message AdmiralBot) is dropped: one with no `id` or `label`, or a `url` that is not `http:` or `https:`, is dropped and the notice stays. It counts toward no action limit. Titles, subtitles, reasons and labels are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
+| Where | Result |
+| --- | --- |
+| The answer, a group, a notice, a row or a section that is not an object; `groups`, `notices`, a group's `rows`, a row's `chips` or `actions`, `sections`, or a section's `links`, `steps` or `fields` that is not a list; `loading` that is not a boolean; the `id` of a group, a notice or a row that is not a string | Refuses the whole answer: `page.get` keeps the last good page and logs a protocol error, `row.get` fails and the row's pane shows the error. |
+| A chip, link, field, action or step that is not an object; a step's `chips` or `actions` that is not a list; a step `id` that is not a string; a target that is not an object or whose `chips` is not a list; a `kind` that is not a string | Drops that object (the target, the section, the step and so on) and keeps the rest. |
+| Any other value, such as a `title`, `subtitle`, `reason`, `label`, `text`, `tone`, `url`, `confirm` or `summary` that is not a string, or a `waiting` that is not a number | Drops the field: text reads as empty, a tone as `neutral` (`info` on a notice), `confirm` as `yesno`, `waiting` as 0, and an object that needs the value (an action without its `id` or `label`, a link without its `url`) goes with it. |
+
+When `row.get` errors or is refused (an RPC error, no answer in 10 seconds, an answer over the limit or with a bad shape), the engineer sees "Couldn't load this row." and the one-line reason in the pane, and the page and the other rows stay as they were. The reason is your error message, cleaned to one line, or Admiral's own for a refused answer.
+
+A notice's text is cut to one line of at most 300 characters, without invisible or bidirectional-control characters. Titles, subtitles, reasons and labels are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
 
 ## Writing a module
 
-A module is an ordinary plugin that also draws a page. This is the read side; the answers' shapes and limits are in [A module's page](#a-modules-page), and the routes a client reads are in [the API](api.md#get-apisourceskeypage-and-get-apisourceskeyrowsid).
+A module is an ordinary plugin that also draws a page. This is the read side; the objects and their limits are in [A module's page](#a-modules-page), and the routes a client reads are in [the API](api.md#get-apisourceskeypage-and-get-apisourceskeyrowsid).
 
 1. **Declare `page`.** List `"page"` in the `capabilities` of your `initialize` answer. A plugin that does not is never asked for a page. You may also answer `messageKinds` there, a list of `{kind, label, job}` for the messages you want Admiral to be able to send; Message AdmiralBot actions use them (see [A module's page](#a-modules-page)).
 2. **Answer `page.get`.** It comes during start-up, before the source is `ok`, and again after each `page.changed` and `page.refresh`. Answer the groups and the waiting count, and add `notices` to say something about the module itself. Send `loading: true` while your first upstream read is still running. A refused answer (over a limit, not valid) leaves the last good page served, and a call that fails with an error of yours shows the page as `error` with your message until the next good answer.
@@ -284,7 +448,7 @@ A module is an ordinary plugin that also draws a page. This is the read side; th
 5. **Handle `page.refresh`.** It comes with `{}` when the engineer asks you to look again. Start looking, answer `{}` at once (within 10 seconds), and send `page.changed` when you have new data, the way `orders.refresh` works. An answer that is an error shows to the engineer.
 6. **Sign-in and crashes** work as for orders: send `auth.required` and the page shows `auth_required` with its last groups; a crash shows `error` and keeps them.
 
-Everything you send is checked against the [limits](#a-modules-page) and the last good page stays when an answer is refused. The example below declares a page.
+Everything you send is checked against the [page limits](#page-limits) and the last good page stays when an answer is refused. The example at the end declares a page.
 
 ## Limits
 
@@ -299,6 +463,7 @@ Admiral treats everything a plugin sends as untrusted.
 - A `settingsSchema` that is not a JSON object, or is over 256 KiB, is replaced with `{}`.
 - Error messages you answer with, and the text of a crash, are cut to one line of at most 300 characters.
 - An `event` with a `kind` the catalog lacks, a `ref` that is not an `http:` or `https:` URL, a `ref`, `kind` or `panel` over **512 bytes**, an `actor` or `author` over **100 bytes**, or a control, format or bidirectional-control character in any field is dropped. At most **60 events a minute** are delivered; the minute starts at the first event, the rest of it is dropped and Admiral logs how many once the minute ends. An event from a plugin names no repository, so a fleet whose repo allowlist is not empty skips it.
+- A module's page has its own limits: at most 10 chips on a row, a target, a step or a link, and the rest of the [page limits](#page-limits).
 - A `url` (in an order or in `auth.required`) must be `http:` or `https:`; Admiral drops any other. A `repo` that is not a git remote is dropped.
 
 A **protocol error** is a line that is not JSON, a reply to a request that is not waiting, a list that breaks a limit, or a notification Admiral does not know. Admiral logs it, drops that message and keeps the process running. A list that breaks a limit is dropped whole, and the panel keeps the orders it had. Only a failed or hung `initialize` or `panels.list` counts as a crash.
@@ -365,7 +530,7 @@ To use it in Admiral, add a source for it to `config.json` (with its `fleet`) or
 
 ### A module
 
-This sibling declares a page: one group with two rows and a detail view for each. Its `page.refresh` marks the first row done and sends `page.changed` with the row it changed. Save it as `$ADMIRAL_HOME/plugins/tasks/plugin.py` with this manifest:
+This sibling declares a page: one group with two rows and a detail view for each. Each row has a Finish `click` action: `action.run` marks the row done and answers a message, and the plugin then sends `page.changed` with that row. Its `page.refresh` marks the first row done and sends `page.changed` the same way. Save it as `$ADMIRAL_HOME/plugins/tasks/plugin.py` with this manifest:
 
 ```json
 { "name": "tasks", "description": "Two tasks on a page.", "command": "python3", "args": ["plugin.py"] }
@@ -380,7 +545,8 @@ tasks = {"t1": {"title": "Fix login", "done": False}, "t2": {"title": "Update do
 
 
 def page():
-    rows = [{"id": i, "title": t["title"], "chips": [{"label": "done" if t["done"] else "open", "tone": "good" if t["done"] else "warn"}]}
+    rows = [{"id": i, "title": t["title"], "chips": [{"label": "done" if t["done"] else "open", "tone": "good" if t["done"] else "warn"}],
+             "action": {"id": "finish", "label": "Finish", "confirm": "click"}}
             for i, t in tasks.items()]
     return {"groups": [{"id": "tasks", "title": "Tasks", "rows": rows}], "waiting": sum(not t["done"] for t in tasks.values()),
             "notices": [{"id": "demo", "text": "These tasks are examples", "tone": "info"}]}
@@ -396,6 +562,9 @@ def handle(method, params):
     if method == "row.get":
         t = tasks[params["id"]]
         return {"sections": [{"kind": "fields", "title": "Details", "fields": [{"label": "Title", "value": t["title"]}]}]}
+    if method == "action.run":
+        tasks[params["row"]]["done"] = True
+        return {"message": "Finished " + tasks[params["row"]]["title"]}
     if method == "page.refresh":
         tasks["t1"]["done"] = True
     return {}
@@ -406,6 +575,7 @@ for line in sys.stdin:
     if "id" in msg:
         result = handle(msg["method"], msg.get("params") or {})
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}), flush=True)
-        if msg["method"] == "page.refresh":
-            print(json.dumps({"jsonrpc": "2.0", "method": "page.changed", "params": {"rows": ["t1"]}}), flush=True)
+        if msg["method"] in ("page.refresh", "action.run"):
+            row = msg["params"]["row"] if msg["method"] == "action.run" else "t1"
+            print(json.dumps({"jsonrpc": "2.0", "method": "page.changed", "params": {"rows": [row]}}), flush=True)
 ```
