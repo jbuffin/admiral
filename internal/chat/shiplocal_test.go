@@ -45,7 +45,7 @@ func TestACleanEndOfAShipThatIsNotLocalOnlyOrReportedNoDoneStillSailsOff(t *test
 		snap   ships.Ship
 		report string
 	}{
-		"a GitHub ship that reported done": {ship("calm-otter", "work", ships.StatusUnderway), "done"},
+		"a GitHub ship that reported done":        {ship("calm-otter", "work", ships.StatusUnderway), "done"},
 		"a local-only ship that reported partial": {localShip("calm-otter"), "partial"},
 		"a local-only ship with no report":        {localShip("calm-otter"), ""},
 	} {

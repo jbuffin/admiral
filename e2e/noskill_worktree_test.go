@@ -192,6 +192,9 @@ func TestAShipFromACheckoutWithNoOriginWorksInAWorktreeAndEndsFinishedWithItsCom
 	cwd := w.waitCwd(ship.Session)
 	w.wantWorktree(dir, cwd)
 	branch := w.git(cwd, "branch", "--show-current")
+	if branch != "admiral/"+ship.Session {
+		t.Errorf("worktree branch = %q, want admiral/%s", branch, ship.Session)
+	}
 	if got := w.git(cwd, "rev-parse", "HEAD"); got != head {
 		t.Errorf("the worktree's HEAD = %s, want the checkout's main tip %s", got, head)
 	}
