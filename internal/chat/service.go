@@ -105,6 +105,8 @@ type Service struct {
 	OrderRepo func(source, id string) (text, repo string, ok bool)
 	// OnReply runs once for a report turn that ended with a reply in the log; Admiral pushes it.
 	OnReply func(fleet string, r ReportReply)
+	// OnDigestReply runs once for a fleet digest turn that ended with a reply in the log; Admiral pushes it.
+	OnDigestReply func(fleet string, r DigestReply)
 	// readPromptKey replaces the tmux read of the prompt key; a test seam.
 	readPromptKey func(fleet string) (string, bool)
 	// Findings says which voyages kept findings, for the ship cards; nil reads as none.

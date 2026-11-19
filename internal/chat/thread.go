@@ -18,28 +18,49 @@ const threadSkew = 2 * time.Second
 // reportCardRe is the card line a report turn carries, which names the ship card the turn is about.
 var reportCardRe = regexp.MustCompile(`(?m)^card: (\S+)[ \t\r]*$`)
 
-// reportCardOf is the ship card id a pasted report turn names, "" when the text is not one.
-func reportCardOf(text string) string {
-	if !strings.HasPrefix(strings.TrimSpace(text), "[Report: ") {
+// digestTurnRe is the turn id line a fleet digest turn carries. Its fact lines all start with "- ", so one can't forge it.
+var digestTurnRe = regexp.MustCompile(`(?m)^turn: (digest:\S+)[ \t\r]*$`)
+
+// digestTurnPrefix starts the id of every fleet digest turn; a ship card's id never does.
+const digestTurnPrefix = "digest:"
+
+// DigestTurnID is the id of the digest turn a routine's run queues.
+func DigestTurnID(routine, run string) string { return digestTurnPrefix + routine + ":" + run }
+
+// DigestTurnHeader is the first two lines of a digest turn: the marker and the turn id line turnIDOf matches.
+func DigestTurnHeader(name, turn string) string {
+	return "[Digest: " + name + "]\nturn: " + turn + "\n"
+}
+
+// turnIDOf is the turn id a pasted report turn names (its ship card) or a pasted digest turn carries, "" when the text is neither.
+func turnIDOf(text string) string {
+	re := reportCardRe
+	switch {
+	case strings.HasPrefix(strings.TrimSpace(text), "[Report: "):
+	case strings.HasPrefix(strings.TrimSpace(text), "[Digest: "):
+		re = digestTurnRe
+	default:
 		return ""
 	}
-	if m := reportCardRe.FindStringSubmatch(text); m != nil {
+	if m := re.FindStringSubmatch(text); m != nil {
 		return m[1]
 	}
 	return ""
 }
 
-// threadState decides which log entries belong to the report turn Admiral last typed. It is memory only: a restart
+// threadState decides which log entries belong to the report or digest turn Admiral last typed. It is memory only: a restart
 // mid-turn leaves the rest of that turn's entries unmarked, and the marks already in the log stay.
 type threadState struct {
 	mu    sync.Mutex
-	id    string    // the ship card whose report turn this is; "" when none is open
+	turn  string    // the id of the open report or digest turn; "" when none is open
 	since time.Time // when the turn was pasted
 	seen  bool      // the turn's own user line has been logged
 	ended bool      // the turn has ended: late replies are threaded until the next user line of any kind
 }
 
-func (t *threadState) open(id string) { t.id, t.since, t.seen, t.ended = id, time.Now(), false, false }
+func (t *threadState) open(id string) {
+	t.turn, t.since, t.seen, t.ended = id, time.Now(), false, false
+}
 
 // after is whether a transcript timestamp is not before the paste; one that can't be read counts as after.
 func (t *threadState) after(at string) bool {
@@ -51,37 +72,37 @@ func (t *threadState) after(at string) bool {
 func (t *threadState) end(id string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.id == id {
+	if t.turn == id {
 		t.ended = true
 	}
 }
 
 // classify returns the thread a not yet logged message carries, and the change it makes to the state once it is logged.
-// A user line is the pasted turn when it names the open turn's card after the paste (or a delivered turn the log has no
+// A user line is the pasted turn when it names the open turn's id after the paste (or a delivered turn the log has no
 // line for, which a restart left behind). Any other user line closes the thread once the turn has ended; before that
 // the engineer's does, and a notice does not.
-func (t *threadState) classify(m Message, restored func(card string) bool) (string, func()) {
+func (t *threadState) classify(m Message, restored func(turn string) bool) (string, func()) {
 	noop := func() {}
 	if m.Kind != chatlog.KindMessage {
 		return "", noop
 	}
 	switch m.Role {
 	case "assistant":
-		if t.id != "" && t.seen {
-			return t.id, noop
+		if t.turn != "" && t.seen {
+			return t.turn, noop
 		}
 	case "user":
-		closeIt := func() { t.id = "" }
-		card := ""
+		closeIt := func() { t.turn = "" }
+		turn := ""
 		if !m.notice {
-			card = reportCardOf(m.Text)
+			turn = turnIDOf(m.Text)
 		}
 		switch {
-		case card != "" && card == t.id && !t.seen && t.after(m.At):
-			return card, func() { t.seen = true }
-		case card != "" && card != t.id && restored(card):
-			return card, func() { t.id, t.seen, t.ended = card, true, true }
-		case t.id == "":
+		case turn != "" && turn == t.turn && !t.seen && t.after(m.At):
+			return turn, func() { t.seen = true }
+		case turn != "" && turn != t.turn && restored(turn):
+			return turn, func() { t.turn, t.seen, t.ended = turn, true, true }
+		case t.turn == "":
 		case t.ended:
 			return "", closeIt
 		case m.notice || !t.seen:
@@ -92,12 +113,12 @@ func (t *threadState) classify(m Message, restored func(card string) bool) (stri
 	return "", noop
 }
 
-// replyOf is the first assistant entry the log marks for the ship card.
-func (s *fleetChat) replyOf(card string) (chatlog.Entry, bool) {
+// replyOf is the first assistant entry the log marks for the turn id.
+func (s *fleetChat) replyOf(turn string) (chatlog.Entry, bool) {
 	es, err := s.history().Recent(s.key, HistoryWindow)
 	s.noteLogErr(err)
 	for _, e := range es {
-		if e.Thread == card && e.Kind == chatlog.KindMessage && e.Role == "assistant" {
+		if e.Thread == turn && e.Kind == chatlog.KindMessage && e.Role == "assistant" {
 			return e, true
 		}
 	}
@@ -122,20 +143,26 @@ func (s *fleetChat) endTurn(id string, how TurnEnd) {
 	}
 	first := false
 	s.turns(func(t *turnState) {
-		for _, r := range t.reported {
+		for _, r := range t.replied {
 			if r == id {
 				return
 			}
 		}
 		first = true
-		t.reported = append(t.reported, id)
-		if n := len(t.reported) - deliveredKeep; n > 0 {
-			t.reported = t.reported[n:]
+		t.replied = append(t.replied, id)
+		if n := len(t.replied) - deliveredKeep; n > 0 {
+			t.replied = t.replied[n:]
 		}
 		if err := s.saveTurnsLocked(t); err != nil {
 			log.Printf("admiral: chat %s: could not save the report queue: %v", s.key, err)
 		}
 	})
+	if first && strings.HasPrefix(id, digestTurnPrefix) {
+		if s.OnDigestReply != nil {
+			s.OnDigestReply(s.key, DigestReply{TurnID: id, MessageID: e.ID, Text: e.Text})
+		}
+		return
+	}
 	if first && s.OnReply != nil {
 		s.OnReply(s.key, ReportReply{CardID: id, MessageID: e.ID, Text: e.Text})
 	}
@@ -160,15 +187,15 @@ func (s *Service) ShipCardOf(fleet, id string) (name, result string, ok bool) {
 	return "", "", false
 }
 
-// restoredCheck returns restored: whether a pasted turn naming card was delivered, yet the log holds no line for it,
-// as a restart between the paste and the record leaves it. The log is read once, and only if a delivered card is asked about.
-func (s *fleetChat) restoredCheck() func(card string) bool {
+// restoredCheck returns restored: whether a pasted turn naming a turn id was delivered, yet the log holds no line for it,
+// as a restart between the paste and the record leaves it. The log is read once, and only if a delivered turn is asked about.
+func (s *fleetChat) restoredCheck() func(turn string) bool {
 	var threaded map[string]bool
-	return func(card string) bool {
+	return func(turn string) bool {
 		delivered := false
 		s.turns(func(t *turnState) {
 			for _, d := range t.delivered {
-				delivered = delivered || d == card
+				delivered = delivered || d == turn
 			}
 		})
 		if !delivered {
@@ -184,6 +211,6 @@ func (s *fleetChat) restoredCheck() func(card string) bool {
 				}
 			}
 		}
-		return !threaded[card]
+		return !threaded[turn]
 	}
 }

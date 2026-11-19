@@ -631,6 +631,12 @@ func serve(args []string) error {
 		}
 		return fleet
 	}, pushFeed.Watcher.Emit)
+	chatService.OnDigestReply = digestReplyPush(func(fleet string) string {
+		if f, _, found := cfg.Current().ChatFleet(fleet); found {
+			return f.Name
+		}
+		return fleet
+	}, pushFeed.Watcher.Emit)
 	chatService.OnQuestions = func() { inboxService.Changed(); commitmentRunner.Changed() }
 	chatService.FollowCampaign, chatService.CampaignFleet, commitmentRunner.Campaign, campaignService.OnRead = campaignService.Follow, campaignService.Owner, campaignService.Snapshot, commitmentRunner.Changed
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
@@ -891,5 +897,13 @@ func reportReplyPush(cards interface {
 			return
 		}
 		emit(push.ReportReplyEvent(push.Reply{Fleet: fleet, FleetName: fleetName(fleet), Ship: name, Result: result, Card: r.CardID, Message: r.MessageID, Text: r.Text}))
+	}
+}
+
+// digestReplyPush turns AdmiralBot's reply to a fleet digest turn into the push that opens the chat at it. A digest
+// reply is a top-level message, so there is no ship card to look up, and it is no Inbox item.
+func digestReplyPush(fleetName func(fleet string) string, emit func(push.Event)) func(string, chat.DigestReply) {
+	return func(fleet string, r chat.DigestReply) {
+		emit(push.DigestReplyEvent(push.Digest{Fleet: fleet, FleetName: fleetName(fleet), Turn: r.TurnID, Message: r.MessageID, Text: r.Text}))
 	}
 }
