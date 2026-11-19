@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, SLOW_TIMEOUT_MS, type CrewBoat, type Ship } from './api';
 import { cardFor } from './answerCard';
+import { DraftingEndedBody } from './PeekDraftingEnded';
+import { InboxTitle } from './InboxTitle';
 import { Composer, useComposer } from './Composer';
 import { ConversationView } from './ConversationView';
 import { fleetSearch } from './fleets';
@@ -202,7 +204,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
             {rowVia(entry) ? <span class="muted"> via {rowVia(entry)}</span> : null}
           </h2>
           {titleLines(entry, title ?? '', shipTitle).map((t, i) => (
-            <p key={i} class="peek-title">{t}</p>
+            <p key={i} class="peek-title"><InboxTitle entry={entry} text={t} /></p>
           ))}
           {entry.fleet?.name ? <p class="peek-fleet">{entry.fleet.name}</p> : null}
           {isCrewKind(kind) ? (
@@ -236,6 +238,8 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
           <ShipTurn key={entry.key} ship={ship} boat={boat} fleetKey={fleetKey} item={item}>
             {form}
           </ShipTurn>
+        ) : kind === 'drafting_ended' ? (
+          <DraftingEndedBody entry={entry}>{form}</DraftingEndedBody>
         ) : (
           <>
             {form}

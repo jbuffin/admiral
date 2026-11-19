@@ -102,7 +102,7 @@ function Card({ title, children }: { title: string; children?: preact.ComponentC
 
 const cardKey = (c: AnswerCard) => (c.kind === 'permission' ? `p:${c.reason}:${c.call?.id ?? ''}` : c.kind === 'question' ? `q:${c.reason}:${c.item}` : c.kind);
 
-export function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCard; session: string; crew?: string; openTerminal: () => void }) {
+export function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCard; session: string; crew?: string; openTerminal?: () => void }) {
   // Which button was tapped; it stays busy until the card goes.
   const [tapped, setTapped] = useState<string | null>(null);
   const [gone, setGone] = useState<string | null>(null);
@@ -119,7 +119,7 @@ export function AnswerCardView({ card, session, crew, openTerminal }: { card: An
   if (card.kind === 'terminal')
     return (
       <Card title="Answer this in the terminal">
-        <Button label="Open terminal" onClick={openTerminal} />
+        {openTerminal ? <Button label="Open terminal" onClick={openTerminal} /> : null}
       </Card>
     );
   const send = async (choice: string, body: object) => {
@@ -147,7 +147,7 @@ export function AnswerCardView({ card, session, crew, openTerminal }: { card: An
   return null;
 }
 
-function ConversationBody({ conv, harness, anchored = false, working, noneTitle, footer, card, session, crew, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; footer?: preact.ComponentChildren; card: AnswerCard; session: string; crew?: string; openTerminal: () => void; loadOlder: () => void }) {
+function ConversationBody({ conv, harness, anchored = false, working, noneTitle, footer, card, session, crew, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; footer?: preact.ComponentChildren; card: AnswerCard; session: string; crew?: string; openTerminal?: () => void; loadOlder: () => void }) {
   const now = useTick(15_000);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -159,7 +159,7 @@ function ConversationBody({ conv, harness, anchored = false, working, noneTitle,
   }, [count, working, conv.state]);
 
   if (conv.state === 'loading') return <p class="line">Loading…</p>;
-  const terminal = <Button label="Open terminal" onClick={openTerminal} />;
+  const terminal = openTerminal ? <Button label="Open terminal" onClick={openTerminal} /> : null;
   if (conv.state === 'none')
     return noneTitle ? (
       <Card title={noneTitle}>{terminal}</Card>
@@ -210,7 +210,7 @@ function ConversationBody({ conv, harness, anchored = false, working, noneTitle,
 }
 
 /** The conversation with the card that answers its prompt in place, always in the same position below it. */
-export function ConversationView(props: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; footer?: preact.ComponentChildren; card: AnswerCard; session: string; crew?: string; openTerminal: () => void; loadOlder: () => void }) {
+export function ConversationView(props: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; footer?: preact.ComponentChildren; card: AnswerCard; session: string; crew?: string; openTerminal?: () => void; loadOlder: () => void }) {
   const { card, session, crew, openTerminal } = props;
   // A state that has its own Open terminal card needs no second one; a permission card needs no transcript.
   const shown: AnswerCard = card.kind === 'terminal' && props.conv.state !== 'ok' ? { kind: 'none' } : card;

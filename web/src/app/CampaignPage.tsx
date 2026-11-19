@@ -39,7 +39,7 @@ import { Link } from './NavLink';
 import { surfaceById } from './surfaces';
 import { IssueLabels } from './IssueLabels';
 import { LaunchForm } from './LaunchDialog';
-import { campaignPath, go } from './router';
+import { campaignPath, go, shipPath } from './router';
 import { Sheet } from './Sheet';
 import { ships } from './shipsLink';
 import { when } from './when';
@@ -87,6 +87,43 @@ function UnderwayCount({ n }: { n: number }) {
   );
 }
 
+// The mark before the skill's name; one place to change if the skill's own mark is wanted.
+const SKILL_MARK = '/';
+
+function draftingShips(fleet: string | undefined) {
+  return ships.value.filter((s) => s.drafting && s.fleet === fleet);
+}
+
+function DraftingRows({ fleet, cls }: { fleet: string | undefined; cls: string }) {
+  const here = draftingShips(fleet);
+  if (here.length === 0) return null;
+  return (
+    <ul class="camp-list drafting-list">
+      {here.map((s) => (
+        <li key={s.session}>
+          <a
+            class={`${cls} drafting-row`}
+            href={shipPath(s.session) + search(s.fleet)}
+            onClick={(e) => {
+              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              go(shipPath(s.session), search(s.fleet));
+            }}
+          >
+            <span class="drafting-dot" aria-hidden="true" />
+            <span class="camp-name">Drafting a campaign</span>
+            <span class="visually-hidden"> · </span>
+            <span class="camp-meta">
+              {s.skill ? `${SKILL_MARK}${s.skill} · ` : ''}
+              {s.name}
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function CampaignSidebar() {
   const fleet = activeFleet.value;
   const mine = campaignList.value.filter((c) => c.fleet === fleet?.key);
@@ -95,6 +132,7 @@ function CampaignSidebar() {
   const here = typeof location === 'undefined' ? '' : location.pathname;
   return (
     <div class="camp-side">
+      <DraftingRows fleet={fleet?.key} cls="camp-row" />
       <ul class="camp-list">
         {active.map((c) => (
           <li key={c.id}>
@@ -168,7 +206,8 @@ export function CampaignsList({ phone, title }: { phone: boolean; title: boolean
         <Button label={`Following (${mine.length - ended.length})`} pressed={!showEnded} onClick={() => (endedOpen.value = false)} />
         <Button label={`Ended (${ended.length})`} pressed={showEnded} onClick={() => (endedOpen.value = true)} />
       </div>
-      {list.length === 0 ? <p class="line">{showEnded ? 'No campaign has ended.' : 'Follow a campaign with Add campaign, or with Follow on an order.'}</p> : null}
+      {showEnded ? null : <DraftingRows fleet={fleet?.key} cls="camp-card" />}
+      {list.length === 0 && (showEnded || draftingShips(fleet?.key).length === 0) ? <p class="line">{showEnded ? 'No campaign has ended.' : 'Follow a campaign with Add campaign, or with Follow on an order.'}</p> : null}
       <ul class="camp-cards">
         {list.map((c) => (
           <li key={c.id}>

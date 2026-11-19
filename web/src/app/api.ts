@@ -172,8 +172,14 @@ export interface Ship {
   hand_refusal?: string;
   // Why the last hand failed on a ship that stayed live, until the next hand starts.
   hand_failed?: string;
+  // The skill the ship was launched with; null when none.
+  skill?: string | null;
   // `commodore` on a Commodore ship.
   skill_kind?: string;
+  // Set while the ship drafts a campaign, until its campaign is followed, it is handed to Commodore, or it ends.
+  drafting?: boolean;
+  // Why a drafting ship's campaign was not followed; omitted when empty.
+  drafting_notice?: string;
   // A live ship woken from its mooring: it returns to port by itself once its PRs are merged.
   carries_prs?: boolean;
   // A live ship whose report lists PRs GitHub confirms open: it can be moored.
@@ -267,6 +273,10 @@ export const shipUrl = (session: string, crew?: string) => `${API}/ships/${encod
 
 export const conversationUrl = (session: string, before?: string, crew?: string) =>
   `${shipUrl(session, crew)}/conversation${before === undefined ? '' : `?before=${encodeURIComponent(before)}`}`;
+
+/** An ended drafting ship's conversation, read through its Inbox item since the ship is gone. */
+export const itemConversationUrl = (session: string, id: string, before?: string) =>
+  `${API}/inbox/${encodeURIComponent(session)}/${encodeURIComponent(id)}/conversation${before === undefined ? '' : `?before=${encodeURIComponent(before)}`}`;
 
 const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
   (body.fleets ?? []).map((f) => ({

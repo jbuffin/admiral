@@ -4,6 +4,7 @@ import { syncSharedQueue, queueRev } from './attention';
 import { sharedInboxQueue, type Entry, type InboxQueue } from './inbox';
 import { call } from './api';
 import { Button } from './Button';
+import { InboxTitle } from './InboxTitle';
 import { renderMarkdown } from './markdown';
 import { isChatSession, Peek, peekKeys } from './Peek';
 import { REMOVED_FOLD } from './itemActions';
@@ -64,7 +65,7 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
           {rowVia(e) ? <span class="muted"> via {rowVia(e)}</span> : null}
         </span>
         {titleLines(e, title, shipTitle).map((t, i) => (
-          <span key={i} class="inbox-title">{t} </span>
+          <span key={i} class="inbox-title"><InboxTitle entry={e} text={t} /> </span>
         ))}
         {ship?.order_id ? <span class="ship-order mono">{orderLabel(ship.order_id)} </span> : null}
         {fleet ? (
