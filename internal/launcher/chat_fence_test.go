@@ -636,10 +636,10 @@ func TestEveryChatPromptTeachesTheThreeKindsOfShipAndWhenToSendEach(t *testing.T
 		if !someSentence(prompt, "scout", "launch_ship", "look", "report") {
 			t.Errorf("%s prompt does not send a scout to look and report", harness)
 		}
-		if !someSentence(prompt, "quick ship", "skill none", "small change", "one session") {
+		if !someSentence(prompt, "quick ship", "skill none", "small change", "one session", "no design to settle") {
 			t.Errorf("%s prompt does not send a quick ship (skill none) for a small change one session can finish", harness)
 		}
-		if !someSentence(prompt, "commodore ship", "skill commodore", "design") {
+		if !someSentence(prompt, "commodore ship", "skill commodore", "design", "several slices") {
 			t.Errorf("%s prompt does not send a Commodore ship (skill commodore) when there is a design to settle", harness)
 		}
 	}
@@ -655,7 +655,7 @@ func TestEveryChatPromptSendsACommodoreShipWhenUnsureOfTheKind(t *testing.T) {
 
 func TestEveryChatPromptAllowsAnyOtherLaunchOptionWhenNoKindFitsAndSaysWhichAndWhy(t *testing.T) {
 	for _, harness := range []string{"claude", "codex", "copilot"} {
-		if !someSentence(chatPromptFor(harness), "none of", "launch_ship", "which", "why") {
+		if !someSentence(chatPromptFor(harness), "none of", "launch_ship", "only as the rules above allow", "which", "why") {
 			t.Errorf("%s prompt does not allow another launch_ship option when none of the three kinds fits, saying which and why", harness)
 		}
 	}
@@ -675,7 +675,7 @@ func TestEveryChatPromptTakesALaunchsRepoFromTheMapAndAsksOnlyBeforeLaunch(t *te
 		if !someSentence(prompt, "launch", "dir", "list_repos", "ask", "more than one", "unclear") {
 			t.Errorf("%s prompt does not take a launch's dir from list_repos and ask only when the request is unclear or more than one repo fits", harness)
 		}
-		if !someSentence(prompt, "ask", "only before", "launch", "unclear") {
+		if !someSentence(prompt, "for a launch", "ask only before it", "more than one", "unclear") {
 			t.Errorf("%s prompt does not limit asking to before the launch", harness)
 		}
 		start := strings.Index(prompt, "Read with")
@@ -698,7 +698,7 @@ func TestEveryChatPromptNeverAsksTheEngineerToPickAKind(t *testing.T) {
 		}
 		for _, s := range promptSentences(prompt) {
 			low := strings.ToLower(s)
-			if strings.Contains(low, "ask_question") && strings.Contains(low, "real choice") && !strings.Contains(low, "kind") {
+			if strings.Contains(low, "ask_question") && strings.Contains(low, "real choice") && !strings.Contains(low, "other than the kind") {
 				t.Errorf("%s prompt's ask_question sentence leaves the choice of a kind open: %q", harness, s)
 			}
 		}
