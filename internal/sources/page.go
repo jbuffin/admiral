@@ -197,9 +197,9 @@ func parseID(raw json.RawMessage) (string, bool) {
 	return id, true
 }
 
-func parseChips(raw []json.RawMessage) ([]Chip, error) {
+func parseChips(raw []json.RawMessage, holder string) ([]Chip, error) {
 	if len(raw) > maxChips {
-		return nil, fmt.Errorf("%d chips, over the limit of %d", len(raw), maxChips)
+		return nil, fmt.Errorf("%s has %d chips, over the limit of %d", holder, len(raw), maxChips)
 	}
 	chips := []Chip{}
 	for _, c := range raw {
@@ -355,7 +355,7 @@ func parseRow(raw json.RawMessage) (Row, error) {
 	}
 	row := Row{ID: id, Title: titleLine(item.Title), Subtitle: titleLine(item.Subtitle), Reason: titleLine(item.Reason)}
 	var err error
-	if row.Chips, err = parseChips(item.Chips); err != nil {
+	if row.Chips, err = parseChips(item.Chips, "a row"); err != nil {
 		return Row{}, err
 	}
 	if u, _ := rawString(item.URL); safeURL(u) != "" && plainURL(safeURL(u)) {
@@ -383,7 +383,7 @@ func parseTarget(raw json.RawMessage) (*Target, error) {
 	if len(raw) == 0 || string(raw) == "null" || json.Unmarshal(raw, &it) != nil {
 		return nil, nil
 	}
-	chips, err := parseChips(it.Chips)
+	chips, err := parseChips(it.Chips, "a target")
 	if err != nil {
 		return nil, err
 	}
@@ -402,7 +402,7 @@ func parseSectionLink(raw json.RawMessage) (*Link, bool, error) {
 		Chips    []json.RawMessage `json:"chips"`
 	}
 	_ = json.Unmarshal(raw, &it)
-	chips, err := parseChips(it.Chips)
+	chips, err := parseChips(it.Chips, "a link")
 	if err != nil {
 		return nil, false, err
 	}
@@ -579,7 +579,7 @@ func parseSection(raw json.RawMessage, stepIDs map[string]bool) (*Section, error
 			stepIDs[id] = true
 			step := Step{ID: id, Title: titleLine(it.Title), Subtitle: titleLine(it.Subtitle)}
 			var err error
-			if step.Chips, err = parseChips(it.Chips); err != nil {
+			if step.Chips, err = parseChips(it.Chips, "a step"); err != nil {
 				return nil, err
 			}
 			if step.Actions, err = parseActions(it.Actions); err != nil {

@@ -683,6 +683,19 @@ test('a row module action naming a step the detail lacks is row-level in the det
   expect(within(rowOf('Fix login')).queryByRole('button', { name: 'Ghost' })).toBeNull();
 });
 
+test('a targeted row whose detail has no steps section still shows its row-level module actions, after the last section', async () => {
+  const ghost = { id: 'ghost', label: 'Ghost', confirm: 'click', step: 'gone' };
+  const links = { sections: [{ kind: 'links', title: 'Links', links: [{ label: 'Ticket', url: 'https://tracker.example/t/1' }] }] };
+  server({ t1: { body: links } }, withRow(targetedRow({ action: undefined, actions: [ghost, closeAll] })));
+  select('t1');
+  sources.value = [source(1)];
+  open();
+  const pane = await screen.findByRole('complementary', { name: 'Selected row' });
+  await within(pane).findByRole('link', { name: 'Ticket' });
+  expect(within(pane).getByRole('button', { name: 'Close 3 from before today' })).toBeTruthy();
+  expect(before(within(pane).getByRole('link', { name: 'Ticket' }), within(pane).getByRole('button', { name: 'Ghost' }))).toBe(true);
+});
+
 test("a module action whose id already showed earlier shows nowhere else, the row's own copy first", async () => {
   const detail = steps();
   const s1 = (detail.sections[0] as { steps: { actions: unknown[] }[] }).steps;

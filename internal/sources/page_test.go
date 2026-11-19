@@ -246,8 +246,7 @@ func TestARowTargetKeepsItsLabelChipsAndStepAndDropsWhatIsUnusable(t *testing.T)
 	}
 }
 
-func TestAModuleActionKeepsTheStepItNamesAndDropsABadOrBuiltinOrNoticeStep(t *testing.T) {
-	builtinAndNoticeDropTheirStep(t)
+func TestAModuleActionKeepsTheStepItNamesAndDropsABadStep(t *testing.T) {
 	row := firstRow(t, oneRow(`{"id":"r","title":"R",
 		"action":{"id":"a","label":"A","confirm":"click","step":"s1"},
 		"actions":[{"id":"b","label":"B","confirm":"click","step":"a\nb"},{"id":"c","label":"C","confirm":"click","step":"gone"},{"id":"d","label":"D","confirm":"click"}]}`))
@@ -270,6 +269,21 @@ func TestAModuleActionKeepsTheStepItNamesAndDropsABadOrBuiltinOrNoticeStep(t *te
 	sacts := list(t, list(t, jsonOf(t, d), "sections")[0], "steps")[0].(map[string]any)["actions"].([]any)
 	if sacts[0].(map[string]any)["step"] != "s2" || sacts[1].(map[string]any)["step"] != nil {
 		t.Errorf("step actions = %s, want step s2 kept on x and the empty step dropped on y", dump(sacts))
+	}
+}
+
+func TestABuiltinActionAndANoticeActionDropTheirStep(t *testing.T) {
+	row := firstRow(t, oneRow(`{"id":"r","title":"R","actions":[{"id":"o","label":"Open","builtin":"open","url":"https://example.com/x","step":"s1"}]}`))
+	if got := list(t, row, "actions")[0].(map[string]any); got["step"] != nil || got["builtin"] != "open" {
+		t.Errorf("built-in action = %s, want it kept without a step", dump(got))
+	}
+	p, err := parsePage(json.RawMessage(`{"state":"ready","groups":[],"notices":[{"id":"n","text":"T","action":{"id":"a","label":"A","confirm":"click","step":"s1"}}]}`))
+	if err != nil {
+		t.Fatalf("parsePage: %v", err)
+	}
+	n := list(t, jsonOf(t, p), "notices")[0].(map[string]any)
+	if a, _ := n["action"].(map[string]any); a == nil || a["id"] != "a" || a["step"] != nil {
+		t.Errorf("notice = %s, want its module action kept without a step", dump(n))
 	}
 }
 
@@ -611,21 +625,5 @@ func TestASourceKnownToHaveNoPageHasNeitherPageNorRowDetail(t *testing.T) {
 	}
 	if _, err := r.rowDetail(t.Context(), "t1", nil); !errors.Is(err, errNoPage) {
 		t.Errorf("rowDetail = %v, want errNoPage", err)
-	}
-}
-
-func builtinAndNoticeDropTheirStep(t *testing.T) {
-	t.Helper()
-	row := firstRow(t, oneRow(`{"id":"r","title":"R","actions":[{"id":"o","label":"Open","builtin":"open","url":"https://example.com/x","step":"s1"}]}`))
-	if got := list(t, row, "actions")[0].(map[string]any); got["step"] != nil || got["builtin"] != "open" {
-		t.Errorf("built-in action = %s, want it kept without a step", dump(got))
-	}
-	p, err := parsePage(json.RawMessage(`{"state":"ready","groups":[],"notices":[{"id":"n","text":"T","action":{"id":"a","label":"A","confirm":"click","step":"s1"}}]}`))
-	if err != nil {
-		t.Fatalf("parsePage: %v", err)
-	}
-	n := list(t, jsonOf(t, p), "notices")[0].(map[string]any)
-	if a, _ := n["action"].(map[string]any); a == nil || a["id"] != "a" || a["step"] != nil {
-		t.Errorf("notice = %s, want its module action kept without a step", dump(n))
 	}
 }

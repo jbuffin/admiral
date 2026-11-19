@@ -200,7 +200,7 @@ A plugin that lists `page` in its `initialize` capabilities is a **module**: it 
 {"jsonrpc":"2.0","id":5,"result":{"groups":[{"id":"review","title":"Needs review","rows":[{"id":"T-1","title":"Fix login","subtitle":"Acme","chips":[{"label":"P1","tone":"warn"}],"reason":"Review is open","action":{"id":"pass","label":"Pass review","confirm":"form","summary":"Pass the review"}}]}],"waiting":1}}
 ```
 
-**`row.get`** carries the row `id` and, optionally, `include`. The `id` and the `include` values come from a client through Admiral, which checks only their length and that the id is on the page, so treat both as untrusted (never build a file path from them without checking). `include` lists parts you leave out by default, such as closed or queued steps; it is left out of the params when the engineer asked for none.
+**`row.get`** carries the row `id` and, optionally, `include`. The `id` and the `include` values come from a client through Admiral, which checks only their length and that the id is on the page, so treat both as untrusted (never build a file path from them without checking). `include` lists parts you leave out by default, such as closed or queued steps; it is left out of the params when the engineer asked for none. The new shell asks for none today, so a part you hide by default stays hidden; `include` is for a client that asks (the route passes it on, see [the API](api.md)).
 
 ```json
 {"jsonrpc":"2.0","id":6,"method":"row.get","params":{"id":"T-1","include":["closed"]}}
@@ -263,7 +263,7 @@ A group:
 
 | Field | Type | Required | Applies to | Meaning | Drawn as | When bad |
 | --- | --- | --- | --- | --- | --- | --- |
-| `id` | string | yes | all | The action's id, unique within a row and its steps (see [Module actions](#module-actions-actionform-and-actionrun)). | Not shown. | Missing: the action is dropped. |
+| `id` | string | yes | all | The action's id, unique within a row and its steps (see [Module actions](#module-actions-actionform-and-actionrun)). It is cleaned and capped like a title (one line, no invisible characters, at most 200 characters), never refused for its length or a control character; the cleaned id is what `action.run` carries. | Not shown. | Missing, not a string or empty after cleaning: the action is dropped. |
 | `label` | string | yes | all | The button's text. | The button's text. | Missing: the action is dropped. |
 | `confirm` | string | no | module actions | `click` runs at once, `yesno` asks first, `form` asks `action.form` and shows its fields. | Decides what a press does first. | Any other value reads `yesno`. A message action always asks. |
 | `summary` | string | no | module actions | A line of what the action does, shown in its confirm. | In the confirm. | Cleaned of control characters. |
@@ -417,6 +417,18 @@ Admiral keeps the last good page. A `page.get` or `row.get` that gets no answer 
 | A notice whose text is empty after cleaning; a chip with no text; an action with no `id` or `label`; a link, field or step that is unusable; a section of an unknown `kind`; a link or action whose `url` is not `http:` or `https:`; a field whose `value` holds a control character other than a line break or tab | That part is dropped by itself, and the rest of the answer stays. |
 | A negative or non-number `waiting`; an unknown chip `tone`; an unknown notice `tone` | Corrected: 0, `neutral`, `info`. |
 
+#### A value of the wrong JSON type
+
+What a wrong type does depends on where it sits. Read it from the table's three results:
+
+| Where | Result |
+| --- | --- |
+| The answer, a group, a notice, a row or a section that is not an object; `groups`, `notices`, a group's `rows`, a row's `chips` or `actions`, `sections`, or a section's `links`, `steps` or `fields` that is not a list; `loading` that is not a boolean; the `id` of a group, a notice or a row that is not a string | Refuses the whole answer: `page.get` keeps the last good page and logs a protocol error, `row.get` fails and the row's pane shows the error. |
+| A chip, link, field, action or step that is not an object; a step's `chips` or `actions` that is not a list; a step `id` that is not a string; a target that is not an object or whose `chips` is not a list; a `kind` that is not a string | Drops that object (the target, the section, the step and so on) and keeps the rest. |
+| Any other value, such as a `title`, `subtitle`, `reason`, `label`, `text`, `tone`, `url`, `confirm` or `summary` that is not a string, or a `waiting` that is not a number | Drops the field: text reads as empty, a tone as `neutral` (`info` on a notice), `confirm` as `yesno`, `waiting` as 0, and an object that needs the value (an action without its `id` or `label`, a link without its `url`) goes with it. |
+
+When `row.get` errors or is refused (an RPC error, no answer in 10 seconds, an answer over the limit or with a bad shape), the engineer sees "Couldn't load this row." and the one-line reason in the pane, and the page and the other rows stay as they were. The reason is your error message, cleaned to one line, or Admiral's own for a refused answer.
+
 A notice's text is cut to one line of at most 300 characters, without invisible or bidirectional-control characters. Titles, subtitles, reasons and labels are cut to one line of at most 200 characters, without invisible or bidirectional-control characters.
 
 ## Writing a module
@@ -518,7 +530,7 @@ To use it in Admiral, add a source for it to `config.json` (with its `fleet`) or
 
 ### A module
 
-This sibling declares a page: one group with two rows and a detail view for each. Its `page.refresh` marks the first row done and sends `page.changed` with the row it changed. Save it as `$ADMIRAL_HOME/plugins/tasks/plugin.py` with this manifest:
+This sibling declares a page: one group with two rows and a detail view for each. Each row has a Finish `click` action: `action.run` marks the row done and answers a message, and the plugin then sends `page.changed` with that row. Its `page.refresh` marks the first row done and sends `page.changed` the same way. Save it as `$ADMIRAL_HOME/plugins/tasks/plugin.py` with this manifest:
 
 ```json
 { "name": "tasks", "description": "Two tasks on a page.", "command": "python3", "args": ["plugin.py"] }
@@ -533,7 +545,8 @@ tasks = {"t1": {"title": "Fix login", "done": False}, "t2": {"title": "Update do
 
 
 def page():
-    rows = [{"id": i, "title": t["title"], "chips": [{"label": "done" if t["done"] else "open", "tone": "good" if t["done"] else "warn"}]}
+    rows = [{"id": i, "title": t["title"], "chips": [{"label": "done" if t["done"] else "open", "tone": "good" if t["done"] else "warn"}],
+             "action": {"id": "finish", "label": "Finish", "confirm": "click"}}
             for i, t in tasks.items()]
     return {"groups": [{"id": "tasks", "title": "Tasks", "rows": rows}], "waiting": sum(not t["done"] for t in tasks.values()),
             "notices": [{"id": "demo", "text": "These tasks are examples", "tone": "info"}]}
@@ -549,6 +562,9 @@ def handle(method, params):
     if method == "row.get":
         t = tasks[params["id"]]
         return {"sections": [{"kind": "fields", "title": "Details", "fields": [{"label": "Title", "value": t["title"]}]}]}
+    if method == "action.run":
+        tasks[params["row"]]["done"] = True
+        return {"message": "Finished " + tasks[params["row"]]["title"]}
     if method == "page.refresh":
         tasks["t1"]["done"] = True
     return {}
@@ -559,6 +575,7 @@ for line in sys.stdin:
     if "id" in msg:
         result = handle(msg["method"], msg.get("params") or {})
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}), flush=True)
-        if msg["method"] == "page.refresh":
-            print(json.dumps({"jsonrpc": "2.0", "method": "page.changed", "params": {"rows": ["t1"]}}), flush=True)
+        if msg["method"] in ("page.refresh", "action.run"):
+            row = msg["params"]["row"] if msg["method"] == "action.run" else "t1"
+            print(json.dumps({"jsonrpc": "2.0", "method": "page.changed", "params": {"rows": [row]}}), flush=True)
 ```

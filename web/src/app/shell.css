@@ -1350,16 +1350,16 @@ a.mlink:hover { text-decoration: underline; }
 .module-page .mrow-target { flex-direction: column; align-items: stretch; gap: 0; }
 /* In a column, a row button's 12em basis would be its height. */
 .module-page .orow.mrow-target .orow-open, .module-page .orow-phone.mrow-target .orow-open { flex: none; }
-.mtarget { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0 10px; border-top: 1px dashed var(--color-line); }
-.module-page .orow-phone.mrow-target .mtarget { margin-right: 10px; }
+.mtarget-line { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; border-top: 1px dashed var(--color-line); }
+.module-page .orow-phone.mrow-target .mtarget-line { margin-right: 10px; }
+.mtarget { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0 10px; }
 .module-page .mtarget .mactions { margin: 0; }
 .mtarget-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-right: auto; font-size: var(--font-size-meta); color: var(--color-text2); }
-.mrowlevel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 0 10px; }
-.module-page .orow-phone.mrow-target .mrowlevel { margin-right: 10px; }
+.mrowlevel { flex: 0 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0 10px; margin-left: auto; }
 .module-page .mrowlevel .mactions { margin: 0; }
 .mdivider { align-self: stretch; width: 1px; min-height: 24px; background: var(--color-line2); }
 .mrowlevel-detail { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--color-line); }
-.odetail .mlinks li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.odetail .mlinks li:has(.mlink-chips, .mlink-sub) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .mlink-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .mlink-sub { flex-basis: 100%; font-size: var(--font-size-meta); color: var(--color-muted); }
 .mtarget-label strong { font-weight: 600; color: var(--color-text); }
