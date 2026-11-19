@@ -614,3 +614,93 @@ func TestEveryChatPromptTeachesDraftCampaignAsAnInstructionOnlyAskingOnlyWhenSev
 		}
 	}
 }
+
+// someSentence reports whether one sentence of the prompt holds every word, ignoring case.
+func someSentence(prompt string, words ...string) bool {
+	for _, s := range promptSentences(prompt) {
+		low := strings.ToLower(s)
+		all := true
+		for _, w := range words {
+			all = all && strings.Contains(low, w)
+		}
+		if all {
+			return true
+		}
+	}
+	return false
+}
+
+func TestEveryChatPromptTeachesTheThreeKindsOfShipAndWhenToSendEach(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		if !someSentence(prompt, "scout", "launch_ship", "look", "report") {
+			t.Errorf("%s prompt does not send a scout to look and report", harness)
+		}
+		if !someSentence(prompt, "quick ship", "skill none", "small change", "one session", "no design to settle") {
+			t.Errorf("%s prompt does not send a quick ship (skill none) for a small change one session can finish", harness)
+		}
+		if !someSentence(prompt, "commodore ship", "skill commodore", "design", "several slices") {
+			t.Errorf("%s prompt does not send a Commodore ship (skill commodore) when there is a design to settle", harness)
+		}
+	}
+}
+
+func TestEveryChatPromptSendsACommodoreShipWhenUnsureOfTheKind(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		if !someSentence(chatPromptFor(harness), "commodore ship", "unsure") {
+			t.Errorf("%s prompt does not say to send a Commodore ship when unsure of the kind", harness)
+		}
+	}
+}
+
+func TestEveryChatPromptAllowsAnyOtherLaunchOptionWhenNoKindFitsAndSaysWhichAndWhy(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		if !someSentence(chatPromptFor(harness), "none of", "launch_ship", "only as the rules above allow", "which", "why") {
+			t.Errorf("%s prompt does not allow another launch_ship option when none of the three kinds fits, saying which and why", harness)
+		}
+	}
+}
+
+func TestEveryChatPromptTeachesReasonAsTheLaunchLineThatStartsWithTo(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		if !someSentence(chatPromptFor(harness), "reason", "launch line", "starts with \"to\"", "why") {
+			t.Errorf("%s prompt does not teach reason as the launch line, starting with \"to\" and saying why", harness)
+		}
+	}
+}
+
+func TestEveryChatPromptTakesALaunchsRepoFromTheMapAndAsksOnlyBeforeLaunch(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		if !someSentence(prompt, "launch", "dir", "list_repos", "ask", "more than one", "unclear") {
+			t.Errorf("%s prompt does not take a launch's dir from list_repos and ask only when the request is unclear or more than one repo fits", harness)
+		}
+		if !someSentence(prompt, "for a launch", "ask only before it", "more than one", "unclear") {
+			t.Errorf("%s prompt does not limit asking to before the launch", harness)
+		}
+		start := strings.Index(prompt, "Read with")
+		if start < 0 {
+			t.Errorf("%s prompt has no reads sentence", harness)
+			continue
+		}
+		reads, _, _ := strings.Cut(prompt[start:], ". ")
+		if !strings.Contains(reads, "list_repos") {
+			t.Errorf("%s prompt's reads sentence does not name list_repos: %q", harness, reads)
+		}
+	}
+}
+
+func TestEveryChatPromptNeverAsksTheEngineerToPickAKind(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		if !someSentence(prompt, "never", "ask", "kind of ship") {
+			t.Errorf("%s prompt does not say never to ask the engineer which kind of ship to send", harness)
+		}
+		for _, s := range promptSentences(prompt) {
+			low := strings.ToLower(s)
+			if strings.Contains(low, "ask_question") && strings.Contains(low, "real choice") && !strings.Contains(low, "other than the kind") {
+				t.Errorf("%s prompt's ask_question sentence leaves the choice of a kind open: %q", harness, s)
+			}
+		}
+	}
+}

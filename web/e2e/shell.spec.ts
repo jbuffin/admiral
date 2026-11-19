@@ -1,11 +1,11 @@
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatTurnEnds, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatTurnEnds, chatLaunches, chatLaunchReply, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -815,18 +815,37 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   expect(watch.unversioned()).toEqual([]);
 });
 
-test("a ship that sails off gets AdmiralBot's reply to its report turn threaded under its ship card, the turn behind a closed disclosure", async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true, chat: true });
-  chatSays(admiral, 'harbor', [line.user('Send a ship to read the harbour log')]);
+test("a scout AdmiralBot sends for the engineer's request shows its launch line, sails off with findings, and gets AdmiralBot's reply to its report turn threaded under its ship card, the turn behind a closed disclosure", async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true, chat: true, mcpChat: 'harbor' });
   await admiral.start({ env: mooringEnv(admiral) });
   const watch = watchPage(page, admiral.url);
   await page.goto(admiral.url + 'app/chat?fleet=harbor');
   const main = page.getByRole('main');
-  await expect(main).toContainText('Send a ship to read the harbour log');
+  const checked = await page.request.post(admiral.url + 'api/v1/harness-capabilities/check', { data: { fleet: 'harbor', harness: 'claude' } });
+  expect(checked.ok()).toBe(true);
+  const request = 'Read the harbour log and tell me the newest error';
+  const box = main.getByRole('textbox', { name: 'Message AdmiralBot' });
+  await box.fill(request);
+  await main.getByRole('button', { name: 'Send', exact: true }).tap();
+  await expect.poll(() => chatReceived(admiral, 'harbor')).toContain(request);
+  chatSays(admiral, 'harbor', [line.user(request)]);
+  await expect(main).toContainText(request);
   chatPrompts(admiral, 'harbor');
-  const sailing = await launchAsAdmiralBot(admiral, 'harbor', 'Read the harbour log and report the newest error.', 'to look at the harbour log', true);
+  // The fake AdmiralBot answers the request with launch_ship over MCP, as its model would.
+  chatLaunches(admiral, 'harbor', { harness: 'claude', scout: true, dir: join(admiral.home, 'proj'), text: 'Read the harbour log and report the newest error.', reason: 'to look at the harbour log' });
+  await expect.poll(() => chatLaunchReply(admiral, 'harbor'), { message: 'launch_ship answered' }).not.toBe('');
+  expect(JSON.parse(chatLaunchReply(admiral, 'harbor')).isError).toBe(false);
+  await expect(main).toContainText('Sent a scout to look at the harbour log');
+  // The scout keeps findings while it waits, then sails off.
+  const rec = join(admiral.home, 'rec');
+  await expect.poll(() => readdirSync(rec).filter((d) => d !== chatSession('harbor') && existsSync(join(rec, d, 'recorded'))).length).toBe(1);
+  const session = readdirSync(rec).find((d) => d !== chatSession('harbor') && existsSync(join(rec, d, 'recorded')))!;
+  const findings = /^ADMIRAL_FINDINGS=(.*)$/m.exec(readFileSync(join(rec, session, 'env'), 'utf8'))?.[1];
+  expect(findings, 'the scout env names a findings path').toBeTruthy();
+  writeFileSync(findings!, 'The newest error is a tide gauge timeout.');
+  writeFileSync(join(rec, session, 'go'), '');
   await expect(main.getByText('Sailed off', { exact: true })).toHaveCount(1, { timeout: 30_000 });
-  await expect.poll(() => new RegExp(`\\[Report: ${sailing.name}\\][^\\r]*\\r`).test(chatReceived(admiral, 'harbor')), { timeout: 30_000 }).toBe(true);
+  await expect.poll(() => /\[Report: [^\]]+\][^\r]*\r/.test(chatReceived(admiral, 'harbor')), { timeout: 30_000 }).toBe(true);
   const turn = chatReceived(admiral, 'harbor').split('\r').find((x) => x.includes('[Report: ')) ?? '';
   chatSays(admiral, 'harbor', [line.user(turn.trim()), line.assistant('The newest error is a **tide gauge** timeout.')]);
   const thread = main.locator('[data-thread]');
@@ -836,9 +855,10 @@ test("a ship that sails off gets AdmiralBot's reply to its report turn threaded 
   const sent = thread.getByRole('button', { name: 'Report sent to AdmiralBot' });
   await expect(sent).toHaveAttribute('aria-expanded', 'false');
   await expect(thread.locator('.msg.user')).toHaveCount(0);
-  await expect(thread).not.toContainText('A ship you launched has reported back');
+  await expect(thread).not.toContainText('Scouts you launched have reported back');
   await sent.tap();
-  await expect(thread).toContainText('A ship you launched has reported back');
+  await expect(thread).toContainText('Scouts you launched have reported back');
+  await expect(thread).toContainText('findings: kept');
   expect(await pageFits(page)).toBe(true);
 
   expect(watch.errors).toEqual([]);

@@ -80,7 +80,7 @@ function probeableCodex(a: Admiral, fleet: string) {
 }
 
 /** Zulu (Westwind) comes first, alpha (Homeport) second; `live` makes the docks launchable and gives zulu the orders; `claude` replaces zulu's claude dock. */
-export function seedFleets(a: Admiral, opts: { userHome?: string; live?: boolean; chat?: boolean; versioned?: boolean; holdChat?: ChatFleet; turnChat?: ChatFleet; claude?: { executable: string; env: Record<string, string> } } = {}) {
+export function seedFleets(a: Admiral, opts: { userHome?: string; live?: boolean; chat?: boolean; versioned?: boolean; holdChat?: ChatFleet; turnChat?: ChatFleet; mcpChat?: ChatFleet; claude?: { executable: string; env: Record<string, string> } } = {}) {
   const live = !!opts.live;
   // A version the server can detect, which Check again needs to keep a seeded probe result.
   const codexDock = (fleet: string, harness: Harness) => {
@@ -97,7 +97,7 @@ export function seedFleets(a: Admiral, opts: { userHome?: string; live?: boolean
   };
   if (opts.chat) {
     const fleets = config.fleets as Record<string, unknown>;
-    for (const f of CHAT_FLEETS) fleets[f.key] = { name: f.name, search_roots: [a.home], claude: chatDock(a, f.key, opts.holdChat === f.key, opts.turnChat === f.key) };
+    for (const f of CHAT_FLEETS) fleets[f.key] = { name: f.name, search_roots: [a.home], claude: chatDock(a, f.key, opts.holdChat === f.key, opts.turnChat === f.key, opts.mcpChat === f.key) };
   }
   if (live) {
     config.sources = { orders: a.ordersSource('orders', 'Orders', { fleet: 'zulu' }) };
@@ -167,15 +167,18 @@ const chatConfigDir = (a: Admiral, fleet: string) => join(a.home, 'identity', `$
 /** A chat's transcript: Claude Code records it under the dock's config dir, which the SessionStart cue names to Admiral. */
 const chatTranscriptPath = (a: Admiral, fleet: string, name: string) => join(chatConfigDir(a, fleet), 'projects', 'p', `${name}.jsonl`);
 
-function chatDock(a: Admiral, fleet: string, hold: boolean, turn = false) {
+function chatDock(a: Admiral, fleet: string, hold: boolean, turn = false, mcp = false) {
   const cue = join(a.home, `chat-cue-${fleet}`);
   const startup = JSON.stringify({ transcript_path: chatTranscriptPath(a, fleet, 't1'), source: 'startup' });
   const cleared = JSON.stringify({ transcript_path: chatTranscriptPath(a, fleet, 't2'), source: 'clear' });
+  // An mcp chat makes the launch_ship call the test hands it, as AdmiralBot does; the ships it launches play a cue of their own, not the chat's.
+  const shipCue = join(a.home, `ship-cue-${fleet}`);
+  if (mcp) writeFileSync(shipCue, `event SessionStart ${JSON.stringify({ transcript_path: chatTranscriptPath(a, fleet, 'ship'), source: 'startup' })}\nwait go\nexit 0\n`);
   // A New chat clears the context: the second transcript starts once the test touches go-clear.
   // A held chat stays before its first SessionStart, as one stopped on Claude's folder-trust dialog does, until chatStarts.
-  writeFileSync(cue, ['record', 'bracketedpaste', ...(hold ? ['wait go-start'] : []), `event SessionStart ${startup}`, ...(turn ? ['hook working', 'wait go-turn-end', 'event Stop {"background_tasks":[]}', 'wait go-report-start', 'hook working', 'wait go-report-end', 'event Stop {"background_tasks":[]}'] : []), 'wait go-clear', `event SessionStart ${cleared}`].join('\n') + '\n');
+  writeFileSync(cue, ['record', 'bracketedpaste', ...(hold ? ['wait go-start'] : []), `event SessionStart ${startup}`, ...(mcp ? ['mcp launch'] : []), ...(turn ? ['hook working', 'wait go-turn-end', 'event Stop {"background_tasks":[]}', 'wait go-report-start', 'hook working', 'wait go-report-end', 'event Stop {"background_tasks":[]}'] : []), 'wait go-clear', `event SessionStart ${cleared}`].join('\n') + '\n');
   mkdirSync(join(chatConfigDir(a, fleet), 'projects', 'p'), { recursive: true });
-  return { executable: fakeClaude, env: { FAKE_RECORD_DIR: join(a.home, 'rec'), FAKE_CUE: cue, CLAUDE_CONFIG_DIR: chatConfigDir(a, fleet) } };
+  return { executable: fakeClaude, env: { FAKE_RECORD_DIR: join(a.home, 'rec'), FAKE_CUE: cue, CLAUDE_CONFIG_DIR: chatConfigDir(a, fleet), ...(mcp && { FAKE_SHIP_CUE: shipCue }) } };
 }
 
 /** Writes lines to a fleet's chat transcript before or after the chat starts; `second` is the transcript a New chat moves to. */
@@ -204,6 +207,18 @@ export function chatStarts(a: Admiral, fleet: ChatFleet) {
 /** Stamps a new prompt on the chat's pane, as its UserPromptSubmit hook does, which the fake Claude Code does not run: a ship launched for the earlier prompt no longer holds this one. */
 export const chatPrompts = (a: Admiral, fleet: ChatFleet) =>
   spawnSync('tmux', ['-S', join(a.home, 'tmux.sock'), 'set-option', '-p', '-t', `${chatSession(fleet)}:`, '@admiral-chat-prompt', String(BigInt(Date.now()) * 1000000n)], { encoding: 'utf8' });
+
+/** Has a chat seeded with `mcpChat` call launch_ship with these arguments, as its model does on the engineer's request. */
+export function chatLaunches(a: Admiral, fleet: ChatFleet, args: Record<string, unknown>) {
+  mkdirSync(chatRecord(a, fleet), { recursive: true });
+  writeFileSync(join(chatRecord(a, fleet), 'launch'), JSON.stringify({ name: 'launch_ship', arguments: args }));
+}
+
+/** The reply the chat's launch_ship call got, once it has one. */
+export const chatLaunchReply = (a: Admiral, fleet: ChatFleet) => {
+  const path = join(chatRecord(a, fleet), 'launch.reply');
+  return existsSync(path) ? readFileSync(path, 'utf8') : '';
+};
 
 /** Ends the engineer's turn in a chat seeded with `turnChat`, which works from its start until then, as Claude Code does while it answers. */
 export function chatTurnEnds(a: Admiral, fleet: ChatFleet, step: 'turn-end' | 'report-start' | 'report-end' = 'turn-end') {
