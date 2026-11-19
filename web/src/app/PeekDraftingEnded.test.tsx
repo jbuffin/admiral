@@ -160,3 +160,11 @@ test('a conversation that reads none is read once, not asked about again', async
   }
   expect(convoRequests()).toHaveLength(1);
 });
+
+test('a conversation that fails to load (500) says so, with no Open terminal and no second read', async () => {
+  page = () => json({ error: 'boom' }, 500);
+  open();
+  await screen.findByText("Admiral can't read this conversation");
+  expect(screen.queryByRole('button', { name: 'Open terminal' })).toBeNull();
+  expect(convoRequests()).toHaveLength(1);
+});

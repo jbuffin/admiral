@@ -1281,9 +1281,10 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .module-page { overflow-wrap: anywhere; }
 .module-page .skeleton, .sheet .skeleton { height: 96px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-hover); animation: module-pulse 1.4s ease-in-out infinite; }
 @keyframes module-pulse { 50% { opacity: 0.45; } }
-@media (prefers-reduced-motion: reduce) { .module-page .skeleton, .sheet .skeleton, .drafting-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .module-page .skeleton, .sheet .skeleton { animation: none; } }
 .drafting-row .drafting-dot { grid-area: ring; width: 8px; height: 8px; margin: auto; border-radius: 50%; background: var(--color-accent); animation: module-pulse 1.4s ease-in-out infinite; }
-.drafting-row .camp-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drafting-row .camp-meta { overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .drafting-row .drafting-dot { animation: none; } }
 .module-page .signin { padding: 12px; border: 1px solid var(--color-needs-line); border-radius: var(--shape-radius-md); }
 .nav-link .nav-icon-img, .menu-item .nav-icon-img { width: 20px; height: 20px; border-radius: 4px; }
 .mchip { flex: none; padding: 1px 8px; border: 1px solid var(--color-line2); border-radius: 999px; font-size: 11.5px; white-space: nowrap; }

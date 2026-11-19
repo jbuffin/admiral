@@ -19,11 +19,11 @@ function useItemConversation(entry: Entry) {
         const res = await fetch(itemConversationUrl(entry.session, entry.id!));
         if (stopped) return;
         if (res.status === 404) return setConv({ state: 'gone', items: [], more: false });
-        if (!res.ok) return;
+        if (!res.ok) return setConv({ state: 'unreadable', items: [], more: false });
         const page = (await res.json()) as ConversationPage;
         if (!stopped) setConv(page.state === 'ok' ? { state: 'ok', items: page.items ?? [], more: page.more } : { state: page.state, items: [], more: false });
       } catch {
-        // The Peek keeps its loading line; opening it again reads again.
+        if (!stopped) setConv({ state: 'unreadable', items: [], more: false });
       }
     })();
     return () => void (stopped = true);
