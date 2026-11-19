@@ -16,7 +16,7 @@ import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
 import { MuteRule } from './MuteRule';
 import { ReviewerNoteView } from './ReviewerNoteView';
 import { Peek } from './Peek';
-import { go, loc, chatMessageOf, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
+import { campaignPath, go, loc, chatMessageOf, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
 import { safeHref } from './makeCampaign';
 import { renderMarkdown } from './markdown';
 import { PeekQuestions } from './PeekQuestions';
@@ -92,6 +92,26 @@ function CampaignDraftCardView({ item }: { item: Extract<ThreadItem, { kind: 'ca
       <p class="line">{title}</p>
       {href ? <Button label="Open the campaign issue" href={href} external /> : null}
       {failed ? <p class="line">{failed}</p> : null}
+    </div>
+  );
+}
+
+function FollowingCardView({ item }: { item: Extract<ThreadItem, { kind: 'following' }> }) {
+  const href = campaignPath(item.card.campaign_id);
+  return (
+    <div class="convo-card chat-card">
+      <p class="chat-card-eyebrow">Following</p>
+      <Button
+        label={`Open the campaign ${item.card.title}`}
+        href={href}
+        onClick={(e) => {
+          if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+          e.preventDefault();
+          go(href, fleetSearch.value);
+        }}
+      >
+        {item.card.title}
+      </Button>
     </div>
   );
 }
@@ -376,6 +396,8 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           <ShipCardView key={i.id} item={i} />
         ) : i.kind === 'campaign_draft' ? (
           <CampaignDraftCardView key={i.id} item={i} />
+        ) : i.kind === 'following' ? (
+          <FollowingCardView key={i.id} item={i} />
         ) : (
           <MessageView key={i.id} item={i} linkShips={linkShips} fleet={fleet} flash={flashId === i.id} />
         ),

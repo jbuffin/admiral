@@ -107,6 +107,19 @@ func (s *Service) FollowDrafted(fleet, reference string) error {
 	return nil
 }
 
+// FollowedCampaign is the id and title of the campaign a reference names, from the tree Admiral read; ok is false when it is not followed.
+func (s *Service) FollowedCampaign(_, reference string) (id, title string, ok bool) {
+	ref, err := campaigns.ParseIssueRef(reference)
+	if err != nil {
+		return "", "", false
+	}
+	have, found := s.Store.Lookup(fmt.Sprintf("https://%s/%s/%s/issues/%d", hostOf(ref), ref.Owner, ref.Repo, ref.Number))
+	if !found || have.Tree == nil {
+		return "", "", false
+	}
+	return have.ID, have.Tree.Title, true
+}
+
 // Snapshot is the campaign as a commitment pass reads it: the latest good tree, built the way the page's is.
 func (s *Service) Snapshot(id string) campaigns.Read {
 	f, ok := s.Store.Get(id)

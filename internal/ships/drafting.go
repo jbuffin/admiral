@@ -3,6 +3,7 @@ package ships
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -26,6 +27,7 @@ type draftState struct {
 	ended    bool
 	fleet    string // the launch's fleet and harness: the ship can rewrite its pane options, so these are what Admiral trusts
 	harness  string
+	fromChat bool      // launched by AdmiralBot from the chat, so a followed campaign posts its card
 	moored   *draftEnd // what the end needs, kept when the ship moors, for a stop that ends it later
 }
 
@@ -42,6 +44,7 @@ func (s *Service) markDrafting(session, first, fleet, harness string) {
 // markDraftingFromChat is markDrafting for a ship AdmiralBot launched from the chat.
 func (s *Service) markDraftingFromChat(session, first, fleet, harness string) {
 	s.markDrafting(session, first, fleet, harness)
+	s.draftOf(session, first).fromChat = true
 }
 
 // IsDrafting is whether the ship of this session and first launch stamp was launched as a drafting ship since Admiral started.
@@ -79,7 +82,7 @@ func issueLabel(url string) (string, bool) {
 
 // applyRef follows the issue a ship wrote, once: a later ref naming another issue is ignored and one the follow refuses
 // is shown on the ship. The caller holds d.run.
-func (s *Service) applyRef(d *draftState, fleet, line string) {
+func (s *Service) applyRef(d *draftState, ship, fleet, line string) {
 	if issueRef.FindStringSubmatch(line) == nil || s.FollowDrafted == nil {
 		return
 	}
@@ -108,6 +111,23 @@ func (s *Service) applyRef(d *draftState, fleet, line string) {
 	}
 	d.mu.Unlock()
 	s.broadcast()
+	if err == nil && d.fromChat {
+		s.postFollowingCard(ship, fleet, line)
+	}
+}
+
+// postFollowingCard tells the chat which campaign the ship followed, by the title Admiral read, never the ship's words.
+func (s *Service) postFollowingCard(ship, fleet, ref string) {
+	if s.PostFollowingCard == nil || s.FollowedCampaign == nil {
+		return
+	}
+	id, title, ok := s.FollowedCampaign(fleet, ref)
+	if !ok {
+		return
+	}
+	if err := s.PostFollowingCard(fleet, FollowingCard{Ship: ship, CampaignID: id, Title: title}); err != nil {
+		log.Printf("ships: following card for %s: %v", ship, err)
+	}
 }
 
 // readDraftRef reads and removes what the ship wrote at its campaign-ref since the last read.
@@ -168,7 +188,7 @@ func (s *Service) advanceDrafting() {
 			d.run.Lock()
 			defer d.run.Unlock()
 			if line := s.readDraftRef(name); line != "" {
-				s.applyRef(d, fleet, line)
+				s.applyRef(d, name, fleet, line)
 			}
 		}()
 	}
@@ -210,7 +230,7 @@ func (s *Service) followEndRef(e *draftEnd) bool {
 	e.d.run.Lock()
 	defer e.d.run.Unlock()
 	if ref := s.readDraftRef(e.item.Ship); ref != "" {
-		s.applyRef(e.d, e.fleet, ref)
+		s.applyRef(e.d, e.item.Ship, e.fleet, ref)
 	}
 	drafting, _ := e.d.view()
 	return drafting
