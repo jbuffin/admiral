@@ -204,6 +204,81 @@ test('a stored New in view routine shows as broken with a note, and the editor o
   expect(options.filter((o) => /New in/.test(o ?? ''))).toEqual([]);
 });
 
+test('picking Post a fleet digest swaps the launch fields for optional extra words, and Save creates a digest routine', async () => {
+  page(null, true);
+  await screen.findByRole('form', { name: 'Routine' });
+  const form = within(editor());
+  await waitFor(() => expect((form.getByRole('radio', { name: 'Claude' }) as HTMLInputElement).checked).toBe(true));
+  fireEvent.click(form.getByRole('radio', { name: 'Post a fleet digest' }));
+  expect(form.queryByLabelText('Text')).toBeNull();
+  expect(form.queryByLabelText('Checkout')).toBeNull();
+  expect(form.queryByRole('radio', { name: 'Claude' })).toBeNull();
+  fireEvent.input(form.getByLabelText('Name'), { target: { value: 'Morning digest' } });
+  fireEvent.input(form.getByLabelText('When'), { target: { value: '0 8 * * *' } });
+  fireEvent.input(form.getByLabelText(/extra words/i), { target: { value: 'lead with PRs' } });
+  fireEvent.click(form.getByRole('radio', { name: 'Act' }));
+  fireEvent.click(save());
+
+  await waitFor(() => expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST /api/v1/fleets/zulu/routines']));
+  expect(calls[0]!.body).toEqual({ name: 'Morning digest', enabled: true, when: '0 8 * * *', do: { digest: { extra: 'lead with PRs' } }, before_acting: 'act', notify: false });
+});
+
+test('a new digest routine defaults Before acting to Act, since a digest cannot act and never asks first', async () => {
+  page(null, true);
+  await screen.findByRole('form', { name: 'Routine' });
+  const form = within(editor());
+  fireEvent.click(form.getByRole('radio', { name: 'Post a fleet digest' }));
+  fireEvent.input(form.getByLabelText('Name'), { target: { value: 'Morning digest' } });
+  fireEvent.input(form.getByLabelText('When'), { target: { value: '0 8 * * *' } });
+  fireEvent.click(save());
+  await waitFor(() => expect(calls.map((c) => c.method)).toEqual(['POST']));
+  expect((calls[0]!.body as { before_acting: string }).before_acting).toBe('act');
+});
+
+test('a digest with the extra words left blank is saved as an empty digest', async () => {
+  page(null, true);
+  await screen.findByRole('form', { name: 'Routine' });
+  const form = within(editor());
+  fireEvent.click(form.getByRole('radio', { name: 'Post a fleet digest' }));
+  fireEvent.input(form.getByLabelText('Name'), { target: { value: 'Morning digest' } });
+  fireEvent.input(form.getByLabelText('When'), { target: { value: '0 8 * * *' } });
+  fireEvent.click(save());
+  await waitFor(() => expect(calls.map((c) => c.method)).toEqual(['POST']));
+  expect((calls[0]!.body as { do: unknown }).do).toEqual({ digest: {} });
+});
+
+test('a digest runs on a schedule only: the event choice is not offered while it is picked, and an event routine does not offer it', async () => {
+  page(null, true);
+  await screen.findByRole('form', { name: 'Routine' });
+  const form = within(editor());
+  fireEvent.click(form.getByRole('radio', { name: 'Post a fleet digest' }));
+  expect(form.queryByRole('radio', { name: 'An event' })).toBeNull();
+  expect(form.getByRole('radio', { name: 'A schedule' })).toBeTruthy();
+  fireEvent.click(form.getByRole('radio', { name: 'Launch a ship' }));
+  fireEvent.click(form.getByRole('radio', { name: 'An event' }));
+  expect(form.queryByRole('radio', { name: 'Post a fleet digest' })).toBeNull();
+});
+
+test('a stored digest routine opens with the digest picked and its extra words, and its list row says what it does', async () => {
+  routines = [stored({ name: 'Morning brief', do: { digest: { extra: 'lead with PRs' } } })];
+  page('r1');
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  expect((form.getByRole('radio', { name: 'Post a fleet digest' }) as HTMLInputElement).checked).toBe(true);
+  expect((form.getByLabelText(/extra words/i) as HTMLInputElement | HTMLTextAreaElement).value).toBe('lead with PRs');
+  expect(screen.getByRole('listitem').textContent).toMatch(/digest/i);
+});
+
+test('a kept digest draft opens in the editor with the digest picked, and Save stores it', async () => {
+  draftReply = linked({ do: { digest: { extra: 'lead with PRs' } } });
+  link('?fleet=zulu&draft=d%2F1');
+  page(null, true);
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  expect((form.getByRole('radio', { name: 'Post a fleet digest' }) as HTMLInputElement).checked).toBe(true);
+  expect((form.getByLabelText(/extra words/i) as HTMLInputElement | HTMLTextAreaElement).value).toBe('lead with PRs');
+  fireEvent.click(save());
+  await waitFor(() => expect(routines.map((r) => r.do)).toEqual([{ digest: { extra: 'lead with PRs' } }]));
+});
+
 test('the daily worker cap notice names the spend once it is reached, and the page says nothing before', async () => {
   spend = { today_usd: 1.5, cap_usd: 2, reached: false };
   const { unmount } = page();

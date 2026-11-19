@@ -958,6 +958,27 @@ func TestDraftRoutinePostsTheProseToItsOwnFleetAndAnswersASummaryAndTheLink(t *t
 	}
 }
 
+func TestDraftRoutineSaysAFleetDigestAndItsExtraWordsInsteadOfAnEmptyAction(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) {
+		return 200, `{"id":"d9","draft":{"name":"Morning digest","enabled":true,"when":"0 8 * * *","before_acting":"act","notify":false,"do":{"digest":{"extra":"lead with PRs"}}},"problems":[]}`
+	})
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "draft_routine", `{"prose":"post a digest every morning"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := result(t, replies, "1")
+	var does string
+	for _, line := range strings.Split(tr.text(), "\n") {
+		if rest, ok := strings.CutPrefix(line, "What it does:"); ok {
+			does = strings.TrimSpace(rest)
+		}
+	}
+	if tr.IsError || !strings.Contains(strings.ToLower(does), "digest") || !strings.Contains(does, "lead with PRs") {
+		t.Errorf("result = %+v, what it does = %q; want it to say a fleet digest with the extra words", tr, does)
+	}
+}
+
 func TestDraftRoutineSaysWhetherTheRoutineWillBeOnOrOffAndNamesTheProblems(t *testing.T) {
 	a := newStandIn(t, func(mcpReq) (int, string) {
 		return 200, `{"id":"d1","draft":{"name":"Sweep","enabled":false,"when":"every morning","before_acting":"just_do_it","notify":false,"do":{"prompt":"sweep"}},"problems":[{"field":"when","message":"not a cron expression"}]}`
@@ -1350,5 +1371,23 @@ func TestReadFindingsWithNoShipIsRefusedNamingShipWithoutCallingTheServer(t *tes
 	tr := readFindings(t, a, `{}`)
 	if !tr.IsError || !strings.Contains(tr.text(), "ship") || strings.Contains(tr.text(), "session") || len(a.requests()) != 0 {
 		t.Errorf("result = %+v, requests %v, want an error naming ship and no request", tr, a.requests())
+	}
+}
+
+func TestDraftRoutineEchoesExtraWordsFoldedAndCutAtTheCap(t *testing.T) {
+	extra := "lead‮ with PRs" + strings.Repeat("x", 1200)
+	body, _ := json.Marshal(map[string]any{"id": "d9", "problems": []any{}, "draft": map[string]any{"name": "Morning digest", "enabled": true, "when": "0 8 * * *", "before_acting": "act", "notify": false, "do": map[string]any{"digest": map[string]any{"extra": extra}}}})
+	a := newStandIn(t, func(mcpReq) (int, string) { return 200, string(body) })
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "draft_routine", `{"prose":"post a digest"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result(t, replies, "1").text()
+	if strings.ContainsAny(text, "‮ ") || !strings.Contains(text, "lead with PRs") {
+		t.Errorf("echo = %q, want the bidi and line-separator characters gone", text)
+	}
+	if strings.Count(text, "x") > 1000 {
+		t.Errorf("echo carries %d x's, want at most the 1000-character cap", strings.Count(text, "x"))
 	}
 }

@@ -13,12 +13,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/textsafe"
 )
 
 // mcpLatest is the protocol revision the server speaks when the client asks for one it doesn't know.
 const mcpLatest = "2025-06-18"
 
 var mcpRevisions = map[string]bool{"2024-11-05": true, "2025-03-26": true, mcpLatest: true}
+
+// mcpMaxDigestExtra is the server's cap on a digest's extra words; the echo stops there too.
+const mcpMaxDigestExtra = 1000
 
 // mcpMaxInFlight bounds the requests served at once; a client that floods the pipe waits instead of growing the process.
 const mcpMaxInFlight = 8
@@ -227,6 +232,9 @@ func draftRoutine(c *mcpClient, raw json.RawMessage) (string, error) {
 			Notify  bool   `json:"notify"`
 			Do      struct {
 				Prompt string `json:"prompt"`
+				Digest *struct {
+					Extra string `json:"extra"`
+				} `json:"digest"`
 			} `json:"do"`
 		} `json:"draft"`
 		Problems []struct {
@@ -238,7 +246,15 @@ func draftRoutine(c *mcpClient, raw json.RawMessage) (string, error) {
 		return "", errors.New("the draft came back unreadable")
 	}
 	d := r.Draft
-	oneLine := strings.NewReplacer("\r", " ", "\n", " ").Replace
+	oneLine := func(s string) string {
+		s = strings.Map(func(r rune) rune {
+			if textsafe.Hidden(r) {
+				return ' '
+			}
+			return r
+		}, s)
+		return strings.Join(strings.Fields(s), " ")
+	}
 	before := map[string]string{"report_only": "only report what it finds", "ask_first": "ask the engineer first", "act": "act without asking"}[d.Before]
 	if before == "" {
 		before = oneLine(d.Before)
@@ -250,9 +266,16 @@ func draftRoutine(c *mcpClient, raw json.RawMessage) (string, error) {
 	if d.Enabled {
 		state = "on"
 	}
+	does := oneLine(d.Do.Prompt)
+	if d.Do.Digest != nil {
+		does = "post a fleet digest to the chat; it reads only and cannot act"
+		if extra := oneLine(string([]rune(d.Do.Digest.Extra)[:min(len([]rune(d.Do.Digest.Extra)), mcpMaxDigestExtra)])); extra != "" {
+			does += ", with the extra words: " + extra
+		}
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Drafted a routine, unsaved: %q.\nWhen: %s\nWhat it does: %s\nBefore acting: %s\nNotify: %s\nOnce saved it will be %s.\n",
-		d.Name, oneLine(d.When), oneLine(d.Do.Prompt), before, notify, state)
+		d.Name, oneLine(d.When), does, before, notify, state)
 	for _, p := range r.Problems {
 		fmt.Fprintf(&b, "Problem with %s: %s\n", oneLine(p.Field), oneLine(p.Message))
 	}

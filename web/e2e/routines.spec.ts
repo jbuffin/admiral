@@ -6,6 +6,30 @@ type Sentences = { sentences: { field: string; sentence: string }[]; checks: str
 const orders = async (a: { url: string }, fleet: string) => (await (await fetch(`${a.url}api/v1/fleets/${fleet}/standing-orders`)).json()) as Sentences;
 const sentenceFor = (o: Sentences, field: string) => o.sentences.find((s) => s.field === field)!.sentence;
 
+test('a person adds a Post a fleet digest routine with a schedule and extra words, and it shows in the list and on the server', async ({ page, admiral }) => {
+  const claude = probeableClaude(admiral);
+  seedFleets(admiral, { claude: claude.dock });
+  await admiral.start();
+  await page.goto(admiral.url + 'app/routines/new?fleet=zulu');
+  const form = page.getByRole('form', { name: 'Routine' });
+  await form.getByLabel('Name').fill('Morning brief');
+  await form.getByRole('radio', { name: 'Post a fleet digest' }).click();
+  // a digest has no ship to launch and no event to answer
+  await expect(form.getByLabel('Checkout')).toHaveCount(0);
+  await expect(form.getByRole('radio', { name: 'An event' })).toHaveCount(0);
+  await form.getByLabel('When').fill('0 8 * * *');
+  await form.getByLabel(/extra words/i).fill('lead with PRs');
+  await form.getByRole('radio', { name: 'Act' }).click();
+  await form.getByRole('button', { name: 'Save' }).click();
+
+  const row = page.getByRole('listitem').filter({ hasText: 'Morning brief' });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText(/digest/i);
+  const stored = (await (await page.request.get(admiral.url + 'api/v1/fleets/zulu/routines')).json()) as { routines: { name: string; when: string; before_acting: string; do: unknown }[] };
+  expect(stored.routines).toHaveLength(1);
+  expect(stored.routines[0]).toMatchObject({ name: 'Morning brief', when: '0 8 * * *', before_acting: 'act', do: { digest: { extra: 'lead with PRs' } } });
+});
+
 test('the link of a kept routine draft opens the filled-in form, and a Standing orders sentence leads to its field on the Limits page, and a Check, a decimal and the Home preset reach the server', async ({ page, admiral }) => {
   const claude = probeableClaude(admiral);
   seedFleets(admiral, { claude: claude.dock });

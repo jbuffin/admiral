@@ -3,6 +3,9 @@ package e2e
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -44,6 +47,136 @@ func (w *world) routineRuns(id string) []runJSON {
 		w.t.Fatalf("runs is not JSON: %v\n%s", err, body)
 	}
 	return wrap.Runs
+}
+
+func (w *world) fleetRoutineRuns(fleet, id string) []runJSON {
+	w.t.Helper()
+	code, body := send(w.t, http.MethodGet, w.in.LocalURL+"/api/fleets/"+fleet+"/routines/"+id+"/runs", nil)
+	if code != http.StatusOK {
+		w.t.Fatalf("GET %s runs = %d: %s", fleet, code, body)
+	}
+	var wrap struct {
+		Runs []runJSON `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(body), &wrap); err != nil {
+		w.t.Fatalf("runs is not JSON: %v\n%s", err, body)
+	}
+	return wrap.Runs
+}
+
+func (w *world) makeRoutine(fleet string, routine map[string]any) string {
+	w.t.Helper()
+	code, body := send(w.t, http.MethodPost, w.in.LocalURL+"/api/fleets/"+fleet+"/routines", routine)
+	if code != http.StatusCreated && code != http.StatusOK {
+		w.t.Fatalf("POST %s routine = %d: %s", fleet, code, body)
+	}
+	var made struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &made); err != nil || made.ID == "" {
+		w.t.Fatalf("created routine has no id: %v\n%s", err, body)
+	}
+	return made.ID
+}
+
+// mcpCall has this fleet's fake chat send one tools/call by the cue `mcp <name>`: the request is the file <rec>/<name>, the reply <name>.reply.
+func (f *chatDock) mcpCall(name, tool string, args map[string]any) mcpReply {
+	f.t.Helper()
+	req, err := json.Marshal(map[string]any{"name": tool, "arguments": args})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	atomicWrite(f.t, filepath.Join(f.recDir(), name), string(req))
+	reply := filepath.Join(f.recDir(), name+".reply")
+	for end := time.Now().Add(20 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		raw, err := os.ReadFile(reply)
+		if err == nil && len(raw) > 0 {
+			var r mcpReply
+			if err := json.Unmarshal(raw, &r); err != nil {
+				f.t.Fatalf("the fake's reply to %s %s is not a tool result: %v\n%s", name, tool, err, raw)
+			}
+			return r
+		}
+		if time.Now().After(end) {
+			mcpErr, _ := os.ReadFile(filepath.Join(f.recDir(), "mcp-error"))
+			f.t.Fatalf("within 20s the fake chat never answered `mcp %s` (%s); the cue's errors: %s", name, tool, mcpErr)
+		}
+	}
+}
+
+func TestADigestRoutineQueuesATurnOnlyInTheFleetWithSomethingNewAndAdmiralBotCannotActDuringIt(t *testing.T) {
+	t.Parallel()
+	cue := func(f *chatDock) []string {
+		lines := chatCue(f)
+		if f.fleet == "alpha" {
+			// the turn never starts (the prompt stamp does not move), so the gate that refuses writes stays closed for the call below
+			return append(lines[:3:3], "mcp refused")
+		}
+		return lines
+	}
+	w, chats := newFleetsWorld(t, cue, fleetSpec{key: "alpha", model: "sonnet", effort: "high"}, fleetSpec{key: "beta", model: "sonnet", effort: "high"})
+	alpha, beta := chats["alpha"], chats["beta"]
+	now := time.Now()
+	skew := now.Truncate(time.Minute).Add(45 * time.Second).Sub(now)
+	if skew < 0 {
+		skew += time.Minute
+	}
+	w.extra = append(w.extra, "ADMIRAL_E2E_CLOCK_SKEW="+skew.String())
+	w.start()
+	alpha.start()
+	beta.start()
+	alpha.waitSession(10*time.Second, "the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
+	beta.waitSession(10*time.Second, "the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
+
+	due := time.Now().Add(skew).Add(5 * time.Second).Truncate(time.Minute).Add(time.Minute).In(time.Local)
+	realDue := due.Add(-skew)
+	when := due.Format("4 15") + " * * *"
+	// the other routine is made first, so on the tick it reports before the digest looks for what is new
+	w.makeRoutine("alpha", map[string]any{"name": "Other", "enabled": true, "when": when, "before_acting": "report_only", "do": map[string]any{"prompt": "sweep"}})
+	alphaDigest := w.makeRoutine("alpha", map[string]any{"name": "Morning digest", "enabled": true, "when": when, "before_acting": "act", "do": map[string]any{"digest": map[string]any{"extra": "lead with PRs"}}})
+	betaDigest := w.makeRoutine("beta", map[string]any{"name": "Morning digest", "enabled": true, "when": when, "before_acting": "act", "do": map[string]any{"digest": map[string]any{}}})
+
+	lastOutcome := func(fleet, id string) runJSON {
+		runs := w.fleetRoutineRuns(fleet, id)
+		if len(runs) == 0 {
+			return runJSON{}
+		}
+		return runs[0]
+	}
+	for _, d := range []struct{ fleet, id string }{{"alpha", alphaDigest}, {"beta", betaDigest}} {
+		for end := realDue.Add(30 * time.Second); lastOutcome(d.fleet, d.id).Outcome == ""; time.Sleep(200 * time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatalf("no run record for the %s digest 30 s after %v", d.fleet, realDue)
+			}
+		}
+	}
+
+	if got := lastOutcome("alpha", alphaDigest); got.Outcome != "queued" {
+		t.Errorf("alpha digest run = %+v, want queued: the fleet had a routine run to report", got)
+	}
+	if got := lastOutcome("beta", betaDigest); got.Outcome != "skipped" || got.Reason != "nothing new" {
+		t.Errorf("beta digest run = %+v, want skipped for %q", got, "nothing new")
+	}
+
+	for end := time.Now().Add(15 * time.Second); !strings.Contains(alpha.stdin(), "[Digest: Morning digest]"); time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatalf("within 15s alpha's chat was never typed a [Digest: Morning digest] turn; stdin: %q", alpha.stdin())
+		}
+	}
+	turn := alpha.stdin()
+	for _, want := range []string{"lead with PRs", "Other"} {
+		if !strings.Contains(turn, want) {
+			t.Errorf("the digest turn does not hold %q: %q", want, turn)
+		}
+	}
+	if got := beta.stdin(); strings.Contains(got, "[Digest:") {
+		t.Errorf("beta had nothing new yet its chat was typed %q", got)
+	}
+
+	r := alpha.mcpCall("refused", "save_note", map[string]any{"text": "a fact AdmiralBot tries to save during the digest"})
+	if !r.IsError || !strings.Contains(r.text(), "can only read and talk") {
+		t.Errorf("a write during the digest turn = %+v, want an error saying the turn can only read and talk", r)
+	}
 }
 
 func TestARoutineAboutAMinuteAheadLaunchesAnAutopilotShipOnTime(t *testing.T) {

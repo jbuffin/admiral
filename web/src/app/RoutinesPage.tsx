@@ -192,7 +192,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
     setError((e) => (e && errorField(e) === field ? '' : e));
   };
   const set = (patch: Partial<RoutineForm>) => {
-    for (const [k, f] of [['name', 'name'], ['when', 'when'], ['before', 'before_acting'], ['mode', 'do'], ['prompt', 'do']] as const) if (k in patch) fixes(f);
+    for (const [k, f] of [['name', 'name'], ['when', 'when'], ['before', 'before_acting'], ['mode', 'do'], ['prompt', 'do'], ['extra', 'do']] as const) if (k in patch) fixes(f);
     setForm((f) => ({ ...f, ...patch }));
   };
   const setLaunch = (patch: Partial<RoutineForm['launch']>) => {
@@ -279,7 +279,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
 
       <fieldset class="seg" role="radiogroup">
         <legend>Runs on</legend>
-        {(['schedule', 'event'] as const).map((k) => (
+        {(form.mode === 'digest' ? (['schedule'] as const) : (['schedule', 'event'] as const)).map((k) => (
           <label key={k} class={(k === 'event') === !!form.on ? 'seg-opt on' : 'seg-opt'}>
             <input
               type="radio"
@@ -336,15 +336,21 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
 
       <fieldset class="seg" role="radiogroup">
         <legend>Do</legend>
-        {(form.on ? (['launch'] as const) : (['launch', 'prompt'] as const)).map((m) => (
+        {(form.on ? (['launch'] as const) : (['launch', 'prompt', 'digest'] as const)).map((m) => (
           <label key={m} class={form.mode === m ? 'seg-opt on' : 'seg-opt'}>
-            <input type="radio" name="do-mode" checked={form.mode === m} onChange={() => set({ mode: m })} />
-            {m === 'launch' ? 'Launch a ship' : 'AdmiralBot prompt'}
+            <input type="radio" name="do-mode" checked={form.mode === m} onChange={() => set(m === 'digest' && !routine && form.mode !== 'digest' ? { mode: m, before: 'act' } : { mode: m })} />
+            {m === 'launch' ? 'Launch a ship' : m === 'prompt' ? 'AdmiralBot prompt' : 'Post a fleet digest'}
           </label>
         ))}
       </fieldset>
 
-      {form.mode === 'prompt' ? (
+      {form.mode === 'digest' ? (
+        <label class="field">
+          <span>Extra words (optional)</span>
+          <textarea rows={3} value={form.extra} onInput={(e) => set({ extra: target(e).value })} />
+          <span class="note">AdmiralBot posts what changed in this fleet since the last digest, and reads only: it cannot act.</span>
+        </label>
+      ) : form.mode === 'prompt' ? (
         <label class="field">
           <span>Prompt</span>
           <textarea rows={4} value={form.prompt} onInput={(e) => set({ prompt: target(e).value })} />
@@ -619,7 +625,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                 }}
               />
             </div>
-            {list.length === 0 ? <p class="line">No routines yet. A routine launches a ship or sends AdmiralBot a prompt on a schedule.</p> : null}
+            {list.length === 0 ? <p class="line">No routines yet. A routine launches a ship, sends AdmiralBot a prompt or posts a fleet digest on a schedule.</p> : null}
             <ul class="routine-list">
               {list.map((r) => (
                 <li key={r.id} class={`crew-item routine-item${r.enabled ? '' : ' off'}`}>
@@ -642,6 +648,8 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                           </>
                         ) : r.on ? (
                           `On: ${eventWords(sources.value, fleet.key, r.on)}`
+                        ) : r.do.digest ? (
+                          `Fleet digest, ${cronSentence(r.when)}`
                         ) : (
                           cronSentence(r.when)
                         )}
