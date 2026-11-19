@@ -79,26 +79,37 @@ function Chips({ chips }: { chips?: PageChip[] }) {
   );
 }
 
-/** A row's actions split into the module actions, which act on its target, and the built-in ones, which act on the row. */
+/** A row's actions split into the module actions and the built-in ones, which act on the row itself. */
 function rowActions(row: PageRow) {
   const all = [...(row.action ? [row.action] : []), ...(row.actions ?? [])];
   return { module: all.filter((a) => !builtinOf(a)), builtin: all.filter((a) => builtinOf(a)) };
 }
 
+/** On a targeted row, the module actions naming its target step go beside the target and the ones naming no step follow a divider; others show only on their step's card. */
 function TargetLine({ row }: { row: PageRow & { target: NonNullable<PageRow['target']> } }) {
   const { module, builtin } = rowActions(row);
+  const onTarget = row.target.step ? module.filter((a) => a.step === row.target.step) : [];
+  const rowLevel = module.filter((a) => !a.step || !row.target.step);
   return (
-    <div class="mtarget" role="group" aria-label={`Acts on ${row.target.label}`}>
-      <span class="mtarget-label">
-        <span class="mtarget-arrow" aria-hidden="true">
-          ↳
+    <>
+      <div class="mtarget" role="group" aria-label={`Acts on ${row.target.label}`}>
+        <span class="mtarget-label">
+          <span class="mtarget-arrow" aria-hidden="true">
+            ↳
+          </span>
+          <strong>{row.target.label}</strong>
+          <Chips chips={row.target.chips} />
         </span>
-        <strong>{row.target.label}</strong>
-        <Chips chips={row.target.chips} />
-      </span>
-      <ModuleActions target={{ id: row.id }} many={module} lead={row.action?.id} />
-      <ModuleActions target={{ id: row.id }} many={builtin} />
-    </div>
+        <ModuleActions target={{ id: row.id }} many={onTarget} lead={row.action?.id} />
+      </div>
+      {rowLevel.length > 0 || builtin.length > 0 ? (
+        <div class="mrowlevel">
+          {rowLevel.length > 0 ? <span class="mdivider" role="separator" aria-orientation="vertical" /> : null}
+          <ModuleActions target={{ id: row.id }} many={rowLevel} lead={row.action?.id} />
+          <ModuleActions target={{ id: row.id }} many={builtin} />
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -141,12 +152,31 @@ function OutLink({ url, children }: { url: string; children: preact.ComponentChi
 
 const sectionCount = (sec: RowDetail['sections'][number]) => (sec.kind === 'links' ? sec.links?.length : sec.kind === 'steps' ? sec.steps?.length : undefined);
 
-function StepCard({ step, rowId, row }: { step: RowStep; rowId: string; row?: PageRow }) {
+type Placed = { byStep: Map<string, PageAction[]>; own: Map<string, PageAction[]>; rowLevel: PageAction[] };
+
+/** Where a targeted row's module actions show in its detail: ids are unique row-wide, the row's first, then each step's in order. */
+function placeActions(row: PageRow | undefined, detail: RowDetail): Placed {
+  const steps = detail.sections.flatMap((sec) => (sec.kind === 'steps' ? (sec.steps ?? []) : []));
+  const placed: Placed = { byStep: new Map(), own: new Map(), rowLevel: [] };
+  const seen = new Set<string>();
+  const stepIds = new Set(steps.map((st) => st.id));
+  for (const a of row?.target ? rowActions(row).module : []) {
+    if (seen.has(a.id)) continue;
+    seen.add(a.id);
+    if (a.step && stepIds.has(a.step)) placed.byStep.set(a.step, [...(placed.byStep.get(a.step) ?? []), a]);
+    else placed.rowLevel.push(a);
+  }
+  for (const st of steps) {
+    const mine = [...(st.action ? [st.action] : []), ...(st.actions ?? [])].filter((a) => !seen.has(a.id));
+    mine.forEach((a) => seen.add(a.id));
+    placed.own.set(st.id, mine);
+  }
+  return placed;
+}
+
+function StepCard({ step, rowId, row, placed }: { step: RowStep; rowId: string; row?: PageRow; placed: Placed }) {
   const next = !!row?.target?.step && row.target.step === step.id;
-  const own = [...(step.action ? [step.action] : []), ...(step.actions ?? [])];
-  // The row's module actions act on its target step, so that step's card carries them too, each once.
-  const lead = next ? rowActions(row!).module : [];
-  const actions = [...lead, ...own.filter((a) => !lead.some((l) => l.id === a.id))];
+  const actions = row?.target ? [...(placed.byStep.get(step.id) ?? []), ...(placed.own.get(step.id) ?? [])] : [...(step.action ? [step.action] : []), ...(step.actions ?? [])];
   return (
     <li class={`mstep${next ? ' next' : ''}`}>
       <div class="mstep-head">
@@ -156,13 +186,15 @@ function StepCard({ step, rowId, row }: { step: RowStep; rowId: string; row?: Pa
       </div>
       {step.subtitle ? <p class="mstep-sub">{step.subtitle}</p> : null}
       {next && row?.reason ? <p class="mstep-sub">{row.reason}</p> : null}
-      <ModuleActions target={{ id: rowId }} many={actions} lead={next ? row?.action?.id : undefined} small />
+      <ModuleActions target={{ id: rowId }} many={actions} lead={row?.target ? row.action?.id : undefined} small />
     </li>
   );
 }
 
 function Sections({ detail, rowId, row }: { detail: RowDetail; rowId: string; row?: PageRow }) {
   const next = row?.target?.step;
+  const placed = placeActions(row, detail);
+  const lastSteps = detail.sections.map((s) => s.kind).lastIndexOf('steps');
   return (
     <>
       {detail.sections.map((sec, i) => (
@@ -176,16 +208,31 @@ function Sections({ detail, rowId, row }: { detail: RowDetail; rowId: string; ro
           {sec.kind === 'links' ? (
             <ul class="mlinks">
               {(sec.links ?? []).map((l, j) => (
-                <li key={j}>{isWebUrl(l.url) ? <OutLink url={l.url}>{l.label}</OutLink> : l.label}</li>
+                <li key={j}>
+                  {(l.chips ?? []).length > 0 ? (
+                    <span class="mlink-chips">
+                      <Chips chips={l.chips} />
+                    </span>
+                  ) : null}
+                  {isWebUrl(l.url) ? <OutLink url={l.url}>{l.label}</OutLink> : l.label}
+                  {l.subtitle ? <span class="mlink-sub">{l.subtitle}</span> : null}
+                </li>
               ))}
             </ul>
           ) : null}
           {sec.kind === 'steps' ? (
-            <ul class="msteps">
-              {[...(sec.steps ?? []).filter((st) => st.id === next), ...(sec.steps ?? []).filter((st) => st.id !== next)].map((st) => (
-                <StepCard key={st.id} step={st} rowId={rowId} row={row} />
-              ))}
-            </ul>
+            <>
+              <ul class="msteps">
+                {[...(sec.steps ?? []).filter((st) => st.id === next), ...(sec.steps ?? []).filter((st) => st.id !== next)].map((st) => (
+                  <StepCard key={st.id} step={st} rowId={rowId} row={row} placed={placed} />
+                ))}
+              </ul>
+              {i === lastSteps && placed.rowLevel.length > 0 ? (
+                <div class="mrowlevel-detail">
+                  <ModuleActions target={{ id: rowId }} many={placed.rowLevel} lead={row?.action?.id} small />
+                </div>
+              ) : null}
+            </>
           ) : null}
           {sec.kind === 'fields' ? (
             <dl class="odetail-facts">

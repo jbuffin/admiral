@@ -947,7 +947,7 @@ test("the row's link is its subtitle at the top of the detail, opening outside t
   expect(link.getAttribute("target")).toBe("_blank");
   unmount();
   const bad = structuredClone(targeted);
-  bad.groups[0].rows[0].url = "javascript:alert(1)";
+  (bad.groups[0].rows[0] as { url: string }).url = "javascript:alert(1)";
   server({ t1: { body: targetedDetail } }, bad);
   open();
   const pane2 = await screen.findByRole("complementary", {

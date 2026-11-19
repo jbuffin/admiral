@@ -71,6 +71,8 @@ type Action struct {
 	Ref   string `json:"ref,omitempty"`
 	Title string `json:"title,omitempty"`
 	Link  string `json:"link,omitempty"`
+	// Step is the id of the step in the row's detail a module action acts on.
+	Step string `json:"step,omitempty"`
 }
 
 type Row struct {
@@ -125,8 +127,10 @@ type PageView struct {
 }
 
 type Link struct {
-	Label string `json:"label"`
-	URL   string `json:"url"`
+	Label    string `json:"label"`
+	URL      string `json:"url"`
+	Subtitle string `json:"subtitle,omitempty"`
+	Chips    []Chip `json:"chips,omitempty"`
 }
 
 type Step struct {
@@ -195,7 +199,7 @@ func parseID(raw json.RawMessage) (string, bool) {
 
 func parseChips(raw []json.RawMessage) ([]Chip, error) {
 	if len(raw) > maxChips {
-		return nil, fmt.Errorf("a row or step has %d chips, over the limit of %d", len(raw), maxChips)
+		return nil, fmt.Errorf("%d chips, over the limit of %d", len(raw), maxChips)
 	}
 	chips := []Chip{}
 	for _, c := range raw {
@@ -262,6 +266,7 @@ func parseAction(raw json.RawMessage) *Action {
 		Ref     json.RawMessage `json:"ref"`
 		Title   json.RawMessage `json:"title"`
 		Link    json.RawMessage `json:"link"`
+		Step    json.RawMessage `json:"step"`
 	}
 	if json.Unmarshal(raw, &item) != nil {
 		return nil
@@ -305,6 +310,9 @@ func parseAction(raw json.RawMessage) *Action {
 		}
 	default:
 		return nil
+	}
+	if a.Builtin == "" {
+		a.Step, _ = parseID(item.Step)
 	}
 	return &a
 }
@@ -387,6 +395,28 @@ func parseTarget(raw json.RawMessage) (*Target, error) {
 	return &Target{Label: label, Chips: chips, Step: step}, nil
 }
 
+// parseSectionLink is a link of a links section: parseLink plus its subtitle and chips; only too many chips refuse it.
+func parseSectionLink(raw json.RawMessage) (*Link, bool, error) {
+	var it struct {
+		Subtitle json.RawMessage   `json:"subtitle"`
+		Chips    []json.RawMessage `json:"chips"`
+	}
+	_ = json.Unmarshal(raw, &it)
+	chips, err := parseChips(it.Chips)
+	if err != nil {
+		return nil, false, err
+	}
+	link, ok := parseLink(raw)
+	if !ok {
+		return nil, false, nil
+	}
+	link.Subtitle = titleLine(it.Subtitle)
+	if len(chips) > 0 {
+		link.Chips = chips
+	}
+	return link, true, nil
+}
+
 // parseLink is raw as a link; false for one with no label or a url that is not http(s).
 func parseLink(raw json.RawMessage) (*Link, bool) {
 	var it struct{ Label, URL json.RawMessage }
@@ -438,6 +468,7 @@ func parseNotices(raw []json.RawMessage) ([]Notice, error) {
 		notice.Link, _ = parseLink(item.Link)
 		// Built-in actions hang on a row; a notice keeps only a module action and links through its link.
 		if a := parseAction(item.Action); a != nil && a.Builtin == "" {
+			a.Step = ""
 			notice.Action = a
 		}
 		out = append(out, notice)
@@ -518,7 +549,11 @@ func parseSection(raw json.RawMessage, stepIDs map[string]bool) (*Section, error
 	switch sec.Kind {
 	case "links":
 		for _, l := range item.Links {
-			if link, ok := parseLink(l); ok {
+			link, ok, err := parseSectionLink(l)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
 				sec.Links = append(sec.Links, *link)
 			}
 		}

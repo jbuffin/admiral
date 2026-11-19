@@ -1,6 +1,6 @@
 // The only place the shell builds /api/v1 URLs.
-import type { Limits } from "./limitsForm";
-import { signedOut } from "./session";
+import type { Limits } from './limitsForm';
+import { signedOut } from './session';
 export interface Dock {
   harness: string;
   executable: string;
@@ -11,7 +11,7 @@ export interface FleetChat {
   harness: string;
   model: string;
   effort: string;
-  context_threshold: number | "never";
+  context_threshold: number | 'never';
   on: boolean;
   off_reason: string;
   /** The harnesses this fleet's chat may run on right now. */
@@ -46,7 +46,7 @@ export interface Fleet {
   chat: FleetChat;
   /** Whether this fleet pushes and alerts; on unless config.json says false. */
   notify: boolean;
-  preset: "work" | "home";
+  preset: 'work' | 'home';
   limits: Limits;
   /** One sentence per Limit in catalog order, then two fixed ones with an empty field. */
   sentences: { field: string; sentence: string }[];
@@ -90,35 +90,19 @@ export interface PRDetail {
   author: PRActor;
   reviews: { author: PRActor; state: string }[];
   requested: PRActor[];
-  threads: {
-    path: string;
-    line: number;
-    resolved: boolean;
-    comments: {
-      author: PRActor;
-      body: string;
-      url: string;
-      created_at: string;
-    }[];
-  }[];
-  comments: {
-    author: PRActor;
-    body: string;
-    url: string;
-    created_at: string;
-  }[];
+  threads: { path: string; line: number; resolved: boolean; comments: { author: PRActor; body: string; url: string; created_at: string }[] }[];
+  comments: { author: PRActor; body: string; url: string; created_at: string }[];
   stack: PRStack | null;
   // The command Answer all reviews would send, only when the ship is moored and the whole stack has feedback.
   answer_all?: string;
 }
 /** A ship's PR shape: GET /api/ships/<session>/stack. `prs` is bottom to top for stacked and chained, the ship's own order otherwise. */
 export interface StackShape {
-  shape: "stacked" | "chained" | "independent" | "mixed" | "none";
+  shape: 'stacked' | 'chained' | 'independent' | 'mixed' | 'none';
   stack_number?: number;
   prs: string[];
 }
-export type ShipStatus =
-  "needs_you" | "underway" | "moored" | "anchored" | "sailing_off";
+export type ShipStatus = 'needs_you' | 'underway' | 'moored' | 'anchored' | 'sailing_off';
 export interface MooredPR {
   url: string;
   state: string;
@@ -211,7 +195,7 @@ export interface Ship {
   fix?: FixOffer;
   stack_ready?: boolean;
   ready_up_to?: string;
-  merge_method?: "merge" | "squash" | "rebase";
+  merge_method?: 'merge' | 'squash' | 'rebase';
   url?: string;
   // The main link of a ship launched without an order, from its first prompt; it claims no issue.
   link?: string;
@@ -262,15 +246,7 @@ export interface Question {
   pending: boolean;
   multiSelect?: boolean;
 }
-export type ItemKind =
-  | "user"
-  | "assistant"
-  | "tool_call"
-  | "question"
-  | "turn_end"
-  | "compaction"
-  | "notice"
-  | "round";
+export type ItemKind = 'user' | 'assistant' | 'tool_call' | 'question' | 'turn_end' | 'compaction' | 'notice' | 'round';
 export interface Item {
   id: string;
   kind: ItemKind;
@@ -281,35 +257,26 @@ export interface Item {
   question?: Question;
   durationMs?: number;
   round?: number;
-  state?: "none" | "gone" | "unreadable";
+  state?: 'none' | 'gone' | 'unreadable';
 }
-export type ConversationState = "ok" | "none" | "unreadable" | "gone";
+export type ConversationState = 'ok' | 'none' | 'unreadable' | 'gone';
 export interface ConversationPage {
   state: ConversationState;
   items: Item[] | null;
   more: boolean;
 }
 
-const API = "/api/v1";
+const API = '/api/v1';
 
 /** A ship's URL, or its crew boat's when one is named. */
-export const shipUrl = (session: string, crew?: string) =>
-  `${API}/ships/${encodeURIComponent(session)}${crew === undefined ? "" : `/crew/${encodeURIComponent(crew)}`}`;
+export const shipUrl = (session: string, crew?: string) => `${API}/ships/${encodeURIComponent(session)}${crew === undefined ? '' : `/crew/${encodeURIComponent(crew)}`}`;
 
-export const conversationUrl = (
-  session: string,
-  before?: string,
-  crew?: string,
-) =>
-  `${shipUrl(session, crew)}/conversation${before === undefined ? "" : `?before=${encodeURIComponent(before)}`}`;
+export const conversationUrl = (session: string, before?: string, crew?: string) =>
+  `${shipUrl(session, crew)}/conversation${before === undefined ? '' : `?before=${encodeURIComponent(before)}`}`;
 
 /** An ended drafting ship's conversation, read through its Inbox item since the ship is gone. */
-export const itemConversationUrl = (
-  session: string,
-  id: string,
-  before?: string,
-) =>
-  `${API}/inbox/${encodeURIComponent(session)}/${encodeURIComponent(id)}/conversation${before === undefined ? "" : `?before=${encodeURIComponent(before)}`}`;
+export const itemConversationUrl = (session: string, id: string, before?: string) =>
+  `${API}/inbox/${encodeURIComponent(session)}/${encodeURIComponent(id)}/conversation${before === undefined ? '' : `?before=${encodeURIComponent(before)}`}`;
 
 const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
   (body.fleets ?? []).map((f) => ({
@@ -318,15 +285,9 @@ const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
     owners: f.owners ?? [],
     wake_reviewers: f.wake_reviewers ?? [],
     docks: (f.docks ?? []).map((d) => ({ ...d, warnings: d.warnings ?? [] })),
-    chat: {
-      ...f.chat,
-      harnesses: f.chat?.harnesses ?? [],
-      harness_options: f.chat?.harness_options ?? [],
-      models: f.chat?.models ?? [],
-      efforts: f.chat?.efforts ?? [],
-    },
+    chat: { ...f.chat, harnesses: f.chat?.harnesses ?? [], harness_options: f.chat?.harness_options ?? [], models: f.chat?.models ?? [], efforts: f.chat?.efforts ?? [] },
     notify: f.notify ?? true,
-    preset: f.preset ?? "work",
+    preset: f.preset ?? 'work',
     sentences: f.sentences ?? [],
     overridden: f.overridden ?? [],
   }));
@@ -337,25 +298,9 @@ export async function fetchFleets(): Promise<Fleet[]> {
   return fleetsOf(await res.json());
 }
 
-export const logoUrl = (harness: string) =>
-  `${API}/logos/${encodeURIComponent(harness)}`;
+export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(harness)}`;
 
-export type Result<T> =
-  | { ok: true; data: T }
-  | {
-      ok: false;
-      error: string;
-      status?: number;
-      field?: string;
-      note?: string;
-      kind?: string;
-      reason?: string;
-      parent?: string;
-      linked?: string[];
-      output?: string;
-      commands?: string[];
-      aborted?: boolean;
-    };
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number; field?: string; note?: string; kind?: string; reason?: string; parent?: string; linked?: string[]; output?: string; commands?: string[]; aborted?: boolean };
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const SLOW_TIMEOUT_MS = 3 * 60_000;
@@ -363,27 +308,20 @@ export const SLOW_TIMEOUT_MS = 3 * 60_000;
 const REREQUEST_TIMEOUT_MS = 60_000;
 export const LAUNCH_TIMEOUT_MS = 10 * 60_000;
 
-const limitText = (ms: number) =>
-  ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`;
+const limitText = (ms: number) => (ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`);
 
 export interface CallOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
 }
 
-export async function call<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-  headers?: Record<string, string>,
-  opts: CallOptions = {},
-): Promise<Result<T>> {
+export async function call<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>, opts: CallOptions = {}): Promise<Result<T>> {
   const limit = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const ctl = new AbortController();
   let timedOut = false;
   const onCallerAbort = () => ctl.abort();
   if (opts.signal?.aborted) ctl.abort();
-  else opts.signal?.addEventListener("abort", onCallerAbort);
+  else opts.signal?.addEventListener('abort', onCallerAbort);
   const timer = setTimeout(() => {
     timedOut = true;
     ctl.abort();
@@ -391,15 +329,7 @@ export async function call<T>(
   try {
     const res = await fetch(path.startsWith(`${API}/`) ? path : API + path, {
       method,
-      headers:
-        body === undefined && headers === undefined
-          ? undefined
-          : {
-              ...(body === undefined
-                ? {}
-                : { "Content-Type": "application/json" }),
-              ...headers,
-            },
+      headers: body === undefined && headers === undefined ? undefined : { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: ctl.signal,
     });
@@ -412,165 +342,79 @@ export async function call<T>(
     }
     if (res.status === 401) signedOut.value = true;
     if (!res.ok) {
-      const body = data as {
-        error?: string;
-        field?: string;
-        note?: unknown;
-        kind?: unknown;
-        reason?: unknown;
-        parent?: unknown;
-        linked?: unknown;
-        output?: unknown;
-        commands?: unknown;
-      } | null;
+      const body = data as { error?: string; field?: string; note?: unknown; kind?: unknown; reason?: unknown; parent?: unknown; linked?: unknown; output?: unknown; commands?: unknown } | null;
       return {
         ok: false,
         status: res.status,
         error: body?.error ?? `${method} ${path}: ${res.status}`,
         ...(body?.field && { field: body.field }),
-        ...(typeof body?.note === "string" && { note: body.note }),
-        ...(typeof body?.kind === "string" && { kind: body.kind }),
-        ...(typeof body?.reason === "string" && { reason: body.reason }),
-        ...(typeof body?.parent === "string" && { parent: body.parent }),
-        ...(Array.isArray(body?.linked) &&
-          body.linked.every((x) => typeof x === "string") && {
-            linked: body.linked as string[],
-          }),
-        ...(typeof body?.output === "string" && { output: body.output }),
-        ...(Array.isArray(body?.commands) &&
-          body.commands.every((x) => typeof x === "string") && {
-            commands: body.commands as string[],
-          }),
+        ...(typeof body?.note === 'string' && { note: body.note }),
+        ...(typeof body?.kind === 'string' && { kind: body.kind }),
+        ...(typeof body?.reason === 'string' && { reason: body.reason }),
+        ...(typeof body?.parent === 'string' && { parent: body.parent }),
+        ...(Array.isArray(body?.linked) && body.linked.every((x) => typeof x === 'string') && { linked: body.linked as string[] }),
+        ...(typeof body?.output === 'string' && { output: body.output }),
+        ...(Array.isArray(body?.commands) && body.commands.every((x) => typeof x === 'string') && { commands: body.commands as string[] }),
       };
     }
     return { ok: true, data: data as T };
   } catch (e) {
-    if (timedOut)
-      return {
-        ok: false,
-        error: `Admiral didn't answer in ${limitText(limit)}. It may still finish, so check before trying again.`,
-      };
-    if (ctl.signal.aborted)
-      return { ok: false, error: "The request was stopped.", aborted: true };
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "The request failed.",
-    };
+    if (timedOut) return { ok: false, error: `Admiral didn't answer in ${limitText(limit)}. It may still finish, so check before trying again.` };
+    if (ctl.signal.aborted) return { ok: false, error: 'The request was stopped.', aborted: true };
+    return { ok: false, error: e instanceof Error ? e.message : 'The request failed.' };
   } finally {
     clearTimeout(timer);
-    opts.signal?.removeEventListener("abort", onCallerAbort);
+    opts.signal?.removeEventListener('abort', onCallerAbort);
   }
 }
 
-const mergeToken = () => ({
-  "X-Admiral-Merge-Token":
-    document.querySelector<HTMLMetaElement>('meta[name="admiral-merge-token"]')
-      ?.content ?? "",
-});
+const mergeToken = () => ({ 'X-Admiral-Merge-Token': document.querySelector<HTMLMetaElement>('meta[name="admiral-merge-token"]')?.content ?? '' });
 
 /** Merges a moored ship's single PR, its whole stack, or with `pr` one independent PR by URL. The token is the one the server put in this page; it changes when Admiral restarts. */
-export function mergeShip(
-  session: string,
-  pr?: string,
-): Promise<Result<unknown>> {
-  return call(
-    "POST",
-    `/ships/${encodeURIComponent(session)}/merge`,
-    pr ? { pr } : undefined,
-    mergeToken(),
-    { timeoutMs: SLOW_TIMEOUT_MS },
-  );
+export function mergeShip(session: string, pr?: string): Promise<Result<unknown>> {
+  return call('POST', `/ships/${encodeURIComponent(session)}/merge`, pr ? { pr } : undefined, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
 /** Updates a moored ship's PR branch with its base, through the fleet's gh. Sends the merge token like Merge. */
-export function updateBranch(
-  session: string,
-  pr: string,
-): Promise<Result<unknown>> {
-  return call(
-    "POST",
-    `/ships/${encodeURIComponent(session)}/update-branch`,
-    { pr },
-    mergeToken(),
-    { timeoutMs: SLOW_TIMEOUT_MS },
-  );
+export function updateBranch(session: string, pr: string): Promise<Result<unknown>> {
+  return call('POST', `/ships/${encodeURIComponent(session)}/update-branch`, { pr }, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
 /** What marking one PR ready for review came to. */
 export interface ReadyForReviewResult {
   url: string;
-  outcome: "marked_ready" | "already_ready_for_review" | "failed";
+  outcome: 'marked_ready' | 'already_ready_for_review' | 'failed';
   error?: string;
 }
 
 /** Takes the named draft PRs, bottom to top, out of draft through the fleet's gh, and answers each one's outcome. Sends the merge token like Merge. */
-export function markReadyForReview(
-  session: string,
-  prs: string[],
-): Promise<Result<{ results: ReadyForReviewResult[] }>> {
-  return call(
-    "POST",
-    `/ships/${encodeURIComponent(session)}/ready-for-review`,
-    { prs },
-    mergeToken(),
-    { timeoutMs: SLOW_TIMEOUT_MS },
-  );
+export function markReadyForReview(session: string, prs: string[]): Promise<Result<{ results: ReadyForReviewResult[] }>> {
+  return call('POST', `/ships/${encodeURIComponent(session)}/ready-for-review`, { prs }, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
 /** How a ship's PRs relate on GitHub; 404 for a ship that is anchored or has no PRs. */
 export function fetchStackShape(session: string): Promise<Result<StackShape>> {
-  return call<StackShape>("GET", `/ships/${encodeURIComponent(session)}/stack`);
+  return call<StackShape>('GET', `/ships/${encodeURIComponent(session)}/stack`);
 }
 
 /** Links the ship's chained PRs into one GitHub stack and answers the shape it then reads. */
 export function linkStack(session: string): Promise<Result<StackShape>> {
-  return call<StackShape>(
-    "POST",
-    `/ships/${encodeURIComponent(session)}/stack`,
-    undefined,
-    mergeToken(),
-    { timeoutMs: SLOW_TIMEOUT_MS },
-  );
+  return call<StackShape>('POST', `/ships/${encodeURIComponent(session)}/stack`, undefined, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
 /** Links a source's chained PRs, bottom to top, into one GitHub stack and answers the shape it then reads. */
-export function linkSourceStack(
-  source: string,
-  prs: string[],
-): Promise<Result<StackShape>> {
-  return call<StackShape>(
-    "POST",
-    `${src(source)}/stack`,
-    { prs },
-    mergeToken(),
-    { timeoutMs: SLOW_TIMEOUT_MS },
-  );
+export function linkSourceStack(source: string, prs: string[]): Promise<Result<StackShape>> {
+  return call<StackShape>('POST', `${src(source)}/stack`, { prs }, mergeToken(), { timeoutMs: SLOW_TIMEOUT_MS });
 }
 
 /** One PR a ship carries, read from GitHub: 404 when the ship doesn't carry it, 502 when GitHub fails. */
-export function fetchPRDetail(
-  session: string,
-  url: string,
-): Promise<Result<PRDetail>> {
-  return call<PRDetail>(
-    "GET",
-    `/ships/${encodeURIComponent(session)}/pr?url=${encodeURIComponent(url)}`,
-  );
+export function fetchPRDetail(session: string, url: string): Promise<Result<PRDetail>> {
+  return call<PRDetail>('GET', `/ships/${encodeURIComponent(session)}/pr?url=${encodeURIComponent(url)}`);
 }
 
 /** Ask GitHub to request another review from `login`, a GitHub reviewer who already reviewed the PR. */
-export function reRequestReview(
-  session: string,
-  pr: string,
-  login: string,
-): Promise<Result<unknown>> {
-  return call<unknown>(
-    "POST",
-    `/ships/${encodeURIComponent(session)}/pr/rerequest`,
-    { pr, login },
-    undefined,
-    { timeoutMs: REREQUEST_TIMEOUT_MS },
-  );
+export function reRequestReview(session: string, pr: string, login: string): Promise<Result<unknown>> {
+  return call<unknown>('POST', `/ships/${encodeURIComponent(session)}/pr/rerequest`, { pr, login }, undefined, { timeoutMs: REREQUEST_TIMEOUT_MS });
 }
 
 export interface Source {
@@ -588,8 +432,7 @@ export interface Source {
   /** A GitHub source's sign-in status; absent for any other source. */
   connection?: Connection;
 }
-export type ConnectionState =
-  "checking" | "connected" | "signed_out" | "gh_missing" | "unreachable";
+export type ConnectionState = 'checking' | 'connected' | 'signed_out' | 'gh_missing' | 'unreachable';
 export interface Connection {
   state: ConnectionState;
   host: string;
@@ -616,19 +459,13 @@ export interface PluginInfo {
 }
 
 // The server names icons by their unversioned path; the shell asks for them under /api/v1.
-export const iconSrc = (url: string) =>
-  url ? url.replace(/^\/api\//, `${API}/`) : "";
+export const iconSrc = (url: string) => (url ? url.replace(/^\/api\//, `${API}/`) : '');
 
 const src = (k: string) => `/sources/${encodeURIComponent(k)}`;
 
 export async function fetchSources(): Promise<Result<Source[]>> {
-  const r = await call<Source[] | null>("GET", "/sources");
-  return r.ok
-    ? {
-        ok: true,
-        data: (r.data ?? []).map((s) => ({ ...s, warnings: s.warnings ?? [] })),
-      }
-    : r;
+  const r = await call<Source[] | null>('GET', '/sources');
+  return r.ok ? { ok: true, data: (r.data ?? []).map((s) => ({ ...s, warnings: s.warnings ?? [] })) } : r;
 }
 export interface FleetRepo {
   path: string;
@@ -637,82 +474,25 @@ export interface FleetRepo {
   /** `host/owner/repo` ids. */
   remotes: string[] | null;
 }
-export const fetchFleetRepos = (fleet: string) =>
-  call<{ repos: FleetRepo[] | null }>(
-    "GET",
-    `/fleets/${encodeURIComponent(fleet)}/repos`,
-  );
-export const fetchPlugins = () => call<PluginInfo[]>("GET", "/plugins");
-export const fetchSchema = (key: string) =>
-  call<unknown>("GET", `${src(key)}/schema`);
-export const fetchSettings = (key: string) =>
-  call<{ name: string; settings: Record<string, unknown> }>(
-    "GET",
-    `${src(key)}/settings`,
-  );
-export const saveSource = (
-  key: string,
-  body: { name?: string; fleet?: string; settings?: Record<string, unknown> },
-) => call<Source>("PUT", src(key), body);
-export const restartSource = (key: string) =>
-  call<unknown>("POST", `${src(key)}/restart`);
+export const fetchFleetRepos = (fleet: string) => call<{ repos: FleetRepo[] | null }>('GET', `/fleets/${encodeURIComponent(fleet)}/repos`);
+export const fetchPlugins = () => call<PluginInfo[]>('GET', '/plugins');
+export const fetchSchema = (key: string) => call<unknown>('GET', `${src(key)}/schema`);
+export const fetchSettings = (key: string) => call<{ name: string; settings: Record<string, unknown> }>('GET', `${src(key)}/settings`);
+export const saveSource = (key: string, body: { name?: string; fleet?: string; settings?: Record<string, unknown> }) => call<Source>('PUT', src(key), body);
+export const restartSource = (key: string) => call<unknown>('POST', `${src(key)}/restart`);
 /** Asks the source to search again now; the new answer arrives with the usual stream. */
-export const refreshSource = (key: string) =>
-  call<unknown>("POST", `${src(key)}/refresh`);
+export const refreshSource = (key: string) => call<unknown>('POST', `${src(key)}/refresh`);
 /** Asks GitHub now whether gh is signed in; a refusal with no `connection` (the source isn't running) keeps the last one. */
-export const checkConnection = (key: string) =>
-  call<Connection>("POST", `${src(key)}/connection/check`);
+export const checkConnection = (key: string) => call<Connection>('POST', `${src(key)}/connection/check`);
 /** How many results a search has, as GitHub counts them. */
-export const countSearch = (key: string, query: string, signal?: AbortSignal) =>
-  call<{ count: number }>(
-    "POST",
-    `${src(key)}/search-count`,
-    { query },
-    undefined,
-    { signal },
-  );
-export const fetchRepos = (key: string) =>
-  call<Repos>("GET", `${src(key)}/repos`);
-export const removeSource = (key: string) => call<unknown>("DELETE", src(key));
-export const addSource = (plugin: string, fleet: string) =>
-  call<Source>("POST", "/sources", { plugin, fleet });
+export const countSearch = (key: string, query: string, signal?: AbortSignal) => call<{ count: number }>('POST', `${src(key)}/search-count`, { query }, undefined, { signal });
+export const fetchRepos = (key: string) => call<Repos>('GET', `${src(key)}/repos`);
+export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
+export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });
 
 /** Saves the fleet fields in the body; the server answers the new config view. */
-export async function saveFleet(
-  key: string,
-  body:
-    | Partial<
-        Pick<
-          Fleet,
-          | "search_roots"
-          | "owners"
-          | "wake_reviewers"
-          | "clone_root"
-          | "color"
-          | "notify"
-          | "preset"
-        >
-      >
-    | { limits: Record<string, unknown> }
-    | {
-        chat: Partial<
-          Omit<
-            FleetChat,
-            | "on"
-            | "off_reason"
-            | "harnesses"
-            | "harness_options"
-            | "models"
-            | "efforts"
-          >
-        >;
-      },
-): Promise<Result<Fleet[]>> {
-  const r = await call<{ fleets?: Fleet[] | null }>(
-    "PUT",
-    `/fleets/${encodeURIComponent(key)}`,
-    body,
-  );
+export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color' | 'notify' | 'preset'>> | { limits: Record<string, unknown> } | { chat: Partial<Omit<FleetChat, 'on' | 'off_reason' | 'harnesses' | 'harness_options' | 'models' | 'efforts'>> }): Promise<Result<Fleet[]>> {
+  const r = await call<{ fleets?: Fleet[] | null }>('PUT', `/fleets/${encodeURIComponent(key)}`, body);
   return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
 }
 export interface ChatNote {
@@ -725,20 +505,8 @@ export interface ChatNote {
 export interface ChatCommitment {
   id: string;
   text: string;
-  trigger: {
-    kind:
-      | "ship_sailed"
-      | "ship_anchored"
-      | "pr_merged"
-      | "pr_closed"
-      | "issue_closed"
-      | "time"
-      | "none"
-      | "campaign";
-    subject?: string;
-    launched?: string;
-  };
-  action: "launch" | "remind" | "work";
+  trigger: { kind: 'ship_sailed' | 'ship_anchored' | 'pr_merged' | 'pr_closed' | 'issue_closed' | 'time' | 'none' | 'campaign'; subject?: string; launched?: string };
+  action: 'launch' | 'remind' | 'work';
   launch?: unknown;
   harness?: string;
   launched?: number;
@@ -754,41 +522,21 @@ export interface Instructions {
   text: string;
   max: number;
 }
-const chatPath = (fleet: string, rest: string) =>
-  `/chat/${encodeURIComponent(fleet)}/${rest}`;
+const chatPath = (fleet: string, rest: string) => `/chat/${encodeURIComponent(fleet)}/${rest}`;
 export async function getNotes(fleet: string): Promise<Result<ChatNote[]>> {
-  const r = await call<{ notes?: ChatNote[] | null }>(
-    "GET",
-    chatPath(fleet, "notes"),
-  );
+  const r = await call<{ notes?: ChatNote[] | null }>('GET', chatPath(fleet, 'notes'));
   return r.ok ? { ok: true, data: r.data.notes ?? [] } : r;
 }
-export const getInstructions = (fleet: string) =>
-  call<Instructions>("GET", chatPath(fleet, "instructions"));
-export const saveInstructions = (fleet: string, text: string) =>
-  call<Instructions>("PUT", chatPath(fleet, "instructions"), { text });
-export const deleteNote = (fleet: string, id: string) =>
-  call<unknown>("DELETE", chatPath(fleet, `notes/${encodeURIComponent(id)}`));
-export async function getCommitments(
-  fleet: string,
-): Promise<Result<ChatCommitment[]>> {
-  const r = await call<{ commitments?: ChatCommitment[] | null }>(
-    "GET",
-    chatPath(fleet, "commitments"),
-  );
+export const getInstructions = (fleet: string) => call<Instructions>('GET', chatPath(fleet, 'instructions'));
+export const saveInstructions = (fleet: string, text: string) => call<Instructions>('PUT', chatPath(fleet, 'instructions'), { text });
+export const deleteNote = (fleet: string, id: string) => call<unknown>('DELETE', chatPath(fleet, `notes/${encodeURIComponent(id)}`));
+export async function getCommitments(fleet: string): Promise<Result<ChatCommitment[]>> {
+  const r = await call<{ commitments?: ChatCommitment[] | null }>('GET', chatPath(fleet, 'commitments'));
   return r.ok ? { ok: true, data: r.data.commitments ?? [] } : r;
 }
-export const cancelCommitment = (fleet: string, id: string) =>
-  call<unknown>(
-    "DELETE",
-    chatPath(fleet, `commitments/${encodeURIComponent(id)}`),
-  );
-export const promoteNote = (fleet: string, id: string) =>
-  call<Instructions>(
-    "POST",
-    chatPath(fleet, `notes/${encodeURIComponent(id)}/promote`),
-  );
-export const startSetup = () => call<unknown>("POST", "/setup");
+export const cancelCommitment = (fleet: string, id: string) => call<unknown>('DELETE', chatPath(fleet, `commitments/${encodeURIComponent(id)}`));
+export const promoteNote = (fleet: string, id: string) => call<Instructions>('POST', chatPath(fleet, `notes/${encodeURIComponent(id)}/promote`));
+export const startSetup = () => call<unknown>('POST', '/setup');
 export interface AllowRule {
   harness: string;
   /** The remote's owner/repo or the checkout's path; a Codex rule has none, since it covers every repo of the fleet. */
@@ -809,16 +557,12 @@ export interface AllowRules {
   rules: AllowRule[];
   skipped: AllowRule[];
 }
-const allowRulesPath = (fleet: string, rest = "") =>
-  `/fleets/${encodeURIComponent(fleet)}/allow-rules${rest}`;
-export const getAllowRules = (fleet: string) =>
-  call<AllowRules>("GET", allowRulesPath(fleet));
-export const removeAllowRule = (fleet: string, rule: AllowRule) =>
-  call<AllowRules>("POST", allowRulesPath(fleet, "/remove"), { rule });
-export const unskipAllowRule = (fleet: string, rule: AllowRule) =>
-  call<AllowRules>("POST", allowRulesPath(fleet, "/skipped/remove"), { rule });
+const allowRulesPath = (fleet: string, rest = '') => `/fleets/${encodeURIComponent(fleet)}/allow-rules${rest}`;
+export const getAllowRules = (fleet: string) => call<AllowRules>('GET', allowRulesPath(fleet));
+export const removeAllowRule = (fleet: string, rule: AllowRule) => call<AllowRules>('POST', allowRulesPath(fleet, '/remove'), { rule });
+export const unskipAllowRule = (fleet: string, rule: AllowRule) => call<AllowRules>('POST', allowRulesPath(fleet, '/skipped/remove'), { rule });
 
-export type CapabilityStatus = "passed" | "failed" | "not_checked";
+export type CapabilityStatus = 'passed' | 'failed' | 'not_checked';
 export interface Capability {
   id: string;
   label: string;
@@ -860,27 +604,19 @@ export async function fetchCapabilities(): Promise<FleetCapabilities[]> {
   const res = await fetch(`${API}/harness-capabilities`);
   if (!res.ok) throw new Error(`harness-capabilities: ${res.status}`);
   const body = (await res.json()) as { fleets?: FleetCapabilities[] | null };
-  return (body.fleets ?? []).map((f) => ({
-    ...f,
-    harnesses: f.harnesses ?? [],
-  }));
+  return (body.fleets ?? []).map((f) => ({ ...f, harnesses: f.harnesses ?? [] }));
 }
 
 /** Runs the probes and waits for them, which can take minutes. */
-export async function checkHarness(
-  fleet: string,
-  harness: string,
-): Promise<CheckAnswer> {
+export async function checkHarness(fleet: string, harness: string): Promise<CheckAnswer> {
   const res = await fetch(`${API}/harness-capabilities/check`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fleet, harness }),
   }).catch(() => {
     throw new Error("Couldn't reach Admiral. Try again.");
   });
-  const body = (await res.json().catch(() => ({}))) as CheckAnswer & {
-    error?: string;
-  };
+  const body = (await res.json().catch(() => ({}))) as CheckAnswer & { error?: string };
   if (!res.ok) throw new Error(body.error || `check: ${res.status}`);
   return body;
 }
@@ -891,7 +627,7 @@ export interface UpdateStatus {
   update_available: boolean;
   checked_at: string | null;
   enabled: boolean;
-  install_method: "homebrew" | "script" | "source";
+  install_method: 'homebrew' | 'script' | 'source';
   upgrade_commands: { label: string; command: string }[];
   restart_note: string;
   executable_path: string;
@@ -901,38 +637,37 @@ export interface UpdateStatus {
 /** The update check's answer, or null when the server cannot give one. */
 export async function fetchUpdateStatus(): Promise<UpdateStatus | null> {
   try {
-    const res = await fetch(`${API}/update`, { cache: "no-store" });
+    const res = await fetch(`${API}/update`, { cache: 'no-store' });
     return res.ok ? ((await res.json()) as UpdateStatus) : null;
   } catch {
     return null;
   }
 }
 
-export const shipsSocketUrl = () =>
-  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/v1`;
+export const shipsSocketUrl = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1`;
 
 const PROXY_DOWN = new Set([502, 503, 504]);
 
-export type ShipsProbe = "ok" | "signed-out" | "down" | "unreachable";
+export type ShipsProbe = 'ok' | 'signed-out' | 'down' | 'unreachable';
 
 // A failed WebSocket handshake doesn't say why, so a reconnect asks over HTTP first: 401 is a changed token.
 export async function probeShips(): Promise<ShipsProbe> {
   try {
-    const res = await fetch(`${API}/ships`, { cache: "no-store" });
-    if (res.status === 401) return "signed-out";
+    const res = await fetch(`${API}/ships`, { cache: 'no-store' });
+    if (res.status === 401) return 'signed-out';
     // Behind tailscale serve a stopped Admiral answers 502 from the proxy, which is as unreachable as a refused connection.
-    if (PROXY_DOWN.has(res.status)) return "unreachable";
-    return res.ok ? "ok" : "down";
+    if (PROXY_DOWN.has(res.status)) return 'unreachable';
+    return res.ok ? 'ok' : 'down';
   } catch {
     // A rejected fetch is a network failure: no answer at all, unlike a 401 or a 5xx.
-    return "unreachable";
+    return 'unreachable';
   }
 }
 
 export interface Order {
   id: string;
   // A pull request's state, as a ship's prs[] entry gives it, without the url.
-  pr?: Omit<MooredPR, "url"> & { failing_check_count?: number };
+  pr?: Omit<MooredPR, 'url'> & { failing_check_count?: number };
   title: string;
   text?: string;
   repo?: string;
@@ -941,23 +676,9 @@ export interface Order {
   /** An issue's GitHub parent; `id` has the form of an order's id. Never on a pull request. */
   parent?: { id: string; title: string; url: string; repo?: string };
   /** A pull request's GitHub stack; `position` sorts layers ascending from the bottom and `size` is GitHub's own count. Never on an issue. */
-  stack?: {
-    number: number;
-    url: string;
-    position: number;
-    size: number;
-    /** The base branch the whole stack conflicts with, set when the server's check found it. */ conflicts_with_base?: string;
-  };
+  stack?: { number: number; url: string; position: number; size: number; /** The base branch the whole stack conflicts with, set when the server's check found it. */ conflicts_with_base?: string };
   /** A pull request chained by branch to others in its view but not in a GitHub stack; `id` is the bottom PR's URL and `position` counts from 1 at the bottom. Never with `stack`. */
-  chain?: {
-    id: string;
-    position: number;
-    size: number;
-    head: string;
-    base: string;
-    mine: boolean;
-    /** The base branch the whole chain conflicts with, set when the server's check found it. */ conflicts_with_base?: string;
-  };
+  chain?: { id: string; position: number; size: number; head: string; base: string; mine: boolean; /** The base branch the whole chain conflicts with, set when the server's check found it. */ conflicts_with_base?: string };
   labels?: string[];
   hot?: boolean;
   author?: string;
@@ -977,7 +698,7 @@ export interface OrderView {
   /** RFC 3339: the view's last successful answer; absent before the first. */
   refreshed_at?: string;
 }
-export type PageState = "starting" | "ready" | "auth_required" | "error";
+export type PageState = 'starting' | 'ready' | 'auth_required' | 'error';
 export interface PageAction {
   id: string;
   label: string;
@@ -987,7 +708,7 @@ export interface PageAction {
   /** The id of the step in the row's detail a module action acts on. */
   step?: string;
   /** A built-in action: Admiral does it, not the module. Absent on a module action. */
-  builtin?: "open" | "launch" | "message";
+  builtin?: 'open' | 'launch' | 'message';
 }
 export interface PageChip {
   label: string;
@@ -1034,6 +755,7 @@ export interface ModulePageData {
 export interface RowLink {
   label: string;
   url: string;
+  /** A second line, such as a pull request's title. */
   subtitle?: string;
   chips?: PageChip[];
 }
@@ -1046,22 +768,17 @@ export interface RowStep {
   actions?: PageAction[];
 }
 export type RowSection =
-  | { kind: "links"; title?: string; links?: RowLink[] }
-  | { kind: "steps"; title?: string; steps?: RowStep[] }
-  | {
-      kind: "fields";
-      title?: string;
-      fields?: { label: string; value: string }[];
-    };
+  | { kind: 'links'; title?: string; links?: RowLink[] }
+  | { kind: 'steps'; title?: string; steps?: RowStep[] }
+  | { kind: 'fields'; title?: string; fields?: { label: string; value: string }[] };
 export interface RowDetail {
   sections: RowSection[];
 }
-export const fetchModuleRow = (key: string, id: string) =>
-  call<RowDetail>("GET", `${src(key)}/rows/${encodeURIComponent(id)}`);
+export const fetchModuleRow = (key: string, id: string) => call<RowDetail>('GET', `${src(key)}/rows/${encodeURIComponent(id)}`);
 export interface FormField {
   id: string;
   label: string;
-  type: "choice" | "checklist" | "duration";
+  type: 'choice' | 'checklist' | 'duration';
   options?: { id: string; label: string }[];
   default?: string | string[];
   min?: string;
@@ -1081,31 +798,11 @@ export interface ActionTarget {
   notice?: boolean;
   id: string;
 }
-const actionPath = (
-  key: string,
-  t: ActionTarget,
-  action: string,
-  leaf: string,
-) =>
-  `${src(key)}/${t.notice ? "notices" : "rows"}/${encodeURIComponent(t.id)}/actions/${encodeURIComponent(action)}/${leaf}`;
-export const fetchModuleForm = (
-  key: string,
-  target: ActionTarget,
-  action: string,
-) => call<ModuleForm>("POST", actionPath(key, target, action, "form"), {});
-export const runModuleAction = (
-  key: string,
-  target: ActionTarget,
-  action: string,
-  values: Record<string, string | string[]>,
-) =>
-  call<RunAnswer>(
-    "POST",
-    actionPath(key, target, action, "run"),
-    { values },
-    undefined,
-    { timeoutMs: RUN_TIMEOUT_MS },
-  );
+const actionPath = (key: string, t: ActionTarget, action: string, leaf: string) =>
+  `${src(key)}/${t.notice ? 'notices' : 'rows'}/${encodeURIComponent(t.id)}/actions/${encodeURIComponent(action)}/${leaf}`;
+export const fetchModuleForm = (key: string, target: ActionTarget, action: string) => call<ModuleForm>('POST', actionPath(key, target, action, 'form'), {});
+export const runModuleAction = (key: string, target: ActionTarget, action: string, values: Record<string, string | string[]>) =>
+  call<RunAnswer>('POST', actionPath(key, target, action, 'run'), { values }, undefined, { timeoutMs: RUN_TIMEOUT_MS });
 export interface LaunchTarget {
   url: string;
   fleet: string;
@@ -1115,24 +812,11 @@ export interface MessagePreview {
   fleet: string;
   chat: string;
 }
-export const fetchLaunchTarget = (key: string, row: string, action: string) =>
-  call<LaunchTarget>("GET", actionPath(key, { id: row }, action, "launch"));
-export const fetchMessagePreview = (key: string, row: string, action: string) =>
-  call<MessagePreview>("GET", actionPath(key, { id: row }, action, "message"));
+export const fetchLaunchTarget = (key: string, row: string, action: string) => call<LaunchTarget>('GET', actionPath(key, { id: row }, action, 'launch'));
+export const fetchMessagePreview = (key: string, row: string, action: string) => call<MessagePreview>('GET', actionPath(key, { id: row }, action, 'message'));
 /** Posts exactly the text the confirm showed; the server refuses it with 409 when the composed text has moved on. */
-export const sendMessage = (
-  key: string,
-  row: string,
-  action: string,
-  text: string,
-) =>
-  call<{ sent: true; chat: string }>(
-    "POST",
-    actionPath(key, { id: row }, action, "message"),
-    { text },
-  );
-export const fetchModulePage = (key: string) =>
-  call<ModulePageData>("GET", `${src(key)}/page`);
+export const sendMessage = (key: string, row: string, action: string, text: string) => call<{ sent: true; chat: string }>('POST', actionPath(key, { id: row }, action, 'message'), { text });
+export const fetchModulePage = (key: string) => call<ModulePageData>('GET', `${src(key)}/page`);
 
 export interface Source {
   key: string;
@@ -1142,12 +826,7 @@ export interface Source {
   capabilities?: string[];
   auth?: { message: string; url?: string; code?: string } | null;
   /** A module's page summary; absent for a source with no page. */
-  page?: {
-    state: PageState;
-    waiting: number;
-    version: number;
-    rows?: string[];
-  };
+  page?: { state: PageState; waiting: number; version: number; rows?: string[] };
   /** True while the source pulls orders, asked for or on its timer; absent from an older server. */
   refreshing?: boolean;
   /** The login the source's account has on its service; only the GitHub source serves it, so a plugin's layers count as not yours. */
@@ -1176,53 +855,30 @@ export interface DirsAnswer {
 }
 
 /** A bridge link's reconnect check, over /api/v1: which ships are listed, or why not. A crew link lists its ship only while the boat is in its crew. */
-export async function probeShipList(
-  crew?: string,
-): Promise<
-  | { kind: "ok"; ships: { session: string }[] }
-  | { kind: "signed-out" }
-  | { kind: "down" }
-> {
+export async function probeShipList(crew?: string): Promise<{ kind: 'ok'; ships: { session: string }[] } | { kind: 'signed-out' } | { kind: 'down' }> {
   try {
-    const res = await fetch(`${API}/ships`, { cache: "no-store" });
-    if (res.status === 401) return { kind: "signed-out" };
-    if (!res.ok) return { kind: "down" };
-    const body = (await res.json()) as {
-      ships?: { session: string; crew?: { name: string }[] | null }[] | null;
-    };
-    const listed = (body.ships ?? []).filter(
-      (s) => crew === undefined || (s.crew ?? []).some((c) => c.name === crew),
-    );
-    return { kind: "ok", ships: listed.map((s) => ({ session: s.session })) };
+    const res = await fetch(`${API}/ships`, { cache: 'no-store' });
+    if (res.status === 401) return { kind: 'signed-out' };
+    if (!res.ok) return { kind: 'down' };
+    const body = (await res.json()) as { ships?: { session: string; crew?: { name: string }[] | null }[] | null };
+    const listed = (body.ships ?? []).filter((s) => crew === undefined || (s.crew ?? []).some((c) => c.name === crew));
+    return { kind: 'ok', ships: listed.map((s) => ({ session: s.session })) };
   } catch {
-    return { kind: "down" };
+    return { kind: 'down' };
   }
 }
 /** A chat terminal's reconnect check: the fleet's chat session is listed only while it is running, so a session that ended returns to the conversation. */
-export async function probeChatSession(
-  fleet: string,
-): Promise<
-  | { kind: "ok"; ships: { session: string }[] }
-  | { kind: "signed-out" }
-  | { kind: "down" }
-> {
+export async function probeChatSession(fleet: string): Promise<{ kind: 'ok'; ships: { session: string }[] } | { kind: 'signed-out' } | { kind: 'down' }> {
   try {
-    const res = await fetch(
-      `${API}/chat/${encodeURIComponent(fleet)}/session`,
-      { cache: "no-store" },
-    );
-    if (res.status === 401) return { kind: "signed-out" };
+    const res = await fetch(`${API}/chat/${encodeURIComponent(fleet)}/session`, { cache: 'no-store' });
+    if (res.status === 401) return { kind: 'signed-out' };
     // A fleet that is gone or whose chat is off has no session to rejoin.
-    if (res.status === 404 || res.status === 409)
-      return { kind: "ok", ships: [] };
-    if (!res.ok) return { kind: "down" };
+    if (res.status === 404 || res.status === 409) return { kind: 'ok', ships: [] };
+    if (!res.ok) return { kind: 'down' };
     const body = (await res.json()) as { running?: boolean };
-    return {
-      kind: "ok",
-      ships: body.running ? [{ session: `_chat-${fleet}` }] : [],
-    };
+    return { kind: 'ok', ships: body.running ? [{ session: `_chat-${fleet}` }] : [] };
   } catch {
-    return { kind: "down" };
+    return { kind: 'down' };
   }
 }
 export interface Device {
@@ -1242,7 +898,7 @@ export interface PairingCode {
 }
 
 export async function fetchDevices(): Promise<Result<Device[]>> {
-  const r = await call<{ devices?: Device[] | null }>("GET", "/devices");
+  const r = await call<{ devices?: Device[] | null }>('GET', '/devices');
   return r.ok ? { ok: true, data: r.data.devices ?? [] } : r;
 }
 
@@ -1251,24 +907,15 @@ export interface PushSubscriptionJSON {
   endpoint: string;
   keys: { p256dh: string; auth: string };
 }
-export const fetchPushKey = () => call<{ key: string }>("GET", "/push/key");
+export const fetchPushKey = () => call<{ key: string }>('GET', '/push/key');
 /** Ok (204) when the server holds this endpoint for this device, a 404 failure when it does not. */
-export const checkPushSubscription = (endpoint: string) =>
-  call<null>(
-    "GET",
-    `/push/subscription?endpoint=${encodeURIComponent(endpoint)}`,
-  );
-export const savePushSubscription = (sub: PushSubscriptionJSON) =>
-  call<null>("PUT", "/push/subscription", sub);
-export const dropPushSubscription = (endpoint: string) =>
-  call<null>("DELETE", "/push/subscription", { endpoint });
-export const mintPairingCode = () =>
-  call<PairingCode>("POST", "/pairing-codes");
-export const renameDevice = (id: string, name: string) =>
-  call<unknown>("PATCH", `/devices/${encodeURIComponent(id)}`, { name });
-export const revokeDevice = (id: string) =>
-  call<unknown>("DELETE", `/devices/${encodeURIComponent(id)}`);
-export const revokeAllDevices = () => call<unknown>("DELETE", "/devices");
+export const checkPushSubscription = (endpoint: string) => call<null>('GET', `/push/subscription?endpoint=${encodeURIComponent(endpoint)}`);
+export const savePushSubscription = (sub: PushSubscriptionJSON) => call<null>('PUT', '/push/subscription', sub);
+export const dropPushSubscription = (endpoint: string) => call<null>('DELETE', '/push/subscription', { endpoint });
+export const mintPairingCode = () => call<PairingCode>('POST', '/pairing-codes');
+export const renameDevice = (id: string, name: string) => call<unknown>('PATCH', `/devices/${encodeURIComponent(id)}`, { name });
+export const revokeDevice = (id: string) => call<unknown>('DELETE', `/devices/${encodeURIComponent(id)}`);
+export const revokeAllDevices = () => call<unknown>('DELETE', '/devices');
 
 export interface RemoteCheck {
   id: string;
@@ -1285,16 +932,7 @@ export interface RemoteView {
   listenExplicit: boolean;
   checks: RemoteCheck[];
 }
-export const fetchRemote = () => call<RemoteView>("GET", "/remote");
-export const editLogins = (change: { add: string } | { remove: string }) =>
-  call<RemoteView>("POST", "/remote/logins", change);
-export const runTailscaleSetup = () =>
-  call<{ ok: boolean; checks: RemoteCheck[] }>(
-    "POST",
-    "/remote/setup",
-    { confirm: true },
-    undefined,
-    { timeoutMs: SLOW_TIMEOUT_MS },
-  );
-export const turnOffTailscale = () =>
-  call<RemoteView>("POST", "/remote/off", { confirm: true });
+export const fetchRemote = () => call<RemoteView>('GET', '/remote');
+export const editLogins = (change: { add: string } | { remove: string }) => call<RemoteView>('POST', '/remote/logins', change);
+export const runTailscaleSetup = () => call<{ ok: boolean; checks: RemoteCheck[] }>('POST', '/remote/setup', { confirm: true }, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
+export const turnOffTailscale = () => call<RemoteView>('POST', '/remote/off', { confirm: true });

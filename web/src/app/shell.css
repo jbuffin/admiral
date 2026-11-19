@@ -1354,6 +1354,14 @@ a.mlink:hover { text-decoration: underline; }
 .module-page .orow-phone.mrow-target .mtarget { margin-right: 10px; }
 .module-page .mtarget .mactions { margin: 0; }
 .mtarget-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-right: auto; font-size: var(--font-size-meta); color: var(--color-text2); }
+.mrowlevel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 0 10px; }
+.module-page .orow-phone.mrow-target .mrowlevel { margin-right: 10px; }
+.module-page .mrowlevel .mactions { margin: 0; }
+.mdivider { align-self: stretch; width: 1px; min-height: 24px; background: var(--color-line2); }
+.mrowlevel-detail { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--color-line); }
+.odetail .mlinks li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.mlink-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.mlink-sub { flex-basis: 100%; font-size: var(--font-size-meta); color: var(--color-muted); }
 .mtarget-label strong { font-weight: 600; color: var(--color-text); }
 .mtarget-arrow { color: var(--color-accent); font-weight: 700; }
 .phone .module-page .odetail { padding: 8px 14px; }
