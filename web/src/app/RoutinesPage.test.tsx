@@ -223,6 +223,18 @@ test('picking Post a fleet digest swaps the launch fields for optional extra wor
   expect(calls[0]!.body).toEqual({ name: 'Morning digest', enabled: true, when: '0 8 * * *', do: { digest: { extra: 'lead with PRs' } }, before_acting: 'act', notify: false });
 });
 
+test('a new digest routine defaults Before acting to Act, since a digest cannot act and never asks first', async () => {
+  page(null, true);
+  await screen.findByRole('form', { name: 'Routine' });
+  const form = within(editor());
+  fireEvent.click(form.getByRole('radio', { name: 'Post a fleet digest' }));
+  fireEvent.input(form.getByLabelText('Name'), { target: { value: 'Morning digest' } });
+  fireEvent.input(form.getByLabelText('When'), { target: { value: '0 8 * * *' } });
+  fireEvent.click(save());
+  await waitFor(() => expect(calls.map((c) => c.method)).toEqual(['POST']));
+  expect((calls[0]!.body as { before_acting: string }).before_acting).toBe('act');
+});
+
 test('a digest with the extra words left blank is saved as an empty digest', async () => {
   page(null, true);
   await screen.findByRole('form', { name: 'Routine' });

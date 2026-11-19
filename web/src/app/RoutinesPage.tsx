@@ -338,7 +338,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
         <legend>Do</legend>
         {(form.on ? (['launch'] as const) : (['launch', 'prompt', 'digest'] as const)).map((m) => (
           <label key={m} class={form.mode === m ? 'seg-opt on' : 'seg-opt'}>
-            <input type="radio" name="do-mode" checked={form.mode === m} onChange={() => set({ mode: m })} />
+            <input type="radio" name="do-mode" checked={form.mode === m} onChange={() => set(m === 'digest' && !routine && form.mode !== 'digest' ? { mode: m, before: 'act' } : { mode: m })} />
             {m === 'launch' ? 'Launch a ship' : m === 'prompt' ? 'AdmiralBot prompt' : 'Post a fleet digest'}
           </label>
         ))}

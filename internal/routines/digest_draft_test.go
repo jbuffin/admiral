@@ -114,11 +114,8 @@ func TestRoutineDraftKeepsADigestWithNoExtraWordsAsAnEmptyDigest(t *testing.T) {
 	}
 }
 
-func TestRoutineDraftNamesADigestMixedWithAPromptOrOverTheCapAsAProblemOnDo(t *testing.T) {
+func TestRoutineDraftNamesADigestOverTheCapAsAProblemOnDo(t *testing.T) {
 	cases := map[string]func(map[string]any){
-		"a digest and a prompt": func(f map[string]any) {
-			f["do"] = map[string]any{"prompt": "sweep", "digest": map[string]any{}}
-		},
 		"extra words over the cap": func(f map[string]any) {
 			f["do"] = map[string]any{"digest": map[string]any{"extra": strings.Repeat("x", 1001)}}
 		},
@@ -145,5 +142,29 @@ func TestRoutineDraftNamesADigestOnABadScheduleAsAProblemOnWhen(t *testing.T) {
 	code, body := r.routineDraft(digestProse)
 	if got := problemFields(body); code != 200 || len(got) == 0 || got[0] != "when" {
 		t.Errorf("draft = %d %v, want 200 with a problem on when", code, body)
+	}
+}
+
+func TestRoutineWriterPromptSaysADigestDefaultsToAct(t *testing.T) {
+	r := newSO(t)
+	r.answers(routineDraftFields())
+	r.routineDraft("Every morning at 8, sum up what changed in this fleet.")
+	calls := r.called()
+	if len(calls) != 1 {
+		t.Fatalf("judge calls = %d, want 1", len(calls))
+	}
+	if p := calls[0].Prompt; !strings.Contains(p, "Use `act`") || !strings.Contains(p, "digest") {
+		t.Errorf("the writer prompt never says a digest defaults to act:\n%s", p)
+	}
+}
+
+func TestRoutineDraftTakesADrafterAnswerWithBothAPromptAndADigestAsMalformed(t *testing.T) {
+	r := newSO(t)
+	fields := digestDraftFields()
+	fields["do"] = map[string]any{"prompt": "sweep", "digest": map[string]any{}}
+	r.answers(fields)
+	code, body := r.routineDraft(digestProse)
+	if code != 502 {
+		t.Errorf("draft = %d %v, want 502, the malformed-answer refusal", code, body)
 	}
 }

@@ -356,7 +356,7 @@ func readRoutineReply(fields map[string]any) (routineDraft, bool) {
 			return d, false
 		}
 	}
-	return d, json.Unmarshal(raw, &d) == nil && d.Do.Launch == nil
+	return d, json.Unmarshal(raw, &d) == nil && d.Do.Launch == nil && (d.Do.Prompt != "") != (d.Do.Digest != nil)
 }
 
 // routineProblem names the form field a validate error is about; the Do fields share one name.

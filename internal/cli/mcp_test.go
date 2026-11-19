@@ -1373,3 +1373,21 @@ func TestReadFindingsWithNoShipIsRefusedNamingShipWithoutCallingTheServer(t *tes
 		t.Errorf("result = %+v, requests %v, want an error naming ship and no request", tr, a.requests())
 	}
 }
+
+func TestDraftRoutineEchoesExtraWordsFoldedAndCutAtTheCap(t *testing.T) {
+	extra := "lead‮ with PRs" + strings.Repeat("x", 1200)
+	body, _ := json.Marshal(map[string]any{"id": "d9", "problems": []any{}, "draft": map[string]any{"name": "Morning digest", "enabled": true, "when": "0 8 * * *", "before_acting": "act", "notify": false, "do": map[string]any{"digest": map[string]any{"extra": extra}}}})
+	a := newStandIn(t, func(mcpReq) (int, string) { return 200, string(body) })
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "draft_routine", `{"prose":"post a digest"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result(t, replies, "1").text()
+	if strings.ContainsAny(text, "‮ ") || !strings.Contains(text, "lead with PRs") {
+		t.Errorf("echo = %q, want the bidi and line-separator characters gone", text)
+	}
+	if strings.Count(text, "x") > 1000 {
+		t.Errorf("echo carries %d x's, want at most the 1000-character cap", strings.Count(text, "x"))
+	}
+}

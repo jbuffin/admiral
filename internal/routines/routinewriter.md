@@ -11,4 +11,4 @@ Reply with one JSON object holding exactly `name`, `enabled`, `when`, `before_ac
 - `notify`: true unless the description asks for silence.
 - `do`: an object with exactly one key.
   - `prompt`: what AdmiralBot is asked to do each time the routine fires, in the engineer's words.
-  - `digest`: choose this when the description asks for a summary, digest or roundup of what changed in the fleet. It posts that summary to the engineer's chat and cannot act. It is an object whose optional `extra` holds the engineer's words about what to lead with or leave out; use `{}` when there are none.
+  - `digest`: choose this when the description asks for a summary, digest or roundup of what changed in the fleet. It posts that summary to the engineer's chat and cannot act. It is an object whose optional `extra` holds the engineer's words about what to lead with or leave out; use `{}` when there are none. Use `act` for `before_acting` on a digest, since it cannot act, unless the description asks to approve each one.

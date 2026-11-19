@@ -114,7 +114,7 @@ export function runLine(run: RoutineRun): { dot: RunDot; text: string; ship?: st
       return { dot: 'ok', text: `AdmiralBot prompt sent${from}${undone}` };
     }
     case 'queued':
-      return { dot: 'ok', text: 'Digest posted to AdmiralBot' };
+      return { dot: 'ok', text: `Digest queued for AdmiralBot${run.via === 'proposal' ? ' (from an accepted proposal)' : ''}` };
     case 'proposed':
       return { dot: 'ok', text: 'Proposed, waiting in the Inbox for your go-ahead' };
     case 'reported':

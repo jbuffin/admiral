@@ -263,6 +263,11 @@ describe('a digest in the run and error words', () => {
     expect(l.text).toMatch(/digest/i);
     expect(l.text).not.toMatch(/prompt/i);
     expect(l.dot).not.toBe('bad');
+    expect(l.text).toMatch(/queued/i);
+  });
+
+  it('says a digest queued from an accepted proposal came from it', () => {
+    expect(runLine(run({ outcome: 'queued', via: 'proposal' } as Partial<RoutineRun>)).text).toMatch(/\(from an accepted proposal\)/);
   });
 
   it('says a fleet with nothing new was skipped for that reason', () => {
