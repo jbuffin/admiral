@@ -68,6 +68,8 @@ var allowed = []struct {
 	{"GET", []string{"fleets", "*", "docks"}, fleetKey},
 	{"GET", []string{"fleets", "*", "crew"}, fleetKey},
 	{"GET", []string{"fleets", "*", "crew", "skills"}, fleetKey},
+	// AdmiralBot reads the drafting skill; the engineer alone sets it
+	{"GET", []string{"fleets", "*", "drafting"}, fleetKey},
 	{"POST", []string{"fleets", "*", "routines", "*", "off"}, fleetKey},
 	// a routine draft is kept for the engineer to open; AdmiralBot never saves, edits or turns on a routine
 	{"POST", []string{"fleets", "*", "routines", "draft"}, fleetKey},

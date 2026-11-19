@@ -67,11 +67,11 @@ export interface LaunchLine {
 
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card';
+  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card' | 'following_card';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
-  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard | LaunchLine | CampaignDraftCard;
+  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard | LaunchLine | CampaignDraftCard | FollowingCard;
   /** The id of the ship card this entry belongs to: a report turn and its reply. */
   thread?: string;
 }
@@ -98,7 +98,14 @@ export type ThreadItem =
   | { kind: 'launch_line'; id: string; text: string; at: string; card: LaunchLine }
   | { kind: 'ship'; id: string; text: string; at: string; card: ShipCard; thread?: ThreadMessage[] }
   | { kind: 'campaign_draft'; id: string; text: string; at: string; card: CampaignDraftCard }
+  | { kind: 'following'; id: string; text: string; at: string; card: FollowingCard }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer; kept?: string };
+
+export interface FollowingCard {
+  ship: string;
+  campaign_id: string;
+  title: string;
+}
 
 export interface CampaignDraftCard {
   title: string;
@@ -124,6 +131,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
     if (m.kind === 'launch_line' && m.card) return [{ t, i, item: { kind: 'launch_line', id: m.id, text: m.text, at: m.at, card: m.card as LaunchLine } }];
     if (m.kind === 'ship_card' && m.card) return [{ t, i, item: { kind: 'ship', id: m.id, text: m.text, at: m.at, card: m.card as ShipCard } }];
     if (m.kind === 'campaign_draft_card' && m.card) return [{ t, i, item: { kind: 'campaign_draft', id: m.id, text: m.text, at: m.at, card: m.card as CampaignDraftCard } }];
+    if (m.kind === 'following_card' && m.card) return [{ t, i, item: { kind: 'following', id: m.id, text: m.text, at: m.at, card: m.card as FollowingCard } }];
     if (m.kind === 'question' && m.card) {
       const card = m.card as InboxItem;
       const answer = answers.get(card.id);

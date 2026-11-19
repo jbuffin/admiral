@@ -221,7 +221,7 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 // The tools by name, with the route each calls. Anything not in this list is a tool the Never list forbids or one
 // nobody specified: approvals, typing mid-turn, config, sources, settings and Preferences have none.
 var wantTools = []string{
-	"add_order", "answer_item", "ask_question", "dismiss_ship", "draft_campaign", "draft_routine", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_cloneable_repos",
+	"add_order", "answer_item", "ask_question", "dismiss_ship", "draft_campaign", "draft_routine", "get_drafting_skill", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_cloneable_repos",
 	"list_crew", "list_docks", "list_inbox", "list_repos", "list_routines", "list_ships", "list_skills", "list_sources", "make_commitment", "next_prompt", "read_campaign", "read_conversation", "read_findings", "read_hold_fire", "read_outcomes",
 	"save_note", "stop_ship", "turn_routine_off", "wake_ship", "work_on_campaign",
 }
@@ -360,6 +360,8 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 		{"list_crew", `{}`, "GET", "/api/fleets/work/crew", "", nil},
 		{"list_crew", `{"harness":"codex"}`, "GET", "/api/fleets/work/crew", "harness=codex", nil},
 		{"list_skills", `{}`, "GET", "/api/fleets/work/crew/skills", "", nil},
+		{"get_drafting_skill", `{}`, "GET", "/api/fleets/work/drafting", "", nil},
+		{"get_drafting_skill", `{"dir":"/code/widget"}`, "GET", "/api/fleets/work/drafting", "dir=%2Fcode%2Fwidget", nil},
 		{"list_skills", `{"harness":"codex"}`, "GET", "/api/fleets/work/crew/skills", "harness=codex", nil},
 	} {
 		t.Run(c.tool, func(t *testing.T) {
@@ -1389,5 +1391,132 @@ func TestDraftRoutineEchoesExtraWordsFoldedAndCutAtTheCap(t *testing.T) {
 	}
 	if strings.Count(text, "x") > 1000 {
 		t.Errorf("echo carries %d x's, want at most the 1000-character cap", strings.Count(text, "x"))
+	}
+}
+
+func TestADraftingLaunchGoesWithYouWhateverWithMeSays(t *testing.T) {
+	for name, extra := range map[string]string{"with_me unset": "", "with_me false": `,"with_me":false`, "with_me true": `,"with_me":true`} {
+		t.Run(name, func(t *testing.T) {
+			a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })
+			a.env(t, mcpToken)
+			replies, _, err := serve(t, call(1, "launch_ship", launchArgs("wayfinder", `,"drafting":true`+extra)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := a.requests()
+			if len(got) != 1 || got[0].Method != "POST" || got[0].Path != "/api/ships" {
+				t.Fatalf("requests = %+v, want one POST /api/ships", got)
+			}
+			b := got[0].Body
+			if d, _ := b["drafting"].(bool); !d {
+				t.Errorf("drafting = %v, want true (body %v)", b["drafting"], b)
+			}
+			if ap, ok := b["autopilot"].(bool); !ok || ap {
+				t.Errorf("autopilot = %v, want false: a drafting ship runs With you (body %v)", b["autopilot"], b)
+			}
+			if sk, _ := b["skill"].(map[string]any); sk["kind"] != "skill" || sk["name"] != "wayfinder" {
+				t.Errorf("skill = %v, want the named skill", b["skill"])
+			}
+			var out struct{ Mode string }
+			if tr := result(t, replies, "1"); tr.IsError || json.Unmarshal([]byte(tr.text()), &out) != nil || out.Mode != "interactive" {
+				t.Errorf("result = %q, want mode interactive", tr.text())
+			}
+		})
+	}
+}
+
+func TestALaunchWithoutDraftingSendsNoDraftingFlag(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })
+	a.env(t, mcpToken)
+	if _, _, err := serve(t, call(1, "launch_ship", launchArgs("wayfinder", ""))); err != nil {
+		t.Fatal(err)
+	}
+	got := a.requests()
+	if len(got) != 1 {
+		t.Fatalf("requests = %+v, want one", got)
+	}
+	if d, present := got[0].Body["drafting"]; present && d != false {
+		t.Errorf("drafting = %v on a launch that did not ask for it", d)
+	}
+	if ap, _ := got[0].Body["autopilot"].(bool); !ap {
+		t.Errorf("autopilot = %v, want true: only a drafting launch drops autopilot", got[0].Body["autopilot"])
+	}
+}
+
+func TestADraftingLaunchIsRefusedBeforeAnyCallWithoutASkillOrWithAScoutACloneOrAnOrder(t *testing.T) {
+	for name, args := range map[string]string{
+		"no skill":        launchArgs("", `,"drafting":true`),
+		"skill none":      launchArgs("none", `,"drafting":true`),
+		"skill commodore": launchArgs("commodore", `,"drafting":true`),
+		"a scout":         launchArgs("wayfinder", `,"drafting":true,"scout":true`),
+		"a clone":         launchArgs("wayfinder", `,"drafting":true,"clone":true`),
+		"an order":        launchArgs("wayfinder", `,"drafting":true,"source":"gh","order_id":"o1"`),
+		"issues":          launchArgs("wayfinder", `,"drafting":true,"issues":["https://github.com/o/r/issues/1"]`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })
+			a.env(t, mcpToken)
+			replies, _, err := serve(t, call(1, "launch_ship", args))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tr := result(t, replies, "1"); !tr.IsError || tr.text() == "" {
+				t.Errorf("result = %+v, want isError saying why a drafting launch is refused", tr)
+			}
+			if got := a.requests(); len(got) != 0 {
+				t.Errorf("requests = %+v, want none", got)
+			}
+		})
+	}
+}
+
+func TestADraftingLaunchTheServerRefusesReachesAdmiralBotAsItCame(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) {
+		return 400, `{"error":"the skill wayfinder is not installed for claude in /code/widget"}`
+	})
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "launch_ship", launchArgs("wayfinder", `,"drafting":true`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "is not installed for claude in /code/widget") {
+		t.Errorf("result = %+v, want isError with the server's message", tr)
+	}
+	if n := len(a.requests()); n != 1 {
+		t.Errorf("POSTs = %d, want 1: a refused drafting launch is not retried", n)
+	}
+}
+
+func TestTheDraftingToolsDescriptionsSayWhenToUseThemAndWhatToPass(t *testing.T) {
+	a := newStandIn(t, nil)
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, rpc(1, "tools/list", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Tools []struct{ Name, Description string }
+	}
+	if err := json.Unmarshal(replies["1"].Result, &list); err != nil {
+		t.Fatal(err)
+	}
+	desc := map[string]string{}
+	for _, tl := range list.Tools {
+		desc[tl.Name] = strings.ToLower(tl.Description)
+	}
+	launch := desc["launch_ship"]
+	for _, want := range []string{"drafting", "with you", "cap"} {
+		if !strings.Contains(launch, want) {
+			t.Errorf("launch_ship description lacks %q:\n%s", want, launch)
+		}
+	}
+	if !strings.Contains(launch, "draft a campaign") {
+		t.Errorf("launch_ship description does not say drafting is for when the engineer asks to draft a campaign:\n%s", launch)
+	}
+	skill := desc["get_drafting_skill"]
+	for _, want := range []string{"dir", "list_repos"} {
+		if !strings.Contains(skill, want) {
+			t.Errorf("get_drafting_skill description lacks %q:\n%s", want, skill)
+		}
 	}
 }

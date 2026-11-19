@@ -89,22 +89,26 @@ func (s *Service) FollowAgain(ctx context.Context, reference string) (Followed, 
 	return got, false, nil
 }
 
-// FollowDrafted follows the campaign a drafting ship of fleet filed, or follows it again when the fleet unfollowed it. A campaign that
-// belongs to another fleet, or to none, is refused with the reason as the error.
-func (s *Service) FollowDrafted(fleet, reference string) error {
+// FollowDrafted follows the campaign a drafting ship of fleet filed, or follows it again when the fleet unfollowed it, and returns its id and
+// the title Admiral read. A campaign that belongs to another fleet, or to none, is refused with the reason as the error.
+func (s *Service) FollowDrafted(fleet, reference string) (id, title string, err error) {
 	owner, lerr := s.Owner(reference)
 	if lerr != nil {
-		return errors.New(lerr.Msg)
+		return "", "", errors.New(lerr.Msg)
 	}
 	if owner != fleet {
-		return fmt.Errorf("That campaign belongs to fleet %s, not %s", owner, fleet)
+		return "", "", fmt.Errorf("That campaign belongs to fleet %s, not %s", owner, fleet)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	if _, _, lerr := s.FollowAgain(ctx, reference); lerr != nil {
-		return errors.New(lerr.Msg)
+	got, _, lerr := s.FollowAgain(ctx, reference)
+	if lerr != nil {
+		return "", "", errors.New(lerr.Msg)
 	}
-	return nil
+	if got.Tree != nil {
+		title = got.Tree.Title
+	}
+	return got.ID, title, nil
 }
 
 // Snapshot is the campaign as a commitment pass reads it: the latest good tree, built the way the page's is.
