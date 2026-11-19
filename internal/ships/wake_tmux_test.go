@@ -213,8 +213,8 @@ func TestAHandWakeLaunchesTheSameShipWithTheResumePromptAndNoAutopilot(t *testin
 		t.Errorf("woken ship = %q named %q, want saltpaw named Saltpaw", ship.Session, ship.Name)
 	}
 	argv, env := r.started(t, 1)
-	if got := prompt(argv); got != "/commodore resume run-7 also check the docs" {
-		t.Errorf("prompt = %q, want the resume text verbatim, then the engineer's text, with the record's skill not prefixed again", got)
+	if got, want := prompt(argv), "/commodore resume run-7 also check the docs"+wakePRsSection("- "+wakePR); got != want {
+		t.Errorf("prompt = %q, want the resume text verbatim, then the engineer's text, then the PR section, with the record's skill not prefixed again", got)
 	}
 	if strings.Contains(strings.Join(argv, " ")+env, "ORDER-TEXT-MARKER") {
 		t.Error("the order's text reached argv or env, want the resume prompt instead")
@@ -246,8 +246,8 @@ func TestAHandWakeWithNoTextPromptsWithTheResumeTextAlone(t *testing.T) {
 		t.Fatal(lerr)
 	}
 	argv, _ := r.started(t, 1)
-	if got := prompt(argv); got != "/commodore resume run-7" {
-		t.Errorf("prompt = %q, want the resume text alone", got)
+	if got, want := prompt(argv), "/commodore resume run-7"+wakePRsSection("- "+wakePR); got != want {
+		t.Errorf("prompt = %q, want the resume text, then the PR section", got)
 	}
 }
 
@@ -446,8 +446,8 @@ func TestAMooredShipWithNoValidResumeTextWakesBareByHand(t *testing.T) {
 			t.Fatalf("Wake with resume %q = %v, want the ship woken", resume, lerr)
 		}
 		argv, _ := r.started(t, 1)
-		if got := prompt(argv); got != "pick up where you left off" {
-			t.Errorf("resume %q: prompt = %q, want the engineer's text alone", resume, got)
+		if got, want := prompt(argv), "pick up where you left off"+wakePRsSection("- "+wakePR); got != want {
+			t.Errorf("resume %q: prompt = %q, want the engineer's text, then the PR section", resume, got)
 		}
 	}
 }

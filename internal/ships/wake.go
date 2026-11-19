@@ -35,13 +35,17 @@ type undoFunc func()
 func (s *Service) Wake(ctx context.Context, session, text string) (Ship, *launcher.Error) {
 	t := strings.TrimSpace(text)
 	prompt := func(rec moor.Record) string {
-		if !moor.ValidResume(rec.Resume) {
-			return t
+		p := t
+		if moor.ValidResume(rec.Resume) {
+			p = rec.Resume
+			if t != "" {
+				p += " " + t
+			}
 		}
-		if t != "" {
-			return rec.Resume + " " + t
+		if p == "" {
+			return p
 		}
-		return rec.Resume
+		return p + s.wakePRsSection(rec)
 	}
 	return s.wakeWith(wakeOpts{noResume: true, bare: true}, session, prompt, "hand", "", viaOfCtx(ctx), s.handRoundStart)
 }
