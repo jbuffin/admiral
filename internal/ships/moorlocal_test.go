@@ -20,7 +20,7 @@ func (r *liveRig) markShip(t *testing.T, name, value string) {
 func (r *liveRig) markLocalOnly(t *testing.T) {
 	t.Helper()
 	r.markShip(t, "local-only", "1")
-	r.markShip(t, "branch", "admiral/saltpaw")
+	r.markShip(t, "branch", "set-by-the-ship")
 }
 
 func TestALocalOnlyShipWhoseTurnEndsOnADoneReportWithNoPRIsFinishedWithoutStop(t *testing.T) {
@@ -34,6 +34,7 @@ func TestALocalOnlyShipWhoseTurnEndsOnADoneReportWithNoPRIsFinishedWithoutStop(t
 	r.turn(t, "needs_you", "stop")
 	r.gone(t, "the finished ship to leave the live list")
 	waitUntil(t, "the finished record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "finished")) == 1 })
+	waitUntil(t, "the ended record of the finished ship", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "ended")) == 1 })
 	for _, no := range []string{"moored", "stopped"} {
 		if contains(r.eventNames(t), no) {
 			t.Errorf("records = %v, want a finished ship that was not %s", r.eventNames(t), no)

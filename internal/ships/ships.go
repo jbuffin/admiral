@@ -336,7 +336,11 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], FirstLaunched: firstLaunched(o), Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Scout: o["scout"] != "", PromptKey: o["prompt-key"], Round: roundOf(o), Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "",
 		Handing: o[sessionhost.OptHanding] != "", HandRefusal: handNotClaude(session, o["harness"]), HandFailed: o[sessionhost.OptHandFailed], SkillKind: o["skill-kind"]}
 	if o["local-only"] != "" {
-		sh.LocalOnly, sh.Branch = true, o["branch"]
+		// The option only says the ship has a worktree: the name is Admiral's own, never text a ship could set.
+		sh.LocalOnly = true
+		if o["branch"] != "" {
+			sh.Branch = "admiral/" + session
+		}
 	}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if sh.Status == "anchored" {

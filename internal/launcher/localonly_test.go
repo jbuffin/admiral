@@ -136,6 +136,9 @@ func TestALocalOnlyShipIsMarkedLocalOnlyWithItsBranchAndAGitHubShipIsNot(t *test
 	if got := sessionOption(t, g, gout.Session, "local-only"); got != "" {
 		t.Errorf("a GitHub ship's local-only option = %q, want it unset", got)
 	}
+	if got := sessionOption(t, g, gout.Session, "branch"); got != "" {
+		t.Errorf("a GitHub ship's branch option = %q, want it unset", got)
+	}
 }
 
 // githubRig is worktreeRig with its origin spelled as a hosted URL that an insteadOf rule sends to the local bare repo,
@@ -286,5 +289,30 @@ func TestADraftingLaunchFromAGitHubOriginStillGetsItsWorktree(t *testing.T) {
 	_, cwd, _, _ := launchedDrafting(t, p, Request{Fleet: "work", Harness: "claude", Dir: p.work, Skill: Skill{Kind: "skill", Name: "wayfinder"}, Text: "draft", Drafting: true})
 	if samePath(t, cwd, p.work) || !registered(t, p.work, cwd) {
 		t.Errorf("a drafting ship ran in %s, want a worktree of the checkout %s", cwd, p.work)
+	}
+}
+
+func TestASubfolderOfANoOriginRepoIsLocalOnlyAndANonGitFolderIsNot(t *testing.T) {
+	r := newLocalRig(t, "", "main")
+	sub := filepath.Join(r.work, "web")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !LocalOnly(sub) {
+		t.Error("a subfolder of a repo with no origin is not local-only, want it local-only")
+	}
+	if LocalOnly(t.TempDir()) {
+		t.Error("a folder outside any repo is local-only, want it not")
+	}
+}
+
+func TestAnOriginThatCannotBeReadIsAnErrorWhileAMissingOneIsNone(t *testing.T) {
+	r := newLocalRig(t, "", "main")
+	if got, err := originURL(0, r.work); got != "" || err != nil {
+		t.Errorf("originURL with no origin = %q, %v, want none and no error", got, err)
+	}
+	writeFile(t, filepath.Join(r.work, ".git", "config"), "[remote \"origin\"\n")
+	if _, err := originURL(0, r.work); err == nil {
+		t.Error("originURL with an unreadable git config = nil error, want an error so the launch is refused")
 	}
 }

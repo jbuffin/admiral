@@ -30,6 +30,19 @@ func TestALocalOnlyShipAdmiralEndedAsFinishedPostsOneDoneCardNamingItsBranch(t *
 	}
 }
 
+func TestAFinishedShipsKilledEndedRecordAddsNoCardToItsDoneCard(t *testing.T) {
+	x := newReporting(t)
+	s := localShip("calm-otter")
+	s.Via = "admiralbot"
+	x.observe(time.Minute, []ships.Ship{launchedBy(s, "chat:m1")})
+	finished := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "finished"}
+	ended := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", ReportResult: "done"}
+	x.observe(5*time.Minute, nil, finished, ended)
+	x.observe(6*time.Minute, nil, finished, ended)
+	x.want("calm-otter:done")
+	x.wantResults("work", "done")
+}
+
 func TestACleanEndAfterADoneReportOnALocalOnlyShipPostsTheDoneCardNotSailedOff(t *testing.T) {
 	x := newDetector(t)
 	x.observe(0, []ships.Ship{localShip("calm-otter")})

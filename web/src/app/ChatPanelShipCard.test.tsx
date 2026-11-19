@@ -57,6 +57,14 @@ test('a ship card shows the ship, its kind and its result, with a link to the PR
   expect(pr.getAttribute('rel')).toBe('noopener noreferrer');
 });
 
+test('a done card names its branch as plain text', async () => {
+  chatWith({ result: 'done', prs: [], branch: 'admiral/calm-otter<b>x</b>' });
+  const el = await shown();
+  expect(el.textContent).toContain('Done');
+  expect(el.querySelector('code')?.textContent).toBe('admiral/calm-otter<b>x</b>');
+  expect(el.querySelector('b')).toBeNull();
+});
+
 test('a PR whose URL is not https, or not a URL, shows as text with no link', async () => {
   chatWith({ prs: [{ url: 'javascript:alert(1)', number: 7 }, { url: 'http://github.com/acme/api/pull/8', number: 8 }, { url: 'not a url', number: 9 }] });
   ships.value = [live()];

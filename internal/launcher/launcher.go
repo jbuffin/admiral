@@ -545,7 +545,9 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}()
 		if wt != "" {
 			req.Dir = wt
-			opts = append(opts, [2]string{"branch", "admiral/" + session})
+			if localOnly {
+				opts = append(opts, [2]string{"branch", "admiral/" + session})
+			}
 		}
 		if localOnly {
 			opts = append(opts, [2]string{"local-only", "1"})

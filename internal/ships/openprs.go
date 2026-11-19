@@ -187,7 +187,8 @@ func (s *Service) finishLocal(ctx context.Context) {
 	}
 }
 
-// finishShip ends a live ship with a `finished` record, which the ship card reads as done; a killed `ended` would post no card.
+// finishShip ends a live ship with a `finished` record, which the ship card reads as done, then the killed `ended` that keeps its
+// findings and usage and cleans its files. A session that would not end is tried again on the next pass.
 // It holds the ship's lock, so a Stop that came first leaves nothing to finish.
 func (s *Service) finishShip(ctx context.Context, sess sessionhost.Session) {
 	unlock := s.lockShip(sess.Name)
@@ -197,7 +198,14 @@ func (s *Service) finishShip(ctx context.Context, sess sessionhost.Session) {
 		return
 	}
 	s.record(outcomes.Record{Ship: sess.Name, Event: "finished"}, nil)
-	_ = s.endSession(ctx, sess.Name, true)
+	s.recordKilled(cur)
+	if err := s.endSession(ctx, sess.Name, true); err != nil {
+		s.openMu.Lock()
+		if st := s.open[sess.Name]; st != nil {
+			st.tried = false
+		}
+		s.openMu.Unlock()
+	}
 }
 
 // moorShip moors a live ship: its record first, then the end of its session, so a crash between leaves it in one place or both.

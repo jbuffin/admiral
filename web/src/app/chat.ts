@@ -211,7 +211,7 @@ export function launchLineView(item: Extract<ThreadItem, { kind: 'launch_line' }
 }
 
 /** What a ship card shows: the ship and its kind, the result in words, each PR and, while its voyage is still in the ships list, the ship's page. */
-export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships: Ship[]): { eyebrow: string; name: string; title: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string; findings: boolean } {
+export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships: Ship[]): { eyebrow: string; name: string; title: string; kind: string; result: string; prs: { label: string; url: string; href: string }[]; shipHref: string; findings: boolean; branch: string } {
   const c = item.card;
   const name = c.name || c.ship;
   const kind = c.skill_kind === 'commodore' ? 'Commodore' : c.skill_kind === 'scout' ? 'Scout' : c.skill_kind === 'quick' ? 'Quick ship' : c.skill_kind === 'none' ? 'No skill' : c.skill || 'No skill';
@@ -225,5 +225,6 @@ export function shipCardView(item: Extract<ThreadItem, { kind: 'ship' }>, ships:
     prs: c.prs.map((p) => ({ label: `PR #${p.number}`, url: p.url, href: httpsHref(p.url) })),
     shipHref: afloat ? shipPath(c.ship) : '',
     findings: c.findings === true,
+    branch: c.branch ?? '',
   };
 }

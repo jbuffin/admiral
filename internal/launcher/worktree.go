@@ -56,7 +56,7 @@ func boundedGit(timeout time.Duration, dir string, args ...string) (string, erro
 		return "", fmt.Errorf("git %s ran past %s: %w", args[0], timeout, errGitTimeout)
 	}
 	if err != nil {
-		return "", fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -76,7 +76,11 @@ func (g GitWorktrees) Fetch(dir string) (string, error) {
 	if _, err := os.Lstat(filepath.Join(dir, ".git")); err != nil {
 		return "", nil
 	}
-	if originURL(dir) == "" {
+	origin, err := originURL(g.Timeout, dir)
+	if err != nil {
+		return "", fmt.Errorf("cannot read the origin remote of %s: %w", dir, err)
+	}
+	if origin == "" {
 		return g.localDefault(dir)
 	}
 	// A plain fetch doesn't set refs/remotes/origin/HEAD, so ask the remote which branch is its default.
@@ -116,25 +120,28 @@ func (g GitWorktrees) localDefault(dir string) (string, error) {
 	return "", fmt.Errorf("%s has no origin remote and none of its local branches %s exists", dir, strings.Join(tried, ", "))
 }
 
-// originURL is the URL configured for origin, "" when there is none. It reads the config, not git remote get-url,
+// originURL is the URL configured for origin, "" when there is none (git config exits 1 for a missing key); any other
+// failure is an error, so a timeout never reads as "no origin". It reads the config, not git remote get-url,
 // which applies url.<x>.insteadOf and so shows a rewritten GitHub origin as whatever it was rewritten to.
-func originURL(dir string) string {
-	out, err := boundedGit(0, dir, "config", "--get", "remote.origin.url")
-	if err != nil {
-		return ""
+func originURL(timeout time.Duration, dir string) (string, error) {
+	out, err := boundedGit(timeout, dir, "config", "--get", "remote.origin.url")
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return "", nil
 	}
-	return out
+	return out, err
 }
 
-// LocalOnly reports whether dir is a working git checkout with no GitHub origin: no origin at all, or one that is not a GitHub repo.
+// LocalOnly reports whether dir is in a working git checkout with no GitHub origin: no origin at all, or one that is not a GitHub repo.
 func LocalOnly(dir string) bool {
-	if _, err := os.Lstat(filepath.Join(dir, ".git")); err != nil {
-		return false
-	}
 	if _, err := boundedGit(0, dir, "rev-parse", "--git-dir"); err != nil {
 		return false
 	}
-	_, github := crew.OriginSlug(originURL(dir))
+	origin, err := originURL(0, dir)
+	if err != nil {
+		return false
+	}
+	_, github := crew.OriginSlug(origin)
 	return !github
 }
 
