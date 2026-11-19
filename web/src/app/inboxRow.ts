@@ -69,6 +69,10 @@ export function rowVerb(e: Entry): string {
       return 'a drafting ship ended';
     case 'event_proposal':
       return 'proposes a routine run for an outside event';
+    case 'allow_rules': {
+      const n = Array.isArray(e.item.allow_rules?.cards) ? e.item.allow_rules.cards.length : 0;
+      return `proposes ${n} allow rule${n === 1 ? '' : 's'} for ${e.fleet?.name || e.fleet?.key || ''}`;
+    }
     case 'crew_notes':
       return 'proposes crew notes';
     case 'crew_member': {

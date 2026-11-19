@@ -9,7 +9,7 @@ export interface InboxItem {
   version: number;
   id: string;
   session: string;
-  kind: 'question' | 'review' | 'findings' | 'notice' | 'wake_proposal' | 'routine_proposal' | 'event_proposal' | 'crew_notes' | 'crew_member' | 'mission' | 'campaign_draft' | 'drafting_ended';
+  kind: 'question' | 'review' | 'findings' | 'notice' | 'wake_proposal' | 'routine_proposal' | 'event_proposal' | 'crew_notes' | 'crew_member' | 'mission' | 'campaign_draft' | 'drafting_ended' | 'allow_rules';
   created: string;
   title: string;
   name?: string;
@@ -28,6 +28,7 @@ export interface InboxItem {
   campaign_draft?: { fleet?: string; repo?: string; title?: string; body?: string; via?: string };
   drafting_ended?: { ship: string; name: string; fleet: string; harness: string };
   wake_proposal?: { ship?: string; ship_title?: string; session?: string; pr?: string; login?: string };
+  allow_rules?: { fleet?: string; cards?: unknown };
   crew_notes?: unknown;
   crew_member?: unknown;
   mission?: unknown;

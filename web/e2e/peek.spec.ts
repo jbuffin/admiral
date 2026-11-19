@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { proveJudge } from './crew';
-import { probeableClaude, addGitHubSource, appendLines, launchShip, line, received, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, withFakeGh, seedReviewRequest, chatAnswerFile, chatAsks, chatSays } from './shell';
+import { probeableClaude, addGitHubSource, appendLines, launchShip, line, received, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, withFakeGh, seedReviewRequest, gitCheckout, chatAnswerFile, chatAsks, chatSays } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 
@@ -416,4 +416,44 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await expect(promoteCard().getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
   expect(existsSync(join(admiral.home, 'checkouts', heir, 'fix.txt'))).toBe(true);
   expect(existsSync(join(admiral.home, 'checkouts', heir, '.admiral', 'untrusted'))).toBe(false);
+});
+
+test('an allow rule proposed after a hand-allowed prompt is added from Peek, lands in allow-rules.json, and the next ship in that checkout launches with it', async ({ page, admiral }) => {
+  test.setTimeout(120_000);
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const repo = join(admiral.home, 'journey-repo');
+  gitCheckout(repo);
+  const ask = '{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"gh pr view 7"},"permission_suggestions":[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"gh pr view:*"}],"behavior":"allow","destination":"localSettings"}]}';
+  const ran = '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"gh pr view 7"},"tool_response":{"stdout":"ok"}}';
+  // The turn finishing is not a round's end: the harness exits, as a ship that has sailed off does.
+  await launchShip(admiral, { fleet: 'zulu', harness: 'claude', dir: repo, cue: ['hook working', `event PermissionRequest ${ask}`, `event PostToolUse ${ran}`, 'exit 0'].join('\n') + '\n' });
+
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  const row = itemRow(page, 'proposes 1 allow rule for Westwind');
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  await expect(row).toContainText('Admiral');
+  await row.getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toBeVisible();
+  await expect(peek).toContainText('Bash(gh pr view:*)');
+  await expect(peek.getByRole('button', { name: 'Send' })).toBeDisabled();
+  await peek.getByRole('button', { name: 'Add' }).tap();
+  await peek.getByRole('button', { name: 'Send' }).tap();
+  await expect(itemRow(page, 'Allow rules sent: 1 added, 0 skipped')).toBeVisible({ timeout: 15_000 });
+  await expect(itemRow(page, 'proposes 1 allow rule')).toHaveCount(0, { timeout: 15_000 });
+
+  const rulesFile = join(admiral.home, 'allow-rules.json');
+  await expect.poll(() => existsSync(rulesFile) && readFileSync(rulesFile, 'utf8').includes('Bash(gh pr view:*)')).toBe(true);
+
+  // The fake never asks, so what "isn't prompted again" can show is the rule the next launch hands Claude.
+  const next = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', dir: repo, cues: ['bracketedpaste'] });
+  const argvFile = join(admiral.home, 'rec', next.session, 'argv');
+  // The fake writes argv with a redirect, so the file can exist empty for a moment.
+  await expect.poll(() => existsSync(argvFile) && readFileSync(argvFile, 'utf8').includes('--settings')).toBe(true);
+  const argv = readFileSync(argvFile, 'utf8').split('\0');
+  const at = argv.indexOf('--settings');
+  expect(at).toBeGreaterThanOrEqual(0);
+  const settings = JSON.parse(readFileSync(argv[at + 1]!, 'utf8')) as { permissions?: { allow?: string[] } };
+  expect(settings.permissions?.allow).toContain('Bash(gh pr view:*)');
 });
