@@ -13,6 +13,7 @@ import (
 // The chat card results a digest reports, spelled as chat.ShipSailedOff, ShipAnchored and ShipMoored.
 const (
 	cardSailedOff = "sailed_off"
+	cardDone      = "done"
 	cardAnchored  = "anchored"
 	cardMoored    = "moored"
 )
@@ -25,6 +26,7 @@ type CardFact struct {
 	Name   string
 	Result string
 	PRs    []string
+	Branch string // a local-only done card's branch
 }
 
 // ShipFact is a ship's current state; only a moored ship has a merge state to show.
@@ -106,6 +108,12 @@ func (f *FleetFacts) Facts(fleet, routine string, from, to time.Time) ([]FactSec
 		switch {
 		case c.Result == cardSailedOff:
 			ended = append(ended, c.Name+" sailed off")
+		case c.Result == cardDone:
+			line := c.Name + " done"
+			if c.Branch != "" {
+				line += " on " + c.Branch
+			}
+			ended = append(ended, line)
 		case c.Result == cardAnchored:
 			ended = append(ended, c.Name+" anchored")
 		case c.Result == cardMoored && len(c.PRs) > 0:

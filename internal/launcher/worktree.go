@@ -10,13 +10,16 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/crew"
 )
 
 // Worktrees makes the git worktree a ship launched with no skill works in.
 type Worktrees interface {
-	// Fetch fetches origin's default branch into dir's repo and returns the tracking ref a worktree is cut from. An empty
-	// ref with no error means dir is not a git checkout, so the ship runs in place. It needs only dir, so a launch calls
-	// it before taking the launch lock.
+	// Fetch fetches origin's default branch into dir's repo and returns the tracking ref a worktree is cut from; a
+	// checkout with no origin returns its local default branch, refs/heads/<b>, with no fetch. An empty ref with no
+	// error means dir is not a git checkout, so the ship runs in place. It needs only dir, so a launch calls it before
+	// taking the launch lock.
 	Fetch(dir string) (tracking string, err error)
 	// Add makes a worktree of dir for the session, on a new branch admiral/<session> cut from tracking, and returns its path.
 	Add(home, session, dir, tracking string) (path string, err error)
@@ -53,7 +56,7 @@ func boundedGit(timeout time.Duration, dir string, args ...string) (string, erro
 		return "", fmt.Errorf("git %s ran past %s: %w", args[0], timeout, errGitTimeout)
 	}
 	if err != nil {
-		return "", fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -72,6 +75,13 @@ func fetchFailed(dir string, err error) error {
 func (g GitWorktrees) Fetch(dir string) (string, error) {
 	if _, err := os.Lstat(filepath.Join(dir, ".git")); err != nil {
 		return "", nil
+	}
+	origin, err := originURL(g.Timeout, dir)
+	if err != nil {
+		return "", fmt.Errorf("cannot read the origin remote of %s: %w", dir, err)
+	}
+	if origin == "" {
+		return g.localDefault(dir)
 	}
 	// A plain fetch doesn't set refs/remotes/origin/HEAD, so ask the remote which branch is its default.
 	head, err := g.git(dir, "ls-remote", "--symref", "origin", "HEAD")
@@ -92,6 +102,47 @@ func (g GitWorktrees) Fetch(dir string) (string, error) {
 		return "", fetchFailed(dir, err)
 	}
 	return tracking, nil
+}
+
+// localDefault is the ref a worktree of a checkout with no origin is cut from: init.defaultBranch, main or master,
+// the first that exists as a local branch.
+func (g GitWorktrees) localDefault(dir string) (string, error) {
+	var tried []string
+	if b, err := g.git(dir, "config", "--get", "init.defaultBranch"); err == nil && b != "" {
+		tried = append(tried, b)
+	}
+	tried = append(tried, "main", "master")
+	for _, b := range tried {
+		if _, err := g.git(dir, "show-ref", "--verify", "--quiet", "refs/heads/"+b); err == nil {
+			return "refs/heads/" + b, nil
+		}
+	}
+	return "", fmt.Errorf("%s has no origin remote and none of its local branches %s exists", dir, strings.Join(tried, ", "))
+}
+
+// originURL is the URL configured for origin, "" when there is none (git config exits 1 for a missing key); any other
+// failure is an error, so a timeout never reads as "no origin". It reads the config, not git remote get-url,
+// which applies url.<x>.insteadOf and so shows a rewritten GitHub origin as whatever it was rewritten to.
+func originURL(timeout time.Duration, dir string) (string, error) {
+	out, err := boundedGit(timeout, dir, "config", "--get", "remote.origin.url")
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return "", nil
+	}
+	return out, err
+}
+
+// LocalOnly reports whether dir is in a working git checkout with no GitHub origin: no origin at all, or one that is not a GitHub repo.
+func LocalOnly(dir string) bool {
+	if _, err := boundedGit(0, dir, "rev-parse", "--git-dir"); err != nil {
+		return false
+	}
+	origin, err := originURL(0, dir)
+	if err != nil {
+		return false
+	}
+	_, github := crew.OriginSlug(origin)
+	return !github
 }
 
 func (g GitWorktrees) Add(home, session, dir, tracking string) (string, error) {

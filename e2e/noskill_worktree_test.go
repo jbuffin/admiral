@@ -173,22 +173,86 @@ func TestAShipLaunchedWithASkillStillRunsInTheCheckout(t *testing.T) {
 	w.wantWorktree(dir, w.waitCwd(plain.Session))
 }
 
-func TestALaunchFromACheckoutWithNoOriginIsRefusedAndNoShipPutToSea(t *testing.T) {
+func TestAShipFromACheckoutWithNoOriginWorksInAWorktreeAndEndsFinishedWithItsCommitOnItsBranch(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
-	w.cueFleets(map[string][]string{"f": {"hook working"}})
+	w.cueFleets(map[string][]string{"f": {"record", "bracketedpaste", "hook working", "wait go", `event Stop {"background_tasks":[]}`}})
+	dir := w.plainCheckout("bare")
+	w.git(dir, "checkout", "-q", "-B", "main")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.git(dir, "add", "a.txt")
+	w.git(dir, "commit", "-q", "-m", "first")
+	head := w.git(dir, "rev-parse", "HEAD")
 	w.start()
 
-	order := map[string]any{"fleet": "f", "harness": "claude", "dir": w.plainCheckout("bare"), "skill": noSkill, "order_id": "o-bare", "text": "x"}
-	code, body := w.post(order)
-	if code < 400 || code >= 500 {
-		t.Errorf("POST /api/ships = %d, want a refusal: %s", code, body)
+	// w.order would give the checkout an origin, so the order names the bare directory itself.
+	ship := w.launch(map[string]any{"fleet": "f", "harness": "claude", "dir": dir, "skill": noSkill, "order_id": "o-bare", "text": "x"})
+	cwd := w.waitCwd(ship.Session)
+	w.wantWorktree(dir, cwd)
+	branch := w.git(cwd, "branch", "--show-current")
+	if branch != "admiral/"+ship.Session {
+		t.Errorf("worktree branch = %q, want admiral/%s", branch, ship.Session)
 	}
-	if ships := w.in.ships(t); len(ships) != 0 {
-		t.Errorf("ships = %v, want none put to sea", ships)
+	if got := w.git(cwd, "rev-parse", "HEAD"); got != head {
+		t.Errorf("the worktree's HEAD = %s, want the checkout's main tip %s", got, head)
 	}
-	if got := w.sessions(); len(got) != 0 {
-		t.Errorf("tmux sessions = %v, want none", got)
+
+	if err := os.WriteFile(filepath.Join(cwd, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.git(cwd, "add", "b.txt")
+	w.git(cwd, "commit", "-q", "-m", "the ship's work")
+	work := w.git(cwd, "rev-parse", "HEAD")
+	w.writeReportFor(ship, reportWith("done"))
+	w.touch(ship.Session, "go")
+	w.waitFile(ship.Session, "cues-done")
+
+	log := w.waitEvent(ship.Session, "finished", 1)
+	waitCond(t, 10*time.Second, "the finished ship gone from the ship list and tmux", func() bool {
+		return len(w.in.ships(t)) == 0 && !w.hasSession(ship.Session)
+	})
+	for _, e := range eventsOf(log) {
+		if e == "stopped" || e == "moored" || e == "returning" {
+			t.Errorf("records = %v, want a ship that finished, not one that was %s", eventsOf(log), e)
+		}
+	}
+
+	if !w.isWorktreeOf(dir, cwd) || w.git(cwd, "rev-parse", "HEAD") != work {
+		t.Errorf("worktree %s: want it registered and still at the ship's commit %s", cwd, work)
+	}
+	if got := w.git(dir, "rev-parse", branch); got != work {
+		t.Errorf("branch %s = %s in the checkout, want the ship's commit %s", branch, got, work)
+	}
+	if got := w.git(dir, "rev-parse", "HEAD"); got != head {
+		t.Errorf("the checkout's HEAD = %s, want %s untouched", got, head)
+	}
+
+	var card struct {
+		Result string `json:"result"`
+		Branch string `json:"branch"`
+	}
+	waitCond(t, 30*time.Second, "the fleet chat to hold the ship's card", func() bool {
+		_, body := send(t, http.MethodGet, w.in.LocalURL+"/api/chat/f/session", nil)
+		var session struct {
+			Messages []struct {
+				Kind string          `json:"kind"`
+				Card json.RawMessage `json:"card"`
+			} `json:"messages"`
+		}
+		if json.Unmarshal([]byte(body), &session) != nil {
+			return false
+		}
+		for _, m := range session.Messages {
+			if m.Kind == "ship_card" && json.Unmarshal(m.Card, &card) == nil {
+				return true
+			}
+		}
+		return false
+	})
+	if card.Result != "done" || card.Branch != branch {
+		t.Errorf("ship card = %+v, want result done on branch %s", card, branch)
 	}
 }
 

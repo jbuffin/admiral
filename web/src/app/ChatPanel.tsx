@@ -138,6 +138,7 @@ function ShipCardView({ item }: { item: Extract<ThreadItem, { kind: 'ship' }> })
         <p class="line">{v.name}</p>
       )}
       {v.title ? <p class="line">{v.title}</p> : null}
+      {v.branch ? <p class="line"><code>{v.branch}</code></p> : null}
       {v.prs.map((p) => (p.href ? <Button key={p.url} label={p.label} href={p.href} external /> : <p key={p.url} class="line">{p.url}</p>))}
       {v.findings ? <Button label="Findings" onClick={() => setShowFindings(true)} /> : null}
       {showFindings ? <FindingsSheet ship={item.card.ship} firstLaunched={item.card.first_launched} onClose={() => setShowFindings(false)} /> : null}

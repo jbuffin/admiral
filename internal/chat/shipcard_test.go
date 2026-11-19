@@ -16,6 +16,7 @@ type shipCardView struct {
 	Skill     string `json:"skill"`
 	SkillKind string `json:"skill_kind"`
 	Result    string `json:"result"`
+	Branch    string `json:"branch"`
 	PRs       []struct {
 		URL    string `json:"url"`
 		Number int    `json:"number"`

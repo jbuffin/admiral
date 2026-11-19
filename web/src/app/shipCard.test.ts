@@ -37,6 +37,11 @@ describe('the ship card view', () => {
     expect(say('returned')).toBe('Returned to port');
   });
 
+  it('says Done for a local-only ship the server reports as done', () => {
+    const card = JSON.parse('{"ship":"calm-otter","name":"Calm Otter","first_launched":"2026-01-02T03:04:05Z","fleet":"harbor","skill":"","skill_kind":"quick","result":"done","branch":"admiral/calm-otter","prs":[]}') as ShipCard;
+    expect(shipCardView({ ...item(), card }, []).result).toBe('Done');
+  });
+
   it('degrades an unknown result to a neutral line that is not its wire value', () => {
     const v = shipCardView(item({ result: 'teleported' as ShipCard['result'] }), []);
     expect(v.result).not.toBe('');

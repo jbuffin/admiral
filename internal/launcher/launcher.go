@@ -419,7 +419,11 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	prompt = l.withGuidance(req, prompt)
 	prompt = withScoutContract(req, prompt)
-	prompt = withClosingSteps(req, prompt)
+	localOnly := LocalOnly(req.Dir)
+	if req.Drafting && localOnly {
+		return nil, refuse(http.StatusBadRequest, "campaigns need a GitHub repo, and %s has no GitHub origin", req.Dir)
+	}
+	prompt = withClosingSteps(req, prompt, localOnly)
 	flags, known := l.hookFlags(req.Harness)
 	if !known {
 		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)
@@ -541,6 +545,12 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}()
 		if wt != "" {
 			req.Dir = wt
+			if localOnly {
+				opts = append(opts, [2]string{"branch", "admiral/" + session})
+			}
+		}
+		if localOnly {
+			opts = append(opts, [2]string{"local-only", "1"})
 		}
 	}
 	if req.Before != nil {

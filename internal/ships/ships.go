@@ -112,6 +112,9 @@ type Ship struct {
 	HandFailed string `json:"hand_failed,omitempty"`
 	// Drafting is set on a drafting ship that has filed no campaign the fleet follows yet.
 	Drafting bool `json:"drafting,omitempty"`
+	// LocalOnly is set on a ship launched from a checkout with no GitHub origin; Branch is the branch its worktree holds.
+	LocalOnly bool   `json:"local_only,omitempty"`
+	Branch    string `json:"branch,omitempty"`
 	// DraftingNotice is the line about the last campaign a drafting ship named that was refused or ignored.
 	DraftingNotice string `json:"drafting_notice,omitempty"`
 	// CarriesPRs is set on a live ship that carries a PR still open, which returns to port only once its PRs are merged.
@@ -332,6 +335,13 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
 		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], FirstLaunched: firstLaunched(o), Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Scout: o["scout"] != "", PromptKey: o["prompt-key"], Round: roundOf(o), Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "",
 		Handing: o[sessionhost.OptHanding] != "", HandRefusal: handNotClaude(session, o["harness"]), HandFailed: o[sessionhost.OptHandFailed], SkillKind: o["skill-kind"]}
+	if o["local-only"] != "" {
+		// The option only says the ship has a worktree: the name is Admiral's own, never text a ship could set.
+		sh.LocalOnly = true
+		if o["branch"] != "" {
+			sh.Branch = "admiral/" + session
+		}
+	}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if sh.Status == "anchored" {
 		sh.StoppedBy = o[sessionhost.OptStoppedBy]
@@ -484,6 +494,7 @@ func (s *Service) Run(ctx context.Context) {
 		s.advanceDrafting()
 		s.refreshOpenPRs(ctx)
 		s.autoMoor(ctx)
+		s.finishLocal(ctx)
 		s.sailOff(ctx, sailing)
 		if gone {
 			s.keep()
