@@ -101,17 +101,16 @@ function FollowingCardView({ item }: { item: Extract<ThreadItem, { kind: 'follow
   return (
     <div class="convo-card chat-card">
       <p class="chat-card-eyebrow">Following</p>
+      <p class="line">{item.card.title}</p>
       <Button
-        label={`Open the campaign ${item.card.title}`}
+        label="Open the campaign"
         href={href + fleetSearch.value}
         onClick={(e) => {
           if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();
           go(href, fleetSearch.value);
         }}
-      >
-        {item.card.title}
-      </Button>
+      />
     </div>
   );
 }
