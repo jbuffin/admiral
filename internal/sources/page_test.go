@@ -246,6 +246,79 @@ func TestARowTargetKeepsItsLabelChipsAndStepAndDropsWhatIsUnusable(t *testing.T)
 	}
 }
 
+func TestAModuleActionKeepsTheStepItNamesAndDropsABadOrBuiltinOrNoticeStep(t *testing.T) {
+	builtinAndNoticeDropTheirStep(t)
+	row := firstRow(t, oneRow(`{"id":"r","title":"R",
+		"action":{"id":"a","label":"A","confirm":"click","step":"s1"},
+		"actions":[{"id":"b","label":"B","confirm":"click","step":"a\nb"},{"id":"c","label":"C","confirm":"click","step":"gone"},{"id":"d","label":"D","confirm":"click"}]}`))
+	if got := row["action"].(map[string]any)["step"]; got != "s1" {
+		t.Errorf("row action step = %v, want s1 kept", got)
+	}
+	acts := list(t, row, "actions")
+	if len(acts) != 3 {
+		t.Fatalf("actions = %s, want all three kept, a bad step dropping only the step", dump(acts))
+	}
+	for i, want := range []any{nil, "gone", nil} {
+		if got := acts[i].(map[string]any)["step"]; got != want {
+			t.Errorf("action %d step = %v, want %v (a step the detail lacks is no error; a bad id is dropped)", i, got, want)
+		}
+	}
+	d, err := parseRowDetail(json.RawMessage(`{"sections":[{"kind":"steps","title":"S","steps":[{"id":"s1","title":"T","actions":[{"id":"x","label":"X","confirm":"click","step":"s2"},{"id":"y","label":"Y","confirm":"click","step":""}]}]}]}`))
+	if err != nil {
+		t.Fatalf("parseRowDetail: %v", err)
+	}
+	sacts := list(t, list(t, jsonOf(t, d), "sections")[0], "steps")[0].(map[string]any)["actions"].([]any)
+	if sacts[0].(map[string]any)["step"] != "s2" || sacts[1].(map[string]any)["step"] != nil {
+		t.Errorf("step actions = %s, want step s2 kept on x and the empty step dropped on y", dump(sacts))
+	}
+}
+
+func TestALinkInALinksSectionKeepsItsSubtitleAndChipsAndANoticeLinkDropsThem(t *testing.T) {
+	d, err := parseRowDetail(json.RawMessage(`{"sections":[{"kind":"links","title":"L","links":[
+		{"label":"PR 7","url":"https://example.com/pr/7","subtitle":"Add retries\nsecond line","chips":[{"label":"Merged","tone":"good"}]},
+		{"label":"Plain","url":"https://example.com/p"}]}]}`))
+	if err != nil {
+		t.Fatalf("parseRowDetail: %v", err)
+	}
+	links := list(t, list(t, jsonOf(t, d), "sections")[0], "links")
+	pr := links[0].(map[string]any)
+	if pr["subtitle"] != "Add retries" || len(list(t, pr, "chips")) != 1 || list(t, pr, "chips")[0].(map[string]any)["label"] != "Merged" {
+		t.Errorf("link = %s, want its one-line subtitle and its chip", dump(pr))
+	}
+	if plain := links[1].(map[string]any); plain["subtitle"] != nil && plain["subtitle"] != "" {
+		t.Errorf("plain link = %s, want no subtitle", dump(plain))
+	}
+	p, err := parsePage(json.RawMessage(`{"state":"ready","groups":[],"notices":[{"id":"n","text":"T","link":{"label":"L","url":"https://example.com/l","subtitle":"S","chips":` + repeat(`{"label":"c"}`, maxChips+1) + `}}]}`))
+	if err != nil {
+		t.Fatalf("a notice link with 11 chips: parsePage = %v, want the page kept (a notice link carries no chips)", err)
+	}
+	nl := list(t, jsonOf(t, p), "notices")[0].(map[string]any)["link"].(map[string]any)
+	if nl["label"] != "L" || nl["subtitle"] != nil || nl["chips"] != nil {
+		t.Errorf("notice link = %s, want only its label and url", dump(nl))
+	}
+}
+
+func TestALinkOverTheChipLimitRefusesTheDetailEvenWhenItsURLIsBad(t *testing.T) {
+	links := func(link string) string {
+		return `{"sections":[{"kind":"links","title":"L","links":[` + link + `]}]}`
+	}
+	chips := repeat(`{"label":"c"}`, maxChips+1)
+	if _, err := parseRowDetail(json.RawMessage(links(`{"label":"A","url":"https://example.com/a","chips":` + repeat(`{"label":"c"}`, maxChips) + `}`))); err != nil {
+		t.Errorf("a link at the chip limit: %v, want it kept", err)
+	}
+	for name, link := range map[string]string{
+		"a good link":    `{"label":"A","url":"https://example.com/a","chips":` + chips + `}`,
+		"a bad-url link": `{"label":"A","url":"javascript:alert(1)","chips":` + chips + `}`,
+	} {
+		d, err := parseRowDetail(json.RawMessage(links(link)))
+		if err == nil {
+			t.Errorf("%s with 11 chips: parseRowDetail = %s, want the detail refused", name, dump(d))
+		} else if strings.Contains(err.Error(), "row or step") {
+			t.Errorf("%s: error %q names a row or step, want it to name a link", name, err)
+		}
+	}
+}
+
 func quote(s string) string { b, _ := json.Marshal(s); return string(b) }
 
 const detailJSON = `{"sections":[
@@ -538,5 +611,21 @@ func TestASourceKnownToHaveNoPageHasNeitherPageNorRowDetail(t *testing.T) {
 	}
 	if _, err := r.rowDetail(t.Context(), "t1", nil); !errors.Is(err, errNoPage) {
 		t.Errorf("rowDetail = %v, want errNoPage", err)
+	}
+}
+
+func builtinAndNoticeDropTheirStep(t *testing.T) {
+	t.Helper()
+	row := firstRow(t, oneRow(`{"id":"r","title":"R","actions":[{"id":"o","label":"Open","builtin":"open","url":"https://example.com/x","step":"s1"}]}`))
+	if got := list(t, row, "actions")[0].(map[string]any); got["step"] != nil || got["builtin"] != "open" {
+		t.Errorf("built-in action = %s, want it kept without a step", dump(got))
+	}
+	p, err := parsePage(json.RawMessage(`{"state":"ready","groups":[],"notices":[{"id":"n","text":"T","action":{"id":"a","label":"A","confirm":"click","step":"s1"}}]}`))
+	if err != nil {
+		t.Fatalf("parsePage: %v", err)
+	}
+	n := list(t, jsonOf(t, p), "notices")[0].(map[string]any)
+	if a, _ := n["action"].(map[string]any); a == nil || a["id"] != "a" || a["step"] != nil {
+		t.Errorf("notice = %s, want its module action kept without a step", dump(n))
 	}
 }
