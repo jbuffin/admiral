@@ -7,16 +7,12 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/brief"
 	"github.com/jbuffin/admiral/internal/campaigns/follow"
 	"github.com/jbuffin/admiral/internal/chatlog"
-	"github.com/jbuffin/admiral/internal/digest"
-	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/ledger"
-	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
@@ -31,19 +27,12 @@ type tickState struct {
 	notes     []ledger.Entry
 	commits   []ledger.Commitment
 	ledgerOK  bool
-
-	ackedTo   uint64 // the printed sequence the digest was last acked to
-	baselined bool   // ships, Inbox items and answers seen once, so what was already there is no event
-	shipState map[string]string
-	inboxSeen map[string]bool
-	answered  map[string]bool
 }
 
 // tickInputs is what one tick reads from outside the chat, once for every fleet.
 type tickInputs struct {
 	ships     []ships.Ship
 	campaigns []follow.Followed
-	inbox     []inbox.Item
 }
 
 func (s *Service) tickInputs() tickInputs {
@@ -54,14 +43,10 @@ func (s *Service) tickInputs() tickInputs {
 	if s.Campaigns != nil {
 		in.campaigns = s.Campaigns()
 	}
-	if s.Inbox != nil {
-		in.inbox = s.Inbox()
-	}
 	return in
 }
 
-// Tick renders each Claude Code fleet's brief and keeps its digest: only its hooks print them, so another
-// harness's chat gets neither.
+// Tick renders each Claude Code fleet's brief: only its hook prints it, so another harness's chat gets none.
 func (s *Service) Tick() {
 	in := s.tickInputs()
 	for _, fc := range s.onFleets() {
@@ -69,7 +54,6 @@ func (s *Service) Tick() {
 			continue
 		}
 		fc.renderBrief(in)
-		fc.digestTick(in)
 	}
 }
 
@@ -86,22 +70,6 @@ func (s *Service) tickLoop(ctx context.Context) {
 			s.ResetTick()
 		}
 	}
-}
-
-// printedSeq is the highest digest sequence the fleet's chat has printed. It comes from the pane options the chat
-// read already, so it costs no tmux call and is 0 for a chat that isn't running.
-func (s *fleetChat) printedSeq() uint64 {
-	if s.DigestAcked != nil {
-		return s.DigestAcked(s.key)
-	}
-	s.mu.Lock()
-	v := s.st.opts.digest
-	s.mu.Unlock()
-	if !sessionhost.SafeToken.MatchString(v) {
-		return 0
-	}
-	n, _ := strconv.ParseUint(v, 10, 64)
-	return n
 }
 
 // ledgerSig names the state of the ledger's files, so an unchanged pair is not read again.
@@ -246,105 +214,4 @@ func writeBrief(home, fleet, text string) error {
 		_ = dir.Remove(tmp)
 	}
 	return err
-}
-
-// digestTick drops the lines the chat has printed and adds a line for each event since the last tick. A ship, Inbox
-// item or answer found on the first tick is the baseline: after a restart, what happened meanwhile is lost, and the
-// brief carries the current state.
-func (s *fleetChat) digestTick(ti tickInputs) {
-	s.tmu.Lock()
-	defer s.tmu.Unlock()
-	st := &s.tk
-	// The digest file is read only when the chat's printed sequence has moved.
-	if seq := s.printedSeq(); seq != st.ackedTo {
-		st.ackedTo = seq
-		if seq > 0 {
-			_ = digest.Ack(s.Home, s.key, seq)
-		}
-	}
-	var lines []string
-	add := func(text string) {
-		if st.baselined {
-			lines = append(lines, text)
-		}
-	}
-
-	if st.answered == nil {
-		st.answered = map[string]bool{}
-	}
-	shipsNow := map[string]string{}
-	for _, sh := range ti.ships {
-		if sh.Fleet != s.key {
-			continue
-		}
-		shipsNow[sh.Session] = sh.Status
-		if prev := st.shipState[sh.Session]; prev != sh.Status {
-			if what := shipEvent(sh.Status); what != "" {
-				add("Ship " + shipName(sh) + " " + what + ".")
-			}
-		}
-	}
-	// What is gone is forgotten, so a reused session name starts fresh.
-	st.shipState = shipsNow
-
-	chatSession := sessionhost.ChatSession(s.key)
-	inboxNow := map[string]bool{}
-	for _, it := range ti.inbox {
-		id := it.Session + "\x00" + it.ID
-		if it.Fleet != s.key || it.Session == chatSession {
-			continue
-		}
-		inboxNow[id] = true
-		if st.inboxSeen[id] {
-			continue
-		}
-		who := it.Name
-		if who == "" {
-			who = it.Session
-		}
-		add("Inbox: a " + brief.Clean(it.Kind) + " from " + brief.Clean(who) + " is waiting.")
-	}
-	st.inboxSeen = inboxNow
-	here := map[string]bool{}
-	for _, q := range s.questions(false) {
-		if len(q.Answer) == 0 || isProposal(q.Item.ID) {
-			continue
-		}
-		here[q.Item.ID] = true
-		if !st.answered[q.Item.ID] {
-			st.answered[q.Item.ID] = true
-			add("The engineer answered your question: " + brief.Clean(questionTitle(q)))
-		}
-	}
-	for id := range st.answered {
-		if !here[id] {
-			delete(st.answered, id)
-		}
-	}
-	st.baselined = true
-	if len(lines) > 0 {
-		_ = digest.Add(s.Home, s.key, lines...)
-	}
-}
-
-func shipName(sh ships.Ship) string {
-	if sh.Name != "" {
-		return brief.Clean(sh.Name)
-	}
-	return brief.Clean(sh.Session)
-}
-
-// shipEvent is what a ship that changed to status did, "" for a change AdmiralBot needn't hear of.
-func shipEvent(status string) string {
-	switch status {
-	case ships.StatusSailingOff:
-		return "sailed off"
-	case ships.StatusMoored:
-		return "moored with a PR open"
-	case ships.StatusAnchored:
-		return "anchored"
-	case ships.StatusNeedsYou:
-		return "is waiting on the engineer"
-	}
-	return ""
 }

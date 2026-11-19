@@ -44,7 +44,7 @@ func TestPostingALaunchCardTwiceAddsOneEntry(t *testing.T) {
 	}
 }
 
-func TestALaunchCardNeverReachesTheDigestOrTheBrief(t *testing.T) {
+func TestALaunchCardNeverReachesTheBrief(t *testing.T) {
 	r := newBriefRig(t)
 	if _, err := r.history().Append("work", chatlog.Entry{ID: "m1", Kind: chatlog.KindMessage, Role: "user", Text: "where are the lanterns"}); err != nil {
 		t.Fatal(err)
@@ -56,15 +56,11 @@ func TestALaunchCardNeverReachesTheDigestOrTheBrief(t *testing.T) {
 	if got, _ := r.history().Recent("work", 50); len(got) != 2 {
 		t.Fatalf("history = %+v, want the message and the card: a card starts no turn", got)
 	}
-	digest := lineTexts(r.digest(t, "work"))
 	brief := r.brief("work")
 	if !strings.Contains(brief, "where are the lanterns") {
 		t.Fatalf("the brief holds no recent message, so the check below proves nothing:\n%s", brief)
 	}
 	for _, s := range []string{"saffron", "alice-the-reviewer", "github.com/acme", "calm-otter", "draft_fix"} {
-		if strings.Contains(digest, s) {
-			t.Errorf("digest %q holds %q, which AdmiralBot would read", digest, s)
-		}
 		if strings.Contains(brief, s) {
 			t.Errorf("brief holds %q, which AdmiralBot would read:\n%s", s, brief)
 		}

@@ -344,7 +344,7 @@ Body `{"skill": "<name>"}` saves `drafting.skill` on the fleet; `""` clears it (
 
 ### Ship cards
 
-A ship card is a chat entry with `kind: "ship_card"` that the server posts in the chat of the ship's own fleet when the ship's result comes in. It starts no turn, sends no push and writes no digest line, so AdmiralBot never reads it. It reaches clients the way every entry does, through the `chat` WebSocket message.
+A ship card is a chat entry with `kind: "ship_card"` that the server posts in the chat of the ship's own fleet when the ship's result comes in. It starts no turn, sends no push and is never shown to AdmiralBot. It reaches clients the way every entry does, through the `chat` WebSocket message.
 
 `id` is `ship-<ship>-<first_launched>-<result>`, so a result posts once per voyage and a reused ship name posts its own cards. `text` is the ship's session name and `card` is:
 
@@ -363,7 +363,7 @@ A ship card is a chat entry with `kind: "ship_card"` that the server posts in th
 
 ### Launch lines
 
-A launch line is a chat entry with `kind: "launch_line"` that the server posts in the chat of the ship's fleet when AdmiralBot launches a ship the engineer asked for in the chat. It starts no turn, sends no push and writes no digest line, so AdmiralBot never reads it. Commitment and campaign launches, launches from the UI and event launches (which post a launch card) post none. It reaches clients through the `chat` WebSocket message.
+A launch line is a chat entry with `kind: "launch_line"` that the server posts in the chat of the ship's fleet when AdmiralBot launches a ship the engineer asked for in the chat. It starts no turn, sends no push and is never shown to AdmiralBot. Commitment and campaign launches, launches from the UI and event launches (which post a launch card) post none. It reaches clients through the `chat` WebSocket message.
 
 `id` is `launch-line-<ship>-<stamp>`, and `text` is the ship's session name. `card` is:
 
@@ -485,7 +485,7 @@ A campaign AdmiralBot drafted is an Inbox item with `kind: "campaign_draft"`, `s
 - `create`: `POST /api/v1/inbox/_admiral/<id>/create`, `{"repo", "title", "body"}`, the draft as the engineer edited it. It files the parent issue and follows it, as `POST /api/campaigns/create` does with no issues, in the draft's fleet, and answers `201 {"campaign": {"id", "url"}}`. The answer file is `{"created": true, "url": "<parent>"}`, and a card naming the campaign goes into the fleet's chat with no model turn. A refusal before any GitHub write leaves the item for another try: `400` for a blank or over-long title or body or a blank repo, `422` for a repo that is not one of the fleet's repos, and the create route's own refusals. Once the parent exists the item is answered even if linking or following failed: the answer is `502 {"error", "parent", "answered"}`, the card says what failed, and a second press is `409` or `404`, so no second parent is ever filed. An action already running on the item is `409`.
 - `dismiss`: `POST /api/v1/inbox/_admiral/<id>/dismiss`, `{}`, writes `{"dismissed": true}`, posts a "thrown away" card to the chat with no model turn, and answers `204`. Remove from inbox on a draft does the same.
 
-Both are the engineer's alone: an actor token is `403`. Each tells AdmiralBot the outcome in its next digest, since it never reads cards. A `campaign_draft_card` entry in the chat's history (`kind: "campaign_draft_card"`, `text` the plain card line, `card` `{"title", "url", "created", "failed"}`) is the card.
+Both are the engineer's alone: an actor token is `403`. AdmiralBot is not told the outcome: it never reads cards. A `campaign_draft_card` entry in the chat's history (`kind: "campaign_draft_card"`, `text` the plain card line, `card` `{"title", "url", "created", "failed"}`) is the card.
 
 ### Acting on an item
 

@@ -472,7 +472,7 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 			t.Errorf("env ADMIRAL_CHAT_FLEET = %q, want %q: `admiral chat ask` finds its fleet there", r.env["ADMIRAL_CHAT_FLEET"], chatFleet)
 		}
 		if r.env["ADMIRAL_CHAT_HARNESS"] != "claude" {
-			t.Errorf("env ADMIRAL_CHAT_HARNESS = %q, want claude: the hooks print the brief and digest only for it", r.env["ADMIRAL_CHAT_HARNESS"])
+			t.Errorf("env ADMIRAL_CHAT_HARNESS = %q, want claude: the hooks print the brief only for it", r.env["ADMIRAL_CHAT_HARNESS"])
 		}
 		if want := filepath.Join(w.home, "chat", chatFleet); r.cwd != want {
 			t.Errorf("cwd = %q, want %q", r.cwd, want)

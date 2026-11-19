@@ -115,7 +115,7 @@ func strip(s string, keepLines bool) string {
 
 // Clean is untrusted text as one safe line: control characters, ANSI escapes and invisible format characters gone, every run of
 // whitespace one space, so it can't open a heading or close a fence. Anything of AdmiralBot's or a ship's that a
-// brief or a digest replays goes through it.
+// brief replays goes through it.
 func Clean(s string) string { return strings.Join(strings.Fields(strip(s, false)), " ") }
 
 // Fence is items as a fenced block of facts the engineer asked AdmiralBot to keep, each one a cleaned line,
