@@ -482,6 +482,8 @@ export const saveSource = (key: string, body: { name?: string; fleet?: string; s
 export const restartSource = (key: string) => call<unknown>('POST', `${src(key)}/restart`);
 /** Asks the source to search again now; the new answer arrives with the usual stream. */
 export const refreshSource = (key: string) => call<unknown>('POST', `${src(key)}/refresh`);
+/** Asks the plugin to rebuild its page now; the new page arrives as a page version bump. */
+export const refreshModulePage = (key: string) => call<unknown>('POST', `${src(key)}/page/refresh`);
 /** Asks GitHub now whether gh is signed in; a refusal with no `connection` (the source isn't running) keeps the last one. */
 export const checkConnection = (key: string) => call<Connection>('POST', `${src(key)}/connection/check`);
 /** How many results a search has, as GitHub counts them. */
