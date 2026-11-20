@@ -122,6 +122,8 @@ type Request struct {
 	Template string `json:"-"`
 	// EventURL is the PR or issue URL of the event that started the ship; only the scheduler sets it.
 	EventURL string `json:"-"`
+	// LaunchPRs are the PR URLs a sourceless launch's text names; only the ship service sets them.
+	LaunchPRs []string `json:"-"`
 	// StartFrom starts the ship from a restricted ship's work: its own clone, with Branch of Clone as the start.
 	StartFrom *StartFrom `json:"-"`
 }
@@ -288,7 +290,7 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	}
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", launched}, {"first-launched", firstLaunched}, {"title", orderTitle(req)}, {"url", cmp.Or(req.URL, req.EventURL)}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")},
+		{"order", req.OrderID}, {"launched", launched}, {"first-launched", firstLaunched}, {"title", orderTitle(req)}, {"url", cmp.Or(req.URL, req.EventURL)}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}, {"prs", strings.Join(req.PRs, ",")}, {"launch-prs", strings.Join(req.LaunchPRs, ",")},
 		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}, {"scout", scoutOption(req.Scout)}, {"drafting", scoutOption(req.Drafting)}, {"prompt-key", req.PromptKey}}
 	for _, o := range opts {
 		if hasControl(o[1]) {

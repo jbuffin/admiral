@@ -22,7 +22,13 @@ func prURLOn(raw, host string) (url, repo string, ok bool) {
 // The check reruns after a restart because the reviewing option alone does not say every layer answered.
 func (s *Service) orderPending(sess sessionhost.Session) bool {
 	url := sess.Options["url"]
-	if url == "" || s.runState(sess).order.done {
+	if s.runState(sess).order.done {
+		return false
+	}
+	if sess.Options["launch-prs"] != "" {
+		return true
+	}
+	if url == "" {
 		return false
 	}
 	if _, _, _, ok := moor.ParsePR(url); ok {
@@ -36,31 +42,37 @@ func (s *Service) orderTargets(ctx context.Context, run runAsk, gh moor.GitHub, 
 	s.mooredMu.Lock()
 	rs := s.runState(run.sess)
 	url := run.sess.Options["url"]
-	if url == "" || rs.order.done {
+	var launch []string
+	if v := run.sess.Options["launch-prs"]; v != "" {
+		launch = strings.Split(v, ",")
+	}
+	if (url == "" && len(launch) == 0) || rs.order.done {
 		s.mooredMu.Unlock()
 		return nil
 	}
-	if pr, repo, ok := prURLOn(url, gh.Host()); ok {
-		if route(gh.Host(), repo) != fleet {
+	var prs []string
+	for _, raw := range append([]string{url}, launch...) {
+		if pr, repo, ok := prURLOn(raw, gh.Host()); ok && route(gh.Host(), repo) == fleet && !slices.Contains(prs, pr) {
+			prs = append(prs, pr)
+		}
+	}
+	host, owner, repo, number, isStack := moor.ParseStack(url)
+	if !isStack {
+		if len(prs) == 0 {
 			rs.order.done = true
-			pr = ""
 		}
 		s.mooredMu.Unlock()
-		if pr == "" {
-			return nil
-		}
-		return []string{pr}
+		return prs
 	}
-	host, owner, repo, number, ok := moor.ParseStack(url)
-	if !ok || !strings.EqualFold(host, gh.Host()) || route(gh.Host(), owner+"/"+repo) != fleet {
+	if !strings.EqualFold(host, gh.Host()) || route(gh.Host(), owner+"/"+repo) != fleet {
 		rs.order.done = true
 		s.mooredMu.Unlock()
-		return nil
+		return prs
 	}
 	if rs.order.resolved {
 		layers := slices.Clone(rs.order.layers)
 		s.mooredMu.Unlock()
-		return layers
+		return withoutDuplicates(append(layers, prs...))
 	}
 	s.mooredMu.Unlock()
 	layers, found, err := gh.StackOpenPRs(ctx, owner, repo, number)
@@ -78,9 +90,19 @@ func (s *Service) orderTargets(ctx context.Context, run runAsk, gh moor.GitHub, 
 		rs.order.resolved, rs.order.layers = true, layers
 	}
 	if err != nil || !found {
-		return nil
+		return prs
 	}
-	return slices.Clone(layers)
+	return withoutDuplicates(append(slices.Clone(layers), prs...))
+}
+
+func withoutDuplicates(urls []string) []string {
+	var out []string
+	for _, u := range urls {
+		if !slices.Contains(out, u) {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 func (o *orderCheck) fail() {
@@ -103,13 +125,15 @@ func (s *Service) judgeOrder(rs *running, run runAsk, answer, candAnswer map[str
 		switch {
 		case candFailed[u]:
 			failed = true
-		case ok && st.State == "OPEN" && st.Viewer != "" && st.Author != "" && st.Author != st.Viewer:
-			if !slices.Contains(rs.reviewing, u) {
+		case ok && st.State == "OPEN" && st.Viewer != "" && st.Author != "":
+			reviews := st.Author != st.Viewer
+			if reviews && !slices.Contains(rs.reviewing, u) {
 				rs.reviewing = append(rs.reviewing, u)
 				added = true
 			}
-			if !slices.Contains(s.carried(run.sess), u) {
+			if !slices.Contains(s.carried(run.sess), u) && (reviews || !slices.Contains(rs.order.layers, u)) {
 				rs.found = append(rs.found, u)
+				added = true
 			}
 		}
 	}
