@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
+import { launchShip, seedFleets, shipViewUrl } from './shell';
 
 // Minting voids the earlier code, so each pairing mints its own.
 const mint = async (admiral: Admiral) => ((await (await fetch(`${admiral.url}api/v1/pairing-codes`, { method: 'POST' })).json()) as { code: string }).code;
@@ -19,7 +20,8 @@ const pagesDevice = async (admiral: Admiral) => {
 
 test.describe('pairing an unpaired device', () => {
   test('an unpaired app opens on Pair this app, refuses a wrong code, pairs by typed code, and says signed out once revoked', { tag: '@critical' }, async ({ page, admiral }) => {
-    await admiral.start({ lan: true });
+    seedFleets(admiral, { live: true });
+    await admiral.start({ lan: true, env: { ADMIRAL_VSCODE_TEST: 'installed' } });
     await page.goto(admiral.lanUrl + 'app/');
     await expect(page.getByRole('heading', { name: 'Pair this app', exact: true })).toBeVisible();
     const field = page.getByRole('textbox', { name: /code/i });
@@ -33,6 +35,15 @@ test.describe('pairing an unpaired device', () => {
     await pairByTyping(page, admiral);
     await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Pair this app' })).toBeHidden();
+    // A paired page on the LAN is a remote user: the bridge shows Open in VS Code disabled, with the remote note and no link.
+    const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude' });
+    await page.goto(`${admiral.lanUrl}app/ships/${encodeURIComponent(ship.session)}?fleet=zulu`);
+    await expect(page).toHaveURL(shipViewUrl(admiral, ship));
+    await expect(page.getByRole('heading', { name: ship.name, exact: true })).toBeVisible();
+    await expect(page.getByText('Not available for remote users yet.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open in VS Code' })).toBeDisabled();
+    await expect(page.getByRole('link', { name: 'Open in VS Code' })).toHaveCount(0);
+
     // The device cookie stays out of reach of the page's script.
     expect(await page.evaluate(() => document.cookie)).toBe('');
 
