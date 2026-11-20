@@ -39,6 +39,7 @@ func (urlOrder) Launched(source, id string) {}
 type launchSpec struct {
 	orderURL, orderText string
 	text, note, kind    string // kind is the skill kind, "none" when empty
+	scout               bool
 }
 
 // newReviewingRig is a live ship, saltpaw, launched on orderURL as a source's order; "" launches it from free text.
@@ -51,7 +52,7 @@ func newLaunchedRig(t *testing.T, spec launchSpec) *liveRig {
 	t.Helper()
 	r := newWakeRig(t, 0)
 	req := launcher.Request{Fleet: "work", Harness: "claude", Dir: r.checkout, Model: "opus", Name: "Saltpaw", Session: "saltpaw",
-		Skill: launcher.Skill{Kind: cmp.Or(spec.kind, "none")}, Text: spec.text, Note: spec.note}
+		Skill: launcher.Skill{Kind: cmp.Or(spec.kind, "none")}, Text: spec.text, Note: spec.note, Scout: spec.scout}
 	if spec.text == "" && spec.note == "" {
 		req.Prompt = "go"
 	}

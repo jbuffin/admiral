@@ -19,7 +19,7 @@ func prURLOn(raw, host string) (url, repo string, ok bool) {
 	return "https://" + host + "/" + repo + "/pull/" + num, repo, true
 }
 
-// The check reruns after a restart because the reviewing option alone does not say every layer answered.
+// The check reruns after a restart because the reviewing option alone does not say every layer answered, or any launch PR.
 func (s *Service) orderPending(sess sessionhost.Session) bool {
 	url := sess.Options["url"]
 	if s.runState(sess).order.done {
@@ -131,6 +131,7 @@ func (s *Service) judgeOrder(rs *running, run runAsk, answer, candAnswer map[str
 				rs.reviewing = append(rs.reviewing, u)
 				added = true
 			}
+			// the viewer's own stack layers stay uncarried: they are the viewer's work, not a review
 			if !slices.Contains(s.carried(run.sess), u) && (reviews || !slices.Contains(rs.order.layers, u)) {
 				rs.found = append(rs.found, u)
 				added = true

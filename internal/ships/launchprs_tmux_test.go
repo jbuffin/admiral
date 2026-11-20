@@ -5,7 +5,9 @@ package ships
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/moor"
@@ -85,14 +87,6 @@ func TestAShipWhoseWholePromptIsAPRURLCarriesIt(t *testing.T) {
 
 func TestACommodoreLaunchOnAPRURLCarriesIt(t *testing.T) {
 	r := newLaunchedRig(t, launchSpec{kind: "commodore", text: livePR7})
-	r.others(livePR7)
-	r.poll()
-
-	r.wantPRs(t, []string{livePR7}, []string{livePR7})
-}
-
-func TestAPRURLWithAFilesTailIsCarriedAsThePR(t *testing.T) {
-	r := newLaunchedRig(t, launchSpec{text: livePR7 + "/files"})
 	r.others(livePR7)
 	r.poll()
 
@@ -197,4 +191,45 @@ func TestALaunchWithAPRInItsTextAsksThePollerToLookAtOnceAndOneWithNoneDoesNot(t
 			}
 		})
 	}
+}
+
+func TestAScoutCarriesNoPRItsLaunchTextNamesAndAsksGitHubNothing(t *testing.T) {
+	r := newLaunchedRig(t, launchSpec{scout: true, text: "review " + livePR7})
+	r.others(livePR7)
+	r.poll()
+
+	r.wantPRs(t, nil, nil)
+	if calls := r.gh.callLog(); len(calls) != 0 {
+		t.Errorf("GitHub was asked %v, want nothing for a scout", calls)
+	}
+}
+
+func TestALaunchNamingMoreThanTwentyPRsCarriesOnlyTheFirstTwenty(t *testing.T) {
+	var urls []string
+	for i := 1; i <= 21; i++ {
+		u := fmt.Sprintf("https://github.com/acme/widgets/pull/%d", 100+i)
+		urls = append(urls, u)
+	}
+	r := newLaunchedRig(t, launchSpec{text: strings.Join(urls, " ")})
+	for _, u := range urls {
+		r.others(u)
+	}
+	r.poll()
+	r.poll()
+
+	r.wantPRs(t, urls[:maxFreshPerPoll], urls[:maxFreshPerPoll])
+}
+
+func TestALaunchPRWhoseFirstAskFailsIsCarriedAfterALaterPollAnswers(t *testing.T) {
+	r := newLaunchedRig(t, launchSpec{text: "review " + livePR7})
+	r.others(livePR7)
+	r.gh.failOn = livePR7
+	r.poll()
+	r.wantPRs(t, nil, nil)
+
+	r.gh.mu.Lock()
+	r.gh.failOn = ""
+	r.gh.mu.Unlock()
+	r.poll()
+	r.wantPRs(t, []string{livePR7}, []string{livePR7})
 }

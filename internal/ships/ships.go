@@ -747,8 +747,9 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	if req.Source == "" && req.Round == 0 { // only a source's order sets a title and URL, so a client's never stand
 		req.Title, req.URL = "", req.EventURL // EventURL is json:"-", so only the scheduler can set it
 	}
-	if req.Source == "" && req.Round == 0 {
+	if req.Source == "" && req.Round == 0 && !req.Scout {
 		req.LaunchPRs = conversation.PRURLsInText(req.Note + "\n" + req.Text)
+		req.LaunchPRs = req.LaunchPRs[:min(len(req.LaunchPRs), maxFreshPerPoll)] // a pasted list must not become a flood of GitHub asks
 	}
 	if len(req.Issues) > 0 {
 		if req.Source == "" && req.Round == 0 {
