@@ -44,12 +44,12 @@ func ModelPair(harness string) (small, strong string, ok bool) {
 	return pair[0], pair[1], ok
 }
 
-// ChatModelsFor is the models a harness's AdmiralBot chat may use; the first is its default.
+// ChatModelsFor is the built-in models a harness's AdmiralBot chat may use until the dock's own list is known; the first is its default.
 func ChatModelsFor(harness string) []string {
 	small, strong, ok := ModelPair(harness)
 	switch {
 	case harness == "claude":
-		return []string{"sonnet", "opus", "haiku"}
+		return []string{"sonnet", "opus", "haiku", "fable"}
 	case ok:
 		return []string{strong, small}
 	}
@@ -119,7 +119,8 @@ func defaultChat() ChatSettings {
 // capability counts. Claude counts until its fence probe fails; Codex and Copilot need the fence
 // and the separate config home both passed.
 func (c *Config) chatHarnessOption(f Fleet, harness string) ChatHarnessOption {
-	o := ChatHarnessOption{Harness: harness, Models: ChatModelsFor(harness), Efforts: ChatEffortsFor(harness)}
+	models, _ := c.ModelsFor(f.Key, harness)
+	o := ChatHarnessOption{Harness: harness, Models: models, Efforts: ChatEffortsFor(harness)}
 	if _, ok := f.Harness(harness); !ok {
 		name := HarnessName(harness)
 		if harness == "claude" {
@@ -224,7 +225,8 @@ func (c *Config) ChatFleet(key string) (f Fleet, off string, ok bool) {
 
 // parseFleetChat reads a fleet's chat object. Leniently (the file) a bad model, effort,
 // threshold or harness name falls back to the default with a warning and never fails the
-// load; strictly (a save) it is an error. An unknown key or a wrong type is always one.
+// load; strictly (a save) it is an error. A model is checked only against the name pattern here,
+// since a dock's list is not known while loading; mergeChat checks a save against the list. An unknown key or a wrong type is always one.
 // The harness is resolved first, since the model and effort are checked against it; a
 // save that names none is checked against base, the fleet's harness today.
 func parseFleetChat(path string, raw json.RawMessage, strict bool, base string) (ChatSettings, error) {
@@ -267,8 +269,8 @@ func parseFleetChat(path string, raw json.RawMessage, strict bool, base string) 
 			if err != nil {
 				return ChatSettings{}, err
 			}
-			if models := ChatModelsFor(c.Harness); !slices.Contains(models, s) {
-				if err := bad(p, fmt.Sprintf("%q is not one of %v for %s", s, models, c.Harness), c.Model); err != nil {
+			if !ValidModelName(s) {
+				if err := bad(p, fmt.Sprintf("%q is not a valid model name", s), c.Model); err != nil {
 					return ChatSettings{}, err
 				}
 				continue

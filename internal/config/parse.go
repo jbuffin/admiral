@@ -33,6 +33,8 @@ type Config struct {
 	UpdateCheck bool
 	// ChatProbe reads the capability store for the AdmiralBot gate; nil reads as not checked everywhere.
 	ChatProbe ChatProbe
+	// HarnessModels reads the lists each dock's harness gave; nil reads as unlisted everywhere.
+	HarnessModels HarnessModels
 }
 
 // Remote is Admiral-wide: the Tailscale mode and who may use it.

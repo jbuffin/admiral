@@ -184,7 +184,7 @@ func editFleet(dir, key string, f FleetFields, cfg *Config, repos RepoLookup) er
 			}
 		}
 		if f.Chat != nil {
-			if err := mergeChat(fleet, key, f.Chat); err != nil {
+			if err := mergeChat(fleet, key, f.Chat, cfg); err != nil {
 				return err
 			}
 		}
@@ -306,7 +306,7 @@ func refuseUnofferedHarness(cfg *Config, key string, raw json.RawMessage) error 
 // mergeChat refuses what parseFleetChat would replace with a default, then sets only the given
 // keys. An empty effort removes its key, so the fleet falls back to the harness default.
 // Switching harness also checks the model and effort the fleet keeps against the new one.
-func mergeChat(fleet *Object, key string, set map[string]json.RawMessage) error {
+func mergeChat(fleet *Object, key string, set map[string]json.RawMessage, cfg *Config) error {
 	given := NewObject()
 	for _, k := range slices.Sorted(maps.Keys(set)) {
 		given.Set(k, set[k])
@@ -324,9 +324,13 @@ func mergeChat(fleet *Object, key string, set map[string]json.RawMessage) error 
 	if err != nil {
 		return err
 	}
+	models, _ := cfg.ModelsFor(key, next.Harness)
+	if raw, ok := given.Get("model"); ok && !slices.Contains(models, next.Model) {
+		return fmt.Errorf("%s.model: %s is not one of %v for %s", path, bytes.TrimSpace(raw), models, next.Harness)
+	}
 	if _, ok := given.Get("harness"); ok {
-		if _, ok := given.Get("model"); !ok && !slices.Contains(ChatModelsFor(next.Harness), cur.Model) {
-			return fmt.Errorf("%s.model: %q is not one of %v for %s: send a model with the harness", path, cur.Model, ChatModelsFor(next.Harness), next.Harness)
+		if _, ok := given.Get("model"); !ok && !slices.Contains(models, cur.Model) {
+			return fmt.Errorf("%s.model: %q is not one of %v for %s: send a model with the harness", path, cur.Model, models, next.Harness)
 		}
 		if _, ok := given.Get("effort"); !ok && !slices.Contains(ChatEffortsFor(next.Harness), cur.Effort) {
 			return fmt.Errorf("%s.effort: %q is not one of %q for %s: send an effort with the harness", path, cur.Effort, ChatEffortsFor(next.Harness), next.Harness)

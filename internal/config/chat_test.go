@@ -72,7 +72,7 @@ func TestFleetChatSettingsParse(t *testing.T) {
 }
 
 func TestFleetChatBadValuesFallBackToDefaultsAndUnknownKeysAreRefused(t *testing.T) {
-	m, _ := openView(t, withFleets(`"w":{"name":"W","claude":{},"chat":{"model":"gpt","effort":"max","context_threshold":123}}`))
+	m, _ := openView(t, withFleets(`"w":{"name":"W","claude":{},"chat":{"model":"gpt 5","effort":"max","context_threshold":123}}`))
 	if g := chatViews(t, m)["w"]; g.Model != "sonnet" || g.Effort != "" || g.ContextThreshold != float64(150000) {
 		t.Errorf("bad values must not fail the load; chat = %+v, want the defaults", g)
 	}

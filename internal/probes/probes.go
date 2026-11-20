@@ -99,6 +99,7 @@ type Runner struct {
 	probes []Probe
 	store  *capabilities.Store
 	bg     sync.WaitGroup
+	lister ModelLister
 	life   context.Context
 	stop   context.CancelFunc
 
@@ -148,6 +149,7 @@ func GuardHarnesses() []string {
 // their results under that version. Concurrent runs for one fleet and harness share one.
 // The run does not end when ctx does: only Close, or the run's own time limit, ends it.
 func (r *Runner) Run(ctx context.Context, fleet config.Fleet, harness string) (Report, error) {
+	r.listModels(fleet, harness)
 	return r.runShared(ctx, fleet, harness, "")
 }
 
@@ -269,6 +271,7 @@ func (r *Runner) refresh(ctx context.Context, fleet config.Fleet, harness string
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer context.AfterFunc(r.life, cancel)()
+	r.listModels(fleet, harness)
 	version, err := capabilities.DetectVersion(ctx, fleet, harness, versionTimeout)
 	if err != nil {
 		if !cancelled(ctx) {

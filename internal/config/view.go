@@ -55,6 +55,9 @@ type DockView struct {
 	Executable      string   `json:"executable"`
 	ExecutableFound bool     `json:"executable_found"`
 	Warnings        []string `json:"warnings"`
+	// Models is the dock's list, listed by its harness or built in; ModelsSource says which.
+	Models       []string `json:"models"`
+	ModelsSource string   `json:"models_source"`
 }
 
 type ErrorView struct {
@@ -98,14 +101,19 @@ func (m *Manager) viewLocked() View {
 		fv := FleetView{Key: f.Key, Name: f.Name, Color: f.Color, Ink: f.Ink, ColorIndex: f.ColorIndex,
 			SearchRoots: f.SearchRoots, Owners: nonNil(f.Owners), WakeReviewers: nonNil(f.WakeReviewers), CloneRoot: f.CloneRoot,
 			CanLaunch: f.CanLaunch(), Notify: f.Notify, Docks: []DockView{},
-			Chat:   ChatView{f.Chat.Harness, f.Chat.Model, f.Chat.Effort, f.Chat.ThresholdJSON(), off == "", off, offered(opts), opts, ChatModelsFor(f.Chat.Harness), ChatEffortsFor(f.Chat.Harness)},
+			Chat:   ChatView{f.Chat.Harness, f.Chat.Model, f.Chat.Effort, f.Chat.ThresholdJSON(), off == "", off, offered(opts), opts, chatModels(m.cur, f), ChatEffortsFor(f.Chat.Harness)},
 			Preset: string(f.Preset), Limits: f.Limits.Clone(), Sentences: standing.Sentences(f.Limits), Overridden: nonNil(f.Overridden)}
 		for _, h := range f.Harnesses {
 			warnings := h.Warnings
 			if warnings == nil {
 				warnings = []string{}
 			}
-			fv.Docks = append(fv.Docks, DockView{h.Name, h.Executable, h.Found, warnings})
+			models, listed := m.cur.ModelsFor(f.Key, h.Name)
+			source := "built_in"
+			if listed {
+				source = "listed"
+			}
+			fv.Docks = append(fv.Docks, DockView{h.Name, h.Executable, h.Found, warnings, models, source})
 		}
 		v.Fleets = append(v.Fleets, fv)
 	}
@@ -113,4 +121,9 @@ func (m *Manager) viewLocked() View {
 		v.Error = &ErrorView{File: m.path, Message: m.errMsg}
 	}
 	return v
+}
+
+func chatModels(c *Config, f Fleet) []string {
+	models, _ := c.ModelsFor(f.Key, f.Chat.Harness)
+	return models
 }
