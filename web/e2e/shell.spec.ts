@@ -28,7 +28,7 @@ function expectCleanTraffic(watch: ReturnType<typeof watchPage>) {
 
 test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and scopes them to that fleet', { tag: '@critical' }, async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
+  await admiral.start({ env: { ...withFakeGh(admiral), ADMIRAL_VSCODE_TEST: 'installed' } });
   const watch = watchPage(page, admiral.url);
 
   // Ships that end are launched first: their cue file is read by any harness that starts while it is there.
@@ -179,6 +179,14 @@ test('a ship\'s view opens on its conversation, follows the transcript live, joi
   await expect(viewTab(page, 'PR')).toHaveAttribute('aria-selected', 'true');
   await expect(viewPanel(page)).toContainText('No pull request yet. A PR shows here as soon as the ship or its crew opens one.');
   expect(watch.paths.filter((p) => /^\/ws\/(v1\/)?bridge\//.test(p))).toEqual([]);
+
+  // On the Mac that runs Admiral, with VS Code there, the bridge links to the folder the ship works in. It is not clicked: that would hand off to the OS.
+  const listed = ((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: { session: string; dir: string; worktree?: string }[] }).ships.find((s) => s.session === login.session)!;
+  const workdir = listed.worktree ?? listed.dir;
+  const open = page.getByRole('link', { name: 'Open in VS Code' });
+  await expect(open).toHaveAttribute('href', `vscode://file${workdir.split('/').map(encodeURIComponent).join('/')}/`);
+  await expect(open).not.toHaveAttribute('target', /.*/);
+  await expect(page.getByText('Not available for remote users yet.')).toBeHidden();
 
   // Only the Terminal tab joins the bridge, and what is typed there reaches the pane. Leaving it closes the socket.
   const joined = page.waitForEvent('websocket', (ws) => /\/bridge\//.test(ws.url()));

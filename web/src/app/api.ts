@@ -207,6 +207,8 @@ export interface Ship {
   issues?: string[];
   source?: string;
   dir: string;
+  // Where the ship works when it has a worktree of its own; absent when it works in `dir`.
+  worktree?: string;
   repo: string;
   reason?: string;
   exit_code: number | null;

@@ -9,7 +9,7 @@ const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole
 
 test('on the phone, the tab bar and More reach every surface, the Ships tab lists the fleet\'s ships and the Fleets sheet switches fleets', { tag: '@critical' }, async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
+  await admiral.start({ env: { ...withFakeGh(admiral), ADMIRAL_VSCODE_TEST: 'missing' } });
   const watch = watchPage(page, admiral.url);
 
   // Ships that end are launched first: their cue file is read by any harness that starts while it is there.
@@ -54,6 +54,11 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await rowLink(page, login).tap();
   await expect(page).toHaveURL(shipViewUrl(admiral, login));
   await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
+  // The phone header orders its children by hand: the note sits below the ship's name, not above Back.
+  const note = page.getByText("VS Code isn't installed on this Mac.");
+  await expect(note).toBeVisible();
+  const [nameBox, noteBox] = [await page.locator('.ship-view-head').getByRole('heading').first().boundingBox(), await note.boundingBox()];
+  expect(noteBox!.y).toBeGreaterThan(nameBox!.y + nameBox!.height - 1);
   await expectSeededTurn(page);
   await viewTab(page, 'PR').tap();
   await expect(viewPanel(page)).toContainText('No pull request yet. A PR shows here as soon as the ship or its crew opens one.');
