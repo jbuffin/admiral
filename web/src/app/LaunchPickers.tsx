@@ -1,5 +1,5 @@
 import type { DirsAnswer, Dock } from './api';
-import { useId, useState } from 'preact/hooks';
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import { Flag } from './Flag';
 import { effortsFor, type SkillChoice, type SkillsAnswer } from './launchForm';
 import { resources } from './shipsLink';
@@ -79,6 +79,11 @@ export function ModelSelect({ dock, model, onModel, describedBy }: { dock: Dock 
   const list = dock?.models ?? [];
   const [pickedOther, setPickedOther] = useState(() => model !== '' && !list.includes(model));
   const selectId = useId();
+  const editing = useRef(false);
+  // A list that gains the stored model shows it as the entry, unless its Other… field is being edited.
+  useEffect(() => {
+    if (!editing.current && list.includes(model)) setPickedOther(false);
+  }, [dock?.models]);
   const other = pickedOther || (model !== '' && !list.includes(model));
   return (
     <div class="model-pick">
@@ -107,7 +112,10 @@ export function ModelSelect({ dock, model, onModel, describedBy }: { dock: Dock 
       {other ? (
         <label class="field">
           <span>Other model</span>
-          <input type="text" autocomplete="off" autocapitalize="off" autocorrect="off" ref={noSpellcheck} placeholder="Model name" value={model} onInput={(e) => onModel(target(e).value.trim())} />
+          <input type="text" autocomplete="off" autocapitalize="off" autocorrect="off" ref={noSpellcheck} placeholder="Model name" value={model} onInput={(e) => {
+            editing.current = true;
+            onModel(target(e).value.trim());
+          }} onBlur={() => (editing.current = false)} />
         </label>
       ) : null}
       {dock?.models_source === 'built_in' ? <p class="meta">{"The harness hasn't listed its models, so this is Admiral's built-in list."}</p> : null}

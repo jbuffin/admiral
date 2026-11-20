@@ -90,6 +90,32 @@ test('editing a stored model outside the list keeps Other… showing, even when 
   expect(screen.queryByLabelText('Other model')).toBeNull();
 });
 
+test('a stored model that the dock list gains shows as that entry, and the Other field goes', () => {
+  const { rerender } = render(<ModelSelect dock={dockOf({ models: [] })} model="opus" onModel={() => undefined} />);
+  expect(chosenOption()).toBe('Other…');
+  expect(other().value).toBe('opus');
+
+  rerender(<ModelSelect dock={dockOf({ models: ['opus', 'sonnet'] })} model="opus" onModel={() => undefined} />);
+  expect(chosenOption()).toBe('opus');
+  expect(screen.queryByLabelText('Other model')).toBeNull();
+});
+
+test('a list that gains the model while its Other field is being edited leaves Other… open with the typed text', () => {
+  const Held = ({ models }: { models: string[] }) => {
+    const [model, setModel] = useState('old-model');
+    return <ModelSelect dock={dockOf({ models })} model={model} onModel={setModel} />;
+  };
+  const { rerender } = render(<Held models={['sonnet']} />);
+
+  other().focus();
+  fireEvent.input(other(), { target: { value: 'opus' } });
+  rerender(<Held models={['sonnet', 'opus']} />);
+
+  expect(chosenOption()).toBe('Other…');
+  expect(other().value).toBe('opus');
+  expect(document.activeElement).toBe(other());
+});
+
 test('a dock with no list offers Default and Other… only, and no dock the same', () => {
   const { rerender } = render(<ModelSelect dock={dockOf({ models: [] })} model="" onModel={() => undefined} />);
   expect(optionsOf('Model')).toEqual(['Default', 'Other…']);

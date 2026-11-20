@@ -46,15 +46,17 @@ test('a slower older config response never replaces a newer one', async () => {
   const answers: ((r: Response) => void)[] = [];
   const answer = (models: string[]) => new Response(JSON.stringify({ fleets: [{ key: 'zulu', name: 'Zulu', docks: [dock(models)] }] }));
   const real = fetch;
-  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => answers.push(resolve))));
-  const older = loadFleets();
-  const newer = loadFleets();
-  answers[1]!(answer(['new']));
-  await newer;
-  answers[0]!(answer(['old']));
-  await older;
-  const shown = fleets.value[0]!.docks[0]!.models;
-  vi.stubGlobal('fetch', real);
+  try {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => answers.push(resolve))));
+    const older = loadFleets();
+    const newer = loadFleets();
+    answers[1]!(answer(['new']));
+    await newer;
+    answers[0]!(answer(['old']));
+    await older;
+    expect(fleets.value[0]!.docks[0]!.models).toEqual(['new']);
+  } finally {
+    vi.stubGlobal('fetch', real);
+  }
   await loadFleets();
-  expect(shown).toEqual(['new']);
 });
