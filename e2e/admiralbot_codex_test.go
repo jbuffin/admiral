@@ -254,3 +254,90 @@ func TestAdmiralBot_CodexChatStaysGreyedWhenAProbeFails(t *testing.T) {
 		})
 	}
 }
+
+// newSwitchBotWorld is newCodexBotWorld with a claude dock beside the codex one, the chat on codex.
+func newSwitchBotWorld(t *testing.T) *chatWorld {
+	t.Helper()
+	c, eng := newCodexBotWorld(t, "pass")
+	w := c.world
+	cfg := map[string]any{"version": 1, "fleets": map[string]any{
+		"chat": map[string]any{"name": "Chat", "search_roots": []string{w.work},
+			"claude": map[string]any{"executable": w.fakeExe("claude"), "args": []string{"--fa-chat"},
+				"env": map[string]string{"FAKE_RECORD_DIR": w.rec, "FAKE_CUE": w.cue, "CLAUDE_CONFIG_DIR": c.cfgDir}},
+			"codex": map[string]any{"executable": w.fakeExe("codex"), "args": []string{"--fa-chat", "--dangerously-bypass-approvals-and-sandbox"},
+				"env": map[string]string{"FAKE_RECORD_DIR": w.rec, "FAKE_CUE": w.cue, "CODEX_HOME": eng, "FAKE_CODEX_PROBE": "pass"}},
+			"chat": map[string]any{"harness": "codex", "model": "gpt-6.1-sol", "effort": "high"}}}}
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(c.cfgDir, "projects", "p"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, w.home, string(b))
+	return c
+}
+
+func (c *chatWorld) setChat(chat map[string]any) {
+	c.t.Helper()
+	if code, body := send(c.t, http.MethodPut, c.in.LocalURL+"/api/fleets/chat", map[string]any{"chat": chat}); code != http.StatusOK {
+		c.t.Fatalf("PUT /api/fleets/chat = %d: %s", code, body)
+	}
+}
+
+func (c *chatWorld) recordedHarness() string {
+	b, _ := os.ReadFile(filepath.Join(c.recDir(), "harness"))
+	return strings.TrimSpace(string(b))
+}
+
+func TestAdmiralBot_SavingAnotherHarnessStartsAFreshChatOnIt(t *testing.T) {
+	t.Parallel()
+	c := newSwitchBotWorld(t)
+	w := c.world
+	w.writeCue("codexready", "codexreply Two ships are at anchor.")
+	w.start()
+	if code, body := w.check("chat", "codex"); code != http.StatusOK {
+		t.Fatalf("POST check = %d: %s", code, body)
+	}
+	c.start()
+	if got := w.record(chatSessionName).harness; got != "codex" {
+		t.Fatalf("the chat ran %q, want codex", got)
+	}
+
+	// Saving the fleet's chat on another harness is the switch: no New chat press.
+	c.setChat(map[string]any{"harness": "claude", "model": "opus", "effort": ""})
+
+	deadline := time.Now().Add(15 * time.Second)
+	for c.recordedHarness() != "claude" {
+		if time.Now().After(deadline) {
+			t.Fatalf("within 15s of saving chat.harness = claude the chat never started on claude (ran %q); %+v", c.recordedHarness(), c.session())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	r := w.record(chatSessionName)
+	if !hasPair(r.argv, "--model", "opus") {
+		t.Errorf("the fresh chat's argv = %q, want --model opus", r.argv)
+	}
+	s := c.waitSession(10*time.Second, "a running chat with one reset marker", func(s chatSession) bool { return s.Running && resets(s.Messages) == 1 })
+	if s.Error != "" {
+		t.Errorf("the chat shows an error after the switch: %q", s.Error)
+	}
+}
+
+func TestAdmiralBot_SavingAnotherHarnessWhileTheChatIsStoppedStartsNothing(t *testing.T) {
+	t.Parallel()
+	c := newSwitchBotWorld(t)
+	w := c.world
+	w.start()
+
+	c.setChat(map[string]any{"harness": "claude", "model": "opus", "effort": ""})
+
+	holdThat(t, "the save started a chat", func() bool {
+		_, err := os.Stat(c.recDir())
+		return err != nil
+	})
+	c.start()
+	if got := w.record(chatSessionName).harness; got != "claude" {
+		t.Errorf("the next start ran %q, want the saved claude", got)
+	}
+}
