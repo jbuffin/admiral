@@ -1,7 +1,7 @@
 import { expect, test } from './fixtures';
 import { chatReceived } from './shell';
 import { expectTouchTarget } from './orders';
-import { entry, expectRowsDrawn, MESSAGE_JOB, MESSAGE_LINK, PAGE, rowDetail, seedModule } from './modulePage';
+import { BUILTINS, entry, expectBelowTitle, expectLongSheetFitsAndScrolls, expectRowsDrawn, MESSAGE_JOB, MESSAGE_LINK, PAGE, rowDetail, seedLongForm, seedModule } from './modulePage';
 
 test('on the iPad a module has a nav entry after Crew with its waiting count, draws its groups and rows, filters them, opens a row in the side pane that a reload keeps, and redraws on a page change', async ({ page, admiral }) => {
   const mod = seedModule(admiral, { chat: true });
@@ -13,6 +13,7 @@ test('on the iPad a module has a nav entry after Crew with its waiting count, dr
       { id: 'time', label: 'Time', type: 'duration', default: '01:30', min: '00:15' },
     ],
   });
+  seedLongForm(mod, BUILTINS);
   mod.run('pass', { message: 'Review passed', url: 'https://example.com/review/t1' });
   await admiral.start();
   // Opening the module's fleet chat starts it, so the message below has a running chat to reach.
@@ -95,6 +96,7 @@ test('on the iPad a module has a nav entry after Crew with its waiting count, dr
   await fix.getByRole('button', { name: 'Pass review' }).tap();
   const sheet = page.getByRole('dialog', { name: 'Pass this review' });
   await expect(sheet.getByText('Whose work')).toBeVisible();
+  await expectBelowTitle(sheet, 'Pass this review', sheet.getByText('Whose work'));
   await expect(sheet.getByRole('radio', { name: 'Bo' })).toBeChecked();
   await sheet.getByLabel('Time').fill('00:05');
   await expect(sheet.getByRole('button', { name: 'Submit' })).toBeDisabled();
@@ -111,6 +113,9 @@ test('on the iPad a module has a nav entry after Crew with its waiting count, dr
   mod.changed(['t1']);
   await expect(fix.getByText('updating…')).toBeHidden();
   await expect(fix.getByRole('button', { name: 'Pass review' })).toBeEnabled();
+
+  // A form far taller than the screen stays on it and scrolls inside.
+  await expectLongSheetFitsAndScrolls(page);
 
   // The plugin says the row moved: the page and the open row redraw, and the badge follows.
   mod.row('t1', rowDetail('bo'));
