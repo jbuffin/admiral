@@ -3,6 +3,7 @@ package ships
 // A ship launched on someone else's PR or stack carries it as reviewing and moors when its turn ends done.
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -20,24 +21,42 @@ const (
 	author      = "dana"
 )
 
-// urlOrder gives a source's order the URL the ship is launched on.
-type urlOrder struct{ url string }
+// urlOrder gives a source's order the URL the ship is launched on, and text "review it" unless it has its own.
+type urlOrder struct{ url, text string }
 
 func (o urlOrder) Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error) {
-	return "review it", "Review it", "", o.url, "p", nil
+	text = o.text
+	if text == "" {
+		text = "review it"
+	}
+	return text, "Review it", "", o.url, "p", nil
 }
 func (urlOrder) Stack(source, id string) (int, string, bool) { return 0, "", false }
 
 func (urlOrder) Launched(source, id string) {}
 
+// launchSpec is how a rig's ship is launched: orderURL or orderText make it a source's order, else text and note are free text.
+type launchSpec struct {
+	orderURL, orderText string
+	text, note, kind    string // kind is the skill kind, "none" when empty
+}
+
 // newReviewingRig is a live ship, saltpaw, launched on orderURL as a source's order; "" launches it from free text.
 func newReviewingRig(t *testing.T, orderURL string) *liveRig {
 	t.Helper()
+	return newLaunchedRig(t, launchSpec{orderURL: orderURL})
+}
+
+func newLaunchedRig(t *testing.T, spec launchSpec) *liveRig {
+	t.Helper()
 	r := newWakeRig(t, 0)
 	req := launcher.Request{Fleet: "work", Harness: "claude", Dir: r.checkout, Model: "opus", Name: "Saltpaw", Session: "saltpaw",
-		Prompt: "go", Skill: launcher.Skill{Kind: "none"}}
-	if orderURL != "" {
-		r.s.Orders = urlOrder{orderURL}
+		Skill: launcher.Skill{Kind: cmp.Or(spec.kind, "none")}, Text: spec.text, Note: spec.note}
+	if spec.text == "" && spec.note == "" {
+		req.Prompt = "go"
+	}
+	if spec.orderURL != "" || spec.orderText != "" {
+		r.s.Orders = urlOrder{spec.orderURL, spec.orderText}
 		req.Source, req.OrderID = "s", "o1"
 	}
 	if _, lerr := r.s.LaunchOrder(req); lerr != nil {
