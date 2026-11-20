@@ -61,6 +61,17 @@ func TestCopilotToolResultURLIsACandidateButNothingElseIs(t *testing.T) {
 	wantCandidates(t, readCop(t, data), prResult)
 }
 
+func TestPRURLsInTextFindsEachPullRequestURLOnceInOrderWithoutItsTailOrItsWrapping(t *testing.T) {
+	text := "Review (" + prOther + ") then " + prResult + "/files, again " + prOther + ".\nNot these: https://github.com/o/r/issues/3 https://github.com/o/r/pull/"
+	got := conversation.PRURLsInText(text)
+	if want := []string{prOther, prResult}; !reflect.DeepEqual(got, want) {
+		t.Errorf("PRURLsInText = %q, want %q", got, want)
+	}
+	if got := conversation.PRURLsInText("fix the flaky test, no link"); len(got) != 0 {
+		t.Errorf("PRURLsInText of plain words = %q, want none", got)
+	}
+}
+
 func TestACandidateMustBeAPullRequestURL(t *testing.T) {
 	data := `{"type":"assistant","uuid":"a1","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}` + "\n" +
 		`{"type":"user","uuid":"u1","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"https://github.com/o/r/issues/3 https://github.com/o/r/pull/ https://github.com/o/r/pulls ` + prResult + `/files https://example.com/o/r/pullman/1"}]}}` + "\n"

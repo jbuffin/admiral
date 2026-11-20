@@ -1,9 +1,23 @@
 package conversation
 
-import "regexp"
+import (
+	"regexp"
+	"slices"
+)
 
 // The PR URL's owner and repository exclude the characters that wrap a URL in prose or a log.
 var prURLInText = regexp.MustCompile(`https://[^/\s"'<>()\[\]\\]+/[^/\s"'<>()\[\]\\]+/[^/\s"'<>()\[\]\\]+/pull/[0-9]+`)
+
+// PRURLsInText returns the pull request URLs in text, in order of first appearance.
+func PRURLsInText(text string) []string {
+	var out []string
+	for _, u := range prURLInText.FindAllString(text, -1) {
+		if !slices.Contains(out, u) {
+			out = append(out, u)
+		}
+	}
+	return out
+}
 
 // PRCandidates returns the pull request URLs printed in the tool results of items, in order of first appearance.
 func PRCandidates(items []Item) []string {
