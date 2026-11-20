@@ -183,6 +183,12 @@ func TestACopilotChatWithNoTranscriptIsReadyOnceItsComposerShows(t *testing.T) {
 		if ready != c.ready || msg != c.msg {
 			t.Errorf("%s: ready=%v msg=%q, want ready=%v msg=%q", c.name, ready, msg, c.ready, c.msg)
 		}
+		fc.mu.Lock()
+		note, terminal := fc.noteLocked()
+		fc.mu.Unlock()
+		if note != c.msg || terminal != !c.ready {
+			t.Errorf("%s: note=%q needsTerminal=%v, want %q and %v", c.name, note, terminal, c.msg, !c.ready)
+		}
 	}
 	if CopilotTrustFolder == "" || CopilotTrustFolder == NotStarted {
 		t.Errorf("CopilotTrustFolder = %q, want a message that says what to do on the trust dialog", CopilotTrustFolder)

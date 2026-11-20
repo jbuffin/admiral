@@ -69,14 +69,6 @@ test("opening that question's path shows it in Peek beside the chat, with its ch
   expect(screen.getByRole('button', { name: 'Send answers' })).toBeTruthy();
 });
 
-const askingForTheTerminal = [
-  'Open the terminal to finish starting the chat',
-  "Codex is asking you to trust Admiral's hooks: open the terminal and trust them",
-  'Codex is offering to update itself, and Enter would run a brew upgrade: open the terminal and choose Skip',
-  "Codex's hooks aren't trusted, so Admiral can't follow this chat: in the terminal type /hooks, press t to trust them, then /new (or end the chat and start a new one)",
-  'Copilot is asking whether to trust this folder: open the terminal and choose Yes',
-];
-
 const showing = async (error: string, needsTerminal = false) => {
   vi.stubGlobal('fetch', async (url: string) =>
     url.endsWith('/session') ? new Response(JSON.stringify({ fleet: 'alpha', running: true, state: 'idle', messages: [], questions: [], error, needsTerminal })) : new Response('{}'),
@@ -87,12 +79,12 @@ const showing = async (error: string, needsTerminal = false) => {
   return container.querySelector('.msg-note') as HTMLElement;
 };
 
-test.each(askingForTheTerminal)('a chat that asks you to act in the terminal offers Open terminal beside the message: %s', async (error) => {
-  const note = await showing(error, true);
+test('a chat the server says needs the terminal offers Open terminal beside its message', async () => {
+  const note = await showing('Codex is asking you to trust Admiral\'s hooks: open the terminal and trust them', true);
   expect(within(note).getByRole('button', { name: 'Open terminal' })).toBeTruthy();
 });
 
-test('a chat error the terminal cannot fix has no Open terminal beside it', async () => {
+test('a chat error the server does not flag has no Open terminal beside it', async () => {
   const note = await showing("Admiral can't read this chat's transcript");
   expect(within(note).queryByRole('button', { name: 'Open terminal' })).toBeNull();
 });

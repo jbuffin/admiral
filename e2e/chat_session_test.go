@@ -41,6 +41,8 @@ type chatSession struct {
 	State    string    `json:"state"`
 	Messages []chatMsg `json:"messages"`
 	Error    string    `json:"error"`
+
+	NeedsTerminal bool `json:"needsTerminal"`
 }
 
 // chatWorld is a world whose config has one fleet, "chat", for the chat only,
@@ -569,7 +571,9 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		if code != http.StatusConflict {
 			t.Errorf("POST /api/chat/chat/messages before SessionStart = %d, want 409", code)
 		}
-		s := c.session()
+		s := c.waitSession(10*time.Second, "the not-started error that needs the terminal", func(s chatSession) bool {
+			return s.Error != "" && s.NeedsTerminal
+		})
 		if !s.Running || s.Error != "Open the terminal to finish starting the chat" {
 			t.Errorf("session before SessionStart = %+v, want running with the error to open the terminal", s)
 		}
@@ -603,7 +607,7 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
 		c.touch("go-start")
 		got := c.waitSession(10*time.Second, "the first four messages", messagesAre(first...))
-		if got.Error != "" || !got.Running {
+		if got.Error != "" || got.NeedsTerminal || !got.Running {
 			t.Errorf("after SessionStart: %+v, want running with no error", got)
 		}
 		for i, id := range []string{"u-1", "a-3", "u-3c", "u-4"} {

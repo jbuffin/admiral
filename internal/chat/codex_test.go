@@ -159,8 +159,15 @@ func TestACodexChatWithNoTranscriptIsReadyOnceItsComposerShowsAndItsHooksAreTrus
 		}
 	}
 	fc.mu.Lock()
-	fc.st.optRaw, fc.st.unread = "transcript", true
+	fc.st.optRaw, fc.st.unread = "transcript", false
 	note, terminal := fc.noteLocked()
+	fc.mu.Unlock()
+	if note != "" || terminal {
+		t.Errorf("a chat with a readable transcript: note=%q needsTerminal=%v, want none", note, terminal)
+	}
+	fc.mu.Lock()
+	fc.st.unread = true
+	note, terminal = fc.noteLocked()
 	fc.mu.Unlock()
 	if note != Unreadable || terminal {
 		t.Errorf("an unreadable transcript: note=%q needsTerminal=%v, want %q and false", note, terminal, Unreadable)
