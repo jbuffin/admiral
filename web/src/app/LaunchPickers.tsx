@@ -1,6 +1,7 @@
 import type { DirsAnswer, Dock } from './api';
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import { Flag } from './Flag';
-import { CLAUDE_MODELS, effortsFor, type SkillChoice, type SkillsAnswer } from './launchForm';
+import { effortsFor, type SkillChoice, type SkillsAnswer } from './launchForm';
 import { resources } from './shipsLink';
 
 export const CLONE = 'clone';
@@ -68,25 +69,65 @@ export function SkillSelect({ value, skills, onChange }: { value: string; skills
   );
 }
 
-export function ModelEffortPair({ harness, model, effort, onModel, onEffort }: { harness: string; model: string; effort: string; onModel: (m: string) => void; onEffort: (e: string) => void }) {
+const OTHER = '__other__';
+
+// Preact drops a false spellcheck prop where the DOM has no such property, leaving the attribute off.
+const noSpellcheck = (el: HTMLInputElement | null) => el?.setAttribute('spellcheck', 'false');
+
+/** Default, the dock's model list, then Other… for a name the list lacks; a stored name outside the list shows under Other… as it is. */
+export function ModelSelect({ dock, model, onModel, describedBy }: { dock: Dock | undefined; model: string; onModel: (m: string) => void; describedBy?: string }) {
+  const list = dock?.models ?? [];
+  const [pickedOther, setPickedOther] = useState(() => model !== '' && !list.includes(model));
+  const selectId = useId();
+  const editing = useRef(false);
+  // A list that gains the stored model shows it as the entry, unless its Other… field is being edited.
+  useEffect(() => {
+    if (!editing.current && list.includes(model)) setPickedOther(false);
+  }, [dock?.models]);
+  const other = pickedOther || (model !== '' && !list.includes(model));
+  return (
+    <div class="model-pick">
+      <div class="field">
+        <label for={selectId}>Model</label>
+        <select
+          id={selectId}
+          aria-describedby={describedBy}
+          aria-invalid={describedBy ? true : undefined}
+          value={other ? OTHER : model}
+          onChange={(e) => {
+            const v = target(e).value;
+            setPickedOther(v === OTHER);
+            onModel(v === OTHER ? (list.includes(model) ? '' : model) : v);
+          }}
+        >
+          <option value="">Default</option>
+          {list.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+          <option value={OTHER}>Other…</option>
+        </select>
+      </div>
+      {other ? (
+        <label class="field">
+          <span>Other model</span>
+          <input type="text" autocomplete="off" autocapitalize="off" autocorrect="off" ref={noSpellcheck} placeholder="Model name" value={model} onInput={(e) => {
+            editing.current = true;
+            onModel(target(e).value.trim());
+          }} onBlur={() => (editing.current = false)} />
+        </label>
+      ) : null}
+      {dock?.models_source === 'built_in' ? <p class="meta">{"The harness hasn't listed its models, so this is Admiral's built-in list."}</p> : null}
+    </div>
+  );
+}
+
+export function ModelEffortPair({ harness, dock, model, effort, onModel, onEffort }: { harness: string; dock?: Dock; model: string; effort: string; onModel: (m: string) => void; onEffort: (e: string) => void }) {
   const efforts = effortsFor(harness);
   return (
     <div class="pair">
-      <label class="field">
-        <span>Model</span>
-        {harness === 'claude' ? (
-          <select value={model} onChange={(e) => onModel(target(e).value)}>
-            <option value="">Default</option>
-            {CLAUDE_MODELS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input type="text" autocomplete="off" autocapitalize="off" spellcheck={false} placeholder="Harness default" value={model} onInput={(e) => onModel(target(e).value.trim())} />
-        )}
-      </label>
+      <ModelSelect key={harness} dock={dock} model={model} onModel={onModel} />
       {efforts.length > 0 ? (
         <label class="field">
           <span>Effort</span>

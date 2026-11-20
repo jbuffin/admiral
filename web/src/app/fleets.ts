@@ -1,7 +1,7 @@
 import { computed, effect, signal } from '@preact/signals';
 import { fetchFleets, type Fleet } from './api';
 import { chatTerminalOf, go, loc, pathAfterFleetSwitch, provideFleets } from './router';
-import { sources, sourcesLoaded } from './shipsLink';
+import { onShipsMessage, sources, sourcesLoaded } from './shipsLink';
 import { fleetPaint } from './fleetPaint';
 
 export { fleetPaint };
@@ -57,9 +57,13 @@ export function chooseFleet(key: string) {
   go(pathAfterFleetSwitch(path, loc.value.search, key, sources.value, sourcesLoaded.value), `?fleet=${encodeURIComponent(key)}`);
 }
 
+let loadSeq = 0;
+
 export async function loadFleets() {
+  const mine = ++loadSeq;
   try {
-    fleets.value = await fetchFleets();
+    const list = await fetchFleets();
+    if (mine === loadSeq) fleets.value = list;
   } catch {
     /* keep the last list */
   }
@@ -77,6 +81,10 @@ export function watchFleets() {
     }
   });
   void loadFleets();
+  // The server sends config on every change, such as a dock's new model list; reloading takes the one parse of it.
+  onShipsMessage((m) => {
+    if (m.type === 'config') void loadFleets();
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void loadFleets();
   });

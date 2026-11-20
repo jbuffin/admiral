@@ -146,8 +146,8 @@ describe('the line that says which repos fire an event routine', () => {
 
 describe('the docks a routine may launch on', () => {
   const docks: Dock[] = [
-    { harness: 'claude', executable: 'claude', executable_found: true, warnings: [] },
-    { harness: 'codex', executable: 'codex', executable_found: true, warnings: [] },
+    { harness: 'claude', executable: 'claude', executable_found: true, warnings: [], models: [], models_source: 'built_in' },
+    { harness: 'codex', executable: 'codex', executable_found: true, warnings: [], models: [], models_source: 'built_in' },
   ];
   const harness = (name: string, status: 'passed' | 'failed' | 'not_checked') => ({
     harness: name,

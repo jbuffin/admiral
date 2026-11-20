@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatTurnEnds, chatLaunches, chatLaunchReply, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, LAUNCH_MODELS, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatTurnEnds, chatLaunches, chatLaunchReply, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
@@ -452,7 +452,7 @@ test('a ship launched in a checkout names its folder as its repo, and a flotilla
 });
 
 test('a ship launches from the header and from an order on the Ships screen and shows in the list', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
+  seedFleets(admiral, { live: true, models: LAUNCH_MODELS });
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
   await page.goto(admiral.url + 'app/ships?fleet=zulu');

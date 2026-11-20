@@ -78,6 +78,9 @@ afterEach(() => vi.unstubAllGlobals());
 const pick = (group: string, name: string) => within(screen.getByRole('radiogroup', { name: group })).getByRole('radio', { name });
 const on = (r: HTMLElement) => r.getAttribute('aria-checked') === 'true' || (r as HTMLInputElement).checked === true;
 const greyed = (r: HTMLElement) => r.getAttribute('aria-disabled') === 'true' || r.hasAttribute('disabled');
+const modelSelect = () => screen.getByLabelText('Model') as HTMLSelectElement;
+const modelLabels = () => within(modelSelect()).getAllByRole('option').map((o) => o.textContent?.trim() ?? '');
+const chosenModel = () => modelSelect().selectedOptions[0]!.textContent?.trim();
 const labels = (group: string) => within(screen.getByRole('radiogroup', { name: group })).getAllByRole('radio').map((r) => r.textContent?.trim() ?? '');
 const save = () => screen.getByRole('button', { name: 'Save' });
 const settled = (b: HTMLElement) => waitFor(() => expect(b.getAttribute('aria-busy')).not.toBe('true'));
@@ -87,8 +90,9 @@ test('shows the harness, model, effort and refresh threshold with what is chosen
   render(<ChatSettingsPage fleet={stored} />);
   await screen.findByRole('heading', { name: 'What AdmiralBot knows' });
   expect(document.body.textContent).toContain("Your chief of staff for the Harborlight fleet. It only sees this fleet's ships, orders, campaigns and logins.");
-  expect(on(pick('Model', 'Sonnet'))).toBe(true);
-  expect(labels('Model')).toEqual(['Sonnet', 'Opus', 'Haiku']);
+  expect(modelSelect().tagName).toBe('SELECT');
+  expect(chosenModel()).toBe('Sonnet');
+  expect(modelLabels()).toEqual(['Sonnet', 'Opus', 'Haiku']);
   expect(labels('Effort')).toEqual(['Default', 'Low', 'Medium', 'High']);
   expect(on(pick('Effort', 'Default'))).toBe(true);
   expect(labels('Refresh context at')).toEqual(['100K', '150K', '300K', 'Never']);
@@ -99,7 +103,7 @@ test('shows the harness, model, effort and refresh threshold with what is chosen
 test('a change sends only the chat object, Default effort drops the key, and a refusal shows the error and keeps the pick', async () => {
   const view = render(<ChatSettingsPage fleet={stored} />);
   await screen.findByRole('heading', { name: 'What AdmiralBot knows' });
-  fireEvent.click(pick('Model', 'Opus'));
+  fireEvent.change(modelSelect(), { target: { value: 'opus' } });
   fireEvent.click(pick('Effort', 'High'));
   fireEvent.click(pick('Refresh context at', '300K'));
   fireEvent.click(save());
@@ -114,10 +118,58 @@ test('a change sends only the chat object, Default effort drops the key, and a r
   await settled(save());
 
   refuse = 'fleets.harbor.chat.model: "haiku" is refused for this test';
-  fireEvent.click(pick('Model', 'Haiku'));
+  fireEvent.change(modelSelect(), { target: { value: 'haiku' } });
   fireEvent.click(save());
   expect((await screen.findAllByRole('alert')).some((a) => a.textContent?.includes('"haiku" is refused for this test'))).toBe(true);
-  expect(on(pick('Model', 'Haiku'))).toBe(true);
+  expect(chosenModel()).toBe('Haiku');
+  await settled(save());
+});
+
+const withModels = (models: string[], over: Record<string, unknown> = {}) => {
+  const listed = { ...claude, models };
+  return { ...harbor, chat: chat({ models, harness_options: [listed, codex], ...over }) } as unknown as Fleet;
+};
+
+test('the Model select offers the dock list with Fable, no Default and no Other…, and a saved Fable is still selected after a reload', async () => {
+  stored = withModels(['sonnet', 'opus', 'haiku', 'fable']);
+  fleets.value = [stored];
+  const view = render(<ChatSettingsPage fleet={stored} />);
+  await screen.findByRole('heading', { name: 'What AdmiralBot knows' });
+  expect(modelLabels()).toEqual(['Sonnet', 'Opus', 'Haiku', 'Fable']);
+
+  fireEvent.change(modelSelect(), { target: { value: 'fable' } });
+  fireEvent.click(save());
+  await waitFor(() => expect(puts).toEqual([{ chat: { model: 'fable' } }]));
+  await settled(save());
+  view.unmount();
+
+  render(<ChatSettingsPage fleet={stored} />);
+  await screen.findByRole('heading', { name: 'What AdmiralBot knows' });
+  expect(chosenModel()).toBe('Fable');
+});
+
+test('a saved model the list no longer offers stays selected, marked as no longer offered', async () => {
+  const gone = withModels(['sonnet', 'opus'], { model: 'retired-model' });
+  render(<ChatSettingsPage fleet={gone} />);
+  await screen.findByRole('heading', { name: 'What AdmiralBot knows' });
+
+  expect(modelSelect().value).toBe('retired-model');
+  expect(chosenModel()).toMatch(/retired-model/);
+  expect(chosenModel()).toMatch(/no longer offered/i);
+  expect(modelLabels().filter((l) => /no longer offered/i.test(l))).toHaveLength(1);
+  expect(modelLabels()).toHaveLength(3);
+});
+
+test('a new list for the open page updates the options and keeps the model chosen', async () => {
+  stored = withModels(['sonnet', 'opus']);
+  const view = render(<ChatSettingsPage fleet={stored} />);
+  await screen.findByRole('heading', { name: 'What AdmiralBot knows' });
+  fireEvent.change(modelSelect(), { target: { value: 'opus' } });
+
+  view.rerender(<ChatSettingsPage fleet={withModels(['sonnet', 'opus', 'fable'])} />);
+
+  expect(modelLabels()).toEqual(['Sonnet', 'Opus', 'Fable']);
+  expect(chosenModel()).toBe('Opus');
 });
 
 test('a harness not yet proven is listed greyed out with why and a way to check it again', async () => {

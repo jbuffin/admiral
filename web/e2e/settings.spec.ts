@@ -839,13 +839,15 @@ test("a fleet's AdmiralBot page writes its chat settings, instructions, notes an
   const main = page.getByRole('main');
 
   // A change saves through the fleet; back to the default effort removes the key.
-  await pick('Model', 'Opus').click();
+  const model = page.getByLabel('Model', { exact: true });
+  await expect(model.locator('option')).toHaveText(['Sonnet', 'Opus', 'Haiku', 'Fable']);
+  await model.selectOption('opus');
   await pick('Effort', 'High').click();
   await pick('Refresh context at', '300K').click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => harbor().chat).toMatchObject({ model: 'opus', effort: 'high', context_threshold: 300000 });
   await page.reload();
-  await expect(pick('Model', 'Opus')).toBeChecked();
+  await expect(model).toHaveValue('opus');
   await pick('Effort', 'Default').click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => harbor().chat?.effort).toBeUndefined();

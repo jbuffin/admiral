@@ -79,8 +79,14 @@ function probeableCodex(a: Admiral, fleet: string) {
   return path;
 }
 
+/** What zulu's fake claude lists in the launch journey: fable and opus are built in, claude-opus-4-8 is in no built-in list. */
+export const LAUNCH_MODELS = 'opus,sonnet,fable,haiku,claude-opus-4-8';
+
+/** `models` is what the fake claude lists for the dock (FAKE_MODELS, comma-separated); unset, the dock serves the built-in list. */
+const withModels = <D extends { env: Record<string, string> }>(d: D, models?: string): D => (models ? { ...d, env: { ...d.env, FAKE_MODELS: models } } : d);
+
 /** Zulu (Westwind) comes first, alpha (Homeport) second; `live` makes the docks launchable and gives zulu the orders; `claude` replaces zulu's claude dock. */
-export function seedFleets(a: Admiral, opts: { userHome?: string; live?: boolean; chat?: boolean; versioned?: boolean; holdChat?: ChatFleet; turnChat?: ChatFleet; mcpChat?: ChatFleet; claude?: { executable: string; env: Record<string, string> } } = {}) {
+export function seedFleets(a: Admiral, opts: { userHome?: string; live?: boolean; chat?: boolean; versioned?: boolean; holdChat?: ChatFleet; turnChat?: ChatFleet; mcpChat?: ChatFleet; claude?: { executable: string; env: Record<string, string> }; models?: string } = {}) {
   const live = !!opts.live;
   // A version the server can detect, which Check again needs to keep a seeded probe result.
   const codexDock = (fleet: string, harness: Harness) => {
@@ -91,7 +97,7 @@ export function seedFleets(a: Admiral, opts: { userHome?: string; live?: boolean
   const config: Record<string, unknown> = {
     version: 1,
     fleets: {
-      zulu: { name: WORK, search_roots: [a.home], claude: opts.claude ?? dock(a, 'zulu', 'claude', live), codex: codexDock('zulu', 'codex') },
+      zulu: { name: WORK, search_roots: [a.home], claude: opts.claude ?? withModels(dock(a, 'zulu', 'claude', live), opts.models), codex: codexDock('zulu', 'codex') },
       alpha: { name: HOME, search_roots: [a.home], codex: codexDock('alpha', 'codex'), copilot: codexDock('alpha', 'copilot') },
     },
   };
@@ -898,13 +904,15 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect(listBox.y >= inputBox.y + inputBox.height - 1 || listBox.y + listBox.height <= inputBox.y + 1, 'the open list does not cover the box').toBe(true);
   await picker.box.press('Escape');
   await form.getByLabel('Text').fill('  look at the parser  ');
-  await form.getByLabel('Model').selectOption('opus');
+  // The list is the dock's own, asked of the harness: claude-opus-4-8 is in no built-in list.
+  await expect(form.getByLabel('Model', { exact: true }).locator('option')).toHaveText(['Default', 'opus', 'sonnet', 'fable', 'haiku', 'claude-opus-4-8', 'Other…']);
+  await form.getByLabel('Model', { exact: true }).selectOption('claude-opus-4-8');
   await form.getByLabel('Effort').selectOption({ label: 'High' });
   await form.getByRole('checkbox', { name: 'db' }).check();
   await picker.pick('review');
   if (opts.phone) expect(await fits()).toBe(true);
   const freeform = await send();
-  expect(freeform.body).toMatchObject({ fleet: 'zulu', harness: 'claude', dir: proj, skill: { kind: 'skill', name: 'review' }, model: 'opus', effort: 'high', resources: ['db'], autopilot: false });
+  expect(freeform.body).toMatchObject({ fleet: 'zulu', harness: 'claude', dir: proj, skill: { kind: 'skill', name: 'review' }, model: 'claude-opus-4-8', effort: 'high', resources: ['db'], autopilot: false });
   expect(freeform.body).not.toHaveProperty('order_id');
   expect(String(freeform.body.text).trim()).toBe('look at the parser');
   const reviewer = await launched(freeform);
@@ -923,7 +931,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     await expect(form.getByLabel('Checkout').locator('option')).not.toHaveCount(1);
     expect(await fits()).toBe(true);
     for (const name of ['Checkout', 'Model', 'Effort']) {
-      expect((await form.getByLabel(name).boundingBox())!.height, `${name} select height`).toBeGreaterThanOrEqual(44);
+      expect((await form.getByLabel(name, { exact: name === 'Model' }).boundingBox())!.height, `${name} select height`).toBeGreaterThanOrEqual(44);
     }
     expect((await picker.box.boundingBox())!.height, 'Skill height').toBeGreaterThanOrEqual(44);
     // Skill keeps its place in the Tab order: right after Checkout.

@@ -177,9 +177,6 @@ export function effortsFor(harness: string): string[] {
   return EFFORTS[harness] ?? [];
 }
 
-// Claude's models are a closed list the server checks; the other harnesses take any model name.
-export const CLAUDE_MODELS = ['sonnet', 'opus', 'haiku'];
-
 export const bareSkillName = (typed: string) => typed.trim().replace(/^[/$]/, '');
 
 export interface SkillOption {

@@ -388,7 +388,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
               />
             </label>
           ) : null}
-          <ModelEffortPair harness={l.harness} model={l.model} effort={l.effort} onModel={(model) => setLaunch({ model })} onEffort={(effort) => setLaunch({ effort })} />
+          <ModelEffortPair harness={l.harness} dock={fleet.docks.find((d) => d.harness === l.harness)} model={l.model} effort={l.effort} onModel={(model) => setLaunch({ model })} onEffort={(effort) => setLaunch({ effort })} />
           <label class="field">
             <span>Args</span>
             <input type="text" autocomplete="off" autocapitalize="off" spellcheck={false} value={l.args} placeholder="Extra harness arguments, separated by spaces" onInput={(e) => setLaunch({ args: target(e).value })} />

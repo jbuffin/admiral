@@ -6,6 +6,8 @@ export interface Dock {
   executable: string;
   executable_found: boolean;
   warnings: string[];
+  models: string[];
+  models_source: 'listed' | 'built_in';
 }
 export interface FleetChat {
   harness: string;
@@ -284,7 +286,7 @@ const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
     search_roots: f.search_roots ?? [],
     owners: f.owners ?? [],
     wake_reviewers: f.wake_reviewers ?? [],
-    docks: (f.docks ?? []).map((d) => ({ ...d, warnings: d.warnings ?? [] })),
+    docks: (f.docks ?? []).map((d) => ({ ...d, warnings: d.warnings ?? [], models: d.models ?? [], models_source: d.models_source ?? 'built_in' })),
     chat: { ...f.chat, harnesses: f.chat?.harnesses ?? [], harness_options: f.chat?.harness_options ?? [], models: f.chat?.models ?? [], efforts: f.chat?.efforts ?? [] },
     notify: f.notify ?? true,
     preset: f.preset ?? 'work',
