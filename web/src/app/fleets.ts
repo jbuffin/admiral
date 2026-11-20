@@ -1,7 +1,7 @@
 import { computed, effect, signal } from '@preact/signals';
 import { fetchFleets, type Fleet } from './api';
 import { chatTerminalOf, go, loc, pathAfterFleetSwitch, provideFleets } from './router';
-import { sources, sourcesLoaded } from './shipsLink';
+import { onShipsMessage, sources, sourcesLoaded } from './shipsLink';
 import { fleetPaint } from './fleetPaint';
 
 export { fleetPaint };
@@ -77,6 +77,10 @@ export function watchFleets() {
     }
   });
   void loadFleets();
+  // The server sends config on every change, such as a dock's new model list; reloading takes the one parse of it.
+  onShipsMessage((m) => {
+    if (m.type === 'config') void loadFleets();
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void loadFleets();
   });

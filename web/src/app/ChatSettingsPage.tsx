@@ -248,7 +248,17 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
             />
           </>
         ) : null}
-        <Choice legend="Model" values={models} value={edited.model} label={modelLabel} disabled={busy} onPick={(v) => set({ model: v })} />
+        <label class="field">
+          <span>Model</span>
+          <select value={edited.model} disabled={busy} onChange={(e) => set({ model: (e.currentTarget as HTMLSelectElement).value })}>
+            {models.includes(edited.model) ? null : <option value={edited.model}>{`${modelLabel(edited.model)} (no longer offered)`}</option>}
+            {models.map((m) => (
+              <option key={m} value={m}>
+                {modelLabel(m)}
+              </option>
+            ))}
+          </select>
+        </label>
         <Choice legend="Effort" values={efforts} value={edited.effort} label={effortLabel} disabled={busy} onPick={(v) => set({ effort: v })} />
         {readsMemory(edited.harness) ? (
           <Choice

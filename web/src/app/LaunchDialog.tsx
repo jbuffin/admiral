@@ -363,7 +363,7 @@ export function LaunchForm({ fleet, order: given, campaign, issues, onClose, onL
           {as && as.harness !== harness ? (
             <p class="note">{`Model and effort are the ${as.harness} default; the member sets its own model.`}</p>
           ) : (
-          <ModelEffortPair harness={harness} model={model} effort={effort} onModel={(m) => setModels({ ...models, [harness]: m })} onEffort={setEffort} />
+          <ModelEffortPair harness={harness} dock={fleet.docks.find((d) => d.harness === harness)} model={model} effort={effort} onModel={(m) => setModels({ ...models, [harness]: m })} onEffort={setEffort} />
           )}
 
           {campaign ? null : <ResourcesPicker held={held} onChange={setHeld} />}

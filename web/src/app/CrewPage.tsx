@@ -1,9 +1,10 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useReducer, useRef, useState } from 'preact/hooks';
-import { call, type Fleet, type Result } from './api';
+import { call, type Dock, type Fleet, type Result } from './api';
 import { Actions, Button } from './Button';
 import { Flag } from './Flag';
 import { fleetSearch } from './fleets';
+import { ModelSelect } from './LaunchPickers';
 import { renderMarkdown } from './markdown';
 import { crewPath, go, loc } from './router';
 import { Sheet } from './Sheet';
@@ -136,6 +137,8 @@ const COUNT_FROM = 3500;
 function MemberEditor({
   label,
   fleetKey,
+  docks,
+  pageHarness,
   members,
   self,
   initial,
@@ -150,6 +153,9 @@ function MemberEditor({
 }: {
   label: string;
   fleetKey: string;
+  /** The fleet's docks, and the page's selected harness, which lists the models for a member with no Harness of its own. */
+  docks: Dock[];
+  pageHarness: string;
   members: CrewMember[];
   self?: string;
   initial: NewMemberForm;
@@ -261,9 +267,10 @@ function MemberEditor({
         />
       )}
       <div class="pair">
-        <Field label="Model" error={at('model')}>
-          {(a) => <input {...a} type="text" value={f.model} onInput={set('model')} />}
-        </Field>
+        <div class="crew-field">
+          <ModelSelect dock={docks.find((d) => d.harness === (f.harness || pageHarness))} model={f.model} onModel={(model) => setF({ ...f, model })} />
+          {at('model') ? <p class="note error">{at('model')}</p> : null}
+        </div>
         <Field label="Harness" error={at('harness')}>
           {(a) => (
             <select {...a} value={f.harness} onChange={set('harness')}>
@@ -291,11 +298,13 @@ function MemberEditor({
   );
 }
 
-function EditForm({ member, members, fleetKey, harness, onDone, onSaved }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; onDone: () => void; onSaved: () => Promise<void> }) {
+function EditForm({ member, members, fleetKey, harness, docks, pageHarness, onDone, onSaved }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; docks: Dock[]; pageHarness: string; onDone: () => void; onSaved: () => Promise<void> }) {
   return (
     <MemberEditor
       label={`Edit ${member.name}`}
       fleetKey={fleetKey}
+      docks={docks}
+      pageHarness={pageHarness}
       members={members}
       self={member.name}
       initial={{ ...formOf(member), name: '' }}
@@ -313,7 +322,7 @@ function EditForm({ member, members, fleetKey, harness, onDone, onSaved }: { mem
 }
 
 /** Describe, draft, review: nothing reaches disk until the editor's Save. */
-function AddCrewPanel({ fleetKey, members, onClose, onCreated }: { fleetKey: string; members: CrewMember[]; onClose: () => void; onCreated: (name: string) => Promise<void> }) {
+function AddCrewPanel({ fleetKey, docks, pageHarness, members, onClose, onCreated }: { fleetKey: string; docks: Dock[]; pageHarness: string; members: CrewMember[]; onClose: () => void; onCreated: (name: string) => Promise<void> }) {
   const [s, send] = useReducer(addCrewStep, ADD_CREW_START);
   const abort = useRef<AbortController | null>(null);
   const textId = useId();
@@ -350,6 +359,8 @@ function AddCrewPanel({ fleetKey, members, onClose, onCreated }: { fleetKey: str
           <MemberEditor
             label="New crew member"
             fleetKey={fleetKey}
+            docks={docks}
+            pageHarness={pageHarness}
             members={members}
             initial={s.form}
             named
@@ -568,7 +579,7 @@ function NoteScopes({ member, notes, regions, fleetKey, harness, reload }: { mem
   );
 }
 
-function Detail({ member, members, fleetKey, harness, reload, afterRename, afterDelete }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; reload: () => Promise<void>; afterRename: (to: string) => Promise<void>; afterDelete: () => Promise<void> }) {
+function Detail({ member, members, fleetKey, harness, docks, pageHarness, reload, afterRename, afterDelete }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; docks: Dock[]; pageHarness: string; reload: () => Promise<void>; afterRename: (to: string) => Promise<void>; afterDelete: () => Promise<void> }) {
   const [editing, setEditing] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -619,7 +630,7 @@ function Detail({ member, members, fleetKey, harness, reload, afterRename, after
         </div>
       ) : null}
       {editing ? (
-        <EditForm member={member} members={members} fleetKey={fleetKey} harness={harness} onDone={() => setEditing(false)} onSaved={reload} />
+        <EditForm member={member} members={members} fleetKey={fleetKey} harness={harness} docks={docks} pageHarness={pageHarness} onDone={() => setEditing(false)} onSaved={reload} />
       ) : (
         <dl class="crew-facts">
           {member['pick-me-when'] ? (
@@ -741,6 +752,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
   const groups = groupMembers(data.members);
   const selected = name === null ? null : (data.members.find((m) => m.name === name) ?? null);
   const showList = !phone || (name === null && !adding);
+  const pageHarness = harness || data?.harness || fleet.docks[0]?.harness || '';
   const showDetail = name !== null || adding;
   const dock = fleet.docks.length > 1 ? (
     <label class="crew-dock">
@@ -814,6 +826,8 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
               <AddCrewPanel
                 key={fleet.key}
                 fleetKey={fleet.key}
+                docks={fleet.docks}
+                pageHarness={pageHarness}
                 members={data.members}
                 onClose={() => toList()}
                 onCreated={async (to) => {
@@ -830,6 +844,8 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
                 members={data.members}
                 fleetKey={fleet.key}
                 harness={harness}
+                docks={fleet.docks}
+                pageHarness={pageHarness}
                 reload={load}
                 afterRename={async (to) => {
                   await load();

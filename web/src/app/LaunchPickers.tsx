@@ -1,6 +1,7 @@
 import type { DirsAnswer, Dock } from './api';
+import { useState } from 'preact/hooks';
 import { Flag } from './Flag';
-import { CLAUDE_MODELS, effortsFor, type SkillChoice, type SkillsAnswer } from './launchForm';
+import { effortsFor, type SkillChoice, type SkillsAnswer } from './launchForm';
 import { resources } from './shipsLink';
 
 export const CLONE = 'clone';
@@ -68,30 +69,53 @@ export function SkillSelect({ value, skills, onChange }: { value: string; skills
   );
 }
 
-// Red-phase stubs: ModelSelect, and ModelEffortPair's `dock` prop, which the implementer wires in.
-export function ModelSelect(_: { dock: Dock | undefined; model: string; onModel: (m: string) => void }) {
-  return null;
+const OTHER = '__other__';
+
+// Preact drops a false spellcheck prop where the DOM has no such property, leaving the attribute off.
+const noSpellcheck = (el: HTMLInputElement | null) => el?.setAttribute('spellcheck', 'false');
+
+/** Default, the dock's model list, then Other… for a name the list lacks; a stored name outside the list shows under Other… as it is. */
+export function ModelSelect({ dock, model, onModel }: { dock: Dock | undefined; model: string; onModel: (m: string) => void }) {
+  const list = dock?.models ?? [];
+  const [pickedOther, setPickedOther] = useState(false);
+  const other = pickedOther || (model !== '' && !list.includes(model));
+  return (
+    <div class="model-pick">
+      <label class="field">
+        <span>Model</span>
+        <select
+          value={other ? OTHER : model}
+          onChange={(e) => {
+            const v = target(e).value;
+            setPickedOther(v === OTHER);
+            onModel(v === OTHER ? (list.includes(model) ? '' : model) : v);
+          }}
+        >
+          <option value="">Default</option>
+          {list.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+          <option value={OTHER}>Other…</option>
+        </select>
+      </label>
+      {other ? (
+        <label class="field">
+          <span>Other model</span>
+          <input type="text" autocomplete="off" autocapitalize="off" autocorrect="off" ref={noSpellcheck} placeholder="Model name" value={model} onInput={(e) => onModel(target(e).value.trim())} />
+        </label>
+      ) : null}
+      {dock?.models_source === 'built_in' ? <p class="meta">{"The harness hasn't listed its models, so this is Admiral's built-in list."}</p> : null}
+    </div>
+  );
 }
 
-export function ModelEffortPair({ harness, model, effort, onModel, onEffort }: { harness: string; dock?: Dock; model: string; effort: string; onModel: (m: string) => void; onEffort: (e: string) => void }) {
+export function ModelEffortPair({ harness, dock, model, effort, onModel, onEffort }: { harness: string; dock?: Dock; model: string; effort: string; onModel: (m: string) => void; onEffort: (e: string) => void }) {
   const efforts = effortsFor(harness);
   return (
     <div class="pair">
-      <label class="field">
-        <span>Model</span>
-        {harness === 'claude' ? (
-          <select value={model} onChange={(e) => onModel(target(e).value)}>
-            <option value="">Default</option>
-            {CLAUDE_MODELS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input type="text" autocomplete="off" autocapitalize="off" spellcheck={false} placeholder="Harness default" value={model} onInput={(e) => onModel(target(e).value.trim())} />
-        )}
-      </label>
+      <ModelSelect key={harness} dock={dock} model={model} onModel={onModel} />
       {efforts.length > 0 ? (
         <label class="field">
           <span>Effort</span>

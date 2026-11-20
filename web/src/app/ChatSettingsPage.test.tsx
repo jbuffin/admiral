@@ -122,6 +122,7 @@ test('a change sends only the chat object, Default effort drops the key, and a r
   fireEvent.click(save());
   expect((await screen.findAllByRole('alert')).some((a) => a.textContent?.includes('"haiku" is refused for this test'))).toBe(true);
   expect(chosenModel()).toBe('Haiku');
+  await settled(save());
 });
 
 const withModels = (models: string[], over: Record<string, unknown> = {}) => {
@@ -139,6 +140,7 @@ test('the Model select offers the dock list with Fable, no Default and no Otherâ
   fireEvent.change(modelSelect(), { target: { value: 'fable' } });
   fireEvent.click(save());
   await waitFor(() => expect(puts).toEqual([{ chat: { model: 'fable' } }]));
+  await settled(save());
   view.unmount();
 
   render(<ChatSettingsPage fleet={stored} />);
