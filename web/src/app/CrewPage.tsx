@@ -172,6 +172,7 @@ function MemberEditor({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<{ field: string | null; message: string } | null>(null);
   const [open, setOpen] = useState<DraftProblem[]>(problems);
+  const modelErrId = useId();
   const shown = named ? addShownFields(f.role) : shownFields(f.role);
   const set = (k: keyof NewMemberForm) => (e: Event) => {
     setF({ ...f, [k]: (e.currentTarget as HTMLInputElement).value });
@@ -268,8 +269,21 @@ function MemberEditor({
       )}
       <div class="pair">
         <div class="crew-field">
-          <ModelSelect dock={docks.find((d) => d.harness === (f.harness || pageHarness))} model={f.model} onModel={(model) => setF({ ...f, model })} />
-          {at('model') ? <p class="note error">{at('model')}</p> : null}
+          <ModelSelect
+            key={f.harness || pageHarness}
+            dock={docks.find((d) => d.harness === (f.harness || pageHarness))}
+            model={f.model}
+            onModel={(model) => {
+              setF({ ...f, model });
+              setOpen(clearProblems(open, 'model'));
+            }}
+            describedBy={at('model') ? `${modelErrId}` : undefined}
+          />
+          {at('model') ? (
+            <p id={modelErrId} class="note error">
+              {at('model')}
+            </p>
+          ) : null}
         </div>
         <Field label="Harness" error={at('harness')}>
           {(a) => (

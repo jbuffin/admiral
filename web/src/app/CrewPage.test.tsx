@@ -341,6 +341,22 @@ test('a draft the resolver refuses shows its problem beside the field, and fixin
   expect(calls.find((c) => c.path.endsWith('/members'))!.body).toMatchObject({ name: 'purser', 'based-on': 'scribe', 'pick-me-when': 'Pick for the accounts.' });
 });
 
+test("a draft's model problem sits beside the model field, linked to it, and clears when the model changes", async () => {
+  const draft = { name: 'purser', role: 'accountant', model: 'gone-model', skills: ['tdd'], 'pick-me-when': 'Pick for the accounts.', instructions: 'Keep the books.' };
+  server({ members: [member('ada', 'Pick for parser work.')] }, (c) => (c.path.endsWith('/draft') ? new Response(JSON.stringify({ draft, problems: [{ field: 'model', message: 'model is not offered here' }] })) : undefined));
+  loc.value = { ...loc.value, path: '/app/crew', search: '?add=1' };
+  page();
+  const panel = await screen.findByRole('region', { name: 'Add crew' });
+  fireEvent.input(within(panel).getByRole('textbox', { name: 'Describe the member' }), { target: { value: 'A purser who keeps the accounts.' } });
+  await whenIdle(within(panel).getByRole('button', { name: 'Draft' }));
+  fireEvent.click(within(panel).getByRole('button', { name: 'Draft' }));
+  await screen.findByRole('form', { name: 'New crew member' });
+  expect(document.getElementById(modelSelect().getAttribute('aria-describedby')!)!.textContent).toContain('model is not offered here');
+
+  fireEvent.change(modelSelect(), { target: { value: '' } });
+  expect(screen.queryByText('model is not offered here')).toBeNull();
+});
+
 const withNotes = (fleetNotes: string[]) => ({ members: [member('ada', 'Pick for parser work.', { notes: { fleet: fleetNotes, repos: {} } })] });
 const rowOf = async (text: string) => (await screen.findByText(text, { exact: false })).closest('li.crew-note') as HTMLElement;
 

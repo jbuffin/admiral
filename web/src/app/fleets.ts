@@ -57,9 +57,13 @@ export function chooseFleet(key: string) {
   go(pathAfterFleetSwitch(path, loc.value.search, key, sources.value, sourcesLoaded.value), `?fleet=${encodeURIComponent(key)}`);
 }
 
+let loadSeq = 0;
+
 export async function loadFleets() {
+  const mine = ++loadSeq;
   try {
-    fleets.value = await fetchFleets();
+    const list = await fetchFleets();
+    if (mine === loadSeq) fleets.value = list;
   } catch {
     /* keep the last list */
   }

@@ -1,5 +1,5 @@
 import { beforeAll, expect, test, vi } from 'vitest';
-import { fleets, loaded, watchFleets } from './fleets';
+import { fleets, loaded, loadFleets, watchFleets } from './fleets';
 import { go } from './router';
 import { watchShips } from './shipsLink';
 
@@ -40,4 +40,21 @@ test("a config message on the shell's socket reloads the fleets, so a dock's new
 
   await vi.waitFor(() => expect(fleets.value[0]!.docks[0]!.models).toEqual(['sonnet', 'opus', 'fable']));
   stop();
+});
+
+test('a slower older config response never replaces a newer one', async () => {
+  const answers: ((r: Response) => void)[] = [];
+  const answer = (models: string[]) => new Response(JSON.stringify({ fleets: [{ key: 'zulu', name: 'Zulu', docks: [dock(models)] }] }));
+  const real = fetch;
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => answers.push(resolve))));
+  const older = loadFleets();
+  const newer = loadFleets();
+  answers[1]!(answer(['new']));
+  await newer;
+  answers[0]!(answer(['old']));
+  await older;
+  const shown = fleets.value[0]!.docks[0]!.models;
+  vi.stubGlobal('fetch', real);
+  await loadFleets();
+  expect(shown).toEqual(['new']);
 });

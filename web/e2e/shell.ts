@@ -905,8 +905,8 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await picker.box.press('Escape');
   await form.getByLabel('Text').fill('  look at the parser  ');
   // The list is the dock's own, asked of the harness: claude-opus-4-8 is in no built-in list.
-  await expect(form.getByLabel('Model').locator('option')).toHaveText(['Default', 'opus', 'sonnet', 'fable', 'haiku', 'claude-opus-4-8', 'Other…']);
-  await form.getByLabel('Model').selectOption('claude-opus-4-8');
+  await expect(form.getByLabel('Model', { exact: true }).locator('option')).toHaveText(['Default', 'opus', 'sonnet', 'fable', 'haiku', 'claude-opus-4-8', 'Other…']);
+  await form.getByLabel('Model', { exact: true }).selectOption('claude-opus-4-8');
   await form.getByLabel('Effort').selectOption({ label: 'High' });
   await form.getByRole('checkbox', { name: 'db' }).check();
   await picker.pick('review');
@@ -931,7 +931,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     await expect(form.getByLabel('Checkout').locator('option')).not.toHaveCount(1);
     expect(await fits()).toBe(true);
     for (const name of ['Checkout', 'Model', 'Effort']) {
-      expect((await form.getByLabel(name).boundingBox())!.height, `${name} select height`).toBeGreaterThanOrEqual(44);
+      expect((await form.getByLabel(name, { exact: true }).boundingBox())!.height, `${name} select height`).toBeGreaterThanOrEqual(44);
     }
     expect((await picker.box.boundingBox())!.height, 'Skill height').toBeGreaterThanOrEqual(44);
     // Skill keeps its place in the Tab order: right after Checkout.

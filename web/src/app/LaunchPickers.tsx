@@ -1,5 +1,5 @@
 import type { DirsAnswer, Dock } from './api';
-import { useState } from 'preact/hooks';
+import { useId, useState } from 'preact/hooks';
 import { Flag } from './Flag';
 import { effortsFor, type SkillChoice, type SkillsAnswer } from './launchForm';
 import { resources } from './shipsLink';
@@ -75,15 +75,19 @@ const OTHER = '__other__';
 const noSpellcheck = (el: HTMLInputElement | null) => el?.setAttribute('spellcheck', 'false');
 
 /** Default, the dock's model list, then Other… for a name the list lacks; a stored name outside the list shows under Other… as it is. */
-export function ModelSelect({ dock, model, onModel }: { dock: Dock | undefined; model: string; onModel: (m: string) => void }) {
+export function ModelSelect({ dock, model, onModel, describedBy }: { dock: Dock | undefined; model: string; onModel: (m: string) => void; describedBy?: string }) {
   const list = dock?.models ?? [];
-  const [pickedOther, setPickedOther] = useState(false);
+  const [pickedOther, setPickedOther] = useState(() => model !== '' && !list.includes(model));
+  const selectId = useId();
   const other = pickedOther || (model !== '' && !list.includes(model));
   return (
     <div class="model-pick">
-      <label class="field">
-        <span>Model</span>
+      <div class="field">
+        <label for={selectId}>Model</label>
         <select
+          id={selectId}
+          aria-describedby={describedBy}
+          aria-invalid={describedBy ? true : undefined}
           value={other ? OTHER : model}
           onChange={(e) => {
             const v = target(e).value;
@@ -99,7 +103,7 @@ export function ModelSelect({ dock, model, onModel }: { dock: Dock | undefined; 
           ))}
           <option value={OTHER}>Other…</option>
         </select>
-      </label>
+      </div>
       {other ? (
         <label class="field">
           <span>Other model</span>

@@ -249,8 +249,10 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
             />
           </>
         ) : null}
-        <div class="field">
-          <label for={modelId}>Model</label>
+        <div class="set">
+          <div class="t">
+            <label for={modelId}>Model</label>
+          </div>
           <select id={modelId} value={edited.model} disabled={busy} onChange={(e) => set({ model: (e.currentTarget as HTMLSelectElement).value })}>
             {models.includes(edited.model) ? null : <option value={edited.model}>{`${modelLabel(edited.model)} (no longer offered)`}</option>}
             {models.map((m) => (

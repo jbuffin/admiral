@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/preact';
+import { useState } from 'preact/hooks';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { DirsAnswer, Dock } from './api';
 import { CheckoutSelect, DockPicker, ModelEffortPair, ModelSelect, ResourcesPicker } from './LaunchPickers';
@@ -69,6 +70,24 @@ test('a model outside the list shows as Other… with its text, never dropped or
   expect(chosenOption()).toBe('Other…');
   expect(other().value).toBe('old-model');
   expect(onModel).not.toHaveBeenCalled();
+});
+
+test('editing a stored model outside the list keeps Other… showing, even when cleared or typed to a listed name', () => {
+  const Held = () => {
+    const [model, setModel] = useState('old-model');
+    return <ModelSelect dock={dockOf()} model={model} onModel={setModel} />;
+  };
+  render(<Held />);
+
+  fireEvent.input(other(), { target: { value: '' } });
+  expect(chosenOption()).toBe('Other…');
+  expect(other().value).toBe('');
+  fireEvent.input(other(), { target: { value: 'opus' } });
+  expect(chosenOption()).toBe('Other…');
+  expect(other().value).toBe('opus');
+  fireEvent.change(modelSelect(), { target: { value: 'haiku' } });
+  expect(modelSelect().value).toBe('haiku');
+  expect(screen.queryByLabelText('Other model')).toBeNull();
 });
 
 test('a dock with no list offers Default and Other… only, and no dock the same', () => {
