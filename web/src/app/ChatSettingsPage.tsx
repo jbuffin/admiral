@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
 import { cancelCommitment, deleteNote, getCommitments, getInstructions, getNotes, promoteNote, saveFleet, saveInstructions, type ChatCommitment, type ChatNote, type Fleet } from './api';
 import { checkErrors, checkKey } from './capabilities';
@@ -178,6 +178,7 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
   const [edited, setEdited] = useState(shown);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const modelId = useId();
   const body = chatSaveBody(shown, edited);
   const set = (patch: Partial<ChatSettings>) => setEdited({ ...edited, ...patch });
 
@@ -248,9 +249,9 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
             />
           </>
         ) : null}
-        <label class="field">
-          <span>Model</span>
-          <select value={edited.model} disabled={busy} onChange={(e) => set({ model: (e.currentTarget as HTMLSelectElement).value })}>
+        <div class="field">
+          <label for={modelId}>Model</label>
+          <select id={modelId} value={edited.model} disabled={busy} onChange={(e) => set({ model: (e.currentTarget as HTMLSelectElement).value })}>
             {models.includes(edited.model) ? null : <option value={edited.model}>{`${modelLabel(edited.model)} (no longer offered)`}</option>}
             {models.map((m) => (
               <option key={m} value={m}>
@@ -258,7 +259,7 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
               </option>
             ))}
           </select>
-        </label>
+        </div>
         <Choice legend="Effort" values={efforts} value={edited.effort} label={effortLabel} disabled={busy} onPick={(v) => set({ effort: v })} />
         {readsMemory(edited.harness) ? (
           <Choice
