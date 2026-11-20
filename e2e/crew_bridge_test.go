@@ -310,10 +310,10 @@ func TestCrewBridge(t *testing.T) {
 			t.Fatalf("the relaunched boat has the old window %s", oldWin)
 		}
 		w.waitPaneWorking(fresh.pane)
-		// The API lists relay before and after the swap, so nothing shows when the server's polls
-		// (every 500 ms) have read the new window: dial again until the new window's output arrives.
+		// A poll between the close and the launch drops relay and the handshake answers 404 until the next one, so wait for the listing before each dial; the snapshot may still hold the old window, so dial again until the new window's output arrives.
 		var nb *bridgeClient
 		for attempt := 1; nb == nil; attempt++ {
+			w.waitShip(ship.Session, "relay listed", crewIs("relay", "underway"))
 			c := w.dialBridge(t, ship.Session+"/crew/relay")
 			c.send(map[string]any{"type": "join", "cols": 80, "rows": 24})
 			m := c.mark()
