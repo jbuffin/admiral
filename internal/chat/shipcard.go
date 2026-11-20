@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -237,7 +238,7 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 				v.apply(r)
 			}
 		}
-		for _, v := range d.st.Voyages {
+		for _, v := range d.voyagesInEndOrder() {
 			// An older build read a scout's stop as a plain one, so a stop already logged was never news.
 			if !d.st.Scouts && !v.ScoutEndedAt.IsZero() {
 				v.Done[ShipSailedOff], v.Done[ShipFailed] = true, true
@@ -256,6 +257,23 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 	d.st.Seeded, d.st.Scouts, d.st.Groups = true, true, true
 	errs = append(errs, d.save())
 	return errors.Join(errs...)
+}
+
+// voyagesInEndOrder lists the voyages by when each ended, ties by ship name, so the cards one pass settles post in that order.
+func (d *ShipCards) voyagesInEndOrder() []*voyage {
+	vs := slices.Collect(maps.Values(d.st.Voyages))
+	slices.SortFunc(vs, func(a, b *voyage) int {
+		return cmp.Or(a.endClock().Compare(b.endClock()), cmp.Compare(a.Ship, b.Ship))
+	})
+	return vs
+}
+
+// endClock is the time of the end event a voyage's card reports; a scout's matches the clock its group report orders by.
+func (v *voyage) endClock() time.Time {
+	if v.Scout {
+		return cmp.Or(latest(v.ScoutEndedAt, v.StoppedAt, v.EndedAt), v.LastSeen)
+	}
+	return cmp.Or(v.ReturnedAt, v.FinishedAt, v.UnmooredAt, v.EndedAt, v.LastSeen)
 }
 
 // keepHiddenShipsSeen stops a ship from aging toward lost while the snapshot can't show it: tmux is lost, or the ship's options could not be read.

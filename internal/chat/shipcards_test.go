@@ -673,3 +673,26 @@ func TestPostedShipCardsAreTheFleetsCardsLoggedAfterTheTimeWithTheirVoyage(t *te
 		t.Errorf("home's cards = %+v, want none: cards are per fleet", other)
 	}
 }
+
+func TestCardsSettledInOnePassPostInTheOrderTheirShipsEndedTiesByShipName(t *testing.T) {
+	x := newDetector(t)
+	x.observe(time.Minute, []ships.Ship{ship("ship-h", "work", ships.StatusUnderway), ship("ship-g", "work", ships.StatusUnderway),
+		scout("scout-f", "work"), ship("ship-e", "work", ships.StatusUnderway), ship("ship-d", "work", ships.StatusUnderway),
+		ship("ship-b", "work", ships.StatusUnderway), ship("ship-a", "work", ships.StatusUnderway)})
+	clean := func(name string, when time.Duration) ShipRecord {
+		return ShipRecord{At: t0.Add(when), Ship: name, Event: "ended", Clean: true}
+	}
+	x.observe(10*time.Minute, nil,
+		clean("ship-b", 7*time.Minute), clean("ship-a", 7*time.Minute), clean("ship-d", 6*time.Minute), clean("ship-e", 5*time.Minute),
+		clean("ship-g", 3*time.Minute), clean("ship-h", 2*time.Minute),
+		ShipRecord{At: t0.Add(4 * time.Minute), Ship: "scout-f", Event: "ended"},
+		ShipRecord{At: t0.Add(4*time.Minute + time.Second), Ship: "scout-f", Event: "stopped", Scout: true})
+	var got []string
+	for _, c := range shipCardsIn(x.t, x.r, "work") {
+		got = append(got, c.Ship)
+	}
+	want := []string{"ship-h", "ship-g", "scout-f", "ship-e", "ship-d", "ship-a", "ship-b"}
+	if !slices.Equal(got, want) {
+		t.Errorf("work chat ship cards = %v, want %v", got, want)
+	}
+}
