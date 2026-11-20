@@ -108,6 +108,8 @@ func sharedTempDirs() []any {
 // from the routine's repository and never from a file the ship can write.
 func restrictedSettings(level standing.Restricted, checkout, home, tempDir string, alternates []string) map[string]any {
 	out := claudeSettings().(map[string]any)
+	// The sandbox denies Admiral's home and local binding, so the ship can't follow a campaign and isn't told it can.
+	delete(out["hooks"].(map[string]any), "SessionStart")
 	hosts := make([]any, len(registryAllowlist))
 	for i, h := range registryAllowlist {
 		hosts[i] = h

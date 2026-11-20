@@ -134,6 +134,10 @@ func run(args []string) error {
 		return cli.Service(args[1:], std)
 	case "hook":
 		return cli.Hook(args[1:], std)
+	case "ship-note":
+		return cli.ShipNote(args[1:], std)
+	case "campaigns":
+		return cli.Campaigns(args[1:], std)
 	case "statusline":
 		return cli.Statusline(args[1:], std)
 	case "guard":

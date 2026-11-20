@@ -116,6 +116,8 @@ func claudeSettings() any {
 		"PostToolUseFailure": []any{group("", "PostToolUseFailure")},
 		"SubagentStart":      []any{group("", "SubagentStart")},
 		"SubagentStop":       []any{group("", "SubagentStop")},
+		// Not admiral hook SessionStart: that would rebind the ship's transcript to a source other than launch.
+		"SessionStart": []any{map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "admiral ship-note"}}}},
 	}}
 }
 
