@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/preact';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { Ship } from './api';
-import { OpenInVSCode, OpenInVSCodeNote } from './OpenInVSCode';
+import { OpenInVSCode, OpenInVSCodeNote, useEditors } from './OpenInVSCode';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -20,13 +20,16 @@ function stub(answer: () => Response | Promise<Response>) {
 }
 const editors = (local: boolean, installed: boolean) => () => new Response(JSON.stringify({ local, vscode: { installed } }), { status: 200 });
 
-const view = (s: Ship) =>
-  render(
+function Bar({ ship: s, note = true }: { ship: Ship; note?: boolean }) {
+  const editors = useEditors();
+  return (
     <>
-      <OpenInVSCode ship={s} />
-      <OpenInVSCodeNote ship={s} />
-    </>,
+      <OpenInVSCode ship={s} editors={editors} />
+      {note ? <OpenInVSCodeNote ship={s} editors={editors} /> : null}
+    </>
   );
+}
+const view = (s: Ship) => render(<Bar ship={s} />);
 const control = () => screen.getByText('Open in VS Code').closest('a,button') as HTMLElement;
 
 test('on this Mac with VS Code installed it is a link to the ship folder with a trailing slash and the spaces encoded', async () => {
@@ -102,9 +105,9 @@ test('a ship whose path is not absolute or is missing gets no enabled link, besi
   stub(editors(true, true));
   render(
     <>
-      <div data-testid="good"><OpenInVSCode ship={ship()} /></div>
-      <div data-testid="relative"><OpenInVSCode ship={ship({ dir: 'relative/repo' })} /></div>
-      <div data-testid="none"><OpenInVSCode ship={ship({ dir: '' })} /></div>
+      <div data-testid="good"><Bar ship={ship()} note={false} /></div>
+      <div data-testid="relative"><Bar ship={ship({ dir: 'relative/repo' })} note={false} /></div>
+      <div data-testid="none"><Bar ship={ship({ dir: '' })} note={false} /></div>
     </>,
   );
   await waitFor(() => expect(screen.getByTestId('good').querySelector('a')?.getAttribute('href')).toBe('vscode://file/Users/me/my%20repo/'));

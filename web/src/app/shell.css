@@ -1289,6 +1289,7 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .phone .ship-view-head .ship-repo { order: 5; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .phone .ship-view-head .ship-order { order: 6; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); color: var(--color-text2); }
 .phone .ship-view-head .ship-actions { order: 7; }
+.phone .ship-view-head .hand-note { order: 8; }
 /* The moored card in the conversation already says so. */
 .phone .ship-view.on-conversation .moored-info > .line { display: none; }
 .phone .moored-info { margin-bottom: 0; }

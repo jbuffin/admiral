@@ -25,7 +25,7 @@ import { Sheet, useCancelFocus } from './Sheet';
 import { HandToCommodore } from './HandAction';
 import { handAction, handFailure } from './hand';
 import { OpenPRs } from './OpenPRs';
-import { OpenInVSCode, OpenInVSCodeNote } from './OpenInVSCode';
+import { OpenInVSCode, OpenInVSCodeNote, useEditors } from './OpenInVSCode';
 import { fleetSearch } from './fleets';
 import { go, loc, surfacePath } from './router';
 import { ships, shipsLink, shipsLoaded } from './shipsLink';
@@ -360,6 +360,7 @@ const openTab = (): Tab => {
 function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const [tab, setTab] = useState<Tab>(openTab);
   const [crew, setCrew] = useState<string | null>(null);
+  const editors = useEditors();
   // Read once at mount; dropping it keeps a remount from reopening Terminal.
   useEffect(() => {
     const q = new URLSearchParams(loc.value.search);
@@ -401,18 +402,18 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         {moored ? (
           <div class="ship-actions">
             <Button label="Wake" variant="primary" class="stop-ship" busyLabel="Waking" busy={box.waking} pending={['ship', ship.session, 'wake']} onClick={() => box.wake()} />
-            <OpenInVSCode ship={ship} />
+            <OpenInVSCode ship={ship} editors={editors} />
             <StopShip ship={ship} />
           </div>
         ) : (
           <div class="ship-actions">
             {ship.status === 'anchored' || ship.status === 'sailing_off' || ship.carries_prs ? null : <ReturnToPort ship={ship} />}
             <HandToCommodore ship={ship} />
-            <OpenInVSCode ship={ship} />
+            <OpenInVSCode ship={ship} editors={editors} />
             <StopShip ship={ship} />
           </div>
         )}
-        <OpenInVSCodeNote ship={ship} />
+        <OpenInVSCodeNote ship={ship} editors={editors} />
         <DraftingLine ship={ship} />
         {!moored && handAction(ship).show && ship.hand_refusal ? <p class="note hand-note">{ship.hand_refusal}</p> : null}
         {!moored && handFailure(ship) ? (
