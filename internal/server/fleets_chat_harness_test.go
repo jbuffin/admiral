@@ -115,7 +115,7 @@ func TestFleetView_ChatOptionsFollowTheStoreAndGainTheHarnessOnceItPasses(t *tes
 	if !slices.Equal(g.Harnesses, []string{"claude"}) {
 		t.Errorf("harnesses = %v, want the offered list [claude]", g.Harnesses)
 	}
-	if !slices.Equal(g.Models, []string{"sonnet", "opus", "haiku"}) || !slices.Equal(g.Efforts, []string{"", "low", "medium", "high"}) {
+	if !slices.Equal(g.Models, []string{"sonnet", "opus", "haiku", "fable"}) || !slices.Equal(g.Efforts, []string{"", "low", "medium", "high"}) {
 		t.Errorf("claude's models = %v efforts = %v, want its own lists", g.Models, g.Efforts)
 	}
 
