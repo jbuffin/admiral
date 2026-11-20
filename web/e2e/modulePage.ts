@@ -145,3 +145,62 @@ export async function expectRowsDrawn(page: Page) {
   await expect(fix).toContainText('P1');
   await expect(fix).toContainText('Review is open');
 }
+
+const LONG_ACTION = { id: 'long', label: 'Pick files', confirm: 'form' };
+const LONG_OPTIONS = 48;
+
+/** Row t1 gains a form action whose checklist is far taller than any viewport; `actions` are the row's other module actions. */
+export function seedLongForm(mod: Module, actions: unknown[]) {
+  mod.form('long', {
+    title: 'Pick the files to deploy',
+    fields: [
+      { id: 'whose', label: 'Whose work', type: 'choice', options: [{ id: 'a', label: 'Amy' }, { id: 'b', label: 'Bo' }], default: 'b' },
+      { id: 'files', label: 'Files', type: 'checklist', default: [], options: Array.from({ length: LONG_OPTIONS }, (_, i) => ({ id: `f${i}`, label: `File number ${i + 1}` })) },
+      { id: 'time', label: 'Time', type: 'duration', default: '01:30', min: '00:15' },
+    ],
+  });
+  const [first, ...rest] = PAGE.groups[0].rows;
+  mod.page({ ...PAGE, groups: [{ ...PAGE.groups[0], rows: [{ ...first, actions: [...actions, LONG_ACTION] }, ...rest] }, ...PAGE.groups.slice(1)] });
+}
+
+/** Opens the long form from row t1, then checks the sheet fits the viewport and its content scrolls inside it. */
+export async function expectLongSheetFitsAndScrolls(page: Page) {
+  const fix = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Fix login' });
+  await fix.getByRole('button', { name: LONG_ACTION.label }).tap();
+  const sheet = page.getByRole('dialog', { name: 'Pick the files to deploy' });
+  const last = sheet.getByRole('checkbox', { name: `File number ${LONG_OPTIONS}`, exact: true });
+  await expect(sheet.getByRole('checkbox', { name: 'File number 1', exact: true })).toBeVisible();
+
+  const view = page.viewportSize()!;
+  const within = async (l: Locator) => {
+    const b = (await l.boundingBox())!;
+    return b.y >= 0 && b.y + b.height <= view.height;
+  };
+  const box = (await sheet.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(8);
+  expect(box.y + box.height).toBeLessThanOrEqual(view.height);
+
+  const title = sheet.getByRole('heading', { name: 'Pick the files to deploy' });
+  const cancel = sheet.getByRole('button', { name: 'Cancel', exact: true });
+  const submit = sheet.getByRole('button', { name: 'Submit', exact: true });
+  for (const l of [title, cancel, submit]) expect(await within(l)).toBe(true);
+
+  // An option counts as in view only while inside the dialog's own box, so a clipped one is out.
+  const seen = async (l: Locator) => {
+    const b = await l.boundingBox();
+    const d = (await sheet.boundingBox())!;
+    return !!b && b.y >= d.y && b.y + b.height <= d.y + d.height && (await within(l));
+  };
+  expect(await seen(last)).toBe(false);
+  await last.scrollIntoViewIfNeeded();
+  expect(await seen(last)).toBe(true);
+  await last.tap();
+  await expect(last).toBeChecked();
+
+  for (const l of [title, cancel, submit]) expect(await within(l)).toBe(true);
+  expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(view.width);
+
+  await cancel.tap();
+  await expect(sheet).toBeHidden();
+}

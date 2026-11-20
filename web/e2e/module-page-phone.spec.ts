@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { entry, expectRowsDrawn, seedModule } from './modulePage';
+import { entry, expectLongSheetFitsAndScrolls, expectRowsDrawn, seedLongForm, seedModule } from './modulePage';
 
 test('on the phone a module sits under More after Crew, and a row opens as its own screen with a way back', async ({ page, admiral }) => {
   seedModule(admiral);
@@ -43,4 +43,12 @@ test('on the phone a row with three built-in actions keeps its title and wraps t
     expect(box!.x + box!.width).toBeLessThanOrEqual(width);
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+});
+
+test('on the phone a form far taller than the screen stays on it and scrolls inside', async ({ page, admiral }) => {
+  seedLongForm(seedModule(admiral), []);
+  await admiral.start();
+  await page.goto(admiral.url + 'app/deploys');
+  await expectRowsDrawn(page);
+  await expectLongSheetFitsAndScrolls(page);
 });
