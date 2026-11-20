@@ -161,6 +161,8 @@ func TestTheRestrictedSettingsHoldTheSharedHooksGuardAndStatusLine(t *testing.T)
 	if err := json.Unmarshal(raw, &shared); err != nil {
 		t.Fatal(err)
 	}
+	// The ship note is the one shared hook a restricted ship drops: its sandbox can't reach Admiral.
+	delete(shared["hooks"].(map[string]any), "SessionStart")
 	for _, k := range []string{"hooks", "statusLine"} {
 		if !reflect.DeepEqual(got[k], shared[k]) {
 			t.Errorf("settings %s = %v, want what the shared file holds: %v", k, got[k], shared[k])

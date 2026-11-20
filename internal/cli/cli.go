@@ -45,6 +45,7 @@ var usages = map[string]string{
 	"codex-pane": "usage: admiral codex-pane --socket <path> -- <codex> [args…]   (run by a Codex ship's pane: a per-ship app-server, then the TUI on it)",
 	"mcp":        "usage: admiral mcp   (AdmiralBot's MCP server over stdio; needs ADMIRAL_ACTOR_TOKEN or ADMIRAL_ACTOR_TOKEN_FILE, and takes ADMIRAL_PORT, ADMIRAL_HOME and ADMIRAL_CHAT_FLEET)",
 	"mcp-probe":  "usage: admiral mcp-probe   (the fence probe's MCP server over stdio; run by the probe, not by people)",
+	"campaigns":  "usage: admiral campaigns follow <issue> [--fleet <key>] [--port <n>]   (follows an existing issue as a campaign)\n       admiral campaigns link <issue>... [--fleet <key>]   (prints the Make campaign link for a new parent; writes nothing)",
 	"chat":       "usage: admiral chat ask [--timeout <dur>] [--wait <id>]   (a question as JSON on stdin: {title, questions})",
 }
 
@@ -54,7 +55,7 @@ func Usage(command string) string {
 	if u, ok := usages[first]; ok {
 		return u
 	}
-	return "usage: admiral [--listen host:port] | setup | fleet | config | ships | attach | crew | outcomes | inbox | orders | hold | pair | devices | chat | advise | lock | completion | service | --version"
+	return "usage: admiral [--listen host:port] | setup | fleet | config | ships | attach | crew | outcomes | inbox | orders | campaigns | hold | pair | devices | chat | advise | lock | completion | service | --version"
 }
 
 func usagef(format string, a ...any) error { return &UsageError{fmt.Sprintf(format, a...)} }
