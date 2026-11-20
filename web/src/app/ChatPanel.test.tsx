@@ -77,9 +77,9 @@ const askingForTheTerminal = [
   'Copilot is asking whether to trust this folder: open the terminal and choose Yes',
 ];
 
-const showing = async (error: string) => {
+const showing = async (error: string, needsTerminal = false) => {
   vi.stubGlobal('fetch', async (url: string) =>
-    url.endsWith('/session') ? new Response(JSON.stringify({ fleet: 'alpha', running: true, state: 'idle', messages: [], questions: [], error })) : new Response('{}'),
+    url.endsWith('/session') ? new Response(JSON.stringify({ fleet: 'alpha', running: true, state: 'idle', messages: [], questions: [], error, needsTerminal })) : new Response('{}'),
   );
   fleets.value = [fleet('alpha', 'Homeport', { on: true })];
   const { container } = render(<ChatPanel surface={surface} title phone />);
@@ -88,7 +88,7 @@ const showing = async (error: string) => {
 };
 
 test.each(askingForTheTerminal)('a chat that asks you to act in the terminal offers Open terminal beside the message: %s', async (error) => {
-  const note = await showing(error);
+  const note = await showing(error, true);
   expect(within(note).getByRole('button', { name: 'Open terminal' })).toBeTruthy();
 });
 
