@@ -7,6 +7,12 @@
 #   --version      (first argument) prints the content of the file $FAKE_VERSION_FILE if it
 #                  exists, else $FAKE_VERSION, else "2.1.300 (fake)", and exits 0. The
 #                  content FAIL prints "boom" to stderr and exits 1.
+#   model listing  `claude -p --input-format stream-json --output-format stream-json --verbose`, `codex app-server` or
+#                  `copilot --acp`, each with no other argument: answers Admiral's model listing in the real protocol
+#                  with the names in $FAKE_MODELS (a dock env value, comma-separated; claude's answer also carries a
+#                  `default` entry, as the real one does). Unset, it fails with a line on stderr, so the dock serves its
+#                  built-in list. $FAKE_MODELS_MODE: ok (default), fail (boom on stderr, exit 1), hang (never answers)
+#                  or garbage (a line that is not JSON, then never answers). Leaves no recording.
 #   plugin ...     the harness's plugin commands (Commodore's install and update): appends the arguments as one
 #                  line to $FAKE_RECORD_DIR/plugin-runs and the run's PATH to plugin-path, then acts on $FAKE_PLUGIN
 #                  (a process variable, not a cue): ok (default) or unset writes inside the identity directory
@@ -277,6 +283,67 @@ if [ "$1" = "--version" ]; then
   echo "$v"
   exit 0
 fi
+# The model listing Admiral runs at startup and on Check again: claude -p with stream-json, codex app-server and
+# copilot --acp, each alone and speaking the real harness's protocol on stdio. Before any tmux call, like --version.
+# $FAKE_MODELS (a dock env value) is the comma-separated list it offers; unset, it fails with a line on stderr, so a
+# dock serves its built-in list. $FAKE_MODELS_MODE: ok (default), fail (boom on stderr, exit 1), hang (never answers)
+# or garbage (prints a line that is not JSON and never answers). A harness stays up after answering until it is killed.
+fake_models_json() { # $1 is the key a model name goes under; the other keys are there for the other protocols
+  out=""
+  old_ifs=$IFS
+  IFS=,
+  for m in $FAKE_MODELS; do
+    [ -n "$out" ] && out="$out,"
+    out="$out{\"$1\":\"$m\",\"displayName\":\"$m\",\"hidden\":false}"
+  done
+  IFS=$old_ifs
+  printf '%s' "$out"
+}
+fake_models_listing() {
+  case "${FAKE_MODELS_MODE:-ok}" in
+  fail)
+    echo boom >&2
+    exit 1
+    ;;
+  hang) sleep 600 ;;
+  garbage)
+    echo "this is not json"
+    sleep 600
+    ;;
+  esac
+  if [ -z "$FAKE_MODELS" ]; then
+    echo "fake harness: FAKE_MODELS is not set" >&2
+    exit 1
+  fi
+  id_of() { printf '%s' "$1" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p'; }
+  case "$1" in
+  claude)
+    IFS= read -r line
+    rid=$(printf '%s' "$line" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+    printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"models":[{"value":"default","displayName":"Default"},%s]}}}\n' "$rid" "$(fake_models_json value)"
+    ;;
+  codex)
+    IFS= read -r line
+    printf '{"id":%s,"result":{"codexHome":"/fake"}}\n' "$(id_of "$line")"
+    IFS= read -r line # the initialized notification
+    while IFS= read -r line; do
+      printf '{"id":%s,"result":{"data":[%s],"nextCursor":null}}\n' "$(id_of "$line")" "$(fake_models_json model)"
+    done
+    ;;
+  copilot)
+    IFS= read -r line
+    printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1}}\n' "$(id_of "$line")"
+    IFS= read -r line
+    printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"fake","models":{"availableModels":[%s],"currentModelId":"auto"}}}\n' "$(id_of "$line")" "$(fake_models_json modelId)"
+    ;;
+  esac
+  sleep 600
+}
+case "$(basename "$0")|$*" in
+"claude|-p --input-format stream-json --output-format stream-json --verbose") fake_models_listing claude ;;
+"codex|app-server") fake_models_listing codex ;;
+"copilot|--acp") fake_models_listing copilot ;;
+esac
 # plugin ...: the harness's own plugin commands, for Commodore's install and update. It writes only
 # inside the identity directory ($CLAUDE_CONFIG_DIR, $CODEX_HOME or $COPILOT_HOME, else the HOME default).
 # Before any tmux call, like --version.
