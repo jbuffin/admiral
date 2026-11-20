@@ -35,15 +35,6 @@ test.describe('pairing an unpaired device', () => {
     await pairByTyping(page, admiral);
     await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Pair this app' })).toBeHidden();
-    // A paired page on the LAN is a remote user: the bridge shows Open in VS Code disabled, with the remote note and no link.
-    const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude' });
-    await page.goto(`${admiral.lanUrl}app/ships/${encodeURIComponent(ship.session)}?fleet=zulu`);
-    await expect(page).toHaveURL(shipViewUrl(admiral, ship));
-    await expect(page.getByRole('heading', { name: ship.name, exact: true })).toBeVisible();
-    await expect(page.getByText('Not available for remote users yet.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Open in VS Code' })).toBeDisabled();
-    await expect(page.getByRole('link', { name: 'Open in VS Code' })).toHaveCount(0);
-
     // The device cookie stays out of reach of the page's script.
     expect(await page.evaluate(() => document.cookie)).toBe('');
 
@@ -58,5 +49,13 @@ test.describe('pairing an unpaired device', () => {
 
     await pairByTyping(page, admiral);
     await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
+    // A paired page on the LAN is a remote user: the bridge shows Open in VS Code disabled, with the remote note and no link.
+    const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude' });
+    await page.goto(`${admiral.lanUrl}app/ships/${encodeURIComponent(ship.session)}?fleet=zulu`);
+    await expect(page).toHaveURL(shipViewUrl(admiral, ship));
+    await expect(page.getByRole('heading', { name: ship.name, exact: true })).toBeVisible();
+    await expect(page.getByText('Not available for remote users yet.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open in VS Code' })).toBeDisabled();
+    await expect(page.getByRole('link', { name: 'Open in VS Code' })).toHaveCount(0);
   });
 });
