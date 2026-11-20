@@ -68,7 +68,12 @@ export function SkillSelect({ value, skills, onChange }: { value: string; skills
   );
 }
 
-export function ModelEffortPair({ harness, model, effort, onModel, onEffort }: { harness: string; model: string; effort: string; onModel: (m: string) => void; onEffort: (e: string) => void }) {
+// Red-phase stubs: ModelSelect, and ModelEffortPair's `dock` prop, which the implementer wires in.
+export function ModelSelect(_: { dock: Dock | undefined; model: string; onModel: (m: string) => void }) {
+  return null;
+}
+
+export function ModelEffortPair({ harness, model, effort, onModel, onEffort }: { harness: string; dock?: Dock; model: string; effort: string; onModel: (m: string) => void; onEffort: (e: string) => void }) {
   const efforts = effortsFor(harness);
   return (
     <div class="pair">

@@ -6,6 +6,8 @@ export interface Dock {
   executable: string;
   executable_found: boolean;
   warnings: string[];
+  models: string[];
+  models_source: 'listed' | 'built_in';
 }
 export interface FleetChat {
   harness: string;

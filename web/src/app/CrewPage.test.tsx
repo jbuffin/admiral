@@ -12,7 +12,9 @@ afterEach(() => {
   history.replaceState({}, '', start.url);
 });
 
-const fleet = { key: 'zulu', name: 'Zulu', docks: [{ harness: 'claude' }] } as unknown as Fleet;
+const listed = (harness: string, models: string[], models_source: 'listed' | 'built_in' = 'listed') => ({ harness, models, models_source });
+const fleet = { key: 'zulu', name: 'Zulu', docks: [listed('claude', ['sonnet', 'opus'])] } as unknown as Fleet;
+const twoDocks = { key: 'zulu', name: 'Zulu', docks: [listed('claude', ['opus', 'sonnet', 'fable']), listed('codex', ['gpt-5.4', 'gpt-5.4-mini'])] } as unknown as Fleet;
 
 const member = (name: string, pick: string, over: Record<string, unknown> = {}) => ({ name, role: 'scribe', 'based-on': null, skills: [], model: null, harness: null, 'pick-me-when': pick, instructions: '', layer: 'fleet', customized: false, notes: { fleet: [], repos: {} }, ...over });
 
@@ -42,7 +44,7 @@ function server(state: { members: unknown[]; unclaimed?: unknown[] }, reply: (c:
 // A button keeps its spinner for a moment after its request settles, and ids repeat between tests, so a click right after another test's Draft would be ignored.
 const whenIdle = (b: HTMLElement) => waitFor(() => expect(b.getAttribute('aria-busy')).not.toBe('true'));
 
-const page = (name: string | null = null, phone = false) => render(<CrewPage fleet={fleet} name={name} title phone={phone} />);
+const page = (name: string | null = null, phone = false, of: Fleet = fleet) => render(<CrewPage fleet={of} name={name} title phone={phone} />);
 
 test('the crew is listed by layer, Fleet first, a customized built-in once and marked, a harness lock with its flag', async () => {
   server({
@@ -209,6 +211,92 @@ test('notes left by a renamed member wait under Unclaimed, and deleting the last
   expect(unclaimed.textContent).toContain('bosun');
   fireEvent.click(within(unclaimed).getByRole('button', { name: 'Delete note' }));
   await waitFor(() => expect(screen.queryByRole('region', { name: /^Unclaimed notes\b/ })).toBeNull());
+});
+
+const modelSelect = () => screen.getByLabelText('Model') as HTMLSelectElement;
+const modelOptions = () => within(modelSelect()).getAllByRole('option').map((o) => o.textContent);
+const editing = async (name: string, of: Fleet = twoDocks) => {
+  page(name, false, of);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit', exact: true } as never));
+  await screen.findByLabelText(/pick me when/i);
+};
+
+test("the editor's Model list follows the member's Harness field, and the page's dock when Harness is none", async () => {
+  server({ members: [member('ada', 'Pick for parser work.', { harness: 'codex' })] });
+  await editing('ada');
+  expect(modelOptions()).toEqual(['Default', 'gpt-5.4', 'gpt-5.4-mini', 'Other…']);
+
+  fireEvent.change(screen.getByLabelText('Harness'), { target: { value: 'claude' } });
+  expect(modelOptions()).toEqual(['Default', 'opus', 'sonnet', 'fable', 'Other…']);
+  fireEvent.change(screen.getByLabelText('Harness'), { target: { value: '' } });
+  expect(modelOptions()).toEqual(['Default', 'opus', 'sonnet', 'fable', 'Other…']);
+  fireEvent.change(screen.getByLabelText('Harness'), { target: { value: 'codex' } });
+  expect(modelOptions()).toEqual(['Default', 'gpt-5.4', 'gpt-5.4-mini', 'Other…']);
+});
+
+test('a harness the fleet has no dock for gets Default and Other… only', async () => {
+  server({ members: [member('ada', 'Pick for parser work.', { harness: 'copilot' })] });
+  await editing('ada');
+
+  expect(modelOptions()).toEqual(['Default', 'Other…']);
+});
+
+test('an edit saves the picked model, keeps one the list lacks as Other…, and omits the model when Default is picked', async () => {
+  const state = { members: [member('ada', 'Pick for parser work.', { harness: 'claude', model: 'old-model' })] };
+  const calls = server(state);
+  await editing('ada');
+  expect(modelSelect().selectedOptions[0]!.textContent).toBe('Other…');
+  expect((screen.getByLabelText('Other model') as HTMLInputElement).value).toBe('old-model');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(1));
+  expect(calls.filter((c) => c.method === 'PUT')[0]!.body).toMatchObject({ model: 'old-model', harness: 'claude' });
+  await waitFor(() => expect(screen.queryByRole('form', { name: /edit ada/i })).toBeNull());
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit', exact: true } as never));
+  await screen.findByLabelText(/pick me when/i);
+  fireEvent.change(modelSelect(), { target: { value: 'fable' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(2));
+  expect(calls.filter((c) => c.method === 'PUT')[1]!.body).toMatchObject({ model: 'fable' });
+  await waitFor(() => expect(screen.queryByRole('form', { name: /edit ada/i })).toBeNull());
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit', exact: true } as never));
+  await screen.findByLabelText(/pick me when/i);
+  fireEvent.change(modelSelect(), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(3));
+  expect(calls.filter((c) => c.method === 'PUT')[2]!.body).not.toHaveProperty('model');
+});
+
+test('the Add crew form offers the list of the harness the draft names', async () => {
+  const draft = { name: 'quartermaster', role: 'scribe', skills: [], harness: 'codex', 'pick-me-when': 'Pick for stocking the galley.', instructions: 'Keep the ship stocked.' };
+  server({ members: [member('ada', 'Pick for parser work.')] }, (c) => (c.path.endsWith('/draft') ? new Response(JSON.stringify({ draft, problems: [] })) : undefined));
+  loc.value = { ...loc.value, path: '/app/crew', search: '?add=1' };
+  page(null, false, twoDocks);
+  const panel = await screen.findByRole('region', { name: 'Add crew' });
+  fireEvent.input(within(panel).getByRole('textbox', { name: 'Describe the member' }), { target: { value: 'A quartermaster who keeps the ship stocked.' } });
+  await whenIdle(within(panel).getByRole('button', { name: 'Draft' }));
+  fireEvent.click(within(panel).getByRole('button', { name: 'Draft' }));
+  await screen.findByRole('form', { name: 'New crew member' });
+
+  expect(modelOptions()).toEqual(['Default', 'gpt-5.4', 'gpt-5.4-mini', 'Other…']);
+});
+
+test('a new list for the open editor updates the options and keeps what was typed', async () => {
+  server({ members: [member('ada', 'Pick for parser work.', { harness: 'claude' })] });
+  const view = page('ada', false, twoDocks);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit', exact: true } as never));
+  const pick = (await screen.findByLabelText(/pick me when/i)) as HTMLInputElement;
+  fireEvent.input(pick, { target: { value: 'Pick for grammar work.' } });
+  fireEvent.change(modelSelect(), { target: { value: 'opus' } });
+
+  const grown = { ...twoDocks, docks: [listed('claude', ['opus', 'sonnet', 'fable', 'claude-opus-4-8']), listed('codex', ['gpt-5.4'])] } as unknown as Fleet;
+  view.rerender(<CrewPage fleet={grown} name="ada" title phone={false} />);
+
+  expect(modelOptions()).toEqual(['Default', 'opus', 'sonnet', 'fable', 'claude-opus-4-8', 'Other…']);
+  expect(modelSelect().selectedOptions[0]!.textContent).toBe('opus');
+  expect((screen.getByLabelText(/pick me when/i) as HTMLInputElement).value).toBe('Pick for grammar work.');
 });
 
 test('Add crew drafts from a description into a form and writes nothing until Save; Discard returns to the description, still filled', async () => {

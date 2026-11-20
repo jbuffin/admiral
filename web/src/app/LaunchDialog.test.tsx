@@ -6,7 +6,9 @@ import { LaunchForm, type CampaignChildRef, type OrderRef } from './LaunchDialog
 import { resources } from './shipsLink';
 
 const proj = '/home/jb/proj';
-const fleet = { key: 'zulu', docks: [{ harness: 'claude' }, { harness: 'codex' }] } as Fleet;
+const listedDock = (harness: string, models: string[], models_source: 'listed' | 'built_in' = 'listed') => ({ harness, models, models_source });
+const fleetOf = (docks: object[]) => ({ key: 'zulu', docks }) as Fleet;
+const fleet = fleetOf([listedDock('claude', ['sonnet', 'opus', 'haiku', 'fable']), listedDock('codex', ['gpt-5.4', 'gpt-5.4-mini'])]);
 const order: OrderRef = { source: 'orders', id: 'ord-api', title: 'Tighten the api limits', text: 'Tighten them.' };
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
@@ -61,10 +63,10 @@ function serve(routes: Routes = {}) {
   return posts;
 }
 
-function open(given?: OrderRef) {
+function open(given?: OrderRef, of: Fleet = fleet) {
   const props = { onClose: vi.fn(), onLaunched: vi.fn() };
-  render(<LaunchForm fleet={fleet} order={given} {...props} />);
-  return props;
+  const view = render(<LaunchForm fleet={of} order={given} {...props} />);
+  return { ...props, view };
 }
 
 const child: CampaignChildRef = { campaignId: 'camp-1', url: 'https://github.com/acme/widgets/issues/24', title: 'Map the parser', mode: 'with-you', skill: { kind: 'skill', name: 'wayfinder', args: '' }, startAnyway: false };
@@ -271,6 +273,79 @@ test('a freeform launch sends the text, model, effort and resources the form hol
   expect(posts[0]).toMatchObject({ fleet: 'zulu', harness: 'claude', dir: proj, skill: { kind: 'skill', name: 'review' }, model: 'opus', effort: 'high', resources: ['db'], autopilot: false });
   expect(posts[0]).not.toHaveProperty('order_id');
   expect(String(posts[0]!.text).trim()).toBe('look at the parser');
+});
+
+const modelSelect = () => screen.getByLabelText('Model') as HTMLSelectElement;
+const modelOptions = () => within(modelSelect()).getAllByRole('option').map((o) => o.textContent);
+const chosenModel = () => modelSelect().selectedOptions[0]!.textContent;
+
+test("the Model select offers the chosen dock's list, and a listed model Claude never had launches as sent", async () => {
+  const posts = serve();
+  open(undefined, fleetOf([listedDock('claude', ['opus', 'sonnet', 'fable', 'haiku', 'claude-opus-4-8']), listedDock('codex', ['gpt-5.4'])]));
+  await ready();
+
+  expect(modelOptions()).toEqual(['Default', 'opus', 'sonnet', 'fable', 'haiku', 'claude-opus-4-8', 'Other…']);
+  fireEvent.change(modelSelect(), { target: { value: 'fable' } });
+  fireEvent.click(launch());
+
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ harness: 'claude', model: 'fable' });
+});
+
+test('a Copilot dock offers every model it lists, and Other… launches with the typed model', async () => {
+  const six = ['gpt-5.4', 'claude-sonnet-5.5', 'claude-opus-4.8', 'gemini-4-argon', 'gpt-5.4-mini', 'o5'];
+  const posts = serve({ skills: () => json({ mark: '/', commodore: { found: false, name: 'commodore', state: 'missing' }, skills: [] }) });
+  open(undefined, fleetOf([listedDock('copilot', six)]));
+  await ready('copilot');
+
+  expect(modelOptions()).toEqual(['Default', ...six, 'Other…']);
+  fireEvent.change(modelSelect(), { target: { value: screen.getByRole('option', { name: 'Other…' }).getAttribute('value')! } });
+  fireEvent.input(screen.getByLabelText('Other model'), { target: { value: ' my-model ' } });
+  fireEvent.click(launch());
+
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ harness: 'copilot', model: 'my-model' });
+});
+
+test('Launch keeps a model per dock: fable stays picked on Claude after a look at Codex', async () => {
+  serve();
+  open();
+  await ready();
+
+  fireEvent.change(modelSelect(), { target: { value: 'fable' } });
+  choose(/codex/i);
+  await waitFor(() => expect(modelOptions()).toContain('gpt-5.4'));
+  expect(chosenModel()).toBe('Default');
+  choose(/claude/i);
+  await waitFor(() => expect(modelOptions()).toContain('fable'));
+  expect(chosenModel()).toBe('fable');
+});
+
+test('the built-in note shows for a dock that has not listed its models', async () => {
+  serve();
+  const { view } = open(undefined, fleetOf([listedDock('claude', ['sonnet', 'opus'], 'built_in')]));
+  await ready();
+  expect(screen.getByRole('dialog').textContent).toMatch(/built-in/i);
+
+  view.rerender(<LaunchForm fleet={fleetOf([listedDock('claude', ['sonnet', 'opus'])])} onClose={vi.fn()} onLaunched={vi.fn()} />);
+  expect(screen.getByRole('dialog').textContent).not.toMatch(/built-in/i);
+});
+
+test('a new list for the open form updates the options and keeps the typed text and the chosen model', async () => {
+  const posts = serve();
+  const { view } = open(undefined, fleetOf([listedDock('claude', ['sonnet', 'opus', 'haiku'])]));
+  await ready();
+  fireEvent.input(screen.getByLabelText('Text'), { target: { value: 'look at the parser' } });
+  fireEvent.change(modelSelect(), { target: { value: 'opus' } });
+
+  view.rerender(<LaunchForm fleet={fleetOf([listedDock('claude', ['sonnet', 'opus', 'haiku', 'fable'])])} onClose={vi.fn()} onLaunched={vi.fn()} />);
+
+  expect(modelOptions()).toEqual(['Default', 'sonnet', 'opus', 'haiku', 'fable', 'Other…']);
+  expect(chosenModel()).toBe('opus');
+  expect((screen.getByLabelText('Text') as HTMLTextAreaElement).value).toBe('look at the parser');
+  fireEvent.click(launch());
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ model: 'opus', text: 'look at the parser' });
 });
 
 test('a launch the server refuses shows its message and keeps the form open, for a held resource, an autopilot guard and a clone folder', async () => {

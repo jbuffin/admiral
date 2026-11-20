@@ -7,7 +7,7 @@ import type { Routine, RoutineSpend } from './routines';
 import { loc } from './router';
 import { sources } from './shipsLink';
 
-const fleet = { key: 'zulu', name: 'Zulu', docks: [{ harness: 'claude' }], limits: {}, sentences: [] } as unknown as Fleet;
+const fleet = { key: 'zulu', name: 'Zulu', docks: [{ harness: 'claude', models: ['opus', 'sonnet', 'fable', 'haiku', 'claude-opus-4-8'], models_source: 'listed' }], limits: {}, sentences: [] } as unknown as Fleet;
 const cap = (id: string, status: Capability['status']): Capability => ({ id, label: id, status, checked_at: null, detail: '' });
 const proven: FleetCapabilities[] = [
   {
@@ -130,6 +130,40 @@ test('a routine filled in through the form is created with what the form shows, 
   await waitFor(() => expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST /api/v1/fleets/zulu/routines']));
   expect(calls[0]!.body).toEqual({ name: 'Form sweep', enabled: true, when: '0 3 * * *', do: { launch: { harness: 'claude', dir: '/h/proj', text: 'go' } }, before_acting: 'act', notify: false });
   await waitFor(() => expect(location.pathname).toBe('/app/routines/r-new'));
+});
+
+test("the Routine editor's Model select offers the dock's list, and Other… saves the typed model", async () => {
+  page(null, true);
+  await screen.findByRole('form', { name: 'Routine' });
+  const form = within(editor());
+  await waitFor(() => expect((form.getByRole('radio', { name: 'Claude' }) as HTMLInputElement).checked).toBe(true));
+  expect(within(form.getByLabelText('Model')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Default', 'opus', 'sonnet', 'fable', 'haiku', 'claude-opus-4-8', 'Other…']);
+
+  fireEvent.input(form.getByLabelText('Name'), { target: { value: 'Form sweep' } });
+  fireEvent.input(form.getByLabelText('When'), { target: { value: '0 3 * * *' } });
+  await waitFor(() => expect(form.getByRole('option', { name: /proj/ })).toBeTruthy());
+  fireEvent.change(form.getByLabelText('Checkout'), { target: { value: '/h/proj' } });
+  fireEvent.input(form.getByLabelText('Text'), { target: { value: 'go' } });
+  fireEvent.change(form.getByLabelText('Model'), { target: { value: form.getByRole('option', { name: 'Other…' }).getAttribute('value')! } });
+  fireEvent.input(form.getByLabelText('Other model'), { target: { value: 'my-model' } });
+  fireEvent.click(save());
+
+  await waitFor(() => expect(calls.map((c) => c.method)).toEqual(['POST']));
+  expect(calls[0]!.body).toMatchObject({ do: { launch: { harness: 'claude', dir: '/h/proj', text: 'go', model: 'my-model' } } });
+});
+
+test('a routine saved with a model the list no longer has opens on Other… with that model and saves it unchanged', async () => {
+  routines = [stored({ do: { launch: { harness: 'claude', dir: '/h/proj', text: 'go', model: 'old-model' } } })];
+  page('r1');
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  const select = form.getByLabelText('Model') as HTMLSelectElement;
+  expect(select.selectedOptions[0]!.textContent).toBe('Other…');
+  expect((form.getByLabelText('Other model') as HTMLInputElement).value).toBe('old-model');
+
+  fireEvent.input(form.getByLabelText('When'), { target: { value: '15 9 * * 1-5' } });
+  fireEvent.click(save());
+  await waitFor(() => expect(calls.map((c) => c.method)).toEqual(['PUT']));
+  expect(calls[0]!.body).toMatchObject({ do: { launch: { model: 'old-model' } } });
 });
 
 test('Save before a Checkout is chosen shows the error under Checkout, above Text, and choosing one clears it', async () => {

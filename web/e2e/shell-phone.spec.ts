@@ -3,7 +3,7 @@ import { expect, test } from './fixtures';
 import { existsSync, readFileSync } from 'node:fs';
 import { seedOrders } from './orders';
 import { join } from 'node:path';
-import { HOME, WORK, boatReceived, chip, expectSeededTurn, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
+import { HOME, WORK, boatReceived, chip, expectSeededTurn, interruptButton, launchCrew, LAUNCH_MODELS, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -137,7 +137,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
 
 
 test('on the phone, the launch form fits, a ship takes a message by button, its crew boats take the box, and Stop ship asks first', { tag: '@critical' }, async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
+  seedFleets(admiral, { live: true, models: LAUNCH_MODELS });
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
 
