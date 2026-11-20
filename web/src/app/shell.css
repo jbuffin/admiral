@@ -79,12 +79,24 @@ a { color: inherit; text-decoration: none; }
 .flag img { width: 70%; height: 70%; object-fit: contain; }
 .flag-letters { font-size: calc(var(--flag-size) * 0.5); font-weight: 700; line-height: 1; }
 
-.backdrop { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; background: rgba(0, 0, 0, 0.4); }
+.backdrop {
+  position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; box-sizing: border-box; background: rgba(0, 0, 0, 0.4);
+  padding: calc(8px + env(safe-area-inset-top)) 0 0;
+}
+/* A tall sheet scrolls inside itself; the title and the foot stick, so they stay in view. */
 .sheet {
-  width: 100%; padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  --sheet-pb: calc(12px + env(safe-area-inset-bottom));
+  box-sizing: border-box; width: 100%; max-height: min(100%, calc(100dvh - 8px - env(safe-area-inset-top)));
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: 12px 12px var(--sheet-pb);
   background: var(--color-panel); border-radius: var(--shape-radius-lg) var(--shape-radius-lg) 0 0;
 }
 .sheet-title { margin: 4px 10px 8px; font-size: var(--font-size-title); }
+.sheet:not(.launch-form) > .sheet-title { position: sticky; top: 0; z-index: 1; margin: -12px 0 0; padding: 16px 10px 8px; background: var(--color-panel); }
+.sheet:not(.launch-form) .launch-foot {
+  position: sticky; bottom: 0; z-index: 1; background: var(--color-panel);
+  padding-bottom: var(--sheet-pb); margin-bottom: calc(-1 * var(--sheet-pb));
+}
 .sheet-sub { margin: 0 0 8px; color: var(--color-text2); font-size: var(--font-size-meta); line-height: 1.5; }
 .sheet ul.sheet-prs { margin: 0 0 12px; padding-left: 18px; color: var(--color-text2); font-size: var(--font-size-meta); overflow-wrap: anywhere; }
 
@@ -532,7 +544,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .stop-backdrop .pr-list { display: flex; flex-wrap: wrap; gap: 0 16px; margin: 0 0 8px; padding: 0; list-style: none; }
 .convo-area { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 @media (min-width: 641px) {
-  .stop-backdrop .sheet { width: 520px; max-width: 100%; padding-bottom: 16px; border-radius: var(--shape-radius-lg); }
+  .stop-backdrop .sheet { --sheet-pb: 16px; width: 520px; max-width: 100%; padding-bottom: 16px; border-radius: var(--shape-radius-lg); }
 }
 .msg-box { display: flex; flex-direction: column; gap: 6px; flex: none; padding-top: 10px; padding-bottom: env(safe-area-inset-bottom); }
 .msg-box .alert { margin: 0; }
@@ -1187,6 +1199,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .findings-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 10px; overflow-wrap: anywhere; }
 .campaign-backdrop { justify-content: center; }
 .campaign-backdrop .sheet { display: flex; flex-direction: column; max-height: 92dvh; max-width: 100%; box-sizing: border-box; overflow: hidden; }
+.campaign-backdrop .launch-foot { position: static; margin-bottom: 0; padding-bottom: 0; }
 .campaign-sheet { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .campaign-body { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 2px 2px 8px; }
 .campaign-body > * { min-width: 0; max-width: 100%; }
