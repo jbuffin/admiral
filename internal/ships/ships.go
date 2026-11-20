@@ -33,17 +33,19 @@ import (
 
 // Ship's ExitCode and ExitSignal are set only on an anchored ship.
 type Ship struct {
-	Session    string  `json:"session"`
-	Name       string  `json:"name"`
-	Fleet      string  `json:"fleet"`
-	FleetName  string  `json:"fleet_name"`
-	FleetColor string  `json:"fleet_color"`
-	Harness    string  `json:"harness"`
-	Dir        string  `json:"dir"`
-	Repo       string  `json:"repo"`
-	Skill      *string `json:"skill"`
-	Source     string  `json:"source"`
-	Panel      string  `json:"panel"`
+	Session    string `json:"session"`
+	Name       string `json:"name"`
+	Fleet      string `json:"fleet"`
+	FleetName  string `json:"fleet_name"`
+	FleetColor string `json:"fleet_color"`
+	Harness    string `json:"harness"`
+	Dir        string `json:"dir"`
+	// Worktree is where the ship works when it has a worktree of its own; omitted when it works in Dir.
+	Worktree string  `json:"worktree,omitempty"`
+	Repo     string  `json:"repo"`
+	Skill    *string `json:"skill"`
+	Source   string  `json:"source"`
+	Panel    string  `json:"panel"`
 	// A ship holds its Resources while it is underway or needs you.
 	Resources []string `json:"-"`
 	Title     string   `json:"title"`
@@ -282,6 +284,9 @@ const NotKnownMsg = "ships are not known yet"
 
 func (s *Service) ship(sess sessionhost.Session) Ship {
 	sh := FromSession(sess, time.Now())
+	if s.Launcher != nil {
+		sh.Worktree, _ = launcher.WorktreeOf(s.Launcher.Home, sess.Name)
+	}
 	s.showDrafting(&sh)
 	if sh.Status == StatusNeedsYou {
 		// The track's Since is set in the same pass as its status; before that

@@ -190,6 +190,14 @@ func HasWorktree(home, session string) bool {
 	return err == nil
 }
 
+// WorktreeOf is the path of the session's worktree, and whether it is still there.
+func WorktreeOf(home, session string) (string, bool) {
+	if !HasWorktree(home, session) {
+		return "", false
+	}
+	return worktreePath(home, session), true
+}
+
 // RemoveWorktree deletes the session's worktree and its registration in checkout's repo, and keeps the branch. It takes
 // the repo from the ship's checkout, not from the worktree's own .git file, and works on a worktree that is damaged or gone.
 func RemoveWorktree(home, session, checkout string) {
