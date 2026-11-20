@@ -623,3 +623,30 @@ func TestRestartKillsShipThatSailedOff(t *testing.T) {
 	}
 	w.in.waitShipsList(t, 15*time.Second, "no ships", func(l []shipJSON) bool { return len(l) == 0 })
 }
+
+// Real Codex fires no hook before the engineer answers its folder-trust dialog, so a ship sitting there has no
+// @admiral-state and reads needs_you once the hook wait passes; opening its terminal view is not an answer.
+func TestCodexShipAtTheTrustDialogNeedsYou(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.extra = append(w.extra, "ADMIRAL_NO_HOOK_WAIT="+noHookWait.String())
+	w.cueFleets(map[string][]string{"trust": {
+		"print Folder access",
+		"print Trust this folder? Codex can read, edit, and run files here, subject to your permission settings.",
+		"print › 1. Trust and continue",
+		"print   2. Back to Agent Command Center",
+		"print enter continue · esc back",
+		"sleep 3600",
+	}})
+	w.start()
+	ws := dialWS(t, w.in.instance)
+
+	s := w.launchIn("trust", "codex", "s5trust")
+	waitStatus(t, ws, noHookWait+2*time.Second, s.Session, "needs_you")
+
+	b, _ := w.joinBridge(t, s.Session, 80, 24)
+	holdThat(t, "opening the terminal view of a ship at the trust dialog made it underway", func() bool {
+		return statusOf(w.in.ships(t), s.Session) == "needs_you"
+	})
+	b.close()
+}

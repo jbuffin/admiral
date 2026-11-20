@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/preact';
+import { render, screen, within } from '@testing-library/preact';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Fleet } from './api';
 import type { InboxItem } from './inbox';
@@ -67,4 +67,32 @@ test("opening that question's path shows it in Peek beside the chat, with its ch
   expect(await screen.findByRole('radio', { name: 'Work queue' })).toBeTruthy();
   expect(screen.getByRole('heading', { name: 'AdmiralBot · Homeport fleet' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Send answers' })).toBeTruthy();
+});
+
+const askingForTheTerminal = [
+  'Open the terminal to finish starting the chat',
+  "Codex is asking you to trust Admiral's hooks: open the terminal and trust them",
+  'Codex is offering to update itself, and Enter would run a brew upgrade: open the terminal and choose Skip',
+  "Codex's hooks aren't trusted, so Admiral can't follow this chat: in the terminal type /hooks, press t to trust them, then /new (or end the chat and start a new one)",
+  'Copilot is asking whether to trust this folder: open the terminal and choose Yes',
+];
+
+const showing = async (error: string) => {
+  vi.stubGlobal('fetch', async (url: string) =>
+    url.endsWith('/session') ? new Response(JSON.stringify({ fleet: 'alpha', running: true, state: 'idle', messages: [], questions: [], error })) : new Response('{}'),
+  );
+  fleets.value = [fleet('alpha', 'Homeport', { on: true })];
+  const { container } = render(<ChatPanel surface={surface} title phone />);
+  await screen.findByText(error, { exact: false });
+  return container.querySelector('.msg-note') as HTMLElement;
+};
+
+test.each(askingForTheTerminal)('a chat that asks you to act in the terminal offers Open terminal beside the message: %s', async (error) => {
+  const note = await showing(error);
+  expect(within(note).getByRole('button', { name: 'Open terminal' })).toBeTruthy();
+});
+
+test('a chat error the terminal cannot fix has no Open terminal beside it', async () => {
+  const note = await showing("Admiral can't read this chat's transcript");
+  expect(within(note).queryByRole('button', { name: 'Open terminal' })).toBeNull();
 });
