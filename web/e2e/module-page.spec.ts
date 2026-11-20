@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures';
 import { chatReceived } from './shell';
+import { expectTouchTarget } from './orders';
 import { entry, expectRowsDrawn, MESSAGE_JOB, MESSAGE_LINK, PAGE, rowDetail, seedModule } from './modulePage';
 
 test('on the iPad a module has a nav entry after Crew with its waiting count, draws its groups and rows, filters them, opens a row in the side pane that a reload keeps, and redraws on a page change', async ({ page, admiral }) => {
@@ -118,4 +119,13 @@ test('on the iPad a module has a nav entry after Crew with its waiting count, dr
   await expect(page.getByRole('main').getByText('Audit logs')).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Selected row' }).getByText('bo')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Deploys\s*3$/ })).toBeVisible();
+
+  // Refresh now on the title line: a page the plugin changed without saying so shows after the press.
+  const refresh = page.getByRole('main').getByRole('button', { name: 'Refresh now' });
+  await expect(refresh).toBeVisible();
+  await expectTouchTarget(refresh, 44);
+  mod.page({ ...PAGE, waiting: 3, groups: [{ ...PAGE.groups[0], rows: [...PAGE.groups[0].rows, { id: 't5', title: 'Backup keys', chips: [] }] }, PAGE.groups[1]] });
+  await refresh.tap();
+  await expect(page.getByRole('main').getByText('Backup keys')).toBeVisible();
+  await expect(page.getByRole('main').getByText('Audit logs')).toBeHidden();
 });

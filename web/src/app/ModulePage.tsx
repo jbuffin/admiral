@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
-import { fetchModulePage, fetchModuleRow, restartSource, type ModulePageData, type PageAction, type PageChip, type PageNotice, type PageRow, type RowDetail, type RowStep } from './api';
+import { fetchModulePage, fetchModuleRow, refreshModulePage, restartSource, type ModulePageData, type PageAction, type PageChip, type PageNotice, type PageRow, type RowDetail, type RowStep } from './api';
 import { Icon } from './Icon';
 import { builtinOf, ModuleActions, ModuleActionsProvider, useModuleActions, useUpdating } from './ModuleActions';
 import { ListGroup } from './ListGroup';
@@ -307,7 +307,10 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
   const source = sources.value.find((s) => s.key === sourceKey);
   const version = source?.page?.version;
   const [page, setPage] = useState<ModulePageData | null>(null);
+  const pageRef = useRef(page);
+  pageRef.current = page;
   const [restarting, setRestarting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [problem, setProblem] = useState('');
   const [query, setQuery] = useState('');
   const [row, setRow] = useState<Detail | null>(null);
@@ -376,6 +379,19 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
     setProblem(r.ok ? '' : r.error);
   };
 
+  const refresh = async () => {
+    setRefreshing(true);
+    const r = await refreshModulePage(sourceKey);
+    setRefreshing(false);
+    setProblem(r.ok ? '' : r.error);
+    // The server bumps the page version only when the page changed, so a page that never loaded needs its own fetch.
+    if (r.ok && !pageRef.current) {
+      const p = await fetchModulePage(sourceKey);
+      if (p.ok) setPage(p.data);
+      else setProblem(p.error);
+    }
+  };
+
   const groups = page ? filterGroups(page.groups, query) : [];
   const detail = selected ? (row?.id === selected ? row : { id: selected }) : null;
   const named = selected ? page?.groups.flatMap((g) => g.rows).find((r) => r.id === selected) : undefined;
@@ -393,7 +409,12 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
     <ModuleActionsProvider value={controller}>
     <div class={`orders-split${detail ? ' has-pane' : ''}`}>
       <main class={phone ? 'panel module-page phone' : 'panel module-page'}>
-        {title ? <h1>{source?.name ?? sourceKey}</h1> : null}
+        <div class="module-line">
+          {title ? <h1>{source?.name ?? sourceKey}</h1> : null}
+          <Button variant="quiet" icon class="orders-refresh" label="Refresh now" busyLabel="Refreshing" busy={refreshing} onClick={() => void refresh()}>
+            <Icon name="refresh" size={16} />
+          </Button>
+        </div>
         {page?.notices ? <Notices notices={page.notices} /> : null}
         {(!page && !problem) || page?.state === 'starting' ? <div class="skeleton" role="status" aria-label="Loading" /> : null}
         {problem ? (

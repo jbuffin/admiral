@@ -153,3 +153,122 @@ test('the pending skeleton names the module and fetches nothing', () => {
   expect(screen.getByRole('status', { name: /loading/i })).toBeTruthy();
   expect(calls).toHaveLength(0);
 });
+
+// Serves the page and the restart; the refresh POST answers through `refresh`.
+function refreshServer(refresh: () => Promise<Response>, body: () => unknown = () => good) {
+  const calls: Call[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (path: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      calls.push({ method, path });
+      if (method === 'GET' && path.endsWith('/page')) return new Response(JSON.stringify(body()));
+      if (method === 'POST' && path.endsWith('/page/refresh')) return refresh();
+      if (method === 'POST' && path.endsWith('/restart')) return new Response(JSON.stringify({ error: 'restart refused' }), { status: 500 });
+      return new Response('{}');
+    }),
+  );
+  return calls;
+}
+
+const refreshes = (calls: Call[]) => calls.filter((c) => c.method === 'POST' && c.path.endsWith('/page/refresh'));
+const ok = async () => new Response(JSON.stringify({ refreshing: 'deploys' }));
+
+test.each([
+  ['with a title', { title: true }],
+  ['without a title', { title: false }],
+  ['on the phone layout', { title: false, phone: true }],
+])('has a Refresh now button when the page is drawn %s', async (_name, props) => {
+  refreshServer(ok);
+  sources.value = [source(1)];
+  render(<ModulePage sourceKey="deploys" {...props} />);
+  await screen.findByText('Row one');
+  expect(screen.getByRole('button', { name: 'Refresh now' })).toBeTruthy();
+});
+
+test('puts the Refresh now button on the title line, after the title', async () => {
+  refreshServer(ok);
+  sources.value = [source(1)];
+  open();
+  const button = await screen.findByRole('button', { name: 'Refresh now' });
+  const heading = screen.getByRole('heading', { name: 'Deploys' });
+  expect(heading.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('Refresh now posts the page refresh of the source, its key encoded', async () => {
+  const calls = refreshServer(ok);
+  sources.value = [{ ...source(1), key: 'my deploys/x' }];
+  render(<ModulePage sourceKey="my deploys/x" title />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Refresh now' }));
+  await waitFor(() => expect(refreshes(calls)).toHaveLength(1));
+  expect(refreshes(calls)[0].path).toBe('/api/v1/sources/my%20deploys%2Fx/page/refresh');
+});
+
+test('the button is busy and named Refreshing while the request is in flight, a second click sends nothing, then it is idle', async () => {
+  let answer: (r: Response) => void = () => {};
+  const calls = refreshServer(() => new Promise<Response>((res) => (answer = res)));
+  sources.value = [source(1)];
+  open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Refresh now' }));
+  const busy = await screen.findByRole('button', { name: 'Refreshing' });
+  expect(busy.getAttribute('aria-busy')).toBe('true');
+  fireEvent.click(busy);
+  expect(refreshes(calls)).toHaveLength(1);
+  answer(await ok());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh now' }).getAttribute('aria-busy')).not.toBe('true'));
+  expect(refreshes(calls)).toHaveLength(1);
+});
+
+test('after an OK refresh the new page version draws the new rows and the earlier error alert is gone', async () => {
+  let body: unknown = { ...good, state: 'error', error: 'plugin crashed' };
+  const calls = refreshServer(ok, () => body);
+  sources.value = [source(1, 'error')];
+  open();
+  // A refused Restart leaves its own line on the page.
+  fireEvent.click(await screen.findByRole('button', { name: 'Restart' }));
+  expect(await screen.findByText('restart refused')).toBeTruthy();
+
+  body = { ...good, groups: [{ id: 'g1', title: 'Needs review', rows: [{ id: 'r3', title: 'Row three', subtitle: '', chips: [], reason: '' }] }] };
+  const pageGets = () => calls.filter((c) => c.method === 'GET' && c.path.endsWith('/page')).length;
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh now' }));
+  await waitFor(() => expect(screen.queryByText('restart refused')).toBeNull());
+  const before = pageGets();
+  await new Promise((r) => setTimeout(r, 20));
+  expect(pageGets()).toBe(before);
+  // The server queues page.get and the source's page version moves.
+  sources.value = [source(2)];
+  expect(await screen.findByText('Row three')).toBeTruthy();
+  expect(screen.queryByText('Row one')).toBeNull();
+});
+
+test('a refused refresh shows its error in the alert and the button is idle again', async () => {
+  const calls = refreshServer(async () => new Response(JSON.stringify({ error: 'plugin refused the refresh' }), { status: 422 }));
+  sources.value = [source(1)];
+  open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Refresh now' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('plugin refused the refresh');
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh now' }).getAttribute('aria-busy')).not.toBe('true'));
+  expect(refreshes(calls)).toHaveLength(1);
+});
+
+test('an OK refresh after the first page load failed fetches the page once, with no version bump', async () => {
+  const calls: Call[] = [];
+  let gets = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (path: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      calls.push({ method, path });
+      if (method === 'GET' && path.endsWith('/page')) return ++gets === 1 ? new Response(JSON.stringify({ error: 'page down' }), { status: 502 }) : new Response(JSON.stringify(good));
+      if (method === 'POST' && path.endsWith('/page/refresh')) return ok();
+      return new Response('{}');
+    }),
+  );
+  sources.value = [source(1)];
+  open();
+  await screen.findByText('page down');
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh now' }));
+  expect(await screen.findByText('Row one')).toBeTruthy();
+  expect(screen.queryByText('page down')).toBeNull();
+  expect(gets).toBe(2);
+});
