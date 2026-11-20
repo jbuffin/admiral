@@ -32,10 +32,11 @@ type Manager struct {
 	edit    sync.Mutex // serializes a fleet edit's read-modify-write; held across the file write, so never with mu
 	mu      sync.Mutex
 	cur     *Config
-	probe   ChatProbe  // wired by the server; every reload carries it onto the new config
-	repos   RepoLookup // wired by the server; checks a saved repo allowlist
-	errMsg  string     // empty when the file is fine
-	existed bool       // the file has been seen; a later absence is an error
+	probe   ChatProbe     // wired by the server; every reload carries it onto the new config
+	models  HarnessModels // wired by the server; carried like probe
+	repos   RepoLookup    // wired by the server; checks a saved repo allowlist
+	errMsg  string        // empty when the file is fine
+	existed bool          // the file has been seen; a later absence is an error
 	watched map[string]bool
 	target  string // base name of the resolved file, when config.json is a symlink
 	subs    map[chan struct{}]struct{}
@@ -229,9 +230,17 @@ func (m *Manager) reload() {
 			m.errMsg = perr.Error()
 		} else {
 			cfg.ChatProbe = m.probe
+			cfg.HarnessModels = m.models
 			m.cur, m.errMsg = cfg, ""
 		}
 	}
+	m.mu.Unlock()
+	m.notify()
+}
+
+// notify wakes every subscriber; one that has not read its last wake keeps it.
+func (m *Manager) notify() {
+	m.mu.Lock()
 	var subs []chan struct{}
 	for ch := range m.subs {
 		subs = append(subs, ch)

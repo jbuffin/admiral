@@ -82,6 +82,27 @@ func TestLaunchModelAndEffortReachTheHarnessFlags(t *testing.T) {
 	}
 }
 
+func TestLaunchPassesAnyWellFormedModelNameTheHarnessListed(t *testing.T) {
+	for _, c := range []struct{ harness, model string }{
+		{"claude", "fable"}, {"claude", "claude-fable-5-2"}, {"claude", "opus[1m]"}, {"codex", "gpt-6.2-sol"},
+	} {
+		t.Run(c.harness+"/"+c.model, func(t *testing.T) {
+			l, work, argv := recordingLauncher(t, c.harness)
+			// A file the shell would glob opus[1m] to, so an unquoted bracket name reaches the harness as "opusm".
+			if err := os.WriteFile(filepath.Join(work, "opusm"), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := l.Launch(Request{Fleet: "work", Harness: c.harness, Dir: work, Skill: Skill{Kind: "none"}, Model: c.model}); err != nil {
+				t.Fatalf("Launch refused %s on %s: %v", c.model, c.harness, err)
+			}
+			got := argv()
+			if !slices.Contains(got, c.model) && !slices.ContainsFunc(got, func(a string) bool { return strings.Contains(a, c.model) }) {
+				t.Errorf("argv %q never carries %q", got, c.model)
+			}
+		})
+	}
+}
+
 func TestLaunchWithNoModelOrEffortLeavesTheHarnessDefaults(t *testing.T) {
 	l, work, argv := recordingLauncher(t, "claude")
 	if _, err := l.Launch(Request{Fleet: "work", Harness: "claude", Dir: work, Skill: Skill{Kind: "none"}}); err != nil {
@@ -123,7 +144,9 @@ func TestLaunchRefusesAModelOrEffortTheHarnessDoesNotOffer(t *testing.T) {
 	for _, c := range []struct {
 		name, harness, model, effort, msg string
 	}{
-		{"an unknown model", "claude", "not-a-model", "", "model"},
+		{"a model with a space", "claude", "a b", "", "model"},
+		{"a bracket suffix that is not alphanumeric", "claude", "opus[a-b]", "", "model"},
+		{"a model that would expand in a shell", "claude", "$(x)", "", "model"},
 		{"an unknown effort", "claude", "", "extreme", "effort"},
 		{"max on codex, which stops at high", "codex", "", "max", "effort"},
 		{"any effort on copilot, which has none", "copilot", "", "low", "effort"},

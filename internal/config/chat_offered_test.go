@@ -221,8 +221,8 @@ func TestChatSettingsFollowTheHarnessInTheFile(t *testing.T) {
 	if g := chatWireOf(t, m, "strong"); g.Model != "gpt-6.1-sol" {
 		t.Errorf("codex with no model = %q, want its strong model gpt-6.1-sol", g.Model)
 	}
-	if g := chatWireOf(t, m, "claude"); g.Model != "sonnet" {
-		t.Errorf("claude with a codex model = %q, want the fallback sonnet", g.Model)
+	if g := chatWireOf(t, m, "claude"); g.Model != "gpt-6.1-sol" {
+		t.Errorf("claude with a well-formed name outside its built-in list = %q, want it kept: the harness's own list is not known while loading", g.Model)
 	}
 	if g := chatWireOf(t, m, "cop"); g.Model != "gpt-5.6-sol" || g.Effort != "" {
 		t.Errorf("copilot = model %q effort %q, want gpt-5.6-sol and the default effort (copilot takes none)", g.Model, g.Effort)
@@ -240,7 +240,7 @@ func TestChatViewServesTheModelAndEffortListsOfTheChosenHarness(t *testing.T) {
 		models  []string
 		efforts []string
 	}{
-		{"cl", []string{"sonnet", "opus", "haiku"}, []string{"", "low", "medium", "high"}},
+		{"cl", []string{"sonnet", "opus", "haiku", "fable"}, []string{"", "low", "medium", "high"}},
 		{"cx", []string{"gpt-6-luna", "gpt-6.1-sol"}, []string{"", "low", "medium", "high"}},
 		{"cp", []string{"gpt-5.6-luna", "gpt-5.6-sol"}, []string{""}},
 	}

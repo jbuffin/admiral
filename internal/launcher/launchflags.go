@@ -2,7 +2,6 @@ package launcher
 
 import (
 	"net/http"
-	"regexp"
 	"slices"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -14,17 +13,11 @@ var efforts = map[string][]string{
 	"codex":  {"low", "medium", "high"},
 }
 
-// Codex and copilot models change often, so any plain name passes; it is one argv element and never dash-led.
-var modelName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
-
 // modelFlags is the harness's own flags for the chosen model and effort; empty means its default.
 func modelFlags(harness, model, effort string) ([]string, *Error) {
 	var out []string
 	if model != "" {
-		switch {
-		case harness == "claude" && !slices.Contains(config.ChatModelsFor("claude"), model):
-			return nil, refuse(http.StatusBadRequest, "model %q is not one of %v for claude", model, config.ChatModelsFor("claude"))
-		case !modelName.MatchString(model):
+		if !config.ValidModelName(model) {
 			return nil, refuse(http.StatusBadRequest, "model %q is not a plain model name", model)
 		}
 		flag := "--model"

@@ -33,6 +33,7 @@ import (
 	"github.com/jbuffin/admiral/internal/fleetmap"
 	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/harnesscaps"
+	"github.com/jbuffin/admiral/internal/harnessmodels"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -286,6 +287,8 @@ func serve(args []string) error {
 	}
 	defer cfg.Close()
 	cfg.SetChatProbe(capabilities.ChatProbe(capabilities.Open(dir)))
+	modelLists := harnessmodels.New(dir, 30*time.Second, cfg.NotifyModelsChanged)
+	cfg.SetHarnessModels(modelLists.Models)
 	cfg.SetRepoLookup(fleetRepos(cfg, ""))
 	listenOn, err := resolveListen(cfg, *listen, func() (bool, error) { return cli.OfferSetup(cli.Std()) })
 	if err != nil {
@@ -693,6 +696,7 @@ func serve(args []string) error {
 		shipCards.Changed()
 	}
 	probeRunner := probes.NewDefault(dir)
+	probeRunner.SetModelLister(modelLists)
 	tails := convService.Tails()
 	shipService.Tail = tails.Tail
 	shipService.Candidates = convService.PRCandidates
