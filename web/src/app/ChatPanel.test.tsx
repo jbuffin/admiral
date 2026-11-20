@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/preact';
+import { render, screen, within } from '@testing-library/preact';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Fleet } from './api';
 import type { InboxItem } from './inbox';
@@ -67,4 +67,24 @@ test("opening that question's path shows it in Peek beside the chat, with its ch
   expect(await screen.findByRole('radio', { name: 'Work queue' })).toBeTruthy();
   expect(screen.getByRole('heading', { name: 'AdmiralBot · Homeport fleet' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Send answers' })).toBeTruthy();
+});
+
+const showing = async (error: string, needsTerminal = false) => {
+  vi.stubGlobal('fetch', async (url: string) =>
+    url.endsWith('/session') ? new Response(JSON.stringify({ fleet: 'alpha', running: true, state: 'idle', messages: [], questions: [], error, needsTerminal })) : new Response('{}'),
+  );
+  fleets.value = [fleet('alpha', 'Homeport', { on: true })];
+  const { container } = render(<ChatPanel surface={surface} title phone />);
+  await screen.findByText(error, { exact: false });
+  return container.querySelector('.msg-note') as HTMLElement;
+};
+
+test('a chat the server says needs the terminal offers Open terminal beside its message', async () => {
+  const note = await showing('Codex is asking you to trust Admiral\'s hooks: open the terminal and trust them', true);
+  expect(within(note).getByRole('button', { name: 'Open terminal' })).toBeTruthy();
+});
+
+test('a chat error the server does not flag has no Open terminal beside it', async () => {
+  const note = await showing("Admiral can't read this chat's transcript");
+  expect(within(note).queryByRole('button', { name: 'Open terminal' })).toBeNull();
 });

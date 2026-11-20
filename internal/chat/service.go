@@ -63,6 +63,8 @@ type Snapshot struct {
 	Messages  []Message  `json:"messages"`
 	Questions []Question `json:"questions"`
 	Error     string     `json:"error,omitempty"`
+	// NeedsTerminal: Error is a startup prompt the engineer answers in the terminal.
+	NeedsTerminal bool `json:"needsTerminal,omitempty"`
 }
 
 type wire struct {
@@ -441,12 +443,7 @@ func (s *fleetChat) read(force, fresh bool) (Snapshot, error) {
 	if unanswered(qs) {
 		snap.State = "waiting"
 	}
-	switch {
-	case st.optRaw == "":
-		_, snap.Error = s.notStartedLocked()
-	case st.unread:
-		snap.Error = Unreadable
-	}
+	snap.Error, snap.NeedsTerminal = s.noteLocked()
 	if force && readErr != nil {
 		return snap, readErr
 	}
@@ -828,6 +825,18 @@ func (s *fleetChat) ready() (pane string, status int, msg string) {
 		}
 	}
 	return s.st.pane, 0, ""
+}
+
+// noteLocked is what the panel says about a running chat, and whether only the terminal clears it.
+func (s *fleetChat) noteLocked() (msg string, needsTerminal bool) {
+	switch {
+	case s.st.optRaw == "":
+		_, msg = s.notStartedLocked()
+		return msg, msg != ""
+	case s.st.unread:
+		return Unreadable, false
+	}
+	return "", false
 }
 
 // notStartedLocked says whether a chat with no transcript can take a message, and what to tell the engineer if not. A

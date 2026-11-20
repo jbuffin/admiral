@@ -123,8 +123,8 @@ describe('the reset marker', () => {
 });
 
 describe('needsTerminal', () => {
-  it('is true only for the not-started error, not for an unreadable transcript', () => {
-    expect(needsTerminal(snap({ error: 'Open the terminal to finish starting the chat' }))).toBe(true);
+  it('is true only when the server sets the flag', () => {
+    expect(needsTerminal(snap({ error: 'Open the terminal to finish starting the chat', needsTerminal: true }))).toBe(true);
     expect(needsTerminal(snap({ error: "Admiral can't read this chat's transcript" }))).toBe(false);
     expect(needsTerminal(snap({}))).toBe(false);
   });

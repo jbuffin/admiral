@@ -86,6 +86,7 @@ export interface ChatSnapshot {
   messages: ChatEntry[];
   questions: ChatQuestion[];
   error?: string;
+  needsTerminal?: boolean;
 }
 
 /** A message of the chat; `report` marks the user entry Admiral typed as a ship's report turn, which is not the engineer's. */
@@ -117,8 +118,8 @@ export interface CampaignDraftCard {
 }
 
 /** The snapshot's entries oldest first; entries with one time, or none that parses, keep the served order. */
-/** Claude's first-start dialog holds the chat; the server's text for that is the only error the terminal fixes. */
-export const needsTerminal = (s: ChatSnapshot) => s.error === 'Open the terminal to finish starting the chat';
+/** The server says the chat waits on a startup prompt only the terminal answers. */
+export const needsTerminal = (s: ChatSnapshot) => s.needsTerminal === true;
 
 export function threadOf(s: ChatSnapshot): ThreadItem[] {
   const answers = new Map(s.questions.map((q) => [q.id, q.answer]));

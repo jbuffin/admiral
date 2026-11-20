@@ -172,6 +172,7 @@
 #   menu <json>    Claude only, needs python3, and the last cue: creates `cues-done`, then draws Claude's AskUserQuestion menu for the
 #                  call <json> holds (a list of {text, labels, multi}) through `fakemenu.py` and logs every key it reads to `stdin`
 #                  (like Claude, it draws only the bottom of a frame taller than the pane, and redraws on a resize)
+#   print <text>   print <text> and a newline, so a cue file can draw a dialog's lines
 #   lines <n>      print n numbered lines, "line 0001" to "line <n>", each in an SGR
 #                  colour (\033[31m..\033[36m, cycling) and reset at the end
 #   altscreen      switch to the alternate screen (\033[?1049h), set application cursor
@@ -1057,6 +1058,7 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 			;;
 		bell) printf '\a' ;;
 		sleep) sleep "$arg" ;;
+		print) printf '%s\n' "$arg" ;;
 		lines) awk -v n="$arg" 'BEGIN { for (i = 1; i <= n; i++) printf "\033[3%dmline %04d\033[0m\n", i % 6 + 1, i }' ;;
 		altscreen) printf '\033[?1049h\033[?1h\033[?2004h\033[2J\033[HALT SCREEN' ;;
 		bracketedpaste) printf '\033[?2004h' ;;
