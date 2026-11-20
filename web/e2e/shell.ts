@@ -931,7 +931,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     await expect(form.getByLabel('Checkout').locator('option')).not.toHaveCount(1);
     expect(await fits()).toBe(true);
     for (const name of ['Checkout', 'Model', 'Effort']) {
-      expect((await form.getByLabel(name, { exact: true }).boundingBox())!.height, `${name} select height`).toBeGreaterThanOrEqual(44);
+      expect((await form.getByLabel(name, { exact: name === 'Model' }).boundingBox())!.height, `${name} select height`).toBeGreaterThanOrEqual(44);
     }
     expect((await picker.box.boundingBox())!.height, 'Skill height').toBeGreaterThanOrEqual(44);
     // Skill keeps its place in the Tab order: right after Checkout.
