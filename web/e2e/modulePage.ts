@@ -163,6 +163,13 @@ export function seedLongForm(mod: Module, actions: unknown[]) {
   mod.page({ ...PAGE, groups: [{ ...PAGE.groups[0], rows: [{ ...first, actions: [...actions, LONG_ACTION] }, ...rest] }, ...PAGE.groups.slice(1)] });
 }
 
+/** The first thing under a sheet's title is fully visible: nothing sticks over it. */
+export async function expectBelowTitle(sheet: Locator, title: string, first: Locator) {
+  const head = (await sheet.getByRole('heading', { name: title }).boundingBox())!;
+  const b = (await first.boundingBox())!;
+  expect(b.y).toBeGreaterThanOrEqual(head.y + head.height);
+}
+
 /** Opens the long form from row t1, then checks the sheet fits the viewport and its content scrolls inside it. */
 export async function expectLongSheetFitsAndScrolls(page: Page) {
   const fix = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Fix login' });
@@ -172,28 +179,30 @@ export async function expectLongSheetFitsAndScrolls(page: Page) {
   await expect(sheet.getByRole('checkbox', { name: 'File number 1', exact: true })).toBeVisible();
 
   const view = page.viewportSize()!;
+  const title = sheet.getByRole('heading', { name: 'Pick the files to deploy' });
+  const cancel = sheet.getByRole('button', { name: 'Cancel', exact: true });
+  const submit = sheet.getByRole('button', { name: 'Submit', exact: true });
   const within = async (l: Locator) => {
     const b = (await l.boundingBox())!;
     return b.y >= 0 && b.y + b.height <= view.height;
   };
-  const box = (await sheet.boundingBox())!;
-  expect(box.y).toBeGreaterThanOrEqual(8);
-  expect(box.y + box.height).toBeLessThanOrEqual(view.height);
+  await expect.poll(async () => {
+    const b = (await sheet.boundingBox())!;
+    return b.y >= 8 && b.y + b.height <= view.height;
+  }).toBe(true);
+  for (const l of [title, cancel, submit]) await expect.poll(() => within(l)).toBe(true);
+  await expectBelowTitle(sheet, 'Pick the files to deploy', sheet.getByText('Whose work', { exact: true }));
 
-  const title = sheet.getByRole('heading', { name: 'Pick the files to deploy' });
-  const cancel = sheet.getByRole('button', { name: 'Cancel', exact: true });
-  const submit = sheet.getByRole('button', { name: 'Submit', exact: true });
-  for (const l of [title, cancel, submit]) expect(await within(l)).toBe(true);
-
-  // An option counts as in view only while inside the dialog's own box, so a clipped one is out.
+  // An option counts as in view only between the title's bottom and the foot's top, where the sticky parts don't cover it.
   const seen = async (l: Locator) => {
     const b = await l.boundingBox();
-    const d = (await sheet.boundingBox())!;
-    return !!b && b.y >= d.y && b.y + b.height <= d.y + d.height && (await within(l));
+    const t = (await title.boundingBox())!;
+    const f = (await cancel.boundingBox())!;
+    return !!b && b.y >= t.y + t.height && b.y + b.height <= f.y;
   };
   expect(await seen(last)).toBe(false);
   await last.scrollIntoViewIfNeeded();
-  expect(await seen(last)).toBe(true);
+  await expect.poll(() => seen(last)).toBe(true);
   await last.tap();
   await expect(last).toBeChecked();
 
