@@ -189,6 +189,10 @@ _Avoid_: shipyard, yard (older design names)
 One harness within one fleet (Work Fleet's Claude dock). Dropping an order on a dock opens launch orders for that fleet and harness, as does picking the dock in the phone's dock sheet after tapping an order, and tapping a dock with no order selected opens launch orders without one.
 _Avoid_: slot, target
 
+**Model list**:
+The model names a dock's harness offers, which Admiral asks the harness for at startup and on Check again. A dock with no listed answer serves the built-in list. It is not a capability probe: it proves nothing, and no feature waits on it.
+_Avoid_: model probe, model catalogue
+
 **Launch orders**:
 The dialog that opens on a dock, with an order dropped on it or with none. With an order, the engineer chooses what the session starts with: Commodore (the default, a task force), a favorite skill, a custom skill typed in with type-ahead over installed skills, or no skill at all, which sends the order's text to the harness as it is. Without an order there is no skill to choose: the engineer may type the text the harness starts with, or leave it empty to start the harness idle, and the ship has no order.
 _Avoid_: launch menu, modal
