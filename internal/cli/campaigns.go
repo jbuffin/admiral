@@ -69,7 +69,10 @@ func campaignsFollow(args []string, std IO) error {
 		return err
 	}
 	if status/100 != 2 {
-		return errors.New(errorText(b))
+		if msg := titleLine(errorText(b)); msg != "" {
+			return errors.New(msg)
+		}
+		return fmt.Errorf("POST /api/campaigns: %d %s", status, http.StatusText(status))
 	}
 	var view struct {
 		URL       string `json:"url"`
@@ -81,14 +84,17 @@ func campaignsFollow(args []string, std IO) error {
 	if err := json.Unmarshal(b, &view); err != nil {
 		return fmt.Errorf("POST /api/campaigns: %v", err)
 	}
-	title := titleLine(view.Title)
-	switch {
+	link, fleetKey, title := titleLine(view.URL), titleLine(view.Fleet), titleLine(view.Title)
+	switch reason := titleLine(view.EndReason); {
+	// A closed issue's end_reason is the word ended, which would only repeat the line.
+	case view.Ended && (reason == "" || strings.EqualFold(reason, "ended")):
+		fmt.Fprintf(std.Out, "%s has ended: %s\n", link, title)
 	case view.Ended:
-		fmt.Fprintf(std.Out, "%s has ended (%s): %s\n", view.URL, titleLine(view.EndReason), title)
+		fmt.Fprintf(std.Out, "%s has ended (%s): %s\n", link, reason, title)
 	case status == http.StatusCreated:
-		fmt.Fprintf(std.Out, "Followed %s in fleet %s: %s\n", view.URL, view.Fleet, title)
+		fmt.Fprintf(std.Out, "Followed %s in fleet %s: %s\n", link, fleetKey, title)
 	default:
-		fmt.Fprintf(std.Out, "Following %s in fleet %s: %s\n", view.URL, view.Fleet, title)
+		fmt.Fprintf(std.Out, "Following %s in fleet %s: %s\n", link, fleetKey, title)
 	}
 	return nil
 }
@@ -173,7 +179,7 @@ func campaignHome() (dir, fleet string, err error) {
 	return dir, fleet, nil
 }
 
-// titleLine prints a GitHub title as data: control characters become spaces.
+// titleLine prints text from the server or GitHub as data: control characters become spaces.
 func titleLine(s string) string {
 	return strings.Join(strings.Fields(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {

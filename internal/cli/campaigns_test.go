@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode"
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/home"
@@ -456,4 +457,67 @@ func jsonEqual(a, b map[string]any) bool {
 	x, _ := json.Marshal(a)
 	y, _ := json.Marshal(b)
 	return bytes.Equal(x, y)
+}
+
+// wantPrintable fails on an ESC, BEL or other control or format character the server sent.
+func wantPrintable(t *testing.T, where, s string) {
+	t.Helper()
+	for _, r := range s {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			t.Errorf("%s %q holds %U from the server", where, s, r)
+		}
+	}
+}
+
+func TestCampaignsFollowRefusalPrintsTheServersTextAsData(t *testing.T) {
+	ship := asCampaignShip(t, "work")
+	raw, _ := json.Marshal(map[string]string{"error": "Not \x1b]52;c;ZXZpbA==\x07allowed‮ here"})
+	fake := startCampaignFake(t, ship.home, http.StatusUnprocessableEntity, string(raw))
+
+	err, _, _ := runCampaigns("follow", followedIssue, "--port", fake.port)
+	var usage *UsageError
+	if err == nil || errors.As(err, &usage) {
+		t.Fatalf("follow refused: error %v (%T); want a plain error (exit 1)", err, err)
+	}
+	wantPrintable(t, "error", err.Error())
+	if !strings.Contains(err.Error(), "Not") || !strings.Contains(err.Error(), "allowed") {
+		t.Errorf("error %q dropped the server's text", err)
+	}
+}
+
+func TestCampaignsFollowRefusalWithNoTextNamesTheStatus(t *testing.T) {
+	ship := asCampaignShip(t, "work")
+	fake := startCampaignFake(t, ship.home, http.StatusBadGateway, "")
+
+	err, _, _ := runCampaigns("follow", followedIssue, "--port", fake.port)
+	if err == nil || !strings.Contains(err.Error(), "502") {
+		t.Errorf("follow answered 502 with no body: error %v; want it to name the status", err)
+	}
+}
+
+func TestCampaignsFollowPrintsTheURLAndFleetAsData(t *testing.T) {
+	for _, status := range []int{http.StatusCreated, http.StatusOK} {
+		ship := asCampaignShip(t, "work")
+		fake := startCampaignFake(t, ship.home, status, campaignBody(t, map[string]any{"url": followedIssue + "\x1b[2J", "fleet": "wo\x1brk"}))
+		err, out, _ := runCampaigns("follow", followedIssue, "--port", fake.port)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantPrintable(t, "stdout", singleLine(t, out))
+	}
+}
+
+func TestCampaignsFollowEndedWithoutAReasonSaysSoOnce(t *testing.T) {
+	for _, reason := range []string{"ended", "Ended", ""} {
+		ship := asCampaignShip(t, "work")
+		fake := startCampaignFake(t, ship.home, http.StatusOK, campaignBody(t, map[string]any{"ended": true, "end_reason": reason}))
+		err, out, _ := runCampaigns("follow", followedIssue, "--port", fake.port)
+		if err != nil {
+			t.Fatal(err)
+		}
+		line := singleLine(t, out)
+		if want := followedIssue + " has ended: "; !strings.HasPrefix(line, want) {
+			t.Errorf("end_reason %q: line %q; want it to start %q", reason, line, want)
+		}
+	}
 }
