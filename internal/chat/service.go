@@ -303,14 +303,20 @@ func (s *Service) Run(ctx context.Context) {
 		done.Add(1)
 		go func() {
 			defer done.Done()
+			// A config changed while Admiral was down is followed once the sessions are listed.
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.Host.Ready():
+			}
 			for {
+				for _, fc := range s.onFleets() {
+					fc.followHarness()
+				}
 				select {
 				case <-ctx.Done():
 					return
 				case <-changes:
-					for _, fc := range s.onFleets() {
-						fc.followHarness()
-					}
 				}
 			}
 		}()
@@ -962,9 +968,12 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 // followHarness starts a fresh chat on the fleet's harness when the running session was launched under another. A model
 // or effort change, a stopped chat and a session that records no harness are left alone.
 func (s *fleetChat) followHarness() {
+	// Most reloads change nothing here: skip them without the lock a flush may hold.
+	if h := s.paneHarness(); h != "" && h == s.harness() {
+		return
+	}
 	s.op.Lock()
 	defer s.op.Unlock()
-	defer s.resetting.Store(false)
 	if _, running := s.session(); !running {
 		return
 	}
@@ -974,6 +983,7 @@ func (s *fleetChat) followHarness() {
 	if h := s.paneHarness(); h == "" || h == s.harness() {
 		return
 	}
+	defer s.resetting.Store(false)
 	if _, lerr := s.newChatLocked(true); lerr != nil {
 		log.Printf("admiral: chat %s: could not start a fresh chat on the new harness: %s", s.key, lerr.Msg)
 	}

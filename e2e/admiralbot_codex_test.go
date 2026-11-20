@@ -307,6 +307,8 @@ func TestAdmiralBot_SavingAnotherHarnessStartsAFreshChatOnIt(t *testing.T) {
 	// The cue file is shared by both fakes, and Claude's fake can't run the Codex cues.
 	w.writeCue("record", sessionStartCue(filepath.Join(c.cfgDir, "projects", "p", "a.jsonl"), "startup"))
 
+	c.moveRecord(".codex")
+
 	// Saving the fleet's chat on another harness is the switch: no New chat press.
 	c.setChat(map[string]any{"harness": "claude", "model": "opus", "effort": ""})
 
