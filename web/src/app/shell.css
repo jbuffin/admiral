@@ -1285,6 +1285,7 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 
 .module-page { overflow-wrap: anywhere; }
 .module-line { display: flex; align-items: center; gap: 8px 10px; min-width: 0; }
+.module-line h1 { margin: 0; }
 .module-page .skeleton, .sheet .skeleton { height: 96px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-hover); animation: module-pulse 1.4s ease-in-out infinite; }
 @keyframes module-pulse { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .module-page .skeleton, .sheet .skeleton { animation: none; } }

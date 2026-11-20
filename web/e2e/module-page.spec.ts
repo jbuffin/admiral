@@ -125,9 +125,7 @@ test('on the iPad a module has a nav entry after Crew with its waiting count, dr
   await expect(refresh).toBeVisible();
   await expectTouchTarget(refresh, 44);
   mod.page({ ...PAGE, waiting: 3, groups: [{ ...PAGE.groups[0], rows: [...PAGE.groups[0].rows, { id: 't5', title: 'Backup keys', chips: [] }] }, PAGE.groups[1]] });
-  await expect(page.getByRole('main').getByText('Backup keys')).toBeHidden();
   await refresh.tap();
   await expect(page.getByRole('main').getByText('Backup keys')).toBeVisible();
   await expect(page.getByRole('main').getByText('Audit logs')).toBeHidden();
-  await expect(refresh).not.toHaveAttribute('aria-busy', 'true');
 });

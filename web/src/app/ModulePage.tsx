@@ -307,6 +307,8 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
   const source = sources.value.find((s) => s.key === sourceKey);
   const version = source?.page?.version;
   const [page, setPage] = useState<ModulePageData | null>(null);
+  const pageRef = useRef(page);
+  pageRef.current = page;
   const [restarting, setRestarting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [problem, setProblem] = useState('');
@@ -382,6 +384,12 @@ export function ModulePage({ sourceKey, title, phone }: { sourceKey: string; tit
     const r = await refreshModulePage(sourceKey);
     setRefreshing(false);
     setProblem(r.ok ? '' : r.error);
+    // The server bumps the page version only when the page changed, so a page that never loaded needs its own fetch.
+    if (r.ok && !pageRef.current) {
+      const p = await fetchModulePage(sourceKey);
+      if (p.ok) setPage(p.data);
+      else setProblem(p.error);
+    }
   };
 
   const groups = page ? filterGroups(page.groups, query) : [];

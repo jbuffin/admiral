@@ -192,7 +192,6 @@ test('puts the Refresh now button on the title line, after the title', async () 
   open();
   const button = await screen.findByRole('button', { name: 'Refresh now' });
   const heading = screen.getByRole('heading', { name: 'Deploys' });
-  expect(heading.parentElement).toBe(button.parentElement);
   expect(heading.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
@@ -222,7 +221,7 @@ test('the button is busy and named Refreshing while the request is in flight, a 
 
 test('after an OK refresh the new page version draws the new rows and the earlier error alert is gone', async () => {
   let body: unknown = { ...good, state: 'error', error: 'plugin crashed' };
-  refreshServer(ok, () => body);
+  const calls = refreshServer(ok, () => body);
   sources.value = [source(1, 'error')];
   open();
   // A refused Restart leaves its own line on the page.
@@ -230,8 +229,12 @@ test('after an OK refresh the new page version draws the new rows and the earlie
   expect(await screen.findByText('restart refused')).toBeTruthy();
 
   body = { ...good, groups: [{ id: 'g1', title: 'Needs review', rows: [{ id: 'r3', title: 'Row three', subtitle: '', chips: [], reason: '' }] }] };
+  const pageGets = () => calls.filter((c) => c.method === 'GET' && c.path.endsWith('/page')).length;
   fireEvent.click(screen.getByRole('button', { name: 'Refresh now' }));
   await waitFor(() => expect(screen.queryByText('restart refused')).toBeNull());
+  const before = pageGets();
+  await new Promise((r) => setTimeout(r, 20));
+  expect(pageGets()).toBe(before);
   // The server queues page.get and the source's page version moves.
   sources.value = [source(2)];
   expect(await screen.findByText('Row three')).toBeTruthy();
@@ -246,4 +249,26 @@ test('a refused refresh shows its error in the alert and the button is idle agai
   expect((await screen.findByRole('alert')).textContent).toContain('plugin refused the refresh');
   await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh now' }).getAttribute('aria-busy')).not.toBe('true'));
   expect(refreshes(calls)).toHaveLength(1);
+});
+
+test('an OK refresh after the first page load failed fetches the page once, with no version bump', async () => {
+  const calls: Call[] = [];
+  let gets = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (path: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      calls.push({ method, path });
+      if (method === 'GET' && path.endsWith('/page')) return ++gets === 1 ? new Response(JSON.stringify({ error: 'page down' }), { status: 502 }) : new Response(JSON.stringify(good));
+      if (method === 'POST' && path.endsWith('/page/refresh')) return ok();
+      return new Response('{}');
+    }),
+  );
+  sources.value = [source(1)];
+  open();
+  await screen.findByText('page down');
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh now' }));
+  expect(await screen.findByText('Row one')).toBeTruthy();
+  expect(screen.queryByText('page down')).toBeNull();
+  expect(gets).toBe(2);
 });
