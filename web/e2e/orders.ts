@@ -240,7 +240,7 @@ async function oldestAnswer(a: Admiral): Promise<number> {
   return times.length === 3 && times.every((t) => !Number.isNaN(t)) ? Math.min(...times) : 0;
 }
 
-async function expectTouchTarget(l: Locator, min: number) {
+export async function expectTouchTarget(l: Locator, min: number) {
   const box = (await l.boundingBox())!;
   expect(box.width).toBeGreaterThanOrEqual(44);
   expect(box.height).toBeGreaterThanOrEqual(min);
