@@ -16,7 +16,7 @@ import (
 //
 //	FAKE_MODELS      comma-separated model names the harness offers
 //	FAKE_MODE        ok (default), fail (stderr boom, exit 3), hang (never answers) or garbage
-//	FAKE_RECORD_DIR  gets argv (one line) and pid
+//	FAKE_RECORD_DIR  gets argv (one line), pid, cwd and env (one variable a line)
 func TestMain(m *testing.M) {
 	if os.Getenv("ADMIRAL_FAKE_LISTER") != "" {
 		fakeHarness()
@@ -29,6 +29,9 @@ func fakeHarness() {
 	if dir := os.Getenv("FAKE_RECORD_DIR"); dir != "" {
 		_ = os.WriteFile(dir+"/argv", []byte(strings.Join(os.Args[1:], " ")), 0o600)
 		_ = os.WriteFile(dir+"/pid", []byte(fmt.Sprint(os.Getpid())), 0o600)
+		cwd, _ := os.Getwd()
+		_ = os.WriteFile(dir+"/cwd", []byte(cwd), 0o600)
+		_ = os.WriteFile(dir+"/env", []byte(strings.Join(os.Environ(), "\n")), 0o600)
 	}
 	switch os.Getenv("FAKE_MODE") {
 	case "fail":

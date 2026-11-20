@@ -66,25 +66,24 @@ func TestRefreshListsTheDocksModelsEvenWhenItsVersionIsUnchangedOrCannotBeDetect
 	}
 }
 
-func TestRefreshReturnsWhileAModelListingIsStillRunning(t *testing.T) {
+func TestRunReturnsWhileAModelListingIsStillRunning(t *testing.T) {
 	l := &listed{enter: make(chan struct{}, 1), hold: make(chan struct{})}
 	r := probes.New(home(t), pass("x"))
 	r.SetModelLister(l)
-	fleets := []config.Fleet{fleetOf(versionScript(t), "9.1.0")}
 	returned := make(chan struct{})
 	go func() {
-		r.Refresh(context.Background(), fleets)
+		_, _ = r.Run(context.Background(), fleetOf(versionScript(t), "9.1.0"), "claude")
 		close(returned)
 	}()
-	select {
-	case <-returned:
-	case <-time.After(10 * time.Second):
-		t.Fatal("Refresh waited for a harness listing, which would hold up the server's startup")
-	}
 	select {
 	case <-l.enter:
 	case <-time.After(10 * time.Second):
 		t.Fatal("the lister never started")
+	}
+	select {
+	case <-returned:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Check again waited for a harness listing")
 	}
 	close(l.hold)
 	r.Wait()

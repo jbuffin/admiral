@@ -19,7 +19,7 @@ type Service struct {
 
 	mu     sync.Mutex
 	served map[string][]string // the listed models per dock; read by the config view, so never behind a listing
-	// one listing per dock at a time, so a Check again during startup's listing does not run the harness twice
+	// locks serialises a dock's listings, so a Check again waits for the one running instead of racing its store write
 	locks map[string]*sync.Mutex
 }
 
@@ -33,8 +33,8 @@ func New(home string, timeout time.Duration, onChange func()) *Service {
 	}
 	for fleet, byHarness := range all {
 		for harness, e := range byHarness {
-			if len(e.Models) > 0 {
-				s.served[key(fleet, harness)] = e.Models
+			if models := clean(e.Models); len(models) > 0 {
+				s.served[key(fleet, harness)] = models
 			}
 		}
 	}

@@ -29,10 +29,10 @@ const (
 
 // List asks one dock's harness for its models, killing it when it answers or the timeout passes.
 // It runs the dock's resolved executable with the dock's env and none of the dock's args, which are
-// launch flags that can break app-server and --acp. Names that fail config.ValidModelName are dropped.
+// launch flags that can break app-server and --acp, in an empty temp directory and without the ship variables.
 func List(ctx context.Context, h config.Harness, timeout time.Duration) ([]string, error) {
 	var args []string
-	var talk func(*conv) ([]string, error)
+	var talk func(*conv, string) ([]string, error)
 	switch h.Name {
 	case "claude":
 		args, talk = []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"}, listClaude
@@ -47,10 +47,16 @@ func List(ctx context.Context, h config.Harness, timeout time.Duration) ([]strin
 	if !ok {
 		return nil, fmt.Errorf("%s not found", h.Name)
 	}
+	dir, err := os.MkdirTemp("", "admiral-models-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, exe, args...)
-	cmd.Env = withoutNesting(h.Environ())
+	cmd.Dir = dir
+	cmd.Env = scrubbed(h.Environ())
 	capabilities.InOwnGroup(cmd)
 	cmd.WaitDelay = time.Second // a descendant holding the pipes open must not outlive the timeout
 	stderr := &head{max: 2048}
@@ -68,7 +74,7 @@ func List(ctx context.Context, h config.Harness, timeout time.Duration) ([]strin
 	}
 	sc := bufio.NewScanner(io.LimitReader(out, maxBytes))
 	sc.Buffer(make([]byte, 0, 64<<10), maxLine)
-	models, err := talk(&conv{in: in, sc: sc})
+	models, err := talk(&conv{in: in, sc: sc}, dir)
 	cancel()
 	_ = cmd.Wait()
 	if err == nil {
@@ -88,14 +94,15 @@ func List(ctx context.Context, h config.Harness, timeout time.Duration) ([]strin
 	return models, nil
 }
 
-// withoutNesting drops the variables that make claude refuse to start under another Claude Code session,
-// which Admiral may itself be running in.
-func withoutNesting(env []string) []string {
+// scrubbed drops what would tie the listing to a real ship or pane, or make claude refuse to start inside another session.
+func scrubbed(env []string) []string {
 	return slices.DeleteFunc(env, func(kv string) bool {
-		return strings.HasPrefix(kv, "CLAUDECODE=") || strings.HasPrefix(kv, "CLAUDE_CODE_CHILD_SESSION=")
+		k, _, _ := strings.Cut(kv, "=")
+		return slices.Contains(capabilities.ScrubbedEnv, k)
 	})
 }
 
+// clean keeps the valid, distinct names, first occurrence winning, and at most maxNames.
 func clean(in []string) []string {
 	var out []string
 	for _, m := range in {
@@ -193,7 +200,7 @@ func (c *conv) call(method string, params any, version bool) (json.RawMessage, e
 	}
 }
 
-func listClaude(c *conv) ([]string, error) {
+func listClaude(c *conv, _ string) ([]string, error) {
 	const id = "admiral-models"
 	if err := c.send(map[string]any{"type": "control_request", "request_id": id, "request": map[string]any{"subtype": "initialize"}}); err != nil {
 		return nil, err
@@ -234,7 +241,8 @@ func listClaude(c *conv) ([]string, error) {
 	}
 }
 
-func listCodex(c *conv) ([]string, error) {
+// listCodex asks app-server, which answers for the signed-in account; a signed-out `codex debug models` prints the bundled catalogue.
+func listCodex(c *conv, _ string) ([]string, error) {
 	if _, err := c.call("initialize", map[string]any{"clientInfo": map[string]any{"name": "admiral", "title": "Admiral", "version": "0"}}, false); err != nil {
 		return nil, err
 	}
@@ -280,13 +288,9 @@ func cmp(a, b string) string {
 	return b
 }
 
-func listCopilot(c *conv) ([]string, error) {
+func listCopilot(c *conv, cwd string) ([]string, error) {
 	if _, err := c.call("initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}}, true); err != nil {
 		return nil, err
-	}
-	cwd, err := os.UserHomeDir()
-	if err != nil {
-		cwd = os.TempDir()
 	}
 	raw, err := c.call("session/new", map[string]any{"cwd": cwd, "mcpServers": []any{}}, true)
 	if err != nil {

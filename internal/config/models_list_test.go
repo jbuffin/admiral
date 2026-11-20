@@ -3,6 +3,7 @@ package config_test
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -227,6 +228,9 @@ func TestValidModelName(t *testing.T) {
 		if !config.ValidModelName(ok) {
 			t.Errorf("%q is refused, want a valid model name", ok)
 		}
+	}
+	if long := strings.Repeat("a", 128); !config.ValidModelName(long) || config.ValidModelName(long+"a") {
+		t.Error("a name is valid up to 128 characters and refused past it")
 	}
 	for _, bad := range []string{"", "-x", "--model", "a b", "opus[1m", "opus[1m]x", "opus[a-b]", "$(x)", "opus[]", "opus[1m][2m]", "a;b", "a\nb"} {
 		if config.ValidModelName(bad) {

@@ -283,11 +283,7 @@ if [ "$1" = "--version" ]; then
   echo "$v"
   exit 0
 fi
-# The model listing Admiral runs at startup and on Check again: claude -p with stream-json, codex app-server and
-# copilot --acp, each alone and speaking the real harness's protocol on stdio. Before any tmux call, like --version.
-# $FAKE_MODELS (a dock env value) is the comma-separated list it offers; unset, it fails with a line on stderr, so a
-# dock serves its built-in list. $FAKE_MODELS_MODE: ok (default), fail (boom on stderr, exit 1), hang (never answers)
-# or garbage (prints a line that is not JSON and never answers). A harness stays up after answering until it is killed.
+# The model listing (see the header), answered before any tmux call, like --version.
 fake_models_json() { # $1 is the key a model name goes under; the other keys are there for the other protocols
   out=""
   old_ifs=$IFS

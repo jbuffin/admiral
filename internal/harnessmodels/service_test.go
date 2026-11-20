@@ -2,6 +2,7 @@ package harnessmodels_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -97,6 +98,27 @@ func TestServiceListsADockAndServesAndStoresItsModels(t *testing.T) {
 	}
 	if e, ok, _ := harnessmodels.Open(home).Get("work", "claude"); !ok || len(e.Models) != 4 {
 		t.Errorf("the store holds %+v ok %v, want the list written", e, ok)
+	}
+}
+
+func TestStoreDoesNotOverwriteAFileItCannotRead(t *testing.T) {
+	home := homeDir(t)
+	if err := os.MkdirAll(filepath.Join(home, harnessmodels.FileName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := harnessmodels.Open(home).Record("work", "claude", []string{"sonnet"}, at); err == nil {
+		t.Error("Record over an unreadable store succeeded, so it replaced what it could not read")
+	}
+}
+
+func TestServiceServesOnlyValidNamesFromTheStoredList(t *testing.T) {
+	home := homeDir(t)
+	if err := harnessmodels.Open(home).Record("work", "claude", []string{"sonnet", "-x", "a b", "sonnet"}, at); err != nil {
+		t.Fatal(err)
+	}
+	got, listed := harnessmodels.New(home, time.Second, nil).Models("work", "claude")
+	if !listed || !slices.Equal(got, []string{"sonnet"}) {
+		t.Errorf("models = %v listed %v, want just sonnet", got, listed)
 	}
 }
 

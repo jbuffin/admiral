@@ -14,8 +14,7 @@ type ModelLister interface {
 // SetModelLister makes Refresh and Run list every dock they touch. Call it before either.
 func (r *Runner) SetModelLister(l ModelLister) { r.lister = l }
 
-// listModels lists the dock in the background: an account's models change without a version change,
-// and a slow or failing harness must not hold up a version check or the server's startup.
+// listModels lists in the background, so a slow harness never holds up a version check or startup.
 func (r *Runner) listModels(fleet config.Fleet, harness string) {
 	if r.lister == nil {
 		return

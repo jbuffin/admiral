@@ -102,7 +102,7 @@ func TestListCopilotAsksSessionNewAndKeepsAutoOnce(t *testing.T) {
 }
 
 func TestListDropsNamesThatFailTheModelNamePattern(t *testing.T) {
-	h, _ := dock(t, "claude", map[string]string{"FAKE_MODELS": "sonnet,-x,a b,opus[1m],opus[a-b],$(x),opus[1m]x"})
+	h, _ := dock(t, "claude", map[string]string{"FAKE_MODELS": "sonnet,-x,a b,opus[1m],opus[a-b],$(x),opus[1m]x," + strings.Repeat("a", 129)})
 	got, err := harnessmodels.List(context.Background(), h, 20*time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -120,6 +120,34 @@ func TestListRunsTheExecutableWithTheDocksEnvAndNoneOfItsArgs(t *testing.T) {
 	}
 	if argv := read(t, filepath.Join(rec, "argv")); strings.Contains(argv, "dangerously") || strings.Contains(argv, "--add-dir") {
 		t.Errorf("argv %q carries the dock's launch args, which can break app-server and --acp", argv)
+	}
+}
+
+func TestListRunsInAnEmptyDirectoryOfItsOwnWithoutTheShipVariables(t *testing.T) {
+	t.Setenv("ADMIRAL_PORT", "1234")
+	here, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		h, rec := dock(t, harness, map[string]string{"FAKE_MODELS": "sonnet", "ADMIRAL_SHIP": "work-1", "CLAUDECODE": "1"})
+		if _, err := harnessmodels.List(context.Background(), h, 20*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		cwd := read(t, filepath.Join(rec, "cwd"))
+		if cwd == here || cwd == "" {
+			t.Errorf("%s ran in %q, want a directory of its own, not the server's", harness, cwd)
+		}
+		if _, err := os.Stat(cwd); err == nil {
+			t.Errorf("%s's directory %s is still there after the listing", harness, cwd)
+		}
+		for _, line := range strings.Split(read(t, filepath.Join(rec, "env")), "\n") {
+			for _, v := range []string{"ADMIRAL_SHIP=", "ADMIRAL_PORT=", "CLAUDECODE="} {
+				if strings.HasPrefix(line, v) {
+					t.Errorf("%s saw %s, which ties the listing to a ship or breaks claude's start", harness, line)
+				}
+			}
+		}
 	}
 }
 

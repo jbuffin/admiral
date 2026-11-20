@@ -225,8 +225,8 @@ func (c *Config) ChatFleet(key string) (f Fleet, off string, ok bool) {
 
 // parseFleetChat reads a fleet's chat object. Leniently (the file) a bad model, effort,
 // threshold or harness name falls back to the default with a warning and never fails the
-// load; strictly (a save) it is an error. A model is checked only against the name pattern here,
-// since a dock's list is not known while loading; mergeChat checks a save against the list. An unknown key or a wrong type is always one.
+// load; strictly (a save) it is an error, as is an unknown key or a wrong type. A model is checked only
+// against the name pattern here: a dock's list is not known while loading, and mergeChat checks a save against it.
 // The harness is resolved first, since the model and effort are checked against it; a
 // save that names none is checked against base, the fleet's harness today.
 func parseFleetChat(path string, raw json.RawMessage, strict bool, base string) (ChatSettings, error) {

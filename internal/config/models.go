@@ -6,7 +6,7 @@ import "regexp"
 var modelName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*(\[[A-Za-z0-9]+\])?$`)
 
 // ValidModelName reports whether name is a model name Admiral passes to a harness as one argv element.
-func ValidModelName(name string) bool { return modelName.MatchString(name) }
+func ValidModelName(name string) bool { return len(name) <= 128 && modelName.MatchString(name) }
 
 // HarnessModels reports a fleet's dock's models: the listed ones with listed true, none when the dock has no list.
 type HarnessModels func(fleet, harness string) (models []string, listed bool)

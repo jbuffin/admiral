@@ -3,6 +3,7 @@ package harnessmodels
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,7 +19,8 @@ type Entry struct {
 	Models   []string  `json:"models,omitempty"`
 	ListedAt time.Time `json:"listed_at,omitzero"`
 	// Error is why the last listing failed; "" after a successful one.
-	Error string `json:"error,omitempty"`
+	Error    string    `json:"error,omitempty"`
+	FailedAt time.Time `json:"failed_at,omitzero"`
 }
 
 // Store is $ADMIRAL_HOME/harness_models.json. It reads the file on every call, like the capability store.
@@ -36,7 +38,10 @@ func Open(home string) *Store { return &Store{home: home} }
 
 func (s *Store) path() string { return filepath.Join(s.home, FileName) }
 
-// load treats a missing file as empty and a corrupt one as empty with an error; the next write replaces it.
+// errCorrupt marks a file that is not the store's JSON; the next write replaces it.
+var errCorrupt = errors.New("corrupt")
+
+// load treats a missing file as empty and a corrupt one as empty with an error that wraps errCorrupt.
 func (s *Store) load() (*file, error) {
 	f := &file{Fleets: map[string]map[string]*Entry{}}
 	raw, err := os.ReadFile(s.path())
@@ -48,7 +53,7 @@ func (s *Store) load() (*file, error) {
 	}
 	var parsed file
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return f, err
+		return f, fmt.Errorf("%w: %v", errCorrupt, err)
 	}
 	if parsed.Fleets != nil {
 		f = &parsed
@@ -85,7 +90,10 @@ func (s *Store) All() (map[string]map[string]Entry, error) {
 func (s *Store) update(fleet, harness string, change func(*Entry)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	f, _ := s.load()
+	f, err := s.load()
+	if err != nil && !errors.Is(err, errCorrupt) {
+		return err
+	}
 	if f.Fleets[fleet] == nil {
 		f.Fleets[fleet] = map[string]*Entry{}
 	}
@@ -128,5 +136,5 @@ func (s *Store) Record(fleet, harness string, models []string, at time.Time) err
 
 // RecordFailure keeps the last good list and its time and records why the newest listing failed.
 func (s *Store) RecordFailure(fleet, harness, msg string, at time.Time) error {
-	return s.update(fleet, harness, func(e *Entry) { e.Error = msg })
+	return s.update(fleet, harness, func(e *Entry) { e.Error, e.FailedAt = msg, at })
 }
