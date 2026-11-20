@@ -304,6 +304,9 @@ func TestAdmiralBot_SavingAnotherHarnessStartsAFreshChatOnIt(t *testing.T) {
 		t.Fatalf("the chat ran %q, want codex", got)
 	}
 
+	// The cue file is shared by both fakes, and Claude's fake can't run the Codex cues.
+	w.writeCue("record", sessionStartCue(filepath.Join(c.cfgDir, "projects", "p", "a.jsonl"), "startup"))
+
 	// Saving the fleet's chat on another harness is the switch: no New chat press.
 	c.setChat(map[string]any{"harness": "claude", "model": "opus", "effort": ""})
 
@@ -318,10 +321,9 @@ func TestAdmiralBot_SavingAnotherHarnessStartsAFreshChatOnIt(t *testing.T) {
 	if !hasPair(r.argv, "--model", "opus") {
 		t.Errorf("the fresh chat's argv = %q, want --model opus", r.argv)
 	}
-	s := c.waitSession(10*time.Second, "a running chat with one reset marker", func(s chatSession) bool { return s.Running && resets(s.Messages) == 1 })
-	if s.Error != "" {
-		t.Errorf("the chat shows an error after the switch: %q", s.Error)
-	}
+	c.waitSession(10*time.Second, "a running chat past its start with one reset marker", func(s chatSession) bool {
+		return s.Running && s.Error == "" && resets(s.Messages) == 1
+	})
 }
 
 func TestAdmiralBot_SavingAnotherHarnessWhileTheChatIsStoppedStartsNothing(t *testing.T) {
