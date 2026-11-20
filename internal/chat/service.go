@@ -78,9 +78,11 @@ type Service struct {
 	Hub      *server.Hub
 	Launcher *launcher.Launcher
 	Config   func() *config.Config
-	Tmux     string // the tmux binary
-	Socket   string
-	Home     string // $ADMIRAL_HOME, where chat/<fleet>/ is
+	// ConfigChanges fires after each config reload, so a running chat on another harness than its fleet's now starts afresh on it; nil follows no reload.
+	ConfigChanges func() (<-chan struct{}, func())
+	Tmux          string // the tmux binary
+	Socket        string
+	Home          string // $ADMIRAL_HOME, where chat/<fleet>/ is
 	// Outcomes takes a usage record at each reset; nil writes none.
 	Outcomes *outcomes.Writer
 	// LastLive gives a chat's last live figures when its transcript has none; nil when nothing keeps them.
@@ -295,6 +297,30 @@ func (s *Service) Run(ctx context.Context) {
 		defer done.Done()
 		s.RunTurns(ctx)
 	}()
+	if s.ConfigChanges != nil {
+		changes, unsubscribe := s.ConfigChanges()
+		defer unsubscribe()
+		done.Add(1)
+		go func() {
+			defer done.Done()
+			// A config changed while Admiral was down is followed once the sessions are listed.
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.Host.Ready():
+			}
+			for {
+				for _, fc := range s.onFleets() {
+					fc.followHarness()
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-changes:
+				}
+			}
+		}()
+	}
 	defer done.Wait()
 	tick := time.NewTicker(500 * time.Millisecond)
 	defer tick.Stop()
@@ -936,6 +962,30 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"running": true, "deferred": true})
 	default:
 		writeJSON(w, http.StatusOK, map[string]bool{"running": true})
+	}
+}
+
+// followHarness starts a fresh chat on the fleet's harness when the running session was launched under another. A model
+// or effort change, a stopped chat and a session that records no harness are left alone.
+func (s *fleetChat) followHarness() {
+	// Most reloads change nothing here: skip them without the lock a flush may hold.
+	if h := s.paneHarness(); h != "" && h == s.harness() {
+		return
+	}
+	s.op.Lock()
+	defer s.op.Unlock()
+	if _, running := s.session(); !running {
+		return
+	}
+	if _, err := s.refresh(true); err != nil {
+		return
+	}
+	if h := s.paneHarness(); h == "" || h == s.harness() {
+		return
+	}
+	defer s.resetting.Store(false)
+	if _, lerr := s.newChatLocked(true); lerr != nil {
+		log.Printf("admiral: chat %s: could not start a fresh chat on the new harness: %s", s.key, lerr.Msg)
 	}
 }
 
