@@ -4,7 +4,7 @@ set -u
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 script=$root/scripts/lint-agent-docs.sh
-tmp=$(mktemp -d)
+tmp=$(mktemp -d) || exit 2
 trap 'rm -rf "$tmp"' EXIT
 
 fails=0
@@ -112,6 +112,48 @@ line 1001 >"$tmp/case/docs/other/long.md"
 line 1001 >"$dir/data.txt"
 run "$dir"
 expect_pass "files outside docs/agents or not Markdown"
+
+# A directory that does not exist fails with exit 2 and names it.
+new_case
+run "$tmp/case/docs/nope"
+if expect_fail "missing directory"; then
+	[ "$code" -eq 2 ] || fail "missing directory: want exit 2, got $code: $out"
+	case $out in *"is not a directory"*nope*|*nope*"is not a directory"*) ;; *) fail "missing directory: message does not say it is not a directory: $out" ;; esac
+fi
+
+# A name with a space is still checked and named.
+new_case
+line 1001 >"$dir/two words.md"
+run "$dir"
+if expect_fail "name with a space"; then
+	case $out in *"two words.md"*) ;; *) fail "name with a space: message does not name the file: $out" ;; esac
+fi
+
+# A name with glob characters is still checked and named.
+new_case
+line 1001 >"$dir/a[1]*.md"
+run "$dir"
+if expect_fail "name with glob characters"; then
+	case $out in *'a[1]*.md'*) ;; *) fail "name with glob characters: message does not name the file: $out" ;; esac
+fi
+
+# A symlinked Markdown file is checked.
+new_case
+line 1001 >"$tmp/case/docs/other/target.md"
+ln -s "$tmp/case/docs/other/target.md" "$dir/link.md"
+run "$dir"
+if expect_fail "symlinked file"; then
+	case $out in *link.md*) ;; *) fail "symlinked file: message does not name the file: $out" ;; esac
+fi
+
+# A relative directory argument resolves against the caller's cwd, not the repo root.
+new_case
+line 1001 >"$dir/long.md"
+out=$(cd "$tmp/case" && sh "$script" docs/agents 2>&1)
+code=$?
+if expect_fail "relative directory"; then
+	case $out in *long.md*) ;; *) fail "relative directory: message does not name the file: $out" ;; esac
+fi
 
 # With no argument it checks the real docs/agents, which must pass.
 run
