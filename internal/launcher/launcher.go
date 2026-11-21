@@ -600,7 +600,10 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 		ours[ScoutEnv] = resolved
 	}
-	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_CHAT_FLEET", "ADMIRAL_CHAT_HARNESS", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW", ScoutEnv} {
+	if req.Context != "" {
+		ours["ADMIRAL_CONTEXT"] = env["ADMIRAL_CONTEXT"]
+	}
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_CHAT_FLEET", "ADMIRAL_CHAT_HARNESS", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW", "ADMIRAL_CONTEXT", ScoutEnv} {
 		if v, ok := ours[k]; ok {
 			env[k] = v
 			continue

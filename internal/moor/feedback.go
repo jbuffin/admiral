@@ -16,10 +16,31 @@ func WriteFeedback(checkout string, round int, text string) (string, error) {
 	return writeUntrusted(checkout, "feedback-"+strconv.Itoa(round)+".md", text)
 }
 
+// OrderPath is where a ship's order text lives in its checkout.
+func OrderPath(checkout string) string {
+	return filepath.Join(checkout, ".admiral", "untrusted", orderFile)
+}
+
+// RemoveOrder deletes a ship's order file through the same guarded root as WriteOrder; a missing file is fine.
+func RemoveOrder(checkout string) error {
+	root, err := os.OpenRoot(checkout)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	err = root.Remove(filepath.Join(".admiral", "untrusted", orderFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+const orderFile = "order.md"
+
 // WriteOrder puts a ship's order text in <checkout>/.admiral/untrusted/order.md the way WriteFeedback writes a round's
 // feedback, and returns its path.
 func WriteOrder(checkout, text string) (string, error) {
-	return writeUntrusted(checkout, "order.md", text)
+	return writeUntrusted(checkout, orderFile, text)
 }
 
 func writeUntrusted(checkout, name, text string) (string, error) {
@@ -41,7 +62,7 @@ func writeUntrusted(checkout, name, text string) (string, error) {
 			return "", fmt.Errorf("moor: %s is not a directory", filepath.Join(checkout, d))
 		}
 	}
-	// Absent only: an engineer's own .gitignore stays. It keeps the feedback out of the ship's commits.
+	// Absent only: an engineer's own .gitignore stays. It keeps the untrusted files out of the ship's commits.
 	ignore, err := root.OpenFile(filepath.Join(".admiral", ".gitignore"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err == nil {
 		_, werr := ignore.WriteString("*\n")

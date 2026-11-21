@@ -99,3 +99,13 @@ func TestAQuickShipsClosingStepsSayItMayWriteFindings(t *testing.T) {
 		t.Errorf("a quick ship's prompt = %q, want its closing steps to name $ADMIRAL_FINDINGS", prompt)
 	}
 }
+
+func TestAFirstLaunchDoesNotInheritAContextFileFromItsEnvironment(t *testing.T) {
+	p := newPinRig(t, map[string]string{"ADMIRAL_CONTEXT": "/elsewhere/context.md"})
+	if _, err := p.l.Launch(p.justRequest()); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if v, ok := p.recorded(t, "claude")["ADMIRAL_CONTEXT"]; ok {
+		t.Errorf("a first launch has ADMIRAL_CONTEXT=%q, want none: only a wake names a context file", v)
+	}
+}

@@ -87,3 +87,17 @@ func Branch(dir string) string {
 	}
 	return strings.TrimSpace(out)
 }
+
+// ConfiguredSlug is the owner/repo of the URL origin is configured with, before any url.<x>.insteadOf rewrite
+// (OriginSlug reads the rewritten one). It is "" when there is no origin or it is not a GitHub form.
+func ConfiguredSlug(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	out, err := git(dir, "config", "--get", "remote.origin.url")
+	if err != nil {
+		return ""
+	}
+	slug, _ := crew.OriginSlug(strings.TrimSpace(out))
+	return slug
+}

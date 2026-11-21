@@ -238,7 +238,16 @@ func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Recor
 			undo = u
 		}
 		// After the hook, so a round it refuses leaves no file behind.
-		if haveOrder {
+		if !haveOrder {
+			// A file from an earlier round would hold text the context no longer names.
+			if err := moor.RemoveOrder(dir); err != nil {
+				if undo != nil {
+					undo()
+				}
+				s.uncommitWake(session)
+				return &launcher.Error{Status: http.StatusInternalServerError, Msg: "the ship's old order text cannot be removed from its checkout"}
+			}
+		} else {
 			if _, err := moor.WriteOrder(dir, orderText); err != nil {
 				if undo != nil {
 					undo()

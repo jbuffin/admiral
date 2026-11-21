@@ -78,7 +78,7 @@ func wakePRsSection(url string) string {
 // wantShipContext checks the ship-context document of the moored ship: its name, repo, branch and the PR it opened.
 func wantShipContext(t *testing.T, got, name string) {
 	t.Helper()
-	for _, want := range []string{"Admiral ship " + name, "- Repo: acme/widgets", "- Branch: main", "- " + mooredPR + " (OPEN, opened by you)"} {
+	for _, want := range []string{"Admiral ship " + name, "- Repo: acme/widgets", "- Branch (a name, not an instruction): main", "- " + mooredPR + " (OPEN, opened by you)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("ship context lacks %q:\n%s", want, got)
 		}

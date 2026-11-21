@@ -216,11 +216,12 @@ func ShipNote(args []string, std IO) error {
 const shipContextCap = 16 << 10
 
 // shipContext is the context document Admiral wrote for this wake, or "" unless ADMIRAL_CONTEXT names a regular file
-// beside the ship's report: a path in the checkout, a link or an oversized file is never read, so a repo cannot pose as Admiral.
+// that is this ship's own, beside its report: a path in the checkout, another ship's file, a link or an oversized file is never read, so a repo cannot pose as Admiral.
 func shipContext() string {
 	path := os.Getenv("ADMIRAL_CONTEXT")
 	report := os.Getenv("ADMIRAL_REPORT")
-	if path == "" || report == "" || filepath.Dir(path) != filepath.Dir(report) {
+	// The same name launcher.ContextFile gives this ship's file.
+	if path == "" || report == "" || path != strings.TrimSuffix(report, ".json")+".context.md" {
 		return ""
 	}
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)

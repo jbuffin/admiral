@@ -163,7 +163,7 @@ func TestShipNoteAddsTheWokenShipsContextFileAfterTheCampaignsNote(t *testing.T)
 	}
 }
 
-func TestShipNoteLeavesTheContextOutWhenItsFileIsALinkTooBigOrOutsideTheShipsReports(t *testing.T) {
+func TestShipNoteLeavesTheContextOutWhenItsFileIsALinkTooBigOrAnotherShipsOrOutsideTheShipsReports(t *testing.T) {
 	const ctx = "You are Admiral ship Saltpaw."
 	for _, c := range []struct {
 		name  string
@@ -184,6 +184,9 @@ func TestShipNoteLeavesTheContextOutWhenItsFileIsALinkTooBigOrOutsideTheShipsRep
 		}},
 		{"a file over the cap", func(t *testing.T, r *shipNoteRig) {
 			r.contextFile(t, "saltpaw-ii", ctx+strings.Repeat("x", 1<<20))
+		}},
+		{"another ship's file in the reports directory", func(t *testing.T, r *shipNoteRig) {
+			r.contextFile(t, "kelpie-iv", ctx)
 		}},
 		{"a path outside the reports directory", func(t *testing.T, r *shipNoteRig) {
 			path := filepath.Join(t.TempDir(), "checkout", ".admiral", "context.md")
