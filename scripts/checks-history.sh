@@ -4,12 +4,17 @@
 set -u
 log=$(git log --first-parent --reverse --format='%H %ad' --date=short HEAD -- scripts/checks/) || exit 2
 [ -z "$log" ] && exit 0
-echo "$log" | while read -r sha day; do
+while read -r sha day; do
+	tree=$(git -c core.quotePath=false ls-tree "$sha" scripts/checks/) || exit 2
 	count=0
-	for name in $(git ls-tree --name-only "$sha" scripts/checks/); do
-		case $name in
-		scripts/checks/*.sh) count=$((count + 1)) ;;
+	while IFS= read -r line; do
+		case $line in
+		"100644 blob "*.sh | "100755 blob "*.sh) count=$((count + 1)) ;;
 		esac
-	done
+	done <<TREE
+$tree
+TREE
 	echo "$day $count"
-done
+done <<LOG
+$log
+LOG

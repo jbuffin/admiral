@@ -29,12 +29,9 @@ func repoRoot(t *testing.T) string {
 func env(date string) []string {
 	var out []string
 	for _, kv := range os.Environ() {
-		switch strings.SplitN(kv, "=", 2)[0] {
-		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
-			"GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE", "GIT_CEILING_DIRECTORIES":
-			continue
+		if !strings.HasPrefix(kv, "GIT_") {
+			out = append(out, kv)
 		}
-		out = append(out, kv)
 	}
 	return append(out,
 		"GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.com",
@@ -188,18 +185,22 @@ func TestCheckPassesQuietlyOnNearMisses(t *testing.T) {
 }
 
 func TestCheckOutsideAGitRepoFailsLoudly(t *testing.T) {
-	dir := t.TempDir()
-	cmd := exec.Command("sh", filepath.Join(repoRoot(t), "scripts/checks/playwright-fixed-wait.sh"))
-	cmd.Dir = dir
-	cmd.Env = append(env(midday), "GIT_CEILING_DIRECTORIES="+filepath.Dir(dir))
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	var exit *exec.ExitError
-	if err := cmd.Run(); !errors.As(err, &exit) || exit.ExitCode() != 2 {
-		t.Fatalf("got %v, want exit 2", err)
-	}
-	if stderr.Len() == 0 {
-		t.Error("no git message on stderr")
+	for _, c := range checkCases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cmd := exec.Command("sh", filepath.Join(repoRoot(t), "scripts/checks/"+c.name+".sh"))
+			cmd.Dir = dir
+			cmd.Env = append(env(midday), "GIT_CEILING_DIRECTORIES="+filepath.Dir(dir))
+			var stderr strings.Builder
+			cmd.Stderr = &stderr
+			var exit *exec.ExitError
+			if err := cmd.Run(); !errors.As(err, &exit) || exit.ExitCode() != 2 {
+				t.Fatalf("got %v, want exit 2", err)
+			}
+			if stderr.Len() == 0 {
+				t.Error("no git message on stderr")
+			}
+		})
 	}
 }
 
