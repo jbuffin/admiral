@@ -1,9 +1,12 @@
 import { act, render } from '@testing-library/preact';
+import { useRef } from 'preact/hooks';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { usePollUntil } from './poll';
 
-function Harness({ tick, active, dep = 0, every = 1000 }: { tick: () => unknown; active?: boolean; dep?: number; every?: number }) {
-  usePollUntil(tick, every, { active, deps: [dep] });
+function Harness({ tick, active, dep = 0, every = 1000 }: { tick: (isLive: () => boolean, dep: number) => unknown; active?: boolean; dep?: number; every?: number }) {
+  const latest = useRef(tick);
+  latest.current = tick;
+  usePollUntil((isLive) => latest.current(isLive, dep), [dep], { everyMs: every, active });
   return null;
 }
 
@@ -111,4 +114,23 @@ it('does not call tick again when a promise resolves after unmount', async () =>
   resolve(false);
   await advance(5000);
   expect(tick).toHaveBeenCalledTimes(1);
+});
+
+it('tells a late tick from the old deps that it is stale, and the new run that it is live', async () => {
+  const resolvers: ((v: boolean) => void)[] = [];
+  const writes: string[] = [];
+  const tick = (dep: number) => async (isLive: () => boolean) => {
+    const done = await new Promise<boolean>((r) => resolvers.push(r));
+    if (isLive()) writes.push(`dep ${dep}`);
+    return done;
+  };
+  const { rerender } = render(<Harness tick={tick(1)} dep={1} />);
+  await advance(0);
+  rerender(<Harness tick={tick(2)} dep={2} />);
+  await advance(0);
+  expect(resolvers).toHaveLength(2);
+  resolvers[0](false);
+  resolvers[1](true);
+  await advance(0);
+  expect(writes).toEqual(['dep 2']);
 });
