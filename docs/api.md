@@ -1,6 +1,6 @@
 # API
 
-The HTTP and WebSocket shapes a client reads. Every route is also served under `/api/v1/...` and `/ws/v1/...` (see "API versions" in `docs/agents/codebase.md`). The bridge sockets are in `docs/bridge-protocol.md`.
+The HTTP and WebSocket shapes a client reads. Every route is also served under `/api/v1/...` and `/ws/v1/...` (see `docs/agents/codebase/api-versions.md`). The bridge sockets are in `docs/bridge-protocol.md`.
 
 ## Ships
 
@@ -216,7 +216,7 @@ A Codex ship has no `--session-id` to launch with. Its `SessionStart` hook write
 
 ### Live from the app-server (Codex)
 
-A running Codex ship's server (`codex app-server`, see the codebase notes) also tells its conversation, and Admiral keeps one observer per running ship, shared by every view. While the observer is connected it is the only source: `GET` and the WebSocket `conversation` messages carry the server's items, and the rollout is not read. A ship with no rollout yet still has a conversation then.
+A running Codex ship's server (`codex app-server`, see `docs/agents/codebase/codex.md`) also tells its conversation, and Admiral keeps one observer per running ship, shared by every view. While the observer is connected it is the only source: `GET` and the WebSocket `conversation` messages carry the server's items, and the rollout is not read. A ship with no rollout yet still has a conversation then.
 
 The observer connects to the pane's `@admiral-codex-socket` only when the pane's start command names the same `--socket`, and only if the socket resolves (symlinks followed) to a socket of this user in `/tmp/codex-daemon-<uid>`. It sends `initialize` (with `experimentalApi`), `initialized`, `thread/loaded/list`, `thread/resume {threadId}` and, when several threads are loaded and none matches the rollout, `thread/list {limit: 50}`, nothing else, and never answers a request of the server: the TUI answers, and the observer would be deciding for the engineer. Frames are read with no timeout; a connect or a handshake that takes longer than the bound fails.
 

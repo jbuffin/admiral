@@ -1,0 +1,45 @@
+# Config, fleets and updates
+
+Fleet-owned sources and the startup migration, fleet fields over HTTP, a fleet's chat settings, preset and limits, fleet env and the update check. Read it before changing `internal/config` or a fleet route.
+
+- Update check (`internal/update`, `cmd/admiral/update_client.go`, `update_e2e.go`).
+  - `update.Checker` asks `GET /repos/jbuffin/admiral/releases/latest` on the GitHub API about a minute after start (`ADMIRAL_UPDATE_FIRST_CHECK` through `internal/delay`) and every 12 hours, reading only `tag_name` (`v<x.y.z>`, else ignored) and `html_url` (https, else rebuilt from the tag) from a body capped at 1 MiB, and keeps the last good result in memory (a failed check keeps it).
+  - `Available` compares numerically against the running version's base (a `git describe` suffix is stripped; `dev`, empty and unparseable never update) and does not use `skillindex.VersionLess`.
+  - `InstallFor` picks `homebrew` (`/Cellar/` in the resolved executable), `source` (`dev`, a describe version, or `<dir>/bin/admiral` beside `<dir>/.git`) or `script`, with the commands the docs give; none of this touches `internal/commodore`.
+  - The route `GET /api/update` is registered through `updateRoutes` in `main.go` and is an actor-guard read.
+  - Top-level `update_check` (boolean, default true, `config.Config.UpdateCheck`; any other value fails `Parse` naming `update_check`): the checker reads it live at every tick and on every config reload (`cfg.Subscribe`), makes no request at all while it is false, and checks about 10 seconds after it turns true.
+  - Under the `e2e` build the checker requests nothing unless both `ADMIRAL_UPDATE_TEST_URL` (the releases origin) and `ADMIRAL_UPDATE_TEST_VERSION` (the running version, since `make build` stamps none) are set; a release is built without that file.
+  - The new shell's `UpdateBadge` (`web/src/app/UpdateBadge.tsx`) fetches `/api/v1/update` itself every 5 minutes and shows beside the build version in the iPad layout only; the phone layout has no badge.
+- Fleet-owned sources and the startup migration (ADR 0006, ADR 0010).
+  - Every entry under `sources` has a required `fleet` naming a fleet in `fleets`: `parseSources` wants it non-empty and `Parse` (`checkSourceFleets`) checks it exists, so removing or renaming a fleet a source names is refused.
+  - A fleet also takes `owners` (GitHub orgs and users) and `clone_root`.
+  - `POST /api/sources` takes `fleet`, defaults to the first fleet, answers 409 when there are no fleets and 422 for an unknown one; `PUT /api/sources/{key}` with a different `fleet` moves a plugin source there (422 for an unknown fleet, and for a built-in GitHub source, which stays with its fleet); `SourceView` carries `fleet`. A fresh install seeds no source.
+  - `serve()` calls `config.Migrate(dir, version)` before `config.Open` (`internal/config/migrate.go`): when a source has no `fleet`, uses `freeform` or holds an `autopilot` entry, or the file has a top-level `autopilot` object, it keeps the old file as `config.json.pre-<version>` (an existing backup stays), gives every fleet-less source the first fleet (the GitHub source too), removes freeform sources (their pending orders are read from `data/<key>/orders.json`, capped and kept inside the home) and any fleet-less source when there are no fleets, removes every `sources.<key>.autopilot` entry, moves `autopilot.max_ships` to the top-level `max_ships` (unless one is there) and drops the `autopilot` object (`resume_source` with it), and writes through `replaceFile`.
+  - A file that would not `Parse` after that is left untouched, with no backup and no notice, so the banner shows.
+  - Commands that load the config (`Fleets`, `ReadConfig`) refuse such a file with `ErrNeedsMigration` and never migrate.
+  - `serve()` then posts the notice (`Migration.Notice`, never the sources' settings).
+  - The notice lists the enabled panel entries it removed (source name, key, panel), with no settings, and says they can come back as routines once scheduled routines land.
+  - `serve()` also deletes the engine's `autopilot.json` at start.
+- Fleet fields over HTTP (ADR 0010 amendment).
+  - `PUT /api/fleets/{key}` (`Server.serveFleetSave`, also under `/api/v1`) takes `{search_roots, owners, wake_reviewers, clone_root, color, notify, chat, preset, limits}`, each optional (omitted stays as stored), ignores every other key, and answers the new `GET /api/config` view.
+  - It writes through `config.Manager.SetFleetFields` (`editFleet`, which also refuses a chat harness the capability store has not cleared), which edits only that fleet's nine keys under `writeMu`, re-parses the whole result, re-reads the file just before the rename and reloads before it returns. 404 for an unknown fleet, 400 for a value `Parse` refuses (message in `error`) or malformed JSON, 409 for an invalid or unmigrated file or one that changed during the save.
+  - `search_roots` are stored as received (`~/code` stays `~/code`); the view shows them and `clone_root` expanded.
+  - `clone_root` must be absolute or start with `~/` (`Parse` cleans it like a search root). An empty `color` or `clone_root` removes the key.
+  - `notify` is a boolean (anything else is a 400): the fleet's **Notify** switch, on when the key is missing, shown as `notify` in `FleetView`; off, the push decision (`internal/push`) drops the fleet's events entirely, push and alert both.
+  - `FleetView` carries `owners` and `wake_reviewers` (each `[]` when none) and `clone_root` (expanded like a search root, `""` when unset).
+  - Docks and env are not editable here: they stay in the setup terminal.
+  - `chat` is an object of any subset of the fleet's chat settings (see "The fleet's `chat` key"); each key is merged into the fleet's stored `chat`, an unknown key, an unknown model, effort or threshold, or a harness that isn't proven is a 400 naming `fleets.<key>.chat.<key>`, and an empty `effort` removes the key.
+- Fleet `env`. A fleet takes `env`, a map of names to values (`Fleet.Environ()`, same overlay on the process environment as a harness's). Plugin subprocesses and the built-in source's `gh` calls start with it. `Supervisor.reconcile` restarts a fleet's sources when its `env` changes, since `SameRun` ignores fleets.
+- The fleet's `chat` key: `"chat": {"harness", "model", "effort", "context_threshold"}` under each fleet in `config.json`, replacing the old top-level `chat` key. Every key is optional.
+  - `internal/config/chat.go` resolves it in `parseFleetChat` into `Fleet.Chat` (`ChatSettings`): `harness` defaults to `claude`, `model` to `sonnet` (the first of `ChatModelsFor`), `effort` to `""` for the harness default (left out of the file; `ChatEffortsFor`), and `context_threshold` to 150000, one of `ChatThresholds` (100000, 150000, 300000) or the string `"never"` (`ChatNever`, 0 in Go).
+  - A bad value in the file falls back to the default with a log and never fails the load; an unknown key fails it, naming `fleets.<key>.chat.<key>`.
+  - A save (`PUT /api/fleets/{key}`) refuses what `Parse` would replace.
+  - Only a harness the fleet has a dock for and whose fence probes have passed on this machine (`Config.ChatHarnessesOffered`) can be chosen.
+  - `Config.ChatOffReason(fleet)` is empty when the chat is on: the chosen harness is offered; otherwise it says why, and a missing dock reads differently from an unproven harness.
+  - `Config.ChatFleet(key)` returns the fleet and that reason; each fleet has its own chat session.
+  - `GET /api/config` carries `chat` on each fleet: `{harness, model, effort, context_threshold, on, off_reason, harnesses}` with defaults filled in (`context_threshold` is a number or `"never"`; `harnesses` are the proven harnesses the fleet has a dock for), and no top-level `chat`. There is no `PUT /api/chat`.
+  - `config.Migrate` moves an old top-level `chat`'s `model` and `effort` onto the fleet named by `chat.fleet` (else the first fleet with a Claude dock, else the first fleet), leaves the other fleets at the defaults, removes the key and names it in the Inbox notice. The old UI's Settings no longer edits the chat.
+- A fleet's `preset` (`work` default, or `home`) and nested `limits` (`internal/config/limits.go`, `internal/standing`): `parseLimits` layers the file's keys per leaf over `standing.PresetLimits`, refuses unknown keys with `fleets.<key>.limits...` paths, and `editFleet` merges a save into the stored `limits` (`mergeLimits`), per leaf for ceilings, with `null` deleting a stored key (so it reads as the preset again; `FleetView.Overridden` lists what is stored).
+  - A preset change is judged on the `preset` in the file being edited and drops stored Limits but `quiet_hours`.
+  - `Manager.SetRepoLookup` (wired in `main.go` from `repofinder`) checks only the `repo_allowlist` entries sent in a save that the fleet does not already store, after the unknown-fleet 404.
+  - `internal/standing` is pure (effective action, rates, quiet hours, allowlists, skips, write-deny, `Loosens`, `Sentences`) and nothing calls its enforcement yet.
