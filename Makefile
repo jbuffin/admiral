@@ -1,4 +1,4 @@
-.PHONY: build test test-short lint lint-docs lint-comments check e2e e2e-critical release
+.PHONY: build test test-short lint lint-docs lint-comments checks-history check e2e e2e-critical release
 
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
 BIN ?= bin/admiral
@@ -30,6 +30,10 @@ lint: lint-docs lint-comments
 
 lint-comments:
 	sh scripts/lint-comments.sh
+
+# How many checks scripts/checks/ held at each commit that touched it.
+checks-history:
+	sh scripts/checks-history.sh
 
 # Every tracked Markdown file: markdownlint, then relative links and anchors.
 # External URLs are never fetched.
