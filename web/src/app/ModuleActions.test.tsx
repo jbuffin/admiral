@@ -962,3 +962,19 @@ test('Escape and a press outside close the menu', async () => {
   fireEvent.pointerDown(document.body);
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
 });
+
+test('the ⋯ trigger is disabled on a row whose id is . like its buttons are', async () => {
+  const posts = server({ page: () => ({
+    state: 'ready',
+    waiting: 0,
+    groups: [{ id: 'g', title: 'G', rows: [{ id: '.', title: 'Dot row', subtitle: '', chips: [], reason: '', actions: [ping, snooze] }] }],
+  }) });
+  open();
+  const row = await rowItem('Dot row');
+  expect((within(row).getByRole('button', { name: 'Ping owner' }) as HTMLButtonElement).disabled).toBe(true);
+  const t = trigger(row);
+  expect(t.disabled).toBe(true);
+  fireEvent.click(t);
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(posts).toHaveLength(0);
+});

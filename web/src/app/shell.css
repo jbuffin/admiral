@@ -1320,6 +1320,7 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 .mactions { flex: none; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .mact .spinner { position: static; inset: auto; margin: 0 0 0 6px; width: 12px; height: 12px; display: inline-block; vertical-align: -2px; }
 .mmenu { position: relative; display: inline-flex; }
+.mmenu > .btn { min-width: var(--shape-min-touch-target, 44px); }
 .mmenu-panel { left: auto; right: 0; min-width: 160px; width: max-content; max-width: 260px; }
 .mmessage { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 10px; }
 .mact-updating { color: var(--color-muted); font-size: var(--font-size-meta); }

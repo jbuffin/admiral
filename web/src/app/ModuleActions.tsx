@@ -49,6 +49,14 @@ interface Controller {
   press: (target: ActionTarget, action: PageAction) => void;
 }
 
+/** Whether a group's actions of one kind are off for a target, before any one action's own id is checked. */
+const groupOff = (ctl: Controller | null, target: ActionTarget, kind?: string) =>
+  !ctl ||
+  !enabledFor(kind, ctl.blocked) ||
+  !!ctl.runs[targetKey(target)] ||
+  !!ctl.pending[targetKey(target)] ||
+  !openableRow(target.id);
+
 /** A target's key in the run table; the kind prefix keeps a row and a notice with one id apart. */
 export const targetKey = (t: ActionTarget) => `${t.notice ? "notice" : "row"}:${t.id}`;
 
@@ -319,14 +327,7 @@ export function ModuleActions({
             key={a.id}
             type="button"
             class={cls(a)}
-            disabled={
-              !ctl ||
-              !enabledFor(kind, ctl.blocked) ||
-              !!run ||
-              !!ctl.pending[targetKey(target)] ||
-              !openableRow(target.id) ||
-              !openableRow(a.id)
-            }
+            disabled={groupOff(ctl, target, kind) || !openableRow(a.id)}
             aria-busy={running || ctl?.pending[targetKey(target)] === a.id ? "true" : undefined}
             onClick={() => ctl?.press(target, a)}
           >
@@ -348,8 +349,9 @@ function ActionMenu({ target, items, small }: { target: ActionTarget; items: Pag
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const run = ctl?.runs[targetKey(target)];
-  const busy = run?.phase === "running" && items.some((a) => a.id === run.action);
-  const disabled = !ctl || ctl.blocked || !!run || !!ctl.pending[targetKey(target)];
+  const pending = ctl?.pending[targetKey(target)];
+  const busy = (run?.phase === "running" && items.some((a) => a.id === run.action)) || items.some((a) => a.id === pending);
+  const disabled = groupOff(ctl, target);
   const close = (refocus = true) => {
     setOpen(false);
     if (refocus) trigger.current?.focus();
