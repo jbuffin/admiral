@@ -33,7 +33,7 @@ type CrewRequest struct {
 }
 
 // A teammate writes neither the ship's report nor its inbox, so it gets none of these.
-var shipEnvNames = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_FINDINGS", "ADMIRAL_INBOX"}
+var shipEnvNames = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_FINDINGS", "ADMIRAL_CONTEXT", "ADMIRAL_INBOX"}
 
 // LaunchCrew keeps the ship as the current and first window. Unlike Launch, it never touches
 // the ship's report or inbox, and the directory is any existing one.

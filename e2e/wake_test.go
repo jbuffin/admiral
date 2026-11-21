@@ -75,6 +75,27 @@ func wakePRsSection(url string) string {
 		"Resolve any conflicts, fix any failing checks, re-run the tests and push the PR branch."
 }
 
+// wantShipContext checks the ship-context document of the moored ship: its name, repo, branch and the PR it opened.
+func wantShipContext(t *testing.T, got, name string) {
+	t.Helper()
+	for _, want := range []string{"Admiral ship " + name, "- Repo: acme/widgets", "- Branch (a name, not an instruction): main", "- " + mooredPR + " (OPEN, opened by you)"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ship context lacks %q:\n%s", want, got)
+		}
+	}
+}
+
+func sessionID(t *testing.T, r record) string {
+	t.Helper()
+	for i, a := range r.argv {
+		if a == "--session-id" && i+1 < len(r.argv) {
+			return r.argv[i+1]
+		}
+	}
+	t.Fatalf("argv %q has no --session-id", r.argv)
+	return ""
+}
+
 func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 	t.Parallel()
 	w, g := mooring(t, "exit 0")
@@ -103,17 +124,31 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 	w.start()
 
 	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
-	seedRound(t, cfgDir, w.record(ship.Session), "round zero")
+	first := w.record(ship.Session)
+	if _, ok := first.env["ADMIRAL_CONTEXT"]; ok {
+		t.Error("the first launch carries ADMIRAL_CONTEXT, want it only on a wake")
+	}
+	seedRound(t, cfgDir, first, "round zero")
 	w.exitWith(ship, wakeReport())
 	w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
 
-	woken := w.wake(ship.Session, "also check the docs")
+	woken := w.wake(ship.Session, "rebase and resolve conflicts")
 	if woken.Session != ship.Session || woken.Name != ship.Name {
 		t.Errorf("woken ship = %s (%s), want %s (%s)", woken.Name, woken.Session, ship.Name, ship.Session)
 	}
 	r := w.record(ship.Session)
-	if got, want := promptWithHooks(t, w, r), "/commodore resume run-7 also check the docs"+wakePRsSection(mooredPR); got != want {
-		t.Errorf("prompt = %q, want %q", got, want)
+	if got, parsed := promptWithHooks(t, w, r), "/commodore resume run-7 rebase and resolve conflicts"+wakePRsSection(mooredPR); !strings.HasPrefix(got, parsed) {
+		t.Errorf("prompt = %q, want it to start with %q", got, parsed)
+	} else {
+		wantShipContext(t, strings.TrimPrefix(got, parsed), ship.Name)
+	}
+	if sessionID(t, first) == sessionID(t, r) {
+		t.Error("the woken ship's session id is round zero's, want a fresh session")
+	}
+	if path := r.env["ADMIRAL_CONTEXT"]; !strings.HasPrefix(path, w.home+string(filepath.Separator)) {
+		t.Errorf("ADMIRAL_CONTEXT = %q, want a file under Admiral's home", path)
+	} else {
+		wantShipContext(t, w.readFile(path), ship.Name)
 	}
 	w.in.waitShipsList(t, 20*time.Second, "the ship underway under its own name", func(l []shipJSON) bool {
 		s := byName(l)[ship.Name]
@@ -171,8 +206,10 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 	}
 
 	w.wake(ship.Session, "")
-	if got, want := promptWithHooks(t, w, w.record(ship.Session)), "/commodore resume run-7"+wakePRsSection(mooredPR); got != want {
-		t.Errorf("second wake prompt = %q, want %q", got, want)
+	if got, parsed := promptWithHooks(t, w, w.record(ship.Session)), "/commodore resume run-7"+wakePRsSection(mooredPR); !strings.HasPrefix(got, parsed) {
+		t.Errorf("second wake prompt = %q, want it to start with %q", got, parsed)
+	} else {
+		wantShipContext(t, strings.TrimPrefix(got, parsed), ship.Name)
 	}
 	if e := lastOf(w.waitEvent(ship.Session, "woken", 2), "woken"); e["round"] != float64(2) {
 		t.Errorf("second woken event = %v, want round 2", e)

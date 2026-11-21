@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -87,6 +88,8 @@ type Request struct {
 	Prompt string `json:"-"`
 	// Bare makes Prompt the harness's prompt even when empty, with no skill invocation: a wake with no resume text.
 	Bare bool `json:"-"`
+	// Context is a woken ship's context document: the launch writes it beside the report and names it in ADMIRAL_CONTEXT.
+	Context string `json:"-"`
 	// Before runs under the launch lock with the validated checkout, just before the session is made; its error refuses the launch.
 	Before func(dir string) error `json:"-"`
 	// By and PR say what started a round, for the `woken` event.
@@ -563,6 +566,11 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if err := l.shipContract(env, session, fleet.Key); err != nil {
 		return nil, err
 	}
+	if req.Context != "" {
+		if err := l.writeContext(env, session, req.Context); err != nil {
+			return nil, err
+		}
+	}
 	var runCrew string
 	if len(pins) > 0 {
 		home, _ := filepath.Abs(l.Home)
@@ -592,7 +600,10 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 		ours[ScoutEnv] = resolved
 	}
-	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_CHAT_FLEET", "ADMIRAL_CHAT_HARNESS", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW", ScoutEnv} {
+	if req.Context != "" {
+		ours["ADMIRAL_CONTEXT"] = env["ADMIRAL_CONTEXT"]
+	}
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_CHAT_FLEET", "ADMIRAL_CHAT_HARNESS", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW", "ADMIRAL_CONTEXT", ScoutEnv} {
 		if v, ok := ours[k]; ok {
 			env[k] = v
 			continue
@@ -846,9 +857,11 @@ func RemoveShipFiles(home, session string) {
 	if rel, err := filepath.Rel(home, report); err == nil && realDir(root, filepath.Dir(rel)) {
 		_ = root.Remove(rel)
 	}
-	if findings, ok := FindingsFile(home, session); ok {
-		if rel, err := filepath.Rel(home, findings); err == nil && realDir(root, filepath.Dir(rel)) {
-			_ = root.Remove(rel)
+	for _, f := range []func(string, string) (string, bool){FindingsFile, ContextFile} {
+		if path, ok := f(home, session); ok {
+			if rel, err := filepath.Rel(home, path); err == nil && realDir(root, filepath.Dir(rel)) {
+				_ = root.Remove(rel)
+			}
 		}
 	}
 	if rel, err := filepath.Rel(home, inbox); err == nil && realDir(root, filepath.Dir(rel)) {
@@ -887,7 +900,8 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 		return refuse(http.StatusInternalServerError, "could not clear the run layer of %s: %v", session, err)
 	}
 	findings, _ := FindingsFile(home, session)
-	for _, p := range []string{report, findings, inbox} {
+	contextFile, _ := ContextFile(home, session)
+	for _, p := range []string{report, findings, contextFile, inbox} {
 		if err := os.RemoveAll(p); err != nil {
 			return refuse(http.StatusInternalServerError, "could not clear %s: %v", p, err)
 		}
@@ -903,6 +917,32 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 	env["ADMIRAL_REPORT"] = report
 	env["ADMIRAL_FINDINGS"] = findings
 	env["ADMIRAL_INBOX"] = inbox + string(os.PathSeparator)
+	return nil
+}
+
+// writeContext puts a woken ship's context document beside its report, after shipContract cleared the old one.
+func (l *Launcher) writeContext(env map[string]string, session, text string) error {
+	home, err := filepath.Abs(l.Home)
+	if err != nil {
+		return refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
+	}
+	path, ok := ContextFile(home, session)
+	if !ok {
+		return refuse(http.StatusInternalServerError, "%q is not a name a ship can have", session)
+	}
+	// Fresh and no-follow: the ship can write in reports/ too.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return refuse(http.StatusInternalServerError, "could not write the ship's context %s: %v", path, err)
+	}
+	_, werr := f.WriteString(text)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return refuse(http.StatusInternalServerError, "could not write the ship's context %s: %v", path, werr)
+	}
+	env["ADMIRAL_CONTEXT"] = path
 	return nil
 }
 
@@ -1013,3 +1053,13 @@ func (l *Launcher) createSession(session, dir string, opts, paneOpts [][2]string
 }
 
 func (l *Launcher) server() sessionhost.Server { return sessionhost.NewServer(l.Tmux, l.Socket) }
+
+// ContextFile is the path ADMIRAL_CONTEXT names, beside the report: the ship-context document of a woken ship.
+// ok is false for a session name that would reach outside reports/.
+func ContextFile(home, session string) (path string, ok bool) {
+	report, _, ok := ShipFiles(home, session)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSuffix(report, ".json") + ".context.md", true
+}

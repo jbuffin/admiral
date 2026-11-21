@@ -75,3 +75,29 @@ func git(dir string, args ...string) (string, error) {
 	out, err := cmd.Output()
 	return string(out), err
 }
+
+// Branch is the branch the checkout has out, or "" when it is detached, unborn or git cannot say.
+func Branch(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	out, err := git(dir, "symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// ConfiguredSlug is the owner/repo of the URL origin is configured with, before any url.<x>.insteadOf rewrite
+// (OriginSlug reads the rewritten one). It is "" when there is no origin or it is not a GitHub form.
+func ConfiguredSlug(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	out, err := git(dir, "config", "--get", "remote.origin.url")
+	if err != nil {
+		return ""
+	}
+	slug, _ := crew.OriginSlug(strings.TrimSpace(out))
+	return slug
+}

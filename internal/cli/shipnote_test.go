@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 // shipNoteRig is a ship's environment with a tmux on PATH that logs any call, so a test sees whether the note touched tmux.
@@ -32,6 +34,7 @@ func newShipNoteRig(t *testing.T, ship string) *shipNoteRig {
 	t.Setenv("ADMIRAL_SCOUT", "")
 	t.Setenv("ADMIRAL_SHIP", ship)
 	t.Setenv("ADMIRAL_REPORT", "")
+	t.Setenv("ADMIRAL_CONTEXT", "")
 	if ship != "" {
 		t.Setenv("ADMIRAL_REPORT", filepath.Join(r.home, "reports", ship+".json"))
 	}
@@ -129,4 +132,85 @@ func TestShipNotePrintsNothingInAScoutOrOutsideAShip(t *testing.T) {
 		}
 		r.wantUntouched(t)
 	})
+}
+
+// contextRig plants a woken ship's context file where Admiral writes it and names it in ADMIRAL_CONTEXT.
+func (r *shipNoteRig) contextFile(t *testing.T, ship, text string) string {
+	t.Helper()
+	path, ok := launcher.ContextFile(r.home, ship)
+	if !ok {
+		t.Fatalf("no context file for %s", ship)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ADMIRAL_CONTEXT", path)
+	return path
+}
+
+func TestShipNoteAddsTheWokenShipsContextFileAfterTheCampaignsNote(t *testing.T) {
+	r := newShipNoteRig(t, "saltpaw-ii")
+	r.contextFile(t, "saltpaw-ii", "You are Admiral ship Saltpaw.\n- https://github.com/acme/widgets/pull/7 (OPEN, opened by you)\n")
+	note := shipNoteContext(t, r.run(t, sessionStartPayload))
+	if !strings.HasPrefix(note, shipNote) {
+		t.Errorf("note %q does not start with the campaigns note", note)
+	}
+	if !strings.Contains(note, "You are Admiral ship Saltpaw.") || !strings.Contains(note, "pull/7 (OPEN, opened by you)") {
+		t.Errorf("note %q does not hold the context file", note)
+	}
+}
+
+func TestShipNoteLeavesTheContextOutWhenItsFileIsALinkTooBigOrAnotherShipsOrOutsideTheShipsReports(t *testing.T) {
+	const ctx = "You are Admiral ship Saltpaw."
+	for _, c := range []struct {
+		name  string
+		plant func(t *testing.T, r *shipNoteRig)
+	}{
+		{"a link", func(t *testing.T, r *shipNoteRig) {
+			real := filepath.Join(t.TempDir(), "real.md")
+			if err := os.WriteFile(real, []byte(ctx), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			path := r.contextFile(t, "saltpaw-ii", "x")
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(real, path); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"a file over the cap", func(t *testing.T, r *shipNoteRig) {
+			r.contextFile(t, "saltpaw-ii", ctx+strings.Repeat("x", 1<<20))
+		}},
+		{"another ship's file in the reports directory", func(t *testing.T, r *shipNoteRig) {
+			r.contextFile(t, "kelpie-iv", ctx)
+		}},
+		{"a path outside the reports directory", func(t *testing.T, r *shipNoteRig) {
+			path := filepath.Join(t.TempDir(), "checkout", ".admiral", "context.md")
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(ctx), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("ADMIRAL_CONTEXT", path)
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			good := newShipNoteRig(t, "saltpaw-ii")
+			good.contextFile(t, "saltpaw-ii", ctx)
+			if got := shipNoteContext(t, good.run(t, sessionStartPayload)); !strings.Contains(got, ctx) {
+				t.Fatalf("a valid context file was left out: %q", got)
+			}
+			r := newShipNoteRig(t, "saltpaw-ii")
+			c.plant(t, r)
+			got := shipNoteContext(t, r.run(t, sessionStartPayload))
+			if got != shipNote {
+				t.Errorf("note = %q, want the campaigns note alone", got)
+			}
+		})
+	}
 }

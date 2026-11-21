@@ -248,3 +248,17 @@ func TestReReviewStartsAtTheShipCap(t *testing.T) {
 		t.Errorf("rereview at the cap = %d %s, want 201 like a hand wake", rec.Code, rec.Body)
 	}
 }
+
+func TestAReReviewKeepsItsPromptAndStillCarriesTheContextFileWithTheReviewRole(t *testing.T) {
+	r := newRereviewRig(t, singlePR())
+	if rec := r.rereview("saltpaw", `{"url":"`+wakePR+`"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("rereview = %d %s, want 201", rec.Code, rec.Body)
+	}
+	argv, env := r.started(t, 1)
+	if got := prompt(argv); got != "/commodore "+wakePR {
+		t.Errorf("prompt = %q, want it unchanged", got)
+	}
+	if got := r.contextOf(t, env); !strings.Contains(got, "- "+wakePR+" (OPEN, you are reviewing it)") {
+		t.Errorf("context file = %q, want the PR marked as one the ship reviews", got)
+	}
+}

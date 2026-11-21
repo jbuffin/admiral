@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -213,9 +212,7 @@ func TestAHandWakeLaunchesTheSameShipWithTheResumePromptAndNoAutopilot(t *testin
 		t.Errorf("woken ship = %q named %q, want saltpaw named Saltpaw", ship.Session, ship.Name)
 	}
 	argv, env := r.started(t, 1)
-	if got, want := prompt(argv), "/commodore resume run-7 also check the docs"+wakePRsSection("- "+wakePR); got != want {
-		t.Errorf("prompt = %q, want the resume text verbatim, then the engineer's text, then the PR section, with the record's skill not prefixed again", got)
-	}
+	handContext(t, prompt(argv), "/commodore resume run-7 also check the docs"+wakePRsSection("- "+wakePR))
 	if strings.Contains(strings.Join(argv, " ")+env, "ORDER-TEXT-MARKER") {
 		t.Error("the order's text reached argv or env, want the resume prompt instead")
 	}
@@ -246,9 +243,7 @@ func TestAHandWakeWithNoTextPromptsWithTheResumeTextAlone(t *testing.T) {
 		t.Fatal(lerr)
 	}
 	argv, _ := r.started(t, 1)
-	if got, want := prompt(argv), "/commodore resume run-7"+wakePRsSection("- "+wakePR); got != want {
-		t.Errorf("prompt = %q, want the resume text, then the PR section", got)
-	}
+	handContext(t, prompt(argv), "/commodore resume run-7"+wakePRsSection("- "+wakePR))
 }
 
 func TestTheNextWakeCountsTheNextRound(t *testing.T) {
@@ -446,21 +441,20 @@ func TestAMooredShipWithNoValidResumeTextWakesBareByHand(t *testing.T) {
 			t.Fatalf("Wake with resume %q = %v, want the ship woken", resume, lerr)
 		}
 		argv, _ := r.started(t, 1)
-		if got, want := prompt(argv), "pick up where you left off"+wakePRsSection("- "+wakePR); got != want {
-			t.Errorf("resume %q: prompt = %q, want the engineer's text, then the PR section", resume, got)
-		}
+		handContext(t, prompt(argv), "pick up where you left off"+wakePRsSection("- "+wakePR))
 	}
 }
 
-func TestAMooredShipWithNoResumeTextWokenWithNoTextStartsWithNoPrompt(t *testing.T) {
+func TestAMooredShipWithNoResumeTextWokenWithNoTextStartsWithItsContextAndTheOrderToWait(t *testing.T) {
 	r := newWakeRig(t, 0)
 	r.mooredResume(t, 0, "", 0)
 	if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {
 		t.Fatalf("Wake = %v", lerr)
 	}
 	argv, _ := r.started(t, 1)
-	if i := slices.Index(argv, "--"); i >= 0 && i < len(argv)-1 {
-		t.Errorf("argv = %q, want no prompt after --: the harness waits for a message", argv)
+	got := prompt(argv)
+	if !strings.Contains(got, "Admiral ship Saltpaw") || !strings.HasSuffix(got, wakeWaitLine) {
+		t.Errorf("prompt = %q, want the ship's context ending with the line that tells it to wait for the engineer", got)
 	}
 }
 

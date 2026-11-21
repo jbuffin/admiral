@@ -92,6 +92,13 @@ func TestAMooredShipWhosePRsAreMergedIsWokenToCleanUpAndStoppedAfterThatTurn(t *
 	if got := prompt(argv); got != "/commodore resume run-7 "+ReturnPrompt {
 		t.Errorf("prompt = %q, want the resume text, then the clean-up prompt", got)
 	}
+	_, env := r.started(t, 1)
+	if got := r.contextOf(t, env); !strings.Contains(got, "Admiral ship Saltpaw") || !strings.Contains(got, wakePR) {
+		t.Errorf("context file = %q, want the ship's context on a Return to port wake too", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(r.checkout, ".admiral", "untrusted", "order.md")); string(b) != "ORDER-TEXT-MARKER" {
+		t.Errorf("order.md = %q, want the order's text on a wake that has no launch hook", b)
+	}
 	if o := r.options(t, "saltpaw"); o["round"] != "2" || o["returning"] != "sent" {
 		t.Errorf("options = %v, want round 2 woken to return to port", o)
 	}

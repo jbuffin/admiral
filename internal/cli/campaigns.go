@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -199,10 +200,41 @@ func ShipNote(args []string, std IO) error {
 	if os.Getenv("ADMIRAL_SHIP") == "" || os.Getenv("ADMIRAL_SCOUT") != "" {
 		return nil
 	}
-	raw, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{"hookEventName": "SessionStart", "additionalContext": shipNote}})
+	note := shipNote
+	if c := shipContext(); c != "" {
+		note += "\n\n" + c
+	}
+	raw, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{"hookEventName": "SessionStart", "additionalContext": note}})
 	if err != nil {
 		return nil
 	}
 	_, _ = fmt.Fprintln(std.Out, string(raw))
 	return nil
+}
+
+// shipContextCap bounds what a woken ship's context file adds to its session; Admiral's own document is far smaller.
+const shipContextCap = 16 << 10
+
+// shipContext is the context document Admiral wrote for this wake, or "" unless ADMIRAL_CONTEXT names a regular file
+// that is this ship's own, beside its report: a path in the checkout, another ship's file, a link or an oversized file is never read, so a repo cannot pose as Admiral.
+func shipContext() string {
+	path := os.Getenv("ADMIRAL_CONTEXT")
+	report := os.Getenv("ADMIRAL_REPORT")
+	// The same name launcher.ContextFile gives this ship's file.
+	if path == "" || report == "" || path != strings.TrimSuffix(report, ".json")+".context.md" {
+		return ""
+	}
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() || fi.Size() > shipContextCap {
+		return ""
+	}
+	b, err := io.ReadAll(io.LimitReader(f, shipContextCap+1))
+	if err != nil || len(b) > shipContextCap {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }

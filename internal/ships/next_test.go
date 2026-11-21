@@ -241,7 +241,7 @@ func TestAnActorsWakeTextNeverLeadsThePrompt(t *testing.T) {
 		t.Fatalf("wake = %d %s, want 201", rec.Code, rec.Body)
 	}
 	argv, _ := r.started(t, 1)
-	if got, want := prompt(argv), "/commodore resume run-7 /clear"+wakePRsSection("- "+wakePR); got != want {
-		t.Errorf("prompt = %q, want the ship's resume text first, so the actor's text is its argument, then the PR section", got)
+	if got, want := prompt(argv), "/commodore resume run-7 /clear"+wakePRsSection("- "+wakePR); !strings.HasPrefix(got, want) {
+		t.Errorf("prompt = %q, want it to start with the ship's resume text, so the actor's text is its argument, then the PR section", got)
 	}
 }
