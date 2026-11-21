@@ -75,3 +75,15 @@ func git(dir string, args ...string) (string, error) {
 	out, err := cmd.Output()
 	return string(out), err
 }
+
+// Branch is the branch the checkout has out, or "" when it is detached, unborn or git cannot say.
+func Branch(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	out, err := git(dir, "symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}

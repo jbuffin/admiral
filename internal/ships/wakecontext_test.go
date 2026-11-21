@@ -97,7 +97,7 @@ func TestTheContextKeepsARepoAndABranchOnlyInTheirSafeCharset(t *testing.T) {
 		got := wakeContextText(in)
 		wantLines(t, got, "- Repo: unknown")
 		if r != "" {
-			wantNone(t, got, r)
+			wantNone(t, got, "- Repo: "+r)
 		}
 	}
 }

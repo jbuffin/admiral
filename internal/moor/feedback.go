@@ -13,6 +13,16 @@ import (
 // WriteFeedback puts a round's feedback text in <checkout>/.admiral/untrusted/feedback-<round>.md and returns its path.
 // The ship's checkout is its own to write in, so a link planted at .admiral, untrusted or the file is refused, not followed.
 func WriteFeedback(checkout string, round int, text string) (string, error) {
+	return writeUntrusted(checkout, "feedback-"+strconv.Itoa(round)+".md", text)
+}
+
+// WriteOrder puts a ship's order text in <checkout>/.admiral/untrusted/order.md the way WriteFeedback writes a round's
+// feedback, and returns its path.
+func WriteOrder(checkout, text string) (string, error) {
+	return writeUntrusted(checkout, "order.md", text)
+}
+
+func writeUntrusted(checkout, name, text string) (string, error) {
 	root, err := os.OpenRoot(checkout)
 	if err != nil {
 		return "", err
@@ -44,7 +54,7 @@ func WriteFeedback(checkout string, round int, text string) (string, error) {
 	} else if !errors.Is(err, fs.ErrExist) {
 		return "", err
 	}
-	rel := filepath.Join(".admiral", "untrusted", "feedback-"+strconv.Itoa(round)+".md")
+	rel := filepath.Join(".admiral", "untrusted", name)
 	// A fresh file, so a hard link planted at the name is dropped, not written through.
 	switch fi, err := root.Lstat(rel); {
 	case errors.Is(err, fs.ErrNotExist):
@@ -70,7 +80,3 @@ func WriteFeedback(checkout string, round int, text string) (string, error) {
 	}
 	return filepath.Join(checkout, rel), nil
 }
-
-// WriteOrder puts a ship's order text in <checkout>/.admiral/untrusted/order.md the way WriteFeedback writes a round's
-// feedback, and returns its path.
-func WriteOrder(checkout, text string) (string, error) { return "", nil }

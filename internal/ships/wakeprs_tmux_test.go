@@ -55,14 +55,20 @@ func (a *answerRig) mooredWith(t *testing.T, prs, reviewing []string, poll bool)
 	}
 }
 
-// handWakePrompt wakes Saltpaw by hand with text and answers the prompt its harness started with.
+// handWakePrompt wakes Saltpaw by hand with text and answers the prompt its harness started with, up to the ship's context
+// that ends it: these tests check the resume, the text and the PR section, and the context has its own.
 func (a *answerRig) handWakePrompt(t *testing.T, text string) string {
 	t.Helper()
 	if _, lerr := a.s.Wake(context.Background(), "saltpaw", text); lerr != nil {
 		t.Fatalf("Wake = %v", lerr)
 	}
 	argv, _ := a.started(t, 1)
-	return prompt(argv)
+	got := prompt(argv)
+	head, _, found := strings.Cut(got, "\n\nYou are Admiral ship ")
+	if !found {
+		t.Fatalf("prompt = %q, want it to end with the ship's context", got)
+	}
+	return head
 }
 
 func TestAHandWakeNamesTheShipsPolledCleanPRAfterTheResumeAndTheEngineersText(t *testing.T) {

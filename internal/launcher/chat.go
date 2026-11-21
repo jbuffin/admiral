@@ -172,7 +172,7 @@ func ChatDock(cfg *config.Config, key string) (config.Fleet, config.Harness, *Er
 
 // chatOwned are the variables Admiral hands a ship and the chat must not have,
 // besides every other ADMIRAL_* name but ADMIRAL_HOME.
-var chatOwned = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_FINDINGS", "ADMIRAL_INBOX", "ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", ScoutEnv}
+var chatOwned = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_FINDINGS", "ADMIRAL_CONTEXT", "ADMIRAL_INBOX", "ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", ScoutEnv}
 
 // chatDropped are Claude Code's own switches that would move or switch off the chat's compaction backstop; a
 // fleet's env or Admiral's can set them for ships, and the chat never gets them.

@@ -34,7 +34,7 @@ type undoFunc func()
 // Like a hand launch it counts toward the cap and is never blocked by it.
 func (s *Service) Wake(ctx context.Context, session, text string) (Ship, *launcher.Error) {
 	t := strings.TrimSpace(text)
-	prompt := func(rec moor.Record) string {
+	prompt := func(rec moor.Record, doc string) string {
 		p := t
 		if moor.ValidResume(rec.Resume) {
 			p = rec.Resume
@@ -43,11 +43,11 @@ func (s *Service) Wake(ctx context.Context, session, text string) (Ship, *launch
 			}
 		}
 		if p == "" {
-			return p
+			return doc + "\n" + wakeWaitLine
 		}
-		return p + s.wakePRsSection(rec)
+		return p + s.wakePRsSection(rec) + "\n\n" + doc
 	}
-	return s.wakeWith(wakeOpts{noResume: true, bare: true}, session, prompt, "hand", "", viaOfCtx(ctx), s.handRoundStart)
+	return s.wakeWith(wakeOpts{noResume: true, bare: true, handPrompt: prompt}, session, nil, "hand", "", viaOfCtx(ctx), s.handRoundStart)
 }
 
 // FeedbackRound relaunches a moored ship, unattended, for the feedback on one of its PRs. The text reaches
@@ -181,6 +181,9 @@ type wakeOpts struct {
 	noResume bool
 	bare     bool   // a record with no resume text launches with the prompt as given, even an empty one
 	text     string // the launch text: the launcher builds the prompt from it and the resolved skill
+	// handPrompt, for the hand Wake only, builds the prompt from the record and the ship-context document. Every other
+	// wake's prompt is parsed by a skill, so it never carries the document: the context file reaches those through the hook.
+	handPrompt func(rec moor.Record, doc string) string
 }
 
 func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Record) string, by, pr, wokenVia string, beforeLaunch func(rec moor.Record, dir string) (undoFunc, error)) (Ship, *launcher.Error) {
@@ -204,10 +207,17 @@ func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Recor
 		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg, Wait: WaitHost}
 	}
 	round := rec.Round + 1
+	doc, orderText, haveOrder := s.wakeContext(rec, round)
+	var promptText string
+	if opts.handPrompt != nil {
+		promptText = opts.handPrompt(rec, doc)
+	} else {
+		promptText = prompt(rec)
+	}
 	req := launcher.Request{Fleet: rec.Fleet, Harness: rec.Harness, Dir: rec.Checkout, Model: rec.Model,
 		Skill: launcher.Skill{Kind: rec.Skill.Kind, Name: rec.Skill.Name}, Source: rec.Source, OrderID: rec.OrderID,
 		Title: rec.Title, URL: rec.URL, Link: rec.Link, Issues: rec.Issues, Panel: rec.Panel, Resources: rec.Resources, PRs: rec.PRs,
-		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Bare: opts.bare && !moor.ValidResume(rec.Resume), Text: opts.text, Autopilot: by == "feedback" || by == "proposal", Unattended: by == "feedback", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, FirstLaunched: cmpFirst(rec.FirstLaunched, rec.Launched), ChatKey: rec.Chat, RoutineKey: rec.Routine, CommitmentKey: rec.Commitment}
+		Name: rec.Name, Session: rec.Session, Round: round, Prompt: promptText, Context: doc, Bare: opts.bare && !moor.ValidResume(rec.Resume), Text: opts.text, Autopilot: by == "feedback" || by == "proposal", Unattended: by == "feedback", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, FirstLaunched: cmpFirst(rec.FirstLaunched, rec.Launched), ChatKey: rec.Chat, RoutineKey: rec.Routine, CommitmentKey: rec.Commitment}
 	var undo undoFunc
 	// The launcher runs this under its lock, just before it makes the session: a Dismiss or a merged PR that
 	// ended the mooring while this wake waited wins, and from here on an ending loses to the wake.
@@ -226,6 +236,16 @@ func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Recor
 				return &launcher.Error{Status: http.StatusInternalServerError, Msg: "the feedback cannot be written into the ship's checkout"}
 			}
 			undo = u
+		}
+		// After the hook, so a round it refuses leaves no file behind.
+		if haveOrder {
+			if _, err := moor.WriteOrder(dir, orderText); err != nil {
+				if undo != nil {
+					undo()
+				}
+				s.uncommitWake(session)
+				return &launcher.Error{Status: http.StatusInternalServerError, Msg: "the order's text cannot be written into the ship's checkout"}
+			}
 		}
 		return nil
 	}
