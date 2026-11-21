@@ -4,6 +4,7 @@ import { syncSharedQueue, queueRev } from './attention';
 import { sharedInboxQueue, type Entry, type InboxQueue } from './inbox';
 import { call } from './api';
 import { Button } from './Button';
+import { useSubscribe } from './hooks/subscribe';
 import { InboxTitle } from './InboxTitle';
 import { renderMarkdown } from './markdown';
 import { isChatSession, Peek, peekKeys } from './Peek';
@@ -23,13 +24,9 @@ const ANSWER = new Set(['question', 'stop']);
 export const STACKED_QUERY = '(max-width: 1099px)';
 
 export function useStacked(phone: boolean) {
-  const mq = matchMedia(STACKED_QUERY);
+  const [mq] = useState(() => matchMedia(STACKED_QUERY));
   const [narrow, setNarrow] = useState(mq.matches);
-  useEffect(() => {
-    const on = () => setNarrow(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
+  useSubscribe(mq, 'change', () => setNarrow(mq.matches));
   return phone || narrow;
 }
 
@@ -205,11 +202,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
       peekKeys.current?.(a);
     }
   };
-  useEffect(() => {
-    const h = (ev: KeyboardEvent) => onKey.current(ev);
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, []);
+  useSubscribe(window, 'keydown', (ev) => onKey.current(ev as KeyboardEvent));
 
   if (entries.length === 0 && !(gone && detail)) {
     return (

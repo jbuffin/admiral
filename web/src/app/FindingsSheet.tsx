@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
+import { useFocusOnOpen } from './hooks/focus';
 import { renderMarkdown } from './markdown';
 import { Sheet } from './Sheet';
 
@@ -11,9 +12,7 @@ const UNAVAILABLE = "Couldn't open these findings. Close this and try again.";
 export function FindingsSheet({ ship, firstLaunched, onClose }: { ship: string; firstLaunched?: string; onClose: () => void }) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const close = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    close.current?.querySelector('button')?.focus();
-  }, []);
+  useFocusOnOpen(true, () => close.current?.querySelector('button'));
   useEffect(() => {
     let live = true;
     const query = firstLaunched ? `?first_launched=${encodeURIComponent(firstLaunched)}` : '';

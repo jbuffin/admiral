@@ -2,6 +2,7 @@ import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, loaded } from './fleets';
 import { Flag } from './Flag';
+import { useSubscribe } from './hooks/subscribe';
 import { FleetSwitcher } from './FleetSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 import { Icon } from './Icon';
@@ -58,13 +59,9 @@ interface ModuleView {
 const PHONE_QUERY = '(max-width: 640px)';
 
 function usePhone() {
-  const mq = matchMedia(PHONE_QUERY);
+  const [mq] = useState(() => matchMedia(PHONE_QUERY));
   const [phone, setPhone] = useState(mq.matches);
-  useEffect(() => {
-    const on = () => setPhone(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
+  useSubscribe(mq, 'change', () => setPhone(mq.matches));
   return phone;
 }
 

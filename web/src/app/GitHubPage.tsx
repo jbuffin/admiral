@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { checkConnection, countSearch, fetchRepos, fetchSettings, saveSource, type Connection, type Fleet, type Repos, type Source } from './api';
 import { Actions, Button } from './Button';
 import { addLabel, BUILTIN_VIEWS, checkedWords, countOutcome, type Count, editSearch, forSave, HOT_LABEL_DEFAULTS, inOrder, intervalLabel, intervalOptions, isBuiltin, isRemovable, needsSignIn, onKey, plainWords, removeLabel, removeView, renameView, searchOf, setHidden, titleOf, viewKey, type ViewEntry } from './githubViews';
+import { useFocusOnOpen } from './hooks/focus';
 import { arranged, gripKey, pressGrip } from './gripReorder';
 import { NewViewCard } from './NewViewCard';
 import { addView } from './newView';
@@ -280,6 +281,9 @@ export function ViewsSection({ sourceKey, views, inert, counts, errors, edit, re
   const shown = arranged('views', keys, (k) => k);
   const [adding, setAdding] = useState(false);
   const openButton = useRef<HTMLButtonElement>(null);
+  // Only a cancel returns focus to the opener; a successful add leaves it where it is.
+  const [cancelled, setCancelled] = useState(false);
+  useFocusOnOpen(cancelled, openButton);
   return (
     <>
       <section class="gh-section" aria-labelledby="gh-views">
@@ -290,7 +294,11 @@ export function ViewsSection({ sourceKey, views, inert, counts, errors, edit, re
             </h2>
             <p class="note">The tabs across the top of Orders, in this order. Drag to reorder, switch off to hide.</p>
           </div>
-          <button ref={openButton} type="button" class="btn" disabled={inert} aria-expanded={adding} onClick={() => setAdding(true)}>
+          <button ref={openButton} type="button" class="btn" disabled={inert} aria-expanded={adding} onClick={() => {
+              setCancelled(false);
+              setAdding(true);
+            }}
+          >
             + New view
           </button>
         </div>
@@ -315,7 +323,7 @@ export function ViewsSection({ sourceKey, views, inert, counts, errors, edit, re
           }}
           onCancel={() => {
             setAdding(false);
-            setTimeout(() => openButton.current?.focus());
+            setCancelled(true);
           }}
         />
       ) : null}

@@ -179,13 +179,10 @@
   },
   "src/app/FindingsSheet.tsx": {
     "admiral/no-raw-effect": {
-      "count": 2
+      "count": 1
     }
   },
   "src/app/GitHubPage.tsx": {
-    "admiral/no-deferral": {
-      "count": 1
-    },
     "admiral/no-raw-effect": {
       "count": 4
     },
@@ -200,10 +197,10 @@
   },
   "src/app/InboxPanel.tsx": {
     "admiral/no-raw-effect": {
-      "count": 4
+      "count": 2
     },
     "react-hooks/exhaustive-deps": {
-      "count": 2
+      "count": 1
     }
   },
   "src/app/InstallPrompts.tsx": {
@@ -277,7 +274,7 @@
   },
   "src/app/NewViewCard.tsx": {
     "admiral/no-raw-effect": {
-      "count": 2
+      "count": 1
     }
   },
   "src/app/NotificationsPage.tsx": {
@@ -392,10 +389,7 @@
   },
   "src/app/Shell.tsx": {
     "admiral/no-raw-effect": {
-      "count": 5
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 1
+      "count": 4
     }
   },
   "src/app/ShipPRs.tsx": {
