@@ -1,5 +1,5 @@
 import { render } from '@testing-library/preact';
-import { useRef } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import { expect, it } from 'vitest';
 import { useFocusOnClose, useFocusOnOpen } from './focus';
 
@@ -66,4 +66,21 @@ it('useFocusOnClose takes a function target and survives a null one', () => {
   a.unmount();
   const b = render(<Harness hook={useFocusOnClose} open mode="null" />);
   expect(() => b.rerender(<Harness hook={useFocusOnClose} open={false} mode="null" />)).not.toThrow();
+});
+
+it('useFocusOnOpen with layout focuses before a passive effect of the same render runs', () => {
+  const seen: Element[] = [];
+  function Probe({ layout }: { layout: boolean }) {
+    const ref = useRef<HTMLButtonElement>(null);
+    useEffect(() => void seen.push(document.activeElement!), []);
+    useFocusOnOpen(true, ref, { layout });
+    return <button ref={ref}>target</button>;
+  }
+  render(<Probe layout />);
+  expect(seen[0]).toBe(target());
+  target().blur();
+  seen.length = 0;
+  render(<Probe layout={false} />);
+  expect(seen[0]).not.toBe(document.querySelectorAll('button')[1]);
+  expect(document.activeElement).toBe(document.querySelectorAll('button')[1]);
 });

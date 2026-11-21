@@ -90,7 +90,7 @@ export function NewViewCard({ sourceKey, error, onAdd, onCancel }: { sourceKey: 
   const first = useRef<HTMLButtonElement>(null);
   const saving = useRef(false);
   // Layout, not passive: a passive effect can land after the person has started typing in Name and pull focus off it.
-  useFocusOnOpen(true, first);
+  useFocusOnOpen(true, first, { layout: true });
 
   const state = draft.state;
   const pr = state.show === 'pr';
