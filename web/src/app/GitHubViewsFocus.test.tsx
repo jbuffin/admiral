@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ViewsSection } from './GitHubPage';
 
@@ -13,7 +13,10 @@ function page(onAdd: (title: string, query: string) => Promise<boolean>) {
 
 // The card's live count asks the server; no answer is needed here.
 beforeEach(() => void vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {}))));
-afterEach(() => void vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 it('returns focus to the button that opened the card when the card is cancelled', async () => {
   const opener = page(async () => true);
@@ -21,10 +24,13 @@ it('returns focus to the button that opened the card when the card is cancelled'
   await waitFor(() => expect(document.activeElement).toBe(opener));
 });
 
-it('leaves focus alone when the view is added', async () => {
+it('leaves focus alone when the view is added, even once every timer has run', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'requestAnimationFrame'] });
   const opener = page(async () => true);
   fireEvent.click(screen.getByRole('button', { name: 'Add view' }));
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Add view' })).toBeNull());
-  await new Promise((r) => setTimeout(r, 50));
+  await act(async () => {
+    await vi.runAllTimersAsync();
+  });
   expect(document.activeElement).not.toBe(opener);
 });
