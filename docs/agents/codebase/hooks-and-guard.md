@@ -38,16 +38,16 @@ How `admiral hook` decides needs you, how `admiral guard pretooluse` refuses a m
 - Programs that run their arguments are looked through when they are `find` (`-exec`, `-execdir`, `-ok`, `-okdir`), `arch`, `script`, `flock`, `watch`, `unbuffer`, `doas`, `gtimeout`, `npx`, `xargs` and the usual wrappers; `git -c alias.x=!…` and `git config alias.x '!…'` are refused as `git_shell_alias`.
 - A relative file is not read once the line has a `cd`, `pushd` or `popd` (the guard would read a different file from the one the call reads), `~/` is the home directory, and a shell is refused when `BASH_ENV`, `ENV` or `ZDOTDIR` is set on the line or when `--rcfile`, `--init-file` or `-i` comes beside a script.
 - `gh auth status --show-token` is read as a boolean, and `git credential-*` helpers count as `git credential`.
-- Known gaps.
-- The guard is best effort, and the GitHub rules of the base branch are the gate: it narrows what a ship can do by accident or by habit, and it can't contain an agent that runs arbitrary programs with a token that can merge.
-- The Merge route's token (`X-Admiral-Merge-Token`, injected into the `/app/` page's `<meta name="admiral-merge-token">` by `internal/server`) keeps a local curl from merging by accident; a process that fetches `/app/` and reads the meta, or impersonates a browser, still can.
-- A script run as `./FILE` runs unread (`bash FILE` is read, but the same file as a command is not).
-- A program word built from a literal and an expansion (`g$Y`, `$D/gh $S`), zsh glob qualifiers that run code (`*(e:'…':)`), the `(e)` parameter flag and arithmetic that evaluates a subscript (`$((X))` with `X='a[$(…)]'`) run a command the guard reads as data.
-- Sourcing nvm (`. ~/.nvm/nvm.sh`) is refused, because nvm defines aliases (`shell_alias`); set Node up outside the ship.
-- The guard is best effort and reads only the text of a Bash call: a merge through anything that is not a literal shell `gh` call is invisible to it, such as an interpreter (`python3 -c`), `make`, `curl` with a token from somewhere else, a nested agent, a `gh` shim earlier on `PATH`, or a replaced `$ADMIRAL_HOME/bin/admiral`.
-- Files the guard reads (`--input`, `-F @file`) can change before gh reads them.
-- Direct writes to the base, `git push`, REST `PUT contents`, `PATCH git/refs`, GraphQL `createCommitOnBranch` and `updateRef`, and the GitHub MCP file tools, are not hooked, and neither are writes to repository settings that raise access (`collaborators`, `PATCH repos/<o>/<r>`); the branch rules on GitHub are what stop them.
-- The GitHub MCP `update_pull_request` tool with a `base` argument changes a base and is not hooked.
+- Known gaps:
+  - The guard is best effort, and the GitHub rules of the base branch are the gate: it narrows what a ship can do by accident or by habit, and it can't contain an agent that runs arbitrary programs with a token that can merge.
+  - The Merge route's token (`X-Admiral-Merge-Token`, injected into the `/app/` page's `<meta name="admiral-merge-token">` by `internal/server`) keeps a local curl from merging by accident; a process that fetches `/app/` and reads the meta, or impersonates a browser, still can.
+  - A script run as `./FILE` runs unread (`bash FILE` is read, but the same file as a command is not).
+  - A program word built from a literal and an expansion (`g$Y`, `$D/gh $S`), zsh glob qualifiers that run code (`*(e:'…':)`), the `(e)` parameter flag and arithmetic that evaluates a subscript (`$((X))` with `X='a[$(…)]'`) run a command the guard reads as data.
+  - Sourcing nvm (`. ~/.nvm/nvm.sh`) is refused, because nvm defines aliases (`shell_alias`); set Node up outside the ship.
+  - The guard is best effort and reads only the text of a Bash call: a merge through anything that is not a literal shell `gh` call is invisible to it, such as an interpreter (`python3 -c`), `make`, `curl` with a token from somewhere else, a nested agent, a `gh` shim earlier on `PATH`, or a replaced `$ADMIRAL_HOME/bin/admiral`.
+  - Files the guard reads (`--input`, `-F @file`) can change before gh reads them.
+  - Direct writes to the base, `git push`, REST `PUT contents`, `PATCH git/refs`, GraphQL `createCommitOnBranch` and `updateRef`, and the GitHub MCP file tools, are not hooked, and neither are writes to repository settings that raise access (`collaborators`, `PATCH repos/<o>/<r>`); the branch rules on GitHub are what stop them.
+  - The GitHub MCP `update_pull_request` tool with a `base` argument changes a base and is not hooked.
 - Codex and Copilot ships have no guard, and autopilot refuses any harness but Claude for that reason; so does `admiral crew launch` for a caller with `ADMIRAL_AUTOPILOT=1`, whose `--arg` values must also fit the autopilot args allowlist (`launcher.AutopilotArgs`, `internal/launcher/autopilotargs.go`, a per-harness table of flags with their arity; codex's and copilot's tables are ready but unreachable until a guard probe is registered for them in `probes`), checked in `LaunchCrew` after the hook refusal and before the window is made.
 - A refusal writes one `guard_denied` line (`tool`, `rule`, no command text) under the home of `ADMIRAL_REPORT`, or else `ADMIRAL_HOME`; with no ship or home, or a failed write, it still refuses.
 - Every ship also gets these variables:
