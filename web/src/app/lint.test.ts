@@ -36,6 +36,21 @@ describe('effect budget', () => {
     });
   }
 
+  for (const from of ['preact/hooks', 'preact/compat', 'react']) {
+    it(`bans a raw effect called through an alias imported from ${from}`, async () => {
+      const code = `import { useEffect as useMount, useLayoutEffect as useBefore } from '${from}';\nexport function C() {\n  useMount(() => {}, []);\n  useBefore(() => {}, []);\n  return null;\n}\n`;
+      expect(withRule(await lint(code, 'src/app/Example.tsx'), EFFECT_RULE)).toHaveLength(2);
+    });
+  }
+  it('bans a raw effect called as a member of the hooks module', async () => {
+    const code = `import * as hooks from 'preact/hooks';\nexport function C() {\n  hooks.useEffect(() => {}, []);\n  return null;\n}\n`;
+    expect(withRule(await lint(code, 'src/app/Example.tsx'), EFFECT_RULE)).toHaveLength(1);
+  });
+  it('does not flag an unrelated function that happens to be imported under another name', async () => {
+    const code = `import { useState as useEffect2 } from 'preact/hooks';\nexport function C() {\n  useEffect2(0);\n  return null;\n}\n`;
+    expect(withRule(await lint(code, 'src/app/Example.tsx'), EFFECT_RULE)).toEqual([]);
+  });
+
   for (const path of ['src/app/hooks/useExample.ts', 'src/app/hooks/Example.tsx', 'src/app/Example.test.tsx', 'src/app/example.ts']) {
     it(`allows a raw effect in ${path}`, async () => {
       expect(withRule(await lint(effect, path), EFFECT_RULE)).toEqual([]);
@@ -65,6 +80,23 @@ describe('deferral ban', () => {
         expect(found[0].message).toMatch(/useFocusOnOpen|usePollUntil/);
       });
     }
+  }
+
+  const dodges: [string, string][] = [
+    ['a sleep that calls the resolver in a callback', `export const s = new Promise<void>((r) => setTimeout(() => r(), 10));`],
+    ['a zero delay with a type assertion', `setTimeout(() => {}, 0 as number);`],
+    ['a zero delay with a satisfies', `setTimeout(() => {}, 0 satisfies number);`],
+    ['an undefined delay', `setTimeout(() => {}, undefined);`],
+    ['a non-null delay of undefined', `declare const d: number | undefined;\nsetTimeout(() => {}, d!);`.replace('d!', 'undefined!')],
+    ['self.setTimeout with no delay', `self.setTimeout(() => {});`],
+    ['globalThis.setTimeout with a zero delay', `globalThis.setTimeout(() => {}, 0);`],
+    ['self.requestAnimationFrame', `self.requestAnimationFrame(() => {});`],
+    ['queueMicrotask', `queueMicrotask(() => {});`],
+  ];
+  for (const [what, code] of dodges) {
+    it(`bans ${what}`, async () => {
+      expect(withRule(await lint(code, 'src/app/example.ts'), DEFERRAL_RULE).length).toBeGreaterThan(0);
+    });
   }
 
   const allowed: [string, string][] = [
