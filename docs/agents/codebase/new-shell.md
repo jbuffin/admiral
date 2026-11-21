@@ -101,3 +101,9 @@ The Ships page groups the active fleet's ships as Needs you, Underway, Moored, t
 - The fleet list comes from `GET /api/v1/config`; the shell makes no unversioned `/api` or `/ws` request.
 - A fleet's Harness capabilities page lists its harnesses from `GET /api/v1/harness-capabilities` and re-runs one harness with `POST /api/v1/harness-capabilities/check`, shown as checking while it waits and as an alert when the check cannot run.
 - Harness flags load `/api/v1/logos/<harness>` as an `<img>` and show the placeholder letters when it 404s. Logos are never inlined.
+
+### Lint and the effect budget
+
+`make lint` runs ESLint over `web/src` (`web/eslint.config.js`, untyped rules, Babel as the parser because TypeScript 7 has no JS compiler API for `@typescript-eslint`) with `--max-warnings 0`. It enforces `react-hooks/rules-of-hooks` and `exhaustive-deps`, and two local rules in `web/eslint-rules.js`: `admiral/no-raw-effect` bans a raw `useEffect` or `useLayoutEffect` in component files (`*.tsx`), and `admiral/no-deferral` bans `setTimeout` with no delay or a `0` delay, `requestAnimationFrame` and sleep promises in any non-test file. Inline `eslint-disable` comments don't work.
+
+Effects and focus or settle deferrals go through the Preact hooks in `web/src/app/hooks/` (not the harness hooks): `useFocusOnOpen` and `useFocusOnClose` focus after render, `usePollUntil` waits for a condition, `useSubscribe` listens to an event target. `web/eslint-suppressions.json` lists today's exceptions and only shrinks: after removing a case, run `node_modules/.bin/eslint --prune-suppressions src` from `web/`, and never add to the file to pass lint.
