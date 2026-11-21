@@ -140,7 +140,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
 
 test('a ship\'s view opens on its conversation, follows the transcript live, joins the bridge only on Terminal, and says when the ship is read only or gone', { tag: '@critical' }, async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
+  await admiral.start({ env: { ...withFakeGh(admiral), ADMIRAL_VSCODE_TEST: 'installed' } });
   const watch = watchPage(page, admiral.url);
 
   // Ships that end are launched first: their cue file is read by any harness that starts while it is there.

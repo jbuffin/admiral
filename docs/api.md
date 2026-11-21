@@ -97,7 +97,7 @@ A ship with one PR runs `gh pr merge <url> --merge|--squash|--rebase` and needs 
 
 ### `GET /api/editors` (alias `GET /api/v1/editors`)
 
-`{"local": <bool>, "vscode": {"installed": <bool>}}`. `local` is true when this request comes from the Mac Admiral runs on (a loopback peer, no proxy headers, a Host of this Mac; the same test as the remote-access setting). `vscode.installed` says VS Code is on this Mac, found read-only by bundle id with Spotlight and then in `/Applications` and `~/Applications`, within two seconds; nothing is launched. It is always `false` for a request that is not local. The shell turns the answer into a `vscode://file/<path>/` link the browser follows, so Admiral opens nothing itself. A test build (`-tags e2e`) answers `installed` or `missing` for the whole lookup when `ADMIRAL_VSCODE_TEST` says so.
+`{"local": <bool>, "vscode": {"installed": <bool>}}`. `local` is true when this request comes from the Mac Admiral runs on (a loopback peer, no proxy headers, a Host of this Mac; the same test as the remote-access setting). `vscode.installed` says VS Code is on this Mac, found read-only by bundle id with Spotlight and then in `/Applications` and `~/Applications`, within two seconds; nothing is launched. It is always `false` for a request that is not local. The shell turns the answer into a `vscode://file/<path>/` link the browser follows, so Admiral opens nothing itself. A test build (`-tags e2e`) never looks at the machine: it answers `installed` only when `ADMIRAL_VSCODE_TEST=installed`, and `missing` otherwise.
 
 ### `POST /api/ships/<session>/wake` (alias `POST /api/v1/ships/<session>/wake`)
 
