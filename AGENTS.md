@@ -42,28 +42,7 @@ Match the comment density of the code around it; most functions need none. A com
 
 Read these when the task touches the area:
 
-- [`docs/agents/codebase.md`](docs/agents/codebase.md): the index of the area files below, with the repo pointers.
-  - [`codebase/packages.md`](docs/agents/codebase/packages.md): the Go packages and top-level directories. Read it before changing finding where a change goes.
-  - [`codebase/ships-and-moor.md`](docs/agents/codebase/ships-and-moor.md): ship routes, statuses, mooring and PR actions. Read it before changing a ship route, `internal/ships` or `internal/moor`.
-  - [`codebase/hooks-and-guard.md`](docs/agents/codebase/hooks-and-guard.md): `admiral hook`, the autopilot guard and ship env. Read it before changing `internal/cli/hook.go`, `guard*.go` or the launcher bundle.
-  - [`codebase/launch.md`](docs/agents/codebase/launch.md): clone on launch, ship cap, locked resources, worktrees. Read it before changing `internal/launcher`.
-  - [`codebase/crew-boats.md`](docs/agents/codebase/crew-boats.md): crew boats and subagents. Read it before changing crew handling or the crew bridge.
-  - [`codebase/codex.md`](docs/agents/codebase/codex.md): Codex ships. Read it before changing Codex launches or `internal/shipconv` Codex reading.
-  - [`codebase/outcomes-and-usage.md`](docs/agents/codebase/outcomes-and-usage.md): outcome log and usage. Read it before changing `internal/outcomes` or usage.
-  - [`codebase/permissions.md`](docs/agents/codebase/permissions.md): permission log and allow rules. Read it before changing `internal/permlog` or allow rules.
-  - [`codebase/routines-and-events.md`](docs/agents/codebase/routines-and-events.md): routines and the Lookout. Read it before changing `internal/routines` or the Lookout.
-  - [`codebase/commitments-and-campaigns.md`](docs/agents/codebase/commitments-and-campaigns.md): commitments and campaigns. Read it before changing commitments or campaigns.
-  - [`codebase/config-and-fleets.md`](docs/agents/codebase/config-and-fleets.md): fleets, fleet env, chat settings, update check. Read it before changing `internal/config` or a fleet route.
-  - [`codebase/sources.md`](docs/agents/codebase/sources.md): order sources and the GitHub source. Read it before changing `internal/sources`.
-  - [`codebase/capabilities-and-probes.md`](docs/agents/codebase/capabilities-and-probes.md): capabilities, probes, autopilot gate. Read it before changing a probe or a capability.
-  - [`codebase/inbox.md`](docs/agents/codebase/inbox.md): the Needs You inbox. Read it before changing `internal/inbox`.
-  - [`codebase/wake.md`](docs/agents/codebase/wake.md): the wake decision. Read it before changing `internal/ships/wake*.go`.
-  - [`codebase/chat.md`](docs/agents/codebase/chat.md): AdmiralBot's chat session (also `chat-harnesses.md`, `chat-cards.md`). Read it before changing `internal/chat`, `internal/brief` or the chat fence.
-  - [`codebase/devices.md`](docs/agents/codebase/devices.md): devices and pairing. Read it before changing `internal/auth`.
-  - [`codebase/api-versions.md`](docs/agents/codebase/api-versions.md): API versions. Read it before changing a route's versioning.
-  - [`codebase/new-shell.md`](docs/agents/codebase/new-shell.md): the new shell at `/app/`. Read it before changing `web/src/app/`.
-  - [`codebase/old-ui.md`](docs/agents/codebase/old-ui.md): the frozen old UI. Read it before changing old-UI code.
-  - [`codebase/idle-memory-and-setup.md`](docs/agents/codebase/idle-memory-and-setup.md): idle memory and the setup terminal. Read it before changing memory use or `admiral setup`.
+- [`docs/agents/codebase.md`](docs/agents/codebase.md): the index of area files: one line per area saying what it covers and when to read it; open it to find the file for the part you're changing.
 - [`docs/agents/testing.md`](docs/agents/testing.md): what to test and at which layer, the test seams and `$ADMIRAL_HOME` isolation. Read it before writing or changing a test.
 - [`docs/agents/testing/fakes.md`](docs/agents/testing/fakes.md): the fake harnesses and their cue language, the test sources, fake `gh` and `tailscale`, and the faked LAN. Read it before writing a test that launches a ship or needs one of them.
 - [`docs/bridge-protocol.md`](docs/bridge-protocol.md): the bridge WebSocket messages. Read it before changing the bridge or `web/src/bridgeLink.ts`.
@@ -98,3 +77,4 @@ Keep the `@critical` set to the flows Admiral cannot ship broken. The release ru
 
 - The server masks secret settings, including values inside arrays, as `__admiral_unchanged__`, and restores them on save. A settings control keeps that marker intact: a list whose stored value holds the marker stays a JSON field. Decide from what the server actually masked (`maskSecrets` in `internal/sources/service.go`), not from schema keywords alone.
 - A settings change or Restart reuses the source's runner (`internal/sources/supervisor.go`), so its panels' last orders and errors carry over to the new process. Adding a source, or removing and re-adding it, starts a new runner with none.
+
