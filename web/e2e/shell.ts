@@ -44,9 +44,9 @@ export function probeableClaude(a: Admiral) {
       executable: wrapper,
       env: { CLAUDE_CONFIG_DIR: `${a.home}/identity/zulu-claude`, FAKE_RECORD_DIR: join(a.home, 'fake-record'), FAKE_VERSION_FILE: versionFile },
     },
-    /** What the next probe does: pass, skip-hook, run-anyway, no-tool or different-command (docs/agents/testing.md). */
+    /** What the next probe does: pass, skip-hook, run-anyway, no-tool or different-command (docs/agents/testing/fakes.md). */
     probe: (mode: string) => writeFileSync(probeFile, mode),
-    /** What the next judge probes do: `pass` (default) or `leak`, which makes each one fail (docs/agents/testing.md). */
+    /** What the next judge probes do: `pass` (default) or `leak`, which makes each one fail (docs/agents/testing/fakes.md). */
     judge: (mode: string) => writeFileSync(judgeFile, mode),
     /** What `--version` prints; `FAIL` makes it exit 1. */
     version: (text: string) => writeFileSync(versionFile, text),
@@ -1100,7 +1100,7 @@ export const TS_NAME = 'fake-mac.tailnet-fake.ts.net';
 export const TS_LOGIN = 'alice@example.com';
 const fakeTailscaleDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testdata', 'faketailscale');
 
-/** The fake `tailscale` (e2e/testdata/faketailscale): pass `env` to `start`; the files steer its answers (docs/agents/testing.md). */
+/** The fake `tailscale` (e2e/testdata/faketailscale): pass `env` to `start`; the files steer its answers (docs/agents/testing/fakes.md). */
 export function fakeTailscale(a: Admiral) {
   const dir = join(a.home, 'fakets');
   mkdirSync(dir, { recursive: true });

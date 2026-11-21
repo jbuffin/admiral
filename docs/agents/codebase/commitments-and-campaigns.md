@@ -1,0 +1,42 @@
+# Commitments and campaigns
+
+AdmiralBot's commitments runner and the campaign model it launches from. Read it before changing `internal/commitments`, `internal/campaigns` or `internal/campaigns/follow`.
+
+- `internal/commitments`: the runner for AdmiralBot's commitments, the commitments in each fleet's ledger (`internal/ledger/commitments.go`, recorded through `internal/chat/commitments.go`).
+  - `Runner.Run` starts in `cmd/admiral/main.go` once `host.Ready()` says the ships are listed, and ticks again on `Changed()` (the ledger's `OnChange`, ship and resource changes) and on a 30 s poll while a commitment waits or watches a ship.
+  - A tick fires what is due with no model turn: a `remind` posts a chat card, a `launch` calls `ships.Service.Launch` from its stored spec in autopilot with no actor, behind the fleet fence (`req.Fleet` and the order's source must be the commitment's fleet) and the quiet autopilot gate (`autopilotgate.CheckQuiet`, no Inbox notice; a refusal is a can't-run card).
+  - The ship holds the `commitment:<id>` launch key, so a restart finds it with `ships.Service.Holder` and never launches twice.
+  - `launcher.Request.Before` re-checks that the commitment is still open under the launch lock, so a cancel launches nothing.
+  - A launch refused for cap or a resource waits with no expiry (`MarkFired` once, then retried); a clone launch checks both before it clones, and keeps the clone's path in `<home>/commitments/clones/` so a retry launches into it and never clones twice (a cancel during the clone leaves it on disk).
+  - Ship triggers (`shiplog.go`) read the outcome log `<home>/outcomes/` and match a ship by session and launch stamp (the `launched` and `woken` records carry it); the table of what sailed, anchored, stopped or dismissed means is the comment on `verdict`.
+  - GitHub triggers (`github.go`) are polled outside the tick: `pollLoop` runs on the runner's `Clock` every `GHPoll` (2 min, `ADMIRAL_COMMITMENT_GH_POLL`), makes one `PullRequestsOrGone` and one `IssueStatesOrGone` call per fleet and host through `Supervisor.GitHubClient` (via `Runner.GitHubFor`), stores each subject's answer stamped with when its poll started, and calls `Changed()` when one changes, so a ship change makes no `gh` call.
+  - `tick` judges a commitment only on an answer whose poll started a second after the commitment was recorded, so a commitment recorded after a poll waits for the next one.
+  - A failed call, a repository-level NOT_FOUND, a URL the answer left out without a reason or a host with no client keeps the commitment open and is logged once per subject per failure streak; only an item-level NOT_FOUND that GitHub returned (`gone`) drops it.
+  - The table of what a state means is the comment on `ghVerdict`.
+  - A commitment with no trigger gets one `aged` card 14 days after it was recorded (`MarkShown` keeps it to once).
+  - The ship-trigger tick caches each outcome-log month file's parsed records and re-reads it only when its size or mtime changes; the cache is pruned once per tick, against the months every fleet read.
+  - Cards are posted before the commitment closes (`chat.PostCard`, id `commitment-<id>-<outcome>`).
+  - A `campaign` commitment (`campaign.go`, action `work`) is the runner's own case in `tick`: it reads the campaign through `Runner.Campaign` (`follow.Service.Snapshot`), asks `campaigns.Decide` what to launch and launches each Without-you child in autopilot (ADR 0034) with its own launcher request, not `fire`, since source `campaign` is reserved: the key is `commitment:<id>:<child url>`, the order and clone repo come from the snapshot, and `cmd/admiral/commitments_wire.go` turns a clone into a launch in the fleet's checkout when it already holds the repo.
+  - Each child gets a ledger child event (`child_launched`, `child_waiting`, `child_declined`, `child_failed`; at most 200, then a `too_large` card) and its own card (`commitment-<id>-<outcome>-<hash of the url>`).
+  - It stays open across children and closes with an `ended` card when the campaign ends or is unfollowed, or when the follow store no longer has it.
+  - `follow.Service.OnRead` is wired to `Runner.Changed` in `main.go`, so a reread wakes it.
+  - It also proposes With-you children through `Runner.Proposals` (`*chat.Service`, `internal/chat/proposals.go`): one open question per fleet (`campaign-*` ids, hidden from the Inbox, the waiting state, resets and the brief's waiting list), written before the ledger's `child_proposed`, read each pass by `Reply`, removed once the runner has acted on the answer, and held while a With-you child's ship is underway or needs you.
+  - `chat.Service.OnQuestions` wakes the runner as well as the Inbox.
+- Campaigns (ADR 0027).
+  - `internal/github` reads a GitHub issue's tree (`Client.Tree`).
+    - `internal/campaigns` folds it into statuses, modes and skills (`Build`) and parses issue references.
+    - `internal/campaigns/follow` keeps the followed campaigns in `$ADMIRAL_HOME/campaigns.json` (atomic write), rereads them (on a child ship's anchor or sail-off, on page open at most every 30 s, every 5 min, and a launch rereads first when the read is over a minute old; one read in flight per campaign, each under a 60 s deadline) and serves `GET`/`POST /api/campaigns`.
+    - `POST /api/campaigns/create` (the engineer's confirm to make a campaign: it reads every child's REST id and parent through the fleet's `github.Client`, refuses a child that has a parent, files the parent, links each child in order with `AddSubIssue` (none when it has no children), then follows it; a failure after the parent exists is a 502 that names the parent and the children linked, and every child must route to the parent repo's fleet; an actor token is refused).
+    - `GET /api/campaigns/<id>`, `POST .../unfollow`.
+    - `PUT .../override`, `PUT .../work-repo` and `POST .../launch`.
+  - It is also the `ships.Orders` that answers orders of source `campaign` (`order_id` is `<campaign id>/<child issue URL>`, `panel` the campaign id) and hands every other order to the sources service; `main.go` gives it to `ships` and `launchorders`.
+  - The claim (`ships.ClaimKey`, `Service.Claims`) is keyed by the lower-cased issue URL, one entry per issue of every ship (`Ship.IssueURLs`: the `issues` list of a slice ship, else its `url`; the tmux option `issues` is comma-joined, and the moored record keeps the list): any listed ship, pending listing or launch in flight holding any of them refuses a second launch with 409, whatever launches it, and an order whose issue is held stays listed.
+  - `Service.Launch` is the one launch path behind `POST /api/ships` and the campaign route.
+  - `sources.Supervisor.GitHubClient(fleet, host)` hands out the fleet's built-in GitHub client. A source cannot take the key `campaign`.
+  - Order JSON from the GitHub source carries `sub_issues`, and for a pull request `pr` (a ship's `prs[]` entry without `url`, mapped from the search through the poll's `prNode.status()` and `moor.View`).
+  - `Service.View` lists every order a panel returns, whatever ships launched from it or hold its issue; the Orders screen shows each order's ships.
+- `internal/campaigns` works out a campaign page from a read issue tree: each child's status (done, ready, blocked, claimed with no ship, underway), the ready set in sub-issue order, progress, and each child's default mode and starting skill from ADR 0027's table, with a per-campaign override winning.
+  - Claims and overrides come in as input; it reads and writes nothing.
+  - `Decide` (`plan.go`) is the pure planner for a campaign commitment: from a built campaign, what the commitment has launched, declined and proposed, and the fleet's With-you hold, it returns the Without-you children to launch, at most one With-you child to propose, a proposal to withdraw and whether the campaign has ended or been unfollowed.
+  - `ParseIssueRef` turns a pasted issue URL or `owner/repo#n` into an issue to read.
+  - The tree itself comes from `(*github.Client).Tree` in `internal/github`: GraphQL only, never a mutation, sub-issues to 8 levels (100 per page, paged), plus the `Part of #n` and `Blocked by:` body-line fallback past GitHub's 100-sub-issue cap.

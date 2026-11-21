@@ -331,7 +331,7 @@ func TestLockLostWhenTheServerStops(t *testing.T) {
 	}
 }
 
-// Skips when the Mac's LAN address does not answer (docs/agents/testing.md).
+// Skips when the Mac's LAN address does not answer (docs/agents/testing/fakes.md).
 func TestLockRouteRefusesANonLoopbackPeer(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

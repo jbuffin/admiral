@@ -41,6 +41,8 @@ DOCS = $(shell git ls-files '*.md')
 lint-docs:
 	web/node_modules/.bin/markdownlint-cli2 $(DOCS)
 	cd web && node_modules/.bin/remark --frail --quiet --no-stdout --use remark-validate-links $(addprefix ../,$(DOCS))
+	sh scripts/lint-agent-docs.sh
+	sh scripts/lint-agent-docs_test.sh
 
 # The Go e2e tests run in parallel, E2E_PARALLEL at a time (each starts its
 # own Admiral and tmux server; four suit a Mac).

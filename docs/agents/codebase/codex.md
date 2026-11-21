@@ -1,0 +1,15 @@
+# Codex ships
+
+The Codex app-server wrapper and the live Codex conversation. Read it before changing `internal/codexpane`, `internal/codexlive` or Codex launch handling.
+
+- Codex ships and their app-server: `Launch` runs a Codex ship (not a crew boat) as `$ADMIRAL_HOME/bin/admiral codex-pane --socket <path> -- <exe> <args…>` (`internal/cli/codexpane.go`, `internal/codexpane`), with the socket `/tmp/admiral-<uid>/<hash>.sock` new per launch, recorded in the pane option `@admiral-codex-socket` and unquoted in the pane's start command.
+  - The wrapper starts `<exe> app-server --listen unix://<path>` with the ship's `-c`/`--enable`/`--disable` flags (the dock's, `model_reasoning_effort`, `hooks.*`; tools and the model run in the server) and none of the TUI-only ones, waits for the socket, then runs the TUI as `<exe> --remote unix://<path> <args…>`; on any failure it prints the reason to stderr and runs `<exe> [--no-daemon] <args…>` instead (`--no-daemon` only when `<exe> --help` lists it).
+  - The server is the wrapper's child, so hooks see the pane's `TMUX_PANE` and `ADMIRAL_SHIP`.
+  - It is killed with the TUI (process group), and Codex's real socket and `.lock` behind the listen symlink (`/private/tmp/codex-daemon-<uid>/` on macOS, compared by resolved path, and only when that directory is ours and 0700) are removed with it.
+  - A Codex dock whose `args` hold `--remote`, a Codex subcommand, a bare `--` or a `-c`/`--config` of `hooks.*` (or a disable of the hooks feature) is refused with a 400 in `Launch` (`codexDockArgRefused`); profiles and other features are allowed; Admiral's own argv is never checked.
+- The live Codex conversation: `shipconv.Service.StartLive` (wired in `cmd/admiral/main.go`) keeps one `internal/codexlive` connection per running Codex ship, keyed by session and `Launched`, and feeds its frames to `conversation.Live` (`internal/conversation/codexlive.go`), the one model the views and `PendingQuestions` read while it is up.
+  - `codexlive.Connect` refuses a socket the pane's start command does not name, or whose resolved target is not a socket of ours in `codexpane.DaemonDir()`; its only requests are `initialize`, `initialized`, `thread/loaded/list`, `thread/list` (several threads loaded and none matching the rollout) and `thread/resume {threadId}`, and it never answers a server request.
+  - A drop gives each view `reset: true` with the rollout, a reconnect `reset: true` with the server's history.
+  - The question card's gate is the pane's `bell` plus a pending question in the observer (`internal/ships/input.go`).
+  - The observer is also what raises that `bell`: Codex's TUI rings none for `request_user_input` and no hook fires, so `shipconv.Service.Asking` (wired to `ships.Service.Asking`) sets the pane to `needs_you`/`bell` when a question starts waiting and to `working` when it settles, touching only a pane a hook has not put at `needs_you` for another reason and clearing only its own mark.
+  - Tests inject `liveShips`, `liveSocket`, `liveDir`, `liveTimeout` and `liveBackoff`.

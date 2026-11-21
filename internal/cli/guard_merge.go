@@ -14,7 +14,7 @@ import (
 // guard refuses every gh pr merge that can merge, a change of a pull request's
 // base, and a write to the rules that gate a merge. It is best effort: it reads
 // the text of a Bash call and nothing else (see "Known gaps" in
-// docs/agents/codebase.md).
+// docs/agents/codebase/hooks-and-guard.md).
 
 // guardState is what the walk over one command line builds up: whether a cd
 // moved the shell, whether a startup file could run, and the standard input the
