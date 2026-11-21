@@ -275,7 +275,7 @@ function ViewRow({ entry, k, keys, inert, count, error, edit, reorder }: { entry
   );
 }
 
-function ViewsSection({ sourceKey, views, inert, counts, errors, edit, reorder, onAdd }: { sourceKey: string; views: ViewEntry[]; inert: boolean; counts: Record<string, Count>; errors: Record<string, string>; edit: (key: string, change: (list: ViewEntry[], i: number) => ViewEntry[]) => void; reorder: (order: string[]) => void; onAdd: (title: string, query: string) => Promise<boolean> }) {
+export function ViewsSection({ sourceKey, views, inert, counts, errors, edit, reorder, onAdd }: { sourceKey: string; views: ViewEntry[]; inert: boolean; counts: Record<string, Count>; errors: Record<string, string>; edit: (key: string, change: (list: ViewEntry[], i: number) => ViewEntry[]) => void; reorder: (order: string[]) => void; onAdd: (title: string, query: string) => Promise<boolean> }) {
   const keys = views.map(viewKey);
   const shown = arranged('views', keys, (k) => k);
   const [adding, setAdding] = useState(false);

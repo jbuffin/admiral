@@ -10,11 +10,16 @@
     "typecheck": "node scripts/gen-tokens.mjs && node scripts/gen-shell-tokens.mjs && tsc --noEmit"
   },
   "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/eslint-parser": "7.29.13",
+    "@babel/preset-typescript": "7.29.7",
     "@playwright/test": "1.55.0",
     "@preact/preset-vite": "^2.10.6",
     "@testing-library/preact": "3.2.6",
     "@types/markdown-it": "14.2.0",
     "@types/node": "^26.6.5",
+    "eslint": "9.39.5",
+    "eslint-plugin-react-hooks": "7.1.1",
     "happy-dom": "21.0.4",
     "jsqr": "^1.4.0",
     "markdownlint-cli2": "0.23.3",
