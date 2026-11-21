@@ -64,7 +64,8 @@ Read these when the task touches the area:
   - [`codebase/new-shell.md`](docs/agents/codebase/new-shell.md): the new shell at `/app/`. Read it before changing `web/src/app/`.
   - [`codebase/old-ui.md`](docs/agents/codebase/old-ui.md): the frozen old UI. Read it before changing old-UI code.
   - [`codebase/idle-memory-and-setup.md`](docs/agents/codebase/idle-memory-and-setup.md): idle memory and the setup terminal. Read it before changing memory use or `admiral setup`.
-- [`docs/agents/testing.md`](docs/agents/testing.md): what to test and at which layer, the test seams, `$ADMIRAL_HOME` isolation, the fake harness cue language and the faked LAN. Read it before writing or changing a test.
+- [`docs/agents/testing.md`](docs/agents/testing.md): what to test and at which layer, the test seams and `$ADMIRAL_HOME` isolation. Read it before writing or changing a test.
+- [`docs/agents/testing/fakes.md`](docs/agents/testing/fakes.md): the fake harnesses and their cue language, the test sources, fake `gh` and `tailscale`, and the faked LAN. Read it before writing a test that launches a ship or needs one of them.
 - [`docs/bridge-protocol.md`](docs/bridge-protocol.md): the bridge WebSocket messages. Read it before changing the bridge or `web/src/bridgeLink.ts`.
 - [`docs/api.md`](docs/api.md): the HTTP and WebSocket shapes a client reads, starting with a ship's conversation. Read it before changing `internal/shipconv/` or a client of it.
 - [`docs/cli.md`](docs/cli.md): every `admiral` command and the setup answers file. Read it before changing `internal/cli/`.
