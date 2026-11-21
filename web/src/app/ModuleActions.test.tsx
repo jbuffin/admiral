@@ -872,7 +872,10 @@ test('on a row with a target a menu action of the target step goes in the menu b
   expect(itemNames()).toEqual(['Rerun lint']);
   await closeMenu();
   const code = within(p).getByText('Code review').closest('li') as HTMLElement;
-  expect(within(code).queryByRole('button', { name: 'More actions' })).toBeNull();
+  // The row's actions naming a step show on its card, so the target step's card holds Hold deploy and never Rerun lint.
+  fireEvent.click(trigger(code));
+  await screen.findByRole('menu');
+  expect(itemNames()).toEqual(['Hold deploy']);
 });
 
 test('a step card draws its own menu when the row has no target', async () => {

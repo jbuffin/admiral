@@ -73,6 +73,8 @@ type Action struct {
 	Link  string `json:"link,omitempty"`
 	// Step is the id of the step in the row's detail a module action acts on.
 	Step string `json:"step,omitempty"`
+	// Menu puts a module action in its group's overflow menu instead of a button.
+	Menu bool `json:"menu,omitempty"`
 }
 
 type Row struct {
@@ -267,6 +269,7 @@ func parseAction(raw json.RawMessage) *Action {
 		Title   json.RawMessage `json:"title"`
 		Link    json.RawMessage `json:"link"`
 		Step    json.RawMessage `json:"step"`
+		Menu    json.RawMessage `json:"menu"`
 	}
 	if json.Unmarshal(raw, &item) != nil {
 		return nil
@@ -313,6 +316,7 @@ func parseAction(raw json.RawMessage) *Action {
 	}
 	if a.Builtin == "" {
 		a.Step, _ = parseID(item.Step)
+		a.Menu = string(item.Menu) == "true"
 	}
 	return &a
 }
@@ -365,7 +369,9 @@ func parseRow(raw json.RawMessage) (Row, error) {
 		return Row{}, err
 	}
 	if hasMain {
-		row.Action = parseAction(item.Action)
+		if row.Action = parseAction(item.Action); row.Action != nil {
+			row.Action.Menu = false // a row's main action is its one button
+		}
 	}
 	if row.Actions, err = parseActions(item.Actions); err != nil {
 		return Row{}, err
@@ -468,7 +474,7 @@ func parseNotices(raw []json.RawMessage) ([]Notice, error) {
 		notice.Link, _ = parseLink(item.Link)
 		// Built-in actions hang on a row; a notice keeps only a module action and links through its link.
 		if a := parseAction(item.Action); a != nil && a.Builtin == "" {
-			a.Step = ""
+			a.Step, a.Menu = "", false
 			notice.Action = a
 		}
 		out = append(out, notice)

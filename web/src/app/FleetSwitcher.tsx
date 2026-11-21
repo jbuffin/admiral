@@ -1,10 +1,11 @@
-import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 import { startSetup } from './api';
 import { activeFleet, chooseFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
 import type { Fleet } from './api';
 import { Icon } from './Icon';
 import { fleetPath, go } from './router';
 import { Sheet, useListKeys } from './Sheet';
+import { useOutsidePress } from './useOutsidePress';
 
 const LINE = 'The inbox and shared resources span fleets.';
 
@@ -26,16 +27,8 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
   };
 
   useListKeys(panel, open && !sheet, () => close());
-  useLayoutEffect(() => {
-    if (!open || sheet) return;
-    // The desktop menu has no backdrop: a tap anywhere else closes it.
-    const onDown = (e: Event) => {
-      const t = e.target as Node;
-      if (!panel.current?.contains(t) && !trigger.current?.contains(t)) close(false);
-    };
-    document.addEventListener('pointerdown', onDown);
-    return () => document.removeEventListener('pointerdown', onDown);
-  }, [open, sheet]);
+  // The desktop menu has no backdrop: a tap anywhere else closes it.
+  useOutsidePress(open && !sheet, [panel, trigger], () => close(false));
 
   const pick = (key: string) => {
     chooseFleet(key);
