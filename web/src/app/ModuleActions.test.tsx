@@ -69,6 +69,7 @@ interface Handlers {
   form?: () => Pending;
   run?: (row: string, action: string) => Pending;
   page?: () => unknown;
+  detail?: () => unknown;
 }
 
 // Serves the page, the row and the module action routes, and records every POST.
@@ -79,7 +80,7 @@ function server(h: Handlers = {}) {
     vi.fn(async (path: string, init?: RequestInit) => {
       const method = init?.method ?? 'GET';
       if (method === 'GET' && path.endsWith('/page')) return new Response(JSON.stringify(h.page ? h.page() : pageOf()));
-      if (method === 'GET' && path.endsWith('/rows/r1')) return new Response(JSON.stringify(detail));
+      if (method === 'GET' && path.endsWith('/rows/r1')) return new Response(JSON.stringify(h.detail ? h.detail() : detail));
       const m = /\/(?:rows|notices)\/([^/]+)\/actions\/([^/]+)\/(form|run)$/.exec(path);
       if (method === 'POST' && m) {
         posts.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined, init });
@@ -750,5 +751,230 @@ test('a notice whose id is . or .. is disabled and a press sends nothing', async
     fireEvent.click(b);
   }
   expect((within(await noticeItem('Fine notice')).getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false);
+  expect(posts).toHaveLength(0);
+});
+
+const snooze = { id: 'snooze', label: 'Snooze', confirm: 'click', menu: true };
+const wipe = { id: 'wipe', label: 'Wipe cache', confirm: 'yesno', summary: 'Wipe the build cache', menu: true };
+const tag = { id: 'tag', label: 'Tag release', confirm: 'click', menu: true };
+const trigger = (scope: HTMLElement) => within(scope).getByRole('button', { name: 'More actions' }) as HTMLButtonElement;
+const itemNames = () => screen.queryAllByRole('menuitem').map((i) => i.textContent?.trim());
+const closeMenu = async () => {
+  fireEvent.keyDown(document.body, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryAllByRole('menuitem')).toHaveLength(0));
+};
+
+const menuPage = (row: Record<string, unknown>, state = 'ready') => () => ({
+  state,
+  waiting: 0,
+  ...(state === 'error' ? { error: 'plugin crashed' } : {}),
+  groups: [{ id: 'review', title: 'Needs review', rows: [{ id: 'r1', title: 'Fix login', subtitle: '', chips: [], reason: '', ...row }] }],
+});
+
+test('a row with two button actions and three menu actions shows two buttons and a ⋯ trigger that lists the three in order', async () => {
+  server({ page: menuPage({ actions: [ping, snooze, ship, wipe, tag] }) });
+  open();
+  const row = await rowItem();
+  const buttons = within(row).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent?.trim());
+  expect(buttons).toEqual(['Open Fix login', 'Ping owner', 'Ship it', 'More actions']);
+  expect(within(row).queryByRole('button', { name: 'Snooze' })).toBeNull();
+  expect(screen.queryByRole('menu')).toBeNull();
+  fireEvent.click(trigger(row));
+  expect(await screen.findByRole('menu')).toBeTruthy();
+  expect(itemNames()).toEqual(['Snooze', 'Wipe cache', 'Tag release']);
+});
+
+test('a group with exactly one menu action still shows the ⋯ trigger and not a button', async () => {
+  server({ page: menuPage({ actions: [snooze] }) });
+  open();
+  const row = await rowItem();
+  expect(within(row).queryByRole('button', { name: 'Snooze' })).toBeNull();
+  fireEvent.click(trigger(row));
+  await screen.findByRole('menu');
+  expect(itemNames()).toEqual(['Snooze']);
+});
+
+test('a menu action with no button actions beside it still draws only the ⋯ trigger', async () => {
+  server({ page: menuPage({ action: pass, actions: [snooze] }) });
+  open();
+  const row = await rowItem();
+  expect(within(row).getByRole('button', { name: 'Pass review' })).toBeTruthy();
+  expect(trigger(row)).toBeTruthy();
+});
+
+test('choosing a click menu item runs it at once with no sheet', async () => {
+  const posts = server({ page: menuPage({ actions: [ping, snooze] }) });
+  open();
+  const row = await rowItem();
+  fireEvent.click(trigger(row));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Snooze' }));
+  await waitFor(() => expect(runPosts(posts)).toHaveLength(1));
+  expect(runPosts(posts)[0].path).toBe(`${BASE}/r1/actions/snooze/run`);
+  expect(runPosts(posts)[0].body).toEqual({ values: {} });
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+test('choosing a yesno menu item opens the same confirm its button would, and confirming sends the same run', async () => {
+  const posts = server({ page: menuPage({ actions: [wipe] }) });
+  open();
+  fireEvent.click(trigger(await rowItem()));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Wipe cache' }));
+  const dialog = await screen.findByRole('dialog');
+  expect(within(dialog).getByText('Wipe the build cache')).toBeTruthy();
+  expect(posts).toHaveLength(0);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Wipe cache' }));
+  await waitFor(() => expect(runPosts(posts)).toHaveLength(1));
+  expect(runPosts(posts)[0].path).toBe(`${BASE}/r1/actions/wipe/run`);
+  expect(runPosts(posts)[0].body).toEqual({ values: {} });
+});
+
+test('choosing a form menu item fetches its form like its button would', async () => {
+  const posts = server({ page: menuPage({ actions: [{ ...pass, menu: true }] }) });
+  open();
+  fireEvent.click(trigger(await rowItem()));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Pass review' }));
+  await screen.findByRole('dialog');
+  expect(formPosts(posts)[0].path).toBe(`${BASE}/r1/actions/pass/form`);
+});
+
+test('on a row with a target a menu action of the target step goes in the menu beside the target, one with no step in the menu after the divider, and one naming another step only on that step\'s card', async () => {
+  const onTarget = { id: 'on-target', label: 'Hold deploy', confirm: 'click', menu: true, step: 's1' };
+  const rowLevel = { id: 'row-level', label: 'Mute row', confirm: 'click', menu: true };
+  const other = { id: 'on-other', label: 'Rerun lint', confirm: 'click', menu: true, step: 's2' };
+  const twoSteps = {
+    sections: [{ kind: 'steps', title: 'Steps', steps: [{ id: 's1', title: 'Code review', chips: [] }, { id: 's2', title: 'Lint', chips: [] }] }],
+  };
+  server({ page: menuPage({ target: { label: 'Deploy', step: 's1' }, actions: [onTarget, rowLevel, other] }), detail: () => twoSteps });
+  open();
+  const row = await rowItem();
+  const triggers = within(row).getAllByRole('button', { name: 'More actions' });
+  expect(triggers).toHaveLength(2);
+  const targetGroup = within(row).getByRole('group', { name: 'Acts on Deploy' });
+  expect(targetGroup.contains(triggers[0])).toBe(true);
+  expect(targetGroup.contains(triggers[1])).toBe(false);
+  expect(row.querySelector('[role="separator"]')?.compareDocumentPosition(triggers[1])).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  fireEvent.click(triggers[0]);
+  await screen.findByRole('menu');
+  expect(itemNames()).toEqual(['Hold deploy']);
+  await closeMenu();
+  fireEvent.click(triggers[1]);
+  await screen.findByRole('menu');
+  expect(itemNames()).toEqual(['Mute row']);
+  await closeMenu();
+
+  cleanup();
+  go('/app/deploys/r1', '');
+  open('ready', true);
+  const p = await pane();
+  const card = (await within(p).findByText('Lint')).closest('li') as HTMLElement;
+  fireEvent.click(trigger(card));
+  await screen.findByRole('menu');
+  expect(itemNames()).toEqual(['Rerun lint']);
+  await closeMenu();
+  const code = within(p).getByText('Code review').closest('li') as HTMLElement;
+  // The row's actions naming a step show on its card, so the target step's card holds Hold deploy and never Rerun lint.
+  fireEvent.click(trigger(code));
+  await screen.findByRole('menu');
+  expect(itemNames()).toEqual(['Hold deploy']);
+});
+
+test('a step card draws its own menu when the row has no target', async () => {
+  const stepMenu = { id: 'step-menu', label: 'Defer step', confirm: 'click', menu: true };
+  server({ detail: () => ({ sections: [{ kind: 'steps', title: 'Steps', steps: [{ id: 's1', title: 'Code review', chips: [], actions: [again, stepMenu] }] }] }) });
+  open('ready', true);
+  const p = await pane();
+  const card = (await within(p).findByText('Code review')).closest('li') as HTMLElement;
+  expect(within(card).getByRole('button', { name: 'Run again' })).toBeTruthy();
+  fireEvent.click(trigger(card));
+  await screen.findByRole('menu');
+  expect(itemNames()).toEqual(['Defer step']);
+});
+
+test('the ⋯ trigger is disabled while the page is in error', async () => {
+  const posts = server({ page: menuPage({ actions: [ping, snooze] }, 'error') });
+  open('error');
+  await screen.findByText('plugin crashed');
+  const t = trigger(await rowItem());
+  expect(t.disabled).toBe(true);
+  fireEvent.click(t);
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(posts).toHaveLength(0);
+});
+
+test('the ⋯ trigger is disabled while a run is in progress on its row, but not on another row', async () => {
+  let release!: (a: Answer) => void;
+  server({
+    page: () => ({
+      state: 'ready',
+      waiting: 0,
+      groups: [{ id: 'g', title: 'G', rows: [
+        { id: 'r1', title: 'Fix login', chips: [], actions: [ping, snooze] },
+        { id: 'r3', title: 'Ship docs', chips: [], actions: [archive, snooze] },
+      ] }],
+    }),
+    run: () => new Promise<Answer>((r) => (release = r)),
+  });
+  open();
+  const row = await rowItem();
+  press(row, 'Ping owner');
+  await waitFor(() => expect(trigger(row).disabled).toBe(true));
+  expect(trigger(await rowItem('Ship docs')).disabled).toBe(false);
+  await act(async () => release({ body: { message: 'ok' } }));
+});
+
+test('while a menu item runs the trigger shows the spinner and aria-busy', async () => {
+  let release!: (a: Answer) => void;
+  const posts = server({ page: menuPage({ actions: [snooze] }), run: () => new Promise<Answer>((r) => (release = r)) });
+  open();
+  const row = await rowItem();
+  expect(trigger(row).getAttribute('aria-busy')).toBeNull();
+  fireEvent.click(trigger(row));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Snooze' }));
+  await waitFor(() => expect(runPosts(posts)).toHaveLength(1));
+  await waitFor(() => expect(trigger(row).getAttribute('aria-busy')).toBe('true'));
+  expect(trigger(row).querySelector('.spinner')).not.toBeNull();
+  expect(trigger(row).disabled).toBe(true);
+  await act(async () => release({ body: { message: 'ok' } }));
+});
+
+test('a menu item whose id is . is disabled on its own while the trigger stays usable, and choosing it sends nothing', async () => {
+  const posts = server({ page: menuPage({ actions: [{ ...snooze, id: '.' }, tag] }) });
+  open();
+  const row = await rowItem();
+  expect(trigger(row).disabled).toBe(false);
+  fireEvent.click(trigger(row));
+  const dot = await screen.findByRole('menuitem', { name: 'Snooze' });
+  expect(dot.hasAttribute('disabled') || dot.getAttribute('aria-disabled') === 'true').toBe(true);
+  fireEvent.click(dot);
+  expect(posts).toHaveLength(0);
+  const ok = screen.getByRole('menuitem', { name: 'Tag release' });
+  expect(ok.hasAttribute('disabled') || ok.getAttribute('aria-disabled') === 'true').toBe(false);
+});
+
+test('Escape and a press outside close the menu', async () => {
+  server({ page: menuPage({ actions: [snooze] }) });
+  open();
+  fireEvent.click(trigger(await rowItem()));
+  await screen.findByRole('menu');
+  await closeMenu();
+  fireEvent.click(trigger(await rowItem()));
+  await screen.findByRole('menu');
+  fireEvent.pointerDown(document.body);
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+});
+
+test('the ⋯ trigger is disabled on a row whose id is . like its buttons are', async () => {
+  const posts = server({ page: () => ({
+    state: 'ready',
+    waiting: 0,
+    groups: [{ id: 'g', title: 'G', rows: [{ id: '.', title: 'Dot row', subtitle: '', chips: [], reason: '', actions: [ping, snooze] }] }],
+  }) });
+  open();
+  const row = await rowItem('Dot row');
+  expect((within(row).getByRole('button', { name: 'Ping owner' }) as HTMLButtonElement).disabled).toBe(true);
+  const t = trigger(row);
+  expect(t.disabled).toBe(true);
+  fireEvent.click(t);
+  expect(screen.queryByRole('menu')).toBeNull();
   expect(posts).toHaveLength(0);
 });

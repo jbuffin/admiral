@@ -17,8 +17,9 @@ import { LaunchForm } from "./LaunchDialog";
 import { openableRow } from "./modules";
 import { durationLabel, MAX_DURATION, parseDuration, toHHMM } from "./moduleView";
 import { go, shipPath } from "./router";
-import { Sheet, useCancelFocus } from "./Sheet";
+import { Sheet, useCancelFocus, useListKeys } from "./Sheet";
 import { isWebUrl, showResult } from "./ToastRegion";
+import { useOutsidePress } from "./useOutsidePress";
 
 type Values = Record<string, string | string[]>;
 type Run = {
@@ -47,6 +48,14 @@ interface Controller {
   blocked: boolean;
   press: (target: ActionTarget, action: PageAction) => void;
 }
+
+/** Whether a group's actions of one kind are off for a target, before any one action's own id is checked. */
+const groupOff = (ctl: Controller | null, target: ActionTarget, kind?: string) =>
+  !ctl ||
+  !enabledFor(kind, ctl.blocked) ||
+  !!ctl.runs[targetKey(target)] ||
+  !!ctl.pending[targetKey(target)] ||
+  !openableRow(target.id);
 
 /** A target's key in the run table; the kind prefix keeps a row and a notice with one id apart. */
 export const targetKey = (t: ActionTarget) => `${t.notice ? "notice" : "row"}:${t.id}`;
@@ -293,9 +302,11 @@ export function ModuleActions({
   const all = [...(one ? [one] : []), ...(many ?? [])];
   const cls = (a: PageAction) => `btn mact${small ? " mact-small" : ""}${a.id === lead ? (small ? " lead" : " primary") : ""}`;
   const run = ctl?.runs[targetKey(target)];
+  const inMenu = (a: PageAction) => !!a.menu && !builtinOf(a);
+  const menu = all.filter(inMenu);
   return all.length === 0 ? null : (
     <span class="mactions">
-      {all.map((a) => {
+      {all.filter((a) => !inMenu(a)).map((a) => {
         const kind = builtinOf(a);
         if (kind && target.notice) return null;
         if (kind === "open")
@@ -316,14 +327,7 @@ export function ModuleActions({
             key={a.id}
             type="button"
             class={cls(a)}
-            disabled={
-              !ctl ||
-              !enabledFor(kind, ctl.blocked) ||
-              !!run ||
-              !!ctl.pending[targetKey(target)] ||
-              !openableRow(target.id) ||
-              !openableRow(a.id)
-            }
+            disabled={groupOff(ctl, target, kind) || !openableRow(a.id)}
             aria-busy={running || ctl?.pending[targetKey(target)] === a.id ? "true" : undefined}
             onClick={() => ctl?.press(target, a)}
           >
@@ -332,6 +336,62 @@ export function ModuleActions({
           </button>
         );
       })}
+      {menu.length > 0 ? <ActionMenu target={target} items={menu} small={small} /> : null}
+    </span>
+  );
+}
+
+/** The ⋯ menu of a group's menu module actions; choosing one acts like pressing its button. */
+function ActionMenu({ target, items, small }: { target: ActionTarget; items: PageAction[]; small?: boolean }) {
+  const ctl = useContext(Ctx);
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const run = ctl?.runs[targetKey(target)];
+  const pending = ctl?.pending[targetKey(target)];
+  const busy = (run?.phase === "running" && items.some((a) => a.id === run.action)) || items.some((a) => a.id === pending);
+  const disabled = groupOff(ctl, target);
+  const close = (refocus = true) => {
+    setOpen(false);
+    if (refocus) trigger.current?.focus();
+  };
+  useListKeys(panel, open, () => close());
+  useOutsidePress(open, [wrap], () => close(false));
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+  return (
+    <span ref={wrap} class="mmenu">
+      <button
+        ref={trigger}
+        type="button"
+        class={`btn mact${small ? " mact-small" : ""}`}
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-busy={busy ? "true" : undefined}
+        disabled={disabled}
+        onClick={() => setOpen(!open)}
+      >
+        ⋯{busy ? <span class="spinner" aria-hidden="true" /> : null}
+      </button>
+      {open ? (
+        <div ref={panel} class="menu mmenu-panel" role="menu" aria-label="More actions">
+          {items.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              role="menuitem"
+              class="menu-item"
+              disabled={!openableRow(a.id)}
+              onClick={() => (close(false), ctl?.press(target, a))}
+            >
+              <span class="menu-name">{a.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </span>
   );
 }

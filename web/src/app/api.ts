@@ -713,6 +713,7 @@ export interface PageAction {
   url?: string;
   /** The id of the step in the row's detail a module action acts on. */
   step?: string;
+  menu?: boolean;
   /** A built-in action: Admiral does it, not the module. Absent on a module action. */
   builtin?: 'open' | 'launch' | 'message';
 }

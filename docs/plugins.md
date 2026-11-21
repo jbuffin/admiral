@@ -259,7 +259,7 @@ A group:
 | `label` | string | yes | The chip's text. | Inside the pill. | Missing: the chip is dropped. |
 | `tone` | string | no | `neutral`, `good`, `warn` or `muted`. | The pill's color. | Any other value reads `neutral`. |
 
-**An action** is a button. It is the `action` of a row, one of its `actions`, an action of a step, or the `action` of a notice.
+**An action** is a button, or, for a module action with `menu`, an item in a ⋯ menu. It is the `action` of a row, one of its `actions`, an action of a step, or the `action` of a notice.
 
 | Field | Type | Required | Applies to | Meaning | Drawn as | When bad |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -268,6 +268,7 @@ A group:
 | `confirm` | string | no | module actions | `click` runs at once, `yesno` asks first, `form` asks `action.form` and shows its fields. | Decides what a press does first. | Any other value reads `yesno`. A message action always asks. |
 | `summary` | string | no | module actions | A line of what the action does, shown in its confirm. | In the confirm. | Cleaned of control characters. |
 | `step` | string | no | module actions | The `id` of the step in the row's detail view that the action acts on; see [how a row is drawn](#how-a-row-is-drawn). | Places the button; see how a row is drawn. | Not a usable id: dropped by itself, the action stays. Dropped on a built-in action and on a notice's action. A step the detail lacks is not an error. |
+| `menu` | boolean | no | module actions | `true` puts the module action in its group's ⋯ menu instead of a button; see [how a row is drawn](#how-a-row-is-drawn). | An item of the group's ⋯ menu, which is named "More actions". | Not a boolean: reads `false`. Cleared on a built-in action, on a notice's action and on a row's `action`. |
 | `builtin` | string | no | built-in actions | `open`, `launch` or `message`: Admiral handles the action itself and never sends it to the plugin. | A link or a dialog, not a plugin call. | Any other value, or `open` or `launch` with no `url`: the action is dropped. |
 | `url` | string | for `open`, `launch` | built-in actions | An `http(s):` link. A bare `url` with no `builtin` is `open`. | The link or issue the button opens. | Not `http(s):`, or holding whitespace of any script or an invisible character: the action is dropped. |
 | `kind`, `ref`, `title`, `link` | strings | for `message` | message actions | See below. | In the message confirm. | Any missing, or `link` unacceptable: the action is dropped. |
@@ -348,6 +349,8 @@ A row with no `target` shows its `action` and `actions` as one set of buttons, w
 - **In the detail view, on a step's card:** the row's module actions naming that step, then the step's own `actions`. The step `target.step` names comes first, marked "Next up", with the row's `reason`, and its lead is the row's `action` when that names it.
 - **In the detail view, after the steps:** the module actions with no `step`, and the ones whose `step` names no step of the detail.
 
+Each of these groups draws its module actions with `menu: true` as the items of one ⋯ menu after the group's buttons, in the order given. A group with a single such action still gets the menu. Choosing an item acts like pressing a button: a `yesno` action opens its confirm, a `form` action its form, and a `click` action runs at once. The ⋯ button is off while the page is in `error` and while a run is out on the row, and shows a spinner while one of its items runs. The row's `action` is always a button, whatever its `menu` says.
+
 An `id` shows once on the whole row, in the order the row's `action`, its `actions`, then each step's actions in step order. An action whose `id` already showed earlier in that order shows nowhere else.
 
 ### A worked example
@@ -404,7 +407,7 @@ The calls for a notice's action name the notice in place of the row: `action.for
 
 ### Page limits
 
-Admiral keeps the last good page. A `page.get` or `row.get` that gets no answer within 10 seconds fails like any other call. A page in the `error` state turns the module's module actions off.
+Admiral keeps the last good page. A `page.get` or `row.get` that gets no answer within 10 seconds fails like any other call. A page in the `error` state turns the module's module actions off. Menu module actions count toward the 10 actions of a row or step like any other.
 
 | Over this, or this | Result |
 | --- | --- |
@@ -425,7 +428,7 @@ What a wrong type does depends on where it sits. Read it from the table's three 
 | --- | --- |
 | The answer, a group, a notice, a row or a section that is not an object; `groups`, `notices`, a group's `rows`, a row's `chips` or `actions`, `sections`, or a section's `links`, `steps` or `fields` that is not a list; `loading` that is not a boolean; the `id` of a group, a notice or a row that is not a string | Refuses the whole answer: `page.get` keeps the last good page and logs a protocol error, `row.get` fails and the row's pane shows the error. |
 | A chip, link, field, action or step that is not an object; a step's `chips` or `actions` that is not a list; a step `id` that is not a string; a target that is not an object or whose `chips` is not a list; a `kind` that is not a string | Drops that object (the target, the section, the step and so on) and keeps the rest. |
-| Any other value, such as a `title`, `subtitle`, `reason`, `label`, `text`, `tone`, `url`, `confirm` or `summary` that is not a string, or a `waiting` that is not a number | Drops the field: text reads as empty, a tone as `neutral` (`info` on a notice), `confirm` as `yesno`, `waiting` as 0, and an object that needs the value (an action without its `id` or `label`, a link without its `url`) goes with it. |
+| Any other value, such as a `title`, `subtitle`, `reason`, `label`, `text`, `tone`, `url`, `confirm` or `summary` that is not a string, or a `waiting` that is not a number | Drops the field: text reads as empty, a tone as `neutral` (`info` on a notice), `confirm` as `yesno`, `menu` as `false`, `waiting` as 0, and an object that needs the value (an action without its `id` or `label`, a link without its `url`) goes with it. |
 
 When `row.get` errors or is refused (an RPC error, no answer in 10 seconds, an answer over the limit or with a bad shape), the engineer sees "Couldn't load this row." and the one-line reason in the pane, and the page and the other rows stay as they were. The reason is your error message, cleaned to one line, or Admiral's own for a refused answer.
 
