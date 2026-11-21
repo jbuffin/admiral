@@ -303,6 +303,8 @@ func TestAdmiralBot_SavingAnotherHarnessStartsAFreshChatOnIt(t *testing.T) {
 	if got := w.record(chatSessionName).harness; got != "codex" {
 		t.Fatalf("the chat ran %q, want codex", got)
 	}
+	// Codex's fake writes to its record until its last cue: moving the record before then ends it.
+	w.waitFile(chatSessionName, "cues-done")
 
 	// The cue file is shared by both fakes, and Claude's fake can't run the Codex cues.
 	w.writeCue("record", sessionStartCue(filepath.Join(c.cfgDir, "projects", "p", "a.jsonl"), "startup"))
