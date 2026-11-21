@@ -627,3 +627,46 @@ func TestASourceKnownToHaveNoPageHasNeitherPageNorRowDetail(t *testing.T) {
 		t.Errorf("rowDetail = %v, want errNoPage", err)
 	}
 }
+
+func TestMenuIsKeptOnARowsAndAStepsActionsAndReadFalseWhereItDoesNotApply(t *testing.T) {
+	menuOf := func(a any) any { return a.(map[string]any)["menu"] }
+	row := firstRow(t, oneRow(`{"id":"r","title":"R","action":{"id":"m","label":"M","confirm":"click","menu":true},"actions":[
+		{"id":"a","label":"A","confirm":"click","menu":true},
+		{"id":"b","label":"B","confirm":"click"},
+		{"id":"c","label":"C","confirm":"click","menu":"true"},
+		{"id":"d","label":"D","confirm":"click","menu":1},
+		{"id":"e","label":"E","confirm":"click","menu":null},
+		{"id":"f","label":"F","confirm":"click","menu":false},
+		{"id":"o","label":"Open","builtin":"open","url":"https://example.com/x","menu":true}]}`))
+	acts := list(t, row, "actions")
+	for i, want := range []any{true, nil, nil, nil, nil, nil, nil} {
+		if got := menuOf(acts[i]); got != want {
+			t.Errorf("row action %d menu = %v, want %v (only a boolean true on a module action is kept)", i, got, want)
+		}
+	}
+	if got := menuOf(row["action"]); got != nil {
+		t.Errorf("row main action menu = %v, want it cleared", got)
+	}
+
+	p, err := parsePage(json.RawMessage(`{"state":"ready","groups":[],"notices":[{"id":"n","text":"T","action":{"id":"a","label":"A","confirm":"click","menu":true}}]}`))
+	if err != nil {
+		t.Fatalf("parsePage: %v", err)
+	}
+	if got := menuOf(list(t, jsonOf(t, p), "notices")[0].(map[string]any)["action"]); got != nil {
+		t.Errorf("notice action menu = %v, want it cleared", got)
+	}
+
+	d, err := parseRowDetail(json.RawMessage(`{"sections":[{"kind":"steps","title":"S","steps":[{"id":"s1","title":"T","actions":[
+		{"id":"x","label":"X","confirm":"click","menu":true},
+		{"id":"y","label":"Y","confirm":"click"},
+		{"id":"z","label":"Z","confirm":"click","menu":"yes"}]}]}]}`))
+	if err != nil {
+		t.Fatalf("parseRowDetail: %v", err)
+	}
+	sacts := list(t, list(t, jsonOf(t, d), "sections")[0], "steps")[0].(map[string]any)["actions"].([]any)
+	for i, want := range []any{true, nil, nil} {
+		if got := menuOf(sacts[i]); got != want {
+			t.Errorf("step action %d menu = %v, want %v", i, got, want)
+		}
+	}
+}
