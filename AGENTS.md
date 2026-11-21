@@ -77,4 +77,3 @@ Keep the `@critical` set to the flows Admiral cannot ship broken. The release ru
 
 - The server masks secret settings, including values inside arrays, as `__admiral_unchanged__`, and restores them on save. A settings control keeps that marker intact: a list whose stored value holds the marker stays a JSON field. Decide from what the server actually masked (`maskSecrets` in `internal/sources/service.go`), not from schema keywords alone.
 - A settings change or Restart reuses the source's runner (`internal/sources/supervisor.go`), so its panels' last orders and errors carry over to the new process. Adding a source, or removing and re-adding it, starts a new runner with none.
-

@@ -33,4 +33,3 @@ Where things are. Read the area file for the part you are changing; `packages.md
 - [The new shell at `/app/`](codebase/new-shell.md): modules, pages and routes of the new web shell. Read before changing `web/src/app/`.
 - [The old web UI](codebase/old-ui.md): the frozen Preact UI outside `web/src/app/`. Read before changing old-UI code.
 - [Idle memory and the setup terminal](codebase/idle-memory-and-setup.md): memory figures and `admiral setup`. Read before changing memory use or `admiral setup`.
-
