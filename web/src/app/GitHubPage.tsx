@@ -282,8 +282,8 @@ export function ViewsSection({ sourceKey, views, inert, counts, errors, edit, re
   const [adding, setAdding] = useState(false);
   const openButton = useRef<HTMLButtonElement>(null);
   // Only a cancel returns focus to the opener; a successful add leaves it where it is.
-  const [cancelled, setCancelled] = useState(false);
-  useFocusOnOpen(cancelled, openButton);
+  const [returnFocus, setReturnFocus] = useState(false);
+  useFocusOnOpen(returnFocus, openButton);
   return (
     <>
       <section class="gh-section" aria-labelledby="gh-views">
@@ -295,7 +295,7 @@ export function ViewsSection({ sourceKey, views, inert, counts, errors, edit, re
             <p class="note">The tabs across the top of Orders, in this order. Drag to reorder, switch off to hide.</p>
           </div>
           <button ref={openButton} type="button" class="btn" disabled={inert} aria-expanded={adding} onClick={() => {
-              setCancelled(false);
+              setReturnFocus(false);
               setAdding(true);
             }}
           >
@@ -323,7 +323,7 @@ export function ViewsSection({ sourceKey, views, inert, counts, errors, edit, re
           }}
           onCancel={() => {
             setAdding(false);
-            setCancelled(true);
+            setReturnFocus(true);
           }}
         />
       ) : null}
