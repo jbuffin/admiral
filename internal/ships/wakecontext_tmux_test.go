@@ -253,3 +253,38 @@ func TestAWakeLeavesTheLastReportAndAnAnsweredInboxItemInTheCheckoutAfterTheLaun
 		t.Error("an inbox text is in the context file")
 	}
 }
+
+func TestAWakeRefusesALinkPlantedAtTheInboxCopyAndStartsNothing(t *testing.T) {
+	r := newWakeRig(t, 0)
+	r.moored(t, 0)
+	r.seedReport(t, "done")
+	report, inbox, _ := launcher.ShipFiles(r.home, "saltpaw")
+	if err := os.MkdirAll(inbox, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inbox, "i1.json"), []byte("ITEM-TEXT"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	if err := os.MkdirAll(filepath.Dir(moor.InboxCopyPath(r.checkout)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, moor.InboxCopyPath(r.checkout)); err != nil {
+		t.Fatal(err)
+	}
+	_, lerr := r.s.Wake(context.Background(), "saltpaw", "")
+	if lerr == nil || lerr.Status != 500 {
+		t.Fatalf("Wake = %v, want a 500 refusal", lerr)
+	}
+	if ents, _ := os.ReadDir(target); len(ents) != 0 {
+		t.Errorf("a file was written through the link: %v", ents)
+	}
+	if _, err := os.Stat(filepath.Join(r.rec, "argv-1")); err == nil {
+		t.Error("a ship was started, want the refused wake to start none")
+	}
+	for _, p := range []string{report, filepath.Join(inbox, "i1.json")} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s is gone after the refused wake: %v", p, err)
+		}
+	}
+}

@@ -93,43 +93,74 @@ func WriteShipCopy(checkout string, p ShipCopy) error {
 		}
 	}
 	if p.Report != "" {
-		if err := copyInto(root, rel, p.Report); err != nil {
+		if err := copyFrom(root, rel, filepath.Dir(p.Report), filepath.Base(p.Report)); err != nil {
 			return err
 		}
 	}
 	if len(p.InboxFile) == 0 {
 		return nil
 	}
+	if fi, err := os.Lstat(p.InboxDir); err != nil || !fi.IsDir() {
+		return nil
+	}
 	if err := root.Mkdir(dir, 0o700); err != nil {
 		return err
 	}
+	// One root for every item, taken after the directory check, so a link swapped in for the directory is not followed.
+	inbox, err := os.OpenRoot(p.InboxDir)
+	if err != nil {
+		return err
+	}
+	defer inbox.Close()
 	for _, name := range p.InboxFile {
-		if err := copyInto(root, filepath.Join(dir, name), filepath.Join(p.InboxDir, name)); err != nil {
+		if err := copyItem(root, filepath.Join(dir, name), inbox, name); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func copyInto(root *os.Root, rel, src string) error {
-	in, err := os.OpenFile(src, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+func copyFrom(root *os.Root, rel, srcDir, name string) error {
+	src, err := os.OpenRoot(srcDir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
-		return nil // a link swapped in since the plan is skipped
+		return err
+	}
+	defer src.Close()
+	return copyItem(root, rel, src, name)
+}
+
+// copyItem skips what the plan could not have seen change into something else: a vanished file, a link, a non-regular
+// file or one over the cap, even one that grew past it while being read. Any other error refuses the wake.
+func copyItem(root *os.Root, rel string, src *os.Root, name string) error {
+	// O_NONBLOCK so a FIFO swapped in after the plan cannot hang the launch lock.
+	in, err := src.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	switch {
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ELOOP), errors.Is(err, syscall.EISDIR):
+		return nil
+	case err != nil:
+		return err
 	}
 	defer in.Close()
 	if fi, err := in.Stat(); err != nil || !copyable(fi) {
+		return err
+	}
+	b, err := io.ReadAll(io.LimitReader(in, maxCopiedFile+1))
+	if err != nil {
+		return err
+	}
+	if len(b) > maxCopiedFile {
 		return nil
 	}
 	out, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return err
 	}
-	_, cerr := io.Copy(out, io.LimitReader(in, maxCopiedFile))
-	if err := out.Close(); cerr == nil {
-		cerr = err
+	_, werr := out.Write(b)
+	if cerr := out.Close(); werr == nil {
+		werr = cerr
 	}
-	return cerr
+	return werr
 }
