@@ -29,9 +29,9 @@ A test earns its place when it would catch a bug a person could hit:
 
 A component test renders one component of the new shell in Node, under happy-dom with `@testing-library/preact`, and runs in `make check` with no browser. Write one for:
 
-- what a component shows for a given state, including its empty and error states;
-- a form's validation, and what enables or disables a control;
-- what a click or key changes on screen, with `fetch` stubbed (`vi.stubGlobal('fetch', …)`) so the test also sees the request body.
+- What a component shows for a given state, including its empty and error states.
+- A form's validation, and what enables or disables a control.
+- What a click or key changes on screen, with `fetch` stubbed (`vi.stubGlobal('fetch', …)`) so the test also sees the request body.
 
 Find elements by role and accessible name, as a person would, and assert what shows. Start from `src/app/Composer.test.tsx` and `src/app/QuestionCall.test.tsx`.
 
@@ -46,11 +46,11 @@ An E2E test is a journey a person takes that crosses the browser, the server and
 
 An E2E test is reliable when:
 
-- it waits on a condition (a locator, an API state, a file), never a fixed sleep, and a negative check holds for its whole window (see above);
-- it owns everything it touches: its own Admiral, `$ADMIRAL_HOME`, tmux socket and port, with no state shared with another test and no order it depends on;
-- it ends what it starts, in order: Admiral first, then `tmux -S <home>/tmux.sock kill-server` (`stop` in `web/e2e/fixtures.ts` does both);
-- its data is deterministic: fixed names and seeds, no random value a check depends on, and no real clock where a fake one will do;
-- it uses no real network and no real home (see below), and waits after seeding state as AGENTS.md's "Running the tests on a Mac" says.
+- It waits on a condition (a locator, an API state, a file), never a fixed sleep, and a negative check holds for its whole window (see above).
+- It owns everything it touches: its own Admiral, `$ADMIRAL_HOME`, tmux socket and port, with no state shared with another test and no order it depends on.
+- It ends what it starts, in order: Admiral first, then `tmux -S <home>/tmux.sock kill-server` (`stop` in `web/e2e/fixtures.ts` does both).
+- Its data is deterministic: fixed names and seeds, no random value a check depends on, and no real clock where a fake one will do.
+- It uses no real network and no real home (see below), and waits after seeding state as AGENTS.md's "Running the tests on a Mac" says.
 
 A flaky test is a bug. Find the race and fix it. Never add a retry, a longer timeout or a skip to make it pass, and prove a fix with repeated runs.
 
