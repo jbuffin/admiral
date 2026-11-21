@@ -1,0 +1,489 @@
+{
+  "src/AddSource.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/App.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/AppSettings.tsx": {
+    "admiral/no-deferral": {
+      "count": 1
+    }
+  },
+  "src/Bridge.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 4
+    }
+  },
+  "src/ChatPane.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 4
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/DockSheet.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 3
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/Header.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/InboxPanel.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 3
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/LaunchOrders.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 6
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 4
+    }
+  },
+  "src/Marina.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/Menu.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/Modal.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/PanelSection.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/PhoneShell.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/SettingsDialog.tsx": {
+    "admiral/no-deferral": {
+      "count": 1
+    },
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/Sidebar.tsx": {
+    "admiral/no-deferral": {
+      "count": 1
+    }
+  },
+  "src/app/AddCampaign.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 2
+    }
+  },
+  "src/app/AllowRulesPage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/Button.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/CampaignPage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 3
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 4
+    },
+    "react-hooks/rules-of-hooks": {
+      "count": 1
+    }
+  },
+  "src/app/ChatPanel.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 5
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/ChatSettingsPage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/Composer.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 6
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/ConversationView.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 3
+    }
+  },
+  "src/app/CrewPage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 3
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/FilingForms.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 2
+    }
+  },
+  "src/app/FindingsSheet.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/GitHubPage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 4
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/HarnessCapabilities.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/InboxPanel.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 2
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/InstallPrompts.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/LaunchDialog.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 6
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 5
+    }
+  },
+  "src/app/LaunchPickers.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/LaunchSkillPicker.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 3
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "src/app/LimitsPage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 4
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "src/app/MakeCampaignSheet.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 3
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 3
+    }
+  },
+  "src/app/ModuleActions.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 4
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/ModulePage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 3
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/NewCampaign.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 5
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 3
+    }
+  },
+  "src/app/NewViewCard.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/NotificationsPage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/OpenInVSCode.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/OrderSources.tsx": {
+    "admiral/no-deferral": {
+      "count": 1
+    },
+    "admiral/no-raw-effect": {
+      "count": 3
+    }
+  },
+  "src/app/OrdersScreen.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 3
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/PRDetailSections.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/Peek.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/PeekAllowRules.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 2
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "src/app/PeekDraftingEnded.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/PeekItem.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 2
+    }
+  },
+  "src/app/PeekMerge.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/Preferences.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/QuestionCall.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/RemoteAccessPage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 5
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 3
+    }
+  },
+  "src/app/RoutinesPage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 7
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 5
+    }
+  },
+  "src/app/SettingsForm.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/Sheet.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 2
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/Shell.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 4
+    }
+  },
+  "src/app/ShipPRs.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 5
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "src/app/ShipView.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 5
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/SkillPicker.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/StandingOrdersPage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/ToastRegion.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/UpdateBadge.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/UsagePage.tsx": {
+    "admiral/no-raw-effect": {
+      "count": 1
+    }
+  },
+  "src/app/draftingPick.ts": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/useChat.ts": {
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "src/app/useCommodoreRun.ts": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/useOutsidePress.ts": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/chat.ts": {
+    "admiral/no-deferral": {
+      "count": 1
+    }
+  },
+  "src/inboxState.ts": {
+    "admiral/no-deferral": {
+      "count": 1
+    }
+  },
+  "src/launch.ts": {
+    "admiral/no-deferral": {
+      "count": 1
+    }
+  },
+  "src/terminal.ts": {
+    "admiral/no-deferral": {
+      "count": 1
+    }
+  },
+  "src/useBridgePlacement.ts": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/useBridgeTerminal.ts": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  }
+}

@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { countSearch } from './api';
 import { Actions, Button } from './Button';
 import { countOutcome, type Count } from './githubViews';
+import { useFocusOnOpen } from './hooks/focus';
 import { canAdd as canAddView, completeSearch, labelProblem, MAX_SEARCH_BYTES, searchBytes, shownSearch, viewPreset, VIEW_PRESETS, withHandEdit, withLabel, withState, type BuilderState, type Draft, type Show, type Where } from './newView';
 
 const SHOWS: { show: Show; label: string }[] = [
@@ -89,7 +90,7 @@ export function NewViewCard({ sourceKey, error, onAdd, onCancel }: { sourceKey: 
   const first = useRef<HTMLButtonElement>(null);
   const saving = useRef(false);
   // Layout, not passive: a passive effect can land after the person has started typing in Name and pull focus off it.
-  useLayoutEffect(() => first.current?.focus(), []);
+  useFocusOnOpen(true, first, { layout: true });
 
   const state = draft.state;
   const pr = state.show === 'pr';

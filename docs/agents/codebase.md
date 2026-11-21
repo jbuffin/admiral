@@ -30,6 +30,6 @@ Where things are. Read the area file for the part you are changing; `packages.md
 - [The chat session](codebase/chat.md): AdmiralBot's per-fleet chat. Related: [harnesses](codebase/chat-harnesses.md) and [questions, cards and drafts](codebase/chat-cards.md). Read before changing `internal/chat`, `internal/brief` or the chat fence.
 - [Devices and pairing](codebase/devices.md): access control, tokens, pairing, push subscriptions. Read before changing `internal/auth`.
 - [API versions](codebase/api-versions.md): the `/api/v1` and `/ws/v1` aliases. Read before changing a route's versioning.
-- [The new shell at `/app/`](codebase/new-shell.md): modules, pages and routes of the new web shell. Read before changing `web/src/app/`.
+- [The new shell at `/app/`](codebase/new-shell.md): modules, pages and routes of the new web shell, and the lint and effect budget. Read before changing `web/src/app/`.
 - [The old web UI](codebase/old-ui.md): the frozen Preact UI outside `web/src/app/`. Read before changing old-UI code.
 - [Idle memory and the setup terminal](codebase/idle-memory-and-setup.md): memory figures and `admiral setup`. Read before changing memory use or `admiral setup`.

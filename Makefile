@@ -1,4 +1,4 @@
-.PHONY: build test test-short lint lint-docs lint-comments checks-history check e2e e2e-critical release
+.PHONY: build test test-short lint lint-web lint-docs lint-comments checks-history check e2e e2e-critical release
 
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
 BIN ?= bin/admiral
@@ -22,7 +22,7 @@ test-short:
 # suite runs on the Mac before a push and in the release (see AGENTS.md).
 check: build lint test-short
 
-lint: lint-docs lint-comments
+lint: lint-docs lint-comments lint-web
 	go vet ./...
 	go vet -tags packaging ./e2e/
 	go vet -tags e2e ./cmd/admiral
@@ -34,6 +34,10 @@ lint-comments:
 # How many checks scripts/checks/ held at each commit that touched it.
 checks-history:
 	sh scripts/checks-history.sh
+
+# Untyped ESLint over web/src; web/eslint-suppressions.json lists the exceptions.
+lint-web:
+	cd web && node_modules/.bin/eslint --max-warnings 0 src
 
 # Every tracked Markdown file: markdownlint, then relative links and anchors.
 # External URLs are never fetched.
