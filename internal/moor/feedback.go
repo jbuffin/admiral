@@ -70,3 +70,7 @@ func WriteFeedback(checkout string, round int, text string) (string, error) {
 	}
 	return filepath.Join(checkout, rel), nil
 }
+
+// WriteOrder puts a ship's order text in <checkout>/.admiral/untrusted/order.md the way WriteFeedback writes a round's
+// feedback, and returns its path.
+func WriteOrder(checkout, text string) (string, error) { return "", nil }

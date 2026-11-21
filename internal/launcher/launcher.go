@@ -1013,3 +1013,13 @@ func (l *Launcher) createSession(session, dir string, opts, paneOpts [][2]string
 }
 
 func (l *Launcher) server() sessionhost.Server { return sessionhost.NewServer(l.Tmux, l.Socket) }
+
+// ContextFile is the path ADMIRAL_CONTEXT names, beside the report: the ship-context document of a woken ship.
+// ok is false for a session name that would reach outside reports/.
+func ContextFile(home, session string) (path string, ok bool) {
+	report, _, ok := ShipFiles(home, session)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSuffix(report, ".json") + ".context.md", true
+}
