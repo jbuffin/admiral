@@ -207,7 +207,7 @@ func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Recor
 		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg, Wait: WaitHost}
 	}
 	round := rec.Round + 1
-	doc, orderText, haveOrder := s.wakeContext(rec, round)
+	doc, orderText, haveOrder, shipCopy := s.wakeContext(rec, round)
 	var promptText string
 	if opts.handPrompt != nil {
 		promptText = opts.handPrompt(rec, doc)
@@ -255,6 +255,14 @@ func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Recor
 				s.uncommitWake(session)
 				return &launcher.Error{Status: http.StatusInternalServerError, Msg: "the order's text cannot be written into the ship's checkout"}
 			}
+		}
+		// The launch clears the report and inbox right after this hook, so the copies are the ship's only way to read them.
+		if err := moor.WriteShipCopy(dir, shipCopy); err != nil {
+			if undo != nil {
+				undo()
+			}
+			s.uncommitWake(session)
+			return &launcher.Error{Status: http.StatusInternalServerError, Msg: "the ship's last report and inbox cannot be copied into its checkout"}
 		}
 		return nil
 	}

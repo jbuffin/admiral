@@ -221,3 +221,35 @@ func TestAFeedbackRoundKeepsItsPromptAndStillCarriesTheContextFile(t *testing.T)
 		t.Errorf("context file = %q, want the ship's PR and round 2", got)
 	}
 }
+
+func TestAWakeLeavesTheLastReportAndAnAnsweredInboxItemInTheCheckoutAfterTheLaunchClearsThem(t *testing.T) {
+	r := newWakeRig(t, 0)
+	r.moored(t, 0)
+	r.seedReport(t, "done")
+	_, inbox, _ := launcher.ShipFiles(r.home, "saltpaw")
+	if err := os.MkdirAll(inbox, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{"i1.json": "ITEM-TEXT", "i1.answer.json": "ANSWER-TEXT"} {
+		if err := os.WriteFile(filepath.Join(inbox, name), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {
+		t.Fatal(lerr)
+	}
+	_, env := r.started(t, 1)
+	if b, _ := os.ReadFile(moor.LastReportPath(r.checkout)); !strings.Contains(string(b), `"result":"done"`) {
+		t.Errorf("last-report.json = %q, want the report the wake found", b)
+	}
+	for name, want := range map[string]string{"i1.json": "ITEM-TEXT", "i1.answer.json": "ANSWER-TEXT"} {
+		if b, _ := os.ReadFile(filepath.Join(moor.InboxCopyPath(r.checkout), name)); string(b) != want {
+			t.Errorf("inbox copy %s = %q, want %q", name, b, want)
+		}
+	}
+	got := r.contextOf(t, env)
+	wantLines(t, got, moor.LastReportPath(r.checkout), moor.InboxCopyPath(r.checkout))
+	if strings.Contains(got, "ITEM-TEXT") || strings.Contains(got, "ANSWER-TEXT") {
+		t.Error("an inbox text is in the context file")
+	}
+}
