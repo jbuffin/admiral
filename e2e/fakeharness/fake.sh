@@ -1006,6 +1006,11 @@ claude_sid() {
 	printf '%s' "${_sid:-$_res}"
 }
 [ -n "$ADMIRAL_SHIP" ] && [ -n "$FAKE_SHIP_CUE" ] && FAKE_CUE=$FAKE_SHIP_CUE
+# The loop reads the cue file as it plays it, so it plays a copy: a test that rewrites the file for the next harness
+# would otherwise change the cues this one has yet to read.
+if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
+	cp "$FAKE_CUE" "$d/.cue.$$" && FAKE_CUE="$d/.cue.$$"
+fi
 exec 3<&0 # the terminal, for a `record` cue: the loop below reads the cue file on fd 0
 if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 	while read -r cmd arg; do

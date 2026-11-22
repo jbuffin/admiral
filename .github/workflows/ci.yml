@@ -2,8 +2,8 @@ name: CI
 
 # The light check every PR gets, on Ubuntu: build, lint (code and docs) and the
 # unit tests that need neither tmux nor macOS. The e2e suites run on the Mac
-# before a push (with evidence in the PR) and in the release; macos.yml runs
-# them on demand.
+# before a push (with evidence in the PR), and macos.yml runs them on a clean
+# runner on every push to main and in the release.
 on:
   pull_request:
   push:

@@ -51,6 +51,7 @@ An E2E test is reliable when:
 - It ends what it starts, in order: Admiral first, then `tmux -S <home>/tmux.sock kill-server` (`stop` in `web/e2e/fixtures.ts` does both).
 - Its data is deterministic: fixed names and seeds, no random value a check depends on, and no real clock where a fake one will do.
 - It uses no real network and no real home (see `testing/fakes.md` for the network part), and waits after seeding state as AGENTS.md's "Running the tests on a Mac" says.
+- It reads nothing about the Mac it runs on: no installed app, no tool on `PATH` beyond tmux, git and node, nothing under `~/.config`. The release runs on a clean runner, so a test that leans on your Mac passes for you and fails every release. A test-build seam (`cmd/admiral/*_e2e.go`) answers from its variable alone and, unset, gives the clean runner's answer, never the machine's.
 
 A flaky test is a bug. Find the race and fix it. Never add a retry, a longer timeout or a skip to make it pass, and prove a fix with repeated runs.
 

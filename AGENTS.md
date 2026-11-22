@@ -53,7 +53,7 @@ Read these when the task touches the area:
 
 ### Before you push
 
-PR CI is light: `make check` on Ubuntu (build, lint, and the unit tests that need neither tmux nor macOS). The e2e suites run on CI only in the release, through `macos.yml`, which you can also start by hand from the Actions tab. So your Mac is the gate: before you push a branch that changes code or tests, run `make e2e` on its head commit, and push once it passes.
+PR CI is light: `make check` on Ubuntu (build, lint, and the unit tests that need neither tmux nor macOS). The e2e suites run on CI through `macos.yml` on a clean macOS runner, on every push to main (beside CI) and in the release, and you can start it by hand from the Actions tab. So your Mac is the gate before merge: before you push a branch that changes code or tests, run `make e2e` on its head commit, and push once it passes.
 
 A PR that changes code or tests carries **e2e evidence** in its body, under `## E2E evidence` (the PR template has the slot):
 
