@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Locator, type Page, expect } from '@playwright/test';
 import type { Admiral } from './fixtures';
+import { cleanEnv } from './shipEnv';
 
 // Fleet names are unusual words so a text assertion can't match anything else on the page.
 export const WORK = 'Westwind';
@@ -628,7 +629,7 @@ export async function expectChipTone(page: Page, chip: Locator, tone: 'ok' | 'er
 export async function launchCrew(a: Admiral, ship: LaunchedShip, name: string, role?: string, cues?: string[]) {
   const cue = join(a.home, 'cue');
   if (cues) writeFileSync(cue, cues.join('\n') + '\n');
-  const env = { ...process.env, ADMIRAL_HOME: a.home, ADMIRAL_SHIP: ship.session, FAKE_RECORD_DIR: join(a.home, 'rec'), FAKE_CUE: cue };
+  const env = { ...cleanEnv(), ADMIRAL_HOME: a.home, ADMIRAL_SHIP: ship.session, FAKE_RECORD_DIR: join(a.home, 'rec'), FAKE_CUE: cue };
   const args = ['crew', 'launch', '--name', name, ...(role ? ['--role', role] : []), '--harness', 'claude', '--dir', join(a.home, 'proj'), '--', 'go'];
   const r = spawnSync(BIN, args, { env, encoding: 'utf8' });
   expect(r.status, r.stderr).toBe(0);
