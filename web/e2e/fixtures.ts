@@ -15,6 +15,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { cleanEnv } from './shipEnv';
+
 const bin = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'admiral');
 
 const fakeGhDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testdata', 'fakegh');
@@ -197,11 +199,10 @@ class Instance implements Admiral {
 
   resumeServer() {
     return new Promise<void>((done, fail) => {
-      // A harness identity variable from the engineer's shell must not reach the server.
+      // cleanEnv drops the ship and harness variables of the shell the tests run in.
       // The test build's LAN needs no network: while on 0.0.0.0, Admiral also serves 127.0.0.1:<lanPort> as a LAN peer (cmd/admiral/listen_tcp_e2e.go).
       const lan = this.lan ? { ADMIRAL_LAN_IP: '192.0.2.10', ADMIRAL_E2E_LAN_PORT: this.lanPort } : {};
-      const env: NodeJS.ProcessEnv = { ...process.env, ...lan, ...this.extraEnv, ADMIRAL_HOME: this.home };
-      for (const v of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'COPILOT_HOME']) delete env[v];
+      const env: NodeJS.ProcessEnv = { ...cleanEnv(), ...lan, ...this.extraEnv, ADMIRAL_HOME: this.home };
       const proc = spawn(bin, ['--listen', this.listen], {
         env,
         stdio: ['ignore', 'pipe', 'pipe'],

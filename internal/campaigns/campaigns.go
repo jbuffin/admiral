@@ -65,7 +65,7 @@ type Node struct {
 	Closed     bool
 	Parent     bool
 	Root       bool // the campaign's own issue
-	Unreadable int // sub-issues GitHub counts that couldn't be read, so the children shown may be incomplete
+	Unreadable int  // sub-issues GitHub counts that couldn't be read, so the children shown may be incomplete
 	Status     Status
 	Blockers   []github.Blocker // the open blockers, for a blocked child
 	Ship       string           // the ship holding the claim, for an underway child

@@ -112,4 +112,3 @@ func TestARoutineNameInALimitSentenceHasHiddenRunesStrippedAndIsBounded(t *testi
 		t.Errorf("sentence = %q, want no bidi rune and a name bounded at 80 runes", got)
 	}
 }
-

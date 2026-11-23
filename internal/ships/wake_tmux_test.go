@@ -83,7 +83,9 @@ exit "$(cat "` + rec + `/exit")"
 	home := guardedHome(t)
 	// Cleanups run last-in first, so this one stops the ships before the temp dirs registered above it are removed.
 	t.Cleanup(func() { _ = exec.Command(tmux, "-S", sock, "kill-server").Run() })
-	claude := func() config.Harness { return config.Harness{Name: "claude", Executable: exe, Found: true, Env: claudeEnv(t)} }
+	claude := func() config.Harness {
+		return config.Harness{Name: "claude", Executable: exe, Found: true, Env: claudeEnv(t)}
+	}
 	cfg := &config.Config{MaxShips: maxShips, Resources: map[string]config.Resource{"phone": {Capacity: 1}},
 		Fleets: []config.Fleet{{Key: "work", Name: "Work", SearchRoots: []string{root}, WakeReviewers: []string{"alice"},
 			Harnesses: []config.Harness{claude()}},

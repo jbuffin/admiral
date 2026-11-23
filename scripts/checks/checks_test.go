@@ -154,6 +154,16 @@ var checkCases = []check{
 		want:  "e2e/a_test.go:3:",
 		clean: map[string]string{"e2e/a_test.go": "package e2e\n\nfunc f() { time.Sleep(50 * time.Millisecond) }\n", "internal/x.go": "package x\n\nfunc f() { time.Sleep(time.Second) }\n"},
 	},
+	{
+		name: "gofmt",
+		hint: "run gofmt -w on these files",
+		bad:  map[string]string{"internal/a b.go": "package a\n\nfunc f( ) {}\n"},
+		want: "internal/a b.go",
+		clean: map[string]string{
+			"internal/a.go": "package a\n\nfunc f() {}\n",
+			"web/notes.txt": "func f( ) {}\n",
+		},
+	},
 }
 
 func TestCheckFailsOnABreak(t *testing.T) {

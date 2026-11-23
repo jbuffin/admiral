@@ -4,4 +4,6 @@ package main
 
 import "github.com/jbuffin/admiral/internal/moor"
 
-func stackRemote(_ string, c moor.StackCheck) string { return "https://" + c.Host + "/" + c.Repo + ".git" }
+func stackRemote(_ string, c moor.StackCheck) string {
+	return "https://" + c.Host + "/" + c.Repo + ".git"
+}

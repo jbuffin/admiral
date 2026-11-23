@@ -125,12 +125,13 @@ func (w *world) defaultSocket() string {
 
 func (w *world) sock() string { return filepath.Join(w.home, "tmux.sock") }
 
+// baseEnv's dropped list has a twin in web/e2e/shipEnv.ts; change both together.
 func (w *world) baseEnv() []string {
 	env := []string{}
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		switch k {
-		case "ADMIRAL_HOME", "ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "HOME", "TMUX", "TMUX_PANE", "TMUX_TMPDIR", "XDG_CONFIG_HOME",
+		case "ADMIRAL_HOME", "ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_SCOUT", "ADMIRAL_INBOX", "HOME", "TMUX", "TMUX_PANE", "TMUX_TMPDIR", "XDG_CONFIG_HOME",
 			"CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME", "CLAUDE_CODE_PLUGIN_CACHE_DIR", "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
 			"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE":
 			continue
