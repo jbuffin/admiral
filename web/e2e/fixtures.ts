@@ -199,7 +199,7 @@ class Instance implements Admiral {
 
   resumeServer() {
     return new Promise<void>((done, fail) => {
-      // A harness identity variable from the engineer's shell must not reach the server.
+      // cleanEnv drops the ship and harness variables of the shell the tests run in.
       // The test build's LAN needs no network: while on 0.0.0.0, Admiral also serves 127.0.0.1:<lanPort> as a LAN peer (cmd/admiral/listen_tcp_e2e.go).
       const lan = this.lan ? { ADMIRAL_LAN_IP: '192.0.2.10', ADMIRAL_E2E_LAN_PORT: this.lanPort } : {};
       const env: NodeJS.ProcessEnv = { ...cleanEnv(), ...lan, ...this.extraEnv, ADMIRAL_HOME: this.home };

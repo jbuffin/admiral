@@ -5,6 +5,7 @@ const LEAKED = new Set([
   'ADMIRAL_HOME',
   'ADMIRAL_SHIP',
   'ADMIRAL_REPORT',
+  'ADMIRAL_SCOUT',
   'ADMIRAL_INBOX',
   'TMUX',
   'TMUX_PANE',
