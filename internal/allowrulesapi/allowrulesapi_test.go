@@ -95,7 +95,10 @@ func TestRemoveDropsTheRuleAndUnskipDropsTheSkip(t *testing.T) {
 
 func TestRefusals(t *testing.T) {
 	mux, _ := newMux(t)
-	for _, c := range []struct{ name, method, path, body string; code int }{
+	for _, c := range []struct {
+		name, method, path, body string
+		code                     int
+	}{
 		{"unknown fleet list", "GET", "/api/fleets/nope/allow-rules", "", http.StatusNotFound},
 		{"unknown fleet remove", "POST", "/api/fleets/nope/allow-rules/remove", `{"rule":{"harness":"codex","pattern":["ls"]}}`, http.StatusNotFound},
 		{"no rule", "POST", "/api/fleets/work/allow-rules/remove", `{}`, http.StatusBadRequest},

@@ -75,7 +75,9 @@ func (a *answerRig) detail(t *testing.T, prURL string) map[string]any {
 	return got
 }
 
-func (a *answerRig) answerStack(body string) *httptest.ResponseRecorder { return a.answer("saltpaw", body) }
+func (a *answerRig) answerStack(body string) *httptest.ResponseRecorder {
+	return a.answer("saltpaw", body)
+}
 
 func TestAMooredStacksDetailCarriesTheCommandAnswerAllReviewsWouldSend(t *testing.T) {
 	a := newAnswerRig(t, 3)
