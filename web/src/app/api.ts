@@ -416,6 +416,11 @@ export function fetchPRDetail(session: string, url: string): Promise<Result<PRDe
   return call<PRDetail>('GET', `/ships/${encodeURIComponent(session)}/pr?url=${encodeURIComponent(url)}`);
 }
 
+/** One PR read from GitHub through a GitHub source, for an order's flyout: 409 when the source can't read, 422 off its host, 502 when GitHub fails. */
+export function fetchSourcePR(source: string, url: string): Promise<Result<PRDetail>> {
+  return call<PRDetail>('GET', `${src(source)}/pr?url=${encodeURIComponent(url)}`);
+}
+
 /** Ask GitHub to request another review from `login`, a GitHub reviewer who already reviewed the PR. */
 export function reRequestReview(session: string, pr: string, login: string): Promise<Result<unknown>> {
   return call<unknown>('POST', `/ships/${encodeURIComponent(session)}/pr/rerequest`, { pr, login }, undefined, { timeoutMs: REREQUEST_TIMEOUT_MS });

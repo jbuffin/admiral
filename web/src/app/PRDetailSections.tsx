@@ -7,7 +7,7 @@ import { canReRequest, checksLine, descriptionSource, foldedLine, logHref, prTim
 const initials = (login: string) => login.replace(/[^a-z]/gi, '').slice(0, 2).toUpperCase();
 const BotTag = ({ actor }: { actor: PRActor }) => (actor.bot ? <span class="bot-tag">bot</span> : null);
 
-function Checks({ detail }: { detail: PRDetail }) {
+export function Checks({ detail }: { detail: PRDetail }) {
   const line = checksLine(detail);
   return (
     <section class="pr-section">
@@ -97,17 +97,20 @@ function ReRequest({ session, pr, login, reread }: { session: string; pr: string
   );
 }
 
-export function Reviewers({ detail, session, reread }: { detail: PRDetail; session?: string; reread?: () => void }) {
+/** `fold` false lists the reviewers always, with no summary button, for a pane too narrow for the ship panel's two columns that still wants them shown. */
+export function Reviewers({ detail, session, reread, fold = true }: { detail: PRDetail; session?: string; reread?: () => void; fold?: boolean }) {
   const [open, setOpen] = useState(false);
   const rows = reviewerRows(detail.reviews, detail.requested);
   return (
-    <div class={`col col-side${open ? ' open' : ''}`}>
+    <div class={`col col-side${open || !fold ? ' open' : ''}`}>
       <section class="pr-section">
         {rows.length ? (
           <>
-            <button type="button" class="rev-summary" aria-expanded={open} onClick={() => setOpen(!open)}>
-              {reviewSummary(rows)}
-            </button>
+            {fold ? (
+              <button type="button" class="rev-summary" aria-expanded={open} onClick={() => setOpen(!open)}>
+                {reviewSummary(rows)}
+              </button>
+            ) : null}
             <h4 class="pr-section-title rev-title">Reviewers</h4>
             <ul class="reviewers">
               {rows.map((r) => (

@@ -246,6 +246,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
 	mux.HandleFunc("PUT /api/sources/{key}/orders/{id}", s.serveEditOrder)
 	mux.HandleFunc("DELETE /api/sources/{key}/orders/{id}", s.serveRemoveOrder)
+	mux.HandleFunc("GET /api/sources/{key}/pr", s.servePR)
 	mux.Handle("POST /api/sources/{key}/stack", s.mergeGuarded(http.HandlerFunc(s.serveStack)))
 	mux.HandleFunc("GET /api/plugins", s.servePlugins)
 	mux.HandleFunc("GET /api/plugins/{name}/icon", s.serveIcon)
