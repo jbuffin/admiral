@@ -13,7 +13,7 @@ const reviewedDetail = `{"number":41,"url":"https://github.com/acme/widgets/pull
 
 func (f *serviceFixture) prDetailRead(key, prURL string) (int, string) {
 	f.t.Helper()
-	return f.do(http.MethodGet, "/api/sources/"+key+"/pr?url="+url.QueryEscape(prURL), nil)
+	return f.do(http.MethodGet, "/"+key+"/pr?url="+url.QueryEscape(prURL), nil)
 }
 
 func TestPRRouteAnswersThePRsReviewsAndRequestedReviewers(t *testing.T) {

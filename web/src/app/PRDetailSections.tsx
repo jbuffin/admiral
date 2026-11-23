@@ -7,7 +7,7 @@ import { canReRequest, checksLine, descriptionSource, foldedLine, logHref, prTim
 const initials = (login: string) => login.replace(/[^a-z]/gi, '').slice(0, 2).toUpperCase();
 const BotTag = ({ actor }: { actor: PRActor }) => (actor.bot ? <span class="bot-tag">bot</span> : null);
 
-function Checks({ detail }: { detail: PRDetail }) {
+export function Checks({ detail }: { detail: PRDetail }) {
   const line = checksLine(detail);
   return (
     <section class="pr-section">

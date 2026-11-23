@@ -166,3 +166,47 @@ func (s *Service) serveStack(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, stackAnswer{Shape: string(after.Kind), StackNumber: after.StackNumber, PRs: after.PRs})
 }
+
+// servePR reads one pull request through a GitHub source, for the Orders flyout. It is a read, so any running source serves it.
+func (s *Service) servePR(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	rn := s.Sup.runner(key)
+	if rn == nil {
+		writeError(w, http.StatusNotFound, "source "+key+" not found")
+		return
+	}
+	p, live := rn.live()
+	rn.mu.Lock()
+	readOnly := rn.readOnly
+	rn.mu.Unlock()
+	if !live || readOnly {
+		writeError(w, http.StatusConflict, "source "+key+" is not running")
+		return
+	}
+	g, ok := p.(*githubConn)
+	if !ok {
+		writeError(w, http.StatusConflict, "source "+key+" is not the GitHub source, so it reads no pull requests")
+		return
+	}
+	g.mu.Lock()
+	gh := g.client
+	g.mu.Unlock()
+	if gh == nil || g.Viewer() == "" {
+		writeError(w, http.StatusConflict, "the source has not signed in to GitHub yet")
+		return
+	}
+	pr := r.URL.Query().Get("url")
+	host, _, _, ok := moor.ParsePR(pr)
+	if !ok || !strings.EqualFold(host, gh.Host()) {
+		writeError(w, http.StatusUnprocessableEntity, "the pull request is not on the source's GitHub host")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
+	defer cancel()
+	d, err := gh.PullRequestDetail(ctx, pr)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, cleanMsg(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
+}

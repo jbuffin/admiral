@@ -9,6 +9,8 @@ import { mooredShipOn, reviews, shipsOnOrder } from './moored';
 import { campaignAction, openedLine, topLine, whyItsHere } from './orderDetail';
 import { launchRef, orderRef, stackLaunchRef, type OrderRow, type ViewGroup } from './ordersView';
 import { Failure } from './PeekItem';
+import { Checks, Reviewers } from './PRDetailSections';
+import { usePRDetail } from './usePRDetail';
 import { GROUP_TITLES } from './shipList';
 import { ShipMerge } from './PeekMerge';
 import { campaignPath, go, shipPath } from './router';
@@ -19,6 +21,29 @@ import type { OrderRef } from './LaunchDialog';
 
 // Outside the pane, since the pane remounts when its ship leaves the list while the source still lists the PR.
 const merged = signal<ReadonlySet<string>>(new Set());
+
+const DECISIONS: Record<string, string> = { APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested', REVIEW_REQUIRED: 'Review required' };
+
+function ReviewStatus({ source, url }: { source: string; url: string }) {
+  const read = usePRDetail(source, url);
+  if (read.state === 'loading') return <p class="odetail-sub">Loading review status…</p>;
+  if (read.state === 'failed') return <Failure message={read.error} />;
+  const d = read.detail;
+  const decision = DECISIONS[d.review] ?? (d.reviews.length === 0 && d.requested.length === 0 ? 'Not reviewed yet' : '');
+  return (
+    <div class="pr-detail odetail-pr" aria-label="Review status">
+      {decision ? <p class="line">{decision}</p> : null}
+      {d.draft || d.mergeable === 'CONFLICTING' ? (
+        <div class="pr-state">
+          {d.draft ? <span class="pr-chip">Draft</span> : null}
+          {d.mergeable === 'CONFLICTING' ? <span class="pr-chip err">Merge conflicts</span> : null}
+        </div>
+      ) : null}
+      <Reviewers detail={d} />
+      <Checks detail={d} />
+    </div>
+  );
+}
 
 interface Props {
   row: OrderRow;
@@ -44,6 +69,7 @@ export function OrderPane({ row, group, viewer, sources, now, heading, onLaunch,
   const action = campaignAction(o, campaignList.value);
   const onOrder = stack ? [...new Map([o, ...stack.children.map((c) => c.order)].flatMap((l) => shipsOnOrder(ships.value, l)).map((s) => [s.session, s])).values()] : shipsOnOrder(ships.value, o);
   const ship = stack ? undefined : mooredShipOn(ships.value, o);
+  const prUrl = o.pr && o.url && !row.stackRow && !row.chainRow && sources.find((s) => s.key === row.source)?.plugin === 'github' ? o.url : null;
   const isMerged = merged.value.has(row.key);
   return (
     <div class="odetail">
@@ -165,6 +191,7 @@ export function OrderPane({ row, group, viewer, sources, now, heading, onLaunch,
           ))}
         </ul>
       ) : null}
+      {prUrl ? <ReviewStatus source={row.source} url={prUrl} /> : null}
       <div class="odetail-actions">
         {isMerged ? <p class="line">Merged</p> : ship?.stack_ready && !reviews(ship) ? <ShipMerge ship={ship} onMerged={() => (merged.value = new Set(merged.value).add(row.key))} onError={setError} /> : null}
         <Failure message={error} />
