@@ -131,8 +131,7 @@ func (s *Service) judgeOrder(rs *running, run runAsk, answer, candAnswer map[str
 				rs.reviewing = append(rs.reviewing, u)
 				added = true
 			}
-			// the viewer's own stack layers stay uncarried: they are the viewer's work, not a review
-			if !slices.Contains(s.carried(run.sess), u) && (reviews || !slices.Contains(rs.order.layers, u)) {
+			if !slices.Contains(s.carried(run.sess), u) {
 				rs.found = append(rs.found, u)
 				added = true
 			}

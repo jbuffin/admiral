@@ -68,7 +68,7 @@ How the moored poll decides to wake a ship, hand rounds, tiers and the wake stat
   - Each confirmed PR is appended to the session's `@admiral-prs` option (which a wake also fills from the record), so a restart keeps it, and `running.found` only caches it.
   - At a clean exit `countedPRs` passes the carried open PRs and the report's through `moor.CountedOK`, and falls back to the last poll's open PRs only when GitHub cannot be reached.
   - `GET /api/ships/<session>/pr` (`prdetail.go`) reads one carried PR fresh.
-- **Reviewing ships.** A ship whose `url` option is a PR or stack URL, or whose `launch-prs` option (the PR URLs a sourceless round-0 launch's note and text name, found by `conversation.PRURLsInText` in `LaunchOrder`) is set, carries those PRs from launch (`internal/ships/revieworder.go`): another author's as *reviewing*, the fleet user's own as a plain PR (a stack's own layers stay uncarried).
+- **Reviewing ships.** A ship whose `url` option is a PR or stack URL, or whose `launch-prs` option (the PR URLs a sourceless round-0 launch's note and text name, found by `conversation.PRURLsInText` in `LaunchOrder`) is set, carries those PRs from launch (`internal/ships/revieworder.go`): another author's as *reviewing*, the fleet user's own as a plain PR.
   - `running.order` is the launch's one check of the order URL and launch PRs, kept apart from the printed candidates', which reject any PR the viewer did not open.
   - A stack resolves through `GitHub.StackOpenPRs` (REST `repos/<o>/<r>/stacks/<N>`, strict parse in `moor.ParseStack`).
   - The reviewed PRs are in the `prs` session option and listed in the `reviewing` option (a subset), written by `persistCarried`, and in `moor.Record.Reviewing`.
