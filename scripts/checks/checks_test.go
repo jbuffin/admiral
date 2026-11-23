@@ -157,8 +157,8 @@ var checkCases = []check{
 	{
 		name: "gofmt",
 		hint: "run gofmt -w on these files",
-		bad:  map[string]string{"internal/a.go": "package a\n\nfunc f( ) {}\n"},
-		want: "internal/a.go",
+		bad:  map[string]string{"internal/a b.go": "package a\n\nfunc f( ) {}\n"},
+		want: "internal/a b.go",
 		clean: map[string]string{
 			"internal/a.go": "package a\n\nfunc f() {}\n",
 			"web/notes.txt": "func f( ) {}\n",
