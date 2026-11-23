@@ -8,6 +8,9 @@ export interface Chip {
   tone: ChipTone;
 }
 
+/** The chip for GitHub's review decision, undefined when it has none. */
+export const reviewChip = (review: string): Chip | undefined => REVIEW[review];
+
 const REVIEW: Record<string, Chip> = {
   APPROVED: { text: 'Approved', tone: 'ok' },
   CHANGES_REQUESTED: { text: 'Changes requested', tone: 'err' },

@@ -5,7 +5,7 @@ import { Button } from './Button';
 import { renderRestrictedInline } from './markdown';
 import { descriptionSource } from './prSections';
 import { campaignList, followReference } from './campaignsLink';
-import { mooredShipOn, reviews, shipsOnOrder } from './moored';
+import { mooredShipOn, reviewChip, reviews, shipsOnOrder } from './moored';
 import { campaignAction, openedLine, topLine, whyItsHere } from './orderDetail';
 import { launchRef, orderRef, stackLaunchRef, type OrderRow, type ViewGroup } from './ordersView';
 import { Failure } from './PeekItem';
@@ -22,24 +22,22 @@ import type { OrderRef } from './LaunchDialog';
 // Outside the pane, since the pane remounts when its ship leaves the list while the source still lists the PR.
 const merged = signal<ReadonlySet<string>>(new Set());
 
-const DECISIONS: Record<string, string> = { APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested', REVIEW_REQUIRED: 'Review required' };
-
 function ReviewStatus({ source, url }: { source: string; url: string }) {
   const read = usePRDetail(source, url);
   if (read.state === 'loading') return <p class="odetail-sub">Loading review status…</p>;
   if (read.state === 'failed') return <Failure message={read.error} />;
   const d = read.detail;
-  const decision = DECISIONS[d.review] ?? (d.reviews.length === 0 && d.requested.length === 0 ? 'Not reviewed yet' : '');
+  const decision = reviewChip(d.review) ?? (d.reviews.length === 0 ? { text: 'Not reviewed yet', tone: 'muted' as const } : undefined);
   return (
     <div class="pr-detail odetail-pr" aria-label="Review status">
-      {decision ? <p class="line">{decision}</p> : null}
-      {d.draft || d.mergeable === 'CONFLICTING' ? (
+      {decision || d.draft || d.mergeable === 'CONFLICTING' ? (
         <div class="pr-state">
+          {decision ? <span class={`pr-chip ${decision.tone === 'muted' ? '' : decision.tone}`}>{decision.text}</span> : null}
           {d.draft ? <span class="pr-chip">Draft</span> : null}
           {d.mergeable === 'CONFLICTING' ? <span class="pr-chip err">Merge conflicts</span> : null}
         </div>
       ) : null}
-      <Reviewers detail={d} />
+      <Reviewers detail={d} fold={false} />
       <Checks detail={d} />
     </div>
   );

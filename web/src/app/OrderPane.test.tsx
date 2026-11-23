@@ -70,8 +70,8 @@ test('a PR row shows the review decision', async () => {
   await findByText('Review required');
 });
 
-test('a PR row with no decision and no reviews says it has not been reviewed yet', async () => {
-  serve(() => json(200, detail({ review: '', reviews: [], requested: [] })));
+test('a PR row with no decision and no reviews, even with a requested reviewer, says it has not been reviewed yet', async () => {
+  serve(() => json(200, detail({ review: '', reviews: [] })));
   const { findByText } = prPane();
   await findByText('Not reviewed yet');
 });
@@ -117,19 +117,22 @@ test('a failed read shows its message and leaves the flyout working', async () =
 });
 
 test('an issue row makes no PR request', async () => {
-  prPane({}, ghSources, { url: 'https://github.com/acme/api/issues/7', pr: undefined });
-  await new Promise((r) => setTimeout(r, 20));
+  const { findByText, queryByText } = prPane({}, ghSources, { url: 'https://github.com/acme/api/issues/7', pr: undefined });
+  await findByText('Launch ship');
+  expect(queryByText('Loading review status…')).toBeNull();
   expect(calls().filter((u) => u.includes('/pr?url='))).toEqual([]);
 });
 
 test('a stack row makes no PR request', async () => {
-  prPane({ stackRow: true });
-  await new Promise((r) => setTimeout(r, 20));
+  const { findByText, queryByText } = prPane({ stackRow: true });
+  await findByText('Launch ship');
+  expect(queryByText('Loading review status…')).toBeNull();
   expect(calls().filter((u) => u.includes('/pr?url='))).toEqual([]);
 });
 
 test('a PR row on a source that is not GitHub makes no PR request', async () => {
-  prPane({}, [{ key: 'gh', plugin: 'other', views: [] }] as unknown as Source[]);
-  await new Promise((r) => setTimeout(r, 20));
+  const { findByText, queryByText } = prPane({}, [{ key: 'gh', plugin: 'other', views: [] }] as unknown as Source[]);
+  await findByText('Launch ship');
+  expect(queryByText('Loading review status…')).toBeNull();
   expect(calls().filter((u) => u.includes('/pr?url='))).toEqual([]);
 });

@@ -179,7 +179,11 @@ func (s *Service) servePR(w http.ResponseWriter, r *http.Request) {
 	rn.mu.Lock()
 	readOnly := rn.readOnly
 	rn.mu.Unlock()
-	if !live || readOnly {
+	if readOnly {
+		writeError(w, http.StatusConflict, "source "+key+" is read-only until it runs again")
+		return
+	}
+	if !live {
 		writeError(w, http.StatusConflict, "source "+key+" is not running")
 		return
 	}
