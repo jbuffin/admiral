@@ -53,6 +53,22 @@ func TestAShipLaunchedOnItsOwnPRCarriesItWithoutReviewingBeforeItPrintsAnything(
 	}
 }
 
+func TestAShipLaunchedOnAPRThatIsAStackLayerCarriesOnlyThatPRAndNeverAsksForTheStack(t *testing.T) {
+	r := newReviewingRig(t, livePR7)
+	r.gh.stacks = map[string][]string{"acme/widgets/12": {livePR7, livePR8, livePR9}}
+	r.mine(livePR7)
+	r.mine(livePR8)
+	r.others(livePR9)
+	for range 3 {
+		r.poll()
+	}
+
+	r.wantPRs(t, []string{livePR7}, nil)
+	if calls := r.gh.stackLog(); len(calls) != 0 {
+		t.Errorf("stack lookups = %v, want none for a PR URL launch", calls)
+	}
+}
+
 func TestAFreeTextShipCarriesAPRNamedAmongItsWordsAndShowsItOnTheWire(t *testing.T) {
 	r := newLaunchedRig(t, launchSpec{text: "please review " + livePR7 + " and report back"})
 	r.others(livePR7)
