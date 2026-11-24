@@ -13,8 +13,7 @@ import (
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
-// NotStartedPushWait is how long past launch a session must still be not started before it pushes. The inbox shows it
-// sooner; a slow harness start would otherwise buzz the phone and clear seconds later.
+// NotStartedPushWait is how long past launch a session must be not started before it pushes; the inbox shows it sooner.
 const NotStartedPushWait = 30 * time.Second
 
 // Decided is an event with what Decide made of it.
@@ -84,7 +83,7 @@ func (w *Watcher) Waiting() bool {
 	return w.waiting
 }
 
-// early is whether a not-started session is still inside NotStartedPushWait; w.mu is not needed, the clock is fixed at construction.
+// early is whether a not-started session is still inside NotStartedPushWait.
 func (w *Watcher) early(reason, launched string) bool {
 	t, err := time.Parse(time.RFC3339, launched)
 	return reason == "not_started" && err == nil && w.now().Sub(t) < NotStartedPushWait
@@ -271,6 +270,8 @@ type Feed struct {
 	Items   func() []inbox.Item
 	// InboxReady is whether the inbox has done its first scan; a change before that is not read.
 	InboxReady func() bool
+	// Recheck is how often a session still inside NotStartedPushWait is looked at again; a second when zero.
+	Recheck time.Duration
 
 	ship, item chan struct{}
 	once       sync.Once
@@ -295,7 +296,11 @@ func (f *Feed) InboxChanged() { f.init(); poke(f.item) }
 func (f *Feed) Run(ctx context.Context) {
 	f.init()
 	// A not-started session's push comes due with no event to announce it.
-	recheck := time.NewTicker(time.Second)
+	every := f.Recheck
+	if every <= 0 {
+		every = time.Second
+	}
+	recheck := time.NewTicker(every)
 	defer recheck.Stop()
 	for {
 		select {

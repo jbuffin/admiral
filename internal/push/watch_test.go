@@ -1,8 +1,10 @@
 package push_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -474,4 +476,42 @@ func TestACrewBoatThatNeverStartedPushesTaggedPerBoatAfterTheGrace(t *testing.T)
 	if len(got) != 1 || got[0].Event.Crew != "mate" || got[0].Event.Text != "mate needs you to finish starting" {
 		t.Errorf("events = %+v, want one for boat mate that needs you to finish starting", got)
 	}
+}
+
+func TestTheFeedLooksAgainAtANotStartedShipWithNoFurtherEvent(t *testing.T) {
+	var mu sync.Mutex
+	after := 15 * time.Second
+	list := []ships.Ship{working("Dory")}
+	rec := &push.Recorder{}
+	w := push.NewWatcher(func() bool { return false }, func(string) bool { return true }, rec).
+		WithClock(func() time.Time { mu.Lock(); defer mu.Unlock(); return launchedAt.Add(after) })
+	f := &push.Feed{Watcher: w, Recheck: 10 * time.Millisecond, Items: func() []inbox.Item { return nil },
+		Ships: func() []ships.Ship { mu.Lock(); defer mu.Unlock(); return list }}
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go f.Run(ctx)
+
+	f.ShipsChanged()
+	until := func(what string, ok func() bool) {
+		t.Helper()
+		for end := time.Now().Add(5 * time.Second); !ok(); time.Sleep(5 * time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatalf("never saw: %s", what)
+			}
+		}
+	}
+	time.Sleep(50 * time.Millisecond) // the startup snapshot is read before the ship changes
+	mu.Lock()
+	list = []ships.Ship{notStarted("Dory")}
+	mu.Unlock()
+	f.ShipsChanged()
+	until("the feed waiting on the not-started ship", w.Waiting)
+	if n := len(rec.Events()); n != 0 {
+		t.Fatalf("pushed inside the grace: %d events", n)
+	}
+
+	mu.Lock()
+	after = 31 * time.Second
+	mu.Unlock()
+	until("a push with no further event", func() bool { return len(rec.Events()) == 1 })
 }
