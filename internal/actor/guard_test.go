@@ -323,3 +323,12 @@ func TestAnActorCannotAnswerAnAllowRuleProposal(t *testing.T) {
 		t.Errorf("code %d, reached %d; want AdmiralBot refused with 403 and nothing reached", rec.Code, r.reached)
 	}
 }
+
+func TestAnActorCannotMakeACrewMemberItsOwn(t *testing.T) {
+	for _, prefix := range []string{"/api", "/api/v1"} {
+		r := newRig(t)
+		if code := r.do("POST", prefix+"/fleets/personal/crew/members/bosun/make-mine", "", "tok-personal", local).Code; code != 403 || r.reached != 0 {
+			t.Errorf("POST %s make-mine as AdmiralBot: code %d, reached %d; want 403 and the handler not reached", prefix, code, r.reached)
+		}
+	}
+}
