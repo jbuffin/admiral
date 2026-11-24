@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import { seedCrew } from './crew';
@@ -95,6 +95,65 @@ test('a member is published to a new share repo, republished with its diff, and 
   await page.getByRole('button', { name: 'Confirm unpublish' }).click();
   await expect(main.getByRole('link', { name: 'Published' })).toHaveCount(0);
   expect(readFileSync(localPath, 'utf8')).toBe(beforeUnpublish);
+
+  expect(watch.errors).toEqual([]);
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+});
+
+const SHA = 'd'.repeat(40);
+const THEIRS = '---\nname: scout\nrole: triager\npick-me-when: Pick **scout** for triage.\n---\n\nWork as scout.\n';
+
+// The import journey of one engineer: paste a ref, read the card and the exact file at the pinned commit, import it,
+// and see the member credited to its owner. Only the fake gh stands in for GitHub.
+test('a crew member is imported from a ref, read before it is written, and shows who shared it', async ({ page, admiral }) => {
+  seedCrew(admiral);
+  addGitHubSource(admiral);
+  const gh = admiral.fakeGh();
+  gh.viewer('octocat');
+  const rest = join(gh.dir, 'rest');
+  mkdirSync(rest, { recursive: true });
+  const answer = (key: string, endpoint: string, body: unknown) => {
+    writeFileSync(join(rest, `${key}.endpoint`), endpoint);
+    writeFileSync(join(rest, `${key}.method`), 'GET');
+    writeFileSync(join(rest, `${key}.status`), '200');
+    writeFileSync(join(rest, `${key}.json`), JSON.stringify(body));
+  };
+  answer('a-user', 'user', { login: 'octocat' });
+  answer('b-repo', 'repos/hubot/crew', { full_name: 'hubot/crew', visibility: 'public', private: false, archived: false, permissions: { push: false }, default_branch: 'main' });
+  answer('c-commit', 'repos/hubot/crew/commits/main', { sha: SHA });
+  answer('d-file', `repos/hubot/crew/contents/crew/scout.md?ref=${SHA}`, { name: 'scout.md', sha: 'e'.repeat(40), size: Buffer.byteLength(THEIRS), encoding: 'base64', content: Buffer.from(THEIRS).toString('base64') });
+  answer('e-tags', 'repos/hubot/crew/tags?per_page=100', [{ name: 'v1', commit: { sha: SHA } }]);
+
+  await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
+  const watch = watchPage(page, admiral.url);
+  const main = page.getByRole('main');
+  const imported = join(admiral.home, 'fleets', 'zulu', 'crew', 'scout.md');
+
+  await page.goto(admiral.url + 'app/fleets/zulu');
+  await page.getByRole('switch', { name: 'Crew sharing' }).click();
+  await expect(page.getByRole('switch', { name: 'Crew sharing' })).toHaveAttribute('aria-checked', 'true');
+
+  await page.goto(admiral.url + 'app/crew?fleet=zulu');
+  await main.getByRole('button', { name: 'Import' }).click();
+  await page.getByLabel(/ref or url/i).fill('hubot/crew/scout');
+  await page.getByRole('button', { name: 'Preview' }).click();
+
+  // Nothing is written until Import: the card, the owner, the short commit, the tag and the exact file show first.
+  await expect(page.getByText(/shared by/i)).toBeVisible();
+  await expect(page.getByLabel('Member card').locator('strong')).toHaveText('scout');
+  await expect(page.getByText(SHA.slice(0, 7))).toBeVisible();
+  await expect(page.getByText('v1')).toBeVisible();
+  await expect(page.getByLabel('File to import')).toContainText('Work as scout.');
+  expect(existsSync(imported)).toBe(false);
+
+  await page.getByRole('region', { name: 'Import' }).getByRole('button', { name: 'Import' }).click();
+  await expect.poll(() => existsSync(imported)).toBe(true);
+  expect(readFileSync(imported, 'utf8')).toBe(THEIRS);
+
+  await page.goto(admiral.url + 'app/crew/scout?fleet=zulu');
+  await expect(main.getByRole('link', { name: /shared by hubot/i })).toHaveAttribute('href', `https://github.com/hubot/crew/blob/${SHA}/crew/scout.md`);
+  await expect(main.getByRole('button', { name: 'Share' })).toHaveCount(0);
 
   expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
