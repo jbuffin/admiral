@@ -196,14 +196,15 @@ const shipNote = `Admiral campaigns, from inside a ship:
 - To make a new parent issue from several issues, run: admiral campaigns link <issue URL>... and give the engineer the link it prints; only the engineer confirms a new parent in Admiral.
 - Never call Admiral's campaign API by hand.`
 
-// ShipNote is a Claude ship's SessionStart hook; it writes no state, so it never rebinds the ship's transcript.
+// ShipNote is a Claude ship's or crew boat's SessionStart hook; it writes no state, so it never rebinds the ship's transcript.
 func ShipNote(args []string, std IO) error {
-	if os.Getenv("ADMIRAL_SHIP") == "" || os.Getenv("ADMIRAL_SCOUT") != "" {
-		return nil
-	}
-	// Claude's SessionStart is the ship's first sign of life; Admiral reads this stamp, never the screen, to tell started from not started.
+	// SessionStart is the session's first sign of life; Admiral reads this stamp, never the screen, to tell started from not started.
+	// A crew boat has no ADMIRAL_SHIP, so the stamp goes first and keys on the pane alone.
 	if pane := os.Getenv("TMUX_PANE"); pane != "" {
 		_ = sessionhost.WriteCurrent(sessionhost.SetPaneCall(pane, sessionhost.ActivityOption, time.Now().UTC().Format(time.RFC3339)))
+	}
+	if os.Getenv("ADMIRAL_SHIP") == "" || os.Getenv("ADMIRAL_SCOUT") != "" {
+		return nil
 	}
 	note := shipNote
 	if c := shipContext(); c != "" {

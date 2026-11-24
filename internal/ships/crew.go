@@ -178,11 +178,11 @@ func (s *Service) CrewInputSeen(session, windowID string) (sessionhost.Crew, err
 	case sessionhost.CrewAnchored:
 		return c, ErrExited
 	case sessionhost.CrewNeedsYou:
-		if err := s.Host.SetPaneWorking(ctx, c.PaneID); err != nil {
+		// The stamp goes first: a boat that is working with no stamp would read as not started again.
+		if err := s.Host.StampPaneActivity(ctx, c.PaneID, time.Now()); err != nil {
 			return sessionhost.Crew{}, err
 		}
-		// The key is a sign of life; without the stamp a boat still waiting on its first hook would read as not started again.
-		if err := s.Host.StampPaneActivity(ctx, c.PaneID, time.Now()); err != nil {
+		if err := s.Host.SetPaneWorking(ctx, c.PaneID); err != nil {
 			return sessionhost.Crew{}, err
 		}
 		_ = s.Host.Sync(ctx)

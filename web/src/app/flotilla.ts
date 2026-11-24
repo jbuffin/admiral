@@ -1,4 +1,4 @@
-import type { BoxState } from './messageBox';
+import { NOT_STARTED_BOX_NOTE, type BoxState } from './messageBox';
 import type { CrewBoat, Ship } from './api';
 import { shipUrl } from './api';
 import { bridgePath } from '../crew';
@@ -25,7 +25,8 @@ export function flotilla(ship: Pick<Ship, 'name' | 'crew'>): Chip[] {
   return [{ crew: null, label: ship.name, state: 'ship' }, ...ship.crew.map((b): Chip => ({ crew: b.name, label: chipLabel(b), state: chipState(b) }))];
 }
 
-export function boatBoxState(b: Pick<CrewBoat, 'status' | 'exit_code' | 'exit_signal'>): BoxState {
+export function boatBoxState(b: Pick<CrewBoat, 'status' | 'exit_code' | 'exit_signal' | 'reason'>): BoxState {
+  if (b.status === 'needs_you' && b.reason === 'not_started') return { enabled: false, note: NOT_STARTED_BOX_NOTE };
   const state = chipState(b);
   if (state === 'running') return { enabled: true };
   if (state === 'finished') return { enabled: false, note: 'Finished, read only' };

@@ -12,8 +12,12 @@ export function wallClockNote(ship: Pick<Ship, 'status' | 'stopped_by'>): string
   return minutes ? `Stopped at the ${minutes}-minute wall clock` : '';
 }
 
+// Enter in the box could answer a trust dialog for the engineer, so a session that has not started gets no box.
+export const NOT_STARTED_BOX_NOTE = 'Not started: answer it in the terminal (Open terminal)';
+
 /** Whether the message box takes a message, and what it says when it does not. */
-export function boxState(ship: Pick<Ship, 'status' | 'exit_code' | 'exit_signal' | 'stopped_by'>): BoxState {
+export function boxState(ship: Pick<Ship, 'status' | 'exit_code' | 'exit_signal' | 'stopped_by'> & { reason?: string }): BoxState {
+  if (ship.status === 'needs_you' && ship.reason === 'not_started') return { enabled: false, note: NOT_STARTED_BOX_NOTE };
   if (ship.status === 'underway' || ship.status === 'needs_you') return { enabled: true };
   if (ship.status === 'anchored') {
     // An anchored ship always exited with an error: a non-zero code, or no code and a signal.

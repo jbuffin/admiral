@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/push"
@@ -399,19 +400,75 @@ func TestAPanickingSinkDoesNotStopTheNextOneHearingTheEvent(t *testing.T) {
 	}
 }
 
-func TestAShipThatNeverStartedPushesAsAnAsk(t *testing.T) {
+var launchedAt = time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
+
+// clocked puts the watcher's clock at launchedAt plus after, and returns a way to move it.
+func (r *rig) clocked(after time.Duration) func(time.Duration) {
+	now := launchedAt.Add(after)
+	r.w.WithClock(func() time.Time { return now })
+	return func(to time.Duration) { now = launchedAt.Add(to) }
+}
+
+func notStarted(name string) ships.Ship {
+	sh := needsYou(name, "not_started")
+	sh.Launched = launchedAt.Format(time.RFC3339)
+	return sh
+}
+
+func TestAShipThatNeverStartedPushesAsAnAskOnceItHasWaitedPastTheGrace(t *testing.T) {
 	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
-	r.w.Ships([]ships.Ship{needsYou("Dory", "not_started")})
+	move := r.clocked(15 * time.Second)
+
+	r.w.Ships([]ships.Ship{notStarted("Dory")})
+	if r.count() != 0 {
+		t.Fatalf("pushed at 15 s: %+v, want nothing yet", r.rec.Events())
+	}
+	if !r.w.Waiting() {
+		t.Error("Waiting() = false inside the grace, so nothing would look again")
+	}
+
+	// No new event arrives: the feed's own tick looks again.
+	move(31 * time.Second)
+	r.w.Ships([]ships.Ship{notStarted("Dory")})
 	got := r.rec.Events()
 	if len(got) != 1 || got[0].Outcome != push.Push || got[0].Event.Text != "needs you to finish starting" {
 		t.Errorf("events = %+v, want one Push saying it needs you to finish starting", got)
 	}
+	if r.w.Waiting() {
+		t.Error("Waiting() stays true after the push")
+	}
+	r.w.Ships([]ships.Ship{notStarted("Dory")})
+	if r.count() != 1 {
+		t.Errorf("pushed again for the same wait: %d events", r.count())
+	}
 }
 
-func TestACrewBoatThatNeverStartedPushesTaggedPerBoat(t *testing.T) {
+func TestASessionThatStartsInsideTheGraceNeverPushes(t *testing.T) {
 	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
+	move := r.clocked(15 * time.Second)
+
+	r.w.Ships([]ships.Ship{notStarted("Dory")})
+	move(20 * time.Second)
+	r.w.Ships([]ships.Ship{working("Dory")})
+	move(40 * time.Second)
+	r.w.Ships([]ships.Ship{working("Dory")})
+	if r.count() != 0 || r.w.Waiting() {
+		t.Errorf("events = %+v waiting %v, want none and not waiting", r.rec.Events(), r.w.Waiting())
+	}
+}
+
+func TestACrewBoatThatNeverStartedPushesTaggedPerBoatAfterTheGrace(t *testing.T) {
+	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
+	move := r.clocked(15 * time.Second)
 	lifted := needsYou("Dory", ships.ReasonCrew)
-	lifted.Crew = []ships.CrewBoat{{Name: "mate", Status: "needs_you", Reason: "not_started"}}
+	lifted.Launched = launchedAt.Add(-time.Hour).Format(time.RFC3339)
+	lifted.Crew = []ships.CrewBoat{{Name: "mate", Status: "needs_you", Reason: "not_started", Launched: launchedAt.Format(time.RFC3339)}}
+
+	r.w.Ships([]ships.Ship{lifted})
+	if r.count() != 0 {
+		t.Fatalf("pushed at 15 s: %+v, want nothing yet", r.rec.Events())
+	}
+	move(31 * time.Second)
 	r.w.Ships([]ships.Ship{lifted})
 	got := r.rec.Events()
 	if len(got) != 1 || got[0].Event.Crew != "mate" || got[0].Event.Text != "mate needs you to finish starting" {

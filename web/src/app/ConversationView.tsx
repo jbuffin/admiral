@@ -120,7 +120,7 @@ export function AnswerCardView({ card, session, crew, openTerminal }: { card: An
     return (
       <Card title="This session hasn't started">
         <p class="line">
-          It is waiting before its first step in <code>{card.dir}</code>, often at Claude's question whether to trust the folder. Answer it in the terminal.
+          It is waiting before its first step in <code>{card.dir}</code>, often at a prompt asking whether to trust the folder. Answer it in the terminal.
         </p>
         {openTerminal ? <Button label="Open terminal" onClick={openTerminal} /> : null}
       </Card>

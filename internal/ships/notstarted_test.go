@@ -43,6 +43,13 @@ func TestShipThatRanSessionStartButHasNoStateStaysIdle(t *testing.T) {
 	}
 }
 
+func TestAStampInTheSameSecondAsTheLaunchCountsAsStarted(t *testing.T) {
+	sh := FromSession(launchedShip("", launchedAt), pastTheWait())
+	if sh.Status != StatusNeedsYou || sh.Reason != "idle" {
+		t.Errorf("status %q reason %q, want needs_you idle", sh.Status, sh.Reason)
+	}
+}
+
 func TestAStartedStampFromAnEarlierLaunchDoesNotCount(t *testing.T) {
 	sess := launchedShip("", launchedAt.Add(-time.Hour))
 	sh := FromSession(sess, pastTheWait())
@@ -55,7 +62,7 @@ func TestTheFirstStateWritingHookClearsNotStarted(t *testing.T) {
 	if sh := FromSession(launchedShip("", time.Time{}), pastTheWait()); sh.Reason != "not_started" {
 		t.Fatalf("before the hook: reason %q, want not_started", sh.Reason)
 	}
-	// Codex and Copilot have no SessionStart hook: their first state write is the first sign of life.
+	// A state write is a sign of life even where no stamp has landed yet.
 	sh := FromSession(launchedShip("working", time.Time{}), pastTheWait())
 	if sh.Status != StatusUnderway || sh.Reason != "" {
 		t.Errorf("after the hook: status %q reason %q, want underway and no reason", sh.Status, sh.Reason)
