@@ -131,6 +131,7 @@ const (
 type SignInError struct {
 	Message string
 	Kind    string // KindSignedOut or KindGHMissing
+	Detail  string // what gh said, when it said anything
 }
 
 func (e *SignInError) Error() string { return e.Message }
@@ -168,7 +169,7 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 	if c.account != "" {
 		args = append(args, "-u", c.account)
 	}
-	out, _, err := c.gh(ctx, args, "", "")
+	out, stderr, err := c.gh(ctx, args, "", "")
 	var token string
 	switch {
 	case errors.Is(err, exec.ErrNotFound):
@@ -181,7 +182,7 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 		token = strings.TrimSpace(out)
 	}
 	if token == "" {
-		return "", &SignInError{Message: "Run gh auth login -h " + c.host, Kind: KindSignedOut}
+		return "", &SignInError{Message: "Run gh auth login -h " + c.host, Kind: KindSignedOut, Detail: strings.TrimSpace(stderr)}
 	}
 	return token, nil
 }
@@ -654,11 +655,11 @@ func (c *Client) gh(ctx context.Context, args []string, tokenVar, token string) 
 
 // ghWithin runs gh in dir, or in Admiral's own directory when dir is empty, with extra after the usual environment.
 func (c *Client) ghWithin(ctx context.Context, timeout time.Duration, dir string, extra, args []string, tokenVar, token string) (stdout, stderr string, err error) {
-	return c.ghStdin(ctx, timeout, dir, extra, args, nil, tokenVar, token)
+	return c.ghStdin(ctx, timeout, dir, extra, args, nil, 0, tokenVar, token)
 }
 
-// ghStdin is ghWithin with stdin, nil for none.
-func (c *Client) ghStdin(ctx context.Context, timeout time.Duration, dir string, extra, args []string, stdin []byte, tokenVar, token string) (stdout, stderr string, err error) {
+// ghStdin is ghWithin with stdin, nil for none, and a limit on stdout's bytes, 0 for none; a longer answer is errTooBig.
+func (c *Client) ghStdin(ctx context.Context, timeout time.Duration, dir string, extra, args []string, stdin []byte, limit int, tokenVar, token string) (stdout, stderr string, err error) {
 	bin, err := c.binary()
 	if err != nil {
 		return "", "", err
@@ -672,7 +673,8 @@ func (c *Client) ghStdin(ctx context.Context, timeout time.Duration, dir string,
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
 	var out, errOut bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errOut
+	capped := &capWriter{w: &out, limit: limit}
+	cmd.Stdout, cmd.Stderr = capped, &errOut
 	cmd.WaitDelay = time.Second
 	err = cmd.Run()
 	if err != nil {
@@ -682,7 +684,29 @@ func (c *Client) ghStdin(ctx context.Context, timeout time.Duration, dir string,
 			err = errTimeout
 		}
 	}
+	if err == nil && capped.over {
+		err = errTooBig
+	}
 	return out.String(), errOut.String(), err
+}
+
+// errTooBig means gh's answer ran past the limit the caller set.
+var errTooBig = errors.New("GitHub's answer is too large")
+
+// capWriter keeps the first limit bytes and drops the rest, so gh is never cut off by a failed write.
+type capWriter struct {
+	w     *bytes.Buffer
+	limit int // 0 keeps everything
+	over  bool
+}
+
+func (c *capWriter) Write(p []byte) (int, error) {
+	if c.limit > 0 && c.w.Len()+len(p) > c.limit {
+		c.over = true
+		c.w.Write(p[:c.limit-c.w.Len()])
+		return len(p), nil
+	}
+	return c.w.Write(p)
 }
 
 // binary finds gh on the client's own PATH first, since a fleet's env may set one.

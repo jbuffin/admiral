@@ -32,6 +32,8 @@ type Service struct {
 	GitHub func(cfg *config.Config, fleet string) *github.Client
 	// ScanTimeout bounds one gitleaks run; zero means the runner's default.
 	ScanTimeout time.Duration
+
+	listings listings
 }
 
 func (s *Service) Routes(mux *http.ServeMux) {
@@ -134,6 +136,8 @@ type memberView struct {
 	Shared       *crew.Shared `json:"shared"`
 	// SidecarUnreadable is true when the member's sidecar is there but can't be used.
 	SidecarUnreadable bool `json:"sidecar_unreadable"`
+	// Published is true when the fleet's share repo holds a file of this name.
+	Published bool `json:"published"`
 }
 
 type unclaimedView struct {
@@ -170,11 +174,12 @@ func (s *Service) serveCrew(w http.ResponseWriter, r *http.Request) {
 	memory := filepath.Join(c.crewDir(), "memory")
 	memoryOK := memoryDir(memory, &out.Warnings)
 	listed := map[string]bool{}
+	published := s.publishedNames(r, c)
 	for _, m := range res.Members {
 		listed[m.Name] = true
 		v := memberView{m.Name, m.Role, m.BasedOn, m.Skills, m.Model, m.Harness, m.PickMeWhen, m.Instructions, m.Layer,
 			m.Layer == crew.LayerFleet && builtIns[m.Name].Name != "", notesView{[]string{}, map[string][]string{}},
-			m.Shared, unreadableSidecar(warns, m)}
+			m.Shared, unreadableSidecar(warns, m), published[m.Name]}
 		if memoryOK && m.Role != crew.FixChecker {
 			v.Notes.Fleet, v.Notes.Repos = crew.MemberNotes(memory, m.Name, &out.Warnings)
 		}

@@ -82,7 +82,7 @@ func (c *Client) rest(ctx context.Context, method, endpoint string, body any) ([
 	if timeout == 0 {
 		timeout = ghTimeout
 	}
-	out, stderr, err := c.ghStdin(ctx, timeout, "", nil, args, stdin, c.tokenVar(), token)
+	out, stderr, err := c.ghStdin(ctx, timeout, "", nil, args, stdin, maxRESTAnswer, c.tokenVar(), token)
 	switch {
 	case err == nil:
 		return []byte(out), nil
@@ -90,10 +90,15 @@ func (c *Client) rest(ctx context.Context, method, endpoint string, body any) ([
 		return nil, ctx.Err()
 	case errors.Is(err, exec.ErrNotFound), errors.Is(err, errTimeout):
 		return nil, c.callFailed(err)
+	case errors.Is(err, errTooBig):
+		return nil, fmt.Errorf("%s %s failed: %w", method, endpoint, err)
 	}
 	msg := strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: ")
 	if msg == "" {
 		msg = err.Error()
 	}
-	return nil, fmt.Errorf("%s %s failed: %s", method, endpoint, msg)
+	return nil, &statusError{msg: fmt.Sprintf("%s %s failed: %s", method, endpoint, msg), status: statusOf(stderr)}
 }
+
+// maxRESTAnswer bounds what one REST call may print: a directory listing of 1000 entries is about 100 KB.
+const maxRESTAnswer = 1 << 20

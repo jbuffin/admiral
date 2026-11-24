@@ -350,7 +350,11 @@ func TestPreviewRefusesAHiddenRuneAPathAndGitleaksAllowWith422AndPutsNothing(t *
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			p := newPub(t, pubOpts{})
-			p.ready("bosun", c.body)
+			body := c.body
+			if c.name == "path" {
+				body = "Read " + p.home + "/secrets.txt first."
+			}
+			p.ready("bosun", body)
 			status, out := p.preview("bosun")
 			wantStatus(t, c.name, status, 422, out)
 			wantText(t, c.name, out, c.want...)
