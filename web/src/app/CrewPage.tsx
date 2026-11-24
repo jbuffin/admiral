@@ -3,12 +3,12 @@ import { useEffect, useId, useReducer, useRef, useState } from 'preact/hooks';
 import { call, type Dock, type Fleet, type Result } from './api';
 import { Actions, Button } from './Button';
 import { CrewImport } from './CrewImport';
-import { SharePanel, UnpublishConfirm, type SharingView } from './CrewShare';
+import { ConnectGitHubLink, SharePanel, UnpublishConfirm, type SharingView } from './CrewShare';
 import { Flag } from './Flag';
 import { fleetSearch } from './fleets';
 import { ModelSelect } from './LaunchPickers';
 import { renderMarkdown } from './markdown';
-import { crewPath, githubPath, go, loc } from './router';
+import { crewPath, go, loc } from './router';
 import { Sheet } from './Sheet';
 import { SkillPicker } from './SkillPicker';
 import {
@@ -641,12 +641,10 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
             ) : (
               <span class="pill">Shared by {member.shared.owner}</span>
             )}
-            {member.shared.commit ? (
-              <span class="muted">
-                {member.shared.commit.slice(0, 7)}
-                {member.shared.tag ? ` ${member.shared.tag}` : ''}
-              </span>
-            ) : null}
+            <span class="muted">
+              {member.shared.commit.slice(0, 7)}
+              {member.shared.tag ? ` ${member.shared.tag}` : ''}
+            </span>
           </>
         ) : null}
         {member.harness ? <Flag harness={member.harness} size="header" label={`runs on ${member.harness}`} /> : null}
@@ -674,16 +672,7 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
       {sharing?.enabled && view && !view.connected && !builtIn ? (
         <p class="note">
           Sharing needs GitHub.{' '}
-          <a
-            href={githubPath(fleetKey)}
-            onClick={(e) => {
-              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-              e.preventDefault();
-              go(githubPath(fleetKey), '');
-            }}
-          >
-            Connect GitHub
-          </a>
+          <ConnectGitHubLink fleetKey={fleetKey} />
         </p>
       ) : null}
       {unpublishing ? (

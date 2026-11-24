@@ -67,7 +67,11 @@ test('with GitHub not connected the Import panel says to connect it and shows no
   server([member('bosun')], () => undefined, view([], { connected: false }));
   page();
   fireEvent.click(await screen.findByRole('button', { name: 'Import' }));
-  expect(await screen.findByText('Connect GitHub (github.com) for this fleet first.')).toBeTruthy();
+  expect(await screen.findByText(/Connect GitHub \(github.com\) for this fleet first/)).toBeTruthy();
+  const link = within(screen.getByRole('region', { name: 'Import' })).getByRole('link', { name: 'Connect GitHub' });
+  expect(link.getAttribute('href')).toBe('/app/preferences/zulu/github');
+  fireEvent.click(link);
+  expect(loc.value.path).toBe('/app/preferences/zulu/github');
   expect(screen.queryByLabelText(/ref or url/i)).toBeNull();
 });
 
@@ -110,7 +114,15 @@ test('a refused file shows the refusal in place of Import', async () => {
 });
 
 test('Import sends the preview back and the new member shows afterwards', async () => {
-  const calls = server([member('bosun')], (c) => (to(c, '/imports/preview') ? json(pv) : to(c, '/imports') && c.method === 'POST' ? json({ name: 'scout', missing_skills: ['nope'] }) : undefined));
+  const members = [member('bosun')];
+  const calls = server(members, (c) => {
+    if (to(c, '/imports/preview')) return json(pv);
+    if (to(c, '/imports') && c.method === 'POST') {
+      members.push(member('scout'));
+      return json({ name: 'scout', missing_skills: ['nope'] });
+    }
+    return undefined;
+  });
   page();
   await previewOf();
   await within(await screen.findByRole('region', { name: 'Import' })).findByText(/shared by/i);
@@ -119,6 +131,8 @@ test('Import sends the preview back and the new member shows afterwards', async 
   await waitFor(() => expect(named(calls, 'POST', '/imports')).toHaveLength(1));
   expect(named(calls, 'POST', '/imports')[0]!.body).toEqual({ repo: 'hubot/crew', path: 'crew/scout.md', commit, sha256: 'abc' });
   await waitFor(() => expect(calls.filter((c) => c.method === 'GET' && /\/crew(\?|$)/.test(c.path)).length).toBeGreaterThan(crewReads));
+  expect(await screen.findByText('Imported as scout. Not installed here: nope.')).toBeTruthy();
+  expect(await screen.findByRole('link', { name: /scout/ })).toBeTruthy();
 });
 
 test('a name that is taken says so, offers the suggested name in an editable box, and Import sends the name typed', async () => {
@@ -139,6 +153,78 @@ test('a clash with no suggestion leaves the name box empty for the engineer to t
   page();
   await previewOf();
   expect(((await screen.findByLabelText(/name in this fleet/i)) as HTMLInputElement).value).toBe('');
+});
+
+test('a name taken since the preview puts the suggested name in the box and keeps the preview without reading it again', async () => {
+  const calls = server([member('bosun')], (c) => (to(c, '/imports/preview') ? json(pv) : to(c, '/imports') && c.method === 'POST' ? json({ error: 'A crew member named scout is already in this fleet. Choose another name.', suggested: 'scout-hubot' }, 409) : undefined));
+  page();
+  await previewOf();
+  fireEvent.click(await within(await screen.findByRole('region', { name: 'Import' })).findByRole('button', { name: 'Import' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('already in this fleet');
+  expect(named(calls, 'POST', '/imports/preview')).toHaveLength(1);
+  const panel = screen.getByRole('region', { name: 'Import' });
+  expect(within(panel).getByLabelText('Member card')).toBeTruthy();
+  expect((within(panel).getByLabelText(/name in this fleet/i) as HTMLInputElement).value).toBe('scout-hubot');
+});
+
+test('the card shows the name, role, based-on, skills, model, harness and pick-me-when', async () => {
+  const card = { name: 'scout', role: 'triager', 'based-on': 'reviewer', skills: ['tdd', 'nope'], model: 'sonnet', harness: 'codex', 'pick-me-when': 'Pick **scout** now.' };
+  server([member('bosun')], (c) => (to(c, '/imports/preview') ? json({ ...pv, card }) : undefined));
+  page();
+  await previewOf();
+  const shown = within(await screen.findByLabelText('Member card'));
+  for (const text of ['scout', 'triager', 'reviewer', 'tdd, nope', 'sonnet', 'codex', 'now.']) expect(shown.getAllByText(new RegExp(text)).length).toBeGreaterThan(0);
+});
+
+test('a scan that did not run because gitleaks is missing or too old shows nothing on import', async () => {
+  for (const state of ['missing', 'too-old']) {
+    server([member('bosun')], (c) => (to(c, '/imports/preview') ? json({ ...pv, scan: { state, findings: [] } }) : undefined));
+    const { unmount } = page();
+    await previewOf();
+    const panel = await screen.findByRole('region', { name: 'Import' });
+    await within(panel).findByText(/shared by/i);
+    expect(panel.textContent).not.toMatch(/secret scan/i);
+    unmount();
+  }
+});
+
+test('adding a repo as a crew source opens its browse list', async () => {
+  server(
+    [member('bosun')],
+    (c) => {
+      if (to(c, '/imports/preview')) return json({ source: 'hubot/crew' });
+      if (c.method === 'PUT' && to(c, '/sources')) return json({ sources: ['hubot/crew'] });
+      if (c.method === 'GET' && to(c, '/sources/hubot/crew')) return json({ members: [{ name: 'mate', path: 'crew/mate.md', blob: 'b2', imported: null, published: false }] });
+      return undefined;
+    },
+    view([]),
+  );
+  page();
+  await previewOf('https://github.com/hubot/crew');
+  fireEvent.click(await screen.findByRole('button', { name: 'Add as a crew source' }));
+  const list = await screen.findByRole('list', { name: 'hubot/crew' });
+  expect(within(list).getByText('mate')).toBeTruthy();
+});
+
+test('a browse row shows the role once its file has been read', async () => {
+  server(
+    [member('bosun')],
+    (c) => {
+      if (c.method === 'GET' && to(c, '/sources/hubot/crew')) return json({ members: [{ name: 'scout', path: 'crew/scout.md', blob: 'b1', imported: null, published: false }, { name: 'mate', path: 'crew/mate.md', blob: 'b2', imported: null, published: false }] });
+      if (to(c, '/imports/preview')) return json(pv);
+      return undefined;
+    },
+    view(['hubot/crew']),
+  );
+  page(null, fleetOf(['hubot/crew']));
+  await openImport();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Browse' })[1]!);
+  const list = await screen.findByRole('list', { name: 'hubot/crew' });
+  const [scoutRow, mateRow] = within(list).getAllByRole('listitem');
+  expect(within(scoutRow!).queryByText('triager')).toBeNull();
+  fireEvent.click(within(scoutRow!).getByRole('button', { name: 'Import' }));
+  await within(scoutRow!).findByText('triager');
+  expect(within(mateRow!).queryByText('triager')).toBeNull();
 });
 
 test('an Import refused as changed since the preview shows the message and loads the preview again', async () => {
@@ -175,7 +261,7 @@ test('an Import from a Browse row refused as changed loads that row\'s preview a
 });
 
 test('a repo URL offers Add as a crew source, which puts the list with the repo added', async () => {
-  const calls = server([member('bosun')], (c) => (to(c, '/imports/preview') ? json({ source: 'hubot/crew' }) : c.method === 'PUT' && to(c, '/sources') ? json({ sources: ['a/b', 'hubot/crew'] }) : undefined), view(['a/b']));
+  const calls = server([member('bosun')], (c) => (to(c, '/imports/preview') ? json({ source: 'hubot/crew' }) : c.method === 'PUT' && to(c, '/sources') ? json({ sources: ['a/b', 'hubot/crew'] }) : c.method === 'GET' && to(c, '/sources/hubot/crew') ? json({ members: [] }) : undefined), view(['a/b']));
   page(null, fleetOf(['a/b']));
   await previewOf('https://github.com/hubot/crew');
   fireEvent.click(await screen.findByRole('button', { name: 'Add as a crew source' }));

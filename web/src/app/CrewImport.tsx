@@ -2,20 +2,14 @@ import { useId, useState } from 'preact/hooks';
 import { call } from './api';
 import { Actions, Button } from './Button';
 import { crewApi } from './crew';
-import { UnpublishConfirm, type SharingView } from './CrewShare';
+import { ConnectGitHubLink, noScan, type Scan, scanLine, UnpublishConfirm, type SharingView } from './CrewShare';
 import { usePollUntil } from './hooks/poll';
 import { renderMarkdown } from './markdown';
-
-interface Scan {
-  state: string;
-  findings: { line: number; rule: string }[];
-  error?: string;
-}
 
 interface Preview {
   source?: string;
   bytes: string;
-  card: { name: string; role: string; 'pick-me-when': string; instructions?: string };
+  card: { name: string; role: string; 'based-on': string | null; skills: string[]; model: string | null; harness: string | null; 'pick-me-when': string; instructions?: string };
   owner: string;
   repo: string;
   path: string;
@@ -29,6 +23,7 @@ interface Preview {
 
 interface Row {
   name: string;
+  path: string;
   imported: string | null;
   published: boolean;
 }
@@ -38,7 +33,8 @@ type Sharing = SharingView & { crew_sharing: { sources: string[] } };
 const slash = (repo: string) => repo.split('/').map(encodeURIComponent).join('/');
 
 function ScanNote({ scan }: { scan: Scan }) {
-  if (scan.state === 'clean') return <p class="note">Secret scan: nothing found.</p>;
+  if (noScan(scan)) return null;
+  if (scan.state === 'clean') return <p class="note">{scanLine(scan)}</p>;
   if (scan.state === 'hit') {
     return (
       <>
@@ -70,6 +66,8 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
   const [done, setDone] = useState('');
   const [browsing, setBrowsing] = useState<{ repo: string; rows: Row[] } | null>(null);
   const [unpublishing, setUnpublishing] = useState('');
+  // The role of each browse row whose file has been read, by repo and path.
+  const [roles, setRoles] = useState<Record<string, string>>({});
 
   usePollUntil(
     async (isLive) => {
@@ -100,6 +98,7 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
     setPreview(r.data);
     setPreviewed(text);
     setName(r.data.clash?.suggested ?? '');
+    if (!r.data.source) setRoles((was) => ({ ...was, [`${r.data.owner}/${r.data.repo}/${r.data.path}`]: r.data.card.role }));
   };
 
   const putSources = async (next: string[]) => {
@@ -129,10 +128,14 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
     const r = await call<{ name: string; missing_skills: string[] }>('POST', crewApi(fleetKey, harness, '/imports'), { repo: `${p.owner}/${p.repo}`, path: p.path, commit: p.commit, sha256: p.sha256, ...(typed ? { name: typed } : {}) });
     setBusy(false);
     if (!r.ok) {
-      if (r.status === 409) {
-        await loadPreview(previewed);
+      if (r.suggested !== undefined) {
+        setPreview({ ...p, clash: { name: typed || p.card.name, suggested: r.suggested || null } });
+        setName(r.suggested);
         setError(r.error);
-      } else setError(r.error);
+        return;
+      }
+      if (r.status === 409) await loadPreview(previewed);
+      setError(r.error);
       return;
     }
     setPreview(null);
@@ -147,7 +150,9 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
   return (
     <section class="crew-import" aria-label="Import">
       {view && !view.connected ? (
-        <p class="note">Connect GitHub (github.com) for this fleet first.</p>
+        <p class="note">
+          Connect GitHub (github.com) for this fleet first. <ConnectGitHubLink fleetKey={fleetKey} />
+        </p>
       ) : (
         <>
           <form
@@ -177,9 +182,11 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
                 label="Add as a crew source"
                 disabled={busy}
                 onClick={async () => {
-                  if (await putSources([...sources, preview.source!])) {
+                  const added = preview.source!;
+                  if (await putSources([...sources, added])) {
                     setPreview(null);
                     setRef('');
+                    await browse(added);
                   }
                 }}
               />
@@ -197,6 +204,21 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
               <div class="crew-card" role="group" aria-label="Member card">
                 <h3>{preview.card.name}</h3>
                 <p class="muted">{preview.card.role}</p>
+                <dl class="crew-facts">
+                  {[
+                    ['Based on', preview.card['based-on']],
+                    ['Skills', preview.card.skills.length > 0 ? preview.card.skills.join(', ') : null],
+                    ['Model', preview.card.model],
+                    ['Harness', preview.card.harness],
+                  ].map(([label, value]) =>
+                    value ? (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ) : null,
+                  )}
+                </dl>
                 <div class="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(preview.card['pick-me-when']) }} />
                 {preview.card.instructions ? <div class="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(preview.card.instructions) }} /> : null}
               </div>
@@ -264,6 +286,7 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
               {browsing.rows.map((m) => (
                 <li key={m.name}>
                   <span>{m.name}</span>
+                  {roles[`${browsing.repo}/${m.path}`] ? <span class="muted">{roles[`${browsing.repo}/${m.path}`]}</span> : null}
                   {m.imported ? <span class="pill">Imported</span> : <Button label="Import" disabled={busy} onClick={() => void loadPreview(`${browsing.repo}/${m.name}`)} />}
                   {browsing.repo === shareRepo ? <Button label="Unpublish" onClick={() => setUnpublishing(m.name)} /> : null}
                 </li>
