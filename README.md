@@ -8,18 +8,18 @@
 
 Admiral runs coding agents (Claude Code, Codex CLI, GitHub Copilot CLI) in the background on your Mac and gives you one dashboard to supervise them. Each running agent is a ship. You launch one, leave it working, and come back when it needs you: to answer a question, review a pull request or read what it did. It works from your Mac, iPad or phone.
 
-Most agent tools stop at one agent in one window. Admiral is built for many at once: agent teams that pair a lead with a crew, a queue of work they pick up, and a place where every question lands. Admiral itself runs on your Mac, next to your repos and your harness sign-ins.
+Most agent tools stop at one agent in one window. Admiral is built for many at once: agent teams that pair a lead with a crew, orders you launch by hand, on a routine or through AdmiralBot, and a place where every question lands. Admiral itself runs on your Mac, next to your repos and your harness sign-ins.
 
 ## What you can do
 
 ### See every ship at once
 
-Ships are grouped by what they need from you: the ones that are blocked on you come first, then the ones underway, then the ones whose pull request is waiting. Each row shows the harness, the repo and the ship's latest words. Fleets keep different projects apart.
+Ships are grouped by what they need from you: the ones that need you come first, then the ones underway. Each row shows the harness, the repo and the ship's latest words. Fleets keep your work and personal setups apart.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/ships-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/images/ships-light.png">
-  <img alt="The Ships view: one ship needs an answer and two are underway, each row showing its harness, repo and latest message" src="docs/images/ships-light.png" width="900">
+  <img alt="The Ships view: two ships that need you above five that are underway, each row showing its harness, repo and latest message" src="docs/images/ships-light.png" width="900">
 </picture>
 
 ### Answer from one inbox
@@ -39,7 +39,7 @@ A ship's conversation shows what the agent said and did, with its plan, code and
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/conversation-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/images/conversation-light.png">
-  <img alt="A ship's Conversation tab showing the task, a numbered plan with code names, a collapsed work summary and a Working status" src="docs/images/conversation-light.png" width="900">
+  <img alt="A ship's Conversation tab showing the task, a numbered plan, a collapsed work summary, a Go code block and a Working status" src="docs/images/conversation-light.png" width="900">
 </picture>
 
 ### Run a crew behind the lead
@@ -54,7 +54,7 @@ A ship can call on crew members, each with a role such as implementer, test writ
 
 ### Drive a software factory
 
-A campaign takes a tracked issue with its sub-issues and works through them: it sorts them into ready, claimed, blocked and done, lets you start a ship on any ready one, and shows progress as they land. Routines launch work on a schedule, and autopilot lets a ship carry on without asking at every step. Admiral never merges a pull request and never edits your issue tree; those stay with you.
+A campaign follows a tracked issue and its sub-issues: it sorts them into ready, claimed, blocked and done, lets you start ships on the ready ones, and shows progress as they land. Routines launch work on a schedule, and autopilot lets a ship carry on without asking at every step. Admiral never merges on its own and never edits your issue tree; you merge, from the Inbox or on GitHub.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/campaign-dark.png">
