@@ -8,7 +8,7 @@ How the moored poll decides to wake a ship, hand rounds, tiers and the wake stat
 - **A live ship's open PRs and moor on done** (`internal/ships/openprs.go`).
   - `refreshOpenPRs` runs each pass: it stats the ship's report file and, only when the stamp (mtime, size) changed, reads it through `loadReport` (`readReport`'s guards without its log line), takes `Report.Result` and asks `moor.CountedAnswered` in a goroutine; `openPRsOf` serves the cached answer, which `ship()` joins with `carriedOpen` (the running-ships poll's OPEN PRs, via `withCarried`) into `Ship.OpenPRs`, so the request path never asks GitHub.
   - `countedPRs` (clean exit) and `serveMoor` check the same union.
-  - `autoMoor` moors a live ship at needs you (reason `stop`), not returning, whose report says `done` with open PRs, once per report stamp.
+  - `autoMoor` moors a live ship at needs you (reason `stop`), not returning, whose report says `done` with open PRs or with an open PR of its launch order (`orderOpen`: order targets and reviewed PRs, not PRs it only printed), once per report stamp.
   - `serveMoor` handles `{"moor": true}` on `/stop` and `/return` with a fresh check.
   - All three end in `moorShip`, under the ship's `lockShip` (shared with `stopShip`, so a Stop that came first leaves nothing to moor): `moor()` (record, `moored`, `endRound("moored")`), then `recordKilled` and `endSession`, so a woken ship's round logs `moored`, not `anchored`.
   - A check GitHub does not answer (gh down past `RetryWindow`) is not cached under the stamp: it is retried with a wait that doubles from 30 s to 4 min.
@@ -72,7 +72,7 @@ How the moored poll decides to wake a ship, hand rounds, tiers and the wake stat
   - `running.order` is the launch's one check of the order URL and launch PRs, kept apart from the printed candidates', which reject any PR the viewer did not open.
   - A stack resolves through `GitHub.StackOpenPRs` (REST `repos/<o>/<r>/stacks/<N>`, strict parse in `moor.ParseStack`).
   - The reviewed PRs are in the `prs` session option and listed in the `reviewing` option (a subset), written by `persistCarried`, and in `moor.Record.Reviewing`.
-  - `decide` hides them from `DecideWake`, `autoMoor` moors a done report that has an open reviewed PR, and `serveMerge` and `serveUnfollow` answer 409 for them.
+  - `decide` hides them from `DecideWake`, `autoMoor` moors a done report that has an open reviewed PR (or any open launch-order PR), and `serveMerge` and `serveUnfollow` answer 409 for them.
   - `LaunchOrder` kicks a poll for an order URL that is a PR or stack URL, or when the launch names a PR, so the check does not wait for the poll interval, and `setMoored` hands a ship's live poll to its new record when it is not stale and covers every PR.
   - The check stays pending until every target answers (a failed ask counts toward `maxCandidateTries`) and reruns once per process, since the option alone does not say every layer answered; `dropMoored` seeds a woken ship's `running.reviewing` and its `reviewing` option from the record, so a round GitHub never answers re-moors with the role.
 - **One round at a time.** A live ship is not decided on by the poll. When the round's ship moors again, the next poll decides from the advanced cursor, and what came in during the round is the queue.

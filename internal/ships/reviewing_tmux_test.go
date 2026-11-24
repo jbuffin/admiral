@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -199,6 +201,9 @@ func TestAShipOnAStackOfOnlyTheViewersLayersMoorsCarryingThemWhenItsReportListsN
 	}
 	r.poll()
 	r.wantPRs(t, []string{stackL1, stackL2}, nil)
+	if rec := r.postMerge(); rec.Code == http.StatusConflict && strings.Contains(rec.Body.String(), "reviews a pull request") {
+		t.Errorf("merge = %d %s, want it not refused as a review for a ship that reviews nothing", rec.Code, rec.Body)
+	}
 }
 
 func TestAShipOnAMixedStackMoorsCarryingEveryLayerAndReviewingOnlyTheOthers(t *testing.T) {
@@ -217,6 +222,9 @@ func TestAShipOnAMixedStackMoorsCarryingEveryLayerAndReviewingOnlyTheOthers(t *t
 	rec := readRecord(t, r.mooredFile())
 	if !slices.Equal(rec.PRs, []string{stackL1, stackL2, stackL3}) || !slices.Equal(rec.Reviewing, []string{stackL1, stackL3}) {
 		t.Errorf("record prs %v reviewing %v, want [%s %s %s] reviewing [%s %s]", rec.PRs, rec.Reviewing, stackL1, stackL2, stackL3, stackL1, stackL3)
+	}
+	if rec := r.postMerge(); rec.Code != http.StatusConflict {
+		t.Errorf("merge = %d %s, want 409 while the ship reviews another author's layer", rec.Code, rec.Body)
 	}
 }
 
@@ -315,6 +323,49 @@ func TestAFreeTextShipWithADoneReportThatListsNoPRsStaysLive(t *testing.T) {
 		_, err := os.Stat(r.mooredFile())
 		return err != nil && r.live(t)
 	})
+}
+
+// A guard: a PR the ship only printed (a transcript candidate, not part of its order) does not make a done report moor it.
+func TestAShipCarryingAPrintedOwnPRWithADoneReportThatListsNoPRsIsNotMoored(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		localOnly bool
+	}{{"a local-only ship finishes", true}, {"a free-text ship stays live", false}} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newReviewingRig(t, "")
+			if c.localOnly {
+				r.markLocalOnly(t)
+			}
+			r.s.Candidates = func(string) []string { return []string{livePR7} }
+			launched, err := time.Parse(time.RFC3339, r.options(t, "saltpaw")["launched"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.gh.pollGitHub.set(livePR7, moor.Status{State: "OPEN", Author: viewer, Viewer: viewer, CreatedAt: launched.Add(time.Minute)})
+			go r.s.Run(r.ctx)
+			r.turn(t, "working", "")
+			waitUntil(t, "the poll to carry the printed PR", func() bool { r.poll(); return len(r.prs(t)) == 1 })
+			r.writeReport(t, "done")
+			r.turn(t, "needs_you", "stop")
+			if c.localOnly {
+				r.gone(t, "the finished ship to leave the live list")
+				waitUntil(t, "the finished record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "finished")) == 1 })
+			}
+			holdsFor(t, 1500*time.Millisecond, "the ship moored", func() bool {
+				_, err := os.Stat(r.mooredFile())
+				return err != nil && (c.localOnly || r.live(t))
+			})
+		})
+	}
+}
+
+// postMerge asks the ship to merge on a mux whose Merge route is open, since the rig's own routes refuse it with no token check.
+func (r *liveRig) postMerge() *httptest.ResponseRecorder {
+	r.s.MergeGuard = func(h http.Handler) http.Handler { return h }
+	mux := http.NewServeMux()
+	r.s.Routes(mux)
+	r.mux = mux
+	return r.post("merge", "{}")
 }
 
 func readRecord(t *testing.T, path string) moor.Record {

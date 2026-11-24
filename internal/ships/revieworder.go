@@ -127,6 +127,9 @@ func (s *Service) judgeOrder(rs *running, run runAsk, answer, candAnswer map[str
 			failed = true
 		case ok && st.State == "OPEN" && st.Viewer != "" && st.Author != "":
 			reviews := st.Author != st.Viewer
+			if !slices.Contains(rs.order.open, u) {
+				rs.order.open = append(rs.order.open, u)
+			}
 			if reviews && !slices.Contains(rs.reviewing, u) {
 				rs.reviewing = append(rs.reviewing, u)
 				added = true
