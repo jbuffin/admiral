@@ -47,7 +47,14 @@ type FleetView struct {
 	Limits        standing.Limits     `json:"limits"`
 	Sentences     []standing.Sentence `json:"sentences"`
 	// Overridden lists the Limits this fleet stores, as the field paths the sentences carry; the rest read from the preset.
-	Overridden []string `json:"overridden"`
+	Overridden  []string        `json:"overridden"`
+	CrewSharing CrewSharingView `json:"crew_sharing"`
+}
+
+type CrewSharingView struct {
+	Enabled   bool     `json:"enabled"`
+	ShareRepo string   `json:"share_repo"`
+	Sources   []string `json:"sources"`
 }
 
 type DockView struct {
@@ -102,7 +109,8 @@ func (m *Manager) viewLocked() View {
 			SearchRoots: f.SearchRoots, Owners: nonNil(f.Owners), WakeReviewers: nonNil(f.WakeReviewers), CloneRoot: f.CloneRoot,
 			CanLaunch: f.CanLaunch(), Notify: f.Notify, Docks: []DockView{},
 			Chat:   ChatView{f.Chat.Harness, f.Chat.Model, f.Chat.Effort, f.Chat.ThresholdJSON(), off == "", off, offered(opts), opts, chatModels(m.cur, f), ChatEffortsFor(f.Chat.Harness)},
-			Preset: string(f.Preset), Limits: f.Limits.Clone(), Sentences: standing.Sentences(f.Limits), Overridden: nonNil(f.Overridden)}
+			Preset: string(f.Preset), Limits: f.Limits.Clone(), Sentences: standing.Sentences(f.Limits), Overridden: nonNil(f.Overridden),
+			CrewSharing: CrewSharingView{f.CrewSharing.Enabled, f.CrewSharing.ShareRepo, nonNil(f.CrewSharing.Sources)}}
 		for _, h := range f.Harnesses {
 			warnings := h.Warnings
 			if warnings == nil {

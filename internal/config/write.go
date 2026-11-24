@@ -140,6 +140,8 @@ type FleetFields struct {
 	DraftingSkill *string
 	// Chat holds the chat settings to change, by key; nil leaves them as stored.
 	Chat map[string]json.RawMessage
+	// CrewSharing holds the crew_sharing keys to change, by key; the others stay as stored.
+	CrewSharing map[string]json.RawMessage
 	// Preset is work or home; switching it clears the Limit values and keeps quiet hours.
 	Preset *string
 	// Limits holds the Limit keys to change; nil leaves them as stored.
@@ -190,6 +192,11 @@ func editFleet(dir, key string, f FleetFields, cfg *Config, repos RepoLookup) er
 		}
 		if f.Notify != nil {
 			fleet.SetValue("notify", *f.Notify)
+		}
+		if f.CrewSharing != nil {
+			if err := mergeCrewSharing(fleet, f.CrewSharing); err != nil {
+				return err
+			}
 		}
 		if f.Preset != nil || f.Limits != nil {
 			if err := mergeLimits(fleet, f); err != nil {
@@ -306,6 +313,22 @@ func refuseUnofferedHarness(cfg *Config, key string, raw json.RawMessage) error 
 // mergeChat refuses what parseFleetChat would replace with a default, then sets only the given
 // keys. An empty effort removes its key, so the fleet falls back to the harness default.
 // Switching harness also checks the model and effort the fleet keeps against the new one.
+// mergeCrewSharing sets the given keys in the stored object; Parse refuses a bad key or value afterwards.
+func mergeCrewSharing(fleet *Object, set map[string]json.RawMessage) error {
+	cs := NewObject()
+	if raw, ok := fleet.Get("crew_sharing"); ok {
+		var err error
+		if cs, err = ParseObject(raw); err != nil {
+			return fmt.Errorf("%w: %w", ErrConflict, err)
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(set)) {
+		cs.Set(k, set[k])
+	}
+	fleet.Set("crew_sharing", cs.JSON())
+	return nil
+}
+
 func mergeChat(fleet *Object, key string, set map[string]json.RawMessage, cfg *Config) error {
 	given := NewObject()
 	for _, k := range slices.Sorted(maps.Keys(set)) {

@@ -72,6 +72,14 @@ type Fleet struct {
 	Limits        standing.Limits   // resolved: the preset's values under the fleet's own
 	Overridden    []string          // the Limits the fleet stores itself, as sentence field paths
 	DraftingSkill string            // drafting.skill; empty means no skill
+	CrewSharing   CrewSharing       // off, with no share repo or sources, unless config.json says otherwise
+}
+
+// CrewSharing is the fleet's crew sharing settings.
+type CrewSharing struct {
+	Enabled   bool
+	ShareRepo string   // <owner>/<name> the fleet publishes to; empty when none
+	Sources   []string // <owner>/<name> share repos the fleet imports from
 }
 
 func (c *Config) clone() *Config {
@@ -92,6 +100,7 @@ func (c *Config) clone() *Config {
 		f.Env = maps.Clone(f.Env)
 		f.Limits = f.Limits.Clone()
 		f.Overridden = slices.Clone(f.Overridden)
+		f.CrewSharing.Sources = slices.Clone(f.CrewSharing.Sources)
 		f.Harnesses = slices.Clone(f.Harnesses)
 		for j, h := range f.Harnesses {
 			h.Args = slices.Clone(h.Args)
@@ -379,6 +388,10 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			if f.DraftingSkill, err = parseDrafting(p, m.raw); err != nil {
 				return Fleet{}, err
 			}
+		case "crew_sharing":
+			if f.CrewSharing, err = parseCrewSharing(p, m.raw); err != nil {
+				return Fleet{}, err
+			}
 		case "preset":
 			if f.Preset, err = parsePreset(p, m.raw); err != nil {
 				return Fleet{}, err
@@ -409,6 +422,53 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 	}
 	f.Overridden = overriddenPaths(limitsRaw)
 	return f, nil
+}
+
+var repoRefRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+// ValidRepoRef is whether s is <owner>/<name>, each segment of [A-Za-z0-9_.-]+ and neither "." nor "..".
+func ValidRepoRef(s string) bool {
+	owner, name, _ := strings.Cut(s, "/")
+	return repoRefRe.MatchString(s) && owner != "." && owner != ".." && name != "." && name != ".."
+}
+
+func parseCrewSharing(path string, raw json.RawMessage) (CrewSharing, error) {
+	ms, err := members(path, raw)
+	if err != nil {
+		return CrewSharing{}, err
+	}
+	cs := CrewSharing{Sources: []string{}}
+	for _, m := range ms {
+		p := path + "." + m.key
+		switch m.key {
+		case "enabled":
+			if cs.Enabled, err = boolean(p, m.raw); err != nil {
+				return CrewSharing{}, err
+			}
+		case "share_repo":
+			if cs.ShareRepo, err = str(p, m.raw); err != nil {
+				return CrewSharing{}, err
+			}
+			if cs.ShareRepo != "" && !ValidRepoRef(cs.ShareRepo) {
+				return CrewSharing{}, fmt.Errorf("%s: must be empty or <owner>/<name>, got %q", p, cs.ShareRepo)
+			}
+		case "sources":
+			if cs.Sources, err = stringList(p, m.raw); err != nil {
+				return CrewSharing{}, err
+			}
+			for i, s := range cs.Sources {
+				if !ValidRepoRef(s) {
+					return CrewSharing{}, fmt.Errorf("%s[%d]: must be <owner>/<name>, got %q", p, i, s)
+				}
+				if slices.Contains(cs.Sources[:i], s) {
+					return CrewSharing{}, fmt.Errorf("%s[%d]: %s is listed twice", p, i, s)
+				}
+			}
+		default:
+			return CrewSharing{}, fmt.Errorf("%s: unknown key", p)
+		}
+	}
+	return cs, nil
 }
 
 func parseHarness(path, name string, raw json.RawMessage) (Harness, error) {
