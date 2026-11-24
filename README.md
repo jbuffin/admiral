@@ -39,7 +39,7 @@ A ship's conversation shows what the agent said and did, with its plan, code and
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/conversation-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/images/conversation-light.png">
-  <img alt="A ship's Conversation tab showing the task, a numbered plan with code names, and a working status" src="docs/images/conversation-light.png" width="900">
+  <img alt="A ship's Conversation tab showing the task, a numbered plan with code names, a collapsed work summary and a Working status" src="docs/images/conversation-light.png" width="900">
 </picture>
 
 ### Run a crew behind the lead
@@ -49,7 +49,7 @@ A ship can call on crew members, each with a role such as implementer, test writ
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/agents-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/images/agents-light.png">
-  <img alt="The Agents tab of a ship, listing four crew boats with their roles and tasks" src="docs/images/agents-light.png" width="900">
+  <img alt="The Agents tab of a ship, listing four running crew boats, with a chip above for each crew member's role" src="docs/images/agents-light.png" width="900">
 </picture>
 
 ### Drive a software factory
