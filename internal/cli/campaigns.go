@@ -17,6 +17,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/campaigns"
 	"github.com/jbuffin/admiral/internal/github"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // followTimeout covers a first follow, which reads the whole issue tree from GitHub before answering.
@@ -199,6 +200,10 @@ const shipNote = `Admiral campaigns, from inside a ship:
 func ShipNote(args []string, std IO) error {
 	if os.Getenv("ADMIRAL_SHIP") == "" || os.Getenv("ADMIRAL_SCOUT") != "" {
 		return nil
+	}
+	// Claude's SessionStart is the ship's first sign of life; Admiral reads this stamp, never the screen, to tell started from not started.
+	if pane := os.Getenv("TMUX_PANE"); pane != "" {
+		_ = sessionhost.WriteCurrent(sessionhost.SetPaneCall(pane, sessionhost.ActivityOption, time.Now().UTC().Format(time.RFC3339)))
 	}
 	note := shipNote
 	if c := shipContext(); c != "" {

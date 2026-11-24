@@ -53,3 +53,5 @@ Amended 2026-10-19 after the live check in [`docs/research/crew-boats.md`](../re
 Amended 2026-10-19 ([#69](https://github.com/jbuffin/admiral/issues/69)): `~/.admiral/bin` goes first on `PATH`, not just somewhere on it.
 
 Amended 2026-11-02 ([#189](https://github.com/jbuffin/admiral/issues/189)): a crew boat's plain `Stop` is `idle`, not needs-you. Permission prompts, questions, elicitation and a Codex boat's bell still flag the boat and its ship.
+
+Amended 2026-11-24: a live crew boat with no hook since its launch, past `NoHookWait`, is needs-you `not_started` and lifts its ship (reason `crew`); the rule runs at read time in `ships`, so `admiral crew list` and the bridge agree. See ADR 0007.

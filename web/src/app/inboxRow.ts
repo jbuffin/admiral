@@ -14,7 +14,7 @@ export function reasonWords(code: string): string {
   if (code === 'notification:permission_prompt') return 'Needs a permission answer';
   if (code.startsWith('notification:')) return 'Sent a notification';
   return (
-    { question: 'Asked a question', stop: 'Finished and is waiting', bell: 'Rang the bell', idle: 'Has gone quiet' }[code as 'stop'] ?? code
+    { question: 'Asked a question', stop: 'Finished and is waiting', bell: 'Rang the bell', idle: 'Has gone quiet', not_started: 'Has not started: waiting on you' }[code as 'stop'] ?? code
   );
 }
 

@@ -282,7 +282,7 @@ _Avoid_: crew boat (for a subagent), mark
 The ocean in the middle of the screen where ships sail once launched. Work Fleet ships drift toward the top and Home Fleet ships toward the bottom; the engineer can drag ships anywhere.
 
 **Needs you**:
-A ship whose session cannot move until the engineer does: a question, an approval, or a finished turn waiting for the next prompt. It shakes, waves its flag fast and plays a chime.
+A ship whose session cannot move until the engineer does: a question, an approval, a finished turn waiting for the next prompt, or a session that has not started (no hook since launch, often Claude's folder-trust prompt, which the engineer answers in its Terminal tab). It shakes, waves its flag fast and plays a chime.
 _Avoid_: alert, blocked, error
 
 **Inbox**:

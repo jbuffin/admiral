@@ -235,6 +235,7 @@ export interface CrewBoat {
   role?: string;
   conversation: boolean;
   harness: string;
+  dir?: string;
   reason?: string;
   status: string;
   launched?: string;

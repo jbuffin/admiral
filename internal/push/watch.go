@@ -93,7 +93,7 @@ func deliver(s Sink, d Decided) {
 // A finished turn (stop), idle, unknown and the ship-level crew reason are only counted.
 func asks(reason string) bool {
 	switch {
-	case reason == "question", reason == "permission", reason == "bell",
+	case reason == "question", reason == "permission", reason == "bell", reason == "not_started",
 		strings.HasPrefix(reason, "permission:"),
 		reason == "notification:permission_prompt", reason == "notification:elicitation_dialog":
 		return true
@@ -104,6 +104,9 @@ func asks(reason string) bool {
 func askText(reason string) string {
 	if strings.HasPrefix(reason, "permission") || strings.HasSuffix(reason, "permission_prompt") {
 		return "needs your approval"
+	}
+	if reason == "not_started" {
+		return "needs you to finish starting"
 	}
 	if reason == "bell" {
 		return "needs you"

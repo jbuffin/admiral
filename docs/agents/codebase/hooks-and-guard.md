@@ -63,3 +63,4 @@ How `admiral hook` decides needs you, how `admiral guard pretooluse` refuses a m
 - A panel's autopilot args go after the fleet's dock args; Admiral removes any report and inbox a reused name left, then creates `reports/` and the inbox before the harness starts.
 - Every start links `$ADMIRAL_HOME/bin/admiral` to the running binary and puts that directory first on a ship's `PATH`.
 - `HiddenOrders` lists the orders that have a ship, which refuses a second launch from one unless the engineer sends `anyway`.
+- Claude's `SessionStart` runs `admiral ship-note`, which stamps `@admiral-activity`; Admiral compares it with `@admiral-launched` to tell a started ship from one stuck before its first hook (`not_started`). Crew boats read the same stamp through `ships.crewStatus`.

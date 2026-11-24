@@ -52,6 +52,7 @@ func (s *Service) resolve(w http.ResponseWriter, session, name string) (target, 
 			clearSeen: func() error { _, err := s.InputSeen(session); return err }}, true
 	}
 	for _, c := range sess.Crew {
+		c.State, c.Reason = crewStatus(c, time.Now())
 		if c.Name == name {
 			return target{pane: c.PaneID, what: "crew boat " + name, exited: c.State == sessionhost.CrewAnchored,
 				harness: c.Harness, needsYou: c.State == sessionhost.CrewNeedsYou, reason: c.Reason, crew: name,

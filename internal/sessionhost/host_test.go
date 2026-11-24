@@ -288,3 +288,39 @@ func TestShipWithCrewWindow(t *testing.T) {
 		}
 	}
 }
+
+// A key sent to a boat that never ran a hook must leave it started, or it would read as not started again.
+func TestStampPaneActivityMakesABoatStarted(t *testing.T) {
+	h, ctx := testHost(t)
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(h.tmux, append([]string{"-S", h.sock}, args...)...)
+		cmd.Env = h.env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("tmux %v: %v\n%s", args, err, out)
+		}
+	}
+	run("new-session", "-d", "-s", "ship", "sleep", "60")
+	run("set-option", "-t", "=ship:", "@admiral-name", "Ship")
+	run("new-window", "-t", "=ship:", "-n", "mate", "sleep", "60")
+	run("set-option", "-w", "-t", "=ship:mate", "@admiral-crew-name", "mate")
+	boat := func() Crew {
+		t.Helper()
+		crew, err := ReadCrew(h.tmux, h.sock, "ship")
+		if err != nil || len(crew) != 1 {
+			t.Fatalf("crew = %+v, err %v; want one boat", crew, err)
+		}
+		return crew[0]
+	}
+	before := boat()
+	if !before.LastActivity.IsZero() {
+		t.Fatalf("LastActivity = %v before any hook, want zero", before.LastActivity)
+	}
+	at := time.Date(2026, 11, 24, 10, 0, 5, 0, time.UTC)
+	if err := h.StampPaneActivity(ctx, before.PaneID, at); err != nil {
+		t.Fatal(err)
+	}
+	if got := boat().LastActivity; !got.Equal(at) {
+		t.Errorf("LastActivity = %v, want %v", got, at)
+	}
+}

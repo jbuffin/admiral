@@ -478,6 +478,9 @@ func parseRows(rows []string, known map[string]bool) (sessions map[string]Sessio
 			s.Subagents = DecodeSubagents(f[fixedFields+len(optionNames)+6])
 		}
 		s.ExitStatus, _ = strconv.Atoi(f[2])
+		if t, err := time.Parse(time.RFC3339, f[fixedFields+len(optionNames)+3]); err == nil {
+			s.Activity = t
+		}
 		if sec, err := strconv.ParseInt(f[4], 10, 64); err == nil && sec > 0 {
 			s.DeadTime = time.Unix(sec, 0)
 		}

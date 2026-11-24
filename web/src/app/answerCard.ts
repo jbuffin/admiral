@@ -104,5 +104,7 @@ export function answerCard({ harness, status, reason, conv }: { harness: string;
 /** The card for what the view targets: the picked boat, else the ship, each by its own harness, status and reason. */
 export function cardFor(ship: Ship, boat: CrewBoat | undefined, conv: Conversation): AnswerCard {
   const t = boat ?? ship;
+  // The session never ran a hook, so there is no transcript; it usually waits on a prompt only the engineer may answer.
+  if (t.status === 'needs_you' && t.reason === 'not_started') return { kind: 'not_started', dir: boat ? (boat.dir ?? '') : (ship.worktree ?? ship.dir ?? ship.repo) };
   return answerCard({ harness: t.harness, status: t.status, reason: t.reason, conv });
 }
