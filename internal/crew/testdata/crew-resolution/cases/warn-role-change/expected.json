@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Plain default for reviewer.",
       "role": "reviewer",
+      "shared": null,
       "skills": []
     },
     {
@@ -35,6 +36,7 @@
       },
       "pick-me-when": "Better.",
       "role": "scribe",
+      "shared": null,
       "skills": []
     }
   ],

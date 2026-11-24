@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Builder for this repo.",
       "role": "implementer",
+      "shared": null,
       "skills": [
         "repo-skill"
       ]
@@ -37,6 +38,7 @@
       },
       "pick-me-when": "Plain default for reviewer.",
       "role": "reviewer",
+      "shared": null,
       "skills": []
     }
   ],

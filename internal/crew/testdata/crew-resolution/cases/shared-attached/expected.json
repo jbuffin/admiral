@@ -1,0 +1,119 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "brief-checker.md",
+      "harness": null,
+      "instructions": "Body of brief-checker.",
+      "layer": "run",
+      "model": null,
+      "name": "brief-checker",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick brief-checker.",
+      "role": "brief-checker",
+      "shared": {
+        "commit": "fedcba9876543210fedcba9876543210fedcba98",
+        "detached": false,
+        "owner": "octocat",
+        "repo": "admiral-crew",
+        "tag": "v2"
+      },
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "implementer.md",
+      "harness": null,
+      "instructions": "Repo body.",
+      "layer": "repo",
+      "model": null,
+      "name": "implementer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick implementer.",
+      "role": "implementer",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "reviewer.md",
+      "harness": null,
+      "instructions": "Body of reviewer.",
+      "layer": "fleet",
+      "model": null,
+      "name": "reviewer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick reviewer.",
+      "role": "reviewer",
+      "shared": {
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "detached": false,
+        "owner": "octocat",
+        "repo": "admiral-crew",
+        "tag": "v1"
+      },
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "reviewer-2.md",
+      "harness": null,
+      "instructions": "Body of reviewer-2.",
+      "layer": "fleet",
+      "model": null,
+      "name": "reviewer-2",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick reviewer-2.",
+      "role": "reviewer",
+      "shared": {
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "detached": false,
+        "owner": "octocat",
+        "repo": "admiral-crew",
+        "tag": "v1"
+      },
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "scribe.md",
+      "harness": null,
+      "instructions": "Body of scribe.",
+      "layer": "fleet",
+      "model": null,
+      "name": "scribe",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick scribe.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

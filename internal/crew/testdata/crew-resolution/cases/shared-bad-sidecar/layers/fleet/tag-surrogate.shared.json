@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "upstream_name": "tag-surrogate",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1\ud800",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z",
+  "path": "crew/tag-surrogate.md",
+  "content_sha256": "534f0c9d2940bd01176c47b983d1db322bbb994ac50bef36c0cea22abfc0156b"
+}

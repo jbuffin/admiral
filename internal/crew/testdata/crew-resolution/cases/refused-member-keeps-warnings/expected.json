@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Plain default for scribe.",
       "role": "scribe",
+      "shared": null,
       "skills": []
     }
   ],

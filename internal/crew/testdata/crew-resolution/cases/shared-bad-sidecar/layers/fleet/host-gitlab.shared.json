@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "gitlab.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/host-gitlab.md",
+  "upstream_name": "host-gitlab",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "dd05b61831c63eb663a82db4549b71327424451124bad4241beefc93e1f37781",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

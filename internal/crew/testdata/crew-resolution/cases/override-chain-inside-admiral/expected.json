@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Builder pinned for this run.",
       "role": "implementer",
+      "shared": null,
       "skills": [
         "run-skill"
       ]
@@ -37,6 +38,7 @@
       },
       "pick-me-when": "Plain default for reviewer.",
       "role": "reviewer",
+      "shared": null,
       "skills": []
     }
   ],

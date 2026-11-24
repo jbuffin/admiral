@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Only for fix checks.",
       "role": "fix-checker",
+      "shared": null,
       "skills": []
     },
     {
@@ -37,6 +38,7 @@
       },
       "pick-me-when": "Default implementer.",
       "role": "implementer",
+      "shared": null,
       "skills": []
     }
   ],

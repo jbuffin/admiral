@@ -1,0 +1,4 @@
+{
+  "admiral": true,
+  "description": "Each unreadable sidecar gives one shared-unreadable warning and shared null; the member still resolves, and an overridden or refused file's bad sidecar warns too."
+}

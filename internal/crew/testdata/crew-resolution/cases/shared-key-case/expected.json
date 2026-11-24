@@ -1,0 +1,31 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "reviewer.md",
+      "harness": null,
+      "instructions": "Body of reviewer.",
+      "layer": "fleet",
+      "model": null,
+      "name": "reviewer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick reviewer.",
+      "role": "reviewer",
+      "shared": {
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "detached": false,
+        "owner": "octocat",
+        "repo": "admiral-crew",
+        "tag": "v1"
+      },
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

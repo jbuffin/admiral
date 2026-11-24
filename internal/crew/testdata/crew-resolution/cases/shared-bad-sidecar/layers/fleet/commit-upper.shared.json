@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/commit-upper.md",
+  "upstream_name": "commit-upper",
+  "commit": "0123456789ABCDEF0123456789ABCDEF01234567",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "7667e77b71a7b6a038c26905372f6b3bde9e5fef1877c699d1bb7ccbda149547",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

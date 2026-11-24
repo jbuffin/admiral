@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Plain default for fix-checker.",
       "role": "fix-checker",
+      "shared": null,
       "skills": []
     },
     {
@@ -35,6 +36,7 @@
       },
       "pick-me-when": "Plain default for implementer.",
       "role": "implementer",
+      "shared": null,
       "skills": []
     },
     {
@@ -53,6 +55,7 @@
       },
       "pick-me-when": "Plain default for reviewer.",
       "role": "reviewer",
+      "shared": null,
       "skills": []
     }
   ],

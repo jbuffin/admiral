@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Fix checker.",
       "role": "fix-checker",
+      "shared": null,
       "skills": []
     },
     {
@@ -35,6 +36,7 @@
       },
       "pick-me-when": "Strict.",
       "role": "fix-checker",
+      "shared": null,
       "skills": []
     }
   ],

@@ -21,6 +21,7 @@
       },
       "pick-me-when": "Repo builder.",
       "role": "implementer",
+      "shared": null,
       "skills": []
     },
     {
@@ -41,6 +42,7 @@
       },
       "pick-me-when": "Pick.",
       "role": "reviewer",
+      "shared": null,
       "skills": []
     }
   ],

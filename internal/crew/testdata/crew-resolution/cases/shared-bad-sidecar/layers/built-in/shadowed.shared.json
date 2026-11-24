@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/shadowed.md",
+  "upstream_name": "reviewer",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "ba05a07737a7601666902b15277d44d032633bf160251d1633aca8e6c6ab6213",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

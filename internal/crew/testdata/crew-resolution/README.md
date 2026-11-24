@@ -52,7 +52,7 @@ Parse both JSON objects, drop every `message` field from your output's `errors` 
 
 ## Symlinks
 
-Some cases hold committed git symlinks (for example `error-outside-layer`). Check out or copy a case with symlinks kept, or those cases give the wrong result.
+Some cases hold committed git symlinks (for example `error-outside-layer`). Check out or copy a case with symlinks kept, or those cases give the wrong result. A case may hold extra directories beside `layers/` as symlink targets, like `shared-bad-sidecar/outside/`; copy the whole case directory.
 
 ## Generated inputs
 

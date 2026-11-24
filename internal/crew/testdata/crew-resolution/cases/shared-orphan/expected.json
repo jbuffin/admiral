@@ -1,0 +1,44 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "reviewer.md",
+      "harness": null,
+      "instructions": "Body of reviewer.",
+      "layer": "fleet",
+      "model": null,
+      "name": "reviewer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick reviewer.",
+      "role": "reviewer",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": true,
+      "ad-hoc-run": "run-1",
+      "based-on": null,
+      "file": "helper.md",
+      "harness": null,
+      "instructions": "Ad hoc body.",
+      "layer": "ad-hoc",
+      "model": null,
+      "name": "helper",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

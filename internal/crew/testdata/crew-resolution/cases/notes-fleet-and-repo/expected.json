@@ -22,6 +22,7 @@
       },
       "pick-me-when": "Default implementer.",
       "role": "implementer",
+      "shared": null,
       "skills": []
     },
     {
@@ -42,6 +43,7 @@
       },
       "pick-me-when": "Default reviewer.",
       "role": "reviewer",
+      "shared": null,
       "skills": []
     }
   ],

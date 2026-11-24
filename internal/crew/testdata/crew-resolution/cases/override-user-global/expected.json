@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Test-first builder.",
       "role": "implementer",
+      "shared": null,
       "skills": [
         "tdd"
       ]
@@ -37,6 +38,7 @@
       },
       "pick-me-when": "Plain default for reviewer.",
       "role": "reviewer",
+      "shared": null,
       "skills": []
     }
   ],

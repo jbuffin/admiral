@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Pick.",
       "role": "scribe",
+      "shared": null,
       "skills": [
         "tdd",
         "review",

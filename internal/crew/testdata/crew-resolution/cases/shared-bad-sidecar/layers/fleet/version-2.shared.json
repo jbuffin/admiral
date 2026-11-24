@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/version-2.md",
+  "upstream_name": "version-2",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "fdc3c5e96b30e5361bbcb711e667462fd323c75e7b76abbbd7e59bb06ba44bc3",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

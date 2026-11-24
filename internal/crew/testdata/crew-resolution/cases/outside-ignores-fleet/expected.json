@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Plain default for implementer.",
       "role": "implementer",
+      "shared": null,
       "skills": []
     }
   ],

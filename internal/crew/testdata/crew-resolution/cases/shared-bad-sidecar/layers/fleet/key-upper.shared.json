@@ -1,0 +1,13 @@
+{
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "upstream_name": "key-upper",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z",
+  "path": "crew/key-upper.md",
+  "content_sha256": "0fce3a199ea14b40c9b82b796c49e7f13bc3ff58efe400bd1321bce21222fad2",
+  "Version": 1
+}

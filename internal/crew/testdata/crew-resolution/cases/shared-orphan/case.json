@@ -1,0 +1,5 @@
+{
+  "admiral": true,
+  "description": "A sidecar with no member file is ignored without a warning, bad or not; sidecars in the ad hoc directory are never read.",
+  "run": "run-1"
+}

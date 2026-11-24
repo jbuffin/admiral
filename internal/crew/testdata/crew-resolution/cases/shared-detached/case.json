@@ -1,0 +1,4 @@
+{
+  "admiral": true,
+  "description": "A member whose bytes no longer hash to content_sha256 is detached; the sidecar still gives its provenance."
+}
