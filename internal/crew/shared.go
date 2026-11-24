@@ -42,31 +42,70 @@ type sidecarProblem string
 
 func (p sidecarProblem) Error() string { return string(p) }
 
-// readSidecar returns nil, nil when the member has no sidecar, and a problem when one is there but unusable.
-func readSidecar(dir, layerReal, stem string, memberRaw []byte) (*Shared, error) {
+var (
+	errTooLarge   = errors.New("over 65536 bytes")
+	errNotRegular = errors.New("not a regular file")
+)
+
+// readBounded opens path once, without blocking on a FIFO, and reads a regular file of at most maxBytes.
+func readBounded(path string) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	switch {
+	case err != nil:
+		return nil, err
+	case !info.Mode().IsRegular():
+		return nil, errNotRegular
+	case info.Size() > maxBytes:
+		return nil, errTooLarge
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > maxBytes {
+		return nil, errTooLarge
+	}
+	return raw, nil
+}
+
+// ReadSidecar returns nil, nil when the member has no sidecar, and a problem when one is there but unusable.
+// It is the one guarded reader: a link must lead to a regular file inside layerReal, and the file is at most 64 KiB.
+func ReadSidecar(dir, layerReal, stem string, memberRaw []byte) (*Shared, error) {
+	shared, _, err := LoadSidecar(dir, layerReal, stem, memberRaw)
+	return shared, err
+}
+
+// LoadSidecar is ReadSidecar that also returns the bytes it parsed, for a caller that rewrites an attached sidecar.
+func LoadSidecar(dir, layerReal, stem string, memberRaw []byte) (*Shared, []byte, error) {
 	path := filepath.Join(dir, stem+SidecarSuffix)
 	if _, err := os.Lstat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, sidecarProblem("sidecar can't be read: " + strerror(err))
+		return nil, nil, sidecarProblem("sidecar can't be read: " + strerror(err))
 	}
-	info, err := os.Stat(path)
+	if !within(realPath(path), layerReal) {
+		return nil, nil, sidecarProblem("sidecar resolves outside its layer directory")
+	}
+	raw, err := readBounded(path)
 	switch {
+	case errors.Is(err, errNotRegular):
+		return nil, nil, sidecarProblem("sidecar is not a regular file")
+	case errors.Is(err, errTooLarge):
+		return nil, nil, sidecarProblem("sidecar is over 65536 bytes")
 	case err != nil:
-		return nil, sidecarProblem("sidecar can't be read: " + strerror(err))
-	case !info.Mode().IsRegular():
-		return nil, sidecarProblem("sidecar is not a regular file")
-	case info.Size() > maxBytes:
-		return nil, sidecarProblem("sidecar is over 65536 bytes")
-	case !within(realPath(path), layerReal):
-		return nil, sidecarProblem("sidecar resolves outside its layer directory")
+		return nil, nil, sidecarProblem("sidecar can't be read: " + strerror(err))
 	}
-	raw, err := os.ReadFile(path)
+	shared, err := ParseSidecar(raw, memberRaw)
 	if err != nil {
-		return nil, sidecarProblem("sidecar can't be read: " + strerror(err))
+		return nil, nil, err
 	}
-	return ParseSidecar(raw, memberRaw)
+	return shared, raw, nil
 }
 
 // ParseSidecar reads sidecar bytes against the member file's bytes; a problem names the rule it breaks.

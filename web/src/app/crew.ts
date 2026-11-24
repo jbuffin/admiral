@@ -24,8 +24,8 @@ export interface CrewMember {
   customized: boolean;
   notes: Notes;
   /** Where the member was shared from; null when it never was. */
-  shared?: { owner: string; repo: string; commit: string; tag: string | null; detached: boolean } | null;
-  sidecar_unreadable?: boolean;
+  shared: { owner: string; repo: string; commit: string; tag: string | null; detached: boolean } | null;
+  sidecar_unreadable: boolean;
 }
 
 export interface Diagnostic {

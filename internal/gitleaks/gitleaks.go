@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -135,6 +136,11 @@ func (r Runner) run(ctx context.Context, bin, dir string, env []string, stdin []
 	cmd.Stdin = bytes.NewReader(stdin)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
+	// A wrapper script may fork the real scanner, so a timeout kills the whole group, not just the child.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if cmd.Cancel != nil {
+		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	}
 	// A killed gitleaks may leave a child holding the pipes; don't wait on them forever.
 	cmd.WaitDelay = 2 * time.Second
 	err = cmd.Run()
@@ -174,7 +180,8 @@ func searchPath(file string, env []string) (string, error) {
 			continue
 		}
 		for _, dir := range filepath.SplitList(list) {
-			if dir == "" {
+			// A relative entry would be checked here but run against another directory, as exec.LookPath's ErrDot says.
+			if !filepath.IsAbs(dir) {
 				continue
 			}
 			p := filepath.Join(dir, file)

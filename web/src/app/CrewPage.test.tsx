@@ -434,3 +434,49 @@ test('an Unclaimed note renders its markdown the same way', async () => {
   expect(row.querySelector('.crew-note-stamp')!.textContent).toBe('2026-11-09 (run-a):');
   expect(row.querySelector('.md strong')!.textContent).toBe('bowline');
 });
+
+const sharedFrom = (detached = false) => ({ owner: 'octocat', repo: 'admiral-crew', commit: 'a'.repeat(40), tag: 'v1.0', detached });
+const makeMine = () => screen.queryByRole('button', { name: 'Make mine' });
+
+test('Make mine shows for an attached, a detached and an unreadable member, and not for one that was never shared', async () => {
+  for (const [over, shown] of [
+    [{ shared: sharedFrom() }, true],
+    [{ shared: sharedFrom(true) }, true],
+    [{ shared: null, sidecar_unreadable: true }, true],
+    [{ shared: null, sidecar_unreadable: false }, false],
+  ] as const) {
+    server({ members: [member('bosun', 'Pick for rigging.', over)] });
+    const { unmount } = page('bosun', true);
+    await screen.findByRole('heading', { name: 'bosun', level: 2 });
+    expect(!!makeMine()).toBe(shown);
+    unmount();
+  }
+});
+
+test('Make mine names the repo it stops tracking, or says it does not know when the sidecar is unreadable', async () => {
+  server({ members: [member('bosun', 'Pick for rigging.', { shared: sharedFrom() })] });
+  const first = page('bosun', true);
+  fireEvent.click(await screen.findByRole('button', { name: 'Make mine' }));
+  expect(screen.getByText('Stop tracking octocat/admiral-crew? This member will no longer get updates or show who shared it.')).toBeTruthy();
+  first.unmount();
+
+  server({ members: [member('bosun', 'Pick for rigging.', { shared: null, sidecar_unreadable: true })] });
+  page('bosun', true);
+  fireEvent.click(await screen.findByRole('button', { name: 'Make mine' }));
+  expect(screen.getByText('Stop tracking where this member came from? This member will no longer get updates or show who shared it.')).toBeTruthy();
+});
+
+test('confirming Make mine posts once and the button is gone once the member reloads untracked', async () => {
+  const state = { members: [member('bosun', 'Pick for rigging.', { shared: sharedFrom() })] as unknown[] };
+  const calls = server(state, (c) => {
+    if (c.path.endsWith('/members/bosun/make-mine')) state.members = [member('bosun', 'Pick for rigging.', { shared: null })];
+    return undefined;
+  });
+  page('bosun', true);
+  fireEvent.click(await screen.findByRole('button', { name: 'Make mine' }));
+  expect(calls).toEqual([]);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  await waitFor(() => expect(makeMine()).toBeNull());
+  expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST /api/v1/fleets/zulu/crew/members/bosun/make-mine']);
+  expect(screen.getByRole('heading', { name: 'bosun', level: 2 })).toBeTruthy();
+});

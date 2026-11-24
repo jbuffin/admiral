@@ -150,13 +150,13 @@ func readLayer(label, dir string, standing map[string]*Member) (errs, warns []Di
 	}
 	for _, name := range names {
 		stem := strings.TrimSuffix(name, ".md")
-		m, found, refused, err := readMember(filepath.Join(dir, name), layerReal, label, stem)
+		m, found, refused, raw, err := readMember(filepath.Join(dir, name), layerReal, label, stem)
 		if err != nil {
 			errs = append(errs, err.diagnostic(label, name))
 			continue
 		}
 		warns = append(warns, found...)
-		if shared, problem := readSidecar(dir, layerReal, stem, memberBytes(filepath.Join(dir, name))); problem != nil {
+		if shared, problem := ReadSidecar(dir, layerReal, stem, raw); problem != nil {
 			warns = append(warns, newDiag(label, stem+SidecarSuffix, "shared-unreadable", "", problem.Error()))
 		} else {
 			m.Shared = shared
@@ -175,11 +175,6 @@ func readLayer(label, dir string, standing map[string]*Member) (errs, warns []Di
 		}
 	}
 	return errs, warns
-}
-
-func memberBytes(path string) []byte {
-	raw, _ := os.ReadFile(path)
-	return raw
 }
 
 func usableName(name string) bool {

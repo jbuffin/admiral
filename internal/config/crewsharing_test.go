@@ -57,6 +57,7 @@ func TestACrewSharingObjectWithABadValueIsRefusedNamingTheField(t *testing.T) {
 		"fleets.work.crew_sharing.nope":       `{"enabled":true,"nope":1}`,
 		"fleets.work.crew_sharing.share_repo": `{"share_repo":"octocat"}`,
 		"fleets.work.crew_sharing.sources":    `{"sources":["a/b","a/b"]}`,
+		"fleets.work.crew_sharing.sources[1]": `{"sources":["octo/crew","Octo/Crew"]}`,
 		"fleets.work.crew_sharing.enabled":    `{"enabled":"yes"}`,
 	} {
 		_, err := config.Parse([]byte(withFleets(`"work":{"name":"Work","crew_sharing":` + object + `}`)))

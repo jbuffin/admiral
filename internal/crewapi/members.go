@@ -395,6 +395,17 @@ func (s *Service) serveRename(w http.ResponseWriter, r *http.Request) {
 		refuse(w, err)
 		return
 	}
+	// The sidecar follows right after the member file, so a failure before the notes move undoes two entries.
+	undoSidecar, err := move.place(dir, name, req.To)
+	if err != nil {
+		_ = os.Remove(filepath.Join(dir, req.To+".md"))
+		refuse(w, err)
+		return
+	}
+	rollback := func() {
+		undoSidecar()
+		_ = os.Remove(filepath.Join(dir, req.To+".md"))
+	}
 	if from != "" {
 		// Only blank files and the directories they leave are cleared out of the way; any other content makes the rename fail.
 		err := pruneBlank(to)
@@ -402,19 +413,16 @@ func (s *Service) serveRename(w http.ResponseWriter, r *http.Request) {
 			err = os.Rename(from, to)
 		}
 		if err != nil {
-			_ = os.Remove(filepath.Join(dir, req.To+".md"))
+			rollback()
 			writeError(w, http.StatusConflict, "the notes can't be moved to "+req.To+": "+err.Error())
 			return
 		}
 	}
-	if move != nil {
-		if err := writeAtomic(dir, sidecarFile(req.To), move.data); err != nil {
-			_ = os.Remove(filepath.Join(dir, req.To+".md"))
-			refuse(w, err)
-			return
-		}
-	}
 	if err := removeMemberAndSidecar(dir, name); err != nil {
+		if from != "" {
+			_ = os.Rename(to, from)
+		}
+		rollback()
 		refuse(w, err)
 		return
 	}

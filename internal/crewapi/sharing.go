@@ -1,6 +1,7 @@
 package crewapi
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -37,26 +38,46 @@ func sidecarFile(name string) string { return name + crew.SidecarSuffix }
 
 // WriteSidecar writes <name>.shared.json in dir, keeping the unknown fields of one already there.
 func WriteSidecar(dir, name string, s Sidecar) error {
-	base, _, _ := readRegular(filepath.Join(dir, sidecarFile(name)))
-	return writeSidecarOver(dir, name, s, base)
-}
-
-// writeSidecarOver writes s over base's fields, so a field only a later schema knows survives.
-func writeSidecarOver(dir, name string, s Sidecar, base []byte) error {
-	fields := map[string]json.RawMessage{}
-	_ = json.Unmarshal(base, &fields)
 	own, err := json.Marshal(s)
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(own, &fields); err != nil {
+	var set map[string]json.RawMessage
+	if err := json.Unmarshal(own, &set); err != nil {
 		return err
+	}
+	// A file that can't be read or isn't a JSON object has nothing to keep; it's replaced.
+	base, _, _ := readRegular(filepath.Join(dir, sidecarFile(name)))
+	out, err := mergeSidecar(base, set)
+	if err != nil {
+		out, err = mergeSidecar(nil, set)
+		if err != nil {
+			return err
+		}
+	}
+	return writeAtomic(dir, sidecarFile(name), out)
+}
+
+// mergeSidecar sets the named raw fields on base's fields and leaves every other key as it was, with its key's exact
+// case. It never decodes into a struct, which would match keys without regard to case.
+func mergeSidecar(base []byte, set map[string]json.RawMessage) ([]byte, error) {
+	fields := map[string]json.RawMessage{}
+	if len(bytes.TrimSpace(base)) > 0 {
+		if err := json.Unmarshal(base, &fields); err != nil {
+			return nil, fmt.Errorf("the sidecar isn't a JSON object: %w", err)
+		}
+		if fields == nil {
+			return nil, errors.New("the sidecar isn't a JSON object")
+		}
+	}
+	for k, v := range set {
+		fields[k] = v
 	}
 	out, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return writeAtomic(dir, sidecarFile(name), append(out, '\n'))
+	return append(out, '\n'), nil
 }
 
 // SidecarPresent says whether anything, of any kind, a dangling link included, is at <name>.shared.json in dir.
@@ -113,50 +134,57 @@ func (s *Service) serveMakeMine(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"name": name})
 }
 
-// sidecarMove is what a rename carries to the new name: nil when the member has no sidecar.
-type sidecarMove struct{ data []byte }
+// sidecarMove is what a rename carries to the new name. rewritten holds the bytes of an attached sidecar re-hashed for
+// the renamed file; it is nil for any other sidecar, which moves as its directory entry.
+type sidecarMove struct {
+	present   bool
+	rewritten []byte
+}
 
-// prepareSidecarMove reads the member's sidecar before anything moves. An attached one is rewritten for the renamed
-// file's hash, so the member stays attached; any other moves byte for byte.
-func prepareSidecarMove(dir, name string, oldMember, newMember []byte) (*sidecarMove, error) {
+// prepareSidecarMove decides, before anything moves, how the member's sidecar follows a rename. Only an attached one,
+// read through the resolver's guarded reader, is rewritten; everything else is moved as the entry it is.
+func prepareSidecarMove(dir, name string, oldMember, newMember []byte) (sidecarMove, error) {
 	present, err := SidecarPresent(dir, name)
 	if err != nil || !present {
-		return nil, err
+		return sidecarMove{}, err
 	}
-	raw, found, err := readRegular(filepath.Join(dir, sidecarFile(name)))
-	if err != nil || !found {
-		return nil, fmt.Errorf("%s can't be moved: %w", sidecarFile(name), orElse(err, errUnreadable))
+	layerReal, rerr := filepath.EvalSymlinks(dir)
+	if rerr != nil {
+		layerReal = filepath.Clean(dir)
 	}
-	if shared, perr := crew.ParseSidecar(raw, oldMember); perr == nil && !shared.Detached {
-		var s Sidecar
-		if err := json.Unmarshal(raw, &s); err == nil {
-			sum := sha256.Sum256(newMember)
-			s.ContentSHA256 = hex.EncodeToString(sum[:])
-			if out, err := encodeSidecar(s, raw); err == nil {
-				return &sidecarMove{out}, nil
-			}
+	shared, raw, perr := crew.LoadSidecar(dir, layerReal, name, oldMember)
+	if perr != nil || shared == nil || shared.Detached {
+		return sidecarMove{present: true}, nil
+	}
+	sum := sha256.Sum256(newMember)
+	hash, err := json.Marshal(hex.EncodeToString(sum[:]))
+	if err != nil {
+		return sidecarMove{}, err
+	}
+	out, err := mergeSidecar(raw, map[string]json.RawMessage{"content_sha256": hash})
+	if err != nil {
+		return sidecarMove{}, fmt.Errorf("%s can't be re-hashed: %w", sidecarFile(name), err)
+	}
+	return sidecarMove{present: true, rewritten: out}, nil
+}
+
+// place puts the sidecar at the new name and returns what undoes it.
+func (m sidecarMove) place(dir, from, to string) (undo func(), err error) {
+	if !m.present {
+		return func() {}, nil
+	}
+	newPath := filepath.Join(dir, sidecarFile(to))
+	if m.rewritten != nil {
+		if err := writeAtomic(dir, sidecarFile(to), m.rewritten); err != nil {
+			return nil, err
 		}
+		return func() { _ = os.Remove(newPath) }, nil
 	}
-	return &sidecarMove{raw}, nil
-}
-
-func orElse(err, fallback error) error {
-	if err != nil {
-		return err
-	}
-	return fallback
-}
-
-func encodeSidecar(s Sidecar, base []byte) ([]byte, error) {
-	dir, err := os.MkdirTemp("", "admiral-sidecar-")
-	if err != nil {
+	oldPath := filepath.Join(dir, sidecarFile(from))
+	if err := os.Rename(oldPath, newPath); err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
-	if err := writeSidecarOver(dir, "x", s, base); err != nil {
-		return nil, err
-	}
-	return os.ReadFile(filepath.Join(dir, sidecarFile("x")))
+	return func() { _ = os.Rename(newPath, oldPath) }, nil
 }
 
 // removeMemberAndSidecar deletes name.md without ever leaving its sidecar behind: the sidecar steps aside first,
@@ -228,19 +256,27 @@ func CheckPublish(data []byte, p PublishPaths) *Refusal {
 
 func checkPaths(lines []string, p PublishPaths) *Refusal {
 	roots := append([]string{p.AdmiralHome, p.Home, p.CloneRoot}, p.SearchRoots...)
+	home := ""
+	if p.Home != "" {
+		home = filepath.Clean(p.Home)
+	}
 	var spellings []string
 	for _, root := range roots {
 		if root == "" {
 			continue
 		}
+		root = filepath.Clean(root)
 		spellings = append(spellings, root)
-		if p.Home != "" && strings.HasPrefix(root, strings.TrimSuffix(p.Home, "/")+"/") {
-			spellings = append(spellings, "~"+strings.TrimPrefix(root, p.Home))
+		if home != "" && strings.HasPrefix(root, strings.TrimSuffix(home, "/")+"/") {
+			rest := strings.TrimPrefix(root, home)
+			for _, shorthand := range homeShorthands {
+				spellings = append(spellings, strings.TrimSuffix(shorthand, "/")+rest)
+			}
 		}
 	}
 	base := ""
-	if p.Home != "" {
-		base = filepath.Base(p.Home)
+	if home != "" {
+		base = filepath.Base(home)
 	}
 	for i, line := range lines {
 		named := ""
@@ -250,7 +286,7 @@ func checkPaths(lines []string, p PublishPaths) *Refusal {
 				break
 			}
 		}
-		if named == "" && p.Home != "" && homeShorthand(line) {
+		if named == "" && home != "" && homeShorthand(line) {
 			named = "~/"
 		}
 		if named == "" && base != "" && base != "/" && base != "." && hasSegment(line, base) {
@@ -283,30 +319,37 @@ func namesPath(line, path string) bool {
 	}
 }
 
-// homeShorthand is a "~/" that starts a word.
+// homeShorthands are the ways a path can spell the home directory without naming it.
+var homeShorthands = []string{"~/", "$HOME/", "${HOME}/"}
+
+// homeShorthand is one of homeShorthands that starts a word.
 func homeShorthand(line string) bool {
-	for from := 0; ; {
-		i := strings.Index(line[from:], "~/")
-		if i < 0 {
-			return false
+	for _, sh := range homeShorthands {
+		for from := 0; ; {
+			i := strings.Index(line[from:], sh)
+			if i < 0 {
+				break
+			}
+			at := from + i
+			if at == 0 || !pathChar(line[at-1]) {
+				return true
+			}
+			from = at + 1
 		}
-		at := from + i
-		if at == 0 || !pathChar(line[at-1]) {
-			return true
-		}
-		from = at + 1
 	}
+	return false
 }
 
 // hasSegment is whether an absolute path in line has seg as one of its segments.
 func hasSegment(line, seg string) bool {
-	words := strings.FieldsFunc(line, func(r rune) bool { return strings.ContainsRune("\"'`()[]{}<>,;", r) || unicode.IsSpace(r) })
+	words := strings.FieldsFunc(line, func(r rune) bool { return strings.ContainsRune("\"'`()[]{}<>,;=:", r) || unicode.IsSpace(r) })
 	for _, w := range words {
 		if !strings.HasPrefix(w, "/") || strings.HasPrefix(w, "//") {
 			continue
 		}
 		for _, part := range strings.Split(w, "/") {
-			if part == seg {
+			// macOS paths ignore case.
+			if strings.EqualFold(part, seg) {
 				return true
 			}
 		}
@@ -343,6 +386,8 @@ func publishHidden(r rune) bool {
 	case textsafe.Hidden(r):
 		return true
 	case r >= 0xE0000 && r <= 0xE007F, r >= 0xFE00 && r <= 0xFE0F, r >= 0xE0100 && r <= 0xE01EF:
+		return true
+	case unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r), unicode.Is(unicode.Variation_Selector, r):
 		return true
 	}
 	switch r {

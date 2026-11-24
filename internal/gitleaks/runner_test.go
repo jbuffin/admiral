@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -119,7 +121,7 @@ func TestTheVersionDecidesWhetherAScanRuns(t *testing.T) {
 	for version, want := range map[string]string{
 		"v8.19.0\n": gitleaks.Clean, "8.19.0\n": gitleaks.Clean, "v8.21.2": gitleaks.Clean, "9.0.0\n": gitleaks.Clean,
 		"8.18.4\n": gitleaks.TooOld, "v8.18.0\n": gitleaks.TooOld, "7.6.1\n": gitleaks.TooOld,
-		"banana\n": gitleaks.Failed, "\n": gitleaks.Failed,
+		"banana\n": gitleaks.Failed, "\n": gitleaks.Failed, "8.19\n": gitleaks.Failed,
 	} {
 		r := newRig(t)
 		r.set("version", version)
@@ -148,7 +150,7 @@ func TestAMissingGitleaksIsMissingWithTheInstallHint(t *testing.T) {
 }
 
 func TestACrashAnErrorExitAndUnparsableOutputEachFailTheScan(t *testing.T) {
-	for fail, wantError := range map[string]string{"crash": "", "error": "fake gitleaks: boom", "garbage": ""} {
+	for fail, wantError := range map[string]string{"crash": "", "error": "fake gitleaks: boom", "garbage": "", "empty": ""} {
 		r := newRig(t)
 		r.set("fail", fail)
 		got := r.scan("token: " + decoy + "\n")
@@ -173,6 +175,45 @@ func TestAScanThatRunsOutOfTimeFailsAndIsStopped(t *testing.T) {
 	}
 	if got.State != gitleaks.Failed || !strings.Contains(got.Error, "timed out") {
 		t.Errorf("result = %+v, want failed with a timeout error", got)
+	}
+}
+
+func TestATimeoutKillsTheProcessesAWrapperForked(t *testing.T) {
+	bin, pidFile := t.TempDir(), filepath.Join(t.TempDir(), "pid")
+	script := "#!/bin/sh\n[ \"$1\" = version ] && echo 8.21.2 && exit 0\nsleep 600 &\necho $! > \"$PIDFILE\"\nwait\n"
+	if err := os.WriteFile(filepath.Join(bin, "gitleaks"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := gitleaks.Runner{Env: []string{"PATH=" + bin + ":/usr/bin:/bin", "PIDFILE=" + pidFile}, Timeout: 300 * time.Millisecond}
+	if got := runner.Scan(context.Background(), []byte("a\n")); got.State != gitleaks.Failed {
+		t.Fatalf("result = %+v, want failed", got)
+	}
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if syscall.Kill(pid, 0) != nil {
+			return
+		}
+	}
+	t.Errorf("the forked sleep (pid %d) outlived the timeout", pid)
+}
+
+func TestARelativePathEntryIsNotSearched(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "gitleaks"), []byte("#!/bin/sh\necho 8.21.2\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(bin)
+	got := gitleaks.Runner{Env: []string{"PATH=.:"}}.Scan(context.Background(), []byte("a\n"))
+	if got.State != gitleaks.Missing {
+		t.Errorf("result = %+v, want missing: a relative PATH entry isn't the fleet's", got)
 	}
 }
 

@@ -460,7 +460,8 @@ func parseCrewSharing(path string, raw json.RawMessage) (CrewSharing, error) {
 				if !ValidRepoRef(s) {
 					return CrewSharing{}, fmt.Errorf("%s[%d]: must be <owner>/<name>, got %q", p, i, s)
 				}
-				if slices.Contains(cs.Sources[:i], s) {
+				// GitHub ignores case in owner and repo names.
+				if slices.ContainsFunc(cs.Sources[:i], func(earlier string) bool { return strings.EqualFold(earlier, s) }) {
 					return CrewSharing{}, fmt.Errorf("%s[%d]: %s is listed twice", p, i, s)
 				}
 			}

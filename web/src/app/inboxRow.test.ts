@@ -9,6 +9,7 @@ const fleet = (key: string, name: string, extra: Partial<Fleet> = {}): Fleet => 
   key,
   name,
   notify: true,
+  crew_sharing: { enabled: false, share_repo: '', sources: [] },
   preset: 'work',
   limits: {} as Fleet['limits'],
   sentences: [],

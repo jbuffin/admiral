@@ -305,6 +305,104 @@ func TestRenameMovesADetachedOrUnreadableSidecarByteForByte(t *testing.T) {
 	}
 }
 
+func TestRenameKeepsAKeyThatDiffersOnlyInCaseAndLeavesTheMemberAttached(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	fixture := filepath.Join("..", "crew", "testdata", "crew-resolution", "cases", "shared-key-case", "layers", "fleet")
+	writeFile(t, filepath.Join(f.crewDir(), "reviewer.md"), readFile(t, filepath.Join(fixture, "reviewer.md")))
+	writeFile(t, f.sidecarPath("reviewer"), readFile(t, filepath.Join(fixture, "reviewer.shared.json")))
+	if status, out := rename(f, "reviewer", map[string]any{"to": "mate-two"}); status != 200 {
+		t.Fatalf("rename: %d %s", status, out)
+	}
+	got := readSidecar(t, f.crewDir(), "mate-two")
+	if got["version"] != float64(1) || got["tag"] != "v1" || got["Version"] != float64(2) || got["TAG"] != "v9" {
+		t.Errorf("sidecar = %v, want version 1, tag v1 and the upper-case keys as they were", got)
+	}
+	m := f.rawMember("mate-two")
+	s, _ := m["shared"].(map[string]any)
+	if m["sidecar_unreadable"] != false || s == nil || s["tag"] != "v1" || s["detached"] != false {
+		t.Errorf("mate-two = %v, want attached with tag v1", m)
+	}
+}
+
+func TestRenameKeepsASymlinkedAttachedSidecarAttached(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	text := f.shared("bosun")
+	real := filepath.Join(f.crewDir(), "store", "bosun.json")
+	if err := os.MkdirAll(filepath.Dir(real), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, real, sidecarFor(text))
+	if err := os.Remove(f.sidecarPath("bosun")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, f.sidecarPath("bosun")); err != nil {
+		t.Fatal(err)
+	}
+	f.wantShared("bosun", true, false)
+	if status, out := rename(f, "bosun", map[string]any{"to": "mate-two"}); status != 200 {
+		t.Fatalf("rename: %d %s", status, out)
+	}
+	f.wantShared("mate-two", true, false)
+	if exists(f.sidecarPath("bosun")) {
+		t.Error("the old link is still there")
+	}
+}
+
+func TestRenameMovesADirectoryALinkAndAnOversizedSidecarAsTheEntriesTheyAre(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	f.fleetMember("dir", "scribe", "Fleet dir.", "")
+	writeFile(t, filepath.Join(f.sidecarPath("dir"), "keep"), "x")
+	f.fleetMember("link", "scribe", "Fleet link.", "")
+	target := filepath.Join(t.TempDir(), "elsewhere.json")
+	if err := os.Symlink(target, f.sidecarPath("link")); err != nil {
+		t.Fatal(err)
+	}
+	f.fleetMember("big", "scribe", "Fleet big.", "")
+	big := strings.Repeat("x", 70000)
+	writeFile(t, f.sidecarPath("big"), big)
+	for _, name := range []string{"dir", "link", "big"} {
+		if status, out := rename(f, name, map[string]any{"to": name + "-two"}); status != 200 {
+			t.Fatalf("rename %s: %d %s", name, status, out)
+		}
+		if _, err := os.Lstat(f.sidecarPath(name)); err == nil {
+			t.Errorf("%s's sidecar is still at the old name", name)
+		}
+	}
+	if slurp(filepath.Join(f.sidecarPath("dir-two"), "keep")) != "x" {
+		t.Error("the directory sidecar didn't move whole")
+	}
+	if dest, err := os.Readlink(f.sidecarPath("link-two")); err != nil || dest != target {
+		t.Errorf("link-two = %q, %v, want a link to %s", dest, err, target)
+	}
+	if slurp(f.sidecarPath("big-two")) != big {
+		t.Error("the oversized sidecar changed")
+	}
+}
+
+func TestRenameRollsBackTheSidecarAndTheNotesWhenTheOldMemberCantBeRemoved(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	f.shared("bosun")
+	notes := f.fleetNotes("bosun", "- "+note(1))
+	// A non-empty directory at the aside name makes removing the old member fail after the new one is in place.
+	writeFile(t, filepath.Join(f.crewDir(), ".bosun.shared.json.removing", "keep"), "x")
+	if status, out := rename(f, "bosun", map[string]any{"to": "mate-two", "carry_notes": true}); status == 200 {
+		t.Fatalf("rename: %d %s, want it to fail", status, out)
+	}
+	if !exists(filepath.Join(f.crewDir(), "bosun.md")) || !exists(f.sidecarPath("bosun")) {
+		t.Error("the old member or its sidecar is gone")
+	}
+	if exists(filepath.Join(f.crewDir(), "mate-two.md")) || exists(f.sidecarPath("mate-two")) {
+		t.Error("the new member or its sidecar was left behind")
+	}
+	if readFile(t, notes) != "- "+note(1)+"\n" {
+		t.Error("the notes didn't come back to bosun")
+	}
+}
+
 func TestRenameOntoAnOrphanSidecarIs409AndMovesNothing(t *testing.T) {
 	commodoreAt(t)
 	f := newFixture(t)
@@ -446,6 +544,7 @@ func TestCheckPublishRefusesEachHiddenRuneAndNamesTheCodePointAndLine(t *testing
 		0x202E: "U+202E", 0x200B: "U+200B", 0xFEFF: "U+FEFF", 0x0007: "U+0007", 0xE0041: "U+E0041", 0xFE0F: "U+FE0F",
 		0xE0100: "U+E0100", 0x115F: "U+115F", 0x1160: "U+1160", 0x3164: "U+3164", 0xFFA0: "U+FFA0", 0x2800: "U+2800",
 		0x2028: "U+2028", 0x2029: "U+2029", 0xE000: "U+E000", 0x0378: "U+0378",
+		0x034F: "U+034F", 0x180B: "U+180B", 0x17B4: "U+17B4",
 	} {
 		file := "1\n2\n3\n4\n5\n6\nseven " + string(r) + " here\n"
 		got := crewapi.CheckPublish([]byte(file), crewapi.PublishPaths{})
@@ -477,6 +576,24 @@ func TestCheckPublishRefusesTheHomeBaseNameSegment(t *testing.T) {
 	got := crewapi.CheckPublish([]byte("work from /Volumes/backup/ann/project\n"), crewapi.PublishPaths{Home: "/Users/ann"})
 	if got == nil || got.Check != crewapi.CheckPaths {
 		t.Errorf("got %+v, want a path refusal on the home's base name", got)
+	}
+}
+
+func TestCheckPublishRefusesEachWayToSpellAHomePath(t *testing.T) {
+	p := crewapi.PublishPaths{AdmiralHome: "/Users/ann/admiral-home", Home: "/Users/ann/", CloneRoot: "/Users/ann//clones/"}
+	for name, line := range map[string]string{
+		"$HOME":            "see $HOME/github_repos/private-repo",
+		"${HOME}":          "see ${HOME}/github_repos/private-repo",
+		"after =":          "dir=/opt/ann/x",
+		"after :":          "PATH=/usr/bin:/srv/ann/bin",
+		"base name case":   "see /users/ANN/x",
+		"unclean root":     "clone at /Users/ann/clones/api",
+		"~ with a slashed": "see ~/admiral-home/fleets",
+	} {
+		got := crewapi.CheckPublish([]byte("one\n"+line+"\n"), p)
+		if got == nil || got.Check != crewapi.CheckPaths || got.Line != 2 {
+			t.Errorf("%s: %q: got %+v, want a path refusal on line 2", name, line, got)
+		}
 	}
 }
 

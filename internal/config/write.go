@@ -310,9 +310,6 @@ func refuseUnofferedHarness(cfg *Config, key string, raw json.RawMessage) error 
 	return nil
 }
 
-// mergeChat refuses what parseFleetChat would replace with a default, then sets only the given
-// keys. An empty effort removes its key, so the fleet falls back to the harness default.
-// Switching harness also checks the model and effort the fleet keeps against the new one.
 // mergeCrewSharing sets the given keys in the stored object; Parse refuses a bad key or value afterwards.
 func mergeCrewSharing(fleet *Object, set map[string]json.RawMessage) error {
 	cs := NewObject()
@@ -329,6 +326,9 @@ func mergeCrewSharing(fleet *Object, set map[string]json.RawMessage) error {
 	return nil
 }
 
+// mergeChat refuses what parseFleetChat would replace with a default, then sets only the given
+// keys. An empty effort removes its key, so the fleet falls back to the harness default.
+// Switching harness also checks the model and effort the fleet keeps against the new one.
 func mergeChat(fleet *Object, key string, set map[string]json.RawMessage, cfg *Config) error {
 	given := NewObject()
 	for _, k := range slices.Sorted(maps.Keys(set)) {

@@ -77,7 +77,7 @@ func readAdHoc(dir, runID string, standing map[string]*Member) []Diagnostic {
 	var warns []Diagnostic
 	for _, name := range names {
 		path, stem, reason := filepath.Join(dir, name), strings.TrimSuffix(name, ".md"), "ad-hoc: true is missing"
-		m, found, refused, merr := readMember(path, layerReal, LayerAdHoc, stem)
+		m, found, refused, _, merr := readMember(path, layerReal, LayerAdHoc, stem)
 		if merr != nil {
 			reason = merr.message
 		}

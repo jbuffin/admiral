@@ -21,6 +21,7 @@
 #       error   "fake gitleaks: boom" and a second line on stderr, exit 2
 #       hang    sleeps 600 seconds (it execs sleep, so a killed gitleaks dies at once)
 #       garbage a report that is not JSON, exit 3
+#       empty   an empty report ([]), exit 3
 #     otherwise it reads stdin and reports a hit on every line holding
 #     decoy-secret-<hex>: a JSON array on stdout with RuleID "decoy-secret",
 #     StartLine, and Secret and Match as REDACTED (as --redact prints them),
@@ -61,6 +62,10 @@ if [ -f "$dir/fail" ]; then
 	hang) exec sleep 600 ;;
 	garbage)
 		echo 'this is not a report'
+		exit 3
+		;;
+	empty)
+		echo '[]'
 		exit 3
 		;;
 	esac

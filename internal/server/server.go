@@ -264,9 +264,8 @@ func (s *Server) serveFleetSave(w http.ResponseWriter, r *http.Request) {
 		Notify        *bool     `json:"notify"`
 		// Each key is checked on save, so a misspelt one is refused.
 		CrewSharing map[string]json.RawMessage `json:"crew_sharing"`
-		// Each key is checked on save, so a misspelt one is refused.
-		Chat   map[string]json.RawMessage `json:"chat"`
-		Preset *string                    `json:"preset"`
+		Chat        map[string]json.RawMessage `json:"chat"`
+		Preset      *string                    `json:"preset"`
 		// Each Limit key is checked on save too.
 		Limits map[string]json.RawMessage `json:"limits"`
 	}
