@@ -23,6 +23,9 @@ export interface CrewMember {
   layer: 'built-in' | 'fleet';
   customized: boolean;
   notes: Notes;
+  /** Where the member was shared from; null when it never was. */
+  shared: { owner: string; repo: string; commit: string; tag: string | null; detached: boolean } | null;
+  sidecar_unreadable: boolean;
 }
 
 export interface Diagnostic {
@@ -87,6 +90,8 @@ export function normalizeCrew(raw: Record<string, unknown>): CrewData {
       layer: m.layer as CrewMember['layer'],
       customized: !!m.customized,
       notes: notesOf(m.notes as Partial<Notes>),
+      shared: (m.shared as CrewMember['shared']) ?? null,
+      sidecar_unreadable: !!m.sidecar_unreadable,
     })),
     unclaimed: list<{ member: string; notes: Partial<Notes> }>(raw.unclaimed).map((u) => ({ member: u.member, notes: notesOf(u.notes) })),
     warnings: list<Record<string, string | null>>(raw.warnings).map(diag),

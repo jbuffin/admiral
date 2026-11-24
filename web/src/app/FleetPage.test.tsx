@@ -14,6 +14,7 @@ const base = {
   color: '#336699',
   ink: '#fff',
   notify: true,
+  crew_sharing: { enabled: false, share_repo: '', sources: [] },
   docks: [
     { harness: 'claude', executable: '', executable_found: true, warnings: [] },
     { harness: 'codex', executable: '/bin/codex', executable_found: false, warnings: ['codex is old'] },

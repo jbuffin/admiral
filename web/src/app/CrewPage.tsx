@@ -597,6 +597,7 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, reload
   const [editing, setEditing] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [makingMine, setMakingMine] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const act = async (fn: () => Promise<{ ok: boolean; error?: string }>, then: () => Promise<void>) => {
@@ -630,10 +631,20 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, reload
           <>
             <Button label="Edit" disabled={busy || editing} onClick={() => setEditing(true)} />
             <Button label="Rename" disabled={busy} onClick={() => setRenaming(true)} />
+            {member.shared || member.sidecar_unreadable ? <Button label="Make mine" disabled={busy || makingMine} onClick={() => setMakingMine(true)} /> : null}
             <Button variant="danger" label="Delete" disabled={busy || confirming} onClick={() => setConfirming(true)} />
           </>
         )}
       </Actions>
+      {makingMine ? (
+        <div class="crew-confirm">
+          <p>{member.shared ? `Stop tracking ${member.shared.owner}/${member.shared.repo}? This member will no longer get updates or show who shared it.` : 'Stop tracking where this member came from? This member will no longer get updates or show who shared it.'}</p>
+          <Actions class="crew-actions">
+            <Button variant="primary" label="Confirm" pending={['member', fleetKey, harness, member.name, 'make-mine']} onClick={() => act(() => call('POST', crewApi(fleetKey, harness, `${path}/make-mine`)), async () => { setMakingMine(false); await reload(); })} />
+            <Button label="Cancel" onClick={() => setMakingMine(false)} />
+          </Actions>
+        </div>
+      ) : null}
       {confirming ? (
         <div class="crew-confirm">
           <p>{member.customized ? `Delete this fleet's ${member.name}? The built-in one takes its place.` : `Delete ${member.name}? Its notes stay under Unclaimed.`}</p>
