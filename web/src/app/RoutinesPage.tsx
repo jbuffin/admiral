@@ -469,7 +469,7 @@ function useLinkedDraft(fleetKey: string, linkId: string | null): LinkVisit | nu
 }
 
 function WhenNote({ when, zone }: { when: string; zone?: string }) {
-  if (!when.trim()) return <p class="note">Five fields: minute hour day month weekday{zone ? `, in ${zone}` : ''}.</p>;
+  if (!when.trim()) return <p class="note">Five fields: minute hour day month weekday{`, in ${zone ?? "the server's time zone"}.`}</p>;
   const d = describeCron(when, zone);
   return <p class="note">{d.ok ? d.text : d.reason}</p>;
 }

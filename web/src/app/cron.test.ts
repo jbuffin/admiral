@@ -35,6 +35,33 @@ describe('common schedules in plain English', () => {
   });
 });
 
+describe('steps and day fields read the way Go runs them', () => {
+  it('reads a star step that fits its field as an even interval, and one that does not as the times it fires', () => {
+    expect(text('*/15 * * * *')).toBe('Every 15 minutes');
+    expect(text('*/45 * * * *')).toBe('At 0 and 45 minutes past the hour');
+    expect(text('*/90 * * * *')).toBe('Every hour');
+    expect(text('0 */5 * * *')).not.toContain('Every 5 hours');
+  });
+
+  it('reads a step from a number as the times it fires, joining consecutive ones into a range', () => {
+    expect(text('1/1 * * * *')).toBe('Minutes 1 through 59 past the hour');
+    expect(text('10/20 * * * *')).toBe('At 10, 30, and 50 minutes past the hour');
+    expect(text('0 0 1/10 * *')).toContain('day 1, 11, 21, and 31 of the month');
+  });
+
+  it('says either day field matches when both are restricted, even for a weekday range', () => {
+    for (const expr of ['0 0 1 * 1-5', '0 0 1,15 * 1-5']) {
+      const t = text(expr);
+      expect(t).toContain('and on Monday, Tuesday');
+      expect(t).toContain('Friday');
+    }
+  });
+
+  it('does not call a schedule that fires on either day never-fires', () => {
+    expect(text('0 0 30 2 1', undefined, new Date('2026-11-24T12:00:00Z'))).toContain('Monday');
+  });
+});
+
 describe('the dialect Admiral runs', () => {
   it('reads month and weekday names in any case as their numbers', () => {
     expect(text('0 9 * * mon-fri')).toBe(text('0 9 * * 1-5'));
@@ -71,7 +98,7 @@ describe('the dialect Admiral runs', () => {
 
   it('says both must match when a day field starts with a star', () => {
     const t = text('0 9 */30 * 1');
-    expect(t).toContain('every 30 days');
+    expect(t).toContain('day 1 and 31 of the month');
     expect(t).toContain('Monday');
     expect(t).not.toContain('and on Monday');
   });

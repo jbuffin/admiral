@@ -39,6 +39,8 @@ func TestZoneName(t *testing.T) {
 		{"Local follows /etc/localtime after zoneinfo/", "Local", "MST", link("/var/db/timezone/zoneinfo/America/Denver"), "America/Denver"},
 		{"Local on a Linux link", "Local", "CET", link("../usr/share/zoneinfo/Europe/Berlin"), "Europe/Berlin"},
 		{"Local with no link gives the abbreviation", "Local", "MST", noLink, "MST"},
+		{"a TZ path into zoneinfo gives the name after it", "/usr/share/zoneinfo/Asia/Tokyo", "JST", noLink, "Asia/Tokyo"},
+		{"a TZ path outside zoneinfo gives the abbreviation", "/tmp/my-zone", "MST", noLink, "MST"},
 		{"Local with a link outside zoneinfo gives the abbreviation", "Local", "MST", link("/tmp/my-clock"), "MST"},
 	}
 	for _, tt := range tests {

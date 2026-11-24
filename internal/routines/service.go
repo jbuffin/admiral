@@ -323,16 +323,20 @@ func (s *Service) serveSetHold(on, global bool) http.HandlerFunc {
 	}
 }
 
-// ZoneName names the zone a scheduler running in a Go location works in: name is Location.String(), abbr the zone abbreviation
-// now, and readlink reads the /etc/localtime link that names a "Local" zone.
+// ZoneName turns a "Local" or path-shaped location name, which says nothing to a reader, into the zoneinfo name or the abbreviation.
 func ZoneName(name, abbr string, readlink func(path string) (string, error)) string {
-	if name != "Local" {
-		return name
-	}
-	if target, err := readlink("/etc/localtime"); err == nil {
-		if _, zone, ok := strings.Cut(target, "zoneinfo/"); ok && zone != "" {
-			return zone
+	if name == "Local" {
+		target, err := readlink("/etc/localtime")
+		if err != nil {
+			return abbr
 		}
+		name = target
 	}
-	return abbr
+	if _, zone, ok := strings.Cut(name, "zoneinfo/"); ok {
+		name = zone
+	}
+	if name == "" || strings.HasPrefix(name, "/") {
+		return abbr
+	}
+	return name
 }

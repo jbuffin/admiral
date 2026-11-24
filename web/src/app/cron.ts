@@ -76,27 +76,35 @@ function parseField(s: string, f: Spec): Parsed {
       if (lo > hi) throw new Refused(`${rng} runs backwards`);
     }
     for (let v = lo; v <= hi; v += step) values.add(v);
-    if (star) items.push(hasStep ? `*/${step}` : '*');
+    const steps = [];
+    for (let v = lo; v <= hi; v += step) steps.push(v);
+    // Go restarts a star step at the field's low each cycle, so only a step that divides the span is an even interval.
+    if (star && (!hasStep || (f.hi - f.lo + 1) % step === 0)) items.push(hasStep ? `*/${step}` : '*');
     else if (hasStep && isRange) items.push(`${lo}-${hi}/${step}`);
     else if (!hasStep) items.push(lo === hi ? String(lo) : `${lo}-${hi}`);
-    else for (let v = lo; v <= hi; v += step) items.push(String(v));
+    else items.push(...runsOf(steps));
   }
   if (dow && values.has(0)) values.add(7);
   if (dow && values.has(7)) values.add(0);
   return { values, items };
 }
 
-// Sunday as 7 and the days as runs, so cronstrue says "Friday through Sunday" for 5-7.
-function weekdayRuns(values: Set<number>): string {
-  const days = [...values].filter((v) => v !== 0).sort((a, b) => a - b);
+function runsOf(sorted: number[]): string[] {
   const runs: string[] = [];
-  for (let i = 0; i < days.length; ) {
+  for (let i = 0; i < sorted.length; ) {
     let j = i;
-    while (j + 1 < days.length && days[j + 1] === days[j] + 1) j++;
-    runs.push(j > i ? `${days[i]}-${days[j]}` : String(days[i]));
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++;
+    runs.push(j > i ? `${sorted[i]}-${sorted[j]}` : String(sorted[i]));
     i = j + 1;
   }
-  return runs.join(',');
+  return runs;
+}
+
+// Sunday as 7 and the days as runs, so cronstrue says "Friday through Sunday" for 5-7. With `listed`, one day per item:
+// cronstrue drops its "and on" marker for a weekday range, which would read an either-day match as both.
+function weekdayItems(values: Set<number>, listed: boolean): string {
+  const days = [...values].filter((v) => v !== 0).sort((a, b) => a - b);
+  return (listed ? days.map(String) : runsOf(days)).join(',');
 }
 
 function neverFires(month: Set<number>, dom: Set<number>, dow: Set<number>, and: boolean, now: Date): boolean {
@@ -128,7 +136,7 @@ export function describeCron(expr: string, zone?: string, now: Date = new Date()
   }
   const and = parts[2].startsWith('*') || parts[4].startsWith('*');
   if (neverFires(parsed[3].values, parsed[2].values, parsed[4].values, and, now)) return { ok: false, reason: NEVER };
-  const normal = [parsed[0].items.join(','), parsed[1].items.join(','), parsed[2].items.join(','), parsed[3].items.join(','), parts[4] === '*' ? '*' : weekdayRuns(parsed[4].values)].join(' ');
+  const normal = [parsed[0].items.join(','), parsed[1].items.join(','), parsed[2].items.join(','), parsed[3].items.join(','), parts[4] === '*' ? '*' : weekdayItems(parsed[4].values, !and)].join(' ');
   let text: string;
   try {
     text = cronstrue.toString(normal, { use24HourTimeFormat: true, logicalAndDayFields: and, throwExceptionOnParseError: true });
