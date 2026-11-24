@@ -102,6 +102,17 @@ func wireStatus(own string, crew []CrewBoat) (status, reason, since string, ok b
 	return StatusNeedsYou, ReasonCrew, since, true
 }
 
+// runningSubagents keeps what the classic view lists: subagents and teammates still running.
+func runningSubagents(agents []sessionhost.Subagent) []sessionhost.Subagent {
+	out := []sessionhost.Subagent{}
+	for _, a := range agents {
+		if a.End == "" && (a.Kind == "" || a.Kind == sessionhost.KindSubagent || a.Kind == sessionhost.KindTeammate) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // crewSignature leaves last_activity out, since every hook restamps it; it rides
 // along on the next push.
 func crewSignature(sh Ship) string {
@@ -109,8 +120,8 @@ func crewSignature(sh Ship) string {
 	for _, c := range sh.Crew {
 		b.WriteString("|" + c.Name + "=" + c.Status + ":" + c.Reason)
 	}
-	for _, a := range sh.Subagents {
-		b.WriteString("|" + a.ID)
+	for _, a := range sh.Agents {
+		b.WriteString("|" + a.ID + ":" + a.Kind + ":" + a.End)
 	}
 	b.WriteString("|live=" + strconv.Itoa(sh.CrewLive))
 	return b.String()

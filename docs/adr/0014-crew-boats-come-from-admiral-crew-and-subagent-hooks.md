@@ -1,6 +1,6 @@
 # 14. Crew boats come from `admiral crew` and the subagent hooks
 
-Status: accepted
+Status: accepted, amended by [ADR 0048](0048-a-ships-agents-tab-keeps-finished-subagents-and-background-tasks.md) (a stop marks an entry finished instead of removing it, Claude Code's Stop and Copilot's lead `agentStop` and `userPromptSubmitted` finish entries instead of replacing or clearing the list, and entries carry a kind and an end time)
 
 ## Context
 

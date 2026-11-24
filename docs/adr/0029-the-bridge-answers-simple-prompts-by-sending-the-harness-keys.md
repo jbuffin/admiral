@@ -1,6 +1,6 @@
 # 29. The bridge answers simple prompts by sending the harness's keys
 
-Status: accepted, amended 2026-11-14 (the Changes tab is removed; see below)
+Status: accepted, amended 2026-11-14 (the Changes tab is removed; see below), amended by [ADR 0048](0048-a-ships-agents-tab-keeps-finished-subagents-and-background-tasks.md) (an Agents tab joins the tabs; subagents still get no chip)
 
 ## Context
 

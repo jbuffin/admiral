@@ -275,7 +275,7 @@ An action on a live Claude ship that carries its settled design to Commodore. Th
 _Avoid_: promote (the order-to-ship action), transfer, handoff (AdmiralBot's word)
 
 **Subagent**:
-A helper the harness runs inside a session, drawn as a small bot on its ship's deck. It has no terminal of its own, so it cannot be boarded; tapping the deck crew shows each subagent's type.
+A helper the harness runs inside a session, drawn as a small bot on its ship's deck. It has no terminal of its own, so it cannot be boarded; tapping the deck crew shows each subagent's type. The new shell lists running and finished subagents in the ship's Agents tab; a Claude Code agent-team teammate with no window is listed there as "Agent-team teammate", distinct from the "Teammate" chip a role-less crew boat gets in the Flotilla.
 _Avoid_: crew boat (for a subagent), mark
 
 **Open water**:
@@ -340,6 +340,13 @@ _Avoid_: modal, detail view
 **Conversation**:
 What a ship, crew boat or AdmiralBot and the engineer said and did in a harness session, as Admiral reads it from the harness. A moored ship's conversation spans its feedback rounds.
 _Avoid_: transcript (the harness's file), log, chat (AdmiralBot's), history
+
+**Agents tab**:
+A ship's fourth tab beside Conversation, Terminal and PR: the list of its crew boats, subagents, agent-team teammates and background tasks, running first, then finished newest first, labelled with the running count. "Agents" is the product's name for the tab and doesn't make "agent" a synonym for Crew member. Finished entries stay for the life of the ship's lead session.
+_Avoid_: using "agent" for a crew member
+
+**Background task**:
+Work a harness keeps running after its turn ends, other than a subagent: a Background shell (a background Bash command) or a Background monitor (Claude Code's Monitor tool). The Agents tab shows only its kind, id, start and whether it runs; Admiral stores none of its command or output. Not the Trust tier's "monitor alerts", and a lost session loses them ([ADR 0037](docs/adr/0037-a-lost-ship-is-recorded-and-resumable.md)).
 
 **Flotilla**:
 The chips above the bridge's tabs: the boarded ship, then each crew boat with its role. Picking one switches the conversation and terminal to it; subagents get no chip.
