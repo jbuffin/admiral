@@ -11,7 +11,6 @@ Chat questions, ship cards, report turns and replies, drafting ships and campaig
   - One fleet's chat never reads, answers or withdraws another's question.
   - Chat questions never touch `inbox/`, `GET /api/inbox` or the `inbox` message.
   - New chat, and a fresh session started after the old one ended (just before the launcher creates it, `Launcher.BeforeChat`), remove every file in that fleet's `chat/<fleet>/questions/`; a waiting `ask_question` then gets no answer.
-- **The old UI's chat** (`web/src/chat.ts`, `ChatPane.tsx`) is frozen with the rest of the old UI: it shows the chat as off with a line pointing to the new shell, and calls no chat route. The new shell's chat is not built yet.
 - **Ship cards** (`internal/chat/shipcard.go`, `cmd/admiral/shipcards_wire.go`).
   - `ShipCards.Observe` takes the ship snapshot (`ships.Service.List`) and the outcome log's records of the last 14 days, and posts one `ship_card` per voyage (session + `FirstLaunched`) and result through `PostShipCard`:
   - `moored` (first moor), `anchored`.

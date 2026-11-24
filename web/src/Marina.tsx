@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Dock, Fleet } from './config';
 import { harnesses } from './harnesses';
-import { armed, departed, dockKey, dragging, openLaunch, selected } from './launch';
 import { LogoFlag } from './Logos';
 import { Breakwater, Rowboat } from './Scenery';
 import { Ship } from './Ship';
-import { openSetup } from './setup';
 import { atSea, ships } from './ships';
 
 // Only a fleet added after the first marinas are up sails in; the ones there on load just appear.
@@ -54,33 +52,13 @@ export function restingStatus(fleet: Fleet, dock: Dock): string {
   return here > 0 ? `${here} at sea` : 'All in port';
 }
 
-function DockView({ fleet, dock, top, index, height }: { fleet: Fleet; dock: Dock; top: number; index: number; height: number }) {
+function DockView({ fleet, dock, top, index }: { fleet: Fleet; dock: Dock; top: number; index: number }) {
   const h = harnesses[dock.harness];
   const mark = marks(fleet, dock);
   const label = `${h.label} dock, ${fleet.name}`;
-  const key = dockKey(fleet.key, dock.harness);
-  const hot = dragging.value?.dock === key;
-  const leaving = departed.value?.dock === key ? departed.value.n : 0;
-  const status = armed.value ? (hot ? 'Let go to launch' : 'Drop here') : restingStatus(fleet, dock);
   return (
-    <button
-      type="button"
-      class={armed.value ? (hot ? 'dock ready hot' : 'dock ready') : 'dock'}
-      data-dock={key}
-      onClick={() => {
-        if (dragging.value) return; // a tap on a dock while another finger is mid-drag
-        openLaunch(selected.value, fleet.key, dock.harness);
-      }}
-      style={`top:${top}px`}
-      aria-label={mark ? `${label}. ${mark.full.join('. ')}` : label}
-      title={mark ? mark.full.join('\n') : undefined}
-    >
-      {leaving > 0 && (
-        <span class={`moored leaving ${top + 23 < height / 2 - 15 ? 'down' : top + 23 > height / 2 + 15 ? 'up' : 'mid'}`} key={`leaving-${leaving}`}>
-          <Ship variant="moored" fleetColor={fleet.color} bot={h.bot} harness={dock.harness} />
-        </span>
-      )}
-      <span class={leaving > 0 ? 'moored arriving' : 'moored'} key={`moored-${leaving}`}>
+    <div class="dock" role="img" style={`top:${top}px`} aria-label={mark ? `${label}. ${mark.full.join('. ')}` : label}>
+      <span class="moored">
         <span class="bob" style={`display:block;animation-delay:-${(index * 0.9).toFixed(1)}s`}>
           <Ship variant="moored" fleetColor={fleet.color} bot={h.bot} harness={dock.harness} />
         </span>
@@ -91,12 +69,12 @@ function DockView({ fleet, dock, top, index, height }: { fleet: Fleet; dock: Doc
         </svg>
         <span class="pier-text">
           <span class="pier-name">{h.label}</span>
-          <span class={mark && !armed.value ? 'pier-status marked' : 'pier-status'}>{status}</span>
+          <span class={mark ? 'pier-status marked' : 'pier-status'}>{restingStatus(fleet, dock)}</span>
         </span>
         <span class="post" style="left:14px" />
         <span class="post" style="left:62px" />
       </span>
-    </button>
+    </div>
   );
 }
 
@@ -141,19 +119,17 @@ export function Marina({ fleet }: { fleet: Fleet }) {
       <Basin height={height} rowboatTop={fleet.docks.length >= 3 ? 58 : height - 52}>
         {fleet.docks.length === 0 && <p class="no-docks">No harnesses</p>}
         {fleet.docks.map((d, i) => (
-          <DockView key={d.harness} fleet={fleet} dock={d} top={tops[i]} index={i} height={height} />
+          <DockView key={d.harness} fleet={fleet} dock={d} top={tops[i]} index={i} />
         ))}
       </Basin>
       <Sign color={fleet.color} ink={fleet.ink}>
         <span class="sign-name">{fleet.name}</span>
         <span class="sign-key">{fleet.key}</span>
       </Sign>
-      {armed.value && <span class="drop-hint">{dragging.value ? 'Drop on a dock' : 'Tap a dock to launch'}</span>}
     </section>
   );
 }
 
-// The button covers the marina; it is not the marina, which holds a basin and a sign.
 export function SetUpMarina() {
   useArrival(null);
   return (
@@ -162,7 +138,7 @@ export function SetUpMarina() {
       <Sign color="#FFF6E3" ink="#14304A">
         <span class="sign-name">Set up a fleet</span>
       </Sign>
-      <button type="button" class="marina-hit" aria-label="Set up a fleet" onClick={() => void openSetup()} />
+      <p class="setup-note">Run admiral setup in a terminal</p>
     </div>
   );
 }

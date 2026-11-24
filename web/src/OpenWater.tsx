@@ -1,13 +1,10 @@
-import { signal } from '@preact/signals';
 import { CrewBoat } from './CrewBoat';
-import { crewAsks, deckLabel, plaqueNeeds, raft, subagentTip } from './crewSea';
+import { deckLabel, raft } from './crewSea';
 import { harnesses } from './harnesses';
 import { REACH_PX } from './placement';
 import { Ship } from './Ship';
-import { arrivals, board, botFor, bobDelay, drop, dragged, popping, spotOf, visible, type WireShip } from './ships';
+import { arrivals, botFor, bobDelay, popping, spotOf, visible, type WireShip } from './ships';
 
-const DRAG_THRESHOLD = 8;
-const TIP_MS = 2600;
 // tokens.json size.crewRaft (top-left of each crew boat, in px from the ship's top-left) and size.subagentBot.
 const RAFT_SPOTS = [
   [-30, 44],
@@ -15,23 +12,12 @@ const RAFT_SPOTS = [
   [-72, 40],
 ];
 const BOAT_H = 33;
-// Presses that start on these act on their own tap; they never drag or board the ship.
-const OWN_TAPS = '.crew-boat, .crew-more';
-
-const tip = signal<string | null>(null);
-let tipTimer: ReturnType<typeof setTimeout> | undefined;
-function showTip(session: string): void {
-  tip.value = session;
-  clearTimeout(tipTimer);
-  tipTimer = setTimeout(() => (tip.value = null), TIP_MS);
-}
 
 function statusWords(s: WireShip): string {
   switch (s.status) {
     case 'underway':
+    case 'needs_you': // reads as underway: the classic view reacts to nothing
       return 'underway';
-    case 'needs_you':
-      return 'needs you';
     case 'sailing_off':
       return 'sailing off';
     case 'anchored':
@@ -46,84 +32,23 @@ function detail(s: WireShip): string {
   return [s.repo, tail].filter(Boolean).join(' · ');
 }
 
-// A press that stays under the threshold is a tap and boards the ship; one that moves drags it.
-function press(e: PointerEvent, s: WireShip): void {
-  if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(OWN_TAPS)) return;
-  const el = e.currentTarget as HTMLElement;
-  const onDeck = !!(e.target as Element).closest('.deck-crew');
-  const layer = el.parentElement!;
-  const id = e.pointerId;
-  const from = { x: e.clientX, y: e.clientY };
-  const start = el.getBoundingClientRect();
-  const water = layer.getBoundingClientRect();
-  // A ship stays on the sea, not on the marinas' land.
-  const sea = layer.parentElement?.querySelector('.sea')?.getBoundingClientRect() ?? water;
-  // A ship with crew keeps the crew boats' reach on its left in view.
-  const reach = s.crew?.length ? REACH_PX : 0;
-  const room = {
-    x: [water.left + reach, Math.min(water.right, sea.right) - start.width],
-    y: [water.top, Math.min(water.bottom, sea.bottom) - start.height],
-  };
-  let moved = false;
-  const at = (ev: PointerEvent) => {
-    const left = Math.min(Math.max(start.left + ev.clientX - from.x, room.x[0]), Math.max(room.x[0], room.x[1]));
-    const top = Math.min(Math.max(start.top + ev.clientY - from.y, room.y[0]), Math.max(room.y[0], room.y[1]));
-    return { x: (left - water.left) / water.width, y: (top - water.top) / water.height };
-  };
-  const move = (ev: PointerEvent) => {
-    if (ev.pointerId !== id) return;
-    if (!moved && Math.hypot(ev.clientX - from.x, ev.clientY - from.y) < DRAG_THRESHOLD) return;
-    moved = true;
-    dragged.value = { session: s.session, ...at(ev) };
-  };
-  const end = (ev: PointerEvent, cancelled: boolean) => {
-    if (ev.pointerId !== id) return;
-    if (el.hasPointerCapture(id)) el.releasePointerCapture(id);
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', up);
-    window.removeEventListener('pointercancel', cancel);
-    if (moved && !cancelled) drop(s.session, at(ev));
-    else if (!moved && !cancelled) onDeck ? showTip(s.session) : board(s.session);
-    dragged.value = null;
-  };
-  const up = (ev: PointerEvent) => end(ev, false);
-  const cancel = (ev: PointerEvent) => end(ev, true);
-  // Captured, so a mouse released outside the window still ends the drag.
-  try {
-    el.setPointerCapture(id);
-  } catch {
-    // a pointer that is not active (a synthetic event) can't be captured; the window listeners still work
-  }
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
-  window.addEventListener('pointercancel', cancel);
-}
-
 function ShipView({ s }: { s: WireShip }) {
   const spot = spotOf(s);
   const label = (harnesses as Partial<typeof harnesses>)[s.harness]?.label ?? s.harness;
-  const needsYou = s.status === 'needs_you';
-  const state = { underway: 'underway', needs_you: 'needs-you', anchored: 'anchored', sailing_off: 'sailing-off' }[s.status] as
-    | 'underway'
-    | 'needs-you'
-    | 'anchored'
-    | 'sailing-off';
-  const lifted = dragged.value?.session === s.session;
-  const cls = ['ship-slot', arrivals.value.has(s.session) && 'sail-in', s.status === 'sailing_off' && 'sail-off', lifted && 'lifted', tip.value === s.session && 'tipped']
+  // A ship that needs you reads as a working one: the classic view reacts to nothing.
+  const state = { underway: 'underway', needs_you: 'underway', anchored: 'anchored', sailing_off: 'sailing-off' }[s.status] as 'underway' | 'anchored' | 'sailing-off';
+  const cls = ['ship-slot', arrivals.value.has(s.session) && 'sail-in', s.status === 'sailing_off' && 'sail-off']
     .filter(Boolean)
     .join(' ');
   if (!spot) return null;
   const crew = s.crew ?? [];
   const subs = s.subagents ?? [];
   const { shown, pill } = raft(crew);
-  const needs = plaqueNeeds(crew);
-  const asking = needsYou || needs !== null;
   const bots = subs.length > 4 ? 3 : subs.length;
   const deck = {
     colors: subs.slice(0, bots).map((_, k) => botFor(`${s.session}#${k}`)),
     more: subs.length > bots ? `+${subs.length - bots}` : '',
   };
-  const [count, ...rest] = subagentTip(subs, Date.now()).split(' · ');
   const last = RAFT_SPOTS[shown.length - 1];
   return (
     <div
@@ -131,15 +56,8 @@ function ShipView({ s }: { s: WireShip }) {
       // Clamped by the slot's largest box, so a ship stays in view when the window shrinks; a ship with crew
       // keeps their reach on its left in view too.
       style={`left:clamp(${crew.length ? REACH_PX : 0}px,${spot.x * 100}%,100% - 140px);top:clamp(0px,${spot.y * 100}%,100% - 142px)`}
-      onPointerDown={(e) => press(e, s)}
     >
-      <button
-        type="button"
-        class="ship-btn"
-        aria-label={`Board ${s.name}, ${label} in ${s.fleet_name}, ${statusWords(s)}`}
-        // A keyboard or assistive-technology activation has no pointer; a pointer's tap boards on release.
-        onClick={(e) => e.detail === 0 && board(s.session)}
-      >
+      <div class="ship-btn" role="img" aria-label={`${s.name}, ${label} in ${s.fleet_name}, ${statusWords(s)}`}>
         <Ship
           fleetColor={s.fleet_color}
           bot={botFor(s.session)}
@@ -148,51 +66,36 @@ function ShipView({ s }: { s: WireShip }) {
           bobDelay={bobDelay(s.session)}
           deck={subs.length ? deck : undefined}
         />
-        <span class={asking ? 'plaque asking' : 'plaque'}>
+        <span class="plaque">
           <span class="plaque-name">{s.name}</span>
-          <span class="plaque-detail">{needs ?? detail(s)}</span>
+          <span class="plaque-detail">{detail(s)}</span>
         </span>
-      </button>
+      </div>
       <div class="ship-marks">
         {shown.map((c, j) => {
           const [x, y] = RAFT_SPOTS[j];
           const anchored = c.status === 'anchored';
-          const asks = crewAsks(c);
           const key = `${s.session}/${c.name}`;
           return (
-            <button
+            <div
               key={c.name}
-              type="button"
+              role="img"
               class={popping.value.has(key) ? 'crew-boat pop' : 'crew-boat'}
               style={`left:${x}px;top:${y}px`}
-              aria-label={`Board ${c.name}, teammate, crew of ${s.name}${asks ? ', needs you' : anchored ? ', anchored' : ''}`}
-              onClick={() => board(s.session, c.name)}
+              aria-label={`${c.name}, crew boat of ${s.name}${anchored ? ', anchored' : ''}`}
             >
               <span class={anchored ? 'crew-still' : 'bob'} style={`display:block;position:relative;${anchored ? '' : `animation-delay:calc(${bobDelay(s.session)} - ${(j * 0.6 + 0.3).toFixed(1)}s)`}`}>
                 <CrewBoat boat={c} stripe={s.fleet_color} bot={botFor(key)} size="sea" />
-                {asks && (
-                  <span class="crew-bang ping" aria-hidden="true">
-                    !
-                  </span>
-                )}
               </span>
-            </button>
+            </div>
           );
         })}
         {pill && (
-          <button type="button" class="crew-more" style={`left:${last[0] + 4}px;top:${last[1] + BOAT_H + 14}px`} aria-label={pill.name} onClick={() => board(s.session)}>
+          <div role="img" class="crew-more" style={`left:${last[0] + 4}px;top:${last[1] + BOAT_H + 14}px`} aria-label={pill.name}>
             <span>{pill.text}</span>
-          </button>
-        )}
-        {subs.length > 0 && (
-          <button type="button" class="deck-crew" aria-label={deckLabel(s.name, subs)} onClick={(e) => e.detail === 0 && showTip(s.session)} />
-        )}
-        {subs.length > 0 && tip.value === s.session && (
-          <div class="deck-tip" role="status" style={`top:${-14 - Math.ceil(subs.length / 2) * 17}px`}>
-            <b>{count}</b>
-            {` · ${rest.join(' · ')}`}
           </div>
         )}
+        {subs.length > 0 && <div role="img" class="deck-crew" aria-label={deckLabel(s.name, subs)} />}
       </div>
     </div>
   );

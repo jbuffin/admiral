@@ -538,7 +538,7 @@ const zulu = (a: Admiral) => JSON.parse(readFileSync(join(a.home, 'config.json')
 const viewOf = async (a: Admiral, key: string) =>
   ((await (await fetch(`${a.url}api/v1/config`)).json()) as { fleets: { key: string; search_roots: string[] }[] }).fleets.find((f) => f.key === key);
 
-test('a fleet page opens from the switcher, writes its owners and clone root to the file keeping the ~/ root, and New fleet… starts setup', async ({ page, admiral }) => {
+test('a fleet page opens from the switcher, writes its owners and clone root to the file keeping the ~/ root, and New fleet… points to admiral setup', async ({ page, admiral }) => {
   // The file stores zulu's search root as ~/…, the view shows it expanded.
   const stored = '~/admiral-u3-roots';
   const shownRoot = join(homedir(), 'admiral-u3-roots');
@@ -596,13 +596,14 @@ test('a fleet page opens from the switcher, writes its owners and clone root to 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
 
-  // "New fleet…" starts setup and sends the person to the old dashboard; setup is left running.
+  // "New fleet…" tells the person to run `admiral setup` in a terminal; the browser starts nothing and goes nowhere.
   await page.goto(admiral.url + 'app/ships');
   await page.getByRole('navigation').getByRole('button', { name: WORK, exact: true }).click();
   await page.getByRole('menu').getByRole('menuitem', { name: 'New fleet…' }).click();
-  await expect(page).toHaveURL(admiral.url + 'classic/');
+  await expect(page.getByText(/admiral setup/)).toBeVisible();
+  await expect(page).toHaveURL(admiral.url + 'app/ships');
   const setup = (await (await fetch(`${admiral.url}api/v1/setup`)).json()) as { running: boolean };
-  expect(setup.running).toBe(true);
+  expect(setup.running).toBe(false);
 });
 
 const hasLan = Object.values(networkInterfaces()).some((l) => l?.some((i) => i.family === 'IPv4' && !i.internal));

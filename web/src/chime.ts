@@ -56,10 +56,6 @@ export function chime(): void {
   if (!muted.value) play();
 }
 
-export function toggleSound(): void {
-  setMuted(!muted.value);
-}
-
 // For the new shell only: follows another page's change without playing or writing back.
 export function followStorage(e: StorageEvent): void {
   let area: Storage | null = null;
