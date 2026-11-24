@@ -351,4 +351,3 @@ func publishHidden(r rune) bool {
 	}
 	return false
 }
-
