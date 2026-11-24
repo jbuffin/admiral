@@ -1,20 +1,14 @@
 # Crew sharing
 
-Status: agreed by the engineer on 2026-11-24 ([ADR 0049](adr/0049-share-crew-members.md), accepted).
+Status: agreed by the engineer on 2026-11-24 ([ADR 0049](adr/0049-crew-members-are-shared-as-files-in-a-public-repo-the-engineer-owns.md), accepted).
 
-How an engineer publishes a crew member to a public GitHub repo, imports one someone else published, keeps it up to date, and takes a published member back down. The decision and its trade-offs are in [ADR 0049](adr/0049-share-crew-members.md); this file is the build spec. Read it before changing crew sharing, the crew directory's file rules, or the Crew page's Share, Import and Unpublish flows.
+How an engineer publishes a crew member to a public GitHub repo, imports one someone else published, keeps it up to date, and takes a published member back down. The decision and its trade-offs are in [ADR 0049](adr/0049-crew-members-are-shared-as-files-in-a-public-repo-the-engineer-owns.md); this file is the build spec. Read it before changing crew sharing, the crew directory's file rules, or the Crew page's Share, Import and Unpublish flows.
 
 The member file format belongs to Commodore (`jbuffin/skills`, `skills/engineering/commodore/references/crew-members.md`). Admiral publishes and imports that format as it is and adds nothing to it. Provenance lives in a separate file, the sidecar, whose schema Commodore also owns (see [Commodore and the sidecar](#commodore-and-the-sidecar)). Sharing missions is out of scope (see [Future work](#future-work)).
 
 ## Words
 
-- **Share repo**: the public GitHub repo a publisher owns and publishes members to. The fleet remembers it.
-- **Crew source**: a public repo a fleet browses for members to import. Any repo with a `crew/` folder of member files is one.
-- **Shared member**: a fleet member imported from a crew source. Its sidecar records where it came from.
-- **Sidecar**: `<name>.shared.json` beside a shared member's file.
-- **Detached**: a shared member whose file no longer matches the bytes Admiral wrote. It stays in the fleet but gets no updates.
-- **Make mine**: removing a shared member's sidecar. The member becomes an ordinary fleet member: no "shared by", no updates, and it can be shared.
-- **Unpublish**: deleting `crew/<name>.md` from the fleet's share repo.
+The terms (Share repo, Crew source, Shared member, Sidecar, Detached, Make mine, Unpublish) are defined in [GLOSSARY.md](../GLOSSARY.md); this file uses them as defined there.
 
 ## Share repo layout
 
@@ -45,7 +39,7 @@ The import box also takes these GitHub URLs:
 - `https://github.com/<owner>/<repo>/blob/<ref>/crew/<name>.md`: one member at `<ref>`.
 - `https://github.com/<owner>/<repo>/tree/<ref>/crew` and `https://github.com/<owner>/<repo>`: no member named, so the box offers to add the repo as a crew source and opens its browse list.
 
-`<owner>` and `<repo>` follow GitHub's rules (`internal/github` has the repo-name check). `<name>` must pass `crew.ValidName`. A `.md` suffix on `<name>` is dropped. Anything else is a 400 that names the form, for example `octocat/admiral-crew/reviewer@v1`.
+`<owner>` and `<repo>` follow GitHub's rules. The build adds one owner/repo segment validator in `internal/github` (pattern `[A-Za-z0-9_.-]+`, as in `internal/campaigns/follow/routes.go:542`) and uses it for every GitHub endpoint segment. `<name>` must pass `crew.ValidName`. A `.md` suffix on `<name>` is dropped. Anything else is a 400 that names the form, for example `octocat/admiral-crew/reviewer@v1`.
 
 An import always resolves the ref to a commit SHA and pins that. **A tag is only a label**: when a tag in the repo points at the pinned commit, the Crew page shows it (`v1`) and the sidecar keeps it, but nothing follows tags. An import at `@v1` gets the same updates as one at the default branch (see [Updates](#updates)).
 
@@ -84,7 +78,7 @@ A sidecar with no `<name>.md` beside it is an orphan. The Crew page doesn't show
 
 Commodore owns the member format, so it owns the sidecar schema too, and shows provenance in its own output in this build.
 
-- **Where the schema lives.** A new "Shared members" section in `jbuffin/skills`'s `skills/engineering/commodore/references/crew-members.md`: the file name (`<stem>.shared.json` beside a member file, in any standing layer), every field above, which fields a resolver reads (`version`, `repo`, `commit`, `tag`, `content_sha256`), the detached rule, and that a bad sidecar is one warning, never an error. Admiral's docs link to it rather than restating it.
+- **Where the schema lives.** A new "Shared members" section in `jbuffin/skills`'s `skills/engineering/commodore/references/crew-members.md`: the file name (`<stem>.shared.json` beside a member file, in any standing layer), every field above, which fields a resolver reads (`version`, `repo`, `commit`, `tag`, `content_sha256`), the validity rules every resolver applies (`host` is `github.com`, `path` is `crew/<file>.md`, the sidecar is strict UTF-8 JSON, and every readable member file's sidecar is checked), the detached rule, and that a bad sidecar is one warning, never an error. Admiral's Go resolver follows that text. Admiral's docs link to it rather than restating it.
 - **What `crew.py` shows.**
   - `resolve` gives each member a `shared` field: `null`, or `{"owner", "repo", "commit", "tag", "detached"}` (`tag` may be null). `detached` is `sha256(raw bytes) != content_sha256`, computed from the bytes `read_member` already reads, so it costs one hash. A sidecar that can't be read or fails the schema gives `shared: null` and a `shared-unreadable` warning for that file.
   - `cast`'s Source column reads `fleet (shared by <owner>/<repo>@<short sha>)`, with `, edited here` added when detached. A pinned run-layer member keeps `(pinned)` as today.
@@ -145,10 +139,11 @@ A publish sends exactly one file. Admiral builds its bytes and checks them for t
 1. **Only the engineer's own fleet members.** Share is offered on a member whose layer is `fleet` and that has no sidecar file at all, attached, detached or unreadable. Imports are never re-shared: an imported member shows no Share action and no hint pointing at one. Make mine, its own action with its own confirm, is the way to make an import the engineer's own. A built-in has no file to share (customize it first). Memory notes, ad hoc members and run members are never offered.
 2. **Canonical bytes.** Admiral rebuilds the file from the resolved member with `crewapi`'s canonical writer (`memberBody.file`), not the file on disk. That drops unknown fields and never writes `ad-hoc` or `ad-hoc-run`. The bytes pass `crew.CheckFile` first.
 3. **No paths from the Mac.** The bytes are refused when they contain `$ADMIRAL_HOME`, the user's home directory, the fleet's clone root or any of its search roots, as absolute paths. The refusal names the line.
-4. **No hidden characters.** A rune that `textsafe.Hidden` flags, or whose category is one of crew notes' hidden set (Cc, Cf, Cs, Co, Cn, Zl, Zp), refuses the publish, except `\n` and `\t`. The refusal names the line and the code point (`U+202E on line 7`).
-5. **Secret scan with gitleaks.** See below.
+4. **No hidden characters.** The whole file goes through `crewapi`'s existing `hidden(s, true)` (`internal/crewapi/draft.go:118`) together with the `textsafe.Hidden` and Unicode tag-block rules, and crew notes' hidden categories (Cc, Cf, Cs, Co, Cn, Zl, Zp). Any rune one of them flags refuses the publish, except `\n` and `\t`. That includes variation selectors (U+FE00 to U+FE0F, U+E0100 to U+E01EF) and blank fillers (U+115F, U+1160, U+3164, U+FFA0, U+2800), which draw nothing and can smuggle text. The refusal names the line and the code point (`U+202E on line 7`).
+5. **No `gitleaks:allow`.** Bytes containing `gitleaks:allow` are refused, naming the line, because gitleaks honours that inline comment and would report a secret on that line as clean.
+6. **Secret scan with gitleaks.** See below.
 
-Checks 1 to 4 always run and have no override. The engineer fixes the member (Edit on the Crew page) and tries again.
+Checks 1 to 5 always run and have no override. The engineer fixes the member (Edit on the Crew page) and tries again.
 
 ### The secret scan
 
@@ -171,7 +166,7 @@ Admiral runs the engineer's own `gitleaks` on the exact bytes. It has no scanner
 Importing is reading a file from GitHub and writing it as a fleet member, with these rules.
 
 - **Read the whole file first.** The import dialog shows the member's rendered card (name, role, based-on, skills, model, harness, pick-me-when) and the full raw file, with "shared by `<owner>`", the repo, the pinned short SHA and the tag. Nothing is written until the engineer clicks Import.
-- **Refuse a bad file.** The bytes must be valid UTF-8, at most `crew`'s 64 KiB limit, free of hidden characters (the same check as publishing), and pass `crew.CheckFile` with the stem from the file name. A file with `ad-hoc` or `ad-hoc-run` is refused: those belong to a run, not a fleet. Each refusal says which rule and which line.
+- **Refuse a bad file.** The bytes must be valid UTF-8, at most `crew`'s 64 KiB limit, free of hidden characters (the same whole-file check as publish check 4), and pass `crew.CheckFile` with the stem from the file name. A file with `ad-hoc` or `ad-hoc-run` is refused: those belong to a run, not a fleet. Each refusal says which rule and which line.
 - **Never overwrite.** When the name is taken (a fleet member file exists, or a built-in has it), the dialog says so and offers `<name>-<owner>` (cut to the 64-character slug limit; when that is taken too, the engineer types one). Renaming rewrites the `name` field (`renamed` in `crewapi`) and the file name together, then runs `crew.CheckFile` again. The write uses a hard link so a file that appeared since the check is never replaced (`KeepMission`'s pattern).
 - **Skills are warnings.** Each skill the member names that the fleet's dock can't see (`GET /api/fleets/{key}/crew/skills`) is listed: "Not installed: `<skill>`". Import is still allowed; Admiral never installs a skill.
 
@@ -227,7 +222,7 @@ All under `/api/fleets/{key}/crew/`, JSON in and out, the `?harness=` dock query
 | --- | --- |
 | `GET  .../crew/sharing` | The fleet's `crew_sharing` state, the `gh` login, whether the share repo exists and is pushable, its published names, and update states per shared member. |
 | `POST .../crew/sharing/repo` | Create the share repo and its README `{"name", "description"}`, or adopt an existing one `{"repo": "owner/name"}`. Saves `share_repo`. 403 when sharing is off. |
-| `POST .../crew/members/{name}/share/preview` | The canonical bytes, their sha256, the target path, whether it replaces a file, and `scan`: `{"state": "clean" \| "hit" \| "failed" \| "missing" \| "too-old", "findings": [{"line", "rule"}], "error": "<text>", "version": "<found>", "install": "<hint>"}`. A failed check 1 to 4 is a 422 naming the check, the line and the rule. 403 when sharing is off. |
+| `POST .../crew/members/{name}/share/preview` | The canonical bytes, their sha256, the target path, whether it replaces a file, and `scan`: `{"state": "clean" \| "hit" \| "failed" \| "missing" \| "too-old", "findings": [{"line", "rule"}], "error": "<text>", "version": "<found>", "install": "<hint>"}`. A failed check 1 to 5 is a 422 naming the check, the line and the rule. 403 when sharing is off. |
 | `POST .../crew/members/{name}/share` | `{"sha256", "skip_secret_scan"?}` from the preview. Rechecks and commits. Returns the commit URL. 403 when sharing is off; 422 on a hit. |
 | `POST .../crew/members/{name}/make-mine` | Deletes the sidecar. 404 when there's none. |
 | `GET  .../crew/published/{name}` | The published file's bytes and blob SHA, for the Unpublish confirm. |
@@ -262,7 +257,7 @@ Rename and Delete change as well: Rename moves `<name>.shared.json` with the mem
 | `gh` not signed in or token refused | 502 with the step and `gh`'s message; the GitHub page's reconnect advice. |
 | Share repo private, archived, gone or not pushable | 409 naming the repo and the reason, with "Choose another repo". |
 | Repo name taken at create | 409, offering to use it when it's public and pushable. |
-| Privacy check 1 to 4 hit | 422 naming the check, the line and the rule or code point. |
+| Privacy check 1 to 5 hit | 422 naming the check, the line and the rule or code point. |
 | gitleaks hit | 422 naming the line and the rule. No opt-out. |
 | gitleaks installed but the scan crashed, errored or timed out | 422 with the error. No opt-out. |
 | gitleaks missing or older than 8.19 | The preview's scan state, the install or upgrade hint, and the one-publish opt-out with its warning. |
@@ -287,13 +282,13 @@ Publishing:
 - **AC3.** With no `share_repo`, the first Share offers to create a public repo under the `gh` login named `admiral-crew` (editable); Create makes the repo through `POST /user/repos` with `private: false`, commits a README naming that owner and repo, and saves `share_repo`. Nothing in Admiral names a particular user.
 - **AC4.** Share shows the exact bytes, target path, sha256 and secret scan state before anything is sent; Publish commits those bytes, byte for byte, to `crew/<name>.md` in the share repo through `gh api` with the body on stdin, and returns the commit URL.
 - **AC5.** The published bytes are the canonical member file: unknown fields, `ad-hoc` and `ad-hoc-run` are absent, and no memory note, ad hoc member or run member is sent.
-- **AC6.** Share is refused (422, no GitHub write, no override) when the bytes contain a hidden character such as U+202E or U+E0041, or an absolute path under `$ADMIRAL_HOME`, the home directory, the clone root or a search root; the message names the line and the rule.
+- **AC6.** Share is refused (422, no GitHub write, no override) when the bytes contain a hidden character such as U+202E, U+E0041, a run of U+E0100 or U+3164, or an absolute path under `$ADMIRAL_HOME`, the home directory, the clone root or a search root; the message names the line and the rule.
 - **AC7.** Publishing when the member changed after the preview answers 409 and commits nothing.
 - **AC8.** Share is not shown, and the share routes answer 409, on a built-in member or on any member with a sidecar file, whether attached, detached or unreadable; an imported member's detail shows Make mine as its own action with its own confirm, and nothing on it offers Share or Make mine-and-share in one step.
 
 Secret scan:
 
-- **AC9.** With gitleaks on the fleet's `PATH`, preview and publish run `gitleaks stdin` on the exact bytes with nothing written to disk and no gitleaks config from the env or a repo; a test with the fake gitleaks shows a `decoy-secret-<hex>` value refuses the publish with 422 naming the line and the rule and never the value, and no opt-out is offered.
+- **AC9.** With gitleaks on the fleet's `PATH`, preview and publish run `gitleaks stdin` on the exact bytes with nothing written to disk and no gitleaks config from the env or a repo; a test with the fake gitleaks shows a `decoy-secret-<hex>` value refuses the publish with 422 naming the line and the rule and never the value, and no opt-out is offered; bytes containing `gitleaks:allow` are refused with 422 naming the line, with no opt-out, before gitleaks runs.
 - **AC10.** Without gitleaks on `PATH`, the preview says the secret scan is unavailable, shows how to install it, and offers Publish without a secret scan with its warning; publishing then needs `skip_secret_scan: true` in that request, and the next publish asks again. Admiral never runs an install.
 - **AC11.** `skip_secret_scan: true` is refused with 400 when a usable gitleaks (8.19 or later) is installed, whatever its scan returned, and `config.json` never records a scan choice.
 - **AC11a.** With a gitleaks older than 8.19 on `PATH` (the fake reporting `8.18.0`), the preview says it's too old, shows the upgrade command and offers the same one-publish opt-out with its warning as AC10; Admiral never runs `gitleaks dir` or any other fallback scan.
@@ -303,7 +298,7 @@ Import:
 
 - **AC12.** Pasting `<owner>/<repo>/<name>`, `<owner>/<repo>/<name>@<ref>` or a GitHub `blob` URL previews the full file, the rendered card, "shared by `<owner>`", the pinned commit SHA and, when a tag points at that commit, the tag; nothing is written until Import is clicked.
 - **AC13.** Import writes `crew/<name>.md` in the chosen fleet's crew directory and `crew/<name>.shared.json` with `version`, `host`, `repo`, `path`, `upstream_name`, `commit`, `upstream_blob`, `content_sha256` and the times; the member resolves as a hand-written fleet member would plus its `shared` object, and the sidecar is never a member in either resolver.
-- **AC14.** A file that fails `crew.CheckFile`, holds a hidden character, is over 64 KiB, is not UTF-8 or carries `ad-hoc` or `ad-hoc-run` is refused with the rule and line, and nothing is written.
+- **AC14.** A file that fails `crew.CheckFile`, holds a hidden character, is over 64 KiB, is not UTF-8 or carries `ad-hoc` or `ad-hoc-run` is refused with the rule and line, and nothing is written; a run of U+E0100 and a U+3164 are each refused as hidden characters.
 - **AC15.** Importing a name a fleet member or built-in already has never overwrites: it answers 409 with `<name>-<owner>` suggested, and accepting it writes both the `name` field and the file name as the new name.
 - **AC16.** Skills the member names that the dock can't see are listed as warnings before and after import; no skill is installed.
 - **AC17.** Adding `<owner>/<repo>` (or its GitHub URL) as a crew source saves it in `crew_sharing.sources` and lists its `crew/*.md` members from one contents call, ignoring other files; Import from the list works as AC12 to AC16.
@@ -340,7 +335,7 @@ None. The engineer answered the last ones on 2026-11-24.
 
 ## Conflicts with today's code
 
-- `textsafe.Hidden` treats `\n` and `\t` as hidden (they are `unicode.IsControl`) and misses the Unicode tag block (U+E0000 to U+E007F) and U+2060. The whole-file check combines it with crew notes' category set and exempts `\n` and `\t`.
+- `textsafe.Hidden` treats `\n` and `\t` as hidden (they are `unicode.IsControl`) and misses the Unicode tag block (U+E0000 to U+E007F), U+2060, variation selectors and blank fillers. The whole-file check combines it and the tag-block rule with `crewapi`'s `hidden(s, true)` (which refuses non-graphic runes, blank fillers and variation selectors that don't follow an emoji base) and crew notes' category set, and exempts `\n` and `\t`.
 - `.gitleaks.toml` allowlists `decoy-(secret|helper)-[0-9a-f]+`, which is why the scan must not read a repo's config, and why tests use a fake gitleaks to prove a hit.
 - Rename and Delete in `internal/crewapi` move and remove only `<name>.md`; they must carry the sidecar.
 - [ADR 0010](adr/0010-fleets-are-set-up-by-admiral-setup-in-a-json-config.md) says fleets are edited through the setup terminal; `PUT /api/fleets/{key}` already amends that for other fields, and `crew_sharing` joins them.
@@ -357,7 +352,7 @@ None. The engineer answered the last ones on 2026-11-24.
 Each unit is one PR and builds only on the ones before it. Unit 1 is in `jbuffin/skills`, a separate repo and PR; the rest are in Admiral.
 
 1. **Commodore reads sidecars (`jbuffin/skills`).** The "Shared members" section in `crew-members.md`, `shared` in `crew.py resolve`, the Source cell in `cast`, the five new fixture cases and `"shared": null` in every existing `expected.json`. AC28 to AC31 on Commodore's side.
-2. **Groundwork (Admiral).** Re-vendor the fixtures and give the Go resolver the same `shared` object; `crew_sharing` on the fleet (config, `PUT /api/fleets/{key}`, the Preferences toggle); the sidecar writer; Rename and Delete carrying the sidecar; Make mine; the hidden-character, path and field checks as one publish check; the gitleaks runner with its fake. AC11, AC22, AC25, AC31 on Admiral's side, and the check halves of AC6 and AC9.
-3. **Publish and Unpublish.** `GET .../crew/sharing`, `POST .../crew/sharing/repo`, share preview and share, the published listing, Unpublish; the Share button, the create-repo dialog, the preview with the scan state and opt-out, the Unpublish confirm, and the line diff component (for "Replaces the published version"); fake `gh` e2e. AC1, AC3 to AC11b, AC23, AC24, and AC26 and AC27 for these routes.
+2. **Groundwork (Admiral).** Re-vendor the fixtures and give the Go resolver the same `shared` object; `crew_sharing` on the fleet (config, `PUT /api/fleets/{key}`, the Preferences toggle); the sidecar writer; Rename and Delete carrying the sidecar; Make mine; the hidden-character, path and field checks as one publish check; the gitleaks runner with its fake. AC11, AC22, AC25, AC31 on Admiral's side, AC2 (Make mine part), AC26 and AC27 for make-mine, and the check halves of AC6 and AC9.
+3. **Publish and Unpublish.** `GET .../crew/sharing`, `POST .../crew/sharing/repo`, share preview and share, the published listing, Unpublish; the Share button, the create-repo dialog, the preview with the scan state and opt-out, the Unpublish confirm, and the line diff component (for "Replaces the published version"); fake `gh` e2e. AC1, AC3 to AC11b, AC2 (Unpublish part), AC23, AC24, and AC26 and AC27 for these routes.
 4. **Import and sources.** Ref and URL parsing, import preview and import, clash rename, skill warnings, "shared by" on the detail header; add, browse and remove sources. AC2 (import part), AC12 to AC17, and AC26 and AC27 for these routes.
-5. **Pinned updates.** The checker (page open and daily, one call per repo), update badges, update preview with the line diff, Apply, and the detach warning on Edit. AC2 (update part), AC18 to AC21.
+5. **Pinned updates.** The checker (page open and daily, one call per repo), update badges, update preview with the line diff, Apply, and the detach warning on Edit. AC2 (update part), AC18 to AC21, and AC26 and AC27 for these routes.

@@ -265,11 +265,17 @@ _Avoid_: registry, marketplace, crew pack
 
 **Crew source**:
 A public repo a fleet browses for crew members to import, by its `crew/` folder. Any share repo is one. A single member can also be imported from a ref (`<owner>/<repo>/<name>[@<ref>]`) without adding its repo as a source. Importing works whether or not crew sharing is on.
-_Avoid_: feed, remote, upstream (for the repo)
+_Avoid_: feed, remote, upstream (as a name for the crew source)
 
 **Shared member**:
 A fleet crew member imported from a crew source. Its file is an ordinary member file; its provenance (repo, path, pinned commit, content hash) is in a sidecar beside it, `<name>.shared.json`, whose schema Commodore defines and which no resolver reads as a member. Commodore and Admiral both show it as "shared by" its publisher. It stays pinned to that commit until the engineer applies an update (any change to its file on the source's default branch) after reading its diff. Once its file is edited here it is **detached**: it stays in the fleet but gets no updates. A shared member can't be shared on; **Make mine** removes its sidecar and makes it the engineer's own.
 _Avoid_: installed member, remote member, synced member
+
+**Sidecar**:
+The file `<name>.shared.json` beside a shared member's file, recording where it came from (repo, path, pinned commit, content hash). Commodore defines its schema; Admiral writes it; no resolver reads it as a member.
+
+**Detached**:
+A shared member whose file no longer matches the bytes Admiral wrote. It stays in the fleet but gets no updates. It is computed on each read, so undoing the edit re-attaches it.
 
 **Mission**:
 A saved Commodore mission file. The fleet's missions directory, `$ADMIRAL_HOME/fleets/<fleet key>/missions/`, holds them and every ship of the fleet sees it as `ADMIRAL_MISSIONS_DIR`. Commodore owns the format of the files; Admiral only keeps the directory. A ship's report can propose a mission; it waits in the Inbox, and Keep writes it there.
