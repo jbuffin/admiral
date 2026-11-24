@@ -48,7 +48,7 @@ export interface Fleet {
   chat: FleetChat;
   /** Whether this fleet pushes and alerts; on unless config.json says false. */
   notify: boolean;
-  crew_sharing: { enabled: boolean; share_repo: string; sources: string[] };
+  crew_sharing?: { enabled: boolean; share_repo: string; sources: string[] };
   preset: 'work' | 'home';
   limits: Limits;
   /** One sentence per Limit in catalog order, then two fixed ones with an empty field. */

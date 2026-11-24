@@ -100,7 +100,7 @@ function CrewSharingSwitch({ fleet, onReload }: { fleet: Fleet; onReload: () => 
   const toggle = async () => {
     setBusy(true);
     setError(null);
-    const r = await saveFleet(fleet.key, { crew_sharing: { enabled: !fleet.crew_sharing.enabled } });
+    const r = await saveFleet(fleet.key, { crew_sharing: { enabled: !fleet.crew_sharing?.enabled } });
     if (r.ok) fleets.value = r.data;
     else setError({ message: r.error, status: r.status });
     setBusy(false);
@@ -120,7 +120,7 @@ function CrewSharingSwitch({ fleet, onReload }: { fleet: Fleet; onReload: () => 
           </p>
         ) : null}
       </div>
-      <button type="button" class="switch" role="switch" aria-checked={fleet.crew_sharing.enabled} aria-labelledby="crew-sharing-label" aria-describedby="crew-sharing-hint" disabled={busy} onClick={() => void toggle()}>
+      <button type="button" class="switch" role="switch" aria-checked={!!fleet.crew_sharing?.enabled} aria-labelledby="crew-sharing-label" aria-describedby="crew-sharing-hint" disabled={busy} onClick={() => void toggle()}>
         <span class="track" aria-hidden="true" />
       </button>
     </div>
