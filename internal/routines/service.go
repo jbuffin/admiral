@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,7 +129,7 @@ func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 			out[i].LastRun = &lastRun{At: runs[0].At, Outcome: runs[0].Outcome}
 		}
 	}
-	body := map[string]any{"routines": out}
+	body := map[string]any{"routines": out, "zone": s.Zone}
 	if sp, ok := s.spend(r.PathValue("key")); ok {
 		body["spend"] = sp
 	}
@@ -325,5 +326,13 @@ func (s *Service) serveSetHold(on, global bool) http.HandlerFunc {
 // ZoneName names the zone a scheduler running in a Go location works in: name is Location.String(), abbr the zone abbreviation
 // now, and readlink reads the /etc/localtime link that names a "Local" zone.
 func ZoneName(name, abbr string, readlink func(path string) (string, error)) string {
-	return ""
+	if name != "Local" {
+		return name
+	}
+	if target, err := readlink("/etc/localtime"); err == nil {
+		if _, zone, ok := strings.Cut(target, "zoneinfo/"); ok && zone != "" {
+			return zone
+		}
+	}
+	return abbr
 }

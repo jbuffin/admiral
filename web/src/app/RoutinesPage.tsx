@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, type DirsAnswer, type Fleet, type FleetCapabilities } from './api';
 import { Actions, Button } from './Button';
 import { capabilities, capabilitiesFailed, loadCapabilities } from './capabilities';
-import { cronSentence } from './cron';
+import { describeCron } from './cron';
 import { DescribeRoutine, openedDraft, routineDraftPath } from './FilingForms';
 import { fleetSearch } from './fleets';
 import { holdFire, setHoldFire, stopResult, stopWorkerShips } from './holdFireLink';
@@ -169,7 +169,7 @@ function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
 /** What a routine that still names the removed view trigger says; the server refuses a save that keeps it. */
 const REMOVED_NOTE = 'The "New in <view>" trigger was removed, so this routine never runs.';
 
-function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSaved, onDeleted, onToggled }: { fleet: Fleet; routine: Routine | null; initial: RoutineForm; caps: FleetCapabilities | undefined; problem?: { field: RoutineField; message: string }; onSaved: (r: Routine) => void; onDeleted: () => void; onToggled: (r: Routine) => void }) {
+function RoutineEditor({ fleet, zone, routine, initial, caps, problem: drafted, onSaved, onDeleted, onToggled }: { fleet: Fleet; zone?: string; routine: Routine | null; initial: RoutineForm; caps: FleetCapabilities | undefined; problem?: { field: RoutineField; message: string }; onSaved: (r: Routine) => void; onDeleted: () => void; onToggled: (r: Routine) => void }) {
   const [form, setForm] = useState(initial);
   // the event chosen before a switch to a schedule, which a switch back restores
   const lastEvent = useRef(initial.on);
@@ -329,7 +329,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
             <span>When</span>
             <input type="text" value={form.when} autocomplete="off" autocapitalize="off" spellcheck={false} placeholder="30 8 * * 1-5" onInput={(e) => set({ when: target(e).value })} />
           </label>
-          {form.when.trim() ? <p class="note">{cronSentence(form.when)}</p> : <p class="note">Five fields: minute hour day month weekday, in this machine's time zone.</p>}
+          <WhenNote when={form.when} zone={zone} />
         </>
       )}
       {err?.field === 'when' ? <p class="note error" role="alert">{err.text}</p> : null}
@@ -468,10 +468,22 @@ function useLinkedDraft(fleetKey: string, linkId: string | null): LinkVisit | nu
   return answer?.id === linkId ? answer.visit : { status: 'loading' };
 }
 
+function WhenNote({ when, zone }: { when: string; zone?: string }) {
+  if (!when.trim()) return <p class="note">Five fields: minute hour day month weekday{zone ? `, in ${zone}` : ''}.</p>;
+  const d = describeCron(when, zone);
+  return <p class="note">{d.ok ? d.text : d.reason}</p>;
+}
+
+function whenText(when: string, zone?: string): string {
+  const d = describeCron(when, zone);
+  return d.ok ? d.text : d.reason;
+}
+
 export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fleet; id: string | null; creating: boolean; title: boolean; phone: boolean }) {
   const [list, setList] = useState<Routine[] | null>(null);
   const [failed, setFailed] = useState('');
   const [spend, setSpend] = useState<RoutineSpend | undefined>();
+  const [zone, setZone] = useState<string | undefined>();
   const [drafted, setDrafted] = useState<{ form: RoutineForm; problem?: { field: RoutineField; message: string }; n: number } | null>(null);
   const caps: FleetCapabilities | undefined = capabilities.value.find((c) => c.key === fleet.key);
   const proposeNote = proposeOnlyNote(caps, normalizeLimits(fleet.limits));
@@ -485,10 +497,11 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const visit = useLinkedDraft(fleet.key, linkId);
 
   const load = async () => {
-    const r = await call<{ routines: Routine[] | null; spend?: RoutineSpend }>('GET', api(fleet.key));
+    const r = await call<{ routines: Routine[] | null; spend?: RoutineSpend; zone?: string }>('GET', api(fleet.key));
     if (r.ok) {
       setList(r.data.routines ?? []);
       setSpend(r.data.spend);
+      setZone(r.data.zone || undefined);
       setFailed('');
     } else setFailed(r.error);
   };
@@ -649,9 +662,9 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                         ) : r.on ? (
                           `On: ${eventWords(sources.value, fleet.key, r.on)}`
                         ) : r.do.digest ? (
-                          `Fleet digest, ${cronSentence(r.when)}`
+                          `Fleet digest, ${whenText(r.when, zone)}`
                         ) : (
-                          cronSentence(r.when)
+                          whenText(r.when, zone)
                         )}
                       </span>
                     </span>
@@ -707,6 +720,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
               <RoutineEditor
                 key={`new:${visit?.status === 'ready' ? `link:${linkId}` : visit ? 'blank' : drafted ? `described:${drafted.n}` : 'blank'}`}
                 fleet={fleet}
+                zone={zone}
                 routine={null}
                 initial={draft}
                 caps={caps}
@@ -723,6 +737,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                 <RoutineEditor
                   key={`${selected.id}:${version}`}
                   fleet={fleet}
+                  zone={zone}
                   routine={selected}
                   initial={formOfRoutine(selected)}
                   caps={caps}
