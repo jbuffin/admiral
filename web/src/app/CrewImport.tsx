@@ -60,6 +60,8 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
   const [sources, setSources] = useState<string[]>([]);
   const [ref, setRef] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
+  // What the shown preview was asked for, which a Browse row sets without touching the box.
+  const [previewed, setPreviewed] = useState('');
   const [name, setName] = useState('');
   const [newSource, setNewSource] = useState('');
   const [busy, setBusy] = useState(false);
@@ -93,6 +95,7 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
       return;
     }
     setPreview(r.data);
+    setPreviewed(text);
     setName(r.data.clash?.suggested ?? '');
   };
 
@@ -124,7 +127,7 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
     setBusy(false);
     if (!r.ok) {
       if (r.status === 409) {
-        await loadPreview(ref);
+        await loadPreview(previewed);
         setError(r.error);
       } else setError(r.error);
       return;

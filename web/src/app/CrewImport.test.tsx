@@ -150,6 +150,30 @@ test('an Import refused as changed since the preview shows the message and loads
   expect((await screen.findByRole('alert')).textContent).toContain('The file changed since the preview');
 });
 
+test('an Import from a Browse row refused as changed loads that row\'s preview again', async () => {
+  const calls = server(
+    [member('bosun')],
+    (c) => {
+      if (c.method === 'GET' && to(c, '/sources/hubot/crew')) return json({ members: [{ name: 'mate', path: 'crew/mate.md', blob: 'b2', imported: null, published: false }] });
+      if (to(c, '/imports/preview')) return json({ ...pv, path: 'crew/mate.md' });
+      if (to(c, '/imports') && c.method === 'POST') return json({ error: 'The file changed since the preview' }, 409);
+      return undefined;
+    },
+    view(['hubot/crew']),
+  );
+  page(null, fleetOf(['hubot/crew']));
+  await openImport();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Browse' })[1]!);
+  const list = await screen.findByRole('list', { name: 'hubot/crew' });
+  fireEvent.click(within(list).getByRole('button', { name: 'Import' }));
+  const panel = screen.getByRole('region', { name: 'Import' });
+  await within(panel).findByLabelText('Member card');
+  // The preview sits above the browse list, so its Import is the first.
+  fireEvent.click(within(panel).getAllByRole('button', { name: 'Import' })[0]!);
+  await waitFor(() => expect(named(calls, 'POST', '/imports/preview')).toHaveLength(2));
+  expect(named(calls, 'POST', '/imports/preview')[1]!.body).toEqual({ ref: 'hubot/crew/mate' });
+});
+
 test('a repo URL offers Add as a crew source, which puts the list with the repo added', async () => {
   const calls = server([member('bosun')], (c) => (to(c, '/imports/preview') ? json({ source: 'hubot/crew' }) : c.method === 'PUT' && to(c, '/sources') ? json({ sources: ['a/b', 'hubot/crew'] }) : undefined), view(['a/b']));
   page(null, fleetOf(['a/b']));
