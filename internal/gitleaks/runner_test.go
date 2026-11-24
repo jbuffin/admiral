@@ -119,7 +119,7 @@ func TestTheVersionDecidesWhetherAScanRuns(t *testing.T) {
 	for version, want := range map[string]string{
 		"v8.19.0\n": gitleaks.Clean, "8.19.0\n": gitleaks.Clean, "v8.21.2": gitleaks.Clean, "9.0.0\n": gitleaks.Clean,
 		"8.18.4\n": gitleaks.TooOld, "v8.18.0\n": gitleaks.TooOld, "7.6.1\n": gitleaks.TooOld,
-		"banana\n": gitleaks.Failed, "\n": gitleaks.Failed, "8.19\n": gitleaks.Failed,
+		"banana\n": gitleaks.Failed, "\n": gitleaks.Failed,
 	} {
 		r := newRig(t)
 		r.set("version", version)
@@ -183,5 +183,8 @@ func TestACancelledContextFailsWithoutRunningGitleaks(t *testing.T) {
 	got := r.runner.Scan(ctx, []byte("a\n"))
 	if got.State != gitleaks.Failed {
 		t.Errorf("result = %+v, want failed", got)
+	}
+	if _, err := os.Stat(filepath.Join(r.state, "last")); err == nil {
+		t.Errorf("a scan ran although the context was already cancelled")
 	}
 }

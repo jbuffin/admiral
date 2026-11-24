@@ -61,7 +61,7 @@ test('on the iPad, Make mine on a shared fleet member asks first, then stops tra
   await expect(main.getByText(`Stop tracking ${REPO}? This member will no longer get updates or show who shared it.`)).toBeVisible();
   expect(existsSync(sidecar)).toBe(true);
 
-  await main.getByRole('button', { name: 'Confirm' }).click();
+  await main.getByRole('button', { name: 'Confirm', exact: true }).click();
   await expect(main.getByRole('button', { name: 'Make mine' })).toHaveCount(0);
   await expect(main.getByRole('heading', { name: 'bosun', level: 2 })).toBeVisible();
   await expect.poll(() => existsSync(sidecar)).toBe(false);
