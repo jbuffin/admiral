@@ -71,7 +71,7 @@ test('running rows come before finished ones, finished newest first', () => {
 test('start and end are shown as times a reader or a screen reader can take', () => {
   const { container } = render(<AgentsTab ship={shipOf([], [{ id: 'a1', type: '', start: T('10:00'), kind: 'subagent', end: T('10:20') }, { id: 'a2', type: '', start: T('10:05'), kind: 'subagent' }])} />);
   const stamps = [...container.querySelectorAll('time')].map((t) => t.getAttribute('datetime'));
-  expect(stamps).toEqual([T('10:00'), T('10:20'), T('10:05')]);
+  expect(stamps).toEqual([T('10:05'), T('10:00'), T('10:20')]);
 });
 
 test('a running entry shows no end time', () => {

@@ -131,21 +131,30 @@ func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
 		return l
 	}
 	hook(shipPane, "SubagentStart", `{"hook_event_name":"SubagentStart","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore"}`)
-	l := subs()
-	if len(l) != 1 || l[0]["id"] != "a0f790cb4a518e0f9" || l[0]["type"] != "Explore" {
-		t.Fatalf("after SubagentStart @admiral-subagents = %v, want one Explore entry", l)
+	// The Monitor above is listed too, so look the entry up by id.
+	entry := func() map[string]string {
+		for _, a := range subs() {
+			if a["id"] == "a0f790cb4a518e0f9" {
+				return a
+			}
+		}
+		return nil
 	}
-	if _, err := time.Parse(time.RFC3339, l[0]["start"]); err != nil {
-		t.Errorf("start %q is not RFC 3339", l[0]["start"])
+	e := entry()
+	if e == nil || e["type"] != "Explore" || e["kind"] != "subagent" || e["end"] != "" {
+		t.Fatalf("after SubagentStart @admiral-subagents = %v, want a running Explore subagent", subs())
+	}
+	if _, err := time.Parse(time.RFC3339, e["start"]); err != nil {
+		t.Errorf("start %q is not RFC 3339", e["start"])
 	}
 	wantState(shipPane, "the ship after SubagentStart", "needs_you", "stop")
 	hook(shipPane, "SubagentStop", `{"hook_event_name":"SubagentStop","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","background_tasks":[]}`)
-	l = subs()
-	if len(l) != 1 || l[0]["id"] != "a0f790cb4a518e0f9" {
-		t.Fatalf("after SubagentStop @admiral-subagents = %v, want the entry kept", l)
+	e = entry()
+	if e == nil {
+		t.Fatalf("after SubagentStop @admiral-subagents = %v, want the entry kept", subs())
 	}
-	if _, err := time.Parse(time.RFC3339, l[0]["end"]); err != nil {
-		t.Errorf("after SubagentStop end %q is not RFC 3339: the entry should be marked finished", l[0]["end"])
+	if _, err := time.Parse(time.RFC3339, e["end"]); err != nil {
+		t.Errorf("after SubagentStop end %q is not RFC 3339: the entry should be marked finished", e["end"])
 	}
 	wantState(shipPane, "the ship after SubagentStop", "needs_you", "stop")
 }

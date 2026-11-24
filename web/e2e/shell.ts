@@ -754,7 +754,7 @@ export const AGENT_CUES = [
   'event SubagentStart {"hook_event_name":"SubagentStart","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore"}',
   'event SubagentStart {"hook_event_name":"SubagentStart","agent_id":"b1c2d3e4f5a6b7c8d","agent_type":"Plan"}',
   'event SubagentStop {"hook_event_name":"SubagentStop","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","background_tasks":[]}',
-  'event Stop {"hook_event_name":"Stop","background_tasks":[{"id":"bdevsrv1","type":"shell","status":"running","description":"dev server","command":"sleep 99"},{"id":"bdone001","type":"shell","status":"completed","description":"build","command":"make"}],"session_crons":[]}',
+  'event Stop {"hook_event_name":"Stop","background_tasks":[{"id":"b1c2d3e4f5a6b7c8d","type":"subagent","status":"running","agent_type":"Plan"},{"id":"bdevsrv1","type":"shell","status":"running","description":"dev server","command":"sleep 99"},{"id":"bdone001","type":"shell","status":"completed","description":"build","command":"make"}],"session_crons":[]}',
 ];
 
 export const viewPanel = (page: Page) => page.getByRole('tabpanel');
