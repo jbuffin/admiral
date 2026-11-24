@@ -213,8 +213,10 @@ func safeID(s string) string {
 }
 
 // Ids and types come from the payload, so an id that is not a safe token is
-// dropped and a type that is not one is stored as "".
+// dropped and a type that is not one is stored as "". A stop finishes an entry
+// instead of removing it; nothing from a payload but id, type, kind and times is kept.
 func subagentList(event string, p hookPayload, harness string, cur []sessionhost.Subagent, now time.Time) []sessionhost.Subagent {
+	stamp := now.Format(time.RFC3339)
 	listed := func(id string) int {
 		for i, a := range cur {
 			if a.ID == id {
@@ -223,57 +225,97 @@ func subagentList(event string, p hookPayload, harness string, cur []sessionhost
 		}
 		return -1
 	}
-	add := func(id, typ string) []sessionhost.Subagent {
-		id = safeID(id)
-		if id == "" || listed(id) >= 0 || len(cur) >= sessionhost.MaxSubagents {
-			return cur
+	add := func(l []sessionhost.Subagent, e sessionhost.Subagent) []sessionhost.Subagent {
+		if e.ID == "" || slices.ContainsFunc(l, func(a sessionhost.Subagent) bool { return a.ID == e.ID }) {
+			return l
 		}
-		return append(append([]sessionhost.Subagent(nil), cur...),
-			sessionhost.Subagent{ID: id, Type: safeID(typ), Start: now.Format(time.RFC3339)})
+		return sessionhost.AddSubagent(l, e)
 	}
-	remove := func(id string) []sessionhost.Subagent {
-		i := listed(id)
-		if i < 0 {
-			return cur
+	finish := func(l []sessionhost.Subagent, i int) []sessionhost.Subagent {
+		if l[i].End != "" {
+			return l
 		}
-		return append(append([]sessionhost.Subagent(nil), cur[:i]...), cur[i+1:]...)
+		out := append([]sessionhost.Subagent(nil), l...)
+		out[i].End = stamp
+		return out
+	}
+	finishAll := func() []sessionhost.Subagent {
+		out := cur
+		for i := range out {
+			out = finish(out, i)
+		}
+		return out
 	}
 	switch event {
 	case "SubagentStart":
-		return add(p.SubagentID, p.SubagentType)
-	case "SubagentStop":
-		return remove(p.SubagentID)
+		return add(cur, sessionhost.Subagent{ID: safeID(p.SubagentID), Type: safeID(p.SubagentType), Start: stamp, Kind: sessionhost.KindSubagent})
 	case "subagentStart":
-		return add(p.AgentID, p.AgentTypeCopilot)
-	case "subagentStop":
-		return remove(p.AgentID)
+		return add(cur, sessionhost.Subagent{ID: safeID(p.AgentID), Type: safeID(p.AgentTypeCopilot), Start: stamp, Kind: sessionhost.KindSubagent})
+	case "SubagentStop", "subagentStop":
+		id := p.SubagentID
+		if event == "subagentStop" {
+			id = p.AgentID
+		}
+		if id = safeID(id); id != "" {
+			if i := listed(id); i >= 0 {
+				return finish(cur, i)
+			}
+		}
 	case "agentStop", "userPromptSubmitted":
 		if p.lead() {
+			return finishAll()
+		}
+	case "sessionStart", "ShipSessionStart":
+		if newLeadSession(event, p) {
 			return nil
 		}
-	case "Stop":
-		// Codex's Stop has no background_tasks and must not clear the list.
-		// Without a harness, a present background_tasks (even []) is Claude's.
-		if harness == "claude" || (harness == "" && p.BackgroundTasks != nil) {
-			var out []sessionhost.Subagent
-			for _, t := range p.BackgroundTasks {
-				id := safeID(t.ID)
-				if t.Status != "running" || (t.Type != "subagent" && t.Type != "teammate") || id == "" || len(out) >= sessionhost.MaxSubagents {
-					continue
-				}
-				if slices.ContainsFunc(out, func(a sessionhost.Subagent) bool { return a.ID == id }) {
-					continue
-				}
-				if i := listed(id); i >= 0 {
-					out = append(out, cur[i])
-				} else {
-					out = append(out, sessionhost.Subagent{ID: id, Type: safeID(t.AgentType), Start: now.Format(time.RFC3339)})
-				}
-			}
-			return out
+	case "PostToolUse":
+		if id := monitorTaskID(event, p); id != "" {
+			return add(cur, sessionhost.Subagent{ID: id, Start: stamp, Kind: sessionhost.KindMonitor})
 		}
+	case "Stop":
+		// Codex's Stop has no background_tasks and must not touch the list.
+		// Without a harness, a present background_tasks (even []) is Claude's.
+		if harness != "claude" && (harness != "" || p.BackgroundTasks == nil) {
+			return cur
+		}
+		out := cur
+		byID := map[string]backgroundTask{}
+		for _, t := range p.BackgroundTasks {
+			byID[safeID(t.ID)] = t
+		}
+		for i, a := range out {
+			if t, ok := byID[a.ID]; !ok || t.Status != "running" {
+				out = finish(out, i)
+			}
+		}
+		for _, t := range p.BackgroundTasks {
+			id := safeID(t.ID)
+			running := t.Status == "running"
+			switch t.Type {
+			case "subagent", "teammate":
+				if running {
+					out = add(out, sessionhost.Subagent{ID: id, Type: safeID(t.AgentType), Start: stamp, Kind: t.Type})
+				}
+			case "shell":
+				e := sessionhost.Subagent{ID: id, Start: stamp, Kind: sessionhost.KindShell}
+				if !running {
+					e.End = stamp
+				}
+				out = add(out, e)
+			}
+		}
+		return out
 	}
 	return cur
+}
+
+// newLeadSession is a start whose list is a past session's; resume and compact keep it.
+func newLeadSession(event string, p hookPayload) bool {
+	if event == "sessionStart" {
+		return p.Source == "new"
+	}
+	return event == "ShipSessionStart" && (p.Source == "startup" || p.Source == "clear")
 }
 
 func (p hookPayload) lead() bool { return p.AgentID == "" }
@@ -281,14 +323,22 @@ func (p hookPayload) lead() bool { return p.AgentID == "" }
 // subagentCall writes nothing when a tmux read fails.
 func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 	var cur []sessionhost.Subagent
-	harness, read := "", true
+	harness := ""
 	switch event {
+	case "sessionStart", "ShipSessionStart":
+		if !newLeadSession(event, p) {
+			return nil
+		}
+		return sessionhost.UnsetPaneCall(pane, sessionhost.SubagentsOption)
 	case "agentStop", "userPromptSubmitted":
 		if !p.lead() {
 			return nil
 		}
-		read = false
-	case "SubagentStart", "SubagentStop", "subagentStart", "subagentStop", "Stop":
+		fallthrough
+	case "SubagentStart", "SubagentStop", "subagentStart", "subagentStop", "Stop", "PostToolUse":
+		if event == "PostToolUse" && monitorTaskID(event, p) == "" {
+			return nil
+		}
 		if event == "Stop" {
 			harness, _ = tmuxOut(sessionhost.CurrentHarnessCall(pane)...)
 			if harness == "codex" {
@@ -305,7 +355,7 @@ func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 	}
 	next := sessionhost.EncodeSubagents(subagentList(event, p, harness, cur, now))
 	switch {
-	case read && next == sessionhost.EncodeSubagents(cur):
+	case next == sessionhost.EncodeSubagents(cur):
 		return nil
 	case next == "":
 		return sessionhost.UnsetPaneCall(pane, sessionhost.SubagentsOption)
@@ -320,17 +370,31 @@ const maxMonitors = 64
 // monitorID skips a persistent Monitor: only one with a timeout is sure to wake
 // the session again.
 func monitorID(event string, p hookPayload) string {
-	if event != "PostToolUse" || p.ToolName != "Monitor" {
+	id, persistent := monitorResponse(event, p)
+	if persistent {
 		return ""
+	}
+	return id
+}
+
+// monitorTaskID is a Monitor's id, persistent or not.
+func monitorTaskID(event string, p hookPayload) string {
+	id, _ := monitorResponse(event, p)
+	return id
+}
+
+func monitorResponse(event string, p hookPayload) (id string, persistent bool) {
+	if event != "PostToolUse" || p.ToolName != "Monitor" {
+		return "", false
 	}
 	var r struct {
 		TaskID     string `json:"taskId"`
 		Persistent bool   `json:"persistent"`
 	}
-	if json.Unmarshal(p.ToolResponse, &r) != nil || r.Persistent {
-		return ""
+	if json.Unmarshal(p.ToolResponse, &r) != nil {
+		return "", false
 	}
-	return safeID(r.TaskID)
+	return safeID(r.TaskID), r.Persistent
 }
 
 // A Stop held by a running Monitor waits for the Monitor's event, which wakes the

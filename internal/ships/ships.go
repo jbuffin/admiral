@@ -123,9 +123,11 @@ type Ship struct {
 	CarriesPRs bool `json:"carries_prs,omitempty"`
 	// OpenPRs is the PRs a live ship carries that are open, then its report's that GitHub confirms open, each once.
 	OpenPRs []string `json:"open_prs,omitempty"`
-	// Crew and Subagents are always present, empty lists as [].
+	// Crew, Subagents and Agents are always present, empty lists as []. Subagents is the running
+	// subagents and teammates the classic view lists; Agents is every stored entry, running or finished.
 	Crew      []CrewBoat             `json:"crew"`
 	Subagents []sessionhost.Subagent `json:"subagents"`
+	Agents    []sessionhost.Subagent `json:"agents"`
 	CrewLive  int                    `json:"crew_live"`
 	Tail      string                 `json:"tail"`
 }
@@ -351,10 +353,11 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	if sh.Status == "anchored" {
 		sh.StoppedBy = o[sessionhost.OptStoppedBy]
 	}
-	sh.Crew, sh.Subagents = crewBoats(sess.Crew), sess.Subagents
-	if sh.Subagents == nil {
-		sh.Subagents = []sessionhost.Subagent{}
+	sh.Crew, sh.Agents = crewBoats(sess.Crew), sess.Subagents
+	if sh.Agents == nil {
+		sh.Agents = []sessionhost.Subagent{}
 	}
+	sh.Subagents = runningSubagents(sh.Agents)
 	sh.CrewLive = crewLive(sh.Crew)
 	if sh.Status == StatusNeedsYou {
 		sh.Reason = reasonOf(sess)
@@ -982,7 +985,8 @@ func (s *Service) Pending() []Ship {
 		if key.Source == "" {
 			orderID = ""
 		}
-		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Routine: u.routine, Commitment: u.commitment, Fleet: u.fleet, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Routine: u.routine, Commitment: u.commitment, Fleet: u.fleet, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway,
+			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}, Agents: []sessionhost.Subagent{}})
 	}
 	return out
 }

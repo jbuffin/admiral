@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, LAUNCH_MODELS, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatTurnEnds, chatLaunches, chatLaunchReply, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, LAUNCH_MODELS, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, AGENT_CUES, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatTurnEnds, chatLaunches, chatLaunchReply, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
@@ -155,7 +155,7 @@ test('a ship\'s view opens on its conversation, follows the transcript live, joi
   await expect(page).toHaveURL(shipViewUrl(admiral, login));
   await expect(page.getByRole('heading', { name: login.name, exact: true })).toBeVisible();
   await expect(page.getByLabel(/^Running for (<1m|\d+m)$/)).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveText(['Conversation', 'Terminal', 'PR']);
+  await expect(page.getByRole('tab')).toHaveText(['Conversation', 'Terminal', 'PR', 'Agents']);
   await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
   await expectSeededTurn(page);
   await expect(viewPanel(page)).toContainText('Working');
@@ -368,7 +368,8 @@ test('a ship launched in a checkout names its folder as its repo, and a flotilla
 
   // The flotilla: a chip for the ship and one per boat, by role (Teammate when it has none). A picked boat takes the conversation,
   // the terminal, the message box and Interrupt; Stop ship stays the ship's.
-  const lead = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  const lead = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', ...AGENT_CUES] });
+  await expect.poll(() => existsSync(join(admiral.home, 'rec', lead.session, 'cues-done'))).toBe(true);
   setState(admiral, lead, 'working');
   await say(admiral, lead, 'The ship is waiting on its crew');
   await launchCrew(admiral, lead, 'rev', 'reviewer', ['bracketedpaste', 'record', 'wait done', 'exit 0']);
@@ -381,6 +382,21 @@ test('a ship launched in a checkout names its folder as its repo, and a flotilla
   await expect(chip(page, /reviewer/)).toBeVisible();
   await expect(chip(page, /Teammate/)).toBeVisible();
   await expect(flotilla(page).getByRole('radio')).toHaveCount(3);
+  await expect(viewPanel(page)).toContainText('The ship is waiting on its crew');
+
+  // The Agents tab lists the crew boats, the running and the finished subagents and the background shells, and no shell command.
+  // Its tab counts what runs: two boats, the Plan subagent and the dev server.
+  await expect(page.getByRole('tab', { name: /^Agents\s*4$/ })).toBeVisible();
+  await viewTab(page, 'Agents').tap();
+  const agents = viewPanel(page);
+  await expect(agents.getByRole('listitem').filter({ hasText: 'Crew boat' })).toHaveCount(2);
+  await expect(agents.getByRole('listitem').filter({ hasText: 'Plan' })).toContainText(/running/i);
+  await expect(agents.getByRole('listitem').filter({ hasText: 'Explore' })).toContainText(/finished/i);
+  await expect(agents.getByRole('listitem').filter({ hasText: 'bdevsrv1' })).toContainText('Background shell');
+  await expect(agents.getByRole('listitem').filter({ hasText: 'bdevsrv1' })).toContainText(/running/i);
+  await expect(agents.getByRole('listitem').filter({ hasText: 'bdone001' })).toContainText(/finished/i);
+  await expect(agents).not.toContainText('sleep 99');
+  await viewTab(page, 'Conversation').tap();
   await expect(viewPanel(page)).toContainText('The ship is waiting on its crew');
 
   await chip(page, /reviewer/).tap();

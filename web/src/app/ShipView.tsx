@@ -15,6 +15,8 @@ import { Composer, InterruptButton, useComposer, type Target } from './Composer'
 import { boatBoxState, chipState, flotilla } from './flotilla';
 import { Icon } from './Icon';
 import { PRTab } from './ShipPRs';
+import { AgentsTab } from './AgentsTab';
+import { runningAgents } from './agents';
 import { openCount, prSummary } from './prTab';
 import { ReadyToMerge } from './StatusGlyph';
 import { useSeenOnLeave } from './seen';
@@ -36,7 +38,7 @@ import { atSea } from '../crew';
 import { KEYS, touchKeyboard } from '../keys';
 
 
-const TABS = ['Conversation', 'Terminal', 'PR'] as const;
+const TABS = ['Conversation', 'Terminal', 'PR', 'Agents'] as const;
 type Tab = (typeof TABS)[number];
 
 const shipsSurface = SURFACES.find((s) => s.id === 'ships')!;
@@ -351,7 +353,7 @@ export function targetFor(ship: Ship, boat: CrewBoat | undefined, conv: Conversa
     : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasConversationAdapter(ship.harness)), subject: 'This ship', wake: ship.status === 'moored', mooredAt: ship.moored_at };
 }
 
-const OPEN_TAB: Record<string, Tab> = { terminal: 'Terminal', pr: 'PR' };
+const OPEN_TAB: Record<string, Tab> = { terminal: 'Terminal', pr: 'PR', agents: 'Agents' };
 const openTab = (): Tab => {
   const v = new URLSearchParams(loc.value.search).get('tab') ?? '';
   return Object.hasOwn(OPEN_TAB, v) ? OPEN_TAB[v] : 'Conversation';
@@ -383,6 +385,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const moored = ship.status === 'moored';
   const summary = prSummary(ship.prs, ship);
   const count = openCount(ship.prs);
+  const running = runningAgents(ship);
   const Heading = title ? 'h1' : 'h2';
   const mooredCard = (
     <div class="convo-card">
@@ -446,6 +449,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
             <button key={t} type="button" role="tab" id={`tab-${t}`} aria-selected={tab === t} aria-controls="view-panel" class="view-tab" onClick={() => setTab(t)}>
               {t}
               {t === 'PR' && count > 0 ? <span class="tab-count">{count}</span> : null}
+              {t === 'Agents' && running > 0 ? <span class="tab-count">{running}</span> : null}
             </button>
           ))}
         </div>
@@ -479,15 +483,17 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
           </>
         ) : tab === 'Terminal' ? (
           <TerminalTab ship={ship} boat={boat} />
-        ) : (
+        ) : tab === 'PR' ? (
           <PRTab ship={ship} />
+        ) : (
+          <AgentsTab ship={ship} />
         )}
       </div>
     </section>
   );
 }
 
-/** One ship: Conversation, Terminal and PR. The view opens on Conversation, or on Terminal or PR when the URL says `?tab=terminal` or `?tab=pr`. */
+/** One ship: Conversation, Terminal, PR and Agents. The view opens on Conversation, or on Terminal, PR or Agents when the URL says `?tab=terminal`, `?tab=pr` or `?tab=agents`. */
 export function ShipView({ session, title }: { session: string; title: boolean }) {
   const ship = ships.value.find((s) => s.session === session);
   if (!ship) {

@@ -216,6 +216,18 @@ export interface Ship {
   // Why Admiral ended the harness: wall_clock:<minutes>.
   stopped_by?: string;
   crew: CrewBoat[];
+  /** Every stored subagent, teammate and background task, running or finished; absent from an older server. */
+  agents?: Agent[];
+}
+
+export interface Agent {
+  id: string;
+  type: string;
+  start: string;
+  /** subagent, teammate, shell or monitor; absent reads as subagent. */
+  kind?: string;
+  /** Set once it has finished. */
+  end?: string;
 }
 
 export interface CrewBoat {
