@@ -939,7 +939,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .pr-summary .sum-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-summary .sum-go { color: var(--color-accent); font-weight: 600; flex: none; }
 
-/* ---- stack bar and per-PR sub-tabs ---- */
+/* ---- Agents tab ---- */
 .agents-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; overflow-y: auto; }
 .agent-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-height: var(--shape-min-touch-target); padding: 8px 0; border-bottom: 1px solid var(--color-line2); min-width: 0; }
 .agent-kind { font-size: var(--font-size-meta); color: var(--color-muted); }
@@ -949,6 +949,8 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .agent-row.running .agent-state { color: var(--color-ok); }
 .agent-row.finished .agent-state { color: var(--color-muted); }
 .agents-empty { margin: 0; color: var(--color-muted); }
+
+/* ---- stack bar and per-PR sub-tabs ---- */
 .pr-tab { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .stack-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: var(--shape-radius-md); font-size: var(--font-size-meta); color: var(--color-text2); }
 .chain-bar { flex: 1 1 0; min-width: 0; }
@@ -1292,6 +1294,9 @@ body.dragging, body.dragging * { user-select: none; -webkit-user-select: none; c
 
 /* Phone ship view: the ship's head, in two rows, so the conversation gets the screen. */
 .phone .panel.ship-main-view { margin-top: var(--phone-top); padding: 4px 14px 6px; }
+/* The tab strip takes the full row so all four tabs show; Interrupt wraps below it. */
+.phone .view-tabs-row { flex-wrap: wrap; }
+.phone .view-tabs { flex: 1 0 auto; }
 .phone .ship-view-head { flex-wrap: wrap; gap: 0 10px; margin-bottom: 4px; }
 .phone .ship-view-head::after { content: ''; order: 4; flex-basis: 100%; }
 .phone .ship-view-head .back-link { order: 1; padding-right: 4px; }

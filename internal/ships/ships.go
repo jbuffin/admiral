@@ -985,7 +985,8 @@ func (s *Service) Pending() []Ship {
 		if key.Source == "" {
 			orderID = ""
 		}
-		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Routine: u.routine, Commitment: u.commitment, Fleet: u.fleet, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Routine: u.routine, Commitment: u.commitment, Fleet: u.fleet, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway,
+			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}, Agents: []sessionhost.Subagent{}})
 	}
 	return out
 }

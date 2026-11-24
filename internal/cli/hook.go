@@ -256,8 +256,10 @@ func subagentList(event string, p hookPayload, harness string, cur []sessionhost
 		if event == "subagentStop" {
 			id = p.AgentID
 		}
-		if i := listed(safeID(id)); i >= 0 && safeID(id) != "" {
-			return finish(cur, i)
+		if id = safeID(id); id != "" {
+			if i := listed(id); i >= 0 {
+				return finish(cur, i)
+			}
 		}
 	case "agentStop", "userPromptSubmitted":
 		if p.lead() {

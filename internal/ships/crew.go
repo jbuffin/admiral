@@ -121,7 +121,8 @@ func crewSignature(sh Ship) string {
 		b.WriteString("|" + c.Name + "=" + c.Status + ":" + c.Reason)
 	}
 	for _, a := range sh.Agents {
-		b.WriteString("|" + a.ID + ":" + a.Kind + ":" + a.End)
+		// A space is in neither a safe token nor a time.
+		b.WriteString("|" + a.ID + " " + a.Kind + " " + a.End)
 	}
 	b.WriteString("|live=" + strconv.Itoa(sh.CrewLive))
 	return b.String()

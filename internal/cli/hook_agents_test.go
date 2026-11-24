@@ -31,7 +31,7 @@ func ent(id, typ, kind, start, end string) string {
 
 func arr(entries ...string) string { return "[" + strings.Join(entries, ",") + "]" }
 
-// asObjects reads entries through JSON so a test needs no field the struct may not have yet.
+// asObjects reads entries through JSON so a test compares them as plain maps.
 func asObjects(t *testing.T, v any) []map[string]string {
 	t.Helper()
 	raw, err := json.Marshal(v)
@@ -136,6 +136,8 @@ func TestHookAgentsList(t *testing.T) {
 			"[]", arr(ent("bdevsrv1", "", "shell", agNow, ""))},
 		{"claude Stop with an unsafe shell id lists nothing", "claude", "Stop",
 			stopJSON(`{"id":"b d;x","type":"shell","status":"running"}`), "[]", "[]"},
+		{"Stop with no harness and a present background_tasks finishes a running entry", "", "Stop",
+			stopJSON(), arr(running), arr(ent(cID, "Explore", "subagent", agT0, agNow))},
 		{"codex Stop leaves finished entries and running ones alone", "codex", "Stop", `{"turn_id":"01a15222-ed87"}`, arr(running, finished), arr(running, finished)},
 		// A Monitor's PostToolUse.
 		{"PostToolUse of Monitor adds a running monitor", "claude", "PostToolUse",
@@ -229,7 +231,7 @@ func TestHookAgentsCapDropsTheOldestFinished(t *testing.T) {
 	})
 }
 
-// ShipSessionStart must not rebind the transcript: that is SessionStart's job and it does not run on a ship.
+// ShipSessionStart must not rebind the transcript (SessionStart's job, which does not run on a ship); like every admiral hook it still stamps the activity.
 func TestSubagentCallClearsOnANewLeadSession(t *testing.T) {
 	unset := sessionhost.UnsetPaneCall("%1", sessionhost.SubagentsOption)
 	now := time.Date(2026, 10, 24, 18, 30, 0, 0, time.UTC)

@@ -2,6 +2,7 @@ package sessionhost
 
 import (
 	"encoding/json"
+	"sort"
 	"time"
 )
 
@@ -37,29 +38,36 @@ func validKind(k string) bool {
 
 // AddSubagent appends e, dropping the finished entry that ended first when the list is full; a list of 64 running entries refuses it.
 func AddSubagent(l []Subagent, e Subagent) []Subagent {
-	out := append(append([]Subagent(nil), l...), e)
-	return TrimSubagents(out, len(l))
+	return TrimSubagents(append(append([]Subagent(nil), l...), e))
 }
 
-// TrimSubagents cuts a list to MaxSubagents by dropping the earliest-ended finished entries; keep is the index of an entry that must stay (-1 for none).
-func TrimSubagents(l []Subagent, keep int) []Subagent {
-	for len(l) > MaxSubagents {
-		drop := -1
-		for i, a := range l {
-			if a.End != "" && i != keep && (drop < 0 || a.End < l[drop].End) {
-				drop = i
-			}
-		}
-		if drop < 0 {
-			// Only running entries are left: the newest one is refused.
-			return append([]Subagent(nil), l[:len(l)-1]...)
-		}
-		l = append(append([]Subagent(nil), l[:drop]...), l[drop+1:]...)
-		if drop < keep {
-			keep--
+// TrimSubagents cuts a list to MaxSubagents in one pass: the earliest-ended finished entries go first, then running ones from the tail (the newest).
+func TrimSubagents(l []Subagent) []Subagent {
+	excess := len(l) - MaxSubagents
+	if excess <= 0 {
+		return l
+	}
+	var fin []int
+	for i, a := range l {
+		if a.End != "" {
+			fin = append(fin, i)
 		}
 	}
-	return l
+	sort.SliceStable(fin, func(x, y int) bool { return l[fin[x]].End < l[fin[y]].End })
+	if len(fin) > excess {
+		fin = fin[:excess]
+	}
+	drop := make(map[int]bool, len(fin))
+	for _, i := range fin {
+		drop[i] = true
+	}
+	out := make([]Subagent, 0, MaxSubagents)
+	for i, a := range l {
+		if !drop[i] {
+			out = append(out, a)
+		}
+	}
+	return out[:min(len(out), MaxSubagents)]
 }
 
 // EncodeSubagents gives "" for an empty list, which `admiral hook` unsets the option for.
@@ -100,5 +108,5 @@ func DecodeSubagents(s string) []Subagent {
 		seen[a.ID] = true
 		out = append(out, a)
 	}
-	return TrimSubagents(out, -1)
+	return TrimSubagents(out)
 }

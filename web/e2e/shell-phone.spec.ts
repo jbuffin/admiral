@@ -158,6 +158,13 @@ test('on the phone, the launch form fits, a ship takes a message by button, its 
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await rowLink(page, chat).tap();
   await expect(messageBox(page)).toBeEnabled();
+  // Every view tab and the Agents count are on screen at first sight, with no swipe.
+  const agentsTab = viewTab(page, 'Agents');
+  await expect(agentsTab.locator('.tab-count')).toBeVisible();
+  for (const target of [agentsTab, agentsTab.locator('.tab-count')]) {
+    const box = (await target.boundingBox())!;
+    expect(box.x + box.width, 'the Agents tab ends on screen').toBeLessThanOrEqual(page.viewportSize()!.width);
+  }
   await messageBox(page).fill('Please rebase onto main');
   await sendButton(page).tap();
   await expect(viewPanel(page).getByText('Please rebase onto main', { exact: true })).toHaveCount(1);
