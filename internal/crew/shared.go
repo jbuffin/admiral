@@ -25,8 +25,8 @@ const maxIntDigits = 4300
 
 var (
 	repoSegmentPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
-	commitPattern  = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	sha256Pattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	commitPattern      = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	sha256Pattern      = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 // Shared is where a member came from, read from its sidecar.
