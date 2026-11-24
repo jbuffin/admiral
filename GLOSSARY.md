@@ -260,15 +260,15 @@ A named, reusable teammate definition in a fleet or repo: its role, skills, inst
 _Avoid_: agent, persona, crew type
 
 **Share repo**:
-A public GitHub repo a publisher owns, with one crew member file per member in `crew/<name>.md` and a README. Share on the Crew page commits one member's file to it through the fleet's `gh`, after the engineer reads the exact bytes. A fleet remembers its share repo, and can publish only once the engineer turns crew sharing on for it.
+A public GitHub repo on github.com a publisher owns, with one crew member file per member in `crew/<name>.md` and a README. Share on the Crew page commits one member's file to it through the fleet's `gh`, after the engineer reads the exact bytes and the engineer's `gitleaks` scans them. A fleet remembers its share repo, and can publish only once the engineer turns crew sharing on for it. A member is **published** when its file is in the share repo's `crew/` listing; **Unpublish** deletes that file from the repo.
 _Avoid_: registry, marketplace, crew pack
 
 **Crew source**:
-A public repo a fleet browses for crew members to import, by its `crew/` folder. Any share repo is one. A single member can also be imported from a ref (`<owner>/<repo>/<name>[@<ref>]`) without adding its repo as a source.
+A public repo a fleet browses for crew members to import, by its `crew/` folder. Any share repo is one. A single member can also be imported from a ref (`<owner>/<repo>/<name>[@<ref>]`) without adding its repo as a source. Importing works whether or not crew sharing is on.
 _Avoid_: feed, remote, upstream (for the repo)
 
 **Shared member**:
-A fleet crew member imported from a crew source. Its file is an ordinary member file; its provenance (repo, path, pinned commit, content hash) is in a sidecar beside it, `<name>.shared.json`, which no resolver reads. It stays pinned to that commit until the engineer applies an update after reading its diff. Once its file is edited here it is **detached**: it stays in the fleet but gets no updates.
+A fleet crew member imported from a crew source. Its file is an ordinary member file; its provenance (repo, path, pinned commit, content hash) is in a sidecar beside it, `<name>.shared.json`, whose schema Commodore defines and which no resolver reads as a member. Commodore and Admiral both show it as "shared by" its publisher. It stays pinned to that commit until the engineer applies an update (any change to its file on the source's default branch) after reading its diff. Once its file is edited here it is **detached**: it stays in the fleet but gets no updates. A shared member can't be shared on; **Make mine** removes its sidecar and makes it the engineer's own.
 _Avoid_: installed member, remote member, synced member
 
 **Mission**:
