@@ -66,10 +66,11 @@ func readSidecar(dir, layerReal, stem string, memberRaw []byte) (*Shared, error)
 	if err != nil {
 		return nil, sidecarProblem("sidecar can't be read: " + strerror(err))
 	}
-	return parseSidecar(raw, memberRaw)
+	return ParseSidecar(raw, memberRaw)
 }
 
-func parseSidecar(raw, memberRaw []byte) (*Shared, error) {
+// ParseSidecar reads sidecar bytes against the member file's bytes; a problem names the rule it breaks.
+func ParseSidecar(raw, memberRaw []byte) (*Shared, error) {
 	if !utf8.Valid(raw) {
 		return nil, sidecarProblem("sidecar is not valid UTF-8")
 	}

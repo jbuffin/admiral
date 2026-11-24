@@ -425,7 +425,7 @@ func TestCanonicalBytesDropUnknownFieldsAndAdHocMarks(t *testing.T) {
 	run := "run-1"
 	m.AdHoc, m.AdHocRun = true, &run
 	got := string(crewapi.CanonicalMemberBytes(m))
-	if !strings.HasPrefix(got, "---\nname: bosun\nrole: triager\n") || !strings.Contains(got, "Do the work.") {
+	if !strings.HasPrefix(got, "---\nname: bosun\nrole: \"triager\"\n") || !strings.Contains(got, "Do the work.") {
 		t.Fatalf("canonical bytes = %q, want the member's name, role and body", got)
 	}
 	for _, banned := range []string{"x-extra", "ad-hoc"} {

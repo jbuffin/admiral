@@ -291,7 +291,7 @@ func (s *Service) serveDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := os.Remove(filepath.Join(dir, name+".md")); err != nil {
+	if err := removeMemberAndSidecar(dir, name); err != nil {
 		refuse(w, err)
 		return
 	}
@@ -353,6 +353,13 @@ func (s *Service) serveRename(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "a crew member named "+req.To+" is already listed")
 		return
 	}
+	if taken, err := SidecarPresent(dir, req.To); err != nil {
+		refuse(w, err)
+		return
+	} else if taken {
+		writeError(w, http.StatusConflict, req.To+crew.SidecarSuffix+" already exists; nothing changed")
+		return
+	}
 	raw, _, err := readRegular(filepath.Join(dir, name+".md"))
 	if err != nil {
 		refuse(w, err)
@@ -361,6 +368,11 @@ func (s *Service) serveRename(w http.ResponseWriter, r *http.Request) {
 	data := renamed(raw, req.To)
 	if _, ferr := crew.CheckFile(data, req.To); ferr != nil {
 		writeError(w, http.StatusConflict, "the file can't be renamed: "+fieldMessage(ferr.Field, ferr.Message))
+		return
+	}
+	move, err := prepareSidecarMove(dir, name, raw, data)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 	var from, to string
@@ -395,7 +407,14 @@ func (s *Service) serveRename(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := os.Remove(filepath.Join(dir, name+".md")); err != nil {
+	if move != nil {
+		if err := writeAtomic(dir, sidecarFile(req.To), move.data); err != nil {
+			_ = os.Remove(filepath.Join(dir, req.To+".md"))
+			refuse(w, err)
+			return
+		}
+	}
+	if err := removeMemberAndSidecar(dir, name); err != nil {
 		refuse(w, err)
 		return
 	}

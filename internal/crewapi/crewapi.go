@@ -37,6 +37,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/fleets/{key}/crew/members/{name}", s.serveDelete)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/members/{name}/customize", s.serveCustomize)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/members/{name}/rename", s.serveRename)
+	mux.HandleFunc("POST /api/fleets/{key}/crew/members/{name}/make-mine", s.serveMakeMine)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/notes", s.serveNotes)
 }
 
@@ -112,17 +113,20 @@ type notesView struct {
 }
 
 type memberView struct {
-	Name         string    `json:"name"`
-	Role         string    `json:"role"`
-	BasedOn      *string   `json:"based-on"`
-	Skills       []string  `json:"skills"`
-	Model        *string   `json:"model"`
-	Harness      *string   `json:"harness"`
-	PickMeWhen   string    `json:"pick-me-when"`
-	Instructions string    `json:"instructions"`
-	Layer        string    `json:"layer"`
-	Customized   bool      `json:"customized"`
-	Notes        notesView `json:"notes"`
+	Name         string       `json:"name"`
+	Role         string       `json:"role"`
+	BasedOn      *string      `json:"based-on"`
+	Skills       []string     `json:"skills"`
+	Model        *string      `json:"model"`
+	Harness      *string      `json:"harness"`
+	PickMeWhen   string       `json:"pick-me-when"`
+	Instructions string       `json:"instructions"`
+	Layer        string       `json:"layer"`
+	Customized   bool         `json:"customized"`
+	Notes        notesView    `json:"notes"`
+	Shared       *crew.Shared `json:"shared"`
+	// SidecarUnreadable is true when the member's sidecar is there but can't be used.
+	SidecarUnreadable bool `json:"sidecar_unreadable"`
 }
 
 type unclaimedView struct {
@@ -162,7 +166,8 @@ func (s *Service) serveCrew(w http.ResponseWriter, r *http.Request) {
 	for _, m := range res.Members {
 		listed[m.Name] = true
 		v := memberView{m.Name, m.Role, m.BasedOn, m.Skills, m.Model, m.Harness, m.PickMeWhen, m.Instructions, m.Layer,
-			m.Layer == crew.LayerFleet && builtIns[m.Name].Name != "", notesView{[]string{}, map[string][]string{}}}
+			m.Layer == crew.LayerFleet && builtIns[m.Name].Name != "", notesView{[]string{}, map[string][]string{}},
+			m.Shared, unreadableSidecar(warns, m)}
 		if memoryOK && m.Role != crew.FixChecker {
 			v.Notes.Fleet, v.Notes.Repos = crew.MemberNotes(memory, m.Name, &out.Warnings)
 		}
@@ -172,6 +177,15 @@ func (s *Service) serveCrew(w http.ResponseWriter, r *http.Request) {
 		out.Unclaimed = unclaimed(memory, listed, &out.Warnings)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func unreadableSidecar(warns []crew.Diagnostic, m crew.Member) bool {
+	for _, d := range warns {
+		if d.Code == "shared-unreadable" && d.Layer == m.Layer && d.File != nil && *d.File == m.Name+crew.SidecarSuffix {
+			return true
+		}
+	}
+	return false
 }
 
 // memoryDir reports whether the memory directory can be read, with a warning for one that is a link or a file.
