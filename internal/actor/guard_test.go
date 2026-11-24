@@ -324,6 +324,25 @@ func TestAnActorCannotAnswerAnAllowRuleProposal(t *testing.T) {
 	}
 }
 
+func TestAnActorCannotPublishOrUnpublishCrewOrCreateTheShareRepo(t *testing.T) {
+	routes := []struct{ method, path string }{
+		{"GET", "/fleets/personal/crew/sharing"},
+		{"POST", "/fleets/personal/crew/sharing/repo"},
+		{"POST", "/fleets/personal/crew/members/bosun/share/preview"},
+		{"POST", "/fleets/personal/crew/members/bosun/share"},
+		{"GET", "/fleets/personal/crew/published/bosun"},
+		{"DELETE", "/fleets/personal/crew/published/bosun"},
+	}
+	for _, prefix := range []string{"/api", "/api/v1"} {
+		for _, rt := range routes {
+			r := newRig(t)
+			if code := r.do(rt.method, prefix+rt.path, "", "tok-personal", local).Code; code != 403 || r.reached != 0 {
+				t.Errorf("%s %s%s as AdmiralBot: code %d, reached %d; want 403 and the handler not reached", rt.method, prefix, rt.path, code, r.reached)
+			}
+		}
+	}
+}
+
 func TestAnActorCannotMakeACrewMemberItsOwn(t *testing.T) {
 	for _, prefix := range []string{"/api", "/api/v1"} {
 		r := newRig(t)

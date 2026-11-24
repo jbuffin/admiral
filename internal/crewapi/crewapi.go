@@ -13,9 +13,11 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/crew"
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/judge"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/skillindex"
@@ -26,9 +28,14 @@ type Service struct {
 	Config *config.Manager
 	// Judge makes the draft call; nil means judge.Run.
 	Judge func(context.Context, judge.Choice, judge.Call) (judge.Reply, error)
+	// GitHub returns the fleet's client; nil, or a nil result, means the fleet has no GitHub source.
+	GitHub func(cfg *config.Config, fleet string) *github.Client
+	// ScanTimeout bounds one gitleaks run; zero means the runner's default.
+	ScanTimeout time.Duration
 }
 
 func (s *Service) Routes(mux *http.ServeMux) {
+	s.publishRoutes(mux)
 	mux.HandleFunc("GET /api/fleets/{key}/crew", s.serveCrew)
 	mux.HandleFunc("GET /api/fleets/{key}/crew/skills", s.serveSkills)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/draft", s.serveDraft)
