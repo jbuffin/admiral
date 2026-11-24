@@ -728,4 +728,3 @@ func TestAPublishedFileOverSixtyFourKiBIsRefusedBeforeItsContentIsDecoded(t *tes
 		t.Errorf("GET published = %d %v, want a refusal after one contents call and no bytes", status, out)
 	}
 }
-
