@@ -140,8 +140,12 @@ func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
 	}
 	wantState(shipPane, "the ship after SubagentStart", "needs_you", "stop")
 	hook(shipPane, "SubagentStop", `{"hook_event_name":"SubagentStop","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","background_tasks":[]}`)
-	if raw := opt(shipPane, "@admiral-subagents"); raw != "" {
-		t.Errorf("after SubagentStop @admiral-subagents = %q, want it unset", raw)
+	l = subs()
+	if len(l) != 1 || l[0]["id"] != "a0f790cb4a518e0f9" {
+		t.Fatalf("after SubagentStop @admiral-subagents = %v, want the entry kept", l)
+	}
+	if _, err := time.Parse(time.RFC3339, l[0]["end"]); err != nil {
+		t.Errorf("after SubagentStop end %q is not RFC 3339: the entry should be marked finished", l[0]["end"])
 	}
 	wantState(shipPane, "the ship after SubagentStop", "needs_you", "stop")
 }

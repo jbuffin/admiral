@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -65,8 +66,17 @@ func TestHookSubagentList(t *testing.T) {
 		}
 		return out
 	}
+	// A new entry is stored with its kind.
+	withKind := func(l []sessionhost.Subagent, id, typ, kind string) []sessionhost.Subagent {
+		var a sessionhost.Subagent
+		raw := fmt.Sprintf(`{"id":%q,"type":%q,"start":%q,"kind":%q}`, id, typ, t1, kind)
+		if err := json.Unmarshal([]byte(raw), &a); err != nil {
+			t.Fatal(err)
+		}
+		return append(l, a)
+	}
 	with := func(l []sessionhost.Subagent, id, typ string) []sessionhost.Subagent {
-		return append(l, sessionhost.Subagent{ID: id, Type: typ, Start: t1})
+		return withKind(l, id, typ, "subagent")
 	}
 	var full []sessionhost.Subagent
 	for i := 0; i < 64; i++ {
@@ -93,28 +103,18 @@ func TestHookSubagentList(t *testing.T) {
 		// Claude Code.
 		{"claude start adds", "claude", "SubagentStart", claudeStart, nil, with(nil, cID, "Explore")},
 		{"claude start for a listed id adds nothing and keeps its start", "claude", "SubagentStart", claudeStart, list(cID + ":Explore"), list(cID + ":Explore")},
-		{"claude stop of a listed id removes it despite its own background_tasks", "claude", "SubagentStop", claudeStop, list(cID+":Explore", "b1:Plan"), list("b1:Plan")},
 		{"claude internal agent stop (unknown id, no type) leaves the list", "claude", "SubagentStop", claudeInt, list(cID + ":Explore"), list(cID + ":Explore")},
-		{"claude Stop replaces the list from running subagents, keeping known starts", "claude", "Stop",
-			`{"hook_event_name":"Stop","background_tasks":[{"id":"` + cID + `","type":"subagent","status":"running","agent_type":"Explore"},{"id":"c2","type":"subagent","status":"running","agent_type":"Plan"},{"id":"sh1","type":"shell","status":"running","command":"sleep 99"},{"id":"d3","type":"subagent","status":"completed","agent_type":"Plan"}],"session_crons":[]}`,
-			list("gone:Plan", cID+":Explore"), with(list(cID+":Explore"), "c2", "Plan")},
 		{"claude Stop lists a repeated id once", "claude", "Stop",
 			`{"background_tasks":[{"id":"c2","type":"subagent","status":"running","agent_type":"Plan"},{"id":"c2","type":"teammate","status":"running","agent_type":"Plan"}]}`, nil, with(nil, "c2", "Plan")},
 		{"claude Stop keeps a running teammate", "claude", "Stop",
-			`{"background_tasks":[{"id":"m1","type":"teammate","status":"running","agent_type":"general-purpose"}]}`, nil, with(nil, "m1", "general-purpose")},
-		{"claude Stop with only a shell empties the list", "claude", "Stop",
-			`{"background_tasks":[{"id":"sh1","type":"shell","status":"running"}]}`, list(cID + ":Explore"), nil},
-		{"unknown harness: background_tasks [] is Claude's Stop and empties", "", "Stop", `{"background_tasks":[]}`, list(cID + ":Explore"), nil},
+			`{"background_tasks":[{"id":"m1","type":"teammate","status":"running","agent_type":"general-purpose"}]}`, nil, withKind(nil, "m1", "general-purpose", "teammate")},
 		{"unknown harness: a Stop with no background_tasks is Codex's and leaves the list", "", "Stop", `{"turn_id":"01a15222-ed87"}`, list(cID + ":Explore"), list(cID + ":Explore")},
 		// Codex.
 		{"codex start adds", "codex", "SubagentStart", codexStart, list("b1:default"), with(list("b1:default"), xID, "default")},
 		{"codex Stop leaves the list alone", "codex", "Stop", `{"turn_id":"01a15222-ed87","last_assistant_message":"done"}`, list(xID + ":default"), list(xID + ":default")},
 		// Copilot.
 		{"copilot subagentStart adds", "copilot", "subagentStart", copStart, nil, with(nil, pID, "general-purpose")},
-		{"copilot subagentStop of a listed id removes it", "copilot", "subagentStop", copStop, list(pID+":general-purpose", "b1:t"), list("b1:t")},
-		{"copilot lead agentStop clears all", "copilot", "agentStop", `{"stopReason":"end_turn","stop_hook_active":false}`, list(pID+":general-purpose", "b1:t"), nil},
 		{"copilot subagent agentStop leaves the list", "copilot", "agentStop", `{"stopReason":"end_turn","agentId":"` + pID + `","agentType":"general-purpose","parentAgentId":"796c5372"}`, list(pID + ":general-purpose"), list(pID + ":general-purpose")},
-		{"copilot lead userPromptSubmitted clears all", "copilot", "userPromptSubmitted", `{"prompt":"go"}`, list(pID + ":general-purpose"), nil},
 		// What reaches tmux.
 		{"an unsafe id is dropped", "claude", "SubagentStart", `{"agent_id":"x;kill-server","agent_type":"Explore"}`, list("b1:Plan"), list("b1:Plan")},
 		{"an unsafe type is stored as empty", "claude", "SubagentStart", `{"agent_id":"ok1","agent_type":"Ex plore"}`, nil, with(nil, "ok1", "")},

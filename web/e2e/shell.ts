@@ -746,9 +746,17 @@ export async function holds(ok: () => boolean, what: string, ms = 1500) {
 }
 
 /** The ship view's tabs, and the link that opens the view from the ship's row. */
-export const viewTab = (page: Page, name: 'Conversation' | 'Terminal' | 'PR') => page.getByRole('tab', { name: new RegExp(`^${name}(\\s*\\d+)?$`) });
+export const viewTab = (page: Page, name: 'Conversation' | 'Terminal' | 'PR' | 'Agents') => page.getByRole('tab', { name: new RegExp(`^${name}(\\s*\\d+)?$`) });
 export const rowLink = (page: Page, ship: LaunchedShip) =>
   page.getByRole('main').getByRole('listitem').filter({ hasText: ship.name }).getByRole('link', { name: new RegExp(ship.name) });
+/** The cues that leave a Claude ship with a running and a finished subagent and a running and a finished background shell. */
+export const AGENT_CUES = [
+  'event SubagentStart {"hook_event_name":"SubagentStart","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore"}',
+  'event SubagentStart {"hook_event_name":"SubagentStart","agent_id":"b1c2d3e4f5a6b7c8d","agent_type":"Plan"}',
+  'event SubagentStop {"hook_event_name":"SubagentStop","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","background_tasks":[]}',
+  'event Stop {"hook_event_name":"Stop","background_tasks":[{"id":"bdevsrv1","type":"shell","status":"running","description":"dev server","command":"sleep 99"},{"id":"bdone001","type":"shell","status":"completed","description":"build","command":"make"}],"session_crons":[]}',
+];
+
 export const viewPanel = (page: Page) => page.getByRole('tabpanel');
 export const shipViewUrl = (a: Admiral, ship: LaunchedShip) => new RegExp(`/app/ships/${encodeURIComponent(ship.session)}\\?(.*&)?fleet=zulu`);
 

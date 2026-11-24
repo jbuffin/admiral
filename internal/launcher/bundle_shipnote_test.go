@@ -42,15 +42,21 @@ func settingsJSON(t *testing.T, v any) []byte {
 func wantShipNoteAtSessionStart(t *testing.T, where string, raw []byte) {
 	t.Helper()
 	groups := hookEvents(t, raw)["SessionStart"]
-	if len(groups) != 1 || len(groups[0].Hooks) != 1 {
-		t.Fatalf("%s SessionStart = %+v; want one group with one hook", where, groups)
+	cmds := map[string]int{}
+	for _, g := range groups {
+		if g.Matcher != nil {
+			t.Errorf("%s SessionStart matcher = %q; want none, so every source runs it, compaction too", where, *g.Matcher)
+		}
+		for _, h := range g.Hooks {
+			if h.Type != "command" {
+				t.Errorf("%s SessionStart hook = %+v; want a command", where, h)
+			}
+			cmds[h.Command]++
+		}
 	}
-	g := groups[0]
-	if g.Matcher != nil {
-		t.Errorf("%s SessionStart matcher = %q; want none, so every source runs it, compaction too", where, *g.Matcher)
-	}
-	if h := g.Hooks[0]; h.Type != "command" || h.Command != "admiral ship-note" {
-		t.Errorf("%s SessionStart hook = %+v; want command admiral ship-note", where, h)
+	// The ship-note stays state-free; the list's clearing is its own hook so it can't ride on one that writes.
+	if len(cmds) != 2 || cmds["admiral ship-note"] != 1 || cmds["admiral hook ShipSessionStart"] != 1 {
+		t.Errorf("%s SessionStart commands = %v; want admiral ship-note and admiral hook ShipSessionStart, once each", where, cmds)
 	}
 	// admiral hook SessionStart would rebind the ship's transcript to a source other than launch.
 	if strings.Contains(string(raw), "admiral hook SessionStart") {

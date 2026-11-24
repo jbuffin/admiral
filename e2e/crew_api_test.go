@@ -36,13 +36,22 @@ type apiSub struct {
 	Start string `json:"start"`
 }
 
+type apiAgent struct {
+	ID    string `json:"id"`
+	Type  string `json:"type"`
+	Start string `json:"start"`
+	Kind  string `json:"kind"`
+	End   string `json:"end"`
+}
+
 type apiShip struct {
 	shipJSON
-	Reason    string    `json:"reason"`
-	StopSince string    `json:"stop_since"`
-	Crew      []apiCrew `json:"crew"`
-	Subagents []apiSub  `json:"subagents"`
-	CrewLive  int       `json:"crew_live"`
+	Reason    string     `json:"reason"`
+	StopSince string     `json:"stop_since"`
+	Crew      []apiCrew  `json:"crew"`
+	Subagents []apiSub   `json:"subagents"`
+	Agents    []apiAgent `json:"agents"`
+	CrewLive  int        `json:"crew_live"`
 	raw       map[string]json.RawMessage
 	rawAll    string
 }
@@ -226,6 +235,7 @@ const (
 	hookStop   = `{"hook_event_name":"Stop","background_tasks":[],"session_crons":[]}`
 	hookPerm   = `{"hook_event_name":"PermissionRequest","tool_name":"Bash"}`
 	hookSubOne = `{"hook_event_name":"SubagentStart","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore"}`
+	hookSub2   = `{"hook_event_name":"SubagentStart","agent_id":"b1c2d3e4f5a6b7c8d","agent_type":"Plan"}`
 	hookSubEnd = `{"hook_event_name":"SubagentStop","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","background_tasks":[]}`
 )
 
@@ -327,13 +337,16 @@ func TestCrewAPI_Shape(t *testing.T) {
 		} else if _, err := time.Parse(time.RFC3339, s.Subagents[0].Start); err != nil {
 			t.Errorf("%s: subagent start %q is not RFC 3339", where, s.Subagents[0].Start)
 		}
+		if len(s.Agents) != 1 || s.Agents[0].ID != "a0f790cb4a518e0f9" || s.Agents[0].Kind != "subagent" || s.Agents[0].End != "" {
+			t.Errorf("%s: agents = %+v, want the one running subagent with kind subagent and no end", where, s.Agents)
+		}
 		if s.CrewLive != 2 {
 			t.Errorf("%s: crew_live = %d, want 2", where, s.CrewLive)
 		}
 	}
 	emptyList := func(t *testing.T, where string, s apiShip) {
 		t.Helper()
-		for k, want := range map[string]string{"crew": "[]", "subagents": "[]", "crew_live": "0"} {
+		for k, want := range map[string]string{"crew": "[]", "subagents": "[]", "agents": "[]", "crew_live": "0"} {
 			if !rawIs(s, k, want) {
 				t.Errorf("%s: %s = %s, want %s on the wire (present, not null)", where, k, s.raw[k], want)
 			}
@@ -362,6 +375,54 @@ func TestCrewAPI_Shape(t *testing.T) {
 			t.Errorf("after SubagentStop crew = %v, want it unchanged", crewNames(got))
 		}
 		w.sub(t).waitShip(a.Session, "an empty subagents list over GET", func(s apiShip) bool { return rawIs(s, "subagents", "[]") })
+	})
+
+	// The stopped subagent from the subtest above is finished, not gone; a second one runs and a Stop lists two shells.
+	t.Run("agents hold finished subagents and background shells while subagents holds only running ones", func(t *testing.T) {
+		w := w.sub(t)
+		w.hookAt(aPane, "SubagentStart", hookSub2)
+		w.hookAt(aPane, "Stop", `{"hook_event_name":"Stop","stop_hook_active":false,"background_tasks":[`+
+			`{"id":"b1c2d3e4f5a6b7c8d","type":"subagent","status":"running","agent_type":"Plan"},`+
+			`{"id":"bdevsrv1","type":"shell","status":"running","description":"dev server","command":"sleep 99"},`+
+			`{"id":"bdone001","type":"shell","status":"completed","description":"build","command":"make"}],"session_crons":[]}`)
+		got := w.waitShip(a.Session, "a background shell in agents", func(s apiShip) bool {
+			for _, ag := range s.Agents {
+				if ag.ID == "bdevsrv1" {
+					return true
+				}
+			}
+			return false
+		})
+		byID := map[string]apiAgent{}
+		for _, ag := range got.Agents {
+			byID[ag.ID] = ag
+			if _, err := time.Parse(time.RFC3339, ag.Start); err != nil {
+				t.Errorf("agent %s start %q is not RFC 3339", ag.ID, ag.Start)
+			}
+		}
+		if len(got.Agents) != 4 {
+			t.Errorf("agents = %+v, want 4 entries: a finished and a running subagent, a running and a finished shell", got.Agents)
+		}
+		if a := byID["a0f790cb4a518e0f9"]; a.Kind != "subagent" || a.Type != "Explore" || a.End == "" {
+			t.Errorf("stopped subagent = %+v, want kind subagent, type Explore and an end", a)
+		}
+		if a := byID["b1c2d3e4f5a6b7c8d"]; a.Kind != "subagent" || a.Type != "Plan" || a.End != "" {
+			t.Errorf("running subagent = %+v, want kind subagent, type Plan and no end", a)
+		}
+		if a := byID["bdevsrv1"]; a.Kind != "shell" || a.End != "" {
+			t.Errorf("running shell = %+v, want kind shell and no end", a)
+		}
+		if a := byID["bdone001"]; a.Kind != "shell" || a.End == "" || a.End != a.Start {
+			t.Errorf("finished shell = %+v, want kind shell, started and ended together (first seen finished)", a)
+		}
+		if len(got.Subagents) != 1 || got.Subagents[0].ID != "b1c2d3e4f5a6b7c8d" {
+			t.Errorf("subagents = %+v, want only the running subagent: the classic view lists no finished entry and no shell", got.Subagents)
+		}
+		for _, leak := range []string{"sleep 99", "dev server", "make"} {
+			if strings.Contains(got.rawAll, `"`+leak+`"`) {
+				t.Errorf("the ship on the wire carries %q from the hook payload: %s", leak, got.rawAll)
+			}
+		}
 	})
 }
 
@@ -395,7 +456,9 @@ func TestCrewAPI_SubagentReaderRules(t *testing.T) {
 	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	dead := w.waitShip(s.Session, "the ship anchored with an empty subagents list", func(s apiShip) bool { return s.Status == "anchored" && rawIs(s, "subagents", "[]") })
+	dead := w.waitShip(s.Session, "the ship anchored with an empty subagents list", func(s apiShip) bool {
+		return s.Status == "anchored" && rawIs(s, "subagents", "[]") && rawIs(s, "agents", "[]")
+	})
 	if w.opt(pane, "@admiral-subagents") == "" {
 		t.Errorf("the dead pane's @admiral-subagents was cleared; the test needs it set (%s)", dead.rawAll)
 	}

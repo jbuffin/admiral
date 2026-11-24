@@ -1,9 +1,9 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { seedOrders } from './orders';
 import { join } from 'node:path';
-import { HOME, WORK, boatReceived, chip, expectSeededTurn, interruptButton, launchCrew, LAUNCH_MODELS, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
+import { AGENT_CUES, HOME, WORK, boatReceived, chip, expectSeededTurn, interruptButton, launchCrew, LAUNCH_MODELS, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -152,7 +152,8 @@ test('on the phone, the launch form fits, a ship takes a message by button, its 
   await launchFromTheShell(page, admiral, (l) => l.tap(), { phone: true });
 
   // On the phone the box sends with its button, Interrupt and Stop ship stay reachable, and Stop ship asks first.
-  const chat = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', 'reply Aye, rebasing now'] });
+  const chat = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', ...AGENT_CUES, 'reply Aye, rebasing now'] });
+  await expect.poll(() => existsSync(join(admiral.home, 'rec', chat.session, 'cues-done'))).toBe(true);
   setState(admiral, chat, 'working');
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await rowLink(page, chat).tap();
@@ -170,7 +171,16 @@ test('on the phone, the launch form fits, a ship takes a message by button, its 
     expect(box.width, `${name} is wide enough to tap`).toBeGreaterThanOrEqual(44);
   }
 
+  // The Agents tab fits the phone and shows the subagents and background shells.
+  await viewTab(page, 'Agents').tap();
+  await expect(viewPanel(page).getByRole('listitem').filter({ hasText: 'Plan' })).toContainText(/running/i);
+  await expect(viewPanel(page).getByRole('listitem').filter({ hasText: 'bdone001' })).toContainText(/finished/i);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await viewTab(page, 'Conversation').tap();
+
   // The flotilla fits the phone, and a picked boat takes the conversation and the box.
+  // A boat without cues of its own plays the cue file left by the ship, so put back the one it needs.
+  writeFileSync(join(admiral.home, 'cue'), 'bracketedpaste\nreply Aye, rebasing now\n');
   await launchCrew(admiral, chat, 'rev', 'reviewer');
   await seedBoatTranscript(admiral, chat, 'rev', [line.user('Review the parser'), line.assistant('Boat found two parser bugs')]);
   await expect(chip(page, /reviewer/)).toBeVisible();
