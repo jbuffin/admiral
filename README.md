@@ -1,12 +1,66 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/images/hero-light.png">
-  <img alt="Admiral: launch coding agents by dragging a task onto a dock, then watch every session sail as a ship you can board" src="docs/images/hero-light.png" width="1280">
+  <img alt="Admiral: a dashboard with the name and tagline above a ship's conversation, showing its plan, its crew and its tabs" src="docs/images/hero-light.png" width="1280">
 </picture>
 
 # Admiral
 
-A dashboard for running coding agents (Claude Code, Codex CLI, GitHub Copilot CLI) in the background. Drag a task onto a harness's dock to launch a session, watch every session sail as a ship, and tap one to attach to its terminal. It works from your Mac, iPad or phone.
+Admiral runs coding agents (Claude Code, Codex CLI, GitHub Copilot CLI) in the background on your Mac and gives you one dashboard to supervise them. Each running agent is a ship. You launch one, leave it working, and come back when it needs you: to answer a question, review a pull request or read what it did. It works from your Mac, iPad or phone.
+
+Most agent tools stop at one agent in one window. Admiral is built for many at once: agent teams that pair a lead with a crew, a queue of work they pick up, and a place where every question lands. Admiral itself runs on your Mac, next to your repos and your harness sign-ins.
+
+## What you can do
+
+### See every ship at once
+
+Ships are grouped by what they need from you: the ones that are blocked on you come first, then the ones underway, then the ones whose pull request is waiting. Each row shows the harness, the repo and the ship's latest words. Fleets keep different projects apart.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/ships-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/ships-light.png">
+  <img alt="The Ships view: one ship needs an answer and two are underway, each row showing its harness, repo and latest message" src="docs/images/ships-light.png" width="900">
+</picture>
+
+### Answer from one inbox
+
+When a ship asks a question or finishes work for review, it lands in the Inbox. Pick an option, add a note and send; the answer goes back to the ship's session. Keyboard shortcuts move through the list, and everything works with touch on an iPad.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/inbox-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/inbox-light.png">
+  <img alt="The Inbox: a list of questions from several ships and, on the right, one question with options to choose from and a Send answers button" src="docs/images/inbox-light.png" width="900">
+</picture>
+
+### Read the conversation, not the scrollback
+
+A ship's conversation shows what the agent said and did, with its plan, code and tool use laid out as formatted text. The Terminal tab is still there when you want to attach, and the PR tab follows the pull request the ship opened.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/conversation-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/conversation-light.png">
+  <img alt="A ship's Conversation tab showing the task, a numbered plan with code names, and a working status" src="docs/images/conversation-light.png" width="900">
+</picture>
+
+### Run a crew behind the lead
+
+A ship can call on crew members, each with a role such as implementer, test writer, reviewer or scribe. The Agents tab lists the crew boats, subagents and background tasks working under the lead, so you can see who is doing what.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/agents-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/agents-light.png">
+  <img alt="The Agents tab of a ship, listing four crew boats with their roles and tasks" src="docs/images/agents-light.png" width="900">
+</picture>
+
+### Drive a software factory
+
+A campaign takes a tracked issue with its sub-issues and works through them: it sorts them into ready, claimed, blocked and done, lets you start a ship on any ready one, and shows progress as they land. Routines launch work on a schedule, and autopilot lets a ship carry on without asking at every step. Admiral never merges a pull request and never edits your issue tree; those stay with you.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/campaign-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/campaign-light.png">
+  <img alt="A campaign view with a progress bar and its issues grouped as ready, claimed, blocked and done" src="docs/images/campaign-light.png" width="900">
+</picture>
 
 ## Requirements
 
