@@ -35,11 +35,13 @@ test('a member is published to a new share repo, republished with its diff, and 
   answer('f-put', 'PUT', FILE, COMMIT);
   answer('g-del', 'DELETE', FILE, COMMIT);
 
-  await admiral.start({ env: { ...gh.env, PATH: `${fakeGitleaks}:${gh.env.PATH}`, FAKEGITLEAKS_DIR: join(admiral.home, 'fakegitleaks') } });
+  const leaks = join(admiral.home, 'fakegitleaks');
+  mkdirSync(leaks, { recursive: true });
+  writeFileSync(join(leaks, 'version'), '8.21.2\n');
+  await admiral.start({ env: { ...gh.env, PATH: `${fakeGitleaks}:${gh.env.PATH}`, FAKEGITLEAKS_DIR: leaks } });
   const watch = watchPage(page, admiral.url);
   const main = page.getByRole('main');
   const localPath = join(admiral.home, 'fleets', 'zulu', 'crew', 'bosun.md');
-  const before = readFileSync(localPath, 'utf8');
 
   // Sharing is off: no Share button yet.
   await page.goto(admiral.url + 'app/crew/bosun?fleet=zulu');
@@ -60,7 +62,7 @@ test('a member is published to a new share repo, republished with its diff, and 
 
   // Publish: the fake repo now lists the file, and the badge shows.
   answer('e-listing', 'GET', LISTING, [{ name: 'bosun.md', path: 'crew/bosun.md', type: 'file', sha: 'a'.repeat(40) }]);
-  answer('h-file', 'GET', FILE, { name: 'bosun.md', sha: 'a'.repeat(40), size: 20, encoding: 'base64', content: Buffer.from('published\n').toString('base64') });
+  answer('h-file', 'GET', FILE, { name: 'bosun.md', sha: 'a'.repeat(40), size: 10, encoding: 'base64', content: Buffer.from('published\n').toString('base64') });
   await page.getByRole('button', { name: 'Publish' }).click();
   await expect(page.getByRole('link', { name: /commit/i })).toBeVisible();
   await page.reload();
@@ -78,13 +80,12 @@ test('a member is published to a new share repo, republished with its diff, and 
 
   // Unpublish: confirmed with the exact text; the local member stays.
   answer('e-listing', 'GET', LISTING, {}, 404);
+  const beforeUnpublish = readFileSync(localPath, 'utf8');
   await main.getByRole('button', { name: 'Unpublish' }).click();
   await expect(page.getByText(`Delete \`crew/bosun.md\` from \`${REPO}\`?`, { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Confirm unpublish' }).click();
   await expect(main.getByText('Published')).toHaveCount(0);
-  expect(readFileSync(localPath, 'utf8')).not.toBe('');
-  expect(readFileSync(localPath, 'utf8')).toContain('twice');
-  expect(before).toContain('Pick for rigging.');
+  expect(readFileSync(localPath, 'utf8')).toBe(beforeUnpublish);
 
   expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
