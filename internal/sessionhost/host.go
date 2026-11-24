@@ -135,6 +135,7 @@ type Session struct {
 	Signal     string    // the signal that killed the pane, e.g. "kill"; then there is no exit status
 	DeadTime   time.Time // when the pane died, at tmux's one-second resolution; zero while it lives
 	BellStamp  string    // changes on every bell
+	Activity   time.Time // the @admiral-activity stamp: SessionStart or any hook; zero before the first
 	PaneID     string    // the ship's own pane, so writes never land on a crew boat's
 	// Neither is part of set()'s event diff. Subagents is empty once the ship's pane is dead.
 	Crew      []Crew

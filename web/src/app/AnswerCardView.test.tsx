@@ -50,3 +50,15 @@ test('a prompt Admiral cannot answer shows the terminal card, and its button ope
   fireEvent.click(screen.getByRole('button', { name: 'Open terminal' }));
   expect(openTerminal).toHaveBeenCalledTimes(1);
 });
+
+test('a session that has not started names its folder as plain text, and Open terminal opens the terminal and sends nothing', () => {
+  const fetchSpy = vi.fn();
+  vi.stubGlobal('fetch', fetchSpy);
+  const openTerminal = vi.fn();
+  render(<AnswerCardView card={{ kind: 'not_started', dir: '/work/my_repo_*x*' }} session="card-not-started" openTerminal={openTerminal} />);
+
+  expect(screen.getByText('/work/my_repo_*x*')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Open terminal' }));
+  expect(openTerminal).toHaveBeenCalledTimes(1);
+  expect(fetchSpy).not.toHaveBeenCalled();
+});

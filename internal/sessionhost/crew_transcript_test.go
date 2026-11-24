@@ -3,6 +3,7 @@ package sessionhost
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func transcriptRow(session, crew, transcript string) string {
@@ -47,5 +48,17 @@ func TestValidCrewTranscriptPath(t *testing.T) {
 		if got := ValidCrewTranscriptPath(c.in); got != c.want {
 			t.Errorf("ValidCrewTranscriptPath(%q) = %v, want %v", c.in, got, c.want)
 		}
+	}
+}
+
+func TestShipRowExposesTheStartedStamp(t *testing.T) {
+	f := make([]string, fixedFields+len(optionNames)+tailFields)
+	f[0] = "ship"
+	tail := fixedFields + len(optionNames)
+	f[tail+1], f[tail+3] = "%1", "2026-11-24T10:00:02Z"
+	got, _ := parseRows([]string{strings.Join(f, sep)}, map[string]bool{"ship": true})
+	want := time.Date(2026, 11, 24, 10, 0, 2, 0, time.UTC)
+	if s := got["ship"]; !s.Activity.Equal(want) {
+		t.Errorf("Activity = %v, want %v", s.Activity, want)
 	}
 }

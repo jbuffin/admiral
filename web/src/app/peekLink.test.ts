@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bridgeSearch, peekKey } from './peekLink';
+import { bridgeSearch, crewFromSearch, peekKey } from './peekLink';
 
 describe('peekKey', () => {
   it('is the queue key of the stop, crew stop or item a path opens', () => {
@@ -16,5 +16,14 @@ describe('bridgeSearch', () => {
     expect(bridgeSearch('alpha')).toBe('?fleet=alpha');
     expect(bridgeSearch('a b', 'terminal')).toBe('?fleet=a%20b&tab=terminal');
     expect(bridgeSearch(undefined)).toBe('');
+  });
+});
+
+describe('a link to a boat’s Terminal tab', () => {
+  it('names the boat beside the tab, and ShipView reads it back', () => {
+    const search = bridgeSearch('alpha', 'terminal', 'mate');
+    expect(search).toBe('?fleet=alpha&tab=terminal&crew=mate');
+    expect(crewFromSearch(search)).toBe('mate');
+    expect(crewFromSearch('?tab=terminal')).toBeNull();
   });
 });

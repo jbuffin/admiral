@@ -398,3 +398,23 @@ func TestAPanickingSinkDoesNotStopTheNextOneHearingTheEvent(t *testing.T) {
 		t.Fatalf("the sink after a panicking one heard %d events, want 2", got)
 	}
 }
+
+func TestAShipThatNeverStartedPushesAsAnAsk(t *testing.T) {
+	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
+	r.w.Ships([]ships.Ship{needsYou("Dory", "not_started")})
+	got := r.rec.Events()
+	if len(got) != 1 || got[0].Outcome != push.Push || got[0].Event.Text != "needs you to finish starting" {
+		t.Errorf("events = %+v, want one Push saying it needs you to finish starting", got)
+	}
+}
+
+func TestACrewBoatThatNeverStartedPushesTaggedPerBoat(t *testing.T) {
+	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
+	lifted := needsYou("Dory", ships.ReasonCrew)
+	lifted.Crew = []ships.CrewBoat{{Name: "mate", Status: "needs_you", Reason: "not_started"}}
+	r.w.Ships([]ships.Ship{lifted})
+	got := r.rec.Events()
+	if len(got) != 1 || got[0].Event.Crew != "mate" || got[0].Event.Text != "mate needs you to finish starting" {
+		t.Errorf("events = %+v, want one for boat mate that needs you to finish starting", got)
+	}
+}

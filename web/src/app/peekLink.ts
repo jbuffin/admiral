@@ -5,7 +5,12 @@ import type { PeekTarget } from './router';
 export const peekKey = (t: PeekTarget): string => (t.merge ? mergeKey(t.session) : t.rereview ? rereviewKey(t.session) : t.item !== undefined ? itemKey(t.session, t.item) : t.crew !== undefined ? crewKey(t.session, t.crew) : stopKey(t.session));
 
 /** The query for a link into the ship's own fleet, and its Terminal tab when asked. */
-export function bridgeSearch(fleetKey: string | undefined, tab?: 'terminal'): string {
+export function bridgeSearch(fleetKey: string | undefined, tab?: 'terminal', _crew?: string): string {
   const parts = [...(fleetKey ? [`fleet=${encodeURIComponent(fleetKey)}`] : []), ...(tab ? [`tab=${tab}`] : [])];
   return parts.length > 0 ? `?${parts.join('&')}` : '';
+}
+
+/** The crew boat a link names, read once when the ship opens. */
+export function crewFromSearch(_search: string): string | null {
+  return null;
 }

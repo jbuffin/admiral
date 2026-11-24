@@ -353,7 +353,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	if sh.Status == "anchored" {
 		sh.StoppedBy = o[sessionhost.OptStoppedBy]
 	}
-	sh.Crew, sh.Agents = crewBoats(sess.Crew), sess.Subagents
+	sh.Crew, sh.Agents = crewBoats(sess.Crew, now), sess.Subagents
 	if sh.Agents == nil {
 		sh.Agents = []sessionhost.Subagent{}
 	}

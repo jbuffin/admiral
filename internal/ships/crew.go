@@ -37,11 +37,17 @@ func HasConversation(harness string) bool {
 	return harness == "claude" || harness == "copilot" || harness == "codex"
 }
 
+// crewStatus is the boat's status and reason as every reader sees them.
+func crewStatus(c sessionhost.Crew, now time.Time) (status, reason string) {
+	return c.State, c.Reason
+}
+
 // crewBoats never returns nil.
-func crewBoats(l []sessionhost.Crew) []CrewBoat {
+func crewBoats(l []sessionhost.Crew, now time.Time) []CrewBoat {
 	out := make([]CrewBoat, 0, len(l))
 	for _, c := range l {
-		b := CrewBoat{Name: c.Name, Harness: c.Harness, Dir: c.Dir, Status: c.State, Reason: c.Reason, Role: c.Role, Launched: c.Launched,
+		st, reason := crewStatus(c, now)
+		b := CrewBoat{Name: c.Name, Harness: c.Harness, Dir: c.Dir, Status: st, Reason: reason, Role: c.Role, Launched: c.Launched,
 			Conversation: HasConversation(c.Harness) && c.Transcript != ""}
 		b.ExitCode, b.ExitSignal = CrewExit(c)
 		if !c.LastActivity.IsZero() {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/launcher"
 )
@@ -61,6 +62,11 @@ func (r *shipNoteRig) wantUntouched(t *testing.T) {
 	if b, err := os.ReadFile(r.tmuxLog); err == nil {
 		t.Errorf("ship-note ran tmux: %q", b)
 	}
+	r.wantNoFiles(t)
+}
+
+func (r *shipNoteRig) wantNoFiles(t *testing.T) {
+	t.Helper()
 	for _, dir := range []string{r.home, r.user} {
 		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 			if err == nil && p != dir {
@@ -100,7 +106,21 @@ func TestShipNoteTellsAShipBothCampaignCommands(t *testing.T) {
 			t.Errorf("note %q does not name %q", note, want)
 		}
 	}
-	r.wantUntouched(t)
+	r.wantNoFiles(t)
+}
+
+func TestShipNoteStampsThatTheSessionStarted(t *testing.T) {
+	r := newShipNoteRig(t, "saltpaw-ii")
+	r.run(t, sessionStartPayload)
+	b, _ := os.ReadFile(r.tmuxLog)
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	const prefix = "set -p -t %7 @admiral-activity "
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], prefix) {
+		t.Fatalf("tmux calls = %q, want one %q<time>", lines, prefix)
+	}
+	if _, err := time.Parse(time.RFC3339, strings.TrimPrefix(lines[0], prefix)); err != nil {
+		t.Errorf("stamp %q is not RFC 3339: %v", lines[0], err)
+	}
 }
 
 func TestShipNoteIsTheSameFixedTextInEveryShip(t *testing.T) {

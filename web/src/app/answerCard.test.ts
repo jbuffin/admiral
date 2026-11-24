@@ -306,3 +306,17 @@ describe('cardFor', () => {
     expect(cardFor(ship, boat('gemini'), ok()).kind).toBe('none');
   });
 });
+
+describe('cardFor: a session that has not started', () => {
+  const none: Conversation = { state: 'none', items: [], more: false };
+  const ship = { session: 's1', harness: 'claude', status: 'needs_you', reason: 'not_started', dir: '/work/teacup', crew: [] } as unknown as Ship;
+
+  it('names the ship folder even though there is no transcript', () => {
+    expect(cardFor(ship, undefined, none)).toEqual({ kind: 'not_started', dir: '/work/teacup' });
+  });
+
+  it('names the picked boat folder, by the boat harness', () => {
+    const boat = { name: 'mate', harness: 'codex', status: 'needs_you', reason: 'not_started', dir: '/work/mate' } as unknown as CrewBoat;
+    expect(cardFor({ ...ship, status: 'needs_you', reason: 'crew' } as Ship, boat, none)).toEqual({ kind: 'not_started', dir: '/work/mate' });
+  });
+});

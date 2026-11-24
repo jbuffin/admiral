@@ -4,6 +4,7 @@ import type { Conversation } from './conversation';
 export type AnswerCard =
   | { kind: 'none' }
   | { kind: 'terminal' }
+  | { kind: 'not_started'; dir: string }
   | { kind: 'permission'; tool: string; reason: string; call?: Item }
   | { kind: 'question'; reason: string; item: string; text: string; options: string[]; descriptions: string[]; questions: CardQuestion[] };
 
