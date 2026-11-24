@@ -259,6 +259,18 @@ _Avoid_: child, worker, sub-ship
 A named, reusable teammate definition in a fleet or repo: its role, skills, instructions, model, optional harness lock, and when to pick it. A fleet's own crew members live in its crew directory, `$ADMIRAL_HOME/fleets/<fleet key>/crew/`, which every ship of the fleet sees as `ADMIRAL_CREW_DIR`. A crew boat is a crew member at work, and a ship can also be launched as one. The engineer adds a crew member to a ship with **Add crew**, which asks the ship's lead to bring the member on.
 _Avoid_: agent, persona, crew type
 
+**Share repo**:
+A public GitHub repo a publisher owns, with one crew member file per member in `crew/<name>.md` and a README. Share on the Crew page commits one member's file to it through the fleet's `gh`, after the engineer reads the exact bytes. A fleet remembers its share repo, and can publish only once the engineer turns crew sharing on for it.
+_Avoid_: registry, marketplace, crew pack
+
+**Crew source**:
+A public repo a fleet browses for crew members to import, by its `crew/` folder. Any share repo is one. A single member can also be imported from a ref (`<owner>/<repo>/<name>[@<ref>]`) without adding its repo as a source.
+_Avoid_: feed, remote, upstream (for the repo)
+
+**Shared member**:
+A fleet crew member imported from a crew source. Its file is an ordinary member file; its provenance (repo, path, pinned commit, content hash) is in a sidecar beside it, `<name>.shared.json`, which no resolver reads. It stays pinned to that commit until the engineer applies an update after reading its diff. Once its file is edited here it is **detached**: it stays in the fleet but gets no updates.
+_Avoid_: installed member, remote member, synced member
+
 **Mission**:
 A saved Commodore mission file. The fleet's missions directory, `$ADMIRAL_HOME/fleets/<fleet key>/missions/`, holds them and every ship of the fleet sees it as `ADMIRAL_MISSIONS_DIR`. Commodore owns the format of the files; Admiral only keeps the directory. A ship's report can propose a mission; it waits in the Inbox, and Keep writes it there.
 
