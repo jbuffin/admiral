@@ -442,8 +442,10 @@ func TestWithNoGitHubSourceEveryImportRouteIs409WithTheConnectTextAndCallsNoGh(t
 				"import": func() (int, map[string]any) {
 					return p.post("/imports", map[string]any{"repo": "hubot/crew", "path": "crew/scout.md", "commit": commitSHA, "sha256": hexSum(scout.text)})
 				},
-				"browse":     func() (int, map[string]any) { return p.getJSON("/sources/hubot/crew") },
-				"add source": func() (int, map[string]any) { return p.put("/sources", map[string]any{"sources": []string{"hubot/crew"}}) },
+				"browse": func() (int, map[string]any) { return p.getJSON("/sources/hubot/crew") },
+				"add source": func() (int, map[string]any) {
+					return p.put("/sources", map[string]any{"sources": []string{"hubot/crew"}})
+				},
 			}
 			for step, run := range steps {
 				status, out := run()
