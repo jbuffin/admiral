@@ -59,9 +59,10 @@ test('a member is published to a new share repo, republished with its diff, and 
   await expect(page.getByRole('checkbox')).toHaveCount(0);
 
   // Publish: the fake repo now lists the file, and Done closes the panel and shows the Published pill, which links to the file.
-  const published = readFileSync(localPath, 'utf8');
+  const published = (await page.getByLabel('File that goes public').textContent()) ?? '';
+  expect(published).toContain('Work as bosun.');
   answer('e-listing', 'GET', LISTING, [{ name: 'bosun.md', path: 'crew/bosun.md', type: 'file', sha: 'a'.repeat(40) }]);
-  answer('h-file', 'GET', FILE, { name: 'bosun.md', sha: 'a'.repeat(40), size: published.length, encoding: 'base64', content: Buffer.from(published).toString('base64') });
+  answer('h-file', 'GET', FILE, { name: 'bosun.md', sha: 'a'.repeat(40), size: Buffer.byteLength(published), encoding: 'base64', content: Buffer.from(published).toString('base64') });
   await page.getByRole('button', { name: 'Publish' }).click();
   await expect(page.getByRole('link', { name: /commit/i })).toHaveAttribute('href', `https://github.com/${REPO}/commit/${'c'.repeat(40)}`);
   await page.getByRole('button', { name: 'Done' }).click();
@@ -83,13 +84,14 @@ test('a member is published to a new share repo, republished with its diff, and 
   await page.getByRole('button', { name: 'Publish' }).click();
   await expect(page.getByRole('link', { name: /commit/i })).toBeVisible();
   await page.getByRole('button', { name: 'Done' }).click();
+  await expect(main.getByRole('link', { name: 'Published' })).toBeVisible();
 
   // Unpublish: confirmed with the exact text; the local member stays.
-  answer('e-listing', 'GET', LISTING, {}, 404);
   const beforeUnpublish = readFileSync(localPath, 'utf8');
   await main.getByRole('button', { name: 'Unpublish' }).click();
   await expect(page.getByText(`Delete crew/bosun.md from ${REPO}?`, { exact: false })).toBeVisible();
   await expect(page.getByLabel('Published file')).toContainText('name: bosun');
+  answer('e-listing', 'GET', LISTING, {}, 404);
   await page.getByRole('button', { name: 'Confirm unpublish' }).click();
   await expect(main.getByRole('link', { name: 'Published' })).toHaveCount(0);
   expect(readFileSync(localPath, 'utf8')).toBe(beforeUnpublish);

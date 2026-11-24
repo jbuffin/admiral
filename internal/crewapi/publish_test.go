@@ -762,3 +762,27 @@ func TestAPublishedFileOverSixtyFourKiBIsRefusedBeforeItsContentIsDecoded(t *tes
 		t.Errorf("GET published = %d %v, want a refusal after one contents call and no bytes", status, out)
 	}
 }
+
+func TestAPreviewOfTheREADMEAnswersTheTemplateAndWritesNothing(t *testing.T) {
+	p := newPub(t, pubOpts{noRepo: true})
+	status, out := p.post("/sharing/repo", map[string]any{"preview": true, "owner": "octocat", "name": "admiral-crew"})
+	wantStatus(t, "readme preview", status, 200, out)
+	if text := str(out, "readme"); !strings.Contains(text, "# "+shareRepo) || !strings.Contains(text, shareRepo+"/<member>@") {
+		t.Errorf("readme = %q, want the template for %s", text, shareRepo)
+	}
+	wantNoWrites(t, p)
+	if share := slurp(filepath.Join(p.home, "config.json")); strings.Contains(share, "share_repo") {
+		t.Errorf("config.json gained a share_repo:\n%s", share)
+	}
+}
+
+func TestAPreviewOfAMemberWhosePublishedFileIsOverSixtyFourKiBIs422(t *testing.T) {
+	p := newPub(t, pubOpts{})
+	p.member("bosun", "Do the work.")
+	p.gh.healthyRepo()
+	p.gh.published("bosun")
+	p.gh.ok("GET", memberPath("bosun"), map[string]any{"name": "bosun.md", "sha": blobOf("bosun"), "size": 70000, "encoding": "base64", "content": b64("tiny")})
+	status, out := p.preview("bosun")
+	wantStatus(t, "preview", status, 422, out)
+	wantNoWrites(t, p)
+}
