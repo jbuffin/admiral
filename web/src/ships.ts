@@ -1,7 +1,5 @@
 import { computed, effect, signal } from '@preact/signals';
-import { chime } from './chime';
 import { config, type HarnessName } from './config';
-import { shouldChime } from './crewSea';
 import { connectionState, onMessage } from './connection';
 import { FOOTPRINT, INSET, KEEP_OUT, REACH, placeShip, type PlacedShip } from './placement';
 
@@ -77,15 +75,8 @@ export { atSea } from './crew';
 
 const launchedAt = (s: WireShip) => Date.parse(s.launched) || 0;
 
+// Nothing in the classic view boards a ship; the signal stays so its tests can pin that.
 export const boarded = signal<{ session: string; crew?: string } | null>(null);
-
-// A test page that asked is told too: `<session>` for a ship, `<session>/<crew>` for a crew boat.
-export function board(session: string, crew?: string): void {
-  window.__admiral?.boarded.push(crew ? `${session}/${crew}` : session);
-  boarded.value = crew === undefined ? { session } : { session, crew };
-}
-
-export const unboard = () => (boarded.value = null);
 
 declare global {
   interface Window {
@@ -102,19 +93,11 @@ const sailedOff = new Set<string>();
 const SAIL_OFF_MS = 2300; // the animation takes 2 s
 const SAIL_IN_MS = 2400;
 
-let baseline = true; // the next `ships` message is the first of this connection: nothing sails in or chimes
+let baseline = true; // the next `ships` message is the first of this connection: nothing sails in
 
 // A reconnect starts over: the first message after it is only a baseline.
 effect(() => {
   if (connectionState.value !== 'open') baseline = true;
-});
-
-// The launch can announce a ship before the `ships` push. A known session is not announced (a reconnect baseline
-// would sail it in again); an entry the pushes never claim is dropped after a while.
-const ANNOUNCED_MS = 10_000;
-const announced = new Map<string, number>();
-window.addEventListener('admiral:launched', (e) => {
-  if (!ships.peek().some((s) => s.session === e.detail.session)) announced.set(e.detail.session, Date.now());
 });
 
 // Crew boats (`<session>/<crew>`) that joined a ship after the page's first `ships` message: they pop in.
@@ -141,11 +124,10 @@ function arrive(session: string): void {
 }
 
 onMessage('ships', (msg: { ships: (Omit<WireShip, 'status'> & { status: WireShip['status'] | 'moored' })[] }) => {
-  // This UI has no place for a moored ship: nothing to board, no state to draw.
+  // This UI has no place for a moored ship: no state to draw.
   const now = msg.ships.filter((s): s is WireShip => s.status !== 'moored');
   const before = new Map(ships.value.map((s) => [s.session, s]));
   const first = baseline;
-  for (const [session, at] of announced) if (Date.now() - at > ANNOUNCED_MS) announced.delete(session);
   for (const s of now) {
     const was = before.get(s.session);
     if (!first) {
@@ -155,8 +137,7 @@ onMessage('ships', (msg: { ships: (Omit<WireShip, 'status'> & { status: WireShip
         const joined = (s.crew ?? []).filter((c) => !known.has(c.name)).map((c) => `${s.session}/${c.name}`);
         if (joined.length) pop(joined);
       }
-    } else if (announced.has(s.session)) arrive(s.session);
-    announced.delete(s.session);
+    }
     if (s.status === 'sailing_off' && !sailedOff.has(s.session)) {
       sailedOff.add(s.session);
       leaving.value = new Map(leaving.value).set(s.session, s);
@@ -167,7 +148,6 @@ onMessage('ships', (msg: { ships: (Omit<WireShip, 'status'> & { status: WireShip
       }, SAIL_OFF_MS);
     }
   }
-  if (shouldChime([...before.values()], now, first)) chime(); // once, however many ships or crew boats turned needs you
   baseline = false;
   ships.value = now;
   shipsLoaded.value = true;
@@ -181,10 +161,6 @@ export const visible = computed(() => {
 
 // Spots this browser has worked out and sent, until the server's push carries them.
 const local = signal<ReadonlyMap<string, Spot>>(new Map());
-// Spots dropped by a drag, shown until the server's push agrees.
-export const dropped = signal<ReadonlyMap<string, Spot>>(new Map());
-export const dragged = signal<{ session: string } & Spot | null>(null);
-
 const clamp = (n: number) => Math.min(1, Math.max(0, n));
 
 export async function putPosition(session: string, p: Spot): Promise<boolean> {
@@ -200,43 +176,6 @@ export async function putPosition(session: string, p: Spot): Promise<boolean> {
     return false;
   }
 }
-
-const SETTLE_MS = 1500;
-// Drops whose PUT succeeded: the next push from the server replaces them.
-const accepted = new Set<string>();
-
-function forget(session: string, spot: Spot): void {
-  // Only the drop that was sent: a newer drop of the same ship stays.
-  if (dropped.peek().get(session) !== spot) return;
-  const next = new Map(dropped.peek());
-  next.delete(session);
-  dropped.value = next;
-  accepted.delete(session);
-}
-
-export function drop(session: string, p: Spot): void {
-  const spot = { x: clamp(p.x), y: clamp(p.y) };
-  dropped.value = new Map(dropped.value).set(session, spot);
-  accepted.delete(session);
-  void putPosition(session, spot).then((ok) => {
-    if (!ok) return forget(session, spot); // the server's spot wins
-    if (dropped.peek().get(session) !== spot) return; // a newer drop is in charge now
-    accepted.add(session);
-    setTimeout(() => forget(session, spot), SETTLE_MS);
-  });
-}
-
-// A drop the server accepted gives way to the next push; one still in flight stays until it settles.
-effect(() => {
-  const list = ships.value;
-  if (accepted.size === 0) return;
-  const next = new Map(dropped.peek());
-  for (const session of accepted) {
-    next.delete(session);
-    accepted.delete(session);
-  }
-  dropped.value = next;
-});
 
 // Every ship without a position gets one, in launch order, each fed to the next.
 // Any browser may send it: they all work out the same spot.
@@ -263,8 +202,7 @@ effect(() => {
   local.value = next;
 });
 
-// Where a ship is drawn: under the finger, else where it was dropped, else the server's, else where this browser put it.
+// Where a ship is drawn: the server's spot, else where this browser put it.
 export function spotOf(s: WireShip): Spot | undefined {
-  if (dragged.value?.session === s.session) return dragged.value;
-  return dropped.value.get(s.session) ?? s.position ?? local.value.get(s.session);
+  return s.position ?? local.value.get(s.session);
 }

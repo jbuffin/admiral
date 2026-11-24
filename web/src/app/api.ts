@@ -559,7 +559,6 @@ export async function getCommitments(fleet: string): Promise<Result<ChatCommitme
 }
 export const cancelCommitment = (fleet: string, id: string) => call<unknown>('DELETE', chatPath(fleet, `commitments/${encodeURIComponent(id)}`));
 export const promoteNote = (fleet: string, id: string) => call<Instructions>('POST', chatPath(fleet, `notes/${encodeURIComponent(id)}/promote`));
-export const startSetup = () => call<unknown>('POST', '/setup');
 export interface AllowRule {
   harness: string;
   /** The remote's owner/repo or the checkout's path; a Codex rule has none, since it covers every repo of the fleet. */

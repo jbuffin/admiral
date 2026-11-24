@@ -40,7 +40,7 @@ Asks GitHub to request another review from someone who already reviewed a PR the
 
 Each boat in a ship's `crew` also carries `role` and `conversation` (see "A crew boat's conversation").
 
-`subagents` and `agents` are always present (`[]` when empty) and come from the harness's hooks, kept on the ship's pane. `subagents` lists only the running subagents and agent-team teammates, which is what the classic view shows. `agents` lists every stored entry, running or finished, for the new shell's Agents tab: `{id, type, start, kind, end}`.
+`subagents` and `agents` are always present (`[]` when empty) and come from the harness's hooks, kept on the ship's pane. `subagents` lists only the running subagents and agent-team teammates, which is what the classic view shows as deck crew. `agents` lists every stored entry, running or finished, for the new shell's Agents tab: `{id, type, start, kind, end}`.
 
 - `kind` is `subagent`, `teammate`, `shell` (a background Bash) or `monitor` (Claude Code's Monitor). An entry stored before kinds existed has no `kind` and reads as `subagent`.
 - `start` and `end` are RFC 3339. `end` is absent while the entry runs. Claude Code reports background shells only at a `Stop`, so a shell's `start` means "first seen by Admiral".

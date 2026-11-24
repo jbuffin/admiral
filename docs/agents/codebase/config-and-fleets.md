@@ -27,7 +27,7 @@ Fleet-owned sources and the startup migration, fleet fields over HTTP, a fleet's
   - `clone_root` must be absolute or start with `~/` (`Parse` cleans it like a search root). An empty `color` or `clone_root` removes the key.
   - `notify` is a boolean (anything else is a 400): the fleet's **Notify** switch, on when the key is missing, shown as `notify` in `FleetView`; off, the push decision (`internal/push`) drops the fleet's events entirely, push and alert both.
   - `FleetView` carries `owners` and `wake_reviewers` (each `[]` when none) and `clone_root` (expanded like a search root, `""` when unset).
-  - Docks and env are not editable here: they stay in the setup terminal.
+  - Docks and env are not editable here: they stay in `admiral setup`, run in a terminal.
   - `chat` is an object of any subset of the fleet's chat settings (see "The fleet's `chat` key"); each key is merged into the fleet's stored `chat`, an unknown key, an unknown model, effort or threshold, or a harness that isn't proven is a 400 naming `fleets.<key>.chat.<key>`, and an empty `effort` removes the key.
 - Fleet `env`. A fleet takes `env`, a map of names to values (`Fleet.Environ()`, same overlay on the process environment as a harness's). Plugin subprocesses and the built-in source's `gh` calls start with it. `Supervisor.reconcile` restarts a fleet's sources when its `env` changes, since `SameRun` ignores fleets.
 - The fleet's `chat` key: `"chat": {"harness", "model", "effort", "context_threshold"}` under each fleet in `config.json`, replacing the old top-level `chat` key. Every key is optional.

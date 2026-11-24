@@ -163,10 +163,10 @@ describe('the classic view still shows what is happening', () => {
     expect(screen.getByText('+2 crew')).toBeTruthy();
   });
 
-  it('draws a ship the server pushes over the live feed', () => {
+  it('draws a ship the server pushes over the live feed', async () => {
     render(<App />);
     hoisted.handlers.get('ships')!({ ships: [ship('Saltpaw')] });
-    expect(screen.getByRole('img', { name: /^Saltpaw/ })).toBeTruthy();
+    expect(await screen.findByRole('img', { name: /^Saltpaw/ })).toBeTruthy();
   });
 
   it('tells a fleetless person to run admiral setup, inertly', () => {
