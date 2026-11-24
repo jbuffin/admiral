@@ -28,7 +28,7 @@ body {
 }
 
 .stage {
-  /* The scene is laid out at least STAGE_MIN_WIDTH wide, then scaled down to the window: --stage is set by App. */
+  /* The scene is laid out at least STAGE_MIN_WIDTH wide, then scaled down to the window: --stage is set by stageFit.ts. */
   --stage: 1;
   display: flex;
   flex: none;
@@ -72,7 +72,7 @@ body {
   background-color: var(--color-grass);
 }
 
-/* The marinas shrink together (--fit, set by App) rather than scroll, so every dock shows. The box reaches over the
+/* The marinas shrink together (--fit, set by stageFit.ts) rather than scroll, so every dock shows. The box reaches over the
    sea by the breakwater's width, so the rocks are not clipped. */
 .moorings {
   --fit: 1;
@@ -509,9 +509,6 @@ body {
   100% { transform: translate(-300px, -24px) scale(0.85); opacity: 0; }
 }
 
-/* The drawer's width: the chat's button and panel sit left of it by the same amount (chat.ts needs no literal). */
-
-/* The fleetless marina's note: the browser no longer sets a fleet up. */
 .setup-note {
   position: absolute;
   left: 12px;
@@ -521,5 +518,5 @@ body {
   text-align: center;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-parchment);
+  color: var(--color-ink);
 }

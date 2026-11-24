@@ -16,8 +16,7 @@ import { App } from './App';
 import { chime } from './chime';
 import { applyConfig, config, type Fleet } from './config';
 import { deckLabel } from './crewSea';
-import { phone } from './sizeClass';
-import { boarded, ships, type WireCrew, type WireShip } from './ships';
+import { ships, type WireCrew, type WireShip } from './ships';
 
 const fleet = (key: string, name: string): Fleet => ({
   key,
@@ -68,15 +67,13 @@ const fetchSpy = vi.fn(async () => new Response('{}'));
 
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchSpy);
-  phone.value = false;
-  boarded.value = null;
   ships.value = [];
   applyConfig({ fleets: [fleet('zulu', 'Zulu')], error: null });
 });
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
-  phone.value = false;
+  window.innerWidth = 1024;
   ships.value = [];
   config.value = null;
 });
@@ -109,7 +106,7 @@ describe('nothing in the classic view is interactive', () => {
   });
 
   it('has none at the phone size either', () => {
-    phone.value = true;
+    window.innerWidth = 402;
     ships.value = [seaWithCrew()];
     const { container } = render(<App />);
     for (const role of ['button', 'link', 'textbox', 'tab']) expect(screen.queryAllByRole(role)).toEqual([]);
@@ -135,7 +132,6 @@ describe('nothing in the classic view is interactive', () => {
     }
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(container.innerHTML).toBe(before);
-    expect(boarded.value).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
@@ -226,8 +222,10 @@ describe('a ship that needs you looks like one that is working', () => {
 });
 
 describe('the classic view on a phone', () => {
+  const stageOf = (c: ParentNode) => c.querySelector<HTMLElement>('.stage')!;
+
   it('shows the sea, ships, crew boats and docks, with no tabs or list', () => {
-    phone.value = true;
+    window.innerWidth = 402;
     ships.value = [seaWithCrew()];
     const { container } = render(<App />);
     expect(container.querySelector('.sea')).not.toBeNull();
@@ -235,7 +233,27 @@ describe('the classic view on a phone', () => {
     expect(screen.getByRole('img', { name: /Scout/ })).toBeTruthy();
     expect(screen.getByRole('img', { name: /Claude dock, Zulu/ })).toBeTruthy();
     expect(screen.queryByRole('tablist')).toBeNull();
-    expect(screen.queryByRole('tab')).toBeNull();
     expect(screen.queryByRole('banner')).toBeNull();
+  });
+
+  it('scales the scene down to the window width, and again when the window resizes', () => {
+    window.innerWidth = 402;
+    const { container } = render(<App />);
+    expect(Number(stageOf(container).style.getPropertyValue('--stage'))).toBeCloseTo(402 / 900, 3);
+    window.innerWidth = 600;
+    fireEvent(window, new Event('resize'));
+    expect(Number(stageOf(container).style.getPropertyValue('--stage'))).toBeCloseTo(600 / 900, 3);
+    window.innerWidth = 1200;
+    fireEvent(window, new Event('resize'));
+    expect(stageOf(container).style.getPropertyValue('--stage')).toBe('1');
+  });
+
+  it('shrinks the marinas to fit when they are taller than the sea', () => {
+    const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+    const offset = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(800);
+    const { container } = render(<App />);
+    expect(Number(container.querySelector<HTMLElement>('.moorings')!.style.getPropertyValue('--fit'))).toBeCloseTo(0.5, 3);
+    height.mockRestore();
+    offset.mockRestore();
   });
 });

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'preact/hooks';
+import { useSubscribe } from './app/hooks/subscribe';
 
 // A narrower window sees the same scene as a wide one, scaled down to fit.
 const STAGE_MIN_WIDTH = 900;
@@ -29,11 +30,8 @@ export function useFit() {
 
 export function useStage() {
   const stage = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const apply = () => stage.current?.style.setProperty('--stage', String(stageScale()));
-    apply();
-    window.addEventListener('resize', apply);
-    return () => window.removeEventListener('resize', apply);
-  }, []);
+  const apply = () => stage.current?.style.setProperty('--stage', String(stageScale()));
+  useLayoutEffect(apply, []);
+  useSubscribe(window, 'resize', apply);
   return stage;
 }

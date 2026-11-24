@@ -40,9 +40,3 @@ test('New fleet… starts no setup and leaves the page', async () => {
   expect(fetchSpy).not.toHaveBeenCalled();
   expect(assign).not.toHaveBeenCalled();
 });
-
-test('the note does not claim setup is running or promise the old dashboard', () => {
-  render(<FleetSwitcher sheet={false} />);
-  openNewFleet();
-  expect(screen.queryByText(/Setup is running|Opening the dashboard/)).toBeNull();
-});

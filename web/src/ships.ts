@@ -75,9 +75,6 @@ export { atSea } from './crew';
 
 const launchedAt = (s: WireShip) => Date.parse(s.launched) || 0;
 
-// Nothing in the classic view boards a ship; the signal stays so its tests can pin that.
-export const boarded = signal<{ session: string; crew?: string } | null>(null);
-
 declare global {
   interface Window {
     // The tests create this object; `screen` is set while a bridge's terminal is up.
