@@ -155,7 +155,7 @@ test('a ship\'s view opens on its conversation, follows the transcript live, joi
   await expect(page).toHaveURL(shipViewUrl(admiral, login));
   await expect(page.getByRole('heading', { name: login.name, exact: true })).toBeVisible();
   await expect(page.getByLabel(/^Running for (<1m|\d+m)$/)).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveText(['Conversation', 'Terminal', 'PR']);
+  await expect(page.getByRole('tab')).toHaveText(['Conversation', 'Terminal', 'PR', 'Agents']);
   await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
   await expectSeededTurn(page);
   await expect(viewPanel(page)).toContainText('Working');
