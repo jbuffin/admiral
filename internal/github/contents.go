@@ -34,6 +34,8 @@ type RepoInfo struct {
 	Public   bool
 	Archived bool
 	Pushable bool
+	// DefaultBranch is the repo's default branch as GitHub reports it.
+	DefaultBranch string
 }
 
 // DirEntry is one file in a repo directory.
