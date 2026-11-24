@@ -107,9 +107,12 @@ var ErrNameTaken = errors.New("a file with that name is already in the fleet's c
 
 // WriteImported writes <name>.md into the fleet's crew directory once: a file already there, whatever its bytes, is ErrNameTaken and stays as it is.
 func WriteImported(home, key, name, text string) error {
-	dir := filepath.Join(home, "fleets", key, crewDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+	if !safeKey(key) || !crew.ValidName(name) {
+		return errors.New("not a crew member name")
+	}
+	dir, _, err := walk(home, true, "fleets", key, crewDir)
+	if err != nil {
+		return unsafePath(err)
 	}
 	tmp, err := os.CreateTemp(dir, ".import-*.tmp")
 	if err != nil {

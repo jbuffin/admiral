@@ -19,10 +19,12 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/crew"
 	"github.com/jbuffin/admiral/internal/github"
-	"github.com/jbuffin/admiral/internal/skillindex"
 )
 
 const botImportText = "Only the engineer can import crew members."
+
+// writeSidecar is WriteSidecar, a variable so a test can fail it: nothing outside can, once the member is written under the lock.
+var writeSidecar = WriteSidecar
 
 // importRoutes registers the import, crew source and browse routes.
 func (s *Service) importRoutes(mux *http.ServeMux) {
@@ -121,17 +123,15 @@ func suggestedName(c fleetCrew, name, owner string) any {
 	return sug
 }
 
-// missingSkills lists the skills no dock of the fleet can see.
-func missingSkills(fleet config.Fleet, skills []string) []string {
+// missingSkills lists the skills the page's dock (every dock when harness is empty) can't see.
+func missingSkills(fleet config.Fleet, harness string, skills []string) []string {
 	out := []string{}
 	if len(skills) == 0 {
 		return out
 	}
 	seen := map[string]bool{}
-	for _, d := range fleet.Harnesses {
-		for _, e := range skillindex.List(d.Name, d.Environ(), "") {
-			seen[e.Name] = true
-		}
+	for _, e := range fleetSkills(fleet, harness) {
+		seen[e.Name] = true
 	}
 	for _, s := range skills {
 		if !seen[s] && !slices.Contains(out, s) {
@@ -139,6 +139,34 @@ func missingSkills(fleet config.Fleet, skills []string) []string {
 		}
 	}
 	return out
+}
+
+// readImportable reads path of owner/repo at commit and runs the import rules over it, answering the refusal itself; ok is false once it has. what names the file in a not-found answer.
+func readImportable(w http.ResponseWriter, ctx context.Context, gh *github.Client, owner, repo, path, commit, what, stem string) (file github.File, member crew.Member, ok bool) {
+	full := owner + "/" + repo
+	file, err := gh.ReadFileAt(ctx, owner, repo, path, commit)
+	switch {
+	case errors.Is(err, github.ErrTooLarge):
+		writeError(w, http.StatusUnprocessableEntity, path+" in "+full+" is over 64 KiB, so Admiral won't import it.")
+		return file, member, false
+	case err != nil:
+		notFoundIn(w, "Reading "+path, full, what, err)
+		return file, member, false
+	}
+	member, problem := checkImported(file.Bytes, stem)
+	if problem != "" {
+		writeError(w, http.StatusUnprocessableEntity, problem)
+		return file, member, false
+	}
+	return file, member, true
+}
+
+// usableTag is tag unless a reader couldn't see all of it or it isn't a ref the import box takes, which is no tag at all.
+func usableTag(tag string) string {
+	if _, line := firstHidden([]string{tag}); line > 0 || !validImportRef(tag) {
+		return ""
+	}
+	return tag
 }
 
 func cardOf(m crew.Member) map[string]any {
@@ -204,18 +232,8 @@ func (s *Service) servePreviewImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := crewDir + "/" + ref.Name + ".md"
-	file, err := sh.gh.ReadFileAt(ctx, ref.Owner, ref.Repo, path, commit)
-	switch {
-	case errors.Is(err, github.ErrTooLarge):
-		writeError(w, http.StatusUnprocessableEntity, path+" in "+full+" is over 64 KiB, so Admiral won't import it.")
-		return
-	case err != nil:
-		notFoundIn(w, "Reading "+path, full, path+" ("+at+")", err)
-		return
-	}
-	member, problem := checkImported(file.Bytes, ref.Name)
-	if problem != "" {
-		writeError(w, http.StatusUnprocessableEntity, problem)
+	file, member, ok := readImportable(w, ctx, sh.gh, ref.Owner, ref.Repo, path, commit, path+" ("+at+")", ref.Name)
+	if !ok {
 		return
 	}
 	tag, err := sh.gh.TagAt(ctx, ref.Owner, ref.Repo, commit)
@@ -223,6 +241,7 @@ func (s *Service) servePreviewImport(w http.ResponseWriter, r *http.Request) {
 		ghFailed(w, "Reading the tags of "+full, full, err)
 		return
 	}
+	tag = usableTag(tag)
 	var clash any
 	taken, err := sh.c.memberTaken(ref.Name)
 	switch {
@@ -239,7 +258,7 @@ func (s *Service) servePreviewImport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"owner": ref.Owner, "repo": ref.Repo, "path": path, "commit": commit, "tag": tagOut, "blob": file.Blob,
 		"sha256": sumOf(file.Bytes), "bytes": string(file.Bytes), "card": cardOf(member), "clash": clash,
-		"missing_skills": missingSkills(sh.fleet, member.Skills), "scan": s.scan(ctx, sh, file.Bytes),
+		"missing_skills": missingSkills(sh.fleet, r.URL.Query().Get("harness"), member.Skills), "scan": s.scan(ctx, sh, file.Bytes),
 	})
 }
 
@@ -286,22 +305,12 @@ func (s *Service) serveImport(w http.ResponseWriter, r *http.Request) {
 	}
 	owner, repo, _ := strings.Cut(body.Repo, "/")
 	ctx := r.Context()
-	file, err := sh.gh.ReadFileAt(ctx, owner, repo, body.Path, body.Commit)
-	switch {
-	case errors.Is(err, github.ErrTooLarge):
-		writeError(w, http.StatusUnprocessableEntity, body.Path+" in "+body.Repo+" is over 64 KiB, so Admiral won't import it.")
-		return
-	case err != nil:
-		notFoundIn(w, "Reading "+body.Path, body.Repo, body.Path, err)
+	file, member, ok := readImportable(w, ctx, sh.gh, owner, repo, body.Path, body.Commit, body.Path, stem)
+	if !ok {
 		return
 	}
 	if sumOf(file.Bytes) != body.SHA256 {
 		writeError(w, http.StatusConflict, "The file changed since the preview. Preview it again.")
-		return
-	}
-	member, problem := checkImported(file.Bytes, stem)
-	if problem != "" {
-		writeError(w, http.StatusUnprocessableEntity, problem)
 		return
 	}
 	tag, err := sh.gh.TagAt(ctx, owner, repo, body.Commit)
@@ -309,9 +318,14 @@ func (s *Service) serveImport(w http.ResponseWriter, r *http.Request) {
 		ghFailed(w, "Reading the tags of "+body.Repo, body.Repo, err)
 		return
 	}
+	tag = usableTag(tag)
 	data := file.Bytes
 	if name != stem {
 		data = renamed(data, name)
+		if _, problem := checkImported(data, name); problem != "" {
+			writeError(w, http.StatusUnprocessableEntity, problem)
+			return
+		}
 	}
 
 	writeMu.Lock()
@@ -326,7 +340,7 @@ func (s *Service) serveImport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "A crew member named " + name + " is already in this fleet. Choose another name.", "suggested": suggestedName(sh.c, stem, owner)})
 		return
 	case err != nil:
-		refuse(w, err)
+		refuseImport(w, err)
 		return
 	}
 	var tagPtr *string
@@ -334,14 +348,24 @@ func (s *Service) serveImport(w http.ResponseWriter, r *http.Request) {
 		tagPtr = &tag
 	}
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	err = WriteSidecar(sh.c.crewDir(), name, Sidecar{Version: 1, Host: github.DefaultHost, Repo: body.Repo, Path: body.Path, UpstreamName: stem,
+	err = writeSidecar(sh.c.crewDir(), name, Sidecar{Version: 1, Host: github.DefaultHost, Repo: body.Repo, Path: body.Path, UpstreamName: stem,
 		Commit: body.Commit, Tag: tagPtr, UpstreamBlob: file.Blob, ContentSHA256: sumOf(data), ImportedAt: now, UpdatedAt: now})
 	if err != nil {
-		_ = os.Remove(filepath.Join(sh.c.crewDir(), name+".md"))
+		// The member stays as a plain fleet member the Crew page shows as one.
 		refuse(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"name": name, "missing_skills": missingSkills(sh.fleet, member.Skills), "scan": s.scan(ctx, sh, data)})
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "missing_skills": missingSkills(sh.fleet, r.URL.Query().Get("harness"), member.Skills), "scan": s.scan(ctx, sh, data)})
+}
+
+// refuseImport answers a failed import write: a refusal from the path guard is a conflict, and anything else goes through refuse.
+func refuseImport(w http.ResponseWriter, err error) {
+	var refused *MissionRefusedError
+	if errors.As(err, &refused) {
+		writeError(w, http.StatusConflict, refused.Msg)
+		return
+	}
+	refuse(w, err)
 }
 
 // sourceRepo is the owner/name a crew source entry names, from owner/name or a GitHub repo URL.

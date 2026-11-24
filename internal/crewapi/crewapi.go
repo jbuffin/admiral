@@ -287,9 +287,14 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fleet, _ := s.Config.Current().Fleet(r.PathValue("key"))
+	writeJSON(w, http.StatusOK, map[string][]skillindex.Entry{"skills": fleetSkills(fleet, r.URL.Query().Get("harness"))})
+}
+
+// fleetSkills is the skills the fleet's docks can see, narrowed to one dock when harness is set, with only names a crew file may list.
+func fleetSkills(fleet config.Fleet, harness string) []skillindex.Entry {
 	docks := fleet.Harnesses
-	if want := r.URL.Query().Get("harness"); want != "" {
-		dock, _ := fleet.Harness(want)
+	if harness != "" {
+		dock, _ := fleet.Harness(harness)
 		docks = []config.Harness{dock}
 	}
 	lists := make([]skillindex.HarnessSkills, 0, len(docks))
@@ -302,5 +307,5 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 			skills = append(skills, e)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string][]skillindex.Entry{"skills": skills})
+	return skills
 }

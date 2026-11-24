@@ -166,9 +166,10 @@ func TestPreviewOfAFileOver64KiBIs422NamingTheRule(t *testing.T) {
 
 func TestPreviewRateLimitIs429(t *testing.T) {
 	p := newImp(t, impOpts{})
-	p.gh.answer("GET", "repos/hubot/crew", 403, nil, "gh: API rate limit exceeded for user ID 1. (HTTP 403)")
+	p.gh.answer("GET", "repos/hubot/crew", 403, nil, "gh: API rate limit exceeded for user ID 1. Try again in 42 minutes. (HTTP 403)")
 	status, out := p.importPreview("hubot/crew/scout")
 	wantStatus(t, "rate limit", status, 429, out)
+	wantText(t, "rate limit", out, "hubot/crew", "Try again in 42 minutes")
 }
 
 func TestARefusedFileIs422NamingTheRuleAndLineAndWritesNothing(t *testing.T) {
@@ -568,6 +569,10 @@ func TestARemovalWorksOnAFleetWithNoGitHubSourceAndSharingOffAndAnEntryThatIsNot
 	}
 	status, out = p.put("/sources", map[string]any{"sources": []string{"a/b", "not a repo"}})
 	wantStatus(t, "bad entry", status, 400, out)
+	wantText(t, "bad entry", out, "not a repo", "owner/name")
+	if got := p.savedSources(); !reflect.DeepEqual(got, []string{"a/b"}) {
+		t.Errorf("saved %v after a refused list, want the old one", got)
+	}
 }
 
 func TestAddingASourceWorksWithSharingOff(t *testing.T) {
@@ -575,6 +580,9 @@ func TestAddingASourceWorksWithSharingOff(t *testing.T) {
 	p.gh.crewListing("a/b", "x.md")
 	status, out := p.put("/sources", map[string]any{"sources": []string{"a/b"}})
 	wantStatus(t, "PUT sources", status, 200, out)
+	if got := p.savedSources(); !reflect.DeepEqual(got, []string{"a/b"}) {
+		t.Errorf("saved %v, want [a/b]", got)
+	}
 }
 
 // --- browse ---
@@ -669,8 +677,9 @@ func TestAnActorGets403OnEveryImportRoute(t *testing.T) {
 	for _, r := range []struct{ method, path string }{
 		{"POST", "/imports/preview"}, {"POST", "/imports"}, {"PUT", "/sources"}, {"GET", "/sources/hubot/crew"},
 	} {
-		if status, body := p.asBot(r.method, r.path); status != 403 {
-			t.Errorf("%s %s as a bot: %d %s", r.method, r.path, status, body)
+		status, body := p.asBot(r.method, r.path)
+		if status != 403 || !strings.Contains(body, "Only the engineer can import crew members.") {
+			t.Errorf("%s %s as a bot: %d %s, want 403 saying only the engineer can import", r.method, r.path, status, body)
 		}
 	}
 	if n := len(p.gh.calls()); n != 0 {
