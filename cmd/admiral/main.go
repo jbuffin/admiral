@@ -625,7 +625,8 @@ func serve(args []string) error {
 		_, lost := host.Snapshot()
 		return lost, host.Unreadable()
 	})
-	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop, Launch: routineShips{shipService}.Launch}
+	zoneAbbr, _ := time.Now().In(time.Local).Zone()
+	routineService := &routines.Service{Store: routineStore, Zone: routines.ZoneName(time.Local.String(), zoneAbbr, os.Readlink), OnChange: routineScheduler.Changed, Stop: routineShips{shipService}.Stop, Launch: routineShips{shipService}.Launch}
 	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
 	routineService.Listed = listedShips(allShips)
 	shipService.EventShip = eventShip(routineStore, listedShips(allShips))

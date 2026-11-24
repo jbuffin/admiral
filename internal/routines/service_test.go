@@ -25,7 +25,7 @@ func newAPI(t *testing.T) *api {
 	t.Helper()
 	a := &api{t: t, rig: newRig(t)}
 	mux := http.NewServeMux()
-	(&routines.Service{Store: a.rig.store}).Routes(mux)
+	(&routines.Service{Store: a.rig.store, Zone: "America/Denver"}).Routes(mux)
 	a.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if a.bot {
 			r = r.WithContext(actor.WithFleet(r.Context(), "work"))
