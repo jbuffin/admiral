@@ -221,12 +221,12 @@ All under `/api/fleets/{key}/crew/`, JSON in and out, the `?harness=` dock query
 | Route | What |
 | --- | --- |
 | `GET  .../crew/sharing` | The fleet's `crew_sharing` state, the `gh` login, whether the share repo exists and is pushable, its published names, and update states per shared member. |
-| `POST .../crew/sharing/repo` | Create the share repo and its README `{"name", "description"}`, or adopt an existing one `{"repo": "owner/name"}`. Saves `share_repo`. 403 when sharing is off. |
-| `POST .../crew/members/{name}/share/preview` | The canonical bytes, their sha256, the target path, whether it replaces a file, and `scan`: `{"state": "clean" \| "hit" \| "failed" \| "missing" \| "too-old", "findings": [{"line", "rule"}], "error": "<text>", "version": "<found>", "install": "<hint>"}`. A failed check 1 to 5 is a 422 naming the check, the line and the rule. 403 when sharing is off. |
-| `POST .../crew/members/{name}/share` | `{"sha256", "skip_secret_scan"?}` from the preview. Rechecks and commits. Returns the commit URL. 403 when sharing is off; 422 on a hit. |
+| `POST .../crew/sharing/repo` | Create the share repo and its README `{"name", "description"}`, or adopt an existing one `{"repo": "owner/name"}`. Saves `share_repo` and answers `{"share_repo"}`. 403 when sharing is off. A taken name is a 409; when the repo is public and pushable it carries `"use_existing": "owner/name"`. |
+| `POST .../crew/members/{name}/share/preview` | No body: the fleet's saved share repo is the target. The canonical bytes (`bytes`), `sha256`, `path`, `repo`, `replaces_blob` (the published file's blob SHA, or null), `published_bytes` when it replaces one, and `scan`: `{"state": "clean" \| "hit" \| "failed" \| "missing" \| "too-old", "findings": [{"line", "rule"}], "error": "<text>", "version": "<found>", "install": "<hint>"}`. A failed check 1 to 5 is a 422 naming the check, the line and the rule. 403 when sharing is off. |
+| `POST .../crew/members/{name}/share` | `{"sha256", "repo", "replaces_blob", "skip_secret_scan"?}`, the first three as the preview gave them. Rechecks and commits. Returns `{"name", "repo", "path", "commit_url"}`. 403 when sharing is off; 422 on a hit, with the `scan` in the body; 409 when the member, the share repo or the published file changed since the preview. |
 | `POST .../crew/members/{name}/make-mine` | Deletes the sidecar. 404 when there's none. |
-| `GET  .../crew/published/{name}` | The published file's bytes and blob SHA, for the Unpublish confirm. |
-| `DELETE .../crew/published/{name}` | `{"blob"}` from the confirm. Deletes `crew/<name>.md` from the share repo. |
+| `GET  .../crew/published/{name}` | `{"name", "repo", "bytes", "blob"}`: the published file's bytes and blob SHA, for the Unpublish confirm. 404 when it isn't published; 422 when it is over 64 KiB. |
+| `DELETE .../crew/published/{name}` | `{"blob"}` from the confirm. Deletes `crew/<name>.md` from the share repo and returns `{"name", "repo", "commit_url"}`. 409 when the file changed since the GET. |
 | `POST .../crew/imports/preview` | `{"ref"}` (a ref or URL). Returns the raw bytes, the parsed card, `owner`, `repo`, `path`, `commit`, `tag`, the clash (with the suggested name), skill warnings and secret-scan warnings. A URL with no member returns `{"source": "owner/repo"}` instead. |
 | `POST .../crew/imports` | `{"repo", "path", "commit", "sha256", "name"?}`. Rereads the file at that commit, checks the hash, writes member and sidecar. 409 on a clash. |
 | `GET  .../crew/sources/{owner}/{repo}` | The source's member list (name, path, blob, imported state, and published state for the share repo). |
@@ -256,7 +256,9 @@ Rename and Delete change as well: Rename moves `<name>.shared.json` with the mem
 | No GitHub source, or not github.com | 409 "Connect GitHub (github.com) for this fleet first." |
 | `gh` not signed in or token refused | 502 with the step and `gh`'s message; the GitHub page's reconnect advice. |
 | Share repo private, archived, gone or not pushable | 409 naming the repo and the reason, with "Choose another repo". |
-| Repo name taken at create | 409, offering to use it when it's public and pushable. |
+| Repo name taken at create | 409, with `use_existing` (the page's "Use `owner/repo`") when it's public and pushable. |
+| Share repo changed since the preview | 409 "Preview it again." |
+| `sha256` or `replaces_blob` missing from Share, or `blob` from Unpublish | 400 saying it must come from the preview or the GET. |
 | Privacy check 1 to 5 hit | 422 naming the check, the line and the rule or code point. |
 | gitleaks hit | 422 naming the line and the rule. No opt-out. |
 | gitleaks installed but the scan crashed, errored or timed out | 422 with the error. No opt-out. |
