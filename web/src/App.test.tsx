@@ -222,6 +222,8 @@ describe('a ship that needs you looks like one that is working', () => {
 });
 
 describe('the classic view on a phone', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   const stageOf = (c: ParentNode) => c.querySelector<HTMLElement>('.stage')!;
 
   it('shows the sea, ships, crew boats and docks, with no tabs or list', () => {
@@ -249,11 +251,9 @@ describe('the classic view on a phone', () => {
   });
 
   it('shrinks the marinas to fit when they are taller than the sea', () => {
-    const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
-    const offset = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(800);
     const { container } = render(<App />);
     expect(Number(container.querySelector<HTMLElement>('.moorings')!.style.getPropertyValue('--fit'))).toBeCloseTo(0.5, 3);
-    height.mockRestore();
-    offset.mockRestore();
   });
 });

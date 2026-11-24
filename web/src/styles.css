@@ -510,13 +510,15 @@ body {
 }
 
 .setup-note {
+  /* Above the basin and quay, which are z-index 1: a note without one paints under them. */
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 14px;
+  z-index: 5;
+  left: 24px;
+  right: 36px;
+  top: 96px;
   margin: 0;
   text-align: center;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   color: var(--color-ink);
 }
