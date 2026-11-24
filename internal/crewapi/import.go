@@ -142,7 +142,7 @@ func missingSkills(fleet config.Fleet, harness string, skills []string) []string
 }
 
 // readImportable reads path of owner/repo at commit and runs the import rules over it, answering the refusal itself; ok is false once it has. what names the file in a not-found answer.
-func readImportable(w http.ResponseWriter, ctx context.Context, gh *github.Client, owner, repo, path, commit, what, stem string) (file github.File, member crew.Member, ok bool) {
+func readImportable(w http.ResponseWriter, ctx context.Context, gh *github.Client, owner, repo, path, commit, what, stem, wantSum string) (file github.File, member crew.Member, ok bool) {
 	full := owner + "/" + repo
 	file, err := gh.ReadFileAt(ctx, owner, repo, path, commit)
 	switch {
@@ -151,6 +151,10 @@ func readImportable(w http.ResponseWriter, ctx context.Context, gh *github.Clien
 		return file, member, false
 	case err != nil:
 		notFoundIn(w, "Reading "+path, full, what, err)
+		return file, member, false
+	}
+	if wantSum != "" && sumOf(file.Bytes) != wantSum {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "The file changed since the preview. Preview it again.", "kind": "changed"})
 		return file, member, false
 	}
 	member, problem := checkImported(file.Bytes, stem)
@@ -232,7 +236,7 @@ func (s *Service) servePreviewImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := crewDir + "/" + ref.Name + ".md"
-	file, member, ok := readImportable(w, ctx, sh.gh, ref.Owner, ref.Repo, path, commit, path+" ("+at+")", ref.Name)
+	file, member, ok := readImportable(w, ctx, sh.gh, ref.Owner, ref.Repo, path, commit, path+" ("+at+")", ref.Name, "")
 	if !ok {
 		return
 	}
@@ -305,12 +309,8 @@ func (s *Service) serveImport(w http.ResponseWriter, r *http.Request) {
 	}
 	owner, repo, _ := strings.Cut(body.Repo, "/")
 	ctx := r.Context()
-	file, member, ok := readImportable(w, ctx, sh.gh, owner, repo, body.Path, body.Commit, body.Path, stem)
+	file, member, ok := readImportable(w, ctx, sh.gh, owner, repo, body.Path, body.Commit, body.Path, stem, body.SHA256)
 	if !ok {
-		return
-	}
-	if sumOf(file.Bytes) != body.SHA256 {
-		writeError(w, http.StatusConflict, "The file changed since the preview. Preview it again.")
 		return
 	}
 	tag, err := sh.gh.TagAt(ctx, owner, repo, body.Commit)

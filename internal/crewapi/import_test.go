@@ -420,6 +420,9 @@ func TestImportRefusesWhenTheFileChangedSinceThePreviewAndWritesNothing(t *testi
 	status, out := p.importFrom(pv, map[string]any{"sha256": hexSum("something else\n")})
 	wantStatus(t, "import", status, 409, out)
 	wantText(t, "import", out, "changed since the preview")
+	if out["kind"] != "changed" {
+		t.Errorf("kind = %v, want changed", out["kind"])
+	}
 	wantNoWrites(t, p)
 	p.wantNothingImported("changed upstream")
 }

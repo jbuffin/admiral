@@ -134,7 +134,7 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
         setError(r.error);
         return;
       }
-      if (r.status === 409) await loadPreview(previewed);
+      if (r.kind === 'changed') await loadPreview(previewed);
       setError(r.error);
       return;
     }

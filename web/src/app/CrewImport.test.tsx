@@ -228,12 +228,22 @@ test('a browse row shows the role once its file has been read', async () => {
 });
 
 test('an Import refused as changed since the preview shows the message and loads the preview again', async () => {
-  const calls = server([member('bosun')], (c) => (to(c, '/imports/preview') ? json(pv) : to(c, '/imports') && c.method === 'POST' ? json({ error: 'The file changed since the preview' }, 409) : undefined));
+  const calls = server([member('bosun')], (c) => (to(c, '/imports/preview') ? json(pv) : to(c, '/imports') && c.method === 'POST' ? json({ error: 'The file changed since the preview', kind: 'changed' }, 409) : undefined));
   page();
   await previewOf();
   fireEvent.click(await within(await screen.findByRole('region', { name: 'Import' })).findByRole('button', { name: 'Import' }));
   await waitFor(() => expect(named(calls, 'POST', '/imports/preview')).toHaveLength(2));
   expect((await screen.findByRole('alert')).textContent).toContain('The file changed since the preview');
+});
+
+test('an Import refused for a link in the crew path shows the message and keeps the preview without reading it again', async () => {
+  const calls = server([member('bosun')], (c) => (to(c, '/imports/preview') ? json(pv) : to(c, '/imports') && c.method === 'POST' ? json({ error: 'a link is in the path, refused; nothing was changed' }, 409) : undefined));
+  page();
+  await previewOf();
+  fireEvent.click(await within(await screen.findByRole('region', { name: 'Import' })).findByRole('button', { name: 'Import' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('a link is in the path');
+  expect(named(calls, 'POST', '/imports/preview')).toHaveLength(1);
+  expect(within(screen.getByRole('region', { name: 'Import' })).getByLabelText('Member card')).toBeTruthy();
 });
 
 test('an Import from a Browse row refused as changed loads that row\'s preview again', async () => {
@@ -242,7 +252,7 @@ test('an Import from a Browse row refused as changed loads that row\'s preview a
     (c) => {
       if (c.method === 'GET' && to(c, '/sources/hubot/crew')) return json({ members: [{ name: 'mate', path: 'crew/mate.md', blob: 'b2', imported: null, published: false }] });
       if (to(c, '/imports/preview')) return json({ ...pv, path: 'crew/mate.md' });
-      if (to(c, '/imports') && c.method === 'POST') return json({ error: 'The file changed since the preview' }, 409);
+      if (to(c, '/imports') && c.method === 'POST') return json({ error: 'The file changed since the preview', kind: 'changed' }, 409);
       return undefined;
     },
     view(['hubot/crew']),

@@ -107,3 +107,22 @@ func TestATagWithAHiddenCharacterOrAnUnusableRefIsNoTag(t *testing.T) {
 		})
 	}
 }
+
+func TestAFileThatChangedToAnInvalidOneIsAConflictNotARefusal(t *testing.T) {
+	p := newImp(t, impOpts{})
+	p.gh.seed(scout)
+	status, pv := p.importPreview("hubot/crew/scout")
+	wantStatus(t, "preview", status, 200, pv)
+
+	changed := scout
+	changed.text = memberFile("scout", "") + "hidden \u202e here\n"
+	p.gh.unseed()
+	p.gh.seed(changed)
+	status, out := p.importFrom(pv, nil)
+	wantStatus(t, "import", status, 409, out)
+	wantText(t, "import", out, "The file changed since the preview")
+	if out["kind"] != "changed" {
+		t.Errorf("kind = %v, want changed", out["kind"])
+	}
+	p.wantNothingImported("a file that changed")
+}
