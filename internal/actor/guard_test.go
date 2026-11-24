@@ -332,6 +332,10 @@ func TestAnActorCannotPublishOrUnpublishCrewOrCreateTheShareRepo(t *testing.T) {
 		{"POST", "/fleets/personal/crew/members/bosun/share"},
 		{"GET", "/fleets/personal/crew/published/bosun"},
 		{"DELETE", "/fleets/personal/crew/published/bosun"},
+		{"POST", "/fleets/personal/crew/imports/preview"},
+		{"POST", "/fleets/personal/crew/imports"},
+		{"PUT", "/fleets/personal/crew/sources"},
+		{"GET", "/fleets/personal/crew/sources/octocat/admiral-crew"},
 	}
 	for _, prefix := range []string{"/api", "/api/v1"} {
 		for _, rt := range routes {
