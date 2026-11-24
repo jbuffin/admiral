@@ -41,7 +41,7 @@ func newImp(t *testing.T, o impOpts) *pubFixture {
 		path = "/usr/bin:/bin"
 	}
 	sharing := map[string]any{"enabled": !o.off, "sources": o.sources}
-	if sharing["sources"] == nil {
+	if len(o.sources) == 0 {
 		sharing["sources"] = []string{}
 	}
 	if !o.noRepo {

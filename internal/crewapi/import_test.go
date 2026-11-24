@@ -242,6 +242,23 @@ func TestAHitInAnImportedFileIsAWarningThatNeverEchoesTheSecretAndImportStillWor
 	}
 }
 
+func TestAFailedScanOfAnImportedFileIsAWarningWithItsErrorAndImportStillWorks(t *testing.T) {
+	p := newImp(t, impOpts{})
+	p.leakFail("error")
+	p.gh.seed(scout)
+	status, pv := p.importPreview("hubot/crew/scout")
+	wantStatus(t, "preview", status, 200, pv)
+	scan, _ := pv["scan"].(map[string]any)
+	if scan["state"] != "failed" || !strings.Contains(str(scan, "error"), "fake gitleaks: boom") {
+		t.Fatalf("scan = %v, want a failure naming its error", scan)
+	}
+	status, out := p.importFrom(pv, nil)
+	wantStatus(t, "import", status, 200, out)
+	if !exists(filepath.Join(p.crewDir(), "scout.md")) {
+		t.Error("nothing imported")
+	}
+}
+
 func TestWithNoGitleaksPreviewAndImportStillWork(t *testing.T) {
 	p := newImp(t, impOpts{pubOpts: pubOpts{noGitleak: true}})
 	p.gh.seed(scout)
