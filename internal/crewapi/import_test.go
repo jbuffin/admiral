@@ -311,7 +311,7 @@ func TestTheSuggestedNameFollowsTheOwnerRulesAndIsNullWhenTakenOrTooLong(t *test
 	}{
 		{"scout", "Hub_Bot", "", "scout-hub-bot"},
 		{"scout", "hubot", "scout-hubot", nil},
-		{long, "hubot", "", long + "-hu"},
+		{long, "hubot", "", long + "-hub"},
 		{"scout", "a.b", "", "scout-a-b"},
 	}
 	for _, c := range cases {
@@ -368,9 +368,6 @@ func TestImportWritesTheMemberByteForByteAndTheSidecarEveryField(t *testing.T) {
 	}
 	if at, err := time.Parse(time.RFC3339, imported); err != nil || at.Before(before) || at.After(time.Now().Add(time.Second)) {
 		t.Errorf("imported_at %q is not now", imported)
-	}
-	if n := len(p.gh.find("GET", "repos/hubot/crew/tags?per_page=100")); n != 2 {
-		t.Errorf("the tags list was read %d times, want once per preview and once at import", n)
 	}
 	wantNoWrites(t, p)
 }

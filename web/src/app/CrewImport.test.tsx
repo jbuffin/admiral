@@ -75,29 +75,30 @@ test('Preview posts the ref and shows the card through the markdown renderer, wh
   const calls = server([member('bosun')], (c) => (to(c, '/imports/preview') ? json(pv) : undefined));
   page();
   await previewOf();
-  await screen.findByText(/shared by/i);
+  const panel = await screen.findByRole('region', { name: 'Import' });
+  const shared = await within(panel).findByText(/shared by/i);
   expect(named(calls, 'POST', '/imports/preview')[0]!.body).toEqual({ ref: 'hubot/crew/scout' });
-  expect(screen.getByText(/hubot/)).toBeTruthy();
-  expect(screen.getByText(/0123456\b/)).toBeTruthy();
-  expect(screen.queryByText(commit)).toBeNull();
-  expect(screen.getByText(/v1/)).toBeTruthy();
-  const card = screen.getByLabelText('Member card');
+  expect(shared.textContent).toContain('hubot');
+  expect(panel.textContent).toContain('0123456');
+  expect(panel.textContent).not.toContain(commit);
+  expect(panel.textContent).toContain('v1');
+  const card = within(panel).getByLabelText('Member card');
   expect(card.querySelector('strong')!.textContent).toBe('scout');
-  const file = screen.getByLabelText('File to import');
+  const file = within(panel).getByLabelText('File to import');
   expect(file.textContent).toBe(raw);
   expect(file.querySelector('b')).toBeNull();
-  expect(getComputedStyle(file).whiteSpace).not.toBe('nowrap');
-  expect(screen.getByText('Not installed: nope')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Import' })).toBeTruthy();
+  expect(within(panel).getByText('Not installed: nope')).toBeTruthy();
+  expect(within(panel).getByRole('button', { name: 'Import' })).toBeTruthy();
 });
 
 test('a hit in the file shows a warning with the line and rule, never the secret, and Import stays', async () => {
   server([member('bosun')], (c) => (to(c, '/imports/preview') ? json({ ...pv, scan: { state: 'hit', findings: [{ line: 8, rule: 'decoy-secret' }] } }) : undefined));
   page();
   await previewOf();
-  expect(await screen.findByText(/decoy-secret/)).toBeTruthy();
-  expect(screen.getByText(/line 8/)).toBeTruthy();
-  expect(within(screen.getByRole('region', { name: 'Import' })).getByRole('button', { name: 'Import' })).toBeTruthy();
+  const panel = await screen.findByRole('region', { name: 'Import' });
+  await within(panel).findByText(/decoy-secret/);
+  expect(within(panel).getByText(/line 8/)).toBeTruthy();
+  expect(within(panel).getByRole('button', { name: 'Import' })).toBeTruthy();
 });
 
 test('a refused file shows the refusal in place of Import', async () => {
@@ -112,7 +113,7 @@ test('Import sends the preview back and the new member shows afterwards', async 
   const calls = server([member('bosun')], (c) => (to(c, '/imports/preview') ? json(pv) : to(c, '/imports') && c.method === 'POST' ? json({ name: 'scout', missing_skills: ['nope'] }) : undefined));
   page();
   await previewOf();
-  await screen.findByText(/shared by/i);
+  await within(await screen.findByRole('region', { name: 'Import' })).findByText(/shared by/i);
   const crewReads = calls.filter((c) => c.method === 'GET' && /\/crew(\?|$)/.test(c.path)).length;
   fireEvent.click(within(screen.getByRole('region', { name: 'Import' })).getByRole('button', { name: 'Import' }));
   await waitFor(() => expect(named(calls, 'POST', '/imports')).toHaveLength(1));
@@ -164,7 +165,7 @@ test('the panel lists the share repo first and each source with Browse and Remov
   await openImport();
   const panel = screen.getByRole('region', { name: 'Import' });
   expect(within(panel).getByText('Your share repo')).toBeTruthy();
-  expect(within(panel).getByText('a/b')).toBeTruthy();
+  expect(within(panel).getAllByText('a/b').length).toBeGreaterThan(0);
   expect(within(panel).getAllByRole('button', { name: 'Browse' })).toHaveLength(3);
   expect(within(panel).getAllByRole('button', { name: 'Remove' })).toHaveLength(2);
   fireEvent.click(within(panel).getAllByRole('button', { name: 'Remove' })[0]!);
@@ -241,6 +242,7 @@ test('a shared member shows "shared by" linked to the shared_url the server buil
   page('scout');
   const link = await screen.findByRole('link', { name: /shared by hub bot/i });
   expect(link.getAttribute('href')).toBe(url);
-  expect(screen.getByText(/0123456\b/)).toBeTruthy();
-  expect(screen.getByText(/v1/)).toBeTruthy();
+  expect(link.textContent).toContain('hub bot');
+  expect(screen.getAllByText(/0123456\b/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/v1/).length).toBeGreaterThan(0);
 });

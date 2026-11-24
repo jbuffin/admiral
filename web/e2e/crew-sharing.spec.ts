@@ -140,11 +140,15 @@ test('a crew member is imported from a ref, read before it is written, and shows
   await page.getByRole('button', { name: 'Preview' }).click();
 
   // Nothing is written until Import: the card, the owner, the short commit, the tag and the exact file show first.
-  await expect(page.getByText(/shared by/i)).toBeVisible();
-  await expect(page.getByLabel('Member card').locator('strong')).toHaveText('scout');
-  await expect(page.getByText(SHA.slice(0, 7))).toBeVisible();
-  await expect(page.getByText('v1')).toBeVisible();
-  await expect(page.getByLabel('File to import')).toContainText('Work as scout.');
+  const panel = page.getByRole('region', { name: 'Import' });
+  await expect(panel.getByText(/shared by/i)).toBeVisible();
+  await expect(panel.getByLabel('Member card').locator('strong')).toHaveText('scout');
+  await expect(panel).toContainText(SHA.slice(0, 7));
+  await expect(panel).toContainText('v1');
+  const file = panel.getByLabel('File to import');
+  await expect(file).toContainText('Work as scout.');
+  // A long line wraps inside the file block instead of scrolling it.
+  expect(await file.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(existsSync(imported)).toBe(false);
 
   await page.getByRole('region', { name: 'Import' }).getByRole('button', { name: 'Import' }).click();
