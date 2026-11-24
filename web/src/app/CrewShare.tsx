@@ -1,7 +1,8 @@
-import { useEffect, useId, useState } from 'preact/hooks';
+import { useId, useState } from 'preact/hooks';
 import { call } from './api';
 import { Actions, Button } from './Button';
 import { crewApi, type CrewMember } from './crew';
+import { usePollUntil } from './hooks/poll';
 import { LineDiff } from './LineDiff';
 
 interface Scan {
@@ -76,18 +77,19 @@ function PreviewStep({ member, fleetKey, harness, onDone, onClose }: { member: C
   const [busy, setBusy] = useState(false);
   const [commit, setCommit] = useState('');
   const base = `/members/${encodeURIComponent(member.name)}/share`;
-  useEffect(() => {
-    let live = true;
-    void call<Preview>('POST', crewApi(fleetKey, harness, `${base}/preview`)).then((r) => {
-      if (!live) return;
+  // One read of the file that would go public; returning true ends the poll after it.
+  usePollUntil(
+    async (isLive) => {
+      const r = await call<Preview>('POST', crewApi(fleetKey, harness, `${base}/preview`));
+      if (!isLive()) return true;
       setLoading(false);
       if (r.ok) setPreview(r.data);
       else setError(r.error);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
+      return true;
+    },
+    [fleetKey, harness, base],
+    { everyMs: 1000 },
+  );
   const missing = preview?.scan.state === 'missing';
   const publish = async () => {
     if (!preview || busy) return;
