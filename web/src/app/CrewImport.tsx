@@ -1,8 +1,9 @@
-import { useEffect, useId, useState } from 'preact/hooks';
+import { useId, useState } from 'preact/hooks';
 import { call } from './api';
 import { Actions, Button } from './Button';
 import { crewApi } from './crew';
 import { UnpublishConfirm, type SharingView } from './CrewShare';
+import { usePollUntil } from './hooks/poll';
 import { renderMarkdown } from './markdown';
 
 interface Scan {
@@ -70,18 +71,20 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
   const [browsing, setBrowsing] = useState<{ repo: string; rows: Row[] } | null>(null);
   const [unpublishing, setUnpublishing] = useState('');
 
-  useEffect(() => {
-    let live = true;
-    void call<Sharing>('GET', crewApi(fleetKey, harness, '/sharing')).then((r) => {
-      if (!live) return;
-      if (!r.ok) return setError(r.error);
-      setView(r.data);
-      setSources(r.data.crew_sharing.sources ?? []);
-    });
-    return () => {
-      live = false;
-    };
-  }, [fleetKey, harness]);
+  usePollUntil(
+    async (isLive) => {
+      const r = await call<Sharing>('GET', crewApi(fleetKey, harness, '/sharing'));
+      if (!isLive()) return true;
+      if (!r.ok) setError(r.error);
+      else {
+        setView(r.data);
+        setSources(r.data.crew_sharing.sources ?? []);
+      }
+      return true;
+    },
+    [fleetKey, harness],
+    { everyMs: 1000 },
+  );
 
   const loadPreview = async (text: string) => {
     setBusy(true);
