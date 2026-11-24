@@ -1,5 +1,7 @@
 # Crew sharing
 
+Status: agreed by the engineer on 2026-11-24 ([ADR 0049](adr/0049-share-crew-members.md), accepted).
+
 How an engineer publishes a crew member to a public GitHub repo, imports one someone else published, keeps it up to date, and takes a published member back down. The decision and its trade-offs are in [ADR 0049](adr/0049-share-crew-members.md); this file is the build spec. Read it before changing crew sharing, the crew directory's file rules, or the Crew page's Share, Import and Unpublish flows.
 
 The member file format belongs to Commodore (`jbuffin/skills`, `skills/engineering/commodore/references/crew-members.md`). Admiral publishes and imports that format as it is and adds nothing to it. Provenance lives in a separate file, the sidecar, whose schema Commodore also owns (see [Commodore and the sidecar](#commodore-and-the-sidecar)). Sharing missions is out of scope (see [Future work](#future-work)).
@@ -140,7 +142,7 @@ The scaffold creates the repo only under the `gh` account itself (`/user/repos`)
 
 A publish sends exactly one file. Admiral builds its bytes and checks them for the preview, and checks them again on commit.
 
-1. **Only the engineer's own fleet members.** Share is offered on a member whose layer is `fleet` and that has no sidecar file at all, attached, detached or unreadable. Imports are never re-shared; Make mine is the way to make an import the engineer's own. A built-in has no file to share (customize it first). Memory notes, ad hoc members and run members are never offered.
+1. **Only the engineer's own fleet members.** Share is offered on a member whose layer is `fleet` and that has no sidecar file at all, attached, detached or unreadable. Imports are never re-shared: an imported member shows no Share action and no hint pointing at one. Make mine, its own action with its own confirm, is the way to make an import the engineer's own. A built-in has no file to share (customize it first). Memory notes, ad hoc members and run members are never offered.
 2. **Canonical bytes.** Admiral rebuilds the file from the resolved member with `crewapi`'s canonical writer (`memberBody.file`), not the file on disk. That drops unknown fields and never writes `ad-hoc` or `ad-hoc-run`. The bytes pass `crew.CheckFile` first.
 3. **No paths from the Mac.** The bytes are refused when they contain `$ADMIRAL_HOME`, the user's home directory, the fleet's clone root or any of its search roots, as absolute paths. The refusal names the line.
 4. **No hidden characters.** A rune that `textsafe.Hidden` flags, or whose category is one of crew notes' hidden set (Cc, Cf, Cs, Co, Cn, Zl, Zp), refuses the publish, except `\n` and `\t`. The refusal names the line and the code point (`U+202E on line 7`).
@@ -152,12 +154,14 @@ Checks 1 to 4 always run and have no override. The engineer fixes the member (Ed
 
 Admiral runs the engineer's own `gitleaks` on the exact bytes. It has no scanner of its own.
 
-- **How it runs.** Admiral finds `gitleaks` on the fleet env's `PATH` and runs `gitleaks stdin --no-banner --redact --log-level error --report-format json --report-path - --exit-code 3`, with the bytes on stdin, nothing written to disk, the working directory a fresh empty temp directory, and `GITLEAKS_CONFIG` and `GITLEAKS_CONFIG_TOML` removed from its env, so gitleaks uses its default rules and never a repo's allowlist. A 30-second timeout.
-- **Reading the result.** Exit 0: clean. Exit 3: a hit; Admiral reads `RuleID` and `StartLine` from the JSON report (`--redact` keeps the secret out of it). Any other exit, a timeout or unparsable output: the scan failed, and the preview says so with gitleaks' first stderr line.
+- **Which gitleaks.** Admiral finds `gitleaks` on the fleet env's `PATH` and reads `gitleaks version` (a leading `v` is dropped). 8.19.0 or later is usable. Older is **too old**: it has no `stdin` command, and Admiral treats it like a missing gitleaks. There is no `gitleaks dir` fallback. A version it can't read is a failed scan.
+- **How it runs.** Admiral runs `gitleaks stdin --no-banner --redact --log-level error --report-format json --report-path - --exit-code 3`, with the bytes on stdin, nothing written to disk, the working directory a fresh empty temp directory, and `GITLEAKS_CONFIG` and `GITLEAKS_CONFIG_TOML` removed from its env, so gitleaks uses its default rules and never a repo's allowlist. A 30-second timeout.
+- **Reading the result.** Exit 0: clean. Exit 3: a hit; Admiral reads `RuleID` and `StartLine` from the JSON report (`--redact` keeps the secret out of it). Any other exit, a crash, a timeout or unparsable output: the scan **failed**.
 - **A hit refuses the publish**, naming the line and the rule, never the text. There is no opt-out on a hit.
-- **No gitleaks.** When `gitleaks` isn't found (or the scan failed), the preview says "Secret scan unavailable: gitleaks isn't installed", shows how to install it (`brew install gitleaks`, with a link to gitleaks' install docs), and offers **Publish without a secret scan**. Admiral never installs it, the way it installs nothing but Commodore ([ADR 0040](adr/0040-admiral-installs-commodore-as-a-harness-plugin.md)).
-- **The opt-out is per publish.** Choosing it shows, in the preview: "This file goes public without a secret scan. Read it for keys, tokens and passwords before you publish." The publish request carries `"skip_secret_scan": true`; nothing is saved, so the next publish scans again or asks again. The server rejects `skip_secret_scan` (400) when gitleaks is installed and ran.
-- **Tests.** A fake `gitleaks` in `e2e/testdata/` (beside the fake `gh`) reports a hit on any `decoy-secret-<hex>` value, with its line, and is clean otherwise; a test without it on `PATH` covers the missing case. Unit tests drive the runner through a seam. No key-shaped string enters the tree.
+- **A failed scan refuses the publish** with gitleaks' error (its first stderr line, or "timed out after 30s"). There is no opt-out: gitleaks is there, so the engineer fixes it or tries again.
+- **Missing or too old.** When `gitleaks` isn't found, the preview says "Secret scan unavailable: gitleaks isn't installed" and shows how to install it (`brew install gitleaks`, with a link to gitleaks' install docs). When it's too old, it says "Secret scan unavailable: gitleaks `<version>` is too old (8.19 or later needed)" and shows the upgrade command (`brew upgrade gitleaks`). Both offer **Publish without a secret scan**. Admiral never installs or upgrades it, the way it installs nothing but Commodore ([ADR 0040](adr/0040-admiral-installs-commodore-as-a-harness-plugin.md)).
+- **The opt-out is per publish.** Choosing it shows, in the preview: "This file goes public without a secret scan. Read it for keys, tokens and passwords before you publish." The publish request carries `"skip_secret_scan": true`; nothing is saved, so the next publish scans again or asks again. The opt-out exists only for a missing or too-old gitleaks: the server rejects `skip_secret_scan` (400) when a usable gitleaks is installed, whether its scan was clean, hit or failed.
+- **Tests.** A fake `gitleaks` in `e2e/testdata/` (beside the fake `gh`) reports a hit on any `decoy-secret-<hex>` value, with its line, and is clean otherwise; its version and failures (a crash, an error exit, a hang) are set by the test. A test without it on `PATH` covers the missing case, and one with it reporting `8.18.0` the too-old case. Unit tests drive the runner through a seam. No key-shaped string enters the tree.
 - **On import** the scan runs the same way and a hit is shown as a warning, not a refusal (a publisher's secret is their problem, but the engineer should know). Missing gitleaks on import shows nothing.
 
 **Preview equals commit.** The preview route returns the bytes, their sha256 and the scan state. The publish route takes that sha256 (and `skip_secret_scan` when chosen), rebuilds the bytes, runs every check again, and commits only when the hash still matches; otherwise it's a 409 "The member changed since the preview" and the page shows the new preview.
@@ -203,7 +207,7 @@ The badge shows on the member's list row and on the detail header.
 
 ## Make mine
 
-**Make mine** on a shared member (attached, detached or with an unreadable sidecar) asks "Stop tracking `<repo>`? This member will no longer get updates or show who shared it." and, on confirm, deletes `<name>.shared.json` and leaves `<name>.md` as it is. The member is then an ordinary fleet member: no badge, no "shared by", no update checks, and Share is offered (when sharing is on). It's the only way an imported member becomes shareable.
+**Make mine** on a shared member (attached, detached or with an unreadable sidecar) asks "Stop tracking `<repo>`? This member will no longer get updates or show who shared it." and, on confirm, deletes `<name>.shared.json` and leaves `<name>.md` as it is. The member is then an ordinary fleet member: no badge, no "shared by", no update checks, and Share is offered (when sharing is on). It's the only way an imported member becomes shareable, and nothing else offers it: Share is never shown on an imported member.
 
 ## Unpublish
 
@@ -223,7 +227,7 @@ All under `/api/fleets/{key}/crew/`, JSON in and out, the `?harness=` dock query
 | --- | --- |
 | `GET  .../crew/sharing` | The fleet's `crew_sharing` state, the `gh` login, whether the share repo exists and is pushable, its published names, and update states per shared member. |
 | `POST .../crew/sharing/repo` | Create the share repo and its README `{"name", "description"}`, or adopt an existing one `{"repo": "owner/name"}`. Saves `share_repo`. 403 when sharing is off. |
-| `POST .../crew/members/{name}/share/preview` | The canonical bytes, their sha256, the target path, whether it replaces a file, and `scan`: `{"state": "clean" \| "hit" \| "missing" \| "failed", "findings": [{"line", "rule"}], "install": "<hint>"}`. A failed check 1 to 4 is a 422 naming the check, the line and the rule. 403 when sharing is off. |
+| `POST .../crew/members/{name}/share/preview` | The canonical bytes, their sha256, the target path, whether it replaces a file, and `scan`: `{"state": "clean" \| "hit" \| "failed" \| "missing" \| "too-old", "findings": [{"line", "rule"}], "error": "<text>", "version": "<found>", "install": "<hint>"}`. A failed check 1 to 4 is a 422 naming the check, the line and the rule. 403 when sharing is off. |
 | `POST .../crew/members/{name}/share` | `{"sha256", "skip_secret_scan"?}` from the preview. Rechecks and commits. Returns the commit URL. 403 when sharing is off; 422 on a hit. |
 | `POST .../crew/members/{name}/make-mine` | Deletes the sidecar. 404 when there's none. |
 | `GET  .../crew/published/{name}` | The published file's bytes and blob SHA, for the Unpublish confirm. |
@@ -260,8 +264,9 @@ Rename and Delete change as well: Rename moves `<name>.shared.json` with the mem
 | Repo name taken at create | 409, offering to use it when it's public and pushable. |
 | Privacy check 1 to 4 hit | 422 naming the check, the line and the rule or code point. |
 | gitleaks hit | 422 naming the line and the rule. No opt-out. |
-| gitleaks missing or failed | The preview's scan state, the install hint and the opt-out. |
-| `skip_secret_scan` while gitleaks ran | 400. |
+| gitleaks installed but the scan crashed, errored or timed out | 422 with the error. No opt-out. |
+| gitleaks missing or older than 8.19 | The preview's scan state, the install or upgrade hint, and the one-publish opt-out with its warning. |
+| `skip_secret_scan` with a usable gitleaks installed | 400. |
 | Member changed since preview | 409; the page reloads the preview. |
 | Published file changed upstream since preview or confirm (`sha` mismatch) | 409 from GitHub; the page reloads the preview or confirm. |
 | Unpublish of a file that isn't there | 404; the page refreshes the published state. |
@@ -284,13 +289,15 @@ Publishing:
 - **AC5.** The published bytes are the canonical member file: unknown fields, `ad-hoc` and `ad-hoc-run` are absent, and no memory note, ad hoc member or run member is sent.
 - **AC6.** Share is refused (422, no GitHub write, no override) when the bytes contain a hidden character such as U+202E or U+E0041, or an absolute path under `$ADMIRAL_HOME`, the home directory, the clone root or a search root; the message names the line and the rule.
 - **AC7.** Publishing when the member changed after the preview answers 409 and commits nothing.
-- **AC8.** Share is not offered, and the share routes answer 409, on a built-in member or on any member with a sidecar file, whether attached, detached or unreadable.
+- **AC8.** Share is not shown, and the share routes answer 409, on a built-in member or on any member with a sidecar file, whether attached, detached or unreadable; an imported member's detail shows Make mine as its own action with its own confirm, and nothing on it offers Share or Make mine-and-share in one step.
 
 Secret scan:
 
 - **AC9.** With gitleaks on the fleet's `PATH`, preview and publish run `gitleaks stdin` on the exact bytes with nothing written to disk and no gitleaks config from the env or a repo; a test with the fake gitleaks shows a `decoy-secret-<hex>` value refuses the publish with 422 naming the line and the rule and never the value, and no opt-out is offered.
 - **AC10.** Without gitleaks on `PATH`, the preview says the secret scan is unavailable, shows how to install it, and offers Publish without a secret scan with its warning; publishing then needs `skip_secret_scan: true` in that request, and the next publish asks again. Admiral never runs an install.
-- **AC11.** `skip_secret_scan: true` is refused with 400 when gitleaks is installed and ran, and `config.json` never records a scan choice.
+- **AC11.** `skip_secret_scan: true` is refused with 400 when a usable gitleaks (8.19 or later) is installed, whatever its scan returned, and `config.json` never records a scan choice.
+- **AC11a.** With a gitleaks older than 8.19 on `PATH` (the fake reporting `8.18.0`), the preview says it's too old, shows the upgrade command and offers the same one-publish opt-out with its warning as AC10; Admiral never runs `gitleaks dir` or any other fallback scan.
+- **AC11b.** With a usable gitleaks whose scan crashes, exits with an error or passes the 30-second timeout, preview and publish refuse with 422 showing the error, no opt-out is offered, and nothing is committed.
 
 Import:
 
@@ -310,7 +317,7 @@ Updates:
 
 Make mine and Unpublish:
 
-- **AC22.** Make mine, after a confirm, deletes the member's sidecar and leaves its file byte for byte; the member then has `shared: null`, no badge and no update checks, and Share is offered when sharing is on.
+- **AC22.** Make mine, after its own confirm, deletes the member's sidecar and leaves its file byte for byte; the member then has `shared: null`, no badge and no update checks, and Share is offered when sharing is on.
 - **AC23.** A fleet member whose name is in the share repo's `crew/` listing shows "Published" and Unpublish; a file published from elsewhere shows too, with no local record involved.
 - **AC24.** Unpublish shows the repo, path and current bytes of the published file and deletes nothing until confirmed; Confirm deletes `crew/<name>.md` through `gh api` `DELETE` with that blob SHA, leaves the local member untouched, and a file changed since the confirm answers 409.
 
@@ -329,9 +336,7 @@ Commodore (`jbuffin/skills`):
 
 ## Open questions
 
-- **gitleaks version.** `gitleaks stdin` needs gitleaks 8.19 or later. Should an older gitleaks count as missing (with an upgrade hint), or should Admiral fall back to writing the bytes to a temp file for `gitleaks dir`?
-- **Opt-out on a failed scan.** As written, a scan that fails (crash, timeout) offers the same per-publish opt-out as a missing gitleaks. Should a failure instead refuse until it runs?
-- **Making a detached import shareable automatically.** Make mine is the only path; an edited import still can't be shared until the engineer clicks it. Fine as is, or should Share offer Make mine inline?
+None. The engineer answered the last ones on 2026-11-24.
 
 ## Conflicts with today's code
 
@@ -353,6 +358,6 @@ Each unit is one PR and builds only on the ones before it. Unit 1 is in `jbuffin
 
 1. **Commodore reads sidecars (`jbuffin/skills`).** The "Shared members" section in `crew-members.md`, `shared` in `crew.py resolve`, the Source cell in `cast`, the five new fixture cases and `"shared": null` in every existing `expected.json`. AC28 to AC31 on Commodore's side.
 2. **Groundwork (Admiral).** Re-vendor the fixtures and give the Go resolver the same `shared` object; `crew_sharing` on the fleet (config, `PUT /api/fleets/{key}`, the Preferences toggle); the sidecar writer; Rename and Delete carrying the sidecar; Make mine; the hidden-character, path and field checks as one publish check; the gitleaks runner with its fake. AC11, AC22, AC25, AC31 on Admiral's side, and the check halves of AC6 and AC9.
-3. **Publish and Unpublish.** `GET .../crew/sharing`, `POST .../crew/sharing/repo`, share preview and share, the published listing, Unpublish; the Share button, the create-repo dialog, the preview with the scan state and opt-out, the Unpublish confirm, and the line diff component (for "Replaces the published version"); fake `gh` e2e. AC1, AC3 to AC10, AC23, AC24, and AC26 and AC27 for these routes.
+3. **Publish and Unpublish.** `GET .../crew/sharing`, `POST .../crew/sharing/repo`, share preview and share, the published listing, Unpublish; the Share button, the create-repo dialog, the preview with the scan state and opt-out, the Unpublish confirm, and the line diff component (for "Replaces the published version"); fake `gh` e2e. AC1, AC3 to AC11b, AC23, AC24, and AC26 and AC27 for these routes.
 4. **Import and sources.** Ref and URL parsing, import preview and import, clash rename, skill warnings, "shared by" on the detail header; add, browse and remove sources. AC2 (import part), AC12 to AC17, and AC26 and AC27 for these routes.
 5. **Pinned updates.** The checker (page open and daily, one call per repo), update badges, update preview with the line diff, Apply, and the detach warning on Edit. AC2 (update part), AC18 to AC21.
