@@ -488,6 +488,20 @@ func TestWriteSidecarKeepsTheUnknownFieldsOfOneAlreadyThere(t *testing.T) {
 	}
 }
 
+func TestWriteSidecarRefusesAFileThatIsNotAJSONObjectAndLeavesItAlone(t *testing.T) {
+	for name, content := range map[string]string{"an array": "[1]", "null": "null", "garbage": "not json"} {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "bosun.shared.json"), content)
+		s := crewapi.Sidecar{Version: 1, Host: "github.com", Repo: "octocat/admiral-crew", Path: "crew/bosun.md", UpstreamName: "bosun", Commit: commit40, UpstreamBlob: strings.Repeat("b", 40), ContentSHA256: hexSum("new")}
+		if err := crewapi.WriteSidecar(dir, "bosun", s); err == nil {
+			t.Errorf("%s: WriteSidecar replaced the file, want an error", name)
+		}
+		if raw, _ := os.ReadFile(filepath.Join(dir, "bosun.shared.json")); string(raw) != content {
+			t.Errorf("%s: the file is now %q, want it untouched", name, raw)
+		}
+	}
+}
+
 func TestSidecarPresentSeesAnythingAtTheName(t *testing.T) {
 	dir := t.TempDir()
 	if got, err := crewapi.SidecarPresent(dir, "bosun"); err != nil || got {

@@ -37,7 +37,7 @@ beforeEach(() => {
       if (init?.method === 'PUT' && path.endsWith('/fleets/zulu')) {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
         puts.push(body);
-        if (refuse) return json({ error: refuse }, 400);
+        if (refuse) return json({ error: refuse }, refuse.startsWith('conflict') ? 409 : 400);
         stored = { ...stored, ...body } as Fleet;
         if (body.color === '') stored = { ...stored, color: '#8899aa' };
         return json({ fleets: [stored] });
@@ -154,4 +154,15 @@ test('a refused Crew sharing save shows the error beside the switch and leaves i
   fireEvent.click(screen.getByRole('switch', { name: 'Crew sharing' }));
   expect((await screen.findByRole('alert')).textContent).toContain('crew_sharing is invalid');
   expect(screen.getByRole('switch', { name: 'Crew sharing' }).getAttribute('aria-checked')).toBe('false');
+});
+
+test('Reload on a conflicting Crew sharing save clears its error', async () => {
+  refuse = 'conflict: the file changed';
+  render(<FleetPage fleet={stored} />);
+  fireEvent.click(screen.getByRole('switch', { name: 'Crew sharing' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('nothing was saved');
+  refuse = null;
+  fireEvent.click(within(alert).getByRole('button', { name: 'Reload' }));
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
 });

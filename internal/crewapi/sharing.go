@@ -46,14 +46,13 @@ func WriteSidecar(dir, name string, s Sidecar) error {
 	if err := json.Unmarshal(own, &set); err != nil {
 		return err
 	}
-	// A file that can't be read or isn't a JSON object has nothing to keep; it's replaced.
-	base, _, _ := readRegular(filepath.Join(dir, sidecarFile(name)))
+	base, _, err := readRegular(filepath.Join(dir, sidecarFile(name)))
+	if err != nil {
+		return err
+	}
 	out, err := mergeSidecar(base, set)
 	if err != nil {
-		out, err = mergeSidecar(nil, set)
-		if err != nil {
-			return err
-		}
+		return err
 	}
 	return writeAtomic(dir, sidecarFile(name), out)
 }
