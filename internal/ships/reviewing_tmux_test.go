@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,29 +143,88 @@ func TestAShipLaunchedFromFreeTextCarriesNoPRAndAsksGitHubNothing(t *testing.T) 
 	}
 }
 
-func TestAShipLaunchedOnAStackCarriesEveryOpenLayerNotByTheViewerBottomFirst(t *testing.T) {
-	const l1, l2, l3, l4 = "https://github.com/acme/widgets/pull/21", "https://github.com/acme/widgets/pull/22",
-		"https://github.com/acme/widgets/pull/23", "https://github.com/acme/widgets/pull/24"
+const (
+	stackL1 = "https://github.com/acme/widgets/pull/21"
+	stackL2 = "https://github.com/acme/widgets/pull/22"
+	stackL3 = "https://github.com/acme/widgets/pull/23"
+	stackL4 = "https://github.com/acme/widgets/pull/24"
+)
+
+func TestAShipLaunchedOnAStackCarriesEveryOpenLayerBottomFirstAndReviewsOnlyOthers(t *testing.T) {
 	r := newReviewingRig(t, reviewStack)
-	r.gh.stacks = map[string][]string{"acme/widgets/12": {l1, l2, l3, l4}}
-	r.others(l1)
-	r.gh.pollGitHub.set(l2, moor.Status{State: "OPEN", Author: viewer, Viewer: viewer}) // the viewer's own layer
-	r.others(l3)
-	r.gh.pollGitHub.set(l4, moor.Status{State: "MERGED", Author: author, Viewer: viewer})
+	r.gh.stacks = map[string][]string{"acme/widgets/12": {stackL1, stackL2, stackL3, stackL4}}
+	r.others(stackL1)
+	r.mine(stackL2) // the viewer's own layer
+	r.others(stackL3)
+	r.gh.pollGitHub.set(stackL4, moor.Status{State: "MERGED", Author: author, Viewer: viewer})
 	r.poll()
 
-	var urls []string
-	for _, p := range r.prs(t) {
-		if !p.Reviewing || p.Author != author {
-			t.Errorf("layer %+v, want reviewing by %s", p, author)
-		}
-		urls = append(urls, p.URL)
+	r.wantPRs(t, []string{stackL1, stackL2, stackL3}, []string{stackL1, stackL3})
+	if o := r.options(t, "saltpaw"); o["reviewing"] != stackL1+","+stackL3 || o["prs"] != stackL1+","+stackL2+","+stackL3 {
+		t.Errorf("options prs %q reviewing %q, want all three open layers carried and %s,%s reviewing", o["prs"], o["reviewing"], stackL1, stackL3)
 	}
-	if !slices.Equal(urls, []string{l1, l3}) {
-		t.Errorf("carried layers = %v, want [%s %s]: open, not the viewer's, bottom first", urls, l1, l3)
+	_, raw, _ := r.wire(t)
+	var wire []map[string]any
+	if err := json.Unmarshal(raw["prs"], &wire); err != nil || len(wire) != 3 || wire[1]["url"] != stackL2 || wire[1]["author"] != viewer || wire[1]["reviewing"] == true {
+		t.Errorf("GET /api/ships prs = %s, want the viewer's layer %s listed second, not reviewing", raw["prs"], stackL2)
 	}
-	if o := r.options(t, "saltpaw"); o["reviewing"] != l1+","+l3 {
-		t.Errorf("reviewing option = %q, want %s,%s", o["reviewing"], l1, l3)
+}
+
+func TestAShipLaunchedOnAStackOfOnlyTheViewersLayersCarriesThemAndReviewsNothing(t *testing.T) {
+	r := newReviewingRig(t, reviewStack)
+	r.gh.stacks = map[string][]string{"acme/widgets/12": {stackL1, stackL2}}
+	r.mine(stackL1)
+	r.mine(stackL2)
+	r.poll()
+
+	r.wantPRs(t, []string{stackL1, stackL2}, nil)
+	if o := r.options(t, "saltpaw"); o["reviewing"] != "" {
+		t.Errorf("reviewing option = %q, want none: the ship reviews nothing, so Merge is not refused", o["reviewing"])
+	}
+}
+
+func TestAShipOnAStackOfOnlyTheViewersLayersMoorsCarryingThemWhenItsReportListsNoPRs(t *testing.T) {
+	r := newReviewingRig(t, reviewStack)
+	r.gh.stacks = map[string][]string{"acme/widgets/12": {stackL1, stackL2}}
+	r.mine(stackL1)
+	r.mine(stackL2)
+	go r.s.Run(r.ctx)
+	r.turn(t, "working", "")
+	r.writeReport(t, "done")
+	waitUntil(t, "the poll to carry both layers", func() bool { r.poll(); return len(r.prs(t)) == 2 })
+	r.turn(t, "needs_you", "stop")
+	r.waitMoored(t)
+
+	rec := readRecord(t, r.mooredFile())
+	if !slices.Equal(rec.PRs, []string{stackL1, stackL2}) || len(rec.Reviewing) != 0 {
+		t.Errorf("record prs %v reviewing %v, want prs [%s %s] and none reviewing, so Merge is not refused", rec.PRs, rec.Reviewing, stackL1, stackL2)
+	}
+	r.poll()
+	r.wantPRs(t, []string{stackL1, stackL2}, nil)
+	if rec := r.postMerge(); rec.Code == http.StatusConflict && strings.Contains(rec.Body.String(), "reviews a pull request") {
+		t.Errorf("merge = %d %s, want it not refused as a review for a ship that reviews nothing", rec.Code, rec.Body)
+	}
+}
+
+func TestAShipOnAMixedStackMoorsCarryingEveryLayerAndReviewingOnlyTheOthers(t *testing.T) {
+	r := newReviewingRig(t, reviewStack)
+	r.gh.stacks = map[string][]string{"acme/widgets/12": {stackL1, stackL2, stackL3}}
+	r.others(stackL1)
+	r.mine(stackL2)
+	r.others(stackL3)
+	go r.s.Run(r.ctx)
+	r.turn(t, "working", "")
+	r.writeReport(t, "done")
+	waitUntil(t, "the poll to carry all three layers", func() bool { r.poll(); return len(r.prs(t)) == 3 })
+	r.turn(t, "needs_you", "stop")
+	r.waitMoored(t)
+
+	rec := readRecord(t, r.mooredFile())
+	if !slices.Equal(rec.PRs, []string{stackL1, stackL2, stackL3}) || !slices.Equal(rec.Reviewing, []string{stackL1, stackL3}) {
+		t.Errorf("record prs %v reviewing %v, want [%s %s %s] reviewing [%s %s]", rec.PRs, rec.Reviewing, stackL1, stackL2, stackL3, stackL1, stackL3)
+	}
+	if rec := r.postMerge(); rec.Code != http.StatusConflict {
+		t.Errorf("merge = %d %s, want 409 while the ship reviews another author's layer", rec.Code, rec.Body)
 	}
 }
 
@@ -262,6 +323,49 @@ func TestAFreeTextShipWithADoneReportThatListsNoPRsStaysLive(t *testing.T) {
 		_, err := os.Stat(r.mooredFile())
 		return err != nil && r.live(t)
 	})
+}
+
+// A guard: a PR the ship only printed (a transcript candidate, not part of its order) does not make a done report moor it.
+func TestAShipCarryingAPrintedOwnPRWithADoneReportThatListsNoPRsIsNotMoored(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		localOnly bool
+	}{{"a local-only ship finishes", true}, {"a free-text ship stays live", false}} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newReviewingRig(t, "")
+			if c.localOnly {
+				r.markLocalOnly(t)
+			}
+			r.s.Candidates = func(string) []string { return []string{livePR7} }
+			launched, err := time.Parse(time.RFC3339, r.options(t, "saltpaw")["launched"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.gh.pollGitHub.set(livePR7, moor.Status{State: "OPEN", Author: viewer, Viewer: viewer, CreatedAt: launched.Add(time.Minute)})
+			go r.s.Run(r.ctx)
+			r.turn(t, "working", "")
+			waitUntil(t, "the poll to carry the printed PR", func() bool { r.poll(); return len(r.prs(t)) == 1 })
+			r.writeReport(t, "done")
+			r.turn(t, "needs_you", "stop")
+			if c.localOnly {
+				r.gone(t, "the finished ship to leave the live list")
+				waitUntil(t, "the finished record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "finished")) == 1 })
+			}
+			holdsFor(t, 1500*time.Millisecond, "the ship moored", func() bool {
+				_, err := os.Stat(r.mooredFile())
+				return err != nil && (c.localOnly || r.live(t))
+			})
+		})
+	}
+}
+
+// postMerge asks the ship to merge on a mux whose Merge route is open, since the rig's own routes refuse it with no token check.
+func (r *liveRig) postMerge() *httptest.ResponseRecorder {
+	r.s.MergeGuard = func(h http.Handler) http.Handler { return h }
+	mux := http.NewServeMux()
+	r.s.Routes(mux)
+	r.mux = mux
+	return r.post("merge", "{}")
 }
 
 func readRecord(t *testing.T, path string) moor.Record {

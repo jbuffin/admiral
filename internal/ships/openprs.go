@@ -132,21 +132,21 @@ func (s *Service) dueCheck(ctx context.Context, sess sessionhost.Session, st *op
 	}()
 }
 
-// autoMoor moors each live ship whose own turn has ended on a done report that has open PRs, or that reviews an open one.
+// autoMoor moors each live ship whose own turn has ended on a done report that has open PRs, or whose launch order has an open one.
 func (s *Service) autoMoor(ctx context.Context) {
 	for _, sess := range s.Host.Sessions() {
 		if !sess.IsShip() || sess.PaneDead || sess.Options["scout"] != "" || sess.Options[sessionhost.OptReturning] != "" || s.beingHanded(sess) ||
 			status(sess, time.Now()) != StatusNeedsYou || reasonOf(sess) != "stop" {
 			continue
 		}
-		reviewing := s.reviewingOpen(sess)
+		carried := s.orderOpen(sess)
 		s.openMu.Lock()
 		st := s.open[sess.Name]
-		due := st != nil && !st.tried && st.result == "done" && len(st.pending) == 0 && (len(st.prs) > 0 || len(reviewing) > 0)
+		due := st != nil && !st.tried && st.result == "done" && len(st.pending) == 0 && (len(st.prs) > 0 || len(carried) > 0)
 		var prs []string
 		if due {
 			st.tried = true
-			prs = withCarried(reviewing, st.prs)
+			prs = withCarried(carried, st.prs)
 		}
 		s.openMu.Unlock()
 		if !due {

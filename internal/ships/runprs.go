@@ -31,6 +31,7 @@ type orderCheck struct {
 	tries    int
 	resolved bool     // a stack's layers are known
 	layers   []string // the open layers of a stack order, bottom first
+	open     []string // the order's PRs judged open, carried or not
 }
 
 // maxFreshPerPoll bounds how many unjudged candidates one ship puts to GitHub in one poll.
@@ -254,11 +255,11 @@ func (s *Service) carriedOpen(sess sessionhost.Session) []string {
 	return out
 }
 
-// reviewingOpen is the carried PRs the ship reviews that the last poll saw open, in carried order.
-func (s *Service) reviewingOpen(sess sessionhost.Session) []string {
+// orderOpen is the carried PRs the order named or the ship reviews that the last poll saw open, in carried order.
+func (s *Service) orderOpen(sess sessionhost.Session) []string {
 	open := s.carriedOpen(sess)
 	s.mooredMu.Lock()
 	defer s.mooredMu.Unlock()
-	reviewing := s.reviewingOf(sess)
-	return slices.DeleteFunc(open, func(u string) bool { return !slices.Contains(reviewing, u) })
+	named, reviewing := s.runState(sess).order.open, s.reviewingOf(sess)
+	return slices.DeleteFunc(open, func(u string) bool { return !slices.Contains(named, u) && !slices.Contains(reviewing, u) })
 }
