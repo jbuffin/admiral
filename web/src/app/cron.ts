@@ -12,3 +12,11 @@ export function cronSentence(expr: string): string {
   if (dow === '*') return `Daily ${hh}:${mm}`;
   return DAYS.has(dow.toLowerCase()) ? `Weekdays at ${hh}:${mm}` : expr;
 }
+
+/** What the When field says: a plain-English description, or the plain reason Admiral's scheduler would refuse it. */
+export type CronDescription = { ok: true; text: string } | { ok: false; reason: string };
+
+/** Describes `expr` as Admiral's scheduler reads it, naming `zone` when known; `now` is the start of the never-fires window. */
+export function describeCron(_expr: string, _zone?: string, _now: Date = new Date()): CronDescription {
+  return { ok: false, reason: '' };
+}

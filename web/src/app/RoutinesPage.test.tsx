@@ -26,6 +26,7 @@ interface Call {
 
 let routines: Routine[];
 let spend: RoutineSpend | undefined;
+let zone: string | undefined;
 let calls: Call[];
 let draftReply: () => Response | Promise<Response>;
 const start = { value: loc.value };
@@ -44,6 +45,7 @@ const stored = (over: Partial<Routine> = {}): Routine => ({
 beforeEach(() => {
   routines = [];
   spend = undefined;
+  zone = 'America/Denver';
   calls = [];
   draftReply = () => json({ error: 'not found' }, 404);
   capabilities.value = [];
@@ -60,7 +62,7 @@ beforeEach(() => {
       if (path.endsWith('/launch-orders/dirs')) return json({ entries: [{ path: '/h/proj', name: 'proj', kind: 'checkout', ships_here: 0 }], selected: null, clone: null });
       if (path.includes('/launch-orders/skills')) return json({ mark: '/', commodore: { found: false, name: '' }, skills: [] });
       if (path.endsWith('/runs')) return json({ runs: [] });
-      if (method === 'GET' && path.endsWith('/routines')) return json({ routines, spend });
+      if (method === 'GET' && path.endsWith('/routines')) return json({ routines, spend, zone });
       calls.push({ method, path, body });
       if (method === 'GET' && path.includes('/routine-drafts/')) return draftReply();
       if (path.endsWith('/routines/draft')) return json({ draft: stored({ name: 'Nightly dependency check', when: '0 3 * * *' }), problems: null });
@@ -120,7 +122,7 @@ test('a routine filled in through the form is created with what the form shows, 
   await waitFor(() => expect((form.getByRole('radio', { name: 'Claude' }) as HTMLInputElement).checked).toBe(true));
   fireEvent.input(form.getByLabelText('Name'), { target: { value: 'Form sweep' } });
   fireEvent.input(form.getByLabelText('When'), { target: { value: '0 3 * * *' } });
-  expect(form.getByText(/Daily/)).toBeTruthy();
+  expect(await form.findByText('At 03:00 (America/Denver)')).toBeTruthy();
   await waitFor(() => expect(form.getByRole('option', { name: /proj/ })).toBeTruthy());
   fireEvent.change(form.getByLabelText('Checkout'), { target: { value: '/h/proj' } });
   fireEvent.input(form.getByLabelText('Text'), { target: { value: 'go' } });
@@ -490,4 +492,54 @@ test('a dot segment as the draft id is gone without a request', async () => {
   page(null, true);
   expect(await screen.findByText(GONE)).toBeTruthy();
   expect(calls).toEqual([]);
+});
+
+test('the When field describes the schedule under it as the engineer types, in the server zone', async () => {
+  page(null, true);
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  const when = form.getByLabelText('When');
+  fireEvent.input(when, { target: { value: '0 9 * * 1-5' } });
+  expect(await form.findByText('At 09:00, Monday through Friday (America/Denver)')).toBeTruthy();
+  fireEvent.input(when, { target: { value: '*/15 * * * *' } });
+  expect(await form.findByText('Every 15 minutes (America/Denver)')).toBeTruthy();
+  expect(form.queryByText(/Monday through Friday/)).toBeNull();
+});
+
+test('an invalid When says so in plain words instead of a description, without raising an alert', async () => {
+  page(null, true);
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  fireEvent.input(form.getByLabelText('When'), { target: { value: '0 25 * * *' } });
+  expect(await form.findByText('hour: 25 is outside 0-23')).toBeTruthy();
+  expect(form.queryByText(/^At /)).toBeNull();
+  expect(form.queryByRole('alert')).toBeNull();
+  fireEvent.input(form.getByLabelText('When'), { target: { value: '0 9 * * *' } });
+  expect(await form.findByText('At 09:00 (America/Denver)')).toBeTruthy();
+  expect(form.queryByText('hour: 25 is outside 0-23')).toBeNull();
+});
+
+test('the empty When keeps a hint that names the server zone, not this machine', async () => {
+  page(null, true);
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  expect(await form.findByText(/Five fields: minute hour day month weekday.*America\/Denver/)).toBeTruthy();
+  expect(form.queryByText(/this machine/)).toBeNull();
+});
+
+test('with no zone from the server the description has no zone suffix', async () => {
+  zone = undefined;
+  page(null, true);
+  const form = within(await screen.findByRole('form', { name: 'Routine' }));
+  fireEvent.input(form.getByLabelText('When'), { target: { value: '0 9 * * *' } });
+  expect(await form.findByText('At 09:00')).toBeTruthy();
+});
+
+test('each listed schedule reads in plain English with the server zone, and a hand-written bad one does not crash the row', async () => {
+  routines = [
+    stored({ id: 'r1', name: 'Weekday sweep', when: '0 9 * * 1-5' }),
+    stored({ id: 'r2', name: 'Morning digest', when: '0 8 * * *', do: { digest: {} } }),
+    stored({ id: 'r3', name: 'Hand edited', when: '60 * * * *' }),
+  ];
+  page();
+  expect(await screen.findByText('At 09:00, Monday through Friday (America/Denver)')).toBeTruthy();
+  expect(screen.getByText('Fleet digest, At 08:00 (America/Denver)')).toBeTruthy();
+  expect(screen.getByText('minute: 60 is outside 0-59')).toBeTruthy();
 });

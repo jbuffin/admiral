@@ -31,6 +31,8 @@ type Service struct {
 	Launch func(ctx context.Context, req launcher.Request) (ShipRef, *launcher.Error)
 	// Listed reads the host's ships; Stop all worker-launched picks the live ones it launched.
 	Listed func() []ListedShip
+	// Zone names the time zone the scheduler runs in, as the list response reports it.
+	Zone string
 
 	undoMu sync.Mutex
 
@@ -318,4 +320,10 @@ func (s *Service) serveSetHold(on, global bool) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, out)
 	}
+}
+
+// ZoneName names the zone a scheduler running in a Go location works in: name is Location.String(), abbr the zone abbreviation
+// now, and readlink reads the /etc/localtime link that names a "Local" zone.
+func ZoneName(name, abbr string, readlink func(path string) (string, error)) string {
+	return ""
 }
