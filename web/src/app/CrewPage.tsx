@@ -2,12 +2,12 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useReducer, useRef, useState } from 'preact/hooks';
 import { call, type Dock, type Fleet, type Result } from './api';
 import { Actions, Button } from './Button';
-import { SharePanel, UnpublishConfirm } from './CrewShare';
+import { SharePanel, UnpublishConfirm, type SharingView } from './CrewShare';
 import { Flag } from './Flag';
 import { fleetSearch } from './fleets';
 import { ModelSelect } from './LaunchPickers';
 import { renderMarkdown } from './markdown';
-import { crewPath, go, loc } from './router';
+import { crewPath, githubPath, go, loc } from './router';
 import { Sheet } from './Sheet';
 import { SkillPicker } from './SkillPicker';
 import {
@@ -594,12 +594,12 @@ function NoteScopes({ member, notes, regions, fleetKey, harness, reload }: { mem
   );
 }
 
-function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharing, reload, afterRename, afterDelete }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; docks: Dock[]; pageHarness: string; sharing?: Fleet['crew_sharing']; reload: () => Promise<void>; afterRename: (to: string) => Promise<void>; afterDelete: () => Promise<void> }) {
+function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharing, view, reload, afterRename, afterDelete }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; docks: Dock[]; pageHarness: string; sharing?: Fleet['crew_sharing']; view?: SharingView; reload: () => Promise<void>; afterRename: (to: string) => Promise<void>; afterDelete: () => Promise<void> }) {
   // The fleet prop is stale after a repo is created here, so the new repo is kept beside it.
   const [made, setMade] = useState('');
-  const shareRepo = made || sharing?.share_repo || '';
+  const shareRepo = made || view?.crew_sharing.share_repo || sharing?.share_repo || '';
   const [sharingOpen, setSharingOpen] = useState(false);
-  const [unpublishing, setUnpublishing] = useState<string | null>(null);
+  const [unpublishing, setUnpublishing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -622,7 +622,15 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
         <Avatar name={member.name} />
         <h2>{member.name}</h2>
         {member.customized ? <span class="pill">customized</span> : null}
-        {member.published ? <span class="pill">Published</span> : null}
+        {member.published ? (
+          shareRepo ? (
+            <a class="pill" href={`https://github.com/${shareRepo}/blob/HEAD/crew/${encodeURIComponent(member.name)}.md`} target="_blank" rel="noopener noreferrer">
+              Published
+            </a>
+          ) : (
+            <span class="pill">Published</span>
+          )
+        ) : null}
         {member.harness ? <Flag harness={member.harness} size="header" label={`runs on ${member.harness}`} /> : null}
       </header>
       <p class="crew-sub">{roleLine(member)}</p>
@@ -638,38 +646,40 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
           <>
             <Button label="Edit" disabled={busy || editing} onClick={() => setEditing(true)} />
             <Button label="Rename" disabled={busy} onClick={() => setRenaming(true)} />
-            {sharing?.enabled && !member.shared && !member.sidecar_unreadable ? <Button label="Share" disabled={busy} onClick={() => setSharingOpen(true)} /> : null}
-            {member.published ? (
-              <Button
-                label="Unpublish"
-                disabled={busy || unpublishing !== null}
-                onClick={() =>
-                  void act(
-                    async () => {
-                      const r = await call<{ blob: string }>('GET', crewApi(fleetKey, harness, `/published/${encodeURIComponent(member.name)}`));
-                      if (r.ok) setUnpublishing(r.data.blob);
-                      return r;
-                    },
-                    async () => {},
-                  )
-                }
-              />
-            ) : null}
+            {sharing?.enabled && view?.connected && !member.shared && !member.sidecar_unreadable ? <Button label="Share" disabled={busy} onClick={() => setSharingOpen(true)} /> : null}
+            {member.published ? <Button label="Unpublish" disabled={busy || unpublishing} onClick={() => setUnpublishing(true)} /> : null}
             {member.shared || member.sidecar_unreadable ? <Button label="Make mine" disabled={busy || makingMine} onClick={() => setMakingMine(true)} /> : null}
             <Button variant="danger" label="Delete" disabled={busy || confirming} onClick={() => setConfirming(true)} />
           </>
         )}
       </Actions>
-      {unpublishing !== null ? (
+      {sharing?.enabled && view && !view.connected && !builtIn ? (
+        <p class="note">
+          Sharing needs GitHub.{' '}
+          <a
+            href={githubPath(fleetKey)}
+            onClick={(e) => {
+              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              go(githubPath(fleetKey), '');
+            }}
+          >
+            Connect GitHub
+          </a>
+        </p>
+      ) : null}
+      {unpublishing ? (
         <UnpublishConfirm
           name={member.name}
-          repo={shareRepo}
-          blob={unpublishing}
           fleetKey={fleetKey}
           harness={harness}
-          onCancel={() => setUnpublishing(null)}
+          onCancel={() => setUnpublishing(false)}
           onDone={async () => {
-            setUnpublishing(null);
+            setUnpublishing(false);
+            await reload();
+          }}
+          onGone={async () => {
+            setUnpublishing(false);
             await reload();
           }}
         />
@@ -693,7 +703,7 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
         </div>
       ) : null}
       {sharingOpen ? (
-        <SharePanel member={member} fleetKey={fleetKey} harness={harness} repo={shareRepo} onRepo={setMade} onPublished={reload} onClose={() => setSharingOpen(false)} />
+        <SharePanel member={member} fleetKey={fleetKey} harness={harness} repo={shareRepo} login={view?.login ?? ''} onRepo={setMade} onPublished={reload} onClose={() => setSharingOpen(false)} />
       ) : editing ? (
         <EditForm member={member} members={members} fleetKey={fleetKey} harness={harness} docks={docks} pageHarness={pageHarness} onDone={() => setEditing(false)} onSaved={reload} />
       ) : (
@@ -778,10 +788,14 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
   const seq = useRef(0);
   const search = fleetSearch.value;
 
+  const [view, setView] = useState<SharingView | undefined>();
+  const sharingOn = !!fleet.crew_sharing?.enabled;
+
   const load = async () => {
     const mine = ++seq.current;
-    const r = await call<Record<string, unknown>>('GET', crewApi(fleet.key, harness));
+    const [r, v] = await Promise.all([call<Record<string, unknown>>('GET', crewApi(fleet.key, harness)), sharingOn ? call<SharingView>('GET', crewApi(fleet.key, harness, '/sharing')) : null]);
     if (mine !== seq.current) return;
+    setView(v?.ok ? v.data : undefined);
     if (r.ok) {
       setData(normalizeCrew(r.data ?? {}));
       setFailed('');
@@ -789,7 +803,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
   };
   useEffect(() => {
     void load();
-  }, [fleet.key, harness]);
+  }, [fleet.key, harness, sharingOn]);
 
   const adding = name === null && new URLSearchParams(loc.value.search).get('add') === '1';
   const toList = (replace = false) => go('/app/crew', search, replace);
@@ -847,6 +861,11 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
       {failed ? (
         <p class="alert" role="alert">
           {failed}
+        </p>
+      ) : null}
+      {view?.published_error ? (
+        <p class="alert" role="alert">
+          Admiral could not read what is published, so Published marks are missing: {view.published_error}
         </p>
       ) : null}
       {data.errors.length > 0 ? (
@@ -912,6 +931,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
                 docks={fleet.docks}
                 pageHarness={pageHarness}
                 sharing={fleet.crew_sharing}
+                view={view}
                 reload={load}
                 afterRename={async (to) => {
                   await load();

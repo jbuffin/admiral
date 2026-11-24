@@ -7,7 +7,8 @@ import { addGitHubSource, watchPage } from './shell';
 const REPO = 'octocat/admiral-crew';
 const LISTING = `repos/${REPO}/contents/crew`;
 const FILE = `${LISTING}/bosun.md`;
-const COMMIT = { commit: { html_url: `https://github.com/${REPO}/commit/abc123` }, content: { sha: 'f'.repeat(40) } };
+const COMMIT = { commit: { sha: 'c'.repeat(40) }, content: { sha: 'f'.repeat(40) } };
+const LONG = 'x'.repeat(500);
 
 // The share journey of one engineer: turn Crew sharing on, create the share repo, publish a member, change it and publish
 // again with the diff, then unpublish. Only the fake gh and the fake gitleaks stand in for GitHub and the scanner.
@@ -32,6 +33,7 @@ test('a member is published to a new share repo, republished with its diff, and 
   answer('e-listing', 'GET', LISTING, {}, 404);
   answer('f-put', 'PUT', FILE, COMMIT);
   answer('g-del', 'DELETE', FILE, COMMIT);
+  answer('h-file', 'GET', FILE, {}, 404);
 
   await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
   const watch = watchPage(page, admiral.url);
@@ -53,33 +55,43 @@ test('a member is published to a new share repo, republished with its diff, and 
   await page.getByRole('button', { name: 'Create repo' }).click();
   await expect(page.getByText(/crew\/bosun\.md/)).toBeVisible();
   await expect(page.getByText('Work as bosun.')).toBeVisible();
+  await expect(page.getByText('Secret scan: nothing found.')).toBeVisible();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
 
-  // Publish: the fake repo now lists the file, and the badge shows.
+  // Publish: the fake repo now lists the file, and Done closes the panel and shows the Published pill, which links to the file.
+  const published = readFileSync(localPath, 'utf8');
   answer('e-listing', 'GET', LISTING, [{ name: 'bosun.md', path: 'crew/bosun.md', type: 'file', sha: 'a'.repeat(40) }]);
-  answer('h-file', 'GET', FILE, { name: 'bosun.md', sha: 'a'.repeat(40), size: 10, encoding: 'base64', content: Buffer.from('published\n').toString('base64') });
+  answer('h-file', 'GET', FILE, { name: 'bosun.md', sha: 'a'.repeat(40), size: published.length, encoding: 'base64', content: Buffer.from(published).toString('base64') });
   await page.getByRole('button', { name: 'Publish' }).click();
-  await expect(page.getByRole('link', { name: /commit/i })).toBeVisible();
-  await page.reload();
-  await expect(main.getByText('Published')).toBeVisible();
+  await expect(page.getByRole('link', { name: /commit/i })).toHaveAttribute('href', `https://github.com/${REPO}/commit/${'c'.repeat(40)}`);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('button', { name: 'Publish' })).toHaveCount(0);
+  await expect(main.getByRole('link', { name: 'Published' })).toHaveAttribute('href', `https://github.com/${REPO}/blob/HEAD/crew/bosun.md`);
 
   // Edit, then Share again: the preview shows the diff against the published file and replaces its blob.
   await main.getByRole('button', { name: 'Edit' }).click();
-  await main.getByLabel(/pick me when/i).fill('Pick for rigging, twice.');
+  await main.getByLabel(/pick me when/i).fill(`Pick for rigging, twice. ${LONG}`);
   await main.getByRole('button', { name: 'Save' }).click();
   await main.getByRole('button', { name: 'Share' }).click();
+  await expect(page.getByText('Replaces the published version')).toBeVisible();
   await expect(page.locator('[data-kind="del"]').first()).toBeVisible();
   await expect(page.locator('[data-kind="add"]').first()).toContainText('twice');
+  // A 500-character line wraps inside the preview instead of scrolling it.
+  const bytes = page.getByLabel('File that goes public');
+  await expect(bytes).toContainText(LONG);
+  expect(await bytes.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await page.getByRole('button', { name: 'Publish' }).click();
   await expect(page.getByRole('link', { name: /commit/i })).toBeVisible();
+  await page.getByRole('button', { name: 'Done' }).click();
 
   // Unpublish: confirmed with the exact text; the local member stays.
   answer('e-listing', 'GET', LISTING, {}, 404);
   const beforeUnpublish = readFileSync(localPath, 'utf8');
   await main.getByRole('button', { name: 'Unpublish' }).click();
-  await expect(page.getByText(`Delete \`crew/bosun.md\` from \`${REPO}\`?`, { exact: false })).toBeVisible();
+  await expect(page.getByText(`Delete crew/bosun.md from ${REPO}?`, { exact: false })).toBeVisible();
+  await expect(page.getByLabel('Published file')).toContainText('name: bosun');
   await page.getByRole('button', { name: 'Confirm unpublish' }).click();
-  await expect(main.getByText('Published')).toHaveCount(0);
+  await expect(main.getByRole('link', { name: 'Published' })).toHaveCount(0);
   expect(readFileSync(localPath, 'utf8')).toBe(beforeUnpublish);
 
   expect(watch.errors).toEqual([]);

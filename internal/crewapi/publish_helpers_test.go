@@ -154,8 +154,10 @@ func (g *ghFake) file(name, text string) {
 	g.ok("GET", memberPath(name), map[string]any{"name": name + ".md", "sha": blobOf(name), "size": len(text), "encoding": "base64", "content": b64(text)})
 }
 
+const commitSHA = "0123456789abcdef0123456789abcdef01234567"
+
 func (g *ghFake) commitOK(method, name string) {
-	g.ok(method, memberPath(name), map[string]any{"commit": map[string]any{"html_url": "https://github.com/" + shareRepo + "/commit/abc123"}, "content": map[string]any{"sha": blobOf(name + "-new")}})
+	g.ok(method, memberPath(name), map[string]any{"commit": map[string]any{"sha": commitSHA, "html_url": "javascript:alert(1)"}, "content": map[string]any{"sha": blobOf(name + "-new")}})
 }
 
 // pubFixture is a crewapi service wired to the fake gh and the fake gitleaks.

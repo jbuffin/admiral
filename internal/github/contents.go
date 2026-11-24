@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -21,6 +22,11 @@ var ErrListingFull = errors.New("the directory has 1000 or more entries, so GitH
 
 // ErrTooLarge means a file is over MaxFileBytes.
 var ErrTooLarge = errors.New("the file is over 64 KiB")
+
+// MovedError means GitHub answered a repository name with a repository of another name.
+type MovedError struct{ To string }
+
+func (e *MovedError) Error() string { return "the repository moved to " + e.To }
 
 // RepoInfo is what a share repo's settings say about whether Admiral may publish to it.
 type RepoInfo struct {
@@ -77,6 +83,10 @@ func (c *Client) Repo(ctx context.Context, owner, name string) (RepoInfo, error)
 	}
 	if json.Unmarshal(out, &got) != nil || got.FullName == "" {
 		return RepoInfo{}, errors.New("GitHub's answer was not a repository")
+	}
+	// GitHub follows a rename or transfer, so a write to the old name would land in the new place.
+	if !strings.EqualFold(got.FullName, owner+"/"+name) {
+		return RepoInfo{}, &MovedError{To: got.FullName}
 	}
 	return RepoInfo{FullName: got.FullName, Public: !got.Private, Archived: got.Archived, Pushable: got.Permissions.Push}, nil
 }
@@ -164,7 +174,7 @@ func (c *Client) ReadFile(ctx context.Context, owner, repo, path string) (File, 
 	return File{Blob: got.SHA, Bytes: raw}, nil
 }
 
-// PutFile creates the file, or with blob replaces that version of it, and returns the commit's page.
+// PutFile creates the file, or with blob replaces that version of it, and returns the new commit's SHA ("" when GitHub gave none).
 func (c *Client) PutFile(ctx context.Context, owner, repo, path, message string, content []byte, blob string) (string, error) {
 	endpoint, err := contentsEndpoint(owner, repo, path)
 	if err != nil {
@@ -177,7 +187,7 @@ func (c *Client) PutFile(ctx context.Context, owner, repo, path, message string,
 	return c.commit(ctx, "PUT", endpoint, body)
 }
 
-// DeleteFile removes that version of the file and returns the commit's page.
+// DeleteFile removes that version of the file and returns the new commit's SHA.
 func (c *Client) DeleteFile(ctx context.Context, owner, repo, path, message, blob string) (string, error) {
 	endpoint, err := contentsEndpoint(owner, repo, path)
 	if err != nil {
@@ -193,12 +203,17 @@ func (c *Client) commit(ctx context.Context, method, endpoint string, body any) 
 	}
 	var got struct {
 		Commit struct {
-			URL string `json:"html_url"`
+			SHA string `json:"sha"`
 		} `json:"commit"`
 	}
 	_ = json.Unmarshal(out, &got)
-	return got.Commit.URL, nil
+	if !commitSHA.MatchString(got.Commit.SHA) {
+		return "", nil
+	}
+	return got.Commit.SHA, nil
 }
+
+var commitSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 func repoEndpoint(owner, name string) (string, error) {
 	if !ValidSegment(owner) || !ValidSegment(name) {

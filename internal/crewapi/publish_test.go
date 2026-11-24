@@ -67,7 +67,7 @@ func TestUnpublishWorksWithSharingOffAndLeavesTheLocalMemberAlone(t *testing.T) 
 	if str(out, "bytes") != "published bytes\n" || str(out, "blob") != blobOf("bosun") {
 		t.Errorf("GET published = %v", out)
 	}
-	status, text := p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": blobOf("bosun")})
+	status, text := p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": blobOf("bosun"), "repo": shareRepo})
 	if status != 200 {
 		t.Fatalf("DELETE published: %d %s", status, text)
 	}
@@ -124,8 +124,9 @@ func TestCreateRepoMakesAPublicRepoThenTheREADMEThenSavesShareRepo(t *testing.T)
 	if str(readme, "message") != "Add README" {
 		t.Errorf("README message = %q", str(readme, "message"))
 	}
-	if text := decodeContent(t, readme); text == "" || strings.Contains(text, "octocat") {
-		t.Errorf("README = %q, want text that names no user", text)
+	if text := decodeContent(t, readme); !strings.Contains(text, "# "+shareRepo) || !strings.Contains(text, "Admiral") ||
+		!strings.Contains(text, shareRepo+"/<member>@") {
+		t.Errorf("README = %q, want it to name %s, say it holds Admiral crew members and give the import ref form", text, shareRepo)
 	}
 	if _, has := readme["sha"]; has {
 		t.Error("the README PUT carries a sha")
@@ -235,7 +236,7 @@ func TestPreviewOfACleanMemberAndShareCommitExactlyThosBytes(t *testing.T) {
 	}
 	status, out := p.share("bosun", pv, nil)
 	wantStatus(t, "share", status, 200, out)
-	if !strings.Contains(str(out, "commit_url"), "/commit/abc123") {
+	if str(out, "commit_url") != "https://github.com/"+shareRepo+"/commit/"+commitSHA {
 		t.Errorf("share = %v, want the commit URL", out)
 	}
 	puts := p.gh.find("PUT", memberPath("bosun"))
@@ -441,7 +442,7 @@ func TestTheOptOutWithAUsableGitleaksIs400ForCleanHitAndFailed(t *testing.T) {
 			if c.fail != "" {
 				p.leakFail(c.fail)
 			}
-			pv := map[string]any{"sha256": hexSum("x"), "repo": shareRepo, "replaces_blob": nil}
+			pv := map[string]any{"sha256": hexSum(string(crewapi.CanonicalMemberBytes(resolvedMember(t, readFile(t, filepath.Join(p.crewDir(), "bosun.md")))))), "repo": shareRepo, "replaces_blob": nil}
 			status, out := p.share("bosun", pv, map[string]any{"skip_secret_scan": true})
 			wantStatus(t, name, status, 400, out)
 			wantNoWrites(t, p)
@@ -588,7 +589,7 @@ func TestShareAndUnpublishClearTheListingCache(t *testing.T) {
 	if got := len(p.gh.find("GET", listingPath)); got != before+1 {
 		t.Errorf("after Share, listing calls %d -> %d, want one more", before, got)
 	}
-	p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": blobOf("bosun")})
+	p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": blobOf("bosun"), "repo": shareRepo})
 	before = len(p.gh.find("GET", listingPath))
 	p.rawMember("bosun")
 	if got := len(p.gh.find("GET", listingPath)); got != before+1 {
@@ -662,7 +663,7 @@ func TestUnpublishDeletesWithTheBlobAndLeavesTheLocalMemberByteIdentical(t *test
 	p.gh.commitOK("DELETE", "bosun")
 	status, out := p.getJSON("/published/bosun")
 	wantStatus(t, "GET", status, 200, out)
-	status, text := p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": str(out, "blob")})
+	status, text := p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": str(out, "blob"), "repo": str(out, "repo")})
 	if status != 200 {
 		t.Fatalf("DELETE: %d %s", status, text)
 	}
@@ -682,12 +683,45 @@ func TestUnpublishDeletesWithTheBlobAndLeavesTheLocalMemberByteIdentical(t *test
 func TestUnpublishWithAStaleBlobIs409(t *testing.T) {
 	p := newPub(t, pubOpts{})
 	p.gh.answer("DELETE", memberPath("bosun"), 409, nil, "gh: Conflict (HTTP 409)")
-	status, text := p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": blobOf("stale")})
+	status, text := p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": blobOf("stale"), "repo": shareRepo})
 	out := parse(t, text)
 	wantStatus(t, "stale", status, 409, out)
 	if len(p.gh.find("DELETE", memberPath("bosun"))) != 1 {
 		t.Errorf("no DELETE was sent: %+v", p.gh.calls())
 	}
+}
+
+func TestUnpublishNamingAnotherRepoIs409AndDeletesNothing(t *testing.T) {
+	p := newPub(t, pubOpts{})
+	p.gh.commitOK("DELETE", "bosun")
+	for _, repo := range []string{"octocat/other", ""} {
+		status, text := p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": blobOf("bosun"), "repo": repo})
+		wantStatus(t, "repo "+repo, status, 409, parse(t, text))
+	}
+	wantNoWrites(t, p)
+}
+
+func TestAShareRepoThatMovedIs409AtShareBeforeAnyWrite(t *testing.T) {
+	p := newPub(t, pubOpts{})
+	p.member("bosun", "Do the work.")
+	moved := repoAnswer("public", true, false)
+	moved["full_name"] = "someorg/admiral-crew"
+	p.gh.answer("GET", "repos/"+shareRepo, 200, moved, "")
+	pv := map[string]any{"sha256": hexSum("x"), "repo": shareRepo, "replaces_blob": nil}
+	status, out := p.share("bosun", pv, nil)
+	wantStatus(t, "share", status, 409, out)
+	wantText(t, "share", out, "someorg/admiral-crew", "Choose another repo")
+	wantNoWrites(t, p)
+}
+
+func TestAStaleHashIs409BeforeTheScanRuns(t *testing.T) {
+	p := newPub(t, pubOpts{})
+	p.ready("bosun", "Do the work.")
+	p.leakFail("error")
+	pv := map[string]any{"sha256": hexSum("x"), "repo": shareRepo, "replaces_blob": nil}
+	status, out := p.share("bosun", pv, nil)
+	wantStatus(t, "share", status, 409, out)
+	wantNoWrites(t, p)
 }
 
 func TestUnpublishOfAFileThatIsNotThereIs404NamingIt(t *testing.T) {
@@ -697,7 +731,7 @@ func TestUnpublishOfAFileThatIsNotThereIs404NamingIt(t *testing.T) {
 	status, out := p.getJSON("/published/bosun")
 	wantStatus(t, "GET", status, 404, out)
 	wantText(t, "GET", out, "bosun")
-	status, text := p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": blobOf("bosun")})
+	status, text := p.do("DELETE", p.base()+"/published/bosun", map[string]any{"blob": blobOf("bosun"), "repo": shareRepo})
 	out = parse(t, text)
 	wantStatus(t, "DELETE", status, 404, out)
 	if len(p.gh.find("GET", memberPath("bosun"))) != 1 || len(p.gh.find("DELETE", memberPath("bosun"))) != 1 {

@@ -37,9 +37,25 @@ const (
 var (
 	blobPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	sumPattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	// resetPattern finds when GitHub says a rate limit ends, in the words gh prints.
+	resetPattern = regexp.MustCompile(`(?i)(?:retry after|try again in|resets? (?:at|in))\s+[^.(\n]+`)
 )
 
-const readme = "# Shared crew\n\nCrew members published from Admiral. Each file in crew/ is one member; import one into a fleet from its Crew page.\n"
+// readmeFor is the README a new share repo starts with: it names the repo and gives the ref form that imports a member.
+func readmeFor(repo string) string {
+	return "# " + repo + "\n\nCrew members published from Admiral for Commodore and Admiral. Each file in `crew/` is one crew member.\n\n" +
+		"Import one from the Crew page of an Admiral fleet, with its ref:\n\n" +
+		"    " + repo + "/<member>\n" +
+		"    " + repo + "/<member>@<tag, branch or commit>\n"
+}
+
+// commitURL is the page of a commit in a repo, built from parts Admiral validated; "" when GitHub gave no SHA.
+func commitURL(repo, sha string) string {
+	if sha == "" {
+		return ""
+	}
+	return "https://github.com/" + repo + "/commit/" + sha
+}
 
 // publishRoutes registers the publish and Unpublish routes.
 func (s *Service) publishRoutes(mux *http.ServeMux) {
@@ -107,14 +123,19 @@ func (l *listings) clear(fleet string) {
 
 // sharing is what one publish request works on.
 type sharing struct {
-	c      fleetCrew
-	fleet  config.Fleet
-	gh     *github.Client
-	repo   string // <owner>/<name>, empty when the fleet has none
-	owner  string
-	name   string
-	cfg    *config.Config
-	member string
+	c     fleetCrew
+	fleet config.Fleet
+	gh    *github.Client
+	repo  string // <owner>/<name>, empty when the fleet has none
+	owner string
+	name  string
+}
+
+func newSharing(cfg *config.Config, c fleetCrew, gh *github.Client) *sharing {
+	fleet, _ := cfg.Fleet(c.key)
+	sh := &sharing{c: c, fleet: fleet, gh: gh, repo: fleet.CrewSharing.ShareRepo}
+	sh.owner, sh.name, _ = strings.Cut(sh.repo, "/")
+	return sh
 }
 
 // shareFleet resolves the fleet and its GitHub client. needOn refuses a fleet with sharing off; it answers for itself when it can't continue.
@@ -124,17 +145,15 @@ func (s *Service) shareFleet(w http.ResponseWriter, r *http.Request, needOn bool
 		return nil, false
 	}
 	cfg := s.Config.Current()
-	fleet, _ := cfg.Fleet(c.key)
-	if needOn && !fleet.CrewSharing.Enabled {
+	sh := newSharing(cfg, c, s.client(cfg, c.key))
+	if needOn && !sh.fleet.CrewSharing.Enabled {
 		writeError(w, http.StatusForbidden, offText)
 		return nil, false
 	}
-	sh := &sharing{c: c, fleet: fleet, cfg: cfg, repo: fleet.CrewSharing.ShareRepo, gh: s.client(cfg, c.key)}
 	if sh.gh == nil {
 		writeError(w, http.StatusConflict, connectText)
 		return nil, false
 	}
-	sh.owner, sh.name, _ = strings.Cut(sh.repo, "/")
 	return sh, true
 }
 
@@ -169,7 +188,11 @@ func ghFailed(w http.ResponseWriter, step, repo string, err error) {
 		}
 		writeError(w, http.StatusBadGateway, msg+". Reconnect GitHub for this fleet and try again.")
 	case github.RateLimited(err):
-		writeError(w, http.StatusTooManyRequests, "GitHub's rate limit stopped "+step+" on "+repo+". Try again later.")
+		msg := "GitHub's rate limit stopped " + step + " on " + repo + "."
+		if when := resetPattern.FindString(err.Error()); when != "" {
+			msg += " GitHub says: " + when + "."
+		}
+		writeError(w, http.StatusTooManyRequests, msg+" Try again later.")
 	case status == http.StatusUnauthorized:
 		writeError(w, http.StatusBadGateway, step+" failed: GitHub refused the sign-in. Reconnect GitHub for this fleet and try again.")
 	case status == http.StatusNotFound:
@@ -195,7 +218,11 @@ func repoProblem(info github.RepoInfo) string {
 // checkRepo reads the share repo's settings and answers for a repo that can't be published to.
 func (sh *sharing) checkRepo(w http.ResponseWriter, ctx context.Context, step string) bool {
 	info, err := sh.gh.Repo(ctx, sh.owner, sh.name)
+	var moved *github.MovedError
 	switch {
+	case errors.As(err, &moved):
+		writeError(w, http.StatusConflict, "The share repo "+sh.repo+" moved to "+moved.To+". Choose another repo.")
+		return false
 	case github.HTTPStatus(err) == http.StatusNotFound:
 		writeError(w, http.StatusConflict, "The share repo "+sh.repo+" was not found. Choose another repo.")
 		return false
@@ -242,14 +269,10 @@ func (s *Service) publishedListing(ctx context.Context, sh *sharing) (listing, b
 // publishedNames is the set of members the fleet's share repo holds, empty when there is none or it can't be read.
 func (s *Service) publishedNames(r *http.Request, c fleetCrew) map[string]bool {
 	out := map[string]bool{}
-	cfg := s.Config.Current()
-	fleet, _ := cfg.Fleet(c.key)
-	gh := s.client(cfg, c.key)
-	if gh == nil || fleet.CrewSharing.ShareRepo == "" {
+	sh := newSharing(s.Config.Current(), c, nil)
+	if sh.gh = s.client(s.Config.Current(), c.key); sh.gh == nil || sh.repo == "" {
 		return out
 	}
-	sh := &sharing{c: c, fleet: fleet, gh: gh, repo: fleet.CrewSharing.ShareRepo}
-	sh.owner, sh.name, _ = strings.Cut(sh.repo, "/")
 	if l, ok := s.publishedListing(r.Context(), sh); ok && l.err == "" {
 		for _, e := range l.entries {
 			out[strings.TrimSuffix(e.Name, ".md")] = true
@@ -287,12 +310,12 @@ func (s *Service) serveSharing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.Config.Current()
-	fleet, _ := cfg.Fleet(c.key)
-	view := sharingView{Published: []string{}}
-	view.CrewSharing.Enabled = fleet.CrewSharing.Enabled
-	view.CrewSharing.ShareRepo = fleet.CrewSharing.ShareRepo
-	view.CrewSharing.Sources = append([]string{}, fleet.CrewSharing.Sources...)
 	gh := s.client(cfg, c.key)
+	sh := newSharing(cfg, c, gh)
+	view := sharingView{Published: []string{}}
+	view.CrewSharing.Enabled = sh.fleet.CrewSharing.Enabled
+	view.CrewSharing.ShareRepo = sh.repo
+	view.CrewSharing.Sources = append([]string{}, sh.fleet.CrewSharing.Sources...)
 	if gh == nil {
 		writeJSON(w, http.StatusOK, view)
 		return
@@ -303,9 +326,7 @@ func (s *Service) serveSharing(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		view.LoginError = err.Error()
 	}
-	sh := &sharing{c: c, fleet: fleet, gh: gh, repo: fleet.CrewSharing.ShareRepo}
 	if sh.repo != "" {
-		sh.owner, sh.name, _ = strings.Cut(sh.repo, "/")
 		view.Repo = &repoView{}
 		info, err := gh.Repo(r.Context(), sh.owner, sh.name)
 		switch {
@@ -335,11 +356,17 @@ func (s *Service) serveShareRepo(w http.ResponseWriter, r *http.Request) {
 		Repo        string `json:"repo"`
 		Name        string `json:"name"`
 		Description string `json:"description"`
+		Owner       string `json:"owner"`
+		Preview     bool   `json:"preview"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
 	ctx := r.Context()
+	if body.Preview {
+		s.previewReadme(w, body.Owner, body.Name)
+		return
+	}
 	if body.Repo != "" {
 		if !github.ValidRepo(body.Repo) {
 			writeError(w, http.StatusBadRequest, body.Repo+" is not <owner>/<name>")
@@ -362,7 +389,7 @@ func (s *Service) serveShareRepo(w http.ResponseWriter, r *http.Request) {
 	}
 	full, err := sh.gh.CreateRepo(ctx, body.Name, body.Description)
 	if github.HTTPStatus(err) == http.StatusUnprocessableEntity {
-		s.nameTaken(w, sh, body.Name)
+		s.nameTaken(ctx, w, sh, body.Name)
 		return
 	}
 	if err != nil {
@@ -370,16 +397,27 @@ func (s *Service) serveShareRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	owner, name, _ := strings.Cut(full, "/")
-	if _, err := sh.gh.PutFile(ctx, owner, name, "README.md", "Add README", []byte(readme), ""); err != nil {
+	if _, err := sh.gh.PutFile(ctx, owner, name, "README.md", "Add README", []byte(readmeFor(full)), ""); err != nil {
 		ghFailed(w, "Adding the README to "+full, full, err)
 		return
 	}
 	s.saveShareRepo(w, sh.c.key, full)
 }
 
+// previewReadme answers the README a new repo of that name would start with, without calling GitHub.
+func (s *Service) previewReadme(w http.ResponseWriter, owner, name string) {
+	if name == "" {
+		name = defaultRepo
+	}
+	if !github.ValidSegment(owner) || !github.ValidSegment(name) {
+		writeError(w, http.StatusBadRequest, "owner and name must be GitHub names")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"readme": readmeFor(owner + "/" + name)})
+}
+
 // nameTaken answers a create that GitHub refused: offers the account's own repo of that name when it can be used.
-func (s *Service) nameTaken(w http.ResponseWriter, sh *sharing, name string) {
-	ctx := context.Background()
+func (s *Service) nameTaken(ctx context.Context, w http.ResponseWriter, sh *sharing, name string) {
 	login, err := sh.gh.Login(ctx)
 	if err != nil {
 		ghFailed(w, "Creating the share repo", name, err)
@@ -496,14 +534,21 @@ func (s *Service) servePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := map[string]any{"name": name, "path": crewDir + "/" + name + ".md", "repo": sh.repo, "bytes": string(data), "sha256": sumOf(data), "replaces_blob": nil}
-	if blob, replaces := l.blob(name); replaces {
+	if _, replaces := l.blob(name); replaces {
 		old, err := sh.gh.ReadFile(ctx, sh.owner, sh.name, crewDir+"/"+name+".md")
-		if err != nil {
+		switch {
+		case errors.Is(err, github.ErrTooLarge):
+			writeError(w, http.StatusUnprocessableEntity, "The published "+name+" is over 64 KiB, so Admiral won't show what it replaces.")
+			return
+		case github.HTTPStatus(err) == http.StatusNotFound:
+			// Removed since the listing: this is a new file after all.
+		case err != nil:
 			ghFailed(w, "Reading the published "+name, sh.repo, err)
 			return
+		default:
+			out["replaces_blob"] = old.Blob
+			out["published_bytes"] = string(old.Bytes)
 		}
-		out["replaces_blob"] = blob
-		out["published_bytes"] = string(old.Bytes)
 	}
 	res := s.scan(ctx, sh, data)
 	out["scan"] = res
@@ -545,14 +590,18 @@ func (s *Service) serveShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	if !sh.checkRepo(w, ctx, "Checking the share repo") {
+		return
+	}
+	if sumOf(data) != body.SHA256 {
+		writeError(w, http.StatusConflict, changedText)
+		return
+	}
 	res := s.scan(ctx, sh, data)
 	usable := res.State != gitleaks.Missing && res.State != gitleaks.TooOld
 	switch {
 	case body.SkipSecretScan && usable:
 		writeError(w, http.StatusBadRequest, "skip_secret_scan is only for a missing or too old gitleaks")
-		return
-	case sumOf(data) != body.SHA256:
-		writeError(w, http.StatusConflict, changedText)
 		return
 	case res.State == gitleaks.Hit || res.State == gitleaks.Failed:
 		scanRefusal(w, res)
@@ -565,7 +614,7 @@ func (s *Service) serveShare(w http.ResponseWriter, r *http.Request) {
 	if body.ReplacesBlob != nil {
 		blob = *body.ReplacesBlob
 	}
-	url, err := sh.gh.PutFile(ctx, sh.owner, sh.name, crewDir+"/"+name+".md", "Share crew member "+name, data, blob)
+	sha, err := sh.gh.PutFile(ctx, sh.owner, sh.name, crewDir+"/"+name+".md", "Share crew member "+name, data, blob)
 	s.listings.clear(sh.c.key)
 	if status := github.HTTPStatus(err); status == http.StatusConflict || status == http.StatusUnprocessableEntity {
 		writeError(w, http.StatusConflict, fileChanged)
@@ -574,7 +623,7 @@ func (s *Service) serveShare(w http.ResponseWriter, r *http.Request) {
 		ghFailed(w, "Sharing "+name, sh.repo, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"name": name, "repo": sh.repo, "path": crewDir + "/" + name + ".md", "commit_url": url})
+	writeJSON(w, http.StatusOK, map[string]string{"name": name, "repo": sh.repo, "path": crewDir + "/" + name + ".md", "commit_url": commitURL(sh.repo, sha)})
 }
 
 func (s *Service) servePublished(w http.ResponseWriter, r *http.Request) {
@@ -610,6 +659,7 @@ func (s *Service) serveUnpublish(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Blob string `json:"blob"`
+		Repo string `json:"repo"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -618,7 +668,11 @@ func (s *Service) serveUnpublish(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "blob must be the published file's blob from its GET")
 		return
 	}
-	url, err := sh.gh.DeleteFile(r.Context(), sh.owner, sh.name, crewDir+"/"+name+".md", "Unpublish crew member "+name, body.Blob)
+	if body.Repo != sh.repo {
+		writeError(w, http.StatusConflict, "The share repo changed since you looked. Reload and try again.")
+		return
+	}
+	sha, err := sh.gh.DeleteFile(r.Context(), sh.owner, sh.name, crewDir+"/"+name+".md", "Unpublish crew member "+name, body.Blob)
 	s.listings.clear(sh.c.key)
 	switch status := github.HTTPStatus(err); {
 	case status == http.StatusConflict || status == http.StatusUnprocessableEntity:
@@ -626,6 +680,6 @@ func (s *Service) serveUnpublish(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		ghFailed(w, "Unpublishing "+name, sh.repo, err)
 	default:
-		writeJSON(w, http.StatusOK, map[string]string{"name": name, "repo": sh.repo, "commit_url": url})
+		writeJSON(w, http.StatusOK, map[string]string{"name": name, "repo": sh.repo, "commit_url": commitURL(sh.repo, sha)})
 	}
 }

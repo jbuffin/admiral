@@ -23,7 +23,7 @@ The terms (Share repo, Crew source, Shared member, Sidecar, Detached, Make mine,
 - There is no manifest. A member is a file `crew/<name>.md` whose stem is a valid member name (`crew.ValidName`); anything else in `crew/` is ignored when browsing (a subfolder, another extension, a dotfile).
 - Admiral reads only `crew/` on the repo's default branch, or at the ref an import names.
 - Admiral writes only `README.md` (at creation) and `crew/<name>.md` (on Share), and deletes only `crew/<name>.md` (on Unpublish, after a confirm).
-- The scaffold README says what the repo is, that each file in `crew/` is a crew member for Commodore and Admiral, and how to import one (the ref form below). It names no user: the owner and repo come from the repo being created.
+- The scaffold README is templated from `<owner>/<repo>`: it names the repo, says it holds Admiral crew members (each file in `crew/` is one, for Commodore and Admiral), and gives the import ref forms below with this repo filled in. The Create dialog shows it before anything is written (`POST .../crew/sharing/repo` with `"preview": true`). Nothing in it is fixed to a particular user.
 
 ## Refs
 
@@ -210,7 +210,7 @@ The badge shows on the member's list row and on the detail header.
 
 - A fleet member whose name is in the listing shows "Published" and an **Unpublish** action.
 - The Import dialog's share repo row (the share repo is always listed there, as "Your share repo") browses it like a source, with Unpublish on every row, so a file whose local member was deleted or renamed can still be removed.
-- Unpublish reads the file's current bytes and blob SHA, and the confirm shows the repo, the path and those bytes: "Delete `crew/<name>.md` from `<owner>/<repo>`? People who imported it keep their copy; they'll see it as removed upstream." Confirm sends the `DELETE` with that blob SHA. A changed file is a 409 and a fresh confirm.
+- Unpublish reads the file's current bytes, blob SHA and repo, and the confirm shows the repo, the path and those bytes: "Delete `crew/<name>.md` from `<owner>/<repo>`? People who imported it keep their copy; they'll see it as removed upstream. It stays in the repo's history." Confirm sends the `DELETE` with `{"blob", "repo"}` as the GET gave them. A changed file, or a share repo that is no longer the one the confirm read, is a 409 and the confirm reloads. A file that is already gone is a 404 and the Crew page refreshes.
 - Unpublish doesn't need the sharing switch on (it only removes), and never touches the local member.
 - Git history keeps the file. The confirm says so: "It stays in the repo's history."
 
@@ -220,13 +220,13 @@ All under `/api/fleets/{key}/crew/`, JSON in and out, the `?harness=` dock query
 
 | Route | What |
 | --- | --- |
-| `GET  .../crew/sharing` | The fleet's `crew_sharing` state, the `gh` login, whether the share repo exists and is pushable, its published names, and update states per shared member. |
-| `POST .../crew/sharing/repo` | Create the share repo and its README `{"name", "description"}`, or adopt an existing one `{"repo": "owner/name"}`. Saves `share_repo` and answers `{"share_repo"}`. 403 when sharing is off. A taken name is a 409; when the repo is public and pushable it carries `"use_existing": "owner/name"`. |
-| `POST .../crew/members/{name}/share/preview` | No body: the fleet's saved share repo is the target. The canonical bytes (`bytes`), `sha256`, `path`, `repo`, `replaces_blob` (the published file's blob SHA, or null), `published_bytes` when it replaces one, and `scan`: `{"state": "clean" \| "hit" \| "failed" \| "missing" \| "too-old", "findings": [{"line", "rule"}], "error": "<text>", "version": "<found>", "install": "<hint>"}`. A failed check 1 to 5 is a 422 naming the check, the line and the rule. 403 when sharing is off. |
-| `POST .../crew/members/{name}/share` | `{"sha256", "repo", "replaces_blob", "skip_secret_scan"?}`, the first three as the preview gave them. Rechecks and commits. Returns `{"name", "repo", "path", "commit_url"}`. 403 when sharing is off; 422 on a hit, with the `scan` in the body; 409 when the member, the share repo or the published file changed since the preview. |
+| `GET  .../crew/sharing` | `{"crew_sharing": {"enabled", "share_repo", "sources"}, "connected", "login", "login_error", "repo", "published": [...], "published_error"}`: the fleet's `crew_sharing` state, whether GitHub is connected, the `gh` login, whether the share repo exists and is pushable, its published names, and why the listing failed when it did (`published_error`). |
+| `POST .../crew/sharing/repo` | Create the share repo and its README `{"name", "description"}`, or adopt an existing one `{"repo": "owner/name"}`. `{"preview": true, "owner", "name"}` writes nothing and answers `{"readme"}`, the README the create would commit. Saves `share_repo` and answers `{"share_repo"}`. 403 when sharing is off. A taken name is a 409; when the repo is public and pushable it carries `"use_existing": "owner/name"`. |
+| `POST .../crew/members/{name}/share/preview` | No body: the fleet's saved share repo is the target. The canonical bytes (`bytes`), `sha256`, `path`, `repo`, `replaces_blob` (the published file's blob SHA, or null for a new file), `published_bytes` when it replaces one (read by the preview itself; 422 when the published file is over 64 KiB), and `scan`: `{"state": "clean" \| "hit" \| "failed" \| "missing" \| "too-old", "findings": [{"line", "rule"}], "error": "<text>", "version": "<found>", "install": "<hint>"}`. A failed check 1 to 5 is a 422 naming the check, the line and the rule. 403 when sharing is off. |
+| `POST .../crew/members/{name}/share` | `{"sha256", "repo", "replaces_blob", "skip_secret_scan"?}`, the first three as the preview gave them. Rechecks and commits. Returns `{"name", "repo", "path", "commit_url"}`, where `commit_url` is `https://github.com/<repo>/commit/<sha>` built from the commit sha GitHub returned, or `""` when it returned none. The share repo is checked again first (409 when it moved, is private or archived, or is no longer pushable), then the hash, then the scan. 403 when sharing is off; 422 on a hit, with the `scan` in the body; 409 when the member, the share repo or the published file changed since the preview. |
 | `POST .../crew/members/{name}/make-mine` | Deletes the sidecar. 404 when there's none. |
 | `GET  .../crew/published/{name}` | `{"name", "repo", "bytes", "blob"}`: the published file's bytes and blob SHA, for the Unpublish confirm. 404 when it isn't published; 422 when it is over 64 KiB. |
-| `DELETE .../crew/published/{name}` | `{"blob"}` from the confirm. Deletes `crew/<name>.md` from the share repo and returns `{"name", "repo", "commit_url"}`. 409 when the file changed since the GET. |
+| `DELETE .../crew/published/{name}` | `{"blob", "repo"}` from the GET. Deletes `crew/<name>.md` from the share repo and returns `{"name", "repo", "commit_url"}`. 409 when the file changed since the GET or `repo` is no longer the fleet's share repo; 404 when the file is gone. |
 | `POST .../crew/imports/preview` | `{"ref"}` (a ref or URL). Returns the raw bytes, the parsed card, `owner`, `repo`, `path`, `commit`, `tag`, the clash (with the suggested name), skill warnings and secret-scan warnings. A URL with no member returns `{"source": "owner/repo"}` instead. |
 | `POST .../crew/imports` | `{"repo", "path", "commit", "sha256", "name"?}`. Rereads the file at that commit, checks the hash, writes member and sidecar. 409 on a clash. |
 | `GET  .../crew/sources/{owner}/{repo}` | The source's member list (name, path, blob, imported state, and published state for the share repo). |
@@ -240,10 +240,10 @@ Rename and Delete change as well: Rename moves `<name>.shared.json` with the mem
 
 ## Crew page
 
-- **Detail header.** A shared member shows "shared by `<owner>`" under its name, linked to the file on GitHub at the pinned commit, and the tag or short SHA. It shows "Update available", "Removed upstream" or "Edited here" when they apply. A published member shows "Published", linked to the file in the share repo.
-- **Actions.** A fleet member with no sidecar gets **Share** beside Edit, Rename and Delete, when sharing is on for the fleet. A shared member gets **Make mine**, and **Update** when one is available, and never Share. A published member gets **Unpublish**.
+- **Detail header.** A shared member shows "shared by `<owner>`" under its name, linked to the file on GitHub at the pinned commit, and the tag or short SHA. It shows "Update available", "Removed upstream" or "Edited here" when they apply. A published member shows "Published", linked to the file in the share repo. When the published listing failed, the page says so (`published_error`) instead of showing the marks as if none existed.
+- **Actions.** A fleet member with no sidecar gets **Share** beside Edit, Rename and Delete, when sharing is on for the fleet and GitHub is connected; with GitHub not connected the page shows "Connect GitHub" linking to the fleet's GitHub page instead. Built-in members never show Share. A shared member gets **Make mine**, and **Update** when one is available, and never Share. A published member gets **Unpublish**.
 - **List toolbar.** **Import** beside "Add crew" opens the Import dialog: a box for a ref or URL, "Your share repo" when there is one, and the fleet's sources, each with Browse (and Remove for sources), and Add source.
-- **Share flow.** With no share repo, Share first opens "Create your share repo": the owner (the `gh` login, read only), the name (`admiral-crew`, editable), a description, and the README it will write, then Create. Then the preview: the target (`<owner>/<repo>/crew/<name>.md`, and "Replaces the published version" with a diff when it does), the exact bytes in a monospace block, the secret scan's state, and Publish. A refusal shows in place of Publish. Without gitleaks, the install hint and **Publish without a secret scan** with its warning show instead of Publish.
+- **Share flow.** With no share repo, Share first opens "Create your share repo": the owner (the `gh` login, read only), the name (`admiral-crew`, editable), a description, the README it will write, then Create; or "Use an existing repo", which takes `owner/name`. Then the preview: the target (`<owner>/<repo>/crew/<name>.md`, and "Replaces the published version" with a diff when it does), the exact bytes in a monospace block, the secret scan's state (always shown, clean or not), and Publish. A refusal shows in place of Publish. A share repo that can't be written shows its message with **Choose another repo**, which opens the repo step. A 409 on Publish (the member, the published file or the repo changed) shows its message and loads the preview again. Without gitleaks, or with one older than 8.19, the install or upgrade hint, a link to gitleaks' install guide and **Publish without a secret scan** with its warning show; Publish stays disabled until the box is ticked.
 - **Diff.** Update and "Replaces the published version" show a line diff. There is no diff component yet; the build adds a small one in `web/src/app/` (an LCS line diff, removed and added lines marked in text as well as colour).
 - Member text from GitHub is shown with `renderMarkdown` (`web/src/app/markdown.ts`) for the card and as plain text for the raw file, never as HTML.
 
@@ -257,8 +257,9 @@ Rename and Delete change as well: Rename moves `<name>.shared.json` with the mem
 | `gh` not signed in or token refused | 502 with the step and `gh`'s message; the GitHub page's reconnect advice. |
 | Share repo private, archived, gone or not pushable | 409 naming the repo and the reason, with "Choose another repo". |
 | Repo name taken at create | 409, with `use_existing` (the page's "Use `owner/repo`") when it's public and pushable. |
-| Share repo changed since the preview | 409 "Preview it again." |
-| `sha256` or `replaces_blob` missing from Share, or `blob` from Unpublish | 400 saying it must come from the preview or the GET. |
+| Share repo changed since the preview or the confirm | 409 "Preview it again." (Share) or "Reload and try again." (Unpublish) |
+| Share repo moved or renamed on GitHub | 409 "The share repo X moved to Y. Choose another repo." |
+| `sha256` missing or malformed, or `replaces_blob` malformed, from Share, or `blob` missing or malformed from Unpublish | 400 saying it must come from the preview or the GET. A missing or null `replaces_blob` means a new file. |
 | Privacy check 1 to 5 hit | 422 naming the check, the line and the rule or code point. |
 | gitleaks hit | 422 naming the line and the rule. No opt-out. |
 | gitleaks installed but the scan crashed, errored or timed out | 422 with the error. No opt-out. |
@@ -272,7 +273,7 @@ Rename and Delete change as well: Rename moves `<name>.shared.json` with the mem
 | File too big, not UTF-8, hidden characters, fails `CheckFile`, has ad hoc fields | 422 naming the rule and line. |
 | Name clash | 409 with the suggested name. |
 | Upstream changed between preview and import or update | 409; the page reloads the preview. |
-| GitHub rate limit | 429 with the reset time; the update check waits for its next turn. |
+| GitHub rate limit | 429 with the reset time when `gh` gives one; the update check waits for its next turn. |
 | Sidecar unreadable | The member shows as a plain fleet member with a warning and Make mine. |
 
 ## Acceptance criteria

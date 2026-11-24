@@ -29,5 +29,5 @@ test('LineDiff shows a - or + marker per changed line and wraps long lines', () 
   expect(rows[1]!.textContent).toContain('old');
   expect(rows[2]!.textContent).toContain('+');
   expect(rows[0]!.textContent).not.toMatch(/^[-+]/);
-  expect(container.querySelector('.line-diff')!.classList.contains('wrap')).toBe(true);
+  expect(container.querySelector('pre.line-diff')).toBeTruthy();
 });

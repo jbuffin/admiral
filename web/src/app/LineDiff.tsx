@@ -31,7 +31,7 @@ const MARK = { same: ' ', del: '-', add: '+' } as const;
 
 export function LineDiff({ before, after }: { before: string; after: string }) {
   return (
-    <pre class="line-diff wrap">
+    <pre class="line-diff">
       {diffLines(before, after).map((l, i) => (
         <div key={i} data-kind={l.kind} class={`diff-${l.kind}`}>
           {MARK[l.kind]} {l.text}
