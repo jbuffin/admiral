@@ -1,11 +1,9 @@
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import { seedCrew } from './crew';
 import { addGitHubSource, watchPage } from './shell';
 
-const fakeGitleaks = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testdata', 'fakegitleaks');
 const REPO = 'octocat/admiral-crew';
 const LISTING = `repos/${REPO}/contents/crew`;
 const FILE = `${LISTING}/bosun.md`;
@@ -35,10 +33,7 @@ test('a member is published to a new share repo, republished with its diff, and 
   answer('f-put', 'PUT', FILE, COMMIT);
   answer('g-del', 'DELETE', FILE, COMMIT);
 
-  const leaks = join(admiral.home, 'fakegitleaks');
-  mkdirSync(leaks, { recursive: true });
-  writeFileSync(join(leaks, 'version'), '8.21.2\n');
-  await admiral.start({ env: { ...gh.env, PATH: `${fakeGitleaks}:${gh.env.PATH}`, FAKEGITLEAKS_DIR: leaks } });
+  await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
   const watch = watchPage(page, admiral.url);
   const main = page.getByRole('main');
   const localPath = join(admiral.home, 'fleets', 'zulu', 'crew', 'bosun.md');

@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useReducer, useRef, useState } from 'preact/hooks';
 import { call, type Dock, type Fleet, type Result } from './api';
 import { Actions, Button } from './Button';
+import { SharePanel, UnpublishConfirm } from './CrewShare';
 import { Flag } from './Flag';
 import { fleetSearch } from './fleets';
 import { ModelSelect } from './LaunchPickers';
@@ -593,7 +594,12 @@ function NoteScopes({ member, notes, regions, fleetKey, harness, reload }: { mem
   );
 }
 
-function Detail({ member, members, fleetKey, harness, docks, pageHarness, reload, afterRename, afterDelete }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; docks: Dock[]; pageHarness: string; reload: () => Promise<void>; afterRename: (to: string) => Promise<void>; afterDelete: () => Promise<void> }) {
+function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharing, reload, afterRename, afterDelete }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; docks: Dock[]; pageHarness: string; sharing?: Fleet['crew_sharing']; reload: () => Promise<void>; afterRename: (to: string) => Promise<void>; afterDelete: () => Promise<void> }) {
+  // The fleet prop is stale after a repo is created here, so the new repo is kept beside it.
+  const [made, setMade] = useState('');
+  const shareRepo = made || sharing?.share_repo || '';
+  const [sharingOpen, setSharingOpen] = useState(false);
+  const [unpublishing, setUnpublishing] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -616,6 +622,7 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, reload
         <Avatar name={member.name} />
         <h2>{member.name}</h2>
         {member.customized ? <span class="pill">customized</span> : null}
+        {member.published ? <span class="pill">Published</span> : null}
         {member.harness ? <Flag harness={member.harness} size="header" label={`runs on ${member.harness}`} /> : null}
       </header>
       <p class="crew-sub">{roleLine(member)}</p>
@@ -631,11 +638,42 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, reload
           <>
             <Button label="Edit" disabled={busy || editing} onClick={() => setEditing(true)} />
             <Button label="Rename" disabled={busy} onClick={() => setRenaming(true)} />
+            {sharing?.enabled && !member.shared && !member.sidecar_unreadable ? <Button label="Share" disabled={busy} onClick={() => setSharingOpen(true)} /> : null}
+            {member.published ? (
+              <Button
+                label="Unpublish"
+                disabled={busy || unpublishing !== null}
+                onClick={() =>
+                  void act(
+                    async () => {
+                      const r = await call<{ blob: string }>('GET', crewApi(fleetKey, harness, `/published/${encodeURIComponent(member.name)}`));
+                      if (r.ok) setUnpublishing(r.data.blob);
+                      return r;
+                    },
+                    async () => {},
+                  )
+                }
+              />
+            ) : null}
             {member.shared || member.sidecar_unreadable ? <Button label="Make mine" disabled={busy || makingMine} onClick={() => setMakingMine(true)} /> : null}
             <Button variant="danger" label="Delete" disabled={busy || confirming} onClick={() => setConfirming(true)} />
           </>
         )}
       </Actions>
+      {unpublishing !== null ? (
+        <UnpublishConfirm
+          name={member.name}
+          repo={shareRepo}
+          blob={unpublishing}
+          fleetKey={fleetKey}
+          harness={harness}
+          onCancel={() => setUnpublishing(null)}
+          onDone={async () => {
+            setUnpublishing(null);
+            await reload();
+          }}
+        />
+      ) : null}
       {makingMine ? (
         <div class="crew-confirm">
           <p>{member.shared ? `Stop tracking ${member.shared.owner}/${member.shared.repo}? This member will no longer get updates or show who shared it.` : 'Stop tracking where this member came from? This member will no longer get updates or show who shared it.'}</p>
@@ -654,7 +692,9 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, reload
           </Actions>
         </div>
       ) : null}
-      {editing ? (
+      {sharingOpen ? (
+        <SharePanel member={member} fleetKey={fleetKey} harness={harness} repo={shareRepo} onRepo={setMade} onPublished={reload} onClose={() => setSharingOpen(false)} />
+      ) : editing ? (
         <EditForm member={member} members={members} fleetKey={fleetKey} harness={harness} docks={docks} pageHarness={pageHarness} onDone={() => setEditing(false)} onSaved={reload} />
       ) : (
         <dl class="crew-facts">
@@ -871,6 +911,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
                 harness={harness}
                 docks={fleet.docks}
                 pageHarness={pageHarness}
+                sharing={fleet.crew_sharing}
                 reload={load}
                 afterRename={async (to) => {
                   await load();

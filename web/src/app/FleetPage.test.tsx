@@ -184,6 +184,7 @@ test('a valid Share repo saves as crew_sharing.share_repo alone, and the field i
   fireEvent.input(screen.getByRole('textbox', { name: 'Share repo' }), { target: { value: 'octocat/crew' } });
   fireEvent.click(save());
   await waitFor(() => expect(puts).toEqual([{ crew_sharing: { share_repo: 'octocat/crew' } }]));
+  await settled(save());
   view.unmount();
   render(<FleetPage fleet={{ ...base } as Fleet} />);
   expect(screen.queryByRole('textbox', { name: 'Share repo' })).toBeNull();
