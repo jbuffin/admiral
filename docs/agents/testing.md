@@ -63,6 +63,8 @@ Admiral keeps its data in `$ADMIRAL_HOME` (default `~/.admiral/`). Every test st
 
 Every Go e2e test owns its home, tmux socket and port, so the tests run in parallel: each top-level test calls `t.Parallel()`, and `make e2e` runs `E2E_PARALLEL` (4) at a time. The packaging tests stay serial, because they run `make release` in the checkout.
 
+A Go e2e request through `client()` that runs out of its 5 s sends SIGQUIT to the Admiral it was sent to, and the test logs that Admiral's stderr with every goroutine's stack, so a stall on the CI runner shows where the server was stuck.
+
 The e2e harness shortens Admiral's production delays through environment variables that take a Go duration (`internal/delay`):
 
 - `ADMIRAL_WAKE_DEBOUNCE` (10 min): how long the newest waking event must have waited before a moored ship wakes. The e2e sets it small and writes the review's `submittedAt` just after the ship moors (`fakeGH.prEvents`).

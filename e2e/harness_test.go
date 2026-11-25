@@ -145,6 +145,8 @@ func requireOwned(t *testing.T, in *instance) (stranger bool) {
 	}
 	if !owned {
 		in.Stop()
+	} else {
+		track(t, in)
 	}
 	return !owned
 }
@@ -474,7 +476,7 @@ func noProxy() *http.Transport {
 // and gives up after 5 s. Tests send cookies explicitly.
 func client() *http.Client {
 	return &http.Client{
-		Transport:     noProxy(),
+		Transport:     stallDump{noProxy()},
 		Timeout:       5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
