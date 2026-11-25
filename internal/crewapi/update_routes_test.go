@@ -163,6 +163,9 @@ func TestUpdatePreviewIsUpToDateWhenTheBytesMatchTheMember(t *testing.T) {
 
 func TestUpdatePreviewOfAMemberRemovedUpstreamIs404(t *testing.T) {
 	u := newUpdatable(t, impOpts{})
+	u.gh.unseed()
+	u.gh.ok("GET", "repos/hubot/crew", repoAs("hubot/crew", "main"))
+	u.gh.ok("GET", "repos/hubot/crew/commits/main", map[string]any{"sha": newSHA})
 	u.gh.answer("GET", "repos/hubot/crew/contents/crew/scout.md?ref="+newSHA, 404, nil, "")
 	status, pv := u.preview("scout")
 	wantStatus(t, "update preview", status, 404, pv)
@@ -193,6 +196,7 @@ func TestUpdatePreviewRefusesWhatImportRefusesAndWritesNothing(t *testing.T) {
 
 func TestUpdatePreviewAnswersARateLimitWithTheResetTime(t *testing.T) {
 	u := newUpdatable(t, impOpts{})
+	u.gh.unseed()
 	u.gh.answer("GET", "repos/hubot/crew", 403, nil, "gh: API rate limit exceeded for user ID 1. Try again in 42 minutes. (HTTP 403)")
 	status, pv := u.preview("scout")
 	wantStatus(t, "update preview", status, 429, pv)
@@ -315,7 +319,7 @@ func TestUpdateApplyAfterALocalEditOrAnUpstreamChangeIsAChangedConflictAndWrites
 		u := newUpdatable(t, impOpts{})
 		pv := u.previewOK("scout")
 		edited := oldScout + "\nEdited after the preview.\n"
-		writeFile(t, u.crewDir()+"/scout.md", edited)
+		u.attach(att{name: "scout", text: edited, tag: "v1"})
 		status, out := u.apply("scout", pv, nil)
 		wantStatus(t, "apply", status, 409, out)
 		if out["kind"] != "changed" {
@@ -394,6 +398,7 @@ func TestUpdateApplyThatCannotWriteTheSidecarRestoresTheMemberAndSaysNothingChan
 func TestUpdateApplyOfARemovedMemberIs404(t *testing.T) {
 	u := newUpdatable(t, impOpts{})
 	pv := u.previewOK("scout")
+	u.gh.unseed()
 	u.gh.answer("GET", "repos/hubot/crew/contents/crew/scout.md?ref="+newSHA, 404, nil, "")
 	status, out := u.apply("scout", pv, nil)
 	wantStatus(t, "apply", status, 404, out)

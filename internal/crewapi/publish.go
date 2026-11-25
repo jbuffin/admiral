@@ -11,7 +11,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/actor"
@@ -65,60 +64,6 @@ func (s *Service) publishRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/fleets/{key}/crew/members/{name}/share", s.serveShare)
 	mux.HandleFunc("GET /api/fleets/{key}/crew/published/{name}", s.servePublished)
 	mux.HandleFunc("DELETE /api/fleets/{key}/crew/published/{name}", s.serveUnpublish)
-}
-
-// listing is one fleet's share repo crew/ directory as last read.
-type listing struct {
-	repo    string
-	entries []github.DirEntry
-	err     string
-	at      time.Time
-}
-
-func (l listing) fresh() bool {
-	ttl := listingTTL
-	if l.err != "" {
-		ttl = listingErrTT
-	}
-	return time.Since(l.at) < ttl
-}
-
-func (l listing) blob(name string) (string, bool) {
-	for _, e := range l.entries {
-		if e.Name == name+".md" {
-			return e.Blob, true
-		}
-	}
-	return "", false
-}
-
-// listings caches each fleet's published listing; Share and Unpublish clear a fleet's entry.
-type listings struct {
-	mu sync.Mutex
-	by map[string]listing
-}
-
-func (l *listings) get(fleet, repo string) (listing, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	v, ok := l.by[fleet]
-	return v, ok && v.repo == repo && v.fresh()
-}
-
-func (l *listings) put(fleet string, v listing) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.by == nil {
-		l.by = map[string]listing{}
-	}
-	v.at = time.Now()
-	l.by[fleet] = v
-}
-
-func (l *listings) clear(fleet string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.by, fleet)
 }
 
 // sharing is what one publish request works on.
@@ -237,18 +182,35 @@ func (sh *sharing) checkRepo(w http.ResponseWriter, ctx context.Context, step st
 	return true
 }
 
-// fetchListing reads the share repo's crew/ directory afresh and caches the answer. A missing directory is an empty listing.
-func (s *Service) fetchListing(ctx context.Context, sh *sharing) (listing, error) {
-	entries, err := sh.gh.ListDir(ctx, sh.owner, sh.name, crewDir)
+// fetchRepoListing reads a repo's crew/ directory afresh and caches the answer. A missing directory is an empty listing marked notFound.
+func (s *Service) fetchRepoListing(ctx context.Context, gh *github.Client, fleet, repo string) (listing, error) {
+	owner, name, _ := strings.Cut(repo, "/")
+	entries, err := gh.ListDir(ctx, owner, name, crewDir)
+	l := listing{}
 	if github.HTTPStatus(err) == http.StatusNotFound {
 		entries, err = nil, nil
+		l.notFound = true
 	}
-	l := listing{repo: sh.repo, entries: entries}
+	l.entries = entries
 	if err != nil {
 		l.err = err.Error()
 	}
-	s.listings.put(sh.c.key, l)
+	s.listings.put(s.now(), fleet, repo, l)
 	return l, err
+}
+
+// repoListing is a repo's cached crew/ listing, read afresh when there is none or it is stale.
+func (s *Service) repoListing(ctx context.Context, gh *github.Client, fleet, repo string) listing {
+	if l, ok := s.listings.get(s.now(), fleet, repo); ok {
+		return l
+	}
+	l, _ := s.fetchRepoListing(ctx, gh, fleet, repo)
+	return l
+}
+
+// fetchListing reads the share repo's crew/ directory afresh and caches the answer.
+func (s *Service) fetchListing(ctx context.Context, sh *sharing) (listing, error) {
+	return s.fetchRepoListing(ctx, sh.gh, sh.c.key, sh.repo)
 }
 
 // publishedListing is the cached listing, read afresh unless the request is a non-engineer actor's, which never calls GitHub.
@@ -256,7 +218,7 @@ func (s *Service) publishedListing(ctx context.Context, sh *sharing) (listing, b
 	if sh.repo == "" {
 		return listing{}, false
 	}
-	if l, ok := s.listings.get(sh.c.key, sh.repo); ok {
+	if l, ok := s.listings.get(s.now(), sh.c.key, sh.repo); ok {
 		return l, true
 	}
 	if _, bot := actor.FleetOf(ctx); bot {
@@ -615,7 +577,7 @@ func (s *Service) serveShare(w http.ResponseWriter, r *http.Request) {
 		blob = *body.ReplacesBlob
 	}
 	sha, err := sh.gh.PutFile(ctx, sh.owner, sh.name, crewDir+"/"+name+".md", "Share crew member "+name, data, blob)
-	s.listings.clear(sh.c.key)
+	s.listings.invalidate(sh.c.key, sh.repo)
 	if status := github.HTTPStatus(err); status == http.StatusConflict || status == http.StatusUnprocessableEntity {
 		writeError(w, http.StatusConflict, fileChanged)
 		return
@@ -673,7 +635,7 @@ func (s *Service) serveUnpublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sha, err := sh.gh.DeleteFile(r.Context(), sh.owner, sh.name, crewDir+"/"+name+".md", "Unpublish crew member "+name, body.Blob)
-	s.listings.clear(sh.c.key)
+	s.listings.invalidate(sh.c.key, sh.repo)
 	switch status := github.HTTPStatus(err); {
 	case status == http.StatusConflict || status == http.StatusUnprocessableEntity:
 		writeError(w, http.StatusConflict, "The published file changed since you looked. Reload and try again.")

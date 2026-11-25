@@ -36,11 +36,13 @@ type Service struct {
 	Clock Clock
 
 	listings listings
+	updates  updateStore
 }
 
 func (s *Service) Routes(mux *http.ServeMux) {
 	s.publishRoutes(mux)
 	s.importRoutes(mux)
+	s.updateRoutes(mux)
 	mux.HandleFunc("GET /api/fleets/{key}/crew", s.serveCrew)
 	mux.HandleFunc("GET /api/fleets/{key}/crew/skills", s.serveSkills)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/draft", s.serveDraft)
@@ -143,6 +145,8 @@ type memberView struct {
 	Published bool `json:"published"`
 	// SharedURL is the page of the upstream file at the commit the member was imported from.
 	SharedURL *string `json:"shared_url"`
+	// Update is the last update check's answer: none, available, removed or unknown.
+	Update string `json:"update"`
 }
 
 type unclaimedView struct {
@@ -184,7 +188,7 @@ func (s *Service) serveCrew(w http.ResponseWriter, r *http.Request) {
 		listed[m.Name] = true
 		v := memberView{m.Name, m.Role, m.BasedOn, m.Skills, m.Model, m.Harness, m.PickMeWhen, m.Instructions, m.Layer,
 			m.Layer == crew.LayerFleet && builtIns[m.Name].Name != "", notesView{[]string{}, map[string][]string{}},
-			m.Shared, unreadableSidecar(warns, m), published[m.Name], sharedURL(c.crewDir(), m)}
+			m.Shared, unreadableSidecar(warns, m), published[m.Name], sharedURL(c.crewDir(), m), s.updateStateOf(c, m)}
 		if memoryOK && m.Role != crew.FixChecker {
 			v.Notes.Fleet, v.Notes.Repos = crew.MemberNotes(memory, m.Name, &out.Warnings)
 		}
