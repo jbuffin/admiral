@@ -5,11 +5,13 @@ import { crewApi, type CrewMember } from './crew';
 import { usePollUntil } from './hooks/poll';
 import { LineDiff } from './LineDiff';
 import { renderMarkdown } from './markdown';
+import { githubPath, go } from './router';
 
-interface Scan {
+export interface Scan {
   state: string;
   findings: { line: number; rule: string }[];
   install?: string;
+  error?: string;
 }
 
 interface Preview {
@@ -34,13 +36,29 @@ const NO_SCAN = 'This file goes public without a secret scan. Read it for keys, 
 const GITLEAKS_DOCS = 'https://github.com/gitleaks/gitleaks#installing';
 const CHOOSE_ANOTHER = 'Choose another repo';
 
-const noScan = (scan: Scan) => scan.state === 'missing' || scan.state === 'too-old';
+export const noScan = (scan: Scan) => scan.state === 'missing' || scan.state === 'too-old';
 
-function scanLine(scan: Scan): string {
+export function scanLine(scan: Scan): string {
   if (scan.state === 'clean') return 'Secret scan: nothing found.';
   if (scan.state === 'too-old') return 'Secret scan: not run, the installed gitleaks is too old.';
   if (scan.state === 'missing') return 'Secret scan: not run, gitleaks is not installed.';
   return `Secret scan: ${scan.state}.`;
+}
+
+/** The link to the fleet's GitHub page, for a fleet that isn't connected. */
+export function ConnectGitHubLink({ fleetKey }: { fleetKey: string }) {
+  return (
+    <a
+      href={githubPath(fleetKey)}
+      onClick={(e) => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        go(githubPath(fleetKey), '');
+      }}
+    >
+      Connect GitHub
+    </a>
+  );
 }
 
 function RepoStep({ fleetKey, harness, login, onRepo }: { fleetKey: string; harness: string; login: string; onRepo: (repo: string) => void }) {

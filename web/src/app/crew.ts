@@ -26,6 +26,8 @@ export interface CrewMember {
   /** Where the member was shared from; null when it never was. */
   shared: { owner: string; repo: string; commit: string; tag: string | null; detached: boolean } | null;
   sidecar_unreadable: boolean;
+  /** The upstream file at the commit the member was imported from. */
+  shared_url?: string | null;
   /** The fleet's share repo holds a file of this name. */
   published?: boolean;
 }
@@ -94,6 +96,7 @@ export function normalizeCrew(raw: Record<string, unknown>): CrewData {
       notes: notesOf(m.notes as Partial<Notes>),
       shared: (m.shared as CrewMember['shared']) ?? null,
       sidecar_unreadable: !!m.sidecar_unreadable,
+      shared_url: (m.shared_url as string | null) ?? null,
       published: !!m.published,
     })),
     unclaimed: list<{ member: string; notes: Partial<Notes> }>(raw.unclaimed).map((u) => ({ member: u.member, notes: notesOf(u.notes) })),

@@ -41,6 +41,8 @@ The import box also takes these GitHub URLs:
 
 `<owner>` and `<repo>` follow GitHub's rules. The build adds one owner/repo segment validator in `internal/github` (pattern `[A-Za-z0-9_.-]+`, as in `internal/campaigns/follow/routes.go:542`) and uses it for every GitHub endpoint segment. `<name>` must pass `crew.ValidName`. A `.md` suffix on `<name>` is dropped. Anything else is a 400 that names the form, for example `octocat/admiral-crew/reviewer@v1`.
 
+Known limit: a ref is read with the charset `[A-Za-z0-9_./-]` (plus `%2F` for a `/` when it goes to GitHub), so a branch whose name holds another character can't be imported by name. Import it by commit SHA instead.
+
 An import always resolves the ref to a commit SHA and pins that. **A tag is only a label**: when a tag in the repo points at the pinned commit, the Crew page shows it (`v1`) and the sidecar keeps it, but nothing follows tags. An import at `@v1` gets the same updates as one at the default branch (see [Updates](#updates)).
 
 ## The sidecar
@@ -166,7 +168,7 @@ Admiral runs the engineer's own `gitleaks` on the exact bytes. It has no scanner
 Importing is reading a file from GitHub and writing it as a fleet member, with these rules.
 
 - **Read the whole file first.** The import dialog shows the member's rendered card (name, role, based-on, skills, model, harness, pick-me-when) and the full raw file, with "shared by `<owner>`", the repo, the pinned short SHA and the tag. Nothing is written until the engineer clicks Import.
-- **Refuse a bad file.** The bytes must be valid UTF-8, at most `crew`'s 64 KiB limit, free of hidden characters (the same whole-file check as publish check 4), and pass `crew.CheckFile` with the stem from the file name. A file with `ad-hoc` or `ad-hoc-run` is refused: those belong to a run, not a fleet. Each refusal says which rule and which line.
+- **Refuse a bad file.** The bytes must be valid UTF-8, at most `crew`'s 64 KiB limit, free of hidden characters (the same whole-file check as publish check 4), and pass `crew.CheckFile` with the stem from the file name. A file with `ad-hoc` or `ad-hoc-run` is refused: those belong to a run, not a fleet. Other frontmatter keys the resolver doesn't know are kept as they are, so a file written for a newer Admiral round-trips. Each refusal says which rule and which line.
 - **Never overwrite.** When the name is taken (a fleet member file exists, or a built-in has it), the dialog says so and offers `<name>-<owner>` (cut to the 64-character slug limit; when that is taken too, the engineer types one). Renaming rewrites the `name` field (`renamed` in `crewapi`) and the file name together, then runs `crew.CheckFile` again. The write uses a hard link so a file that appeared since the check is never replaced (`KeepMission`'s pattern).
 - **Skills are warnings.** Each skill the member names that the fleet's dock can't see (`GET /api/fleets/{key}/crew/skills`) is listed: "Not installed: `<skill>`". Import is still allowed; Admiral never installs a skill.
 
@@ -220,6 +222,7 @@ All under `/api/fleets/{key}/crew/`, JSON in and out, the `?harness=` dock query
 
 | Route | What |
 | --- | --- |
+| `GET  .../crew` | Each member also carries `shared_url`: `https://github.com/<owner>/<repo>/blob/<commit>/crew/<file>.md` for an imported member (built on the server from its sidecar, each segment escaped), else null. |
 | `GET  .../crew/sharing` | `{"crew_sharing": {"enabled", "share_repo", "sources"}, "connected", "login", "login_error", "repo", "published": [...], "published_error"}`: the fleet's `crew_sharing` state, whether GitHub is connected, the `gh` login, whether the share repo exists and is pushable, its published names, and why the listing failed when it did (`published_error`). |
 | `POST .../crew/sharing/repo` | Create the share repo and its README `{"name", "description"}`, or adopt an existing one `{"repo": "owner/name"}`. `{"preview": true, "owner", "name"}` writes nothing and answers `{"readme"}`, the README the create would commit. Saves `share_repo` and answers `{"share_repo"}`. 403 when sharing is off. A taken name is a 409; when the repo is public and pushable it carries `"use_existing": "owner/name"`. |
 | `POST .../crew/members/{name}/share/preview` | No body: the fleet's saved share repo is the target. The canonical bytes (`bytes`), `sha256`, `path`, `repo`, `replaces_blob` (the published file's blob SHA, or null for a new file), `published_bytes` when it replaces one (read by the preview itself; 422 when the published file is over 64 KiB), and `scan`: `{"state": "clean" \| "hit" \| "failed" \| "missing" \| "too-old", "findings": [{"line", "rule"}], "error": "<text>", "version": "<found>", "install": "<hint>"}`. A failed check 1 to 5 is a 422 naming the check, the line and the rule. 403 when sharing is off. |
@@ -227,10 +230,10 @@ All under `/api/fleets/{key}/crew/`, JSON in and out, the `?harness=` dock query
 | `POST .../crew/members/{name}/make-mine` | Deletes the sidecar. 404 when there's none. |
 | `GET  .../crew/published/{name}` | `{"name", "repo", "bytes", "blob"}`: the published file's bytes and blob SHA, for the Unpublish confirm. 404 when it isn't published; 422 when it is over 64 KiB. |
 | `DELETE .../crew/published/{name}` | `{"blob", "repo"}` from the GET. Deletes `crew/<name>.md` from the share repo and returns `{"name", "repo", "commit_url"}`. 409 when the file changed since the GET or `repo` is no longer the fleet's share repo; 404 when the file is gone. |
-| `POST .../crew/imports/preview` | `{"ref"}` (a ref or URL). Returns the raw bytes, the parsed card, `owner`, `repo`, `path`, `commit`, `tag`, the clash (with the suggested name), skill warnings and secret-scan warnings. A URL with no member returns `{"source": "owner/repo"}` instead. |
-| `POST .../crew/imports` | `{"repo", "path", "commit", "sha256", "name"?}`. Rereads the file at that commit, checks the hash, writes member and sidecar. 409 on a clash. |
-| `GET  .../crew/sources/{owner}/{repo}` | The source's member list (name, path, blob, imported state, and published state for the share repo). |
-| `PUT  .../crew/sources` | `{"sources": [...]}`, the whole list. |
+| `POST .../crew/imports/preview` | `{"ref"}` (a ref or URL). Returns `bytes` (the raw file), `card` (the parsed member), `owner`, `repo`, `path`, `commit`, `tag`, `blob`, `sha256`, `clash` (`{"name", "suggested"}`, or null), `missing_skills` (skills no dock of the fleet has) and `scan` (as in the Share preview; a failed scan is a warning here and never blocks). A URL with no member returns `{"source": "owner/repo"}` instead. 409 when the fleet has no github.com client; 404 naming the ref, file or repo that wasn't found; 403 for a bot. |
+| `POST .../crew/imports` | `{"repo", "path", "commit", "sha256", "name"?}`. Rereads the file at that commit, checks the hash (409 "The file changed since the preview. Preview it again."), rechecks the file, then writes the member and its sidecar without replacing anything. Returns `{"name", "missing_skills", "scan"}`. 409 on a clash, with a top-level `suggested`. |
+| `GET  .../crew/sources/{owner}/{repo}` | `{"members": [{"name", "path", "blob", "imported", "published"}]}`: `imported` is the fleet member's name when one came from that file, else null; `published` is true for a file in the fleet's share repo. |
+| `PUT  .../crew/sources` | `{"sources": [...]}`, the whole list. Only entries new to the list are checked (the repo exists and has a `crew/` folder; 404 otherwise). Returns `{"sources": [...]}`. |
 | `POST .../crew/members/{name}/update/preview` | The current bytes, the new bytes, the new commit and tag, and the checks' result. |
 | `POST .../crew/members/{name}/update` | `{"commit", "sha256"}` from the preview. Writes both files. |
 

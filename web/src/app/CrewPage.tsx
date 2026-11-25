@@ -2,12 +2,13 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useReducer, useRef, useState } from 'preact/hooks';
 import { call, type Dock, type Fleet, type Result } from './api';
 import { Actions, Button } from './Button';
-import { SharePanel, UnpublishConfirm, type SharingView } from './CrewShare';
+import { CrewImport } from './CrewImport';
+import { ConnectGitHubLink, SharePanel, UnpublishConfirm, type SharingView } from './CrewShare';
 import { Flag } from './Flag';
 import { fleetSearch } from './fleets';
 import { ModelSelect } from './LaunchPickers';
 import { renderMarkdown } from './markdown';
-import { crewPath, githubPath, go, loc } from './router';
+import { crewPath, go, loc } from './router';
 import { Sheet } from './Sheet';
 import { SkillPicker } from './SkillPicker';
 import {
@@ -631,6 +632,21 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
             <span class="pill">Published</span>
           )
         ) : null}
+        {member.shared ? (
+          <>
+            {member.shared_url ? (
+              <a class="pill" href={member.shared_url} target="_blank" rel="noopener noreferrer">
+                Shared by {member.shared.owner}
+              </a>
+            ) : (
+              <span class="pill">Shared by {member.shared.owner}</span>
+            )}
+            <span class="muted">
+              {member.shared.commit.slice(0, 7)}
+              {member.shared.tag ? ` ${member.shared.tag}` : ''}
+            </span>
+          </>
+        ) : null}
         {member.harness ? <Flag harness={member.harness} size="header" label={`runs on ${member.harness}`} /> : null}
       </header>
       <p class="crew-sub">{roleLine(member)}</p>
@@ -656,16 +672,7 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
       {sharing?.enabled && view && !view.connected && !builtIn ? (
         <p class="note">
           Sharing needs GitHub.{' '}
-          <a
-            href={githubPath(fleetKey)}
-            onClick={(e) => {
-              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-              e.preventDefault();
-              go(githubPath(fleetKey), '');
-            }}
-          >
-            Connect GitHub
-          </a>
+          <ConnectGitHubLink fleetKey={fleetKey} />
         </p>
       ) : null}
       {unpublishing ? (
@@ -788,6 +795,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
   const seq = useRef(0);
   const search = fleetSearch.value;
 
+  const [importing, setImporting] = useState(false);
   const [view, setView] = useState<SharingView | undefined>();
   const sharingOn = !!fleet.crew_sharing?.enabled;
 
@@ -897,7 +905,9 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
             <div class="crew-toolbar">
               {dock}
               <Button label="Add crew" onClick={openAdd} />
+              <Button label="Import" onClick={() => setImporting((v) => !v)} />
             </div>
+            {importing ? <CrewImport fleetKey={fleet.key} harness={harness} reload={load} onClose={() => setImporting(false)} /> : null}
             {data.members.length === 0 && data.errors.length === 0 ? <p class="line">No crew members yet.</p> : null}
             <Group id="crew-fleet" title={groups[0].title} empty={data.errors.length > 0 ? '' : 'No fleet members yet.'} members={groups[0].members} selected={name} />
             <Group id="crew-built-in" title={groups[1].title} empty={data.errors.length > 0 ? '' : 'No built-in members here.'} members={groups[1].members} selected={name} />

@@ -357,17 +357,25 @@ func hasSegment(line, seg string) bool {
 }
 
 func checkHidden(lines []string) *Refusal {
+	if r, line := firstHidden(lines); line > 0 {
+		return hiddenRefusal(r, line)
+	}
+	return nil
+}
+
+// firstHidden is the first code point a reader can't see and its 1-based line, or line 0 when there is none.
+func firstHidden(lines []string) (rune, int) {
 	for i, line := range lines {
 		for _, r := range line {
 			if publishHidden(r) {
-				return hiddenRefusal(r, i+1)
+				return r, i + 1
 			}
 		}
 		if n, first := hidden(line, true); n > 0 {
-			return hiddenRefusal(first, i+1)
+			return first, i + 1
 		}
 	}
-	return nil
+	return 0, 0
 }
 
 func hiddenRefusal(r rune, line int) *Refusal {

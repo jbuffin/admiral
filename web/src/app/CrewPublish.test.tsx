@@ -55,7 +55,7 @@ const posts = (calls: Call[]) => calls.filter((c) => c.method !== 'GET').map((c)
 const clean = { path: 'crew/bosun.md', bytes: '---\nname: bosun\n---\n\nDo it.\n', sha256: 'abc', repo: 'octocat/admiral-crew', replaces_blob: null, published_bytes: null, scan: { state: 'clean', findings: [] } };
 
 test('Share shows for a fleet member of a sharing fleet, and not for a built-in, an imported member or a fleet with sharing off', async () => {
-  server([member('bosun'), member('mate', { layer: 'built-in' }), member('imp', { shared: { owner: 'a', repo: 'b' } })]);
+  server([member('bosun'), member('mate', { layer: 'built-in' }), member('imp', { shared: { owner: 'a', repo: 'b', commit: '0123456789abcdef0123456789abcdef01234567', tag: null, detached: false } })]);
   const { unmount } = page('bosun');
   expect(await screen.findByRole('button', { name: 'Share' })).toBeTruthy();
   unmount();
@@ -65,7 +65,7 @@ test('Share shows for a fleet member of a sharing fleet, and not for a built-in,
 });
 
 test('an imported member and a fleet with sharing off show no Share button', async () => {
-  server([member('imp', { shared: { owner: 'a', repo: 'b' } }), member('bosun')]);
+  server([member('imp', { shared: { owner: 'a', repo: 'b', commit: '0123456789abcdef0123456789abcdef01234567', tag: null, detached: false } }), member('bosun')]);
   const { unmount } = page('imp');
   await screen.findByRole('button', { name: 'Make mine' });
   expect(screen.queryByRole('button', { name: 'Share' })).toBeNull();

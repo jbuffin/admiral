@@ -34,6 +34,8 @@ type RepoInfo struct {
 	Public   bool
 	Archived bool
 	Pushable bool
+	// DefaultBranch is the repo's default branch as GitHub reports it.
+	DefaultBranch string
 }
 
 // DirEntry is one file in a repo directory.
@@ -74,10 +76,11 @@ func (c *Client) Repo(ctx context.Context, owner, name string) (RepoInfo, error)
 		return RepoInfo{}, err
 	}
 	var got struct {
-		FullName    string `json:"full_name"`
-		Private     bool   `json:"private"`
-		Archived    bool   `json:"archived"`
-		Permissions struct {
+		FullName      string `json:"full_name"`
+		Private       bool   `json:"private"`
+		Archived      bool   `json:"archived"`
+		DefaultBranch string `json:"default_branch"`
+		Permissions   struct {
 			Push bool `json:"push"`
 		} `json:"permissions"`
 	}
@@ -88,7 +91,7 @@ func (c *Client) Repo(ctx context.Context, owner, name string) (RepoInfo, error)
 	if !strings.EqualFold(got.FullName, owner+"/"+name) {
 		return RepoInfo{}, &MovedError{To: got.FullName}
 	}
-	return RepoInfo{FullName: got.FullName, Public: !got.Private, Archived: got.Archived, Pushable: got.Permissions.Push}, nil
+	return RepoInfo{FullName: got.FullName, Public: !got.Private, Archived: got.Archived, Pushable: got.Permissions.Push, DefaultBranch: got.DefaultBranch}, nil
 }
 
 // CreateRepo makes a public repository under the signed-in account and returns its owner/name.
@@ -145,6 +148,10 @@ func (c *Client) ReadFile(ctx context.Context, owner, repo, path string) (File, 
 	if err != nil {
 		return File{}, err
 	}
+	return c.readFile(ctx, endpoint)
+}
+
+func (c *Client) readFile(ctx context.Context, endpoint string) (File, error) {
 	out, err := c.rest(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return File{}, err

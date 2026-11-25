@@ -38,6 +38,7 @@ type Service struct {
 
 func (s *Service) Routes(mux *http.ServeMux) {
 	s.publishRoutes(mux)
+	s.importRoutes(mux)
 	mux.HandleFunc("GET /api/fleets/{key}/crew", s.serveCrew)
 	mux.HandleFunc("GET /api/fleets/{key}/crew/skills", s.serveSkills)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/draft", s.serveDraft)
@@ -138,6 +139,8 @@ type memberView struct {
 	SidecarUnreadable bool `json:"sidecar_unreadable"`
 	// Published is true when the fleet's share repo holds a file of this name.
 	Published bool `json:"published"`
+	// SharedURL is the page of the upstream file at the commit the member was imported from.
+	SharedURL *string `json:"shared_url"`
 }
 
 type unclaimedView struct {
@@ -179,7 +182,7 @@ func (s *Service) serveCrew(w http.ResponseWriter, r *http.Request) {
 		listed[m.Name] = true
 		v := memberView{m.Name, m.Role, m.BasedOn, m.Skills, m.Model, m.Harness, m.PickMeWhen, m.Instructions, m.Layer,
 			m.Layer == crew.LayerFleet && builtIns[m.Name].Name != "", notesView{[]string{}, map[string][]string{}},
-			m.Shared, unreadableSidecar(warns, m), published[m.Name]}
+			m.Shared, unreadableSidecar(warns, m), published[m.Name], sharedURL(c.crewDir(), m)}
 		if memoryOK && m.Role != crew.FixChecker {
 			v.Notes.Fleet, v.Notes.Repos = crew.MemberNotes(memory, m.Name, &out.Warnings)
 		}
@@ -284,9 +287,14 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fleet, _ := s.Config.Current().Fleet(r.PathValue("key"))
+	writeJSON(w, http.StatusOK, map[string][]skillindex.Entry{"skills": fleetSkills(fleet, r.URL.Query().Get("harness"))})
+}
+
+// fleetSkills is the skills the fleet's docks can see, narrowed to one dock when harness is set, with only names a crew file may list.
+func fleetSkills(fleet config.Fleet, harness string) []skillindex.Entry {
 	docks := fleet.Harnesses
-	if want := r.URL.Query().Get("harness"); want != "" {
-		dock, _ := fleet.Harness(want)
+	if harness != "" {
+		dock, _ := fleet.Harness(harness)
 		docks = []config.Harness{dock}
 	}
 	lists := make([]skillindex.HarnessSkills, 0, len(docks))
@@ -299,5 +307,5 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 			skills = append(skills, e)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string][]skillindex.Entry{"skills": skills})
+	return skills
 }
