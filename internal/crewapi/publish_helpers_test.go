@@ -167,6 +167,8 @@ type pubFixture struct {
 	leaks string // $FAKEGITLEAKS_DIR
 	// builtIns is the Commodore crew directory.
 	builtIns string
+	// svc is the service behind the server, for a test that runs its background check.
+	svc *crewapi.Service
 }
 
 type pubOpts struct {

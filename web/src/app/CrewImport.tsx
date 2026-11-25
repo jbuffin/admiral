@@ -25,14 +25,17 @@ interface Row {
   name: string;
   path: string;
   imported: string | null;
+  update?: string | null;
   published: boolean;
 }
+
+const updateLabels: Record<string, string> = { available: 'Update available', removed: 'Removed upstream' };
 
 type Sharing = SharingView & { crew_sharing: { sources: string[] } };
 
 const slash = (repo: string) => repo.split('/').map(encodeURIComponent).join('/');
 
-function ScanNote({ scan }: { scan: Scan }) {
+export function ScanNote({ scan }: { scan: Scan }) {
   if (noScan(scan)) return null;
   if (scan.state === 'clean') return <p class="note">{scanLine(scan)}</p>;
   if (scan.state === 'hit') {
@@ -288,6 +291,7 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
                   <span>{m.name}</span>
                   {roles[`${browsing.repo}/${m.path}`] ? <span class="muted">{roles[`${browsing.repo}/${m.path}`]}</span> : null}
                   {m.imported ? <span class="pill">Imported</span> : <Button label="Import" disabled={busy} onClick={() => void loadPreview(`${browsing.repo}/${m.name}`)} />}
+                  {m.imported && m.update && updateLabels[m.update] ? <span class="pill">{updateLabels[m.update]}</span> : null}
                   {browsing.repo === shareRepo ? <Button label="Unpublish" onClick={() => setUnpublishing(m.name)} /> : null}
                 </li>
               ))}

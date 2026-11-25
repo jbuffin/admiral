@@ -452,6 +452,7 @@ type browseRow struct {
 	Path      string  `json:"path"`
 	Blob      string  `json:"blob"`
 	Imported  *string `json:"imported"`
+	Update    *string `json:"update"`
 	Published bool    `json:"published"`
 }
 
@@ -484,36 +485,37 @@ func (s *Service) serveBrowse(w http.ResponseWriter, r *http.Request) {
 		}
 		path := crewDir + "/" + e.Name
 		row := browseRow{Name: stem, Path: path, Blob: e.Blob, Published: strings.EqualFold(full, sh.repo)}
-		if local, ok := imported[path]; ok {
-			row.Imported = &local
+		if m, ok := imported[path]; ok {
+			row.Imported = &m.name
+			state := updateNone
+			if !m.side.shared.Detached {
+				state = s.updates.state(sh.c.key, m.name)
+			}
+			row.Update = &state
 		}
 		rows = append(rows, row)
 	}
 	writeJSON(w, http.StatusOK, map[string][]browseRow{"members": rows})
 }
 
-// importedFrom maps each upstream path of repo that a sidecar in dir records to the member's local name.
-func importedFrom(dir, repo string) map[string]string {
-	out := map[string]string{}
-	entries, _ := os.ReadDir(dir)
-	for _, e := range entries {
-		stem, ok := strings.CutSuffix(e.Name(), crew.SidecarSuffix)
-		if !ok {
+// importedFrom maps each upstream path of repo that a usable sidecar in dir records to the member's local name and sidecar.
+func importedFrom(dir, repo string) map[string]importedMember {
+	out := map[string]importedMember{}
+	for _, name := range sidecarStems(dir) {
+		side := readSidecar(dir, name)
+		if side.kind != usableSidecar || !strings.EqualFold(side.repo, repo) {
 			continue
 		}
-		raw, found, err := readRegular(filepath.Join(dir, e.Name()))
-		var side struct {
-			Repo string `json:"repo"`
-			Path string `json:"path"`
-		}
-		if err != nil || !found || json.Unmarshal(raw, &side) != nil || !strings.EqualFold(side.Repo, repo) {
-			continue
-		}
-		if _, dup := out[side.Path]; !dup {
-			out[side.Path] = stem
+		if _, dup := out[side.path]; !dup {
+			out[side.path] = importedMember{name: name, side: side}
 		}
 	}
 	return out
+}
+
+type importedMember struct {
+	name string
+	side sidecarRead
 }
 
 // sharedURL is the page of the member's upstream file at the commit it came from; nil when it has no usable sidecar.
@@ -521,20 +523,11 @@ func sharedURL(dir string, m crew.Member) *string {
 	if m.Shared == nil || m.Layer != crew.LayerFleet {
 		return nil
 	}
-	raw, found, err := readRegular(filepath.Join(dir, sidecarFile(m.Name)))
-	if err != nil || !found {
+	side := readSidecar(dir, m.Name)
+	if side.kind != usableSidecar {
 		return nil
 	}
-	var side struct {
-		Path string `json:"path"`
-	}
-	if json.Unmarshal(raw, &side) != nil {
-		return nil
-	}
-	file, ok := strings.CutPrefix(side.Path, crewDir+"/")
-	if !ok || !strings.HasSuffix(file, ".md") || strings.HasPrefix(file, ".") || strings.Contains(file, "/") {
-		return nil
-	}
+	file := strings.TrimPrefix(side.path, crewDir+"/")
 	u := "https://github.com/" + url.PathEscape(m.Shared.Owner) + "/" + url.PathEscape(m.Shared.Repo) +
 		"/blob/" + url.PathEscape(m.Shared.Commit) + "/" + crewDir + "/" + url.PathEscape(file)
 	return &u
