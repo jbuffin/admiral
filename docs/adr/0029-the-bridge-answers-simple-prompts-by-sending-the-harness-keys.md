@@ -43,3 +43,5 @@ Today the bridge is the ship's terminal ([ADR 0011](0011-the-bridge-follows-the-
 - The conversation endpoints and the `conversation` WebSocket message belong in the API docs, not in `docs/bridge-protocol.md`.
 
 Amended 2026-11-14: the Changes tab is removed, with its route (`GET /api/v1/ships/<ship>/changes`) and the `changes` capability. It diffed one checkout against the base branch, which says little about a ship whose work spans several branches and becomes a stack, and the engineer reads code once it is a PR. The bridge's tabs are Conversation, Terminal and PR. A way to read a PR's code changes may come back under the PR tab; that is not decided here.
+
+Amended 2026-11-24: a `not_started` ship or boat gets the terminal card even with no transcript. The card names the session's folder as plain text, and Open terminal opens that ship's or boat's Terminal tab (`crew=` in the link). It sends no keys.

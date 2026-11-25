@@ -19,7 +19,7 @@ func events(recs []outcomes.Record) []string {
 
 func TestReasonOf(t *testing.T) {
 	for _, c := range []struct{ state, reason, want string }{
-		{"", "", "idle"}, // no hook has spoken: the 10 s rule
+		{"", "", "not_started"}, // no hook has spoken: the 10 s rule
 		{"needs_you", "question", "question"},
 		{"needs_you", "", "unknown"},          // the state without its reason
 		{"needs_you", "has space", "unknown"}, // a planted reason

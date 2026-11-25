@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
@@ -16,7 +17,7 @@ func TestCrewBoatsCarryRoleAndConversationFlagButNotThePath(t *testing.T) {
 		{Name: "d", Harness: "codex"},
 		{Name: "e", Harness: "copilot", Transcript: "/x/session-state/s/events.jsonl"},
 		{Name: "f", Harness: "copilot"},
-	})
+	}, time.Now())
 	want := []struct {
 		role string
 		conv bool

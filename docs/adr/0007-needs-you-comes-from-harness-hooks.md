@@ -31,3 +31,5 @@ A crash fires no hook. The pane dying is the exit signal, and what that means fo
 - The first Codex launch in each fleet stops on the hook review dialog. The 10-second rule shows that launch as needs-you.
 - A startup dialog that clears in under 10 seconds is never flagged, and a slow first hook can flag a ship briefly. Both are accepted.
 - A harness that drops or renames a hook event breaks needs-you for that harness until the bundle is updated. Admiral never falls back to screen reading.
+
+Amended 2026-11-24: a ship or crew boat with no `@admiral-activity` stamp at or after `@admiral-launched`, 10 seconds on, needs you with reason `not_started` (usually a folder-trust prompt only the engineer may answer); Admiral writes no trust into any config, and the message box and Interrupt send it no key (409). Claude's `SessionStart` (`admiral ship-note`, which stamps on the pane alone, so crew boats too) and Codex's and Copilot's (`admiral hook`) write the stamp, and the engineer's first key in the Terminal tab clears the state and stamps a boat. The push waits 30 seconds past launch, so a slow start does not buzz the phone.

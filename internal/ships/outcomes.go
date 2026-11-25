@@ -80,10 +80,19 @@ func baseline(sess sessionhost.Session, now time.Time) tally {
 	return t
 }
 
+// startedSinceLaunch: a hook stamped activity at or after this launch, so an earlier launch's stamp doesn't count.
+func startedSinceLaunch(sess sessionhost.Session) bool {
+	launched, err := time.Parse(time.RFC3339, sess.Options["launched"])
+	return err == nil && !sess.Activity.IsZero() && !sess.Activity.Before(launched)
+}
+
 func reasonOf(sess sessionhost.Session) string {
 	switch {
 	case sess.State == "":
-		return "idle"
+		if startedSinceLaunch(sess) {
+			return "idle"
+		}
+		return "not_started"
 	case reasonPattern.MatchString(sess.Reason):
 		return sess.Reason
 	}

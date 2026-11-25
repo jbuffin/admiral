@@ -6,11 +6,15 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
+
+// NotStartedPushWait is how long past launch a session must be not started before it pushes; the inbox shows it sooner.
+const NotStartedPushWait = 30 * time.Second
 
 // Decided is an event with what Decide made of it.
 type Decided struct {
@@ -47,6 +51,7 @@ type Watcher struct {
 	watching func() bool
 	notify   func(fleet string) bool
 	sinks    []Sink
+	now      func() time.Time
 
 	mu         sync.Mutex
 	shipsSeen  bool
@@ -56,12 +61,32 @@ type Watcher struct {
 	polled     map[string]bool // moored ship -> its PRs have been polled since Admiral started
 	mooredAt0  map[string]bool // ships already moored in the first snapshot
 	fleetOf    map[string]ships.Ship
+	waiting    bool // a not-started session is still inside NotStartedPushWait
 	inboxSeen  bool
 	inboxItems map[string]bool
 }
 
 func NewWatcher(watching func() bool, notify func(fleet string) bool, sinks ...Sink) *Watcher {
-	return &Watcher{watching: watching, notify: notify, sinks: sinks}
+	return &Watcher{watching: watching, notify: notify, sinks: sinks, now: time.Now}
+}
+
+// WithClock replaces the clock NotStartedPushWait is measured on.
+func (w *Watcher) WithClock(now func() time.Time) *Watcher {
+	w.now = now
+	return w
+}
+
+// Waiting is whether a not-started session has yet to reach NotStartedPushWait, so its push needs another look with no event.
+func (w *Watcher) Waiting() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.waiting
+}
+
+// early is whether a not-started session is still inside NotStartedPushWait.
+func (w *Watcher) early(reason, launched string) bool {
+	t, err := time.Parse(time.RFC3339, launched)
+	return reason == "not_started" && err == nil && w.now().Sub(t) < NotStartedPushWait
 }
 
 // Emit is the way in for events that no detector produces yet.
@@ -93,7 +118,7 @@ func deliver(s Sink, d Decided) {
 // A finished turn (stop), idle, unknown and the ship-level crew reason are only counted.
 func asks(reason string) bool {
 	switch {
-	case reason == "question", reason == "permission", reason == "bell",
+	case reason == "question", reason == "permission", reason == "bell", reason == "not_started",
 		strings.HasPrefix(reason, "permission:"),
 		reason == "notification:permission_prompt", reason == "notification:elicitation_dialog":
 		return true
@@ -105,6 +130,9 @@ func askText(reason string) string {
 	if strings.HasPrefix(reason, "permission") || strings.HasSuffix(reason, "permission_prompt") {
 		return "needs your approval"
 	}
+	if reason == "not_started" {
+		return "needs you to finish starting"
+	}
 	if reason == "bell" {
 		return "needs you"
 	}
@@ -115,6 +143,7 @@ func (w *Watcher) Ships(list []ships.Ship) {
 	asking, anchored, ready, polled := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
 	fleetOf := make(map[string]ships.Ship, len(list))
 	var events []Event
+	waiting := false
 	w.mu.Lock()
 	first := !w.shipsSeen
 	if first {
@@ -135,6 +164,8 @@ func (w *Watcher) Ships(list []ships.Ship) {
 		fleetOf[sh.Session] = sh
 		base := Event{Fleet: sh.Fleet, FleetName: sh.FleetName, Name: sh.Name, Target: TargetPeek, Session: sh.Session}
 		switch {
+		case sh.Status == ships.StatusNeedsYou && asks(sh.Reason) && w.early(sh.Reason, sh.Launched):
+			waiting = true
 		case sh.Status == ships.StatusNeedsYou && asks(sh.Reason):
 			ev := base
 			ev.Kind, ev.Key, ev.Text = ShipQuestion, sh.Session, askText(sh.Reason)
@@ -160,12 +191,16 @@ func (w *Watcher) Ships(list []ships.Ship) {
 			if b.Status != sessionhost.CrewNeedsYou || !asks(b.Reason) {
 				continue
 			}
+			if w.early(b.Reason, b.Launched) {
+				waiting = true
+				continue
+			}
 			ev := base
 			ev.Kind, ev.Key, ev.Text, ev.Crew = ShipQuestion, sh.Session+"/"+b.Name, b.Name+" "+askText(b.Reason), b.Name
 			note(w.asking, asking, sh.Session+"/"+b.Name, ev)
 		}
 	}
-	w.shipsSeen, w.asking, w.anchored, w.ready, w.polled, w.fleetOf = true, asking, anchored, ready, polled, fleetOf
+	w.shipsSeen, w.asking, w.anchored, w.ready, w.polled, w.fleetOf, w.waiting = true, asking, anchored, ready, polled, fleetOf, waiting
 	w.mu.Unlock()
 	for _, ev := range events {
 		w.Emit(ev)
@@ -235,6 +270,8 @@ type Feed struct {
 	Items   func() []inbox.Item
 	// InboxReady is whether the inbox has done its first scan; a change before that is not read.
 	InboxReady func() bool
+	// Recheck is how often a session still inside NotStartedPushWait is looked at again; a second when zero.
+	Recheck time.Duration
 
 	ship, item chan struct{}
 	once       sync.Once
@@ -258,8 +295,19 @@ func (f *Feed) InboxChanged() { f.init(); poke(f.item) }
 
 func (f *Feed) Run(ctx context.Context) {
 	f.init()
+	// A not-started session's push comes due with no event to announce it.
+	every := f.Recheck
+	if every <= 0 {
+		every = time.Second
+	}
+	recheck := time.NewTicker(every)
+	defer recheck.Stop()
 	for {
 		select {
+		case <-recheck.C:
+			if f.Watcher.Waiting() {
+				f.Watcher.Ships(f.Ships())
+			}
 		case <-f.ship:
 			f.Watcher.Ships(f.Ships())
 		case <-f.item:

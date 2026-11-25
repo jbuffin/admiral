@@ -58,7 +58,7 @@ function ShipTurn({ ship, boat, fleetKey, item, children }: { ship: Ship; boat?:
           anchored={boat ? boat.status === 'anchored' : ship.status === 'anchored'}
           working={(boat ?? ship).status === 'underway'}
           noneTitle={boat ? 'No conversation for this boat' : undefined}
-          openTerminal={() => go(shipPath(ship.session), bridgeSearch(fleetKey, 'terminal'))}
+          openTerminal={() => go(shipPath(ship.session), bridgeSearch(fleetKey, 'terminal', boat?.name))}
           loadOlder={loadOlder}
         />
       </div>

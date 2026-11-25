@@ -1,9 +1,12 @@
 package push_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/push"
@@ -397,4 +400,118 @@ func TestAPanickingSinkDoesNotStopTheNextOneHearingTheEvent(t *testing.T) {
 	if got := len(rec.Events()); got != 2 {
 		t.Fatalf("the sink after a panicking one heard %d events, want 2", got)
 	}
+}
+
+var launchedAt = time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
+
+// clocked puts the watcher's clock at launchedAt plus after, and returns a way to move it.
+func (r *rig) clocked(after time.Duration) func(time.Duration) {
+	now := launchedAt.Add(after)
+	r.w.WithClock(func() time.Time { return now })
+	return func(to time.Duration) { now = launchedAt.Add(to) }
+}
+
+func notStarted(name string) ships.Ship {
+	sh := needsYou(name, "not_started")
+	sh.Launched = launchedAt.Format(time.RFC3339)
+	return sh
+}
+
+func TestAShipThatNeverStartedPushesAsAnAskOnceItHasWaitedPastTheGrace(t *testing.T) {
+	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
+	move := r.clocked(15 * time.Second)
+
+	r.w.Ships([]ships.Ship{notStarted("Dory")})
+	if r.count() != 0 {
+		t.Fatalf("pushed at 15 s: %+v, want nothing yet", r.rec.Events())
+	}
+	if !r.w.Waiting() {
+		t.Error("Waiting() = false inside the grace, so nothing would look again")
+	}
+
+	// No new event arrives: the feed's own tick looks again.
+	move(31 * time.Second)
+	r.w.Ships([]ships.Ship{notStarted("Dory")})
+	got := r.rec.Events()
+	if len(got) != 1 || got[0].Outcome != push.Push || got[0].Event.Text != "needs you to finish starting" {
+		t.Errorf("events = %+v, want one Push saying it needs you to finish starting", got)
+	}
+	if r.w.Waiting() {
+		t.Error("Waiting() stays true after the push")
+	}
+	r.w.Ships([]ships.Ship{notStarted("Dory")})
+	if r.count() != 1 {
+		t.Errorf("pushed again for the same wait: %d events", r.count())
+	}
+}
+
+func TestASessionThatStartsInsideTheGraceNeverPushes(t *testing.T) {
+	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
+	move := r.clocked(15 * time.Second)
+
+	r.w.Ships([]ships.Ship{notStarted("Dory")})
+	move(20 * time.Second)
+	r.w.Ships([]ships.Ship{working("Dory")})
+	move(40 * time.Second)
+	r.w.Ships([]ships.Ship{working("Dory")})
+	if r.count() != 0 || r.w.Waiting() {
+		t.Errorf("events = %+v waiting %v, want none and not waiting", r.rec.Events(), r.w.Waiting())
+	}
+}
+
+func TestACrewBoatThatNeverStartedPushesTaggedPerBoatAfterTheGrace(t *testing.T) {
+	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
+	move := r.clocked(15 * time.Second)
+	lifted := needsYou("Dory", ships.ReasonCrew)
+	lifted.Launched = launchedAt.Add(-time.Hour).Format(time.RFC3339)
+	lifted.Crew = []ships.CrewBoat{{Name: "mate", Status: "needs_you", Reason: "not_started", Launched: launchedAt.Format(time.RFC3339)}}
+
+	r.w.Ships([]ships.Ship{lifted})
+	if r.count() != 0 {
+		t.Fatalf("pushed at 15 s: %+v, want nothing yet", r.rec.Events())
+	}
+	move(31 * time.Second)
+	r.w.Ships([]ships.Ship{lifted})
+	got := r.rec.Events()
+	if len(got) != 1 || got[0].Event.Crew != "mate" || got[0].Event.Text != "mate needs you to finish starting" {
+		t.Errorf("events = %+v, want one for boat mate that needs you to finish starting", got)
+	}
+}
+
+func TestTheFeedLooksAgainAtANotStartedShipWithNoFurtherEvent(t *testing.T) {
+	var mu sync.Mutex
+	after := 15 * time.Second
+	list := []ships.Ship{working("Dory")}
+	rec := &push.Recorder{}
+	w := push.NewWatcher(func() bool { return false }, func(string) bool { return true }, rec).
+		WithClock(func() time.Time { mu.Lock(); defer mu.Unlock(); return launchedAt.Add(after) })
+	f := &push.Feed{Watcher: w, Recheck: 10 * time.Millisecond, Items: func() []inbox.Item { return nil },
+		Ships: func() []ships.Ship { mu.Lock(); defer mu.Unlock(); return list }}
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go f.Run(ctx)
+
+	f.ShipsChanged()
+	until := func(what string, ok func() bool) {
+		t.Helper()
+		for end := time.Now().Add(5 * time.Second); !ok(); time.Sleep(5 * time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatalf("never saw: %s", what)
+			}
+		}
+	}
+	time.Sleep(50 * time.Millisecond) // the startup snapshot is read before the ship changes
+	mu.Lock()
+	list = []ships.Ship{notStarted("Dory")}
+	mu.Unlock()
+	f.ShipsChanged()
+	until("the feed waiting on the not-started ship", w.Waiting)
+	if n := len(rec.Events()); n != 0 {
+		t.Fatalf("pushed inside the grace: %d events", n)
+	}
+
+	mu.Lock()
+	after = 31 * time.Second
+	mu.Unlock()
+	until("a push with no further event", func() bool { return len(rec.Events()) == 1 })
 }

@@ -29,6 +29,7 @@ import { handAction, handFailure } from './hand';
 import { OpenPRs } from './OpenPRs';
 import { OpenInVSCode, OpenInVSCodeNote, useEditors } from './OpenInVSCode';
 import { fleetSearch } from './fleets';
+import { crewFromSearch } from './peekLink';
 import { go, loc, surfacePath } from './router';
 import { ships, shipsLink, shipsLoaded } from './shipsLink';
 import { signedOut as signedOutSignal } from './session';
@@ -361,13 +362,14 @@ const openTab = (): Tab => {
 
 function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const [tab, setTab] = useState<Tab>(openTab);
-  const [crew, setCrew] = useState<string | null>(null);
+  const [crew, setCrew] = useState<string | null>(() => crewFromSearch(loc.value.search));
   const editors = useEditors();
   // Read once at mount; dropping it keeps a remount from reopening Terminal.
   useEffect(() => {
     const q = new URLSearchParams(loc.value.search);
-    if (!q.has('tab')) return;
+    if (!q.has('tab') && !q.has('crew')) return;
     q.delete('tab');
+    q.delete('crew');
     const rest = q.toString();
     go(loc.value.path, rest ? `?${rest}` : '', true);
   }, []);

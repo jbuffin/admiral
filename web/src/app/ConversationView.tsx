@@ -116,6 +116,15 @@ export function AnswerCardView({ card, session, crew, openTerminal }: { card: An
     setGone(null);
   }, [key]);
   if (card.kind === 'none' || gone === key) return null;
+  if (card.kind === 'not_started')
+    return (
+      <Card title="This session hasn't started">
+        <p class="line">
+          It is waiting before its first step in <code>{card.dir}</code>, often at a prompt asking whether to trust the folder. Answer it in the terminal.
+        </p>
+        {openTerminal ? <Button label="Open terminal" onClick={openTerminal} /> : null}
+      </Card>
+    );
   if (card.kind === 'terminal')
     return (
       <Card title="Answer this in the terminal">
@@ -216,7 +225,7 @@ export function ConversationView(props: { conv: Conversation; harness: string; a
   const shown: AnswerCard = card.kind === 'terminal' && props.conv.state !== 'ok' ? { kind: 'none' } : card;
   return (
     <>
-      <ConversationBody conv={props.conv} harness={props.harness} anchored={props.anchored} working={props.working} noneTitle={props.noneTitle} footer={props.footer} card={shown} session={session} crew={crew} openTerminal={openTerminal} loadOlder={props.loadOlder} />
+      <ConversationBody conv={props.conv} harness={props.harness} anchored={props.anchored} working={props.working} noneTitle={shown.kind === 'not_started' ? undefined : props.noneTitle} footer={props.footer} card={shown} session={session} crew={crew} openTerminal={openTerminal} loadOlder={props.loadOlder} />
       <AnswerCardView card={shown} session={session} crew={crew} openTerminal={openTerminal} />
     </>
   );

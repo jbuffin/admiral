@@ -31,3 +31,5 @@ Today Admiral only chimes in an open browser. Away from the Mac, the engineer ha
 - A device on plain HTTP, with no Tailscale mode, never gets pushes. It still gets the tab-title badge, the chime and toasts.
 
 Amended 2026-11-12 (Web Push build, [#278](https://github.com/jbuffin/admiral/issues/278)): the app icon badge and closing stale notifications run in the page, not the worker. The page sets the badge from the shared Inbox queue and closes each shown notification whose entry is gone when it opens and when its lists change, so the worker only handles `push` and `notificationclick` (and the shell cache).
+
+Amended 2026-11-24: a ship or crew boat that has not started (`needs_you` reason `not_started`) pushes as a question, but only once it is 30 seconds past launch; the Inbox shows it at 10 seconds. The in-app alert waits the same 30 seconds.

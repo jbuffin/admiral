@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/launcher"
 )
@@ -55,12 +56,19 @@ func (r *shipNoteRig) run(t *testing.T, stdin string) string {
 	return out.String()
 }
 
-// wantUntouched fails when the note called tmux or wrote any file under the ship's home or the user's home.
-func (r *shipNoteRig) wantUntouched(t *testing.T) {
+// wantOnlyTheStamp fails unless the note's only effect was the started stamp on its pane, which a crew boat or a scout gets too.
+func (r *shipNoteRig) wantOnlyTheStamp(t *testing.T) {
 	t.Helper()
-	if b, err := os.ReadFile(r.tmuxLog); err == nil {
-		t.Errorf("ship-note ran tmux: %q", b)
+	b, _ := os.ReadFile(r.tmuxLog)
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "set -p -t %7 @admiral-activity ") {
+		t.Errorf("tmux calls = %q, want only the started stamp", lines)
 	}
+	r.wantNoFiles(t)
+}
+
+func (r *shipNoteRig) wantNoFiles(t *testing.T) {
+	t.Helper()
 	for _, dir := range []string{r.home, r.user} {
 		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 			if err == nil && p != dir {
@@ -100,7 +108,21 @@ func TestShipNoteTellsAShipBothCampaignCommands(t *testing.T) {
 			t.Errorf("note %q does not name %q", note, want)
 		}
 	}
-	r.wantUntouched(t)
+	r.wantNoFiles(t)
+}
+
+func TestShipNoteStampsThatTheSessionStarted(t *testing.T) {
+	r := newShipNoteRig(t, "saltpaw-ii")
+	r.run(t, sessionStartPayload)
+	b, _ := os.ReadFile(r.tmuxLog)
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	const prefix = "set -p -t %7 @admiral-activity "
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], prefix) {
+		t.Fatalf("tmux calls = %q, want one %q<time>", lines, prefix)
+	}
+	if _, err := time.Parse(time.RFC3339, strings.TrimPrefix(lines[0], prefix)); err != nil {
+		t.Errorf("stamp %q is not RFC 3339: %v", lines[0], err)
+	}
 }
 
 func TestShipNoteIsTheSameFixedTextInEveryShip(t *testing.T) {
@@ -116,21 +138,21 @@ func TestShipNoteIsTheSameFixedTextInEveryShip(t *testing.T) {
 	}
 }
 
-func TestShipNotePrintsNothingInAScoutOrOutsideAShip(t *testing.T) {
+func TestShipNotePrintsNothingInAScoutOrOutsideAShipButStillStampsTheStart(t *testing.T) {
 	t.Run("scout", func(t *testing.T) {
 		r := newShipNoteRig(t, "saltpaw-ii")
 		t.Setenv("ADMIRAL_SCOUT", filepath.Join(t.TempDir(), "checkout"))
 		if out := r.run(t, sessionStartPayload); out != "" {
 			t.Errorf("ship-note in a scout printed %q; a scout can't follow", out)
 		}
-		r.wantUntouched(t)
+		r.wantOnlyTheStamp(t)
 	})
-	t.Run("outside a ship", func(t *testing.T) {
+	t.Run("outside a ship, as a crew boat is", func(t *testing.T) {
 		r := newShipNoteRig(t, "")
 		if out := r.run(t, sessionStartPayload); out != "" {
 			t.Errorf("ship-note outside a ship printed %q", out)
 		}
-		r.wantUntouched(t)
+		r.wantOnlyTheStamp(t)
 	})
 }
 

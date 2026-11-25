@@ -37,11 +37,23 @@ func HasConversation(harness string) bool {
 	return harness == "claude" || harness == "copilot" || harness == "codex"
 }
 
+// crewStatus is the boat's status and reason as every reader sees them.
+// A live boat with no hook since its launch, past NoHookWait, is stuck before it started: a trust prompt waits for the engineer.
+func crewStatus(c sessionhost.Crew, now time.Time) (status, reason string) {
+	if c.State == sessionhost.CrewUnderway && c.LastActivity.IsZero() {
+		if t, err := time.Parse(time.RFC3339, c.Launched); err == nil && now.Sub(t) >= NoHookWait {
+			return sessionhost.CrewNeedsYou, "not_started"
+		}
+	}
+	return c.State, c.Reason
+}
+
 // crewBoats never returns nil.
-func crewBoats(l []sessionhost.Crew) []CrewBoat {
+func crewBoats(l []sessionhost.Crew, now time.Time) []CrewBoat {
 	out := make([]CrewBoat, 0, len(l))
 	for _, c := range l {
-		b := CrewBoat{Name: c.Name, Harness: c.Harness, Dir: c.Dir, Status: c.State, Reason: c.Reason, Role: c.Role, Launched: c.Launched,
+		st, reason := crewStatus(c, now)
+		b := CrewBoat{Name: c.Name, Harness: c.Harness, Dir: c.Dir, Status: st, Reason: reason, Role: c.Role, Launched: c.Launched,
 			Conversation: HasConversation(c.Harness) && c.Transcript != ""}
 		b.ExitCode, b.ExitSignal = CrewExit(c)
 		if !c.LastActivity.IsZero() {
@@ -133,8 +145,17 @@ func (s *Service) Crew(session string) ([]sessionhost.Crew, bool) {
 	if !ok {
 		return nil, false
 	}
-	return sess.Crew, true
+	now := time.Now()
+	out := make([]sessionhost.Crew, len(sess.Crew))
+	for i, c := range sess.Crew {
+		c.State, c.Reason = crewStatus(c, now)
+		out[i] = c
+	}
+	return out, true
 }
+
+// CrewStatus is the status and reason a crew boat shows everywhere, for readers outside this package.
+func CrewStatus(c sessionhost.Crew, now time.Time) (status, reason string) { return crewStatus(c, now) }
 
 // CrewInputSeen ignores the ship's own status: an anchored ship keeps its live crew.
 func (s *Service) CrewInputSeen(session, windowID string) (sessionhost.Crew, error) {
@@ -157,6 +178,10 @@ func (s *Service) CrewInputSeen(session, windowID string) (sessionhost.Crew, err
 	case sessionhost.CrewAnchored:
 		return c, ErrExited
 	case sessionhost.CrewNeedsYou:
+		// The stamp goes first: a boat that is working with no stamp would read as not started again.
+		if err := s.Host.StampPaneActivity(ctx, c.PaneID, time.Now()); err != nil {
+			return sessionhost.Crew{}, err
+		}
 		if err := s.Host.SetPaneWorking(ctx, c.PaneID); err != nil {
 			return sessionhost.Crew{}, err
 		}

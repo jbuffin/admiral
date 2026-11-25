@@ -37,6 +37,12 @@ func (h *Host) SetPaneWorking(ctx context.Context, paneID string) error {
 	return h.setPaneAt(ctx, paneID, "working", "")
 }
 
+// StampPaneActivity sets the pane's activity stamp, the one a hook writes, so a key counts as the session's first sign of life.
+func (h *Host) StampPaneActivity(ctx context.Context, paneID string, at time.Time) error {
+	_, err := h.command(ctx, "set-option -p -t "+tmuxQuote(paneID)+" "+ActivityOption+" "+tmuxQuote(at.UTC().Format(time.RFC3339)))
+	return err
+}
+
 // SetPaneNeedsYou names the pane by its id, like SetPaneWorking.
 func (h *Host) SetPaneNeedsYou(ctx context.Context, paneID, reason string) error {
 	return h.setPaneAt(ctx, paneID, "needs_you", reason)

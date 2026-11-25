@@ -206,3 +206,11 @@ describe('a rereview entry', () => {
     expect(rowVerb(entry([layer(7, { responded: true, reviewing: false, author: 'fake-viewer' }), layer(8, { responded: true })]))).toBe('@dana responded on #8');
   });
 });
+
+describe('reasonWords: not_started', () => {
+  it('says the session has not started, in words of its own', () => {
+    expect(reasonWords('not_started')).toMatch(/start/i);
+    expect(reasonWords('not_started')).not.toBe(reasonWords('idle'));
+    expect(reasonWords('not_started')).not.toBe('not_started');
+  });
+});

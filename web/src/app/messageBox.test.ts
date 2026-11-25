@@ -36,6 +36,15 @@ describe('boxState', () => {
   });
 });
 
+describe('boxState on a session that has not started', () => {
+  it('is disabled with a note pointing at the terminal, for needs-you only with that reason', () => {
+    const got = boxState({ ...exit('needs_you'), reason: 'not_started' });
+    expect(got.enabled).toBe(false);
+    expect(got.note).toContain('Open terminal');
+    expect(boxState({ ...exit('needs_you'), reason: 'question' }).enabled).toBe(true);
+  });
+});
+
 describe('boxState on a moored ship', () => {
   const moored = (extra: { no_resume?: boolean } = {}) => ({ status: 'moored' as const, exit_code: null, exit_signal: null, ...extra });
 

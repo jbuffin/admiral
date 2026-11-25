@@ -17,6 +17,7 @@ import (
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/ships"
 )
 
 const (
@@ -279,7 +280,7 @@ func crewList(args []string, std IO) error {
 	}
 	rows := make([]crewRow, 0, len(boats))
 	for _, b := range boats {
-		r := crewRow{Name: b.Name, Harness: b.Harness, Dir: b.Dir, State: b.State, Launched: b.Launched}
+		r := crewRow{Name: b.Name, Harness: b.Harness, Dir: b.Dir, State: crewState(b), Launched: b.Launched}
 		if b.Role != "" {
 			role := b.Role
 			r.Role = &role
@@ -328,4 +329,9 @@ func crewClose(args []string, std IO) error {
 		return fmt.Errorf("tmux could not close %s: %s", boat.Name, err)
 	}
 	return nil
+}
+
+func crewState(b sessionhost.Crew) string {
+	st, _ := ships.CrewStatus(b, time.Now())
+	return st
 }

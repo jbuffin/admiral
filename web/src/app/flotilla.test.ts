@@ -47,6 +47,13 @@ describe('boatBoxState', () => {
     expect(boatBoxState(boat({ name: 'b', status: 'idle' })).enabled).toBe(true);
   });
 
+  it('is disabled with a note pointing at the terminal while the boat has not started', () => {
+    const got = boatBoxState(boat({ name: 'b', status: 'needs_you', reason: 'not_started' }));
+    expect(got.enabled).toBe(false);
+    expect(got.note).toContain('Open terminal');
+    expect(boatBoxState(boat({ name: 'b', status: 'needs_you', reason: 'question' })).enabled).toBe(true);
+  });
+
   it('is read only once the boat has exited, and says finished for exit 0 and error otherwise', () => {
     const done = boatBoxState(boat({ name: 'b', status: 'anchored', exit_code: 0 }));
     expect(done.enabled).toBe(false);

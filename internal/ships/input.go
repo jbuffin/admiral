@@ -34,6 +34,9 @@ type target struct {
 	clearSeen func() error
 }
 
+// notStarted: a trust dialog may be on screen, and Enter or Esc would answer it for the engineer.
+func (t target) notStarted() bool { return t.needsYou && t.reason == "not_started" }
+
 // resolve finds the ship, or its crew boat when name is set. It writes the error response itself.
 func (s *Service) resolve(w http.ResponseWriter, session, name string) (target, bool) {
 	sess, ok := s.find(session)
@@ -52,6 +55,7 @@ func (s *Service) resolve(w http.ResponseWriter, session, name string) (target, 
 			clearSeen: func() error { _, err := s.InputSeen(session); return err }}, true
 	}
 	for _, c := range sess.Crew {
+		c.State, c.Reason = crewStatus(c, time.Now())
 		if c.Name == name {
 			return target{pane: c.PaneID, what: "crew boat " + name, exited: c.State == sessionhost.CrewAnchored,
 				harness: c.Harness, needsYou: c.State == sessionhost.CrewNeedsYou, reason: c.Reason, crew: name,
@@ -92,6 +96,10 @@ func (s *Service) serveSendInput(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, t.what+" has exited")
 		return
 	}
+	if t.notStarted() {
+		writeError(w, http.StatusConflict, t.what+" has not started: answer it in the Terminal tab")
+		return
+	}
 	// Not the request's context: a client that hangs up must not leave a half-sent message.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -114,6 +122,10 @@ func (s *Service) serveInterrupt(w http.ResponseWriter, r *http.Request) {
 	}
 	if t.exited {
 		writeError(w, http.StatusConflict, t.what+" has exited")
+		return
+	}
+	if t.notStarted() {
+		writeError(w, http.StatusConflict, t.what+" has not started: answer it in the Terminal tab")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
