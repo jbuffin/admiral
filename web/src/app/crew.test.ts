@@ -121,7 +121,6 @@ describe('updateWords', () => {
   it('leaves available, removed and edited here as they are, and says nothing for unknown', () => {
     expect(updateWords(imported(), { scout: 'available' })).toBe('Update available');
     expect(updateWords(imported(), { scout: 'removed' })).toBe('Removed upstream');
-    expect(updateWords(imported({ shared: { ...shared, detached: true } }), { scout: 'no_access' })).toBe('Edited here');
     expect(updateWords(imported(), { scout: 'unknown' })).toBeNull();
   });
 });

@@ -388,7 +388,9 @@ test('a share preview, an import preview and an update check on a repo the engin
   // The share preview of a saved share repo the engineer cannot read.
   await page.goto(admiral.url + 'app/preferences/zulu/fleet');
   await page.getByRole('textbox', { name: 'Share repo' }).fill(REPO);
-  await page.getByRole('textbox', { name: 'Share repo' }).blur();
+  const saved = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/fleets/zulu') && r.ok());
+  await page.getByRole('button', { name: 'Save' }).click();
+  await saved;
   await page.goto(admiral.url + 'app/crew/bosun?fleet=zulu');
   await main.getByRole('button', { name: 'Share' }).click();
   await expect(page.getByRole('alert')).toContainText(NO_ACCESS(REPO));
