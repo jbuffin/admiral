@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 type capsHarness struct {
@@ -58,9 +59,12 @@ func (w *world) capsOf(fleet, harness string) capsHarness {
 	return capsHarness{}
 }
 
+// The check answers only when its probes end, about ten fake harness runs that a loaded CI runner takes over 5s to finish.
+var checkClient = &http.Client{Transport: noProxy(), Timeout: 30 * time.Second}
+
 func (w *world) check(fleet, harness string) (int, string) {
 	w.t.Helper()
-	return send(w.t, http.MethodPost, w.in.LocalURL+"/api/harness-capabilities/check",
+	return sendWith(w.t, checkClient, http.MethodPost, w.in.LocalURL+"/api/harness-capabilities/check",
 		map[string]any{"fleet": fleet, "harness": harness})
 }
 

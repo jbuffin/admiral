@@ -433,6 +433,11 @@ type prJSON struct {
 
 func send(t *testing.T, method, url string, body any) (int, string) {
 	t.Helper()
+	return sendWith(t, client(), method, url, body)
+}
+
+func sendWith(t *testing.T, c *http.Client, method, url string, body any) (int, string) {
+	t.Helper()
 	var r io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -448,7 +453,7 @@ func send(t *testing.T, method, url string, body any) (int, string) {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := client().Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, url, err)
 	}
