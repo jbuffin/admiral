@@ -2,7 +2,7 @@
 
 Status: agreed by the engineer on 2026-11-24 ([ADR 0049](adr/0049-crew-members-are-shared-as-files-in-a-public-repo-the-engineer-owns.md), accepted).
 
-How an engineer publishes a crew member to a public GitHub repo, imports one someone else published, keeps it up to date, and takes a published member back down. The decision and its trade-offs are in [ADR 0049](adr/0049-crew-members-are-shared-as-files-in-a-public-repo-the-engineer-owns.md); this file is the build spec. Read it before changing crew sharing, the crew directory's file rules, or the Crew page's Share, Import and Unpublish flows.
+How an engineer publishes a crew member to a GitHub repo they own, public or private, imports one someone else published, keeps it up to date, and takes a published member back down. The decision and its trade-offs are in [ADR 0049](adr/0049-crew-members-are-shared-as-files-in-a-public-repo-the-engineer-owns.md); this file is the build spec. Read it before changing crew sharing, the crew directory's file rules, or the Crew page's Share, Import and Unpublish flows.
 
 The member file format belongs to Commodore (`jbuffin/skills`, `skills/engineering/commodore/references/crew-members.md`). Admiral publishes and imports that format as it is and adds nothing to it. Provenance lives in a separate file, the sidecar, whose schema Commodore also owns (see [Commodore and the sidecar](#commodore-and-the-sidecar)). Sharing missions is out of scope (see [Future work](#future-work)).
 
@@ -13,7 +13,7 @@ The terms (Share repo, Crew source, Shared member, Sidecar, Detached, Make mine,
 ## Share repo layout
 
 ```text
-<owner>/<repo>            # public; default name admiral-crew
+<owner>/<repo>            # public or private; default name admiral-crew
   README.md               # written by the scaffold; the publisher may edit it
   crew/
     reviewer.md           # one member file, the member format, nothing else
@@ -100,7 +100,7 @@ A new object on the fleet in `config.json`, edited through `PUT /api/fleets/{key
 }
 ```
 
-- `enabled` gates **publishing only**: creating the share repo and Share. It is false when the object is missing. Turning it on is a toggle on the fleet's Preferences page, with one sentence under it: "Lets you publish this fleet's crew members to a public GitHub repo."
+- `enabled` gates **publishing only**: creating the share repo and Share. It is false when the object is missing. Turning it on is a toggle on the fleet's Preferences page, with one sentence under it: "Lets you publish this fleet's crew members to a GitHub repo you own, public or private." The web app uses this exact text. The share repo field on the same page says "The GitHub repo, as owner/repo, that this fleet's crew is published to. Sharing a member can create it." (the web app copies that too).
 - Import, crew sources, update checks, Update, Make mine and Unpublish work whatever `enabled` says. Each write is still the engineer's click.
 - `share_repo` is set when the scaffold creates the repo or the engineer picks an existing one on first Share. It can be cleared or changed in Preferences.
 - `sources` is the list of crew source repos, in the order added, without duplicates. Adding a source from the Crew page writes it here.
@@ -109,19 +109,23 @@ A new object on the fleet in `config.json`, edited through `PUT /api/fleets/{key
 
 ## GitHub access
 
-Every call goes through the fleet's built-in GitHub source client, `sources.FleetGitHub(cfg, fleet)` in `internal/sources/github.go`, which runs `gh api` with the fleet's account and env (`internal/github.Client.rest`). No new token store, no second `gh` account, no HTTP client of Admiral's own.
+Every call goes through the fleet's built-in GitHub source client, `sources.FleetGitHub(cfg, fleet)` in `internal/sources/github.go`, which runs `gh api` with the fleet's account and env (`internal/github.Client.rest`). No new token store, no second `gh` account, no HTTP client of Admiral's own. Private repos use the same calls and the same client.
 
 - A fleet with no GitHub source can't share or import: the Crew page says "Connect GitHub (github.com) for this fleet first." and links to the fleet's GitHub page.
 - **github.com only.** A fleet whose GitHub source is on another host gets the same refusal, and no `gh` call is made. GitHub Enterprise is later work.
-- Reading a public crew source uses the fleet's token too, which keeps the rate limit at 5,000 calls an hour.
+- **Token.** `Client.Token` (`internal/github/client.go`) reads the token, and `Client.rest` (`internal/github/issuewrite.go`) hands it to the child `gh` as `GH_TOKEN` and redacts it from `gh`'s stderr. That is the only place it lives. No new code reads, stores, logs, prints or embeds it. It never goes into the sidecar (see its fields above: `version`, `host`, `repo`, `path`, `upstream_name`, `commit`, `tag`, `upstream_blob`, `content_sha256`, `imported_at`, `updated_at`), a crew file, the share repo's README, a log line, an error text or the UI. Every error text names the step and the repo, never the token.
+- **Visibility isn't stored.** A share repo or source may be public or private. The sidecar and `config.json` record `repo` and `host` only, because visibility can change on GitHub; `GET .../crew/sharing` reads it fresh, as `private`. Admiral doesn't re-check it after a share or warn when it changes.
+- **Links.** `shared_url`, `commit_url` and the Published pill's link stay plain `https://github.com/<owner>/<repo>/...` links, whatever the visibility. They open for anyone signed in to GitHub with access to the repo and give GitHub's 404 page to everyone else. Admiral doesn't test whether a link opens and builds no token URL, raw URL or other special link for a private repo. The Unpublish confirm names the repo the same way for both.
+- **An imported file** from a private repo is written to the fleet's crew directory like any other. Admiral doesn't copy it anywhere else, and another Mac can't update it without its own `gh` login that can read the repo. Nothing changes in how imported files are handled.
+- Reading a crew source uses the fleet's token too, public or private, which keeps the rate limit at 5,000 calls an hour. A private source works when the fleet's `gh` login can read it (see [No access](#no-access)).
 
 The calls, all with `gh api --method <M> --hostname github.com [--input -] <endpoint>`:
 
 | Step | Call |
 | --- | --- |
 | Who am I | `GET /user` (login, for the scaffold owner) |
-| Check share repo | `GET /repos/{owner}/{repo}` (`visibility` must be `public`, `permissions.push` true, `default_branch`) |
-| Create share repo | `POST /user/repos` `{"name", "description", "private": false, "auto_init": false}` |
+| Check share repo | `GET /repos/{owner}/{repo}` (`private` is true or false and is not a failure either way; `permissions.push` must be true; `default_branch`; the repo must not be archived) |
+| Create share repo | `POST /user/repos` `{"name", "description", "private": <bool>, "auto_init": false}`, where `private` is the engineer's choice in the Create dialog and `false` when none was made |
 | Write README | `PUT /repos/{owner}/{repo}/contents/README.md` `{"message", "content"}` (the repo's first commit) |
 | Publish a member | `PUT /repos/{owner}/{repo}/contents/crew/{name}.md` `{"message", "content", "sha"?}` (`sha` is the current blob when replacing; absent when new) |
 | Unpublish a member | `DELETE /repos/{owner}/{repo}/contents/crew/{name}.md` `{"message", "sha"}` |
@@ -132,7 +136,41 @@ The calls, all with `gh api --method <M> --hostname github.com [--input -] <endp
 
 Bodies go on stdin, never `-F`, so the fake `gh` (`e2e/testdata/fakegh/gh`) serves every call. Each step's failure text names the step and the repo, with `gh`'s message after it.
 
-The scaffold creates the repo only under the `gh` account itself (`/user/repos`), never under an organization, and only on the engineer's click, like [ADR 0047](adr/0047-admiral-adds-or-creates-a-fleets-project-through-one-route.md). A name already taken is a 409 that offers "Use the existing repo" when the account can push to it and it is public.
+The scaffold creates the repo only under the `gh` account itself (`/user/repos`), never under an organization, and only on the engineer's click, like [ADR 0047](adr/0047-admiral-adds-or-creates-a-fleets-project-through-one-route.md). A name already taken is a 409 that offers "Use the existing repo" when the account can push to it, public or private. When GitHub refuses the name and the account can't see a repo of that name, the answer is today's 409 "GitHub refused to create `<owner>/<name>`. Choose another name.", not `no_access`: the name is in the engineer's own namespace, so this is not an access problem.
+
+In Go, `RepoInfo.Public` becomes `RepoInfo.Private` (`!Public` is `Private`), and `CreateRepo(ctx, name, description string, private bool)` sends it. `internal/github` is the only place that touches the token.
+
+## No access
+
+GitHub answers 404, not 403, when a token can't see a private repo, and also when the repo doesn't exist. Admiral can't tell the two apart, so a missing or mistyped repo shows the same answer. The message is about access only, by the engineer's choice:
+
+> You need access to `<owner>/<repo>`. Ask its owner to add you.
+
+**The answer.** HTTP 403 with `{"error": "You need access to <owner>/<repo>. Ask its owner to add you.", "code": "no_access"}`. Today's errors are `{"error": msg}` with no `code` (`writeError`, `internal/crewapi/crewapi.go`); `code` is present on this answer only. A 403 is also what sharing off (`offText`) and a bot (`botImportText`) get, so clients branch on `code`, never on the 403 status alone.
+
+**Repo-level 404** means a 404 from `GET /repos/{owner}/{repo}` (`gh.Repo`) and nothing else. Routes that call `gh.Repo` first ask it directly. Routes that only call the contents or commits API (browse, the update listing, update apply, `GET` and `DELETE .../crew/published/{name}`) call `gh.Repo` once after that call answers 404: a repo 404 is no access; a readable repo gives today's answer.
+
+| Route | Where the repo 404 shows | Before |
+| --- | --- | --- |
+| `POST .../crew/sharing/repo` with `repo` (adopt) | `checkRepo` | 409 "not found" |
+| `POST .../members/{name}/share/preview` and `.../share` | `checkRepo` | 409 "not found" |
+| `GET` and `DELETE .../crew/published/{name}` | `gh.Repo` after a file 404 | 404 |
+| `POST .../imports/preview` | the `gh.Repo` that opens it | 404 naming the repo |
+| `PUT .../crew/sources` | `checkSource`'s `gh.Repo` | 404 |
+| `GET .../crew/sources/{owner}/{repo}` (browse) | `gh.Repo` after a `crew/` 404 | 404 "has no `crew/` folder" |
+| `GET .../crew/updates` (the update check) | `gh.Repo` after a `crew/` 404 | `unknown` state |
+| `POST .../members/{name}/update/preview` | the `gh.Repo` that opens it | 404 naming the repo |
+| `POST .../members/{name}/update` (apply) | `gh.Repo` after a file 404 | 404 |
+
+The update check never fails as a whole: it records the state `no_access` for the members of that repo (see [Updates](#updates)).
+
+**When it is shown and when it isn't.** Two cases decide it. A repo `gh.Repo` can't read answers 403 `no_access`. A repo it can read but that has no `crew/` folder gives 404 "`<owner>/<repo>` has no `crew/` folder." (browse, adding a source), and one with no such member or ref gives 404 naming the file or ref. A 404 on a file inside a readable repo is never `no_access`: reading a member (import preview, update preview), update apply, unpublishing a file that is gone and `GET .../crew/published/{name}` for a name that isn't published keep today's 404s.
+
+A 403 from `gh.Repo` itself (a token without the scope, an organization's SAML SSO) is not `no_access`: it keeps today's 502 with `gh`'s message, so a real authorization problem isn't called "ask the owner" (see [Known limits](#known-limits)).
+
+**The setup view.** `GET .../crew/sharing` never fails on a GitHub error. For a saved `share_repo` that `gh.Repo` answers 404 for it still returns `repo: {"exists": false}` with no new field, so the create path keeps working. That is also what a repo you can't read looks like. With a saved `share_repo` the Create dialog says "Admiral can't see `<owner>/<repo>`. If it exists, ask its owner to add you, or choose another repo." Its `published_error` is the no-access text and `published` is empty when the share repo's listing hits it.
+
+**Create.** A name GitHub reports taken that the account can't see is the 409 name-taken answer, not `no_access` (see [GitHub access](#github-access)).
 
 ## Privacy checks
 
@@ -145,7 +183,7 @@ A publish sends exactly one file. Admiral builds its bytes and checks them for t
 5. **No `gitleaks:allow`.** Bytes containing `gitleaks:allow` are refused, naming the line, because gitleaks honours that inline comment and would report a secret on that line as clean.
 6. **Secret scan with gitleaks.** See below.
 
-Checks 1 to 5 always run and have no override. The engineer fixes the member (Edit on the Crew page) and tries again.
+Checks 1 to 5 always run and have no override. Every check, the gitleaks scan and the opt-out rules run unchanged when the share repo is private: there is no private-repo exemption, and a private target never makes the opt-out available (it exists only for a missing or too-old gitleaks). The engineer fixes the member (Edit on the Crew page) and tries again.
 
 ### The secret scan
 
@@ -157,7 +195,7 @@ Admiral runs the engineer's own `gitleaks` on the exact bytes. It has no scanner
 - **A hit refuses the publish**, naming the line and the rule, never the text. There is no opt-out on a hit.
 - **A failed scan refuses the publish** with gitleaks' error (its first stderr line, or "timed out after 30s"). There is no opt-out: gitleaks is there, so the engineer fixes it or tries again.
 - **Missing or too old.** When `gitleaks` isn't found, the preview says "Secret scan unavailable: gitleaks isn't installed" and shows how to install it (`brew install gitleaks`, with a link to gitleaks' install docs). When it's too old, it says "Secret scan unavailable: gitleaks `<version>` is too old (8.19 or later needed)" and shows the upgrade command (`brew upgrade gitleaks`). Both offer **Publish without a secret scan**. Admiral never installs or upgrades it, the way it installs nothing but Commodore ([ADR 0040](adr/0040-admiral-installs-commodore-as-a-harness-plugin.md)).
-- **The opt-out is per publish.** Choosing it shows, in the preview: "This file goes public without a secret scan. Read it for keys, tokens and passwords before you publish." The publish request carries `"skip_secret_scan": true`; nothing is saved, so the next publish scans again or asks again. The opt-out exists only for a missing or too-old gitleaks: the server rejects `skip_secret_scan` (400) when a usable gitleaks is installed, whether its scan was clean, hit or failed.
+- **The opt-out is per publish.** Choosing it shows, in the preview: "This file goes to `<owner>/<repo>` without a secret scan. Anyone who can read that repo can read it. Read it for keys, tokens and passwords before you publish." The web app copies this text exactly, with the share repo filled in. The publish request carries `"skip_secret_scan": true`; nothing is saved, so the next publish scans again or asks again. The opt-out exists only for a missing or too-old gitleaks: the server rejects `skip_secret_scan` (400) when a usable gitleaks is installed, whether its scan was clean, hit or failed.
 - **Tests.** A fake `gitleaks` in `e2e/testdata/` (beside the fake `gh`) reports a hit on any `decoy-secret-<hex>` value, with its line, and is clean otherwise; its version and failures (a crash, an error exit, a hang) are set by the test. A test without it on `PATH` covers the missing case, and one with it reporting `8.18.0` the too-old case. Unit tests drive the runner through a seam. No key-shaped string enters the tree.
 - **On import** the scan runs the same way and a hit is shown as a warning, not a refusal (a publisher's secret is their problem, but the engineer should know). Missing gitleaks on import shows nothing.
 
@@ -187,13 +225,14 @@ The member file and sidecar are written under the crew write lock; the member fi
 **When.** Admiral checks when the Crew page opens and once a day in the background.
 
 - The background check is a loop modeled on `internal/update.Checker`: started from `serve()`, the first check after a delay read by `internal/delay.From` (`ADMIRAL_CREW_UPDATE_FIRST_CHECK`, so tests can make it quick), then every 24 hours, with an injected clock. `ADMIRAL_CREW_UPDATE_FIRST_CHECK` is a Go duration and defaults to two minutes. Results are kept in memory per fleet, not on disk.
-- Opening the Crew page asks the checker for the fleet's state. A result younger than five minutes is reused; otherwise it checks now and the page shows "Checking for updates" as one line above the member list, while it holds shared members, until it answers. (Design change, D38: the first draft put the wording on each shared member.) A failed check shows nothing new and logs the error; the next one retries.
+- Opening the Crew page asks the checker for the fleet's state. A result younger than five minutes is reused; otherwise it checks now and the page shows "Checking for updates" as one line above the member list, while it holds shared members, until it answers. (Design change, D38: the first draft put the wording on each shared member.) A failed check shows nothing new and logs the error; the next one retries. The listing cache behind it holds a `no_access` repo for 30 seconds, the same as an error, so a page open right after another reads the cache and a later one asks GitHub again.
 
 **How.** One call per repo that any attached sidecar in the fleet names: `GET /repos/{owner}/{repo}/contents/crew` on the default branch. For each attached shared member from that repo, the listed blob SHA of its `path` is compared with its sidecar's `upstream_blob`:
 
 - Same: up to date.
 - Different: "Update available".
-- Missing from the listing: "Removed upstream". The member stays as it is.
+- Missing from a readable listing: "Removed upstream". The member stays as it is.
+- The repo itself can't be read (a repo 404, see [No access](#no-access)): the member shows `no_access` with "You need access to `<owner>/<repo>`. Ask its owner to add you.", not "Removed upstream" and not blank. A `no_access` result is not reused: the next page open checks again, like `unknown`. The five-minute reuse covers only results with neither.
 - Detached: no check and no badge; the detail says "Edited here, so it no longer gets updates from `<repo>`."
 
 The badge shows on the member's list row and on the detail header.
@@ -210,6 +249,8 @@ The badge shows on the member's list row and on the detail header.
 
 **How Admiral knows what you published.** It lists the share repo: a member is published when `crew/<name>.md` is in the `GET .../contents/crew` listing of the fleet's `share_repo`. Admiral keeps no local record of publishes, so a file published from another Mac, renamed on GitHub or deleted there shows correctly. The listing is fetched with the update check (one more call when the share repo isn't already a source) and when the Crew page opens, under the same five-minute reuse.
 
+The listing cache is in memory, per fleet and process, keyed by fleet and lowercase repo. Each fleet has its own `gh` client, so one fleet's login never fills another fleet's entry, and a private listing can't reach another user. It stores no access result of its own beyond the 30-second `no_access` entry above. Share and Unpublish drop the share repo's entry; a repo the login has lost access to keeps its cached listing until its five-minute reuse ends. One path reads it without calling GitHub: a non-engineer actor (AdmiralBot) asking for the Published pills is served the engineer's cached listing as it is. That is accepted, since AdmiralBot acts for the same engineer.
+
 - A fleet member whose name is in the listing shows "Published" and an **Unpublish** action.
 - The Import dialog's share repo row (the share repo is always listed there, as "Your share repo") browses it like a source, with Unpublish on every row, so a file whose local member was deleted or renamed can still be removed.
 - Unpublish reads the file's current bytes, blob SHA and repo, and the confirm shows the repo, the path and those bytes: "Delete `crew/<name>.md` from `<owner>/<repo>`? People who imported it keep their copy; they'll see it as removed upstream. It stays in the repo's history." Confirm sends the `DELETE` with `{"blob", "repo"}` as the GET gave them. A changed file, or a share repo that is no longer the one the confirm read, is a 409 and the confirm reloads. A file that is already gone is a 404 and the Crew page refreshes.
@@ -218,36 +259,36 @@ The badge shows on the member's list row and on the detail header.
 
 ## API
 
-All under `/api/fleets/{key}/crew/`, JSON in and out, the `?harness=` dock query where a member list is involved, like the existing crew routes. None is added to the actor guard's allowlist, so AdmiralBot, routines and ships get 403.
+All under `/api/fleets/{key}/crew/`, JSON in and out, the `?harness=` dock query where a member list is involved, like the existing crew routes. None is added to the actor guard's allowlist, so AdmiralBot, routines and ships get 403. A repo the fleet's login can't read answers 403 `{"error", "code": "no_access"}` on the routes listed in [No access](#no-access); clients branch on `code`, never on the 403 status alone, since sharing off and bots are 403 too.
 
 | Route | What |
 | --- | --- |
-| `GET  .../crew` | Each member also carries `shared_url`: `https://github.com/<owner>/<repo>/blob/<commit>/crew/<file>.md` for an imported member (built on the server from its sidecar, each segment escaped), else null. |
-| `GET  .../crew/sharing` | `{"crew_sharing": {"enabled", "share_repo", "sources"}, "connected", "login", "login_error", "repo", "published": [...], "published_error"}`: the fleet's `crew_sharing` state, whether GitHub is connected, the `gh` login, whether the share repo exists and is pushable, its published names, and why the listing failed when it did (`published_error`). |
-| `POST .../crew/sharing/repo` | Create the share repo and its README `{"name", "description"}`, or adopt an existing one `{"repo": "owner/name"}`. `{"preview": true, "owner", "name"}` writes nothing and answers `{"readme"}`, the README the create would commit. Saves `share_repo` and answers `{"share_repo"}`. 403 when sharing is off. A taken name is a 409; when the repo is public and pushable it carries `"use_existing": "owner/name"`. |
+| `GET  .../crew` | Each member also carries `shared_url`: `https://github.com/<owner>/<repo>/blob/<commit>/crew/<file>.md` for an imported member (built on the server from its sidecar, each segment escaped), else null. A plain link, public or private repo alike. |
+| `GET  .../crew/sharing` | `{"crew_sharing": {"enabled", "share_repo", "sources"}, "connected", "login", "login_error", "repo", "published": [...], "published_error"}`: the fleet's `crew_sharing` state, whether GitHub is connected, the `gh` login, `repo` (`{"exists", "private", "archived", "pushable", "error"}`; `private` replaces `public`, which is dropped; for a repo that answers 404 only `exists: false`), its published names, and why the listing failed when it did (`published_error`). |
+| `POST .../crew/sharing/repo` | Create the share repo and its README `{"name", "description", "private"?}` (`private` is a bool; absent or false makes a public repo, true a private one; any other value is a 400 naming `private`, like the other fleet fields), or adopt an existing one `{"repo": "owner/name"}`. `{"preview": true, "owner", "name"}` writes nothing and answers `{"readme"}`, the README the create would commit; it ignores `private`, since the README doesn't depend on visibility. Adopting an existing repo, public or private, takes no choice and keeps the repo's own visibility. Saves `share_repo` and answers `{"share_repo"}`. 403 when sharing is off. A repo that answers 404 is 403 `no_access`. A taken name is a 409; when the repo is pushable, public or private, it carries `"use_existing": "owner/name"`. |
 | `POST .../crew/members/{name}/share/preview` | No body: the fleet's saved share repo is the target. The canonical bytes (`bytes`), `sha256`, `path`, `repo`, `replaces_blob` (the published file's blob SHA, or null for a new file), `published_bytes` when it replaces one (read by the preview itself; 422 when the published file is over 64 KiB), and `scan`: `{"state": "clean" \| "hit" \| "failed" \| "missing" \| "too-old", "findings": [{"line", "rule"}], "error": "<text>", "version": "<found>", "install": "<hint>"}`. A failed check 1 to 5 is a 422 naming the check, the line and the rule. 403 when sharing is off. |
-| `POST .../crew/members/{name}/share` | `{"sha256", "repo", "replaces_blob", "skip_secret_scan"?}`, the first three as the preview gave them. Rechecks and commits. Returns `{"name", "repo", "path", "commit_url"}`, where `commit_url` is `https://github.com/<repo>/commit/<sha>` built from the commit sha GitHub returned, or `""` when it returned none. The share repo is checked again first (409 when it moved, is private or archived, or is no longer pushable), then the hash, then the scan. 403 when sharing is off; 422 on a hit, with the `scan` in the body; 409 when the member, the share repo or the published file changed since the preview. |
+| `POST .../crew/members/{name}/share` | `{"sha256", "repo", "replaces_blob", "skip_secret_scan"?}`, the first three as the preview gave them. Rechecks and commits. Returns `{"name", "repo", "path", "commit_url"}`, where `commit_url` is a plain `https://github.com/<repo>/commit/<sha>` link built from the commit sha GitHub returned, or `""` when it returned none. The share repo is checked again first (409 when it moved, is archived or is no longer pushable; 403 `no_access` when it can't be read), then the hash, then the scan. 403 when sharing is off; 422 on a hit, with the `scan` in the body; 409 when the member, the share repo or the published file changed since the preview. |
 | `POST .../crew/members/{name}/make-mine` | Deletes the sidecar. 404 when there's none. |
-| `GET  .../crew/published/{name}` | `{"name", "repo", "bytes", "blob"}`: the published file's bytes and blob SHA, for the Unpublish confirm. 404 when it isn't published; 422 when it is over 64 KiB. |
-| `DELETE .../crew/published/{name}` | `{"blob", "repo"}` from the GET. Deletes `crew/<name>.md` from the share repo and returns `{"name", "repo", "commit_url"}`. 409 when the file changed since the GET or `repo` is no longer the fleet's share repo; 404 when the file is gone. |
-| `POST .../crew/imports/preview` | `{"ref"}` (a ref or URL). Returns `bytes` (the raw file), `card` (the parsed member), `owner`, `repo`, `path`, `commit`, `tag`, `blob`, `sha256`, `clash` (`{"name", "suggested"}`, or null), `missing_skills` (skills no dock of the fleet has) and `scan` (as in the Share preview; a failed scan is a warning here and never blocks). A URL with no member returns `{"source": "owner/repo"}` instead. 409 when the fleet has no github.com client; 404 naming the ref, file or repo that wasn't found; 403 for a bot. |
+| `GET  .../crew/published/{name}` | `{"name", "repo", "bytes", "blob"}`: the published file's bytes and blob SHA, for the Unpublish confirm. 404 when it isn't published; 403 `no_access` when the share repo can't be read; 422 when it is over 64 KiB. |
+| `DELETE .../crew/published/{name}` | `{"blob", "repo"}` from the GET. Deletes `crew/<name>.md` from the share repo and returns `{"name", "repo", "commit_url"}`. 409 when the file changed since the GET or `repo` is no longer the fleet's share repo; 404 when the file is gone from a readable repo; 403 `no_access` when the share repo can't be read. |
+| `POST .../crew/imports/preview` | `{"ref"}` (a ref or URL). Returns `bytes` (the raw file), `card` (the parsed member), `owner`, `repo`, `path`, `commit`, `tag`, `blob`, `sha256`, `clash` (`{"name", "suggested"}`, or null), `missing_skills` (skills no dock of the fleet has) and `scan` (as in the Share preview; a failed scan is a warning here and never blocks). A URL with no member returns `{"source": "owner/repo"}` instead. 409 when the fleet has no github.com client; 404 naming the ref or file that wasn't found in a readable repo; 403 `no_access` when the repo can't be read; 403 for a bot. |
 | `POST .../crew/imports` | `{"repo", "path", "commit", "sha256", "name"?}`. Rereads the file at that commit, checks the hash (409 "The file changed since the preview. Preview it again."), rechecks the file, then writes the member and its sidecar without replacing anything. Returns `{"name", "missing_skills", "scan"}`. 409 on a clash, with a top-level `suggested`. |
-| `GET  .../crew/sources/{owner}/{repo}` | `{"members": [{"name", "path", "blob", "imported", "update", "published"}]}`: `imported` is the fleet member's name when one came from that file, else null; `update` is that member's update state from the checker's last result (`"none"` for an edited-here member), null when `imported` is; `published` is true for a file in the fleet's share repo. |
-| `PUT  .../crew/sources` | `{"sources": [...]}`, the whole list. Only entries new to the list are checked (the repo exists and has a `crew/` folder; 404 otherwise). Returns `{"sources": [...]}`. |
-| `GET  .../crew/updates` | `{"updates": {"<name>": "none" \| "available" \| "removed" \| "unknown"}}` for each attached shared member. Runs the page-open check, or reuses a result younger than five minutes that covers every attached member and holds no `"unknown"`. With no attached member the answer is `{"updates": {}}` and nothing is called. 409 only when the fleet has attached members and no github.com client; 403 for a bot. `GET .../crew` never calls GitHub; it shows the last stored result. |
-| `POST .../crew/members/{name}/update/preview` | No body: the repo and path come from the sidecar. Returns `name`, `repo`, `path`, `current_bytes`, `current_sha256`, `bytes` (the new file, under the local name), `sha256` (of the raw upstream bytes, before any rename), `commit`, `tag`, `blob`, `card`, `missing_skills`, `scan` (as in the Import preview) and `up_to_date` (true when the upstream blob equals the sidecar's `upstream_blob`). A file that fails an import check is a 422. 409 for a detached member or an unusable sidecar, with no GitHub call; 404 naming the repo when the file is gone; 403 for a bot. |
-| `POST .../crew/members/{name}/update` | `{"commit", "sha256", "current_sha256"}` from the preview. Rereads the file at that commit and answers 409 `{"kind": "changed"}` when its hash is not `sha256` or the member's bytes are not `current_sha256`, then writes the member and rewrites the sidecar. When the sidecar write fails the old member bytes are put back and the answer is a 500 saying nothing changed. Also 409 `changed` when the sidecar names another repo, path or stem by the time the write lock is taken. Returns `{"name", "commit", "tag", "missing_skills"}`. 409 for a detached member, with no GitHub call. |
+| `GET  .../crew/sources/{owner}/{repo}` | 403 `no_access` when the repo can't be read; 404 "has no `crew/` folder" when it is readable without one. `{"members": [{"name", "path", "blob", "imported", "update", "published"}]}`: `imported` is the fleet member's name when one came from that file, else null; `update` is that member's update state from the checker's last result (`"none"` for an edited-here member), null when `imported` is; `published` is true for a file in the fleet's share repo. |
+| `PUT  .../crew/sources` | `{"sources": [...]}`, the whole list. Only entries new to the list are checked (the repo is readable and has a `crew/` folder; 403 `no_access` when it can't be read, 404 when it is readable but has no `crew/`). Returns `{"sources": [...]}`. |
+| `GET  .../crew/updates` | `{"updates": {"<name>": "none" \| "available" \| "removed" \| "unknown" \| "no_access"}}` for each attached shared member. `no_access` is a repo `gh.Repo` can't read, and `unknown` any other failed listing; `removed` still means a readable repo without that file. The check is per repo (one call per repo), so every attached member from an unreadable repo shows `no_access` and the other repos are still checked. Runs the page-open check, or reuses a result younger than five minutes that covers every attached member and holds neither `"unknown"` nor `"no_access"`. With no attached member the answer is `{"updates": {}}` and nothing is called. 409 only when the fleet has attached members and no github.com client; 403 for a bot. `GET .../crew` never calls GitHub; it shows the last stored result. |
+| `POST .../crew/members/{name}/update/preview` | No body: the repo and path come from the sidecar. Returns `name`, `repo`, `path`, `current_bytes`, `current_sha256`, `bytes` (the new file, under the local name), `sha256` (of the raw upstream bytes, before any rename), `commit`, `tag`, `blob`, `card`, `missing_skills`, `scan` (as in the Import preview) and `up_to_date` (true when the upstream blob equals the sidecar's `upstream_blob`). A file that fails an import check is a 422. 409 for a detached member or an unusable sidecar, with no GitHub call; 404 naming the repo when the file is gone from a readable repo; 403 `no_access` when the repo can't be read; 403 for a bot. |
+| `POST .../crew/members/{name}/update` | `{"commit", "sha256", "current_sha256"}` from the preview. Rereads the file at that commit and answers 409 `{"kind": "changed"}` when its hash is not `sha256` or the member's bytes are not `current_sha256`, then writes the member and rewrites the sidecar. When the sidecar write fails the old member bytes are put back and the answer is a 500 saying nothing changed. Also 409 `changed` when the sidecar names another repo, path or stem by the time the write lock is taken. Returns `{"name", "commit", "tag", "missing_skills"}`. 409 for a detached member, with no GitHub call. 403 `no_access` when the repo can't be read at apply time. |
 
-`GET .../crew` gains, on each member view, the resolver's `shared` object (`{"owner", "repo", "commit", "tag", "detached"}` or null) plus Admiral's `update` (`"none"`, `"available"`, `"removed"` or `"unknown"`), `published` (bool, from the share repo listing) and `sidecar_unreadable` (bool).
+`GET .../crew` gains, on each member view, the resolver's `shared` object (`{"owner", "repo", "commit", "tag", "detached"}` or null) plus Admiral's `update` (`"none"`, `"available"`, `"removed"` or `"unknown"` or `"no_access"`), `published` (bool, from the share repo listing) and `sidecar_unreadable` (bool).
 
 Rename and Delete change as well: Rename moves `<name>.shared.json` with the member (the sidecar's `upstream_name` stays), and Delete removes it. Both refuse when the sidecar's target name is taken by some other file.
 
 ## Crew page
 
-- **Detail header.** A shared member shows "shared by `<owner>`" under its name, linked to the file on GitHub at the pinned commit, and the tag or short SHA. It shows "Update available", "Removed upstream" or "Edited here" when they apply. A published member shows "Published", linked to the file in the share repo. When the published listing failed, the page says so (`published_error`) instead of showing the marks as if none existed.
+- **Detail header.** A shared member shows "shared by `<owner>`" under its name, linked to the file on GitHub at the pinned commit, and the tag or short SHA. It shows "Update available", "Removed upstream" or "Edited here" when they apply. A published member shows "Published", linked to the file in the share repo. Both links are plain GitHub links (see [GitHub access](#github-access)); for a private repo they open only for a signed-in reader with access. When the published listing failed, the page says so (`published_error`) instead of showing the marks as if none existed.
 - **Actions.** A fleet member with no sidecar gets **Share** beside Edit, Rename and Delete, when sharing is on for the fleet and GitHub is connected; with GitHub not connected the page shows "Connect GitHub" linking to the fleet's GitHub page instead. Built-in members never show Share. A shared member gets **Make mine**, and **Update** when one is available, and never Share. A published member gets **Unpublish**.
 - **List toolbar.** **Import** beside "Add crew" opens the Import dialog: a box for a ref or URL, "Your share repo" when there is one, and the fleet's sources, each with Browse (and Remove for sources), and Add source.
-- **Share flow.** With no share repo, Share first opens "Create your share repo": the owner (the `gh` login, read only), the name (`admiral-crew`, editable), a description, the README it will write, then Create; or "Use an existing repo", which takes `owner/name`. Then the preview: the target (`<owner>/<repo>/crew/<name>.md`, and "Replaces the published version" with a diff when it does), the exact bytes in a monospace block, the secret scan's state (always shown, clean or not), and Publish. A refusal shows in place of Publish. A share repo that can't be written shows its message with **Choose another repo**, which opens the repo step. A 409 on Publish (the member, the published file or the repo changed) shows its message and loads the preview again. Without gitleaks, or with one older than 8.19, the install or upgrade hint, a link to gitleaks' install guide and **Publish without a secret scan** with its warning show; Publish stays disabled until the box is ticked.
+- **Share flow.** With no share repo, Share first opens "Create your share repo": the owner (the `gh` login, read only), the name (`admiral-crew`, editable), a description, the README it will write, then Create; or "Use an existing repo", which takes `owner/name`. The dialog also asks for the repo's visibility, **Public** or **Private**, with Public preselected, in a radio group under the name. Public says "Anyone can read and import your crew members." and Private says "Only you and people you add to the repo can read and import them." The button reads "Create public repo" or "Create private repo". The choice sends `private` and applies only to creating a repo: "Use an existing repo" takes none and keeps that repo's own visibility. The setup view the page reads (`repo`: `exists`, `private`, `archived`, `pushable`) words the preview from `private`: under the target line, "`<owner>/<repo>` is private. Anyone with access to it can read this file." or "`<owner>/<repo>` is public. Anyone can read this file." The preview's "The file that goes public, exactly:" becomes "The file that goes to `<owner>/<repo>`, exactly:" (the aria label, "File to publish"). A saved share repo that answers `exists: false` shows the no-access line from [No access](#no-access). Then the preview: the target (`<owner>/<repo>/crew/<name>.md`, and "Replaces the published version" with a diff when it does), the exact bytes in a monospace block, the secret scan's state (always shown, clean or not), and Publish. A refusal shows in place of Publish. A share repo that can't be written shows its message with **Choose another repo**, which opens the repo step. A 409 on Publish (the member, the published file or the repo changed) shows its message and loads the preview again. Without gitleaks, or with one older than 8.19, the install or upgrade hint, a link to gitleaks' install guide and **Publish without a secret scan** with its warning show; Publish stays disabled until the box is ticked.
 - **Diff.** Update and "Replaces the published version" show a line diff. There is no diff component yet; the build adds a small one in `web/src/app/` (an LCS line diff, removed and added lines marked in text as well as colour).
 - Member text from GitHub is shown with `renderMarkdown` (`web/src/app/markdown.ts`) for the card and as plain text for the raw file, never as HTML.
 
@@ -259,8 +300,9 @@ Rename and Delete change as well: Rename moves `<name>.shared.json` with the mem
 | Share on a member with a sidecar | 409 "Imported members can't be shared. Make it yours first." |
 | No GitHub source, or not github.com | 409 "Connect GitHub (github.com) for this fleet first." |
 | `gh` not signed in or token refused | 502 with the step and `gh`'s message; the GitHub page's reconnect advice. |
-| Share repo private, archived, gone or not pushable | 409 naming the repo and the reason, with "Choose another repo". |
-| Repo name taken at create | 409, with `use_existing` (the page's "Use `owner/repo`") when it's public and pushable. |
+| Share repo archived or not pushable | 409 naming the repo and the reason, with "Choose another repo". |
+| Repo-level 404 (a repo `gh.Repo` can't read: private without access, or missing) | 403 `{"error": "You need access to <owner>/<repo>. Ask its owner to add you.", "code": "no_access"}`, on the routes in [No access](#no-access). `code` is on this answer only. |
+| Repo name taken at create | 409, with `use_existing` (the page's "Use `owner/repo`") when it's pushable. |
 | Share repo changed since the preview or the confirm | 409 "Preview it again." (Share) or "Reload and try again." (Unpublish) |
 | Share repo moved or renamed on GitHub | 409 "The share repo X moved to Y. Choose another repo." |
 | `sha256` missing or malformed, or `replaces_blob` malformed, from Share, or `blob` missing or malformed from Unpublish | 400 saying it must come from the preview or the GET. A missing or null `replaces_blob` means a new file. |
@@ -273,7 +315,7 @@ Rename and Delete change as well: Rename moves `<name>.shared.json` with the mem
 | Published file changed upstream since preview or confirm (`sha` mismatch) | 409 from GitHub; the page reloads the preview or confirm. |
 | Unpublish of a file that isn't there | 404; the page refreshes the published state. |
 | Bad ref or URL | 400 naming the accepted forms. |
-| Ref, repo or file not found | 404 naming which. |
+| Ref or file not found in a readable repo | 404 naming which. A repo that can't be read is the 403 `no_access` row above. |
 | File too big, not UTF-8, hidden characters, fails `CheckFile`, has ad hoc fields | 422 naming the rule and line. |
 | Name clash | 409 with the suggested name. |
 | Upstream changed between preview and import or update | 409; the page reloads the preview. |
@@ -286,7 +328,7 @@ Publishing:
 
 - **AC1.** A fleet's `crew_sharing.enabled` is false until the engineer turns it on in Preferences; while it is false, `POST .../crew/sharing/repo`, `.../share/preview` and `.../share` answer 403 and the Crew page shows no Share action.
 - **AC2.** With `enabled` false, import preview, import, adding and browsing a source, the update check, update preview and Update, Make mine and Unpublish all still work, and each write happens only on the engineer's click.
-- **AC3.** With no `share_repo`, the first Share offers to create a public repo under the `gh` login named `admiral-crew` (editable); Create makes the repo through `POST /user/repos` with `private: false`, commits a README naming that owner and repo, and saves `share_repo`. Nothing in Admiral names a particular user.
+- **AC3.** With no `share_repo`, the first Share offers to create a repo under the `gh` login named `admiral-crew` (editable), Public or Private with Public preselected; Create makes the repo through `POST /user/repos` with `private: false` by default and `private: true` when Private is chosen, commits a README naming that owner and repo, and saves `share_repo`. Nothing in Admiral names a particular user.
 - **AC4.** Share shows the exact bytes, target path, sha256 and secret scan state before anything is sent; Publish commits those bytes, byte for byte, to `crew/<name>.md` in the share repo through `gh api` with the body on stdin, and returns the commit URL.
 - **AC5.** The published bytes are the canonical member file: unknown fields, `ad-hoc` and `ad-hoc-run` are absent, and no memory note, ad hoc member or run member is sent.
 - **AC6.** Share is refused (422, no GitHub write, no override) when the bytes contain a hidden character such as U+202E, U+E0041, a run of U+E0100 or U+3164, or an absolute path under `$ADMIRAL_HOME`, the home directory, the clone root or a search root; the message names the line and the rule.
@@ -303,16 +345,16 @@ Secret scan:
 
 Import:
 
-- **AC12.** Pasting `<owner>/<repo>/<name>`, `<owner>/<repo>/<name>@<ref>` or a GitHub `blob` URL previews the full file, the rendered card, "shared by `<owner>`", the pinned commit SHA and, when a tag points at that commit, the tag; nothing is written until Import is clicked.
+- **AC12.** For a public or private repo the fleet's login can read, pasting `<owner>/<repo>/<name>`, `<owner>/<repo>/<name>@<ref>` or a GitHub `blob` URL previews the full file, the rendered card, "shared by `<owner>`", the pinned commit SHA and, when a tag points at that commit, the tag; nothing is written until Import is clicked.
 - **AC13.** Import writes `crew/<name>.md` in the chosen fleet's crew directory and `crew/<name>.shared.json` with `version`, `host`, `repo`, `path`, `upstream_name`, `commit`, `upstream_blob`, `content_sha256` and the times; the member resolves as a hand-written fleet member would plus its `shared` object, and the sidecar is never a member in either resolver.
 - **AC14.** A file that fails `crew.CheckFile`, holds a hidden character, is over 64 KiB, is not UTF-8 or carries `ad-hoc` or `ad-hoc-run` is refused with the rule and line, and nothing is written; a run of U+E0100 and a U+3164 are each refused as hidden characters.
 - **AC15.** Importing a name a fleet member or built-in already has never overwrites: it answers 409 with `<name>-<owner>` suggested, and accepting it writes both the `name` field and the file name as the new name.
 - **AC16.** Skills the member names that the dock can't see are listed as warnings before and after import; no skill is installed.
-- **AC17.** Adding `<owner>/<repo>` (or its GitHub URL) as a crew source saves it in `crew_sharing.sources` and lists its `crew/*.md` members from one contents call, ignoring other files; Import from the list works as AC12 to AC16.
+- **AC17.** Adding a public or private `<owner>/<repo>` (or its GitHub URL) as a crew source saves it in `crew_sharing.sources` and lists its `crew/*.md` members from one contents call, ignoring other files; Import from the list works as AC12 to AC16.
 
 Updates:
 
-- **AC18.** Opening the Crew page, and a daily background check, make one GitHub API call per repo that the fleet's attached sidecars name, and show "Update available" on an attached shared member whose file's blob on the default branch differs from its sidecar's `upstream_blob`, and "Removed upstream" when the file is gone.
+- **AC18.** For public and private repos alike, opening the Crew page, and a daily background check, make one GitHub API call per repo that the fleet's attached sidecars name, and show "Update available" on an attached shared member whose file's blob on the default branch differs from its sidecar's `upstream_blob`, and "Removed upstream" when the file is gone.
 - **AC19.** A member imported at a tag shows "Update available" when its file changes on the default branch, even when no new tag exists; a new tag on an unchanged file shows no update.
 - **AC20.** Update shows a line diff of the current and new file and writes nothing until Apply; Apply writes the new file and moves the sidecar's pin to the new commit.
 - **AC21.** A shared member whose file no longer matches `content_sha256` is shown as "Edited here" with no update badge, and editing a shared member on the Crew page warns first that it detaches.
@@ -329,6 +371,17 @@ Housekeeping and access:
 - **AC26.** AdmiralBot (and any non-engineer actor) gets 403 on every new route.
 - **AC27.** A fleet without a github.com GitHub source gets "Connect GitHub (github.com) for this fleet first." on Share, Import and Unpublish, and no `gh` call is made.
 
+Private share repos (the numbers continue; no earlier AC moves):
+
+- **AC32.** Publishing to an existing private repo (adopt, share preview, share, `use_existing`) succeeds and commits the same bytes as for a public one.
+- **AC33.** Creating a repo sends `private: true` when Private is chosen and `private: false` by default, adopting takes no choice, and the README doesn't depend on it.
+- **AC34.** Browsing a private source and importing from it by ref or URL work when the fleet's login can read it.
+- **AC35.** The update check and Apply work against a private repo, with the `update` states `none`, `available`, `removed`, `unknown` and `no_access`.
+- **AC36.** A repo-level 404 on publish, browse, import preview, update check and update apply answers 403 `no_access` with the D3 text (the check records the state `no_access`, which isn't reused); a readable repo without `crew/`, or without the file, doesn't.
+- **AC37.** No token reaches the sidecar, crew files, the README, errors, logs or the UI, and the checks and scan run for a private repo.
+- **AC38.** The web app offers Public or Private (Public default), words copy from `private`, and shows the no-access message on publish, import and update.
+- **AC39.** A publish to a private repo runs the same checks and scan, and refuses on the same hits as a public one.
+
 Commodore (`jbuffin/skills`):
 
 - **AC28.** Commodore's `crew-members.md` defines the sidecar: its file name and place, every field, the fields a resolver reads, the detached rule and the `shared-unreadable` warning.
@@ -342,24 +395,39 @@ None. The engineer answered the last ones on 2026-11-24.
 
 ## Conflicts with today's code
 
+- `RepoInfo.Public` becomes `Private`, `CreateRepo` takes `private` instead of sending `false`, and the repo view's `public` becomes `private`.
+- `checkRepo` answers a repo 404 with a 409, `servePreviewImport`, `checkSource` and `servePreviewUpdate` with a 404, and `repoProblem` refuses a private repo; they answer 403 `no_access` and accept private.
+- `serveBrowse`, `fetchRepoListing` and update apply call no `gh.Repo` today, so a repo 404 and a missing `crew/` look the same, and a repo 404 gives the update state `unknown`.
+- `reusableResult` reuses a result unless it holds `unknown`; it also refuses `no_access`.
 - `textsafe.Hidden` treats `\n` and `\t` as hidden (they are `unicode.IsControl`) and misses the Unicode tag block (U+E0000 to U+E007F), U+2060, variation selectors and blank fillers. The whole-file check combines it and the tag-block rule with `crewapi`'s `hidden(s, true)` (which refuses non-graphic runes, blank fillers and variation selectors that don't follow an emoji base) and crew notes' category set, and exempts `\n` and `\t`.
 - `.gitleaks.toml` allowlists `decoy-(secret|helper)-[0-9a-f]+`, which is why the scan must not read a repo's config, and why tests use a fake gitleaks to prove a hit.
 - Rename and Delete in `internal/crewapi` move and remove only `<name>.md`; they must carry the sidecar.
 - [ADR 0010](adr/0010-fleets-are-set-up-by-admiral-setup-in-a-json-config.md) says fleets are edited through the setup terminal; `PUT /api/fleets/{key}` already amends that for other fields, and `crew_sharing` joins them.
 - The member view's `shared` comes from the resolver, so the resolver's output (and every fixture's `expected.json`) changes shape. That change starts in `jbuffin/skills`.
 
+## Known limits
+
+- **403 for 404.** GitHub sometimes answers 403 instead of 404 for a private repo (a token without the scope, SAML SSO, an organization's IP rules). Admiral's rule is one: a 403 from `gh.Repo` is not `no_access`; it keeps today's 502 with `gh`'s message.
+- **Token scope.** A classic token needs the `repo` scope for a private repo, and a fine-grained token needs access to that repo with Contents read (and write to publish). A token without it gets a 404 that Admiral shows as `no_access`; that can't be told apart from "doesn't exist".
+- **Organization SSO.** A token not authorized for an organization's SAML SSO is refused by GitHub. Admiral shows the `gh` error, not `no_access`. The scaffold still creates a repo only under the `gh` account, never an organization.
+- **Visibility changes.** A share repo's visibility can change on GitHub after a share. Admiral doesn't re-check or warn, and the sidecar records none.
+- **github.com only.** Private repos work on github.com only; GitHub Enterprise stays out.
+- **Not proven on real GitHub.** The e2e suite uses the fake `gh` and no real private repo, so private behavior is checked by hand.
+
 ## Future work
 
 - GitHub Enterprise hosts.
+- Creating a share repo under an organization, public or private.
 - Sharing missions (`crew/missions/`), with the same repo and checks.
 - A search across sources.
 
 ## Suggested build order
 
-Each unit is one PR and builds only on the ones before it. Unit 1 is in `jbuffin/skills`, a separate repo and PR; the rest are in Admiral.
+Each unit is one PR and builds only on the ones before it. Unit 1 is in `jbuffin/skills`, a separate repo and PR; the rest are in Admiral. This order is for the original feature; private repos landed afterwards as unit 6.
 
 1. **Commodore reads sidecars (`jbuffin/skills`).** The "Shared members" section in `crew-members.md`, `shared` in `crew.py resolve`, the Source cell in `cast`, the five new fixture cases and `"shared": null` in every existing `expected.json`. AC28 to AC31 on Commodore's side.
 2. **Groundwork (Admiral).** Re-vendor the fixtures and give the Go resolver the same `shared` object; `crew_sharing` on the fleet (config, `PUT /api/fleets/{key}`, the Preferences toggle); the sidecar writer; Rename and Delete carrying the sidecar; Make mine; the hidden-character, path and field checks as one publish check; the gitleaks runner with its fake. AC11, AC22, AC25, AC31 on Admiral's side, AC2 (Make mine part), AC26 and AC27 for make-mine, and the check halves of AC6 and AC9.
 3. **Publish and Unpublish.** `GET .../crew/sharing`, `POST .../crew/sharing/repo`, share preview and share, the published listing, Unpublish; the Share button, the create-repo dialog, the preview with the scan state and opt-out, the Unpublish confirm, and the line diff component (for "Replaces the published version"); fake `gh` e2e. AC1, AC3 to AC11b, AC2 (Unpublish part), AC23, AC24, and AC26 and AC27 for these routes.
 4. **Import and sources.** Ref and URL parsing, import preview and import, clash rename, skill warnings, "shared by" on the detail header; add, browse and remove sources. AC2 (import part), AC12 to AC17, and AC26 and AC27 for these routes.
 5. **Pinned updates.** The checker (page open and daily, one call per repo), update badges, update preview with the line diff, Apply, and the detach warning on Edit. AC2 (update part), AC18 to AC21, and AC26 and AC27 for these routes.
+6. **Private share repos.** Server first: the `private` field on the repo view and the create body, `RepoInfo.Private` and `CreateRepo(..., private bool)`, the `no_access` answer and update state, and the extra `gh.Repo` calls. Then the web app: the Public/Private choice, copy from `private` and the no-access message. AC32 to AC39, and the edits to AC3, AC12, AC17 and AC18.

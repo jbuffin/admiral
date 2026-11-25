@@ -1,6 +1,8 @@
-# 49. Crew members are shared as files in a public repo the engineer owns
+# 49. Crew members are shared as files in a repo the engineer owns
 
 Status: accepted
+
+Amended 2026-11-24: the share repo may be public or private. The decision first said public; the file name still does, so links stay valid.
 
 ## Context
 
@@ -10,14 +12,14 @@ The [crew sharing design](../crew-sharing.md) has the full detail.
 
 ## Decision
 
-**A member is shared as `crew/<name>.md` in a public GitHub repo its publisher owns, its share repo. Admiral publishes, imports and unpublishes one member file at a time, through the fleet's own `gh` on github.com, and every publish, import, update and unpublish is the engineer's click after reading the exact bytes.**
+**A member is shared as `crew/<name>.md` in a GitHub repo its publisher owns, public or private, its share repo. Admiral publishes, imports and unpublishes one member file at a time, through the fleet's own `gh` on github.com, and every publish, import, update and unpublish is the engineer's click after reading the exact bytes.**
 
 - **Packaging.** One file per member, `crew/<name>.md`, in the member format, plus a README the scaffold writes. There is no manifest: Admiral lists `crew/*.md` through the GitHub API.
 - **github.com only.** A fleet needs a built-in GitHub source on github.com. GitHub Enterprise is later work.
 - **Publishing is off until turned on.** Each fleet has a Crew sharing switch, off by default, which gates creating the share repo and Share only. Import, crew sources, updates, Make mine and Unpublish work with it off. The fleet also remembers its share repo and its crew sources.
-- **Scaffold.** The first Share offers to create a public repo under the fleet's `gh` account, `admiral-crew` unless the engineer changes the name, with the README. Nothing names any particular user.
-- **Publish.** Share on a fleet member shows the exact bytes that will go public, then commits that one file with `gh api`. Only the member file goes: never notes, never ad hoc fields, never a path on the Mac. A hidden character or a Mac path refuses the publish, always.
-- **Secret scan with the engineer's gitleaks.** Admiral runs `gitleaks` on the exact bytes and has no scanner of its own. A hit refuses the publish, with no opt-out. A scan that crashes, errors or times out also refuses, with no opt-out. When gitleaks isn't installed, or is older than 8.19 (no `stdin`), the preview says how to install or upgrade it (Admiral never does either, [ADR 0040](0040-admiral-installs-commodore-as-a-harness-plugin.md)) and lets the engineer publish without a scan, for that publish only, behind a clear warning. There is no fallback scan. Any member bytes containing `gitleaks:allow` are refused too, because gitleaks honours that inline comment and would report a secret on that line as clean.
+- **Scaffold.** The first Share offers to create a repo under the fleet's `gh` account, `admiral-crew` unless the engineer changes the name, with the README. It offers Public or Private, Public preselected; the choice applies only to creating a repo, and an existing repo, public or private, keeps its own visibility. Nothing names any particular user.
+- **Publish.** Share on a fleet member shows the exact bytes that will go to the share repo, then commits that one file with `gh api`. Only the member file goes: never notes, never ad hoc fields, never a path on the Mac. A hidden character or a Mac path refuses the publish, always.
+- **Secret scan with the engineer's gitleaks.** Admiral runs `gitleaks` on the exact bytes and has no scanner of its own. A hit refuses the publish, with no opt-out. A scan that crashes, errors or times out also refuses, with no opt-out. When gitleaks isn't installed, or is older than 8.19 (no `stdin`), the preview says how to install or upgrade it (Admiral never does either, [ADR 0040](0040-admiral-installs-commodore-as-a-harness-plugin.md)) and lets the engineer publish without a scan, for that publish only, behind a clear warning ("This file goes to `<owner>/<repo>` without a secret scan. Anyone who can read that repo can read it."). There is no fallback scan. Any member bytes containing `gitleaks:allow` are refused too, because gitleaks honours that inline comment and would report a secret on that line as clean.
 - **No re-sharing.** Share isn't shown, and is refused, for any member with a sidecar, attached or not. **Make mine**, its own action with its own confirm, removes the sidecar: the member becomes the engineer's own, gets no more updates, and can then be shared.
 - **Unpublish.** A member is published when its file is in the share repo's `crew/` listing; Admiral keeps no record of its own. Unpublish deletes that file through `gh api` after a confirm showing it.
 - **Import.** A ref (`<owner>/<repo>/<name>`, optionally `@<ref>`) or a GitHub URL imports one member; adding a repo as a crew source lets the engineer browse its members. An import pins the commit SHA; a tag pointing at it is shown as a label only. The file is written into the fleet's crew directory like any member, with its provenance in a sidecar, `<name>.shared.json`, which neither resolver reads as a member.
@@ -29,7 +31,7 @@ The [crew sharing design](../crew-sharing.md) has the full detail.
 
 ## Considered options
 
-- **A public repo the publisher owns** (chosen). Free, versioned, readable without Admiral, and the publisher controls it. GitHub already holds every engineer's identity.
+- **A repo the publisher owns, public or private** (chosen). Free, versioned, readable without Admiral (when public), and the publisher controls it. GitHub already holds every engineer's identity.
 - **A central registry or index.** Easier to search, but someone has to run it and moderate it, and it puts one user at the center.
 - **A manifest file listing the members.** One more file to keep in step with `crew/`, which the contents API already lists.
 - **One gist per member.** No layout to scaffold, but no folder to browse, and a gist's history and tags are weaker.
@@ -47,5 +49,6 @@ The [crew sharing design](../crew-sharing.md) has the full detail.
 - The resolver's output gains `shared` on every member, so Commodore's fixtures change first and Admiral re-vendors them.
 - Rename and Delete on the Crew page carry the sidecar with the member file.
 - Publishing without a secret scan is possible only when gitleaks is missing or too old, never silent, and never remembered. A broken gitleaks blocks publishing until it's fixed.
+- A private share repo is read only by people who can see it, so only they can import from it or get its updates. The privacy checks and the secret scan are the same for both. A repo the engineer can't see shows the same "You need access" message as one that doesn't exist.
 - A fleet on GitHub Enterprise only can't share, for now.
 - Sharing missions is not part of this decision.
