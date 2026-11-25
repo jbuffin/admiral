@@ -112,23 +112,27 @@ function RepoStep({ fleetKey, harness, login, onRepo }: { fleetKey: string; harn
         <label for={id}>Repo name</label>
         <input id={id} type="text" value={name} autocapitalize="none" autocomplete="off" onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)} />
       </div>
+      <fieldset class="seg crew-visibility" role="radiogroup" aria-labelledby={`${id}-visibility`}>
+        <legend id={`${id}-visibility`}>Visibility</legend>
+        {[
+          { key: 'public', label: 'Public', on: !isPrivate, sentence: 'Anyone can read and import your crew members.' },
+          { key: 'private', label: 'Private', on: isPrivate, sentence: 'Only you and people you add to the repo can read and import them.' },
+        ].map((o) => (
+          <div key={o.key}>
+            <label class={o.on ? 'seg-opt on' : 'seg-opt'}>
+              <input type="radio" name={`${id}-visibility`} checked={o.on} aria-describedby={`${id}-${o.key}-note`} onChange={() => setPrivate(o.key === 'private')} />
+              {o.label}
+            </label>
+            <p class="note" id={`${id}-${o.key}-note`}>
+              {o.sentence}
+            </p>
+          </div>
+        ))}
+      </fieldset>
       <div class="field crew-field">
         <label for={`${id}-description`}>Description</label>
         <input id={`${id}-description`} type="text" value={description} autocomplete="off" onInput={(e) => setDescription((e.currentTarget as HTMLInputElement).value)} />
       </div>
-      <fieldset class="field crew-field">
-        <legend>Visibility</legend>
-        <label class="check">
-          <input type="radio" name={`${id}-visibility`} checked={!isPrivate} onChange={() => setPrivate(false)} />
-          <span>Public</span>
-        </label>
-        <p class="note">Anyone can read and import your crew members.</p>
-        <label class="check">
-          <input type="radio" name={`${id}-visibility`} checked={isPrivate} onChange={() => setPrivate(true)} />
-          <span>Private</span>
-        </label>
-        <p class="note">Only you and people you add to the repo can read and import them.</p>
-      </fieldset>
       {readmeText ? (
         <>
           <p class="note">The README Admiral will write first:</p>
@@ -225,8 +229,8 @@ function PreviewStep({ member, fleetKey, harness, onDone, onClose, onChoose }: {
           <p class="note">
             {preview.path} in {preview.repo}
           </p>
-          {preview.replaces_blob && preview.published_bytes != null ? <p class="note">Replaces the published version</p> : null}
           <p class="note">{preview.private ? `${preview.repo} is private. Anyone with access to it can read this file.` : `${preview.repo} is public. Anyone can read this file.`}</p>
+          {preview.replaces_blob && preview.published_bytes != null ? <p class="note">Replaces the published version</p> : null}
           <p class="note">The file that goes to {preview.repo}, exactly:</p>
           <pre class="line-diff" aria-label="File to publish">
             {preview.bytes}

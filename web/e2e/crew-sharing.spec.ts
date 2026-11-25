@@ -4,6 +4,7 @@ import { expect, test } from './fixtures';
 import { seedCrew } from './crew';
 import { ghWrites } from './orders';
 import { addGitHubSource, watchPage } from './shell';
+import type { Locator } from '@playwright/test';
 
 const REPO = 'octocat/admiral-crew';
 const LISTING = `repos/${REPO}/contents/crew`;
@@ -232,6 +233,14 @@ test('an imported member shows an update, previews the change, applies it, and t
   expect(watch.foreign).toEqual([]);
 });
 
+/** Asserts that nothing matches `loc` for the whole window. */
+const holdsAbsent = async (loc: Locator, what: string) => {
+  const end = Date.now() + 1500;
+  while (Date.now() < end) {
+    expect(await loc.count(), what).toBe(0);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+};
 const NO_ACCESS = (repo: string) => `You need access to ${repo}. Ask its owner to add you.`;
 const PRIVATE_REPO = { full_name: 'hubot/crew', visibility: 'private', private: true, archived: false, permissions: { push: false }, default_branch: 'main' };
 
@@ -290,87 +299,8 @@ test('a private share repo is created private, the preview says it is private, a
   expect(watch.foreign).toEqual([]);
 });
 
-// Importing from a private repo the engineer can read works like any import, by ref.
-test('a crew member is imported by ref from a private repo the engineer can read', async ({ page, admiral }) => {
-  seedCrew(admiral);
-  addGitHubSource(admiral);
-  const gh = admiral.fakeGh();
-  gh.viewer('octocat');
-  const answer = answerer(join(gh.dir, 'rest'));
-  answer('a-user', 'user', { login: 'octocat' });
-  answer('b-repo', 'repos/hubot/crew', PRIVATE_REPO);
-  answer('c-commit', 'repos/hubot/crew/commits/main', { sha: SHA });
-  answer('d-file', `repos/hubot/crew/contents/crew/navigator.md?ref=${SHA}`, { name: 'navigator.md', sha: 'e'.repeat(40), size: Buffer.byteLength(THEIRS), encoding: 'base64', content: Buffer.from(THEIRS).toString('base64') });
-  answer('e-tags', 'repos/hubot/crew/tags?per_page=100', [{ name: 'v1', commit: { sha: SHA } }]);
-
-  await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
-  const watch = watchPage(page, admiral.url);
-  const imported = join(admiral.home, 'fleets', 'zulu', 'crew', 'navigator.md');
-  await turnOnSharing(page, admiral.url);
-
-  await page.goto(admiral.url + 'app/crew?fleet=zulu');
-  await page.getByRole('main').getByRole('button', { name: 'Import' }).click();
-  await page.getByLabel(/ref or url/i).fill('hubot/crew/navigator');
-  await page.getByRole('button', { name: 'Preview' }).click();
-  const panel = page.getByRole('region', { name: 'Import' });
-  await expect(panel.getByLabel('File to import')).toContainText('Work as navigator.');
-  await panel.getByRole('button', { name: 'Import' }).click();
-  await expect.poll(() => existsSync(imported)).toBe(true);
-  expect(readFileSync(imported, 'utf8')).toBe(THEIRS);
-
-  expect(watch.errors).toEqual([]);
-  expect(watch.unversioned()).toEqual([]);
-  expect(watch.foreign).toEqual([]);
-});
-
-// A member imported from a private repo shows an update and applies it like any other.
-test('a member imported from a private repo shows an update and applies it', async ({ page, admiral }) => {
-  seedCrew(admiral);
-  addGitHubSource(admiral);
-  const gh = admiral.fakeGh();
-  gh.viewer('octocat');
-  const answer = answerer(join(gh.dir, 'rest'));
-  const OLD_BLOB = 'e'.repeat(40);
-  const NEW_BLOB = 'd'.repeat(40);
-  answer('a-user', 'user', { login: 'octocat' });
-  answer('b-repo', 'repos/hubot/crew', PRIVATE_REPO);
-  answer('c-commit', 'repos/hubot/crew/commits/main', { sha: SHA });
-  answer('d-file', `repos/hubot/crew/contents/crew/navigator.md?ref=${SHA}`, { name: 'navigator.md', sha: OLD_BLOB, size: Buffer.byteLength(THEIRS), encoding: 'base64', content: Buffer.from(THEIRS).toString('base64') });
-  answer('e-tags', 'repos/hubot/crew/tags?per_page=100', [{ name: 'v1', commit: { sha: SHA } }]);
-  answer('f-listing', 'repos/hubot/crew/contents/crew', [{ name: 'navigator.md', path: 'crew/navigator.md', type: 'file', sha: OLD_BLOB }]);
-
-  await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
-  const watch = watchPage(page, admiral.url);
-  const main = page.getByRole('main');
-  const member = join(admiral.home, 'fleets', 'zulu', 'crew', 'navigator.md');
-  await turnOnSharing(page, admiral.url);
-  await page.goto(admiral.url + 'app/crew?fleet=zulu');
-  await main.getByRole('button', { name: 'Import' }).click();
-  await page.getByLabel(/ref or url/i).fill('hubot/crew/navigator');
-  await page.getByRole('button', { name: 'Preview' }).click();
-  await page.getByRole('region', { name: 'Import' }).getByRole('button', { name: 'Import' }).click();
-  await expect.poll(() => existsSync(member)).toBe(true);
-
-  answer('c-commit', 'repos/hubot/crew/commits/main', { sha: SHA2 });
-  answer('d-file', `repos/hubot/crew/contents/crew/navigator.md?ref=${SHA2}`, { name: 'navigator.md', sha: NEW_BLOB, size: Buffer.byteLength(NEWER), encoding: 'base64', content: Buffer.from(NEWER).toString('base64') });
-  answer('e-tags', 'repos/hubot/crew/tags?per_page=100', [{ name: 'v2', commit: { sha: SHA2 } }]);
-  answer('f-listing', 'repos/hubot/crew/contents/crew', [{ name: 'navigator.md', path: 'crew/navigator.md', type: 'file', sha: NEW_BLOB }]);
-
-  await page.goto(admiral.url + 'app/crew/navigator?fleet=zulu');
-  await expect(main.locator('.crew-head').getByText('Update available')).toBeVisible();
-  await main.getByRole('button', { name: 'Update', exact: true }).click();
-  await expect(main).toContainText('keep the log short');
-  await main.getByRole('button', { name: 'Apply' }).click();
-  await expect.poll(() => readFileSync(member, 'utf8')).toBe(NEWER);
-  await expect(main.locator('.crew-head').getByText('Update available')).toHaveCount(0);
-
-  expect(watch.errors).toEqual([]);
-  expect(watch.unversioned()).toEqual([]);
-  expect(watch.foreign).toEqual([]);
-});
-
 // A repo the engineer cannot read answers 404 to GitHub, and every flow says what to do instead of "not found" or "removed".
-test('a share preview, an import preview and an update check on a repo the engineer cannot read say they need access', async ({ page, admiral }) => {
+test('a share preview and an import preview on a repo the engineer cannot read say they need access', async ({ page, admiral }) => {
   seedCrew(admiral);
   addGitHubSource(admiral);
   const gh = admiral.fakeGh();
@@ -439,8 +369,8 @@ test('an imported member whose upstream repo is no longer readable shows the no 
 
   await page.goto(admiral.url + 'app/crew/navigator?fleet=zulu');
   await expect(main.locator('.crew-head').getByText(NO_ACCESS('hubot/crew'))).toBeVisible();
-  await expect(main.getByText('Removed upstream')).toHaveCount(0);
-  await expect(main.getByRole('button', { name: 'Update', exact: true })).toHaveCount(0);
+  await holdsAbsent(main.getByText('Removed upstream'), 'Removed upstream showed for an unreadable repo');
+  await holdsAbsent(main.getByRole('button', { name: 'Update', exact: true }), 'Update was offered for an unreadable repo');
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

@@ -314,6 +314,13 @@ test('the repo step asks for Public or Private under the name, Public preselecte
   const priv = screen.getByRole('radio', { name: /^Private/ }) as HTMLInputElement;
   expect(pub.checked).toBe(true);
   expect(priv.checked).toBe(false);
+  const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const nameInput = screen.getByLabelText(/repo name/i);
+  const descriptionInput = screen.getByLabelText(/description/i);
+  expect(follows(nameInput, pub) && follows(pub, priv) && follows(priv, descriptionInput)).toBe(true);
+  expect(screen.getByRole('radiogroup', { name: 'Visibility' })).toBeTruthy();
+  expect(pub.getAttribute('aria-describedby')).toBeTruthy();
+  expect(document.getElementById(pub.getAttribute('aria-describedby')!)?.textContent).toMatch(/Anyone can read/);
   expect(screen.getByText(/Anyone can read and import your crew members\./)).toBeTruthy();
   expect(screen.getByText(/Only you and people you add to the repo can read and import them\./)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Create public repo' })).toBeTruthy();
@@ -367,7 +374,9 @@ test('Use this repo and the Use offer send no private, and the README preview is
   fireEvent.click(screen.getByRole('button', { name: 'Use this repo' }));
   await waitFor(() => expect(second.some((c) => c.body?.repo)).toBe(true));
   expect(second.filter((c) => c.path.endsWith('/sharing/repo') && c.body?.repo).map((c) => c.body)).toEqual([{ repo: 'me/shared-crew' }]);
-  expect(calls.find((c) => c.body?.preview)!.body).toEqual({ preview: true, owner: 'octocat', name: 'admiral-crew' });
+  const previews = calls.filter((c) => c.body?.preview);
+  expect(previews.length).toBeGreaterThan(0);
+  for (const c of previews) expect(c.body).toEqual({ preview: true, owner: 'octocat', name: 'admiral-crew' });
 });
 
 test('the preview says private or public from its own answer, not from the setup view', async () => {

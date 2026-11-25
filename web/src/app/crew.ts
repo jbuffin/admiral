@@ -113,14 +113,19 @@ export type UpdateStates = Record<string, string>;
 
 export const noAccessText = (repo: string) => `You need access to ${repo}. Ask its owner to add you.`;
 
+/** The words for an update state of the member's upstream repo, or null when it has none to show. */
+export function updateStateWords(state: string | null | undefined, repo: string): string | null {
+  if (state === 'available') return 'Update available';
+  if (state === 'removed') return 'Removed upstream';
+  if (state === 'no_access') return noAccessText(repo);
+  return null;
+}
+
 /** The words for a member's update state, or null when it has none to show. The page-open check wins over the list's stored answer. */
 export function updateWords(m: CrewMember, states: UpdateStates | null): string | null {
   if (m.shared?.detached) return 'Edited here';
   const state = states?.[m.name] ?? m.update;
-  if (state === 'available') return 'Update available';
-  if (state === 'removed') return 'Removed upstream';
-  if (state === 'no_access' && m.shared) return noAccessText(`${m.shared.owner}/${m.shared.repo}`);
-  return null;
+  return m.shared ? updateStateWords(state, `${m.shared.owner}/${m.shared.repo}`) : state === 'no_access' ? null : updateStateWords(state, '');
 }
 
 /** A member that follows its upstream: shared, and not edited here. */
