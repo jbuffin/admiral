@@ -21,9 +21,9 @@ const member = (name: string, over: Record<string, unknown> = {}) => ({
 });
 
 const preview = (over: Record<string, unknown> = {}) => ({
-  name: 'scout', repo: 'hubot/crew', path: 'crew/scout.md', current_bytes: 80, current_sha256: 'c'.repeat(64), bytes: 90, sha256: 'd'.repeat(64),
+  name: 'scout', repo: 'hubot/crew', path: 'crew/scout.md', current_bytes: 'Work as scout.\n', current_sha256: 'c'.repeat(64), bytes: 'Work as scout, better.\n', sha256: 'd'.repeat(64),
   commit: 'b'.repeat(40), tag: 'v2', blob: 'e'.repeat(40), card: { name: 'scout', role: 'triager', 'pick-me-when': 'Pick scout v2.' },
-  missing_skills: [], scan: { status: 'clean' }, up_to_date: false, current: 'Work as scout.\n', incoming: 'Work as scout, better.\n', ...over,
+  missing_skills: [], scan: { status: 'clean' }, up_to_date: false, ...over,
 });
 
 interface Call {

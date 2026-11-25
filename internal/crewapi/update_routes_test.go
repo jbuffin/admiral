@@ -11,60 +11,64 @@ import (
 
 // --- GET crew carries update ---
 
-func TestUpdateBrowseRowsCarryTheUpdateKeyAndOnlyImportedOnesHaveAState(t *testing.T) {
-	p := newImp(t, impOpts{pubOpts: pubOpts{noRepo: true}, sources: []string{"hubot/crew"}})
-	p.clockIt(t)
-	p.gh.ok("GET", "repos/hubot/crew", repoAs("hubot/crew", "main"))
-	p.gh.ok("GET", "repos/hubot/crew/contents/crew", []map[string]any{
-		{"name": "scout.md", "path": "crew/scout.md", "type": "file", "sha": blobOf("scout-new")},
-		{"name": "mate.md", "path": "crew/mate.md", "type": "file", "sha": blobOf("mate")},
-	})
-	p.attach(att{name: "scout"})
-	status, out := p.getJSON("/imports/browse?repo=hubot/crew")
+func browseRows(t *testing.T, p *pubFixture) map[string]map[string]any {
+	t.Helper()
+	status, out := p.getJSON("/sources/hubot/crew")
 	wantStatus(t, "browse", status, 200, out)
 	rows, _ := out["members"].([]any)
-	if len(rows) == 0 {
-		rows, _ = out["entries"].([]any)
-	}
-	seen := map[string]map[string]any{}
+	byName := map[string]map[string]any{}
 	for _, r := range rows {
 		m, _ := r.(map[string]any)
-		seen[str(m, "name")] = m
+		byName[str(m, "name")] = m
 	}
-	for _, n := range []string{"scout", "mate"} {
-		if _, present := seen[n]["update"]; !present {
-			t.Errorf("browse row %s has no update key: %v", n, seen[n])
+	return byName
+}
+
+func listUpstream(p *pubFixture, names ...string) {
+	var list []map[string]any
+	for _, n := range names {
+		list = append(list, map[string]any{"name": n + ".md", "path": "crew/" + n + ".md", "type": "file", "sha": blobOf(n)})
+	}
+	p.gh.ok("GET", "repos/hubot/crew/contents/crew", list)
+}
+
+func TestUpdateBrowseRowsCarryTheUpdateKeyAndOnlyImportedOnesHaveAState(t *testing.T) {
+	p := newImp(t, impOpts{pubOpts: pubOpts{noRepo: true}})
+	p.clockIt(t)
+	p.attach(att{name: "scout-hubot", upstreamName: "scout"})
+	listUpstream(p, "scout", "bosun")
+	rows := browseRows(t, p)
+	for _, n := range []string{"scout", "bosun"} {
+		if _, present := rows[n]["update"]; !present {
+			t.Errorf("browse row %s has no update key: %v", n, rows[n])
 		}
 	}
-	if got := seen["scout"]["update"]; got == nil {
-		t.Errorf("the imported row has no update state: %v", seen["scout"])
+	if rows["scout"]["imported"] != "scout-hubot" {
+		t.Errorf("scout imported = %v, want scout-hubot", rows["scout"]["imported"])
 	}
-	if got := seen["mate"]["update"]; got != nil {
-		t.Errorf("the row that is not imported has update %v, want null", got)
+	if got, _ := rows["scout"]["update"].(string); got == "" {
+		t.Errorf("the imported row has update %v, want one of the four states", rows["scout"]["update"])
+	}
+	if rows["bosun"]["update"] != nil {
+		t.Errorf("the row that is not imported has update %v, want null", rows["bosun"]["update"])
 	}
 }
 
-func TestUpdateAnOrphanOrUnusableSidecarIsNotCountedAsImported(t *testing.T) {
-	p := newImp(t, impOpts{pubOpts: pubOpts{noRepo: true}, sources: []string{"hubot/crew"}})
+func TestUpdateAnOrphanOrUnusableSidecarIsNotMarkedImported(t *testing.T) {
+	p := newImp(t, impOpts{pubOpts: pubOpts{noRepo: true}})
 	p.clockIt(t)
-	p.gh.ok("GET", "repos/hubot/crew", repoAs("hubot/crew", "main"))
-	p.gh.ok("GET", "repos/hubot/crew/contents/crew", []map[string]any{{"name": "scout.md", "path": "crew/scout.md", "type": "file", "sha": blobOf("scout")}})
-	orphan := att{name: "scout"}.sidecar()
-	p.writeSidecarMap("scout", orphan) // a sidecar with no member beside it
-	status, out := p.getJSON("/imports/browse?repo=hubot/crew")
-	wantStatus(t, "browse", status, 200, out)
-	if imported, _ := out["imported"].(float64); imported != 0 {
-		t.Errorf("importedFrom counted an orphan sidecar: %v", out["imported"])
+	listUpstream(p, "scout")
+	p.writeSidecarMap("scout", att{name: "scout"}.sidecar()) // a sidecar with no member beside it
+	if got := browseRows(t, p)["scout"]["imported"]; got != nil {
+		t.Errorf("an orphan sidecar marks the row imported as %v", got)
 	}
 
 	p.member("scout", "Mine.")
 	bad := att{name: "scout"}.sidecar()
 	bad["upstream_blob"] = "not-a-blob"
 	p.writeSidecarMap("scout", bad)
-	status, out = p.getJSON("/sharing")
-	wantStatus(t, "sharing", status, 200, out)
-	if got := p.updateOf("scout"); got != "none" {
-		t.Errorf("a member with an unusable sidecar shows update %q, want none", got)
+	if got := browseRows(t, p)["scout"]["imported"]; got != nil {
+		t.Errorf("a sidecar the reader refuses marks the row imported as %v", got)
 	}
 }
 
@@ -86,8 +90,8 @@ func TestUpdatePreviewShowsWhatApplyWouldWriteAndWritesNothing(t *testing.T) {
 	wantStatus(t, "update preview", status, 200, pv)
 	want := map[string]any{
 		"name": "scout", "repo": "hubot/crew", "path": "crew/scout.md",
-		"current_bytes": float64(len(oldScout)), "current_sha256": hexSum(oldScout),
-		"bytes": float64(len(newScout)), "sha256": hexSum(newScout),
+		"current_bytes": oldScout, "current_sha256": hexSum(oldScout),
+		"bytes": newScout, "sha256": hexSum(newScout),
 		"commit": newSHA, "tag": "v2", "blob": u.up.blob(), "up_to_date": false,
 	}
 	for k, v := range want {
@@ -397,14 +401,25 @@ func TestUpdateApplyOfARemovedMemberIs404(t *testing.T) {
 }
 
 func TestUpdateApplyDoesNotInvalidateTheListingCache(t *testing.T) {
-	u := newUpdatable(t, impOpts{})
-	u.updates()
-	before := len(u.gh.listings())
+	p := newImp(t, impOpts{})
+	p.clockIt(t)
+	p.attach(att{name: "scout", repo: shareRepo, text: oldScout})
+	up := upstream{owner: "octocat", repo: "admiral-crew", name: "scout", text: newScout, commit: newSHA, tags: []string{"v2"}}
+	p.gh.seed(up)
+	p.gh.upstreamListing(shareRepo, map[string]string{"scout": up.blob()})
+	u := &updatable{pubFixture: p, up: up}
+	status, _ := p.getJSON("/sharing")
+	wantStatus(t, "sharing", status, 200, nil)
+	before := len(p.gh.listings())
+	if before == 0 {
+		t.Fatal("nothing listed the share repo before Apply")
+	}
 	pv := u.previewOK("scout")
 	status, out := u.apply("scout", pv, nil)
 	wantStatus(t, "apply", status, 200, out)
-	u.updates()
-	if got := len(u.gh.listings()); got != before {
+	status, _ = p.getJSON("/sharing")
+	wantStatus(t, "sharing", status, 200, nil)
+	if got := len(p.gh.listings()); got != before {
 		t.Errorf("listing calls went from %d to %d: Apply must not refetch the listing", before, got)
 	}
 }

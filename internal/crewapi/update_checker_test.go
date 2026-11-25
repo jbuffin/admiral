@@ -10,7 +10,7 @@ import (
 
 func TestUpdateBackgroundCheckWaitsTheFirstDelayThenEveryTwentyFourHours(t *testing.T) {
 	t.Setenv("ADMIRAL_CREW_UPDATE_FIRST_CHECK", "7m")
-	u := newUpdatable(t, impOpts{})
+	u := newUpdatable(t, impOpts{pubOpts: pubOpts{noRepo: true}})
 	u.runChecker()
 
 	eventually(t, "the first check to be scheduled", func() bool { return reflect.DeepEqual(u.clk.pending(), []time.Duration{7 * time.Minute}) })

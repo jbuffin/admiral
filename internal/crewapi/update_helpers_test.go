@@ -3,7 +3,6 @@ package crewapi_test
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -310,11 +309,4 @@ func (u *updatable) previewOK(name string) map[string]any {
 		u.t.Fatalf("update preview %s: %d %v", name, status, pv)
 	}
 	return pv
-}
-
-func removeAll(t *testing.T, path string) {
-	t.Helper()
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
 }
