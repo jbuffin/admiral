@@ -12,6 +12,8 @@ Run the **Release** workflow on `main` (Actions → Release → Run workflow, or
 - Last, it installs the release with `brew install jbuffin/admiral/admiral` and `brew test admiral`, and again with the published `install.sh`, and checks that both print the version.
 - `dry_run` stops after the formula check, so it builds and audits but tags, publishes and pushes nothing.
 
+If the run fails in **Tag and publish the GitHub release**, the tag is already pushed, and there may be a draft release that `gh` could not delete. A rerun picks the next version above that tag, so it skips a number. Before you run it again, delete the draft and the tag (`gh release delete v<x.y.z> --cleanup-tag --yes`, or `git push origin :refs/tags/v<x.y.z>` when there is no release), then rerun with the same `version`. A 5xx from `api.github.com` or `uploads.github.com` in that step is GitHub's side, so check githubstatus.com and wait for the incident to clear before you rerun.
+
 One-time setup: the public tap repo `jbuffin/homebrew-admiral`, a deploy key with write access on it, and that key's private half in this repo's secret `HOMEBREW_TAP_DEPLOY_KEY`. To replace the key:
 
 ```sh
