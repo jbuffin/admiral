@@ -402,7 +402,7 @@ test('a share preview, an import preview and an update check on a repo the engin
   await main.getByRole('button', { name: 'Import' }).click();
   await page.getByLabel(/ref or url/i).fill('hubot/crew/navigator');
   await page.getByRole('button', { name: 'Preview' }).click();
-  await expect(page.getByRole('alert')).toContainText(NO_ACCESS('hubot/crew'));
+  await expect(page.getByRole('region', { name: 'Import' }).getByRole('alert')).toContainText(NO_ACCESS('hubot/crew'));
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
