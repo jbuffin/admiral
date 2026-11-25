@@ -32,6 +32,8 @@ type Service struct {
 	GitHub func(cfg *config.Config, fleet string) *github.Client
 	// ScanTimeout bounds one gitleaks run; zero means the runner's default.
 	ScanTimeout time.Duration
+	// Clock times the update checker and the listing cache; nil means the real clock.
+	Clock Clock
 
 	listings listings
 }

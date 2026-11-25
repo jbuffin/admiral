@@ -88,7 +88,7 @@ func newImp(t *testing.T, o impOpts) *pubFixture {
 		mux.ServeHTTP(w, r)
 	}))
 	t.Cleanup(f.srv.Close)
-	return &pubFixture{fixture: f, gh: g, leaks: leaks, builtIns: builtIns}
+	return &pubFixture{fixture: f, gh: g, leaks: leaks, builtIns: builtIns, svc: svc}
 }
 
 // upstream is one member in a source repo, as the fake GitHub answers for it.

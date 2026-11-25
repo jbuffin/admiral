@@ -162,3 +162,71 @@ test('a crew member is imported from a ref, read before it is written, and shows
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
 });
+
+const SHA2 = 'b'.repeat(40);
+const NEWER = '---\nname: scout\nrole: triager\npick-me-when: Pick **scout** for triage.\n---\n\nWork as scout, and keep the log short.\n';
+
+// The update journey of one engineer: an imported member's upstream file moves on, the page says so, Update shows the
+// exact change before anything is written, Apply pins the new commit, and the badge goes. Only the fake gh stands in for GitHub.
+test('an imported member shows an update, previews the change, applies it, and the badge goes', async ({ page, admiral }) => {
+  seedCrew(admiral);
+  addGitHubSource(admiral);
+  const gh = admiral.fakeGh();
+  gh.viewer('octocat');
+  const rest = join(gh.dir, 'rest');
+  mkdirSync(rest, { recursive: true });
+  const answer = (key: string, endpoint: string, body: unknown) => {
+    writeFileSync(join(rest, `${key}.endpoint`), endpoint);
+    writeFileSync(join(rest, `${key}.method`), 'GET');
+    writeFileSync(join(rest, `${key}.status`), '200');
+    writeFileSync(join(rest, `${key}.json`), JSON.stringify(body));
+  };
+  const OLD_BLOB = 'e'.repeat(40);
+  const NEW_BLOB = 'd'.repeat(40);
+  answer('a-user', 'user', { login: 'octocat' });
+  answer('b-repo', 'repos/hubot/crew', { full_name: 'hubot/crew', visibility: 'public', private: false, archived: false, permissions: { push: false }, default_branch: 'main' });
+  answer('c-commit', 'repos/hubot/crew/commits/main', { sha: SHA });
+  answer('d-file', `repos/hubot/crew/contents/crew/scout.md?ref=${SHA}`, { name: 'scout.md', sha: OLD_BLOB, size: Buffer.byteLength(THEIRS), encoding: 'base64', content: Buffer.from(THEIRS).toString('base64') });
+  answer('e-tags', 'repos/hubot/crew/tags?per_page=100', [{ name: 'v1', commit: { sha: SHA } }]);
+  answer('f-listing', 'repos/hubot/crew/contents/crew', [{ name: 'scout.md', path: 'crew/scout.md', type: 'file', sha: OLD_BLOB }]);
+
+  await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
+  const watch = watchPage(page, admiral.url);
+  const main = page.getByRole('main');
+  const member = join(admiral.home, 'fleets', 'zulu', 'crew', 'scout.md');
+
+  await page.goto(admiral.url + 'app/fleets/zulu');
+  await page.getByRole('switch', { name: 'Crew sharing' }).click();
+  await expect(page.getByRole('switch', { name: 'Crew sharing' })).toHaveAttribute('aria-checked', 'true');
+  await page.goto(admiral.url + 'app/crew?fleet=zulu');
+  await main.getByRole('button', { name: 'Import' }).click();
+  await page.getByLabel(/ref or url/i).fill('hubot/crew/scout');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByRole('region', { name: 'Import' }).getByRole('button', { name: 'Import' }).click();
+  await expect.poll(() => existsSync(member)).toBe(true);
+
+  // Upstream moves on: a new commit, a new blob and a new tag.
+  answer('c-commit', 'repos/hubot/crew/commits/main', { sha: SHA2 });
+  answer('d-file', `repos/hubot/crew/contents/crew/scout.md?ref=${SHA2}`, { name: 'scout.md', sha: NEW_BLOB, size: Buffer.byteLength(NEWER), encoding: 'base64', content: Buffer.from(NEWER).toString('base64') });
+  answer('e-tags', 'repos/hubot/crew/tags?per_page=100', [{ name: 'v2', commit: { sha: SHA2 } }]);
+  answer('f-listing', 'repos/hubot/crew/contents/crew', [{ name: 'scout.md', path: 'crew/scout.md', type: 'file', sha: NEW_BLOB }]);
+
+  await page.goto(admiral.url + 'app/crew/scout?fleet=zulu');
+  await expect(main.getByText('Update available')).toBeVisible();
+
+  // Update reads the change first; nothing is written until Apply.
+  await main.getByRole('button', { name: 'Update', exact: true }).click();
+  await expect(main).toContainText(SHA2.slice(0, 7));
+  await expect(main).toContainText('v2');
+  await expect(main).toContainText('keep the log short');
+  expect(readFileSync(member, 'utf8')).toBe(THEIRS);
+
+  await main.getByRole('button', { name: 'Apply' }).click();
+  await expect.poll(() => readFileSync(member, 'utf8')).toBe(NEWER);
+  await expect(main.getByText('Update available')).toHaveCount(0);
+  await expect(main.getByRole('link', { name: /shared by hubot/i })).toBeVisible();
+
+  expect(watch.errors).toEqual([]);
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+});
