@@ -19,6 +19,7 @@ const (
 	updateAvailable = "available"
 	updateRemoved   = "removed"
 	updateUnknown   = "unknown"
+	updateNoAccess  = "no_access"
 
 	updateEvery = 24 * time.Hour
 	// resultTTL is how long the page-open check reuses the last result.
@@ -189,6 +190,8 @@ func (s *Service) runCheck(ctx context.Context, sh *sharing, withShare bool) map
 		for _, m := range byRepo[strings.ToLower(repo)] {
 			blob, listed := l.blob(m.side.stem)
 			switch {
+			case l.noAccess:
+				states[m.name] = updateNoAccess
 			case l.err != "" || l.notFound:
 				states[m.name] = updateUnknown
 			case !listed:
@@ -273,8 +276,8 @@ func (s *Service) reusableResult(fleet string, members []attachedMember) map[str
 		if !have {
 			return nil
 		}
-		if state == updateUnknown {
-			return nil // a failed listing is worth asking again
+		if state == updateUnknown || state == updateNoAccess {
+			return nil // a failed or unreadable listing is worth asking again
 		}
 		out[m.name] = state
 	}
@@ -344,6 +347,10 @@ func (s *Service) servePreviewUpdate(w http.ResponseWriter, r *http.Request) {
 	owner, repo, _ := strings.Cut(side.repo, "/")
 	ctx := r.Context()
 	info, err := sh.gh.Repo(ctx, owner, repo)
+	if github.HTTPStatus(err) == http.StatusNotFound {
+		writeNoAccess(w, side.repo)
+		return
+	}
 	if err != nil {
 		ghFailed(w, "Reading "+side.repo, side.repo, err)
 		return

@@ -270,6 +270,26 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// noAccessText is the answer for a repo the fleet's login can't read; GitHub says 404 for a missing repo and a private one alike.
+func noAccessText(repo string) string {
+	return "You need access to " + repo + ". Ask its owner to add you."
+}
+
+// writeNoAccess answers 403 with the no-access text and its code, the one answer that carries a code.
+func writeNoAccess(w http.ResponseWriter, repo string) {
+	writeJSON(w, http.StatusForbidden, map[string]string{"error": noAccessText(repo), "code": "no_access"})
+}
+
+// repoUnreadable asks gh.Repo after a contents 404 whether the repo itself is the thing GitHub can't find, and answers no access if so.
+// A readable repo, or any other error from gh.Repo, leaves the route's own answer to give.
+func repoUnreadable(w http.ResponseWriter, ctx context.Context, gh *github.Client, owner, name string) bool {
+	if _, err := gh.Repo(ctx, owner, name); github.HTTPStatus(err) == http.StatusNotFound {
+		writeNoAccess(w, owner+"/"+name)
+		return true
+	}
+	return false
+}
+
 // refuse answers a failed file operation: a link or odd file in the path is a refusal, anything else a server error.
 func refuse(w http.ResponseWriter, err error) {
 	if errors.Is(err, errLink) || errors.Is(err, errNotDir) || errors.Is(err, errUnreadable) {

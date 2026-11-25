@@ -250,6 +250,7 @@ func TestCreateRepoSendsPrivateAsChosenAndTheREADMEIsTheSameEitherWay(t *testing
 			t.Errorf("%s: private sent as %v, want %v", c.name, got, c.want)
 		}
 		readmes[i] = decodeContent(t, putBody(t, w[1]))
+		wantNoToken(t, c.name+" README body sent to GitHub", w[0].Stdin, w[1].Stdin, readmes[i])
 	}
 	if readmes[0] != readmes[1] || readmes[1] != readmes[2] {
 		t.Errorf("README differs by visibility:\n%q\n%q\n%q", readmes[0], readmes[1], readmes[2])

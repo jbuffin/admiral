@@ -14,12 +14,14 @@ type listing struct {
 	err     string
 	// notFound is a repo or crew/ folder that isn't there: nothing published, but not proof a file was removed.
 	notFound bool
+	// noAccess is a repo gh.Repo answers 404 for: held as briefly as an error, and kept apart from err so the update check can name it.
+	noAccess bool
 	at       time.Time
 }
 
 func (l listing) fresh(now time.Time) bool {
 	ttl := listingTTL
-	if l.err != "" {
+	if l.err != "" || l.noAccess {
 		ttl = listingErrTT
 	}
 	return now.Sub(l.at) < ttl

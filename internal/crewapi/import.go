@@ -149,6 +149,8 @@ func readImportable(w http.ResponseWriter, ctx context.Context, gh *github.Clien
 	case errors.Is(err, github.ErrTooLarge):
 		writeError(w, http.StatusUnprocessableEntity, path+" in "+full+" is over 64 KiB, so Admiral won't import it.")
 		return file, member, false
+	case github.HTTPStatus(err) == http.StatusNotFound && repoUnreadable(w, ctx, gh, owner, repo):
+		return file, member, false
 	case err != nil:
 		notFoundIn(w, "Reading "+path, full, what, err)
 		return file, member, false
@@ -218,6 +220,10 @@ func (s *Service) servePreviewImport(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	info, err := sh.gh.Repo(ctx, ref.Owner, ref.Repo)
+	if github.HTTPStatus(err) == http.StatusNotFound {
+		writeNoAccess(w, full)
+		return
+	}
 	if err != nil {
 		ghFailed(w, "Reading "+full, full, err)
 		return
@@ -432,7 +438,10 @@ func (s *Service) servePutSources(w http.ResponseWriter, r *http.Request) {
 // checkSource answers for a repo that is missing or has no crew/ folder.
 func (s *Service) checkSource(w http.ResponseWriter, ctx context.Context, gh *github.Client, repo string) bool {
 	owner, name, _ := strings.Cut(repo, "/")
-	if _, err := gh.Repo(ctx, owner, name); err != nil {
+	if _, err := gh.Repo(ctx, owner, name); github.HTTPStatus(err) == http.StatusNotFound {
+		writeNoAccess(w, repo)
+		return false
+	} else if err != nil {
 		ghFailed(w, "Checking "+repo, repo, err)
 		return false
 	}
@@ -469,9 +478,11 @@ func (s *Service) serveBrowse(w http.ResponseWriter, r *http.Request) {
 	full := owner + "/" + repo
 	entries, err := sh.gh.ListDir(r.Context(), owner, repo, crewDir)
 	if err != nil {
-		if github.HTTPStatus(err) == http.StatusNotFound {
+		switch {
+		case github.HTTPStatus(err) == http.StatusNotFound && repoUnreadable(w, r.Context(), sh.gh, owner, repo):
+		case github.HTTPStatus(err) == http.StatusNotFound:
 			writeError(w, http.StatusNotFound, full+" has no "+crewDir+"/ folder.")
-		} else {
+		default:
 			ghFailed(w, "Reading "+full, full, err)
 		}
 		return
