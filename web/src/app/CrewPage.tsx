@@ -4,8 +4,10 @@ import { call, type Dock, type Fleet, type Result } from './api';
 import { Actions, Button } from './Button';
 import { CrewImport } from './CrewImport';
 import { ConnectGitHubLink, SharePanel, UnpublishConfirm, type SharingView } from './CrewShare';
+import { CrewUpdate } from './CrewUpdate';
 import { Flag } from './Flag';
 import { fleetSearch } from './fleets';
+import { usePollUntil } from './hooks/poll';
 import { ModelSelect } from './LaunchPickers';
 import { renderMarkdown } from './markdown';
 import { crewPath, go, loc } from './router';
@@ -19,6 +21,7 @@ import {
   ROLES,
   addCrewStep,
   addShownFields,
+  attached,
   canDraft,
   clearProblems,
   DESCRIPTION_MAX,
@@ -37,12 +40,14 @@ import {
   scopesOf,
   shownFields,
   splitNote,
+  updateWords,
   type CrewData,
   type CrewMember,
   type DraftProblem,
   type NewMemberForm,
   type Notes,
   type Scope,
+  type UpdateStates,
 } from './crew';
 
 const CREW_COLORS = 5;
@@ -65,9 +70,11 @@ function roleLine(m: CrewMember) {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function MemberRow({ m, current }: { m: CrewMember; current: boolean }) {
+function MemberRow({ m, current, states }: { m: CrewMember; current: boolean; states: UpdateStates | null }) {
   const search = fleetSearch.value;
   const n = noteCount(m.notes);
+  // The open member's detail already says it.
+  const words = current ? null : updateWords(m, states);
   return (
     <li class="crew-item">
       <a
@@ -85,6 +92,7 @@ function MemberRow({ m, current }: { m: CrewMember; current: boolean }) {
           <span class="crew-title">
             <span class="crew-name">{m.name}</span>
             {m.customized ? <span class="pill">customized</span> : null}
+            {words ? <span class="pill">{words}</span> : null}
           </span>
           <span class="crew-sub">{roleLine(m)}</span>
           {m['pick-me-when'] ? <span class="crew-pick">{m['pick-me-when']}</span> : null}
@@ -98,7 +106,7 @@ function MemberRow({ m, current }: { m: CrewMember; current: boolean }) {
   );
 }
 
-function Group({ id, title, empty, members, selected }: { id: string; title: string; empty: string; members: CrewMember[]; selected: string | null }) {
+function Group({ id, title, empty, members, selected, states }: { id: string; title: string; empty: string; members: CrewMember[]; selected: string | null; states: UpdateStates | null }) {
   return (
     <section class="crew-group" aria-labelledby={id}>
       <h2 id={id} class="group-head">
@@ -109,7 +117,7 @@ function Group({ id, title, empty, members, selected }: { id: string; title: str
       ) : (
         <ul class="ship-list">
           {members.map((m) => (
-            <MemberRow key={m.name} m={m} current={m.name === selected} />
+            <MemberRow key={m.name} m={m} current={m.name === selected} states={states} />
           ))}
         </ul>
       )}
@@ -595,7 +603,7 @@ function NoteScopes({ member, notes, regions, fleetKey, harness, reload }: { mem
   );
 }
 
-function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharing, view, reload, afterRename, afterDelete }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; docks: Dock[]; pageHarness: string; sharing?: Fleet['crew_sharing']; view?: SharingView; reload: () => Promise<void>; afterRename: (to: string) => Promise<void>; afterDelete: () => Promise<void> }) {
+function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharing, view, states, reload, afterUpdate, afterRename, afterDelete }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; docks: Dock[]; pageHarness: string; sharing?: Fleet['crew_sharing']; view?: SharingView; states: UpdateStates | null; reload: () => Promise<void>; afterUpdate: () => Promise<void>; afterRename: (to: string) => Promise<void>; afterDelete: () => Promise<void> }) {
   // The fleet prop is stale after a repo is created here, so the new repo is kept beside it.
   const [made, setMade] = useState('');
   const shareRepo = made || view?.crew_sharing.share_repo || sharing?.share_repo || '';
@@ -605,6 +613,8 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [makingMine, setMakingMine] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [detaching, setDetaching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const act = async (fn: () => Promise<{ ok: boolean; error?: string }>, then: () => Promise<void>) => {
@@ -617,6 +627,9 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
   };
   const path = `/members/${encodeURIComponent(member.name)}`;
   const builtIn = member.layer === 'built-in';
+  const words = member.shared?.detached ? null : updateWords(member, states);
+  const follows = attached(member);
+  const canUpdate = follows && words !== 'Removed upstream';
   return (
     <article class="crew-detail">
       <header class="crew-head">
@@ -647,9 +660,11 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
             </span>
           </>
         ) : null}
+        {words ? <span class="pill">{words}</span> : null}
         {member.harness ? <Flag harness={member.harness} size="header" label={`runs on ${member.harness}`} /> : null}
       </header>
       <p class="crew-sub">{roleLine(member)}</p>
+      {member.shared?.detached ? <p class="note">Edited here, so it no longer gets updates from {member.shared.owner}/{member.shared.repo}.</p> : null}
       {error ? (
         <p class="alert" role="alert">
           {error}
@@ -660,7 +675,8 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
           <Button variant="primary" label="Customize for this fleet" pending={['member', fleetKey, harness, member.name, 'customize']} onClick={() => act(() => call('POST', crewApi(fleetKey, harness, `${path}/customize`)), reload)} />
         ) : (
           <>
-            <Button label="Edit" disabled={busy || editing} onClick={() => setEditing(true)} />
+            {canUpdate ? <Button label="Update" disabled={busy || updating} onClick={() => setUpdating(true)} /> : null}
+            <Button label="Edit" disabled={busy || editing || detaching} onClick={() => (follows ? setDetaching(true) : setEditing(true))} />
             <Button label="Rename" disabled={busy} onClick={() => setRenaming(true)} />
             {sharing?.enabled && view?.connected && !member.shared && !member.sidecar_unreadable ? <Button label="Share" disabled={busy} onClick={() => setSharingOpen(true)} /> : null}
             {member.published ? <Button label="Unpublish" disabled={busy || unpublishing} onClick={() => setUnpublishing(true)} /> : null}
@@ -691,6 +707,16 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
           }}
         />
       ) : null}
+      {detaching && member.shared ? (
+        <div class="crew-confirm">
+          <p>Editing detaches this member from {member.shared.owner}/{member.shared.repo}. It won't get updates.</p>
+          <Actions class="crew-actions">
+            <Button variant="primary" label="Continue" onClick={() => { setDetaching(false); setEditing(true); }} />
+            <Button label="Cancel" onClick={() => setDetaching(false)} />
+          </Actions>
+        </div>
+      ) : null}
+      {updating && follows ? <CrewUpdate name={member.name} fleetKey={fleetKey} harness={harness} reload={reload} onApplied={afterUpdate} onClose={() => setUpdating(false)} /> : null}
       {makingMine ? (
         <div class="crew-confirm">
           <p>{member.shared ? `Stop tracking ${member.shared.owner}/${member.shared.repo}? This member will no longer get updates or show who shared it.` : 'Stop tracking where this member came from? This member will no longer get updates or show who shared it.'}</p>
@@ -813,6 +839,29 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
     void load();
   }, [fleet.key, harness, sharingOn]);
 
+  // The page-open check; until it answers the list shows what the last check stored.
+  const [states, setStates] = useState<UpdateStates | null>(null);
+  const [checking, setChecking] = useState(true);
+  // Bumped to check again after an update was applied.
+  const [checkRound, setCheckRound] = useState(0);
+  const checked = useRef('');
+  usePollUntil(
+    async (isLive) => {
+      const where = `${fleet.key}/${harness}`;
+      // A new round of the same fleet keeps what is shown; another fleet or harness starts blank.
+      if (!checked.current.startsWith(`${where}#`)) setStates(null);
+      checked.current = `${where}#${checkRound}`;
+      setChecking(true);
+      const r = await call<{ updates: UpdateStates | null }>('GET', crewApi(fleet.key, harness, '/updates'));
+      if (!isLive()) return true;
+      setChecking(false);
+      if (r.ok) setStates(r.data.updates ?? {});
+      return true;
+    },
+    [fleet.key, harness, checkRound],
+    { everyMs: 1000 },
+  );
+
   const adding = name === null && new URLSearchParams(loc.value.search).get('add') === '1';
   const toList = (replace = false) => go('/app/crew', search, replace);
   const openAdd = () => go('/app/crew', `${search}${search ? '&' : '?'}add=1`);
@@ -907,10 +956,11 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
               <Button label="Add crew" onClick={openAdd} />
               <Button label="Import" onClick={() => setImporting((v) => !v)} />
             </div>
+            {checking && data.members.some(attached) ? <p class="muted">Checking for updates</p> : null}
             {importing ? <CrewImport fleetKey={fleet.key} harness={harness} reload={load} onClose={() => setImporting(false)} /> : null}
             {data.members.length === 0 && data.errors.length === 0 ? <p class="line">No crew members yet.</p> : null}
-            <Group id="crew-fleet" title={groups[0].title} empty={data.errors.length > 0 ? '' : 'No fleet members yet.'} members={groups[0].members} selected={name} />
-            <Group id="crew-built-in" title={groups[1].title} empty={data.errors.length > 0 ? '' : 'No built-in members here.'} members={groups[1].members} selected={name} />
+            <Group id="crew-fleet" title={groups[0].title} empty={data.errors.length > 0 ? '' : 'No fleet members yet.'} members={groups[0].members} selected={name} states={states} />
+            <Group id="crew-built-in" title={groups[1].title} empty={data.errors.length > 0 ? '' : 'No built-in members here.'} members={groups[1].members} selected={name} states={states} />
             <Unclaimed data={data} fleetKey={fleet.key} harness={harness} reload={load} />
           </div>
         ) : null}
@@ -942,7 +992,12 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
                 pageHarness={pageHarness}
                 sharing={fleet.crew_sharing}
                 view={view}
+                states={states}
                 reload={load}
+                afterUpdate={async () => {
+                  await load();
+                  setCheckRound((n) => n + 1);
+                }}
                 afterRename={async (to) => {
                   await load();
                   go(crewPath(to), search, true);

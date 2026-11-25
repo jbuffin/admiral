@@ -30,6 +30,8 @@ export interface CrewMember {
   shared_url?: string | null;
   /** The fleet's share repo holds a file of this name. */
   published?: boolean;
+  /** What the last update check found: none, available, removed or unknown. */
+  update?: string;
 }
 
 export interface Diagnostic {
@@ -98,12 +100,28 @@ export function normalizeCrew(raw: Record<string, unknown>): CrewData {
       sidecar_unreadable: !!m.sidecar_unreadable,
       shared_url: (m.shared_url as string | null) ?? null,
       published: !!m.published,
+      update: (m.update as string | undefined) ?? 'none',
     })),
     unclaimed: list<{ member: string; notes: Partial<Notes> }>(raw.unclaimed).map((u) => ({ member: u.member, notes: notesOf(u.notes) })),
     warnings: list<Record<string, string | null>>(raw.warnings).map(diag),
     errors: list<Record<string, string | null>>(raw.errors).map(diag),
   };
 }
+
+/** Updates by member name, from the page-open check. */
+export type UpdateStates = Record<string, string>;
+
+/** The words for a member's update state, or null when it has none to show. The page-open check wins over the list's stored answer. */
+export function updateWords(m: CrewMember, states: UpdateStates | null): string | null {
+  if (m.shared?.detached) return 'Edited here';
+  const state = states?.[m.name] ?? m.update;
+  if (state === 'available') return 'Update available';
+  if (state === 'removed') return 'Removed upstream';
+  return null;
+}
+
+/** A member that follows its upstream: shared, and not edited here. */
+export const attached = (m: CrewMember) => m.layer === 'fleet' && !!m.shared && !m.shared.detached;
 
 /** Fleet members first, built-in after, each group in the order given. Both groups always exist. */
 export function groupMembers(members: CrewMember[]) {
