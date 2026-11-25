@@ -99,6 +99,7 @@ type upstream struct {
 	branch            string // the repo's default branch; "main" when empty
 	commit            string // "" means commitSHA
 	tags              []string
+	private           bool // the repo is private
 }
 
 func (u upstream) sha() string {
@@ -129,7 +130,11 @@ func (g *ghFake) seed(u upstream) {
 	if ref == "" {
 		ref = branch
 	}
-	g.ok("GET", "repos/"+u.full(), repoAs(u.full(), branch))
+	repo := repoAs(u.full(), branch)
+	if u.private {
+		repo["visibility"], repo["private"] = "private", true
+	}
+	g.ok("GET", "repos/"+u.full(), repo)
 	g.ok("GET", "repos/"+u.full()+"/commits/"+strings.ReplaceAll(url.PathEscape(ref), "/", "%2F"), map[string]any{"sha": u.sha()})
 	g.ok("GET", "repos/"+u.full()+"/contents/crew/"+u.name+".md?ref="+u.sha(), map[string]any{"name": u.name + ".md", "sha": u.blob(), "size": len(u.text), "encoding": "base64", "content": b64(u.text)})
 	var tags []map[string]any

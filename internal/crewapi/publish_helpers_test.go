@@ -296,6 +296,9 @@ func errText(m map[string]any) string { return str(m, "error") }
 func (p *pubFixture) share(name string, pv map[string]any, extra map[string]any) (int, map[string]any) {
 	p.t.Helper()
 	body := map[string]any{"sha256": pv["sha256"], "repo": pv["repo"], "replaces_blob": pv["replaces_blob"]}
+	if private, has := pv["private"]; has {
+		body["private"] = private
+	}
 	for k, v := range extra {
 		body[k] = v
 	}
