@@ -378,6 +378,7 @@ test('a share preview, an import preview and an update check on a repo the engin
   const answer = answerer(join(gh.dir, 'rest'));
   answer('a-user', 'user', { login: 'octocat' });
   answer('b-share', `repos/${REPO}`, { message: 'Not Found' }, 404);
+  answer('b-share-listing', `repos/${REPO}/contents/crew`, { message: 'Not Found' }, 404);
   answer('c-theirs', 'repos/hubot/crew', { message: 'Not Found' }, 404);
 
   await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
@@ -393,7 +394,7 @@ test('a share preview, an import preview and an update check on a repo the engin
   await saved;
   await page.goto(admiral.url + 'app/crew/bosun?fleet=zulu');
   await main.getByRole('button', { name: 'Share' }).click();
-  await expect(page.getByRole('alert')).toContainText(NO_ACCESS(REPO));
+  await expect(page.getByRole('region', { name: 'Share bosun' }).getByRole('alert')).toContainText(NO_ACCESS(REPO));
   await expect(page.getByRole('button', { name: 'Choose another repo' })).toBeVisible();
 
   // The import preview.
