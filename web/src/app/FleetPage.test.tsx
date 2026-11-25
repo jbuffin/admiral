@@ -166,3 +166,26 @@ test('Reload on a conflicting Crew sharing save clears its error', async () => {
   fireEvent.click(within(alert).getByRole('button', { name: 'Reload' }));
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
 });
+
+test('a Share repo field shows with Crew sharing on, and a typo shows an inline error and saves nothing', async () => {
+  stored = { ...stored, crew_sharing: { enabled: true, share_repo: 'octocat/crew', sources: [] } };
+  render(<FleetPage fleet={stored} />);
+  const field = screen.getByRole('textbox', { name: 'Share repo' }) as HTMLInputElement;
+  expect(field.value).toBe('octocat/crew');
+  fireEvent.input(field, { target: { value: 'not a repo' } });
+  fireEvent.click(save());
+  expect((await screen.findByRole('alert')).textContent).toMatch(/owner\/repo/i);
+  expect(puts).toEqual([]);
+});
+
+test('a valid Share repo saves as crew_sharing.share_repo alone, and the field is hidden with Crew sharing off', async () => {
+  stored = { ...stored, crew_sharing: { enabled: true, share_repo: '', sources: ['hubot/crew'] } };
+  const view = render(<FleetPage fleet={stored} />);
+  fireEvent.input(screen.getByRole('textbox', { name: 'Share repo' }), { target: { value: 'octocat/crew' } });
+  fireEvent.click(save());
+  await waitFor(() => expect(puts).toEqual([{ crew_sharing: { share_repo: 'octocat/crew' } }]));
+  await settled(save());
+  view.unmount();
+  render(<FleetPage fleet={{ ...base } as Fleet} />);
+  expect(screen.queryByRole('textbox', { name: 'Share repo' })).toBeNull();
+});

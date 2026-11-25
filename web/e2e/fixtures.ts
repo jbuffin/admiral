@@ -20,6 +20,7 @@ import { cleanEnv } from './shipEnv';
 const bin = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'admiral');
 
 const fakeGhDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testdata', 'fakegh');
+const fakeGitleaksDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testdata', 'fakegitleaks');
 
 const testPlugin = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testplugin', 'plugin.py');
 
@@ -61,6 +62,8 @@ export interface Admiral {
     viewer(login: string): void;
     count(key: string, needle: string, answer: number | { fail: string }): void;
   };
+  /** The fake `gitleaks` (e2e/testdata/fakegitleaks): pass `env` to `start`; `path` is the PATH to put it in front of, such as the fake gh's. */
+  fakeGitleaks(path?: string, version?: string): { dir: string; env: Record<string, string> };
   /** `lan` listens on 0.0.0.0, pairs a device and fills `lanUrl` and `token`; `env` wins over the server's environment. */
   start(opts?: { lan?: boolean; env?: Record<string, string> }): Promise<void>;
   /** With `start({ lan: true })`: a URL Admiral sees as the LAN (http://127.0.0.1:<lan port>/) and the token of a device paired from it. */
@@ -164,6 +167,13 @@ class Instance implements Admiral {
         }
       },
     };
+  }
+
+  fakeGitleaks(path = process.env.PATH ?? '', version = '8.21.2') {
+    const dir = join(this.home, 'fakegitleaks');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'version'), version + '\n');
+    return { dir, env: { FAKEGITLEAKS_DIR: dir, PATH: `${fakeGitleaksDir}:${path}` } };
   }
 
   lanUrl = '';

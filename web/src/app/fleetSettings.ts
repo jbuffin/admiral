@@ -6,13 +6,20 @@ export interface FleetFields {
   wake_reviewers: string[];
   clone_root: string;
   color: string;
+  share_repo?: string;
 }
+
+export type FleetSave = Partial<Omit<FleetFields, 'share_repo'>> & { crew_sharing?: { share_repo: string } };
 
 const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((v, i) => v === b[i]);
 
+/** An empty share repo is none; otherwise it is GitHub's owner/repo. */
+export const validShareRepo = (v: string) => v === '' || /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(v);
+
 /** What a save sends: only the fields that changed, so one field's stored form is never rewritten by another's save. */
-export function saveBody(shown: FleetFields, edited: FleetFields): Partial<FleetFields> {
-  const body: Partial<FleetFields> = {};
+export function saveBody(shown: FleetFields, edited: FleetFields): FleetSave {
+  const body: FleetSave = {};
+  if ((shown.share_repo ?? '') !== (edited.share_repo ?? '')) body.crew_sharing = { share_repo: edited.share_repo ?? '' };
   if (!sameList(shown.search_roots, edited.search_roots)) body.search_roots = edited.search_roots;
   if (!sameList(shown.owners, edited.owners)) body.owners = edited.owners;
   if (!sameList(shown.wake_reviewers, edited.wake_reviewers)) body.wake_reviewers = edited.wake_reviewers;

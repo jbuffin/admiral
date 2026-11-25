@@ -3,9 +3,9 @@ import { saveFleet, type Fleet } from './api';
 import { Button } from './Button';
 import { Flag } from './Flag';
 import { fleetPaint, fleets, loadFleets } from './fleets';
-import { errorTarget, fieldMessage, saveBody, type FleetFields } from './fleetSettings';
+import { errorTarget, fieldMessage, saveBody, validShareRepo, type FleetFields } from './fleetSettings';
 
-const fieldsOf = (f: Fleet): FleetFields => ({ search_roots: f.search_roots, owners: f.owners, wake_reviewers: f.wake_reviewers, clone_root: f.clone_root, color: f.color });
+const fieldsOf = (f: Fleet): FleetFields => ({ search_roots: f.search_roots, owners: f.owners, wake_reviewers: f.wake_reviewers, clone_root: f.clone_root, color: f.color, share_repo: f.crew_sharing?.share_repo ?? '' });
 
 function ListField({ id, legend, item, add, values, errors, disabled, onChange }: {
   id: string;
@@ -98,8 +98,10 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
   const [edited, setEdited] = useState(shown);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; status?: number } | null>(null);
+  const [repoError, setRepoError] = useState('');
 
-  const body = saveBody(shown, edited);
+  const shareRepo = edited.share_repo ?? '';
+  const body = saveBody(shown, { ...edited, share_repo: shareRepo.trim() });
   const target = error ? errorTarget(error.message, fleet.key) : null;
   const listErrors = (field: 'search_roots' | 'owners' | 'wake_reviewers') =>
     new Map(target?.field === field && target.index !== undefined && error ? [[target.index, fieldMessage(error.message, fleet.key)]] : []);
@@ -108,6 +110,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
   const set = (patch: Partial<FleetFields>) => {
     // An error names a field (and a list slot); once that field changes it no longer points at what it said.
     if (target && target.field in patch) setError(null);
+    if ('share_repo' in patch) setRepoError('');
     setEdited({ ...edited, ...patch });
   };
 
@@ -117,7 +120,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
     setEdited(next);
   };
 
-  const save = async () => {
+  const send = async () => {
     setBusy(true);
     setError(null);
     const r = await saveFleet(fleet.key, body);
@@ -129,6 +132,12 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
       setError({ message: r.error, status: r.status });
     }
     setBusy(false);
+  };
+
+  // A typo is refused before the request, and without a promise so the Save button doesn't spin for it.
+  const save = () => {
+    if (validShareRepo(shareRepo.trim())) return send();
+    setRepoError('Write the share repo as owner/repo, such as octocat/admiral-crew.');
   };
 
   const reload = async () => {
@@ -189,6 +198,32 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
             ) : null}
           </div>
         </div>
+        {fleet.crew_sharing?.enabled ? (
+          <div class="set">
+            <div class="t">
+              <label for="share-repo">Share repo</label>
+              <span>The public GitHub repo, as owner/repo, that this fleet's crew is published to. Sharing a member can create it.</span>
+            </div>
+            <div class="control">
+              <input
+                id="share-repo"
+                type="text"
+                value={edited.share_repo}
+                disabled={busy}
+                autocapitalize="none"
+                autocomplete="off"
+                aria-invalid={repoError ? true : undefined}
+                aria-describedby={repoError ? 'share-repo-err' : undefined}
+                onInput={(e) => set({ share_repo: (e.target as HTMLInputElement).value })}
+              />
+              {repoError ? (
+                <p class="note error" role="alert" id="share-repo-err">
+                  {repoError}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <div class="set">
           <div class="t">
             <label for="fleet-color">Color</label>

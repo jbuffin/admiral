@@ -318,7 +318,7 @@ export async function fetchFleets(): Promise<Fleet[]> {
 
 export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(harness)}`;
 
-export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number; field?: string; note?: string; kind?: string; reason?: string; parent?: string; linked?: string[]; output?: string; commands?: string[]; aborted?: boolean };
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number; field?: string; note?: string; kind?: string; reason?: string; parent?: string; linked?: string[]; output?: string; commands?: string[]; aborted?: boolean; use_existing?: string };
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const SLOW_TIMEOUT_MS = 3 * 60_000;
@@ -360,11 +360,12 @@ export async function call<T>(method: string, path: string, body?: unknown, head
     }
     if (res.status === 401) signedOut.value = true;
     if (!res.ok) {
-      const body = data as { error?: string; field?: string; note?: unknown; kind?: unknown; reason?: unknown; parent?: unknown; linked?: unknown; output?: unknown; commands?: unknown } | null;
+      const body = data as { error?: string; field?: string; note?: unknown; kind?: unknown; reason?: unknown; parent?: unknown; linked?: unknown; output?: unknown; commands?: unknown; use_existing?: unknown } | null;
       return {
         ok: false,
         status: res.status,
         error: body?.error ?? `${method} ${path}: ${res.status}`,
+        ...(typeof body?.use_existing === 'string' && { use_existing: body.use_existing }),
         ...(body?.field && { field: body.field }),
         ...(typeof body?.note === 'string' && { note: body.note }),
         ...(typeof body?.kind === 'string' && { kind: body.kind }),
@@ -516,7 +517,7 @@ export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
 export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });
 
 /** Saves the fleet fields in the body; the server answers the new config view. */
-export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color' | 'notify' | 'preset'>> | { crew_sharing: { enabled: boolean } } | { limits: Record<string, unknown> } | { chat: Partial<Omit<FleetChat, 'on' | 'off_reason' | 'harnesses' | 'harness_options' | 'models' | 'efforts'>> }): Promise<Result<Fleet[]>> {
+export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color' | 'notify' | 'preset'>> | { crew_sharing: { enabled?: boolean; share_repo?: string } } | { limits: Record<string, unknown> } | { chat: Partial<Omit<FleetChat, 'on' | 'off_reason' | 'harnesses' | 'harness_options' | 'models' | 'efforts'>> }): Promise<Result<Fleet[]>> {
   const r = await call<{ fleets?: Fleet[] | null }>('PUT', `/fleets/${encodeURIComponent(key)}`, body);
   return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
 }
