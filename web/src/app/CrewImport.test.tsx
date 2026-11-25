@@ -336,6 +336,31 @@ test('Browse lists a source\'s members, shows Imported instead of Import on one 
   expect(named(calls, 'POST', '/imports/preview')[0]!.body).toEqual({ ref: 'hubot/crew/mate' });
 });
 
+test('an imported browse row shows its update state beside Imported, and a row that is not imported shows none', async () => {
+  server(
+    [member('bosun')],
+    (c) => {
+      if (c.method === 'GET' && to(c, '/sources/hubot/crew')) {
+        return json({
+          members: [
+            { name: 'scout', path: 'crew/scout.md', blob: 'b1', imported: 'scout-hubot', update: 'available', published: false },
+            { name: 'mate', path: 'crew/mate.md', blob: 'b2', imported: null, update: null, published: false },
+          ],
+        });
+      }
+      return undefined;
+    },
+    view(['hubot/crew']),
+  );
+  page(null, fleetOf(['hubot/crew']));
+  await openImport();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Browse' })[1]!);
+  const rows = within(await screen.findByRole('list', { name: 'hubot/crew' })).getAllByRole('listitem');
+  expect(within(rows[0]!).getByText('Imported')).toBeTruthy();
+  expect(within(rows[0]!).getByText('Update available')).toBeTruthy();
+  expect(within(rows[1]!).queryByText(/Update available|Removed upstream|Edited here/)).toBeNull();
+});
+
 test('every row of the share repo has Unpublish, which opens the same confirm as a member\'s', async () => {
   const calls = server(
     [member('bosun')],

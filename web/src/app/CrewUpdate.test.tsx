@@ -23,7 +23,7 @@ const member = (name: string, over: Record<string, unknown> = {}) => ({
 const preview = (over: Record<string, unknown> = {}) => ({
   name: 'scout', repo: 'hubot/crew', path: 'crew/scout.md', current_bytes: 'Work as scout.\n', current_sha256: 'c'.repeat(64), bytes: 'Work as scout, better.\n', sha256: 'd'.repeat(64),
   commit: 'b'.repeat(40), tag: 'v2', blob: 'e'.repeat(40), card: { name: 'scout', role: 'triager', 'pick-me-when': 'Pick scout v2.' },
-  missing_skills: [], scan: { status: 'clean' }, up_to_date: false, ...over,
+  missing_skills: [], scan: { state: 'clean', findings: [] }, up_to_date: false, ...over,
 });
 
 interface Call {
@@ -116,12 +116,13 @@ test('the preview lists missing skills and a scan warning, and still offers Appl
   server({
     members: [member('scout', { update: 'available' })],
     updates: async () => json({ updates: { scout: 'available' } }),
-    reply: () => json(preview({ missing_skills: ['tdd'], scan: { status: 'findings', findings: [{ rule: 'generic-api-key', line: 3 }] } })),
+    reply: () => json(preview({ missing_skills: ['tdd'], scan: { state: 'hit', findings: [{ rule: 'generic-api-key', line: 3 }] } })),
   });
   page('scout', true);
   fireEvent.click(await updateButton());
   expect(await screen.findByText(/tdd/)).toBeTruthy();
-  expect(screen.getByText(/generic-api-key|secret/i)).toBeTruthy();
+  expect(screen.getByText('The secret scan found something in this file. You can still import it.')).toBeTruthy();
+  expect(screen.getByText(/generic-api-key/)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Apply' })).toBeTruthy();
 });
 
@@ -145,7 +146,7 @@ test('a preview that is up to date says so and offers no Apply', async () => {
   });
   page('scout', true);
   fireEvent.click(await updateButton());
-  expect(await screen.findByText(/up to date/i)).toBeTruthy();
+  expect(await screen.findByText('Up to date')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
 });
 
