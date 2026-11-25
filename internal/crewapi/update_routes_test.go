@@ -150,14 +150,13 @@ func TestUpdatePreviewOfARenamedMemberHashesTheRawUpstreamBytes(t *testing.T) {
 	}
 }
 
-func TestUpdatePreviewIsUpToDateWhenTheBytesMatchTheMember(t *testing.T) {
+func TestUpdatePreviewIsUpToDateWhenTheUpstreamBlobIsTheOneTheMemberCameFrom(t *testing.T) {
 	u := newUpdatable(t, impOpts{})
-	u.up.text = oldScout
-	u.gh.unseed()
-	u.gh.seed(u.up)
-	pv := u.previewOK("scout")
+	renamed := strings.Replace(oldScout, "name: scout", "name: scout-hubot", 1)
+	u.attach(att{name: "scout-hubot", upstreamName: "scout", text: renamed, blob: u.up.blob()})
+	pv := u.previewOK("scout-hubot")
 	if pv["up_to_date"] != true {
-		t.Errorf("up_to_date = %v, want true", pv["up_to_date"])
+		t.Errorf("up_to_date = %v, want true: the blob is the same though the renamed bytes differ", pv["up_to_date"])
 	}
 }
 
@@ -169,24 +168,25 @@ func TestUpdatePreviewOfAMemberRemovedUpstreamIs404(t *testing.T) {
 	u.gh.answer("GET", "repos/hubot/crew/contents/crew/scout.md?ref="+newSHA, 404, nil, "")
 	status, pv := u.preview("scout")
 	wantStatus(t, "update preview", status, 404, pv)
-	wantText(t, "update preview", pv, "was not found in", "hubot/crew")
+	wantText(t, "update preview", pv, "crew/scout.md", "was not found in", "hubot/crew")
 }
 
 func TestUpdatePreviewRefusesWhatImportRefusesAndWritesNothing(t *testing.T) {
 	big := "---\nname: scout\nrole: triager\npick-me-when: x.\n---\n\n" + strings.Repeat("a", 64*1024)
-	for name, text := range map[string]string{
-		"hidden direction mark": memberFile("scout", "") + "‮",
-		"invalid utf-8":         "---\nname: scout\nrole: triager\npick-me-when: x.\n---\n\n\xff\xfe\n",
-		"over 64 KiB":           big,
-		"ad-hoc":                "---\nname: ad-hoc\nrole: triager\npick-me-when: x.\n---\n\nHi.\n",
+	for name, c := range map[string]struct{ text, says string }{
+		"hidden direction mark": {memberFile("scout", "") + "‮", "a character a reader can't see"},
+		"invalid utf-8":         {"---\nname: scout\nrole: triager\npick-me-when: x.\n---\n\n\xff\xfe\n", "isn't valid UTF-8"},
+		"over 64 KiB":           {big, "over 64 KiB"},
+		"ad-hoc":                {"---\nname: scout\nad-hoc: true\nrole: triager\npick-me-when: x.\n---\n\nHi.\n","an ad hoc member can't be imported"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			u := newUpdatable(t, impOpts{})
-			u.up.text = text
+			u.up.text = c.text
 			u.gh.unseed()
 			u.gh.seed(u.up)
 			status, pv := u.preview("scout")
 			wantStatus(t, "update preview", status, 422, pv)
+			wantText(t, "update preview", pv, c.says)
 			if u.memberBytes("scout") != oldScout {
 				t.Error("the member changed")
 			}
@@ -216,17 +216,21 @@ func TestUpdatePreviewAndApplyOfADetachedMemberAre409WithNoGitHubCall(t *testing
 }
 
 func TestUpdatePreviewOfAMemberWithAnUnusableSidecarIs409(t *testing.T) {
-	for name, edit := range map[string]func(m map[string]any){
-		"upstream_name is not the path stem": func(m map[string]any) { m["upstream_name"] = "other" },
-		"blob is not 40 hex":                 func(m map[string]any) { m["upstream_blob"] = "xyz" },
+	for name, c := range map[string]struct {
+		edit func(m map[string]any)
+		says string
+	}{
+		"upstream_name is not the path stem": {func(m map[string]any) { m["upstream_name"] = "other" }, "its upstream name does not match its path"},
+		"blob is not 40 hex":                 {func(m map[string]any) { m["upstream_blob"] = "xyz" }, "its upstream blob is not a Git object id"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			u := newUpdatable(t, impOpts{})
 			m := att{name: "scout", text: oldScout}.sidecar()
-			edit(m)
+			c.edit(m)
 			u.writeSidecarMap("scout", m)
 			status, pv := u.preview("scout")
 			wantStatus(t, "update preview", status, 409, pv)
+			wantText(t, "update preview", pv, "can't be used: "+c.says)
 			u.wantCalls("an unusable sidecar", 0)
 		})
 	}
@@ -237,8 +241,10 @@ func TestUpdatePreviewOfAMemberThatWasNeverImportedIs404(t *testing.T) {
 	u.member("plain", "Mine.")
 	status, pv := u.preview("plain")
 	wantStatus(t, "update preview of a plain member", status, 404, pv)
+	wantText(t, "update preview of a plain member", pv, "plain is not an imported member")
 	status, pv = u.preview("nobody")
 	wantStatus(t, "update preview of no member", status, 404, pv)
+	wantText(t, "update preview of no member", pv, "nobody is not an imported member")
 	u.wantCalls("members that were never imported", 0)
 }
 
@@ -248,11 +254,10 @@ func TestUpdatePreviewAndApplyWithNoGitHubClientOrAnotherHostAre409AndCallNothin
 			u := newUpdatable(t, impOpts{pubOpts: o})
 			status, pv := u.preview("scout")
 			wantStatus(t, "update preview", status, 409, pv)
-			if o.noGitHub {
-				wantText(t, "update preview", pv, connectText)
-			}
+			wantText(t, "update preview", pv, connectText)
 			status, out := u.post("/members/scout/update", map[string]any{"commit": newSHA, "sha256": hexSum(newScout), "current_sha256": hexSum(oldScout)})
 			wantStatus(t, "apply", status, 409, out)
+			wantText(t, "apply", out, connectText)
 			if got := len(u.gh.calls()); got != 0 {
 				t.Errorf("%d gh calls: %v", got, endpoints(u.gh.calls()))
 			}
@@ -275,6 +280,14 @@ func TestUpdateApplyWritesTheUpstreamBytesAndMovesTheSidecar(t *testing.T) {
 	pv := u.previewOK("scout")
 	status, out := u.apply("scout", pv, nil)
 	wantStatus(t, "apply", status, 200, out)
+	for k, v := range map[string]any{"name": "scout", "commit": newSHA, "tag": "v2"} {
+		if out[k] != v {
+			t.Errorf("apply %s = %v, want %v", k, out[k], v)
+		}
+	}
+	if _, ok := out["missing_skills"]; !ok {
+		t.Errorf("apply has no missing_skills: %v", out)
+	}
 	if got := u.memberBytes("scout"); got != newScout {
 		t.Errorf("member = %q, want the upstream bytes", got)
 	}
@@ -349,17 +362,21 @@ func TestUpdateApplyAfterALocalEditOrAnUpstreamChangeIsAChangedConflictAndWrites
 
 func TestUpdateApplyRefusesABadBodyBeforeAnyGitHubCall(t *testing.T) {
 	good := map[string]any{"commit": newSHA, "sha256": hexSum(newScout), "current_sha256": hexSum(oldScout)}
-	for name, over := range map[string]map[string]any{
-		"short commit":       {"commit": "abc"},
-		"commit not hex":     {"commit": strings.Repeat("z", 40)},
-		"missing commit":     {"commit": nil},
-		"short sha256":       {"sha256": "abc"},
-		"sha256 not hex":     {"sha256": strings.Repeat("g", 64)},
-		"missing sha256":     {"sha256": nil},
-		"short current":      {"current_sha256": "abc"},
-		"missing current":    {"current_sha256": nil},
-		"current not a text": {"current_sha256": 7},
+	for name, c := range map[string]struct {
+		over map[string]any
+		says string
+	}{
+		"short commit":       {map[string]any{"commit": "abc"}, "commit must"},
+		"commit not hex":     {map[string]any{"commit": strings.Repeat("z", 40)}, "commit must"},
+		"missing commit":     {map[string]any{"commit": nil}, "commit must"},
+		"short sha256":       {map[string]any{"sha256": "abc"}, "sha256 must"},
+		"sha256 not hex":     {map[string]any{"sha256": strings.Repeat("g", 64)}, "sha256 must"},
+		"missing sha256":     {map[string]any{"sha256": nil}, "sha256 must"},
+		"short current":      {map[string]any{"current_sha256": "abc"}, "current_sha256 must"},
+		"missing current":    {map[string]any{"current_sha256": nil}, "current_sha256 must"},
+		"current not a text": {map[string]any{"current_sha256": 7}, "request is not valid JSON"},
 	} {
+		over := c.over
 		t.Run(name, func(t *testing.T) {
 			u := newUpdatable(t, impOpts{})
 			body := map[string]any{}
@@ -371,6 +388,7 @@ func TestUpdateApplyRefusesABadBodyBeforeAnyGitHubCall(t *testing.T) {
 			}
 			status, out := u.post("/members/scout/update", body)
 			wantStatus(t, "apply", status, 400, out)
+			wantText(t, "apply", out, c.says)
 			u.wantCalls("a bad body", 0)
 			if u.memberBytes("scout") != oldScout {
 				t.Error("the member changed")
@@ -402,7 +420,7 @@ func TestUpdateApplyOfARemovedMemberIs404(t *testing.T) {
 	u.gh.answer("GET", "repos/hubot/crew/contents/crew/scout.md?ref="+newSHA, 404, nil, "")
 	status, out := u.apply("scout", pv, nil)
 	wantStatus(t, "apply", status, 404, out)
-	wantText(t, "apply", out, "was not found in", "hubot/crew")
+	wantText(t, "apply", out, "crew/scout.md", "was not found in", "hubot/crew")
 }
 
 func TestUpdateApplyDoesNotInvalidateTheListingCache(t *testing.T) {

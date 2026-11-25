@@ -93,6 +93,8 @@ test('a detached member says why it gets no updates and keeps who shared it', as
   server({ members: [member('ada', { shared: sharedFrom(true), shared_url: 'https://github.com/hubot/crew/blob/x/crew/ada.md' })] });
   page('ada', true);
   expect(await screen.findByText('Edited here, so it no longer gets updates from hubot/crew.')).toBeTruthy();
+  const header = screen.getByRole('heading', { name: 'ada', level: 2 }).closest('header')!;
+  expect(within(header).getByText('Edited here')).toBeTruthy();
   expect(screen.getByText('Shared by hubot')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Update', exact: true } as never)).toBeNull();
 });

@@ -114,6 +114,19 @@ func TestReadFileAtRefusesAFileOver64KiB(t *testing.T) {
 	}
 }
 
+func TestReadFileAtRefusesAnAnswerWhoseBlobIsNotAGitObjectID(t *testing.T) {
+	for _, blob := range []string{"", "xyz", strings.Repeat("B", 40), strings.Repeat("b", 39)} {
+		f, c := signedIn(t)
+		answer := fileAnswer("hello\n")
+		answer["sha"] = blob
+		f.can(t, 1, "GET", "repos/o/r/contents/crew/x.md?ref="+sha40, 200, answer)
+		_, err := c.ReadFileAt(context.Background(), "o", "r", "crew/x.md", sha40)
+		if err == nil || !strings.Contains(err.Error(), "GitHub's answer was not a file") {
+			t.Errorf("sha %q: err = %v; want the answer refused as not a file", blob, err)
+		}
+	}
+}
+
 func TestReadFileKeepsItsEndpointWithNoRef(t *testing.T) {
 	f, c := signedIn(t)
 	f.can(t, 1, "GET", "repos/o/r/contents/crew/x.md", 200, fileAnswer("hi"))

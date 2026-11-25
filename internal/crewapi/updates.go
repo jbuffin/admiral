@@ -53,8 +53,18 @@ type updateResult struct {
 
 // updateStore keeps each fleet's last check in memory; a restart starts with none.
 type updateStore struct {
-	mu sync.Mutex
-	by map[string]updateResult
+	mu  sync.Mutex
+	by  map[string]updateResult
+	seq int
+	// setAt is the seq of each member's latest set, so a check that began earlier doesn't undo it.
+	setAt map[string]map[string]int
+}
+
+// begin marks the start of a check for put.
+func (u *updateStore) begin() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.seq
 }
 
 func (u *updateStore) get(fleet string) (updateResult, bool) {
@@ -71,13 +81,22 @@ func (u *updateStore) get(fleet string) (updateResult, bool) {
 	return res, ok
 }
 
-func (u *updateStore) put(fleet string, at time.Time, states map[string]string) {
+// put stores a check that began at began, keeping any member state set since, and returns what it stored.
+func (u *updateStore) put(fleet string, at time.Time, states map[string]string, began int) map[string]string {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if u.by == nil {
 		u.by = map[string]updateResult{}
 	}
+	for name, seq := range u.setAt[fleet] {
+		if kept, ok := u.by[fleet].states[name]; ok && seq > began {
+			if _, checked := states[name]; checked {
+				states[name] = kept
+			}
+		}
+	}
 	u.by[fleet] = updateResult{at: at, states: states}
+	return states
 }
 
 // set changes one member's state and leaves the check's age alone.
@@ -94,6 +113,14 @@ func (u *updateStore) set(fleet, name, state string) {
 	}
 	states[name] = state
 	u.by[fleet] = updateResult{at: res.at, states: states}
+	u.seq++
+	if u.setAt == nil {
+		u.setAt = map[string]map[string]int{}
+	}
+	if u.setAt[fleet] == nil {
+		u.setAt[fleet] = map[string]int{}
+	}
+	u.setAt[fleet][name] = u.seq
 }
 
 func (u *updateStore) state(fleet, name string) string {
@@ -134,6 +161,7 @@ func attachedMembers(dir string) []attachedMember {
 
 // runCheck lists each repo the attached members came from once, and the share repo when withShare is set, and stores each member's state.
 func (s *Service) runCheck(ctx context.Context, sh *sharing, withShare bool) map[string]string {
+	began := s.updates.begin()
 	members := attachedMembers(sh.c.crewDir())
 	var repos []string // first-seen spelling, one per repo ignoring case
 	byRepo := map[string][]attachedMember{}
@@ -172,8 +200,7 @@ func (s *Service) runCheck(ctx context.Context, sh *sharing, withShare bool) map
 			}
 		}
 	}
-	s.updates.put(sh.c.key, s.now(), states)
-	return states
+	return s.updates.put(sh.c.key, s.now(), states, began)
 }
 
 // Run is the background update check: the first after a delay, then daily. It blocks until ctx ends.
@@ -216,13 +243,17 @@ func (s *Service) updateRoutes(mux *http.ServeMux) {
 
 // serveUpdates checks the fleet as the page opens, reusing a result younger than resultTTL that covers every attached member.
 func (s *Service) serveUpdates(w http.ResponseWriter, r *http.Request) {
-	sh, ok := s.importFleet(w, r, true)
+	sh, ok := s.importFleet(w, r, false)
 	if !ok {
 		return
 	}
 	members := attachedMembers(sh.c.crewDir())
 	states := map[string]string{}
 	if len(members) > 0 {
+		if sh.gh == nil {
+			writeError(w, http.StatusConflict, connectText)
+			return
+		}
 		states = s.reusableResult(sh.c.key, members)
 		if states == nil {
 			states = s.runCheck(r.Context(), sh, true)
@@ -241,6 +272,9 @@ func (s *Service) reusableResult(fleet string, members []attachedMember) map[str
 		state, have := res.states[m.name]
 		if !have {
 			return nil
+		}
+		if state == updateUnknown {
+			return nil // a failed listing is worth asking again
 		}
 		out[m.name] = state
 	}
@@ -269,6 +303,31 @@ func editedText(repo string) string {
 	return "Edited here, so it no longer gets updates from " + repo + "."
 }
 
+// readUpdate reads the member's upstream file at commit, its tag and the bytes as this member's name, checking each as import does.
+// wantSum, when set, must match the raw upstream bytes.
+func (s *Service) readUpdate(w http.ResponseWriter, ctx context.Context, sh *sharing, side sidecarRead, name, commit, wantSum string) (file github.File, data []byte, member crew.Member, tag string, ok bool) {
+	owner, repo, _ := strings.Cut(side.repo, "/")
+	file, member, ok = readImportable(w, ctx, sh.gh, owner, repo, side.path, commit, side.path, side.stem, wantSum)
+	if !ok {
+		return file, nil, member, "", false
+	}
+	tag, err := sh.gh.TagAt(ctx, owner, repo, commit)
+	if err != nil {
+		ghFailed(w, "Reading the tags of "+side.repo, side.repo, err)
+		return file, nil, member, "", false
+	}
+	data = file.Bytes
+	if name != side.stem {
+		data = renamed(data, name)
+		var problem string
+		if member, problem = checkImported(data, name); problem != "" {
+			writeError(w, http.StatusUnprocessableEntity, problem)
+			return file, nil, member, "", false
+		}
+	}
+	return file, data, member, usableTag(tag), true
+}
+
 func (s *Service) servePreviewUpdate(w http.ResponseWriter, r *http.Request) {
 	sh, ok := s.importFleet(w, r, false)
 	if !ok {
@@ -294,33 +353,19 @@ func (s *Service) servePreviewUpdate(w http.ResponseWriter, r *http.Request) {
 		notFoundIn(w, "Reading "+side.repo, side.repo, "The branch "+info.DefaultBranch, err)
 		return
 	}
-	file, member, ok := readImportable(w, ctx, sh.gh, owner, repo, side.path, commit, side.path, side.stem, "")
+	file, data, member, tag, ok := s.readUpdate(w, ctx, sh, side, name, commit, "")
 	if !ok {
 		return
 	}
-	tag, err := sh.gh.TagAt(ctx, owner, repo, commit)
-	if err != nil {
-		ghFailed(w, "Reading the tags of "+side.repo, side.repo, err)
-		return
-	}
-	data := file.Bytes
-	if name != side.stem {
-		data = renamed(data, name)
-		var problem string
-		if member, problem = checkImported(data, name); problem != "" {
-			writeError(w, http.StatusUnprocessableEntity, problem)
-			return
-		}
-	}
 	var tagOut any
-	if tag = usableTag(tag); tag != "" {
+	if tag != "" {
 		tagOut = tag
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name": name, "repo": side.repo, "path": side.path,
 		"current_bytes": string(side.member), "current_sha256": sumOf(side.member),
 		"bytes": string(data), "sha256": sumOf(file.Bytes), "commit": commit, "tag": tagOut, "blob": file.Blob,
-		"up_to_date": sumOf(data) == sumOf(side.member), "card": cardOf(member),
+		"up_to_date": file.Blob == side.blob, "card": cardOf(member),
 		"missing_skills": missingSkills(sh.fleet, r.URL.Query().Get("harness"), member.Skills), "scan": s.scan(ctx, sh, data),
 	})
 }
@@ -357,29 +402,22 @@ func (s *Service) serveApplyUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	owner, repo, _ := strings.Cut(side.repo, "/")
-	ctx := r.Context()
-	file, _, ok := readImportable(w, ctx, sh.gh, owner, repo, side.path, body.Commit, side.path, side.stem, body.SHA256)
+	file, data, member, tag, ok := s.readUpdate(w, r.Context(), sh, side, name, body.Commit, body.SHA256)
 	if !ok {
 		return
-	}
-	tag, err := sh.gh.TagAt(ctx, owner, repo, body.Commit)
-	if err != nil {
-		ghFailed(w, "Reading the tags of "+side.repo, side.repo, err)
-		return
-	}
-	data := file.Bytes
-	if name != side.stem {
-		data = renamed(data, name)
-		if _, problem := checkImported(data, name); problem != "" {
-			writeError(w, http.StatusUnprocessableEntity, problem)
-			return
-		}
 	}
 
 	writeMu.Lock()
 	defer writeMu.Unlock()
-	dir := sh.c.crewDir()
+	dir, found, err := walk(sh.c.home, false, "fleets", sh.c.key, crewDir)
+	if err != nil {
+		refuseImport(w, unsafePath(err))
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, name+" is not an imported member, so it has no updates.")
+		return
+	}
 	now := readSidecar(dir, name)
 	switch {
 	case now.kind != usableSidecar:
@@ -388,7 +426,8 @@ func (s *Service) serveApplyUpdate(w http.ResponseWriter, r *http.Request) {
 	case now.shared.Detached:
 		writeError(w, http.StatusConflict, editedText(now.repo))
 		return
-	case sumOf(now.member) != body.CurrentSHA256:
+	case !strings.EqualFold(now.repo, side.repo) || now.path != side.path || now.stem != side.stem,
+		sumOf(now.member) != body.CurrentSHA256:
 		writeJSON(w, http.StatusConflict, map[string]any{"error": changedText, "kind": "changed"})
 		return
 	}
@@ -397,7 +436,7 @@ func (s *Service) serveApplyUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var tagPtr *string
-	if tag = usableTag(tag); tag != "" {
+	if tag != "" {
 		tagPtr = &tag
 	}
 	err = writeSidecar(dir, name, Sidecar{Version: 1, Host: github.DefaultHost, Repo: now.repo, Path: now.path, UpstreamName: now.stem,
@@ -412,5 +451,6 @@ func (s *Service) serveApplyUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.updates.set(sh.c.key, name, updateNone)
-	writeJSON(w, http.StatusOK, map[string]any{"name": name, "commit": body.Commit, "tag": tagPtr})
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "commit": body.Commit, "tag": tagPtr,
+		"missing_skills": missingSkills(sh.fleet, r.URL.Query().Get("harness"), member.Skills)})
 }

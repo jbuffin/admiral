@@ -487,7 +487,10 @@ func (s *Service) serveBrowse(w http.ResponseWriter, r *http.Request) {
 		row := browseRow{Name: stem, Path: path, Blob: e.Blob, Published: strings.EqualFold(full, sh.repo)}
 		if m, ok := imported[path]; ok {
 			row.Imported = &m.name
-			state := m.updateOf(e.Blob)
+			state := updateNone
+			if !m.side.shared.Detached {
+				state = s.updates.state(sh.c.key, m.name)
+			}
 			row.Update = &state
 		}
 		rows = append(rows, row)
@@ -513,15 +516,6 @@ func importedFrom(dir, repo string) map[string]importedMember {
 type importedMember struct {
 	name string
 	side sidecarRead
-}
-
-// updateOf is the update state a listed upstream blob gives this member.
-func (m importedMember) updateOf(blob string) string {
-	switch {
-	case m.side.shared.Detached, blob == m.side.blob:
-		return updateNone
-	}
-	return updateAvailable
 }
 
 // sharedURL is the page of the member's upstream file at the commit it came from; nil when it has no usable sidecar.

@@ -212,7 +212,7 @@ test('an imported member shows an update, previews the change, applies it, and t
   answer('f-listing', 'repos/hubot/crew/contents/crew', [{ name: 'scout.md', path: 'crew/scout.md', type: 'file', sha: NEW_BLOB }]);
 
   await page.goto(admiral.url + 'app/crew/scout?fleet=zulu');
-  await expect(main.getByText('Update available')).toBeVisible();
+  await expect(main.locator('.crew-head').getByText('Update available')).toBeVisible();
 
   // Update reads the change first; nothing is written until Apply.
   await main.getByRole('button', { name: 'Update', exact: true }).click();
@@ -223,7 +223,7 @@ test('an imported member shows an update, previews the change, applies it, and t
 
   await main.getByRole('button', { name: 'Apply' }).click();
   await expect.poll(() => readFileSync(member, 'utf8')).toBe(NEWER);
-  await expect(main.getByText('Update available')).toHaveCount(0);
+  await expect(main.locator('.crew-head').getByText('Update available')).toHaveCount(0);
   await expect(main.getByRole('link', { name: /shared by hubot/i })).toBeVisible();
 
   expect(watch.errors).toEqual([]);

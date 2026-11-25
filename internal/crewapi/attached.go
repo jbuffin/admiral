@@ -28,9 +28,7 @@ type sidecarRead struct {
 	path    string // crew/<stem>.md
 	stem    string // upstream_name
 	blob    string
-	sum     string // content_sha256
 	at      string // imported_at
-	raw     []byte
 	member  []byte
 }
 
@@ -79,9 +77,9 @@ func readSidecar(dir, name string) sidecarRead {
 		return ""
 	}
 	out := sidecarRead{
-		kind: usableSidecar, shared: shared, raw: raw, member: member,
+		kind: usableSidecar, shared: shared, member: member,
 		repo: shared.Owner + "/" + shared.Repo, path: text("path"), stem: text("upstream_name"),
-		blob: text("upstream_blob"), sum: text("content_sha256"), at: text("imported_at"),
+		blob: text("upstream_blob"), at: text("imported_at"),
 	}
 	file, ok := strings.CutPrefix(out.path, crewDir+"/")
 	upstream, isMd := strings.CutSuffix(file, ".md")

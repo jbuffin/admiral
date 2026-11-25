@@ -73,8 +73,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 function MemberRow({ m, current, states }: { m: CrewMember; current: boolean; states: UpdateStates | null }) {
   const search = fleetSearch.value;
   const n = noteCount(m.notes);
-  // The open member's detail already says it.
-  const words = current ? null : updateWords(m, states);
+  const words = updateWords(m, states);
   return (
     <li class="crew-item">
       <a
@@ -627,7 +626,7 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
   };
   const path = `/members/${encodeURIComponent(member.name)}`;
   const builtIn = member.layer === 'built-in';
-  const words = member.shared?.detached ? null : updateWords(member, states);
+  const words = updateWords(member, states);
   const follows = attached(member);
   const canUpdate = follows && words === 'Update available';
   return (

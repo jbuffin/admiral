@@ -162,7 +162,7 @@ func (c *Client) readFile(ctx context.Context, endpoint string) (File, error) {
 		Encoding string `json:"encoding"`
 		Content  string `json:"content"`
 	}
-	if json.Unmarshal(out, &got) != nil || got.SHA == "" {
+	if json.Unmarshal(out, &got) != nil || !commitSHA.MatchString(got.SHA) {
 		return File{}, errors.New("GitHub's answer was not a file")
 	}
 	if got.Size > MaxFileBytes || len(got.Content) > MaxFileBytes*2 {
