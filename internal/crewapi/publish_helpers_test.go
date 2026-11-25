@@ -67,6 +67,28 @@ func (g *ghFake) answer(method, endpoint string, status int, body any, stderr st
 	}
 }
 
+// answerOnce is answer for one call only; the next matching canned answer takes over after it.
+func (g *ghFake) answerOnce(method, endpoint string, body any) {
+	g.t.Helper()
+	g.answer(method, endpoint, 200, body, "")
+	writeFile(g.t, filepath.Join(g.dir, "rest", "a"+strconv.Itoa(1000+g.n)+".once"), "")
+}
+
+// forget drops every canned answer of METHOD endpoint, so a later answer can replace it.
+func (g *ghFake) forget(method, endpoint string) {
+	g.t.Helper()
+	keys, _ := filepath.Glob(filepath.Join(g.dir, "rest", "*.endpoint"))
+	for _, e := range keys {
+		key := strings.TrimSuffix(e, ".endpoint")
+		if strings.TrimSpace(slurp(e)) == endpoint && strings.TrimSpace(slurp(key+".method")) == method {
+			files, _ := filepath.Glob(key + ".*")
+			for _, f := range files {
+				_ = os.Remove(f)
+			}
+		}
+	}
+}
+
 func (g *ghFake) ok(method, endpoint string, body any) { g.answer(method, endpoint, 200, body, "") }
 
 type ghCall struct {
@@ -296,6 +318,9 @@ func errText(m map[string]any) string { return str(m, "error") }
 func (p *pubFixture) share(name string, pv map[string]any, extra map[string]any) (int, map[string]any) {
 	p.t.Helper()
 	body := map[string]any{"sha256": pv["sha256"], "repo": pv["repo"], "replaces_blob": pv["replaces_blob"]}
+	if private, has := pv["private"]; has {
+		body["private"] = private
+	}
 	for k, v := range extra {
 		body[k] = v
 	}

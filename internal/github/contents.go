@@ -31,7 +31,7 @@ func (e *MovedError) Error() string { return "the repository moved to " + e.To }
 // RepoInfo is what a share repo's settings say about whether Admiral may publish to it.
 type RepoInfo struct {
 	FullName string
-	Public   bool
+	Private  bool
 	Archived bool
 	Pushable bool
 	// DefaultBranch is the repo's default branch as GitHub reports it.
@@ -91,15 +91,15 @@ func (c *Client) Repo(ctx context.Context, owner, name string) (RepoInfo, error)
 	if !strings.EqualFold(got.FullName, owner+"/"+name) {
 		return RepoInfo{}, &MovedError{To: got.FullName}
 	}
-	return RepoInfo{FullName: got.FullName, Public: !got.Private, Archived: got.Archived, Pushable: got.Permissions.Push, DefaultBranch: got.DefaultBranch}, nil
+	return RepoInfo{FullName: got.FullName, Private: got.Private, Archived: got.Archived, Pushable: got.Permissions.Push, DefaultBranch: got.DefaultBranch}, nil
 }
 
-// CreateRepo makes a public repository under the signed-in account and returns its owner/name.
-func (c *Client) CreateRepo(ctx context.Context, name, description string) (string, error) {
+// CreateRepo makes a repository, private or public, under the signed-in account and returns its owner/name.
+func (c *Client) CreateRepo(ctx context.Context, name, description string, private bool) (string, error) {
 	if !ValidSegment(name) {
 		return "", fmt.Errorf("%q is not a repository name", name)
 	}
-	out, err := c.rest(ctx, "POST", "user/repos", map[string]any{"name": name, "description": description, "private": false, "auto_init": false})
+	out, err := c.rest(ctx, "POST", "user/repos", map[string]any{"name": name, "description": description, "private": private, "auto_init": false})
 	if err != nil {
 		return "", err
 	}

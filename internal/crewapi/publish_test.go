@@ -154,7 +154,6 @@ func TestCreateRepoWithATakenNameIs409AndOffersAPublicPushableRepo(t *testing.T)
 
 func TestCreateRepoWithATakenNameOffersNothingWhenTheRepoCannotBeUsed(t *testing.T) {
 	for name, repo := range map[string]map[string]any{
-		"private":  repoAnswer("private", true, false),
 		"archived": repoAnswer("public", true, true),
 		"no push":  repoAnswer("public", false, false),
 	} {
@@ -186,12 +185,11 @@ func TestAdoptSavesAnExistingPublicPushableRepo(t *testing.T) {
 	}
 }
 
-func TestAdoptRefusesAPrivateArchivedOrUnpushableRepoAndSavesNothing(t *testing.T) {
+func TestAdoptRefusesAnArchivedOrUnpushableRepoAndSavesNothing(t *testing.T) {
 	cases := map[string]struct {
 		repo   map[string]any
 		reason string
 	}{
-		"private":  {repoAnswer("private", true, false), "private"},
 		"archived": {repoAnswer("public", true, true), "archived"},
 		"no push":  {repoAnswer("public", false, false), "push"},
 	}
@@ -327,14 +325,14 @@ func TestSharingAMemberWithASidecarOrABuiltInIs409AndPutsNothing(t *testing.T) {
 		status, out := p.preview(name)
 		wantStatus(t, name+" preview", status, 409, out)
 		wantText(t, name, out, importText)
-		pv := map[string]any{"sha256": hexSum("x"), "repo": shareRepo, "replaces_blob": nil}
+		pv := map[string]any{"sha256": hexSum("x"), "repo": shareRepo, "replaces_blob": nil, "private": false}
 		status, out = p.share(name, pv, nil)
 		wantStatus(t, name+" share", status, 409, out)
 		wantText(t, name+" share", out, importText)
 	}
 	status, out := p.preview("mate")
 	wantStatus(t, "built-in preview", status, 409, out)
-	status, out = p.share("mate", map[string]any{"sha256": hexSum("x"), "repo": shareRepo}, nil)
+	status, out = p.share("mate", map[string]any{"sha256": hexSum("x"), "repo": shareRepo, "private": false}, nil)
 	wantStatus(t, "built-in share", status, 409, out)
 	wantNoWrites(t, p)
 }
@@ -373,7 +371,7 @@ func TestAHitIs422NamingTheLineAndRuleAndNeverTheSecret(t *testing.T) {
 	p := newPub(t, pubOpts{})
 	p.ready("bosun", "Token "+decoy+" here.")
 	canonical := hexSum(string(crewapi.CanonicalMemberBytes(resolvedMember(t, readFile(t, filepath.Join(p.crewDir(), "bosun.md"))))))
-	bodies := map[string]map[string]any{"/members/bosun/share/preview": {}, "/members/bosun/share": {"sha256": canonical, "repo": shareRepo}}
+	bodies := map[string]map[string]any{"/members/bosun/share/preview": {}, "/members/bosun/share": {"sha256": canonical, "repo": shareRepo, "private": false}}
 	for path, body := range bodies {
 		status, text := p.do("POST", p.base()+path, body)
 		out := parse(t, text)
@@ -442,7 +440,7 @@ func TestTheOptOutWithAUsableGitleaksIs400ForCleanHitAndFailed(t *testing.T) {
 			if c.fail != "" {
 				p.leakFail(c.fail)
 			}
-			pv := map[string]any{"sha256": hexSum(string(crewapi.CanonicalMemberBytes(resolvedMember(t, readFile(t, filepath.Join(p.crewDir(), "bosun.md")))))), "repo": shareRepo, "replaces_blob": nil}
+			pv := map[string]any{"sha256": hexSum(string(crewapi.CanonicalMemberBytes(resolvedMember(t, readFile(t, filepath.Join(p.crewDir(), "bosun.md")))))), "repo": shareRepo, "replaces_blob": nil, "private": false}
 			status, out := p.share("bosun", pv, map[string]any{"skip_secret_scan": true})
 			wantStatus(t, name, status, 400, out)
 			wantNoWrites(t, p)
@@ -496,10 +494,8 @@ func TestAShareRepoThatCannotBeWrittenIs409AtPreviewNamingTheRepoAndTheReason(t 
 		status int
 		reason string
 	}{
-		"private":  {repoAnswer("private", true, false), 200, "private"},
 		"archived": {repoAnswer("public", true, true), 200, "archived"},
 		"no push":  {repoAnswer("public", false, false), 200, "push"},
-		"gone":     {nil, 404, "not found"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -529,8 +525,11 @@ func TestTheSharingViewShowsTheSettingsLoginRepoStateAndPublishedNames(t *testin
 	repo, _ := out["repo"].(map[string]any)
 	names, _ := out["published"].([]any)
 	if cs["enabled"] != true || cs["share_repo"] != shareRepo || out["login"] != "octocat" ||
-		repo["exists"] != true || repo["public"] != true || repo["pushable"] != true || len(names) != 2 || names[0] != "bosun" {
+		repo["exists"] != true || repo["private"] != false || repo["pushable"] != true || len(names) != 2 || names[0] != "bosun" {
 		t.Errorf("sharing = %v", out)
+	}
+	if _, has := repo["public"]; has {
+		t.Errorf("repo = %v, want no public key", repo)
 	}
 }
 
@@ -707,7 +706,7 @@ func TestAShareRepoThatMovedIs409AtShareBeforeAnyWrite(t *testing.T) {
 	moved := repoAnswer("public", true, false)
 	moved["full_name"] = "someorg/admiral-crew"
 	p.gh.answer("GET", "repos/"+shareRepo, 200, moved, "")
-	pv := map[string]any{"sha256": hexSum("x"), "repo": shareRepo, "replaces_blob": nil}
+	pv := map[string]any{"sha256": hexSum("x"), "repo": shareRepo, "replaces_blob": nil, "private": false}
 	status, out := p.share("bosun", pv, nil)
 	wantStatus(t, "share", status, 409, out)
 	wantText(t, "share", out, "someorg/admiral-crew", "Choose another repo")
@@ -718,7 +717,7 @@ func TestAStaleHashIs409BeforeTheScanRuns(t *testing.T) {
 	p := newPub(t, pubOpts{})
 	p.ready("bosun", "Do the work.")
 	p.leakFail("error")
-	pv := map[string]any{"sha256": hexSum("x"), "repo": shareRepo, "replaces_blob": nil}
+	pv := map[string]any{"sha256": hexSum("x"), "repo": shareRepo, "replaces_blob": nil, "private": false}
 	status, out := p.share("bosun", pv, nil)
 	wantStatus(t, "share", status, 409, out)
 	wantNoWrites(t, p)

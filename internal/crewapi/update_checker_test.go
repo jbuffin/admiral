@@ -206,27 +206,6 @@ func TestUpdateAFleetWithNoAttachedMemberAnswersEmptyAndCallsNothingEvenWithASha
 
 // --- failures ---
 
-func TestUpdateANotFoundRepoIsUnknownNotRemovedWhileThePublishedListingReadsItAsNothingPublished(t *testing.T) {
-	p := newImp(t, impOpts{})
-	p.clockIt(t)
-	p.attach(att{name: "d", repo: shareRepo})
-	p.gh.answer("GET", listingPath, 404, nil, "")
-	status, states := p.updates()
-	wantStatus(t, "updates", status, 200, nil)
-	if states["d"] != "unknown" {
-		t.Errorf("states = %v, want d unknown, not removed", states)
-	}
-	p.gh.healthyRepo()
-	status, out := p.getJSON("/sharing")
-	wantStatus(t, "sharing", status, 200, out)
-	if out["published_error"] != nil && out["published_error"] != "" {
-		t.Errorf("published_error = %v, want none: a missing crew/ folder is nothing published", out["published_error"])
-	}
-	if names, _ := out["published"].([]any); len(names) != 0 {
-		t.Errorf("published = %v, want none", names)
-	}
-}
-
 func TestUpdateARateLimitedListingIsUnknownAndTheNextCheckRetries(t *testing.T) {
 	p := newImp(t, impOpts{pubOpts: pubOpts{noRepo: true}})
 	clk := p.clockIt(t)

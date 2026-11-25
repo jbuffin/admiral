@@ -150,8 +150,6 @@ func ghFailed(w http.ResponseWriter, step, repo string, err error) {
 // repoProblem says why a share repo can't be published to, or "" when it can.
 func repoProblem(info github.RepoInfo) string {
 	switch {
-	case !info.Public:
-		return "is private"
 	case info.Archived:
 		return "is archived"
 	case !info.Pushable:
@@ -161,25 +159,42 @@ func repoProblem(info github.RepoInfo) string {
 }
 
 // checkRepo reads the share repo's settings and answers for a repo that can't be published to.
-func (sh *sharing) checkRepo(w http.ResponseWriter, ctx context.Context, step string) bool {
+func (sh *sharing) checkRepo(w http.ResponseWriter, ctx context.Context, step string) (github.RepoInfo, bool) {
 	info, err := sh.gh.Repo(ctx, sh.owner, sh.name)
 	var moved *github.MovedError
 	switch {
 	case errors.As(err, &moved):
 		writeError(w, http.StatusConflict, "The share repo "+sh.repo+" moved to "+moved.To+". Choose another repo.")
-		return false
+		return info, false
 	case github.HTTPStatus(err) == http.StatusNotFound:
-		writeError(w, http.StatusConflict, "The share repo "+sh.repo+" was not found. Choose another repo.")
-		return false
+		writeNoAccess(w, sh.repo)
+		return info, false
 	case err != nil:
 		ghFailed(w, step, sh.repo, err)
-		return false
+		return info, false
 	}
 	if why := repoProblem(info); why != "" {
 		writeError(w, http.StatusConflict, "The share repo "+sh.repo+" "+why+". Choose another repo.")
-		return false
+		return info, false
 	}
-	return true
+	return info, true
+}
+
+// boolField reads a JSON body field that must be a bool; named is the field's name in the 400 it answers when it isn't.
+func boolField(w http.ResponseWriter, raw json.RawMessage, named string, required bool) (value, ok bool) {
+	if raw == nil && !required {
+		return false, true
+	}
+	// A JSON null unmarshals into a bool without error, so it is refused by hand.
+	if err := json.Unmarshal(raw, &value); raw == nil || string(raw) == "null" || err != nil {
+		if required {
+			writeError(w, http.StatusBadRequest, named+" must come from a preview")
+		} else {
+			writeError(w, http.StatusBadRequest, named+" must be true or false")
+		}
+		return false, false
+	}
+	return value, true
 }
 
 // fetchRepoListing reads a repo's crew/ directory afresh and caches the answer. A missing directory is an empty listing marked notFound.
@@ -190,6 +205,9 @@ func (s *Service) fetchRepoListing(ctx context.Context, gh *github.Client, fleet
 	if github.HTTPStatus(err) == http.StatusNotFound {
 		entries, err = nil, nil
 		l.notFound = true
+		if _, rerr := gh.Repo(ctx, owner, name); github.HTTPStatus(rerr) == http.StatusNotFound {
+			l.notFound, l.noAccess = false, true
+		}
 	}
 	l.entries = entries
 	if err != nil {
@@ -249,17 +267,17 @@ type sharingView struct {
 		ShareRepo string   `json:"share_repo"`
 		Sources   []string `json:"sources"`
 	} `json:"crew_sharing"`
-	Connected      bool      `json:"connected"`
-	Login          string    `json:"login"`
-	LoginError     string    `json:"login_error"`
-	Repo           *repoView `json:"repo"`
-	Published      []string  `json:"published"`
-	PublishedError string    `json:"published_error"`
+	Connected      bool     `json:"connected"`
+	Login          string   `json:"login"`
+	LoginError     string   `json:"login_error"`
+	Repo           any      `json:"repo"`
+	Published      []string `json:"published"`
+	PublishedError string   `json:"published_error"`
 }
 
 type repoView struct {
 	Exists   bool   `json:"exists"`
-	Public   bool   `json:"public"`
+	Private  bool   `json:"private"`
 	Archived bool   `json:"archived"`
 	Pushable bool   `json:"pushable"`
 	Error    string `json:"error"`
@@ -289,17 +307,20 @@ func (s *Service) serveSharing(w http.ResponseWriter, r *http.Request) {
 		view.LoginError = err.Error()
 	}
 	if sh.repo != "" {
-		view.Repo = &repoView{}
 		info, err := gh.Repo(r.Context(), sh.owner, sh.name)
 		switch {
 		case github.HTTPStatus(err) == http.StatusNotFound:
+			view.Repo = map[string]bool{"exists": false}
 		case err != nil:
-			view.Repo.Error = err.Error()
+			view.Repo = repoView{Error: err.Error()}
 		default:
-			view.Repo = &repoView{Exists: true, Public: info.Public, Archived: info.Archived, Pushable: info.Pushable}
+			view.Repo = repoView{Exists: true, Private: info.Private, Archived: info.Archived, Pushable: info.Pushable}
 		}
 		if l, ok := s.publishedListing(r.Context(), sh); ok {
 			view.PublishedError = l.err
+			if l.noAccess {
+				view.PublishedError = noAccessText(sh.repo)
+			}
 			for _, e := range l.entries {
 				view.Published = append(view.Published, strings.TrimSuffix(e.Name, ".md"))
 			}
@@ -320,6 +341,8 @@ func (s *Service) serveShareRepo(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		Owner       string `json:"owner"`
 		Preview     bool   `json:"preview"`
+		// Private is read by hand so a value that isn't a bool is a 400 naming it.
+		Private json.RawMessage `json:"private"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -336,7 +359,7 @@ func (s *Service) serveShareRepo(w http.ResponseWriter, r *http.Request) {
 		}
 		sh.repo = body.Repo
 		sh.owner, sh.name, _ = strings.Cut(body.Repo, "/")
-		if !sh.checkRepo(w, ctx, "Checking the share repo") {
+		if _, ok := sh.checkRepo(w, ctx, "Checking the share repo"); !ok {
 			return
 		}
 		s.saveShareRepo(w, sh.c.key, body.Repo)
@@ -349,7 +372,11 @@ func (s *Service) serveShareRepo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, body.Name+" is not a repository name")
 		return
 	}
-	full, err := sh.gh.CreateRepo(ctx, body.Name, body.Description)
+	private, ok := boolField(w, body.Private, "private", false)
+	if !ok {
+		return
+	}
+	full, err := sh.gh.CreateRepo(ctx, body.Name, body.Description, private)
 	if github.HTTPStatus(err) == http.StatusUnprocessableEntity {
 		s.nameTaken(ctx, w, sh, body.Name)
 		return
@@ -487,7 +514,8 @@ func (s *Service) servePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if !sh.checkRepo(w, ctx, "Checking the share repo") {
+	info, ok := sh.checkRepo(w, ctx, "Checking the share repo")
+	if !ok {
 		return
 	}
 	l, err := s.fetchListing(ctx, sh)
@@ -495,7 +523,7 @@ func (s *Service) servePreview(w http.ResponseWriter, r *http.Request) {
 		ghFailed(w, "Listing the published crew", sh.repo, err)
 		return
 	}
-	out := map[string]any{"name": name, "path": crewDir + "/" + name + ".md", "repo": sh.repo, "bytes": string(data), "sha256": sumOf(data), "replaces_blob": nil}
+	out := map[string]any{"name": name, "path": crewDir + "/" + name + ".md", "repo": sh.repo, "private": info.Private, "bytes": string(data), "sha256": sumOf(data), "replaces_blob": nil}
 	if _, replaces := l.blob(name); replaces {
 		old, err := sh.gh.ReadFile(ctx, sh.owner, sh.name, crewDir+"/"+name+".md")
 		switch {
@@ -535,12 +563,18 @@ func (s *Service) serveShare(w http.ResponseWriter, r *http.Request) {
 		Repo           string  `json:"repo"`
 		ReplacesBlob   *string `json:"replaces_blob"`
 		SkipSecretScan bool    `json:"skip_secret_scan"`
+		// Private is read by hand so a missing or non-bool value is a 400 naming it.
+		Private json.RawMessage `json:"private"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
 	if !sumPattern.MatchString(body.SHA256) || (body.ReplacesBlob != nil && !blobPattern.MatchString(*body.ReplacesBlob)) {
 		writeError(w, http.StatusBadRequest, "sha256 and replaces_blob must come from a preview")
+		return
+	}
+	seen, ok := boolField(w, body.Private, "private", true)
+	if !ok {
 		return
 	}
 	if body.Repo != sh.repo {
@@ -552,7 +586,12 @@ func (s *Service) serveShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if !sh.checkRepo(w, ctx, "Checking the share repo") {
+	info, ok := sh.checkRepo(w, ctx, "Checking the share repo")
+	if !ok {
+		return
+	}
+	if info.Private != seen {
+		writeError(w, http.StatusConflict, "The share repo's visibility changed since the preview. Preview it again.")
 		return
 	}
 	if sumOf(data) != body.SHA256 {
@@ -582,7 +621,9 @@ func (s *Service) serveShare(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, fileChanged)
 		return
 	} else if err != nil {
-		ghFailed(w, "Sharing "+name, sh.repo, err)
+		if github.HTTPStatus(err) != http.StatusNotFound || !repoUnreadable(w, ctx, sh.gh, sh.owner, sh.name) {
+			ghFailed(w, "Sharing "+name, sh.repo, err)
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"name": name, "repo": sh.repo, "path": crewDir + "/" + name + ".md", "commit_url": commitURL(sh.repo, sha)})
@@ -600,7 +641,9 @@ func (s *Service) servePublished(w http.ResponseWriter, r *http.Request) {
 	file, err := sh.gh.ReadFile(r.Context(), sh.owner, sh.name, crewDir+"/"+name+".md")
 	switch {
 	case github.HTTPStatus(err) == http.StatusNotFound:
-		writeError(w, http.StatusNotFound, name+" is not published in "+sh.repo)
+		if !repoUnreadable(w, r.Context(), sh.gh, sh.owner, sh.name) {
+			writeError(w, http.StatusNotFound, name+" is not published in "+sh.repo)
+		}
 	case errors.Is(err, github.ErrTooLarge):
 		writeError(w, http.StatusUnprocessableEntity, "The published "+name+" is over 64 KiB, so Admiral won't show it.")
 	case err != nil:
@@ -639,6 +682,7 @@ func (s *Service) serveUnpublish(w http.ResponseWriter, r *http.Request) {
 	switch status := github.HTTPStatus(err); {
 	case status == http.StatusConflict || status == http.StatusUnprocessableEntity:
 		writeError(w, http.StatusConflict, "The published file changed since you looked. Reload and try again.")
+	case status == http.StatusNotFound && repoUnreadable(w, r.Context(), sh.gh, sh.owner, sh.name):
 	case err != nil:
 		ghFailed(w, "Unpublishing "+name, sh.repo, err)
 	default:

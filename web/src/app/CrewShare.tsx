@@ -19,6 +19,7 @@ interface Preview {
   repo: string;
   bytes: string;
   sha256: string;
+  private: boolean;
   replaces_blob: string | null;
   published_bytes?: string | null;
   scan: Scan;
@@ -178,7 +179,7 @@ function PreviewStep({ member, fleetKey, harness, onDone, onClose, onChoose }: {
     if (!preview || busy) return;
     setBusy(true);
     setError('');
-    const r = await call<{ commit_url: string }>('POST', crewApi(fleetKey, harness, base), { sha256: preview.sha256, repo: preview.repo, replaces_blob: preview.replaces_blob, ...(skip && { skip_secret_scan: true }) });
+    const r = await call<{ commit_url: string }>('POST', crewApi(fleetKey, harness, base), { sha256: preview.sha256, repo: preview.repo, private: preview.private, replaces_blob: preview.replaces_blob, ...(skip && { skip_secret_scan: true }) });
     setBusy(false);
     if (r.ok) return setCommit(r.data.commit_url);
     setError(r.error);

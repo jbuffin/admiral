@@ -127,7 +127,6 @@ func TestPreviewNotFoundNamesWhichThingIsMissing(t *testing.T) {
 		can   func(g *ghFake)
 		names []string
 	}{
-		"repo": {"hubot/crew/scout", func(g *ghFake) { g.answer("GET", "repos/hubot/crew", 404, nil, "") }, []string{"hubot/crew"}},
 		"commit 422": {"hubot/crew/scout@nope", func(g *ghFake) {
 			g.ok("GET", "repos/hubot/crew", repoAs("hubot/crew", "main"))
 			g.answer("GET", "repos/hubot/crew/commits/nope", 422, nil, "gh: No commit found for SHA: nope (HTTP 422)")
@@ -543,7 +542,6 @@ func TestASourceWithNoRepoOrNoCrewFolderIs404NamingWhichAndSavesNothing(t *testi
 		can   func(g *ghFake)
 		parts []string
 	}{
-		"no repo": {func(g *ghFake) { g.answer("GET", "repos/a/b", 404, nil, "") }, []string{"a/b"}},
 		"no crew folder": {func(g *ghFake) {
 			g.ok("GET", "repos/a/b", repoAs("a/b", "main"))
 			g.answer("GET", "repos/a/b/contents/crew", 404, nil, "")
