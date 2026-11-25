@@ -391,3 +391,85 @@ test('a shared member shows "shared by" linked to the shared_url the server buil
   expect(screen.getAllByText(/0123456\b/).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/v1/).length).toBeGreaterThan(0);
 });
+
+const NO_ACCESS = 'You need access to hubot/crew. Ask its owner to add you.';
+const noAccess = () => json({ error: NO_ACCESS, code: 'no_access' }, 403);
+
+test.each([['a ref', 'hubot/crew/scout'], ['a URL', 'https://github.com/hubot/crew/blob/main/crew/scout.md']])('previewing %s in a repo the engineer cannot read shows the no access text and no Import (guard)', async (_, ref) => {
+  server([member('bosun')], (c) => (to(c, '/imports/preview') ? noAccess() : undefined));
+  page();
+  await previewOf(ref);
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
+  expect(within(screen.getByRole('region', { name: 'Import' })).queryByRole('button', { name: 'Import' })).toBeNull();
+});
+
+test('an Import refused for no access shows the text and keeps the preview (guard)', async () => {
+  server([member('bosun')], (c) => (to(c, '/imports/preview') ? json(pv) : to(c, '/imports') && c.method === 'POST' ? noAccess() : undefined));
+  page();
+  await previewOf();
+  fireEvent.click(await within(await screen.findByRole('region', { name: 'Import' })).findByRole('button', { name: 'Import' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
+  expect(within(screen.getByRole('region', { name: 'Import' })).getByLabelText('Member card')).toBeTruthy();
+});
+
+test('Browse of a source the engineer cannot read shows the no access text and no list (guard)', async () => {
+  server([member('bosun')], (c) => (c.method === 'GET' && to(c, '/sources/hubot/crew') ? noAccess() : undefined), view(['hubot/crew']));
+  page(null, fleetOf(['hubot/crew']));
+  await openImport();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Browse' })[1]!);
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
+  expect(screen.queryByRole('list', { name: 'hubot/crew' })).toBeNull();
+});
+
+test('Add source for a repo the engineer cannot read shows the no access text and keeps the list (guard)', async () => {
+  server([member('bosun')], (c) => (c.method === 'PUT' && to(c, '/sources') ? noAccess() : undefined), view(['a/b']));
+  page(null, fleetOf(['a/b']));
+  await openImport();
+  fireEvent.input(screen.getByLabelText(/source repo/i), { target: { value: 'hubot/crew' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Add source' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
+});
+
+test('a browse row whose update state is no access shows the no access text in the pill, never Removed upstream', async () => {
+  server(
+    [member('bosun')],
+    (c) => (c.method === 'GET' && to(c, '/sources/hubot/crew') ? json({ members: [{ name: 'scout', path: 'crew/scout.md', blob: 'b1', imported: 'scout-hubot', update: 'no_access', published: false }] }) : undefined),
+    view(['hubot/crew']),
+  );
+  page(null, fleetOf(['hubot/crew']));
+  await openImport();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Browse' })[1]!);
+  const row = within(await screen.findByRole('list', { name: 'hubot/crew' })).getAllByRole('listitem')[0]!;
+  expect(within(row).getByText('Imported')).toBeTruthy();
+  const pill = within(row).getByText(NO_ACCESS);
+  expect(pill.classList.contains('pill')).toBe(true);
+  expect(within(row).queryByText('Removed upstream')).toBeNull();
+});
+
+test('Unpublish on a share repo row shows the no access text when the file cannot be read or deleted (guard)', async () => {
+  const rows = { members: [{ name: 'gone', path: 'crew/gone.md', blob: 'b1', imported: null, published: true }] };
+  server([member('bosun')], (c) => (c.method === 'GET' && to(c, '/sources/octocat/admiral-crew') ? json(rows) : c.method === 'GET' && to(c, '/published/gone') ? noAccess() : undefined), view([]));
+  const first = page();
+  await openImport();
+  fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+  fireEvent.click(await within(await screen.findByRole('list', { name: 'octocat/admiral-crew' })).findByRole('button', { name: 'Unpublish' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
+  first.unmount();
+
+  server(
+    [member('bosun')],
+    (c) => {
+      if (c.method === 'GET' && to(c, '/sources/octocat/admiral-crew')) return json(rows);
+      if (c.method === 'GET' && to(c, '/published/gone')) return json({ name: 'gone', repo: 'octocat/admiral-crew', bytes: '---\nname: gone\n---\n', blob: 'b1' });
+      if (c.method === 'DELETE') return noAccess();
+      return undefined;
+    },
+    view([]),
+  );
+  page();
+  await openImport();
+  fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+  fireEvent.click(await within(await screen.findByRole('list', { name: 'octocat/admiral-crew' })).findByRole('button', { name: 'Unpublish' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Confirm unpublish' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
+});

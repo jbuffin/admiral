@@ -30,7 +30,7 @@ export interface CrewMember {
   shared_url?: string | null;
   /** The fleet's share repo holds a file of this name. */
   published?: boolean;
-  /** What the last update check found: none, available, removed or unknown. */
+  /** What the last update check found: none, available, removed, unknown or no_access. */
   update?: string;
 }
 
@@ -111,13 +111,21 @@ export function normalizeCrew(raw: Record<string, unknown>): CrewData {
 /** Updates by member name, from the page-open check. */
 export type UpdateStates = Record<string, string>;
 
+export const noAccessText = (repo: string) => `You need access to ${repo}. Ask its owner to add you.`;
+
+/** The words for an update state of the member's upstream repo, or null when it has none to show. */
+export function updateStateWords(state: string | null | undefined, repo: string): string | null {
+  if (state === 'available') return 'Update available';
+  if (state === 'removed') return 'Removed upstream';
+  if (state === 'no_access') return noAccessText(repo);
+  return null;
+}
+
 /** The words for a member's update state, or null when it has none to show. The page-open check wins over the list's stored answer. */
 export function updateWords(m: CrewMember, states: UpdateStates | null): string | null {
   if (m.shared?.detached) return 'Edited here';
   const state = states?.[m.name] ?? m.update;
-  if (state === 'available') return 'Update available';
-  if (state === 'removed') return 'Removed upstream';
-  return null;
+  return m.shared ? updateStateWords(state, `${m.shared.owner}/${m.shared.repo}`) : state === 'no_access' ? null : updateStateWords(state, '');
 }
 
 /** A member that follows its upstream: shared, and not edited here. */

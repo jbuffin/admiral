@@ -211,3 +211,60 @@ test('editing a member that was never imported asks nothing', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Edit', exact: true } as never));
   expect(screen.queryByText(/Editing detaches this member/)).toBeNull();
 });
+
+const NO_ACCESS = 'You need access to hubot/crew. Ask its owner to add you.';
+
+test('a member from a repo the engineer cannot read shows the no access text on its list row and detail header, with no Update', async () => {
+  server({ members: [member('scout', { update: 'none' })], updates: async () => json({ updates: { scout: 'no_access' } }) });
+  const first = page();
+  const row = (await screen.findByRole('link', { name: /scout/ })).closest('li')!;
+  const pill = await within(row).findByText(NO_ACCESS);
+  expect(pill.classList.contains('pill')).toBe(true);
+  expect(within(row).queryByText('Removed upstream')).toBeNull();
+  first.unmount();
+
+  server({ members: [member('scout', { update: 'none' })], updates: async () => json({ updates: { scout: 'no_access' } }) });
+  page('scout', true);
+  const header = (await screen.findByRole('heading', { name: 'scout', level: 2 })).closest('header')!;
+  expect((await within(header).findByText(NO_ACCESS)).classList.contains('pill')).toBe(true);
+  expect(within(header).queryByText('Removed upstream')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Update', exact: true } as never)).toBeNull();
+});
+
+test('a stored no access state shows the same text before the page-open check answers', async () => {
+  server({ members: [member('scout', { update: 'no_access' })], updates: () => new Promise<Response>(() => {}) });
+  page('scout', true);
+  const header = (await screen.findByRole('heading', { name: 'scout', level: 2 })).closest('header')!;
+  expect(await within(header).findByText(NO_ACCESS)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Update', exact: true } as never)).toBeNull();
+});
+
+test('the no access text names the repo the member was shared from, not another', async () => {
+  server({ members: [member('scout', { shared: { owner: 'acme', repo: 'bridge-crew', commit: 'a'.repeat(40), tag: null, detached: false } })], updates: async () => json({ updates: { scout: 'no_access' } }) });
+  page();
+  expect(await screen.findByText('You need access to acme/bridge-crew. Ask its owner to add you.')).toBeTruthy();
+});
+
+test('an update preview refused for no access shows the text and no Apply (guard)', async () => {
+  server({
+    members: [member('scout', { update: 'available' })],
+    updates: async () => json({ updates: { scout: 'available' } }),
+    reply: () => json({ error: NO_ACCESS, code: 'no_access' }, 403),
+  });
+  page('scout', true);
+  fireEvent.click(await updateButton());
+  expect(await screen.findByText(NO_ACCESS)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+});
+
+test('an Apply refused for no access shows the text (guard)', async () => {
+  server({
+    members: [member('scout', { update: 'available' })],
+    updates: async () => json({ updates: { scout: 'available' } }),
+    reply: (c) => (c.path.endsWith('/update/preview') ? json(preview()) : json({ error: NO_ACCESS, code: 'no_access' }, 403)),
+  });
+  page('scout', true);
+  fireEvent.click(await updateButton());
+  fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
+  expect(await screen.findByText(NO_ACCESS)).toBeTruthy();
+});

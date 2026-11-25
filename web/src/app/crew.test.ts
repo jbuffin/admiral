@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CUSTOM_ROLE, fieldError, formOf, groupMembers, memberBody, shownFields, splitNote, type CrewMember, type MemberForm } from './crew';
+import { CUSTOM_ROLE, fieldError, formOf, groupMembers, memberBody, shownFields, splitNote, updateWords, type CrewMember, type MemberForm } from './crew';
 
 const member = (name: string, layer: 'built-in' | 'fleet', customized = false): CrewMember => ({
   name,
@@ -106,5 +106,21 @@ describe('splitNote', () => {
   });
   it('edits a hand-written line with no stamp whole', () => {
     expect(splitNote('ada keeps handlers thin')).toEqual({ stamp: '', fact: 'ada keeps handlers thin' });
+  });
+});
+
+describe('updateWords', () => {
+  const shared = { owner: 'hubot', repo: 'crew', commit: 'a'.repeat(40), tag: null, detached: false };
+  const imported = (over: Partial<CrewMember> = {}): CrewMember => ({ ...member('scout', 'fleet'), shared, ...over });
+  it('words no access from the shared owner and repo, from the check or from the stored state', () => {
+    const text = 'You need access to hubot/crew. Ask its owner to add you.';
+    expect(updateWords(imported(), { scout: 'no_access' })).toBe(text);
+    expect(updateWords(imported({ update: 'no_access' }), null)).toBe(text);
+    expect(updateWords(imported({ update: 'available' }), { scout: 'no_access' })).toBe(text);
+  });
+  it('leaves available, removed and edited here as they are, and says nothing for unknown', () => {
+    expect(updateWords(imported(), { scout: 'available' })).toBe('Update available');
+    expect(updateWords(imported(), { scout: 'removed' })).toBe('Removed upstream');
+    expect(updateWords(imported(), { scout: 'unknown' })).toBeNull();
   });
 });

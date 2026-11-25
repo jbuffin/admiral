@@ -145,7 +145,7 @@ test('Crew sharing shows the stored state and sends only enabled, so the share r
   await waitFor(() => expect(puts).toEqual([{ crew_sharing: { enabled: true } }]));
   view.rerender(<FleetPage fleet={fleets.value[0]} />);
   await waitFor(() => expect(screen.getByRole('switch', { name: 'Crew sharing' }).getAttribute('aria-checked')).toBe('true'));
-  expect(screen.getByText("Lets you publish this fleet's crew members to a public GitHub repo.")).toBeTruthy();
+  expect(screen.getByText("Lets you publish this fleet's crew members to a GitHub repo you own, public or private.")).toBeTruthy();
 });
 
 test('a refused Crew sharing save shows the error beside the switch and leaves it off', async () => {
@@ -188,4 +188,12 @@ test('a valid Share repo saves as crew_sharing.share_repo alone, and the field i
   view.unmount();
   render(<FleetPage fleet={{ ...base } as Fleet} />);
   expect(screen.queryByRole('textbox', { name: 'Share repo' })).toBeNull();
+});
+
+test('the Share repo field says it takes a GitHub repo as owner/repo and that sharing a member can create it', () => {
+  stored = { ...base, crew_sharing: { enabled: true, share_repo: '', sources: [] } } as Fleet;
+  fleets.value = [stored];
+  render(<FleetPage fleet={stored} />);
+  expect(screen.getByText('The GitHub repo, as owner/repo, that this fleet\'s crew is published to. Sharing a member can create it.')).toBeTruthy();
+  expect(screen.queryByText(/public GitHub repo/)).toBeNull();
 });

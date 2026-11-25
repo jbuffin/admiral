@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { Fleet } from './api';
 import { CrewPage } from './CrewPage';
@@ -52,7 +52,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const page = (name: string, of: Fleet = on) => render(<CrewPage fleet={of} name={name} title phone={false} />);
 const posts = (calls: Call[]) => calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.path.replace('/api/v1/fleets/zulu/crew', '')}`);
 
-const clean = { path: 'crew/bosun.md', bytes: '---\nname: bosun\n---\n\nDo it.\n', sha256: 'abc', repo: 'octocat/admiral-crew', replaces_blob: null, published_bytes: null, scan: { state: 'clean', findings: [] } };
+const clean = { path: 'crew/bosun.md', bytes: '---\nname: bosun\n---\n\nDo it.\n', sha256: 'abc', repo: 'octocat/admiral-crew', private: false, replaces_blob: null, published_bytes: null, scan: { state: 'clean', findings: [] } };
 
 test('Share shows for a fleet member of a sharing fleet, and not for a built-in, an imported member or a fleet with sharing off', async () => {
   server([member('bosun'), member('mate', { layer: 'built-in' }), member('imp', { shared: { owner: 'a', repo: 'b', commit: '0123456789abcdef0123456789abcdef01234567', tag: null, detached: false } })]);
@@ -89,9 +89,9 @@ test('with no share repo yet Share opens the create-or-adopt dialog with the own
   expect(screen.getByText('octocat')).toBeTruthy();
   expect(await screen.findByRole('heading', { name: 'octocat/admiral-crew' })).toBeTruthy();
   fireEvent.input(screen.getByLabelText(/description/i), { target: { value: 'My crew' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Create repo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Create public repo' }));
   await waitFor(() => expect(posts(calls)).toContain('POST /sharing/repo'));
-  expect(calls.find((c) => c.path.endsWith('/sharing/repo') && !c.body?.preview)!.body).toEqual({ name: 'admiral-crew', description: 'My crew' });
+  expect(calls.find((c) => c.path.endsWith('/sharing/repo') && !c.body?.preview)!.body).toEqual({ name: 'admiral-crew', description: 'My crew', private: false });
 });
 
 test('Use an existing repo posts that repo', async () => {
@@ -130,7 +130,7 @@ test('a taken repo name offers to use the existing repo, and using it posts that
   );
   page('bosun', noRepo);
   fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Create repo' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Create public repo' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Use octocat/admiral-crew' }));
   await waitFor(() => expect(calls.some((c) => c.body?.repo === 'octocat/admiral-crew')).toBe(true));
   expect(calls.filter((c) => c.path.endsWith('/sharing/repo') && !c.body?.preview)).toHaveLength(2);
@@ -145,13 +145,13 @@ test('Share previews the exact file, and Publish sends the preview back and repo
   page('bosun');
   fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
   expect(await screen.findByText(/crew\/bosun\.md/)).toBeTruthy();
-  expect(screen.getByText(/octocat\/admiral-crew/)).toBeTruthy();
+  expect(screen.getByText('crew/bosun.md in octocat/admiral-crew')).toBeTruthy();
   expect(screen.getByText(/Do it\./)).toBeTruthy();
   expect(screen.getByText('Secret scan: nothing found.')).toBeTruthy();
   expect(posts(calls)).toEqual(['POST /members/bosun/share/preview']);
   fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
   await waitFor(() => expect(posts(calls)).toEqual(['POST /members/bosun/share/preview', 'POST /members/bosun/share']));
-  expect(calls[calls.length - 1]!.body).toMatchObject({ sha256: 'abc', repo: 'octocat/admiral-crew', replaces_blob: null });
+  expect(calls[calls.length - 1]!.body).toMatchObject({ sha256: 'abc', repo: 'octocat/admiral-crew', private: false, replaces_blob: null });
   expect(await screen.findByRole('link', { name: /commit/i })).toBeTruthy();
 });
 
@@ -164,7 +164,7 @@ test('a published member shows a Published badge and an Unpublish button, and Sh
   fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
   await screen.findByText(/crew\/bosun\.md/);
   expect(screen.getByText('Replaces the published version')).toBeTruthy();
-  expect(screen.getByLabelText('File that goes public').textContent).toContain('Do it.');
+  expect(screen.getByLabelText('File to publish').textContent).toContain('Do it.');
   expect(document.querySelector('[data-kind="del"]')!.textContent).toContain('Old.');
   expect(document.querySelector('[data-kind="add"]')!.textContent).toContain('Do it.');
 });
@@ -199,7 +199,7 @@ test.each([
   fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
   expect(await screen.findByText(new RegExp(install))).toBeTruthy();
   expect(screen.getByRole('link', { name: /gitleaks install guide/ })).toBeTruthy();
-  expect(screen.getByText('This file goes public without a secret scan. Read it for keys, tokens and passwords before you publish.')).toBeTruthy();
+  expect(screen.getByText('This file goes to octocat/admiral-crew without a secret scan. Anyone who can read that repo can read it. Read it for keys, tokens and passwords before you publish.')).toBeTruthy();
   const publish = screen.getByRole('button', { name: 'Publish' }) as HTMLButtonElement;
   expect(publish.disabled).toBe(true);
   fireEvent.click(screen.getByRole('checkbox'));
@@ -236,14 +236,14 @@ test('a Share refused as changed since the preview shows the message and loads t
 
 test('a share repo that cannot be written offers Choose another repo, which opens the repo step', async () => {
   server([member('bosun')], (c) => {
-    if (c.path.endsWith('/share/preview')) return json({ error: 'The share repo octocat/admiral-crew is private. Choose another repo.' }, 409);
+    if (c.path.endsWith('/share/preview')) return json({ error: 'The share repo octocat/admiral-crew is archived. Choose another repo.' }, 409);
     return readmeOrRepo(c);
   });
   page('bosun');
   fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
-  expect((await screen.findByRole('alert')).textContent).toContain('private');
+  expect((await screen.findByRole('alert')).textContent).toContain('archived');
   fireEvent.click(screen.getByRole('button', { name: 'Choose another repo' }));
-  expect(await screen.findByRole('button', { name: 'Create repo' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Create public repo' })).toBeTruthy();
 });
 
 test('a refused preview shows the server message', async () => {
@@ -299,4 +299,202 @@ test('an Unpublish that finds the file already gone reloads the crew view and dr
   fireEvent.click(await screen.findByRole('button', { name: 'Confirm unpublish' }));
   await waitFor(() => expect(screen.queryByRole('link', { name: 'Published' })).toBeNull());
   expect(calls.filter((c) => c.method === 'GET' && /\/fleets\/zulu\/crew(\?|$)/.test(c.path)).length).toBeGreaterThan(1);
+});
+
+const NO_ACCESS = 'You need access to octocat/admiral-crew. Ask its owner to add you.';
+const noAccess = (text = NO_ACCESS) => json({ error: text, code: 'no_access' }, 403);
+const createBody = (calls: Call[]) => calls.find((c) => c.path.endsWith('/sharing/repo') && !c.body?.preview && !c.body?.repo)?.body;
+
+test('the repo step asks for Public or Private under the name, Public preselected, each with its sentence', async () => {
+  server([member('bosun')], readmeOrRepo, viewOf({}, ''));
+  page('bosun', noRepo);
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  await screen.findByLabelText(/repo name/i);
+  const pub = screen.getByRole('radio', { name: /^Public/ }) as HTMLInputElement;
+  const priv = screen.getByRole('radio', { name: /^Private/ }) as HTMLInputElement;
+  expect(pub.checked).toBe(true);
+  expect(priv.checked).toBe(false);
+  const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const nameInput = screen.getByLabelText(/repo name/i);
+  const descriptionInput = screen.getByLabelText(/description/i);
+  expect(follows(nameInput, pub) && follows(pub, priv) && follows(priv, descriptionInput)).toBe(true);
+  expect(screen.getByRole('radiogroup', { name: 'Visibility' })).toBeTruthy();
+  expect(pub.getAttribute('aria-describedby')).toBeTruthy();
+  expect(document.getElementById(pub.getAttribute('aria-describedby')!)?.textContent).toMatch(/Anyone can read/);
+  expect(screen.getByText(/Anyone can read and import your crew members\./)).toBeTruthy();
+  expect(screen.getByText(/Only you and people you add to the repo can read and import them\./)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Create public repo' })).toBeTruthy();
+});
+
+test('the repo step note says a GitHub repo you own, not a public one', async () => {
+  server([member('bosun')], readmeOrRepo, viewOf({}, ''));
+  page('bosun', noRepo);
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  expect(await screen.findByText('Crew members are published to a GitHub repo you own. Admiral creates it under your account, or you can use one you have.')).toBeTruthy();
+});
+
+test('choosing Private renames the button and creates a private repo', async () => {
+  const calls = server([member('bosun')], readmeOrRepo, viewOf({}, ''));
+  page('bosun', noRepo);
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  await screen.findByLabelText(/repo name/i);
+  fireEvent.click(screen.getByRole('radio', { name: /^Private/ }));
+  expect(screen.queryByRole('button', { name: 'Create public repo' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Create private repo' }));
+  await waitFor(() => expect(createBody(calls)).toBeTruthy());
+  expect(createBody(calls)).toMatchObject({ name: 'admiral-crew', private: true });
+});
+
+test('Use this repo and the Use offer send no private, and the README preview is unchanged', async () => {
+  let attempts = 0;
+  const calls = server(
+    [member('bosun')],
+    (c) => {
+      if (!c.path.endsWith('/sharing/repo')) return undefined;
+      if (c.body?.preview) return json({ readme: '# r\n' });
+      attempts++;
+      return c.body?.repo ? json({ share_repo: 'octocat/admiral-crew' }) : json({ error: 'octocat/admiral-crew already exists', use_existing: 'octocat/admiral-crew' }, 409);
+    },
+    viewOf({}, ''),
+  );
+  page('bosun', noRepo);
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  await screen.findByLabelText(/repo name/i);
+  fireEvent.click(screen.getByRole('radio', { name: /^Private/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Create private repo' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Use octocat/admiral-crew' }));
+  await waitFor(() => expect(attempts).toBe(2));
+  expect(calls.filter((c) => c.path.endsWith('/sharing/repo') && c.body?.repo).map((c) => c.body)).toEqual([{ repo: 'octocat/admiral-crew' }]);
+  cleanup();
+
+  const second = server([member('bosun')], (c) => (c.path.endsWith('/sharing/repo') ? (c.body?.preview ? json({ readme: '# r\n' }) : json({ share_repo: 'me/shared-crew' })) : undefined), viewOf({}, ''));
+  page('bosun', noRepo);
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  fireEvent.input(await screen.findByLabelText(/use an existing repo/i), { target: { value: 'me/shared-crew' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Use this repo' }));
+  await waitFor(() => expect(second.some((c) => c.body?.repo)).toBe(true));
+  expect(second.filter((c) => c.path.endsWith('/sharing/repo') && c.body?.repo).map((c) => c.body)).toEqual([{ repo: 'me/shared-crew' }]);
+  const previews = calls.filter((c) => c.body?.preview);
+  expect(previews.length).toBeGreaterThan(0);
+  for (const c of previews) expect(c.body).toEqual({ preview: true, owner: 'octocat', name: 'admiral-crew' });
+});
+
+test('the preview says private or public from its own answer, not from the setup view', async () => {
+  for (const [previewPrivate, setupPrivate, shown, hidden] of [
+    [true, false, 'octocat/admiral-crew is private. Anyone with access to it can read this file.', /is public/],
+    [false, true, 'octocat/admiral-crew is public. Anyone can read this file.', /is private/],
+  ] as const) {
+    server([member('bosun')], (c) => (c.path.endsWith('/share/preview') ? json({ ...clean, private: previewPrivate }) : undefined), viewOf({ repo: { exists: true, private: setupPrivate, archived: false, pushable: true, error: '' } }));
+    const { unmount } = page('bosun');
+    fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+    expect(await screen.findByText(shown)).toBeTruthy();
+    expect(screen.queryByText(hidden)).toBeNull();
+    unmount();
+  }
+});
+
+test('the preview names the share repo above the exact file, with the aria label File to publish', async () => {
+  server([member('bosun')], (c) => (c.path.endsWith('/share/preview') ? json(clean) : undefined));
+  page('bosun');
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  expect(await screen.findByText('The file that goes to octocat/admiral-crew, exactly:')).toBeTruthy();
+  expect(screen.getByLabelText('File to publish').textContent).toContain('Do it.');
+  expect(screen.queryByText(/goes public/)).toBeNull();
+});
+
+test('Publish sends the private the preview answered', async () => {
+  const calls = server([member('bosun')], (c) => (c.path.endsWith('/share/preview') ? json({ ...clean, private: true }) : c.path.endsWith('/members/bosun/share') ? json({ commit_url: '' }) : undefined));
+  page('bosun');
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Publish' }));
+  await waitFor(() => expect(posts(calls)).toContain('POST /members/bosun/share'));
+  expect(calls[calls.length - 1]!.body).toMatchObject({ private: true });
+});
+
+test('no access on the share preview shows its text with Choose another repo, which opens the repo step', async () => {
+  server([member('bosun')], (c) => (c.path.endsWith('/share/preview') ? noAccess() : readmeOrRepo(c)));
+  page('bosun');
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
+  expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Choose another repo' }));
+  expect(await screen.findByRole('button', { name: 'Create public repo' })).toBeTruthy();
+});
+
+test('a 403 with no code (sharing off) offers no Choose another repo', async () => {
+  server([member('bosun')], (c) => (c.path.endsWith('/share/preview') ? json({ error: 'Crew sharing is off for this fleet. Turn it on in Preferences.' }, 403) : undefined));
+  page('bosun');
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('Crew sharing is off');
+  expect(screen.queryByRole('button', { name: 'Choose another repo' })).toBeNull();
+});
+
+test('no access on Publish shows its text with Choose another repo and does not read the preview again', async () => {
+  const calls = server([member('bosun')], (c) => {
+    if (c.path.endsWith('/share/preview')) return json(clean);
+    if (c.path.endsWith('/members/bosun/share')) return noAccess();
+    return readmeOrRepo(c);
+  });
+  page('bosun');
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Publish' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
+  fireEvent.click(await screen.findByRole('button', { name: 'Choose another repo' }));
+  expect(await screen.findByRole('button', { name: 'Create public repo' })).toBeTruthy();
+  expect(calls.filter((c) => c.path.endsWith('/share/preview'))).toHaveLength(1);
+});
+
+test('a Share refused because the visibility changed shows the message, reads the preview again and offers no Choose another repo (guard)', async () => {
+  const calls = server([member('bosun')], (c) => {
+    if (c.path.endsWith('/share/preview')) return json(clean);
+    if (c.path.endsWith('/members/bosun/share')) return json({ error: "The share repo's visibility changed since the preview. Preview it again." }, 409);
+    return undefined;
+  });
+  page('bosun');
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Publish' }));
+  await waitFor(() => expect(calls.filter((c) => c.path.endsWith('/share/preview'))).toHaveLength(2));
+  expect((await screen.findByRole('alert')).textContent).toContain('Preview it again.');
+  expect(screen.queryByRole('button', { name: 'Choose another repo' })).toBeNull();
+});
+
+test('a saved share repo whose setup view says it does not exist shows the share preview, not the repo step (guard)', async () => {
+  server([member('bosun')], (c) => (c.path.endsWith('/share/preview') ? noAccess() : undefined), viewOf({ repo: { exists: false } }));
+  page('bosun');
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
+  expect(screen.queryByLabelText(/repo name/i)).toBeNull();
+});
+
+test('adopting a repo the engineer cannot read shows the no access text (guard)', async () => {
+  server([member('bosun')], (c) => (c.path.endsWith('/sharing/repo') ? (c.body?.preview ? json({ readme: '# r\n' }) : noAccess('You need access to me/shared-crew. Ask its owner to add you.')) : undefined), viewOf({}, ''));
+  page('bosun', noRepo);
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  fireEvent.input(await screen.findByLabelText(/use an existing repo/i), { target: { value: 'me/shared-crew' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Use this repo' }));
+  expect((await screen.findByRole('alert')).textContent).toBe('You need access to me/shared-crew. Ask its owner to add you.');
+});
+
+test('no access on the published listing shows its text where the Published marks are missing (guard)', async () => {
+  server([member('bosun')], undefined, viewOf({ published_error: NO_ACCESS }));
+  page('bosun');
+  expect((await screen.findByText(/Published marks are missing/)).textContent).toContain(NO_ACCESS);
+});
+
+test('Unpublish with no access shows the text when reading the file and when deleting it (guard)', async () => {
+  server([member('bosun', { published: true })], (c) => (c.method === 'GET' && c.path.endsWith('/published/bosun') ? noAccess() : undefined));
+  const first = page('bosun');
+  fireEvent.click(await screen.findByRole('button', { name: 'Unpublish' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
+  first.unmount();
+
+  server([member('bosun', { published: true })], (c) => {
+    if (c.method === 'GET' && c.path.endsWith('/published/bosun')) return json(got);
+    if (c.method === 'DELETE') return noAccess();
+    return undefined;
+  });
+  page('bosun');
+  fireEvent.click(await screen.findByRole('button', { name: 'Unpublish' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Confirm unpublish' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(NO_ACCESS);
 });

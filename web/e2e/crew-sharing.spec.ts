@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import { seedCrew } from './crew';
+import { ghWrites } from './orders';
 import { addGitHubSource, watchPage } from './shell';
+import type { Locator } from '@playwright/test';
 
 const REPO = 'octocat/admiral-crew';
 const LISTING = `repos/${REPO}/contents/crew`;
@@ -52,14 +54,14 @@ test('a member is published to a new share repo, republished with its diff, and 
   // Share with no repo yet: create it, then the preview of the exact file.
   await page.goto(admiral.url + 'app/crew/bosun?fleet=zulu');
   await main.getByRole('button', { name: 'Share' }).click();
-  await page.getByRole('button', { name: 'Create repo' }).click();
+  await page.getByRole('button', { name: 'Create public repo' }).click();
   await expect(page.getByText(/crew\/bosun\.md/)).toBeVisible();
   await expect(page.getByText('Work as bosun.')).toBeVisible();
   await expect(page.getByText('Secret scan: nothing found.')).toBeVisible();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
 
   // Publish: the fake repo now lists the file, and Done closes the panel and shows the Published pill, which links to the file.
-  const published = (await page.getByLabel('File that goes public').textContent()) ?? '';
+  const published = (await page.getByLabel('File to publish').textContent()) ?? '';
   expect(published).toContain('Work as bosun.');
   answer('e-listing', 'GET', LISTING, [{ name: 'bosun.md', path: 'crew/bosun.md', type: 'file', sha: 'a'.repeat(40) }]);
   answer('h-file', 'GET', FILE, { name: 'bosun.md', sha: 'a'.repeat(40), size: Buffer.byteLength(published), encoding: 'base64', content: Buffer.from(published).toString('base64') });
@@ -78,7 +80,7 @@ test('a member is published to a new share repo, republished with its diff, and 
   await expect(page.locator('[data-kind="del"]').first()).toBeVisible();
   await expect(page.locator('[data-kind="add"]').first()).toContainText('twice');
   // A 500-character line wraps inside the preview instead of scrolling it.
-  const bytes = page.getByLabel('File that goes public');
+  const bytes = page.getByLabel('File to publish');
   await expect(bytes).toContainText(LONG);
   expect(await bytes.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
@@ -227,6 +229,149 @@ test('an imported member shows an update, previews the change, applies it, and t
   await expect(main.getByRole('link', { name: /shared by hubot/i })).toBeVisible();
 
   expect(watch.errors).toEqual([]);
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+});
+
+/** Asserts that nothing matches `loc` for the whole window. */
+const holdsAbsent = async (loc: Locator, what: string) => {
+  const end = Date.now() + 1500;
+  while (Date.now() < end) {
+    expect(await loc.count(), what).toBe(0);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+};
+const NO_ACCESS = (repo: string) => `You need access to ${repo}. Ask its owner to add you.`;
+const PRIVATE_REPO = { full_name: 'hubot/crew', visibility: 'private', private: true, archived: false, permissions: { push: false }, default_branch: 'main' };
+
+function answerer(rest: string) {
+  mkdirSync(rest, { recursive: true });
+  return (key: string, endpoint: string, body: unknown, status = 200, method = 'GET') => {
+    writeFileSync(join(rest, `${key}.endpoint`), endpoint);
+    writeFileSync(join(rest, `${key}.method`), method);
+    writeFileSync(join(rest, `${key}.status`), String(status));
+    writeFileSync(join(rest, `${key}.json`), JSON.stringify(body));
+  };
+}
+
+async function turnOnSharing(page: import('@playwright/test').Page, url: string) {
+  await page.goto(url + 'app/preferences/zulu/fleet');
+  await page.getByRole('switch', { name: 'Crew sharing' }).click();
+  await expect(page.getByRole('switch', { name: 'Crew sharing' })).toHaveAttribute('aria-checked', 'true');
+}
+
+// The private share journey: choosing Private creates the repo private, and the preview says so before anything is published.
+test('a private share repo is created private, the preview says it is private, and the member publishes to it', async ({ page, admiral }) => {
+  seedCrew(admiral);
+  addGitHubSource(admiral);
+  const gh = admiral.fakeGh();
+  gh.viewer('octocat');
+  const answer = answerer(join(gh.dir, 'rest'));
+  const repo = { full_name: REPO, visibility: 'private', private: true, archived: false, permissions: { push: true }, default_branch: 'main' };
+  answer('a-user', 'user', { login: 'octocat' });
+  answer('b-create', 'user/repos', repo, 200, 'POST');
+  answer('c-readme', `repos/${REPO}/contents/README.md`, COMMIT, 200, 'PUT');
+  answer('d-repo', `repos/${REPO}`, repo);
+  answer('e-listing', LISTING, {}, 404);
+  answer('f-put', FILE, COMMIT, 200, 'PUT');
+  answer('h-file', FILE, {}, 404);
+
+  await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
+  const watch = watchPage(page, admiral.url);
+  await turnOnSharing(page, admiral.url);
+
+  await page.goto(admiral.url + 'app/crew/bosun?fleet=zulu');
+  await page.getByRole('main').getByRole('button', { name: 'Share' }).click();
+  await expect(page.getByRole('radio', { name: /^Public/ })).toBeChecked();
+  await page.getByRole('radio', { name: /^Private/ }).check();
+  await page.getByRole('button', { name: 'Create private repo' }).click();
+
+  await expect(page.getByText(`${REPO} is private. Anyone with access to it can read this file.`)).toBeVisible();
+  await expect(page.getByText(`The file that goes to ${REPO}, exactly:`)).toBeVisible();
+  const created = ghWrites(admiral).find((w) => w.endpoint === 'user/repos');
+  expect(created?.stdin).toMatchObject({ private: true });
+
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByRole('link', { name: /commit/i })).toHaveAttribute('href', `https://github.com/${REPO}/commit/${'c'.repeat(40)}`);
+
+  expect(watch.errors).toEqual([]);
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+});
+
+// A repo the engineer cannot read answers 404 to GitHub, and every flow says what to do instead of "not found" or "removed".
+test('a share preview and an import preview on a repo the engineer cannot read say they need access', async ({ page, admiral }) => {
+  seedCrew(admiral);
+  addGitHubSource(admiral);
+  const gh = admiral.fakeGh();
+  gh.viewer('octocat');
+  const answer = answerer(join(gh.dir, 'rest'));
+  answer('a-user', 'user', { login: 'octocat' });
+  answer('b-share', `repos/${REPO}`, { message: 'Not Found' }, 404);
+  answer('b-share-listing', `repos/${REPO}/contents/crew`, { message: 'Not Found' }, 404);
+  answer('c-theirs', 'repos/hubot/crew', { message: 'Not Found' }, 404);
+
+  await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
+  const watch = watchPage(page, admiral.url);
+  const main = page.getByRole('main');
+  await turnOnSharing(page, admiral.url);
+
+  // The share preview of a saved share repo the engineer cannot read.
+  await page.goto(admiral.url + 'app/preferences/zulu/fleet');
+  await page.getByRole('textbox', { name: 'Share repo' }).fill(REPO);
+  const saved = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/fleets/zulu') && r.ok());
+  await page.getByRole('button', { name: 'Save' }).click();
+  await saved;
+  await page.goto(admiral.url + 'app/crew/bosun?fleet=zulu');
+  await main.getByRole('button', { name: 'Share' }).click();
+  await expect(page.getByRole('region', { name: 'Share bosun' }).getByRole('alert')).toContainText(NO_ACCESS(REPO));
+  await expect(page.getByRole('button', { name: 'Choose another repo' })).toBeVisible();
+
+  // The import preview.
+  await page.goto(admiral.url + 'app/crew?fleet=zulu');
+  await main.getByRole('button', { name: 'Import' }).click();
+  await page.getByLabel(/ref or url/i).fill('hubot/crew/navigator');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await expect(page.getByRole('region', { name: 'Import' }).getByRole('alert')).toContainText(NO_ACCESS('hubot/crew'));
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+});
+
+test('an imported member whose upstream repo is no longer readable shows the no access text, not Removed upstream', async ({ page, admiral }) => {
+  seedCrew(admiral);
+  addGitHubSource(admiral);
+  const gh = admiral.fakeGh();
+  gh.viewer('octocat');
+  const answer = answerer(join(gh.dir, 'rest'));
+  const BLOB = 'e'.repeat(40);
+  answer('a-user', 'user', { login: 'octocat' });
+  answer('b-repo', 'repos/hubot/crew', PRIVATE_REPO);
+  answer('c-commit', 'repos/hubot/crew/commits/main', { sha: SHA });
+  answer('d-file', `repos/hubot/crew/contents/crew/navigator.md?ref=${SHA}`, { name: 'navigator.md', sha: BLOB, size: Buffer.byteLength(THEIRS), encoding: 'base64', content: Buffer.from(THEIRS).toString('base64') });
+  answer('e-tags', 'repos/hubot/crew/tags?per_page=100', [{ name: 'v1', commit: { sha: SHA } }]);
+
+  await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
+  const watch = watchPage(page, admiral.url);
+  const main = page.getByRole('main');
+  const member = join(admiral.home, 'fleets', 'zulu', 'crew', 'navigator.md');
+  await turnOnSharing(page, admiral.url);
+  await page.goto(admiral.url + 'app/crew?fleet=zulu');
+  await main.getByRole('button', { name: 'Import' }).click();
+  await page.getByLabel(/ref or url/i).fill('hubot/crew/navigator');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByRole('region', { name: 'Import' }).getByRole('button', { name: 'Import' }).click();
+  await expect.poll(() => existsSync(member)).toBe(true);
+
+  // Access to the repo is taken away.
+  answer('b-repo', 'repos/hubot/crew', { message: 'Not Found' }, 404);
+  answer('f-listing', 'repos/hubot/crew/contents/crew', { message: 'Not Found' }, 404);
+
+  await page.goto(admiral.url + 'app/crew/navigator?fleet=zulu');
+  await expect(main.locator('.crew-head').getByText(NO_ACCESS('hubot/crew'))).toBeVisible();
+  await holdsAbsent(main.getByText('Removed upstream'), 'Removed upstream showed for an unreadable repo');
+  await holdsAbsent(main.getByRole('button', { name: 'Update', exact: true }), 'Update was offered for an unreadable repo');
+
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
 });
