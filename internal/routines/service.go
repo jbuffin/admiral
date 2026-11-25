@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +32,8 @@ type Service struct {
 	Launch func(ctx context.Context, req launcher.Request) (ShipRef, *launcher.Error)
 	// Listed reads the host's ships; Stop all worker-launched picks the live ones it launched.
 	Listed func() []ListedShip
+	// Zone names the time zone the scheduler runs in, as the list response reports it.
+	Zone string
 
 	undoMu sync.Mutex
 
@@ -126,7 +129,7 @@ func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 			out[i].LastRun = &lastRun{At: runs[0].At, Outcome: runs[0].Outcome}
 		}
 	}
-	body := map[string]any{"routines": out}
+	body := map[string]any{"routines": out, "zone": s.Zone}
 	if sp, ok := s.spend(r.PathValue("key")); ok {
 		body["spend"] = sp
 	}
@@ -318,4 +321,22 @@ func (s *Service) serveSetHold(on, global bool) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, out)
 	}
+}
+
+// ZoneName turns a "Local" or path-shaped location name, which says nothing to a reader, into the zoneinfo name or the abbreviation.
+func ZoneName(name, abbr string, readlink func(path string) (string, error)) string {
+	if name == "Local" {
+		target, err := readlink("/etc/localtime")
+		if err != nil {
+			return abbr
+		}
+		name = target
+	}
+	if _, zone, ok := strings.Cut(name, "zoneinfo/"); ok {
+		name = zone
+	}
+	if name == "" || strings.HasPrefix(name, "/") {
+		return abbr
+	}
+	return name
 }

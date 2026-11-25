@@ -1,5 +1,4 @@
 import { useRef, useState } from 'preact/hooks';
-import { startSetup } from './api';
 import { activeFleet, chooseFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
 import type { Fleet } from './api';
 import { Icon } from './Icon';
@@ -18,11 +17,11 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const active = activeFleet.value;
-  const [setup, setSetup] = useState<{ error?: string; started?: boolean } | null>(null);
+  const [setup, setSetup] = useState(false);
 
   const close = (refocus = true) => {
     setOpen(false);
-    setSetup(null);
+    setSetup(false);
     if (refocus) trigger.current?.focus();
   };
 
@@ -41,15 +40,6 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
     go(fleetPath(active.key), fleetSearch.value);
   };
 
-  // The new shell has no terminal: setup runs detached and the old UI at /classic/ joins it.
-  const newFleet = async () => {
-    setSetup(null);
-    const r = await startSetup();
-    if (!r.ok) return setSetup({ error: r.error });
-    setSetup({ started: true });
-    setTimeout(() => location.assign('/classic/'), 2500);
-  };
-
   const items = (
     <>
       {fleets.value.map((f) => (
@@ -66,18 +56,13 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
         </button>
       ))}
       <p class="menu-note">{LINE}</p>
-      <button type="button" role="menuitem" class="menu-item" onClick={() => void newFleet()}>
+      <button type="button" role="menuitem" class="menu-item" onClick={() => setSetup(true)}>
         <Icon name="plus" size={14} />
         <span class="menu-name">New fleet…</span>
       </button>
-      {setup?.error ? (
-        <p class="menu-note error-text" role="alert">
-          {setup.error}
-        </p>
-      ) : null}
-      {setup?.started ? (
+      {setup ? (
         <p class="menu-note" role="status">
-          Setup is running. Opening the dashboard: tap the fleet count there to join the setup terminal.
+          Run <code>admiral setup</code> in a terminal to add a fleet.
         </p>
       ) : null}
       {active ? (

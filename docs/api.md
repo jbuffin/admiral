@@ -40,7 +40,7 @@ Asks GitHub to request another review from someone who already reviewed a PR the
 
 Each boat in a ship's `crew` also carries `role` and `conversation` (see "A crew boat's conversation").
 
-`subagents` and `agents` are always present (`[]` when empty) and come from the harness's hooks, kept on the ship's pane. `subagents` lists only the running subagents and agent-team teammates, which is what the classic view shows. `agents` lists every stored entry, running or finished, for the new shell's Agents tab: `{id, type, start, kind, end}`.
+`subagents` and `agents` are always present (`[]` when empty) and come from the harness's hooks, kept on the ship's pane. `subagents` lists only the running subagents and agent-team teammates, which is what the classic view shows as deck crew. `agents` lists every stored entry, running or finished, for the new shell's Agents tab: `{id, type, start, kind, end}`.
 
 - `kind` is `subagent`, `teammate`, `shell` (a background Bash) or `monitor` (Claude Code's Monitor). An entry stored before kinds existed has no `kind` and reads as `subagent`.
 - `start` and `end` are RFC 3339. `end` is absent while the entry runs. Claude Code reports background shells only at a `Stop`, so a shell's `start` means "first seen by Admiral".
@@ -768,7 +768,7 @@ A routine:
 
 ### `GET /api/fleets/<key>/routines`
 
-`{"routines": [<routine>, …]}`, `[]` when there are none. Each routine also carries `last_run: {"at", "outcome"}`, the newest record of its trigger log (see `…/runs`), and none while it has never run. The other routes return the routine without it. The body also carries `spend: {"today_usd", "cap_usd", "reached"}`: the fleet's worker spend today (the sum of every trigger record's `costs` since local midnight, the sum an event is checked against), its `spend.daily_worker_usd` Limit, and whether the first has reached the second. Once `reached` is true, events from this fleet stop at a proposal until the day turns, and the Routines screen says so. When today's trigger log can't be read, `spend` is `{"today_usd": 0, "cap_usd", "reached": true, "unreadable": true}`: events are held at a proposal, as the event path does, and the screen says the spend could not be read. `unreadable` is left out when the read works.
+`{"routines": [<routine>, …]}`, `[]` when there are none. The body always carries `zone`, the name of the time zone the scheduler runs in (the server's, such as `America/Denver`), which the Routines screen shows beside each schedule's description. Each routine also carries `last_run: {"at", "outcome"}`, the newest record of its trigger log (see `…/runs`), and none while it has never run. The other routes return the routine without it. The body also carries `spend: {"today_usd", "cap_usd", "reached"}`: the fleet's worker spend today (the sum of every trigger record's `costs` since local midnight, the sum an event is checked against), its `spend.daily_worker_usd` Limit, and whether the first has reached the second. Once `reached` is true, events from this fleet stop at a proposal until the day turns, and the Routines screen says so. When today's trigger log can't be read, `spend` is `{"today_usd": 0, "cap_usd", "reached": true, "unreadable": true}`: events are held at a proposal, as the event path does, and the screen says the spend could not be read. `unreadable` is left out when the read works.
 
 ### `GET /api/sources`
 
