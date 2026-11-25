@@ -185,8 +185,13 @@ func boolField(w http.ResponseWriter, raw json.RawMessage, named string, require
 	if raw == nil && !required {
 		return false, true
 	}
-	if err := json.Unmarshal(raw, &value); raw == nil || err != nil {
-		writeError(w, http.StatusBadRequest, named+" must be true or false")
+	// A JSON null unmarshals into a bool without error, so it is refused by hand.
+	if err := json.Unmarshal(raw, &value); raw == nil || string(raw) == "null" || err != nil {
+		if required {
+			writeError(w, http.StatusBadRequest, named+" must come from a preview")
+		} else {
+			writeError(w, http.StatusBadRequest, named+" must be true or false")
+		}
 		return false, false
 	}
 	return value, true
@@ -616,7 +621,9 @@ func (s *Service) serveShare(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, fileChanged)
 		return
 	} else if err != nil {
-		ghFailed(w, "Sharing "+name, sh.repo, err)
+		if github.HTTPStatus(err) != http.StatusNotFound || !repoUnreadable(w, ctx, sh.gh, sh.owner, sh.name) {
+			ghFailed(w, "Sharing "+name, sh.repo, err)
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"name": name, "repo": sh.repo, "path": crewDir + "/" + name + ".md", "commit_url": commitURL(sh.repo, sha)})

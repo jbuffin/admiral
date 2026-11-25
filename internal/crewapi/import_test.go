@@ -153,14 +153,6 @@ func TestPreviewNotFoundNamesWhichThingIsMissing(t *testing.T) {
 	}
 }
 
-func TestPreviewOfARepoThatAnswers404IsNoAccessNamingTheRepo(t *testing.T) {
-	p := newImp(t, impOpts{})
-	p.gh.answer("GET", "repos/hubot/crew", 404, nil, "")
-	status, out := p.importPreview("hubot/crew/scout")
-	wantNoAccess(t, "repo 404", status, out, "hubot/crew")
-	wantNoWrites(t, p)
-}
-
 func TestPreviewOfAFileOver64KiBIs422NamingTheRule(t *testing.T) {
 	p := newImp(t, impOpts{})
 	u := scout
@@ -566,16 +558,6 @@ func TestASourceWithNoRepoOrNoCrewFolderIs404NamingWhichAndSavesNothing(t *testi
 				t.Errorf("saved %v, want the old list", got)
 			}
 		})
-	}
-}
-
-func TestASourceWhoseRepoAnswers404IsNoAccessAndSavesNothing(t *testing.T) {
-	p := newImp(t, impOpts{sources: []string{"keep/me"}})
-	p.gh.answer("GET", "repos/a/b", 404, nil, "")
-	status, out := p.put("/sources", map[string]any{"sources": []string{"keep/me", "a/b"}})
-	wantNoAccess(t, "no repo", status, out, "a/b")
-	if got := p.savedSources(); !reflect.DeepEqual(got, []string{"keep/me"}) {
-		t.Errorf("saved %v, want the old list", got)
 	}
 }
 

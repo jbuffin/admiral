@@ -258,7 +258,7 @@ func TestCreateRepoSendsPrivateAsChosenAndTheREADMEIsTheSameEitherWay(t *testing
 }
 
 func TestCreateRepoWithAPrivateThatIsNotABoolIs400NamingItAndCreatesNothing(t *testing.T) {
-	for _, bad := range []any{"yes", "true", 1, []string{"x"}} {
+	for _, bad := range []any{"yes", "true", 1, []string{"x"}, nil} {
 		p := newPub(t, pubOpts{noRepo: true})
 		p.createAnswers()
 		status, out := p.post("/sharing/repo", map[string]any{"name": "admiral-crew", "private": bad})
@@ -332,14 +332,26 @@ func TestShareWithAMissingOrNonBoolPrivateIs400AndCommitsNothing(t *testing.T) {
 	p.ready("bosun", "Do the work.")
 	p.gh.commitOK("PUT", "bosun")
 	_, pv := p.preview("bosun")
-	for name, private := range map[string]any{"missing": nil, "string": "false", "number": 0} {
+	for name, private := range map[string]any{"missing": nil, "null": nil, "string": "false", "number": 0} {
 		body := map[string]any{"sha256": pv["sha256"], "repo": pv["repo"], "replaces_blob": pv["replaces_blob"]}
 		if name != "missing" {
 			body["private"] = private
 		}
 		status, out := p.post("/members/bosun/share", body)
 		wantStatus(t, name, status, 400, out)
-		wantText(t, name, out, "private")
+		wantText(t, name, out, "private must come from a preview")
 	}
 	wantNoWrites(t, p)
+}
+
+func TestShareWhoseCommitAnswers404AfterAccessIsLostIsNoAccess(t *testing.T) {
+	p := newPub(t, pubOpts{})
+	p.readyPrivate("bosun", "Do the work.")
+	_, pv := p.preview("bosun")
+	p.gh.forget("GET", "repos/"+shareRepo)
+	p.gh.answerOnce("GET", "repos/"+shareRepo, repoAnswer("private", true, false))
+	p.gh.answer("GET", "repos/"+shareRepo, 404, nil, ghNotFound)
+	p.gh.answer("PUT", memberPath("bosun"), 404, nil, ghNotFound)
+	status, out := p.share("bosun", pv, nil)
+	wantNoAccess(t, "share", status, out, shareRepo)
 }

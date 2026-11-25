@@ -127,3 +127,19 @@ func TestANoAccessListingIsHeldThirtySecondsNotFiveMinutes(t *testing.T) {
 		t.Errorf("%d listing calls after 31 seconds, want 2", got)
 	}
 }
+
+func TestTheSharingViewServesTheNoAccessTheUpdateCheckCached(t *testing.T) {
+	p := newImp(t, impOpts{})
+	p.clockIt(t)
+	p.attach(att{name: "d", repo: shareRepo})
+	p.gh.noAccessTo(shareRepo)
+	_, states := p.updates()
+	if states["d"] != "no_access" {
+		t.Fatalf("states = %v, want d no_access", states)
+	}
+	status, out := p.getJSON("/sharing")
+	wantStatus(t, "sharing", status, 200, out)
+	if got := str(out, "published_error"); got != noAccessText(shareRepo) {
+		t.Errorf("published_error = %q, want the no-access text", got)
+	}
+}

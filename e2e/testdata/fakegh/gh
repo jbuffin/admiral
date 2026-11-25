@@ -221,6 +221,8 @@
 #     The first key (in name order) that matches answers:
 #       <key>.status   the HTTP status (default 200)
 #       <key>.json     the body, printed on stdout (default {})
+#       <key>.once     when it exists, the key answers one call and is then
+#                      removed, so the next matching key answers after it
 #       <key>.stderr   for a status of 300 or more, printed on stderr
 #                      (default "gh: HTTP <status>"); the exit is then 1, as gh's
 #     No key matches: stderr says so, exit 1.
@@ -553,6 +555,7 @@ api)
 			status=200
 			[ -s "$key.status" ] && status=$(cat "$key.status")
 			if [ -e "$key.json" ]; then cat "$key.json"; else echo '{}'; fi
+			[ -e "$key.once" ] && rm -f "$key".*
 			if [ "$status" -ge 300 ]; then
 				if [ -e "$key.stderr" ]; then cat "$key.stderr" >&2; else echo "gh: HTTP $status" >&2; fi
 				exit 1

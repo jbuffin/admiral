@@ -1,6 +1,9 @@
 package crewapi_test
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // accessCase is one route of the doc's No access table: setup cans the calls the route makes up to its 404, and gone says whether
 // the repo itself answers 404 (no access) or is readable (the route keeps today's answer).
@@ -70,9 +73,12 @@ func accessCases() []accessCase {
 			return p, status, out
 		}},
 		{"sources", up, 0, func(t *testing.T, gone bool) (*pubFixture, int, map[string]any) {
-			p := newImp(t, impOpts{})
+			p := newImp(t, impOpts{sources: []string{"keep/me"}})
 			canRepo(p.gh, up, gone)
-			status, out := p.put("/sources", map[string]any{"sources": []string{up}})
+			status, out := p.put("/sources", map[string]any{"sources": []string{"keep/me", up}})
+			if got := p.savedSources(); !reflect.DeepEqual(got, []string{"keep/me"}) {
+				t.Errorf("saved %v, want the old list", got)
+			}
 			return p, status, out
 		}},
 		{"browse", up, 404, func(t *testing.T, gone bool) (*pubFixture, int, map[string]any) {

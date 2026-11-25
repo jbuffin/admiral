@@ -129,6 +129,7 @@ Tests that need `gh` put the fake in `e2e/testdata/fakegh/gh` first on Admiral's
 - The fake refuses `-F`/`--field`, `--jq` and `--template` (exit 2), so a test fails if Admiral lets an item's text be read as a file, or leans on gh's own filtering.
 - Each call writes `$FAKEGH_DIR/calls/call.*/` with `argv`, `env`, and for REST `method`, `endpoint`, `host` and `stdin`.
 - A test scripts an answer with `fakeGH.rest(key, method, endpoint, status, body, stderr)`: a status of 300 or more exits 1 with the stderr, as gh does, and a call with no canned answer exits 1.
+- A key with a `<key>.once` file answers one call and is then removed, so a test can have a repo readable for one call and gone for the next.
 - `callsTo` and `restCalls` read the calls back, and `restCall.field` finds a body field in a `-f` argument or in JSON on stdin.
 - A test that must not reach GitHub asserts that `restCalls()` is empty.
 - `pr view URL --json state` is the moor check's lookup: `fakeGH.prState(url, "OPEN")` answers it (OPEN, CLOSED or MERGED), a URL with no canned state exits 1, and `fakeGH.asked(url)` reports whether any call named it as a URL.
