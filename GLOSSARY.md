@@ -260,11 +260,11 @@ A named, reusable teammate definition in a fleet or repo: its role, skills, inst
 _Avoid_: agent, persona, crew type
 
 **Share repo**:
-A public GitHub repo on github.com a publisher owns, with one crew member file per member in `crew/<name>.md` and a README. Share on the Crew page commits one member's file to it through the fleet's `gh`, after the engineer reads the exact bytes and the engineer's `gitleaks` scans them. A fleet remembers its share repo, and can publish only once the engineer turns crew sharing on for it. A member is **published** when its file is in the share repo's `crew/` listing; **Unpublish** deletes that file from the repo.
+A GitHub repo on github.com, public or private, that a publisher owns, with one crew member file per member in `crew/<name>.md` and a README. Share on the Crew page commits one member's file to it through the fleet's `gh`, after the engineer reads the exact bytes and the engineer's `gitleaks` scans them. A fleet remembers its share repo, and can publish only once the engineer turns crew sharing on for it. A member is **published** when its file is in the share repo's `crew/` listing; **Unpublish** deletes that file from the repo.
 _Avoid_: registry, marketplace, crew pack
 
 **Crew source**:
-A public repo a fleet browses for crew members to import, by its `crew/` folder. Any share repo is one. A single member can also be imported from a ref (`<owner>/<repo>/<name>[@<ref>]`) without adding its repo as a source. Importing works whether or not crew sharing is on.
+A repo (public, or private when the fleet's `gh` login can read it) that a fleet browses for crew members to import, by its `crew/` folder. Any share repo is one. A single member can also be imported from a ref (`<owner>/<repo>/<name>[@<ref>]`) without adding its repo as a source. Importing works whether or not crew sharing is on.
 _Avoid_: feed, remote, upstream (as a name for the crew source)
 
 **Shared member**:
