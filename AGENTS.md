@@ -48,6 +48,7 @@ Read these when the task touches the area:
 - [`docs/bridge-protocol.md`](docs/bridge-protocol.md): the bridge WebSocket messages. Read it before changing the bridge or `web/src/bridgeLink.ts`.
 - [`docs/api.md`](docs/api.md): the HTTP and WebSocket shapes a client reads, starting with a ship's conversation. Read it before changing `internal/shipconv/` or a client of it.
 - [`docs/cli.md`](docs/cli.md): every `admiral` command and the setup answers file. Read it before changing `internal/cli/`.
+- [`docs/crew-sharing.md`](docs/crew-sharing.md): publishing crew members to a public share repo and importing them, with the sidecar, the privacy checks and the update check. Read it before changing crew sharing or the files a fleet's crew directory may hold.
 - [`docs/agents/releasing.md`](docs/agents/releasing.md): the Release workflow, its one-time setup and the manual fallback. Read it before cutting a release or changing `release.yml`.
 - [`docs/personal-builds.md`](docs/personal-builds.md): building with the official harness logos. Read it before touching `web/logos/` or `web/src/Logos.tsx`.
 
