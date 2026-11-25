@@ -102,7 +102,7 @@ test('a member is published to a new share repo, republished with its diff, and 
 });
 
 const SHA = 'd'.repeat(40);
-const THEIRS = '---\nname: scout\nrole: triager\npick-me-when: Pick **scout** for triage.\n---\n\nWork as scout.\n';
+const THEIRS = '---\nname: navigator\nrole: triager\npick-me-when: Pick **navigator** for triage.\n---\n\nWork as navigator.\n';
 
 // The import journey of one engineer: paste a ref, read the card and the exact file at the pinned commit, import it,
 // and see the member credited to its owner. Only the fake gh stands in for GitHub.
@@ -122,21 +122,21 @@ test('a crew member is imported from a ref, read before it is written, and shows
   answer('a-user', 'user', { login: 'octocat' });
   answer('b-repo', 'repos/hubot/crew', { full_name: 'hubot/crew', visibility: 'public', private: false, archived: false, permissions: { push: false }, default_branch: 'main' });
   answer('c-commit', 'repos/hubot/crew/commits/main', { sha: SHA });
-  answer('d-file', `repos/hubot/crew/contents/crew/scout.md?ref=${SHA}`, { name: 'scout.md', sha: 'e'.repeat(40), size: Buffer.byteLength(THEIRS), encoding: 'base64', content: Buffer.from(THEIRS).toString('base64') });
+  answer('d-file', `repos/hubot/crew/contents/crew/navigator.md?ref=${SHA}`, { name: 'navigator.md', sha: 'e'.repeat(40), size: Buffer.byteLength(THEIRS), encoding: 'base64', content: Buffer.from(THEIRS).toString('base64') });
   answer('e-tags', 'repos/hubot/crew/tags?per_page=100', [{ name: 'v1', commit: { sha: SHA } }]);
 
   await admiral.start({ env: { ...gh.env, ...admiral.fakeGitleaks(gh.env.PATH).env } });
   const watch = watchPage(page, admiral.url);
   const main = page.getByRole('main');
-  const imported = join(admiral.home, 'fleets', 'zulu', 'crew', 'scout.md');
+  const imported = join(admiral.home, 'fleets', 'zulu', 'crew', 'navigator.md');
 
-  await page.goto(admiral.url + 'app/fleets/zulu');
+  await page.goto(admiral.url + 'app/preferences/zulu/fleet');
   await page.getByRole('switch', { name: 'Crew sharing' }).click();
   await expect(page.getByRole('switch', { name: 'Crew sharing' })).toHaveAttribute('aria-checked', 'true');
 
   await page.goto(admiral.url + 'app/crew?fleet=zulu');
   await main.getByRole('button', { name: 'Import' }).click();
-  await page.getByLabel(/ref or url/i).fill('hubot/crew/scout');
+  await page.getByLabel(/ref or url/i).fill('hubot/crew/navigator');
   await page.getByRole('button', { name: 'Preview' }).click();
 
   // Nothing is written until Import: the card, the owner, the short commit, the tag and the exact file show first.
@@ -145,7 +145,7 @@ test('a crew member is imported from a ref, read before it is written, and shows
   await expect(panel).toContainText(SHA.slice(0, 7));
   await expect(panel).toContainText('v1');
   const file = panel.getByLabel('File to import');
-  await expect(file).toContainText('Work as scout.');
+  await expect(file).toContainText('Work as navigator.');
   // A long line wraps inside the file block instead of scrolling it.
   expect(await file.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(existsSync(imported)).toBe(false);
@@ -154,8 +154,8 @@ test('a crew member is imported from a ref, read before it is written, and shows
   await expect.poll(() => existsSync(imported)).toBe(true);
   expect(readFileSync(imported, 'utf8')).toBe(THEIRS);
 
-  await page.goto(admiral.url + 'app/crew/scout?fleet=zulu');
-  await expect(main.getByRole('link', { name: /shared by hubot/i })).toHaveAttribute('href', `https://github.com/hubot/crew/blob/${SHA}/crew/scout.md`);
+  await page.goto(admiral.url + 'app/crew/navigator?fleet=zulu');
+  await expect(main.getByRole('link', { name: /shared by hubot/i })).toHaveAttribute('href', `https://github.com/hubot/crew/blob/${SHA}/crew/navigator.md`);
   await expect(main.getByRole('button', { name: 'Share' })).toHaveCount(0);
 
   expect(watch.errors).toEqual([]);
