@@ -42,10 +42,10 @@ test('a member is published to a new share repo, republished with its diff, and 
 
   // Sharing is off: no Share button yet.
   await page.goto(admiral.url + 'app/crew/bosun?fleet=zulu');
-  await expect(main.getByRole('button', { name: 'Edit' })).toBeVisible();
+  await expect(main.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
   await expect(main.getByRole('button', { name: 'Share' })).toHaveCount(0);
 
-  await page.goto(admiral.url + 'app/fleets/zulu');
+  await page.goto(admiral.url + 'app/preferences/zulu/fleet');
   await page.getByRole('switch', { name: 'Crew sharing' }).click();
   await expect(page.getByRole('switch', { name: 'Crew sharing' })).toHaveAttribute('aria-checked', 'true');
 
@@ -63,14 +63,14 @@ test('a member is published to a new share repo, republished with its diff, and 
   expect(published).toContain('Work as bosun.');
   answer('e-listing', 'GET', LISTING, [{ name: 'bosun.md', path: 'crew/bosun.md', type: 'file', sha: 'a'.repeat(40) }]);
   answer('h-file', 'GET', FILE, { name: 'bosun.md', sha: 'a'.repeat(40), size: Buffer.byteLength(published), encoding: 'base64', content: Buffer.from(published).toString('base64') });
-  await page.getByRole('button', { name: 'Publish' }).click();
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(page.getByRole('link', { name: /commit/i })).toHaveAttribute('href', `https://github.com/${REPO}/commit/${'c'.repeat(40)}`);
   await page.getByRole('button', { name: 'Done' }).click();
-  await expect(page.getByRole('button', { name: 'Publish' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Publish', exact: true })).toHaveCount(0);
   await expect(main.getByRole('link', { name: 'Published' })).toHaveAttribute('href', `https://github.com/${REPO}/blob/HEAD/crew/bosun.md`);
 
   // Edit, then Share again: the preview shows the diff against the published file and replaces its blob.
-  await main.getByRole('button', { name: 'Edit' }).click();
+  await main.getByRole('button', { name: 'Edit', exact: true }).click();
   await main.getByLabel(/pick me when/i).fill(`Pick for rigging, twice. ${LONG}`);
   await main.getByRole('button', { name: 'Save' }).click();
   await main.getByRole('button', { name: 'Share' }).click();
@@ -81,7 +81,7 @@ test('a member is published to a new share repo, republished with its diff, and 
   const bytes = page.getByLabel('File that goes public');
   await expect(bytes).toContainText(LONG);
   expect(await bytes.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-  await page.getByRole('button', { name: 'Publish' }).click();
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(page.getByRole('link', { name: /commit/i })).toBeVisible();
   await page.getByRole('button', { name: 'Done' }).click();
   await expect(main.getByRole('link', { name: 'Published' })).toBeVisible();
