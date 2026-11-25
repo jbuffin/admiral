@@ -51,14 +51,14 @@ function ListField({ id, legend, item, add, values, errors, disabled, onChange }
   );
 }
 
-// Saves at once and sends only itself, so it never rides on the form's Save.
-function NotifySwitch({ fleet, onReload }: { fleet: Fleet; onReload: () => Promise<void> }) {
+// Saves at once and sends only its own key, so it never rides on the form's Save and the rest of the stored object stays as it is.
+function SaveSwitch({ id, label, hint, on, body, fleetKey, onReload }: { id: string; label: string; hint: string; on: boolean; body: Parameters<typeof saveFleet>[1]; fleetKey: string; onReload: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; status?: number } | null>(null);
   const toggle = async () => {
     setBusy(true);
     setError(null);
-    const r = await saveFleet(fleet.key, { notify: !fleet.notify });
+    const r = await saveFleet(fleetKey, body);
     if (r.ok) fleets.value = r.data;
     else setError({ message: r.error, status: r.status });
     setBusy(false);
@@ -66,10 +66,10 @@ function NotifySwitch({ fleet, onReload }: { fleet: Fleet; onReload: () => Promi
   return (
     <div class="set">
       <div class="t">
-        <span id="notify-label" class="label">
-          Notify
+        <span id={`${id}-label`} class="label">
+          {label}
         </span>
-        <span id="notify-hint">Push to your devices when this fleet needs you. Off silences its pushes and alerts; the Inbox still lists everything.</span>
+        <span id={`${id}-hint`}>{hint}</span>
         {error ? (
           <p class="note error" role="alert">
             {error.status === 409 ? 'The config file changed or is invalid, so nothing was saved. ' : ''}
@@ -86,7 +86,7 @@ function NotifySwitch({ fleet, onReload }: { fleet: Fleet; onReload: () => Promi
           </p>
         ) : null}
       </div>
-      <button type="button" class="switch" role="switch" aria-checked={fleet.notify} aria-labelledby="notify-label" aria-describedby="notify-hint" disabled={busy} onClick={() => void toggle()}>
+      <button type="button" class="switch" role="switch" aria-checked={on} aria-labelledby={`${id}-label`} aria-describedby={`${id}-hint`} disabled={busy} onClick={() => void toggle()}>
         <span class="track" aria-hidden="true" />
       </button>
     </div>
@@ -153,7 +153,8 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
         </p>
       ) : null}
       <div class="box notify-box">
-        <NotifySwitch fleet={fleet} onReload={reload} />
+        <SaveSwitch id="notify" label="Notify" hint="Push to your devices when this fleet needs you. Off silences its pushes and alerts; the Inbox still lists everything." on={fleet.notify} body={{ notify: !fleet.notify }} fleetKey={fleet.key} onReload={reload} />
+        <SaveSwitch id="crew-sharing" label="Crew sharing" hint="Lets you publish this fleet's crew members to a public GitHub repo." on={fleet.crew_sharing.enabled} body={{ crew_sharing: { enabled: !fleet.crew_sharing.enabled } }} fleetKey={fleet.key} onReload={reload} />
       </div>
       <div class="box">
         <ListField id="roots" legend="Search roots" item="Search root" add="Add search root" values={edited.search_roots} errors={listErrors('search_roots')} disabled={busy} onChange={(v) => set({ search_roots: v })} />

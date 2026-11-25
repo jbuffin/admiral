@@ -17,6 +17,8 @@ const crewMember = (name: string, role: string, skills: string[]): CrewMember =>
   layer: 'fleet',
   customized: false,
   notes: { fleet: [], repos: {} },
+  shared: null,
+  sidecar_unreadable: false,
 });
 
 describe('rankSkills', () => {

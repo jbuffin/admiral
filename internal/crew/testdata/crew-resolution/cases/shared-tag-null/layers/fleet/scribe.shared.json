@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/scribe.md",
+  "upstream_name": "scribe",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "cf9c2d5870c4a5d2b12bb5d4bf7ad0793347e7e2680bf0254a48b3fafb3d85da",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

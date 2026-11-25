@@ -55,6 +55,7 @@ type Member struct {
 	Layer        string   `json:"layer"`
 	File         string   `json:"file"`
 	Notes        Notes    `json:"notes"`
+	Shared       *Shared  `json:"shared"`
 }
 
 type Diagnostic struct {
@@ -149,12 +150,17 @@ func readLayer(label, dir string, standing map[string]*Member) (errs, warns []Di
 	}
 	for _, name := range names {
 		stem := strings.TrimSuffix(name, ".md")
-		m, found, refused, err := readMember(filepath.Join(dir, name), layerReal, label, stem)
+		m, found, refused, raw, err := readMember(filepath.Join(dir, name), layerReal, label, stem)
 		if err != nil {
 			errs = append(errs, err.diagnostic(label, name))
 			continue
 		}
 		warns = append(warns, found...)
+		if shared, problem := ReadSidecar(dir, layerReal, stem, raw); problem != nil {
+			warns = append(warns, newDiag(label, stem+SidecarSuffix, "shared-unreadable", "", problem.Error()))
+		} else {
+			m.Shared = shared
+		}
 		if earlier := standing[m.Name]; earlier != nil && !refused && (earlier.Role != m.Role || !sameString(earlier.BasedOn, m.BasedOn)) {
 			field := "based-on"
 			if earlier.Role != m.Role {

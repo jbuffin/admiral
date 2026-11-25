@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/reviewer.md",
+  "upstream_name": "reviewer",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "697bd08cd468df775ce83099f1b4d6ae12a445470297c26627e84a365c5168e3",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

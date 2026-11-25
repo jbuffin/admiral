@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/commit-short.md",
+  "upstream_name": "commit-short",
+  "commit": "0123456",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "f21bbc7656b87d5bd54507f9512bb5ceabcb59dbe59e67516371e184b943b9b1",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

@@ -1,0 +1,4 @@
+{
+  "admiral": true,
+  "description": "A member with a sidecar whose content hash matches is attached, in any standing layer; a later layer's member without a sidecar overrides an earlier shared member and is not shared."
+}

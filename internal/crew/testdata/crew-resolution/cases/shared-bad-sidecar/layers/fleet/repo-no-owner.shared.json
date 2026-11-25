@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "admiral-crew",
+  "path": "crew/repo-no-owner.md",
+  "upstream_name": "repo-no-owner",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "48006a4ca77d6a5ff8de983d406420ed4eefae6538496aea813226bc6ce8c6e1",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

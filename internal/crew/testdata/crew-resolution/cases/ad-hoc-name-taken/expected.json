@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Default scribe.",
       "role": "scribe",
+      "shared": null,
       "skills": []
     },
     {
@@ -35,6 +36,7 @@
       },
       "pick-me-when": "Pick.",
       "role": "triager",
+      "shared": null,
       "skills": []
     }
   ],

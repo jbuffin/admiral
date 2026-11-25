@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Block.",
       "role": "scribe",
+      "shared": null,
       "skills": [
         "a",
         "b",
@@ -40,6 +41,7 @@
       },
       "pick-me-when": "Trim.",
       "role": "scribe",
+      "shared": null,
       "skills": []
     },
     {
@@ -58,6 +60,7 @@
       },
       "pick-me-when": "Flow.",
       "role": "scribe",
+      "shared": null,
       "skills": [
         "review",
         "tdd",
@@ -80,6 +83,7 @@
       },
       "pick-me-when": "Use when a: b # c",
       "role": "scribe",
+      "shared": null,
       "skills": []
     },
     {
@@ -98,6 +102,7 @@
       },
       "pick-me-when": "say \"hi\" and \\ done",
       "role": "scribe",
+      "shared": null,
       "skills": []
     }
   ],

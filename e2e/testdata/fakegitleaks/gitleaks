@@ -1,0 +1,86 @@
+#!/bin/sh
+# Fake `gitleaks` for the crew sharing tests. A test puts this folder first on
+# a fleet's PATH and steers it through $FAKEGITLEAKS_DIR, a folder the test owns.
+#
+# It records the last scan in $FAKEGITLEAKS_DIR/last/:
+#   argv         the arguments, each followed by a NUL byte
+#   stdin        the bytes it was given
+#   cwd          the working directory it ran in
+#   cwd-entries  the names in that directory, one per line, at the start
+#   env          GITLEAKS_CONFIG and GITLEAKS_CONFIG_TOML as NAME=value lines;
+#                a variable that was not set has no line
+#
+# It answers two kinds of call and nothing else (anything else exits 2):
+#
+#   gitleaks version
+#     prints $FAKEGITLEAKS_DIR/version (default 8.21.2) and exits 0.
+#
+#   gitleaks stdin [FLAGS]
+#     with $FAKEGITLEAKS_DIR/fail set it fails as that file says:
+#       crash   the process kills itself with SIGSEGV
+#       error   "fake gitleaks: boom" and a second line on stderr, exit 2
+#       hang    sleeps 600 seconds (it execs sleep, so a killed gitleaks dies at once)
+#       garbage a report that is not JSON, exit 3
+#       empty   an empty report ([]), exit 3
+#     otherwise it reads stdin and reports a hit on every line holding
+#     decoy-secret-<hex>: a JSON array on stdout with RuleID "decoy-secret",
+#     StartLine, and Secret and Match as REDACTED (as --redact prints them),
+#     exit 3. With no such line it prints [] and exits 0.
+
+dir=${FAKEGITLEAKS_DIR:?FAKEGITLEAKS_DIR is not set}
+
+case "$1" in
+version)
+	if [ -f "$dir/version" ]; then cat "$dir/version"; else echo 8.21.2; fi
+	exit 0
+	;;
+stdin) ;;
+*)
+	echo "fake gitleaks: unsupported call: $*" >&2
+	exit 2
+	;;
+esac
+
+last=$dir/last
+rm -rf "$last"
+mkdir -p "$last"
+for a in "$@"; do printf '%s\0' "$a"; done >"$last/argv"
+pwd >"$last/cwd"
+ls -A >"$last/cwd-entries"
+: >"$last/env"
+[ "${GITLEAKS_CONFIG+set}" ] && echo "GITLEAKS_CONFIG=$GITLEAKS_CONFIG" >>"$last/env"
+[ "${GITLEAKS_CONFIG_TOML+set}" ] && echo "GITLEAKS_CONFIG_TOML=$GITLEAKS_CONFIG_TOML" >>"$last/env"
+cat >"$last/stdin"
+
+if [ -f "$dir/fail" ]; then
+	case "$(cat "$dir/fail")" in
+	crash) kill -SEGV $$ ;;
+	error)
+		printf 'fake gitleaks: boom\nsecond line\n' >&2
+		exit 2
+		;;
+	hang) exec sleep 600 ;;
+	garbage)
+		echo 'this is not a report'
+		exit 3
+		;;
+	empty)
+		echo '[]'
+		exit 3
+		;;
+	esac
+fi
+
+hits=$(grep -n -E 'decoy-secret-[0-9a-f]+' "$last/stdin" | cut -d: -f1)
+if [ -z "$hits" ]; then
+	echo '[]'
+	exit 0
+fi
+sep=
+printf '['
+for n in $hits; do
+	printf '%s{"RuleID":"decoy-secret","StartLine":%s,"EndLine":%s,"Secret":"REDACTED","Match":"REDACTED"}' "$sep" "$n" "$n"
+	sep=,
+done
+printf ']\n'
+exit 3

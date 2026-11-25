@@ -13,6 +13,8 @@ const member = (name: string, layer: 'built-in' | 'fleet', customized = false): 
   layer,
   customized,
   notes: { fleet: [], repos: {} },
+  shared: null,
+  sidecar_unreadable: false,
 });
 
 const form = (over: Partial<MemberForm> = {}): MemberForm => ({

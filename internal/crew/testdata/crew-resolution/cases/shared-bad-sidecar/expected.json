@@ -1,0 +1,694 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "reviewer.md",
+      "harness": null,
+      "instructions": "Reviewer body.",
+      "layer": "built-in",
+      "model": null,
+      "name": "reviewer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Built-in reviewer.",
+      "role": "reviewer",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "bad-json.md",
+      "harness": null,
+      "instructions": "Body of bad-json.",
+      "layer": "fleet",
+      "model": null,
+      "name": "bad-json",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick bad-json.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "commit-short.md",
+      "harness": null,
+      "instructions": "Body of commit-short.",
+      "layer": "fleet",
+      "model": null,
+      "name": "commit-short",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick commit-short.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "commit-upper.md",
+      "harness": null,
+      "instructions": "Body of commit-upper.",
+      "layer": "fleet",
+      "model": null,
+      "name": "commit-upper",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick commit-upper.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "dangling.md",
+      "harness": null,
+      "instructions": "Body of dangling.",
+      "layer": "fleet",
+      "model": null,
+      "name": "dangling",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick dangling.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "dir-sidecar.md",
+      "harness": null,
+      "instructions": "Body of dir-sidecar.",
+      "layer": "fleet",
+      "model": null,
+      "name": "dir-sidecar",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick dir-sidecar.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "escape.md",
+      "harness": null,
+      "instructions": "Body of escape.",
+      "layer": "fleet",
+      "model": null,
+      "name": "escape",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick escape.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "good.md",
+      "harness": null,
+      "instructions": "Body of good.",
+      "layer": "fleet",
+      "model": null,
+      "name": "good",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick good.",
+      "role": "scribe",
+      "shared": {
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "detached": false,
+        "owner": "octocat",
+        "repo": "admiral-crew",
+        "tag": "v1"
+      },
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "hash-upper.md",
+      "harness": null,
+      "instructions": "Body of hash-upper.",
+      "layer": "fleet",
+      "model": null,
+      "name": "hash-upper",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick hash-upper.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "host-gitlab.md",
+      "harness": null,
+      "instructions": "Body of host-gitlab.",
+      "layer": "fleet",
+      "model": null,
+      "name": "host-gitlab",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick host-gitlab.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "key-upper.md",
+      "harness": null,
+      "instructions": "Body of key-upper.",
+      "layer": "fleet",
+      "model": null,
+      "name": "key-upper",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick key-upper.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "nan.md",
+      "harness": null,
+      "instructions": "Body of nan.",
+      "layer": "fleet",
+      "model": null,
+      "name": "nan",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick nan.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "not-object.md",
+      "harness": null,
+      "instructions": "Body of not-object.",
+      "layer": "fleet",
+      "model": null,
+      "name": "not-object",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick not-object.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "oversized.md",
+      "harness": null,
+      "instructions": "Body of oversized.",
+      "layer": "fleet",
+      "model": null,
+      "name": "oversized",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick oversized.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "path-hidden.md",
+      "harness": null,
+      "instructions": "Body of path-hidden.",
+      "layer": "fleet",
+      "model": null,
+      "name": "path-hidden",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick path-hidden.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "path-nested.md",
+      "harness": null,
+      "instructions": "Body of path-nested.",
+      "layer": "fleet",
+      "model": null,
+      "name": "path-nested",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick path-nested.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "path-outside.md",
+      "harness": null,
+      "instructions": "Body of path-outside.",
+      "layer": "fleet",
+      "model": null,
+      "name": "path-outside",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick path-outside.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "repo-extra-segment.md",
+      "harness": null,
+      "instructions": "Body of repo-extra-segment.",
+      "layer": "fleet",
+      "model": null,
+      "name": "repo-extra-segment",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick repo-extra-segment.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "repo-no-owner.md",
+      "harness": null,
+      "instructions": "Body of repo-no-owner.",
+      "layer": "fleet",
+      "model": null,
+      "name": "repo-no-owner",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick repo-no-owner.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "shadowed.md",
+      "harness": null,
+      "instructions": "Body of shadowed.",
+      "layer": "fleet",
+      "model": null,
+      "name": "shadowed",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick shadowed.",
+      "role": "scribe",
+      "shared": {
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "detached": false,
+        "owner": "octocat",
+        "repo": "admiral-crew",
+        "tag": "v1"
+      },
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "tag-bidi.md",
+      "harness": null,
+      "instructions": "Body of tag-bidi.",
+      "layer": "fleet",
+      "model": null,
+      "name": "tag-bidi",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick tag-bidi.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "tag-control.md",
+      "harness": null,
+      "instructions": "Body of tag-control.",
+      "layer": "fleet",
+      "model": null,
+      "name": "tag-control",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick tag-control.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "tag-empty.md",
+      "harness": null,
+      "instructions": "Body of tag-empty.",
+      "layer": "fleet",
+      "model": null,
+      "name": "tag-empty",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick tag-empty.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "tag-number.md",
+      "harness": null,
+      "instructions": "Body of tag-number.",
+      "layer": "fleet",
+      "model": null,
+      "name": "tag-number",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick tag-number.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "tag-surrogate.md",
+      "harness": null,
+      "instructions": "Body of tag-surrogate.",
+      "layer": "fleet",
+      "model": null,
+      "name": "tag-surrogate",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick tag-surrogate.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "version-2.md",
+      "harness": null,
+      "instructions": "Body of version-2.",
+      "layer": "fleet",
+      "model": null,
+      "name": "version-2",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick version-2.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "version-true.md",
+      "harness": null,
+      "instructions": "Body of version-true.",
+      "layer": "fleet",
+      "model": null,
+      "name": "version-true",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick version-true.",
+      "role": "scribe",
+      "shared": null,
+      "skills": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "shadowed.shared.json",
+      "layer": "built-in"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "bad-json.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "commit-short.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "commit-upper.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "dangling.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "dir-sidecar.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "escape.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "hash-upper.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "host-gitlab.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "key-upper.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "nan.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "not-object.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "oversized.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "path-hidden.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "path-nested.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "path-outside.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "repo-extra-segment.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "repo-no-owner.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "role-change",
+      "field": "role",
+      "file": "reviewer.md",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "reviewer.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "tag-bidi.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "tag-control.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "tag-empty.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "tag-number.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "tag-surrogate.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "version-2.shared.json",
+      "layer": "fleet"
+    },
+    {
+      "code": "shared-unreadable",
+      "field": null,
+      "file": "version-true.shared.json",
+      "layer": "fleet"
+    }
+  ]
+}

@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Fix.",
       "role": "fix-checker",
+      "shared": null,
       "skills": []
     },
     {
@@ -35,6 +36,7 @@
       },
       "pick-me-when": "A.",
       "role": "scribe",
+      "shared": null,
       "skills": []
     },
     {
@@ -53,6 +55,7 @@
       },
       "pick-me-when": "AB.",
       "role": "scribe",
+      "shared": null,
       "skills": []
     },
     {
@@ -71,6 +74,7 @@
       },
       "pick-me-when": "E.",
       "role": "scribe",
+      "shared": null,
       "skills": []
     },
     {
@@ -89,6 +93,7 @@
       },
       "pick-me-when": "Late.",
       "role": "scribe",
+      "shared": null,
       "skills": []
     }
   ],

@@ -48,6 +48,7 @@ export interface Fleet {
   chat: FleetChat;
   /** Whether this fleet pushes and alerts; on unless config.json says false. */
   notify: boolean;
+  crew_sharing: { enabled: boolean; share_repo: string; sources: string[] };
   preset: 'work' | 'home';
   limits: Limits;
   /** One sentence per Limit in catalog order, then two fixed ones with an empty field. */
@@ -303,6 +304,7 @@ const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
     docks: (f.docks ?? []).map((d) => ({ ...d, warnings: d.warnings ?? [], models: d.models ?? [], models_source: d.models_source ?? 'built_in' })),
     chat: { ...f.chat, harnesses: f.chat?.harnesses ?? [], harness_options: f.chat?.harness_options ?? [], models: f.chat?.models ?? [], efforts: f.chat?.efforts ?? [] },
     notify: f.notify ?? true,
+    crew_sharing: { enabled: f.crew_sharing?.enabled ?? false, share_repo: f.crew_sharing?.share_repo ?? '', sources: f.crew_sharing?.sources ?? [] },
     preset: f.preset ?? 'work',
     sentences: f.sentences ?? [],
     overridden: f.overridden ?? [],
@@ -514,7 +516,7 @@ export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
 export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });
 
 /** Saves the fleet fields in the body; the server answers the new config view. */
-export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color' | 'notify' | 'preset'>> | { limits: Record<string, unknown> } | { chat: Partial<Omit<FleetChat, 'on' | 'off_reason' | 'harnesses' | 'harness_options' | 'models' | 'efforts'>> }): Promise<Result<Fleet[]>> {
+export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color' | 'notify' | 'preset'>> | { crew_sharing: { enabled: boolean } } | { limits: Record<string, unknown> } | { chat: Partial<Omit<FleetChat, 'on' | 'off_reason' | 'harnesses' | 'harness_options' | 'models' | 'efforts'>> }): Promise<Result<Fleet[]>> {
   const r = await call<{ fleets?: Fleet[] | null }>('PUT', `/fleets/${encodeURIComponent(key)}`, body);
   return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
 }

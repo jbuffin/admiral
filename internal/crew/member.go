@@ -1,6 +1,7 @@
 package crew
 
 import (
+	"errors"
 	"os"
 	"regexp"
 	"slices"
@@ -150,28 +151,32 @@ func reviewFields(fm frontmatter, body, layer string, warn warner) (skills []str
 	return skills, body, refused
 }
 
-func readMember(path, layerReal, layer, stem string) (Member, []Diagnostic, bool, *memberError) {
+// readMember returns the file's bytes beside the member, so a caller hashes what was parsed.
+func readMember(path, layerReal, layer, stem string) (Member, []Diagnostic, bool, []byte, *memberError) {
 	var none Member
 	info, err := os.Stat(path)
 	if err != nil {
-		return none, nil, false, unreadable(err)
+		return none, nil, false, nil, unreadable(err)
 	}
 	if info.Size() > maxBytes {
-		return none, nil, false, &memberError{code: "too-large", message: "file is over 65536 bytes"}
+		return none, nil, false, nil, &memberError{code: "too-large", message: "file is over 65536 bytes"}
 	}
 	if !within(realPath(path), layerReal) {
-		return none, nil, false, &memberError{code: "outside-layer", message: "file resolves outside its layer directory"}
+		return none, nil, false, nil, &memberError{code: "outside-layer", message: "file resolves outside its layer directory"}
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := readBounded(path)
+	if errors.Is(err, errTooLarge) {
+		return none, nil, false, nil, &memberError{code: "too-large", message: "file is over 65536 bytes"}
+	}
 	if err != nil {
-		return none, nil, false, unreadable(err)
+		return none, nil, false, nil, unreadable(err)
 	}
 	fm, body, perr := parseMember(raw)
 	if perr != nil {
-		return none, nil, false, perr
+		return none, nil, false, nil, perr
 	}
 	if me := checkFields(fm, stem); me != nil {
-		return none, nil, false, me
+		return none, nil, false, nil, me
 	}
 
 	file := stem + ".md"
@@ -195,7 +200,7 @@ func readMember(path, layerReal, layer, stem string) (Member, []Diagnostic, bool
 		File:         file,
 		Notes:        Notes{Fleet: []string{}, Repo: []string{}},
 	}
-	return member, warnings, refused, nil
+	return member, warnings, refused, raw, nil
 }
 
 func unreadable(err error) *memberError {

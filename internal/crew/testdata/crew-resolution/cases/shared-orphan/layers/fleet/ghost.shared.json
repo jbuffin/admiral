@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/ghost.md",
+  "upstream_name": "reviewer",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

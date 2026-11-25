@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "upstream_name": "tag-bidi",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1\u202e",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z",
+  "path": "crew/tag-bidi.md",
+  "content_sha256": "12a78bd5ec04dc69b3c1fb93364c8da26ade0ff351646d7fd190a7c55b4a2a6f"
+}

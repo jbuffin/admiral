@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/brief-checker.md",
+  "upstream_name": "brief-checker",
+  "commit": "fedcba9876543210fedcba9876543210fedcba98",
+  "tag": "v2",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "a3a19673df241f08c8e375cd3a8048029ccc231516ddd0affb4d31c9e525f40b",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

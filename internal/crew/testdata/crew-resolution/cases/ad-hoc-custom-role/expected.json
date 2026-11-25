@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Pick.",
       "role": "changelog",
+      "shared": null,
       "skills": [
         "writing"
       ]
@@ -37,6 +38,7 @@
       },
       "pick-me-when": "Default scribe.",
       "role": "scribe",
+      "shared": null,
       "skills": []
     }
   ],

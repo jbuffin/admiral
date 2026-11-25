@@ -1,0 +1,4 @@
+{
+  "admiral": true,
+  "description": "Sidecar keys match exactly, case-sensitively: Version and TAG are unknown fields and are ignored."
+}

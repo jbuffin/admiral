@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/good.md",
+  "upstream_name": "good",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "b89319bb89c668bb0ed177299f35e47dab9477f140ed004983a6ba7bce9e4d26",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

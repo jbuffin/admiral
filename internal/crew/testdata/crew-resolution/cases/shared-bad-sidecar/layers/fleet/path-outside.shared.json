@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "docs/path-outside.md",
+  "upstream_name": "path-outside",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "1bb4396e8a192668322a7c1337ca5c4a2bd2537638c40192801fbc701556fa55",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

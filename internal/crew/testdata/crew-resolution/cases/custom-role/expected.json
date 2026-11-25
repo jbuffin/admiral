@@ -17,6 +17,7 @@
       },
       "pick-me-when": "Use for release notes.",
       "role": "release-notes",
+      "shared": null,
       "skills": [
         "writing"
       ]
@@ -37,6 +38,7 @@
       },
       "pick-me-when": "Plain default for scribe.",
       "role": "scribe",
+      "shared": null,
       "skills": []
     }
   ],

@@ -1,0 +1,4 @@
+{
+  "admiral": true,
+  "description": "A sidecar whose tag is null or absent gives tag null."
+}

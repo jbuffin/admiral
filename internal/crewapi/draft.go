@@ -329,6 +329,13 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 		refuse(w, err)
 		return
 	}
+	if present, err := SidecarPresent(dir, m.Name); err != nil {
+		refuse(w, err)
+		return
+	} else if present {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": m.Name + crew.SidecarSuffix + " already exists", "field": "name"})
+		return
+	}
 	if err := writeAtomic(dir, m.Name+".md", m.body().file(m.Name)); err != nil {
 		refuse(w, err)
 		return

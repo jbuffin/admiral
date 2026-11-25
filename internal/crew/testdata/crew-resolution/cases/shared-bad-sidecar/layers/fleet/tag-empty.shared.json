@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "path": "crew/tag-empty.md",
+  "upstream_name": "tag-empty",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "content_sha256": "662587f1a2fbaf9ef7a5c939ee4d786d84f4afc346d0ba2eb3a8615c74c84b9b",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z"
+}

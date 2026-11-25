@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "host": "github.com",
+  "repo": "octocat/admiral-crew",
+  "upstream_name": "tag-control",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tag": "v1\u001b",
+  "upstream_blob": "89abcdef0123456789abcdef0123456789abcdef",
+  "imported_at": "2026-11-24T10:00:00Z",
+  "updated_at": "2026-11-24T10:00:00Z",
+  "path": "crew/tag-control.md",
+  "content_sha256": "7ae7b3bc6f7d5ef6fb57fceab1c4790ad7ca30ba9c9c3d2d88662642c99286b3"
+}

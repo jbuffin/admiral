@@ -14,6 +14,7 @@ const base = {
   color: '#336699',
   ink: '#fff',
   notify: true,
+  crew_sharing: { enabled: false, share_repo: '', sources: [] },
   docks: [
     { harness: 'claude', executable: '', executable_found: true, warnings: [] },
     { harness: 'codex', executable: '/bin/codex', executable_found: false, warnings: ['codex is old'] },
@@ -36,7 +37,7 @@ beforeEach(() => {
       if (init?.method === 'PUT' && path.endsWith('/fleets/zulu')) {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
         puts.push(body);
-        if (refuse) return json({ error: refuse }, 400);
+        if (refuse) return json({ error: refuse }, refuse.startsWith('conflict') ? 409 : 400);
         stored = { ...stored, ...body } as Fleet;
         if (body.color === '') stored = { ...stored, color: '#8899aa' };
         return json({ fleets: [stored] });
@@ -132,4 +133,36 @@ test('docks are one read-only row per harness with the way to change them', () =
   expect(within(docks).queryAllByRole('textbox')).toHaveLength(0);
   expect(document.body.textContent).toContain('admiral setup');
   expect(document.body.textContent).not.toContain('CLAUDE_CONFIG_DIR');
+});
+
+test('Crew sharing shows the stored state and sends only enabled, so the share repo and sources stay', async () => {
+  stored = { ...stored, crew_sharing: { enabled: false, share_repo: 'octocat/crew', sources: ['hubot/crew'] } };
+  fleets.value = [stored];
+  const view = render(<FleetPage fleet={stored} />);
+  const sharing = screen.getByRole('switch', { name: 'Crew sharing' });
+  expect(sharing.getAttribute('aria-checked')).toBe('false');
+  fireEvent.click(sharing);
+  await waitFor(() => expect(puts).toEqual([{ crew_sharing: { enabled: true } }]));
+  view.rerender(<FleetPage fleet={fleets.value[0]} />);
+  await waitFor(() => expect(screen.getByRole('switch', { name: 'Crew sharing' }).getAttribute('aria-checked')).toBe('true'));
+  expect(screen.getByText("Lets you publish this fleet's crew members to a public GitHub repo.")).toBeTruthy();
+});
+
+test('a refused Crew sharing save shows the error beside the switch and leaves it off', async () => {
+  refuse = 'crew_sharing is invalid';
+  render(<FleetPage fleet={stored} />);
+  fireEvent.click(screen.getByRole('switch', { name: 'Crew sharing' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('crew_sharing is invalid');
+  expect(screen.getByRole('switch', { name: 'Crew sharing' }).getAttribute('aria-checked')).toBe('false');
+});
+
+test('Reload on a conflicting Crew sharing save clears its error', async () => {
+  refuse = 'conflict: the file changed';
+  render(<FleetPage fleet={stored} />);
+  fireEvent.click(screen.getByRole('switch', { name: 'Crew sharing' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('nothing was saved');
+  refuse = null;
+  fireEvent.click(within(alert).getByRole('button', { name: 'Reload' }));
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
 });
