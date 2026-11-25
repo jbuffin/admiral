@@ -712,6 +712,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .crew-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .crew-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .crew-name { font-weight: 600; }
+.crew-title .pill, .crew-head .pill { max-width: 100%; min-width: 0; padding-top: 2px; padding-bottom: 2px; white-space: normal; overflow-wrap: anywhere; }
 .crew-sub, .crew-pick, .crew-count { font-size: var(--font-size-meta); color: var(--color-muted); }
 .crew-pick { color: var(--color-text2); }
 .crew-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
@@ -723,7 +724,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .crew-add-head { margin: 0 0 8px; font-size: var(--font-size-heading); }
 .crew-add textarea { min-height: var(--shape-min-touch-target); box-sizing: border-box; width: 100%; padding: 8px 10px; font: inherit; font-size: 16px; color: var(--color-text); background: var(--color-panel); border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
 .crew-form input[type='text'], .crew-form select, .crew-form textarea { font-size: 16px; }
-.crew-head { display: flex; align-items: center; gap: 10px; }
+.crew-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .crew-head h2 { margin: 0; font-size: var(--font-size-heading); min-width: 0; }
 .crew-detail > .crew-sub { margin: 4px 0 12px; }
 .crew-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }

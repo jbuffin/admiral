@@ -1,7 +1,7 @@
 import { useId, useState } from 'preact/hooks';
 import { call } from './api';
 import { Actions, Button } from './Button';
-import { crewApi } from './crew';
+import { crewApi, noAccessText } from './crew';
 import { ConnectGitHubLink, noScan, type Scan, scanLine, UnpublishConfirm, type SharingView } from './CrewShare';
 import { usePollUntil } from './hooks/poll';
 import { renderMarkdown } from './markdown';
@@ -29,7 +29,7 @@ interface Row {
   published: boolean;
 }
 
-const updateLabels: Record<string, string> = { available: 'Update available', removed: 'Removed upstream' };
+const updateLabel = (update: string | null | undefined, repo: string) => (update === 'available' ? 'Update available' : update === 'removed' ? 'Removed upstream' : update === 'no_access' ? noAccessText(repo) : null);
 
 type Sharing = SharingView & { crew_sharing: { sources: string[] } };
 
@@ -291,7 +291,7 @@ export function CrewImport({ fleetKey, harness, reload, onClose }: { fleetKey: s
                   <span>{m.name}</span>
                   {roles[`${browsing.repo}/${m.path}`] ? <span class="muted">{roles[`${browsing.repo}/${m.path}`]}</span> : null}
                   {m.imported ? <span class="pill">Imported</span> : <Button label="Import" disabled={busy} onClick={() => void loadPreview(`${browsing.repo}/${m.name}`)} />}
-                  {m.imported && m.update && updateLabels[m.update] ? <span class="pill">{updateLabels[m.update]}</span> : null}
+                  {m.imported && updateLabel(m.update, browsing.repo) ? <span class="pill">{updateLabel(m.update, browsing.repo)}</span> : null}
                   {browsing.repo === shareRepo ? <Button label="Unpublish" onClick={() => setUnpublishing(m.name)} /> : null}
                 </li>
               ))}

@@ -34,9 +34,10 @@ export interface SharingView {
   repo?: { exists: boolean; private?: boolean; archived?: boolean; pushable?: boolean; error?: string };
 }
 
-const NO_SCAN = 'This file goes public without a secret scan. Read it for keys, tokens and passwords before you publish.';
+const noScanText = (repo: string) => `This file goes to ${repo} without a secret scan. Anyone who can read that repo can read it. Read it for keys, tokens and passwords before you publish.`;
 const GITLEAKS_DOCS = 'https://github.com/gitleaks/gitleaks#installing';
 const CHOOSE_ANOTHER = 'Choose another repo';
+const isNoAccess = (r: { status?: number; code?: string }) => r.status === 403 && r.code === 'no_access';
 
 export const noScan = (scan: Scan) => scan.state === 'missing' || scan.state === 'too-old';
 
@@ -67,6 +68,7 @@ function RepoStep({ fleetKey, harness, login, onRepo }: { fleetKey: string; harn
   const [name, setName] = useState('admiral-crew');
   const [description, setDescription] = useState('Crew members published from Admiral');
   const [existing, setExisting] = useState('');
+  const [isPrivate, setPrivate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [offer, setOffer] = useState('');
@@ -98,10 +100,10 @@ function RepoStep({ fleetKey, harness, login, onRepo }: { fleetKey: string; harn
       class="crew-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!busy) void send({ name: name.trim(), description: description.trim() });
+        if (!busy) void send({ name: name.trim(), description: description.trim(), private: isPrivate });
       }}
     >
-      <p class="note">Crew members are published to a public GitHub repo. Admiral creates it under your account, or you can use one you have.</p>
+      <p class="note">Crew members are published to a GitHub repo you own. Admiral creates it under your account, or you can use one you have.</p>
       <div class="field crew-field">
         <span>Owner</span>
         <strong>{owner}</strong>
@@ -114,6 +116,19 @@ function RepoStep({ fleetKey, harness, login, onRepo }: { fleetKey: string; harn
         <label for={`${id}-description`}>Description</label>
         <input id={`${id}-description`} type="text" value={description} autocomplete="off" onInput={(e) => setDescription((e.currentTarget as HTMLInputElement).value)} />
       </div>
+      <fieldset class="field crew-field">
+        <legend>Visibility</legend>
+        <label class="check">
+          <input type="radio" name={`${id}-visibility`} checked={!isPrivate} onChange={() => setPrivate(false)} />
+          <span>Public</span>
+        </label>
+        <p class="note">Anyone can read and import your crew members.</p>
+        <label class="check">
+          <input type="radio" name={`${id}-visibility`} checked={isPrivate} onChange={() => setPrivate(true)} />
+          <span>Private</span>
+        </label>
+        <p class="note">Only you and people you add to the repo can read and import them.</p>
+      </fieldset>
       {readmeText ? (
         <>
           <p class="note">The README Admiral will write first:</p>
@@ -126,7 +141,7 @@ function RepoStep({ fleetKey, harness, login, onRepo }: { fleetKey: string; harn
         </p>
       ) : null}
       <Actions class="crew-actions">
-        <Button type="submit" variant="primary" label="Create repo" busy={busy} disabled={!name.trim()} />
+        <Button type="submit" variant="primary" label={isPrivate ? 'Create private repo' : 'Create public repo'} busy={busy} disabled={!name.trim()} />
       </Actions>
       {offer ? (
         <Actions class="crew-actions">
@@ -164,7 +179,7 @@ function PreviewStep({ member, fleetKey, harness, onDone, onClose, onChoose }: {
       } else {
         setPreview(null);
         setError(r.error);
-        setRepoProblem(r.status === 409);
+        setRepoProblem(r.status === 409 || isNoAccess(r));
       }
       return true;
     },
@@ -184,6 +199,7 @@ function PreviewStep({ member, fleetKey, harness, onDone, onClose, onChoose }: {
     setBusy(false);
     if (r.ok) return setCommit(r.data.commit_url);
     setError(r.error);
+    if (isNoAccess(r)) return setRepoProblem(true);
     if (r.status === 409) {
       // The share repo changed, or the member or the published file did; either way the preview is stale.
       setRepoProblem(r.error.includes(CHOOSE_ANOTHER));
@@ -210,8 +226,9 @@ function PreviewStep({ member, fleetKey, harness, onDone, onClose, onChoose }: {
             {preview.path} in {preview.repo}
           </p>
           {preview.replaces_blob && preview.published_bytes != null ? <p class="note">Replaces the published version</p> : null}
-          <p class="note">The file that goes public, exactly:</p>
-          <pre class="line-diff" aria-label="File that goes public">
+          <p class="note">{preview.private ? `${preview.repo} is private. Anyone with access to it can read this file.` : `${preview.repo} is public. Anyone can read this file.`}</p>
+          <p class="note">The file that goes to {preview.repo}, exactly:</p>
+          <pre class="line-diff" aria-label="File to publish">
             {preview.bytes}
           </pre>
           {preview.replaces_blob && preview.published_bytes != null ? (
@@ -228,7 +245,7 @@ function PreviewStep({ member, fleetKey, harness, onDone, onClose, onChoose }: {
               </p>
               <label class="check">
                 <input type="checkbox" checked={skip} onChange={(e) => setSkip((e.currentTarget as HTMLInputElement).checked)} />
-                {NO_SCAN}
+                {noScanText(preview.repo)}
               </label>
             </>
           ) : null}
@@ -250,7 +267,7 @@ function PreviewStep({ member, fleetKey, harness, onDone, onClose, onChoose }: {
   );
 }
 
-/** Shows exactly the file that would go public and publishes it; with no share repo it first creates or adopts one. It stands in for the member's facts, so the file shows once. */
+/** Shows exactly the file that would go to the share repo and publishes it; with no share repo it first creates or adopts one. It stands in for the member's facts, so the file shows once. */
 export function SharePanel({ member, fleetKey, harness, repo, login, onRepo, onPublished, onClose }: { member: CrewMember; fleetKey: string; harness: string; repo: string; login: string; onRepo: (repo: string) => void; onPublished: () => Promise<void>; onClose: () => void }) {
   const [choosing, setChoosing] = useState(false);
   const done = async () => {

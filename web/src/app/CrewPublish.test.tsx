@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { Fleet } from './api';
 import { CrewPage } from './CrewPage';
@@ -145,7 +145,7 @@ test('Share previews the exact file, and Publish sends the preview back and repo
   page('bosun');
   fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
   expect(await screen.findByText(/crew\/bosun\.md/)).toBeTruthy();
-  expect(screen.getByText(/octocat\/admiral-crew/)).toBeTruthy();
+  expect(screen.getByText('crew/bosun.md in octocat/admiral-crew')).toBeTruthy();
   expect(screen.getByText(/Do it\./)).toBeTruthy();
   expect(screen.getByText('Secret scan: nothing found.')).toBeTruthy();
   expect(posts(calls)).toEqual(['POST /members/bosun/share/preview']);
@@ -357,11 +357,16 @@ test('Use this repo and the Use offer send no private, and the README preview is
   fireEvent.click(screen.getByRole('button', { name: 'Create private repo' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Use octocat/admiral-crew' }));
   await waitFor(() => expect(attempts).toBe(2));
-  fireEvent.input(screen.getByLabelText(/use an existing repo/i), { target: { value: 'me/shared-crew' } });
+  expect(calls.filter((c) => c.path.endsWith('/sharing/repo') && c.body?.repo).map((c) => c.body)).toEqual([{ repo: 'octocat/admiral-crew' }]);
+  cleanup();
+
+  const second = server([member('bosun')], (c) => (c.path.endsWith('/sharing/repo') ? (c.body?.preview ? json({ readme: '# r\n' }) : json({ share_repo: 'me/shared-crew' })) : undefined), viewOf({}, ''));
+  page('bosun', noRepo);
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }));
+  fireEvent.input(await screen.findByLabelText(/use an existing repo/i), { target: { value: 'me/shared-crew' } });
   fireEvent.click(screen.getByRole('button', { name: 'Use this repo' }));
-  await waitFor(() => expect(attempts).toBe(3));
-  const adopts = calls.filter((c) => c.path.endsWith('/sharing/repo') && c.body?.repo);
-  expect(adopts.map((c) => c.body)).toEqual([{ repo: 'octocat/admiral-crew' }, { repo: 'me/shared-crew' }]);
+  await waitFor(() => expect(second.some((c) => c.body?.repo)).toBe(true));
+  expect(second.filter((c) => c.path.endsWith('/sharing/repo') && c.body?.repo).map((c) => c.body)).toEqual([{ repo: 'me/shared-crew' }]);
   expect(calls.find((c) => c.body?.preview)!.body).toEqual({ preview: true, owner: 'octocat', name: 'admiral-crew' });
 });
 

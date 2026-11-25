@@ -163,7 +163,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
       ) : null}
       <div class="box notify-box">
         <SaveSwitch id="notify" label="Notify" hint="Push to your devices when this fleet needs you. Off silences its pushes and alerts; the Inbox still lists everything." on={fleet.notify} body={{ notify: !fleet.notify }} fleetKey={fleet.key} onReload={reload} />
-        <SaveSwitch id="crew-sharing" label="Crew sharing" hint="Lets you publish this fleet's crew members to a public GitHub repo." on={fleet.crew_sharing.enabled} body={{ crew_sharing: { enabled: !fleet.crew_sharing.enabled } }} fleetKey={fleet.key} onReload={reload} />
+        <SaveSwitch id="crew-sharing" label="Crew sharing" hint="Lets you publish this fleet's crew members to a GitHub repo you own, public or private." on={fleet.crew_sharing.enabled} body={{ crew_sharing: { enabled: !fleet.crew_sharing.enabled } }} fleetKey={fleet.key} onReload={reload} />
       </div>
       <div class="box">
         <ListField id="roots" legend="Search roots" item="Search root" add="Add search root" values={edited.search_roots} errors={listErrors('search_roots')} disabled={busy} onChange={(v) => set({ search_roots: v })} />
@@ -202,7 +202,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
           <div class="set">
             <div class="t">
               <label for="share-repo">Share repo</label>
-              <span>The public GitHub repo, as owner/repo, that this fleet's crew is published to. Sharing a member can create it.</span>
+              <span>The GitHub repo, as owner/repo, that this fleet's crew is published to. Sharing a member can create it.</span>
             </div>
             <div class="control">
               <input

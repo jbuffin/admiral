@@ -30,7 +30,7 @@ export interface CrewMember {
   shared_url?: string | null;
   /** The fleet's share repo holds a file of this name. */
   published?: boolean;
-  /** What the last update check found: none, available, removed or unknown. */
+  /** What the last update check found: none, available, removed, unknown or no_access. */
   update?: string;
 }
 
@@ -111,12 +111,15 @@ export function normalizeCrew(raw: Record<string, unknown>): CrewData {
 /** Updates by member name, from the page-open check. */
 export type UpdateStates = Record<string, string>;
 
+export const noAccessText = (repo: string) => `You need access to ${repo}. Ask its owner to add you.`;
+
 /** The words for a member's update state, or null when it has none to show. The page-open check wins over the list's stored answer. */
 export function updateWords(m: CrewMember, states: UpdateStates | null): string | null {
   if (m.shared?.detached) return 'Edited here';
   const state = states?.[m.name] ?? m.update;
   if (state === 'available') return 'Update available';
   if (state === 'removed') return 'Removed upstream';
+  if (state === 'no_access' && m.shared) return noAccessText(`${m.shared.owner}/${m.shared.repo}`);
   return null;
 }
 

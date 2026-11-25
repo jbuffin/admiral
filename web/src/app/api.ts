@@ -361,11 +361,12 @@ export async function call<T>(method: string, path: string, body?: unknown, head
     }
     if (res.status === 401) signedOut.value = true;
     if (!res.ok) {
-      const body = data as { error?: string; field?: string; note?: unknown; kind?: unknown; reason?: unknown; parent?: unknown; linked?: unknown; output?: unknown; commands?: unknown; use_existing?: unknown; suggested?: unknown } | null;
+      const body = data as { error?: string; field?: string; note?: unknown; kind?: unknown; reason?: unknown; parent?: unknown; linked?: unknown; output?: unknown; commands?: unknown; use_existing?: unknown; suggested?: unknown; code?: unknown } | null;
       return {
         ok: false,
         status: res.status,
         error: body?.error ?? `${method} ${path}: ${res.status}`,
+        ...(typeof body?.code === 'string' && { code: body.code }),
         ...(typeof body?.use_existing === 'string' && { use_existing: body.use_existing }),
         ...(body && 'suggested' in body && { suggested: typeof body.suggested === 'string' ? body.suggested : '' }),
         ...(body?.field && { field: body.field }),
