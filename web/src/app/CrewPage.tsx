@@ -629,7 +629,7 @@ function Detail({ member, members, fleetKey, harness, docks, pageHarness, sharin
   const builtIn = member.layer === 'built-in';
   const words = member.shared?.detached ? null : updateWords(member, states);
   const follows = attached(member);
-  const canUpdate = follows && words !== 'Removed upstream';
+  const canUpdate = follows && words === 'Update available';
   return (
     <article class="crew-detail">
       <header class="crew-head">
