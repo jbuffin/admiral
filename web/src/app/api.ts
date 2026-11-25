@@ -319,7 +319,7 @@ export async function fetchFleets(): Promise<Fleet[]> {
 
 export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(harness)}`;
 
-export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number; field?: string; note?: string; kind?: string; reason?: string; parent?: string; linked?: string[]; output?: string; commands?: string[]; aborted?: boolean; use_existing?: string; suggested?: string };
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number; field?: string; note?: string; kind?: string; reason?: string; parent?: string; linked?: string[]; output?: string; commands?: string[]; aborted?: boolean; use_existing?: string; suggested?: string; code?: string };
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const SLOW_TIMEOUT_MS = 3 * 60_000;

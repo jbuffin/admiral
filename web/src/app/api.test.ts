@@ -18,6 +18,15 @@ describe('call on a refusal', () => {
     expect(await call('PUT', '/x')).toEqual({ ok: false, status: 400, error: 'bad role', field: 'role' });
   });
 
+  it('carries the code a 403 names, so a caller can tell no access from sharing off', async () => {
+    answer(403, { error: 'You need access to a/b. Ask its owner to add you.', code: 'no_access' });
+    expect(await call('POST', '/x')).toEqual({ ok: false, status: 403, error: 'You need access to a/b. Ask its owner to add you.', code: 'no_access' });
+    answer(403, { error: 'Crew sharing is off for this fleet.' });
+    expect(await call('POST', '/x')).toEqual({ ok: false, status: 403, error: 'Crew sharing is off for this fleet.' });
+    answer(403, { error: 'nope', code: 4 });
+    expect(await call('POST', '/x')).toEqual({ ok: false, status: 403, error: 'nope' });
+  });
+
   it('ignores a note that is not a string', async () => {
     answer(409, { error: 'nope', note: 4 });
     expect(await call('POST', '/x')).toEqual({ ok: false, status: 409, error: 'nope' });

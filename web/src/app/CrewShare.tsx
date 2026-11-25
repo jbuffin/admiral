@@ -31,6 +31,7 @@ export interface SharingView {
   login: string;
   published_error: string;
   crew_sharing: { enabled: boolean; share_repo: string };
+  repo?: { exists: boolean; private?: boolean; archived?: boolean; pushable?: boolean; error?: string };
 }
 
 const NO_SCAN = 'This file goes public without a secret scan. Read it for keys, tokens and passwords before you publish.';
