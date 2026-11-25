@@ -46,8 +46,12 @@ func TestUpdateBrowseRowsCarryTheUpdateKeyAndOnlyImportedOnesHaveAState(t *testi
 	if rows["scout"]["imported"] != "scout-hubot" {
 		t.Errorf("scout imported = %v, want scout-hubot", rows["scout"]["imported"])
 	}
-	if got, _ := rows["scout"]["update"].(string); got == "" {
-		t.Errorf("the imported row has update %v, want one of the four states", rows["scout"]["update"])
+	if got := rows["scout"]["update"]; got != "unknown" {
+		t.Errorf("before any check the imported row has update %v, want the checker's unknown", got)
+	}
+	p.updates()
+	if got, want := browseRows(t, p)["scout"]["update"], p.updateOf("scout-hubot"); got != want {
+		t.Errorf("the imported row has update %v, want the checker's %v", got, want)
 	}
 	if rows["bosun"]["update"] != nil {
 		t.Errorf("the row that is not imported has update %v, want null", rows["bosun"]["update"])
@@ -177,7 +181,8 @@ func TestUpdatePreviewRefusesWhatImportRefusesAndWritesNothing(t *testing.T) {
 		"hidden direction mark": {memberFile("scout", "") + "‮", "a character a reader can't see"},
 		"invalid utf-8":         {"---\nname: scout\nrole: triager\npick-me-when: x.\n---\n\n\xff\xfe\n", "isn't valid UTF-8"},
 		"over 64 KiB":           {big, "over 64 KiB"},
-		"ad-hoc":                {"---\nname: scout\nad-hoc: true\nrole: triager\npick-me-when: x.\n---\n\nHi.\n","an ad hoc member can't be imported"},
+		"ad-hoc":                {"---\nname: scout\nad-hoc: true\nrole: triager\npick-me-when: x.\n---\n\nHi.\n", "an ad hoc member can't be imported"},
+		"name differs":          {"---\nname: other\nrole: triager\npick-me-when: x.\n---\n\nHi.\n", "does not match the file name scout"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			u := newUpdatable(t, impOpts{})

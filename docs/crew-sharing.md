@@ -187,7 +187,7 @@ The member file and sidecar are written under the crew write lock; the member fi
 **When.** Admiral checks when the Crew page opens and once a day in the background.
 
 - The background check is a loop modeled on `internal/update.Checker`: started from `serve()`, the first check after a delay read by `internal/delay.From` (`ADMIRAL_CREW_UPDATE_FIRST_CHECK`, so tests can make it quick), then every 24 hours, with an injected clock. `ADMIRAL_CREW_UPDATE_FIRST_CHECK` is a Go duration and defaults to two minutes. Results are kept in memory per fleet, not on disk.
-- Opening the Crew page asks the checker for the fleet's state. A result younger than five minutes is reused; otherwise it checks now and the page shows "Checking for updates" as one line above the member list, while it holds shared members, until it answers. (Design change: the first draft put the wording on each shared member.) A failed check shows nothing new and logs the error; the next one retries.
+- Opening the Crew page asks the checker for the fleet's state. A result younger than five minutes is reused; otherwise it checks now and the page shows "Checking for updates" as one line above the member list, while it holds shared members, until it answers. (Design change, D38: the first draft put the wording on each shared member.) A failed check shows nothing new and logs the error; the next one retries.
 
 **How.** One call per repo that any attached sidecar in the fleet names: `GET /repos/{owner}/{repo}/contents/crew` on the default branch. For each attached shared member from that repo, the listed blob SHA of its `path` is compared with its sidecar's `upstream_blob`:
 

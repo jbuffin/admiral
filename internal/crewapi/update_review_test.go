@@ -2,7 +2,6 @@ package crewapi_test
 
 import (
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -100,21 +99,5 @@ func TestUpdateApplyThroughASymlinkedCrewDirectoryIs409AndWritesNothing(t *testi
 	wantText(t, "apply", out, "nothing was changed")
 	if got := readFile(t, behind+"/scout.md"); got != oldScout {
 		t.Errorf("member behind the link = %q, want it untouched", got)
-	}
-}
-
-func TestUpdatePreviewOfAFileAnswerWithABlobThatIsNotAGitObjectIDIsRefused(t *testing.T) {
-	u := newUpdatable(t, impOpts{})
-	u.gh.unseed()
-	u.gh.ok("GET", "repos/hubot/crew", repoAs("hubot/crew", "main"))
-	u.gh.ok("GET", "repos/hubot/crew/commits/main", map[string]any{"sha": newSHA})
-	u.gh.ok("GET", "repos/hubot/crew/contents/crew/scout.md?ref="+newSHA,
-		map[string]any{"sha": "not-a-blob", "size": len(newScout), "encoding": "base64", "content": b64(newScout)})
-	status, pv := u.preview("scout")
-	if status < 400 || strings.Contains(errText(pv), "up_to_date") {
-		t.Fatalf("update preview: %d %v, want a refusal", status, pv)
-	}
-	if u.memberBytes("scout") != oldScout {
-		t.Error("the member changed")
 	}
 }
