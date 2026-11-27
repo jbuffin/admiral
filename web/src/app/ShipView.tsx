@@ -481,7 +481,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
             </div>
             <InboxWaiting session={ship.session} />
             {/* A new ship waits on its first message. */}
-            <Composer target={target} box={box} interrupt={false} focus={!boat && !anchored && !moored && conv.state === 'none' && hasConversationAdapter(ship.harness)} />
+            <Composer target={target} box={box} interrupt={false} focus={!boat && !anchored && !moored && hasConversationAdapter(ship.harness)} primary />
           </>
         ) : tab === 'Terminal' ? (
           <TerminalTab ship={ship} boat={boat} />

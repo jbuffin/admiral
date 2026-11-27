@@ -5,6 +5,8 @@ import type { Conversation } from './conversation';
 import { boatRoutes } from './flotilla';
 import { Icon } from './Icon';
 import { bubblesShowing, snapshotOf, type BoxState, type Send } from './messageBox';
+import { editable, usePrimaryPaste } from './hooks/primaryPaste';
+import { coarsePointer } from './pointer';
 import { acceptSkill, matchSkills, skillQuery, type SkillList } from './skillMenu';
 
 /** What the box talks to: the ship, or one of its boats when `crew` is set. */
@@ -130,10 +132,17 @@ let menuIds = 0;
 /** One line that grows with its text, up to a third of the screen, with Send inside it; Enter sends and Shift+Enter breaks the line. With `skills`, a box that starts with the harness's mark offers its skills above it, as the terminal does. */
 export function MessageField({ label, placeholder, text, setText, send, disabled, canSend, busy = false, locked = false, focus = false, primary = false, skills }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => unknown; disabled: boolean; canSend: boolean; busy?: boolean; locked?: boolean; focus?: boolean; primary?: boolean; skills?: string }) {
   const field = useRef<HTMLTextAreaElement>(null);
+  const focused = useRef(false);
   useEffect(() => {
-    // The field enabling late must not take focus from an open sheet.
-    if (focus && !disabled && !document.querySelector('[aria-modal="true"]')) field.current?.focus();
+    if (!focus || disabled || focused.current) return;
+    focused.current = true;
+    // Once per boarding: a late enable must not take focus from an open sheet or a field the engineer moved to.
+    if (!coarsePointer() && !document.querySelector('[aria-modal="true"]') && !editable(document.activeElement)) field.current?.focus();
   }, [focus, disabled]);
+  usePrimaryPaste(field, primary, !disabled, (value) => {
+    setText(value);
+    setCaret(field.current?.selectionStart ?? 0);
+  });
   const menu = useRef<HTMLUListElement>(null);
   // Where a completion put the caret, set on the commit that shows its text: any later and fast typing lands on both sides of it.
   const caretTo = useRef<number | null>(null);

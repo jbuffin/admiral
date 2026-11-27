@@ -416,7 +416,7 @@ function ChatComposer({ chat }: { chat: Chat }) {
           {error}
         </p>
       ) : null}
-      <MessageField label="Message AdmiralBot" placeholder="Ask AdmiralBot" text={text} setText={setText} send={() => void send()} disabled={false} canSend={!sending && text.trim() !== ''} />
+      <MessageField label="Message AdmiralBot" placeholder="Ask AdmiralBot" text={text} setText={setText} send={() => void send()} disabled={false} canSend={!sending && text.trim() !== ''} primary />
     </div>
   );
 }

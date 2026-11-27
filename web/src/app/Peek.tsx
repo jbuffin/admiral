@@ -63,7 +63,7 @@ function ShipTurn({ ship, boat, fleetKey, item, children }: { ship: Ship; boat?:
         />
       </div>
       {children}
-      <Composer target={target} box={box} />
+      <Composer target={target} box={box} primary />
     </>
   );
 }
