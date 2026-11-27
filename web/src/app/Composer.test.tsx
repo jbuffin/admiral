@@ -152,3 +152,116 @@ test('a refused or lost send shows an error beside the box and keeps the text', 
   expect(box.value).toBe('Keep this text');
   expect(screen.queryByText('Keep this text', { selector: '.msg' })).toBeNull();
 });
+
+const pointer = (coarse: boolean) => vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('coarse') ? coarse : !q.includes('coarse'), addEventListener() {}, removeEventListener() {} }));
+const dropped = (data: Record<string, string>, files: unknown[] = []) => ({ getData: (type: string) => data[type] ?? '', files, types: Object.keys(data) });
+const pasteAnywhere = (data: Record<string, string>, files: unknown[] = []) => fireEvent.paste(document.body, { clipboardData: dropped(data, files) });
+
+function Field({ focus = false, primary = false, disabled = false, busy = false, locked = false }: { focus?: boolean; primary?: boolean; disabled?: boolean; busy?: boolean; locked?: boolean }) {
+  const [text, setText] = useState('');
+  return <MessageField label="Message" placeholder="Message the ship" text={text} setText={setText} send={() => {}} disabled={disabled} canSend busy={busy} locked={locked} focus={focus} primary={primary} />;
+}
+
+test('a fine pointer focuses the message box once it is enabled', () => {
+  pointer(false);
+  render(<Field focus />);
+  expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Message' }));
+});
+
+test('a coarse pointer leaves the message box unfocused so the keyboard stays down', () => {
+  pointer(true);
+  render(<Field focus />);
+  expect(document.activeElement).not.toBe(screen.getByRole('textbox', { name: 'Message' }));
+});
+
+test('a box that enables after the engineer moved on does not take focus back', () => {
+  pointer(false);
+  const other = document.body.appendChild(document.createElement('input'));
+  const { rerender } = render(<Field focus disabled />);
+  other.focus();
+  rerender(<Field focus disabled={false} />);
+  expect(document.activeElement).toBe(other);
+  other.remove();
+});
+
+test('a paste with nothing editable focused fills the primary box and is consumed', () => {
+  pointer(false);
+  render(<Field primary />);
+  const box = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;
+  expect(pasteAnywhere({ 'text/plain': 'from the clipboard' })).toBe(false);
+  expect(box.value).toBe('from the clipboard');
+  expect(document.activeElement).toBe(box);
+});
+
+test('a paste fills the primary box without raising the keyboard on a coarse pointer', () => {
+  pointer(true);
+  render(<Field primary />);
+  const box = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;
+  pasteAnywhere({ 'text/plain': 'from the clipboard' });
+  expect(box.value).toBe('from the clipboard');
+  expect(document.activeElement).not.toBe(box);
+});
+
+test('pasted markup stays literal text in the box', () => {
+  pointer(false);
+  render(<Field primary />);
+  pasteAnywhere({ 'text/plain': '<img src=x onerror=alert(1)> **bold**' });
+  expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe('<img src=x onerror=alert(1)> **bold**');
+  expect(document.querySelector('img')).toBeNull();
+});
+
+test('a paste is left alone while another field has focus', () => {
+  pointer(false);
+  const other = document.body.appendChild(document.createElement('input'));
+  render(<Field primary />);
+  other.focus();
+  expect(fireEvent.paste(other, { clipboardData: dropped({ 'text/plain': 'for the other field' }) })).toBe(true);
+  expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe('');
+  other.remove();
+});
+
+test('a paste is left alone while a dialog is open', () => {
+  pointer(false);
+  const dialog = document.body.appendChild(document.createElement('div'));
+  dialog.setAttribute('aria-modal', 'true');
+  render(<Field primary />);
+  expect(pasteAnywhere({ 'text/plain': 'under the dialog' })).toBe(true);
+  expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe('');
+  dialog.remove();
+});
+
+test.each([
+  ['disabled', { disabled: true }],
+  ['busy', { busy: true }],
+  ['locked', { locked: true }],
+])('a paste is left alone while the box is %s', (_, state) => {
+  pointer(false);
+  render(<Field primary {...state} />);
+  expect(pasteAnywhere({ 'text/plain': 'not now' })).toBe(true);
+  expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe('');
+});
+
+test('a paste of only a file is left alone', () => {
+  pointer(false);
+  render(<Field primary />);
+  expect(pasteAnywhere({}, [{ name: 'shot.png', type: 'image/png' }])).toBe(true);
+  expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe('');
+});
+
+test('a box that is not primary takes no paste from elsewhere', () => {
+  pointer(false);
+  render(<Field />);
+  expect(pasteAnywhere({ 'text/plain': 'nobody asked' })).toBe(true);
+  expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe('');
+});
+
+test('the Composer passes primary to its box', () => {
+  pointer(false);
+  function Primary() {
+    const box = useComposer(ship, conv);
+    return <Composer target={ship} box={box} primary />;
+  }
+  render(<Primary />);
+  pasteAnywhere({ 'text/plain': 'into the composer' });
+  expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe('into the composer');
+});

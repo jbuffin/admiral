@@ -128,7 +128,7 @@ function useSkillList(route: string | undefined, wanted: boolean) {
 let menuIds = 0;
 
 /** One line that grows with its text, up to a third of the screen, with Send inside it; Enter sends and Shift+Enter breaks the line. With `skills`, a box that starts with the harness's mark offers its skills above it, as the terminal does. */
-export function MessageField({ label, placeholder, text, setText, send, disabled, canSend, busy = false, locked = false, focus = false, skills }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => unknown; disabled: boolean; canSend: boolean; busy?: boolean; locked?: boolean; focus?: boolean; skills?: string }) {
+export function MessageField({ label, placeholder, text, setText, send, disabled, canSend, busy = false, locked = false, focus = false, primary = false, skills }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => unknown; disabled: boolean; canSend: boolean; busy?: boolean; locked?: boolean; focus?: boolean; primary?: boolean; skills?: string }) {
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     // The field enabling late must not take focus from an open sheet.
@@ -276,7 +276,7 @@ export function InterruptButton({ target, box }: { target: Target; box: ReturnTy
 }
 
 /** The box under the Conversation tab: a message to the ship or the picked boat, and a dimmed bubble per message until the conversation shows it. Interrupt goes over the box unless the view puts it beside its tabs. */
-export function Composer({ target, box, interrupt = true, focus = false }: { target: Target; box: ReturnType<typeof useComposer>; interrupt?: boolean; focus?: boolean }) {
+export function Composer({ target, box, interrupt = true, focus = false, primary = false }: { target: Target; box: ReturnType<typeof useComposer>; interrupt?: boolean; focus?: boolean; primary?: boolean }) {
   const { state } = target;
   const { text, setText, bubbles, error, send, sending, waking } = box;
   return (
@@ -308,6 +308,7 @@ export function Composer({ target, box, interrupt = true, focus = false }: { tar
         locked={waking}
         canSend={text.trim() !== ''}
         focus={focus}
+        primary={primary}
         skills={boatRoutes(target.session, target.crew).skills}
       />
     </div>

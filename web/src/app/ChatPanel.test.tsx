@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/preact';
+import { fireEvent, render, screen, within } from '@testing-library/preact';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Fleet } from './api';
 import type { InboxItem } from './inbox';
@@ -87,4 +87,21 @@ test('a chat the server says needs the terminal offers Open terminal beside its 
 test('a chat error the server does not flag has no Open terminal beside it', async () => {
   const note = await showing("Admiral can't read this chat's transcript");
   expect(within(note).queryByRole('button', { name: 'Open terminal' })).toBeNull();
+});
+
+test("a paste with nothing editable focused fills AdmiralBot's message box, and is left alone while another field has focus", async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  fleets.value = [fleet('alpha', 'Homeport', { on: true })];
+  render(<ChatPanel surface={surface} title phone />);
+  const box = (await screen.findByRole('textbox', { name: 'Message AdmiralBot' })) as HTMLTextAreaElement;
+  const paste = (on: Element, text: string) => fireEvent.paste(on, { clipboardData: { getData: (t: string) => (t === 'text/plain' ? text : ''), files: [], types: ['text/plain'] } });
+
+  const other = document.body.appendChild(document.createElement('input'));
+  other.focus();
+  expect(paste(other, 'for the other field')).toBe(true);
+  expect(box.value).toBe('');
+  other.remove();
+
+  expect(paste(document.body, 'ask about the ferry')).toBe(false);
+  expect(box.value).toBe('ask about the ferry');
 });

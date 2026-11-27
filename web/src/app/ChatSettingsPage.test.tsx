@@ -245,3 +245,19 @@ test('commitments list the open ones with their marks and never show a launch pr
   expect((await screen.findAllByRole('alert')).map((a) => a.textContent)).toContain('That commitment already closed.');
   await waitFor(() => expect(screen.queryByText('Ask me about the dock review.')).toBeNull());
 });
+
+test("a paste with nothing editable focused fills the instructions box, and is left alone while a dialog is open", async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  render(<ChatSettingsPage fleet={stored} />);
+  const box = (await screen.findByRole('textbox', { name: 'Instructions' })) as HTMLTextAreaElement;
+  const paste = (text: string) => fireEvent.paste(document.body, { clipboardData: { getData: (t: string) => (t === 'text/plain' ? text : ''), files: [], types: ['text/plain'] } });
+
+  const dialog = document.body.appendChild(document.createElement('div'));
+  dialog.setAttribute('aria-modal', 'true');
+  expect(paste('under the dialog')).toBe(true);
+  expect(box.value).toBe('');
+  dialog.remove();
+
+  expect(paste('Always say aye.')).toBe(false);
+  expect(box.value).toBe('Always say aye.');
+});
