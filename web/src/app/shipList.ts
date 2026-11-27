@@ -63,7 +63,6 @@ const repoOfUrl = (url: string | undefined): string => GITHUB_REPO_URL.exec(url 
 /** The repo a ship works in: its PRs', else its checkout's origin, else its order URL's, else the folder name. Re-homed when it differs from the checkout's origin. */
 export function workRepo(ship: Ship): { repo: string; rehomed: boolean } {
   const counts = new Map<string, { repo: string; n: number }>();
-  let best: { repo: string; n: number } | undefined;
   for (const p of ship.prs ?? []) {
     const repo = repoOfUrl(p.url);
     if (!repo) continue;
@@ -71,8 +70,9 @@ export function workRepo(ship: Ship): { repo: string; rehomed: boolean } {
     const entry = counts.get(key) ?? { repo, n: 0 };
     entry.n++;
     counts.set(key, entry);
-    if (!best || entry.n > best.n) best = entry;
   }
+  let best: { repo: string; n: number } | undefined;
+  for (const entry of counts.values()) if (!best || entry.n > best.n) best = entry;
   const origin = ship.origin_repo ?? '';
   const away = (repo: string) => repo.toLowerCase() !== origin.toLowerCase();
   if (best) return { repo: best.repo, rehomed: away(best.repo) };

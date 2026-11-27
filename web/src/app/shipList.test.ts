@@ -124,6 +124,11 @@ describe('workRepo', () => {
     expect(workRepo(s).repo).toBe('b/two');
   });
 
+  it('breaks a PR tie with the repo of the first PR even when another repo reaches the top count first', () => {
+    const s = placed('a', { prs: [pr('a/one', 1), pr('b/two', 2), pr('b/two', 3), pr('a/one', 4)] });
+    expect(workRepo(s).repo).toBe('a/one');
+  });
+
   it('reads PRs and ignores open_prs', () => {
     const s = placed('a', { open_prs: ['https://github.com/x/other/pull/9'], origin_repo: 'acme/widgets' });
     expect(workRepo(s)).toEqual({ repo: 'acme/widgets', rehomed: false });
