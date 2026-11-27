@@ -867,6 +867,8 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     if (opts.waitsOnMessage) {
       // A new ship with no conversation yet waits on the engineer's first message, and no card stands over the box. These are touch devices, so boarding leaves the keyboard down.
       await expect(messageBox(page)).toBeEnabled();
+      // A negative check passes at once, so let the commit's effects run before it looks.
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
       await expect(messageBox(page)).not.toBeFocused();
       await expect(viewPanel(page).locator('.convo-card')).toHaveCount(0);
     }
