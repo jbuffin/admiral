@@ -1,6 +1,6 @@
 # 43. An idea in the chat becomes a PR with no questions on the way
 
-Status: accepted
+Status: accepted, amended by [ADR 0051](0051-what-a-ship-needs-posts-a-need-card-in-its-fleets-chat.md) (a ship's need posts a need card in the chat, AdmiralBot answers it on the engineer's word, and Ready to merge posts a card for every ship)
 
 ## Context
 
