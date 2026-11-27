@@ -205,7 +205,7 @@ _Avoid_: configured skill, skill list
 A skill a harness on this Mac can load for a fleet's dock, from the harness's own skills folder or its plugins. A skill inside a repo counts only for that repo. The same skill can be installed on several harnesses, under its plain name on one and a plugin's name on another, and is still one skill.
 
 **AdmiralBot**:
-A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and the fleet's map, and acts by launching ships (a scout, a quick ship or a Commodore ship, its choice), working a campaign, drafting a campaign (a drafting ship, or a draft the engineer confirms in Admiral), adding orders, answering inbox items, giving a ship its next prompt, waking, stopping and dismissing ships, drafting a routine or turning one off, turning Hold fire on in its fleet and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which shows in the Inbox as an "AdmiralBot asked" item while it waits and is answered there or in the chat.
+A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and the fleet's map, and acts by launching ships (a scout, a quick ship or a Commodore ship, its choice), working a campaign, drafting a campaign (a drafting ship, or a draft the engineer confirms in Admiral), adding orders, answering inbox items and need cards, giving a ship its next prompt, waking, stopping and dismissing ships, drafting a routine or turning one off, turning Hold fire on in its fleet and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which shows in the Inbox as an "AdmiralBot asked" item while it waits and is answered there or in the chat.
 _Avoid_: assistant, chat ship, chat agent, background session, handoff (say "a launch via AdmiralBot")
 
 **Ledger**:
@@ -343,6 +343,10 @@ _Avoid_: report (the Admiral report is a different thing), results, summary
 **Report turn**:
 A turn the server gives AdmiralBot when a ship it launched from the chat finishes, so it can tell the engineer what came back. It is not the engineer's turn: AdmiralBot can read and talk in it, but can't act.
 _Avoid_: wake (a moored ship's), notification, callback
+
+**Need card**:
+A card the server posts in a fleet's chat when one of its ships needs the engineer: an Inbox item or a needs-you stop, or Ready to merge. It is that item itself, so a tap answers it, and a reply under it goes to AdmiralBot, which answers only with the engineer's choice. Once the need is answered anywhere, moves on or is removed, the card says so and collapses.
+_Avoid_: notification, relay, inbox card
 
 **Fleet digest**:
 A routine's summary, in one fleet's chat, of what that fleet's ships did since the last one. AdmiralBot writes it from facts Admiral gathers, and can't act while it does.

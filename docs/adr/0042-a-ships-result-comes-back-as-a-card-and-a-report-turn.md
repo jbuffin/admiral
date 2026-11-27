@@ -1,6 +1,6 @@
 # 42. A ship's result comes back as a card and a report turn
 
-Status: accepted, amended by [ADR 0043](0043-an-idea-in-the-chat-becomes-a-pr-with-no-questions-on-the-way.md) (Ready to merge and the end of a ship AdmiralBot launched each post a card) and [ADR 0045](0045-a-fleet-digest-is-a-routine-action-that-cannot-act.md) (the report-turn queue also carries fleet digest turns) and by a later change to its Report-turns bullet (an error exit, anchored, reports; only needing the engineer queues nothing)
+Status: accepted, amended by [ADR 0043](0043-an-idea-in-the-chat-becomes-a-pr-with-no-questions-on-the-way.md) (Ready to merge and the end of a ship AdmiralBot launched each post a card) and [ADR 0045](0045-a-fleet-digest-is-a-routine-action-that-cannot-act.md) (the report-turn queue also carries fleet digest turns) and by a later change to its Report-turns bullet (an error exit, anchored, reports; only needing the engineer queues nothing) and by [ADR 0051](0051-what-a-ship-needs-posts-a-need-card-in-its-fleets-chat.md) (a ship's need posts a need card in the chat, and AdmiralBot answers it on the engineer's word)
 
 ## Context
 
