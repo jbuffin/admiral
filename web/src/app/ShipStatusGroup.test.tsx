@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/preact';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type { MooredPR, Ship } from './api';
+import { collapsed } from './collapsedRepoGroups';
 import { ShipStatusGroup } from './ShipStatusGroup';
 import type { ShipGroup } from './shipList';
 
@@ -27,6 +28,7 @@ const ship = (name: string, extra: Partial<Ship> = {}): Ship => ({
 
 beforeEach(() => {
   localStorage.clear();
+  collapsed.value = new Set();
 });
 
 const show = (ships: Ship[], byRepo: boolean, status: ShipGroup['status'] = 'underway') => {

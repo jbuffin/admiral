@@ -258,8 +258,11 @@ a { color: inherit; text-decoration: none; }
 .ready-badge .glyph { color: var(--color-ok); }
 .group-anchored .glyph { color: var(--status-anchored); }
 .count { color: var(--color-muted); }
-.repo-head { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; padding: 2px 0; min-width: 0; font-family: var(--font-mono); font-size: var(--font-size-mono); color: var(--color-text2); }
+.repo-head { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 32px; margin: 8px 0 0; padding: 2px 0; border: 0; background: none; text-align: left; cursor: pointer; min-width: 0; font-family: var(--font-mono); font-size: var(--font-size-mono); color: var(--color-text2); }
 .repo-head::before { content: ""; flex: none; width: 10px; border-top: 1px solid var(--color-line2); }
+.repo-chevron { flex: none; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); margin: -3px 2px 0 0; transition: transform 0.15s; }
+.repo-head[aria-expanded="false"] .repo-chevron { transform: rotate(-45deg); margin-top: 0; }
+.ship-list[hidden] { display: none; }
 .repo-head .repo-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repo-head .count { flex: none; }
 .ship-list { list-style: none; margin: 0; padding: 0; }

@@ -1,5 +1,6 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
+import { collapsedKey, isCollapsed, toggleCollapsed } from './collapsedRepoGroups';
 import { fleetSearch } from './fleets';
 import { Flag } from './Flag';
 import { rowButtons } from './moored';
@@ -104,18 +105,24 @@ export function ShipStatusGroup({ group, bar, now, byRepo }: { group: ShipGroup;
         <span class="count">{g.ships.length}</span>
       </h2>
       {byRepo ? (
-        byWorkRepo(g.ships).map((r) => (
-          <Fragment key={r.repo.toLowerCase()}>
-            <p class="repo-head">
-              <span class="repo-name">{r.repo}</span> <span class="count">{r.ships.length}</span>
-            </p>
-            <ul class="ship-list">
-              {r.ships.map((s) => (
-                <ShipRow key={s.session} ship={s} bar={bar} now={now} label={workRepo(s).rehomed ? <RehomedFrom ship={s} /> : null} />
-              ))}
-            </ul>
-          </Fragment>
-        ))
+        byWorkRepo(g.ships).map((r) => {
+          const key = collapsedKey(g.status, r.repo);
+          const shut = isCollapsed(key);
+          const listId = `repo-${key.replace(/[^a-z0-9_-]/g, '_')}`;
+          return (
+            <Fragment key={r.repo.toLowerCase()}>
+              <button type="button" class="repo-head" aria-expanded={!shut} aria-controls={listId} onClick={() => toggleCollapsed(key)}>
+                <span class="repo-chevron" aria-hidden="true" />
+                <span class="repo-name">{r.repo}</span> <span class="count">{r.ships.length}</span>
+              </button>
+              <ul class="ship-list" id={listId} hidden={shut}>
+                {r.ships.map((s) => (
+                  <ShipRow key={s.session} ship={s} bar={bar} now={now} label={workRepo(s).rehomed ? <RehomedFrom ship={s} /> : null} />
+                ))}
+              </ul>
+            </Fragment>
+          );
+        })
       ) : (
         <ul class="ship-list">
           {g.ships.map((s) => (
