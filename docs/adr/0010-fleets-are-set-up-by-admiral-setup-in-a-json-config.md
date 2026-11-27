@@ -1,6 +1,6 @@
 # 10. Fleets are set up by `admiral setup` in a JSON config
 
-Status: accepted, amended below (sources belong to a fleet, fleets gain `owners` and `clone_root`, the config migrates itself at startup, and the HTTP API may edit four fleet fields and a fleet's chat settings)
+Status: accepted, amended below (sources belong to a fleet, fleets gain `owners` and `clone_root`, the config migrates itself at startup, and the HTTP API may edit four fleet fields and a fleet's chat settings); amended by [ADR 0050](0050-the-engineer-picks-the-default-fleet.md) (a top-level `default_fleet` key)
 
 ## Context
 
