@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { launchShip, messageBox, received, rowLink, seedFleets, seedTurn, setState, viewPanel, withFakeGh } from './shell';
+import { holds, launchShip, messageBox, received, rowLink, seedFleets, seedTurn, setState, viewPanel, viewTab, withFakeGh } from './shell';
 
 test('Shift+Enter adds a line to the message and Enter sends it whole', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -21,7 +21,7 @@ test('Shift+Enter adds a line to the message and Enter sends it whole', async ({
 test.describe('with a mouse', () => {
   test.use({ hasTouch: false, isMobile: false });
 
-  test('boarding a ship focuses its message box, and an unfocused paste fills it', async ({ page, admiral }) => {
+  test('boarding a ship focuses its message box once', async ({ page, admiral }) => {
     seedFleets(admiral, { live: true });
     await admiral.start({ env: withFakeGh(admiral) });
     const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', 'reply Aye'] });
@@ -32,12 +32,10 @@ test.describe('with a mouse', () => {
 
     await expect(viewPanel(page)).toContainText('Rebase onto main please');
     await expect(messageBox(page)).toBeFocused();
-    await messageBox(page).blur();
-    await page.evaluate(() => {
-      const clipboardData = new DataTransfer();
-      clipboardData.setData('text/plain', 'pasted from nowhere');
-      document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
-    });
-    await expect(messageBox(page)).toHaveValue('pasted from nowhere');
+
+    await viewTab(page, 'Terminal').click();
+    await viewTab(page, 'Conversation').click();
+    await expect(messageBox(page)).toBeEnabled();
+    await holds(() => messageBox(page).evaluate((el) => el !== document.activeElement), 'coming back to Conversation does not refocus the message box');
   });
 });

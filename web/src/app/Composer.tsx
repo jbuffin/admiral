@@ -5,8 +5,8 @@ import type { Conversation } from './conversation';
 import { boatRoutes } from './flotilla';
 import { Icon } from './Icon';
 import { bubblesShowing, snapshotOf, type BoxState, type Send } from './messageBox';
+import { touchKeyboard } from '../keys';
 import { editable, usePrimaryPaste } from './hooks/primaryPaste';
-import { coarsePointer } from './pointer';
 import { acceptSkill, matchSkills, skillQuery, type SkillList } from './skillMenu';
 
 /** What the box talks to: the ship, or one of its boats when `crew` is set. */
@@ -135,11 +135,12 @@ export function MessageField({ label, placeholder, text, setText, send, disabled
   const focused = useRef(false);
   useEffect(() => {
     if (!focus || disabled || focused.current) return;
+    // A late enable must not take focus from an open sheet, which gets another try, or from a field the engineer moved to.
+    if (document.querySelector('[aria-modal="true"]')) return;
     focused.current = true;
-    // Once per boarding: a late enable must not take focus from an open sheet or a field the engineer moved to.
-    if (!coarsePointer() && !document.querySelector('[aria-modal="true"]') && !editable(document.activeElement)) field.current?.focus();
+    if (!touchKeyboard() && !editable(document.activeElement)) field.current?.focus();
   }, [focus, disabled]);
-  usePrimaryPaste(field, primary, !disabled, (value) => {
+  usePrimaryPaste(field, primary, (value) => {
     setText(value);
     setCaret(field.current?.selectionStart ?? 0);
   });

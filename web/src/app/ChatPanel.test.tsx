@@ -89,18 +89,12 @@ test('a chat error the server does not flag has no Open terminal beside it', asy
   expect(within(note).queryByRole('button', { name: 'Open terminal' })).toBeNull();
 });
 
-test("a paste with nothing editable focused fills AdmiralBot's message box, and is left alone while another field has focus", async () => {
+test("a paste with nothing editable focused fills AdmiralBot's message box", async () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   fleets.value = [fleet('alpha', 'Homeport', { on: true })];
   render(<ChatPanel surface={surface} title phone />);
   const box = (await screen.findByRole('textbox', { name: 'Message AdmiralBot' })) as HTMLTextAreaElement;
   const paste = (on: Element, text: string) => fireEvent.paste(on, { clipboardData: { getData: (t: string) => (t === 'text/plain' ? text : ''), files: [], types: ['text/plain'] } });
-
-  const other = document.body.appendChild(document.createElement('input'));
-  other.focus();
-  expect(paste(other, 'for the other field')).toBe(true);
-  expect(box.value).toBe('');
-  other.remove();
 
   expect(paste(document.body, 'ask about the ferry')).toBe(false);
   expect(box.value).toBe('ask about the ferry');

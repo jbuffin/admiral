@@ -38,7 +38,7 @@ export const peekKeys: { current: ((a: KeyAct) => void) | null } = { current: nu
 const toList = () => go(surfacePath(inboxSurface), fleetSearch.value);
 
 /** The ship's last turn with its card and message box; a file item's form sits between the turn and the box. */
-function ShipTurn({ ship, boat, fleetKey, item, children }: { ship: Ship; boat?: CrewBoat; fleetKey?: string; item: boolean; children?: preact.ComponentChildren }) {
+function ShipTurn({ ship, boat, fleetKey, item, primary, children }: { ship: Ship; boat?: CrewBoat; fleetKey?: string; item: boolean; primary: boolean; children?: preact.ComponentChildren }) {
   const { conv, loadOlder } = useShipConversation(ship, boat);
   const target = targetFor(ship, boat, conv);
   const box = useComposer(target, conv);
@@ -63,13 +63,14 @@ function ShipTurn({ ship, boat, fleetKey, item, children }: { ship: Ship; boat?:
         />
       </div>
       {children}
-      <Composer target={target} box={box} primary />
+      <Composer target={target} box={box} primary={primary} />
     </>
   );
 }
 
 /** back leaves Peek for the surface that opened it; the Inbox when none is given. */
-export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: (text: string) => void; back?: { href: string; go: () => void }; gone?: boolean }) {
+/** `primary` makes its message box take an unfocused paste; a page with another primary box leaves it off. */
+export function Peek({ entry, fold, back, gone = false, primary = false }: { entry: Entry; fold: (text: string) => void; back?: { href: string; go: () => void }; gone?: boolean; primary?: boolean }) {
   const ship = ships.value.find((s) => s.session === entry.session);
   const boat = entry.crew ? ship?.crew.find((b) => b.name === entry.crew!.name) : undefined;
   const fleetKey = entry.fleet?.key ?? ship?.fleet;
@@ -238,7 +239,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
             <p class="line">This ship is gone.</p>
           ) : null
         ) : ship ? (
-          <ShipTurn key={entry.key} ship={ship} boat={boat} fleetKey={fleetKey} item={item}>
+          <ShipTurn key={entry.key} ship={ship} boat={boat} fleetKey={fleetKey} item={item} primary={primary}>
             {form}
           </ShipTurn>
         ) : kind === 'drafting_ended' ? (

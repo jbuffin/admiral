@@ -737,10 +737,10 @@ export const shipOption = (a: Admiral, ship: LaunchedShip, name: string) => tmux
 export const paneSize = (a: Admiral, ship: LaunchedShip) => tmux(a, 'display', '-p', '-t', ship.session, '#{window_width}x#{window_height}').stdout.trim();
 
 /** Asserts that `ok` stays true for `ms`: the way to show that something does not happen. */
-export async function holds(ok: () => boolean, what: string, ms = 1500) {
+export async function holds(ok: () => boolean | Promise<boolean>, what: string, ms = 1500) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    expect(ok(), what).toBe(true);
+    expect(await ok(), what).toBe(true);
     await new Promise((r) => setTimeout(r, 100));
   }
 }
@@ -867,9 +867,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     if (opts.waitsOnMessage) {
       // A new ship with no conversation yet waits on the engineer's first message, and no card stands over the box. These are touch devices, so boarding leaves the keyboard down.
       await expect(messageBox(page)).toBeEnabled();
-      // A negative check passes at once, so let the commit's effects run before it looks.
-      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-      await expect(messageBox(page)).not.toBeFocused();
+      await holds(() => messageBox(page).evaluate((el) => el !== document.activeElement), 'the message box stays unfocused');
       await expect(viewPanel(page).locator('.convo-card')).toHaveCount(0);
     }
     await press(page.getByRole('link', { name: 'Back', exact: true }));

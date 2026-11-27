@@ -173,7 +173,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
   const peek = peekOf(loc.value.path);
   const search = fleetSearch.value;
   const { open, closing, gone, foldKey } = usePeekEntry(peek, entries, queue, rerender, () => go(surfacePath(surface), search, true));
-  const detail = open && !closing ? <Peek key={open.key} entry={open} gone={gone} fold={(text) => foldKey(open.key, text)} /> : null;
+  const detail = open && !closing ? <Peek key={open.key} entry={open} gone={gone} fold={(text) => foldKey(open.key, text)} primary /> : null;
 
   // Rows that open a Peek, in the order the list shows them.
   const peekable = groups.flatMap((g) => g.rows).filter((e) => e.folded === null && e.item?.kind !== 'notice');

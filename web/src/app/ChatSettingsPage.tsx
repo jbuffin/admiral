@@ -66,7 +66,7 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
     setBusy(false);
   };
   const field = useRef<HTMLTextAreaElement>(null);
-  usePrimaryPaste(field, true, !busy, setText);
+  usePrimaryPaste(field, true, setText);
   const count = instructionsCount(text);
   const dirty = text.trim() !== saved.trim();
   const now = Date.now();

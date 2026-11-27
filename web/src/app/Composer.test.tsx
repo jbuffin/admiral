@@ -265,3 +265,31 @@ test('the Composer passes primary to its box', () => {
   pasteAnywhere({ 'text/plain': 'into the composer' });
   expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe('into the composer');
 });
+
+test('with two boxes mounted, an unfocused paste goes only to the primary one, on a coarse pointer too', () => {
+  pointer(true);
+  render(
+    <>
+      <Field primary />
+      <Field />
+    </>,
+  );
+  const [primary, other] = screen.getAllByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement[];
+  pasteAnywhere({ 'text/plain': 'one box only' });
+  expect(primary.value).toBe('one box only');
+  expect(other.value).toBe('');
+});
+
+test('a paste a primary box took is not inserted again by another primary box', () => {
+  pointer(true);
+  render(
+    <>
+      <Field primary />
+      <Field primary />
+    </>,
+  );
+  const [first, second] = screen.getAllByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement[];
+  pasteAnywhere({ 'text/plain': 'taken once' });
+  expect(first.value).toBe('taken once');
+  expect(second.value).toBe('');
+});
