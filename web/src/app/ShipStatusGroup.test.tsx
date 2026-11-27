@@ -368,7 +368,7 @@ test('a move under one status heading orders the same repos under another headin
   expect(heads(second)).toEqual([S, W, T]);
   drag(T, 10, 'pointerUp', first);
   expect(heads(first)).toEqual([T, W, S]);
-  expect(heads(second)).toEqual([T, S, W]);
+  expect(heads(second)).toEqual([T, W, S]);
 });
 
 test('a stored repo absent from the moved heading follows that heading\'s repos', () => {
