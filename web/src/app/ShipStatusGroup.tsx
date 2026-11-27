@@ -84,8 +84,7 @@ function ShipRow({ ship, bar, now, label }: { ship: Ship; bar: string; now: numb
   );
 }
 
-
-/** The row's repo label: from where it launched when it works in another repo, nothing when the sub-heading names the repo. */
+/** Renders "from <folder>" for a re-homed row, and nothing when `ship.repo` is empty. */
 function RehomedFrom({ ship }: { ship: Ship }) {
   return ship.repo ? (
     <span class="ship-repo" title={ship.dir}>
