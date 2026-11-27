@@ -1,0 +1,221 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE #876 · ConPTY bridge</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.css">
+<style>
+  body { margin: 0; font: 13px system-ui, sans-serif; background: #111; color: #ddd; display: grid; grid-template-columns: 230px 1fr 380px; height: 100vh; }
+  #left, #right { padding: 8px; overflow: auto; border-right: 1px solid #333; }
+  #right { border-right: 0; border-left: 1px solid #333; display: flex; flex-direction: column; }
+  #mid { display: flex; flex-direction: column; min-width: 0; }
+  #banner { background: #a33; color: #fff; padding: 4px 8px; font-weight: 600; }
+  #term { flex: 1; min-height: 0; padding: 4px; }
+  #status { padding: 4px 8px; background: #222; font-family: monospace; white-space: pre; overflow: hidden; }
+  button, select, input, textarea { font: inherit; background: #222; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 3px 6px; margin: 2px 0; }
+  button:hover { background: #333; }
+  .pane { padding: 4px; border: 1px solid #333; margin: 4px 0; cursor: pointer; }
+  .pane.cur { border-color: #6af; }
+  h4 { margin: 10px 0 4px; color: #9ab; }
+  #log { flex: 1; font: 11px monospace; white-space: pre-wrap; overflow: auto; background: #0a0a0a; padding: 4px; }
+  .k-bell { color: #fd5; } .k-title { color: #8cf; } .k-reply { color: #f8a; } .k-seq { color: #9c9; } .k-exit { color: #f66; } .k-drop { color: #c9f; }
+  textarea { width: 100%; box-sizing: border-box; height: 60px; }
+  label { display: block; }
+</style>
+</head>
+<body>
+<div id="left">
+  <h4>Spawn in host</h4>
+  <button onclick="spawn('claude')">claude</button>
+  <button onclick="spawn('codex')">codex</button>
+  <button onclick="spawn('pwsh')">pwsh</button>
+  <button onclick="spawn('cmd')">cmd</button>
+  <label>queries answered by
+    <select id="answer"><option value="host">host emulator</option><option value="browser">browser xterm.js</option></select></label>
+  <label>join snapshot
+    <select id="snap"><option value="render">render (tmux-style)</option><option value="replay">replay (tuios)</option></select></label>
+  <h4>Panes</h4>
+  <div id="panes"></div>
+  <button onclick="refresh()">refresh</button>
+  <h4>Pane</h4>
+  <button onclick="rejoin()">rejoin (new snapshot)</button>
+  <button onclick="window.open('/api/dump?pane='+cur)">dump text</button>
+  <button onclick="killPane()">kill</button>
+  <h4>Size</h4>
+  <button onclick="setSize(80,24)">80x24</button>
+  <button onclick="setSize(120,36)">120x36</button>
+  <button onclick="setSize(60,40)">60x40 (phone)</button>
+  <button onclick="fitNow()">fit window</button>
+  <button onclick="storm()">resize storm ×10</button>
+  <h4>Host</h4>
+  <button onclick="window.open('/api/hooks')">hook probe log</button>
+  <button onclick="confirm('Stop the host? Every pane dies.') && fetch('/api/stop-host',{method:'POST'})">stop host…</button>
+</div>
+<div id="mid">
+  <div id="banner">PROTOTYPE for admiral #876, throwaway. ConPTY host → bridge stub → xterm.js</div>
+  <div id="term"></div>
+  <div id="status">no pane</div>
+</div>
+<div id="right">
+  <h4>Send a prompt</h4>
+  <textarea id="prompt">Say hello in one short sentence.</textarea>
+  <button onclick="sendPrompt('raw')">raw text + CR</button>
+  <button onclick="sendPrompt('bracketed')">bracketed paste, wait, CR</button>
+  <button onclick="sendPrompt('typed')">text, wait 400ms, CR</button>
+  <button onclick="sendPrompt('chars')">char by char, CR</button>
+  <label><input type="checkbox" id="multiline"> keep newlines (else they become spaces)</label>
+  <h4>Events <button onclick="logEl.textContent=''">clear</button> <label style="display:inline"><input type="checkbox" id="showseq" checked> seqs</label></h4>
+  <div id="log"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.11.0/lib/addon-fit.js"></script>
+<script>
+const ESC = '\x1b';
+const logEl = document.getElementById('log');
+const statusEl = document.getElementById('status');
+let cur = null, ws = null, lastJoin = null, size = null;
+const term = new Terminal({ fontFamily: 'Cascadia Mono, Consolas, monospace', fontSize: 14, scrollback: 5000, allowProposedApi: true });
+const fit = new FitAddon.FitAddon();
+term.loadAddon(fit);
+// As web/src/terminal.ts: Shift+Enter sends NEWLINE (ESC CR, web/src/keys.ts), not CR.
+term.attachCustomKeyEventHandler((e) => {
+  // PROTOTYPE fix (not in web/src today): on Windows, Ctrl+V and Ctrl+Shift+V
+  // become ^V in xterm.js and the browser never pastes. Let the browser paste.
+  if (e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'v' || e.key === 'V')) return false;
+  if (e.key !== 'Enter' || !e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return true;
+  if (e.type === 'keydown') term.input('\x1b\r');
+  e.preventDefault();
+  return false;
+});
+term.open(document.getElementById('term'));
+fit.fit();
+
+function log(kind, text) {
+  if (kind === 'seq' && !document.getElementById('showseq').checked) return;
+  const d = document.createElement('div');
+  d.className = 'k-' + kind;
+  d.textContent = `${new Date().toISOString().slice(11, 23)} ${kind} ${text}`;
+  logEl.appendChild(d);
+  if (logEl.childNodes.length > 3000) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// The same sequence internal/bridge's join is replayed with in web/src/bridgeReplay.ts.
+const lines = (s) => s.split('\n').join('\r\n');
+function joinSequence(j) {
+  let out = '';
+  if (j.scrollback && !j.modes.alternate) out += `${ESC}[0m${lines(j.scrollback)}${'\r\n'.repeat(j.size.rows)}`;
+  if (j.modes.alternate) out += `${ESC}[?1049h`;
+  out += `${ESC}[0m${ESC}[H${ESC}[2J${lines(j.screen)}${ESC}[0m`;
+  out += `${ESC}[${j.cursor.y + 1};${j.cursor.x + 1}H`;
+  if (j.modes.application_cursor) out += `${ESC}[?1h`;
+  if (j.modes.bracketed_paste) out += `${ESC}[?2004h`;
+  if (j.modes.mouse !== 'none') out += `${ESC}[?1003h${ESC}[?1006h`;
+  // PROTOTYPE fix: bridgeReplay.ts doesn't carry focus reporting, so a joining
+  // xterm.js never reports focus and the harness thinks it is always focused.
+  if (j.modes.focus) out += `${ESC}[?1004h`;
+  out += j.cursor.visible ? `${ESC}[?25h` : `${ESC}[?25l`;
+  return out;
+}
+
+async function refresh() {
+  const r = await fetch('/api/panes');
+  const ps = await r.json();
+  const el = document.getElementById('panes');
+  el.innerHTML = '';
+  for (const p of ps) {
+    const d = document.createElement('div');
+    d.className = 'pane' + (p.pane === cur ? ' cur' : '');
+    d.textContent = `${p.pane} ${p.name} pid ${p.pid} ${p.cols}x${p.rows} ${p.exited ? 'exited ' + p.exit_code.toString(16) : 'live'} [${p.answer}]`;
+    d.onclick = () => attach(p.pane, p.answer);
+    el.appendChild(d);
+  }
+}
+
+async function spawn(preset) {
+  const r = await fetch(`/api/spawn?preset=${preset}&cols=${term.cols}&rows=${term.rows}&answer=${document.getElementById('answer').value}`, { method: 'POST' });
+  const t = await r.text();
+  log('spawn', t);
+  try { const j = JSON.parse(t); if (j.pane) { await refresh(); attach(j.pane, document.getElementById('answer').value); } } catch {}
+}
+
+let answerBy = 'host';
+// With the host answering, xterm.js's own replies to the same queries would be a second answer: drop them.
+const replyRe = /^(\x1b\[\?[\d;]*c|\x1b\[>[\d;]*c|\x1b\[\d+;\d+R|\x1b\]\d+;rgb:[^\x07\x1b]*(\x07|\x1b\\)|\x1b\[\?\d+u|\x1bP>\|[^\x1b]*\x1b\\|\x1b\[\?[\d;]+\$y)+$/;
+
+function attach(pane, answer) {
+  if (ws) { ws.onclose = null; ws.close(); }
+  cur = pane; answerBy = answer || 'host';
+  refresh();
+  const snap = document.getElementById('snap').value;
+  ws = new WebSocket(`ws://${location.host}/ws/bridge/${pane}?snap=${snap}`);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'join', api: 1, cols: term.cols, rows: term.rows }));
+  ws.onmessage = (e) => {
+    if (typeof e.data !== 'string') { term.write(new Uint8Array(e.data)); return; }
+    const m = JSON.parse(e.data);
+    if (m.type === 'join') {
+      lastJoin = m;
+      term.reset();
+      if (m.snap === 'replay') term.write(Uint8Array.from(atob(m.replay), c => c.charCodeAt(0)));
+      else term.write(joinSequence(m));
+      size = m.size;
+      log('join', `${m.size.cols}x${m.size.rows} scrollback=${m.scrollback ? m.scrollback.split('\n').length : 0} modes=${JSON.stringify(m.modes)} ship=${JSON.stringify(m.ship)} snap=${m.snap}`);
+      status();
+    } else if (m.type === 'size') {
+      size = { cols: m.cols, rows: m.rows };
+      if (term.cols !== m.cols || term.rows !== m.rows) term.resize(m.cols, m.rows);
+      status();
+    } else if (m.type === 'event') {
+      const ev = m.event;
+      const { kind, t, ...rest } = ev;
+      log(kind, `+${t}ms ${JSON.stringify(rest)}`);
+      if (kind === 'exit') status();
+    } else log('msg', e.data);
+  };
+  ws.onclose = () => { log('ws', 'closed'); statusEl.textContent = 'disconnected from ' + pane; };
+}
+
+function rejoin() { if (cur) attach(cur, answerBy); }
+
+function send(data) { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data })); }
+term.onData((d) => {
+  if (answerBy === 'host' && replyRe.test(d)) { log('drop', 'xterm.js reply ' + JSON.stringify(d)); return; }
+  send(d);
+});
+term.onBinary((d) => send(d));
+
+function setSize(c, r) {
+  term.resize(c, r);
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', cols: c, rows: r }));
+  status();
+}
+function fitNow() { fit.fit(); setSize(term.cols, term.rows); }
+window.addEventListener('resize', () => { fit.fit(); setSize(term.cols, term.rows); });
+async function storm() {
+  for (let i = 0; i < 10; i++) { setSize(i % 2 ? 80 : 120, i % 2 ? 24 : 36); await new Promise(r => setTimeout(r, 150)); }
+  fitNow();
+}
+
+async function killPane() { if (cur) { await fetch('/api/kill?pane=' + cur, { method: 'POST' }); setTimeout(refresh, 2500); } }
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+async function sendPrompt(how) {
+  let text = document.getElementById('prompt').value;
+  if (!document.getElementById('multiline').checked) text = text.replace(/\s*\n\s*/g, ' ');
+  log('prompt', `${how}: ${JSON.stringify(text)}`);
+  if (how === 'raw') send(text + '\r');
+  else if (how === 'bracketed') { send(`${ESC}[200~${text}${ESC}[201~`); await sleep(400); send('\r'); }
+  else if (how === 'typed') { send(text); await sleep(400); send('\r'); }
+  else if (how === 'chars') { for (const ch of text) { send(ch); await sleep(15); } await sleep(200); send('\r'); }
+  term.focus();
+}
+
+function status() {
+  statusEl.textContent = `pane ${cur}  pane size ${size ? size.cols + 'x' + size.rows : '?'}  xterm ${term.cols}x${term.rows}  answer=${answerBy}`;
+}
+refresh().then(() => {});
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
