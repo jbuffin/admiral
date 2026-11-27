@@ -361,8 +361,18 @@ const openTab = (): Tab => {
 };
 
 function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
-  const [tab, setTab] = useState<Tab>(openTab);
-  const [crew, setCrew] = useState<string | null>(() => crewFromSearch(loc.value.search));
+  const [tab, setTabNow] = useState<Tab>(openTab);
+  const [crew, setCrewNow] = useState<string | null>(() => crewFromSearch(loc.value.search));
+  // Boarding focuses the message box once: moving between tabs or boats afterwards is not a boarding.
+  const moved = useRef(tab !== 'Conversation' || crew !== null);
+  const setTab = (t: Tab) => {
+    moved.current = true;
+    setTabNow(t);
+  };
+  const setCrew = (c: string | null) => {
+    moved.current = true;
+    setCrewNow(c);
+  };
   const editors = useEditors();
   // Read once at mount; dropping it keeps a remount from reopening Terminal.
   useEffect(() => {
@@ -480,8 +490,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
               )}
             </div>
             <InboxWaiting session={ship.session} />
-            {/* A new ship waits on its first message. */}
-            <Composer target={target} box={box} interrupt={false} focus={!boat && !anchored && !moored && conv.state === 'none' && hasConversationAdapter(ship.harness)} />
+            <Composer target={target} box={box} interrupt={false} focus={!moved.current && !boat && !anchored && !moored && hasConversationAdapter(ship.harness)} primary />
           </>
         ) : tab === 'Terminal' ? (
           <TerminalTab ship={ship} boat={boat} />

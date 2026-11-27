@@ -5,6 +5,8 @@ import type { Conversation } from './conversation';
 import { boatRoutes } from './flotilla';
 import { Icon } from './Icon';
 import { bubblesShowing, snapshotOf, type BoxState, type Send } from './messageBox';
+import { touchKeyboard } from '../keys';
+import { editable, usePrimaryPaste } from './hooks/primaryPaste';
 import { acceptSkill, matchSkills, skillQuery, type SkillList } from './skillMenu';
 
 /** What the box talks to: the ship, or one of its boats when `crew` is set. */
@@ -128,12 +130,20 @@ function useSkillList(route: string | undefined, wanted: boolean) {
 let menuIds = 0;
 
 /** One line that grows with its text, up to a third of the screen, with Send inside it; Enter sends and Shift+Enter breaks the line. With `skills`, a box that starts with the harness's mark offers its skills above it, as the terminal does. */
-export function MessageField({ label, placeholder, text, setText, send, disabled, canSend, busy = false, locked = false, focus = false, skills }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => unknown; disabled: boolean; canSend: boolean; busy?: boolean; locked?: boolean; focus?: boolean; skills?: string }) {
+export function MessageField({ label, placeholder, text, setText, send, disabled, canSend, busy = false, locked = false, focus = false, primary = false, skills }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => unknown; disabled: boolean; canSend: boolean; busy?: boolean; locked?: boolean; focus?: boolean; primary?: boolean; skills?: string }) {
   const field = useRef<HTMLTextAreaElement>(null);
+  const focused = useRef(false);
   useEffect(() => {
-    // The field enabling late must not take focus from an open sheet.
-    if (focus && !disabled && !document.querySelector('[aria-modal="true"]')) field.current?.focus();
+    if (!focus || disabled || focused.current) return;
+    // A late enable must not take focus from an open sheet, which gets another try, or from a field the engineer moved to.
+    if (document.querySelector('[aria-modal="true"]')) return;
+    focused.current = true;
+    if (!touchKeyboard() && !editable(document.activeElement)) field.current?.focus();
   }, [focus, disabled]);
+  usePrimaryPaste(field, primary, (value) => {
+    setText(value);
+    setCaret(field.current?.selectionStart ?? 0);
+  });
   const menu = useRef<HTMLUListElement>(null);
   // Where a completion put the caret, set on the commit that shows its text: any later and fast typing lands on both sides of it.
   const caretTo = useRef<number | null>(null);
@@ -276,7 +286,7 @@ export function InterruptButton({ target, box }: { target: Target; box: ReturnTy
 }
 
 /** The box under the Conversation tab: a message to the ship or the picked boat, and a dimmed bubble per message until the conversation shows it. Interrupt goes over the box unless the view puts it beside its tabs. */
-export function Composer({ target, box, interrupt = true, focus = false }: { target: Target; box: ReturnType<typeof useComposer>; interrupt?: boolean; focus?: boolean }) {
+export function Composer({ target, box, interrupt = true, focus = false, primary = false }: { target: Target; box: ReturnType<typeof useComposer>; interrupt?: boolean; focus?: boolean; primary?: boolean }) {
   const { state } = target;
   const { text, setText, bubbles, error, send, sending, waking } = box;
   return (
@@ -308,6 +318,7 @@ export function Composer({ target, box, interrupt = true, focus = false }: { tar
         locked={waking}
         canSend={text.trim() !== ''}
         focus={focus}
+        primary={primary}
         skills={boatRoutes(target.session, target.crew).skills}
       />
     </div>

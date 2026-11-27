@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import { Button } from './Button';
 import { cancelCommitment, deleteNote, getCommitments, getInstructions, getNotes, promoteNote, saveFleet, saveInstructions, type ChatCommitment, type ChatNote, type Fleet } from './api';
 import { checkErrors, checkKey } from './capabilities';
+import { usePrimaryPaste } from './hooks/primaryPaste';
 import { MissingCapability } from './MissingCapability';
 import { Choice } from './Choice';
 import { fleets } from './fleets';
@@ -64,6 +65,8 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
     if (!r.ok) setCancelError(cancelErrorMessage(r.status, r.error));
     setBusy(false);
   };
+  const field = useRef<HTMLTextAreaElement>(null);
+  usePrimaryPaste(field, true, setText);
   const count = instructionsCount(text);
   const dirty = text.trim() !== saved.trim();
   const now = Date.now();
@@ -80,7 +83,7 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
           <div class="t">
             <label for="chat-instructions">Instructions</label>
             <span>Plain words AdmiralBot follows every time. Only you can change them.</span>
-            <textarea id="chat-instructions" rows={6} value={text} disabled={busy} onInput={(e) => setText(e.currentTarget.value)} />
+            <textarea ref={field} id="chat-instructions" rows={6} value={text} disabled={busy} onInput={(e) => setText(e.currentTarget.value)} />
             <span class={count > INSTRUCTIONS_MAX ? 'note error' : undefined}>
               {count} / {INSTRUCTIONS_MAX}
             </span>
