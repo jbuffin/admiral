@@ -257,6 +257,7 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, Link: r.Link, Titled: true, Via: r.Via, Chat: r.Chat, Routine: r.Routine, Commitment: r.Commitment, Round: r.Round, Launched: r.Launched, FirstLaunched: cmpFirst(r.FirstLaunched, r.Launched), PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, Waiting: polls[i].waiting, NoResume: !moor.ValidResume(r.Resume),
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}, Agents: []sessionhost.Subagent{}}
 		sh.Worktree, _ = launcher.WorktreeOf(s.Launcher.Home, r.Session)
+		sh.OriginRepo = s.originRepo(checkoutOf(sh))
 		sh.Fix = polls[i].fix
 		s.showDrafting(&sh)
 		sh.StackReady, sh.ReadyUpTo = moor.StackReady(prs[i])

@@ -1,19 +1,16 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, loaded } from './fleets';
-import { Flag } from './Flag';
 import { useSubscribe } from './hooks/subscribe';
 import { FleetSwitcher } from './FleetSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
-import { GROUP_TITLES, groupShips, shipRowAge } from './shipList';
+import { groupShips, oneWorkRepo } from './shipList';
+import { ShipStatusGroup } from './ShipStatusGroup';
 import { useNow } from './useNow';
 import { Button } from './Button';
-import { rowButtons } from './moored';
-import { MooredActions } from './MooredActions';
-import { MooredPRs } from './MooredPRs';
 import { LaunchForm } from './LaunchDialog';
 import { forYouLinkText } from './orderDetail';
 import { watchPresence } from './presence';
@@ -24,9 +21,7 @@ import { Unreachable } from './Unreachable';
 import { PairScreen } from './PairScreen';
 import { InstallSheet } from './InstallPrompts';
 import { gateOf } from './pairing';
-import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
 import { call, iconSrc, type Ship } from './api';
-import { ShipOrder, ShipRepo } from './ShipOrder';
 import { CrewPage } from './CrewPage';
 import { RoutinesPage } from './RoutinesPage';
 import { StandingOrdersPage } from './StandingOrdersPage';
@@ -105,83 +100,11 @@ function EmptyState({ surface, title, children }: { surface: Surface; title: boo
   );
 }
 
-function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
-  const meta = ship.crew_live > 0 ? `${ship.crew_live} crew` : '';
-  const moored = ship.status === 'moored';
-  const [error, setError] = useState('');
-  const search = fleetSearch.value;
-  if (moored) {
-    return (
-      <li class="ship-row moored">
-        <span class="ship-bar" style={{ background: bar }} aria-hidden="true" />
-        <Flag harness={ship.harness} size="row" />
-        <div class="ship-main">
-          <a
-            class="ship-name ship-name-link"
-            href={shipPath(ship.session) + search}
-            onClick={(e) => {
-              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-              e.preventDefault();
-              go(shipPath(ship.session), search);
-            }}
-          >
-            {ship.name}
-          </a>
-          <ShipOrder ship={ship} />
-          {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
-          {rowButtons(ship, false).note ? <span class="ship-tail">{rowButtons(ship, false).note}</span> : null}
-          <ReadyToMerge ship={ship} />
-          <MooredPRs ship={ship} now={now} />
-          <MooredActions ship={ship} onError={setError} />
-        </div>
-        <div class="ship-side">
-          <ShipRepo ship={ship} />
-          {meta ? <span class="ship-meta">{meta}</span> : null}
-          <span class="ship-age">{shipRowAge(ship, now)}</span>
-        </div>
-        {error ? (
-          <p class="alert" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </li>
-    );
-  }
-  return (
-    <li class="ship-row">
-      {/* The name's link covers the row, so the issue link can sit inside it without nesting one link in another. */}
-      <div class="ship-link ship-link-cover">
-        <span class="ship-bar" style={{ background: bar }} aria-hidden="true" />
-        <Flag harness={ship.harness} size="row" />
-        <div class="ship-main">
-          <a
-            class="ship-name ship-cover"
-            href={shipPath(ship.session) + search}
-            onClick={(e) => {
-              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-              e.preventDefault();
-              go(shipPath(ship.session), search);
-            }}
-          >
-            {ship.name}
-          </a>
-          <ShipOrder ship={ship} />
-          {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
-        </div>
-        <div class="ship-side">
-          <ShipRepo ship={ship} />
-          {meta ? <span class="ship-meta">{meta}</span> : null}
-          <span class="ship-age">{shipRowAge(ship, now)}</span>
-        </div>
-      </div>
-    </li>
-  );
-}
-
 function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
   const now = useNow();
   const fleet = activeFleet.value;
   const groups = fleet ? groupShips(ships.value, fleet.key) : [];
+  const byRepo = !oneWorkRepo(groups.flatMap((g) => g.ships));
   const fleetKey = fleet?.key;
   // Fire and forget: the poller pushes the new chips over the ships socket.
   useEffect(() => {
@@ -232,18 +155,7 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
         ) : null}
         {forYouLink}
         {groups.map((g) => (
-          <section key={g.status} class="ship-group" aria-labelledby={`group-${g.status}`}>
-            <h2 id={`group-${g.status}`} class={`group-head group-${g.status}`}>
-              <StatusGlyph status={g.status} />
-              {GROUP_TITLES[g.status]}{' '}
-              <span class="count">{g.ships.length}</span>
-            </h2>
-            <ul class="ship-list">
-              {g.ships.map((s) => (
-                <ShipRow key={s.session} ship={s} bar={fleetPaint(fleet!).fill} now={now} />
-              ))}
-            </ul>
-          </section>
+          <ShipStatusGroup key={g.status} group={g} bar={fleetPaint(fleet!).fill} now={now} byRepo={byRepo} />
         ))}
       </main>
       {form}

@@ -41,11 +41,13 @@ type Ship struct {
 	Harness    string `json:"harness"`
 	Dir        string `json:"dir"`
 	// Worktree is where the ship works when it has a worktree of its own; omitted when it works in Dir.
-	Worktree string  `json:"worktree,omitempty"`
-	Repo     string  `json:"repo"`
-	Skill    *string `json:"skill"`
-	Source   string  `json:"source"`
-	Panel    string  `json:"panel"`
+	Worktree string `json:"worktree,omitempty"`
+	Repo     string `json:"repo"`
+	// OriginRepo is the owner/repo of the origin remote of the ship's checkout; omitted without a github.com origin.
+	OriginRepo string  `json:"origin_repo,omitempty"`
+	Skill      *string `json:"skill"`
+	Source     string  `json:"source"`
+	Panel      string  `json:"panel"`
 	// A ship holds its Resources while it is underway or needs you.
 	Resources []string `json:"-"`
 	Title     string   `json:"title"`
@@ -193,6 +195,10 @@ type Service struct {
 	// Approving is whether a Codex ship's app-server is waiting on an approval: a bell then may be for it, not for a question.
 	Approving func(session, crew string) bool
 	Outcomes  *outcomes.Writer
+	// originSlug reads a checkout's origin as owner/repo; nil reads it with git.
+	originSlug func(dir string) string
+	originMu   sync.Mutex
+	origins    map[string]originEntry
 
 	findingsOnce  sync.Once
 	findingsStore *findings.Store
@@ -289,6 +295,7 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 	if s.Launcher != nil {
 		sh.Worktree, _ = launcher.WorktreeOf(s.Launcher.Home, sess.Name)
 	}
+	sh.OriginRepo = s.originRepo(checkoutOf(sh))
 	s.showDrafting(&sh)
 	if sh.Status == StatusNeedsYou {
 		// The track's Since is set in the same pass as its status; before that

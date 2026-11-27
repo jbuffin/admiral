@@ -211,6 +211,8 @@ export interface Ship {
   // Where the ship works when it has a worktree of its own; absent when it works in `dir`.
   worktree?: string;
   repo: string;
+  // The owner/repo of the origin remote of the checkout; absent without a github.com origin.
+  origin_repo?: string;
   reason?: string;
   exit_code: number | null;
   exit_signal: string | null;
