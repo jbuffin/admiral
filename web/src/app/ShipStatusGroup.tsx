@@ -1,5 +1,6 @@
-import { Fragment, type ComponentChildren } from 'preact';
-import { useState } from 'preact/hooks';
+import { type ComponentChildren } from 'preact';
+import { useId, useState } from 'preact/hooks';
+import { isCollapsed, toggleCollapsed } from './collapsedRepoGroups';
 import { fleetSearch } from './fleets';
 import { Flag } from './Flag';
 import { rowButtons } from './moored';
@@ -94,6 +95,24 @@ function RehomedFrom({ ship }: { ship: Ship }) {
   ) : null;
 }
 
+function RepoGroup({ status, repo, ships, bar, now }: { status: string; repo: string; ships: Ship[]; bar: string; now: number }) {
+  const listId = useId();
+  const shut = isCollapsed(status, repo);
+  return (
+    <>
+      <button type="button" class="repo-head" aria-expanded={!shut} aria-controls={listId} onClick={() => toggleCollapsed(status, repo)}>
+        <span class="repo-chevron" aria-hidden="true" />
+        <span class="repo-name">{repo}</span> <span class="count">{ships.length}</span>
+      </button>
+      <ul class="ship-list" id={listId} hidden={shut}>
+        {ships.map((s) => (
+          <ShipRow key={s.session} ship={s} bar={bar} now={now} label={workRepo(s).rehomed ? <RehomedFrom ship={s} /> : null} />
+        ))}
+      </ul>
+    </>
+  );
+}
+
 export function ShipStatusGroup({ group, bar, now, byRepo }: { group: ShipGroup; bar: string; now: number; byRepo: boolean }) {
   const g = group;
   return (
@@ -104,18 +123,7 @@ export function ShipStatusGroup({ group, bar, now, byRepo }: { group: ShipGroup;
         <span class="count">{g.ships.length}</span>
       </h2>
       {byRepo ? (
-        byWorkRepo(g.ships).map((r) => (
-          <Fragment key={r.repo.toLowerCase()}>
-            <p class="repo-head">
-              <span class="repo-name">{r.repo}</span> <span class="count">{r.ships.length}</span>
-            </p>
-            <ul class="ship-list">
-              {r.ships.map((s) => (
-                <ShipRow key={s.session} ship={s} bar={bar} now={now} label={workRepo(s).rehomed ? <RehomedFrom ship={s} /> : null} />
-              ))}
-            </ul>
-          </Fragment>
-        ))
+        byWorkRepo(g.ships).map((r) => <RepoGroup key={r.repo.toLowerCase()} status={g.status} repo={r.repo} ships={r.ships} bar={bar} now={now} />)
       ) : (
         <ul class="ship-list">
           {g.ships.map((s) => (
