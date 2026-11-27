@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { launchShip, messageBox, received, rowLink, seedFleets, setState, withFakeGh } from './shell';
+import { launchShip, messageBox, received, rowLink, seedFleets, seedTurn, setState, viewPanel, withFakeGh } from './shell';
 
 test('Shift+Enter adds a line to the message and Enter sends it whole', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -25,10 +25,12 @@ test.describe('with a mouse', () => {
     seedFleets(admiral, { live: true });
     await admiral.start({ env: withFakeGh(admiral) });
     const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', 'reply Aye'] });
+    await seedTurn(admiral, ship);
     setState(admiral, ship, 'working');
     await page.goto(admiral.url + 'app/ships?fleet=zulu');
     await rowLink(page, ship).click();
 
+    await expect(viewPanel(page)).toContainText('Rebase onto main please');
     await expect(messageBox(page)).toBeFocused();
     await messageBox(page).blur();
     await page.evaluate(() => {
