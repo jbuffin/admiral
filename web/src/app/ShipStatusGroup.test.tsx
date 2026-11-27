@@ -465,3 +465,55 @@ test('a keyboard move is stored and leaves focus on the moved group\'s handle', 
   expect(JSON.parse(localStorage.getItem(ORDER_STORE) as string)).toEqual([S, W, T]);
   await waitFor(() => expect(document.activeElement).toBe(handle(W)));
 });
+
+const outside = (ships: Ship[]) => (
+  <>
+    <input aria-label="outside" />
+    <ShipStatusGroup group={{ status: 'underway', ships }} bar="#369" now={Date.now()} byRepo />
+  </>
+);
+
+test('after a keyboard move the handle never takes focus back when its group becomes movable again', () => {
+  const { rerender } = render(outside(three()));
+  handle(W).focus();
+  press(W, 'ArrowDown');
+  const input = screen.getByLabelText('outside');
+  input.focus();
+  rerender(outside([widgets('w1')]));
+  expect(screen.queryByRole('button', { name: /^Move/ })).toBeNull();
+  rerender(outside(three()));
+  expect(document.activeElement).toBe(input);
+});
+
+const dragTo = (repo: string, y: number) => {
+  const h = handle(repo);
+  stack(h.closest('section') as HTMLElement);
+  fireEvent.pointerDown(h, { pointerId: 1, clientY: 50, button: 0 });
+  fireEvent.pointerMove(h, { pointerId: 1, clientY: y });
+};
+const marks = () => [...document.querySelectorAll('.lifted, .drop-before, .drop-after')];
+
+test('a drag in progress lifts the dragged group and marks the drop place in front of the group it would land before', () => {
+  show(three(), true);
+  dragTo(W, 160);
+  expect(handle(W).closest('.repo-group')?.classList.contains('lifted')).toBe(true);
+  expect(handle(T).closest('.repo-group')?.classList.contains('drop-before')).toBe(true);
+  expect(marks()).toHaveLength(2);
+});
+
+test('a drag below the last group marks the drop place behind it', () => {
+  show(three(), true);
+  dragTo(W, 290);
+  expect(handle(T).closest('.repo-group')?.classList.contains('drop-after')).toBe(true);
+  expect(marks()).toHaveLength(2);
+});
+
+test('a drag whose group goes away leaves no lifted look or drop marker, even when the group comes back', () => {
+  const { rerender } = render(outside(three()));
+  dragTo(W, 160);
+  expect(marks()).toHaveLength(2);
+  rerender(outside([small('s1'), small('s2'), third('t1')]));
+  expect(marks()).toHaveLength(0);
+  rerender(outside(three()));
+  expect(marks()).toHaveLength(0);
+});

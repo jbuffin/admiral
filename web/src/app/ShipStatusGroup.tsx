@@ -99,12 +99,12 @@ function RehomedFrom({ ship }: { ship: Ship }) {
 
 type Drop = 'before' | 'after' | null;
 
-type Move = { lifted: boolean; drop: Drop; refocus: number; onPointerDown: (e: PointerEvent) => void; onPointerMove: (e: PointerEvent) => void; onPointerUp: (e: PointerEvent) => void; onEnd: () => void; onKeyDown: (e: KeyboardEvent) => void };
+type Move = { lifted: boolean; drop: Drop; refocus: boolean; onRefocused: () => void; onPointerDown: (e: PointerEvent) => void; onPointerMove: (e: PointerEvent) => void; onPointerUp: (e: PointerEvent) => void; onEnd: () => void; onKeyDown: (e: KeyboardEvent) => void };
 
 function RepoGroup({ status, repo, ships, bar, now, move }: { status: string; repo: string; ships: Ship[]; bar: string; now: number; move: Move | null }) {
   const listId = useId();
   const handleRef = useRef<HTMLButtonElement>(null);
-  useRefocus(move?.refocus ?? 0, handleRef);
+  useRefocus(move?.refocus ?? false, handleRef, move?.onRefocused ?? (() => {}));
   const shut = isCollapsed(status, repo);
   const cls = ['repo-group', move?.lifted ? 'lifted' : '', move?.drop ? `drop-${move.drop}` : ''].filter(Boolean).join(' ');
   return (
@@ -150,9 +150,15 @@ function RepoGroups({ status, ships, bar, now }: { status: string; ships: Ship[]
   const shown = groups.map((r) => r.repo);
   const ref = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
-  const [drag, setDrag] = useState<{ repo: string; to: number } | null>(null);
-  const [refocus, setRefocus] = useState({ repo: '', n: 0 });
+  const [dragState, setDrag] = useState<{ repo: string; to: number } | null>(null);
+  const [refocus, setRefocus] = useState('');
   const movable = groups.length > 1;
+  // A drag whose group is gone or no longer movable must not outlive it: its handle can't report the end.
+  const drag = dragState && movable && shown.includes(dragState.repo) ? dragState : null;
+  if (dragState && !drag) {
+    gesture.current = null;
+    setDrag(null);
+  }
 
   // Counts the other groups whose midpoint is above the pointer: that is the dragged group's new place.
   const placeAt = (repo: string, y: number) =>
@@ -179,7 +185,8 @@ function RepoGroups({ status, ships, bar, now }: { status: string; ships: Ship[]
     return {
       lifted: drag?.repo === repo,
       drop: dropMarker(repo),
-      refocus: refocus.repo === repo ? refocus.n : 0,
+      refocus: refocus === repo,
+      onRefocused: () => setRefocus(''),
       onPointerDown: (e) => {
         if (e.button !== 0) return;
         gesture.current = { repo, id: e.pointerId, startY: e.clientY, dragging: false };
@@ -209,7 +216,7 @@ function RepoGroups({ status, ships, bar, now }: { status: string; ships: Ship[]
         e.preventDefault();
         if (to < 0 || to >= shown.length) return;
         moveRepo(shown, repo, to);
-        setRefocus((f) => ({ repo, n: f.n + 1 }));
+        setRefocus(repo);
       },
     };
   };

@@ -1,9 +1,12 @@
 import type { RefObject } from 'preact';
 import { useLayoutEffect } from 'preact/hooks';
 
-// Re-focuses the element each time `token` changes to a non-zero value: a keyed reorder can drop focus from the node it moved.
-export function useRefocus(token: number, target: RefObject<HTMLElement | null>): void {
+// Focuses the element in the commit where `want` turns true, then calls `done` so a later mount or remount never takes focus.
+// A keyed reorder can drop focus from the node it moved.
+export function useRefocus(want: boolean, target: RefObject<HTMLElement | null>, done: () => void): void {
   useLayoutEffect(() => {
-    if (token) target.current?.focus();
-  }, [token, target]);
+    if (!want) return;
+    target.current?.focus();
+    done();
+  }, [want]);
 }
