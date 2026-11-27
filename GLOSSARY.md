@@ -164,7 +164,7 @@ A GitHub repo a fleet owns because it is checked out under the fleet's search ro
 An org or user account a fleet claims, so its repos route to that fleet when no fleet has them as a project.
 
 **Default fleet**:
-The first fleet in the configuration, which takes the GitHub items no project or owner matches.
+The fleet the engineer picks (the first in the configuration until they do), which takes the GitHub items no project or owner matches and the requests to AdmiralBot that name no fleet.
 
 **Fleet color**:
 The color that identifies a fleet everywhere: its marina sign, the stripe on each of its ships and crew boats, and the launch orders header.

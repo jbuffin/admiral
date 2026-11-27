@@ -1,6 +1,6 @@
 # 6. GitHub is built in; other trackers are subprocess plugins
 
-Status: accepted, rewritten 2026-11-10 for [#227](https://github.com/jbuffin/admiral/issues/227) (GitHub built in, sources per fleet, event methods, no freeform); extended by [ADR 0044](0044-a-modules-page-is-drawn-by-admiral-from-building-blocks.md) (module plugins with their own page)
+Status: accepted, rewritten 2026-11-10 for [#227](https://github.com/jbuffin/admiral/issues/227) (GitHub built in, sources per fleet, event methods, no freeform); extended by [ADR 0044](0044-a-modules-page-is-drawn-by-admiral-from-building-blocks.md) (module plugins with their own page); amended by [ADR 0050](0050-the-engineer-picks-the-default-fleet.md) (the engineer picks the default fleet)
 
 ## Context
 
@@ -19,7 +19,7 @@ This ADR first made every source a subprocess plugin, with a freeform list and a
 - **Routing.** Each GitHub item goes to one fleet, first match wins:
   1. **Project:** its repo is checked out under the fleet's search roots.
   2. **Owner:** the repo's owner (an org or a user account) is listed in the fleet's `owners`.
-  3. **Default fleet:** the first fleet in the config file.
+  3. **Default fleet:** the fleet the engineer picked, else the first fleet in the config file ([ADR 0050](0050-the-engineer-picks-the-default-fleet.md)).
 
   This applies to every built-in view and event, so nothing is hidden and nothing appears twice. A checkout beats an owner. When two fleets claim the same repo or owner, the first in the file wins and both show a warning.
 - **Events.** GitHub's catalog: review requested of me, issue or PR assigned to me, @-mention of me, new item in view X. Plugins gain `events.catalog` and an `event` notification `{kind, ref, actor, author, verified}`. Go sets the tier from actor and author, the lower winning: the engineer's own login T1, allowlisted T2, others T3. A source never claims a tier. GitHub's `verified` is true, since the API authenticates the actor.
