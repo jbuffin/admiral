@@ -866,6 +866,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     await expect(page).toHaveURL(shipViewUrl(a, ship));
     if (opts.waitsOnMessage) {
       // A new ship with no conversation yet waits on the engineer's first message, and no card stands over the box. These are touch devices, so boarding leaves the keyboard down.
+      await expect(messageBox(page)).toBeEnabled();
       await expect(messageBox(page)).not.toBeFocused();
       await expect(viewPanel(page).locator('.convo-card')).toHaveCount(0);
     }
