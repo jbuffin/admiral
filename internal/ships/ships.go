@@ -438,7 +438,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 }
 
 // tick catches changes no tmux event announces: NoHookWait and the end of the sail-off.
-const tick = 500 * time.Millisecond
+var tick = 500 * time.Millisecond
 
 func (s *Service) Run(ctx context.Context) {
 	events, cancel := s.Host.Subscribe()

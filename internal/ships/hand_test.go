@@ -510,7 +510,7 @@ func TestAShipBeingHandedIsNotMooredAtTheEndOfItsTurnForADoneReportWithAnOpenPR(
 		t.Fatalf("hand = %d %s", rec.Code, rec.Body)
 	}
 	r.turn(t, "needs_you", "stop")
-	holdsFor(t, 1500*time.Millisecond, "the ship moored while it was being handed", func() bool {
+	holdsFor(t, settleHold(), "the ship moored while it was being handed", func() bool {
 		s, _, _ := r.wire(t)
 		_, err := os.Stat(r.mooredFile())
 		return s.Status != "moored" && err != nil && r.live(t)

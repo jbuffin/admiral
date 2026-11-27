@@ -52,14 +52,14 @@ func TestAScoutIsLeftAloneAtAQuestionOrAPermission(t *testing.T) {
 	r := scoutRig(t, true)
 	r.turn(t, "working", "")
 	r.turn(t, "needs_you", "permission:Bash")
-	holdsFor(t, 1500*time.Millisecond, "the scout was stopped at a permission", func() bool { return r.live(t) })
+	holdsFor(t, settleHold(), "the scout was stopped at a permission", func() bool { return r.live(t) })
 }
 
 func TestAPlainAutopilotShipIsNotStoppedAtItsStop(t *testing.T) {
 	r := scoutRig(t, false)
 	r.turn(t, "working", "")
 	r.turn(t, "needs_you", "stop")
-	holdsFor(t, 1500*time.Millisecond, "an autopilot ship that is not a scout was stopped", func() bool { return r.live(t) })
+	holdsFor(t, settleHold(), "an autopilot ship that is not a scout was stopped", func() bool { return r.live(t) })
 	if got := outcomeLines(t, r.home, "saltpaw", "stopped"); len(got) != 0 {
 		t.Errorf("stopped records = %v, want none", got)
 	}

@@ -36,7 +36,8 @@ func recordingLauncher(t *testing.T, harness string) (*Launcher, string, func() 
 	})
 	out := filepath.Join(tmp, "argv")
 	exe := filepath.Join(tmp, "harness")
-	script := "#!/bin/sh\nprintf '%s\\0' \"$@\" > " + out + ".part\nmv " + out + ".part " + out + "\nsleep 30\n"
+	// It refuses Copilot's --ui-server gate at once, as a build without the flag does, instead of sleeping through it.
+	script := "#!/bin/sh\nfor a; do [ \"$a\" = --version ] && exit 1; done\nprintf '%s\\0' \"$@\" > " + out + ".part\nmv " + out + ".part " + out + "\nsleep 30\n"
 	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

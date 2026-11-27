@@ -102,7 +102,7 @@ func TestMoorRefusesAShipWhoseCarriedPRIsNotOpenOrNotConfirmedAndLeavesItAlone(t
 				if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), c.want) {
 					t.Fatalf("%s with moor = %d %s, want 409 %q", route, rec.Code, rec.Body, c.want)
 				}
-				holdsFor(t, 500*time.Millisecond, "the refused ship was touched", func() bool {
+				holdsFor(t, settleHold(), "the refused ship was touched", func() bool {
 					_, err := os.Stat(r.mooredFile())
 					names := r.eventNames(t)
 					return r.live(t) && err != nil && !contains(names, "moored") && !contains(names, "stopped") &&

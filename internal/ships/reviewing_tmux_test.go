@@ -319,7 +319,7 @@ func TestAFreeTextShipWithADoneReportThatListsNoPRsStaysLive(t *testing.T) {
 	r.turn(t, "working", "")
 	r.writeReport(t, "done")
 	r.turn(t, "needs_you", "stop")
-	holdsFor(t, 1500*time.Millisecond, "the ship moored", func() bool {
+	holdsFor(t, settleHold(), "the ship moored", func() bool {
 		_, err := os.Stat(r.mooredFile())
 		return err != nil && r.live(t)
 	})
@@ -351,7 +351,7 @@ func TestAShipCarryingAPrintedOwnPRWithADoneReportThatListsNoPRsIsNotMoored(t *t
 				r.gone(t, "the finished ship to leave the live list")
 				waitUntil(t, "the finished record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "finished")) == 1 })
 			}
-			holdsFor(t, 1500*time.Millisecond, "the ship moored", func() bool {
+			holdsFor(t, settleHold(), "the ship moored", func() bool {
 				_, err := os.Stat(r.mooredFile())
 				return err != nil && (c.localOnly || r.live(t))
 			})

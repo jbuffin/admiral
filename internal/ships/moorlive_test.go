@@ -252,7 +252,7 @@ func TestOpenPRsListsTheReportPRsThatGitHubConfirmsOpenAndAsksOnlyWhenTheReportC
 		return reflect.DeepEqual(s.OpenPRs, []string{livePR7})
 	})
 	asked := r.gh.asked()
-	holdsFor(t, 1500*time.Millisecond, "GitHub was asked again while the report was unchanged", func() bool {
+	holdsFor(t, settleHold(), "GitHub was asked again while the report was unchanged", func() bool {
 		r.wire(t)
 		return r.gh.asked() == asked
 	})
@@ -288,7 +288,7 @@ func TestAShipMoorsWhenItsTurnEndsWithADoneReportAndAnOpenPR(t *testing.T) {
 	r.writeReport(t, "done", livePR7)
 	waitUntil(t, "GitHub to confirm the PR", func() bool { s, _, _ := r.wire(t); return len(s.OpenPRs) == 1 })
 
-	holdsFor(t, 1500*time.Millisecond, "the ship moored while its turn was still running", func() bool {
+	holdsFor(t, settleHold(), "the ship moored while its turn was still running", func() bool {
 		s, _, _ := r.wire(t)
 		_, err := os.Stat(r.mooredFile())
 		return s.Status != "moored" && err != nil && r.live(t)
@@ -322,7 +322,7 @@ func TestAShipThatIsNotDoneWithOpenPRsStaysLive(t *testing.T) {
 				waitUntil(t, "GitHub to be asked", func() bool { return r.gh.asked() > 0 })
 			}
 			r.turn(t, "needs_you", "stop")
-			holdsFor(t, 1500*time.Millisecond, "the ship left the live list or got a record", func() bool {
+			holdsFor(t, settleHold(), "the ship left the live list or got a record", func() bool {
 				s, _, ok := r.wire(t)
 				_, err := os.Stat(r.mooredFile())
 				return ok && s.Status == "needs_you" && err != nil && !contains(r.eventNames(t), "moored")
@@ -458,7 +458,7 @@ func TestMoorOnAShipWithoutAnOpenPRIsRefusedAndLeavesTheShipAlone(t *testing.T) 
 				if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"error"`) {
 					t.Fatalf("%s with moor = %d %s, want 409 with a message", route, rec.Code, rec.Body)
 				}
-				holdsFor(t, 500*time.Millisecond, "the refused ship was touched", func() bool {
+				holdsFor(t, settleHold(), "the refused ship was touched", func() bool {
 					_, err := os.Stat(r.mooredFile())
 					names := r.eventNames(t)
 					return r.live(t) && err != nil && !contains(names, "moored") && !contains(names, "stopped") &&
@@ -481,7 +481,7 @@ func TestMoorWhoseRecordCannotBeWrittenKeepsTheShipLive(t *testing.T) {
 			if rec.Code != http.StatusInternalServerError {
 				t.Fatalf("%s with moor = %d %s, want 500", route, rec.Code, rec.Body)
 			}
-			holdsFor(t, 500*time.Millisecond, "the ship was ended or marked moored", func() bool {
+			holdsFor(t, settleHold(), "the ship was ended or marked moored", func() bool {
 				names := r.eventNames(t)
 				return r.live(t) && !contains(names, "moored") && !contains(names, "ended") && !contains(names, "stopped")
 			})
@@ -498,7 +498,7 @@ func TestADoneShipWhoseRecordCannotBeWrittenStaysLive(t *testing.T) {
 	r.writeReport(t, "done", livePR7)
 	waitUntil(t, "GitHub to confirm the PR", func() bool { s, _, _ := r.wire(t); return len(s.OpenPRs) == 1 })
 	r.turn(t, "needs_you", "stop")
-	holdsFor(t, 1500*time.Millisecond, "the ship left the live list", func() bool {
+	holdsFor(t, settleHold(), "the ship left the live list", func() bool {
 		s, _, ok := r.wire(t)
 		return ok && s.Status == "needs_you" && !contains(r.eventNames(t), "ended")
 	})
@@ -542,7 +542,7 @@ func TestADoneShipWhoseGitHubCheckFailedMoorsOnceGitHubAnswersWithTheReportUncha
 	r.writeReport(t, "done", livePR7)
 	waitUntil(t, "GitHub to be asked", func() bool { return r.gh.asked() > 0 })
 	r.turn(t, "needs_you", "stop")
-	holdsFor(t, 600*time.Millisecond, "the ship moored or listed a PR while GitHub failed", func() bool {
+	holdsFor(t, settleHold(), "the ship moored or listed a PR while GitHub failed", func() bool {
 		s, _, ok := r.wire(t)
 		return ok && s.Status == "needs_you" && len(s.OpenPRs) == 0 && !contains(r.eventNames(t), "moored")
 	})
