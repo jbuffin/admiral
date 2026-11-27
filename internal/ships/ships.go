@@ -197,6 +197,8 @@ type Service struct {
 	Outcomes  *outcomes.Writer
 	// originSlug reads a checkout's origin as owner/repo; nil reads it with git.
 	originSlug func(dir string) string
+	originMu   sync.Mutex
+	origins    map[string]originEntry
 
 	findingsOnce  sync.Once
 	findingsStore *findings.Store
@@ -293,6 +295,7 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 	if s.Launcher != nil {
 		sh.Worktree, _ = launcher.WorktreeOf(s.Launcher.Home, sess.Name)
 	}
+	sh.OriginRepo = s.originRepo(checkoutOf(sh))
 	s.showDrafting(&sh)
 	if sh.Status == StatusNeedsYou {
 		// The track's Since is set in the same pass as its status; before that
