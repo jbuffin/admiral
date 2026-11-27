@@ -50,3 +50,20 @@ export function shipRowAge(ship: Ship, now: number): string {
   if (isRunning(ship)) return runningFor(ship.launched, now);
   return shipAge(ship.status === 'moored' ? (ship.moored_at ?? '') : ship.launched, now);
 }
+
+export interface RepoGroup {
+  repo: string;
+  ships: Ship[];
+}
+
+export function workRepo(_ship: Ship): { repo: string; rehomed: boolean } {
+  return { repo: '', rehomed: false };
+}
+
+export function byWorkRepo(ships: Ship[]): RepoGroup[] {
+  return [{ repo: '', ships }];
+}
+
+export function oneWorkRepo(_ships: Ship[]): boolean {
+  return false;
+}
