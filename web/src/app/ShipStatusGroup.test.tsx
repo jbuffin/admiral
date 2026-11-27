@@ -125,11 +125,26 @@ test('collapsing a repo under one status leaves the same repo under another stat
   expect(repoButton(/^acme\/widgets/, second).getAttribute('aria-expanded')).toBe('true');
 });
 
-test('the repo is matched case-insensitively across a status group', () => {
-  show([ship('a'), ship('b', { origin_repo: 'ACME/Widgets' })], true);
-  fireEvent.click(repoButton(/^acme\/widgets/i));
-  expect(screen.queryByRole('link', { name: 'a' })).toBeNull();
+test('the repo is matched case-insensitively across renders', () => {
+  const { unmount } = show([ship('a'), small('c')], true);
+  fireEvent.click(repoButton(/^acme\/widgets/));
+  unmount();
+  show([ship('b', { origin_repo: 'ACME/Widgets' }), small('c')], true);
+  expect(repoButton(/^ACME\/Widgets/).getAttribute('aria-expanded')).toBe('false');
   expect(screen.queryByRole('link', { name: 'b' })).toBeNull();
+});
+
+test('a button controls the list holding its rows, which is hidden when collapsed, even for near-identical repo names', () => {
+  show([ship('a', { origin_repo: 'acme/foo.js' }), ship('b', { origin_repo: 'acme/foo_js' })], true);
+  const listOf = (name: RegExp) => document.getElementById(repoButton(name).getAttribute('aria-controls') as string) as HTMLElement;
+  const dot = listOf(/^acme\/foo\.js/);
+  const under = listOf(/^acme\/foo_js/);
+  expect(dot).not.toBe(under);
+  expect(within(dot).getByRole('link', { name: 'a' })).toBeTruthy();
+  expect(within(under).getByRole('link', { name: 'b' })).toBeTruthy();
+  fireEvent.click(repoButton(/^acme\/foo\.js/));
+  expect(listOf(/^acme\/foo\.js/).hidden).toBe(true);
+  expect(listOf(/^acme\/foo_js/).hidden).toBe(false);
 });
 
 test('a one-repo layout has no collapse control', () => {
@@ -137,14 +152,7 @@ test('a one-repo layout has no collapse control', () => {
   expect(screen.queryByRole('button')).toBeNull();
 });
 
-test('a click writes the collapsed state to this device', () => {
-  show([ship('a'), small('c')], true);
-  expect(localStorage.getItem(STORE)).toBeNull();
-  fireEvent.click(repoButton(/^acme\/widgets/));
-  expect(JSON.parse(localStorage.getItem(STORE) ?? 'null')).toHaveLength(1);
-});
-
-test('a fresh page load finds the stored state and collapses only that status and repo pair', async () => {
+test('a click is kept for a fresh page load, which collapses only that status and repo pair', async () => {
   show([ship('a'), small('c')], true);
   fireEvent.click(repoButton(/^acme\/widgets/));
   const stored = localStorage.getItem(STORE) as string;

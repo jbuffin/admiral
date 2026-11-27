@@ -24,11 +24,13 @@ function load(): Set<string> {
 // The collapsed repo groups of the Ships page, kept on this device.
 export const collapsed = signal<Set<string>>(load());
 
-export const collapsedKey = (status: string, repo: string) => `${status}:${repo.toLowerCase()}`;
+// Keyed by status and lowercased repo, as the grouping compares repos.
+const keyOf = (status: string, repo: string) => `${status}:${repo.toLowerCase()}`;
 
-export const isCollapsed = (key: string) => collapsed.value.has(key);
+export const isCollapsed = (status: string, repo: string) => collapsed.value.has(keyOf(status, repo));
 
-export function toggleCollapsed(key: string) {
+export function toggleCollapsed(status: string, repo: string) {
+  const key = keyOf(status, repo);
   const next = new Set(collapsed.value);
   if (!next.delete(key)) next.add(key);
   collapsed.value = next;
