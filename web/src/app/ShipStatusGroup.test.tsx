@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/preact';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type { MooredPR, Ship } from './api';
 import { collapsed } from './collapsedRepoGroups';
+import { repoOrder } from './repoGroupOrder';
 import { ShipStatusGroup } from './ShipStatusGroup';
 import type { ShipGroup } from './shipList';
 
@@ -29,6 +30,7 @@ const ship = (name: string, extra: Partial<Ship> = {}): Ship => ({
 beforeEach(() => {
   localStorage.clear();
   collapsed.value = new Set();
+  repoOrder.value = [];
 });
 
 const show = (ships: Ship[], byRepo: boolean, status: ShipGroup['status'] = 'underway') => {
@@ -181,4 +183,285 @@ test('unreadable stored state starts every group expanded', async () => {
   render(<fresh.ShipStatusGroup group={{ status: 'underway', ships: [ship('a'), small('c')] }} bar="#369" now={Date.now()} byRepo />);
   expect(repoButton(/^acme\/widgets/).getAttribute('aria-expanded')).toBe('true');
   expect(screen.getByRole('link', { name: 'a' })).toBeTruthy();
+});
+
+// Drag to reorder repo groups.
+const ORDER_STORE = 'admiral.app.ships.repoOrder';
+const widgets = (n: string) => ship(n);
+const third = (n: string) => ship(n, { origin_repo: 'c/third' });
+const other = (n: string) => ship(n, { origin_repo: 'd/other' });
+// Default order: acme/widgets (3 ships), b/small (2), c/third (1).
+const three = () => [widgets('w1'), widgets('w2'), widgets('w3'), small('s1'), small('s2'), third('t1')];
+
+const heads = (scope: HTMLElement | Document = document.body) =>
+  [...scope.querySelectorAll('.repo-head .repo-name')].map((n) => n.textContent);
+const handle = (repo: string, scope: HTMLElement | Document = document.body) => within(scope as HTMLElement).getByRole('button', { name: `Move ${repo}` });
+const groupLinks = (repo: string) =>
+  within(handle(repo).closest('.repo-group') as HTMLElement)
+    .queryAllByRole('link')
+    .map((a) => a.textContent);
+
+// happy-dom has no layout: stack the section's groups 100px tall, so midpoints sit at 50, 150, 250...
+const stack = (section: Element) =>
+  section.querySelectorAll('.repo-group').forEach((el, i) => {
+    el.getBoundingClientRect = () => ({ top: i * 100, bottom: i * 100 + 100, height: 100, left: 0, right: 300, width: 300, x: 0, y: i * 100, toJSON: () => ({}) }) as DOMRect;
+  });
+
+// Presses the handle at its group's midpoint, moves to `toY` and lets go there.
+function drag(repo: string, toY: number, end: 'pointerUp' | 'pointerCancel' | 'lostPointerCapture' = 'pointerUp', scope: HTMLElement | Document = document.body, pointerType = 'mouse') {
+  const h = handle(repo, scope);
+  const section = h.closest('section') as HTMLElement;
+  stack(section);
+  const from = (h.closest('.repo-group') as HTMLElement).getBoundingClientRect().top + 50;
+  const init = { pointerId: 1, pointerType };
+  fireEvent.pointerDown(h, { ...init, clientY: from, button: 0 });
+  fireEvent.pointerMove(h, { ...init, clientY: (from + toY) / 2 });
+  fireEvent.pointerMove(h, { ...init, clientY: toY });
+  if (end === 'pointerUp') fireEvent.pointerUp(h, { ...init, clientY: toY });
+  else if (end === 'pointerCancel') fireEvent.pointerCancel(h, init);
+  else fireEvent.lostPointerCapture(h, init);
+}
+
+const W = 'acme/widgets';
+const S = 'b/small';
+const T = 'c/third';
+
+test('dragging a group past another one moves the whole group there', () => {
+  show(three(), true);
+  expect(heads()).toEqual([W, S, T]);
+  drag(W, 160);
+  expect(heads()).toEqual([S, W, T]);
+});
+
+test('a group dropped below every other midpoint goes to the end, and one dropped above all goes first', () => {
+  show(three(), true);
+  drag(W, 290);
+  expect(heads()).toEqual([S, T, W]);
+  drag(W, 10);
+  expect(heads()).toEqual([W, S, T]);
+  drag(T, 10);
+  expect(heads()).toEqual([T, W, S]);
+});
+
+test('a group dropped short of the next midpoint stays where it was', () => {
+  show(three(), true);
+  drag(W, 120);
+  expect(heads()).toEqual([W, S, T]);
+});
+
+test('a moved group takes its header and its ships with it, and the other groups keep their own ships in order', () => {
+  show(three(), true);
+  drag(W, 290);
+  expect(groupLinks(W)).toEqual(['w1', 'w2', 'w3']);
+  expect(groupLinks(S)).toEqual(['s1', 's2']);
+  expect(groupLinks(T)).toEqual(['t1']);
+  const text = [...document.querySelectorAll('.repo-group')].map((g) => g.textContent);
+  expect(text[2]).toContain('w1');
+  expect(text[0]).toContain('s1');
+});
+
+test('ship rows have no move handle', () => {
+  show(three(), true);
+  for (const row of screen.getAllByRole('listitem')) expect(within(row).queryByRole('button', { name: /^Move/ })).toBeNull();
+  expect(screen.getAllByRole('button', { name: /^Move/ })).toHaveLength(3);
+});
+
+test('the handle sits beside the collapse button, not inside it', () => {
+  show(three(), true);
+  const h = handle(W);
+  expect(h.closest('.repo-head')).toBeNull();
+  expect(h.closest('.repo-group')?.querySelector('.repo-head')).not.toBeNull();
+  expect(h.closest('.repo-group')?.querySelector('ul.ship-list')).not.toBeNull();
+});
+
+test('the groups reorder only on the drop, not while the pointer is moving', () => {
+  show(three(), true);
+  const h = handle(W);
+  stack(h.closest('section') as HTMLElement);
+  fireEvent.pointerDown(h, { pointerId: 1, clientY: 50, button: 0 });
+  fireEvent.pointerMove(h, { pointerId: 1, clientY: 160 });
+  expect(heads()).toEqual([W, S, T]);
+  fireEvent.pointerUp(h, { pointerId: 1, clientY: 160 });
+  expect(heads()).toEqual([S, W, T]);
+});
+
+test('a touch drag moves a group the same way', () => {
+  show(three(), true);
+  drag(W, 160, 'pointerUp', document.body, 'touch');
+  expect(heads()).toEqual([S, W, T]);
+});
+
+test('a cancelled pointer leaves the order and the stored order unchanged', () => {
+  show(three(), true);
+  drag(W, 290, 'pointerCancel');
+  expect(heads()).toEqual([W, S, T]);
+  expect(localStorage.getItem(ORDER_STORE)).toBeNull();
+});
+
+test('losing pointer capture mid-drag leaves the order unchanged', () => {
+  show(three(), true);
+  drag(W, 290, 'lostPointerCapture');
+  expect(heads()).toEqual([W, S, T]);
+  expect(localStorage.getItem(ORDER_STORE)).toBeNull();
+});
+
+test('a press on the handle that does not move changes nothing', () => {
+  show(three(), true);
+  const h = handle(S);
+  stack(h.closest('section') as HTMLElement);
+  fireEvent.pointerDown(h, { pointerId: 1, clientY: 150, button: 0 });
+  fireEvent.pointerUp(h, { pointerId: 1, clientY: 150 });
+  expect(heads()).toEqual([W, S, T]);
+  expect(localStorage.getItem(ORDER_STORE)).toBeNull();
+});
+
+test('a move is written to storage as the status heading\'s whole order', () => {
+  show(three(), true);
+  drag(W, 290);
+  expect(JSON.parse(localStorage.getItem(ORDER_STORE) as string)).toEqual([S, T, W]);
+});
+
+test('a stored order is shown after a fresh page load', async () => {
+  show(three(), true);
+  drag(W, 290);
+  const stored = localStorage.getItem(ORDER_STORE) as string;
+  cleanup();
+  vi.resetModules();
+  localStorage.setItem(ORDER_STORE, stored);
+  const fresh = await import('./ShipStatusGroup');
+  render(<fresh.ShipStatusGroup group={{ status: 'underway', ships: three() }} bar="#369" now={Date.now()} byRepo />);
+  expect(heads()).toEqual([S, T, W]);
+});
+
+test('unreadable stored order shows the default order', async () => {
+  vi.resetModules();
+  localStorage.setItem(ORDER_STORE, '{not json');
+  const fresh = await import('./ShipStatusGroup');
+  render(<fresh.ShipStatusGroup group={{ status: 'underway', ships: three() }} bar="#369" now={Date.now()} byRepo />);
+  expect(heads()).toEqual([W, S, T]);
+  expect(screen.getAllByRole('button', { name: /^Move/ })).toHaveLength(3);
+});
+
+test('placed repos come first in their stored order, and repos never placed follow most ships first', () => {
+  repoOrder.value = [T];
+  show(three(), true);
+  expect(heads()).toEqual([T, W, S]);
+});
+
+test('stored repos are matched case-insensitively', () => {
+  repoOrder.value = ['B/Small'];
+  show(three(), true);
+  expect(heads()).toEqual([S, W, T]);
+});
+
+const twoStatuses = (first: Ship[], second: Ship[]) =>
+  render(
+    <>
+      <ShipStatusGroup group={{ status: 'underway', ships: first }} bar="#369" now={Date.now()} byRepo />
+      <ShipStatusGroup group={{ status: 'needs_you', ships: second }} bar="#369" now={Date.now()} byRepo />
+    </>,
+  );
+
+test('a move under one status heading orders the same repos under another heading', () => {
+  twoStatuses(three(), [widgets('a'), small('b'), small('c'), third('d')]);
+  const [first, second] = screen.getAllByRole('region');
+  expect(heads(second)).toEqual([S, W, T]);
+  drag(T, 10, 'pointerUp', first);
+  expect(heads(first)).toEqual([T, W, S]);
+  expect(heads(second)).toEqual([T, S, W]);
+});
+
+test('a stored repo absent from the moved heading follows that heading\'s repos', () => {
+  repoOrder.value = ['d/other'];
+  twoStatuses(three(), [other('o1'), other('o2'), widgets('a'), small('b')]);
+  const [first, second] = screen.getAllByRole('region');
+  expect(heads(second)).toEqual(['d/other', W, S]);
+  drag(S, 10, 'pointerUp', first);
+  expect(JSON.parse(localStorage.getItem(ORDER_STORE) as string)).toEqual([S, W, T, 'd/other']);
+  expect(heads(second)).toEqual([S, W, 'd/other']);
+});
+
+test('a repo never placed follows the placed ones under another heading', () => {
+  twoStatuses(three(), [other('o1'), other('o2'), widgets('a'), small('b')]);
+  const [first, second] = screen.getAllByRole('region');
+  drag(S, 10, 'pointerUp', first);
+  expect(heads(second)).toEqual([S, W, 'd/other']);
+});
+
+test('a click on the repo header still collapses and expands it', () => {
+  show(three(), true);
+  fireEvent.click(repoButton(/^acme\/widgets/));
+  expect(repoButton(/^acme\/widgets/).getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(repoButton(/^acme\/widgets/));
+  expect(repoButton(/^acme\/widgets/).getAttribute('aria-expanded')).toBe('true');
+});
+
+test('a tap or a drag on the handle never changes whether a group is expanded', () => {
+  show(three(), true);
+  const h = handle(W);
+  fireEvent.pointerDown(h, { pointerId: 1, clientY: 50, button: 0 });
+  fireEvent.pointerUp(h, { pointerId: 1, clientY: 50 });
+  fireEvent.click(h);
+  expect(repoButton(/^acme\/widgets/).getAttribute('aria-expanded')).toBe('true');
+  drag(W, 290);
+  fireEvent.click(handle(W));
+  expect(repoButton(/^acme\/widgets/).getAttribute('aria-expanded')).toBe('true');
+  expect(heads()).toEqual([S, T, W]);
+});
+
+test('a collapsed group drags like any other and stays collapsed', () => {
+  show(three(), true);
+  fireEvent.click(repoButton(/^acme\/widgets/));
+  drag(W, 290);
+  expect(heads()).toEqual([S, T, W]);
+  expect(repoButton(/^acme\/widgets/).getAttribute('aria-expanded')).toBe('false');
+  expect(screen.queryByRole('link', { name: 'w1' })).toBeNull();
+  expect(screen.getByRole('link', { name: 's1' })).toBeTruthy();
+});
+
+test('with no stored order the default order holds and every group has a handle', () => {
+  show(three(), true);
+  expect(heads()).toEqual([W, S, T]);
+  expect(screen.getAllByRole('button', { name: /^Move/ })).toHaveLength(3);
+});
+
+test('without sub-headings there is no move handle', () => {
+  show(three(), false);
+  expect(screen.queryByRole('button', { name: /^Move/ })).toBeNull();
+});
+
+test('a status heading with one repo group has no move handle, while one with two does', () => {
+  twoStatuses([widgets('a'), widgets('b')], [widgets('c'), small('d')]);
+  const [first, second] = screen.getAllByRole('region');
+  expect(within(first).queryByRole('button', { name: /^Move/ })).toBeNull();
+  expect(within(second).getAllByRole('button', { name: /^Move/ })).toHaveLength(2);
+});
+
+const press = (repo: string, key: string) => fireEvent.keyDown(handle(repo), { key });
+
+test('ArrowDown on a focused handle moves the group one place down, and ArrowUp one up', () => {
+  show(three(), true);
+  handle(W).focus();
+  press(W, 'ArrowDown');
+  expect(heads()).toEqual([S, W, T]);
+  press(W, 'ArrowDown');
+  expect(heads()).toEqual([S, T, W]);
+  press(W, 'ArrowUp');
+  expect(heads()).toEqual([S, W, T]);
+});
+
+test('ArrowUp on the first group and ArrowDown on the last change nothing', () => {
+  show(three(), true);
+  press(W, 'ArrowUp');
+  press(T, 'ArrowDown');
+  expect(heads()).toEqual([W, S, T]);
+  expect(localStorage.getItem(ORDER_STORE)).toBeNull();
+});
+
+test('a keyboard move is stored and leaves focus on the moved group\'s handle', async () => {
+  show(three(), true);
+  handle(W).focus();
+  press(W, 'ArrowDown');
+  expect(JSON.parse(localStorage.getItem(ORDER_STORE) as string)).toEqual([S, W, T]);
+  await waitFor(() => expect(document.activeElement).toBe(handle(W)));
 });
