@@ -266,6 +266,16 @@ a { color: inherit; text-decoration: none; }
 @media (prefers-reduced-motion: reduce) { .repo-chevron { transition: none; } }
 .repo-head .repo-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repo-head .count { flex: none; }
+.repo-row { display: flex; align-items: flex-start; min-width: 0; }
+.repo-row .repo-head { flex: 1; width: auto; }
+.repo-grip { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; min-height: 32px; margin: 8px 0 0; padding: 0; border: 0; border-radius: var(--shape-radius-sm); background: none; color: var(--color-muted); font-family: var(--font-mono); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.repo-grip:active { cursor: grabbing; }
+@media (pointer: coarse) { .repo-grip { width: var(--shape-min-touch-target); min-height: var(--shape-min-touch-target); } }
+.repo-group { position: relative; }
+.repo-group.lifted { background: var(--color-sel); border-radius: var(--shape-radius-md); box-shadow: 0 0 0 1px var(--color-line2); }
+.repo-group.drop-before::before, .repo-group.drop-after::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; border-radius: 1px; background: var(--color-accent); pointer-events: none; }
+.repo-group.drop-before::before { top: 0; }
+.repo-group.drop-after::after { bottom: 0; }
 .ship-list { list-style: none; margin: 0; padding: 0; }
 .ship-row { border-bottom: 1px solid var(--color-line); }
 .ship-link-cover { position: relative; }
