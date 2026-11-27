@@ -56,14 +56,46 @@ export interface RepoGroup {
   ships: Ship[];
 }
 
-export function workRepo(_ship: Ship): { repo: string; rehomed: boolean } {
-  return { repo: '', rehomed: false };
+const GITHUB_REPO_URL = /^https:\/\/github\.com\/([^/\s]+\/[^/\s#?]+)\/(?:pull|issues)\/\d+/;
+
+const repoOfUrl = (url: string | undefined): string => GITHUB_REPO_URL.exec(url ?? '')?.[1] ?? '';
+
+/** The repo a ship works in: its PRs', else its checkout's origin, else its order URL's, else the folder name. Re-homed when it differs from the checkout's origin. */
+export function workRepo(ship: Ship): { repo: string; rehomed: boolean } {
+  const counts = new Map<string, { repo: string; n: number }>();
+  let best: { repo: string; n: number } | undefined;
+  for (const p of ship.prs ?? []) {
+    const repo = repoOfUrl(p.url);
+    if (!repo) continue;
+    const key = repo.toLowerCase();
+    const entry = counts.get(key) ?? { repo, n: 0 };
+    entry.n++;
+    counts.set(key, entry);
+    if (!best || entry.n > best.n) best = entry;
+  }
+  const origin = ship.origin_repo ?? '';
+  const away = (repo: string) => repo.toLowerCase() !== origin.toLowerCase();
+  if (best) return { repo: best.repo, rehomed: away(best.repo) };
+  if (origin) return { repo: origin, rehomed: false };
+  const fromOrder = repoOfUrl(ship.url);
+  if (fromOrder) return { repo: fromOrder, rehomed: true };
+  return { repo: ship.repo, rehomed: false };
 }
 
+/** One status group's ships under the repo each works in: most ships first, then by name; ships keep their order. */
 export function byWorkRepo(ships: Ship[]): RepoGroup[] {
-  return [{ repo: '', ships }];
+  const groups = new Map<string, RepoGroup>();
+  for (const ship of ships) {
+    const { repo } = workRepo(ship);
+    const key = repo.toLowerCase();
+    const group = groups.get(key) ?? { repo, ships: [] };
+    group.ships.push(ship);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => b.ships.length - a.ships.length || a.repo.toLowerCase().localeCompare(b.repo.toLowerCase()));
 }
 
-export function oneWorkRepo(_ships: Ship[]): boolean {
-  return false;
+/** True when every ship works in the same repo, or there are none. */
+export function oneWorkRepo(ships: Ship[]): boolean {
+  return new Set(ships.map((s) => workRepo(s).repo.toLowerCase())).size <= 1;
 }
