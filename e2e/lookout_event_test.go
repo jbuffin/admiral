@@ -252,10 +252,11 @@ func TestAReviewRequestFromAnAllowlistedSenderLaunchesARestrictedDraftFixShipInI
 
 	// the launch posts one launch card for the record, with no event body in it
 	var chatBody string
-	waitCond(t, 30*time.Second, "the fleet chat to hold the launch card", func() bool {
+	waitCond(t, "the fleet chat to hold the launch card", func() bool {
 		_, chatBody = send(t, http.MethodGet, w.in.LocalURL+"/api/chat/work/session", nil)
 		return strings.Contains(chatBody, "launch_card")
 	})
+
 	if n := strings.Count(chatBody, `"launch_card"`); n != 1 {
 		t.Fatalf("the fleet chat holds %d launch cards, want 1: %s", n, chatBody)
 	}
@@ -334,7 +335,7 @@ func TestPromotingARestrictedDraftFixShipStartsANormalShipWithTheTokensInItsOwnC
 		t.Fatalf("promote = %d %s, want 200", code, body)
 	}
 	var heir runJSON
-	waitCond(t, 30*time.Second, "the record to name the promoted ship", func() bool {
+	waitCond(t, "the record to name the promoted ship", func() bool {
 		for _, r := range w.routineRuns(id) {
 			if r.ID == run.ID {
 				heir = r
@@ -342,6 +343,7 @@ func TestPromotingARestrictedDraftFixShipStartsANormalShipWithTheTokensInItsOwnC
 		}
 		return heir.PromotedShip != ""
 	})
+
 	if !heir.Promoted || heir.Ship != run.Ship || heir.PromotedShip == run.Ship {
 		t.Fatalf("record = %+v, want promoted to a ship other than %s, with its own ship unchanged", heir, run.Ship)
 	}

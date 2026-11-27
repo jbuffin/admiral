@@ -270,7 +270,7 @@ func TestAdmiralBot_WorkOnACampaignLaunchesItsWithoutYouChildrenAndEndsWithIt(t 
 	}
 
 	var child shipJSON
-	waitCond(t, 45*time.Second, "a ship launched for the Without-you child", func() bool {
+	waitCond(t, "a ship launched for the Without-you child", func() bool {
 		for _, s := range w.in.ships(t) {
 			if s.Fleet == chatFleet && s.Via == "admiralbot" {
 				child = s
@@ -279,6 +279,7 @@ func TestAdmiralBot_WorkOnACampaignLaunchesItsWithoutYouChildrenAndEndsWithIt(t 
 		}
 		return false
 	})
+
 	if env := w.record(child.Session).env; env["ADMIRAL_AUTOPILOT"] != "1" {
 		t.Errorf("the child's ship ADMIRAL_AUTOPILOT = %q, want 1: a commitment's launch is unattended", env["ADMIRAL_AUTOPILOT"])
 	}
@@ -307,7 +308,7 @@ func TestAdmiralBot_WorkOnACampaignLaunchesItsWithoutYouChildrenAndEndsWithIt(t 
 	}
 	// opening the campaign page rereads the tree, no more often than every 30s: the store's own tick is five minutes
 	campID := listed.Commitments[0].Trigger.Subject
-	waitCond(t, 100*time.Second, "the card for the ended campaign", func() bool { w.campaign(campID); return cardOf() != nil })
+	waitCond(t, "the card for the ended campaign", func() bool { w.campaign(campID); return cardOf() != nil })
 	_, body = send(t, http.MethodGet, w.in.LocalURL+"/api/chat/"+chatFleet+"/commitments", nil)
 	if strings.Contains(body, `"campaign"`) {
 		t.Errorf("commitments after the campaign ended = %s, want none open", body)
@@ -400,7 +401,7 @@ func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
 	}
 	w.release(quiet.Session, "end")
 	w.in.waitShipsList(t, 15*time.Second, "the drafting ship sailed off", func(l []shipJSON) bool { return statusOf(l, quiet.Session) == "" })
-	waitCond(t, 15*time.Second, "an Inbox item that "+quiet.Name+" ended without filing", func() bool { return len(w.endedItemIDs()) == 1 })
+	waitCond(t, "an Inbox item that "+quiet.Name+" ended without filing", func() bool { return len(w.endedItemIDs()) == 1 })
 	id := w.endedItemIDs()[0]
 	if b, _ := os.ReadFile(filepath.Join(w.home, "inbox", "_admiral", id+".json")); !strings.Contains(string(b), quiet.Name) {
 		t.Errorf("the item %s does not name the ship %s", b, quiet.Name)
@@ -424,7 +425,7 @@ func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
 	w.waitDrafting(t, d.Session, true)
 	w.writeCampaignRef(d.Session, campIssueURL(20))
 	w.release(d.Session, "filed")
-	waitCond(t, 20*time.Second, "the unfollowed campaign followed again", func() bool { return !w.campaign(ended).Ended })
+	waitCond(t, "the unfollowed campaign followed again", func() bool { return !w.campaign(ended).Ended })
 	w.waitDrafting(t, d.Session, false)
 	if _, err := os.Stat(filepath.Join(w.home, "ships", d.Session, "campaign-ref")); err == nil {
 		t.Error("the ref file was left after it was followed")

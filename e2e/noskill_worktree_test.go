@@ -210,9 +210,10 @@ func TestAShipFromACheckoutWithNoOriginWorksInAWorktreeAndEndsFinishedWithItsCom
 	w.waitFile(ship.Session, "cues-done")
 
 	log := w.waitEvent(ship.Session, "finished", 1)
-	waitCond(t, 10*time.Second, "the finished ship gone from the ship list and tmux", func() bool {
+	waitCond(t, "the finished ship gone from the ship list and tmux", func() bool {
 		return len(w.in.ships(t)) == 0 && !w.hasSession(ship.Session)
 	})
+
 	for _, e := range eventsOf(log) {
 		if e == "stopped" || e == "moored" || e == "returning" {
 			t.Errorf("records = %v, want a ship that finished, not one that was %s", eventsOf(log), e)
@@ -233,7 +234,7 @@ func TestAShipFromACheckoutWithNoOriginWorksInAWorktreeAndEndsFinishedWithItsCom
 		Result string `json:"result"`
 		Branch string `json:"branch"`
 	}
-	waitCond(t, 30*time.Second, "the fleet chat to hold the ship's card", func() bool {
+	waitCond(t, "the fleet chat to hold the ship's card", func() bool {
 		_, body := send(t, http.MethodGet, w.in.LocalURL+"/api/chat/f/session", nil)
 		var session struct {
 			Messages []struct {
@@ -251,6 +252,7 @@ func TestAShipFromACheckoutWithNoOriginWorksInAWorktreeAndEndsFinishedWithItsCom
 		}
 		return false
 	})
+
 	if card.Result != "done" || card.Branch != branch {
 		t.Errorf("ship card = %+v, want result done on branch %s", card, branch)
 	}
@@ -264,7 +266,7 @@ func TestStopShipLeavesTheWorktreeInPlace(t *testing.T) {
 	if code, body := send(t, http.MethodPost, w.shipURL(ship.Session, "/stop"), nil); code != http.StatusOK {
 		t.Fatalf("stop = %d: %s", code, body)
 	}
-	waitCond(t, 10*time.Second, "the stopped ship's session gone", func() bool { return !w.hasSession(ship.Session) })
+	waitCond(t, "the stopped ship's session gone", func() bool { return !w.hasSession(ship.Session) })
 	if samePathOf(t, cwd, dir) || !w.isWorktreeOf(dir, cwd) {
 		t.Errorf("worktree %s: want a worktree of the checkout, still registered and in place after Stop ship", cwd)
 	}
@@ -279,7 +281,7 @@ func TestDismissLeavesTheWorktreeInPlace(t *testing.T) {
 	if code := w.dismiss(ship.Session); code != http.StatusOK && code != http.StatusNoContent {
 		t.Fatalf("dismiss = %d", code)
 	}
-	waitCond(t, 10*time.Second, "the dismissed ship gone", func() bool { return len(w.in.ships(t)) == 0 })
+	waitCond(t, "the dismissed ship gone", func() bool { return len(w.in.ships(t)) == 0 })
 	if samePathOf(t, cwd, dir) || !w.isWorktreeOf(dir, cwd) {
 		t.Errorf("worktree %s: want a worktree of the checkout, still registered and in place after Dismiss", cwd)
 	}
@@ -304,8 +306,8 @@ func TestReturnToPortOfALiveNoSkillShipRemovesItsWorktreeAndKeepsItsBranch(t *te
 	w.waitPaneState(ship.Session, "working")
 	w.hookAt(pane, "Stop", hookStop)
 
-	waitCond(t, 20*time.Second, "the returned ship's session gone", func() bool { return !w.hasSession(ship.Session) })
-	waitCond(t, 20*time.Second, "the worktree removed", func() bool { return !exists(cwd) && !w.isWorktreeOf(dir, cwd) })
+	waitCond(t, "the returned ship's session gone", func() bool { return !w.hasSession(ship.Session) })
+	waitCond(t, "the worktree removed", func() bool { return !exists(cwd) && !w.isWorktreeOf(dir, cwd) })
 	if w.isWorktreeOf(dir, cwd) || len(w.worktreesOf(dir)) != 1 {
 		t.Errorf("worktrees = %v, want the checkout alone", w.worktreesOf(dir))
 	}
@@ -348,7 +350,7 @@ func TestReturnToPortOfAMooredNoSkillShipWhosePRMergedRemovesItsWorktreeAndKeeps
 	pane := strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", "="+ship.Session+":0", "#{pane_id}"))
 	w.hookAt(pane, "Stop", hookStop)
 	waitUntil(t, "the moored record removed", func() bool { return !exists(w.mooredFile(ship.Name)) })
-	waitCond(t, 20*time.Second, "the worktree removed", func() bool { return !exists(cwd) && !w.isWorktreeOf(dir, cwd) })
+	waitCond(t, "the worktree removed", func() bool { return !exists(cwd) && !w.isWorktreeOf(dir, cwd) })
 	if got := w.worktreesOf(dir); len(got) != 1 {
 		t.Errorf("worktrees = %v, want the checkout alone", got)
 	}
@@ -476,7 +478,7 @@ func TestARoutineRunOfNoSkillGetsAWorktree(t *testing.T) {
 		t.Fatalf("created routine has no id: %v\n%s", err, body)
 	}
 	var ship string
-	waitCond(t, 90*time.Second, "the routine's launched run", func() bool {
+	waitCond(t, "the routine's launched run", func() bool {
 		for _, r := range w.routineRuns(made.ID) {
 			if r.Outcome == "launched" {
 				ship = r.Ship
@@ -484,6 +486,7 @@ func TestARoutineRunOfNoSkillGetsAWorktree(t *testing.T) {
 		}
 		return ship != ""
 	})
+
 	cwd := w.waitCwd(ship)
 	if samePathOf(t, cwd, dir) || !w.isWorktreeOf(dir, cwd) {
 		t.Fatalf("the routine's ship ran in %s, want a worktree of %s", cwd, dir)

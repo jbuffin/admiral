@@ -39,7 +39,7 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 	// one routine's event launches and the other's is skipped, naming the ship that now holds the PR
 	var first, second string
 	var run runJSON
-	waitCond(t, 30*time.Second, "one routine to launch and the other to be skipped on its ship", func() bool {
+	waitCond(t, "one routine to launch and the other to be skipped on its ship", func() bool {
 		w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
 		ra, okA := w.firstRun(a, "launched")
 		rb, okB := w.firstRun(b, "launched")
@@ -65,7 +65,7 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 		return node
 	}
 	g.search("review", "review-requested:@me", reviewRequest(8, 2*time.Hour))
-	waitCond(t, 30*time.Second, "the other routine's event to be a proposal that names the cap", func() bool {
+	waitCond(t, "the other routine's event to be a proposal that names the cap", func() bool {
 		w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
 		held, ok := w.firstRun(second, "proposed")
 		return ok && strings.Contains(held.Reason, "concurrent")
@@ -83,7 +83,7 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 	if stopped.ExitSignal == nil || stopped.StoppedBy != "wall_clock:1" {
 		t.Errorf("ship = %+v, want an exit signal and stopped_by wall_clock:1", stopped)
 	}
-	waitCond(t, 30*time.Second, "the first record to read failed with the wall-clock reason", func() bool {
+	waitCond(t, "the first record to read failed with the wall-clock reason", func() bool {
 		for _, r := range w.routineRuns(first) {
 			if r.ID == run.ID {
 				return r.Outcome == "failed" && r.Reason == "stopped at the 1-minute wall clock"
@@ -97,11 +97,12 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 		t.Fatalf("switching %s off = %d %s, want 200", first, code, body)
 	}
 	g.search("review", "review-requested:@me", reviewRequest(9, 3*time.Hour))
-	waitCond(t, 30*time.Second, "the second routine to launch once the first ship's slot is free", func() bool {
+	waitCond(t, "the second routine to launch once the first ship's slot is free", func() bool {
 		w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
 		_, ok := w.firstRun(second, "launched")
 		return ok
 	})
+
 }
 
 func TestStopAllWorkerLaunchedEndsTheLiveEventShipsAndHoldFireCountsThem(t *testing.T) {
@@ -121,9 +122,10 @@ func TestStopAllWorkerLaunchedEndsTheLiveEventShipsAndHoldFireCountsThem(t *test
 	if code != http.StatusOK || !strings.Contains(body, run.Ship) {
 		t.Fatalf("POST worker-ships/stop = %d %s, want 200 naming %s", code, body, run.Ship)
 	}
-	waitCond(t, 30*time.Second, "the stopped ship to leave the live list", func() bool {
+	waitCond(t, "the stopped ship to leave the live list", func() bool {
 		return len(w.shipsWhere(func(s shipJSON) bool { return s.Session == run.Ship && live(s) })) == 0
 	})
+
 	code, body = send(t, http.MethodGet, w.in.LocalURL+"/api/fleets/work/hold-fire", nil)
 	if code != http.StatusOK || !strings.Contains(body, `"worker_ships":0`) {
 		t.Errorf("GET hold-fire after = %d %s, want worker_ships 0", code, body)
