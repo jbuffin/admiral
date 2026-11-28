@@ -454,7 +454,9 @@ func TestAScheduledResetSkipsAChatWithAnItemQueued(t *testing.T) {
 		t.Helper()
 		r := newTurnRig(t, "claude")
 		setup(r)
-		now := time.Now()
+		// Noon, so the tick a day later is past the daily reset hour at any wall-clock time.
+		y, m, d := time.Now().Date()
+		now := time.Date(y, m, d, 12, 0, 0, 0, time.Local)
 		r.fc.resetTick(now)
 		r.fc.resetTick(now.Add(25 * time.Hour))
 		for end := time.Now().Add(3 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
