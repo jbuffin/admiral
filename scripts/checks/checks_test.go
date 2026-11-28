@@ -157,12 +157,19 @@ var checkCases = []check{
 	{
 		name: "probes-executable-write",
 		hint: "write an executable fake with writeExe (exe_test.go); an in-process write fd makes the exec fail with text file busy on Linux",
-		bad:  map[string]string{"internal/probes/a_test.go": "package probes_test\n\nvar _ = os.WriteFile(p, b, 0o755)\n"},
+		bad: map[string]string{
+			"internal/probes/a_test.go": "package probes_test\n\nvar _ = os.WriteFile(p, b, 0o755)\n",
+			"internal/probes/b_test.go": "package probes_test\n\nvar _ = os.WriteFile(p, b, 0755)\n",
+			"internal/probes/c_test.go": "package probes_test\n\nvar _, _ = os.OpenFile(p, os.O_CREATE, 0o700)\n",
+			"internal/probes/d_test.go": "package probes_test\n\nvar _, _ = os.OpenFile(p, os.O_CREATE, 0755)\n",
+			"internal/probes/e_test.go": "package probes_test\n\nvar _ = os.Chmod(p, 0o755)\n",
+			"internal/probes/f_test.go": "package probes_test\n\nvar _ = os.Chmod(p, 0755)\n",
+		},
 		want: "internal/probes/a_test.go:3:",
 		clean: map[string]string{
-			"internal/probes/exe_test.go": "package probes_test\n\nvar _ = os.WriteFile(p, b, 0o755)\n",
-			"internal/probes/a_test.go":   "package probes_test\n\nvar _ = os.WriteFile(p, b, 0o644)\n",
-			"internal/ships/a_test.go":    "package ships\n\nvar _ = os.WriteFile(p, b, 0o755)\n",
+			"internal/probes/a_test.go": "package probes_test\n\nvar _ = os.WriteFile(p, b, 0o644)\n",
+			"internal/probes/b_test.go": "package probes_test\n\nvar _ = os.WriteFile(p, b, 0644)\n",
+			"internal/ships/a_test.go":  "package ships\n\nvar _ = os.WriteFile(p, b, 0o755)\n",
 		},
 	},
 	{

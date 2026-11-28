@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 name=$(basename "$0" .sh)
-hits=$(git grep -nE 'os\.WriteFile\(.*0o7' -- 'internal/probes/*_test.go' ':!internal/probes/exe_test.go')
+hits=$(git grep -nE 'os\.(WriteFile|OpenFile|Chmod)\(.*[ ,(]0o?7[0-7]{2}[,) ]' -- 'internal/probes/*_test.go')
 status=$?
 [ "$status" -le 1 ] || exit 2
 [ -z "$hits" ] && exit 0
