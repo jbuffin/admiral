@@ -159,6 +159,7 @@ func TestEveryHarnessRegistersItsJudgeProbesAndStoresThemUnderTheVersion(t *test
 	}
 	for _, name := range allHarnesses {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			j := newJRig(t, name, "pass")
 			h := home(t)
 			rep, err := probes.NewDefault(h).Run(t.Context(), j.fleet, name)
@@ -381,13 +382,13 @@ func TestAFullClaudeRunFitsTheRunnersTimeEvenWhenOneJudgeCallHangs(t *testing.T)
 	j := newJRig(t, "claude", "hang-first")
 	h := home(t)
 	r := probes.NewDefault(h)
-	r.Timeout = 12 * time.Second
+	r.Timeout = 4 * time.Second
 	start := time.Now()
 	rep, err := r.Run(t.Context(), j.fleet, "claude")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if took := time.Since(start); took > 12*time.Second+time.Second {
+	if took := time.Since(start); took > r.Timeout+time.Second {
 		t.Errorf("Run took %s, past its %s limit", took, r.Timeout)
 	}
 	passed, failed := 0, 0

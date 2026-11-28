@@ -148,27 +148,33 @@ func TestBothRestrictedProbesPassOnAConfinedRunAndAreStored(t *testing.T) {
 func TestRestrictedProbeFailuresSayWhy(t *testing.T) {
 	t.Parallel()
 	t.Run("no sandbox", func(t *testing.T) {
+		t.Parallel()
 		r := runRestricted(t, "no-sandbox", "")
 		r.wantFailed(t, capabilities.RestrictedSandbox, "outside")
 		r.wantFailed(t, capabilities.RestrictedAllow, "example.com")
 	})
 	t.Run("a write into the shared Claude temp dir lands", func(t *testing.T) {
+		t.Parallel()
 		r := runRestricted(t, "tmp-open", "")
 		r.wantFailed(t, capabilities.RestrictedSandbox, "landed", "/tmp/claude-")
 	})
 	t.Run("a write to .git lands", func(t *testing.T) {
+		t.Parallel()
 		r := runRestricted(t, "git-open", "")
 		r.wantFailed(t, capabilities.RestrictedSandbox, ".git")
 	})
 	t.Run("a nested repo is let through", func(t *testing.T) {
+		t.Parallel()
 		r := runRestricted(t, "nest-open", "")
 		r.wantFailed(t, capabilities.RestrictedSandbox, "nested")
 	})
 	t.Run("git cannot commit", func(t *testing.T) {
+		t.Parallel()
 		r := runRestricted(t, "no-commit", "")
 		r.wantFailed(t, capabilities.RestrictedSandbox, "commit", "index.lock")
 	})
 	t.Run("no network", func(t *testing.T) {
+		t.Parallel()
 		r := runRestricted(t, "no-network", "")
 		r.wantFailed(t, capabilities.RestrictedAllow, "registry.npmjs.org", "no network")
 		if l := r.line(t, capabilities.RestrictedSandbox); l.Status != capabilities.Passed {
@@ -176,6 +182,7 @@ func TestRestrictedProbeFailuresSayWhy(t *testing.T) {
 		}
 	})
 	t.Run("no tool calls", func(t *testing.T) {
+		t.Parallel()
 		r := runRestricted(t, "no-tool", "")
 		for _, id := range []capabilities.ID{capabilities.RestrictedSandbox, capabilities.RestrictedAllow} {
 			l := r.line(t, id)
@@ -185,6 +192,7 @@ func TestRestrictedProbeFailuresSayWhy(t *testing.T) {
 		}
 	})
 	t.Run("claude fails before its init record", func(t *testing.T) {
+		t.Parallel()
 		r := runRestricted(t, "pass", "error")
 		r.wantFailed(t, capabilities.RestrictedSandbox, "boom: not logged in")
 		r.wantFailed(t, capabilities.RestrictedAllow, "boom: not logged in")
@@ -347,7 +355,7 @@ func TestASlowRestrictedProbeCannotStarveTheJudgesAndADeadlineIsNotAPass(t *test
 	}
 	h := home(t)
 	r := probes.NewDefault(h)
-	r.Timeout = 12 * time.Second
+	r.Timeout = 3 * time.Second
 	rep, err := r.Run(context.Background(), restrictedFleet(t, "pass", "hang", t.TempDir(), filepath.Join(t.TempDir(), "rec")), "claude")
 	if err != nil {
 		t.Fatal(err)
@@ -381,6 +389,7 @@ func TestARunWhereTheModelSkippedACommandIsRetriedOnceAndThenPasses(t *testing.T
 	t.Parallel()
 	for _, mode := range []string{"skip-once", "unread-once"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			r := runRestricted(t, mode, "", probes.ClaudeRestrictedSandbox())
 			if l := r.line(t, capabilities.RestrictedSandbox); l.Status != capabilities.Passed {
 				t.Errorf("sandbox = %+v, want passed on the retry", l)
@@ -396,6 +405,7 @@ func TestAFailureThatIsNotASkippedCommandIsNeverRetried(t *testing.T) {
 	t.Parallel()
 	for mode, want := range map[string]string{"tmp-open": "landed", "git-open": ".git", "no-commit": "index.lock", "no-sandbox": "outside"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			r := runRestricted(t, mode, "", probes.ClaudeRestrictedSandbox())
 			r.wantFailed(t, capabilities.RestrictedSandbox, want)
 			if n := r.runs(t); n != 3 {
