@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -111,9 +112,11 @@ func mkCheckout(t *testing.T, dir, remote string) {
 // startSources runs the fixture's supervisor until the test ends.
 func (f *serviceFixture) startSources() {
 	f.t.Helper()
+	wait := new(sync.WaitGroup)
+	f.Svc.Sup.workers = wait
 	ctx, cancel := context.WithCancel(context.Background())
 	f.Svc.Sup.Start(ctx)
-	f.t.Cleanup(func() { cancel(); f.Svc.Sup.Wait(); workers.Wait() })
+	f.t.Cleanup(func() { cancel(); f.Svc.Sup.Wait(); wait.Wait() })
 }
 
 func (f *serviceFixture) waitView(key, what string, pred func(SourceView) bool) SourceView {

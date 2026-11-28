@@ -79,6 +79,8 @@ type openArgs struct {
 	setRefreshing func()
 	// stackChecker tells whether a chain's or stack's top merges into its base; nil skips the check.
 	stackChecker moor.StackChecker
+	// workers, when set, counts the running work loops, which outlive stop; a test waits on it before it restores a github package limit.
+	workers *sync.WaitGroup
 }
 
 // A failed view keeps its last good orders next to the error.
@@ -132,9 +134,6 @@ type kindPoll struct {
 	emitted map[string]time.Time
 }
 
-// workers counts the running work loops, which outlive stop; tests wait on it before they restore a github package limit.
-var workers sync.WaitGroup
-
 func openGitHub(a openArgs) *githubConn {
 	ctx, cancel := context.WithCancel(context.Background())
 	g := &githubConn{openArgs: a, fleet: a.def.Fleet, gone: make(chan struct{}), ctx: ctx, cancel: cancel,
@@ -185,8 +184,15 @@ func (g *githubConn) call(ctx context.Context, method string, params any, _ time
 		}
 		g.mu.Unlock()
 		g.once.Do(func() { // only now may the source send notifications
-			workers.Add(1)
-			go func() { defer workers.Done(); g.work() }()
+			if g.workers != nil {
+				g.workers.Add(1)
+			}
+			go func() {
+				if g.workers != nil {
+					defer g.workers.Done()
+				}
+				g.work()
+			}()
 		})
 		return json.Marshal(list)
 	case "orders.list":

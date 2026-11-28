@@ -51,6 +51,7 @@ type runner struct {
 
 	// stackChecker is the supervisor's, set before the runner starts.
 	stackChecker moor.StackChecker
+	workers      *sync.WaitGroup // the supervisor's, passed to the GitHub source
 
 	mu          sync.Mutex
 	def         config.Source
@@ -97,8 +98,8 @@ type pulls struct {
 	pageRows    map[string]bool
 }
 
-func newRunner(ctx context.Context, home string, cfg func() *config.Config, def config.Source, notify func(), onEvent func(Event), prev *runner, stackChecker moor.StackChecker) *runner {
-	r := &runner{stackChecker: stackChecker, home: home, key: def.Key, cfg: cfg, ctx: ctx, def: def, notify: notify, onEvent: onEvent, done: make(chan struct{}),
+func newRunner(ctx context.Context, home string, cfg func() *config.Config, def config.Source, notify func(), onEvent func(Event), prev *runner, stackChecker moor.StackChecker, workers *sync.WaitGroup) *runner {
+	r := &runner{stackChecker: stackChecker, workers: workers, home: home, key: def.Key, cfg: cfg, ctx: ctx, def: def, notify: notify, onEvent: onEvent, done: make(chan struct{}),
 		restartCh: make(chan struct{}, 1), wake: make(chan struct{}, 1), state: StateStarting, caps: []string{}}
 	go func() {
 		if prev != nil {
@@ -305,7 +306,7 @@ func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMe
 		r.mu.Unlock()
 		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf, emit: r.emitFrom(sid),
 			setWarnings: func(w []string) { r.setWarnings(sid, w) }, conn: carried, setConn: func(c connState) { r.setConn(sid, c) },
-			setRefreshing: r.notify, stackChecker: r.stackChecker}), nil
+			setRefreshing: r.notify, stackChecker: r.stackChecker, workers: r.workers}), nil
 	}
 	m, dir, err := LoadManifest(r.home, def.Plugin)
 	if err != nil {
