@@ -113,11 +113,12 @@ func TestAPermissionCardSettlesWhenThePromptIsClearedInTheTerminalAndALateTapSen
 		t.Errorf("settled card %s, want the one posted, %s", settled.ID, card.ID)
 	}
 
+	before := w.stdinOf(ship.Session)
 	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/f/need-cards/"+card.ID+"/answer", `{"choice":"allow"}`)
 	if code != http.StatusConflict || !strings.Contains(body, "item "+card.Card.Item+" is already answered") {
 		t.Errorf("a late tap = %d %s, want 409 item %s is already answered", code, body, card.Card.Item)
 	}
-	if got := w.stdinOf(ship.Session); got != "" {
-		t.Errorf("the pane received %s after the late tap, want nothing", quote(got))
+	if got := w.stdinOf(ship.Session); got != before {
+		t.Errorf("the pane received %s after the late tap, want nothing", quote(strings.TrimPrefix(got, before)))
 	}
 }
