@@ -550,7 +550,7 @@ func (r *rig) idle() {
 }
 
 // shipsChanged tells the service the ships changed and returns once it has acted on that: the second poke is
-// taken only after the first one's diff, and the rereads it asked for, are done.
+// taken only after the first one's diff. The rereads it asked for have only started; holds waits for them.
 func (r *rig) shipsChanged() {
 	r.t.Helper()
 	n := r.polls.Load()
