@@ -320,3 +320,10 @@ describe('cardFor: a session that has not started', () => {
     expect(cardFor({ ...ship, status: 'needs_you', reason: 'crew' } as Ship, boat, none)).toEqual({ kind: 'not_started', dir: '/work/mate' });
   });
 });
+
+describe('answerCard: an interrupted turn', () => {
+  it('gives no question card for a question the interrupted turn left pending', () => {
+    const conv = ok(ask('q#0', ['A', 'B']), { id: 'x', kind: 'interrupted', text: 'Interrupted' });
+    expect(needs('question', conv)).toEqual({ kind: 'terminal' });
+  });
+});

@@ -69,7 +69,7 @@ export interface LaunchLine {
 
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card' | 'following_card';
+  kind: 'message' | 'question' | 'reset' | 'interrupted' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card' | 'following_card';
   role?: 'user' | 'assistant';
   text: string;
   at: string;

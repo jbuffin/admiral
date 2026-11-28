@@ -131,3 +131,13 @@ describe('lastTurn', () => {
     expect(ids(lastTurn(items))).toEqual(['u1', 'a1', 'm', 'a2']);
   });
 });
+
+describe('blocksOf at an interrupted divider', () => {
+  const mk = (id: string, kind: Item['kind'], extra: Partial<Item> = {}): Item => ({ id, kind, ...extra });
+  const call = (id: string) => mk(id, 'tool_call', { tool: { name: 'Read', done: true } });
+
+  it('starts a new tool group for the calls after it', () => {
+    const blocks = blocksOf([call('a'), mk('x', 'interrupted', { text: 'Interrupted' }), call('b')]);
+    expect(blocks.map((b) => (b.kind === 'item' ? b.item.id : b.calls.map((c) => c.id).join('+')))).toEqual(['a', 'x', 'b']);
+  });
+});
