@@ -162,3 +162,18 @@ func TestNextUnderTheAdmiralBotTokenMarksTheStopAnsweredViaAdmiralBot(t *testing
 		t.Errorf("@admiral-stop-answered = %q, want %q", got, want)
 	}
 }
+
+func TestTheAnswerRouteRefusesAnAdmiralBotAnswerWithNoStopIdWith400AndSendsNoKeys(t *testing.T) {
+	t.Parallel()
+	p := newAnswerPane(t, "copilot", nil)
+	p.needsYou("notification:permission_prompt")
+	if code, msg := p.postAs("work", "/answer", permissionBody("")); code != http.StatusBadRequest || !strings.Contains(msg, "stop_id") {
+		t.Fatalf("actor answer with no stop_id = %d %s, want 400 naming stop_id", code, msg)
+	}
+	if got := p.sent(""); got != "" {
+		t.Errorf("refused answer sent %q, want no keys", got)
+	}
+	if got := p.option(sessionhost.OptStopAnswered); got != "" {
+		t.Errorf("@admiral-stop-answered = %q, want none", got)
+	}
+}

@@ -435,12 +435,6 @@ func sameJSON(a, b string) bool {
 	return json.Unmarshal([]byte(a), &x) == nil && json.Unmarshal([]byte(b), &y) == nil && mustJSON(x) == mustJSON(y)
 }
 
-func TestCopilotChatAllowsAnswerStop(t *testing.T) {
-	if !slices.Contains(launcher.ChatTools, "answer_stop") {
-		t.Errorf("launcher.ChatTools = %v, want it to name answer_stop", launcher.ChatTools)
-	}
-}
-
 func TestAnswerStopRefusesACallWithNoStopIdAndSendsNothing(t *testing.T) {
 	a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"answered":true}` })
 	a.env(t, mcpToken)

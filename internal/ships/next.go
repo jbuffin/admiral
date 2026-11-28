@@ -57,7 +57,7 @@ func (s *Service) serveNext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "ship "+session+" is mid-turn or waiting on something else, so its turn has not ended")
 		return
 	}
-	undo := s.markStopAnswered(r.Context(), target{pane: sess.PaneID, needsYou: true}, viaOf(r))
+	undo := s.markStopAnswered(r.Context(), target{pane: sess.PaneID, needsYou: true}, "", viaOf(r))
 	_, typed, err := s.TypeResume(session, body.Text)
 	if !typed {
 		undo()
