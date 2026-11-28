@@ -141,8 +141,7 @@ const rule = (id: string, pattern: string) => ({
   id,
   harness: "claude",
   repo: "acme/api",
-  rule: "allow",
-  pattern,
+  pattern: pattern.split(" "),
   every_repo: false,
   count: 1,
   reason: `Because ${id}`,
@@ -236,7 +235,10 @@ const shown = async (...entries: unknown[]) => {
   return document.querySelector(".chat-card") as HTMLElement;
 };
 const button = (name: string) =>
-  screen.getByRole("button", { name }) as HTMLButtonElement;
+  within(document.querySelector(".chat-card") as HTMLElement).getByRole(
+    "button",
+    { name },
+  ) as HTMLButtonElement;
 const sent = async (count = 1) => {
   await waitFor(() => expect(posts).toHaveLength(count));
   return posts[count - 1];
