@@ -193,7 +193,7 @@ func TestPushFollowJourneyFromQuestionToAnswerToReconnectToRestart(t *testing.T)
 	f.silent("after the answer's push_clear, which already carries the count")
 
 	// Away: the socket is closed (silent's read timeout closed it) and the next question happens without it.
-	// The Web Push leaves before the follow ring records the event, so a second follower is the barrier that the event is in the ring.
+	// Neither the Web Push nor the ship list shows the event is in the ring; a live follower receiving it does.
 	observer := r.follow("a", nil, "")
 	observer.expect("attention")
 	missed := r.launch("q")
