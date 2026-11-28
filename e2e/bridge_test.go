@@ -25,7 +25,7 @@ func TestBridgeS1_JoinGetsScreenAndScrollbackThenStreams(t *testing.T) {
 	w.start()
 	s := w.launchIn("f", "claude", "b1")
 	w.waitFile(s.Session, "cues-done")
-	w.in.waitStatusList(t, 3*time.Second, s.Session, "underway")
+	w.in.waitStatusList(t, s.Session, "underway")
 
 	// The fake did print coloured lines; a failure below is the bridge.
 	pane := w.mustTmux("capture-pane", "-p", "-e", "-S", "-2000", "-t", w.target(s.Session))
@@ -65,7 +65,7 @@ func TestBridgeS1_JoinGetsScreenAndScrollbackThenStreams(t *testing.T) {
 	marker := "\x1b[35mmagenta\x1b[0m back\\slash é✓ live-1\r\n"
 	start := time.Now()
 	w.paneWrite(s.Session, marker)
-	b.waitOutput(2*time.Second, mark, marker)
+	b.waitOutput(mark, marker)
 	if lag := time.Since(start); lag > 500*time.Millisecond {
 		t.Errorf("live output took %s to reach the browser on loopback, want no visible lag", lag)
 	}
@@ -79,7 +79,7 @@ func TestBridgeS1_JoinWithoutHistoryRepeatsNothing(t *testing.T) {
 	w.start()
 	s := w.launchIn("f", "claude", "b1short")
 	w.waitFile(s.Session, "cues-done")
-	w.in.waitStatusList(t, 3*time.Second, s.Session, "underway")
+	w.in.waitStatusList(t, s.Session, "underway")
 
 	_, j := w.joinBridge(t, s.Session, 100, 30)
 	if j.Scrollback != "" {
@@ -100,7 +100,7 @@ func TestBridgeS2_TwoBrowsers(t *testing.T) {
 	w.start()
 	s := w.launchIn("f", "claude", "b2")
 	w.waitFile(s.Session, "cues-done")
-	w.in.waitStatusList(t, 3*time.Second, s.Session, "needs_you")
+	w.in.waitStatusList(t, s.Session, "needs_you")
 
 	a, _ := w.joinBridge(t, s.Session, 100, 30)
 	w.waitPaneSize(t, s.Session, "100x30")
@@ -109,7 +109,7 @@ func TestBridgeS2_TwoBrowsers(t *testing.T) {
 	if jb.Size.Cols != 80 || jb.Size.Rows != 24 {
 		t.Errorf("the second browser's join size = %dx%d, want 80x24", jb.Size.Cols, jb.Size.Rows)
 	}
-	a.waitSize(3*time.Second, 0, 80, 24)
+	a.waitSize(0, 80, 24)
 	if got := w.controlClients(s.Session); len(got) != 1 {
 		t.Errorf("two browsers on one ship use %d tmux control clients (%v), want exactly 1 shared", len(got), got)
 	}
@@ -118,13 +118,13 @@ func TestBridgeS2_TwoBrowsers(t *testing.T) {
 	ma, mb := a.mark(), b.mark()
 	a.active()
 	w.waitPaneSize(t, s.Session, "100x30")
-	b.waitSize(3*time.Second, mb, 100, 30)
+	b.waitSize(mb, 100, 30)
 	b.active()
 	w.waitPaneSize(t, s.Session, "80x24")
 	a.resize(120, 40)
 	w.waitPaneSize(t, s.Session, "120x40")
-	a.waitSize(3*time.Second, ma, 120, 40)
-	b.waitSize(3*time.Second, mb, 120, 40)
+	a.waitSize(ma, 120, 40)
+	b.waitSize(mb, 120, 40)
 
 	// Input from either browser reaches the pane as given, with no lock, and
 	// clears needs-you at once.
@@ -134,7 +134,7 @@ func TestBridgeS2_TwoBrowsers(t *testing.T) {
 		t.Errorf("right after browser B typed, GET status = %q, want underway", got)
 	}
 	w.setPaneState(s.Session, "needs_you")
-	w.in.waitStatusList(t, 3*time.Second, s.Session, "needs_you")
+	w.in.waitStatusList(t, s.Session, "needs_you")
 	typed := "\x03\x1b[A\r é \t"
 	a.input(typed)
 	w.waitStdin(t, s.Session, "y"+typed)
@@ -150,7 +150,7 @@ func TestBridgeS2_TwoBrowsers(t *testing.T) {
 	b.resize(50, 20)
 	b.active()
 	w.paneWrite(s.Session, "while-hidden\r\n")
-	a.waitOutput(2*time.Second, ma, "while-hidden") // A got it, so B's copy has had its chance to arrive
+	a.waitOutput(ma, "while-hidden") // A got it, so B's copy has had its chance to arrive
 	holdWindow(t, 300*time.Millisecond, "a hidden browser still received output", func() bool { return b.output(mb) == "" })
 	if got := w.paneSize(s.Session); got != "120x40" {
 		t.Errorf("a hidden browser changed the pane to %s, want it left at 120x40", got)
@@ -158,7 +158,7 @@ func TestBridgeS2_TwoBrowsers(t *testing.T) {
 
 	// Visible again, it rejoins like a joining browser: the whole screen again.
 	b.visible(true)
-	rj := b.waitJoin(3*time.Second, 2)
+	rj := b.waitJoin(2)
 	if !strings.Contains(stripSGR(rj.Screen+rj.Scrollback), "while-hidden") {
 		t.Errorf("the rejoin payload lacks what was printed while the browser was hidden: %.200q", stripSGR(rj.Screen))
 	}
@@ -232,7 +232,7 @@ func TestBridgeS3_OnlyCurrentShipsAreWatchable(t *testing.T) {
 	rec := w.rec + "/" + impostor + ".stdin"
 	w.mustTmux("kill-session", "-t", w.target(s.Session))
 	w.mustTmux("new-session", "-d", "-s", impostor, "stty raw -echo; exec cat -u >"+rec)
-	w.in.waitShipsList(t, 5*time.Second, "the killed ship gone", func(l []shipJSON) bool { return statusOf(l, s.Session) == "" })
+	w.in.waitShipsList(t, "the killed ship gone", func(l []shipJSON) bool { return statusOf(l, s.Session) == "" })
 	expectBridgeRefused(t, w.in.LocalURL, s.Session, "", nil, "", http.StatusNotFound)
 	if got := w.controlClients(impostor); len(got) != 0 {
 		t.Errorf("a refused bridge attached to %s: %v", impostor, got)
@@ -261,7 +261,7 @@ func TestBridgeS3_AccessFollowsTheDeviceToken(t *testing.T) {
 			t.Fatalf("a non-local peer with the token should connect, got %v (err %v)", resp, err)
 		}
 		b.send(map[string]any{"type": "join", "cols": 80, "rows": 24})
-		b.waitJoin(5*time.Second, 1)
+		b.waitJoin(1)
 	}
 	t.Run("the cookie works", func(t *testing.T) {
 		connects(t, "", http.Header{"Cookie": {in.cookieName() + "=" + in.Token}})
@@ -278,7 +278,7 @@ func TestBridgeS3_AccessFollowsTheDeviceToken(t *testing.T) {
 			t.Fatalf("a local peer should connect, got %v (err %v)", resp, err)
 		}
 		b.send(map[string]any{"type": "join", "cols": 80, "rows": 24})
-		b.waitJoin(5*time.Second, 1)
+		b.waitJoin(1)
 	})
 	t.Run("a foreign Origin is refused even from a local peer", func(t *testing.T) {
 		expectBridgeRefused(t, in.LocalURL, s.Session, "", http.Header{"Origin": {"http://evil.example"}}, "", http.StatusForbidden)
@@ -324,28 +324,28 @@ func TestBridgeS4_ExitReachesTheBridge(t *testing.T) {
 
 	z := w.launchIn("zero", "claude", "b4zero")
 	w.waitFile(z.Session, "recorded")
-	w.in.waitStatusList(t, 3*time.Second, z.Session, "underway")
+	w.in.waitStatusList(t, z.Session, "underway")
 	zb, zj := w.joinBridge(t, z.Session, 100, 30)
 	if zj.Ship.Status != "underway" {
 		t.Errorf("join ship status = %q, want underway", zj.Ship.Status)
 	}
 	mark := zb.mark()
 	w.release(z.Session, "go")
-	zb.waitShip(6*time.Second, mark, "status sailing_off after exit 0", func(s shipState) bool { return s.Status == "sailing_off" })
+	zb.waitShip(mark, "status sailing_off after exit 0", func(s shipState) bool { return s.Status == "sailing_off" })
 
 	a := w.launchIn("three", "claude", "b4three")
 	w.waitFile(a.Session, "recorded")
-	w.in.waitStatusList(t, 3*time.Second, a.Session, "underway")
+	w.in.waitStatusList(t, a.Session, "underway")
 	ab, _ := w.joinBridge(t, a.Session, 100, 30)
 	mark = ab.mark()
 	w.release(a.Session, "go")
-	got := ab.waitShip(6*time.Second, mark, "status anchored after exit 3", func(s shipState) bool { return s.Status == "anchored" })
+	got := ab.waitShip(mark, "status anchored after exit 3", func(s shipState) bool { return s.Status == "anchored" })
 	if got.ExitCode == nil || *got.ExitCode != 3 || got.ExitSignal != nil {
 		t.Errorf("anchored ship state = %+v, want exit_code 3 and exit_signal null", got)
 	}
 	mark = ab.mark()
 	ab.input("x")
-	ab.waitFor(3*time.Second, `a {"type":"refused","reason":"anchored"} message for input to an anchored ship`, func() bool {
+	ab.waitFor(`a {"type":"refused","reason":"anchored"} message for input to an anchored ship`, func() bool {
 		for _, raw := range ab.texts(mark, "refused") {
 			if strings.Contains(string(raw), `"anchored"`) {
 				return true
@@ -364,7 +364,7 @@ func TestBridgeS4_ExitReachesTheBridge(t *testing.T) {
 	}
 	mark = late.mark()
 	late.input("x")
-	late.waitFor(3*time.Second, "a refusal of input to the anchored ship", func() bool { return len(late.texts(mark, "refused")) > 0 })
+	late.waitFor("a refusal of input to the anchored ship", func() bool { return len(late.texts(mark, "refused")) > 0 })
 }
 
 // titleOf reads `title` of one ship from GET /api/ships; the bool is false when
@@ -403,11 +403,11 @@ func TestBridgeTitleIsTheOrdersFirstLineAndSurvivesARestart(t *testing.T) {
 	w := liveFleet(t)
 	w.addOrdersSource()
 	w.start()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
+	w.waitSource("orders", "state ok", isOK)
 	panel := w.panelID("orders")
 	code, body := w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": "Fix the flaky test\n\nsee the CI log"})
 	w.mustOK(code, body, "add order")
-	s := w.waitSource("orders", 5*time.Second, "the order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
+	s := w.waitSource("orders", "the order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
 	ship := w.mustLaunchFrom("f", "orders", s.orderIDs()[0])
 	w.waitFile(ship.Session, "cues-done")
 
@@ -423,7 +423,7 @@ func TestBridgeTitleIsTheOrdersFirstLineAndSurvivesARestart(t *testing.T) {
 	}
 
 	w.restart()
-	w.in.waitShipsList(t, 5*time.Second, "both ships after the restart", func(l []shipJSON) bool { return len(l) == 2 })
+	w.in.waitShipsList(t, "both ships after the restart", func(l []shipJSON) bool { return len(l) == 2 })
 	if got, ok := w.in.titleOf(t, ship.Session); !ok || got != "Fix the flaky test" {
 		t.Errorf("after a restart the title is %q (present %v), want it rebuilt from the session option", got, ok)
 	}

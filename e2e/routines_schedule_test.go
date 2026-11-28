@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -110,20 +111,20 @@ func (f *chatDock) mcpCall(name, tool string, args map[string]any) mcpReply {
 	}
 	atomicWrite(f.t, filepath.Join(f.recDir(), name), string(req))
 	reply := filepath.Join(f.recDir(), name+".reply")
-	for end := time.Now().Add(20 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		raw, err := os.ReadFile(reply)
+	var raw []byte
+	eventually(f.t, "the fake chat answering `mcp "+name+"` ("+tool+")", func() (bool, string) {
+		raw, err = os.ReadFile(reply)
 		if err == nil && len(raw) > 0 {
-			var r mcpReply
-			if err := json.Unmarshal(raw, &r); err != nil {
-				f.t.Fatalf("the fake's reply to %s %s is not a tool result: %v\n%s", name, tool, err, raw)
-			}
-			return r
+			return true, ""
 		}
-		if time.Now().After(end) {
-			mcpErr, _ := os.ReadFile(filepath.Join(f.recDir(), "mcp-error"))
-			f.t.Fatalf("within 20s the fake chat never answered `mcp %s` (%s); the cue's errors: %s", name, tool, mcpErr)
-		}
+		mcpErr, _ := os.ReadFile(filepath.Join(f.recDir(), "mcp-error"))
+		return false, fmt.Sprintf("the cue's errors: %s", mcpErr)
+	})
+	var rep mcpReply
+	if err := json.Unmarshal(raw, &rep); err != nil {
+		f.t.Fatalf("the fake's reply to %s %s is not a tool result: %v\n%s", name, tool, err, raw)
 	}
+	return rep
 }
 
 func TestADigestRoutineQueuesATurnOnlyInTheFleetWithSomethingNewAndAdmiralBotCannotActDuringIt(t *testing.T) {
@@ -142,8 +143,8 @@ func TestADigestRoutineQueuesATurnOnlyInTheFleetWithSomethingNewAndAdmiralBotCan
 	w.start()
 	alpha.start()
 	beta.start()
-	alpha.waitSession(10*time.Second, "the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
-	beta.waitSession(10*time.Second, "the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
+	alpha.waitSession("the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
+	beta.waitSession("the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
 
 	when := due.Format("4 15") + " * * *"
 	// the other routine is made first, so on the tick it reports before the digest looks for what is new

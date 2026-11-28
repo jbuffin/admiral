@@ -67,7 +67,7 @@ func TestShipPRs_ARunningShipCarriesThePRItOpenedThroughToMooring(t *testing.T) 
 		time.Sleep(50 * time.Millisecond)
 	}
 	w.kickMoored()
-	list := w.in.waitShipsList(t, 20*time.Second, "the running ship carrying the PR it opened", func(l []shipJSON) bool {
+	list := w.in.waitShipsList(t, "the running ship carrying the PR it opened", func(l []shipJSON) bool {
 		s := byName(l)[ship.Name]
 		return s.Status != "moored" && len(s.PRs) == 1 && s.PRs[0].URL == mooredPR
 	})
@@ -76,7 +76,7 @@ func TestShipPRs_ARunningShipCarriesThePRItOpenedThroughToMooring(t *testing.T) 
 	}
 
 	w.exitWith(ship, mooredReport())
-	list = w.in.waitShipsList(t, 20*time.Second, "the ship moored with the PR it carried", func(l []shipJSON) bool {
+	list = w.in.waitShipsList(t, "the ship moored with the PR it carried", func(l []shipJSON) bool {
 		s := byName(l)[ship.Name]
 		return s.Status == "moored" && len(s.PRs) == 1 && s.PRs[0].URL == mooredPR
 	})

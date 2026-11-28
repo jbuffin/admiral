@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -82,25 +81,24 @@ func (f *chatDock) start() chatSession {
 
 func (f *chatDock) session() chatSession { return fetchFleetChat(f.t, f.w.in.LocalURL, f.fleet) }
 
-func (f *chatDock) waitSession(d time.Duration, what string, pred func(chatSession) bool) chatSession {
+func (f *chatDock) waitSession(what string, pred func(chatSession) bool) chatSession {
 	f.t.Helper()
-	deadline := time.Now().Add(d)
-	for {
+	var got chatSession
+	eventually(f.t, "GET /api/chat/"+f.fleet+"/session showing "+what, func() (bool, string) {
 		s := f.session()
 		if pred(s) {
-			return s
+			got = s
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			f.t.Fatalf("within %s GET /api/chat/%s/session never showed %s; last: %+v", d, f.fleet, what, s)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("%+v", s)
+	})
+	return got
 }
 
 func (f *chatDock) newChat() {
 	f.t.Helper()
 	// New chat is refused until the harness's SessionStart is recorded, which the chat's error says.
-	f.waitSession(10*time.Second, "the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
+	f.waitSession("the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
 	if code, body := send(f.t, http.MethodPost, f.url("new"), nil); code != http.StatusOK {
 		f.t.Fatalf("POST /api/chat/%s/new = %d, want 200: %s", f.fleet, code, body)
 	}
@@ -147,17 +145,10 @@ func (f *chatDock) logTexts() (msgs []string, resets, questions int) {
 
 func (f *chatDock) waitLog(what string, pred func(msgs []string, resets, questions int) bool) {
 	f.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	eventually(f.t, f.logPath()+" holding "+what, func() (bool, string) {
 		msgs, r, q := f.logTexts()
-		if pred(msgs, r, q) {
-			return
-		}
-		if time.Now().After(deadline) {
-			f.t.Fatalf("within 10s %s never held %s; it has %v, %d markers, %d questions", f.logPath(), what, msgs, r, q)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return pred(msgs, r, q), fmt.Sprintf("%v, %d markers, %d questions", msgs, r, q)
+	})
 }
 
 // newFleetsWorld writes a config of the given fleets, in order, each with its own dock.
@@ -204,15 +195,14 @@ func chatCue(f *chatDock) []string {
 		"wait go-clear", sessionStartCue(f.transcript("t2"), "clear")}
 }
 
-func waitFleetWS(t *testing.T, c *websocket.Conn, fleet string, d time.Duration, what string, pred func(chatSession) bool) chatSession {
+func waitFleetWS(t *testing.T, c *websocket.Conn, fleet string, what string, pred func(chatSession) bool) chatSession {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
+	ctx := testCtx(t)
 	var last string
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
-			t.Fatalf("within %s the websocket never delivered a `chat` message for fleet %s with %s (last: %s): %v", d, fleet, what, last, err)
+			failRequest(t, fmt.Sprintf("the websocket delivering a `chat` message for fleet %s with %s (last: %s)", fleet, what, last), err)
 		}
 		var m chatSession
 		if json.Unmarshal(data, &m) != nil || m.Type != "chat" {
@@ -241,7 +231,7 @@ func TestChatHistory_IsKeptInTheFleetsLog(t *testing.T) {
 	w.start()
 	f.start()
 	want := []string{"user: Where are the ships", "assistant: Two are afloat."}
-	f.waitSession(10*time.Second, "the transcript's messages", messagesAre(want...))
+	f.waitSession("the transcript's messages", messagesAre(want...))
 
 	t.Run("messages land in the fleet's log", func(t *testing.T) {
 		f.at(t).waitLog("the two messages once each", func(m []string, _, _ int) bool { return sameStrings(m, want) })
@@ -265,7 +255,7 @@ func TestChatHistory_IsKeptInTheFleetsLog(t *testing.T) {
 		f := f.at(t)
 		f.newChat()
 		f.waitLog("a marker after the two messages", func(m []string, r, _ int) bool { return r == 1 && sameStrings(m, want) })
-		if s := f.waitSession(5*time.Second, "the history and one marker", func(s chatSession) bool { return resets(s.Messages) == 1 }); !messagesAre(want...)(s) {
+		if s := f.waitSession("the history and one marker", func(s chatSession) bool { return resets(s.Messages) == 1 }); !messagesAre(want...)(s) {
 			t.Errorf("after New chat the session serves %v, want the earlier history %v", texts(s.Messages), want)
 		}
 		f.touch("go-clear")
@@ -280,7 +270,7 @@ func TestChatHistory_IsKeptInTheFleetsLog(t *testing.T) {
 		all := append(append([]string{}, want...), "user: After the reset")
 		before := len(f.logEntries())
 		f.w.restart()
-		s := f.waitSession(10*time.Second, "the history", func(s chatSession) bool { return messagesAre(all...)(s) && resets(s.Messages) == 1 })
+		s := f.waitSession("the history", func(s chatSession) bool { return messagesAre(all...)(s) && resets(s.Messages) == 1 })
 		if !uniqueIDs(s.Messages) {
 			t.Errorf("the restarted session serves a message twice: %v", s.Messages)
 		}
@@ -293,8 +283,8 @@ func TestChatHistory_IsKeptInTheFleetsLog(t *testing.T) {
 
 func waitFleetQuestions(t *testing.T, f *chatDock, p *botProc, n int) botSession {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	var got botSession
+	eventually(t, fmt.Sprintf("GET /api/chat/%s/session showing %d questions", f.fleet, n), func() (bool, string) {
 		code, body := send(t, http.MethodGet, f.url("session"), nil)
 		if code != http.StatusOK {
 			t.Fatalf("GET /api/chat/%s/session = %d: %s", f.fleet, code, body)
@@ -304,16 +294,15 @@ func waitFleetQuestions(t *testing.T, f *chatDock, p *botProc, n int) botSession
 			t.Fatalf("session is not JSON: %v", err)
 		}
 		if len(s.Questions) == n {
-			return s
+			got = s
+			return true, ""
 		}
 		if p != nil {
 			p.failIfExited("the question")
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within 10s GET /api/chat/%s/session never showed %d questions; last: %s", f.fleet, n, body)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, body
+	})
+	return got
 }
 
 // Two fleets, two chats: a message, a log and a question belong to one fleet.
@@ -409,10 +398,10 @@ func TestChatFleets_TwoChatsStayApart(t *testing.T) {
 		appendLines(t, a.transcript("t1"), userLine("a-u1", "to alpha only", nil), assistantLine("a-a1", "msg_a", map[string]any{"type": "text", "text": "Alpha heard."}))
 		appendLines(t, b.transcript("t1"), userLine("b-u1", "beta's own talk", nil))
 
-		a.waitSession(10*time.Second, "alpha's messages", messagesAre("user: to alpha only", "assistant: Alpha heard."))
-		b.waitSession(10*time.Second, "beta's message", messagesAre("user: beta's own talk"))
-		waitFleetWS(t, ws, "alpha", 5*time.Second, "alpha's messages", messagesAre("user: to alpha only", "assistant: Alpha heard."))
-		waitFleetWS(t, ws, "beta", 5*time.Second, "beta's message", messagesAre("user: beta's own talk"))
+		a.waitSession("alpha's messages", messagesAre("user: to alpha only", "assistant: Alpha heard."))
+		b.waitSession("beta's message", messagesAre("user: beta's own talk"))
+		waitFleetWS(t, ws, "alpha", "alpha's messages", messagesAre("user: to alpha only", "assistant: Alpha heard."))
+		waitFleetWS(t, ws, "beta", "beta's message", messagesAre("user: beta's own talk"))
 		a.waitLog("alpha's two messages", func(m []string, _, _ int) bool {
 			return sameStrings(m, []string{"user: to alpha only", "assistant: Alpha heard."})
 		})
@@ -446,14 +435,14 @@ func TestChatFleets_TwoChatsStayApart(t *testing.T) {
 		pb := b.w.botStart(b.w.botEnvFor("beta", "ADMIRAL_PORT="+b.w.in.Port), askStdin("Beta asks"), "chat", "ask")
 		waitFleetQuestions(t, b, pb, 1)
 		b.newChat()
-		b.w.expectExit(pb.wait(10*time.Second), 4, "beta's chat ask when beta's New chat withdrew its question")
+		b.w.expectExit(pb.wait(), 4, "beta's chat ask when beta's New chat withdrew its question")
 		if got := fetchBotFleet(t, a).ids(); len(got) != 1 || got[0] != id {
 			t.Errorf("after beta's New chat alpha lists %v, want its question %s", got, id)
 		}
 		if code, body := send(t, http.MethodPost, a.url("questions/"+id+"/answer"), botAnswer("Work queue")); code/100 != 2 {
 			t.Fatalf("answering on alpha = %d: %s", code, body)
 		}
-		a.w.expectExit(pa.wait(10*time.Second), 0, "alpha's chat ask after its answer")
+		a.w.expectExit(pa.wait(), 0, "alpha's chat ask after its answer")
 	})
 }
 

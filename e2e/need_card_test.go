@@ -2,12 +2,12 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 type needCardMsg struct {
@@ -42,16 +42,16 @@ func (w *world) needCards(fleet string) []needCardMsg {
 
 func (w *world) waitNeedCard(fleet, state, in string) needCardMsg {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if cs := w.needCards(fleet); len(cs) == 1 && cs[0].Card.State == state && cs[0].Card.AnsweredIn == in {
-			return cs[0]
+	var got needCardMsg
+	eventually(w.t, fmt.Sprintf("the %s chat holding one need card %s %s", fleet, state, in), func() (bool, string) {
+		cs := w.needCards(fleet)
+		if len(cs) == 1 && cs[0].Card.State == state && cs[0].Card.AnsweredIn == in {
+			got = cs[0]
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 10s the %s chat never held one need card %s %s (it has %+v)", fleet, state, in, w.needCards(fleet))
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("it has %+v", cs)
+	})
+	return got
 }
 
 // A ship's question posts a card in its fleet's chat; answering through the card writes the answer the ship reads and settles the card.

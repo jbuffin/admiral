@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -87,9 +88,7 @@ func theRelease(t *testing.T) release {
 		rel.root = tmp
 		rel.dir = filepath.Join(tmp, "dist")
 		rel.bin = filepath.Join(tmp, "admiral")
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, "make", "release", "VERSION="+releaseVer, "DIST="+rel.dir, "BIN="+rel.bin)
+		cmd := exec.CommandContext(testCtx(t), "make", "release", "VERSION="+releaseVer, "DIST="+rel.dir, "BIN="+rel.bin)
 		cmd.Dir = repoRoot
 		out, err := cmd.CombinedOutput()
 		rel.makeText = string(out)
@@ -164,8 +163,7 @@ var versionLine = regexp.MustCompile(`^admiral (\S+) \(([0-9a-f]{7,40})(-dirty)?
 
 func run(t *testing.T, o runOpts, name string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
+	ctx := testCtx(t)
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = o.dir
 	cmd.Env = o.env
@@ -178,7 +176,7 @@ func run(t *testing.T, o runOpts, name string, args ...string) (stdout, stderr s
 	case asExit(err, &ee) && ctx.Err() == nil:
 		code = ee.ExitCode()
 	default:
-		t.Fatalf("%s %v: %v\nstdout: %s\nstderr: %s", name, args, err, out.String(), errb.String())
+		failRequest(t, fmt.Sprintf("%s %v\nstdout: %s\nstderr: %s", name, args, out.String(), errb.String()), err)
 	}
 	return out.String(), errb.String(), code
 }

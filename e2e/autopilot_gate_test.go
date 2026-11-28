@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -26,9 +27,11 @@ func gateNotices(t *testing.T, in *fleetInst, want int) []noticeItem {
 		}
 		return out
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for want > 0 && len(list()) < want && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
+	if want > 0 {
+		eventually(t, fmt.Sprintf("%d guard-not-proven notices", want), func() (bool, string) {
+			l := list()
+			return len(l) >= want, fmt.Sprintf("%d: %+v", len(l), l)
+		})
 	}
 	// A late duplicate shows within a poll or two; the longest list seen is the answer.
 	out := list()

@@ -1,14 +1,13 @@
 package e2e
 
 import (
-	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 )
@@ -27,17 +26,16 @@ func chatInboxItems(t *testing.T, w *world) []inboxItem {
 
 func waitChatInbox(t *testing.T, w *world, what string, pred func([]inboxItem) bool) []inboxItem {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	var got []inboxItem
+	eventually(t, "GET /api/inbox showing "+what, func() (bool, string) {
 		items := chatInboxItems(t, w)
 		if pred(items) {
-			return items
+			got = items
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within 10s GET /api/inbox never showed %s; its chat items: %+v", what, items)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("its chat items: %+v", items)
+	})
+	return got
 }
 
 func inboxHas(id string) func([]inboxItem) bool {
@@ -58,12 +56,11 @@ func not(p func([]inboxItem) bool) func([]inboxItem) bool {
 // waitInboxWS reads `inbox` messages until one lists the item (want true) or no longer lists it.
 func waitInboxWS(t *testing.T, c *websocket.Conn, id string, want bool) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := testCtx(t)
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
-			t.Fatalf("within 10s the websocket never delivered an `inbox` message with item %s present=%v: %v", id, want, err)
+			failRequest(t, fmt.Sprintf("the websocket delivering an `inbox` message with item %s present=%v", id, want), err)
 		}
 		var m struct {
 			Type  string      `json:"type"`
@@ -175,7 +172,7 @@ func TestChatInbox_ListsAndAnswersAFleetsQuestion(t *testing.T) {
 		if code, body := w.in.answer(t, chatSessionFor("alpha"), ida, botAnswer("Work queue")); code/100 != 2 {
 			t.Fatalf("POST /api/inbox/%s/%s/answer = %d, want 2xx: %s", chatSessionFor("alpha"), ida, code, body)
 		}
-		w.expectExit(pa.wait(10*time.Second), 0, "alpha's chat ask after the inbox answer")
+		w.expectExit(pa.wait(), 0, "alpha's chat ask after the inbox answer")
 		file, err := os.ReadFile(filepath.Join(a.questionsDir(), ida+".answer.json"))
 		if err != nil || !strings.Contains(string(file), "Work queue") {
 			t.Errorf("alpha's answer file = %q, %v, want the choice Work queue", file, err)
@@ -199,7 +196,7 @@ func TestChatInbox_ListsAndAnswersAFleetsQuestion(t *testing.T) {
 	t.Run("New chat withdraws the question from the inbox and an answer for it is refused with a reason", func(t *testing.T) {
 		w := w.at(t)
 		b.at(t).newChat()
-		w.expectExit(pb.wait(10*time.Second), 4, "beta's chat ask when New chat withdrew its question")
+		w.expectExit(pb.wait(), 4, "beta's chat ask when New chat withdrew its question")
 		waitChatInbox(t, w, "beta's question gone", func(items []inboxItem) bool { return !inboxHas(idb)(items) })
 		code, body := w.in.answer(t, chatSessionFor("beta"), idb, botAnswer("Freeform"))
 		if code != http.StatusNotFound || errMessage(body) == "" {
@@ -241,17 +238,14 @@ func TestChatInbox_FleetComesFromTheDirectory(t *testing.T) {
 	if code, body := w.in.answer(t, items[0].Session, items[0].ID, botAnswer("Freeform")); code/100 != 2 {
 		t.Fatalf("answer = %d: %s", code, body)
 	}
-	w.expectExit(p.wait(10*time.Second), 0, "chat ask after the answer")
+	w.expectExit(p.wait(), 0, "chat ask after the answer")
 	waitChatInbox(t, w, "the answered question gone", not(inboxHas(id)))
 }
 
 func waitQuestionsOf(t *testing.T, f *chatDock, what string, pred func(botSession) bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !pred(fetchBotFleet(t, f)) {
-		if time.Now().After(deadline) {
-			t.Fatalf("within 5s GET /api/chat/%s/session never showed %s", f.fleet, what)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(t, "GET /api/chat/"+f.fleet+"/session showing "+what, func() (bool, string) {
+		s := fetchBotFleet(t, f)
+		return pred(s), fmt.Sprintf("%+v", s)
+	})
 }

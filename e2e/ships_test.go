@@ -247,10 +247,10 @@ func TestSessionOptionsAndHookBundle(t *testing.T) {
 	writeConfig(t, w.home, w.config())
 	w.addOrdersSource()
 	w.start()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
+	w.waitSource("orders", "state ok", isOK)
 	code, body := w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": w.panelID("orders"), "text": "go"})
 	w.mustOK(code, body, "add an order")
-	orderID := w.waitSource("orders", 5*time.Second, "the order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 }).orderIDs()[0]
+	orderID := w.waitSource("orders", "the order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 }).orderIDs()[0]
 	req := w.order("work", "claude", "optrepo", commodore, "go")
 	req["source"], req["order_id"] = "orders", orderID
 	ship := w.launch(req)
@@ -474,7 +474,7 @@ func TestRestartRebuildsShips(t *testing.T) {
 		t.Fatalf("after stopping Admiral tmux has %d sessions, want 2 still running", got)
 	}
 	w.restart()
-	after := w.in.waitShipsList(t, 5*time.Second, "both ships after restart", func(l []shipJSON) bool { return len(l) == 2 })
+	after := w.in.waitShipsList(t, "both ships after restart", func(l []shipJSON) bool { return len(l) == 2 })
 	if !reflect.DeepEqual(byName(before), byName(after)) {
 		t.Errorf("ships changed over a restart:\nbefore %+v\nafter  %+v", before, after)
 	}
@@ -501,7 +501,7 @@ func TestRestartRebuildsShips(t *testing.T) {
 		t.Errorf("ship %s of the removed fleet = %+v, want it kept with fleet_color #cc5533 and fleet_name Home", b.Name, got)
 	}
 	w.restart()
-	got = byName(w.in.waitShipsList(t, 5*time.Second, "both ships", func(l []shipJSON) bool { return len(l) == 2 }))[b.Name]
+	got = byName(w.in.waitShipsList(t, "both ships", func(l []shipJSON) bool { return len(l) == 2 }))[b.Name]
 	if got.FleetColor != "#cc5533" {
 		t.Errorf("after a restart the removed fleet's ship has fleet_color %q, want #cc5533", got.FleetColor)
 	}
@@ -513,7 +513,7 @@ func TestTmuxChangesReachAdmiral(t *testing.T) {
 	w.start()
 	a := w.launch(w.order("work", "claude", "wa", commodore, "x"))
 	ws := dialWS(t, w.in.instance)
-	waitShipsMsg(t, ws, 5*time.Second, "the first ship", func(l []shipJSON) bool { return len(l) == 1 })
+	waitShipsMsg(t, ws, "the first ship", func(l []shipJSON) bool { return len(l) == 1 })
 
 	w.mustTmux("new-session", "-d", "-s", "stranger", "sleep", "3600")
 	holdThat(t, "a tmux session without @admiral-name became a ship", func() bool { return len(w.in.ships(t)) == 1 })
@@ -527,17 +527,17 @@ func TestTmuxChangesReachAdmiral(t *testing.T) {
 	w.mustTmux("set-option", "-t", "stranger", "@admiral-name", "Outsider")
 	w.mustTmux("set-option", "-t", "stranger", "@admiral-fleet", "work")
 	w.mustTmux("set-option", "-t", "stranger", "@admiral-harness", "claude")
-	waitShipsMsg(t, ws, 3*time.Second, "the session that got @admiral-name", func(l []shipJSON) bool {
+	waitShipsMsg(t, ws, "the session that got @admiral-name", func(l []shipJSON) bool {
 		_, ok := byName(l)["Outsider"]
 		return ok
 	})
 
 	w.mustTmux("kill-session", "-t", a.Session)
-	waitShipsMsg(t, ws, 3*time.Second, "the killed ship gone", func(l []shipJSON) bool {
+	waitShipsMsg(t, ws, "the killed ship gone", func(l []shipJSON) bool {
 		_, ok := byName(l)[a.Name]
 		return !ok
 	})
-	w.in.waitShipsList(t, 2*time.Second, "the killed ship gone", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the killed ship gone", func(l []shipJSON) bool {
 		_, ok := byName(l)[a.Name]
 		return !ok
 	})
@@ -551,13 +551,13 @@ func TestStateFile(t *testing.T) {
 	b := w.launch(w.order("work", "codex", "sb", commodore, "x"))
 
 	other := dialWS(t, w.in.instance)
-	waitShipsMsg(t, other, 5*time.Second, "both ships", func(l []shipJSON) bool { return len(l) == 2 })
+	waitShipsMsg(t, other, "both ships", func(l []shipJSON) bool { return len(l) == 2 })
 
 	url := w.in.LocalURL + "/api/ships/" + a.Session + "/position"
 	if code, body := send(t, http.MethodPut, url, map[string]float64{"x": 0.25, "y": 0.75}); code/100 != 2 {
 		t.Fatalf("PUT position = %d: %s", code, body)
 	}
-	got := waitShipsMsg(t, other, 3*time.Second, "the new position", func(l []shipJSON) bool {
+	got := waitShipsMsg(t, other, "the new position", func(l []shipJSON) bool {
 		p := byName(l)[a.Name].Position
 		return p != nil && p.X == 0.25 && p.Y == 0.75
 	})
@@ -589,7 +589,7 @@ func TestStateFile(t *testing.T) {
 	w.in.Stop()
 	w.mustTmux("kill-session", "-t", b.Session)
 	w.restart()
-	list := w.in.waitShipsList(t, 5*time.Second, "the surviving ship", func(l []shipJSON) bool { return len(l) == 1 })
+	list := w.in.waitShipsList(t, "the surviving ship", func(l []shipJSON) bool { return len(l) == 1 })
 	if p := list[0].Position; list[0].Name != a.Name || p == nil || p.X != 0.25 || p.Y != 0.75 {
 		t.Errorf("after restart ship = %+v, want %s at (0.25, 0.75)", list[0], a.Name)
 	}
@@ -597,7 +597,7 @@ func TestStateFile(t *testing.T) {
 	for _, kv := range [][2]string{{"@admiral-name", b.Name}, {"@admiral-fleet", "work"}, {"@admiral-harness", "codex"}} {
 		w.mustTmux("set-option", "-t", b.Session, kv[0], kv[1])
 	}
-	list = w.in.waitShipsList(t, 3*time.Second, "the recreated session as a ship", func(l []shipJSON) bool { return len(l) == 2 })
+	list = w.in.waitShipsList(t, "the recreated session as a ship", func(l []shipJSON) bool { return len(l) == 2 })
 	if p := byName(list)[b.Name].Position; p != nil {
 		t.Errorf("a session that was gone at start got its old position %+v back, want it dropped", p)
 	}
@@ -605,17 +605,13 @@ func TestStateFile(t *testing.T) {
 
 func waitStateFile(t *testing.T, path string, pred func(string) bool) string {
 	t.Helper()
-	deadline := time.Now().Add(4 * time.Second)
-	for {
+	var got string
+	eventually(t, path+" holding the expected content", func() (bool, string) {
 		data, _ := os.ReadFile(path)
-		if pred(string(data)) {
-			return string(data)
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within 4s %s never held the expected content; it holds: %s", path, data)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		got = string(data)
+		return pred(got), "it holds: " + got
+	})
+	return got
 }
 
 func TestBadStateFileIsMovedAside(t *testing.T) {
@@ -728,7 +724,7 @@ func TestPositionsDroppedAfterTmuxRestarts(t *testing.T) {
 		t.Fatalf("PUT position = %d: %s", code, body)
 	}
 	w.mustTmux("kill-server")
-	w.in.waitShipsList(t, 5*time.Second, "no ships once tmux is gone", func(l []shipJSON) bool { return len(l) == 0 })
+	w.in.waitShipsList(t, "no ships once tmux is gone", func(l []shipJSON) bool { return len(l) == 0 })
 	// Admiral reconnects, which starts a new server with its hidden session.
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(100 * time.Millisecond) {
 		if _, err := w.tmux("has-session", "-t", "=_admiral"); err == nil {
@@ -740,7 +736,7 @@ func TestPositionsDroppedAfterTmuxRestarts(t *testing.T) {
 	}
 	w.mustTmux("new-session", "-d", "-s", a.Session, "sleep", "3600")
 	w.mustTmux("set-option", "-t", a.Session+":", "@admiral-name", a.Name)
-	list := w.in.waitShipsList(t, 3*time.Second, "the recreated session", func(l []shipJSON) bool { return len(l) == 1 })
+	list := w.in.waitShipsList(t, "the recreated session", func(l []shipJSON) bool { return len(l) == 1 })
 	if list[0].Position != nil {
 		t.Errorf("a ship that took a freed name has position %+v, want null", list[0].Position)
 	}
@@ -766,7 +762,7 @@ func TestUnreadableShipKeepsItsPositionAcrossRestart(t *testing.T) {
 	})
 
 	w.mustTmux("set-option", "-t", a.Session+":", "@admiral-order", "o-ur")
-	list := w.in.waitShipsList(t, 3*time.Second, "the repaired ship", func(l []shipJSON) bool { return len(l) == 1 })
+	list := w.in.waitShipsList(t, "the repaired ship", func(l []shipJSON) bool { return len(l) == 1 })
 	if p := list[0].Position; p == nil || p.X != 0.3 || p.Y != 0.6 {
 		t.Errorf("repaired ship = %+v, want it back at (0.3, 0.6)", list[0])
 	}

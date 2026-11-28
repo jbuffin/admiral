@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestHoldFireTurnsADueRoutineIntoAnInboxProposalThatLaunchesOneAutopilotShipWhenAccepted(t *testing.T) {
@@ -46,7 +45,7 @@ func TestHoldFireTurnsADueRoutineIntoAnInboxProposalThatLaunchesOneAutopilotShip
 	if code, body := send(t, http.MethodPost, launch, map[string]any{}); code != http.StatusCreated {
 		t.Fatalf("accept = %d, want 201: %s", code, body)
 	}
-	ships := w.waitShipCount(30*time.Second, "the accepted proposal's ship", func(shipJSON) bool { return true }, 1)
+	ships := w.waitShipCount("the accepted proposal's ship", func(shipJSON) bool { return true }, 1)
 	if env := w.record(ships[0].Session).env; env["ADMIRAL_AUTOPILOT"] != "1" {
 		t.Errorf("the accepted proposal's ship env ADMIRAL_AUTOPILOT = %q, want 1", env["ADMIRAL_AUTOPILOT"])
 	}

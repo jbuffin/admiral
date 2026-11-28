@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -99,55 +98,45 @@ func fetchShips(t *testing.T, in *fleetInst) []apiShip {
 
 func (w *world) waitShip(session, what string, pred func(apiShip) bool) apiShip {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	last := "(ship not listed)"
-	for {
+	var got apiShip
+	eventually(w.t, "GET /api/ships showing "+what+" for "+session, func() (bool, string) {
+		last := "(ship not listed)"
 		for _, s := range fetchShips(w.t, w.in) {
 			if s.Session == session {
 				if pred(s) {
-					return s
+					got = s
+					return true, ""
 				}
 				last = s.rawAll
 			}
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 10s GET /api/ships never showed %s for %s; last: %s", what, session, last)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return false, last
+	})
+	return got
 }
 
 func (w *world) waitGone(session, what string) {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		gone := true
+	until(w.t, what+": "+session+" leaving GET /api/ships", func() bool {
 		for _, s := range fetchShips(w.t, w.in) {
 			if s.Session == session {
-				gone = false
+				return false
 			}
 		}
-		if gone {
-			return
-		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 10s %s: %s was still listed", what, session)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return true
+	})
 }
 
 // wsShip reads `ships` messages until the ship satisfies pred. A timed-out read
 // closes the connection, so the caller doesn't reuse it afterwards.
-func wsShip(t *testing.T, c *websocket.Conn, d time.Duration, session, what string, pred func(apiShip) bool) apiShip {
+func wsShip(t *testing.T, c *websocket.Conn, session, what string, pred func(apiShip) bool) apiShip {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
+	ctx := testCtx(t)
 	last := ""
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
-			t.Fatalf("within %s the websocket never delivered a `ships` message with %s for %s (last ship: %s): %v", d, what, session, last, err)
+			failRequest(t, fmt.Sprintf("the websocket delivering a `ships` message with %s for %s (last ship: %s)", what, session, last), err)
 		}
 		var m struct {
 			Type  string            `json:"type"`
@@ -190,13 +179,9 @@ func (w *world) opt(pane, name string) string {
 
 func (w *world) waitPaneWorking(pane string) {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for w.opt(pane, "@admiral-state") != "working" {
-		if time.Now().After(deadline) {
-			w.t.Fatalf("pane %s never reached @admiral-state working (the cue's first step)", pane)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	until(w.t, "pane "+pane+" reaching @admiral-state working (the cue's first step)", func() bool {
+		return w.opt(pane, "@admiral-state") == "working"
+	})
 }
 
 // crewShip launches a ship and waits for its cue to make it working. It returns
@@ -258,13 +243,7 @@ func alive(pid string) bool {
 
 func waitDead(t *testing.T, what, pid string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for alive(pid) {
-		if time.Now().After(deadline) {
-			t.Fatalf("%s (pid %s) was still running 10s later", what, pid)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	until(t, what+" (pid "+pid+") exiting", func() bool { return !alive(pid) })
 }
 
 func crewNames(s apiShip) []string {
@@ -362,15 +341,15 @@ func TestCrewAPI_Shape(t *testing.T) {
 
 	t.Run("the ships WebSocket message", func(t *testing.T) {
 		c := dialWS(t, w.in.instance)
-		got := wsShip(t, c, 10*time.Second, a.Session, "crew, a subagent and a last_activity", ready)
+		got := wsShip(t, c, a.Session, "crew, a subagent and a last_activity", ready)
 		check(t, "WS", got)
 		// A connection gets one `ships` message at connect, with every ship, so the
 		// second ship is read from a fresh connection.
-		emptyList(t, "WS, ship without crew", wsShip(t, dialWS(t, w.in.instance), 10*time.Second, b.Session, "the ship without crew", func(apiShip) bool { return true }))
+		emptyList(t, "WS, ship without crew", wsShip(t, dialWS(t, w.in.instance), b.Session, "the ship without crew", func(apiShip) bool { return true }))
 
 		// SubagentStop empties the list on the wire within a tick, on the same connection.
 		w.sub(t).hookAt(aPane, "SubagentStop", hookSubEnd)
-		got = wsShip(t, c, 5*time.Second, a.Session, "an empty subagents list", func(s apiShip) bool { return rawIs(s, "subagents", "[]") })
+		got = wsShip(t, c, a.Session, "an empty subagents list", func(s apiShip) bool { return rawIs(s, "subagents", "[]") })
 		if len(got.Crew) != 2 {
 			t.Errorf("after SubagentStop crew = %v, want it unchanged", crewNames(got))
 		}

@@ -2,12 +2,12 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/permlog"
 )
@@ -54,8 +54,8 @@ func permWorld(t *testing.T) *world {
 // waitPrompts waits until the ship's log holds n answered prompts.
 func (w *world) waitPrompts(ship string, n int) []permlog.Record {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	var got []permlog.Record
+	eventually(w.t, fmt.Sprintf("the permission log of %s holding %d answered prompts", ship, n), func() (bool, string) {
 		recs, err := permlog.Read(w.home, ship)
 		answered := 0
 		for _, r := range recs {
@@ -64,13 +64,12 @@ func (w *world) waitPrompts(ship string, n int) []permlog.Record {
 			}
 		}
 		if err == nil && answered >= n {
-			return recs
+			got = recs
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("the permission log of %s never held %d answered prompts within 10s: %+v (err %v)", ship, n, recs, err)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("%+v (err %v)", recs, err)
+	})
+	return got
 }
 
 func TestPermissionLog_RecordsEachPromptOfAShipAndItsCrewWithWhoAnswered(t *testing.T) {

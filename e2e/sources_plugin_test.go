@@ -20,7 +20,7 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 	p.mainOrders(ord("o1", "First"), ord("o2", "Second"))
 	w.startSources(tpSource("a", p, map[string]any{"title": "Things"}))
 
-	s := w.waitSource("a", 10*time.Second, "state ok", isOK)
+	s := w.waitSource("a", "state ok", isOK)
 	if s.Name != "Test a" || s.Plugin != "testplug" || s.IconURL == "" || s.ReadOnly || s.Error != nil || s.Auth != nil {
 		t.Errorf("source = %s, want a healthy source named %q of plugin testplug with an icon", dump(s), "Test a")
 	}
@@ -54,8 +54,8 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 	if !strings.Contains(w.in.stderrBuf.String(), "initialize received") {
 		t.Errorf("the plugin's stderr never reached Admiral's log: %q", w.in.stderrBuf.String())
 	}
-	p.waitCall(2*time.Second, "panels.list", func(rpcCall) bool { return true })
-	p.waitCall(2*time.Second, "orders.list", func(c rpcCall) bool { return c.Params["panel"] == "main" })
+	p.waitCall("panels.list", func(rpcCall) bool { return true })
+	p.waitCall("orders.list", func(c rpcCall) bool { return c.Params["panel"] == "main" })
 
 	// no GET touches the plugin or changes state
 	seen := len(p.calls())
@@ -74,8 +74,8 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 	p.mainOrders(ord("o1", "First"), ord("o3", "Third"))
 	code, body := w.srcReq(http.MethodPost, "/a/refresh", map[string]any{"panel": "main"})
 	w.mustOK(code, body, "POST refresh")
-	p.waitCall(2*time.Second, "orders.refresh", func(c rpcCall) bool { return c.Params["panel"] == "main" })
-	w.waitSource("a", 5*time.Second, "the refreshed orders", func(s sourceJSON) bool { return reflect.DeepEqual(s.orderIDs(), []string{"o1", "o3"}) })
+	p.waitCall("orders.refresh", func(c rpcCall) bool { return c.Params["panel"] == "main" })
+	w.waitSource("a", "the refreshed orders", func(s sourceJSON) bool { return reflect.DeepEqual(s.orderIDs(), []string{"o1", "o3"}) })
 
 	w.wantConflict(w.srcReq(http.MethodPost, "/a/orders", map[string]any{"panel": "main", "text": "x"}))
 	w.wantConflict(w.srcReq(http.MethodPut, "/a/orders/o1", map[string]any{"text": "x"}))
@@ -86,7 +86,7 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 
 	pid := p.pid()
 	w.in.Stop()
-	p.waitDead(5*time.Second, pid, "after Admiral shut down")
+	p.waitDead(pid, "after Admiral shut down")
 }
 
 func TestSourceProtocolVersionMismatch(t *testing.T) {
@@ -94,13 +94,13 @@ func TestSourceProtocolVersionMismatch(t *testing.T) {
 	w := newWorld(t)
 	p := w.newTP("a")
 	w.startSources(tpSource("a", p, map[string]any{"protocolVersion": 2}))
-	s := w.waitSource("a", 10*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
+	s := w.waitSource("a", "state error", func(s sourceJSON) bool { return s.State == "error" })
 	if s.errText() == "" {
 		t.Errorf("source = %s, want an error message", dump(s))
 	}
 	holdThat(t, "an incompatible plugin was started again before Restart", func() bool { return len(p.starts()) == 1 })
 	w.mustOK(w.srcReq(http.MethodPost, "/a/restart", nil))
-	p.waitStarts(3*time.Second, 2)
+	p.waitStarts(2)
 }
 
 // A panels.list that hangs after start-up is a crash, like a hung initialize.
@@ -111,18 +111,18 @@ func TestSourceHungPanelsList(t *testing.T) {
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"))
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "state ok", isOK)
+	w.waitSource("a", "state ok", isOK)
 	pid := p.pid()
 	p.put("hang-panels.list", "")
 	p.do("panels-changed", "")
-	p.waitDead(14*time.Second, pid, "killed after a hung panels.list")
-	s := w.waitSource("a", 5*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
+	p.waitDead(pid, "killed after a hung panels.list")
+	s := w.waitSource("a", "state error", func(s sourceJSON) bool { return s.State == "error" })
 	if !s.ReadOnly || !s.hasOrder("o1") {
 		t.Errorf("source = %s, want read-only with its last orders", dump(s))
 	}
 	p.clear("hang-panels.list")
-	p.waitStarts(8*time.Second, 2)
-	w.waitSource("a", 5*time.Second, "state ok again", isOK)
+	p.waitStarts(2)
+	w.waitSource("a", "state ok again", isOK)
 }
 
 func TestSourceUntrustedOrders(t *testing.T) {
@@ -130,7 +130,7 @@ func TestSourceUntrustedOrders(t *testing.T) {
 	w := newWorld(t)
 	p := w.newTP("a")
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "state ok", isOK)
+	w.waitSource("a", "state ok", isOK)
 
 	// push sets the plugin's orders, notifies, and waits until Admiral has
 	// pulled the list, so an absence check below proves a rejection and not a delay.
@@ -138,7 +138,7 @@ func TestSourceUntrustedOrders(t *testing.T) {
 		before := len(p.callsOf("orders.list"))
 		p.mainOrders(orders...)
 		p.do("orders-changed", "")
-		p.waitCall(5*time.Second, "orders.list", func(rpcCall) bool { return len(p.callsOf("orders.list")) > before })
+		p.waitCall("orders.list", func(rpcCall) bool { return len(p.callsOf("orders.list")) > before })
 	}
 	push(
 		map[string]any{"id": "ok", "title": "Plain", "text": "line1\nline2\tx", "url": "https://example.com/i/1", "hot": true,
@@ -147,7 +147,7 @@ func TestSourceUntrustedOrders(t *testing.T) {
 		map[string]any{"id": "multi", "title": "  two\nlines  ", "text": "t"},
 		map[string]any{"id": "badrepo", "title": "Bad repo", "repo": "banana"},
 	)
-	s := w.waitSource("a", 5*time.Second, "the pushed orders", func(s sourceJSON) bool { return s.hasOrder("js") })
+	s := w.waitSource("a", "the pushed orders", func(s sourceJSON) bool { return s.hasOrder("js") })
 	ok, _ := s.order("ok")
 	if ok.URL != "https://example.com/i/1" || !ok.Hot || ok.Text != "line1\nline2\tx" || ok.Repo == "" || ok.Title != "Plain" {
 		t.Errorf("a well-formed order = %+v, want url, hot, whole text and repo kept", ok)
@@ -194,11 +194,11 @@ func TestSourceAuth(t *testing.T) {
 	w := newWorld(t)
 	p := w.newTP("a")
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "state ok", isOK)
+	w.waitSource("a", "state ok", isOK)
 	ws := w.ws()
 
 	p.do("auth-required", `{"message":"Sign in to Acme","url":"https://acme.example/device","code":"ABCD-1234"}`)
-	l := waitSourcesMsg(t, ws, 5*time.Second, "auth_required", func(l []sourceJSON) bool {
+	l := waitSourcesMsg(t, ws, "auth_required", func(l []sourceJSON) bool {
 		s, _ := find(l, "a")
 		return s.State == "auth_required"
 	})
@@ -209,13 +209,13 @@ func TestSourceAuth(t *testing.T) {
 	}
 
 	p.do("auth-required", `{"message":"Try again","url":"javascript:alert(1)"}`)
-	s = w.waitSource("a", 5*time.Second, "the new message", func(s sourceJSON) bool { return s.Auth != nil && s.Auth.Message == "Try again" })
+	s = w.waitSource("a", "the new message", func(s sourceJSON) bool { return s.Auth != nil && s.Auth.Message == "Try again" })
 	if s.Auth.URL != "" || s.State != "auth_required" {
 		t.Errorf("auth = %+v state %s, want the javascript: url dropped and the state kept", s.Auth, s.State)
 	}
 
 	p.do("auth-ok", "")
-	s = w.waitSource("a", 5*time.Second, "auth cleared", func(s sourceJSON) bool { return s.State == "ok" })
+	s = w.waitSource("a", "auth cleared", func(s sourceJSON) bool { return s.State == "ok" })
 	if s.Auth != nil {
 		t.Errorf("auth = %+v after auth.ok, want null", s.Auth)
 	}
@@ -228,21 +228,21 @@ func TestSourceCrashRecovery(t *testing.T) {
 	p.mainOrders(ord("o1", "First"), ord("o2", "Second"))
 	caps := map[string]any{"capabilities": []string{"add", "edit", "remove", "refresh"}}
 	w.startSources(tpSource("a", p, caps))
-	w.waitSource("a", 10*time.Second, "both orders", func(s sourceJSON) bool { return isOK(s) && len(s.orderIDs()) == 2 })
+	w.waitSource("a", "both orders", func(s sourceJSON) bool { return isOK(s) && len(s.orderIDs()) == 2 })
 
 	code, body := w.srcReq(http.MethodPost, "/a/orders", map[string]any{"panel": "main", "text": "new order"})
 	w.mustOK(code, body, "add on a healthy source")
-	p.waitCall(2*time.Second, "orders.add", func(c rpcCall) bool { return c.Params["panel"] == "main" && c.Params["text"] == "new order" })
+	p.waitCall("orders.add", func(c rpcCall) bool { return c.Params["panel"] == "main" && c.Params["text"] == "new order" })
 	code, body = w.srcReq(http.MethodPut, "/a/orders/o1", map[string]any{"text": "edited"})
 	w.mustOK(code, body, "edit on a healthy source")
-	p.waitCall(2*time.Second, "orders.edit", func(c rpcCall) bool { return c.Params["id"] == "o1" && c.Params["text"] == "edited" })
+	p.waitCall("orders.edit", func(c rpcCall) bool { return c.Params["id"] == "o1" && c.Params["text"] == "edited" })
 	code, body = w.srcReq(http.MethodDelete, "/a/orders/o2", nil)
 	w.mustOK(code, body, "remove on a healthy source")
-	p.waitCall(2*time.Second, "orders.remove", func(c rpcCall) bool { return c.Params["id"] == "o2" })
+	p.waitCall("orders.remove", func(c rpcCall) bool { return c.Params["id"] == "o2" })
 
 	p.put("crash-on-initialize", "")
 	p.do("crash", "")
-	s := w.waitSource("a", 10*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
+	s := w.waitSource("a", "state error", func(s sourceJSON) bool { return s.State == "error" })
 	if !s.ReadOnly || s.errText() == "" {
 		t.Errorf("crashed source = %s, want read_only true and an error message", dump(s))
 	}
@@ -254,7 +254,7 @@ func TestSourceCrashRecovery(t *testing.T) {
 	w.wantConflict(w.srcReq(http.MethodDelete, "/a/orders/o1", nil))
 	w.wantConflict(w.srcReq(http.MethodPost, "/a/refresh", map[string]any{}))
 
-	starts := p.waitStarts(15*time.Second, 4)
+	starts := p.waitStarts(4)
 	n := len(starts)
 	g1, g2 := starts[n-2]-starts[n-3], starts[n-1]-starts[n-2]
 	if g1 < 0.8 || g2 < g1+0.5 {
@@ -264,12 +264,12 @@ func TestSourceCrashRecovery(t *testing.T) {
 	before := len(p.starts())
 	code, body = w.srcReq(http.MethodPut, "/a", map[string]any{"name": "Renamed", "settings": p.settings(caps)})
 	w.mustOK(code, body, "settings save on a crashed source")
-	p.waitStarts(3*time.Second, before+1)
+	p.waitStarts(before + 1)
 
 	p.clear("crash-on-initialize")
 	code, body = w.srcReq(http.MethodPost, "/a/restart", nil)
 	w.mustOK(code, body, "POST restart")
-	s = w.waitSource("a", 3*time.Second, "state ok", isOK)
+	s = w.waitSource("a", "state ok", isOK)
 	if s.ReadOnly || s.Error != nil || s.Name != "Renamed" {
 		t.Errorf("restarted source = %s, want read_only false, no error, the saved name", dump(s))
 	}
@@ -278,10 +278,10 @@ func TestSourceCrashRecovery(t *testing.T) {
 
 	p.put("crash-on-initialize", "")
 	p.do("crash", "")
-	w.waitSource("a", 10*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
+	w.waitSource("a", "state error", func(s sourceJSON) bool { return s.State == "error" })
 	code, body = w.srcReq(http.MethodDelete, "/a", nil)
 	w.mustOK(code, body, "DELETE on a crashed source")
-	w.waitSources(5*time.Second, "no sources", func(l []sourceJSON) bool { return len(l) == 0 })
+	w.waitSources("no sources", func(l []sourceJSON) bool { return len(l) == 0 })
 	if got := w.configSources(); len(got) != 0 {
 		t.Errorf("config sources after the delete = %v, want none", got)
 	}
@@ -296,14 +296,14 @@ func TestSourceCrashBeforePanels(t *testing.T) {
 	p.mainOrders(ord("o1", "First"))
 	p.put("crash-on-panels", "")
 	w.startSources(tpSource("a", p, nil))
-	s := w.waitSource("a", 10*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
+	s := w.waitSource("a", "state error", func(s sourceJSON) bool { return s.State == "error" })
 	if s.Name != "Test a" || s.Plugin != "testplug" || s.errText() == "" || !s.ReadOnly || len(s.Views) != 0 {
 		t.Errorf("source = %s, want its name, plugin and an error with no panels yet", dump(s))
 	}
 	p.clear("crash-on-panels")
 	code, body := w.srcReq(http.MethodPost, "/a/restart", nil)
 	w.mustOK(code, body, "POST restart")
-	s = w.waitSource("a", 4*time.Second, "state ok", isOK)
+	s = w.waitSource("a", "state ok", isOK)
 	if len(s.Views) != 1 || !s.hasOrder("o1") {
 		t.Errorf("restarted source = %s, want its panel and order", dump(s))
 	}
@@ -316,10 +316,10 @@ func TestLaunchFromCrashedSource(t *testing.T) {
 	p := w.newTP("a")
 	p.mainOrders(map[string]any{"id": "o1", "title": "Title one", "text": "The whole\ntext of one"})
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "order o1", func(s sourceJSON) bool { return isOK(s) && s.hasOrder("o1") })
+	w.waitSource("a", "order o1", func(s sourceJSON) bool { return isOK(s) && s.hasOrder("o1") })
 	p.put("crash-on-initialize", "")
 	p.do("crash", "")
-	w.waitSource("a", 10*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
+	w.waitSource("a", "state error", func(s sourceJSON) bool { return s.State == "error" })
 
 	ship := w.mustLaunchFrom("stay", "a", "o1")
 	if got := promptOf(t, w, w.record(ship.Session)); got != "The whole\ntext of one" {
@@ -330,8 +330,8 @@ func TestLaunchFromCrashedSource(t *testing.T) {
 	}
 	p.clear("crash-on-initialize")
 	w.mustOK(w.srcReq(http.MethodPost, "/a/restart", nil))
-	w.waitSource("a", 4*time.Second, "state ok", isOK)
-	p.waitCall(5*time.Second, "orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o1" })
+	w.waitSource("a", "state ok", isOK)
+	p.waitCall("orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o1" })
 	w.mustTmux("kill-session", "-t", ship.Session)
 }
 
@@ -341,14 +341,14 @@ func TestOrdersStayListedWithShips(t *testing.T) {
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"), ord("o2", "Second"), ord("o3", "Third"))
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "three orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 3 })
+	w.waitSource("a", "three orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 3 })
 
 	anchored := w.mustLaunchFrom("anch", "a", "o1")
-	w.in.waitShipsList(t, 10*time.Second, "an anchored ship", func(l []shipJSON) bool { return statusOf(l, anchored.Session) == "anchored" })
+	w.in.waitShipsList(t, "an anchored ship", func(l []shipJSON) bool { return statusOf(l, anchored.Session) == "anchored" })
 	underway := w.mustLaunchFrom("stay", "a", "o2")
-	p.waitCall(3*time.Second, "orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o2" })
-	w.waitSource("a", 5*time.Second, "all three listed with two ships on them", func(s sourceJSON) bool { return reflect.DeepEqual(s.orderIDs(), []string{"o1", "o2", "o3"}) })
-	p.waitCall(3*time.Second, "orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o1" })
+	p.waitCall("orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o2" })
+	w.waitSource("a", "all three listed with two ships on them", func(s sourceJSON) bool { return reflect.DeepEqual(s.orderIDs(), []string{"o1", "o2", "o3"}) })
+	p.waitCall("orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o1" })
 
 	if code, body := w.launchFrom("stay", "a", "o1"); code != http.StatusConflict || !strings.Contains(body, "already has a ship") {
 		t.Errorf("a second launch of o1 = %d %s, want 409 saying the order already has a ship", code, body)
@@ -356,7 +356,7 @@ func TestOrdersStayListedWithShips(t *testing.T) {
 
 	w.mustOK(send(t, http.MethodPost, w.in.LocalURL+"/api/ships/"+anchored.Session+"/dismiss", nil))
 	w.mustTmux("kill-session", "-t", underway.Session)
-	w.waitSource("a", 10*time.Second, "all three still listed once the ships are gone", func(s sourceJSON) bool { return len(s.orderIDs()) == 3 })
+	w.waitSource("a", "all three still listed once the ships are gone", func(s sourceJSON) bool { return len(s.orderIDs()) == 3 })
 }
 
 func TestSourceHungRequests(t *testing.T) {
@@ -368,7 +368,7 @@ func TestSourceHungRequests(t *testing.T) {
 		p := w.newTP("a")
 		p.mainOrders(ord("o1", "First"))
 		w.startSources(tpSource("a", p, nil))
-		w.waitSource("a", 10*time.Second, "state ok", isOK)
+		w.waitSource("a", "state ok", isOK)
 		pid := p.pid()
 		p.put("hang-orders.refresh", "")
 		began := time.Now()
@@ -395,15 +395,15 @@ func TestSourceHungRequests(t *testing.T) {
 		p := w.newTP("a")
 		p.put("hang-initialize", "")
 		w.startSources(tpSource("a", p, nil))
-		first := w.waitSource("a", 3*time.Second, "state starting", func(s sourceJSON) bool { return s.State == "starting" })
+		first := w.waitSource("a", "state starting", func(s sourceJSON) bool { return s.State == "starting" })
 		if first.ReadOnly {
 			t.Errorf("a starting source is read_only: %s", dump(first))
 		}
-		p.waitStarts(3*time.Second, 1)
+		p.waitStarts(1)
 		pid := p.pid()
-		p.waitDead(14*time.Second, pid, "killed after a hung initialize")
-		w.waitSource("a", 5*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
-		p.waitStarts(8*time.Second, 2)
+		p.waitDead(pid, "killed after a hung initialize")
+		w.waitSource("a", "state error", func(s sourceJSON) bool { return s.State == "error" })
+		p.waitStarts(2)
 	})
 }
 
@@ -413,8 +413,8 @@ func TestSourceSlowInitialize(t *testing.T) {
 	p := w.newTP("a")
 	p.put("slow-initialize", "2")
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 2*time.Second, "state starting", func(s sourceJSON) bool { return s.State == "starting" })
-	w.waitSource("a", 8*time.Second, "state ok", isOK)
+	w.waitSource("a", "state starting", func(s sourceJSON) bool { return s.State == "starting" })
+	w.waitSource("a", "state ok", isOK)
 }
 
 func TestSourceProtocolErrors(t *testing.T) {
@@ -423,7 +423,7 @@ func TestSourceProtocolErrors(t *testing.T) {
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"))
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "state ok", isOK)
+	w.waitSource("a", "state ok", isOK)
 
 	pid := p.pid()
 	for _, cmd := range []string{"garbage", "oversize"} {
@@ -436,7 +436,7 @@ func TestSourceProtocolErrors(t *testing.T) {
 				return ""
 			}
 		})
-		w.waitSource("a", 12*time.Second, "the source usable again after "+cmd, func(s sourceJSON) bool { return isOK(s) && !s.ReadOnly && s.hasOrder("o1") })
+		w.waitSource("a", "the source usable again after "+cmd, func(s sourceJSON) bool { return isOK(s) && !s.ReadOnly && s.hasOrder("o1") })
 		code, body := w.srcReq(http.MethodPost, "/a/refresh", map[string]any{})
 		w.mustOK(code, body, "refresh after a "+cmd+" line")
 		// the message was dropped and the plugin left running: same process,
@@ -456,7 +456,7 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 	defA := tpSource("a", a, map[string]any{"title": "Alpha"})
 	defB := tpSource("b", b, map[string]any{"title": "Beta"})
 	w.startSources(defA, defB)
-	w.waitSources(10*time.Second, "both sources ok", func(l []sourceJSON) bool {
+	w.waitSources("both sources ok", func(l []sourceJSON) bool {
 		sa, _ := find(l, "a")
 		sb, _ := find(l, "b")
 		return isOK(sa) && isOK(sb)
@@ -475,8 +475,8 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 
 	code, body := w.srcReq(http.MethodPut, "/a", map[string]any{"settings": a.settings(map[string]any{"title": "Alpha 2"})})
 	w.mustOK(code, body, "PUT settings of a")
-	a.waitStarts(5*time.Second, 2)
-	w.waitSource("a", 5*time.Second, "the new title", func(s sourceJSON) bool { return isOK(s) && len(s.Views) == 1 && s.Views[0].Title == "Alpha 2" })
+	a.waitStarts(2)
+	w.waitSource("a", "the new title", func(s sourceJSON) bool { return isOK(s) && len(s.Views) == 1 && s.Views[0].Title == "Alpha 2" })
 	holdClean(t, 500*time.Millisecond, func() string {
 		if n := len(b.starts()); n != 1 {
 			return fmt.Sprintf("saving a's settings restarted b (%d starts)", n)
@@ -490,14 +490,14 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 	defA.Settings = a.settings(map[string]any{"title": "Alpha 2"})
 	defC := tpSource("c", c, nil)
 	replaceConfig(t, w.home, w.srcConfig(defA, defB, defC))
-	w.waitSource("c", 5*time.Second, "c started", isOK)
+	w.waitSource("c", "c started", isOK)
 	if keys := keysOf(w.sources()); !reflect.DeepEqual(keys, []string{"a", "b", "c"}) {
 		t.Errorf("source order after the hand edit = %v, want [a b c]", keys)
 	}
 	pidB := b.pid()
 	replaceConfig(t, w.home, w.srcConfig(defA, defC))
-	w.waitSources(5*time.Second, "b dropped", func(l []sourceJSON) bool { _, ok := find(l, "b"); return !ok })
-	b.waitDead(5*time.Second, pidB, "b removed by a hand edit")
+	w.waitSources("b dropped", func(l []sourceJSON) bool { _, ok := find(l, "b"); return !ok })
+	b.waitDead(pidB, "b removed by a hand edit")
 	if _, err := os.Stat(w.dataDir("b")); err != nil {
 		t.Errorf("data/b was removed with its source: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 	ws := w.ws()
 	code, raw = w.srcReq(http.MethodDelete, "/a", nil)
 	w.mustOK(code, raw, "DELETE a")
-	waitSourcesMsg(t, ws, 5*time.Second, "a gone", func(l []sourceJSON) bool { _, ok := find(l, "a"); return !ok })
+	waitSourcesMsg(t, ws, "a gone", func(l []sourceJSON) bool { _, ok := find(l, "a"); return !ok })
 }
 
 func TestSourcePushNotifications(t *testing.T) {
@@ -539,23 +539,23 @@ func TestSourcePushNotifications(t *testing.T) {
 	w := newWorld(t)
 	p := w.newTP("a")
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "state ok", isOK)
+	w.waitSource("a", "state ok", isOK)
 	ws := w.ws()
-	waitSourcesMsg(t, ws, 5*time.Second, "the source on connect", func(l []sourceJSON) bool {
+	waitSourcesMsg(t, ws, "the source on connect", func(l []sourceJSON) bool {
 		s, ok := find(l, "a")
 		return ok && len(s.orderIDs()) == 0
 	})
 
 	p.mainOrders(ord("n1", "New one"), ord("n2", "New two"))
 	p.do("orders-changed", `{"panel":"main"}`)
-	waitSourcesMsg(t, ws, 5*time.Second, "the pushed orders", func(l []sourceJSON) bool {
+	waitSourcesMsg(t, ws, "the pushed orders", func(l []sourceJSON) bool {
 		s, _ := find(l, "a")
 		return reflect.DeepEqual(s.orderIDs(), []string{"n1", "n2"})
 	})
 
 	p.put("panels.json", `[{"id":"main","title":"Main"},{"id":"extra","title":"Extra"}]`)
 	p.do("panels-changed", "")
-	waitSourcesMsg(t, ws, 5*time.Second, "two panels", func(l []sourceJSON) bool {
+	waitSourcesMsg(t, ws, "two panels", func(l []sourceJSON) bool {
 		s, _ := find(l, "a")
 		return len(s.Views) == 2 && s.Views[1].Title == "Extra"
 	})
@@ -570,7 +570,7 @@ func TestLaunchOrdersDirsFromSource(t *testing.T) {
 	p := w.newTP("a")
 	p.mainOrders(map[string]any{"id": "o1", "title": "Widgets", "repo": "https://github.com/acme/widgets"})
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "order o1", func(s sourceJSON) bool { return isOK(s) && s.hasOrder("o1") })
+	w.waitSource("a", "order o1", func(s sourceJSON) bool { return isOK(s) && s.hasOrder("o1") })
 	widgets := w.repo("widgets", "https://github.com/acme/widgets")
 	w.repo("other", "https://github.com/acme/other")
 
@@ -598,7 +598,7 @@ func TestSourceOrdersListErrorShowsOnPanel(t *testing.T) {
 		"two": {ord("t1", "Second")},
 	})
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "both panels' orders", func(s sourceJSON) bool {
+	w.waitSource("a", "both panels' orders", func(s sourceJSON) bool {
 		return len(s.Views) == 2 && len(s.Views[0].Orders) == 1 && len(s.Views[1].Orders) == 1
 	})
 
@@ -608,7 +608,7 @@ func TestSourceOrdersListErrorShowsOnPanel(t *testing.T) {
 		"two": {ord("t2", "Second, changed")},
 	})
 	p.do("orders-changed", "")
-	s := w.waitSource("a", 5*time.Second, "panel one's error and panel two's new orders", func(s sourceJSON) bool {
+	s := w.waitSource("a", "panel one's error and panel two's new orders", func(s sourceJSON) bool {
 		return len(s.Views) == 2 && s.Views[0].Error != nil && s.Views[1].hasOrder("t2")
 	})
 	if got := *s.Views[0].Error; got != "Search failed: bad query" {
@@ -626,7 +626,7 @@ func TestSourceOrdersListErrorShowsOnPanel(t *testing.T) {
 
 	p.clear("fail-orders.list-one")
 	p.do("orders-changed", `{"panel":"one"}`)
-	s = w.waitSource("a", 5*time.Second, "panel one's error cleared", func(s sourceJSON) bool {
+	s = w.waitSource("a", "panel one's error cleared", func(s sourceJSON) bool {
 		return len(s.Views) == 2 && s.Views[0].Error == nil && s.Views[0].hasOrder("o2")
 	})
 	if ids := s.Views[0].orderIDs(); !reflect.DeepEqual(ids, []string{"o2"}) {

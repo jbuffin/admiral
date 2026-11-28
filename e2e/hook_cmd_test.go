@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,8 +77,7 @@ func (w *world) runHook(event, payload, pane string) hookResult {
 	dir := filepath.Join(w.root, "rectmux")
 	rec := filepath.Join(w.t.TempDir(), "calls")
 	w.writeRaw(filepath.Join(dir, "tmux"), "#!/bin/sh\nprintf '%s\\0' \"$@\" >>\"$FAKE_TMUX_RECORD\"\nprintf '\\n' >>\"$FAKE_TMUX_RECORD\"\n", 0o755)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := testCtx(w.t)
 	args := []string{"hook"}
 	if event != "" {
 		args = append(args, event)
@@ -102,7 +100,7 @@ func (w *world) runHook(event, payload, pane string) hookResult {
 	if err := cmd.Run(); err != nil {
 		ee, ok := err.(*exec.ExitError)
 		if !ok || ctx.Err() != nil {
-			w.t.Fatalf("admiral hook %s: %v", event, err)
+			failRequest(w.t, "admiral hook "+event, err)
 		}
 		res.code = ee.ExitCode()
 	}

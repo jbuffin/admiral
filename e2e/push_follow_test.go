@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 )
@@ -78,10 +77,8 @@ func (r *pushRig) follow(device string, after any, boot string) *follower {
 		msg["boot"] = boot
 	}
 	b, _ := json.Marshal(msg)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := ws.Write(ctx, websocket.MessageText, b); err != nil {
-		r.t.Fatal(err)
+	if err := ws.Write(testCtx(r.t), websocket.MessageText, b); err != nil {
+		failRequest(r.t, "sending push_follow", err)
 	}
 	return f
 }
@@ -95,14 +92,13 @@ func isFollowType(typ string) bool {
 }
 
 // next reads until the next follow message, skipping hello and every other /ws/v1 message, or fails at the one deadline.
-func (f *follower) next(d time.Duration) followMsg {
+func (f *follower) next() followMsg {
 	f.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
+	ctx := testCtx(f.t)
 	for {
 		_, data, err := f.ws.Read(ctx)
 		if err != nil {
-			f.t.Fatalf("within %s the follower got no follow message: %v", d, err)
+			failRequest(f.t, "the follower getting a follow message", err)
 		}
 		var m followMsg
 		if err := json.Unmarshal(data, &m); err != nil {
@@ -118,7 +114,7 @@ func (f *follower) next(d time.Duration) followMsg {
 // expect reads the next follow message and requires its type.
 func (f *follower) expect(typ string) followMsg {
 	f.t.Helper()
-	m := f.next(15 * time.Second)
+	m := f.next()
 	if m.Type != typ {
 		f.t.Fatalf("the follower got %+v (count %v, attention %v), want a %s message", m, ptr(m.Count), ptr(m.Attention), typ)
 	}
@@ -174,10 +170,8 @@ func (r *pushRig) forwarding(device string) string {
 
 func (f *follower) unfollow() {
 	f.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := f.ws.Write(ctx, websocket.MessageText, []byte(`{"type":"push_unfollow"}`)); err != nil {
-		f.t.Fatal(err)
+	if err := f.ws.Write(testCtx(f.t), websocket.MessageText, []byte(`{"type":"push_unfollow"}`)); err != nil {
+		failRequest(f.t, "sending push_unfollow", err)
 	}
 }
 

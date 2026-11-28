@@ -75,24 +75,23 @@ func eventsOf(log []outRec) []string {
 	return out
 }
 
-func (w *world) waitShipLog(session string, d time.Duration, what string, pred func([]outRec) bool) []outRec {
+func (w *world) waitShipLog(session string, what string, pred func([]outRec) bool) []outRec {
 	w.t.Helper()
-	deadline := time.Now().Add(d)
-	for {
+	var got []outRec
+	eventually(w.t, fmt.Sprintf("the outcome log showing %s for %s", what, session), func() (bool, string) {
 		log := w.shipLog(session)
 		if pred(log) {
-			return log
+			got = log
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within %s the outcome log never showed %s for %s; its records: %v", d, what, session, log)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("its records: %v", log)
+	})
+	return got
 }
 
 func (w *world) waitEvent(session, event string, n int) []outRec {
 	w.t.Helper()
-	return w.waitShipLog(session, 15*time.Second, strconv.Itoa(n)+" "+event+" record(s)", func(l []outRec) bool {
+	return w.waitShipLog(session, strconv.Itoa(n)+" "+event+" record(s)", func(l []outRec) bool {
 		c := 0
 		for _, m := range l {
 			if m["event"] == event {
@@ -162,37 +161,26 @@ func (w *world) seedShipFiles(r record, reportJSON string) (report, inbox string
 	return report, inbox
 }
 
-func waitGone(t *testing.T, d time.Duration, paths ...string) {
+func waitGone(t *testing.T, paths ...string) {
 	t.Helper()
-	deadline := time.Now().Add(d)
-	for {
+	eventually(t, fmt.Sprintf("%v going away", paths), func() (bool, string) {
 		var left []string
 		for _, p := range paths {
 			if _, err := os.Lstat(p); err == nil {
 				left = append(left, p)
 			}
 		}
-		if len(left) == 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within %s %v were still there", d, left)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return len(left) == 0, fmt.Sprintf("%v are still there", left)
+	})
 }
 
 func exists(p string) bool { _, err := os.Lstat(p); return err == nil }
 
 func (w *world) waitPaneDead(session string) {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for strings.TrimSpace(w.mustTmux("list-panes", "-t", session, "-F", "#{pane_dead}")) != "1" {
-		if time.Now().After(deadline) {
-			w.t.Fatalf("the pane of %s never died", session)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	until(w.t, "the pane of "+session+" dying", func() bool {
+		return strings.TrimSpace(w.mustTmux("list-panes", "-t", session, "-F", "#{pane_dead}")) == "1"
+	})
 }
 
 // killPane kills the harness process; the pane stays dead under remain-on-exit.
@@ -242,7 +230,7 @@ func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 		"u": {"hook working", "usage", "wait go", "exit 0"}},
 		tpSource("a", p, nil))
 	w.start()
-	w.waitSource("a", 10*time.Second, "order o1", func(s sourceJSON) bool { return isOK(s) && s.hasOrder("o1") })
+	w.waitSource("a", "order o1", func(s sourceJSON) bool { return isOK(s) && s.hasOrder("o1") })
 
 	ship := w.mustLaunchFrom("f", "a", "o1")
 	rec := w.record(ship.Session)
@@ -324,7 +312,7 @@ func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 
 	// Sailing off removes the files, and only once `ended` is in the log (it is
 	// already: waitEvent returned).
-	waitGone(t, 10*time.Second, reportPath, inboxPath)
+	waitGone(t, reportPath, inboxPath)
 	if w.hasSession(ship.Session) {
 		t.Errorf("the session of the sailed-off ship still exists")
 	}
@@ -365,9 +353,7 @@ var (
 // (nil money: null), each harness keeping its own money kind.
 func (w *world) waitFleetUsage(fleet, harness string, tokens, money map[string]any) {
 	w.t.Helper()
-	var last string
-	deadline := time.Now().Add(15 * time.Second)
-	for {
+	eventually(w.t, fmt.Sprintf("GET /api/usage?fleet=%s showing %s today with tokens %v and money %v", fleet, harness, tokens, money), func() (bool, string) {
 		code, body := send(w.t, http.MethodGet, w.in.LocalURL+"/api/usage?fleet="+fleet, nil)
 		var resp struct {
 			Periods map[string]struct {
@@ -381,16 +367,12 @@ func (w *world) waitFleetUsage(fleet, harness string, tokens, money map[string]a
 		if code == http.StatusOK && json.Unmarshal([]byte(body), &resp) == nil {
 			for _, h := range resp.Periods["today"].Harnesses {
 				if h.Harness == harness && reflect.DeepEqual(h.Tokens, tokens) && reflect.DeepEqual(h.Money, money) {
-					return
+					return true, ""
 				}
 			}
 		}
-		last = body
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 15s GET /api/usage?fleet=%s never showed %s today with tokens %v and money %v; last answer (%d): %s", fleet, harness, tokens, money, code, last)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("answer (%d): %s", code, body)
+	})
 }
 
 // wantUsage checks a usage record's fleet, harness, tokens and money (nil: null), and that it has no crew boats and no round.
@@ -555,7 +537,7 @@ func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
 				c.repo, got, lines, w.in.stderrBuf.String())
 		}
 
-		w.in.waitStatusList(t, 5*time.Second, ship.Session, "anchored")
+		w.in.waitStatusList(t, ship.Session, "anchored")
 		if !exists(inboxPath) || (c.content != "" && !exists(reportPath)) {
 			t.Errorf("%s: the report or inbox is gone while the ship is only anchored", c.repo)
 		}
@@ -566,7 +548,7 @@ func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
 		if got, want := eventsOf(log), []string{"launched", "ended", "dismissed"}; !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: records = %v, want %v", c.repo, got, want)
 		}
-		waitGone(t, 5*time.Second, reportPath, inboxPath)
+		waitGone(t, reportPath, inboxPath)
 	}
 }
 
@@ -584,7 +566,7 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 	}
 
 	w.restart()
-	w.in.waitStatusList(t, 10*time.Second, ship.Session, "underway")
+	w.in.waitStatusList(t, ship.Session, "underway")
 	holdThat(t, "after a restart the ship has a second launched", func() bool {
 		log := w.shipLog(ship.Session)
 		return reflect.DeepEqual(eventsOf(log), []string{"launched"}) && usageCount(log) == 0
@@ -614,7 +596,7 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 	}
 
 	w.restart()
-	w.in.waitStatusList(t, 10*time.Second, ship.Session, "anchored")
+	w.in.waitStatusList(t, ship.Session, "anchored")
 	holdThat(t, "after another restart the ship has a second ended", func() bool {
 		log := w.shipLog(ship.Session)
 		return reflect.DeepEqual(eventsOf(log), []string{"launched", "ended"}) && usageCount(log) == 1
@@ -637,7 +619,7 @@ func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 	w.waitPaneDead(ship.Session)
 
 	w.restart()
-	waitGone(t, 15*time.Second, reportPath, inboxPath)
+	waitGone(t, reportPath, inboxPath)
 	if w.hasSession(ship.Session) {
 		t.Errorf("the session of an exit-0 ship still exists after the restart")
 	}
@@ -667,8 +649,8 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 
 	a := w.launchIn("f", "claude", "unw1")
 	b := w.launchIn("f", "claude", "unw2")
-	w.in.waitStatusList(t, 10*time.Second, a.Session, "needs_you")
-	w.in.waitStatusList(t, 10*time.Second, b.Session, "needs_you")
+	w.in.waitStatusList(t, a.Session, "needs_you")
+	w.in.waitStatusList(t, b.Session, "needs_you")
 	if code, _ := send(t, http.MethodGet, w.in.LocalURL+"/api/ships", nil); code != 200 || !w.hasSession(b.Session) {
 		t.Errorf("with an unwritable log GET /api/ships = %d, ship b present: %v", code, w.hasSession(b.Session))
 	}
@@ -684,7 +666,7 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	z := w.launchIn("z", "claude", "unw-sail")
 	reportPath, inboxPath := w.seedShipFiles(w.record(z.Session), `{"status":"done"}`)
 	w.touch(z.Session, "go")
-	w.in.waitStatusList(t, 10*time.Second, z.Session, "sailing_off")
+	w.in.waitStatusList(t, z.Session, "sailing_off")
 	for deadline := time.Now().Add(15 * time.Second); w.hasSession(z.Session); time.Sleep(100 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the exit-0 ship did not sail off while the log was unwritable")
@@ -699,7 +681,7 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	y := w.launchIn("y", "claude", "unw-dismiss")
 	_, yInbox := shipPaths(w.record(y.Session))
 	w.touch(y.Session, "go")
-	w.in.waitStatusList(t, 10*time.Second, y.Session, "anchored")
+	w.in.waitStatusList(t, y.Session, "anchored")
 	waitUntil(t, "the writer tried the anchored ship's queued `ended`, and failed", func() bool {
 		return strings.Contains(w.in.stderrBuf.String(), "e2e: outcome write failed: ended "+y.Session+"\n")
 	})
@@ -726,7 +708,7 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	if n := usageCount(log); n != 1 {
 		t.Errorf("the log has %d usage records after Dismiss, want 1: the one lost with the log is written again", n)
 	}
-	waitGone(t, 5*time.Second, yInbox)
+	waitGone(t, yInbox)
 	if got := w.stderrLines("outcome log:"); got != 1 {
 		t.Errorf("a record written after the repair added log lines: %d in all, want 1", got)
 	}

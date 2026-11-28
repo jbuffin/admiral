@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -23,8 +24,7 @@ func (in *instance) admiralCLI(t *testing.T, args ...string) cliResult {
 
 func runAdmiralCLI(t *testing.T, home, port string, args ...string) cliResult {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
+	ctx := testCtx(t)
 	cmd := exec.CommandContext(ctx, binaryPath(t), args...)
 	cmd.Env = append(hermeticEnv(t), "ADMIRAL_HOME="+home, "ADMIRAL_PORT="+port)
 	var out, errb bytes.Buffer
@@ -38,7 +38,7 @@ func runAdmiralCLI(t *testing.T, home, port string, args ...string) cliResult {
 	case errors.As(err, &ee) && ctx.Err() == nil:
 		res.code = ee.ExitCode()
 	default:
-		t.Fatalf("admiral %v: %v (stdout %q stderr %q)", args, err, res.stdout, res.stderr)
+		failRequest(t, fmt.Sprintf("admiral %v (stdout %q stderr %q)", args, res.stdout, res.stderr), err)
 	}
 	return res
 }

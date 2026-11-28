@@ -3,7 +3,6 @@ package e2e
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -88,14 +87,15 @@ func newWorld(t *testing.T) *world {
 // command line; one on the default socket (the setup terminal's) has none, so it is found by asking it.
 func (w *world) noTmuxLeft(t *testing.T) {
 	pattern := tmuxOnPattern(w.sock())
-	end := time.Now().Add(2 * time.Second)
+	ctx := testCtx(t)
 	for {
 		out, _ := exec.Command("pgrep", "-f", "--", pattern).Output()
 		defaultUp := exec.Command("tmux", "-S", w.defaultSocket(), "list-sessions").Run() == nil
 		if len(out) == 0 && !defaultUp {
 			return
 		}
-		if time.Now().After(end) {
+		select {
+		case <-ctx.Done():
 			if len(out) > 0 {
 				_ = exec.Command("pkill", "-9", "-f", "--", pattern).Run()
 				t.Errorf("a tmux server on %s outlived the test and was killed; stop the Admiral that started it before kill-server", w.sock())
@@ -105,8 +105,8 @@ func (w *world) noTmuxLeft(t *testing.T) {
 				t.Errorf("a tmux server on %s outlived the test and was killed; stop the Admiral that started it before kill-server", w.defaultSocket())
 			}
 			return
+		case <-time.After(pollEvery):
 		}
-		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -270,7 +270,6 @@ func launchAdmiralOnce(t *testing.T, home, listen string, env []string) (*fleetI
 		close(lines)
 	}()
 	var got []string
-	timeout := time.After(10 * time.Second)
 	for len(got) < 2 {
 		select {
 		case l, ok := <-lines:
@@ -282,8 +281,8 @@ func launchAdmiralOnce(t *testing.T, home, listen string, env []string) (*fleetI
 				t.Fatalf("admiral exited before printing two URL lines (got %q); stderr: %s", got, stderr.String())
 			}
 			got = append(got, l)
-		case <-timeout:
-			t.Fatalf("admiral printed %d of 2 URL lines within 10s; stderr: %s", len(got), stderr.String())
+		case <-testCtx(t).Done():
+			hung(t, fmt.Sprintf("admiral printed %d of 2 URL lines before the test run's deadline; stderr: %s", len(got), stderr.String()))
 		}
 	}
 	go func() {
@@ -535,30 +534,28 @@ func byName(ships []shipJSON) map[string]shipJSON {
 	return m
 }
 
-func (in *fleetInst) waitShipsList(t *testing.T, d time.Duration, what string, pred func([]shipJSON) bool) []shipJSON {
+func (in *fleetInst) waitShipsList(t *testing.T, what string, pred func([]shipJSON) bool) []shipJSON {
 	t.Helper()
-	deadline := time.Now().Add(d)
-	for {
+	var got []shipJSON
+	eventually(t, "GET /api/ships showing "+what, func() (bool, string) {
 		list := in.ships(t)
 		if pred(list) {
-			return list
+			got = list
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within %s GET /api/ships never showed %s; last list: %+v", d, what, list)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("%+v", list)
+	})
+	return got
 }
 
-func waitShipsMsg(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred func([]shipJSON) bool) []shipJSON {
+func waitShipsMsg(t *testing.T, c *websocket.Conn, what string, pred func([]shipJSON) bool) []shipJSON {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
+	ctx := testCtx(t)
 	var last string
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
-			t.Fatalf("within %s the websocket never delivered a `ships` message with %s (last ships message: %s): %v", d, what, last, err)
+			failRequest(t, fmt.Sprintf("the websocket delivering a `ships` message with %s (last ships message: %s)", what, last), err)
 		}
 		var m struct {
 			Type  string     `json:"type"`
@@ -609,16 +606,13 @@ func (r record) codexTUIArgv() []string {
 func (w *world) waitFile(session, file string) string {
 	w.t.Helper()
 	p := filepath.Join(w.rec, session, file)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if data, err := os.ReadFile(p); err == nil {
-			return string(data)
-		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("the fake harness of %s never wrote %s within 10s", session, file)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	var got string
+	until(w.t, "the fake harness of "+session+" writing "+file, func() bool {
+		data, err := os.ReadFile(p)
+		got = string(data)
+		return err == nil
+	})
+	return got
 }
 
 func (w *world) record(session string) record {

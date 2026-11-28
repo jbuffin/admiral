@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
-	"time"
 )
 
 func (in *fleetInst) urlOf(t *testing.T, session string) (string, bool) {
@@ -46,7 +45,7 @@ func TestShipKeepsItsOrdersURL(t *testing.T) {
 		map[string]any{"id": "ftp", "title": "Ftp url order", "url": "ftp://x/y"},
 	)
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "the four orders", func(s sourceJSON) bool { return isOK(s) && len(s.orderIDs()) == 4 })
+	w.waitSource("a", "the four orders", func(s sourceJSON) bool { return isOK(s) && len(s.orderIDs()) == 4 })
 
 	const webURL = "https://example.com/issues/106"
 	cases := []struct{ name, order, want string }{
@@ -83,13 +82,13 @@ func TestShipKeepsItsOrdersURL(t *testing.T) {
 			}
 		}
 	}
-	w.in.waitShipsList(t, 10*time.Second, "all five ships", func(l []shipJSON) bool { return len(l) == 5 })
+	w.in.waitShipsList(t, "all five ships", func(l []shipJSON) bool { return len(l) == 5 })
 	check("after launch")
 	if got, _ := w.in.titleOf(t, ships["web"].Session); got != "Web order" {
 		t.Errorf("ship from an order whose text is its url has title %q, want the order's title", got)
 	}
 
 	w.restart()
-	w.in.waitShipsList(t, 10*time.Second, "all five ships after the restart", func(l []shipJSON) bool { return len(l) == 5 })
+	w.in.waitShipsList(t, "all five ships after the restart", func(l []shipJSON) bool { return len(l) == 5 })
 	check("after a restart")
 }

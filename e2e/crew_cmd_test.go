@@ -58,22 +58,18 @@ func crewList(w *world, ship string) map[string]crewRow {
 
 func waitCrewState(w *world, ship, name, state string) {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	eventually(w.t, "crew boat "+name+" reaching state "+state, func() (bool, string) {
 		r := crewCall(w, ship, "", "list", "--json")
 		var rows []crewRow
 		if r.code == 0 && json.Unmarshal([]byte(r.stdout), &rows) == nil {
 			for _, row := range rows {
 				if row.Name == name && row.State == state {
-					return
+					return true, ""
 				}
 			}
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("crew boat %s never reached state %s within 10s; last list: %s%s", name, state, r.stdout, r.stderr)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return false, "list: " + r.stdout + r.stderr
+	})
 }
 
 type crewPane struct{ window, crew, pane, pid, dead string }
@@ -210,7 +206,7 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 
 	t.Run("a ship with crew still reads as it did", func(t *testing.T) {
 		w := w.sub(t)
-		w.in.waitShipsList(t, 10*time.Second, "the ship underway with crew windows", func(l []shipJSON) bool {
+		w.in.waitShipsList(t, "the ship underway with crew windows", func(l []shipJSON) bool {
 			return len(l) == 1 && l[0].Session == sess && l[0].Status == "underway" && l[0].Harness == "claude" && l[0].Dir == w.checkout("alpha")
 		})
 		r := w.admiral("ships", "--port", w.in.Port)
@@ -358,7 +354,7 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 		w := w.sub(t)
 		before := crewList(w, sess)
 		w.restart()
-		w.in.waitShipsList(t, 10*time.Second, "the ship after the restart", func(l []shipJSON) bool {
+		w.in.waitShipsList(t, "the ship after the restart", func(l []shipJSON) bool {
 			return len(l) == 2 && l[0].Status == "underway" && l[1].Status == "underway"
 		})
 		after := crewList(w, sess)

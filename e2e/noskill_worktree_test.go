@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 // originCheckout makes a checkout of acme/<name> whose origin is a local bare repo with default branch trunk, one commit ahead of the checkout's HEAD.
@@ -278,7 +277,7 @@ func TestDismissLeavesTheWorktreeInPlace(t *testing.T) {
 	w, dir, _ := worktreeWorld(t, "hook working", "exit 1")
 	ship := w.launchIn("f", "claude", "widgets")
 	cwd := w.waitCwd(ship.Session)
-	w.in.waitShipsList(t, 20*time.Second, "the ship anchored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "anchored" })
+	w.in.waitShipsList(t, "the ship anchored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "anchored" })
 	if code := w.dismiss(ship.Session); code != http.StatusOK && code != http.StatusNoContent {
 		t.Fatalf("dismiss = %d", code)
 	}
@@ -330,7 +329,7 @@ func TestReturnToPortOfAMooredNoSkillShipWhosePRMergedRemovesItsWorktreeAndKeeps
 	w.wantWorktree(dir, cwd)
 	branch := w.git(cwd, "branch", "--show-current")
 	w.exitWith(ship, mooredReport(mooredPR))
-	w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
+	w.in.waitShipsList(t, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
 	if !exists(cwd) || !w.isWorktreeOf(dir, cwd) {
 		t.Fatalf("worktree %s: want it kept while the ship is moored", cwd)
 	}
@@ -370,7 +369,7 @@ func TestAMooredNoSkillShipWakesInTheSameWorktreeItWasLaunchedIn(t *testing.T) {
 	w.wantWorktree(dir, cwd)
 	branches := w.branches(dir)
 	w.exitWith(ship, mooredReport(mooredPR))
-	w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
+	w.in.waitShipsList(t, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
 
 	w.forgetRecord(ship.Session)
 	g.prState(mooredPR, "MERGED")

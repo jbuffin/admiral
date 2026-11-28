@@ -76,12 +76,11 @@ func dialShips(t *testing.T, base string, header http.Header) *websocket.Conn {
 // awaitMove reads until the move message arrives and returns its url; the socket must still be open when it does.
 func awaitMove(t *testing.T, conn *websocket.Conn) string {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := testCtx(t)
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
-			t.Fatalf("the socket ended without a move message: %v", err)
+			failRequest(t, "the socket delivering a move message", err)
 		}
 		var m struct {
 			Type string `json:"type"`
@@ -96,12 +95,11 @@ func awaitMove(t *testing.T, conn *websocket.Conn) string {
 // awaitClosed reads until the socket errors: a LAN socket must not outlive the move.
 func awaitClosed(t *testing.T, conn *websocket.Conn) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := testCtx(t)
 	for {
 		if _, _, err := conn.Read(ctx); err != nil {
 			if ctx.Err() != nil {
-				t.Fatal("the LAN socket stayed open after the move")
+				hung(t, "the LAN socket stayed open after the move until the test run's deadline")
 			}
 			return
 		}

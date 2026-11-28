@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 type pageJSON struct {
@@ -56,16 +56,12 @@ func (w *world) getPage(key string) pageJSON {
 
 func (w *world) waitPageReady(key string) pageJSON {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if p := w.getPage(key); p.State == "ready" {
-			return p
-		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 10s the page of %q never became ready; last: %s", key, dump(w.getPage(key)))
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	var got pageJSON
+	eventually(w.t, fmt.Sprintf("the page of %q becoming ready", key), func() (bool, string) {
+		got = w.getPage(key)
+		return got.State == "ready", "last: " + dump(got)
+	})
+	return got
 }
 
 func (p pageJSON) titles() []string {
@@ -86,7 +82,7 @@ func TestAPluginThatDeclaresAPageHasItsPageAndRowDetailServed(t *testing.T) {
 	p.putRow("t1", `{"sections":[{"kind":"fields","title":"Details","fields":[{"label":"Owner","value":"amy"}]}]}`)
 	w.startSources(tpSource("m", p, map[string]any{"capabilities": []string{"page"}}))
 
-	s := w.waitSource("m", 10*time.Second, "state ok", isOK)
+	s := w.waitSource("m", "state ok", isOK)
 	if !reflect.DeepEqual(s.Capabilities, []string{"page"}) {
 		t.Errorf("capabilities = %v, want [page]", s.Capabilities)
 	}
@@ -103,7 +99,7 @@ func TestAPluginThatDeclaresAPageHasItsPageAndRowDetailServed(t *testing.T) {
 	if !strings.Contains(body, `"Owner"`) || !strings.Contains(body, `"amy"`) {
 		t.Errorf("GET row = %s, want the plugin's detail view", body)
 	}
-	call := p.waitCall(2*time.Second, "row.get", func(c rpcCall) bool { return c.Params["id"] == "t1" })
+	call := p.waitCall("row.get", func(c rpcCall) bool { return c.Params["id"] == "t1" })
 	if inc, _ := call.Params["include"].([]any); !reflect.DeepEqual(inc, []any{"closed", "queued"}) {
 		t.Errorf("row.get params = %v, want include [closed queued]", call.Params)
 	}
@@ -126,7 +122,7 @@ func TestASourceWithoutAPageIsUnchangedAndAnswersItsPageRoutesWith404(t *testing
 	p := w.newTP("o")
 	p.mainOrders(ord("o1", "First"))
 	w.startSources(tpSource("o", p, nil))
-	s := w.waitSource("o", 10*time.Second, "state ok", isOK)
+	s := w.waitSource("o", "state ok", isOK)
 	if !reflect.DeepEqual(s.Capabilities, []string{"refresh"}) {
 		t.Errorf("capabilities = %v, want [refresh] as before", s.Capabilities)
 	}
@@ -158,9 +154,9 @@ func TestARestartThatBringsAnOverLimitPageKeepsServingTheLastGoodOne(t *testing.
 	}
 	p.put("page.json", `{"groups":[`+strings.Join(groups, ",")+`],"waiting":9}`)
 	w.mustOK(w.srcReq(http.MethodPost, "/m/restart", nil))
-	p.waitStarts(10*time.Second, 2)
+	p.waitStarts(2)
 	// State ok is set only after the restarted plugin's page.get was read, so the bad page has been refused by now.
-	w.waitSource("m", 10*time.Second, "state ok again", isOK)
+	w.waitSource("m", "state ok again", isOK)
 
 	got := w.getPage("m")
 	if got.State != "ready" || !reflect.DeepEqual(got.titles(), []string{"Needs review"}) || got.Waiting != 2 {
@@ -174,7 +170,7 @@ func pageWith(title string, waiting int) string {
 
 func (w *world) waitLive(key, what string, pred func(*livePage) bool) *livePage {
 	w.t.Helper()
-	return w.waitSource(key, 10*time.Second, what, func(s sourceJSON) bool { return s.Page != nil && pred(s.Page) }).Page
+	return w.waitSource(key, what, func(s sourceJSON) bool { return s.Page != nil && pred(s.Page) }).Page
 }
 
 func TestAModulesPageStaysLiveWhenItsPluginSendsPageChanged(t *testing.T) {
@@ -190,7 +186,7 @@ func TestAModulesPageStaysLiveWhenItsPluginSendsPageChanged(t *testing.T) {
 	if first.Waiting != 1 {
 		t.Errorf("page block = %s, want waiting 1 from the page", dump(first))
 	}
-	if plain := w.waitSource("o", 10*time.Second, "state ok", isOK); plain.Page != nil {
+	if plain := w.waitSource("o", "state ok", isOK); plain.Page != nil {
 		t.Errorf("the source without a page has a page block: %s", dump(plain))
 	}
 
@@ -228,7 +224,7 @@ func TestAModulesPageStaysLiveWhenItsPluginSendsPageChanged(t *testing.T) {
 	}
 
 	w.mustOK(w.srcReq(http.MethodPost, "/m/page/refresh", nil))
-	p.waitCall(5*time.Second, "page.refresh", func(rpcCall) bool { return true })
+	p.waitCall("page.refresh", func(rpcCall) bool { return true })
 
 	if code, body := w.srcReq(http.MethodPost, "/o/page/refresh", nil); code != http.StatusNotFound || !strings.Contains(body, "The source has no page") {
 		t.Errorf("POST page/refresh of a source without a page = %d %s, want 404", code, body)
@@ -274,7 +270,7 @@ func TestAModuleActionFormIsFetchedAndRunThroughThePluginProcess(t *testing.T) {
 		form.Fields[0].ID != "time" || form.Fields[0].Type != "duration" || form.Fields[0].Default != "01:30" || form.Fields[0].Min != "00:15" {
 		t.Errorf("form = %s (%v), want the plugin's forms/pass.json", body, err)
 	}
-	call := p.waitCall(2*time.Second, "action.form", func(rpcCall) bool { return true })
+	call := p.waitCall("action.form", func(rpcCall) bool { return true })
 	if call.Params["row"] != "t1" || call.Params["action"] != "pass" {
 		t.Errorf("action.form params = %v, want row t1 and action pass", call.Params)
 	}
@@ -284,7 +280,7 @@ func TestAModuleActionFormIsFetchedAndRunThroughThePluginProcess(t *testing.T) {
 	if !strings.Contains(body, `"message":"Review passed"`) || !strings.Contains(body, `"url":"https://acme.test/T-1"`) {
 		t.Errorf("run answer = %s, want the plugin's runs/pass.json", body)
 	}
-	run := p.waitCall(2*time.Second, "action.run", func(rpcCall) bool { return true })
+	run := p.waitCall("action.run", func(rpcCall) bool { return true })
 	values, _ := run.Params["values"].(map[string]any)
 	if run.Params["row"] != "t1" || run.Params["action"] != "pass" || values["time"] != "01:45" {
 		t.Errorf("action.run params = %v, want row t1, action pass and values {time: 01:45}", run.Params)

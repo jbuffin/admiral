@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -88,17 +89,16 @@ func ids(items []inboxItem) []string {
 // wide margin for a loaded runner; a healthy inbox answers in about a second).
 func (in *fleetInst) waitInbox(t *testing.T, want ...string) []inboxItem {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for {
+	var got []inboxItem
+	eventually(t, fmt.Sprintf("GET /api/inbox listing %v", want), func() (bool, string) {
 		items := in.inbox(t)
 		if reflect.DeepEqual(ids(items), want) || (len(want) == 0 && len(items) == 0) {
-			return items
+			got = items
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within 30s GET /api/inbox never listed %v; last: %v", want, ids(items))
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprint(ids(items))
+	})
+	return got
 }
 
 func (in *fleetInst) answer(t *testing.T, session, id string, body any) (int, string) {
@@ -268,7 +268,7 @@ func TestShipWireCarriesReasonAndStopSince(t *testing.T) {
 		t.Errorf("an underway ship shows reason %v and stop_since %v, want neither", s.Reason, s.StopSince)
 	}
 	start := time.Now().Add(-time.Second)
-	w.in.waitStatusList(t, 10*time.Second, ship.Session, "needs_you")
+	w.in.waitStatusList(t, ship.Session, "needs_you")
 	s := read()
 	if s.Reason == nil || *s.Reason != "permission:Bash" {
 		t.Errorf("reason = %v, want permission:Bash", s.Reason)
@@ -281,7 +281,7 @@ func TestShipWireCarriesReasonAndStopSince(t *testing.T) {
 	}
 
 	w.touch(ship.Session, "go")
-	w.in.waitStatusList(t, 10*time.Second, ship.Session, "underway")
+	w.in.waitStatusList(t, ship.Session, "underway")
 	if s := read(); s.Reason != nil && *s.Reason != "" || s.StopSince != nil && *s.StopSince != "" {
 		t.Errorf("after the stop reason = %v and stop_since = %v, want neither", s.Reason, s.StopSince)
 	}

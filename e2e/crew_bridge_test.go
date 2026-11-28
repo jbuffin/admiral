@@ -27,17 +27,10 @@ func (w *world) winSize(win string) string {
 
 func (w *world) waitWinSize(win, want string) {
 	w.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
+	eventually(w.t, "window "+win+" becoming "+want, func() (bool, string) {
 		got, err := w.tmux("display", "-p", "-t", win, "#{window_width}x#{window_height}")
-		if err == nil && got == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 5s window %s never became %s (it is %s)", win, want, got)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return err == nil && got == want, "it is " + got
+	})
 }
 
 // expectWinSizes requires each window to hold its size, after a short settle so
@@ -75,24 +68,18 @@ func (w *world) capture(pane string) string {
 
 func (w *world) waitCapture(pane, want string) {
 	w.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(w.capture(pane), want) {
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 5s pane %s never showed %q; it shows %q", pane, want, w.capture(pane))
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(w.t, fmt.Sprintf("pane %s showing %q", pane, want), func() (bool, string) {
+		got := w.capture(pane)
+		return strings.Contains(got, want), fmt.Sprintf("it shows %q", got)
+	})
 }
 
 func (w *world) waitOpt(pane, name, want string) {
 	w.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for w.opt(pane, name) != want {
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 5s pane %s never got %s=%q (it is %q)", pane, name, want, w.opt(pane, name))
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(w.t, fmt.Sprintf("pane %s getting %s=%q", pane, name, want), func() (bool, string) {
+		got := w.opt(pane, name)
+		return got == want, fmt.Sprintf("it is %q", got)
+	})
 }
 
 func (w *world) dialCrew(t *testing.T, session, crew string, cols, rows int) (*bridgeClient, joinMsg) {
@@ -124,7 +111,7 @@ func TestCrewBridge(t *testing.T) {
 		m := sb.mark()
 		w.paneWriteID(shipPane, "SHIP-LIVE-MARK\r\n")
 		w.paneWriteID(a.pane, "CREW-LIVE-MARK\r\n")
-		sb.waitOutput(5*time.Second, m, "SHIP-LIVE-MARK")
+		sb.waitOutput(m, "SHIP-LIVE-MARK")
 		if strings.Contains(sb.output(m), "CREW-LIVE-MARK") {
 			t.Errorf("the ship's bridge streamed the crew pane after select-window")
 		}
@@ -165,7 +152,7 @@ func TestCrewBridge(t *testing.T) {
 		w.paneWriteID(shipPane, "OUT-SHIP\r\n")
 		w.paneWriteID(b.pane, "OUT-COOK\r\n")
 		w.paneWriteID(a.pane, "OUT-SCOUT\r\n")
-		scout.waitOutput(5*time.Second, m, "OUT-SCOUT")
+		scout.waitOutput(m, "OUT-SCOUT")
 		time.Sleep(300 * time.Millisecond)
 		if got := scout.output(m); strings.Contains(got, "OUT-SHIP") || strings.Contains(got, "OUT-COOK") {
 			t.Errorf("the bridge on scout streamed another pane's output: %q", got)
@@ -175,7 +162,7 @@ func TestCrewBridge(t *testing.T) {
 		m = sb.mark()
 		w.paneWriteID(a.pane, "AGAIN-SCOUT\r\n")
 		w.paneWriteID(shipPane, "AGAIN-SHIP\r\n")
-		sb.waitOutput(5*time.Second, m, "AGAIN-SHIP")
+		sb.waitOutput(m, "AGAIN-SHIP")
 		if got := sb.output(m); strings.Contains(got, "AGAIN-SCOUT") {
 			t.Errorf("the ship's bridge streamed a crew boat's output: %q", got)
 		}
@@ -202,7 +189,7 @@ func TestCrewBridge(t *testing.T) {
 				t.Errorf("input to scout reached pane %s", p)
 			}
 		}
-		scout.waitShip(5*time.Second, 0, "status underway", func(s shipState) bool { return s.Status == "underway" })
+		scout.waitShip(0, "status underway", func(s shipState) bool { return s.Status == "underway" })
 
 		// The ship's bridge keeps clearing only the ship's.
 		w.mustTmux("set", "-p", "-t", b.pane, "@admiral-state", "needs_you")
@@ -226,7 +213,7 @@ func TestCrewBridge(t *testing.T) {
 		scout, _ := w.dialCrew(t, ship.Session, "scout", 100, 30)
 		scout.active()
 		w.waitWinSize(aWin, "100x30")
-		scout.waitSize(5*time.Second, 0, 100, 30)
+		scout.waitSize(0, 100, 30)
 		w.expectWinSizes("a resize on scout's bridge", map[string]string{shipWin: cur[shipWin], bWin: cur[bWin]})
 
 		// The ship's bridge sizes only the ship's window, though refresh-client -C
@@ -274,7 +261,7 @@ func TestCrewBridge(t *testing.T) {
 			t.Errorf("the join of an anchored crew boat should say anchored with exit_code 1, got %+v", j.Ship)
 		}
 		cook.input("typed-in-anchored")
-		cook.waitFor(5*time.Second, "a `refused` message with reason anchored", func() bool {
+		cook.waitFor("a `refused` message with reason anchored", func() bool {
 			for _, raw := range cook.texts(0, "refused") {
 				if strings.Contains(string(raw), `"anchored"`) {
 					return true
@@ -299,7 +286,7 @@ func TestCrewBridge(t *testing.T) {
 		w.expectExit(crewCall(w, ship.Session, "", "close", "relay"), 0, "crew close relay")
 		w.expectExit(crewCall(w, ship.Session, "", "launch", "--name", "relay", "--harness", "claude",
 			"--dir", filepath.Join(w.root, "anywhere"), "--", "go"), 0, "crew launch relay")
-		oldBridge.waitFor(10*time.Second, "the bridge on the closed boat to close", func() bool {
+		oldBridge.waitFor("the bridge on the closed boat to close", func() bool {
 			oldBridge.mu.Lock()
 			defer oldBridge.mu.Unlock()
 			return oldBridge.err != nil
@@ -345,7 +332,7 @@ func TestCrewBridge(t *testing.T) {
 		if code, body := send(t, http.MethodPost, url, nil); code/100 != 2 {
 			t.Fatalf("close cook = %d: %s", code, body)
 		}
-		cook.waitFor(10*time.Second, "the bridge on cook to close", func() bool {
+		cook.waitFor("the bridge on cook to close", func() bool {
 			cook.mu.Lock()
 			defer cook.mu.Unlock()
 			return cook.err != nil
@@ -360,7 +347,7 @@ func TestCrewBridge(t *testing.T) {
 		}
 		m := sb.mark()
 		w.paneWriteID(shipPane, "SHIP-STILL-OPEN\r\n")
-		sb.waitOutput(5*time.Second, m, "SHIP-STILL-OPEN")
+		sb.waitOutput(m, "SHIP-STILL-OPEN")
 	})
 
 	t.Run("input to a live crew boat of an anchored ship is accepted", func(t *testing.T) {

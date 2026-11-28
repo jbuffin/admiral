@@ -57,7 +57,7 @@ func TestMooredShipSurvivesRestart(t *testing.T) {
 	ship := w.launch(req)
 	w.exitWith(ship, mooredReport(mooredPR))
 
-	list := w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool {
+	list := w.in.waitShipsList(t, "the ship moored", func(l []shipJSON) bool {
 		return byName(l)[ship.Name].Status == "moored"
 	})
 	got := byName(list)[ship.Name]
@@ -87,7 +87,7 @@ func TestMooredShipSurvivesRestart(t *testing.T) {
 	}
 
 	w.restart()
-	list = w.in.waitShipsList(t, 20*time.Second, "the ship still moored after a restart", func(l []shipJSON) bool {
+	list = w.in.waitShipsList(t, "the ship still moored after a restart", func(l []shipJSON) bool {
 		return byName(l)[ship.Name].Status == "moored"
 	})
 	if again := byName(list)[ship.Name]; len(again.PRs) != 1 || again.MooredAt != got.MooredAt {
@@ -116,7 +116,7 @@ func TestCleanExitFoundAtStartupIsChecked(t *testing.T) {
 
 	w.in = launchAdmiral(t, w.home, "127.0.0.1:"+w.in.Port, w.baseEnv())
 
-	w.in.waitShipsList(t, 20*time.Second, "the exit-0 ship found at startup moored", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the exit-0 ship found at startup moored", func(l []shipJSON) bool {
 		return byName(l)[ship.Name].Status == "moored"
 	})
 	if !exists(w.mooredFile(ship.Name)) {
@@ -134,7 +134,7 @@ func TestCleanExitWithoutAnOpenPRSailsOff(t *testing.T) {
 
 	waitCond(t, "Admiral asked gh about the PR", func() bool { return g.asked(mooredPR) })
 	w.waitEvent(ship.Session, "ended", 1)
-	w.in.waitShipsList(t, 20*time.Second, "the ship sailed off", func(l []shipJSON) bool { _, ok := byName(l)[ship.Name]; return !ok })
+	w.in.waitShipsList(t, "the ship sailed off", func(l []shipJSON) bool { _, ok := byName(l)[ship.Name]; return !ok })
 	if exists(w.mooredFile(ship.Name)) {
 		t.Errorf("a closed PR left a record")
 	}
@@ -153,7 +153,7 @@ func TestNonZeroExitAnchorsWhateverTheReportSays(t *testing.T) {
 	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
 	w.exitWith(ship, mooredReport(mooredPR))
 
-	w.in.waitShipsList(t, 20*time.Second, "the ship anchored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "anchored" })
+	w.in.waitShipsList(t, "the ship anchored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "anchored" })
 	holdThat(t, "an anchored ship moored or got a record", func() bool {
 		return byName(w.in.ships(t))[ship.Name].Status == "anchored" && !exists(w.mooredFile(ship.Name))
 	})
@@ -239,10 +239,10 @@ func TestMooredShipReturnsToPortWhenItsPRMerges(t *testing.T) {
 	w.start()
 	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
 	w.exitWith(ship, mooredReport(mooredPR))
-	w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
+	w.in.waitShipsList(t, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
 
 	w.kickMoored()
-	list := w.in.waitShipsList(t, 20*time.Second, "the poll's chips on the moored ship", func(l []shipJSON) bool {
+	list := w.in.waitShipsList(t, "the poll's chips on the moored ship", func(l []shipJSON) bool {
 		prs := byName(l)[ship.Name].PRs
 		return len(prs) == 1 && prs[0].Review == "APPROVED"
 	})
@@ -260,7 +260,7 @@ func TestMooredShipReturnsToPortWhenItsPRMerges(t *testing.T) {
 	if woken["by"] != "return" {
 		t.Errorf("woken = %v, want by return", woken)
 	}
-	w.in.waitShipsList(t, 20*time.Second, "the ship gone after its clean-up wake", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the ship gone after its clean-up wake", func(l []shipJSON) bool {
 		_, ok := byName(l)[ship.Name]
 		return !ok
 	})
@@ -312,7 +312,7 @@ func (w *world) writeReportFor(ship shipJSON, report string) {
 
 func (w *world) wantMoored(ship shipJSON) {
 	w.t.Helper()
-	list := w.in.waitShipsList(w.t, 20*time.Second, "the ship moored", func(l []shipJSON) bool {
+	list := w.in.waitShipsList(w.t, "the ship moored", func(l []shipJSON) bool {
 		return byName(l)[ship.Name].Status == "moored"
 	})
 	if got := byName(list)[ship.Name]; len(got.PRs) != 1 || got.PRs[0].URL != mooredPR {
@@ -343,7 +343,7 @@ func TestAShipMoorsWhenCommodoreIsDoneAndItsTurnEnds(t *testing.T) {
 	ship := w.launchLive()
 
 	w.writeReportFor(ship, mooredReport(mooredPR))
-	w.in.waitShipsList(t, 20*time.Second, "open_prs to list the report's open PR", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "open_prs to list the report's open PR", func(l []shipJSON) bool {
 		return reflect.DeepEqual(byName(l)[ship.Name].OpenPRs, []string{mooredPR})
 	})
 	holdThat(t, "the ship moored while its turn was still running", func() bool {
@@ -362,12 +362,12 @@ func TestAShipWithAPartialReportStaysLiveWhenItsTurnEnds(t *testing.T) {
 	w, _ := liveMooring(t)
 	ship := w.launchLive()
 	w.writeReportFor(ship, reportWith("partial", mooredPR))
-	w.in.waitShipsList(t, 20*time.Second, "open_prs to list the report's open PR", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "open_prs to list the report's open PR", func(l []shipJSON) bool {
 		return reflect.DeepEqual(byName(l)[ship.Name].OpenPRs, []string{mooredPR})
 	})
 	w.touch(ship.Session, "go")
 	w.waitFile(ship.Session, "cues-done")
-	w.in.waitShipsList(t, 20*time.Second, "the ship to need you at the end of its turn", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the ship to need you at the end of its turn", func(l []shipJSON) bool {
 		return byName(l)[ship.Name].Status == "needs_you"
 	})
 	holdThat(t, "a ship whose report is partial left the live list", func() bool {
@@ -465,7 +465,7 @@ func reviewingWorld(t *testing.T, url string) (*world, *fakeGH) {
 		srcDef{Key: "gh", Plugin: "github", Name: "GitHub", Fleet: "f", Settings: map[string]any{"views": []any{}}},
 		tpSource("rv", p, nil))
 	w.start()
-	w.waitSource("rv", 10*time.Second, "the order", func(s sourceJSON) bool { return isOK(s) && len(s.orderIDs()) == 1 })
+	w.waitSource("rv", "the order", func(s sourceJSON) bool { return isOK(s) && len(s.orderIDs()) == 1 })
 	return w, g
 }
 
@@ -481,7 +481,7 @@ func (w *world) launchReview() shipJSON {
 // wantMooredWith is wantMoored for a ship that carries several PRs: they are listed in this order, each reviewing when reviewing says so.
 func (w *world) wantMooredWith(ship shipJSON, reviewing bool, urls ...string) shipJSON {
 	w.t.Helper()
-	list := w.in.waitShipsList(w.t, 20*time.Second, "the ship moored", func(l []shipJSON) bool {
+	list := w.in.waitShipsList(w.t, "the ship moored", func(l []shipJSON) bool {
 		return byName(l)[ship.Name].Status == "moored"
 	})
 	got := byName(list)[ship.Name]
@@ -562,13 +562,13 @@ func TestAReviewedPRTheAuthorPushedToShowsRespondedWithoutWakingAndReReviewWakes
 	w.finishTurn(ship, mooredReport())
 	w.wantMooredWith(ship, true, reviewedPR)
 
-	w.in.waitShipsList(t, 20*time.Second, "a poll shows the PR not responded", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "a poll shows the PR not responded", func(l []shipJSON) bool {
 		prs := byName(l)[ship.Name].PRs
 		return len(prs) == 1 && prs[0].Author == otherAuthor && !prs[0].Responded
 	})
 	g.prReviewedBy(reviewedPR, otherAuthor, created, "fake-viewer", "aaa111", "bbb222", time.Now().Add(-20*time.Minute)) // the author pushed
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the author's push shows as responded", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the author's push shows as responded", func(l []shipJSON) bool {
 		prs := byName(l)[ship.Name].PRs
 		return len(prs) == 1 && prs[0].Responded
 	})

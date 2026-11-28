@@ -152,7 +152,7 @@ func TestShipConversation_FromLaunchToDismiss(t *testing.T) {
 	holdThat(t, "a client that never opened the ship received its conversation", func() bool { return len(strays) == 0 })
 
 	// The fake exits at once, so the ship is anchored: still readable until dismissed.
-	w.in.waitShipsList(t, 15*time.Second, "the ship to be anchored", func(l []shipJSON) bool { return statusOf(l, s.Session) == "anchored" })
+	w.in.waitShipsList(t, "the ship to be anchored", func(l []shipJSON) bool { return statusOf(l, s.Session) == "anchored" })
 	if p := page(""); p.State != "ok" || len(p.Items) != 200 || p.Items[199].Text != msg(251) {
 		t.Errorf("after the harness exited: state %q with %d items, want ok and the newest 200", p.State, len(p.Items))
 	}
@@ -175,12 +175,5 @@ func firstText(items []convItem) string {
 // holdFor polls cond for up to 15 s.
 func holdFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	for end := time.Now().Add(15 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		if cond() {
-			return
-		}
-		if time.Now().After(end) {
-			t.Fatalf("within 15s: %s never happened", what)
-		}
-	}
+	until(t, what, cond)
 }

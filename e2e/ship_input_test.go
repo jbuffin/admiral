@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -8,7 +9,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 // The fleet's cue records the terminal's raw input and parks until `go`, then anchors.
@@ -37,17 +37,10 @@ func (w *world) inputOf(session, crew string) string {
 
 func (w *world) waitStdinOf(session, crew, want string) {
 	w.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	got := ""
-	for {
-		if got = w.inputOf(session, crew); got == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 5s the terminal input of %s %s never became %q; it is %q", session, crew, want, got)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(w.t, fmt.Sprintf("the terminal input of %s %s becoming %q", session, crew, want), func() (bool, string) {
+		got := w.inputOf(session, crew)
+		return got == want, fmt.Sprintf("it is %q", got)
+	})
 }
 
 func (w *world) holdStdin(session, crew, want string) {
@@ -218,7 +211,7 @@ func TestShipStop_EndsALiveShipAndItsCrewAndRecordsStopped(t *testing.T) {
 		t.Errorf("ended = %v, want signal KILL and exit_code null", e)
 	}
 	holdFor(t, "the tmux session to end", func() bool { return !w.hasSession(ship.Session) })
-	waitGone(t, 5*time.Second, report, inbox)
+	waitGone(t, report, inbox)
 	w.waitGone(ship.Session, "the stop")
 	if code, _ := send(t, http.MethodPost, w.shipURL(ship.Session, "/stop"), nil); code != http.StatusNotFound {
 		t.Errorf("stopping the same ship again = %d, want 404", code)

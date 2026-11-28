@@ -4,7 +4,6 @@ package e2e
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -318,7 +317,6 @@ func startAdmiralOnce(t *testing.T, home, listen string) (*instance, bool) {
 		close(lines)
 	}()
 	var got []string
-	timeout := time.After(10 * time.Second)
 	for len(got) < 2 {
 		select {
 		case l, ok := <-lines:
@@ -330,8 +328,8 @@ func startAdmiralOnce(t *testing.T, home, listen string) (*instance, bool) {
 				t.Fatalf("admiral exited before printing two URL lines (got %q); stderr: %s", got, stderr.String())
 			}
 			got = append(got, l)
-		case <-timeout:
-			t.Fatalf("admiral printed %d of 2 URL lines within 10s (got %q); stderr: %s", len(got), got, stderr.String())
+		case <-testCtx(t).Done():
+			hung(t, fmt.Sprintf("admiral printed %d of 2 URL lines before the test run's deadline (got %q); stderr: %s", len(got), got, stderr.String()))
 		}
 	}
 	// A LAN address brings a third line, read before the drain starts.
@@ -341,7 +339,8 @@ func startAdmiralOnce(t *testing.T, home, listen string) (*instance, bool) {
 			if ok {
 				in.PairLine = l
 			}
-		case <-time.After(5 * time.Second):
+		case <-testCtx(t).Done():
+			hung(t, "admiral printed no third URL line before the test run's deadline")
 		}
 	}
 	go func() { // keep draining so the pipe never blocks the server
@@ -371,7 +370,7 @@ func startAdmiralOnce(t *testing.T, home, listen string) (*instance, bool) {
 	return in, false
 }
 
-// Stop is safe to repeat.
+// Stop is safe to repeat. Its 5s grace before SIGKILL stays: cleanup runs after the test's deadline context may have ended.
 func (in *instance) Stop() {
 	select {
 	case <-in.done:
@@ -525,8 +524,7 @@ func wsDialAt(t *testing.T, base, path, query string, hdr http.Header, host stri
 	u.Scheme = "ws"
 	u.Path = path
 	u.RawQuery = query
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	t.Cleanup(cancel)
+	ctx := testCtx(t)
 	c, resp, err := websocket.Dial(ctx, u.String(), &websocket.DialOptions{
 		HTTPClient: &http.Client{Transport: noProxy()}, HTTPHeader: hdr, Host: host})
 	if c != nil {
@@ -538,6 +536,7 @@ func wsDialAt(t *testing.T, base, path, query string, hdr http.Header, host stri
 // killTmux ends every tmux process on sock. A client still starting when Admiral exits forks its server after the socket
 // stops answering, so it kills again until no process names the socket. pgrep lists processes before it reads their
 // command lines, so it misses a server whose forking client exited in between: only a second empty look in a row is clean.
+// The 5s bound stays: it runs in cleanup, after the test's deadline context may have ended.
 func killTmux(sock string) {
 	deadline := time.Now().Add(5 * time.Second)
 	for empty := 0; time.Now().Before(deadline); {
@@ -556,11 +555,9 @@ func killTmux(sock string) {
 
 func readJSON(t *testing.T, c *websocket.Conn, v any) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, data, err := c.Read(ctx)
+	_, data, err := c.Read(testCtx(t))
 	if err != nil {
-		t.Fatalf("read websocket message: %v", err)
+		failRequest(t, "read websocket message", err)
 	}
 	if err := json.Unmarshal(data, v); err != nil {
 		t.Fatalf("websocket message %q is not JSON: %v", data, err)
