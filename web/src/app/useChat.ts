@@ -88,5 +88,14 @@ export function useChat(fleet: string) {
     editDraft(id, (d) => ({ ...d, sending: false, error: r.ok ? '' : failure(r) }));
   };
 
-  return { snap, error, text, setText, sending, resetting, drafts, editDraft, send, interrupt, newChat, answer };
+  const answerNeed = async (id: string, body: AnswerBody) => {
+    if (drafts[id]?.sending) return;
+    editDraft(id, (d) => ({ ...d, sending: true, error: '' }));
+    const r = await call('POST', `${base}/need-cards/${encodeURIComponent(id)}/answer`, body);
+    // A 409 means the item was answered elsewhere; the next snapshot says where, so it is no failure.
+    if (r.ok || r.status === 409 || r.status === 404) await reread();
+    editDraft(id, (d) => ({ ...d, sending: false, error: r.ok || r.status === 409 ? '' : failure(r) }));
+  };
+
+  return { snap, error, text, setText, sending, resetting, drafts, editDraft, send, interrupt, newChat, answer, answerNeed };
 }

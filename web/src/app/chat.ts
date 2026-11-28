@@ -69,11 +69,11 @@ export interface LaunchLine {
 
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'interrupted' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card' | 'following_card';
+  kind: 'message' | 'question' | 'reset' | 'interrupted' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card' | 'following_card' | 'need_card';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
-  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard | LaunchLine | CampaignDraftCard | FollowingCard;
+  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard | LaunchLine | CampaignDraftCard | FollowingCard | NeedCard;
   /** The id of the ship card this entry belongs to: a report turn and its reply. */
   thread?: string;
 }
@@ -103,7 +103,18 @@ export type ThreadItem =
   | { kind: 'ship'; id: string; text: string; at: string; card: ShipCard; thread?: ThreadMessage[] }
   | { kind: 'campaign_draft'; id: string; text: string; at: string; card: CampaignDraftCard }
   | { kind: 'following'; id: string; text: string; at: string; card: FollowingCard }
+  | { kind: 'need'; id: string; text: string; at: string; card: NeedCard }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer; kept?: string };
+
+/** The card Admiral posts in a ship's own fleet's chat for each question the ship asks. */
+export interface NeedCard {
+  ship: string;
+  item: string;
+  item_kind: 'question';
+  questions: NonNullable<InboxItem['question']>['questions'];
+  state: 'open' | 'answered' | 'removed';
+  answered_in?: 'chat' | 'inbox';
+}
 
 export interface FollowingCard {
   ship: string;
@@ -137,6 +148,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
     if (m.kind === 'ship_card' && m.card) return [{ t, i, item: { kind: 'ship', id: m.id, text: m.text, at: m.at, card: m.card as ShipCard } }];
     if (m.kind === 'campaign_draft_card' && m.card) return [{ t, i, item: { kind: 'campaign_draft', id: m.id, text: m.text, at: m.at, card: m.card as CampaignDraftCard } }];
     if (m.kind === 'following_card' && m.card) return [{ t, i, item: { kind: 'following', id: m.id, text: m.text, at: m.at, card: m.card as FollowingCard } }];
+    if (m.kind === 'need_card' && m.card) return [{ t, i, item: { kind: 'need', id: m.id, text: m.text, at: m.at, card: m.card as NeedCard } }];
     if (m.kind === 'question' && m.card) {
       const card = m.card as InboxItem;
       const answer = answers.get(card.id);
