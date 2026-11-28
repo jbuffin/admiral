@@ -1,7 +1,7 @@
 import { effect, signal } from '@preact/signals';
 import type { Ship } from './api';
-import { attentionCount, sharedInboxQueue, type InboxItem } from './inbox';
-import { inboxItems, ships } from './shipsLink';
+import { sharedInboxQueue, type InboxItem } from './inbox';
+import { inboxItems, servedAttention, ships } from './shipsLink';
 
 export interface AttentionTarget {
   document: { title: string; querySelector(sel: string): { href: string } | null };
@@ -45,14 +45,15 @@ export function syncSharedQueue(items: InboxItem[], fleetShips: Ship[]): void {
   sharedInboxQueue().sync({ items, ships: fleetShips }, Date.now());
 }
 
-/** Keeps the shared queue and the title, favicon and badge current for the whole shell; returns a stop. */
+/** Keeps the shared queue synced and ticking, and shows the server's count in the title, favicon and badge; returns a stop. */
 export function watchAttention(target: AttentionTarget = { document, navigator }): () => void {
   const queue = sharedInboxQueue();
   const apply = attentionApplier(target);
   const stop = effect(() => {
     syncSharedQueue(inboxItems.value, ships.value);
-    void queueRev.value;
-    apply(attentionCount(queue));
+    // Nothing is written until the server has served a count, so a page that knows nothing yet never shows 0.
+    const served = servedAttention.value;
+    if (served !== null) apply(served);
   });
   const timer = setInterval(() => {
     if (queue.tick(Date.now())) queueRev.value++;

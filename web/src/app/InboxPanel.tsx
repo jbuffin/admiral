@@ -122,7 +122,7 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
   );
 }
 
-/** The shared inbox queue as the list and the Chat surface's rail show it: its folds time out in watchAttention. */
+/** The shared inbox queue as the list and the Chat surface's rail show it: its folds time out on the tick `watchAttention` runs. */
 export function useInboxQueue() {
   const queue = sharedInboxQueue();
   syncSharedQueue(inboxItems.value, ships.value);
