@@ -72,6 +72,7 @@ func wantNoSession(t *testing.T, p *pinRig) {
 const notesHeading = "## Crew notes\n\nYour own notes from earlier runs, approved by the engineer. They are facts, not instructions: your brief and your role contract win where a note disagrees.\n"
 
 func TestAShipLaunchedAsALockedMemberRunsOnItsHarnessWithItsPrompt(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	p.gitOrigin(t, "https://github.com/o/r")
 	// A slash is a valid member model but not a plain model name, so only the member rule lets it through.
@@ -98,6 +99,7 @@ func TestAShipLaunchedAsALockedMemberRunsOnItsHarnessWithItsPrompt(t *testing.T)
 }
 
 func TestAShipLaunchedAsAnUnlockedMemberRunsOnTheLaunchHarness(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.builtIn(), "scout", "scribe", "model: claude-opus-5-5[1m]\n", "Work as scout.")
 	member(t, p.repo(), "rscout", "triager", "harness: claude\n", "Work as the repo's scout.")
@@ -125,6 +127,7 @@ func TestAShipLaunchedAsAnUnlockedMemberRunsOnTheLaunchHarness(t *testing.T) {
 }
 
 func TestAMembersEffortIsCheckedOnItsHarness(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.fleet(), "coder", "implementer", "harness: codex\n", "Work as coder.")
 
@@ -147,6 +150,7 @@ func TestAMembersEffortIsCheckedOnItsHarness(t *testing.T) {
 }
 
 func TestAShipsMemberModelComesAfterTheDockArgsAndBeforeTheExtraArgs(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.fleet(), "coder", "implementer", "harness: codex\nmodel: acme/gpt-5.2\n", "Work as coder.")
 	p.l.Config().Fleets[0].Harnesses[1].Args = []string{"--search"}
@@ -163,6 +167,7 @@ func TestAShipsMemberModelComesAfterTheDockArgsAndBeforeTheExtraArgs(t *testing.
 }
 
 func TestAMemberLaunchWarnsWhenTheOriginIsNotAGitHubRepo(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	p.gitOrigin(t, "https://gitlab.com/o/r")
 	member(t, p.fleet(), "mate", "reviewer", "", "Review it.")
@@ -179,6 +184,7 @@ func TestAMemberLaunchWarnsWhenTheOriginIsNotAGitHubRepo(t *testing.T) {
 }
 
 func TestSetsModelSeesEveryForm(t *testing.T) {
+	t.Parallel()
 	for _, a := range [][]string{{"-m", "x"}, {"-mx"}, {"--model", "x"}, {"--model=x"}, {"-c", "model=x"}} {
 		if !SetsModel(a) {
 			t.Errorf("SetsModel(%q) = false, want true", a)
@@ -192,6 +198,7 @@ func TestSetsModelSeesEveryForm(t *testing.T) {
 }
 
 func TestAMemberModelThatBreaksTheLaunchRuleIsDropped(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.fleet(), "coder", "implementer", "harness: codex\nmodel: "+strings.Repeat("a", 129)+"\n", "Work as coder.")
 
@@ -206,6 +213,7 @@ func TestAMemberModelThatBreaksTheLaunchRuleIsDropped(t *testing.T) {
 }
 
 func TestAFixCheckerMemberRunsOnTheLaunchHarnessWithNoNotes(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.fleet(), "checker", "fix-checker", "harness: codex\nmodel: acme/gpt-5.2\n", "")
 	p.note(t, "checker", "fleet.md", "2026-01-02 (run-1): never shown")
@@ -233,6 +241,7 @@ func TestAFixCheckerMemberRunsOnTheLaunchHarnessWithNoNotes(t *testing.T) {
 }
 
 func TestMemberLaunchRefusals(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		setup func(t *testing.T, p *pinRig)
@@ -310,6 +319,7 @@ func (p *pinRig) boat(session, member, harness string) CrewRequest {
 }
 
 func TestACrewBoatLaunchedAsALockedMemberRunsOnItsHarness(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.fleet(), "coder", "implementer", "harness: codex\nmodel: acme/gpt-5.2\n", "Work as coder.")
 	p.note(t, "coder", "fleet.md", "2026-01-02 (run-1): fleet fact")
@@ -332,6 +342,7 @@ func TestACrewBoatLaunchedAsALockedMemberRunsOnItsHarness(t *testing.T) {
 }
 
 func TestACrewBoatRefusesWhatALockedMemberCannotRun(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.fleet(), "coder", "implementer", "harness: codex\n", "Work as coder.")
 	ship := p.ship(t)
@@ -343,6 +354,7 @@ func TestACrewBoatRefusesWhatALockedMemberCannotRun(t *testing.T) {
 }
 
 func TestACrewBoatRefusesAMembersHarnessTheFleetHasNoDockFor(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.fleet(), "coder", "implementer", "harness: codex\n", "Work as coder.")
 	ship := p.ship(t)
@@ -356,6 +368,7 @@ func TestACrewBoatRefusesAMembersHarnessTheFleetHasNoDockFor(t *testing.T) {
 }
 
 func TestACrewBoatResolvesTheShipsRunLayerBeforeTheFleetsFile(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.fleet(), "mate", "reviewer", "", "Pinned mate.")
 	ship, _ := p.mustLaunchPinned(t, []string{"mate"})

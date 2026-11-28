@@ -62,6 +62,7 @@ func snapshot(t *testing.T, dir string) map[string][32]byte {
 }
 
 func TestTheRealCheckoutIsASharedCloneOnItsOwnBranchThatNeverTouchesTheDirsGit(t *testing.T) {
+	t.Parallel()
 	dir, home := t.TempDir(), t.TempDir()
 	commitRepo(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, "wip.txt"), []byte("uncommitted\n"), 0o644); err != nil {
@@ -111,6 +112,7 @@ func TestTheRealCheckoutIsASharedCloneOnItsOwnBranchThatNeverTouchesTheDirsGit(t
 }
 
 func TestARealCheckoutOfADirThatIsNotARepoFailsAndLeavesNoHalfClone(t *testing.T) {
+	t.Parallel()
 	dir, home := t.TempDir(), t.TempDir()
 	if _, err := (GitCheckouts{}).Make(home, "kelp-1", dir); err == nil {
 		t.Fatal("Make of a directory that is not a git repo succeeded")
@@ -124,6 +126,7 @@ func TestARealCheckoutOfADirThatIsNotARepoFailsAndLeavesNoHalfClone(t *testing.T
 }
 
 func TestARealCheckoutRefusesAPathThatExistsAndKeepsWhatIsThere(t *testing.T) {
+	t.Parallel()
 	dir, home := t.TempDir(), t.TempDir()
 	commitRepo(t, dir)
 	first, err := GitCheckouts{}.Make(home, "kelp-1", dir)
@@ -142,6 +145,7 @@ func TestARealCheckoutRefusesAPathThatExistsAndKeepsWhatIsThere(t *testing.T) {
 }
 
 func TestARestrictedLaunchWithTheRealCheckoutRunsTheShipOnItsOwnBranch(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	p.l.Checkouts = GitCheckouts{}
@@ -167,6 +171,7 @@ func TestARestrictedLaunchWithTheRealCheckoutRunsTheShipOnItsOwnBranch(t *testin
 }
 
 func TestAnInvestigateShipMayWriteOnlyItsReportFileAndItsSandboxDeniesTheCheckout(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, fc, argv, _ := p.mustRestricted(t, standing.Investigate)
 	_, got := settingsOf(t, argv)
@@ -204,6 +209,7 @@ func TestAnInvestigateShipMayWriteOnlyItsReportFileAndItsSandboxDeniesTheCheckou
 }
 
 func TestADraftFixShipsSandboxDoesNotDenyItsCheckout(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, fc, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)
@@ -232,6 +238,7 @@ func (p *pinRig) setDockArgs(args []string) {
 }
 
 func TestARestrictedLaunchRefusesUnsafeDockAndExtraArgsNamingTheFlag(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.Investigate, standing.DraftFix} {
 		for _, flag := range unsafeFlags {
 			for form, args := range map[string][]string{"separate": {flag, "x"}, "equals": {flag + "=x"}} {
@@ -263,6 +270,7 @@ func TestARestrictedLaunchRefusesUnsafeDockAndExtraArgsNamingTheFlag(t *testing.
 }
 
 func TestANormalLaunchStartsWithTheSameArgsARestrictedOneRefuses(t *testing.T) {
+	t.Parallel()
 	for _, where := range []string{"dock", "extra"} {
 		t.Run(where, func(t *testing.T) {
 			p := newPinRig(t, nil)

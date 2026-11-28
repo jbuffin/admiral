@@ -65,10 +65,12 @@ func wantShipNoteAtSessionStart(t *testing.T, where string, raw []byte) {
 }
 
 func TestClaudeShipSettingsRunTheShipNoteAtSessionStart(t *testing.T) {
+	t.Parallel()
 	wantShipNoteAtSessionStart(t, "claudeSettings", settingsJSON(t, claudeSettings()))
 }
 
 func TestEveryClaudeShipSettingsFileRunsTheShipNote(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	if err := WriteBundle(home); err != nil {
 		t.Fatal(err)
@@ -91,6 +93,7 @@ func TestEveryClaudeShipSettingsFileRunsTheShipNote(t *testing.T) {
 }
 
 func TestRestrictedShipSettingsHaveNoShipNote(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.Investigate, standing.DraftFix} {
 		raw := settingsJSON(t, restrictedSettings(level, nestCheckout, "/home/x/admiral", nestTemp, nil))
 		if groups, ok := hookEvents(t, raw)["SessionStart"]; ok {
@@ -103,6 +106,7 @@ func TestRestrictedShipSettingsHaveNoShipNote(t *testing.T) {
 }
 
 func TestChatCodexAndCopilotBundlesGetNoShipNote(t *testing.T) {
+	t.Parallel()
 	chat := settingsJSON(t, claudeChatSettings())
 	groups := hookEvents(t, chat)["SessionStart"]
 	if len(groups) != 1 || len(groups[0].Hooks) != 1 || groups[0].Hooks[0].Command != "admiral hook SessionStart" {

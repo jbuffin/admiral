@@ -6,6 +6,7 @@ import (
 )
 
 func TestAutopilotArgs(t *testing.T) {
+	t.Parallel()
 	auto := []string{"--permission-mode", "auto"}
 	plan := []string{"--permission-mode=plan"}
 
@@ -93,6 +94,7 @@ func TestAutopilotArgs(t *testing.T) {
 
 // A joined value is named once in the refusal.
 func TestAutopilotArgs_JoinedValueNamedOnce(t *testing.T) {
+	t.Parallel()
 	err := AutopilotArgs("claude", nil, []string{"--permission-mode=bypassPermissions"})
 	if err == nil || strings.Count(err.Error(), "bypassPermissions") != 1 {
 		t.Errorf("error %v should name bypassPermissions once", err)

@@ -6,6 +6,7 @@ import (
 )
 
 func TestRefuseHookArgs(t *testing.T) {
+	t.Parallel()
 	refused := []struct {
 		harness string
 		args    []string

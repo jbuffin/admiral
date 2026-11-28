@@ -12,6 +12,7 @@ func TestAShipThatIsNotAScoutNeverHasTheScoutVariableWhoeverSetsIt(t *testing.T)
 }
 
 func TestACrewBoatsDockCannotSetTheScoutVariable(t *testing.T) {
+	t.Parallel()
 	r := newCrewDirRig(t, nil)
 	ship := r.launch(t)
 	r.recorded(t, "claude")

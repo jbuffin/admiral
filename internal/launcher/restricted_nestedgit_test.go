@@ -34,6 +34,7 @@ func wantAll(t *testing.T, where string, have []string, want ...string) {
 }
 
 func TestADraftFixShipCannotCreateAGitBelowItsCheckoutRootOrItsTempDir(t *testing.T) {
+	t.Parallel()
 	denyWrite, _, permDeny := nestedProfile(t, standing.DraftFix)
 	wantAll(t, "sandbox.filesystem.denyWrite", denyWrite, nestCheckout+"/*/**/.git", nestTemp+"/**/.git")
 	wantAll(t, "permissions.deny", permDeny,
@@ -42,6 +43,7 @@ func TestADraftFixShipCannotCreateAGitBelowItsCheckoutRootOrItsTempDir(t *testin
 }
 
 func TestADraftFixShipsOwnGitStaysWritableAsAWhole(t *testing.T) {
+	t.Parallel()
 	denyWrite, _, permDeny := nestedProfile(t, standing.DraftFix)
 	root := nestCheckout + "/.git"
 	for _, bad := range []string{root, nestCheckout + "/**/.git", nestCheckout + "/**"} {
@@ -57,12 +59,14 @@ func TestADraftFixShipsOwnGitStaysWritableAsAWhole(t *testing.T) {
 }
 
 func TestAnInvestigateShipCannotCreateAGitBelowItsTempDir(t *testing.T) {
+	t.Parallel()
 	denyWrite, _, permDeny := nestedProfile(t, standing.Investigate)
 	wantAll(t, "sandbox.filesystem.denyWrite", denyWrite, nestTemp+"/**/.git")
 	wantAll(t, "permissions.deny", permDeny, "Edit(/"+nestTemp+"/**/.git)", "Edit(/"+nestTemp+"/**/.git/**)")
 }
 
 func TestARestrictedProfileHoldsNoWritePermissionRules(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
 		_, allow, deny := nestedProfile(t, level)
 		for _, r := range append(slices.Clone(allow), deny...) {
@@ -74,6 +78,7 @@ func TestARestrictedProfileHoldsNoWritePermissionRules(t *testing.T) {
 }
 
 func TestTheProfileDeniesTheResolvedTempDirNotTheShortLink(t *testing.T) {
+	t.Parallel()
 	target := t.TempDir()
 	link := filepath.Join(t.TempDir(), "adm-link")
 	if err := os.Symlink(target, link); err != nil {
@@ -96,6 +101,7 @@ func TestTheProfileDeniesTheResolvedTempDirNotTheShortLink(t *testing.T) {
 }
 
 func TestEveryProfileDeniesAGitBelowClaudeCodesDefaultWriteRoots(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
 		denyWrite, _, permDeny := nestedProfile(t, level)
 		for _, root := range []string{"/tmp/claude", "/private/tmp/claude", "~/.npm/_logs"} {

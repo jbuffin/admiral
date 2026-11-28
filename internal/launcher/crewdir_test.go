@@ -47,7 +47,6 @@ func newCrewDirRig(t *testing.T, fleetEnv map[string]string) *crewDirRig {
 		t.Fatal(err)
 	}
 	sock := filepath.Join(tmp, "tmux.sock")
-	t.Setenv("TMUX_TMPDIR", tmp)
 	t.Cleanup(func() {
 		_ = exec.Command(tmux, "-S", sock, "kill-server").Run()
 		_ = os.RemoveAll(tmp)
@@ -114,6 +113,7 @@ func (r *crewDirRig) recorded(t *testing.T, harness string) map[string]string {
 func (r *crewDirRig) crewDir() string { return filepath.Join(r.home, "fleets", "work", "crew") }
 
 func TestLaunchCreatesTheFleetCrewDirAndKeepsItsFiles(t *testing.T) {
+	t.Parallel()
 	r := newCrewDirRig(t, map[string]string{"ADMIRAL_CREW_DIR": "/fleet/says/otherwise"})
 	r.launch(t)
 	if got := r.recorded(t, "claude")["ADMIRAL_CREW_DIR"]; got != r.crewDir() {
@@ -134,6 +134,7 @@ func TestLaunchCreatesTheFleetCrewDirAndKeepsItsFiles(t *testing.T) {
 }
 
 func TestLaunchRefusesACrewDirPathThatIsALinkOrAFile(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		setup func(t *testing.T, r *crewDirRig) (target string)
@@ -200,6 +201,7 @@ func mustSymlink(t *testing.T, target, link string) {
 }
 
 func TestCrewBoatKeepsTheShipsCrewDir(t *testing.T) {
+	t.Parallel()
 	// The ship's dock sets the name, so the boat's -u loop would clear it for a dock that doesn't.
 	r := newCrewDirRig(t, nil)
 	shipDock := r.l.Config().Fleets[0].Harnesses[0]

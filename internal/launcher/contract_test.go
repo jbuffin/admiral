@@ -7,6 +7,7 @@ import (
 )
 
 func TestShipContractClearsWhatANameLeft(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	stale := map[string]string{
 		filepath.Join(home, "reports", "dory.json"):        "old report",
@@ -38,6 +39,7 @@ func TestShipContractClearsWhatANameLeft(t *testing.T) {
 }
 
 func TestPickNameSkipsAKeptInbox(t *testing.T) {
+	t.Parallel()
 	keptAll := func(session string) bool { return session != Slug(names[7]) }
 	for range 20 {
 		if got := pickName(taken(nil, nil, keptAll)); got != names[7] {

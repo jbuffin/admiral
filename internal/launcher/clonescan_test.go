@@ -53,6 +53,7 @@ func plantCarrier(t *testing.T, clone, kind, rel string) {
 }
 
 func TestARelaunchRefusesAGitCarrierAnywhereBelowTheRootAndNamesItsPath(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ kind, rel string }{
 		{"git folder", "src/deep/.git"},
 		{"git file", "src/deep/.git"},
@@ -83,6 +84,7 @@ func TestARelaunchRefusesAGitCarrierAnywhereBelowTheRootAndNamesItsPath(t *testi
 }
 
 func TestARelaunchRunsNoCoreFsmonitorOfAnUntrackedNestedRepoItRefuses(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	clone := keptDraftFixClone(t, p, p.work, "kelpie")
@@ -98,6 +100,7 @@ func TestARelaunchRunsNoCoreFsmonitorOfAnUntrackedNestedRepoItRefuses(t *testing
 }
 
 func TestARefusalNamesAPathQuotedSoItCannotForgeALineOrFloodTheMessage(t *testing.T) {
+	t.Parallel()
 	long := filepath.Join(strings.Repeat("a", 90), strings.Repeat("b", 90), strings.Repeat("c", 90), ".git")
 	for name, rel := range map[string]string{"quoted": "q\"uote\nforged: ok/.git", "capped": filepath.ToSlash(long)} {
 		t.Run(name, func(t *testing.T) {
@@ -133,6 +136,7 @@ func TestARefusalNamesAPathQuotedSoItCannotForgeALineOrFloodTheMessage(t *testin
 }
 
 func TestARelaunchAcceptsAKeptCloneWhoseDeepTreeOnlyHasOrdinaryFilesThatLookLikeGit(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	clone := keptDraftFixClone(t, p, p.work, "kelpie")
@@ -180,6 +184,7 @@ func plantFilterSubmodule(t *testing.T, clone, marker string) {
 }
 
 func TestAPlantedSubmodulesCleanFilterDoesRunUnderPlainGit(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	clone := keptDraftFixClone(t, p, p.work, "kelpie")
@@ -193,6 +198,7 @@ func TestAPlantedSubmodulesCleanFilterDoesRunUnderPlainGit(t *testing.T) {
 }
 
 func TestARelaunchOverAPlantedSubmoduleRunsNoFilterOfItsAndIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, where := range []string{"gitlink", "tree", "index", "commit"} {
 		t.Run(where, func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -212,6 +218,7 @@ func TestARelaunchOverAPlantedSubmoduleRunsNoFilterOfItsAndIsRefused(t *testing.
 }
 
 func TestAStartFromRefusesACloneThatGainedACarrierAfterTheCallerReadItWithTheFixedMessageAndNoPath(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	clone, branch := p.restrictedClone(t)
 	startWrite(t, filepath.Join(clone, "c.txt"), "the fix\n")
@@ -235,6 +242,7 @@ func TestAStartFromRefusesACloneThatGainedACarrierAfterTheCallerReadItWithTheFix
 }
 
 func TestARelaunchWhileTheShipsTmuxSessionIsListedIsRefusedBeforeAnyScan(t *testing.T) {
+	t.Parallel()
 	for _, planted := range []bool{false, true} {
 		name := "clean"
 		if planted {

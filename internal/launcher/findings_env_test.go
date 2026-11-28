@@ -11,6 +11,7 @@ import (
 // ADMIRAL_FINDINGS names a ship's findings file, and the prompts say how to use it.
 
 func TestAShipsFindingsFileIsNamedByAnEnvVarBesideItsReportAndAnOldOneIsCleared(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	stale := filepath.Join(home, "reports", "dory.md")
 	if err := os.MkdirAll(filepath.Dir(stale), 0o700); err != nil {
@@ -32,6 +33,7 @@ func TestAShipsFindingsFileIsNamedByAnEnvVarBesideItsReportAndAnOldOneIsCleared(
 }
 
 func TestSailingOffDeletesAShipsFindingsFileWithItsReport(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	files := []string{filepath.Join(home, "reports", "dory.json"), filepath.Join(home, "reports", "dory.md")}
 	for _, p := range files {
@@ -51,6 +53,7 @@ func TestSailingOffDeletesAShipsFindingsFileWithItsReport(t *testing.T) {
 }
 
 func TestACrewBoatDoesNotKeepItsShipsFindingsPath(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	ship, err := p.l.Launch(p.justRequest())
 	if err != nil {
@@ -75,6 +78,7 @@ func execTmux(l *Launcher, args ...string) ([]byte, error) {
 }
 
 func TestAScoutIsToldToWriteItsFindingsToTheFileTheVariableNamesAndThatNoneMeansFailed(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	if _, err := p.l.Launch(p.scoutRequest(p.work)); err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -91,6 +95,7 @@ func TestAScoutIsToldToWriteItsFindingsToTheFileTheVariableNamesAndThatNoneMeans
 }
 
 func TestAQuickShipsClosingStepsSayItMayWriteFindings(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	if _, err := p.l.Launch(p.chatLaunch()); err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -101,6 +106,7 @@ func TestAQuickShipsClosingStepsSayItMayWriteFindings(t *testing.T) {
 }
 
 func TestAFirstLaunchDoesNotInheritAContextFileFromItsEnvironment(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, map[string]string{"ADMIRAL_CONTEXT": "/elsewhere/context.md"})
 	if _, err := p.l.Launch(p.justRequest()); err != nil {
 		t.Fatalf("Launch: %v", err)

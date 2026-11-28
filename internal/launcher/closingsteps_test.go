@@ -12,6 +12,7 @@ func (p *pinRig) chatLaunch() Request {
 }
 
 func TestAQuickShipsPromptIsAdmiralBotsLaunchTextThenAdmiralsClosingSteps(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	if _, err := p.l.Launch(p.chatLaunch()); err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -35,6 +36,7 @@ func TestAQuickShipsPromptIsAdmiralBotsLaunchTextThenAdmiralsClosingSteps(t *tes
 }
 
 func TestOnlyAFreshNoSkillLaunchTheEngineerAskedForInTheChatGetsClosingSteps(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	// the control: the same request as a quick ship carries the steps, so the cases below differ in one thing
 	if _, err := p.l.Launch(p.chatLaunch()); err != nil {
@@ -75,6 +77,7 @@ func TestOnlyAFreshNoSkillLaunchTheEngineerAskedForInTheChatGetsClosingSteps(t *
 }
 
 func TestAQuickShipWithTheEngineerStillGetsClosingStepsWithoutABanOnQuestions(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	r := p.chatLaunch()
 	r.Autopilot = false

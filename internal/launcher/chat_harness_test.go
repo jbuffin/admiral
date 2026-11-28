@@ -16,6 +16,7 @@ import (
 const unlaunchableHarness = "gemini"
 
 func TestStartChatRefusesAnOfferedHarnessWithNoLaunchOfItsOwn(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	exe := filepath.Join(root, unlaunchableHarness)
 	if err := os.WriteFile(exe, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {

@@ -62,6 +62,7 @@ func (p *pinRig) promoted(clone, branch string) Request {
 }
 
 func TestAShipStartedFromCommitsWorksInItsOwnCloneOnItsOwnBranchAtTheRestrictedTip(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	clone, branch := p.restrictedClone(t)
 	startWrite(t, filepath.Join(clone, "c.txt"), "the fix\n")
@@ -89,6 +90,7 @@ func TestAShipStartedFromCommitsWorksInItsOwnCloneOnItsOwnBranchAtTheRestrictedT
 }
 
 func TestAShipStartedFromAnUncommittedDiffGetsItAppliedAndNoAdmiralFiles(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	clone, branch := p.restrictedClone(t)
 	startWrite(t, filepath.Join(clone, "a.txt"), "a changed\n")
@@ -111,6 +113,7 @@ func TestAShipStartedFromAnUncommittedDiffGetsItAppliedAndNoAdmiralFiles(t *test
 }
 
 func TestAShipStartedFromRestrictedWorkIsANewSessionOnTheOrderAloneWithNoResumeNoRestrictedProfileNoGuidance(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	clone, branch := p.restrictedClone(t)
 	startWrite(t, filepath.Join(clone, "c.txt"), "the fix\n")
@@ -144,6 +147,7 @@ func TestAShipStartedFromRestrictedWorkIsANewSessionOnTheOrderAloneWithNoResumeN
 }
 
 func TestAStartFromWhoseFetchFailsFailsTheLaunchAndLeavesNoCloneAndNoSession(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	clone, _ := p.restrictedClone(t)
 	for name, req := range map[string]Request{
@@ -164,6 +168,7 @@ func TestAStartFromWhoseFetchFailsFailsTheLaunchAndLeavesNoCloneAndNoSession(t *
 }
 
 func TestAStartFromWhoseTipIsNotTheOneTheCallerReadFailsAfterTheCloneExistsAndRemovesIt(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	clone, branch := p.restrictedClone(t)
 	startWrite(t, filepath.Join(clone, "c.txt"), "the fix\n")
@@ -184,6 +189,7 @@ func TestAStartFromWhoseTipIsNotTheOneTheCallerReadFailsAfterTheCloneExistsAndRe
 }
 
 func TestAStartFromRefusesWorkThatTouchesAdmiralOrHarnessConfigEvenWhenAReplaceRefHidesIt(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{".admiral/untrusted/event.md", ".claude/settings.json"} {
 		p := newPinRig(t, nil)
 		clone, branch := p.restrictedClone(t)

@@ -33,6 +33,7 @@ func (p *pinRig) justRequest() Request {
 }
 
 func TestAWorkerLaunchedShipsPromptCarriesTheFleetsGuidanceInAStandingOrdersSection(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	asked := p.guided(guidanceText, nil)
 	req := p.justRequest()
@@ -53,6 +54,7 @@ func TestAWorkerLaunchedShipsPromptCarriesTheFleetsGuidanceInAStandingOrdersSect
 }
 
 func TestAShipThatIsNotWorkerLaunchedGetsItsPromptUnchanged(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	p.guided(guidanceText, nil)
 	if _, err := p.l.Launch(p.justRequest()); err != nil {
@@ -64,6 +66,7 @@ func TestAShipThatIsNotWorkerLaunchedGetsItsPromptUnchanged(t *testing.T) {
 }
 
 func TestAWorkerLaunchWithNoGuidanceGetsNoStandingOrdersSection(t *testing.T) {
+	t.Parallel()
 	for name, text := range map[string]string{"empty": "", "blank": " \n\t"} {
 		t.Run(name, func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -84,6 +87,7 @@ func TestAWorkerLaunchWithNoGuidanceGetsNoStandingOrdersSection(t *testing.T) {
 }
 
 func TestACrewMemberWorkerLaunchGetsTheGuidanceAfterTheMembersPrompt(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.builtIn(), "scout", "scribe", "", "Work as scout.")
 	p.guided(guidanceText, nil)
@@ -99,6 +103,7 @@ func TestACrewMemberWorkerLaunchGetsTheGuidanceAfterTheMembersPrompt(t *testing.
 }
 
 func TestGuidanceIsNeverWrittenIntoTheWorktreeOrAnUntrustedFolder(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	p.guided(guidanceText, nil)
 	req := p.justRequest()
@@ -128,6 +133,7 @@ func TestGuidanceIsNeverWrittenIntoTheWorktreeOrAnUntrustedFolder(t *testing.T) 
 }
 
 func TestGuidanceThatMakesTheCommandTooLongRefusesTheLaunchAndIsNotDropped(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	p.guided(strings.Repeat("g", 2000), nil)
 	req := p.justRequest()
@@ -144,6 +150,7 @@ func TestGuidanceThatMakesTheCommandTooLongRefusesTheLaunchAndIsNotDropped(t *te
 }
 
 func TestAGuidanceReadErrorLaunchesWithoutTheSection(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	p.guided("", errors.New("the file is unreadable"))
 	var warned []string
@@ -162,6 +169,7 @@ func TestAGuidanceReadErrorLaunchesWithoutTheSection(t *testing.T) {
 }
 
 func TestAClientCannotSetWorkerLaunchedFromTheRequestBody(t *testing.T) {
+	t.Parallel()
 	var req Request
 	for _, body := range []string{`{"WorkerLaunched":true}`, `{"worker_launched":true}`, `{"workerLaunched":true}`} {
 		req = Request{}

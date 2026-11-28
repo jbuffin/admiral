@@ -16,6 +16,7 @@ import (
 )
 
 func TestAnExistingCheckoutKeepsItsNameOutOfThePool(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	for _, n := range names {
 		if err := os.MkdirAll(filepath.Join(p.home, "checkouts", Slug(n)), 0o755); err != nil {
@@ -32,6 +33,7 @@ func TestAnExistingCheckoutKeepsItsNameOutOfThePool(t *testing.T) {
 }
 
 func TestARelaunchOfARestrictedShipReusesItsKeptCloneAndALateFailureLeavesIt(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.restricted(standing.DraftFix)
 	fc.t = t
@@ -59,6 +61,7 @@ func TestARelaunchOfARestrictedShipReusesItsKeptCloneAndALateFailureLeavesIt(t *
 }
 
 func TestALateFailureAfterTheCheckoutRemovesTheCloneAndTheSettingsFile(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.restricted(standing.DraftFix)
 	fc.t = t
@@ -79,6 +82,7 @@ func TestALateFailureAfterTheCheckoutRemovesTheCloneAndTheSettingsFile(t *testin
 }
 
 func TestTheRestrictedSettingsDenyReadingTheHomeAndAdmiralsHomeExceptTheCheckoutAndCaches(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.Investigate, standing.DraftFix} {
 		t.Run(string(level), func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -105,6 +109,7 @@ func TestTheRestrictedSettingsDenyReadingTheHomeAndAdmiralsHomeExceptTheCheckout
 }
 
 func TestARealCloneSandboxMayReadTheObjectsItSharesWithItsDir(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	p.l.Checkouts = GitCheckouts{}
@@ -123,6 +128,7 @@ func TestARealCloneSandboxMayReadTheObjectsItSharesWithItsDir(t *testing.T) {
 }
 
 func TestTheRestrictedSettingsDenyEveryToolThatReachesOtherSessionsOrOffTheMachine(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, _, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)
@@ -135,6 +141,7 @@ func TestTheRestrictedSettingsDenyEveryToolThatReachesOtherSessionsOrOffTheMachi
 }
 
 func TestADraftFixShipsSandboxCannotWriteGitCommondirOrConfigWorktreeAndAnInvestigateShipsCheckoutIsDenied(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, fc, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)
@@ -153,6 +160,7 @@ func TestADraftFixShipsSandboxCannotWriteGitCommondirOrConfigWorktreeAndAnInvest
 }
 
 func TestTheRestrictedSettingsPinWhatARepoSettingsFileCouldWiden(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, _, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)
@@ -168,6 +176,7 @@ func TestTheRestrictedSettingsPinWhatARepoSettingsFileCouldWiden(t *testing.T) {
 }
 
 func TestACommittedSymlinkInTheCloneCannotSendTheEventFileOutsideIt(t *testing.T) {
+	t.Parallel()
 	for _, link := range []string{".admiral", ".admiral/untrusted"} {
 		t.Run(link, func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -208,6 +217,7 @@ func TestACommittedSymlinkInTheCloneCannotSendTheEventFileOutsideIt(t *testing.T
 }
 
 func TestACheckoutIsReturnedByItsResolvedPath(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := t.TempDir()
 	commitRepo(t, dir)
@@ -225,6 +235,7 @@ func TestACheckoutIsReturnedByItsResolvedPath(t *testing.T) {
 }
 
 func TestAnEventFileThatIsALinkInsideTheCloneIsReplacedNotWrittenThrough(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".admiral", "untrusted"), 0o755); err != nil {
 		t.Fatal(err)
@@ -248,6 +259,7 @@ func TestAnEventFileThatIsALinkInsideTheCloneIsReplacedNotWrittenThrough(t *test
 }
 
 func TestARelaunchOfARestrictedShipSucceedsInItsKeptCloneWithoutMakingANewOne(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.restricted(standing.DraftFix)
 	fc.t = t
@@ -291,6 +303,7 @@ func relaunchDraftFix(t *testing.T, p *pinRig, dir, session string) (map[string]
 }
 
 func TestAShipCannotWidenItsReadsThroughTheAlternatesFileOfItsKeptClone(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	clone := keptDraftFixClone(t, p, p.work, "kelpie")
@@ -318,6 +331,7 @@ func TestAShipCannotWidenItsReadsThroughTheAlternatesFileOfItsKeptClone(t *testi
 }
 
 func TestALinkedWorktreeDirAllowsItsCommonObjectDirectory(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	main := t.TempDir()
 	commitRepo(t, main)
@@ -334,6 +348,7 @@ func TestALinkedWorktreeDirAllowsItsCommonObjectDirectory(t *testing.T) {
 }
 
 func TestADirThatBorrowsObjectsByARelativeAlternateAllowsThemToo(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	lender := t.TempDir()
@@ -357,6 +372,7 @@ func TestADirThatBorrowsObjectsByARelativeAlternateAllowsThemToo(t *testing.T) {
 }
 
 func TestADraftFixShipsSandboxCannotWriteTheFilesGitReadsItsConfigurationFrom(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, fc, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)
@@ -384,6 +400,7 @@ func TestADraftFixShipsSandboxCannotWriteTheFilesGitReadsItsConfigurationFrom(t 
 }
 
 func TestARelaunchRemovesGitConfigurationAShipPlantedInItsKeptClone(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	clone := keptDraftFixClone(t, p, p.work, "kelpie")
@@ -410,6 +427,7 @@ func TestARelaunchRemovesGitConfigurationAShipPlantedInItsKeptClone(t *testing.T
 }
 
 func TestACommitAndAnFsckStillWorkInAClonePastTheReusesAlternatesRewrite(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	clone := keptDraftFixClone(t, p, p.work, "kelpie")
@@ -428,6 +446,7 @@ func TestACommitAndAnFsckStillWorkInAClonePastTheReusesAlternatesRewrite(t *test
 }
 
 func TestARelaunchWhoseDirsObjectsCannotBeFoundRefusesAndKeepsTheClonesAlternates(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	clone := keptDraftFixClone(t, p, p.work, "kelpie")
@@ -448,6 +467,7 @@ func TestARelaunchWhoseDirsObjectsCannotBeFoundRefusesAndKeepsTheClonesAlternate
 }
 
 func TestARelaunchNeverFollowsALinkTheShipPlantedInsideItsKeptClonesGit(t *testing.T) {
+	t.Parallel()
 	for _, rel := range []string{"info", filepath.Join("objects", "info"), "config"} {
 		t.Run(rel, func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -513,6 +533,7 @@ func assertGitInTheCloneRunsNothingFromANestedRepo(t *testing.T, clone, marker s
 }
 
 func TestAFreshCloneRunsNothingFromANestedRepoAShipPlantsWhenGitLooksAtIt(t *testing.T) {
+	t.Parallel()
 	dir, home := t.TempDir(), t.TempDir()
 	commitRepo(t, dir)
 	clone, err := GitCheckouts{}.Make(home, "kelpie", dir)
@@ -525,6 +546,7 @@ func TestAFreshCloneRunsNothingFromANestedRepoAShipPlantsWhenGitLooksAtIt(t *tes
 }
 
 func TestAReusedCloneMadeBeforeTheFixRunsNothingFromANestedRepoEither(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	clone := keptDraftFixClone(t, p, p.work, "kelpie")
@@ -598,6 +620,7 @@ func assertNoMarkerFromGit(t *testing.T, clone, marker string, env []string) {
 }
 
 func TestADraftFixShipsGitCannotBeMadeToRunANestedReposFsmonitor(t *testing.T) {
+	t.Parallel()
 	env := shipGitEnv(t)
 	if len(env) == 0 {
 		t.Fatal("the ship's environment carries no git configuration")
@@ -619,6 +642,7 @@ func TestADraftFixShipsGitCannotBeMadeToRunANestedReposFsmonitor(t *testing.T) {
 }
 
 func TestAFleetsOwnGitConfigurationInTheEnvironmentIsDroppedAndOnlyTheFsmonitorSettingRemains(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "credential.helper", "GIT_CONFIG_VALUE_0": "!echo fake-token-work-2"})
 	_, _, _, env := p.mustRestricted(t, standing.DraftFix)
 	if env["GIT_CONFIG_COUNT"] != "1" || env["GIT_CONFIG_KEY_0"] != "core.fsmonitor" || env["GIT_CONFIG_VALUE_0"] != "false" || env["GIT_CONFIG_KEY_1"] != "" {
@@ -627,6 +651,7 @@ func TestAFleetsOwnGitConfigurationInTheEnvironmentIsDroppedAndOnlyTheFsmonitorS
 }
 
 func TestADraftFixShipsSandboxAndToolsCannotWriteGitmodules(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, fc, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)
@@ -641,6 +666,7 @@ func TestADraftFixShipsSandboxAndToolsCannotWriteGitmodules(t *testing.T) {
 }
 
 func TestARelaunchRefusesAKeptCloneWhoseSubmoduleStateTheShipChanged(t *testing.T) {
+	t.Parallel()
 	for _, where := range []string{"gitlink", "tree", "index", "commit"} {
 		t.Run(where, func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -663,6 +689,7 @@ func TestARelaunchRefusesAKeptCloneWhoseSubmoduleStateTheShipChanged(t *testing.
 }
 
 func TestARelaunchAcceptsADirsOwnGitmodulesThatTheShipLeftAlone(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	if err := os.WriteFile(filepath.Join(p.work, ".gitmodules"), []byte(submoduleOn), 0o644); err != nil {
@@ -708,6 +735,7 @@ func patchIndexMode(t *testing.T, clone, path string, mode uint32) {
 }
 
 func TestARelaunchRefusesAKeptCloneWhoseIndexHoldsAGitlinkWithAnOddMode(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []uint32{0o160644, 0o167777} {
 		p := newPinRig(t, nil)
 		commitRepo(t, p.work)
@@ -721,6 +749,7 @@ func TestARelaunchRefusesAKeptCloneWhoseIndexHoldsAGitlinkWithAnOddMode(t *testi
 }
 
 func TestARelaunchRefusesAKeptCloneWhoseGitIsNotADirectory(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"missing", "gitfile", "link"} {
 		t.Run(kind, func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -761,6 +790,7 @@ func TestTheChecksGitIgnoresGitVariablesInAdmiralsEnvironment(t *testing.T) {
 }
 
 func TestAShipsGitConfigEnvironmentSurvivesAnOddFleetValue(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, count string }{{"negative", "-1"}, {"text", "lots"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newPinRig(t, map[string]string{"GIT_CONFIG_COUNT": tc.count, "GIT_CONFIG_PARAMETERS": "'core.fsmonitor=true'"})
@@ -776,6 +806,7 @@ func TestAShipsGitConfigEnvironmentSurvivesAnOddFleetValue(t *testing.T) {
 }
 
 func TestADraftFixShipCannotWriteProjectSettingsOrServersInItsCheckout(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, fc, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)

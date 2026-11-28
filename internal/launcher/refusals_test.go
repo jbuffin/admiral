@@ -12,6 +12,7 @@ import (
 )
 
 func TestLaunchRefusals(t *testing.T) {
+	t.Parallel()
 	work := t.TempDir()
 	file := filepath.Join(work, "afile")
 	if err := os.WriteFile(file, nil, 0o644); err != nil {
@@ -47,6 +48,7 @@ func TestLaunchRefusals(t *testing.T) {
 }
 
 func TestLaunchRefusesAConversationToResumeItCannotKeep(t *testing.T) {
+	t.Parallel()
 	work := t.TempDir()
 	const id = "0f8fad5b-d9cb-469f-a165-70867728950e"
 	cfg := &config.Config{Fleets: []config.Fleet{

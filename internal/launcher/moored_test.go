@@ -10,6 +10,7 @@ import (
 
 // A moored ship's record reserves its name, so no launch picks it.
 func TestPickNameSkipsAMooredShip(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("pickName asks tmux for its sessions")
 	}

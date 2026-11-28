@@ -10,6 +10,7 @@ import (
 func (r *crewDirRig) missionsDir() string { return filepath.Join(r.home, "fleets", "work", "missions") }
 
 func TestLaunchCreatesTheFleetMissionsDirAndKeepsItsFiles(t *testing.T) {
+	t.Parallel()
 	r := newCrewDirRig(t, map[string]string{"ADMIRAL_MISSIONS_DIR": "/fleet/says/otherwise"})
 	r.launch(t)
 	if got := r.recorded(t, "claude")["ADMIRAL_MISSIONS_DIR"]; got != r.missionsDir() {
@@ -30,6 +31,7 @@ func TestLaunchCreatesTheFleetMissionsDirAndKeepsItsFiles(t *testing.T) {
 }
 
 func TestLaunchRefusesAMissionsPathThatIsALinkOrAFile(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		setup func(t *testing.T, r *crewDirRig) (target string)
@@ -76,6 +78,7 @@ func TestLaunchRefusesAMissionsPathThatIsALinkOrAFile(t *testing.T) {
 }
 
 func TestCrewBoatKeepsTheShipsMissionsDir(t *testing.T) {
+	t.Parallel()
 	// The ship's dock sets the name, so the boat's -u loop would clear it for a dock that doesn't.
 	r := newCrewDirRig(t, nil)
 	cfg := r.l.Config()

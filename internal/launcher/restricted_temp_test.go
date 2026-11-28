@@ -25,6 +25,7 @@ func TestRemovingATempLinkWorksWithARelativeHome(t *testing.T) {
 }
 
 func TestStartingSweepsOnlyDanglingLinksThatPointUnderThisHomesRestrictedDir(t *testing.T) {
+	t.Parallel()
 	home, other := t.TempDir(), t.TempDir()
 	root := linkRoot()
 	mk := func(target string) string {

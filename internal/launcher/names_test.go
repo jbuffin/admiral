@@ -6,6 +6,7 @@ import (
 )
 
 func TestShipNamesAreDistinctThenNumbered(t *testing.T) {
+	t.Parallel()
 	used := map[string]bool{}
 	sessions := map[string]bool{}
 	for range len(names) + 3 {

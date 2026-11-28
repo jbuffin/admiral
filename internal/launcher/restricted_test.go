@@ -136,6 +136,7 @@ func samePath(t *testing.T, a, b string) bool {
 }
 
 func TestARestrictedDraftFixLaunchRunsOnTheDontAskProjectOnlyProfileWithOneSettingsFile(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	out, _, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	wantFlag(t, argv, "--permission-mode", "dontAsk")
@@ -150,6 +151,7 @@ func TestARestrictedDraftFixLaunchRunsOnTheDontAskProjectOnlyProfileWithOneSetti
 }
 
 func TestTheRestrictedSettingsHoldTheSharedHooksGuardAndStatusLine(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, _, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)
@@ -171,6 +173,7 @@ func TestTheRestrictedSettingsHoldTheSharedHooksGuardAndStatusLine(t *testing.T)
 }
 
 func TestTheRestrictedSettingsRunTheSandboxClosedWithExactlyTheRegistryHosts(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
 		t.Run(string(level), func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -195,6 +198,7 @@ func TestTheRestrictedSettingsRunTheSandboxClosedWithExactlyTheRegistryHosts(t *
 }
 
 func TestTheRestrictedSettingsDenyTheWebMcpPushGhAndNotebookTools(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
 		t.Run(string(level), func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -211,6 +215,7 @@ func TestTheRestrictedSettingsDenyTheWebMcpPushGhAndNotebookTools(t *testing.T) 
 }
 
 func TestADraftFixShipMayEditOnlyInItsCheckout(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, fc, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)
@@ -238,6 +243,7 @@ func TestADraftFixShipMayEditOnlyInItsCheckout(t *testing.T) {
 }
 
 func TestAnInvestigateShipIsNeverAllowedBlanketEditOrWrite(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, _, argv, _ := p.mustRestricted(t, standing.Investigate)
 	wantFlag(t, argv, "--permission-mode", "dontAsk")
@@ -250,6 +256,7 @@ func TestAnInvestigateShipIsNeverAllowedBlanketEditOrWrite(t *testing.T) {
 }
 
 func TestARestrictedShipHasNoGitHubTokenEvenWhenTheFleetSetsThem(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, fleetTokens())
 	_, _, _, env := p.mustRestricted(t, standing.DraftFix)
 	for _, k := range tokenVars {
@@ -260,6 +267,7 @@ func TestARestrictedShipHasNoGitHubTokenEvenWhenTheFleetSetsThem(t *testing.T) {
 }
 
 func TestARestrictedShipDropsATokenTheTmuxServerHoldsGlobally(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	tmux := p.l.Tmux
 	run := func(args ...string) {
@@ -281,6 +289,7 @@ func TestARestrictedShipDropsATokenTheTmuxServerHoldsGlobally(t *testing.T) {
 }
 
 func TestARestrictedShipRunsAndIsRecordedInTheCheckoutTheSeamReturned(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	out, fc, _, env := p.mustRestricted(t, standing.DraftFix)
 	if len(fc.calls) != 1 {
@@ -299,6 +308,7 @@ func TestARestrictedShipRunsAndIsRecordedInTheCheckoutTheSeamReturned(t *testing
 }
 
 func TestARestrictedLaunchHandsBeforeTheCheckoutPath(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.restricted(standing.DraftFix)
 	fc.t = t
@@ -313,6 +323,7 @@ func TestARestrictedLaunchHandsBeforeTheCheckoutPath(t *testing.T) {
 }
 
 func TestARestrictedLaunchStillRefusesADirThatIsNotTheFleetsCheckout(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.restricted(standing.DraftFix)
 	req.Dir = t.TempDir()
@@ -327,6 +338,7 @@ func TestARestrictedLaunchStillRefusesADirThatIsNotTheFleetsCheckout(t *testing.
 }
 
 func TestARestrictedLaunchWhoseCheckoutFailsStartsNoShipAndWritesNoEventFile(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.restricted(standing.DraftFix)
 	fc.err = errors.New("no room for a checkout")
@@ -343,6 +355,7 @@ func TestARestrictedLaunchWhoseCheckoutFailsStartsNoShipAndWritesNoEventFile(t *
 }
 
 func TestTheEventTextIsWrittenByteForByteToTheCheckoutsUntrustedFolder(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, fc, _, _ := p.mustRestricted(t, standing.DraftFix)
 	if fc.madeFor == "" {
@@ -358,6 +371,7 @@ func TestTheEventTextIsWrittenByteForByteToTheCheckoutsUntrustedFolder(t *testin
 }
 
 func TestTheRestrictedPromptIsTheTemplateThenTheEventFileLineThenTheGuidanceAndNeverTheEvent(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, _, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	prompt := argv[len(argv)-1]
@@ -379,6 +393,7 @@ func TestTheRestrictedPromptIsTheTemplateThenTheEventFileLineThenTheGuidanceAndN
 }
 
 func TestANormalLaunchIsUnchangedByTheRestrictedProfile(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, fleetTokens())
 	fc := &fakeCheckouts{t: t}
 	p.l.Checkouts = fc
@@ -413,6 +428,7 @@ func TestANormalLaunchIsUnchangedByTheRestrictedProfile(t *testing.T) {
 }
 
 func TestTheRestrictedSettingsAutoAllowSandboxedBashSoDontAskRunsCommands(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
 		t.Run(string(level), func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -426,6 +442,7 @@ func TestTheRestrictedSettingsAutoAllowSandboxedBashSoDontAskRunsCommands(t *tes
 }
 
 func TestTheRestrictedSettingsDenyCronProjectSendsAndRegistryPublishes(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
 		t.Run(string(level), func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -442,6 +459,7 @@ func TestTheRestrictedSettingsDenyCronProjectSendsAndRegistryPublishes(t *testin
 }
 
 func TestTheRestrictedSettingsDenyTheToolsThatRanOnRealClaudeCodeAndAShipDoesNotNeed(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
 		t.Run(string(level), func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -461,6 +479,7 @@ func TestTheRestrictedSettingsDenyTheToolsThatRanOnRealClaudeCodeAndAShipDoesNot
 }
 
 func TestTheRestrictedSettingsDenyWritesToTheWholeOfBothSharedClaudeTempDirs(t *testing.T) {
+	t.Parallel()
 	want := []string{
 		filepath.Join("/tmp", "claude-"+strconv.Itoa(os.Getuid())),
 		filepath.Join("/private/tmp", "claude-"+strconv.Itoa(os.Getuid())),
@@ -481,6 +500,7 @@ func TestTheRestrictedSettingsDenyWritesToTheWholeOfBothSharedClaudeTempDirs(t *
 }
 
 func TestARestrictedShipsTempVarsPointAtAShortLinkToItsOwnDirUnderTheHome(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
 		t.Run(string(level), func(t *testing.T) {
 			p := newPinRig(t, map[string]string{"CLAUDE_CODE_TMPDIR": "/fleet/own", "TMPDIR": "/fleet/own"})
@@ -507,6 +527,7 @@ func TestARestrictedShipsTempVarsPointAtAShortLinkToItsOwnDirUnderTheHome(t *tes
 }
 
 func TestARestrictedShipsOwnTempDirIsReadableThoughTheHomeIsNot(t *testing.T) {
+	t.Parallel()
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
 		t.Run(string(level), func(t *testing.T) {
 			p := newPinRig(t, nil)
@@ -525,6 +546,7 @@ func TestARestrictedShipsOwnTempDirIsReadableThoughTheHomeIsNot(t *testing.T) {
 }
 
 func TestRemovingARestrictedShipsFilesTakesAwayItsTempLinkAndDir(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	out, _, _, env := p.mustRestricted(t, standing.DraftFix)
 	link := env["TMPDIR"]
@@ -539,6 +561,7 @@ func TestRemovingARestrictedShipsFilesTakesAwayItsTempLinkAndDir(t *testing.T) {
 }
 
 func TestRemovingARestrictedShipsFilesNeverFollowsOrRemovesALinkSwappedToPointElsewhere(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	out, _, _, env := p.mustRestricted(t, standing.DraftFix)
 	link := env["TMPDIR"]
@@ -566,6 +589,7 @@ func TestRemovingARestrictedShipsFilesNeverFollowsOrRemovesALinkSwappedToPointEl
 }
 
 func TestANormalLaunchGetsNoTempLinkAndKeepsTheFleetsTempVars(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, map[string]string{"TMPDIR": "/fleet/own"})
 	if _, err := p.l.Launch(p.justRequest()); err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -580,6 +604,7 @@ func TestANormalLaunchGetsNoTempLinkAndKeepsTheFleetsTempVars(t *testing.T) {
 }
 
 func TestARestrictedShipGetsAStubGitConfigAndIdentityOnEveryLaunch(t *testing.T) {
+	t.Parallel()
 	want := map[string]string{"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
 		"GIT_AUTHOR_NAME": "Admiral", "GIT_AUTHOR_EMAIL": "admiral@localhost", "GIT_COMMITTER_NAME": "Admiral", "GIT_COMMITTER_EMAIL": "admiral@localhost"}
 	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
@@ -597,6 +622,7 @@ func TestARestrictedShipGetsAStubGitConfigAndIdentityOnEveryLaunch(t *testing.T)
 }
 
 func TestARestrictedShipDropsTheEnvVarsThatCarryGitConfigAskpassAndTheSshAgent(t *testing.T) {
+	t.Parallel()
 	fleetEnv := map[string]string{"GIT_CONFIG_PARAMETERS": "'url.https://fake-token-work-1@github.com/.insteadof=https://github.com/'",
 		"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "credential.helper", "GIT_CONFIG_VALUE_0": "!echo fake-token-work-2",
 		"GIT_ASKPASS": "/usr/bin/fake-askpass", "SSH_ASKPASS": "/usr/bin/fake-askpass", "SSH_AUTH_SOCK": "/tmp/fake-agent.sock"}
@@ -614,6 +640,7 @@ func TestARestrictedShipDropsTheEnvVarsThatCarryGitConfigAskpassAndTheSshAgent(t
 }
 
 func TestANormalLaunchKeepsTheFleetsGitEnvAndGetsNoStubIdentity(t *testing.T) {
+	t.Parallel()
 	fleetEnv := map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_ASKPASS": "/usr/bin/fake-askpass", "SSH_AUTH_SOCK": "/tmp/fake-agent.sock"}
 	p := newPinRig(t, fleetEnv)
 	p.l.Checkouts = &fakeCheckouts{t: t}
@@ -634,6 +661,7 @@ func TestANormalLaunchKeepsTheFleetsGitEnvAndGetsNoStubIdentity(t *testing.T) {
 }
 
 func TestTheRestrictedPromptIsTheEventURLThenTheTextThenTheEventFileLineThenTheGuidance(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.restricted(standing.DraftFix)
 	fc.t = t

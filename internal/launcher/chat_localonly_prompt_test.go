@@ -6,6 +6,7 @@ import (
 )
 
 func TestEveryChatPromptSaysADoneShipInALocalOnlyCheckoutHasACommitOnItsBranchNotAPR(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		if !strings.Contains(prompt, "the report result is done and a PR exists") {
