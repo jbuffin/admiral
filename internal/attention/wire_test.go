@@ -181,3 +181,22 @@ func TestTheCountSpansEveryFleet(t *testing.T) {
 		t.Errorf("count on connect = %d, want 2 (one stop in each fleet)", got)
 	}
 }
+
+func TestNoCountIsSentUntilTheListsAreKnown(t *testing.T) {
+	r := newRig(t, []ships.Ship{needsYou("a")}, nil)
+	known := false
+	r.svc.Ready = func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return known
+	}
+	conn := r.dial()
+	r.svc.Changed() // a change before the lists are known sends nothing either
+	r.mu.Lock()
+	known = true
+	r.mu.Unlock()
+	r.svc.Changed()
+	if got := next(t, conn); got != 1 {
+		t.Errorf("first count = %d, want 1 (the count once known, not one from empty lists)", got)
+	}
+}
