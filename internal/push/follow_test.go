@@ -81,9 +81,9 @@ func newFollowRig(t *testing.T, o ...followOpts) *followRig {
 		return !ok || v.(bool)
 	}, push.NewAlertSink(r.hub), r.f)
 	srv := httptest.NewServer((&server.Server{
-		Hub:      r.hub,
-		Modules:  []server.Module{joinProbe{r.joined}},
-		Bearer:   func(req *http.Request) bool { return req.Header.Get("Authorization") != "" },
+		Hub:     r.hub,
+		Modules: []server.Module{joinProbe{r.joined}},
+		Bearer:  func(req *http.Request) bool { return req.Header.Get("Authorization") != "" },
 		Messages: map[string]server.MessageHandler{"push_follow": func(ctx context.Context, c *server.Client, raw json.RawMessage) {
 			r.f.Handle(ctx, c, raw)
 			select {
