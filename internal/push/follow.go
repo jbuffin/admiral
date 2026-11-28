@@ -31,6 +31,15 @@ type FollowersConfig struct {
 	Queue int
 	// Send writes one message to a follower; nil is Client.Send. Tests replace it to stall a writer.
 	Send func(c *server.Client, msg []byte) error
+	// Record hears which device follows, stops following on purpose, or loses its last follower socket; nil hears nothing.
+	Record FollowRecorder
+}
+
+// FollowRecorder is where Followers reports a device's follow state, once per device and not per socket.
+type FollowRecorder interface {
+	Followed(device string)
+	Unfollowed(device string)
+	FollowEnded(device string, at time.Time)
 }
 
 type ringEntry struct {
@@ -261,6 +270,9 @@ drain:
 		fw.lastSent = *att
 	}
 }
+
+// HandleUnfollow is the message handler for "push_unfollow".
+func (f *Followers) HandleUnfollow(ctx context.Context, c *server.Client, raw json.RawMessage) {}
 
 // inRing is whether every event after seq is still held. Called with f.mu held.
 func (f *Followers) inRing(after int, boot string) bool {

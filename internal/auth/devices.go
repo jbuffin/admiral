@@ -33,6 +33,8 @@ type device struct {
 	// ThisMac marks the device that loopback browsers subscribe as, with no pairing; it has no token.
 	ThisMac       bool           `json:"thisMac,omitempty"`
 	Subscriptions []Subscription `json:"subscriptions,omitempty"`
+	Forwarding    bool           `json:"forwarding,omitempty"`
+	LastFollowed  *time.Time     `json:"lastFollowed,omitempty"`
 
 	reissued time.Time
 }
@@ -62,6 +64,21 @@ type Auth struct {
 type Option func(*Auth)
 
 func WithClock(now func() time.Time) Option { return func(a *Auth) { a.now = now } }
+
+// WithStart gives the time Admiral started, which the forwarding rule counts from.
+func WithStart(t time.Time) Option { return func(a *Auth) {} }
+
+// WithFollowing gives whether a device has a follower socket open now.
+func WithFollowing(open func(device string) bool) Option { return func(a *Auth) {} }
+
+// Followed records that the device follows push events.
+func (a *Auth) Followed(id string) {}
+
+// Unfollowed clears the device's forwarding record.
+func (a *Auth) Unfollowed(id string) {}
+
+// FollowEnded saves when the device's last follower socket closed.
+func (a *Auth) FollowEnded(id string, at time.Time) {}
 
 // WithBaseURL gives the address pairing URLs start with, such as http://192.168.1.10:7420.
 func WithBaseURL(base func() string) Option { return func(a *Auth) { a.baseURL = base } }

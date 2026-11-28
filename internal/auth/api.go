@@ -37,6 +37,9 @@ type deviceView struct {
 	Notifications bool `json:"notifications"`
 	// ThisMac marks the device that stands for the Mac Admiral runs on, so a page can tell it from a paired one.
 	ThisMac bool `json:"thisMac,omitempty"`
+	// Forwarding is "on" or "stopped" for a device that follows push events, else null.
+	Forwarding   *string    `json:"forwarding"`
+	LastFollowed *time.Time `json:"lastFollowed"`
 }
 
 func (a *Auth) serveList(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +52,7 @@ func (a *Auth) serveList(w http.ResponseWriter, r *http.Request) {
 	out := make([]deviceView, 0, len(a.devices))
 	for _, d := range a.devices {
 		isCurrent := (current != "" && d.ID == current) || (local && d.ThisMac)
-		out = append(out, deviceView{d.ID, d.Name, d.Login, d.PairedAt, d.LastSeen, isCurrent, len(d.Subscriptions) > 0, d.ThisMac})
+		out = append(out, deviceView{d.ID, d.Name, d.Login, d.PairedAt, d.LastSeen, isCurrent, len(d.Subscriptions) > 0, d.ThisMac, nil, nil})
 	}
 	a.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out})
