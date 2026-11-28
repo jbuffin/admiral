@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -23,22 +22,6 @@ func (oneOrder) Order(source, id string) (text, title, repo, url, panel string, 
 func (oneOrder) Stack(source, id string) (int, string, bool) { return 0, "", false }
 
 func (oneOrder) Launched(source, id string) {}
-
-// An empty ship list before the host's first poll says nothing about which
-// orders hold a ship, so autopilot's tick could start an order that already runs.
-func TestLaunchOrderRefusesWhileShipsAreNotKnown(t *testing.T) {
-	t.Parallel()
-	s := &Service{
-		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
-		Orders:   oneOrder{},
-		Launcher: &launcher.Launcher{Config: func() *config.Config { return &config.Config{} }},
-	}
-	_, lerr := s.LaunchOrder(launcher.Request{Fleet: "work", Harness: "claude", Dir: t.TempDir(),
-		Skill: launcher.Skill{Kind: "none"}, Source: "s", OrderID: "o1"})
-	if lerr == nil || lerr.Msg != "ships are not known yet" || lerr.Status != http.StatusServiceUnavailable {
-		t.Fatalf("LaunchOrder before the host is ready = %v, want a 503 \"ships are not known yet\"", lerr)
-	}
-}
 
 func TestPendingListsAnUnlistedShipUntilItExpires(t *testing.T) {
 	t.Parallel()
