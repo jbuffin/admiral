@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/github"
 )
 
 const connSource = `"gh":{"plugin":"github","fleet":"alpha","settings":{"views":[{"title":"Bugs","query":"is:open label:bug"}]}}`
@@ -192,17 +194,19 @@ func TestUnreachableIsTheConnectionsStateButARefusedSearchIsTheViewsError(t *tes
 	if code, body := f.do(http.MethodPost, "/gh/refresh", map[string]any{}); code != http.StatusOK {
 		t.Fatalf("POST refresh = %d %s", code, body)
 	}
-	f.waitView("gh", "an error on Bugs", func(s SourceView) bool { return strings.Contains(s.view("bugs").Error, "boom") })
-	holdFor(t, "a refused search changed the connection", func() bool {
-		n := f.connectionOf("gh")
-		return n["state"] == "unreachable" && n["checked_at"] == c["checked_at"]
+	// A cycle settles the connection before it stops refreshing, so nothing changes it once it ends.
+	f.waitView("gh", "an error on Bugs and the cycle's end", func(s SourceView) bool {
+		return strings.Contains(s.view("bugs").Error, "boom") && !s.Refreshing
 	})
+	if n := f.connectionOf("gh"); n["state"] != "unreachable" || n["checked_at"] != c["checked_at"] {
+		t.Errorf("a refused search changed the connection to %v, want it unchanged from %v", n, c)
+	}
 }
 
-// holdFor polls check over a short hold, to show that something does not happen.
+// holdFor polls check over a short hold, to show that something does not happen: a restart signal or a config write is asynchronous by milliseconds, not by a timer.
 func holdFor(t *testing.T, msg string, check func() bool) {
 	t.Helper()
-	end := time.Now().Add(time.Second)
+	end := time.Now().Add(200 * time.Millisecond)
 	for time.Now().Before(end) {
 		if !check() {
 			t.Fatal(msg)
@@ -263,7 +267,7 @@ func TestConnectionSurvivesARestartOfTheSource(t *testing.T) {
 		return r.sid
 	}
 	before := sid()
-	g.write("slow", "2")
+	g.write("slow", "0.3")
 	if !f.Svc.Sup.Restart("gh") {
 		t.Fatal("Restart found no runner")
 	}
@@ -274,10 +278,17 @@ func TestConnectionSurvivesARestartOfTheSource(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	holdFor(t, "the connection left the last one during the restart", func() bool {
-		c := f.connectionOf("gh")
-		return c["state"] == "connected" && c["login"] == "octocat"
-	})
+	// The new process's search has begun, after its token call and before it settles the connection.
+	deadline = time.Now().Add(10 * time.Second)
+	for _, err := os.Stat(filepath.Join(g.dir, "slow-started")); err != nil; _, err = os.Stat(filepath.Join(g.dir, "slow-started")) {
+		if time.Now().After(deadline) {
+			t.Fatal("the new search never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if c := f.connectionOf("gh"); c["state"] != "connected" || c["login"] != "octocat" {
+		t.Errorf("the connection left the last one during the restart: %v", c)
+	}
 }
 
 func TestCheckAgainRefusals(t *testing.T) {
@@ -565,6 +576,9 @@ func TestACancelledCheckRecordsNothing(t *testing.T) {
 }
 
 func TestASlowTokenCallKeepsTheConnectionAndShowsOnTheViews(t *testing.T) {
+	old := github.CallTimeout
+	github.CallTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { github.CallTimeout = old }) // runs after the fixture stops the source, which reads it
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
 	g.search("bugs", "label:bug", [3]any{"acme/widgets", 13, "Any bug"})
@@ -572,7 +586,7 @@ func TestASlowTokenCallKeepsTheConnectionAndShowsOnTheViews(t *testing.T) {
 	f.startSources()
 	c := f.waitConnection("gh", "connected", func(c map[string]any) bool { return c["state"] == "connected" })
 
-	g.write("token.sleep", "30")
+	g.write("token.sleep", "5")
 	if code, body := f.do(http.MethodPost, "/gh/refresh", map[string]any{}); code != http.StatusOK {
 		t.Fatalf("POST refresh = %d %s", code, body)
 	}

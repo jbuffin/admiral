@@ -214,7 +214,7 @@ func TestStackRouteLinksTheViewersChainBottomToTopOnTheBottomPRsBase(t *testing.
 
 func TestStackRouteLinksOneChainAtATimePerSource(t *testing.T) {
 	f, g := stackFixture(t, true, "fake-viewer", "fake-viewer")
-	g.write("stack_link.sleep", "2\n")
+	g.write("stack_link.sleep", "0.3\n")
 	first := make(chan int, 1)
 	go func() {
 		code, _ := f.stack("gha", "ok", widgets+"41", widgets+"42")
@@ -238,10 +238,10 @@ func TestStackRouteLinksOneChainAtATimePerSource(t *testing.T) {
 
 func TestStackRouteAnswersOKWhenTheLinkTakesLongerThanTheReadAllowance(t *testing.T) {
 	old := readTimeout
-	readTimeout = 700 * time.Millisecond
+	readTimeout = 300 * time.Millisecond
 	t.Cleanup(func() { readTimeout = old })
 	f, g := stackFixture(t, true, "fake-viewer", "fake-viewer")
-	g.write("stack_link.sleep", "1\n")
+	g.write("stack_link.sleep", "0.5\n")
 	code, body := f.stack("gha", "ok", widgets+"41", widgets+"42")
 	wantCode(t, "POST stack when the link outlasts the read allowance", http.StatusOK, code, body)
 }
@@ -271,10 +271,12 @@ func TestStackRouteOfASourceThatIsReadOnlyIsAConflictAndRunsNoGh(t *testing.T) {
 
 func TestStackRouteAnswersGatewayTimeoutWhenGhRunsPastItsLimit(t *testing.T) {
 	old := github.MergeTimeout
-	github.MergeTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { github.MergeTimeout = old })
+	github.MergeTimeout = 100 * time.Millisecond
+	oldGrace := github.KillGrace
+	github.KillGrace = 20 * time.Millisecond
+	t.Cleanup(func() { github.MergeTimeout, github.KillGrace = old, oldGrace })
 	f, g := stackFixture(t, true, "fake-viewer", "fake-viewer")
-	g.write("stack_link.sleep", "3\n")
+	g.write("stack_link.sleep", "1\n")
 	code, body := f.stack("gha", "ok", widgets+"41", widgets+"42")
 	wantCode(t, "POST stack when gh runs past its limit", http.StatusGatewayTimeout, code, body)
 }

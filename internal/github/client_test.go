@@ -302,6 +302,14 @@ func limitSearch(t *testing.T, d time.Duration) {
 	t.Cleanup(func() { SearchTimeout = old })
 }
 
+// shortenKillGrace stops a killed gh's child from holding the pipes open for the production second.
+func shortenKillGrace(t *testing.T) {
+	t.Helper()
+	old := KillGrace
+	KillGrace = 20 * time.Millisecond
+	t.Cleanup(func() { KillGrace = old })
+}
+
 func TestSearchLimitsAreSeparateFromQuickCalls(t *testing.T) {
 	const slow = "is:open"
 	answer := map[string]string{"json": `{"data":{"search":{"nodes":[` + node("acme/widgets", 1) + `]}}}`}
@@ -320,10 +328,10 @@ func TestSearchLimitsAreSeparateFromQuickCalls(t *testing.T) {
 		t.Run(name+" slower than the quick limit but inside the search limit returns its items", func(t *testing.T) {
 			f := newFake(t)
 			f.answer(t, answer)
-			f.write(t, "search.sleep", "1")
+			f.write(t, "search.sleep", "0.1")
 			limitSearch(t, 10*time.Second)
 			cl := NewClient("github.com", "", nil, f.env)
-			cl.Timeout = 300 * time.Millisecond
+			cl.Timeout = 30 * time.Millisecond
 			if err := call(cl); err != nil {
 				t.Fatalf("err = %v, want the items", err)
 			}
@@ -331,8 +339,9 @@ func TestSearchLimitsAreSeparateFromQuickCalls(t *testing.T) {
 		t.Run(name+" past the search limit says GitHub took too long", func(t *testing.T) {
 			f := newFake(t)
 			f.answer(t, answer)
-			f.write(t, "search.sleep", "5")
-			limitSearch(t, 300*time.Millisecond)
+			f.write(t, "search.sleep", "1")
+			limitSearch(t, 40*time.Millisecond)
+			shortenKillGrace(t)
 			err := call(NewClient("github.com", "", nil, f.env))
 			if err == nil || err.Error() != "GitHub took too long to answer" || IsUnreachable(err) {
 				t.Fatalf("err = %v, want \"GitHub took too long to answer\", not unreachable", err)
@@ -342,7 +351,7 @@ func TestSearchLimitsAreSeparateFromQuickCalls(t *testing.T) {
 	t.Run("a quick call past its limit says the same", func(t *testing.T) {
 		hangingGH(t)
 		cl := NewClient("github.com", "", nil, os.Environ())
-		cl.Timeout = 300 * time.Millisecond
+		cl.Timeout = 100 * time.Millisecond
 		_, err := cl.Viewer(context.Background(), "fake-token-work-2")
 		if err == nil || err.Error() != "GitHub took too long to answer" || IsUnreachable(err) {
 			t.Fatalf("err = %v, want \"GitHub took too long to answer\", not unreachable", err)

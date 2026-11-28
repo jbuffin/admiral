@@ -140,7 +140,8 @@ func TestGitHubSourceServesTheOrderFieldsAndLeavesOutWhatIsUnknown(t *testing.T)
 	absent(t, issue, "the issue", "pr", "review_requested_at", "reviewed_since_push")
 }
 
-// slowSearch makes every gh graphql call wait the seconds in $FAKEGH_DIR/slow before the fake answers.
+// slowSearch makes every gh graphql call wait the seconds in $FAKEGH_DIR/slow before the fake answers,
+// and writes $FAKEGH_DIR/slow-started when such a call begins its wait.
 func slowSearch(t *testing.T, g *fakeGH) {
 	t.Helper()
 	real, err := filepath.Abs("../../e2e/testdata/fakegh/gh")
@@ -148,7 +149,7 @@ func slowSearch(t *testing.T, g *fakeGH) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	script := "#!/bin/sh\n[ -s \"$FAKEGH_DIR/slow\" ] && case \"$*\" in *graphql*) sleep \"$(cat \"$FAKEGH_DIR/slow\")\";; esac\nexec " + real + " \"$@\"\n"
+	script := "#!/bin/sh\n[ -s \"$FAKEGH_DIR/slow\" ] && case \"$*\" in *graphql*) : > \"$FAKEGH_DIR/slow-started\"; sleep \"$(cat \"$FAKEGH_DIR/slow\")\";; esac\nexec " + real + " \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +215,7 @@ func TestGitHubViewRefreshedAtMarksTheLastSuccessfulSearch(t *testing.T) {
 
 	// Refresh now answers at once, but only the finished search may stamp the time.
 	g.unfail("bugs")
-	g.write("slow", "1")
+	g.write("slow", "0.06")
 	posted := time.Now()
 	refresh()
 	if at, ok := refreshedAt(t, bugs(f.Svc.viewOf(t, "gha"))); !ok || !at.Equal(t2) {
@@ -225,8 +226,8 @@ func TestGitHubViewRefreshedAtMarksTheLastSuccessfulSearch(t *testing.T) {
 		return ok && at.After(t2)
 	})
 	t3, _ := refreshedAt(t, bugs(done))
-	if t3.Sub(posted) < 900*time.Millisecond {
-		t.Errorf("refreshed_at = %v is %v after Refresh now, but the search takes a second: it was stamped before the search finished", t3, t3.Sub(posted))
+	if t3.Sub(posted) < 50*time.Millisecond {
+		t.Errorf("refreshed_at = %v is %v after Refresh now, but the search takes 0.06s: it was stamped before the search finished", t3, t3.Sub(posted))
 	}
 }
 
@@ -434,7 +435,7 @@ func TestGitHubViewKeepsItsOrdersAndTimeAcrossARestartUntilTheNewSearchAnswers(t
 	}
 	before := sid()
 	writeSearch(t, g, "bugs", "label:bug", searchNode("issues", 14, obj{"subIssuesSummary": obj{"total": 0}}))
-	g.write("slow", "1")
+	g.write("slow", "0.15")
 	if !f.Svc.Sup.Restart("gha") {
 		t.Fatal("Restart found no runner")
 	}
@@ -445,7 +446,14 @@ func TestGitHubViewKeepsItsOrdersAndTimeAcrossARestartUntilTheNewSearchAnswers(t
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	time.Sleep(400 * time.Millisecond) // the new process has listed its panels and pulled; its search takes a second
+	// the new process has listed its panels and pulled, and its search is mid-wait
+	deadline = time.Now().Add(10 * time.Second)
+	for _, err := os.Stat(filepath.Join(g.dir, "slow-started")); err != nil; _, err = os.Stat(filepath.Join(g.dir, "slow-started")) {
+		if time.Now().After(deadline) {
+			t.Fatal("the new search never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	mid := f.Svc.viewOf(t, "gha")
 	if at, ok := refreshedAt(t, bugs(mid)); !ok || !at.Equal(t1) || len(mid.orders("bugs")) != 1 || bugs(mid).Orders[0].ID != "acme/widgets#13" {
 		t.Errorf("before the new search: orders %v refreshed_at %v (present %v), want the old order 13 and %v", mid.orders("bugs"), at, ok, t1)
