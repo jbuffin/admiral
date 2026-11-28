@@ -46,6 +46,7 @@ func plantCarrier(t *testing.T, clone, kind, rel string) {
 }
 
 func TestReadRefusesAGitCarrierAnywhereBelowTheRootAndNamesItsQuotedPath(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ kind, rel string }{
 		{"git folder", "src/deep/.git"},
 		{"git file", "src/deep/.git"},
@@ -57,6 +58,7 @@ func TestReadRefusesAGitCarrierAnywhereBelowTheRootAndNamesItsQuotedPath(t *test
 	} {
 		for _, work := range []string{"commits", "diff"} {
 			t.Run(c.kind+" at "+c.rel+" as "+work, func(t *testing.T) {
+				t.Parallel()
 				w := newWorld(t)
 				if work == "commits" {
 					commit(t, w.clone, "c.txt", "c\n")
@@ -80,9 +82,11 @@ func TestReadRefusesAGitCarrierAnywhereBelowTheRootAndNamesItsQuotedPath(t *test
 }
 
 func TestReadQuotesAndCapsThePathItNames(t *testing.T) {
+	t.Parallel()
 	long := strings.Join([]string{strings.Repeat("a", 90), strings.Repeat("b", 90), strings.Repeat("c", 90), ".git"}, "/")
 	for name, rel := range map[string]string{"quoted": "q\"uote\nforged: ok/.git", "capped": long} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			w := newWorld(t)
 			commit(t, w.clone, "c.txt", "c\n")
 			plantCarrier(t, w.clone, "git file", rel)
@@ -108,6 +112,7 @@ func TestReadQuotesAndCapsThePathItNames(t *testing.T) {
 }
 
 func TestReadStillAcceptsDeepOrdinaryFilesThatLookLikeGit(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	for _, f := range []string{"src/deep/a.go", ".github/ci.yml", "x.git/y.txt", ".gitignore", "src/.gitmodulesx", "src/deep/.gitkeep"} {
 		commit(t, w.clone, f, "x\n")
@@ -118,6 +123,7 @@ func TestReadStillAcceptsDeepOrdinaryFilesThatLookLikeGit(t *testing.T) {
 }
 
 func TestReadRunsNoCleanFilterOfAPlantedSubmoduleAndRefusesIt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	commit(t, w.clone, "c.txt", "c\n")
 	marker := filepath.Join(t.TempDir(), "ran")
@@ -140,8 +146,10 @@ func TestReadRunsNoCleanFilterOfAPlantedSubmoduleAndRefusesIt(t *testing.T) {
 }
 
 func TestReadRefusesANestedRepoBehindARootGitThatIsNotAFolder(t *testing.T) {
+	t.Parallel()
 	for _, root := range []string{"link", "file"} {
 		t.Run(root, func(t *testing.T) {
+			t.Parallel()
 			w := newWorld(t)
 			commit(t, w.clone, "c.txt", "c\n")
 			real := filepath.Join(t.TempDir(), "real.git")

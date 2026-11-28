@@ -85,6 +85,7 @@ func (w *world) mustRead(t *testing.T) promote.Work {
 }
 
 func TestTheBaseComesFromDirAndNotFromTheClonesRefs(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	c := commit(t, w.clone, "c.txt", "c\n")
 	// A ship can write its clone's refs: point the remote-tracking branch Make left at A, before B.
@@ -99,6 +100,7 @@ func TestTheBaseComesFromDirAndNotFromTheClonesRefs(t *testing.T) {
 }
 
 func TestTheBaseFollowsDirsMergeBaseWhenDirMovedAheadAfterTheClone(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	c := commit(t, w.clone, "c.txt", "c\n")
 	commit(t, w.dir, "d.txt", "d\n")
@@ -109,6 +111,7 @@ func TestTheBaseFollowsDirsMergeBaseWhenDirMovedAheadAfterTheClone(t *testing.T)
 }
 
 func TestUncommittedChangesAreADiffWithUntrackedAndBinaryFilesAndNoAdmiralPaths(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	write(t, filepath.Join(w.clone, "a.txt"), "a changed\n")
 	write(t, filepath.Join(w.clone, "new.txt"), "brand new\n")
@@ -134,6 +137,7 @@ func TestUncommittedChangesAreADiffWithUntrackedAndBinaryFilesAndNoAdmiralPaths(
 }
 
 func TestACloneWithNothingNewIsRefused(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	if _, err := w.read(t); !errors.Is(err, promote.ErrNothing) {
 		t.Errorf("a clean clone: err = %v, want ErrNothing", err)
@@ -145,6 +149,7 @@ func TestACloneWithNothingNewIsRefused(t *testing.T) {
 }
 
 func TestACommitThatTouchesAdmiralIsRefusedEvenWhenALaterOneUndoesIt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	commit(t, w.clone, "c.txt", "c\n")
 	commit(t, w.clone, ".admiral/untrusted/event.md", "smuggled\n")
@@ -156,6 +161,7 @@ func TestACommitThatTouchesAdmiralIsRefusedEvenWhenALaterOneUndoesIt(t *testing.
 }
 
 func TestChangedAlternatesAreRefusedAndTheUntouchedFileIsNot(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	commit(t, w.clone, "c.txt", "c\n")
 	w.mustRead(t)
@@ -200,6 +206,7 @@ func hits(t *testing.T, markers string) string {
 }
 
 func TestReadingRunsNoCodeTheClonesOrDirsConfigHooksAttributesOrFilterNameWhenItIsACommitRange(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	markers := t.TempDir()
 	commit(t, w.clone, "c.txt", "c\n")
@@ -215,6 +222,7 @@ func TestReadingRunsNoCodeTheClonesOrDirsConfigHooksAttributesOrFilterNameWhenIt
 }
 
 func TestReadingRunsNoCodeTheClonesOrDirsConfigHooksAttributesOrFilterNameWhenItIsADiff(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	markers := t.TempDir()
 	write(t, filepath.Join(w.clone, "a.txt"), "a changed\n")
@@ -231,6 +239,7 @@ func TestReadingRunsNoCodeTheClonesOrDirsConfigHooksAttributesOrFilterNameWhenIt
 }
 
 func TestThePlantedFsmonitorDoesRunUnderPlainGit(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	markers := t.TempDir()
 	plant(t, w.clone, markers)
@@ -241,22 +250,27 @@ func TestThePlantedFsmonitorDoesRunUnderPlainGit(t *testing.T) {
 }
 
 func TestWorkThatTouchesHarnessConfigIsRefusedAsCommitsAndAsADiffWhateverTheCase(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{".claude/settings.json", ".mcp.json", "CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".codex/config.toml",
 		".github/copilot-instructions.md", ".Claude/Settings.json", "claude.MD", "agents.md", ".MCP.JSON"} {
-		w := newWorld(t)
-		commit(t, w.clone, path, "x\n")
-		if _, err := w.read(t); !errors.Is(err, promote.ErrHarness) {
-			t.Errorf("commit of %s: err = %v, want ErrHarness", path, err)
-		}
-		w = newWorld(t)
-		write(t, filepath.Join(w.clone, path), "x\n")
-		if _, err := w.read(t); !errors.Is(err, promote.ErrHarness) {
-			t.Errorf("uncommitted %s: err = %v, want ErrHarness", path, err)
-		}
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			w := newWorld(t)
+			commit(t, w.clone, path, "x\n")
+			if _, err := w.read(t); !errors.Is(err, promote.ErrHarness) {
+				t.Errorf("commit of %s: err = %v, want ErrHarness", path, err)
+			}
+			w = newWorld(t)
+			write(t, filepath.Join(w.clone, path), "x\n")
+			if _, err := w.read(t); !errors.Is(err, promote.ErrHarness) {
+				t.Errorf("uncommitted %s: err = %v, want ErrHarness", path, err)
+			}
+		})
 	}
 }
 
 func TestAHarnessConfigDeletedOrRenamedInTheWorkIsRefusedAndAnOrdinaryFileStillPromotes(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	commit(t, w.dir, "CLAUDE.md", "mine\n")
 	w = &world{dir: w.dir, branch: w.branch}
@@ -279,6 +293,7 @@ func TestAHarnessConfigDeletedOrRenamedInTheWorkIsRefusedAndAnOrdinaryFileStillP
 }
 
 func TestAddingASymlinkIsRefusedAsCommitsAndAsADiff(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	if err := os.Symlink("/etc/hosts", filepath.Join(w.clone, "link")); err != nil {
 		t.Fatal(err)
@@ -301,6 +316,7 @@ func hide(t *testing.T, clone, target string) {
 }
 
 func TestAReplaceRefThatHidesAnAdmiralOrHarnessCommitDoesNotHideIt(t *testing.T) {
+	t.Parallel()
 	for path, want := range map[string]error{".admiral/untrusted/event.md": promote.ErrAdmiralPaths, ".claude/settings.json": promote.ErrHarness} {
 		w := newWorld(t)
 		commit(t, w.clone, "c.txt", "c\n")
@@ -313,6 +329,7 @@ func TestAReplaceRefThatHidesAnAdmiralOrHarnessCommitDoesNotHideIt(t *testing.T)
 }
 
 func TestVerifyRunsTheSameRefusalsAndReturnsTheMergeBase(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	commit(t, w.clone, "c.txt", "c\n")
 	bad := commit(t, w.clone, ".claude/settings.json", "x\n")
