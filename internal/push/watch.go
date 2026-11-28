@@ -58,7 +58,8 @@ type Watcher struct {
 
 	mu         sync.Mutex
 	shipsSeen  bool
-	asking     map[string]bool // ship or crew boat -> waiting on a question or approval
+	asking     map[string]bool   // ship or crew boat -> waiting on a question or approval
+	askedCard  map[string]string // asking ship -> the card its stop posts, so a new stop pushes again
 	anchored   map[string]bool
 	ready      map[string]bool
 	polled     map[string]bool // moored ship -> its PRs have been polled since Admiral started
@@ -225,6 +226,7 @@ func askText(reason string) string {
 
 func (w *Watcher) Ships(list []ships.Ship) {
 	asking, anchored, ready, polled := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
+	askedCard := map[string]string{}
 	fleetOf := make(map[string]ships.Ship, len(list))
 	var events []Event
 	waiting := false
@@ -253,7 +255,17 @@ func (w *Watcher) Ships(list []ships.Ship) {
 		case sh.Status == ships.StatusNeedsYou && asks(sh.Reason):
 			ev := base
 			ev.Kind, ev.Key, ev.Text = ShipQuestion, sh.Session, askText(sh.Reason)
-			note(w.asking, asking, sh.Session, ev)
+			if w.cards != nil {
+				ev.Card, ev.Choices = w.cards.ForShip(sh)
+			}
+			askedCard[sh.Session] = ev.Card
+			// A new stop under the same tag replaces the earlier notification, which names a card that is gone.
+			if prev, was := w.askedCard[sh.Session]; was && prev != ev.Card && !first {
+				asking[sh.Session] = true
+				events = append(events, ev)
+			} else {
+				note(w.asking, asking, sh.Session, ev)
+			}
 		case sh.Status == ships.StatusAnchored:
 			ev := base
 			ev.Kind, ev.Key, ev.Text, ev.Target = Anchored, sh.Session+":anchored", "stopped with an error", TargetShip
@@ -284,6 +296,7 @@ func (w *Watcher) Ships(list []ships.Ship) {
 			note(w.asking, asking, sh.Session+"/"+b.Name, ev)
 		}
 	}
+	w.askedCard = askedCard
 	w.shipsSeen, w.asking, w.anchored, w.ready, w.polled, w.fleetOf, w.waiting = true, asking, anchored, ready, polled, fleetOf, waiting
 	live := map[string]bool{}
 	for k := range asking {
@@ -368,7 +381,11 @@ func (w *Watcher) itemEvent(it inbox.Item, key string) (Event, bool) {
 	if name == "" {
 		name = "Admiral"
 	}
-	return Event{Kind: kind, Fleet: it.Fleet, FleetName: it.FleetName, Key: key, Name: name, Text: title, Target: TargetPeek, Session: it.Session, Item: it.ID}, true
+	ev := Event{Kind: kind, Fleet: it.Fleet, FleetName: it.FleetName, Key: key, Name: name, Text: title, Target: TargetPeek, Session: it.Session, Item: it.ID}
+	if w.cards != nil {
+		ev.Card, ev.Choices = w.cards.ForItem(it)
+	}
+	return ev, true
 }
 
 // Feed runs a Watcher on change signals: the signals never block, and a burst of them is read once.

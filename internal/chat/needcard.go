@@ -13,17 +13,17 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/needcard"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // The states and places a need card reads.
 const (
-	NeedOpen     = "open"
+	NeedOpen     = needcard.StateOpen
 	NeedAnswered = "answered"
 	NeedRemoved  = "removed"
 	// NeedSettledTerminal is a stop that ended with no Admiral route answering it; NeedMovedOn is a routine proposal that closed without the engineer, or a ship that stopped needing you by leaving: moored, ended, gone.
@@ -152,25 +152,17 @@ func (n *needStore) openIDs(session, item string) []string {
 	defer n.mu.Unlock()
 	var ids []string
 	for id, r := range n.recs {
-		if r.State == NeedOpen && (session == "" || !stopKinds[r.Kind] && r.Session == session && r.Item == item) {
+		if r.State == NeedOpen && (session == "" || !needcard.StopKinds[r.Kind] && r.Session == session && r.Item == item) {
 			ids = append(ids, id)
 		}
 	}
 	return ids
 }
 
-func needCreated(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
-
 // needSig is what the engineer sees on the card; the route refuses an item whose questions, review or findings changed since.
 func needSig(field json.RawMessage) string {
 	h := sha256.Sum256(field)
 	return hex.EncodeToString(h[:12])
-}
-
-// needCardID folds the item's identity in, so a reused session name or item id gets its own card; hashed, since a session name can hold any character.
-func needCardID(session, item, created string) string {
-	h := sha256.Sum256([]byte(session + "\x00" + item + "\x00" + created))
-	return "need-" + hex.EncodeToString(h[:12])
 }
 
 // InboxChanged tells the need card poster the Inbox's list changed; it never blocks.
@@ -225,16 +217,16 @@ func (s *Service) needPass() {
 	items := s.Inbox.List()
 	cfg := s.Config()
 	for _, it := range items {
-		fleet := needFleet(it)
-		if !needKinds[it.Kind] || fleet == "" || sessionhost.IsChatSession(it.Session) || it.Session == inbox.AdmiralSession && !fleetKinds[it.Kind] {
+		fleet := needcard.Fleet(it)
+		if !needcard.Kinds[it.Kind] || fleet == "" || sessionhost.IsChatSession(it.Session) || it.Session == inbox.AdmiralSession && !needcard.FleetKinds[it.Kind] {
 			continue
 		}
 		if _, _, ok := cfg.ChatFleet(fleet); !ok {
 			continue
 		}
-		created := needCreated(it.Created)
-		id := needCardID(it.Session, it.ID, created)
-		body, ok := needCardBody(it)
+		created := needcard.Created(it.Created)
+		id := needcard.CardID(it.Session, it.ID, created)
+		body, ok := needcard.Body(it)
 		if !ok {
 			continue
 		}
@@ -263,103 +255,12 @@ func (s *Service) needPass() {
 	}
 }
 
-// needKinds are the Inbox kinds that post a need card.
-var needKinds = map[string]bool{inbox.KindQuestion: true, inbox.KindReview: true, inbox.KindFindings: true,
-	inbox.KindRoutineProposal: true, inbox.KindAllowRules: true, inbox.KindCampaignDraft: true}
-
-// fleetKinds are the needKinds whose items live under _admiral and name their own fleet.
-var fleetKinds = map[string]bool{inbox.KindRoutineProposal: true, inbox.KindAllowRules: true, inbox.KindCampaignDraft: true}
-
-// needFleet is the fleet whose chat holds an item's card; an allow rule item names it in its object, since the list leaves Fleet empty for an unconfigured one.
-func needFleet(it inbox.Item) string {
-	switch it.Kind {
-	case inbox.KindAllowRules:
-		if o, ok := it.AllowRulesObject(); ok {
-			return o.Fleet
-		}
-		return ""
-	case inbox.KindRoutineProposal:
-		if p, ok := it.RoutineProposal(); ok {
-			return p.Fleet
-		}
-		return ""
-	case inbox.KindCampaignDraft:
-		if d, ok := it.CampaignDraft(); ok {
-			return d.Fleet
-		}
-		return ""
-	}
-	return it.Fleet
-}
-
-// needCardBody is the card's JSON for an item, with what its kind's choices need; a review's summary and a set of finding cards' quotes stay in the Inbox item, which the web joins.
-func needCardBody(it inbox.Item) (map[string]any, bool) {
-	card := map[string]any{"ship": it.Session, "item": it.ID, "item_kind": it.Kind, "state": NeedOpen}
-	switch it.Kind {
-	case inbox.KindQuestion:
-		var q struct {
-			Questions json.RawMessage `json:"questions"`
-		}
-		if json.Unmarshal(it.Field(inbox.KindQuestion), &q) != nil || len(q.Questions) == 0 {
-			return nil, false
-		}
-		card["questions"] = q.Questions
-	case inbox.KindReview:
-		var r struct {
-			PRURL string `json:"pr_url"`
-		}
-		if json.Unmarshal(it.Field(inbox.KindReview), &r) != nil {
-			return nil, false
-		}
-		card["events"], card["discard"], card["pr_url"] = []string{"COMMENT", "APPROVE", "REQUEST_CHANGES"}, true, r.PRURL
-	case inbox.KindFindings:
-		var f struct {
-			Cards []struct {
-				ID       string          `json:"id"`
-				Proposal *inbox.Proposal `json:"proposal"`
-			} `json:"cards"`
-		}
-		if json.Unmarshal(it.Field(inbox.KindFindings), &f) != nil {
-			return nil, false
-		}
-		cards := make([]map[string]any, 0, len(f.Cards))
-		for _, c := range f.Cards {
-			cards = append(cards, map[string]any{"id": c.ID, "proposal": c.Proposal})
-		}
-		card["cards"] = cards
-	case inbox.KindRoutineProposal:
-		p, ok := it.RoutineProposal()
-		if !ok {
-			return nil, false
-		}
-		delete(card, "ship")
-		card["action"], card["reason"], card["expires_at"], card["routine_name"] = p.Action, p.Reason, p.ExpiresAt, p.RoutineName
-	case inbox.KindAllowRules:
-		o, ok := it.AllowRulesObject()
-		if !ok {
-			return nil, false
-		}
-		delete(card, "ship")
-		card["cards"] = o.Cards
-	case inbox.KindCampaignDraft:
-		d, ok := it.CampaignDraft()
-		if !ok {
-			return nil, false
-		}
-		delete(card, "ship")
-		card["repo"], card["title"], card["body"] = d.Repo, d.Title, d.Body
-	default:
-		return nil, false // a kind in needKinds with no body here must fail loudly, not post as a question
-	}
-	return card, true
-}
-
 // openItems is the items the Inbox lists that post a card, keyed by session, item and created stamp.
 func (s *Service) openItems(items []inbox.Item) map[string]bool {
 	open := map[string]bool{}
 	for _, it := range items {
-		if needKinds[it.Kind] {
-			open[it.Session+"\x00"+it.ID+"\x00"+needCreated(it.Created)] = true
+		if needcard.Kinds[it.Kind] {
+			open[it.Session+"\x00"+it.ID+"\x00"+needcard.Created(it.Created)] = true
 		}
 	}
 	return open
@@ -369,7 +270,7 @@ func (s *Service) openItems(items []inbox.Item) map[string]bool {
 func (s *Service) needState(id string, open map[string]bool) (needRec, bool) {
 	n := s.needs()
 	r, ok := n.get(id)
-	if !ok || stopKinds[r.Kind] || r.State != NeedOpen || s.Inbox == nil || !s.Inbox.Scanned() || open[r.Session+"\x00"+r.Item+"\x00"+r.Created] {
+	if !ok || needcard.StopKinds[r.Kind] || r.State != NeedOpen || s.Inbox == nil || !s.Inbox.Scanned() || open[r.Session+"\x00"+r.Item+"\x00"+r.Created] {
 		return r, ok
 	}
 	if r.Kind == inbox.KindRoutineProposal {
@@ -427,7 +328,7 @@ func (s *Service) withNeedState(id string, card json.RawMessage, open func() map
 // refreshRules sets an open allow rule card's rules to the item's now: the item grows in place while rounds add rules, and its one card follows.
 func (s *Service) refreshRules(r needRec, c map[string]json.RawMessage) {
 	for _, it := range s.Inbox.List() {
-		if it.Session == r.Session && it.ID == r.Item && needCreated(it.Created) == r.Created {
+		if it.Session == r.Session && it.ID == r.Item && needcard.Created(it.Created) == r.Created {
 			if o, ok := it.AllowRulesObject(); ok {
 				c["cards"], _ = json.Marshal(o.Cards)
 			}
@@ -448,7 +349,7 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no need card "+cardID+" in the "+fleet+" chat")
 		return
 	}
-	if stopKinds[rec.Kind] {
+	if needcard.StopKinds[rec.Kind] {
 		s.serveStopCardAnswer(w, r, n, cardID, rec)
 		return
 	}
@@ -465,11 +366,17 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "item "+rec.Item+" is already answered")
 		return
 	}
+	var top map[string]json.RawMessage
+	if json.Unmarshal(body, &top) == nil && top["choice"] != nil {
+		if body = s.choiceBody(w, rec, top["choice"]); body == nil {
+			return
+		}
+	}
 	n.setTapping(rec.Session, rec.Item, true)
 	defer n.setTapping(rec.Session, rec.Item, false)
 	// The item must still be the one the card showed; via marks the answer as given in the chat once it is written.
 	g := &inbox.Guard{Via: AnsweredChat, Check: func(it inbox.Item) error {
-		if needCreated(it.Created) != rec.Created || rec.Sig != "" && rec.Sig != needSig(it.Field(it.Kind)) {
+		if needcard.Created(it.Created) != rec.Created || rec.Sig != "" && rec.Sig != needSig(it.Field(it.Kind)) {
 			return inbox.ErrAnswered
 		}
 		return nil
@@ -578,4 +485,27 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}
+}
+
+// choiceBody is the body of the kind's own path that a generic {"choice": id} stands for, or nil once it has written the refusal: 409 for an item that is no longer the one the card showed, before the id is judged, then 400.
+func (s *Service) choiceBody(w http.ResponseWriter, rec needRec, raw json.RawMessage) []byte {
+	var cur *inbox.Item
+	for _, it := range s.Inbox.List() {
+		if it.Session == rec.Session && it.ID == rec.Item {
+			cur = &it
+			break
+		}
+	}
+	if cur == nil || needcard.Created(cur.Created) != rec.Created || rec.Sig != "" && rec.Sig != needSig(cur.Field(cur.Kind)) {
+		writeError(w, http.StatusConflict, "item "+rec.Item+" is already answered")
+		return nil
+	}
+	var id string
+	if json.Unmarshal(raw, &id) == nil {
+		if b, ok := needcard.AnswerBody(*cur, id); ok {
+			return b
+		}
+	}
+	writeError(w, http.StatusBadRequest, "that card takes no such choice")
+	return nil
 }
