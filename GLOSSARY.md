@@ -235,6 +235,10 @@ _Avoid_: voice mode, voice chat, phone call
 The `[Voice call]` mark that opens a chat message spoken on a voice call and asks AdmiralBot for an answer that works when heard. A message without it gets an ordinary chat answer, even during a call.
 _Avoid_: voice tag, voice flag
 
+**Siri marker**:
+The `[Siri]` mark that opens a chat message asked through Siri from the AdmiralBot app, asking AdmiralBot for a single, complete answer that works when heard. Siri speaks it.
+_Avoid_: Siri tag, Siri flag
+
 **Brief**:
 The page AdmiralBot starts from after each reset: its instructions, open commitments, what is waiting and running, and the last few messages, drawn from the ledger and live state.
 _Avoid_: summary, context
