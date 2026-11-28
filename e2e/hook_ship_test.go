@@ -1,12 +1,12 @@
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestShipHookRunsBundleCommand(t *testing.T) {
@@ -53,13 +53,9 @@ func TestShipHookRunsBundleCommand(t *testing.T) {
 	}
 	waitFor := func(what string, ok func() bool) {
 		t.Helper()
-		deadline := time.Now().Add(10 * time.Second)
-		for !ok() {
-			if time.Now().After(deadline) {
-				t.Fatalf("%s within 10s did not happen; hook errors: %s", what, readIf(filepath.Join(r.dir, "event-error")))
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
+		eventually(t, what, func() (bool, string) {
+			return ok(), "hook errors: " + readIf(filepath.Join(r.dir, "event-error"))
+		})
 	}
 	eventsDone := func() int {
 		return strings.Count(readIf(filepath.Join(r.dir, "events-done")), "\n")
@@ -125,13 +121,9 @@ func TestShipHookReason(t *testing.T) {
 	events := func() int { return strings.Count(readIf(filepath.Join(r.dir, "events-done")), "\n") }
 	step := func(n int, state, reason string) {
 		t.Helper()
-		deadline := time.Now().Add(10 * time.Second)
-		for events() < n {
-			if time.Now().After(deadline) {
-				t.Fatalf("event %d did not finish in 10s; hook errors: %s", n, readIf(filepath.Join(r.dir, "event-error")))
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
+		eventually(t, fmt.Sprintf("event %d finishing", n), func() (bool, string) {
+			return events() >= n, "hook errors: " + readIf(filepath.Join(r.dir, "event-error"))
+		})
 		if got := w.paneState(ship.Session); got != state {
 			t.Errorf("after event %d @admiral-state = %q, want %q", n, got, state)
 		}

@@ -2,19 +2,17 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func sprintAdHoc(name, run string) string {
 	return "---\nname: " + name + "\nrole: scout\nbased-on: implementer\npick-me-when: a run needs a map\nad-hoc: true\nad-hoc-run: \"" + run + "\"\n---\n\nMap it.\n"
 }
-
-func sleep50() { time.Sleep(50 * time.Millisecond) }
 
 // A Commodore run's crew proposals become Inbox items, and the fleet's crew files change only on an answer.
 func TestCrewItemsFromAReportAreWrittenToTheFleetOnlyWhenAnswered(t *testing.T) {
@@ -59,8 +57,7 @@ func TestCrewItemsFromAReportAreWrittenToTheFleetOnlyWhenAnswered(t *testing.T) 
 	w.waitEvent(ship.Session, "ended", 1)
 
 	var notesID, scoutID, mapperID string
-	deadline := 0
-	for notesID == "" || scoutID == "" || mapperID == "" {
+	eventually(t, "GET /api/inbox listing the crew items", func() (bool, string) {
 		for _, it := range w.in.inbox(t) {
 			switch {
 			case it.Kind == "crew_notes":
@@ -71,11 +68,8 @@ func TestCrewItemsFromAReportAreWrittenToTheFleetOnlyWhenAnswered(t *testing.T) 
 				mapperID = it.ID
 			}
 		}
-		if deadline++; deadline > 300 {
-			t.Fatalf("within 15s GET /api/inbox never listed the crew items: notes %q scout %q mapper %q", notesID, scoutID, mapperID)
-		}
-		sleep50()
-	}
+		return notesID != "" && scoutID != "" && mapperID != "", fmt.Sprintf("notes %q scout %q mapper %q", notesID, scoutID, mapperID)
+	})
 	holdThat(t, "the fleet's crew memory was written before any answer", func() bool {
 		_, err := os.Stat(filepath.Join(crewDir, "memory"))
 		return os.IsNotExist(err) && exists(filepath.Join(adHoc, "scout.md")) && !exists(filepath.Join(crewDir, "scout.md"))

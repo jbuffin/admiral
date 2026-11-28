@@ -356,13 +356,10 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 	}
 	// A tmux server that outlived another Admiral, or was started from a ship's shell.
 	// Admiral's host starts the server a moment after the page is up: wait for it.
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		if _, err := w.tmux("list-sessions"); err == nil {
-			break
-		} else if time.Now().After(deadline) {
-			t.Fatalf("within 5s Admiral's tmux server never came up: %v", err)
-		}
-	}
+	eventually(t, "Admiral's tmux server coming up", func() (bool, string) {
+		_, err := w.tmux("list-sessions")
+		return err == nil, fmt.Sprint(err)
+	})
 	for _, kv := range [][2]string{{"ADMIRAL_SHIP", "leak-ship"}, {"ADMIRAL_REPORT", "/leak/report"}, {"ADMIRAL_INBOX", "/leak/inbox"},
 		{"ADMIRAL_AUTOPILOT", "1"}, {"ADMIRAL_AUTOPILOT_LOW_STAKES", "1"},
 		{"ADMIRAL_LOW_STAKES", "never"}, {"ADMIRAL_AUTO_MERGE", "squash"}} {
@@ -488,15 +485,14 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 		}
 		// The chat's Claude can run tmux on its own session; it must not make itself a ship.
 		w.mustTmux("set-option", "-t", "="+chatSessionName+":", "@admiral-name", "Sneaky")
-		deadline := time.Now().Add(2 * time.Second)
-		for time.Now().Before(deadline) {
+		holdClean(t, 2*time.Second, func() string {
 			for _, s := range w.in.ships(t) {
 				if s.Session == chatSessionName {
-					t.Fatalf("setting @admiral-name made the chat a ship: %+v", s)
+					return fmt.Sprintf("setting @admiral-name made the chat a ship: %+v", s)
 				}
 			}
-			time.Sleep(100 * time.Millisecond)
-		}
+			return ""
+		})
 	})
 
 	t.Run("the bridge follows the session", func(t *testing.T) {
@@ -730,9 +726,7 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	if code, body := send(t, http.MethodPut, w.in.LocalURL+"/api/fleets/chat", map[string]any{"chat": map[string]any{"harness": "claude", "model": "sonnet", "effort": ""}}); code != http.StatusOK {
 		t.Fatalf("PUT /api/fleets/chat = %d: %s", code, body)
 	}
-	if got := c.session(); !got.Running {
-		t.Fatalf("a config change must not stop a running chat: %+v", got)
-	}
+	c.stays(hold, "a running chat after a config change", func(s chatSession) bool { return s.Running })
 	appendLines(t, tpB, userLine("u-30", "Fresh start", nil))
 	// The flush runs in the old session, before the kill.
 	newChat := c.postNewChat()
@@ -1063,9 +1057,7 @@ func TestChatSession_NewChatWhileATurnRunsClearsWithoutAFlush(t *testing.T) {
 		t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
 	}
 	c.waitStdinOneOf("/clear\r", "\x1b[200~/clear\x1b[201~\r")
-	if s := c.session(); resetText(s.Messages) != "New chat" {
-		t.Errorf("thread = %+v, want a New chat marker", s.Messages)
-	}
+	c.waitSession("a New chat marker", func(s chatSession) bool { return resetText(s.Messages) == "New chat" })
 }
 
 // Interrupt presses one Escape in the working chat, withdraws what it asked, shows the harness's own interrupted record,

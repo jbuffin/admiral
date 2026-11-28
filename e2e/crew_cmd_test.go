@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -269,20 +270,16 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 		w.expectExit(crewCall(w, sess, "via stdin", "send", "scout"), 0, "crew send from stdin")
 		// Without the altscreen cue the fake has no bracketed paste on: the text, then Enter.
 		want := "hello team\rvia stdin\r"
-		deadline := time.Now().Add(10 * time.Second)
-		for {
+		eventually(t, "scout's stdin holding the sent text", func() (bool, string) {
 			got, _ := os.ReadFile(filepath.Join(w.rec, sess, "crew", "scout", "stdin"))
-			if string(got) == want {
-				break
+			return string(got) == want, fmt.Sprintf("%q, want %q", got, want)
+		})
+		holdClean(t, hold, func() string {
+			if got, _ := os.ReadFile(filepath.Join(w.rec, sess, "crew", "mate", "stdin")); len(got) != 0 {
+				return fmt.Sprintf("mate received %q; send went to the wrong window", got)
 			}
-			if time.Now().After(deadline) {
-				t.Fatalf("scout stdin = %q after 10s, want %q", got, want)
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		if got, _ := os.ReadFile(filepath.Join(w.rec, sess, "crew", "mate", "stdin")); len(got) != 0 {
-			t.Errorf("mate received %q; send went to the wrong window", got)
-		}
+			return ""
+		})
 	})
 
 	t.Run("refusals", func(t *testing.T) {

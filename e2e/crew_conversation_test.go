@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -11,7 +10,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 )
@@ -209,9 +207,10 @@ func TestCrewConversation_ReadStreamExitAndClose(t *testing.T) {
 
 	conn := dialWS(t, c.in.instance)
 	msgs := make(chan crewWSMsg, 16)
+	ctx := testCtx(t)
 	go func() {
 		for {
-			_, data, err := conn.Read(context.Background())
+			_, data, err := conn.Read(ctx)
 			if err != nil {
 				return
 			}
@@ -222,7 +221,7 @@ func TestCrewConversation_ReadStreamExitAndClose(t *testing.T) {
 		}
 	}()
 	open, _ := json.Marshal(map[string]string{"type": "conversation_open", "ship": c.sess, "crew": "rev"})
-	if err := conn.Write(context.Background(), websocket.MessageText, open); err != nil {
+	if err := conn.Write(ctx, websocket.MessageText, open); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -230,8 +229,8 @@ func TestCrewConversation_ReadStreamExitAndClose(t *testing.T) {
 		if m.Type != "conversation_opened" || m.Ship != c.sess || m.Crew != "rev" {
 			t.Fatalf("first message = %+v, want conversation_opened for the ship and crew rev", m)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("within 10s the crew open was never answered with conversation_opened")
+	case <-testCtx(t).Done():
+		hung(t, "the crew open was never answered with conversation_opened")
 	}
 	appendLines(t, path, userLine("u-2", "and the tests?", nil))
 	select {
@@ -239,8 +238,8 @@ func TestCrewConversation_ReadStreamExitAndClose(t *testing.T) {
 		if m.Type != "conversation" || m.Crew != "rev" || len(m.Items) != 1 || m.Items[0].Text != "and the tests?" {
 			t.Fatalf("pushed = %+v, want one conversation message for crew rev holding the new line", m)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("within 10s the opener never got the appended line")
+	case <-testCtx(t).Done():
+		hung(t, "the opener never got the appended line")
 	}
 
 	// Anchored: the boat's process is gone and its conversation still reads.

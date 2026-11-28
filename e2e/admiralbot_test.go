@@ -243,6 +243,18 @@ func hasQuestions(n int) func(botSession) bool {
 	return func(s botSession) bool { return len(s.Questions) == n }
 }
 
+// postChatMessageOnceUp posts a chat message, waiting out the 409s of a composer that is not up yet (a refused post has no effect).
+func postChatMessageOnceUp(t *testing.T, base, text string) (int, string) {
+	t.Helper()
+	var code int
+	var body string
+	eventually(t, "the chat's composer taking a message", func() (bool, string) {
+		code, body = send(t, http.MethodPost, base+"/api/chat/chat/messages", map[string]any{"text": text})
+		return code != http.StatusConflict, fmt.Sprintf("%d %s", code, body)
+	})
+	return code, body
+}
+
 func waitBotWS(t *testing.T, c *websocket.Conn, what string, pred func(botSession) bool) botSession {
 	t.Helper()
 	ctx := testCtx(t)
@@ -571,16 +583,16 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 		t.Errorf("launch_ship result = %q, want mode autopilot: every AdmiralBot launch runs in autopilot unless with_me", first.text())
 	}
 	var mine shipJSON
-	for end := time.Now().Add(10 * time.Second); mine.Session == ""; time.Sleep(50 * time.Millisecond) {
-		for _, s := range w.in.ships(t) {
+	eventually(t, "GET /api/ships listing a ship of fleet "+chatFleet+" stamped via admiralbot", func() (bool, string) {
+		ships := w.in.ships(t)
+		for _, s := range ships {
 			if s.Fleet == chatFleet && s.Via == "admiralbot" {
 				mine = s
+				return true, ""
 			}
 		}
-		if time.Now().After(end) {
-			t.Fatalf("GET /api/ships never listed a ship of fleet %s stamped via admiralbot: %s", chatFleet, dump(w.in.ships(t)))
-		}
-	}
+		return false, dump(ships)
+	})
 	if !strings.HasSuffix(mine.Dir, "repo1") {
 		t.Errorf("the launched ship's dir = %q, want repo1", mine.Dir)
 	}
@@ -651,27 +663,18 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 			t.Fatalf("save_note was refused: %s", r.text())
 		}
 		briefPath := filepath.Join(w.home, "chat", chatFleet, "brief.md")
-		for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-			if b, _ := os.ReadFile(briefPath); strings.Contains(string(b), fact) {
-				break
-			}
-			if time.Now().After(end) {
-				b, _ := os.ReadFile(briefPath)
-				t.Fatalf("within 10s chat/%s/brief.md never held the note; it is %q", chatFleet, b)
-			}
-		}
+		eventually(t, "chat/"+chatFleet+"/brief.md holding the note", func() (bool, string) {
+			b, _ := os.ReadFile(briefPath)
+			return strings.Contains(string(b), fact), fmt.Sprintf("%q", b)
+		})
 		c.touch("briefed")
 		stdoutPath := filepath.Join(c.recDir(), "event-stdout")
 		var out string
-		for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		eventually(t, "the SessionStart hook printing the note", func() (bool, string) {
 			b, _ := os.ReadFile(stdoutPath)
-			if out = string(b); strings.Contains(out, fact) {
-				break
-			}
-			if time.Now().After(end) {
-				t.Fatalf("within 10s the SessionStart hook never printed the note; event-stdout is %q", out)
-			}
-		}
+			out = string(b)
+			return strings.Contains(out, fact), fmt.Sprintf("event-stdout is %q", out)
+		})
 		// The PreCompact cue's plain text follows the SessionStart line in the same file.
 		var got struct {
 			Output struct {
@@ -703,16 +706,10 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 			t.Fatalf("the ledger holds no saved note: %s", raw)
 		}
 		stdoutPath := filepath.Join(c.recDir(), "event-stdout")
-		var out string
-		for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		eventually(t, "the PreCompact hook printing note id "+id, func() (bool, string) {
 			b, _ := os.ReadFile(stdoutPath)
-			if out = string(b); strings.Contains(out, id) {
-				break
-			}
-			if time.Now().After(end) {
-				t.Fatalf("within 10s the PreCompact hook never printed note id %s; event-stdout is %q", id, out)
-			}
-		}
+			return strings.Contains(string(b), id), fmt.Sprintf("event-stdout is %q", b)
+		})
 	})
 
 	t.Run("a time commitment it records fires as a card in the chat with no new turn", func(t *testing.T) {
@@ -723,20 +720,20 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 			t.Fatalf("make_commitment was refused: %s", r.text())
 		}
 		typed := c.stdin() // what the chat was sent so far: a turn would add to it
-		var card *chatMsg
-		for end := time.Now().Add(15 * time.Second); card == nil; time.Sleep(50 * time.Millisecond) {
+		eventually(t, fmt.Sprintf("GET /api/chat/%s/session listing a commitment card for %q", chatFleet, promise), func() (bool, string) {
 			for _, m := range c.session().Messages {
 				if m.Kind == "commitment" && strings.Contains(m.Text, promise) {
-					card = &m
+					return true, ""
 				}
 			}
-			if card == nil && time.Now().After(end) {
-				t.Fatalf("within 15s GET /api/chat/%s/session never listed a commitment card for %q; %s", chatFleet, promise, c.diag())
+			return false, c.diag()
+		})
+		holdClean(t, hold, func() string {
+			if got := c.stdin(); got != typed {
+				return fmt.Sprintf("a fired commitment started a turn: the chat was sent %q, want %q", got, typed)
 			}
-		}
-		if got := c.stdin(); got != typed {
-			t.Errorf("the chat was sent %q after the card, want %q: a fired commitment starts no turn", got, typed)
-		}
+			return ""
+		})
 	})
 }
 
@@ -1130,8 +1127,7 @@ func TestAdmiralBot_ChatAskWorksOnFilesAlone(t *testing.T) {
 		}
 
 		p := w.botStart(env, "", "chat", "ask", "--wait", id)
-		time.Sleep(500 * time.Millisecond)
-		p.failIfExited("an answer that has not been written")
+		holdWindow(t, 500*time.Millisecond, "chat ask --wait exited before its answer was written", func() bool { return !p.exited() })
 		atomicWrite(t, filepath.Join(w.questionsDir(), id+".answer.json"), answerFile(id, "Freeform"))
 		got := p.wait()
 		w.expectExit(got, 0, "chat ask --wait after the answer")
@@ -1153,20 +1149,17 @@ func TestAdmiralBot_ChatAskWorksOnFilesAlone(t *testing.T) {
 	t.Run("a question withdrawn while waiting exits 4", func(t *testing.T) {
 		w := w.at(t)
 		p := w.botStart(env, askStdin("Withdrawn one"), "chat", "ask")
-		deadline := time.Now().Add(10 * time.Second)
 		var name string
-		for name == "" {
+		eventually(t, "chat ask writing its question file", func() (bool, string) {
 			for _, f := range w.questionFiles() {
 				if f != id+".json" && f != id+".answer.json" && strings.HasSuffix(f, ".json") && !strings.Contains(f, "answer") {
 					name = f
+					return true, ""
 				}
 			}
 			p.failIfExited("the question file")
-			if time.Now().After(deadline) {
-				t.Fatalf("chat ask wrote no question file within 10s: %v", w.questionFiles())
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
+			return false, fmt.Sprint(w.questionFiles())
+		})
 		if err := os.Remove(filepath.Join(w.questionsDir(), name)); err != nil {
 			t.Fatal(err)
 		}
@@ -1352,14 +1345,16 @@ func TestAdmiralBot_AQuickShipFollowsAdmiralsClosingStepsToAPRAndMoors(t *testin
 	w.finishTurn(ship, mooredReport(mooredPR))
 	w.wantMoored(ship)
 	var line *chatMsg
-	for _, m := range c.session().Messages {
-		if m.Kind == "launch_line" {
-			line = &m
+	c.waitSession("a launch_line entry after the launch", func(s chatSession) bool {
+		for _, m := range s.Messages {
+			if m.Kind == "launch_line" {
+				line = &m
+				return true
+			}
 		}
-	}
-	if line == nil {
-		t.Errorf("the fleet chat holds no launch_line entry after the launch: %+v", c.session().Messages)
-	} else if !strings.Contains(string(line.Card), "to fix the 500 in widgets") || !strings.Contains(string(line.Card), ship.Name) || strings.Contains(string(line.Card), "ADMIRAL_REPORT") {
+		return false
+	})
+	if !strings.Contains(string(line.Card), "to fix the 500 in widgets") || !strings.Contains(string(line.Card), ship.Name) || strings.Contains(string(line.Card), "ADMIRAL_REPORT") {
 		t.Errorf("launch_line card = %s, want the ship's name and reason and no closing steps", line.Card)
 	}
 

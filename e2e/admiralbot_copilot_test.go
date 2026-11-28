@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -162,16 +161,7 @@ func TestAdmiralBot_CopilotChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testin
 	})
 
 	t.Run("the first message and its reply show with nothing typed in the terminal", func(t *testing.T) {
-		var code int
-		var body string
-		deadline := time.Now().Add(15 * time.Second)
-		for {
-			code, body = send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/messages", map[string]any{"text": "Which ships are at anchor?"})
-			if code != http.StatusConflict || time.Now().After(deadline) {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		code, body := postChatMessageOnceUp(t, w.in.LocalURL, "Which ships are at anchor?")
 		if code != http.StatusOK {
 			t.Fatalf("POST /api/chat/chat/messages on a fresh trusted Copilot chat = %d, want 200: %s", code, body)
 		}
@@ -196,14 +186,7 @@ func TestAdmiralBot_CopilotChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testin
 			t.Errorf("the chat's usage record = %v, want fleet chat and harness copilot", got)
 		}
 		// The reply to a message sent after /clear can only come from the new session's transcript.
-		var code int
-		var body string
-		for end := time.Now().Add(15 * time.Second); ; time.Sleep(100 * time.Millisecond) {
-			code, body = send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/messages", map[string]any{"text": "And the harbours?"})
-			if code != http.StatusConflict || time.Now().After(end) {
-				break
-			}
-		}
+		code, body := postChatMessageOnceUp(t, w.in.LocalURL, "And the harbours?")
 		if code != http.StatusOK {
 			t.Fatalf("POST /api/chat/chat/messages after /clear = %d, want 200: %s", code, body)
 		}

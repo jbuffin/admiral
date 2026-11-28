@@ -153,10 +153,12 @@ func TestCrewBridge(t *testing.T) {
 		w.paneWriteID(b.pane, "OUT-COOK\r\n")
 		w.paneWriteID(a.pane, "OUT-SCOUT\r\n")
 		scout.waitOutput(m, "OUT-SCOUT")
-		time.Sleep(300 * time.Millisecond)
-		if got := scout.output(m); strings.Contains(got, "OUT-SHIP") || strings.Contains(got, "OUT-COOK") {
-			t.Errorf("the bridge on scout streamed another pane's output: %q", got)
-		}
+		holdClean(t, 300*time.Millisecond, func() string {
+			if got := scout.output(m); strings.Contains(got, "OUT-SHIP") || strings.Contains(got, "OUT-COOK") {
+				return fmt.Sprintf("the bridge on scout streamed another pane's output: %q", got)
+			}
+			return ""
+		})
 		// The ship's bridge, in turn, streams the ship's pane and not the crew boat's.
 		sb, _ := w.joinBridge(t, ship.Session, 80, 24)
 		m = sb.mark()
@@ -269,10 +271,9 @@ func TestCrewBridge(t *testing.T) {
 			}
 			return false
 		})
-		time.Sleep(200 * time.Millisecond)
-		if strings.Contains(w.capture(b.pane), "typed-in-anchored") {
-			t.Errorf("input reached an anchored crew boat")
-		}
+		holdWindow(t, 200*time.Millisecond, "input reached an anchored crew boat", func() bool {
+			return !strings.Contains(w.capture(b.pane), "typed-in-anchored")
+		})
 	})
 
 	t.Run("a boat closed and relaunched under its name inside one poll closes the old bridge", func(t *testing.T) {
@@ -298,28 +299,34 @@ func TestCrewBridge(t *testing.T) {
 		}
 		w.waitPaneWorking(fresh.pane)
 		// A poll between the close and the launch drops relay and the handshake answers 404 until the next one, so wait for the listing before each dial; the snapshot may still hold the old window, so dial again until the new window's output arrives.
-		var nb *bridgeClient
-		for attempt := 1; nb == nil; attempt++ {
+		w.paneWriteID(fresh.pane, "RELAY-NEW-LIVE\r\n")
+		w.waitCapture(fresh.pane, "RELAY-NEW-LIVE")
+		eventually(t, "a fresh dial showing the new window's output", func() (bool, string) {
 			w.waitShip(ship.Session, "relay listed", crewIs("relay", "underway"))
 			c := w.dialBridge(t, ship.Session+"/crew/relay")
+			defer c.close()
 			c.send(map[string]any{"type": "join", "cols": 80, "rows": 24})
+			// A dial that lands on the old window is closed by the server without a join reply.
+			until(t, "the dial's join reply or close", func() bool {
+				c.mu.Lock()
+				closed := c.err != nil
+				c.mu.Unlock()
+				return closed || len(c.texts(0, "join")) > 0
+			})
+			if len(c.texts(0, "join")) == 0 {
+				return false, "the dial was closed before a join reply"
+			}
+			j := c.waitJoin(1)
+			seen := stripSGR(j.Scrollback) + stripSGR(j.Screen)
+			if !strings.Contains(seen, "RELAY-NEW-LIVE") {
+				return false, fmt.Sprintf("join screen %q", seen)
+			}
+			// The dial is on the new window; its stream must follow it too.
 			m := c.mark()
-			for end := time.Now().Add(time.Second); nb == nil && time.Now().Before(end); time.Sleep(15 * time.Millisecond) {
-				if len(c.texts(0, "join")) == 0 {
-					continue
-				}
-				w.paneWriteID(fresh.pane, "RELAY-NEW-LIVE\r\n")
-				if strings.Contains(c.output(m), "RELAY-NEW-LIVE") {
-					nb = c
-				}
-			}
-			if nb == nil {
-				c.close()
-				if attempt == 8 {
-					t.Fatal("the bridge dialled after the relaunch never showed the new window's output")
-				}
-			}
-		}
+			w.paneWriteID(fresh.pane, "RELAY-NEW-STREAM\r\n")
+			c.waitOutput(m, "RELAY-NEW-STREAM")
+			return true, ""
+		})
 	})
 
 	// Closing runs before the ship anchors: the ship's pane must still take output
@@ -338,13 +345,14 @@ func TestCrewBridge(t *testing.T) {
 			return cook.err != nil
 		})
 		expectBridgeRefused(t, w.in.LocalURL, ship.Session+"/crew/cook", "", nil, "", http.StatusNotFound)
-		time.Sleep(300 * time.Millisecond)
-		sb.mu.Lock()
-		err := sb.err
-		sb.mu.Unlock()
-		if err != nil {
-			t.Errorf("the ship's bridge closed with cook's: %v", err)
-		}
+		holdClean(t, 300*time.Millisecond, func() string {
+			sb.mu.Lock()
+			defer sb.mu.Unlock()
+			if sb.err != nil {
+				return fmt.Sprintf("the ship's bridge closed with cook's: %v", sb.err)
+			}
+			return ""
+		})
 		m := sb.mark()
 		w.paneWriteID(shipPane, "SHIP-STILL-OPEN\r\n")
 		sb.waitOutput(m, "SHIP-STILL-OPEN")
@@ -388,11 +396,7 @@ func TestCrewBridgeSharesOneControlClient(t *testing.T) {
 	first.active()
 	w.waitWinSize(shipWin, "133x41")
 	first.close()
-	for deadline := time.Now().Add(6 * time.Second); len(w.controlClients(ship.Session)) != 0; time.Sleep(100 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("the first control client never detached")
-		}
-	}
+	until(t, "the first control client detaching", func() bool { return len(w.controlClients(ship.Session)) == 0 })
 
 	scout, _ := w.dialCrew(t, ship.Session, "scout", 90, 25)
 	scout.active()
@@ -407,11 +411,5 @@ func TestCrewBridgeSharesOneControlClient(t *testing.T) {
 		return len(w.controlClients(ship.Session)) == 1
 	})
 	scout.close()
-	deadline := time.Now().Add(6 * time.Second)
-	for len(w.controlClients(ship.Session)) != 0 {
-		if time.Now().After(deadline) {
-			t.Fatalf("the control client was still attached 6s after the last browser left the ship and its crew")
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	until(t, "the control client detaching after the last browser left the ship and its crew", func() bool { return len(w.controlClients(ship.Session)) == 0 })
 }
