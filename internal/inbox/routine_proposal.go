@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"syscall"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/outcomes"
@@ -69,13 +72,21 @@ func (p RoutineProposal) expired(now time.Time) bool { return !now.Before(p.Expi
 // LaunchRoutineItem runs the routine a proposal asks for and answers the item. The hook runs under the answer lock,
 // so a second press finds the item answered; a refused launch, or one after the proposal expired, leaves it unanswered.
 func (s *Service) LaunchRoutineItem(ctx context.Context, id string) (any, error) {
+	return s.LaunchRoutineItemGuarded(ctx, id, nil)
+}
+
+// LaunchRoutineItemGuarded is LaunchRoutineItem for a caller with a Guard, checked under the lock before the hook runs.
+func (s *Service) LaunchRoutineItemGuarded(ctx context.Context, id string, g *Guard) (any, error) {
 	if s.LaunchRoutine == nil {
 		return nil, &refusedError{http.StatusNotImplemented, "launching a routine proposal is not wired"}
 	}
 	var ship any
 	err := s.writeAnswered(AdmiralSession, id, KindRoutineProposal, func(it Item) (any, []outcomes.Record, error) {
+		if err := g.check(it); err != nil {
+			return nil, nil, err
+		}
 		p, _ := it.RoutineProposal()
-		if p.expired(time.Now()) {
+		if p.expired(s.now()) {
 			return nil, nil, &refusedError{http.StatusGone, "the proposal expired"}
 		}
 		got, status, msg := s.LaunchRoutine(ctx, p)
@@ -89,20 +100,30 @@ func (s *Service) LaunchRoutineItem(ctx context.Context, id string) (any, error)
 	if err != nil {
 		return nil, err
 	}
+	s.settled(AdmiralSession, id, g)
 	s.Refresh()
 	return ship, nil
 }
 
 // DismissRoutineProposal answers a routine proposal with a dismissal.
 func (s *Service) DismissRoutineProposal(id string) error {
+	return s.DismissRoutineProposalGuarded(id, nil)
+}
+
+// DismissRoutineProposalGuarded is DismissRoutineProposal for a caller with a Guard.
+func (s *Service) DismissRoutineProposalGuarded(id string, g *Guard) error {
 	var dismissed RoutineProposal
 	err := s.writeAnswered(AdmiralSession, id, KindRoutineProposal, func(it Item) (any, []outcomes.Record, error) {
+		if err := g.check(it); err != nil {
+			return nil, nil, err
+		}
 		p, _ := it.RoutineProposal()
 		dismissed = p
 		file := map[string]any{"version": 1, "id": id, "kind": KindRoutineProposal, "answered": time.Now().UTC().Format(time.RFC3339), "dismissed": true}
 		return file, []outcomes.Record{{Event: "proposal_dismissed", Fields: map[string]any{"item": id, "routine": p.Routine, "fleet": p.Fleet}}}, nil
 	})
 	if err == nil {
+		s.settled(AdmiralSession, id, g)
 		if s.DismissRoutine != nil {
 			s.DismissRoutine(dismissed)
 		}
@@ -132,4 +153,37 @@ func (s *Service) fleetOf(key string) (FleetInfo, bool) {
 		return FleetInfo{}, false
 	}
 	return s.Fleet(key)
+}
+
+// MovedOn says whether a routine proposal closed without the engineer: it expired, or the routine's next run replaced it.
+func (s *Service) MovedOn(session, id string) bool {
+	if session != AdmiralSession || !idPattern.MatchString(id) {
+		return false
+	}
+	dir, err := openShipDir(s.Home, session)
+	if err != nil {
+		return false
+	}
+	defer dir.Close()
+	it, err := readItem(dir, session, id)
+	if err != nil {
+		return false
+	}
+	p, ok := it.RoutineProposal()
+	if !ok {
+		return false
+	}
+	if !Answered(dir, id) {
+		return p.expired(s.now())
+	}
+	f, err := dir.OpenFile(answerName(id), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var a struct {
+		Expired bool `json:"expired"`
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxItem))
+	return err == nil && json.Unmarshal(b, &a) == nil && a.Expired
 }

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -306,6 +307,19 @@ func TestFleetNeedCardCarriesWhatItsChoicesNeed(t *testing.T) {
 	}
 }
 
+// sameRules compares what the rules allow; when they were added doesn't count.
+func sameRules(got []allowrules.Rule, want ...allowrules.Rule) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if !got[i].Same(want[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 func str(v any) string { s, _ := v.(string); return s }
 
 func TestFleetNeedCardATapOnARoutineProposalLaunchesOrDismissesItThroughTheInboxsPath(t *testing.T) {
@@ -372,7 +386,7 @@ func TestFleetNeedCardATapOnAnAllowRuleProposalAddsAndSkipsEachRuleThroughTheInb
 		t.Fatalf("tap = %d %s, want success", rec.Code, rec.Body)
 	}
 	bodyIs(t, rec, `{"answered":"allow-1"}`)
-	if got, _ := f.store.List("home"); !reflect.DeepEqual(got.Rules, []allowrules.Rule{viewRule}) || !reflect.DeepEqual(got.Skipped, []allowrules.Rule{checkRule}) {
+	if got, _ := f.store.List("home"); !sameRules(got.Rules, viewRule) || !sameRules(got.Skipped, checkRule) {
 		t.Errorf("home's store = rules %+v skipped %+v, want the claude rule added and the codex rule skipped", got.Rules, got.Skipped)
 	}
 	want := map[string]any{"version": float64(1), "id": "allow-1", "kind": "allow_rules",
@@ -394,7 +408,7 @@ func TestFleetNeedCardATapOnAnAllowRuleProposalAddsAndSkipsEachRuleThroughTheInb
 	if rec := r.post("off", offCard.ID, map[string]any{"cards": map[string]any{"c1": map[string]any{"decision": "add"}}}); !is2xx(rec) {
 		t.Errorf("tap in the fleet with its chat off = %d %s, want success", rec.Code, rec.Body)
 	}
-	if got, _ := f.store.List("off"); !reflect.DeepEqual(got.Rules, []allowrules.Rule{viewRule}) {
+	if got, _ := f.store.List("off"); !sameRules(got.Rules, viewRule) {
 		t.Errorf("off's store rules = %+v, want the rule added to its own fleet", got.Rules)
 	}
 }
@@ -580,7 +594,10 @@ func TestFleetNeedCardOnlyTheFirstAnswerCountsWhetherItCameFromTheInboxOrAnEarli
 		effects func(f *fleetFakes) int
 	}{
 		{"routine proposal", routineItem, "routine-t1", map[string]any{"launch": true},
-			func(r *needRig) error { _, err := r.in.LaunchRoutineItem(context.Background(), "routine-t1"); return err },
+			func(r *needRig) error {
+				_, err := r.in.LaunchRoutineItem(context.Background(), "routine-t1")
+				return err
+			},
 			func(f *fleetFakes) int { return f.launched() }},
 		{"allow rule proposal", allowItem, "allow-1", map[string]any{"cards": map[string]any{"c1": map[string]any{"decision": "add"}}},
 			func(r *needRig) error {
@@ -770,12 +787,17 @@ func TestFleetNeedCardARoutineCardAnswersEachInboxRefusalWithTheRoutesStatusAndM
 	t.Run("the proposal expired", func(t *testing.T) {
 		r := newNeedRig(t)
 		f := r.fleetHooks()
-		exp := time.Now().Add(3 * time.Second)
-		r.item("_admiral", "routine-t1", fleetRoutine("t1", "home", createdA, exp, sweepAction))
+		var skew atomic.Int64
+		wire := r.wire
+		r.wire = func(s *inbox.Service) {
+			wire(s)
+			s.Now = func() time.Time { return time.Now().Add(time.Duration(skew.Load())) }
+		}
+		r.item("_admiral", "routine-t1", fleetRoutine("t1", "home", createdA, inAnHour(), sweepAction))
 		r.start()
 		card := r.cardFor("home", "routine-t1")
-		// No pass or read of the cards runs meanwhile, so the card has not yet moved on.
-		waitFor(t, "the proposal's expiry", func() bool { return time.Now().After(exp) })
+		// No pass or read of the cards runs meanwhile, so the card has not yet moved on and the tap meets the Inbox's 410.
+		skew.Store(int64(2 * time.Hour))
 
 		rec := r.post("home", card.ID, map[string]any{"launch": true})
 		if rec.Code != http.StatusGone || errorOf(rec) != "the proposal expired" {
@@ -783,6 +805,10 @@ func TestFleetNeedCardARoutineCardAnswersEachInboxRefusalWithTheRoutesStatusAndM
 		}
 		if f.launched() != 0 {
 			t.Errorf("an expired proposal ran the routine %d times", f.launched())
+		}
+		r.waitState("home", card.ID, "moved_on", "")
+		if rec := r.post("home", card.ID, map[string]any{"launch": true}); rec.Code != http.StatusConflict {
+			t.Errorf("tap on the card that reads moved on = %d, want 409", rec.Code)
 		}
 	})
 }

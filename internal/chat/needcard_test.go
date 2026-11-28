@@ -34,7 +34,7 @@ type needRig struct {
 	svc    *Service
 	mux    *http.ServeMux
 	cancel context.CancelFunc
-	done   chan struct{} // closed when the poster has returned
+	done   chan struct{}        // closed when the poster has returned
 	wire   func(*inbox.Service) // sets the hooks of the Inbox begin builds, before the poster runs
 }
 

@@ -73,6 +73,8 @@ type Service struct {
 	ChatQuestions func() []Item
 	// AnswerChat answers a chat question where the chat keeps it; the inbox has no copy.
 	AnswerChat func(session, id string, req QuestionRequest) error
+	// Now is the clock a routine proposal's expiry reads; nil is the wall clock.
+	Now func() time.Time
 	// OnChange runs after every change to the list is sent. It must not block.
 	OnChange func()
 	// OnSettled runs synchronously after an item's answer file is written, before a kept inbox's files are released; via is the Guard's, empty for the Inbox's own.
@@ -95,11 +97,18 @@ type Service struct {
 	watcher  *fsnotify.Watcher
 }
 
+func (s *Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
 func (s *Service) List() []Item {
 	s.mu.Lock()
 	items := append([]Item{}, s.items...)
 	s.mu.Unlock()
-	now := time.Now()
+	now := s.now()
 	items = slices.DeleteFunc(items, func(it Item) bool {
 		if p, ok := it.EventProposal(); ok {
 			if !p.expired(now) {
