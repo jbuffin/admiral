@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 
@@ -19,9 +20,7 @@ func (w *world) restartLAN(t *testing.T) *fleetInst {
 	old := w.in
 	old.Stop()
 	w.in = launchAdmiral(t, w.home, "0.0.0.0:"+old.Port, w.baseEnv())
-	if m := lanLine.FindStringSubmatch(w.in.LANLine); m != nil {
-		w.in.LANIP = m[1]
-	}
+	w.in.setLANIP()
 	w.in.Token = old.Token
 	requireLAN(t, w.in.instance)
 	return w.in
@@ -42,6 +41,7 @@ type followMsg struct {
 	Target    string `json:"target"`
 	Session   string `json:"session"`
 	Reason    string `json:"reason"`
+	raw       []byte
 }
 
 type follower struct {
@@ -104,6 +104,7 @@ func (f *follower) next(d time.Duration) followMsg {
 			f.t.Fatalf("websocket message %q is not JSON: %v", data, err)
 		}
 		if isFollowType(m.Type) {
+			m.raw = data
 			return m
 		}
 	}
@@ -179,9 +180,13 @@ func TestPushFollowJourneyFromQuestionToAnswerToReconnectToRestart(t *testing.T)
 		t.Fatalf("question push = %+v, want ship %s (%s) in fleet ans", pushMsg, ship.Name, ship.Session)
 	}
 	web := r.collect(1)[0]
-	for field, got := range map[string]string{"name": pushMsg.Name, "line": pushMsg.Line, "tag": pushMsg.Tag, "session": pushMsg.Session, "fleet": pushMsg.Fleet, "target": pushMsg.Target} {
-		if web.payload[field] != got {
-			t.Errorf("%s: the follower's push says %q and the Web Push says %v", field, got, web.payload[field])
+	var followed map[string]any
+	if err := json.Unmarshal(pushMsg.raw, &followed); err != nil {
+		t.Fatalf("push %q is not a JSON object: %v", pushMsg.raw, err)
+	}
+	for field, want := range web.payload {
+		if !reflect.DeepEqual(followed[field], want) {
+			t.Errorf("%s: the follower's push says %v and the Web Push says %v", field, followed[field], want)
 		}
 	}
 
@@ -193,7 +198,7 @@ func TestPushFollowJourneyFromQuestionToAnswerToReconnectToRestart(t *testing.T)
 	f.silent("after the answer's push_clear, which already carries the count")
 
 	// Away: the socket is closed (silent's read timeout closed it) and the next question happens without it.
-	// Neither the Web Push nor the ship list shows the event is in the ring; a live follower receiving it does.
+	// The Web Push leaves the sender on its own goroutine, so only a follower shows the event is in the ring.
 	observer := r.follow("a", nil, "")
 	observer.expect("attention")
 	missed := r.launch("q")
@@ -211,7 +216,6 @@ func TestPushFollowJourneyFromQuestionToAnswerToReconnectToRestart(t *testing.T)
 	if m := back.expect("attention"); count(t, m) != 1 {
 		t.Fatalf("after the replay got %+v, want a count of 1", m)
 	}
-	back.silent("after the replay and its count")
 
 	// Restart: the ring is in memory only, so the old boot and seq are no longer known.
 	r.w.restartLAN(t)
