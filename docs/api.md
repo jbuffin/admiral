@@ -503,7 +503,7 @@ The WebSocket (`/ws`, `/ws/v1`) also sends `{"type": "attention", "count": N}`: 
 - moored ships with `stack_ready` and no PR with `reviewing` set, whatever its state
 - moored ships with a PR that is `reviewing`, `responded` and `OPEN` (a re-review)
 
-The count drops only when an item is answered or removed or a stop ends; viewing a stop (`seen`) never changes it. Until the first inbox scan has finished and the ship list is known, no `attention` message is sent, since empty lists would read as zero; the first one follows as soon as both are known.
+Viewing a stop (`seen`) never changes the count; it drops only when what it counts goes away (an item answered or removed, a stop ended, a stack merged, a re-review done). Until the first inbox scan has finished and the ship list is known, no `attention` message is sent, since empty lists would read as zero; the first one follows as soon as both are known.
 
 A `crew_notes` item holds `crew_notes: {"fleet", "ship", "run_date", "notes": [{"id", "member", "role", "scope", "repo", "note", "replaces"}]}`. A `crew_member` item holds `crew_member: {"fleet", "ship", "run_date", "member", "role", "ad_hoc_run", "definition", "notes": [...]}`, where `definition` is the ad hoc file's text and the notes are that member's. `fleet` is the fleet key the ship was launched in. The answer files are `{"version": 1, "id", "kind", "answered", "notes": {"<note id>": {"decision", "note", "scope", "repo"}}}` for `crew_notes` and `{..., "decision", "file_removed"}` for `crew_member`.
 

@@ -3,6 +3,7 @@ package attention_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -24,11 +25,13 @@ type rig struct {
 	items []inbox.Item
 	svc   *attention.Service
 	url   string
+	// joined gets a value once a new client has been through every module's Connected.
+	joined chan struct{}
 }
 
 func newRig(t *testing.T, sh []ships.Ship, items []inbox.Item) *rig {
 	t.Helper()
-	r := &rig{t: t, ships: sh, items: items}
+	r := &rig{t: t, ships: sh, items: items, joined: make(chan struct{}, 16)}
 	hub := server.NewHub()
 	r.svc = &attention.Service{
 		Hub: hub,
@@ -43,11 +46,16 @@ func newRig(t *testing.T, sh []ships.Ship, items []inbox.Item) *rig {
 			return append([]inbox.Item(nil), r.items...)
 		},
 	}
-	srv := httptest.NewServer((&server.Server{Hub: hub, Modules: []server.Module{r.svc}}).Handler())
+	srv := httptest.NewServer((&server.Server{Hub: hub, Modules: []server.Module{r.svc, joinProbe{r.joined}}}).Handler())
 	t.Cleanup(srv.Close)
 	r.url = "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws/v1"
 	return r
 }
+
+type joinProbe struct{ joined chan struct{} }
+
+func (joinProbe) Routes(*http.ServeMux)      {}
+func (p joinProbe) Connected(*server.Client) { p.joined <- struct{}{} }
 
 func (r *rig) setShips(sh []ships.Ship) {
 	r.mu.Lock()
@@ -72,6 +80,11 @@ func (r *rig) dial() *websocket.Conn {
 		r.t.Fatal(err)
 	}
 	r.t.Cleanup(func() { _ = conn.CloseNow() })
+	select {
+	case <-r.joined:
+	case <-ctx.Done():
+		r.t.Fatal("the client never finished connecting")
+	}
 	return conn
 }
 
@@ -183,7 +196,7 @@ func TestTheCountSpansEveryFleet(t *testing.T) {
 }
 
 func TestNoCountIsSentUntilTheListsAreKnown(t *testing.T) {
-	r := newRig(t, []ships.Ship{needsYou("a")}, nil)
+	r := newRig(t, nil, nil)
 	known := false
 	r.svc.Ready = func() bool {
 		r.mu.Lock()
@@ -191,12 +204,13 @@ func TestNoCountIsSentUntilTheListsAreKnown(t *testing.T) {
 		return known
 	}
 	conn := r.dial()
-	r.svc.Changed() // a change before the lists are known sends nothing either
+	r.setShips([]ships.Ship{needsYou("a")}) // a change before the lists are known sends nothing
 	r.mu.Lock()
 	known = true
+	r.ships = []ships.Ship{needsYou("a"), needsYou("b")}
 	r.mu.Unlock()
 	r.svc.Changed()
-	if got := next(t, conn); got != 1 {
-		t.Errorf("first count = %d, want 1 (the count once known, not one from empty lists)", got)
+	if got := next(t, conn); got != 2 {
+		t.Errorf("first count = %d, want 2 (the count once known, not an earlier one)", got)
 	}
 }
