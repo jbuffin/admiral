@@ -516,13 +516,15 @@ func serve(args []string) error {
 		return true
 	}, append([]push.Sink{push.NewAlertSink(push.Async(hub))}, pushSinks...)...)
 	attentionService := &attention.Service{Hub: hub, Ships: shipService.List, Items: inboxService.List, Ready: func() bool { return inboxService.Scanned() && host.Known() }}
-	inboxService.OnChange = func() { pushFeed.InboxChanged(); attentionService.Changed() }
 
 	minter, err := actor.NewMinter(absDir)
 	if err != nil {
 		return err
 	}
 	chatService := &chat.Service{Actor: minter, Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, ConfigChanges: cfg.Subscribe, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
+	chatService.Inbox = inboxService
+	inboxService.OnChange = func() { pushFeed.InboxChanged(); attentionService.Changed(); chatService.InboxChanged() }
+	inboxService.OnSettled = chatService.InboxSettled
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	shipService.ChatPrompt = chatService.PromptKey
 	shipService.PromptKey = chatService.PromptKey
@@ -697,6 +699,7 @@ func serve(args []string) error {
 		inboxService.Notify()
 		pushFeed.ShipsChanged()
 		attentionService.Changed()
+		chatService.InboxChanged() // a ship's fleet may only now be known
 		routineScheduler.Changed()
 		commitmentRunner.Changed()
 		shipCards.Changed()
@@ -765,7 +768,7 @@ func serve(args []string) error {
 			}
 		}
 	}()
-	runs := []func(context.Context){s.WatchConfig, updateChecker.Run, crewService.Run, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run, titler.Run, routineScheduler.Run, commitmentRunner.Run, shipCards.Run, func(ctx context.Context) {
+	runs := []func(context.Context){s.WatchConfig, updateChecker.Run, crewService.Run, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, chatService.RunNeedCards, tails.Run, titler.Run, routineScheduler.Run, commitmentRunner.Run, shipCards.Run, func(ctx context.Context) {
 		wakeOn(ctx, resourceSet.Changed, routineScheduler.Changed, commitmentRunner.Changed)
 	}}
 	if tmuxPath != "" {

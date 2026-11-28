@@ -52,6 +52,16 @@ func (s *fleetChat) recent() []Message {
 	es, err := s.history().Recent(s.key, HistoryWindow)
 	s.noteLogErr(err)
 	out := make([]Message, 0, len(es))
+	var open map[string]bool
+	openNow := func() map[string]bool {
+		if open == nil {
+			open = map[string]bool{}
+			if s.Inbox != nil {
+				open = s.openItems(s.Inbox.List())
+			}
+		}
+		return open
+	}
 	for _, e := range es {
 		at := e.At
 		if at.IsZero() {
@@ -60,6 +70,9 @@ func (s *fleetChat) recent() []Message {
 		card := e.Card
 		if e.Kind == chatlog.KindShipCard {
 			card = s.withFindings(card)
+		}
+		if e.Kind == chatlog.KindNeedCard {
+			card = s.withNeedState(e.ID, card, openNow)
 		}
 		out = append(out, Message{ID: e.ID, Kind: e.Kind, Role: e.Role, Text: e.Text, At: at.UTC().Format(time.RFC3339Nano), Card: card, Thread: e.Thread})
 	}

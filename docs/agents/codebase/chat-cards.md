@@ -61,3 +61,8 @@ Chat questions, ship cards, report turns and replies, drafting ships and campaig
   - Once the parent exists the item is answered even if Follow failed.
   - Both post a `campaign_draft_card` with no turn; AdmiralBot is not told the outcome.
 - **Kept out.** No outcomes beyond ship cards, autopilot, caps or resources; no crew rows.
+- **Need cards** (`internal/chat/needcard.go`). Shape and route: `docs/api.md`, "Need cards".
+  - `Service.RunNeedCards` takes a poke from `InboxChanged` (the Inbox's `OnChange` and the ships' change, fanned out in `cmd/admiral/main.go`) and posts a `need_card` for each listed question of a ship with a fleet, on its own goroutine. The id hashes session, item id and `created`; the log skips an id it holds, so a restart posts nothing twice.
+  - `need-cards.json` under the home keeps one record per card (fleet, session, item, `created`, state, where answered). The entry in the log keeps the card as posted and `recent` serves its state from the record, settling it first when the item has left the Inbox's list (answer file: answered in the Inbox; none: removed).
+  - `inbox.Service.OnSettled` (`InboxSettled`) runs from `Answer` and `RemoveItem` before a kept ship's files are released; the card route marks its item as answered through the chat first, so no pass ever reads it as `inbox`.
+  - The route answers through `inbox.Service.Answer` with a build that checks the item's `created` against the card's, so a reused item id is refused.

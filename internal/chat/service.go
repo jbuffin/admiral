@@ -114,7 +114,9 @@ type Service struct {
 	// readPromptKey replaces the tmux read of the prompt key; a test seam.
 	readPromptKey func(fleet string) (string, bool)
 	// Inbox is the Needs You inbox whose questions post need cards and which a need card's answer goes through; nil posts none.
-	Inbox *inbox.Service
+	Inbox    *inbox.Service
+	needOnce sync.Once
+	need     *needStore
 	// Findings says which voyages kept findings, for the ship cards; nil reads as none.
 	Findings findings.Reader
 
