@@ -16,13 +16,14 @@ import (
 // NotStartedPushWait is how long past launch a session must be not started before it pushes; the inbox shows it sooner.
 const NotStartedPushWait = 30 * time.Second
 
-// Decided is an event with what Decide made of it.
+// Decided is an event with what Decide made of it. For a Clear, Event is the event that pushed.
 type Decided struct {
 	Event   Event
 	Outcome Outcome
 }
 
-// Sink receives each event that Decide did not drop. It must not block.
+// Sink receives each event that Decide did not drop, and a Clear when a key that pushed stops needing the engineer.
+// It must not block.
 type Sink interface {
 	Deliver(Decided)
 }
@@ -64,6 +65,29 @@ type Watcher struct {
 	waiting    bool // a not-started session is still inside NotStartedPushWait
 	inboxSeen  bool
 	inboxItems map[string]bool
+	// pushedShips and pushedInbox hold the event behind each key whose last decided outcome was Push, per snapshot
+	// that detects it; events from Emit are in neither, so they never clear.
+	pushedShips, pushedInbox map[string]Event
+}
+
+// takeCleared removes and returns the pushed events whose key is not in live. It is called with w.mu held.
+func takeCleared(pushed map[string]Event, live map[string]bool) []Event {
+	var out []Event
+	for key, ev := range pushed {
+		if !live[key] {
+			out = append(out, ev)
+			delete(pushed, key)
+		}
+	}
+	return out
+}
+
+func (w *Watcher) sendClears(evs []Event) {
+	for _, ev := range evs {
+		for _, s := range w.sinks {
+			deliver(s, Decided{ev, Clear})
+		}
+	}
 }
 
 func NewWatcher(watching func() bool, notify func(fleet string) bool, sinks ...Sink) *Watcher {
@@ -90,7 +114,10 @@ func (w *Watcher) early(reason, launched string) bool {
 }
 
 // Emit is the way in for events that no detector produces yet.
-func (w *Watcher) Emit(ev Event) {
+func (w *Watcher) Emit(ev Event) { w.emit(ev, nil) }
+
+// emit decides ev and, when it pushes and a snapshot owns it, remembers it in that snapshot's pushed set.
+func (w *Watcher) emit(ev Event, owner *map[string]Event) {
 	notify := true
 	if ev.Fleet != "" {
 		notify = w.notify(ev.Fleet)
@@ -98,6 +125,14 @@ func (w *Watcher) Emit(ev Event) {
 	out := Decide(ev, w.watching(), notify)
 	if out == Nothing {
 		return
+	}
+	if out == Push && owner != nil {
+		w.mu.Lock()
+		if *owner == nil {
+			*owner = map[string]Event{}
+		}
+		(*owner)[ev.Key] = ev
+		w.mu.Unlock()
 	}
 	for _, s := range w.sinks {
 		deliver(s, Decided{ev, out})
@@ -201,9 +236,21 @@ func (w *Watcher) Ships(list []ships.Ship) {
 		}
 	}
 	w.shipsSeen, w.asking, w.anchored, w.ready, w.polled, w.fleetOf, w.waiting = true, asking, anchored, ready, polled, fleetOf, waiting
+	live := map[string]bool{}
+	for k := range asking {
+		live[k] = true
+	}
+	for k := range anchored {
+		live[k+":anchored"] = true
+	}
+	for k := range ready {
+		live[k+":ready"] = true
+	}
+	cleared := takeCleared(w.pushedShips, live)
 	w.mu.Unlock()
+	w.sendClears(cleared)
 	for _, ev := range events {
-		w.Emit(ev)
+		w.emit(ev, &w.pushedShips)
 	}
 }
 
@@ -223,9 +270,11 @@ func (w *Watcher) Inbox(items []inbox.Item) {
 		}
 	}
 	w.inboxSeen, w.inboxItems = true, seen
+	cleared := takeCleared(w.pushedInbox, seen)
 	w.mu.Unlock()
+	w.sendClears(cleared)
 	for _, ev := range events {
-		w.Emit(ev)
+		w.emit(ev, &w.pushedInbox)
 	}
 }
 
@@ -270,6 +319,9 @@ type Feed struct {
 	Items   func() []inbox.Item
 	// InboxReady is whether the inbox has done its first scan; a change before that is not read.
 	InboxReady func() bool
+	// ShipsReady is whether the ship list can be trusted; a list read while tmux is unknown or lost says nothing about
+	// which ships left, so it is neither read nor cleared on. Nil means always ready.
+	ShipsReady func() bool
 	// Recheck is how often a session still inside NotStartedPushWait is looked at again; a second when zero.
 	Recheck time.Duration
 
@@ -293,6 +345,8 @@ func poke(c chan struct{}) {
 func (f *Feed) ShipsChanged() { f.init(); poke(f.ship) }
 func (f *Feed) InboxChanged() { f.init(); poke(f.item) }
 
+func (f *Feed) shipsReady() bool { return f.ShipsReady == nil || f.ShipsReady() }
+
 func (f *Feed) Run(ctx context.Context) {
 	f.init()
 	// A not-started session's push comes due with no event to announce it.
@@ -305,10 +359,13 @@ func (f *Feed) Run(ctx context.Context) {
 	for {
 		select {
 		case <-recheck.C:
-			if f.Watcher.Waiting() {
+			if f.Watcher.Waiting() && f.shipsReady() {
 				f.Watcher.Ships(f.Ships())
 			}
 		case <-f.ship:
+			if !f.shipsReady() {
+				continue
+			}
 			f.Watcher.Ships(f.Ships())
 		case <-f.item:
 			if f.InboxReady != nil && !f.InboxReady() {
