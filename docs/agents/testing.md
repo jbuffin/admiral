@@ -21,7 +21,7 @@ A test earns its place when it would catch a bug a person could hit:
 - Pick one case per distinct rule. Spelling variants of one flag, every bidi code point, every way to write the same argument: one representative each.
 - Test the inputs real callers send. The boundary validates; test it there, and trust the code behind it.
 - Mock only what Admiral doesn't control: `gh`, the network, the clock. Use the real binary, tmux and the fake harness for the rest.
-- Wait on a condition (a file, an API state, a locator), never on a fixed sleep. To show that something does not happen, poll it for its whole window after the test has seen what it starts from: `holdThat` for `hold`, `holdWindow` for a window of the test's own, or `holdClean` when the check returns the reason it failed (`e2e/harness_test.go`). A negative check that passes after one look proves nothing.
+- Wait on a condition (a file, an API state, a locator), never on a fixed sleep. To show that something does not happen, poll it for its whole window after the test has seen what it starts from: `holdThat` for `hold`, `holdWindow` for a window of the test's own, or `holdClean` when the check returns the reason it failed (`e2e/harness_test.go`). Where the work that could do it has a completion signal, wait for that signal and look once. A negative check that passes after one look with no such signal proves nothing.
 - A red test describes the behavior it expects. Once the code exists, the test file carries no header spelling out the interface it assumed.
 - Text, class names, colors, layout and focus order are the designs' job. A Playwright test finds elements by role and accessible name, and asserts what the person sees happen.
 

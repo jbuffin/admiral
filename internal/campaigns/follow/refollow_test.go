@@ -86,7 +86,7 @@ func TestFollowingACampaignWhoseTreeClosedLeavesItEnded(t *testing.T) {
 	}
 	r.clock.Advance(10 * time.Minute)
 	r.svc.Tick()
-	holds(t, "a tree-closed campaign was reread", func() bool { return r.gh.rootReads() > reads })
+	r.holds("a tree-closed campaign was reread", func() bool { return r.gh.rootReads() > reads })
 }
 
 func TestTheCampaignViewCarriesWhyItEnded(t *testing.T) {
