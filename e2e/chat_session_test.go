@@ -1099,3 +1099,55 @@ func TestChatSession_NewChatWhileATurnRunsClearsWithoutAFlush(t *testing.T) {
 		t.Errorf("thread = %+v, want a New chat marker", s.Messages)
 	}
 }
+
+// Interrupt presses one Escape in the working chat, withdraws what it asked, shows the harness's own interrupted record,
+// and does nothing once the turn has ended. The fake's `interrupted` cue writes that record once it reads the Escape.
+func TestChatSession_InterruptStopsTheTurnWithdrawsItsQuestionsAndShowsInterrupted(t *testing.T) {
+	t.Parallel()
+	c := newBotWorld(t, botOpts{})
+	w := c.world
+	tp := filepath.Join(c.cfgDir, "projects", "p", "turn.jsonl")
+	w.writeCue("record", sessionStartCue(tp, "startup"), "hook working", "interrupted", "wait go-stop", `event Stop {"background_tasks":[]}`)
+	w.start()
+	c.start()
+	c.waitSession(10*time.Second, "a working chat", func(s chatSession) bool { return s.Running && s.State == "working" })
+	p := w.botStart(w.botEnv(), askStdin("Where does it go?"), "chat", "ask")
+	waitQuestions(t, w.in.LocalURL, p, 10*time.Second, "the question", hasQuestions(1))
+
+	if _, body := send(t, http.MethodGet, w.in.LocalURL+"/api/version", nil); !strings.Contains(body, `"chat-interrupt"`) {
+		t.Errorf("GET /api/version = %s, want the capability chat-interrupt", body)
+	}
+	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/interrupt", nil)
+	if code != http.StatusOK || !strings.Contains(body, `"interrupted":true`) {
+		t.Fatalf(`POST /api/chat/chat/interrupt = %d %s, want 200 {"interrupted":true}`, code, body)
+	}
+	c.waitStdin("\x1b")
+	w.expectExit(p.wait(10*time.Second), 4, "chat ask when Interrupt withdrew its question")
+	if s := fetchBot(t, w.in.LocalURL); len(s.Questions) != 0 || len(w.questionFiles()) != 0 {
+		t.Errorf("after Interrupt: questions %v, files %v, want none", fetchBot(t, w.in.LocalURL).ids(), w.questionFiles())
+	}
+	s := c.waitSession(10*time.Second, "the interrupted entry", func(s chatSession) bool {
+		return len(s.Messages) > 0 && s.Messages[len(s.Messages)-1].Kind == "interrupted"
+	})
+	if last := s.Messages[len(s.Messages)-1]; last.Text != "Interrupted" {
+		t.Errorf("last entry = %+v, want kind interrupted with the text Interrupted", last)
+	}
+	for _, m := range s.Messages {
+		if strings.Contains(m.Text, "Request interrupted") {
+			t.Errorf("the harness's raw line shows as %+v", m)
+		}
+	}
+	if !s.Running {
+		t.Errorf("the chat stopped running: Interrupt must leave the same session")
+	}
+
+	t.Run("an idle chat is left alone", func(t *testing.T) {
+		c.touch("go-stop")
+		c.waitSession(10*time.Second, "an idle chat", func(s chatSession) bool { return s.State == "idle" })
+		code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/interrupt", nil)
+		if code != http.StatusOK || !strings.Contains(body, `"interrupted":false`) {
+			t.Fatalf(`POST /api/chat/chat/interrupt on an idle chat = %d %s, want 200 {"interrupted":false}`, code, body)
+		}
+		holdThat(t, "the idle chat's terminal input changed from the first Escape", func() bool { return c.stdin() == "\x1b" })
+	})
+}

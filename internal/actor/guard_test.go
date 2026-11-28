@@ -358,3 +358,12 @@ func TestAnActorCannotMakeACrewMemberItsOwn(t *testing.T) {
 		}
 	}
 }
+
+func TestAnActorCannotInterruptItsOwnChat(t *testing.T) {
+	r := newRig(t)
+	for _, p := range []string{"/api/chat/work/interrupt", "/api/v1/chat/work/interrupt"} {
+		if c := r.do("POST", p, "", "tok-work", local).Code; c != 403 || r.reached != 0 {
+			t.Errorf("POST %s as AdmiralBot: code %d, reached %d; want 403 and the handler not reached", p, c, r.reached)
+		}
+	}
+}

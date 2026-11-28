@@ -14,6 +14,7 @@ The `/api/v1` and `/ws/v1` aliases, the version route and the logo route. Read i
   - `resources`: the resource units and their locks.
   - `chat`: the chat session.
   - `ship-input`: send a message to, interrupt and stop a ship, and send to or interrupt a crew boat (`POST /api/ships/<session>/{messages,interrupt,stop}` and `/crew/<name>/{messages,interrupt}`; see `docs/api.md`).
+  - `chat-interrupt`: interrupt a fleet's chat turn (`POST /api/chat/<fleet>/interrupt`, which presses Escape and withdraws the chat's questions; see `docs/api.md`) and the `interrupted` entry in the chat's messages and in conversations.
   - `conversation`: a Claude Code, Codex or Copilot ship's conversation (`GET /api/ships/<session>/conversation` and the WebSocket `conversation` messages; see `docs/api.md`).
     - It also covers a crew boat's (`GET /api/ships/{session}/crew/{name}/conversation` and the `crew` field of the WebSocket messages): `internal/shipconv` keys a subscription by session or by `{session}/crew/{name}`, and reads the boat's path fresh from its pane option (`@admiral-crew-transcript`), confined by `transcriptfs` and `ValidCrewTranscriptPath` only.
     - A Codex ship or boat is read the same way through the rollout adapter (`internal/conversation/codex.go`, selected by `Options.Format`) with `transcriptfs.OpenIn` on `<Codex home>/sessions/`; the hook's `SessionStart` records the path, and a watch re-reads the option about once a second to follow a new rollout.

@@ -266,6 +266,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat/{fleet}/start", s.route((*fleetChat).serveStart))
 	mux.HandleFunc("POST /api/chat/{fleet}/messages", s.route((*fleetChat).serveSend))
 	mux.HandleFunc("POST /api/chat/{fleet}/new", s.route((*fleetChat).serveNew))
+	mux.HandleFunc("POST /api/chat/{fleet}/interrupt", s.route((*fleetChat).serveInterrupt))
 	mux.HandleFunc("POST /api/chat/{fleet}/questions/{id}/answer", s.route((*fleetChat).serveAnswer))
 }
 
@@ -819,6 +820,33 @@ func (s *fleetChat) send(raw string) *launcher.Error {
 	return nil
 }
 
+func (s *fleetChat) serveInterrupt(w http.ResponseWriter, r *http.Request) {
+	if s.resetting.Load() {
+		writeError(w, http.StatusConflict, Refreshing)
+		return
+	}
+	s.op.Lock()
+	defer s.op.Unlock()
+	pane, state, status, msg := s.readyState()
+	if pane == "" {
+		writeError(w, status, msg)
+		return
+	}
+	if state == "idle" {
+		writeJSON(w, http.StatusOK, map[string]bool{"interrupted": false})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.server().SendEscape(ctx, pane); err != nil {
+		writeError(w, http.StatusBadGateway, "could not interrupt: "+err.Error())
+		return
+	}
+	// The turn is over, so the chat questions it was waiting on are too; the brief stays as it is.
+	s.withdraw()
+	writeJSON(w, http.StatusOK, map[string]bool{"interrupted": true})
+}
+
 // Send pastes a turn into the fleet's running chat, as a routine's prompt does; it errors when the chat is off or not running.
 func (s *Service) Send(fleet, text string) error {
 	if lerr := s.SendStatus(fleet, text); lerr != nil {
@@ -837,21 +865,27 @@ func (s *Service) SendStatus(fleet, text string) *launcher.Error {
 }
 
 func (s *fleetChat) ready() (pane string, status int, msg string) {
+	pane, _, status, msg = s.readyState()
+	return pane, status, msg
+}
+
+// readyState is ready with the state the chat reported on the same read.
+func (s *fleetChat) readyState() (pane, state string, status int, msg string) {
 	snap, err := s.refresh(true)
 	switch {
 	case !snap.Running:
-		return "", http.StatusConflict, "the chat is not running"
+		return "", "", http.StatusConflict, "the chat is not running"
 	case err != nil:
-		return "", http.StatusBadGateway, "could not read the chat's state: " + err.Error()
+		return "", "", http.StatusBadGateway, "could not read the chat's state: " + err.Error()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.st.optRaw == "" {
 		if ok, why := s.notStartedLocked(); !ok {
-			return "", http.StatusConflict, why
+			return "", "", http.StatusConflict, why
 		}
 	}
-	return s.st.pane, 0, ""
+	return s.st.pane, snap.State, 0, ""
 }
 
 // noteLocked is what the panel says about a running chat, and whether only the terminal clears it.

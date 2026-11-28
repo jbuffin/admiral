@@ -347,6 +347,10 @@ func (d *claudeDecoder) user(l claudeLine, b *lineItems) {
 	if text == "" || b.full() {
 		return
 	}
+	if !l.IsMeta && isInterruptLine(l.Message.Content, bs, text) {
+		b.add(Item{Kind: KindInterrupted, Text: "Interrupted"})
+		return
+	}
 	for _, p := range noticePrefixes {
 		if strings.HasPrefix(head, p) {
 			if p == "<task-notification>" {
@@ -360,6 +364,15 @@ func (d *claudeDecoder) user(l claudeLine, b *lineItems) {
 	if !l.IsMeta {
 		b.add(Item{Kind: KindUser, Text: cutTo(text, maxText, "…")})
 	}
+}
+
+// isInterruptLine is Claude Code's own record of an Escape: one text block holding exactly the marker. The engineer's typed
+// prompt is plain string content, so a typed or pasted copy of the marker stays their message.
+func isInterruptLine(raw json.RawMessage, bs []claudeBlock, text string) bool {
+	if len(bs) != 1 || bs[0].Type != "text" || !strings.HasPrefix(strings.TrimSpace(string(raw)), "[") {
+		return false
+	}
+	return text == "[Request interrupted by user]" || text == "[Request interrupted by user for tool use]"
 }
 
 // harnessOpen is a tag the harness puts around what the engineer typed, such as a paste; its close repeats the name and the id.

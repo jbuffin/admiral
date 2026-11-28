@@ -21,6 +21,7 @@ type codexPayload struct {
 	DurationMs int64           `json:"duration_ms"`
 	Item       codexItem       `json:"item"`
 	CallID     string          `json:"call_id"`
+	Reason     string          `json:"reason"`
 	Name       string          `json:"name"`
 	Input      string          `json:"input"`
 	Arguments  string          `json:"arguments"`
@@ -73,6 +74,11 @@ func (d *codexDecoder) line(raw []byte) (out []emission, ok bool) {
 		case "task_complete":
 			b.uuid = ident(p.TurnID) + "#end"
 			b.add(Item{Kind: KindTurnEnd, Duration: time.Duration(p.DurationMs) * time.Millisecond})
+		case "turn_aborted":
+			if p.Reason == "interrupted" {
+				b.uuid = ident(p.TurnID) + "#interrupted"
+				b.add(Item{Kind: KindInterrupted, Text: "Interrupted"})
+			}
 		case "item_completed":
 			kind := Kind("")
 			switch p.Item.Type {
