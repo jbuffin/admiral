@@ -628,3 +628,38 @@ func TestAGhFailureAnswersTheCardWithTheStatusTheInboxsSubmitRouteReturnsAndLeav
 		})
 	}
 }
+
+// answerOnWrite runs fn when the handler writes its status, which is after the tap's checks and before the handler returns.
+type answerOnWrite struct {
+	*httptest.ResponseRecorder
+	fn func()
+}
+
+func (w *answerOnWrite) WriteHeader(code int) {
+	if w.fn != nil {
+		w.fn()
+		w.fn = nil
+	}
+	w.ResponseRecorder.WriteHeader(code)
+}
+
+func TestAFindingsTapRefusedByValidationLeavesAnInboxAnswerThatLandsNextReadingAnsweredInTheInbox(t *testing.T) {
+	newFakeGH(t)
+	r := newNeedRig(t)
+	r.item("s-work", "fd-1", needFindings("fd-1", "2026-11-20T10:00:00Z"))
+	r.start()
+	card := r.waitLogged("work", 1)[0]
+
+	partial := inbox.FindingsRequest{Cards: []inbox.CardDecision{{ID: "c1", Decision: "approved"}}}
+	b, _ := json.Marshal(partial)
+	w := &answerOnWrite{ResponseRecorder: httptest.NewRecorder(), fn: func() {
+		if err := r.in.AnswerFindings("s-work", "fd-1", allApproved()); err != nil {
+			t.Errorf("the Inbox's answer: %v", err)
+		}
+	}}
+	r.mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/chat/work/need-cards/"+card.ID+"/answer", strings.NewReader(string(b))))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("the partial tap = %d %s, want 400", w.Code, w.Body)
+	}
+	r.waitState("work", card.ID, "answered", "inbox")
+}

@@ -107,13 +107,13 @@ func (n *needStore) settle(id, state, in string) {
 	}
 }
 
-func (n *needStore) answeringItem(session, item string) bool {
+func (n *needStore) tapping(session, item string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.pending[session+"\x00"+item]
 }
 
-func (n *needStore) setAnswering(session, item string, on bool) {
+func (n *needStore) setTapping(session, item string, on bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if on {
@@ -158,13 +158,13 @@ func (s *Service) InboxChanged() {
 }
 
 // InboxSettled records, before the Inbox releases a kept ship's files, that an item was answered or removed through the Inbox.
-func (s *Service) InboxSettled(session, id string, removed bool) {
+func (s *Service) InboxSettled(session, id string, removed bool, via string) {
 	n := s.needs()
 	for _, cid := range n.openIDs(session, id) {
 		switch {
 		case removed:
 			n.settle(cid, NeedRemoved, "")
-		case n.answeringItem(session, id):
+		case via == AnsweredChat:
 			n.settle(cid, NeedAnswered, AnsweredChat)
 		default:
 			n.settle(cid, NeedAnswered, AnsweredInbox)
@@ -292,8 +292,9 @@ func (s *Service) needState(id string, open map[string]bool) (needRec, bool) {
 	switch {
 	case !present || mark:
 		n.settle(id, NeedRemoved, "")
-	case n.answeringItem(r.Session, r.Item):
-		n.settle(id, NeedAnswered, AnsweredChat)
+	case n.tapping(r.Session, r.Item):
+		// A tap in flight settles the card itself through OnSettled; guessing here could read an answer from the Inbox as the chat's.
+		return r, ok
 	default:
 		n.settle(id, NeedAnswered, AnsweredInbox)
 	}
@@ -347,17 +348,15 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "item "+rec.Item+" is already answered")
 		return
 	}
-	defer n.setAnswering(rec.Session, rec.Item, false)
-	// The item must still be the one the card showed; once under the answer lock the tap counts as answered in the chat.
-	check := func(it inbox.Item, locked bool) error {
+	n.setTapping(rec.Session, rec.Item, true)
+	defer n.setTapping(rec.Session, rec.Item, false)
+	// The item must still be the one the card showed; via marks the answer as given in the chat once it is written.
+	g := &inbox.Guard{Via: AnsweredChat, Check: func(it inbox.Item) error {
 		if needCreated(it.Created) != rec.Created || rec.Sig != "" && rec.Sig != needSig(it.Field(it.Kind)) {
 			return inbox.ErrAnswered
 		}
-		if locked {
-			n.setAnswering(rec.Session, rec.Item, true)
-		}
 		return nil
-	}
+	}}
 	out := map[string]any{"answered": rec.Item}
 	switch rec.Kind {
 	case inbox.KindReview:
@@ -368,9 +367,9 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 		if err = json.Unmarshal(body, &req); err == nil {
 			var res inbox.ReviewResult
 			if req.Discard {
-				res, err = s.Inbox.DiscardReviewChecked(rec.Session, rec.Item, check)
+				res, err = s.Inbox.DiscardReviewGuarded(rec.Session, rec.Item, g)
 			} else {
-				res, err = s.Inbox.SubmitReviewChecked(rec.Session, rec.Item, req.SubmitRequest, check)
+				res, err = s.Inbox.SubmitReviewGuarded(rec.Session, rec.Item, req.SubmitRequest, g)
 			}
 			out["action"] = res.Action
 			if res.InvalidTarget {
@@ -380,20 +379,16 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 	case inbox.KindFindings:
 		var req inbox.FindingsRequest
 		if err = json.Unmarshal(body, &req); err == nil {
-			err = s.Inbox.AnswerFindingsChecked(rec.Session, rec.Item, req, check)
+			err = s.Inbox.AnswerFindingsGuarded(rec.Session, rec.Item, req, g)
 		}
 	default:
 		var req inbox.QuestionRequest
 		if err = json.Unmarshal(body, &req); err == nil {
-			err = s.Inbox.Answer(rec.Session, rec.Item, inbox.KindQuestion, func(it inbox.Item) (any, []outcomes.Record, error) {
-				if err := check(it, false); err != nil {
-					return nil, nil, err
-				}
+			err = s.Inbox.AnswerGuarded(rec.Session, rec.Item, inbox.KindQuestion, g, func(it inbox.Item) (any, []outcomes.Record, error) {
 				file, err := inbox.BuildQuestionAnswer(it, req)
 				if err != nil {
 					return nil, nil, err
 				}
-				n.setAnswering(rec.Session, rec.Item, true)
 				return file, []outcomes.Record{{Event: "answered", Fields: map[string]any{"item": rec.Item, "kind": inbox.KindQuestion}}}, nil
 			})
 		}

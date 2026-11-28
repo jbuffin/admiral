@@ -34,7 +34,7 @@ func TestSweepKeptSettlesTheItemsAnsweredWhileAdmiralWasDown(t *testing.T) {
 	}
 	var mu sync.Mutex
 	got := map[string]bool{}
-	s := &Service{Home: home, Kept: st, OnSettled: func(session, id string, removed bool) {
+	s := &Service{Home: home, Kept: st, OnSettled: func(session, id string, removed bool, _ string) {
 		mu.Lock()
 		defer mu.Unlock()
 		if session == "s-work" {

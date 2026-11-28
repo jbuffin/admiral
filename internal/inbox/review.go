@@ -235,27 +235,24 @@ type ReviewResult struct {
 // SubmitReview uses the body the review has on GitHub now, since the engineer
 // may have edited it there, or the item's summary when that is empty.
 func (s *Service) SubmitReview(session, id string, req SubmitRequest) (ReviewResult, error) {
-	return s.SubmitReviewChecked(session, id, req, nil)
+	return s.SubmitReviewGuarded(session, id, req, nil)
 }
 
-// ItemCheck lets a caller refuse an answer to an item other than the one it showed the engineer. It runs before any gh call and again under the answer lock, where locked is true and nothing but the write follows; its error is the action's.
-type ItemCheck func(it Item, locked bool) error
-
-func (s *Service) SubmitReviewChecked(session, id string, req SubmitRequest, check ItemCheck) (ReviewResult, error) {
+func (s *Service) SubmitReviewGuarded(session, id string, req SubmitRequest, guard *Guard) (ReviewResult, error) {
 	if !reviewEvents[req.Event] {
 		return ReviewResult{}, invalid("event must be COMMENT, APPROVE or REQUEST_CHANGES")
 	}
-	return s.reviewAction(session, id, false, false, req.Event, req.Edited, check)
+	return s.reviewAction(session, id, false, false, req.Event, req.Edited, guard)
 }
 
 // DiscardReview of an invalid target runs no gh, so an item no other action can
 // answer still has a way out.
 func (s *Service) DiscardReview(session, id string) (ReviewResult, error) {
-	return s.DiscardReviewChecked(session, id, nil)
+	return s.DiscardReviewGuarded(session, id, nil)
 }
 
-func (s *Service) DiscardReviewChecked(session, id string, check ItemCheck) (ReviewResult, error) {
-	return s.reviewAction(session, id, true, false, "", false, check)
+func (s *Service) DiscardReviewGuarded(session, id string, guard *Guard) (ReviewResult, error) {
+	return s.reviewAction(session, id, true, false, "", false, guard)
 }
 
 // ForgetReview is for a review no action can clear any more (a deleted repository,
@@ -266,15 +263,13 @@ func (s *Service) ForgetReview(session, id string) (ReviewResult, error) {
 
 // reviewAction runs gh outside answerMu, and an item has one action at a time,
 // so a double tap runs gh once.
-func (s *Service) reviewAction(session, id string, discard, forget bool, event string, edited bool, check ItemCheck) (ReviewResult, error) {
+func (s *Service) reviewAction(session, id string, discard, forget bool, event string, edited bool, guard *Guard) (ReviewResult, error) {
 	it, err := s.open(session, id)
 	if err != nil {
 		return ReviewResult{}, err
 	}
-	if check != nil {
-		if err := check(it, false); err != nil {
-			return ReviewResult{}, err
-		}
+	if err := guard.check(it); err != nil {
+		return ReviewResult{}, err
 	}
 	if it.Kind != KindReview {
 		return ReviewResult{}, invalid("item %s is a %s, not a review", id, it.Kind)
@@ -338,11 +333,9 @@ func (s *Service) reviewAction(session, id string, discard, forget bool, event s
 		action = ActionGone
 	}
 	// A forgotten review is a removal, so a need card for it reads removed.
-	err = s.answer(session, id, KindReview, forget, func(it Item) (any, []outcomes.Record, error) {
-		if check != nil {
-			if err := check(it, true); err != nil {
-				return nil, nil, err
-			}
+	err = s.answer(session, id, KindReview, forget, guard, func(it Item) (any, []outcomes.Record, error) {
+		if err := guard.check(it); err != nil {
+			return nil, nil, err
 		}
 		file := struct {
 			Version  int    `json:"version"`
