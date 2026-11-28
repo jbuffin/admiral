@@ -190,3 +190,33 @@ test('an option description renders through the shared markdown renderer', async
   const el = await shown();
   expect(el.querySelector('.inbox-option-desc strong')?.textContent).toBe('calm');
 });
+
+test('a title that equals the only question is shown once, and one that differs is still shown', async () => {
+  serve(() => [entry('need-1', ' Which port? ')]);
+  const el = await shown();
+  expect(el.textContent?.split('Which port?')).toHaveLength(2);
+});
+
+test('a title that differs from the question is shown beside it', async () => {
+  serve(() => [entry('need-1', 'Pick a port')]);
+  const el = await shown();
+  expect(el.textContent).toContain('Pick a port');
+  expect(el.textContent).toContain('Which port?');
+});
+
+test('a hidden character in the title shows by its code point, open and collapsed', async () => {
+  serve(() => [entry('need-1', 'Pick\u202Ea port'), entry('need-2', 'Done\u202Eit', { state: 'removed' })]);
+  render(<ChatPanel surface={surface} title phone />);
+  await waitFor(() => expect(document.querySelectorAll('.chat-card')).toHaveLength(2));
+  const [open, quiet] = Array.from(document.querySelectorAll('.chat-card')).map((e) => e.textContent ?? '');
+  expect(open).toContain('Pick⟨U+202E⟩a port');
+  expect(quiet).toContain('Done⟨U+202E⟩it');
+});
+
+test('a 404 from the card route shows its error', async () => {
+  serve(() => [entry('need-1', 'Pick a port')], () => new Response(JSON.stringify({ error: 'no such card' }), { status: 404 }));
+  await shown();
+  fireEvent.click(screen.getByRole('radio', { name: /Harbor/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Send answers' }));
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('no such card'));
+});

@@ -834,6 +834,7 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   await page.reload();
   await expect(main.locator('.chat-card', { hasText: 'Which database should the login use?' })).toContainText('Answered in the chat');
   await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  await expect(main.locator('.chat-card').first()).toBeVisible();
   await expect(main.locator('.chat-card', { hasText: 'Which database should the login use?' })).toHaveCount(0);
 
   // A ship AdmiralBot launched is a link in its reply, and tapping it opens the ship's screen in this page.
