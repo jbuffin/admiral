@@ -215,7 +215,10 @@ func TestObserverGivesUpWithAnErrorSoTheFileIsServed(t *testing.T) {
 	t.Run("never answers connect", func(t *testing.T) {
 		p := listen(t)
 		r := conversation.NewServerReader(conversation.Options{Harness: "copilot"})
-		done, _ := observe(t, p.port(), r)
+		done := make(chan error, 1)
+		go func() {
+			done <- conversation.ObserveUIServerWithin(context.Background(), p.port(), wireSession, r, 300*time.Millisecond)
+		}()
 		if !p.accept() {
 			t.Fatal("the observer never connected")
 		}
