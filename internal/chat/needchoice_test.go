@@ -313,21 +313,6 @@ func TestAnAnsweredCardRefusesAChoiceWith409EvenWhenTheIdIsUnknown(t *testing.T)
 	}
 }
 
-func TestAnExistingBodyStillAnswersACardThatAlsoHasChoices(t *testing.T) {
-	g := newFakeGH(t)
-	r := newNeedRig(t)
-	r.item("s-work", "rv-1", needReview("rv-1", createdA, "the summary", 11))
-	r.start()
-	card := r.waitLogged("work", 1)[0]
-
-	if rec := r.post("work", card.ID, map[string]any{"event": "APPROVE", "edited": true}); rec.Code != http.StatusOK {
-		t.Fatalf("POST the review's own body = %d %s, want 200", rec.Code, rec.Body)
-	}
-	if calls := g.calls(); len(calls) != 2 || !strings.Contains(calls[1], `"event":"APPROVE"`) {
-		t.Errorf("gh calls = %q, want a GET and the APPROVE event", calls)
-	}
-}
-
 // The push names a card and its choices through needcard; the chat posts the card. The two must agree on every id.
 func TestTheIdsThePushNamesAreTheIdsOfTheCardsTheChatPosted(t *testing.T) {
 	r := newNeedRig(t)

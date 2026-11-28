@@ -9,9 +9,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/chatlog"
-	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/needcard"
-	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
@@ -21,19 +19,16 @@ func (s *Service) stopPass() {
 		return
 	}
 	n := s.needs()
-	cfg := s.Config()
+	res := s.cardResolver()
 	list := s.Ships()
 	byName := make(map[string]ships.Ship, len(list))
 	for _, sh := range list {
 		byName[sh.Session] = sh
 		kind, identity := needcard.StopKind(sh.Reason), needcard.StopIdentity(sh)
-		if sh.Status != ships.StatusNeedsYou || kind == "" || identity == "" || sh.Fleet == "" || sessionhost.IsChatSession(sh.Session) || sh.Session == inbox.AdmiralSession {
+		id, _ := res.ForShip(sh)
+		if id == "" {
 			continue
 		}
-		if _, _, ok := cfg.ChatFleet(sh.Fleet); !ok {
-			continue
-		}
-		id := needcard.StopCardID(sh.Session, identity)
 		if _, ok := n.get(id); ok {
 			continue
 		}

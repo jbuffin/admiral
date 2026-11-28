@@ -18,7 +18,6 @@ import (
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/needcard"
 	"github.com/jbuffin/admiral/internal/outcomes"
-	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // The states and places a need card reads.
@@ -215,17 +214,14 @@ func (s *Service) needPass() {
 	}
 	n := s.needs()
 	items := s.Inbox.List()
-	cfg := s.Config()
+	res := s.cardResolver()
 	for _, it := range items {
+		id, _ := res.ForItem(it)
+		if id == "" {
+			continue
+		}
 		fleet := needcard.Fleet(it)
-		if !needcard.Kinds[it.Kind] || fleet == "" || sessionhost.IsChatSession(it.Session) || it.Session == inbox.AdmiralSession && !needcard.FleetKinds[it.Kind] {
-			continue
-		}
-		if _, _, ok := cfg.ChatFleet(fleet); !ok {
-			continue
-		}
 		created := needcard.Created(it.Created)
-		id := needcard.CardID(it.Session, it.ID, created)
 		body, ok := needcard.Body(it)
 		if !ok {
 			continue
@@ -367,7 +363,7 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var top map[string]json.RawMessage
-	if json.Unmarshal(body, &top) == nil && top["choice"] != nil {
+	if json.Unmarshal(body, &top) == nil && string(top["choice"]) != "null" && top["choice"] != nil {
 		if body = s.choiceBody(w, rec, top["choice"]); body == nil {
 			return
 		}
@@ -376,7 +372,7 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 	defer n.setTapping(rec.Session, rec.Item, false)
 	// The item must still be the one the card showed; via marks the answer as given in the chat once it is written.
 	g := &inbox.Guard{Via: AnsweredChat, Check: func(it inbox.Item) error {
-		if needcard.Created(it.Created) != rec.Created || rec.Sig != "" && rec.Sig != needSig(it.Field(it.Kind)) {
+		if !rec.sameItem(it) {
 			return inbox.ErrAnswered
 		}
 		return nil
@@ -496,7 +492,7 @@ func (s *Service) choiceBody(w http.ResponseWriter, rec needRec, raw json.RawMes
 			break
 		}
 	}
-	if cur == nil || needcard.Created(cur.Created) != rec.Created || rec.Sig != "" && rec.Sig != needSig(cur.Field(cur.Kind)) {
+	if cur == nil || !rec.sameItem(*cur) {
 		writeError(w, http.StatusConflict, "item "+rec.Item+" is already answered")
 		return nil
 	}
@@ -508,4 +504,15 @@ func (s *Service) choiceBody(w http.ResponseWriter, rec needRec, raw json.RawMes
 	}
 	writeError(w, http.StatusBadRequest, "that card takes no such choice")
 	return nil
+}
+
+// sameItem is whether the item is the one the card was posted for.
+func (r needRec) sameItem(it inbox.Item) bool {
+	return needcard.Created(it.Created) == r.Created && (r.Sig == "" || r.Sig == needSig(it.Field(it.Kind)))
+}
+
+// cardResolver reads cards by the same rule that posts them.
+func (s *Service) cardResolver() needcard.Resolver {
+	cfg := s.Config()
+	return needcard.Resolver{Configured: func(fleet string) bool { _, _, ok := cfg.ChatFleet(fleet); return ok }}
 }
