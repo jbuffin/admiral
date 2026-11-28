@@ -312,9 +312,7 @@ func TestNoFirstHook(t *testing.T) {
 		t.Errorf("a ship with no hook became needs_you after %s, want about %s", el, noHookWait)
 	}
 	w.waitPaneState(busy.Session, "working") // a loaded runner starts the fake late
-	if got := statusOf(w.in.ships(t), busy.Session); got != "underway" {
-		t.Errorf("a ship that fired working at 1s has status %q past %s, want underway", got, noHookWait)
-	}
+	w.in.waitStatusList(t, busy.Session, "underway")
 
 	if code := w.inputSeen(quiet.Session); code/100 != 2 {
 		t.Fatalf("input-seen = %d, want 2xx", code)

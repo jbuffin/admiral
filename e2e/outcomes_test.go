@@ -530,8 +530,13 @@ func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
 		eventually(t, c.repo+": Admiral logging its lines about the report", func() (bool, string) {
 			return w.stderrLines("its report") >= lines, fmt.Sprintf("%d of %d lines; stderr: %s", w.stderrLines("its report"), lines, w.in.stderrBuf.String())
 		})
-		holdThat(t, fmt.Sprintf("%s: Admiral logged more than %d lines about the report (one per bad file, none for a missing one); stderr: %s",
-			c.repo, lines, w.in.stderrBuf.String()), func() bool { return w.stderrLines("its report") == lines })
+		holdClean(t, hold, func() string {
+			if w.stderrLines("its report") == lines {
+				return ""
+			}
+			return fmt.Sprintf("%s: Admiral logged %d lines about the report, want %d (one per bad file, none for a missing one); stderr: %s",
+				c.repo, w.stderrLines("its report"), lines, w.in.stderrBuf.String())
+		})
 
 		w.in.waitStatusList(t, ship.Session, "anchored")
 		if !exists(inboxPath) || (c.content != "" && !exists(reportPath)) {

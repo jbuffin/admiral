@@ -51,9 +51,9 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 	if gotCwd, _ := filepath.EvalSymlinks(p.read("cwd")); gotCwd != wantCwd {
 		t.Errorf("plugin working directory = %q, want its folder %q", gotCwd, wantCwd)
 	}
-	if !strings.Contains(w.in.stderrBuf.String(), "initialize received") {
-		t.Errorf("the plugin's stderr never reached Admiral's log: %q", w.in.stderrBuf.String())
-	}
+	eventually(t, "the plugin's stderr reaching Admiral's log", func() (bool, string) {
+		return strings.Contains(w.in.stderrBuf.String(), "initialize received"), w.in.stderrBuf.String()
+	})
 	p.waitCall("panels.list", func(rpcCall) bool { return true })
 	p.waitCall("orders.list", func(c rpcCall) bool { return c.Params["panel"] == "main" })
 

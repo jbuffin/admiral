@@ -74,9 +74,8 @@ func TestShipPRs_ARunningShipCarriesThePRItOpenedThroughToMooring(t *testing.T) 
 		s := byName(l)[ship.Name]
 		return s.Status == "moored" && len(s.PRs) == 1 && s.PRs[0].URL == mooredPR
 	})
-	if !exists(w.mooredFile(byName(list)[ship.Name].Name)) {
-		t.Errorf("no moored record for %s, want the carried PR kept though the report named none", ship.Name)
-	}
+	moored := w.mooredFile(byName(list)[ship.Name].Name)
+	until(t, "a moored record for "+ship.Name+" keeping the carried PR though the report named none", func() bool { return exists(moored) })
 }
 
 // transcriptHas reports whether a Claude transcript under the config dir holds text.
