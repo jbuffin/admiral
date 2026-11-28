@@ -148,6 +148,7 @@ func TestGuardProbeTimesOutAsAFailureAndKillsTheHarness(t *testing.T) {
 	t.Parallel()
 	g := runGuard(t, "hang", 1500*time.Millisecond, nil)
 	l := g.guard(t)
+	g.read(t, "prompt")
 	if l.Status != capabilities.Failed || l.Detail == "" {
 		t.Errorf("line = %+v, want failed with a detail", l)
 	}

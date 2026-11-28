@@ -415,6 +415,11 @@ func TestARunsOwnTimeLimitStillCountsAsAFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	select {
+	case <-started:
+	default:
+		t.Fatal("the probe never started, so the time limit ended nothing")
+	}
 	if l := line(t, rep, capabilities.JudgeNoTools); l.Status != capabilities.Failed {
 		t.Errorf("line = %+v, want failed when the run's own time limit ends it", l)
 	}
