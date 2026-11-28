@@ -510,3 +510,46 @@ test("the phone's Campaigns list shows the Drafting row above the cards and drop
     row.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });
+
+const working = { id: "cm-1", ts: "2026-01-01T11:00:00Z", launched: 2, waiting_children: 1 };
+
+test("a campaign with an open work commitment says AdmiralBot is working on it, with its counts, and not that Admiral is only following", async () => {
+  served = { ...campaign, commitment: working };
+  render(<CampaignPage id="camp-1" title />);
+  expect(await screen.findByText(/AdmiralBot is working on this campaign/)).toBeTruthy();
+  expect(screen.getByText(/2 launched/)).toBeTruthy();
+  expect(screen.getByText(/1 waiting/)).toBeTruthy();
+  expect(screen.queryByText(/only following/i)).toBeNull();
+  expect(screen.queryByText(/Admiral is working/)).toBeNull();
+});
+
+test("a working campaign with no children launched yet shows the line and no zero counts", async () => {
+  served = { ...campaign, commitment: { id: "cm-1", ts: "2026-01-01T11:00:00Z" } };
+  render(<CampaignPage id="camp-1" title />);
+  expect(await screen.findByText(/AdmiralBot is working on this campaign/)).toBeTruthy();
+  expect(screen.queryByText(/launched/)).toBeNull();
+  expect(screen.queryByText(/0 waiting/)).toBeNull();
+});
+
+test("a followed campaign with no commitment says Admiral is only following it and how to start the work with its own ref", async () => {
+  render(<CampaignPage id="camp-1" title />);
+  expect(await screen.findByText(/only following/i)).toBeTruthy();
+  expect(screen.getByText(/work on acme\/widgets#20/)).toBeTruthy();
+  expect(screen.queryByText(/AdmiralBot is working on this campaign/)).toBeNull();
+});
+
+test("an ended campaign with no commitment shows neither the working line nor the following-only hint", async () => {
+  served = treeClosed();
+  render(<CampaignPage id="camp-1" title />);
+  await waitFor(() => expect(screen.getByText("Ended")).toBeTruthy());
+  expect(screen.queryByText(/only following/i)).toBeNull();
+  expect(screen.queryByText(/work on acme\/widgets#20/)).toBeNull();
+  expect(screen.queryByText(/AdmiralBot is working on this campaign/)).toBeNull();
+});
+
+test("an ended campaign whose commitment is still open shows the working line", async () => {
+  served = { ...treeClosed(), commitment: working };
+  render(<CampaignPage id="camp-1" title />);
+  expect(await screen.findByText(/AdmiralBot is working on this campaign/)).toBeTruthy();
+  expect(screen.queryByText(/only following/i)).toBeNull();
+});

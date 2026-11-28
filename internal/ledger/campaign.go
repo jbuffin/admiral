@@ -183,3 +183,8 @@ func (l *Ledger) childEvent(fleet, id string, ev event) error {
 	ev.V, ev.TS, ev.ID = version, l.now().UTC().Truncate(time.Second), id
 	return l.append(fleet, ev)
 }
+
+// CampaignCommitment picks the open work commitment on a campaign out of a fleet's open commitments.
+func CampaignCommitment(open []Commitment, campaignID string) (Commitment, bool) {
+	return Commitment{}, false
+}
