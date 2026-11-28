@@ -203,3 +203,17 @@ func TestTailsLookUpAShipWithNoConversationLessAndLess(t *testing.T) {
 		t.Errorf("%d lookups inside the backoff, want none", looks-before)
 	}
 }
+
+func TestAnInterruptedTurnsPendingQuestionIsNoLongerPending(t *testing.T) {
+	f := newFixture(t)
+	path := f.path("zz")
+	appendTo(t, path, `{"type":"assistant","uuid":"q1","message":{"content":[{"type":"tool_use","id":"tq","name":"AskUserQuestion","input":{"questions":[{"question":"Which database?","options":[{"label":"pg"}]}]}}]}}`+"\n")
+	f.ship("alpha", path)
+	if qs := f.svc.PendingQuestions("alpha", ""); len(qs) != 1 {
+		t.Fatalf("pending questions before the interrupt = %+v, want the one asked", qs)
+	}
+	appendTo(t, path, `{"type":"user","uuid":"i1","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}`+"\n")
+	if qs := f.svc.PendingQuestions("alpha", ""); len(qs) != 0 {
+		t.Errorf("pending questions after the interrupt = %+v, want none", qs)
+	}
+}
