@@ -22,8 +22,8 @@ func routineClock() routines.Clock {
 
 type realClock struct{}
 
-func (realClock) Now() time.Time                         { return time.Now() }
-func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
+func (realClock) Now() time.Time                  { return time.Now() }
+func (realClock) At(t time.Time) <-chan time.Time { return time.After(time.Until(t)) }
 
 // fileClock reads the time from its file, which only the test writes; an unreadable file reads as the wall clock.
 type fileClock string
@@ -40,13 +40,12 @@ func (c fileClock) Now() time.Time {
 	return at
 }
 
-// After fires once the file's time is d past what it read now.
-func (c fileClock) After(d time.Duration) <-chan time.Time {
+// At fires once the file's time reaches t.
+func (c fileClock) At(t time.Time) <-chan time.Time {
 	ch := make(chan time.Time, 1)
-	end := c.Now().Add(d)
 	go func() {
 		for {
-			if now := c.Now(); !now.Before(end) {
+			if now := c.Now(); !now.Before(t) {
 				ch <- now
 				return
 			}

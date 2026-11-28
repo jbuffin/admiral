@@ -262,8 +262,15 @@ func TestInterruptingWhenTheEscapeCannotBePressedFailsAndLeavesTheQuestionsOpen(
 	}
 }
 
+// interruptedLine is Claude Code's record of an Escape: the marker in a text block, not the string content a typed prompt has.
 func interruptedLine(t *testing.T, id string) string {
-	return claudeLine(t, "user", id, "[Request interrupted by user]")
+	t.Helper()
+	b, err := json.Marshal(map[string]any{"type": "user", "uuid": id, "sessionId": claudeSession, "timestamp": "2026-11-12T10:00:00.000Z",
+		"message": map[string]any{"role": "user", "content": []map[string]any{{"type": "text", "text": "[Request interrupted by user]"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b) + "\n"
 }
 
 func appendLine(t *testing.T, path, line string) {

@@ -536,15 +536,20 @@ func wsDialAt(t *testing.T, base, path, query string, hdr http.Header, host stri
 }
 
 // killTmux ends every tmux process on sock. A client still starting when Admiral exits forks its server after the socket
-// stops answering, so it kills again until no process names the socket.
+// stops answering, so it kills again until no process names the socket. pgrep lists processes before it reads their
+// command lines, so it misses a server whose forking client exited in between: only a second empty look in a row is clean.
 func killTmux(sock string) {
 	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	for empty := 0; time.Now().Before(deadline); {
 		_ = exec.Command("tmux", "-S", sock, "kill-server").Run()
-		if tmuxOn(sock) == "" {
+		if tmuxOn(sock) != "" {
+			empty = 0
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		if empty++; empty == 2 {
 			return
 		}
-		time.Sleep(50 * time.Millisecond)
 	}
 	_ = exec.Command("pkill", "-9", "-f", "--", tmuxOnPattern(sock)).Run()
 }

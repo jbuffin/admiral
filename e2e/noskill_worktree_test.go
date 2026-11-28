@@ -71,6 +71,7 @@ func (w *world) shipCwd(session string) string {
 	return strings.TrimSpace(w.readFile(filepath.Join(w.rec, session, "cwd")))
 }
 
+// isWorktreeOf is false once path is gone, though git deletes the folder before its registration and lists it a while longer.
 func (w *world) isWorktreeOf(dir, path string) bool {
 	w.t.Helper()
 	r, err := filepath.EvalSymlinks(path)
@@ -307,10 +308,7 @@ func TestReturnToPortOfALiveNoSkillShipRemovesItsWorktreeAndKeepsItsBranch(t *te
 	w.hookAt(pane, "Stop", hookStop)
 
 	waitCond(t, "the returned ship's session gone", func() bool { return !w.hasSession(ship.Session) })
-	waitCond(t, "the worktree removed", func() bool { return !exists(cwd) && !w.isWorktreeOf(dir, cwd) })
-	if w.isWorktreeOf(dir, cwd) || len(w.worktreesOf(dir)) != 1 {
-		t.Errorf("worktrees = %v, want the checkout alone", w.worktreesOf(dir))
-	}
+	waitCond(t, "the worktree removed", func() bool { return !exists(cwd) && len(w.worktreesOf(dir)) == 1 })
 	if !slices.Contains(strings.Fields(w.branches(dir)), branch) {
 		t.Errorf("branches = %q, want %s kept", w.branches(dir), branch)
 	}
@@ -350,10 +348,7 @@ func TestReturnToPortOfAMooredNoSkillShipWhosePRMergedRemovesItsWorktreeAndKeeps
 	pane := strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", "="+ship.Session+":0", "#{pane_id}"))
 	w.hookAt(pane, "Stop", hookStop)
 	waitUntil(t, "the moored record removed", func() bool { return !exists(w.mooredFile(ship.Name)) })
-	waitCond(t, "the worktree removed", func() bool { return !exists(cwd) && !w.isWorktreeOf(dir, cwd) })
-	if got := w.worktreesOf(dir); len(got) != 1 {
-		t.Errorf("worktrees = %v, want the checkout alone", got)
-	}
+	waitCond(t, "the worktree removed", func() bool { return !exists(cwd) && len(w.worktreesOf(dir)) == 1 })
 	if got := strings.Fields(w.branches(dir)); !slices.Contains(got, branch) || len(got) != 2 {
 		t.Errorf("branches = %v, want main and %s only, with no branch made by the wake", got, branch)
 	}

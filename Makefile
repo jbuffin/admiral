@@ -49,8 +49,9 @@ lint-docs:
 	sh scripts/lint-agent-docs_test.sh
 
 # The Go e2e tests run in parallel, E2E_PARALLEL at a time (each starts its
-# own Admiral and tmux server; four suit a Mac).
-E2E_PARALLEL ?= 4
+# own Admiral and tmux server). Twelve is the fastest setting that passes
+# run after run on a 16-core Mac.
+E2E_PARALLEL ?= 12
 # The Go e2e suite's one clock: its waits have no budgets of their own, so a hang
 # fails here, with the stuck Admirals' goroutines in the log.
 E2E_TIMEOUT ?= 20m
