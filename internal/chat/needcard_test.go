@@ -66,6 +66,13 @@ func newNeedRig(t *testing.T) *needRig {
 // start builds the Inbox and the chat service as Admiral wires them and runs the card poster.
 func (r *needRig) start() {
 	r.t.Helper()
+	r.begin()
+	r.in.Refresh()
+}
+
+// begin is start up to the Inbox's first scan, the order cmd/admiral/main.go runs the poster in.
+func (r *needRig) begin() {
+	r.t.Helper()
 	r.in = &inbox.Service{Home: r.home, Hub: server.NewHub(), Kept: r.kept,
 		Ship: func(session string) (inbox.ShipInfo, bool) {
 			fleet, ok := shipFleets[session]
@@ -79,7 +86,6 @@ func (r *needRig) start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
 	go r.svc.RunNeedCards(ctx)
-	r.in.Refresh()
 }
 
 func (r *needRig) stop() {

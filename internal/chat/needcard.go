@@ -34,6 +34,7 @@ type needRec struct {
 	Session string `json:"session"`
 	Item    string `json:"item"`
 	Created string `json:"created"`
+	Sig     string `json:"sig,omitempty"`
 	State   string `json:"state"`
 	In      string `json:"in,omitempty"`
 }
@@ -49,8 +50,13 @@ type needStore struct {
 func (s *Service) needs() *needStore {
 	s.needOnce.Do(func() {
 		n := &needStore{path: filepath.Join(s.Home, "need-cards.json"), recs: map[string]*needRec{}, pending: map[string]bool{}, poke: make(chan struct{}, 1)}
-		if b, err := os.ReadFile(n.path); err == nil {
-			_ = json.Unmarshal(b, &n.recs)
+		if b, err := os.ReadFile(n.path); err == nil && json.Unmarshal(b, &n.recs) != nil {
+			// Kept aside so the next save cannot overwrite what the engineer may repair.
+			n.recs = map[string]*needRec{}
+			if err := os.Rename(n.path, n.path+".bad"); err != nil {
+				log.Printf("admiral: need cards: %v", err)
+			}
+			log.Printf("admiral: need cards: %s did not parse; moved to %s.bad", n.path, n.path)
 		}
 		s.need = n
 	})
@@ -129,6 +135,12 @@ func (n *needStore) openIDs(session, item string) []string {
 
 func needCreated(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
+// needSig is what the engineer sees on the card; the route refuses an item whose questions changed since.
+func needSig(questions json.RawMessage) string {
+	h := sha256.Sum256(questions)
+	return hex.EncodeToString(h[:12])
+}
+
 // needCardID folds the item's identity in, so a reused session name or item id gets its own card; hashed, since a session name can hold any character.
 func needCardID(session, item, created string) string {
 	h := sha256.Sum256([]byte(session + "\x00" + item + "\x00" + created))
@@ -176,6 +188,9 @@ func (s *Service) RunNeedCards(ctx context.Context) {
 }
 
 func (s *Service) needPass() {
+	if !s.Inbox.Scanned() { // before the first scan the list is empty, not settled
+		return
+	}
 	n := s.needs()
 	items := s.Inbox.List()
 	cfg := s.Config()
@@ -205,7 +220,7 @@ func (s *Service) needPass() {
 			log.Printf("admiral: need card for %s/%s: %v", it.Session, it.ID, err)
 			continue
 		}
-		n.add(id, needRec{Fleet: it.Fleet, Session: it.Session, Item: it.ID, Created: created, State: NeedOpen})
+		n.add(id, needRec{Fleet: it.Fleet, Session: it.Session, Item: it.ID, Created: created, Sig: needSig(it.Field(inbox.KindQuestion)), State: NeedOpen})
 	}
 	open := s.openItems(items)
 	for _, id := range n.openIDs("", "") {
@@ -228,7 +243,7 @@ func (s *Service) openItems(items []inbox.Item) map[string]bool {
 func (s *Service) needState(id string, open map[string]bool) (needRec, bool) {
 	n := s.needs()
 	r, ok := n.get(id)
-	if !ok || r.State != NeedOpen || s.Inbox == nil || open[r.Session+"\x00"+r.Item+"\x00"+r.Created] {
+	if !ok || r.State != NeedOpen || s.Inbox == nil || !s.Inbox.Scanned() || open[r.Session+"\x00"+r.Item+"\x00"+r.Created] {
 		return r, ok
 	}
 	present, mark := s.Inbox.AnswerFile(r.Session, r.Item)
@@ -288,7 +303,7 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	defer n.setAnswering(rec.Session, rec.Item, false)
 	err := s.Inbox.Answer(rec.Session, rec.Item, inbox.KindQuestion, func(it inbox.Item) (any, []outcomes.Record, error) {
-		if needCreated(it.Created) != rec.Created {
+		if needCreated(it.Created) != rec.Created || rec.Sig != "" && rec.Sig != needSig(it.Field(inbox.KindQuestion)) {
 			return nil, nil, inbox.ErrAnswered
 		}
 		file, err := inbox.BuildQuestionAnswer(it, req)
@@ -302,10 +317,8 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusOK, map[string]string{"answered": rec.Item})
-	case errors.Is(err, inbox.ErrAnswered):
+	case errors.Is(err, inbox.ErrAnswered), errors.Is(err, inbox.ErrNotFound):
 		writeError(w, http.StatusConflict, "item "+rec.Item+" is already answered")
-	case errors.Is(err, inbox.ErrNotFound):
-		writeError(w, http.StatusNotFound, "no item "+rec.Item+" in the inbox of "+rec.Session)
 	case errors.As(err, &bad):
 		writeError(w, http.StatusBadRequest, bad.Msg)
 	default:
