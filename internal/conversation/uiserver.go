@@ -134,7 +134,11 @@ func ObserveUIServer(ctx context.Context, port int, sessionID string, r *ServerR
 // ObserveUIServerChecked is ObserveUIServer with verify run once connect has succeeded and before the session id
 // is sent. If it says no, the connection is dropped and the error is returned.
 func ObserveUIServerChecked(ctx context.Context, port int, sessionID string, r *ServerReader, verify func() bool) error {
-	d := net.Dialer{Timeout: handshakeWait}
+	return observeUIServer(ctx, port, sessionID, r, verify, handshakeWait)
+}
+
+func observeUIServer(ctx context.Context, port int, sessionID string, r *ServerReader, verify func() bool, wait time.Duration) error {
+	d := net.Dialer{Timeout: wait}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
 		return err
@@ -142,7 +146,7 @@ func ObserveUIServerChecked(ctx context.Context, port int, sessionID string, r *
 	defer conn.Close()
 	br := bufio.NewReader(conn)
 
-	_ = conn.SetDeadline(time.Now().Add(handshakeWait))
+	_ = conn.SetDeadline(time.Now().Add(wait))
 	// The server accepts connect with no token and ignores a wrong one, so none is sent.
 	if err := call(conn, br, 1, "connect", map[string]any{}, sessionID, r); err != nil {
 		return fmt.Errorf("connect: %w", err)

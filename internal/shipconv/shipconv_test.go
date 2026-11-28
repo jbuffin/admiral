@@ -110,8 +110,17 @@ func newFixture(t *testing.T) *fixture {
 			return raw, f.starts[sh.Session], f.homeOf(f.harness[sh.Session]), ok
 		},
 	}
+	f.svc.pollEvery, f.svc.findEvery, f.svc.relocateEvery = 20*time.Millisecond, fixtureDelay, fixtureDelay
+	f.svc.reconcileEvery, f.svc.uiRetry = fixtureDelay, fixtureDelay
 	return f
 }
+
+// fixtureDelay is the longest delay the fixture sets short, and quietWindow is how long a push that should not
+// come is waited for: every one of those delays has run several times by then.
+const (
+	fixtureDelay = 50 * time.Millisecond
+	quietWindow  = 8 * fixtureDelay
+)
 
 // homeOf is the home the seams return for a harness: Claude's config dir or Codex's home, as production derives them.
 func (f *fixture) homeOf(harness string) string {
@@ -351,7 +360,7 @@ func (s *socket) quiet(what string) {
 	select {
 	case m := <-s.in:
 		s.t.Fatalf("%s: got %v", what, m)
-	case <-time.After(1500 * time.Millisecond):
+	case <-time.After(quietWindow):
 	}
 }
 

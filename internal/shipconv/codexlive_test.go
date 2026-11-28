@@ -313,7 +313,7 @@ func TestLiveObserverStartsOnlyWhenTheOptionMatchesTheStartCommand(t *testing.T)
 	f.starts["s"] = "'/bin/admiral' 'codex-pane' '--socket' '/tmp/some-other.sock' '--' '/bin/codex'"
 	f.mu.Unlock()
 	f.startLive()
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(quietWindow)
 	if n := fake.connections(); n != 0 {
 		t.Errorf("%d connections, want none: the pane's command names another socket", n)
 	}
@@ -391,6 +391,8 @@ var rolloutID = regexp.MustCompile(`([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 func TestLiveFollowsTheRolloutTheShipRecordsNext(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
+	// The file poll answers while the observer reconnects and would push the rollout's own line first; this test is about the live thread.
+	f.svc.pollEvery = time.Hour
 	fake := newLiveFake(t)
 	f.liveShip(fake, true) // a hook-less server picks the only loaded thread; this ship's hooks record a rollout
 	f.startLive()

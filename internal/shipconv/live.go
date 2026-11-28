@@ -81,7 +81,7 @@ func (s *Service) socketOf(sh ships.Ship) (sock, startCmd string) {
 // StartLive keeps an observer on each running Codex ship until ctx ends.
 func (s *Service) StartLive(ctx context.Context) {
 	go func() {
-		t := time.NewTicker(reconcileEvery)
+		t := time.NewTicker(orDefault(s.reconcileEvery, reconcileEvery))
 		defer t.Stop()
 		reads := map[string]liveRead{}
 		for {

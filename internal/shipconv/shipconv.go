@@ -80,6 +80,9 @@ type Service struct {
 	liveReadEvery time.Duration
 	observers     map[string]*observer
 
+	// Tests set these delays short; zero keeps the production value.
+	pollEvery, findEvery, relocateEvery, reconcileEvery, uiRetry time.Duration
+
 	cands candidates
 
 	mu      sync.Mutex
@@ -692,8 +695,16 @@ func (s *Service) dropClient(c *server.Client) {
 	}
 }
 
+// orDefault is d, or def when d is unset.
+func orDefault(d, def time.Duration) time.Duration {
+	if d > 0 {
+		return d
+	}
+	return def
+}
+
 func (s *Service) run() {
-	t := time.NewTicker(pollEvery)
+	t := time.NewTicker(orDefault(s.pollEvery, pollEvery))
 	defer t.Stop()
 	for range t.C {
 		s.mu.Lock()
@@ -763,7 +774,7 @@ func (s *Service) poll(w *watch) {
 // fileItems is what the file gained since the last poll; reset is true when the items replace what the client holds,
 // because the file was truncated or replaced, or a Codex ship recorded another rollout.
 func (w *watch) fileItems() (items []conversation.Item, reset bool) {
-	if w.loc.harness == "codex" && time.Since(w.lastLocate) >= relocateEvery {
+	if w.loc.harness == "codex" && time.Since(w.lastLocate) >= orDefault(w.svc.relocateEvery, relocateEvery) {
 		// A Codex ship's SessionStart fires again on /new, resume and fork, and records a new rollout.
 		w.lastLocate = time.Now()
 		if loc, ok, none := w.svc.locateBoat(w.session, w.crew); ok && !none && loc.path != w.loc.path {
@@ -779,7 +790,7 @@ func (w *watch) fileItems() (items []conversation.Item, reset bool) {
 		f, info, err = transcriptfs.OpenFor(w.loc.harness, w.loc.configDir, w.path)
 	}
 	if f == nil {
-		find := time.Since(w.lastFind) >= findEvery
+		find := time.Since(w.lastFind) >= orDefault(w.svc.findEvery, findEvery)
 		if find {
 			w.lastFind = time.Now()
 		}
