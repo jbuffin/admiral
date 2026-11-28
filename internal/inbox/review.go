@@ -235,29 +235,40 @@ type ReviewResult struct {
 // SubmitReview uses the body the review has on GitHub now, since the engineer
 // may have edited it there, or the item's summary when that is empty.
 func (s *Service) SubmitReview(session, id string, req SubmitRequest) (ReviewResult, error) {
+	return s.SubmitReviewGuarded(session, id, req, nil)
+}
+
+func (s *Service) SubmitReviewGuarded(session, id string, req SubmitRequest, guard *Guard) (ReviewResult, error) {
 	if !reviewEvents[req.Event] {
 		return ReviewResult{}, invalid("event must be COMMENT, APPROVE or REQUEST_CHANGES")
 	}
-	return s.reviewAction(session, id, false, false, req.Event, req.Edited)
+	return s.reviewAction(session, id, false, false, req.Event, req.Edited, guard)
 }
 
 // DiscardReview of an invalid target runs no gh, so an item no other action can
 // answer still has a way out.
 func (s *Service) DiscardReview(session, id string) (ReviewResult, error) {
-	return s.reviewAction(session, id, true, false, "", false)
+	return s.DiscardReviewGuarded(session, id, nil)
+}
+
+func (s *Service) DiscardReviewGuarded(session, id string, guard *Guard) (ReviewResult, error) {
+	return s.reviewAction(session, id, true, false, "", false, guard)
 }
 
 // ForgetReview is for a review no action can clear any more (a deleted repository,
 // lost access, a gone host). It runs no gh; Submit stays strict.
 func (s *Service) ForgetReview(session, id string) (ReviewResult, error) {
-	return s.reviewAction(session, id, true, true, "", false)
+	return s.reviewAction(session, id, true, true, "", false, nil)
 }
 
 // reviewAction runs gh outside answerMu, and an item has one action at a time,
 // so a double tap runs gh once.
-func (s *Service) reviewAction(session, id string, discard, forget bool, event string, edited bool) (ReviewResult, error) {
+func (s *Service) reviewAction(session, id string, discard, forget bool, event string, edited bool, guard *Guard) (ReviewResult, error) {
 	it, err := s.open(session, id)
 	if err != nil {
+		return ReviewResult{}, err
+	}
+	if err := guard.check(it); err != nil {
 		return ReviewResult{}, err
 	}
 	if it.Kind != KindReview {
@@ -321,7 +332,11 @@ func (s *Service) reviewAction(session, id string, discard, forget bool, event s
 		}
 		action = ActionGone
 	}
-	err = s.Answer(session, id, KindReview, func(Item) (any, []outcomes.Record, error) {
+	// A forgotten review is a removal, so a need card for it reads removed.
+	err = s.answer(session, id, KindReview, forget, guard, func(it Item) (any, []outcomes.Record, error) {
+		if err := guard.check(it); err != nil {
+			return nil, nil, err
+		}
 		file := struct {
 			Version  int    `json:"version"`
 			ID       string `json:"id"`

@@ -75,8 +75,8 @@ type Service struct {
 	AnswerChat func(session, id string, req QuestionRequest) error
 	// OnChange runs after every change to the list is sent. It must not block.
 	OnChange func()
-	// OnSettled runs synchronously when an item is answered or removed through the Service, before a kept inbox's files are released.
-	OnSettled func(session, id string, removed bool)
+	// OnSettled runs synchronously after an item's answer file is written, before a kept inbox's files are released; via is the Guard's, empty for the Inbox's own.
+	OnSettled func(session, id string, removed bool, via string)
 
 	scanned atomic.Bool
 

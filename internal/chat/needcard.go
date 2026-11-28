@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -33,6 +34,7 @@ type needRec struct {
 	Fleet   string `json:"fleet"`
 	Session string `json:"session"`
 	Item    string `json:"item"`
+	Kind    string `json:"kind,omitempty"` // empty on a card posted before other kinds had one: a question
 	Created string `json:"created"`
 	Sig     string `json:"sig,omitempty"`
 	State   string `json:"state"`
@@ -105,13 +107,13 @@ func (n *needStore) settle(id, state, in string) {
 	}
 }
 
-func (n *needStore) answeringItem(session, item string) bool {
+func (n *needStore) tapping(session, item string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.pending[session+"\x00"+item]
 }
 
-func (n *needStore) setAnswering(session, item string, on bool) {
+func (n *needStore) setTapping(session, item string, on bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if on {
@@ -135,9 +137,9 @@ func (n *needStore) openIDs(session, item string) []string {
 
 func needCreated(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
-// needSig is what the engineer sees on the card; the route refuses an item whose questions changed since.
-func needSig(questions json.RawMessage) string {
-	h := sha256.Sum256(questions)
+// needSig is what the engineer sees on the card; the route refuses an item whose questions, review or findings changed since.
+func needSig(field json.RawMessage) string {
+	h := sha256.Sum256(field)
 	return hex.EncodeToString(h[:12])
 }
 
@@ -156,13 +158,13 @@ func (s *Service) InboxChanged() {
 }
 
 // InboxSettled records, before the Inbox releases a kept ship's files, that an item was answered or removed through the Inbox.
-func (s *Service) InboxSettled(session, id string, removed bool) {
+func (s *Service) InboxSettled(session, id string, removed bool, via string) {
 	n := s.needs()
 	for _, cid := range n.openIDs(session, id) {
 		switch {
 		case removed:
 			n.settle(cid, NeedRemoved, "")
-		case n.answeringItem(session, id):
+		case via == AnsweredChat:
 			n.settle(cid, NeedAnswered, AnsweredChat)
 		default:
 			n.settle(cid, NeedAnswered, AnsweredInbox)
@@ -195,7 +197,7 @@ func (s *Service) needPass() {
 	items := s.Inbox.List()
 	cfg := s.Config()
 	for _, it := range items {
-		if it.Kind != inbox.KindQuestion || it.Fleet == "" || sessionhost.IsChatSession(it.Session) || it.Session == inbox.AdmiralSession {
+		if !needKinds[it.Kind] || it.Fleet == "" || sessionhost.IsChatSession(it.Session) || it.Session == inbox.AdmiralSession {
 			continue
 		}
 		if _, _, ok := cfg.ChatFleet(it.Fleet); !ok {
@@ -206,13 +208,11 @@ func (s *Service) needPass() {
 		if _, ok := n.get(id); ok {
 			continue
 		}
-		var q struct {
-			Questions json.RawMessage `json:"questions"`
-		}
-		if json.Unmarshal(it.Field(inbox.KindQuestion), &q) != nil || len(q.Questions) == 0 {
+		body, ok := needCardBody(it)
+		if !ok {
 			continue
 		}
-		card, err := json.Marshal(map[string]any{"ship": it.Session, "item": it.ID, "item_kind": it.Kind, "questions": q.Questions, "state": NeedOpen})
+		card, err := json.Marshal(body)
 		if err != nil {
 			continue
 		}
@@ -220,7 +220,7 @@ func (s *Service) needPass() {
 			log.Printf("admiral: need card for %s/%s: %v", it.Session, it.ID, err)
 			continue
 		}
-		n.add(id, needRec{Fleet: it.Fleet, Session: it.Session, Item: it.ID, Created: created, Sig: needSig(it.Field(inbox.KindQuestion)), State: NeedOpen})
+		n.add(id, needRec{Fleet: it.Fleet, Session: it.Session, Item: it.ID, Kind: it.Kind, Created: created, Sig: needSig(it.Field(it.Kind)), State: NeedOpen})
 	}
 	open := s.openItems(items)
 	for _, id := range n.openIDs("", "") {
@@ -228,11 +228,53 @@ func (s *Service) needPass() {
 	}
 }
 
-// openItems is the questions the Inbox lists, keyed by session, item and created stamp.
+// needKinds are the Inbox kinds that post a need card.
+var needKinds = map[string]bool{inbox.KindQuestion: true, inbox.KindReview: true, inbox.KindFindings: true}
+
+// needCardBody is the card's JSON for an item, with what its kind's choices need so the web never reads the Inbox item.
+func needCardBody(it inbox.Item) (map[string]any, bool) {
+	card := map[string]any{"ship": it.Session, "item": it.ID, "item_kind": it.Kind, "state": NeedOpen}
+	switch it.Kind {
+	case inbox.KindQuestion:
+		var q struct {
+			Questions json.RawMessage `json:"questions"`
+		}
+		if json.Unmarshal(it.Field(inbox.KindQuestion), &q) != nil || len(q.Questions) == 0 {
+			return nil, false
+		}
+		card["questions"] = q.Questions
+	case inbox.KindReview:
+		var r struct {
+			PRURL string `json:"pr_url"`
+		}
+		if json.Unmarshal(it.Field(inbox.KindReview), &r) != nil {
+			return nil, false
+		}
+		card["events"], card["discard"], card["pr_url"] = []string{"COMMENT", "APPROVE", "REQUEST_CHANGES"}, true, r.PRURL
+	case inbox.KindFindings:
+		var f struct {
+			Cards []struct {
+				ID       string          `json:"id"`
+				Proposal *inbox.Proposal `json:"proposal"`
+			} `json:"cards"`
+		}
+		if json.Unmarshal(it.Field(inbox.KindFindings), &f) != nil {
+			return nil, false
+		}
+		cards := make([]map[string]any, 0, len(f.Cards))
+		for _, c := range f.Cards {
+			cards = append(cards, map[string]any{"id": c.ID, "proposal": c.Proposal})
+		}
+		card["cards"] = cards
+	}
+	return card, true
+}
+
+// openItems is the items the Inbox lists that post a card, keyed by session, item and created stamp.
 func (s *Service) openItems(items []inbox.Item) map[string]bool {
 	open := map[string]bool{}
 	for _, it := range items {
-		if it.Kind == inbox.KindQuestion {
+		if needKinds[it.Kind] {
 			open[it.Session+"\x00"+it.ID+"\x00"+needCreated(it.Created)] = true
 		}
 	}
@@ -250,8 +292,9 @@ func (s *Service) needState(id string, open map[string]bool) (needRec, bool) {
 	switch {
 	case !present || mark:
 		n.settle(id, NeedRemoved, "")
-	case n.answeringItem(r.Session, r.Item):
-		n.settle(id, NeedAnswered, AnsweredChat)
+	case n.tapping(r.Session, r.Item):
+		// A tap in flight settles the card itself through OnSettled; guessing here could read an answer from the Inbox as the chat's.
+		return r, ok
 	default:
 		n.settle(id, NeedAnswered, AnsweredInbox)
 	}
@@ -292,35 +335,85 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no need card "+cardID+" in the "+fleet+" chat")
 		return
 	}
-	var req inbox.QuestionRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10)).Decode(&req); err != nil {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "the request is not a valid JSON object: "+err.Error())
 		return
 	}
 	if rec.State != NeedOpen {
+		if !json.Valid(body) {
+			writeError(w, http.StatusBadRequest, "the request is not a valid JSON object")
+			return
+		}
 		writeError(w, http.StatusConflict, "item "+rec.Item+" is already answered")
 		return
 	}
-	defer n.setAnswering(rec.Session, rec.Item, false)
-	err := s.Inbox.Answer(rec.Session, rec.Item, inbox.KindQuestion, func(it inbox.Item) (any, []outcomes.Record, error) {
-		if needCreated(it.Created) != rec.Created || rec.Sig != "" && rec.Sig != needSig(it.Field(inbox.KindQuestion)) {
-			return nil, nil, inbox.ErrAnswered
+	n.setTapping(rec.Session, rec.Item, true)
+	defer n.setTapping(rec.Session, rec.Item, false)
+	// The item must still be the one the card showed; via marks the answer as given in the chat once it is written.
+	g := &inbox.Guard{Via: AnsweredChat, Check: func(it inbox.Item) error {
+		if needCreated(it.Created) != rec.Created || rec.Sig != "" && rec.Sig != needSig(it.Field(it.Kind)) {
+			return inbox.ErrAnswered
 		}
-		file, err := inbox.BuildQuestionAnswer(it, req)
-		if err != nil {
-			return nil, nil, err
+		return nil
+	}}
+	out := map[string]any{"answered": rec.Item}
+	switch rec.Kind {
+	case inbox.KindReview:
+		var req struct {
+			inbox.SubmitRequest
+			Discard bool `json:"discard"`
 		}
-		n.setAnswering(rec.Session, rec.Item, true)
-		return file, []outcomes.Record{{Event: "answered", Fields: map[string]any{"item": rec.Item, "kind": inbox.KindQuestion}}}, nil
-	})
+		if err = json.Unmarshal(body, &req); err == nil {
+			var res inbox.ReviewResult
+			if req.Discard {
+				res, err = s.Inbox.DiscardReviewGuarded(rec.Session, rec.Item, g)
+			} else {
+				res, err = s.Inbox.SubmitReviewGuarded(rec.Session, rec.Item, req.SubmitRequest, g)
+			}
+			out["action"] = res.Action
+			if res.InvalidTarget {
+				out["invalid_target"] = true
+			}
+		}
+	case inbox.KindFindings:
+		var req inbox.FindingsRequest
+		if err = json.Unmarshal(body, &req); err == nil {
+			err = s.Inbox.AnswerFindingsGuarded(rec.Session, rec.Item, req, g)
+		}
+	default:
+		var req inbox.QuestionRequest
+		if err = json.Unmarshal(body, &req); err == nil {
+			err = s.Inbox.AnswerGuarded(rec.Session, rec.Item, inbox.KindQuestion, g, func(it inbox.Item) (any, []outcomes.Record, error) {
+				file, err := inbox.BuildQuestionAnswer(it, req)
+				if err != nil {
+					return nil, nil, err
+				}
+				return file, []outcomes.Record{{Event: "answered", Fields: map[string]any{"item": rec.Item, "kind": inbox.KindQuestion}}}, nil
+			})
+		}
+	}
 	var bad *inbox.InvalidError
+	var gh *inbox.GhError
+	var syn *json.SyntaxError
+	var typ *json.UnmarshalTypeError
 	switch {
 	case err == nil:
-		writeJSON(w, http.StatusOK, map[string]string{"answered": rec.Item})
+		writeJSON(w, http.StatusOK, out)
+	case errors.As(err, &syn), errors.As(err, &typ):
+		writeError(w, http.StatusBadRequest, "the request is not a valid JSON object: "+err.Error())
 	case errors.Is(err, inbox.ErrAnswered), errors.Is(err, inbox.ErrNotFound):
 		writeError(w, http.StatusConflict, "item "+rec.Item+" is already answered")
+	case errors.Is(err, inbox.ErrBusy):
+		writeError(w, http.StatusConflict, err.Error())
 	case errors.As(err, &bad):
 		writeError(w, http.StatusBadRequest, bad.Msg)
+	case errors.As(err, &gh):
+		status := http.StatusBadGateway
+		if gh.Missing {
+			status = http.StatusServiceUnavailable
+		}
+		writeError(w, status, gh.Msg)
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}

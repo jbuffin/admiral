@@ -59,6 +59,6 @@ func (s *Service) settleAnswered(session string) {
 	}
 	dir.Close()
 	for _, m := range marks {
-		s.OnSettled(session, m.id, m.removed)
+		s.OnSettled(session, m.id, m.removed, "")
 	}
 }
