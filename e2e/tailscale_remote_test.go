@@ -218,7 +218,7 @@ func (p *tsProc) exited() bool {
 	}
 }
 
-// otherDevices waits for the "On other devices:" line and returns it; it fails if Admiral exits or takes too long.
+// otherDevices waits for the "On other devices:" line and returns it; it fails if Admiral exits first.
 func (p *tsProc) otherDevices(t *testing.T) string {
 	t.Helper()
 	var line string
@@ -290,7 +290,7 @@ func (p *tsProc) remote(t *testing.T, path string) remoteView {
 	return v
 }
 
-// waitStopped waits for Admiral to exit on its own; on u1 it never does, so the wait is bounded.
+// waitStopped waits for Admiral to exit on its own; on u1 it never does, so the test run's deadline ends the wait.
 func (p *tsProc) waitStopped(t *testing.T) {
 	t.Helper()
 	select {

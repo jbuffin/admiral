@@ -499,7 +499,7 @@ func TestExitSailsOffOrAnchors(t *testing.T) {
 
 	// A ship that was waiting when it exited is anchored, not needs_you.
 	n3 := w.launchIn("waited", "claude", "s5wait")
-	w.waitPaneState(n3.Session, "needs_you") // a loaded runner starts the fake late; the 3 s is for Admiral's reading of it
+	w.waitPaneState(n3.Session, "needs_you") // a loaded runner starts the fake late
 	waitStatus(t, ws, n3.Session, "needs_you")
 	w.waitFile(n3.Session, "recorded")
 	w.touch(n3.Session, "go")

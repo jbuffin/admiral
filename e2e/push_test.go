@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -95,14 +96,28 @@ type pushed struct {
 }
 
 // next waits for one push and decrypts it with the subscriber the endpoint belongs to.
-func (r *pushRig) next() pushed {
+func (r *pushRig) next() pushed { return r.collect(1)[0] }
+
+// collect waits for n pushes, in arrival order, and decrypts each with the subscriber its endpoint belongs to.
+func (r *pushRig) collect(n int) []pushed {
 	r.t.Helper()
-	var got pushtest.Request
-	until(r.t, "a push reaching the service", func() bool {
-		var ok bool
-		got, ok = r.svc.Next(time.Second)
-		return ok
+	var got []pushtest.Request
+	eventually(r.t, fmt.Sprintf("%d pushes reaching the service", n), func() (bool, string) {
+		// a short Next only paces the poll; the deadline is eventually's
+		if req, ok := r.svc.Next(time.Second); ok {
+			got = append(got, req)
+		}
+		return len(got) >= n, fmt.Sprintf("got %d of %d pushes", len(got), n)
 	})
+	out := make([]pushed, 0, n)
+	for _, req := range got[:n] {
+		out = append(out, r.decrypt(req))
+	}
+	return out
+}
+
+func (r *pushRig) decrypt(got pushtest.Request) pushed {
+	r.t.Helper()
 	sub := r.subs[got.Path]
 	if sub == nil {
 		r.t.Fatalf("a push reached %s, which no subscriber holds", got.Path)
@@ -116,15 +131,6 @@ func (r *pushRig) next() pushed {
 		r.t.Fatalf("payload %q: %v", plain, err)
 	}
 	return pushed{path: got.Path, payload: p, body: got.Body}
-}
-
-func (r *pushRig) collect(n int) []pushed {
-	r.t.Helper()
-	var out []pushed
-	for len(out) < n {
-		out = append(out, r.next())
-	}
-	return out
 }
 
 func (r *pushRig) launch(fleet string) shipJSON {

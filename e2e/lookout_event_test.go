@@ -106,7 +106,7 @@ func (w *world) waitRun(routine, outcome string) runJSON {
 				return true, ""
 			}
 		}
-		if polls%40 == 0 { // the first poll only baselines, so ask for another
+		if polls%40 == 0 { // the first poll only baselines, so ask for another; every 40th poll (2s) re-asks
 			w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
 		}
 		polls++
