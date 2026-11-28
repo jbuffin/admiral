@@ -115,7 +115,7 @@ func TestConcurrentAutopilotLaunchesOverOneFreeSlot(t *testing.T) {
 	if got[http.StatusCreated] != 1 || got[http.StatusConflict] != 1 {
 		t.Errorf("two autopilot launches over one free slot gave statuses %v, want one 201 and one 409", got)
 	}
-	w.waitShipCount(10*time.Second, "exactly one ship", live, 1)
+	w.waitShipCount("exactly one ship", live, 1)
 	if n := len(w.in.ships(t)); n != 1 {
 		t.Errorf("ships = %d, want 1", n)
 	}
@@ -163,7 +163,7 @@ func TestConcurrentLaunchesOfOneOrder(t *testing.T) {
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"))
 	w.startSources(tpSource("a", p, nil))
-	w.waitSource("a", 10*time.Second, "an order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
+	w.waitSource("a", "an order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
 	dir := w.checkout("proj")
 
 	const n = 4

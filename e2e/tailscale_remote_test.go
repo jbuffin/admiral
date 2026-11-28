@@ -155,19 +155,20 @@ func (r *tsRig) owned(once func() *tsProc) *tsProc {
 // lostPort waits until the process serves or ends, and reports whether its port belonged to someone else.
 // A process that does neither fails the test with its output.
 func (r *tsRig) lostPort(p *tsProc) bool {
-	end := time.Now().Add(tsStartBound)
-	for time.Now().Before(end) {
+	var lost bool
+	eventually(r.t, "admiral either serving or exiting", func() (bool, string) {
 		out := p.out.String()
 		if p.exited() {
-			return strings.Contains(out, "address already in use")
+			lost = strings.Contains(out, "address already in use")
+			return true, ""
 		}
 		if strings.Contains(out, "Admiral is running at") {
-			return requireOwned(r.t, p.instance)
+			lost = requireOwned(r.t, p.instance)
+			return true, ""
 		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	r.t.Fatalf("admiral neither served nor exited within %s:\n%s", tsStartBound, p.out.String())
-	return false
+		return false, out
+	})
+	return lost
 }
 
 // movePort gives the rig a new port; the serve config that proxies to the old one follows.
@@ -217,23 +218,23 @@ func (p *tsProc) exited() bool {
 	}
 }
 
-// otherDevices waits for the "On other devices:" line and returns it; it fails if Admiral exits or takes too long.
+// otherDevices waits for the "On other devices:" line and returns it; it fails if Admiral exits first.
 func (p *tsProc) otherDevices(t *testing.T) string {
 	t.Helper()
-	end := time.Now().Add(tsStartBound)
-	for time.Now().Before(end) {
+	var line string
+	eventually(t, "admiral printing the On other devices line", func() (bool, string) {
 		for _, l := range strings.Split(p.out.String(), "\n") {
 			if strings.HasPrefix(l, "On other devices:") {
-				return l
+				line = l
+				return true, ""
 			}
 		}
 		if p.exited() {
 			t.Fatalf("admiral exited before printing the On other devices line:\n%s", p.out.String())
 		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatalf("no On other devices line within %s:\n%s", tsStartBound, p.out.String())
-	return ""
+		return false, p.out.String()
+	})
+	return line
 }
 
 var tsClient = &http.Client{Transport: noProxy(), Timeout: 30 * time.Second}
@@ -289,14 +290,14 @@ func (p *tsProc) remote(t *testing.T, path string) remoteView {
 	return v
 }
 
-// waitStopped waits for Admiral to exit on its own; on u1 it never does, so the wait is bounded.
+// waitStopped waits for Admiral to exit on its own; on u1 it never does, so the test run's deadline ends the wait.
 func (p *tsProc) waitStopped(t *testing.T) {
 	t.Helper()
 	select {
 	case <-p.done:
-	case <-time.After(tsStartBound):
+	case <-testCtx(t).Done():
 		p.Stop()
-		t.Fatalf("admiral kept running; it should have refused to start:\n%s", p.out.String())
+		hung(t, "admiral kept running; it should have refused to start:\n"+p.out.String())
 	}
 }
 

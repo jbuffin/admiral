@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -92,16 +93,16 @@ func shipIn(list []shipJSON, session string) (shipJSON, bool) {
 	return shipJSON{}, false
 }
 
-func waitStatus(t *testing.T, c *websocket.Conn, d time.Duration, session, status string) {
+func waitStatus(t *testing.T, c *websocket.Conn, session, status string) {
 	t.Helper()
-	waitShipsMsg(t, c, d, "ship "+session+" with status "+status, func(l []shipJSON) bool {
+	waitShipsMsg(t, c, "ship "+session+" with status "+status, func(l []shipJSON) bool {
 		return statusOf(l, session) == status
 	})
 }
 
-func (in *fleetInst) waitStatusList(t *testing.T, d time.Duration, session, status string) {
+func (in *fleetInst) waitStatusList(t *testing.T, session, status string) {
 	t.Helper()
-	in.waitShipsList(t, d, "ship "+session+" with status "+status, func(l []shipJSON) bool {
+	in.waitShipsList(t, "ship "+session+" with status "+status, func(l []shipJSON) bool {
 		return statusOf(l, session) == status
 	})
 }
@@ -118,17 +119,10 @@ func (w *world) paneState(session string) string {
 // waitPaneState waits for the fake harness's hook to set the pane's @admiral-state, the step that gates the ship's status.
 func (w *world) waitPaneState(session, want string) {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	eventually(w.t, "the pane of "+session+" setting @admiral-state "+want, func() (bool, string) {
 		out, _ := w.tmux("show-options", "-t", session, "-p", "-qv", "@admiral-state")
-		if out == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 10s the pane of %s never set @admiral-state %s (it is %q)", session, want, out)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return out == want, fmt.Sprintf("it is %q", out)
+	})
 }
 
 func (w *world) paneReason(session string) string {
@@ -142,13 +136,10 @@ func (w *world) paneReason(session string) string {
 
 func (w *world) waitPaneReason(session, want string) {
 	w.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for w.paneReason(session) != want {
-		if time.Now().After(deadline) {
-			w.t.Fatalf("@admiral-reason of %s = %q after 5s, want %q", session, w.paneReason(session), want)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(w.t, fmt.Sprintf("@admiral-reason of %s becoming %q", session, want), func() (bool, string) {
+		got := w.paneReason(session)
+		return got == want, fmt.Sprintf("it is %q", got)
+	})
 }
 
 func (w *world) setPaneState(session, state string) {
@@ -202,8 +193,8 @@ func TestHooksSetNeedsYouAndUnderway(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "copilot"} {
 		s := w.launchIn("f", h, "s1"+h)
 		w.waitFile(s.Session, "recorded")
-		waitStatus(t, ws, 2*time.Second, s.Session, "needs_you")
-		waitStatus(t, ws, 5*time.Second, s.Session, "underway")
+		waitStatus(t, ws, s.Session, "needs_you")
+		waitStatus(t, ws, s.Session, "underway")
 		if got := statusOf(w.in.ships(t), s.Session); got != "underway" {
 			t.Errorf("%s ship after its working hook: GET status = %q, want underway", h, got)
 		}
@@ -277,13 +268,13 @@ func TestCodexBellNeedsYou(t *testing.T) {
 	ws := dialWS(t, w.in.instance)
 
 	c := w.launchIn("bell", "codex", "s2bell")
-	waitStatus(t, ws, 4*time.Second, c.Session, "needs_you")
+	waitStatus(t, ws, c.Session, "needs_you")
 	if got := w.paneState(c.Session); got != "needs_you" {
 		t.Errorf("after a Codex bell @admiral-state = %q, want needs_you", got)
 	}
 	w.waitPaneReason(c.Session, "bell")
 	w.touch(c.Session, "go")
-	waitStatus(t, ws, 5*time.Second, c.Session, "underway")
+	waitStatus(t, ws, c.Session, "underway")
 	if got := w.paneState(c.Session); got != "working" {
 		t.Errorf("after the working hook @admiral-state = %q, want working", got)
 	}
@@ -292,12 +283,12 @@ func TestCodexBellNeedsYou(t *testing.T) {
 	w.waitFile(a.Session, "recorded")
 	w.attachControlClient(a.Session)
 	w.touch(a.Session, "go")
-	waitStatus(t, ws, 5*time.Second, a.Session, "needs_you")
+	waitStatus(t, ws, a.Session, "needs_you")
 
 	// The Claude ship's needs_you hook comes after its bell, so once the ship
 	// shows needs_you the bell has been read too: it must not have set reason bell.
 	cl := w.launchIn("nocodex", "claude", "s2claude")
-	waitStatus(t, ws, 5*time.Second, cl.Session, "needs_you")
+	waitStatus(t, ws, cl.Session, "needs_you")
 	if got := w.paneReason(cl.Session); got == "bell" {
 		t.Errorf("a Claude bell was taken as needs you: @admiral-reason = %q", got)
 	}
@@ -317,7 +308,7 @@ func TestNoFirstHook(t *testing.T) {
 	t0 := time.Now()
 	quiet := w.launchIn("none", "claude", "s3none")
 	busy := w.launchIn("late", "claude", "s3late")
-	waitStatus(t, ws, noHookWait+2*time.Second, quiet.Session, "needs_you")
+	waitStatus(t, ws, quiet.Session, "needs_you")
 	if el := time.Since(t0); el < noHookWait-time.Second {
 		t.Errorf("a ship with no hook became needs_you after %s, want about %s", el, noHookWait)
 	}
@@ -343,7 +334,7 @@ func TestNoFirstHookAfterRestart(t *testing.T) {
 	w.in.Stop()
 	time.Sleep(noHookWait + 500*time.Millisecond)
 	w.restart()
-	w.in.waitStatusList(t, 15*time.Second, s.Session, "needs_you")
+	w.in.waitStatusList(t, s.Session, "needs_you")
 }
 
 func TestInputSeenClearsNeedsYou(t *testing.T) {
@@ -353,7 +344,7 @@ func TestInputSeenClearsNeedsYou(t *testing.T) {
 	w.start()
 	s := w.launchIn("f", "claude", "s4")
 	w.waitFile(s.Session, "cues-done")
-	w.in.waitStatusList(t, 3*time.Second, s.Session, "needs_you")
+	w.in.waitStatusList(t, s.Session, "needs_you")
 	w.mustTmux("set-option", "-p", "-t", s.Session, "@admiral-reason", "stop")
 
 	if code := w.inputSeen(s.Session); code/100 != 2 {
@@ -377,7 +368,7 @@ func TestInputSeenClearsNeedsYou(t *testing.T) {
 
 	ws := dialWS(t, w.in.instance)
 	w.setPaneState(s.Session, "needs_you")
-	waitStatus(t, ws, 2*time.Second, s.Session, "needs_you")
+	waitStatus(t, ws, s.Session, "needs_you")
 }
 
 func TestSeenMarksTheStopWithoutClearingIt(t *testing.T) {
@@ -387,10 +378,10 @@ func TestSeenMarksTheStopWithoutClearingIt(t *testing.T) {
 	w.start()
 	s := w.launchIn("f", "claude", "s4seen")
 	w.waitFile(s.Session, "cues-done")
-	w.in.waitStatusList(t, 3*time.Second, s.Session, "needs_you")
+	w.in.waitStatusList(t, s.Session, "needs_you")
 	w.mustTmux("set-option", "-p", "-t", s.Session, "@admiral-reason", "stop")
 	ws := dialWS(t, w.in.instance)
-	first := waitShipsMsg(t, ws, 3*time.Second, "the stop's start", func(l []shipJSON) bool {
+	first := waitShipsMsg(t, ws, "the stop's start", func(l []shipJSON) bool {
 		sh, ok := shipIn(l, s.Session)
 		return ok && sh.StopSince != ""
 	})
@@ -409,7 +400,7 @@ func TestSeenMarksTheStopWithoutClearingIt(t *testing.T) {
 	if code := seen(stop.StopSince); code != http.StatusOK {
 		t.Fatalf("seen = %d, want 200", code)
 	}
-	waitShipsMsg(t, ws, 2*time.Second, "the stop seen", func(l []shipJSON) bool {
+	waitShipsMsg(t, ws, "the stop seen", func(l []shipJSON) bool {
 		sh, ok := shipIn(l, s.Session)
 		return ok && sh.Seen && sh.Status == "needs_you"
 	})
@@ -421,9 +412,9 @@ func TestSeenMarksTheStopWithoutClearingIt(t *testing.T) {
 	}
 
 	w.setPaneState(s.Session, "working")
-	waitStatus(t, ws, 2*time.Second, s.Session, "underway")
+	waitStatus(t, ws, s.Session, "underway")
 	w.setPaneState(s.Session, "needs_you")
-	next := waitShipsMsg(t, ws, 2*time.Second, "the next stop", func(l []shipJSON) bool {
+	next := waitShipsMsg(t, ws, "the next stop", func(l []shipJSON) bool {
 		return statusOf(l, s.Session) == "needs_you"
 	})
 	if sh, _ := shipIn(next, s.Session); sh.Seen {
@@ -456,12 +447,12 @@ func TestExitSailsOffOrAnchors(t *testing.T) {
 	waitStateFile(t, statePath, func(s string) bool { return strings.Contains(s, z.Session) })
 	w.waitFile(z.Session, "recorded")
 	w.touch(z.Session, "go")
-	waitStatus(t, ws, 4*time.Second, z.Session, "sailing_off")
+	waitStatus(t, ws, z.Session, "sailing_off")
 	seen := time.Now()
 	if got := statusOf(w.in.ships(t), z.Session); got != "sailing_off" {
 		t.Errorf("GET status of an exit-0 ship = %q, want sailing_off", got)
 	}
-	waitShipsMsg(t, ws, 6*time.Second, "the exit-0 ship gone", func(l []shipJSON) bool { return statusOf(l, z.Session) == "" })
+	waitShipsMsg(t, ws, "the exit-0 ship gone", func(l []shipJSON) bool { return statusOf(l, z.Session) == "" })
 	if el := time.Since(seen); el < sailOff/2 {
 		t.Errorf("the ship sailed off after only %s, want it shown sailing_off for about %s", el, sailOff)
 	}
@@ -476,7 +467,7 @@ func TestExitSailsOffOrAnchors(t *testing.T) {
 
 	// Exit 3.
 	a := w.launchIn("three", "claude", "s5three")
-	waitStatus(t, ws, 4*time.Second, a.Session, "anchored")
+	waitStatus(t, ws, a.Session, "anchored")
 	holdWindow(t, sailOff+500*time.Millisecond, "the exit-3 ship stopped being anchored", func() bool { // past the sail-off an exit 0 would get
 		got, ok := w.in.u5Ship(t, a.Session)
 		return ok && got.Status == "anchored"
@@ -500,7 +491,7 @@ func TestExitSailsOffOrAnchors(t *testing.T) {
 	if err := syscall.Kill(n, syscall.SIGKILL); err != nil {
 		t.Fatalf("kill pane process %s: %v", pid, err)
 	}
-	waitStatus(t, ws, 4*time.Second, k.Session, "anchored")
+	waitStatus(t, ws, k.Session, "anchored")
 	got, _ = w.in.u5Ship(t, k.Session)
 	if string(got.ExitCode) != "null" || string(got.ExitSignal) != `"KILL"` {
 		t.Errorf("killed ship exit_code %s, exit_signal %s, want null and \"KILL\"", got.ExitCode, got.ExitSignal)
@@ -508,11 +499,11 @@ func TestExitSailsOffOrAnchors(t *testing.T) {
 
 	// A ship that was waiting when it exited is anchored, not needs_you.
 	n3 := w.launchIn("waited", "claude", "s5wait")
-	w.waitPaneState(n3.Session, "needs_you") // a loaded runner starts the fake late; the 3 s is for Admiral's reading of it
-	waitStatus(t, ws, 3*time.Second, n3.Session, "needs_you")
+	w.waitPaneState(n3.Session, "needs_you") // a loaded runner starts the fake late
+	waitStatus(t, ws, n3.Session, "needs_you")
 	w.waitFile(n3.Session, "recorded")
 	w.touch(n3.Session, "go")
-	waitStatus(t, ws, 4*time.Second, n3.Session, "anchored")
+	waitStatus(t, ws, n3.Session, "anchored")
 	if code := w.inputSeen(n3.Session); code != http.StatusConflict {
 		t.Errorf("input-seen on an anchored ship = %d, want 409", code)
 	}
@@ -528,7 +519,7 @@ func TestDismiss(t *testing.T) {
 	w.start()
 	d := w.launchIn("dead", "claude", "s6dead")
 	l := w.launchIn("live", "claude", "s6live")
-	w.in.waitStatusList(t, 4*time.Second, d.Session, "anchored")
+	w.in.waitStatusList(t, d.Session, "anchored")
 	send(t, http.MethodPut, w.in.LocalURL+"/api/ships/"+d.Session+"/position", map[string]float64{"x": 0.1, "y": 0.2})
 	statePath := filepath.Join(w.home, "state.json")
 	waitStateFile(t, statePath, func(s string) bool { return strings.Contains(s, d.Session) })
@@ -572,7 +563,7 @@ func TestRestartKeepsAnchoredAndNeedsYou(t *testing.T) {
 	want := map[string]string{a.Session: "anchored", h.Session: "needs_you", b.Session: "needs_you", u.Session: "underway"}
 	// One poll for all four: a WebSocket wait per ship would hang on a slow
 	// machine when an earlier wait had already read the message for a later ship.
-	w.in.waitShipsList(t, 20*time.Second, "all four ships in their statuses", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "all four ships in their statuses", func(l []shipJSON) bool {
 		for s, st := range want {
 			if statusOf(l, s) != st {
 				return false
@@ -582,7 +573,7 @@ func TestRestartKeepsAnchoredAndNeedsYou(t *testing.T) {
 	})
 	w.in.Stop()
 	w.restart()
-	w.in.waitShipsList(t, 15*time.Second, "all four ships as before the restart", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "all four ships as before the restart", func(l []shipJSON) bool {
 		for s, st := range want {
 			if statusOf(l, s) != st {
 				return false
@@ -621,7 +612,7 @@ func TestRestartKillsShipThatSailedOff(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	w.in.waitShipsList(t, 15*time.Second, "no ships", func(l []shipJSON) bool { return len(l) == 0 })
+	w.in.waitShipsList(t, "no ships", func(l []shipJSON) bool { return len(l) == 0 })
 }
 
 // Real Codex fires no hook before the engineer answers its folder-trust dialog, so a ship sitting there has no
@@ -642,7 +633,7 @@ func TestCodexShipAtTheTrustDialogNeedsYou(t *testing.T) {
 	ws := dialWS(t, w.in.instance)
 
 	s := w.launchIn("trust", "codex", "s5trust")
-	waitStatus(t, ws, noHookWait+2*time.Second, s.Session, "needs_you")
+	waitStatus(t, ws, s.Session, "needs_you")
 
 	b, _ := w.joinBridge(t, s.Session, 80, 24)
 	holdThat(t, "opening the terminal view of a ship at the trust dialog made it underway", func() bool {

@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 )
 
 // fleetsOnly is a config with fleets zulu then alpha and the given sources.
@@ -89,7 +88,7 @@ func TestSettingsSaveKeepsEverySourcesFleet(t *testing.T) {
 	two, _ := json.Marshal(map[string]any{"plugin": "testplug", "name": "Sb", "fleet": "zulu", "settings": b.settings(nil)})
 	writeConfig(t, w.home, w.fleetsOnly(`{"sa":`+string(one)+`,"sb":`+string(two)+`}`))
 	w.start()
-	w.waitSource("sa", 10*time.Second, "state ok", isOK)
+	w.waitSource("sa", "state ok", isOK)
 
 	code, body := w.srcReq(http.MethodPut, "/sa", map[string]any{"name": "Renamed", "settings": a.settings(nil)})
 	w.mustOK(code, body, "PUT /api/sources/sa")

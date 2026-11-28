@@ -2,8 +2,8 @@ package e2e
 
 import (
 	"cmp"
-	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"os"
@@ -146,35 +146,32 @@ func (w *world) sources() []sourceJSON {
 	return decodeSources(w.t, body)
 }
 
-func (w *world) waitSource(key string, d time.Duration, what string, pred func(sourceJSON) bool) sourceJSON {
+func (w *world) waitSource(key string, what string, pred func(sourceJSON) bool) sourceJSON {
 	w.t.Helper()
-	deadline := time.Now().Add(d)
-	for {
+	var got sourceJSON
+	eventually(w.t, fmt.Sprintf("source %q showing %s", key, what), func() (bool, string) {
 		list := w.sources()
-		s, ok := find(list, key)
-		if ok && pred(s) {
-			return s
+		if s, ok := find(list, key); ok && pred(s) {
+			got = s
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within %s source %q never showed %s; last list: %s", d, key, what, dump(list))
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, "list: " + dump(list)
+	})
+	return got
 }
 
-func (w *world) waitSources(d time.Duration, what string, pred func([]sourceJSON) bool) []sourceJSON {
+func (w *world) waitSources(what string, pred func([]sourceJSON) bool) []sourceJSON {
 	w.t.Helper()
-	deadline := time.Now().Add(d)
-	for {
+	var got []sourceJSON
+	eventually(w.t, "GET /api/sources showing "+what, func() (bool, string) {
 		list := w.sources()
 		if pred(list) {
-			return list
+			got = list
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within %s GET /api/sources never showed %s; last list: %s", d, what, dump(list))
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, "list: " + dump(list)
+	})
+	return got
 }
 
 func dump(v any) string {
@@ -184,15 +181,14 @@ func dump(v any) string {
 
 func isOK(s sourceJSON) bool { return s.State == "ok" }
 
-func waitSourcesMsg(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred func([]sourceJSON) bool) []sourceJSON {
+func waitSourcesMsg(t *testing.T, c *websocket.Conn, what string, pred func([]sourceJSON) bool) []sourceJSON {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
+	ctx := testCtx(t)
 	var last string
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
-			t.Fatalf("within %s the websocket never delivered a `sources` message with %s (last sources message: %s): %v", d, what, last, err)
+			failRequest(t, fmt.Sprintf("the websocket delivering a `sources` message with %s (last sources message: %s)", what, last), err)
 		}
 		var m struct {
 			Type    string       `json:"type"`
@@ -307,18 +303,14 @@ func (p *tplug) starts() []float64 {
 	return out
 }
 
-func (p *tplug) waitStarts(d time.Duration, n int) []float64 {
+func (p *tplug) waitStarts(n int) []float64 {
 	p.t.Helper()
-	deadline := time.Now().Add(d)
-	for {
-		if s := p.starts(); len(s) >= n {
-			return s
-		}
-		if time.Now().After(deadline) {
-			p.t.Fatalf("within %s the plugin received %d initialize calls, want %d", d, len(p.starts()), n)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	var got []float64
+	eventually(p.t, fmt.Sprintf("the plugin receiving %d initialize calls", n), func() (bool, string) {
+		got = p.starts()
+		return len(got) >= n, fmt.Sprintf("%d", len(got))
+	})
+	return got
 }
 
 type rpcCall struct {
@@ -347,48 +339,38 @@ func (p *tplug) callsOf(method string) []rpcCall {
 	return out
 }
 
-func (p *tplug) waitCall(d time.Duration, method string, pred func(rpcCall) bool) rpcCall {
+func (p *tplug) waitCall(method string, pred func(rpcCall) bool) rpcCall {
 	p.t.Helper()
-	deadline := time.Now().Add(d)
-	for {
+	var got rpcCall
+	eventually(p.t, "the plugin receiving a matching "+method, func() (bool, string) {
 		for _, c := range p.callsOf(method) {
 			if pred(c) {
-				return c
+				got = c
+				return true, ""
 			}
 		}
-		if time.Now().After(deadline) {
-			p.t.Fatalf("within %s the plugin never received a matching %s; calls: %+v", d, method, p.calls())
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("calls: %+v", p.calls())
+	})
+	return got
 }
 
 // pid waits for the plugin to write its pid, which it does just after it
 // records its start.
 func (p *tplug) pid() int {
 	p.t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
-		if n, _ := strconv.Atoi(p.read("pid")); n > 0 {
-			return n
-		}
-		if time.Now().After(deadline) {
-			p.t.Fatalf("within 5s the plugin wrote no pid")
-		}
-	}
+	var n int
+	until(p.t, "the plugin writing its pid", func() bool {
+		n, _ = strconv.Atoi(p.read("pid"))
+		return n > 0
+	})
+	return n
 }
 
-func (p *tplug) waitDead(d time.Duration, pid int, what string) {
+func (p *tplug) waitDead(pid int, what string) {
 	p.t.Helper()
-	deadline := time.Now().Add(d)
-	for {
-		if pid > 0 && syscall.Kill(pid, 0) != nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			p.t.Fatalf("within %s the plugin process %d (%s) was still alive", d, pid, what)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	until(p.t, fmt.Sprintf("the plugin process %d (%s) dying", pid, what), func() bool {
+		return pid > 0 && syscall.Kill(pid, 0) != nil
+	})
 }
 
 func (p *tplug) alive(pid int) bool { return pid > 0 && syscall.Kill(pid, 0) == nil }

@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -40,8 +39,7 @@ type guardResult struct {
 // world's environment less ADMIRAL_HOME and ADMIRAL_AUTOPILOT, then extra.
 func (w *world) runGuardCmd(payload string, extra ...string) guardResult {
 	w.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := testCtx(w.t)
 	cmd := exec.CommandContext(ctx, binaryPath(w.t), "guard", "pretooluse")
 	cmd.Dir = w.userHom
 	cmd.Stdin = strings.NewReader(payload)
@@ -60,7 +58,7 @@ func (w *world) runGuardCmd(payload string, extra ...string) guardResult {
 	if err := cmd.Run(); err != nil {
 		ee, ok := err.(*exec.ExitError)
 		if !ok || ctx.Err() != nil {
-			w.t.Fatalf("admiral guard pretooluse: %v", err)
+			failRequest(w.t, "admiral guard pretooluse", err)
 		}
 		res.code = ee.ExitCode()
 	}

@@ -1,8 +1,6 @@
 package e2e
 
-import (
-	"time"
-)
+import ()
 
 // Helpers for tests that watch ships: waiting for a count, sailing a ship off
 // and reading the outcome log.
@@ -18,9 +16,9 @@ func (w *world) shipsWhere(pred func(shipJSON) bool) []shipJSON {
 	return out
 }
 
-func (w *world) waitShipCount(d time.Duration, what string, pred func(shipJSON) bool, n int) []shipJSON {
+func (w *world) waitShipCount(what string, pred func(shipJSON) bool, n int) []shipJSON {
 	w.t.Helper()
-	return w.in.waitShipsList(w.t, d, what, func(list []shipJSON) bool {
+	return w.in.waitShipsList(w.t, what, func(list []shipJSON) bool {
 		c := 0
 		for _, s := range list {
 			if pred(s) {

@@ -650,7 +650,7 @@ func TestInboxFindingsSend(t *testing.T) {
 	if got := readAnswer(t, dir, "f-1", before); !reflect.DeepEqual(got, want) {
 		t.Errorf("answer file = %v, want %v", got, want)
 	}
-	log := w.waitShipLog(ship.Session, 15*time.Second, "three card outcomes", func(l []outRec) bool {
+	log := w.waitShipLog(ship.Session, "three card outcomes", func(l []outRec) bool {
 		return countEvent(l, "card_approved")+countEvent(l, "card_edited")+countEvent(l, "card_rejected") >= 3
 	})
 	for event, card := range map[string]string{"card_approved": "r1", "card_edited": "r2", "card_rejected": "r3"} {
@@ -753,7 +753,7 @@ func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 	if calls := g.callsTo("POST", ghReviews+"/events"); len(calls) != 1 || calls[0].Env["GH_TOKEN"] != "fake-token-f" {
 		t.Errorf("gh calls = %v, want one POST with the sailed-off ship's fleet token fake-token-f", g.restCalls())
 	}
-	waitGone(t, 15*time.Second, inboxPath, reportPath)
+	waitGone(t, inboxPath, reportPath)
 	w.in.waitInbox(t)
 	// The record goes with the files, or the name is never drawn again.
 	deadline = time.Now().Add(15 * time.Second)
@@ -783,11 +783,7 @@ func kept(t *testing.T, home, session string) bool {
 
 func waitKept(t *testing.T, home, session string) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); !kept(t, home, session); time.Sleep(50 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("within 10s state.json never kept the inbox of %s", session)
-		}
-	}
+	until(t, "state.json keeping the inbox of "+session, func() bool { return kept(t, home, session) })
 }
 
 // refused is a request the server turns down as invalid: not a missing route
@@ -818,7 +814,7 @@ func TestInboxKeepsOnlyWhatTheReportListsAfterSailOff(t *testing.T) {
 	w.touch(wait.Session, "go")
 	w.waitEvent(done.Session, "ended", 1)
 	w.waitEvent(wait.Session, "ended", 1)
-	waitGone(t, 15*time.Second, doneInbox, doneReport)
+	waitGone(t, doneInbox, doneReport)
 	waitKept(t, w.home, wait.Session)
 	if !exists(waitInbox) || !exists(waitReport) {
 		t.Fatalf("the ship whose report lists q-3 lost its kept inbox")
@@ -832,7 +828,7 @@ func TestInboxKeepsOnlyWhatTheReportListsAfterSailOff(t *testing.T) {
 	if !ok2xx(code) || !strings.Contains(resp, `"forgotten":true`) {
 		t.Fatalf("remove = %d %s, want 2xx and forgotten true", code, resp)
 	}
-	waitGone(t, 15*time.Second, waitInbox, waitReport)
+	waitGone(t, waitInbox, waitReport)
 	w.in.waitInbox(t)
 	w.waitEvent(wait.Session, "item_removed", 1)
 }

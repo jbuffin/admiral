@@ -1,13 +1,13 @@
 package e2e
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -105,50 +105,26 @@ func (c *chatWorld) stdin() string {
 
 func (c *chatWorld) waitStdin(want string) {
 	c.t.Helper()
-	var got string
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if got = c.stdin(); got == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			c.t.Fatalf("within 5s the fake's terminal input never became %q; it is %q", want, got)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(c.t, fmt.Sprintf("the fake's terminal input becoming %q", want), func() (bool, string) {
+		got := c.stdin()
+		return got == want, fmt.Sprintf("it is %q", got)
+	})
 }
 
 func (c *chatWorld) waitStdinOneOf(wants ...string) {
 	c.t.Helper()
-	var got string
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		got = c.stdin()
-		for _, w := range wants {
-			if got == w {
-				return
-			}
-		}
-		if time.Now().After(deadline) {
-			c.t.Fatalf("within 5s the fake's terminal input never became one of %q; it is %q", wants, got)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(c.t, fmt.Sprintf("the fake's terminal input becoming one of %q", wants), func() (bool, string) {
+		got := c.stdin()
+		return slices.Contains(wants, got), fmt.Sprintf("it is %q", got)
+	})
 }
 
 func (c *chatWorld) waitEvents(n int) {
 	c.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	eventually(c.t, fmt.Sprintf("the fake running %d hook cues", n), func() (bool, string) {
 		data, _ := os.ReadFile(filepath.Join(c.recDir(), "events-done"))
-		if strings.Count(string(data), "\n") >= n {
-			return
-		}
-		if time.Now().After(deadline) {
-			c.t.Fatalf("within 10s the fake never ran %d hook cues; %s", n, c.diag())
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return strings.Count(string(data), "\n") >= n, c.diag()
+	})
 }
 
 // diag is what the fake recorded about its hook handlers.
@@ -207,31 +183,29 @@ func fetchFleetChat(t *testing.T, base, fleet string) chatSession {
 	return s
 }
 
-func (c *chatWorld) waitSession(d time.Duration, what string, pred func(chatSession) bool) chatSession {
+func (c *chatWorld) waitSession(what string, pred func(chatSession) bool) chatSession {
 	c.t.Helper()
-	deadline := time.Now().Add(d)
-	for {
+	var got chatSession
+	eventually(c.t, "GET /api/chat/chat/session showing "+what, func() (bool, string) {
 		s := c.session()
 		if pred(s) {
-			return s
+			got = s
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			c.t.Fatalf("within %s GET /api/chat/chat/session never showed %s; last: %+v; %s", d, what, s, c.diag())
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("%+v; %s", s, c.diag())
+	})
+	return got
 }
 
 // stays requires pred to hold for the whole of d.
 func (c *chatWorld) stays(d time.Duration, what string, pred func(chatSession) bool) {
 	c.t.Helper()
-	deadline := time.Now().Add(d)
-	for time.Now().Before(deadline) {
+	holdClean(c.t, d, func() string {
 		if s := c.session(); !pred(s) {
-			c.t.Fatalf("expected %s throughout %s, got %+v", what, d, s)
+			return fmt.Sprintf("expected %s throughout %s, got %+v", what, d, s)
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return ""
+	})
 }
 
 // texts lists the text messages only; a reset marker or a question card is not one.
@@ -296,15 +270,14 @@ func messagesAre(want ...string) func(chatSession) bool {
 	return func(s chatSession) bool { return sameStrings(texts(s.Messages), want) }
 }
 
-func waitChatWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred func(chatSession) bool) chatSession {
+func waitChatWS(t *testing.T, c *websocket.Conn, what string, pred func(chatSession) bool) chatSession {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
+	ctx := testCtx(t)
 	var last string
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
-			t.Fatalf("within %s the websocket never delivered a `chat` message with %s (last chat message: %s): %v", d, what, last, err)
+			failRequest(t, fmt.Sprintf("the websocket delivering a `chat` message with %s (last chat message: %s)", what, last), err)
 		}
 		var m chatSession
 		if json.Unmarshal(data, &m) != nil || m.Type != "chat" {
@@ -495,7 +468,7 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 	t.Run("never a ship", func(t *testing.T) {
 		w := w.at(t)
 		ws := dialWS(t, w.in.instance)
-		onWire := waitShipsMsg(t, ws, 5*time.Second, "any ships message", func([]shipJSON) bool { return true })
+		onWire := waitShipsMsg(t, ws, "any ships message", func([]shipJSON) bool { return true })
 		for _, s := range append(onWire, w.in.ships(t)...) {
 			if s.Session == chatSessionName {
 				t.Errorf("%s is in the ships list: %+v", chatSessionName, s)
@@ -531,7 +504,7 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 		b, _ := w.joinBridge(t, chatSessionName, 80, 24)
 		b.close()
 		w.mustTmux("kill-session", "-t", "="+chatSessionName)
-		c.waitSession(5*time.Second, "the chat no longer running", func(s chatSession) bool { return !s.Running })
+		c.waitSession("the chat no longer running", func(s chatSession) bool { return !s.Running })
 		expectBridgeRefused(t, w.in.LocalURL, chatSessionName, "", nil, "", http.StatusNotFound)
 	})
 }
@@ -571,7 +544,7 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		if code != http.StatusConflict {
 			t.Errorf("POST /api/chat/chat/messages before SessionStart = %d, want 409", code)
 		}
-		s := c.waitSession(10*time.Second, "the not-started error that needs the terminal", func(s chatSession) bool {
+		s := c.waitSession("the not-started error that needs the terminal", func(s chatSession) bool {
 			return s.Error != "" && s.NeedsTerminal
 		})
 		if !s.Running || s.Error != "Open the terminal to finish starting the chat" {
@@ -606,7 +579,7 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 	t.Run("the transcript becomes the conversation", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
 		c.touch("go-start")
-		got := c.waitSession(10*time.Second, "the first four messages", messagesAre(first...))
+		got := c.waitSession("the first four messages", messagesAre(first...))
 		if got.Error != "" || got.NeedsTerminal || !got.Running {
 			t.Errorf("after SessionStart: %+v, want running with no error", got)
 		}
@@ -616,8 +589,8 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 			}
 		}
 		// Every browser gets the update.
-		waitChatWS(t, ws1, 5*time.Second, "the first four messages", messagesAre(first...))
-		waitChatWS(t, ws2, 5*time.Second, "the first four messages", messagesAre(first...))
+		waitChatWS(t, ws1, "the first four messages", messagesAre(first...))
+		waitChatWS(t, ws2, "the first four messages", messagesAre(first...))
 
 		// More lines, then a line cut in two: it must be read whole once finished.
 		appendLines(t, tp1,
@@ -629,17 +602,17 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		part := userLine("u-8", "Thanks, that is all", nil)
 		appendFile(t, tp1, part[:len(part)/2])
 		second := append(append([]string{}, first...), "assistant: Two ships are afloat.")
-		c.waitSession(10*time.Second, "the new assistant message and nothing else", messagesAre(second...))
+		c.waitSession("the new assistant message and nothing else", messagesAre(second...))
 		appendFile(t, tp1, part[len(part)/2:]+"\n")
-		c.waitSession(10*time.Second, "the line finished", messagesAre(append(second, "user: Thanks, that is all")...))
+		c.waitSession("the line finished", messagesAre(append(second, "user: Thanks, that is all")...))
 	})
 
 	t.Run("state follows the hooks", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
 		for _, step := range []struct{ file, state string }{{"go-prompt", "working"}, {"go-perm", "waiting"}, {"go-stop", "idle"}} {
 			c.touch(step.file)
-			c.waitSession(5*time.Second, "state "+step.state, func(s chatSession) bool { return s.State == step.state })
-			waitChatWS(t, ws2, 5*time.Second, "state "+step.state, func(s chatSession) bool { return s.State == step.state })
+			c.waitSession("state "+step.state, func(s chatSession) bool { return s.State == step.state })
+			waitChatWS(t, ws2, "state "+step.state, func(s chatSession) bool { return s.State == step.state })
 		}
 	})
 
@@ -684,8 +657,8 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		if s := c.session(); !messagesAre(history...)(s) || resets(s.Messages) != 1 || resetText(s.Messages) != "New chat" {
 			t.Errorf("right after New chat: %v with %d reset markers reading %q, want the history (no flush turn) and one New chat marker", texts(s.Messages), resets(s.Messages), resetText(s.Messages))
 		}
-		waitChatWS(t, ws1, 3*time.Second, "the history and a marker", func(s chatSession) bool { return messagesAre(history...)(s) && resets(s.Messages) == 1 })
-		waitChatWS(t, ws2, 3*time.Second, "the history and a marker", func(s chatSession) bool { return messagesAre(history...)(s) && resets(s.Messages) == 1 })
+		waitChatWS(t, ws1, "the history and a marker", func(s chatSession) bool { return messagesAre(history...)(s) && resets(s.Messages) == 1 })
+		waitChatWS(t, ws2, "the history and a marker", func(s chatSession) bool { return messagesAre(history...)(s) && resets(s.Messages) == 1 })
 		// /clear typed as keys, or pasted as one bracketed paste: either reaches the pane, after the flush.
 		c.waitStdinOneOf(want+flushPaste+"/clear\r", want+flushPaste+"\x1b[200~/clear\x1b[201~\r")
 		c.expectNotLogged(chat.FlushPrompt, "FLUSH-REPLY")
@@ -699,14 +672,14 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 			map[string]any{"amount": 0.5, "basis": "estimate", "incomplete": false})
 		holdThat(t, "the clear wrote a second usage record for the chat", func() bool { return usageCount(c.shipLog(chatSessionName)) == 1 })
 		appendLines(t, tp2, userLine("u-20", "After the clear", nil))
-		c.waitSession(10*time.Second, "the message written after the clear", messagesAre(append(history, "user: After the clear")...))
+		c.waitSession("the message written after the clear", messagesAre(append(history, "user: After the clear")...))
 	})
 
 	t.Run("a restarted Admiral serves the same conversation", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
 		c.restart()
 		// The log serves the history before the chat is found running again, so wait for both.
-		got := c.waitSession(10*time.Second, "the same conversation, running", func(s chatSession) bool {
+		got := c.waitSession("the same conversation, running", func(s chatSession) bool {
 			return s.Running && messagesAre(append(history, "user: After the clear")...)(s)
 		})
 		if !got.Running || got.Error != "" || resets(got.Messages) != 1 || !uniqueIDs(got.Messages) {
@@ -733,13 +706,13 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	)
 	w.start()
 	c.start()
-	c.waitSession(10*time.Second, "the conversation", messagesAre("user: Before the clear", "assistant: Answer before the clear."))
+	c.waitSession("the conversation", messagesAre("user: Before the clear", "assistant: Answer before the clear."))
 
 	// A SessionStart with source clear on the same path serves only lines written after it.
 	c.touch("go-clear")
 	c.waitEvents(2)
 	appendLines(t, tpA, userLine("u-2", "After the same-path clear", nil))
-	c.waitSession(10*time.Second, "the later line, with nothing served twice", messagesEndWith("user: After the same-path clear"))
+	c.waitSession("the later line, with nothing served twice", messagesEndWith("user: After the same-path clear"))
 
 	// A clear before the transcript exists skips nothing: its lines show once it appears.
 	c.touch("go-late")
@@ -747,7 +720,7 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	c.touch("go-late-clear")
 	c.waitEvents(4)
 	appendLines(t, tpC, userLine("u-3", "Written after the clear", nil))
-	c.waitSession(10*time.Second, "the line of a transcript that did not exist at the clear", messagesEndWith("user: Written after the clear"))
+	c.waitSession("the line of a transcript that did not exist at the clear", messagesEndWith("user: Written after the clear"))
 
 	// The chat's cost-state is read from the path recorded before the reset.
 	appendLines(t, tpC, `{"type":"cost-state","totalCostUSD":0.5,"modelUsage":{"claude-fake":{"inputTokens":7,"outputTokens":3}}}`)
@@ -780,7 +753,7 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	if !hasPair(r.argv, "--model", "sonnet") || has(r.argv, "--effort") {
 		t.Errorf("the restarted chat's argv = %q, want --model sonnet and no --effort", r.argv)
 	}
-	c.waitSession(10*time.Second, "the new run's conversation", messagesEndWith("user: Fresh start"))
+	c.waitSession("the new run's conversation", messagesEndWith("user: Fresh start"))
 
 	// The reset wrote one usage record for the chat, from the transcript it had before the kill.
 	got := lastOf(w.waitEvent(chatSessionName, "usage", 1), "usage")
@@ -835,14 +808,14 @@ func TestChatSession_OnlyARealTranscriptUnderProjectsIsRead(t *testing.T) {
 	}
 	c.touch("go-4")
 	real2 := []string{"user: A real line", "user: Another real line"}
-	c.waitSession(10*time.Second, "the real transcript's lines (the over-long line skipped)", messagesAre(real2...))
+	c.waitSession("the real transcript's lines (the over-long line skipped)", messagesAre(real2...))
 	// Claude may report the path through the link a dotfiles config dir is; a
 	// different transcript named that way must be read too (the dock's
 	// CLAUDE_CONFIG_DIR is that link).
 	c.touch("go-5")
 	c.waitEvents(5)
 	// The history keeps the earlier transcript's lines and adds this one's.
-	c.waitSession(10*time.Second, "the transcript named through the config dir's link", messagesAre(append(real2, "user: Read through the link")...))
+	c.waitSession("the transcript named through the config dir's link", messagesAre(append(real2, "user: Read through the link")...))
 }
 
 func TestChatSession_NeedsTheTokenOverTheLAN(t *testing.T) {
@@ -871,7 +844,7 @@ func TestChatSession_NeedsTheTokenOverTheLAN(t *testing.T) {
 		t.Fatalf("/ws/bridge/_chat with the token: %v (%v)", resp, err)
 	}
 	b.send(map[string]any{"type": "join", "cols": 80, "rows": 24})
-	b.waitJoin(5*time.Second, 1)
+	b.waitJoin(1)
 }
 
 // flushPaste is what the chat's terminal receives for the flush prompt: one bracketed paste, then Enter.
@@ -956,15 +929,10 @@ func (c *chatWorld) briefOut() (string, int) {
 
 func (c *chatWorld) waitBriefs(n int) {
 	c.t.Helper()
-	for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+	eventually(c.t, fmt.Sprintf("the SessionStart hook printing the brief %d times", n), func() (bool, string) {
 		b, _ := os.ReadFile(filepath.Join(c.recDir(), "event-stdout"))
-		if strings.Count(string(b), `"hookEventName":"SessionStart"`) >= n {
-			return
-		}
-		if time.Now().After(end) {
-			c.t.Fatalf("within 10s the SessionStart hook never printed the brief %d times; event-stdout is %q", n, b)
-		}
-	}
+		return strings.Count(string(b), `"hookEventName":"SessionStart"`) >= n, fmt.Sprintf("event-stdout is %q", b)
+	})
 }
 
 // Admiral resets an idle chat over its threshold by itself: a flush turn, then /clear, then the brief, with a
@@ -989,7 +957,7 @@ func TestChatSession_AdmiralRefreshesAnIdleChatOverItsThreshold(t *testing.T) {
 	c.start()
 	c.waitFile(chatSessionName, "recording")
 	c.touch("go-start")
-	c.waitSession(10*time.Second, "the first messages", messagesAre(history...))
+	c.waitSession("the first messages", messagesAre(history...))
 	// The reading is kept after the session started, so it is not one from before a reset.
 	c.touch("go-usage")
 
@@ -1017,7 +985,7 @@ func TestChatSession_AdmiralRefreshesAnIdleChatOverItsThreshold(t *testing.T) {
 
 	t.Run("the clear follows the flush and the thread shows a Context refreshed marker", func(t *testing.T) {
 		c.waitStdinOneOf(flushPaste+"/clear\r", flushPaste+"\x1b[200~/clear\x1b[201~\r")
-		c.waitSession(10*time.Second, "the marker", func(s chatSession) bool { return resets(s.Messages) == 1 })
+		c.waitSession("the marker", func(s chatSession) bool { return resets(s.Messages) == 1 })
 		appendLines(t, tp1, assistantLine("f-2", "msg_f", map[string]any{"type": "text", "text": "FLUSH-REPLY"}))
 		holdThat(t, "the flush reply, read after the marker, showed in the thread", func() bool {
 			return messagesAre(history...)(c.session())
@@ -1029,7 +997,7 @@ func TestChatSession_AdmiralRefreshesAnIdleChatOverItsThreshold(t *testing.T) {
 			t.Fatalf("the SessionStart hook printed %d times before the clear, want 0 (the startup one found no history)", n)
 		}
 		c.touch("go-clear")
-		got := c.waitSession(10*time.Second, "one marker after the history", func(s chatSession) bool { return resets(s.Messages) == 1 })
+		got := c.waitSession("one marker after the history", func(s chatSession) bool { return resets(s.Messages) == 1 })
 		if resetText(got.Messages) != "Context refreshed" || !messagesAre(history...)(got) {
 			t.Errorf("thread = %v with a marker reading %q, want the history and Context refreshed", texts(got.Messages), resetText(got.Messages))
 		}
@@ -1065,7 +1033,7 @@ func TestChatSession_AnAbandonedFlushClearsNothing(t *testing.T) {
 	c.start()
 	c.waitFile(chatSessionName, "recording")
 	c.touch("go-start")
-	c.waitSession(10*time.Second, "the first messages", messagesAre(history...))
+	c.waitSession("the first messages", messagesAre(history...))
 	c.touch("go-usage")
 	c.waitStdin(flushPaste)
 	// Claude took the prompt and answered, but no hook says the turn ended.
@@ -1089,7 +1057,7 @@ func TestChatSession_NewChatWhileATurnRunsClearsWithoutAFlush(t *testing.T) {
 	c.waitFile(chatSessionName, "recording")
 	c.touch("go-start")
 	c.touch("go-prompt")
-	c.waitSession(10*time.Second, "a running turn", func(s chatSession) bool { return s.State == "working" })
+	c.waitSession("a running turn", func(s chatSession) bool { return s.State == "working" })
 	code, body := send(t, http.MethodPost, c.in.LocalURL+"/api/chat/chat/new", nil)
 	if code != http.StatusOK {
 		t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
@@ -1110,9 +1078,9 @@ func TestChatSession_InterruptStopsTheTurnWithdrawsItsQuestionsAndShowsInterrupt
 	w.writeCue("record", sessionStartCue(tp, "startup"), "hook working", "interrupted", "wait go-stop", `event Stop {"background_tasks":[]}`)
 	w.start()
 	c.start()
-	c.waitSession(10*time.Second, "a working chat", func(s chatSession) bool { return s.Running && s.State == "working" })
+	c.waitSession("a working chat", func(s chatSession) bool { return s.Running && s.State == "working" })
 	p := w.botStart(w.botEnv(), askStdin("Where does it go?"), "chat", "ask")
-	waitQuestions(t, w.in.LocalURL, p, 10*time.Second, "the question", hasQuestions(1))
+	waitQuestions(t, w.in.LocalURL, p, "the question", hasQuestions(1))
 
 	if _, body := send(t, http.MethodGet, w.in.LocalURL+"/api/version", nil); !strings.Contains(body, `"chat-interrupt"`) {
 		t.Errorf("GET /api/version = %s, want the capability chat-interrupt", body)
@@ -1122,11 +1090,11 @@ func TestChatSession_InterruptStopsTheTurnWithdrawsItsQuestionsAndShowsInterrupt
 		t.Fatalf(`POST /api/chat/chat/interrupt = %d %s, want 200 {"interrupted":true}`, code, body)
 	}
 	c.waitStdin("\x1b")
-	w.expectExit(p.wait(10*time.Second), 4, "chat ask when Interrupt withdrew its question")
+	w.expectExit(p.wait(), 4, "chat ask when Interrupt withdrew its question")
 	if s := fetchBot(t, w.in.LocalURL); len(s.Questions) != 0 || len(w.questionFiles()) != 0 {
 		t.Errorf("after Interrupt: questions %v, files %v, want none", fetchBot(t, w.in.LocalURL).ids(), w.questionFiles())
 	}
-	s := c.waitSession(10*time.Second, "the interrupted entry", func(s chatSession) bool {
+	s := c.waitSession("the interrupted entry", func(s chatSession) bool {
 		return len(s.Messages) > 0 && s.Messages[len(s.Messages)-1].Kind == "interrupted"
 	})
 	if last := s.Messages[len(s.Messages)-1]; last.Text != "Interrupted" {
@@ -1143,7 +1111,7 @@ func TestChatSession_InterruptStopsTheTurnWithdrawsItsQuestionsAndShowsInterrupt
 
 	t.Run("an idle chat is left alone", func(t *testing.T) {
 		c.touch("go-stop")
-		c.waitSession(10*time.Second, "an idle chat", func(s chatSession) bool { return s.State == "idle" })
+		c.waitSession("an idle chat", func(s chatSession) bool { return s.State == "idle" })
 		code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/interrupt", nil)
 		if code != http.StatusOK || !strings.Contains(body, `"interrupted":false`) {
 			t.Fatalf(`POST /api/chat/chat/interrupt on an idle chat = %d %s, want 200 {"interrupted":false}`, code, body)

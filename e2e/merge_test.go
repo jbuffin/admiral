@@ -115,7 +115,7 @@ func moorPRs(t *testing.T, w *world, prs ...string) shipJSON {
 	t.Helper()
 	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
 	w.exitWith(ship, mooredReport(prs...))
-	w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
+	w.in.waitShipsList(t, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
 	return ship
 }
 
@@ -195,7 +195,7 @@ func TestMergeASinglePRRunsOneGhMergeWithTheDefaultMethod(t *testing.T) {
 	w.start()
 	ship := moorPRs(t, w, layer1)
 	w.kickMoored()
-	got := byName(w.in.waitShipsList(t, 20*time.Second, "the PR read ready and the default method served", func(l []shipJSON) bool {
+	got := byName(w.in.waitShipsList(t, "the PR read ready and the default method served", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
 		return len(sh.PRs) == 1 && sh.PRs[0].Ready && sh.MergeMethod == "squash"
 	}))[ship.Name]
@@ -232,7 +232,7 @@ func TestMergeASinglePRRunsOneGhMergeWithTheDefaultMethod(t *testing.T) {
 
 	w.waitEvent(ship.Session, "merged", 1)
 	// No kick here: the 2-minute poll can't end the ship in time, so the server's own refresh after the merge does.
-	w.in.waitShipsList(t, 20*time.Second, "the ship sailed off after the merge", func(l []shipJSON) bool { _, ok := byName(l)[ship.Name]; return !ok })
+	w.in.waitShipsList(t, "the ship sailed off after the merge", func(l []shipJSON) bool { _, ok := byName(l)[ship.Name]; return !ok })
 	if ev := lastOf(w.waitEvent(ship.Session, "unmoored", 1), "unmoored"); ev["reason"] != "merged" {
 		t.Errorf("unmoored = %v, want reason merged", ev)
 	}
@@ -388,7 +388,7 @@ func seedMoored(t *testing.T, method string, seed func(g *fakeGH), prs ...string
 	w.start()
 	ship := moorPRs(t, w, prs...)
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "every PR read ready", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "every PR read ready", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
 		return sh.StackReady && sh.ReadyUpTo == prs[len(prs)-1]
 	})
@@ -482,7 +482,7 @@ func TestMergeAGitHubStackRunsOneGhStackMergeByNumberWithNoCheckout(t *testing.T
 			}
 		}
 	}
-	w.in.waitShipsList(t, 20*time.Second, "the ship left its mooring after the merge", func(l []shipJSON) bool { return byName(l)[ship.Name].Status != "moored" })
+	w.in.waitShipsList(t, "the ship left its mooring after the merge", func(l []shipJSON) bool { return byName(l)[ship.Name].Status != "moored" })
 }
 
 // A ship's independent PRs merge one at a time by URL, and the ship stays moored until the last one is merged.
@@ -497,7 +497,7 @@ func TestMergeOfIndependentPRsMergesOneAtATimeAndTheShipStaysMooredUntilTheLast(
 	w.start()
 	ship := moorPRs(t, w, layer1, layer2)
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the first PR read ready", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the first PR read ready", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
 		return len(sh.PRs) == 2 && sh.PRs[0].Ready && !sh.PRs[1].Ready
 	})
@@ -541,7 +541,7 @@ func TestMergeOfIndependentPRsMergesOneAtATimeAndTheShipStaysMooredUntilTheLast(
 		}
 	}
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the poll saw the first PR merged", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the poll saw the first PR merged", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
 		return len(sh.PRs) == 2 && sh.PRs[0].State == "MERGED"
 	})
@@ -553,7 +553,7 @@ func TestMergeOfIndependentPRsMergesOneAtATimeAndTheShipStaysMooredUntilTheLast(
 	// The second PR is merged by its own Merge, when it is ready; the merged first PR does not hold it up.
 	g.prChips(layer2, "APPROVED", "SUCCESS", "MERGEABLE")
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the second PR ready makes the ship ready to merge again", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the second PR ready makes the ship ready to merge again", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
 		return len(sh.PRs) == 2 && sh.PRs[1].Ready && sh.StackReady && sh.ReadyUpTo == layer2
 	})
@@ -567,7 +567,7 @@ func TestMergeOfIndependentPRsMergesOneAtATimeAndTheShipStaysMooredUntilTheLast(
 	}
 	checkPRMergeArgv(t, calls[1], layer2, "squash")
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the ship left its mooring after its last PR merged", func(l []shipJSON) bool { return byName(l)[ship.Name].Status != "moored" })
+	w.in.waitShipsList(t, "the ship left its mooring after its last PR merged", func(l []shipJSON) bool { return byName(l)[ship.Name].Status != "moored" })
 	if ev := lastOf(w.waitEvent(ship.Session, "unmoored", 1), "unmoored"); ev["reason"] != "merged" {
 		t.Errorf("unmoored = %v, want reason merged", ev)
 	}
@@ -585,7 +585,7 @@ func TestMergeOfIndependentPRsInTwoRepositoriesMergesEachByItsOwnURL(t *testing.
 	w.start()
 	ship := moorPRs(t, w, layer1, other)
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "both PRs read ready", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "both PRs read ready", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
 		return len(sh.PRs) == 2 && sh.PRs[0].Ready && sh.PRs[1].Ready
 	})
@@ -627,7 +627,7 @@ func TestAFailedGhMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T) {
 	w.start()
 	ship := moorPRs(t, w, layer1)
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the PR read ready", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the PR read ready", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
 		return len(sh.PRs) == 1 && sh.PRs[0].Ready
 	})
@@ -665,7 +665,7 @@ func TestMergeWithoutTheShellsTokenIsRefusedAndRunsNoGh(t *testing.T) {
 	w.start()
 	ship := moorPRs(t, w, layer1)
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the PR read ready", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the PR read ready", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
 		return len(sh.PRs) == 1 && sh.PRs[0].Ready
 	})

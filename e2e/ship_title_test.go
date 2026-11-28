@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 // A ship launched blank gains its title once the engineer sends the first prompt: a pull request's own title when the
@@ -62,7 +61,7 @@ func TestShipTitleFromItsFirstPrompt(t *testing.T) {
 	appendLines(t, docsTranscript, userLine("u-1", "Read https://docs.example.com/setup and tidy the setup page", nil),
 		jsonLine(map[string]any{"type": "ai-title", "aiTitle": "Tidy the setup page", "sessionId": "x"}))
 
-	list := w.in.waitShipsList(t, 30*time.Second, "both ships titled", func(l []shipJSON) bool {
+	list := w.in.waitShipsList(t, "both ships titled", func(l []shipJSON) bool {
 		a, _ := shipIn(l, pr.Session)
 		b, _ := shipIn(l, docs.Session)
 		return a.Title != "" && !a.Titling && b.Title != "" && !b.Titling

@@ -197,7 +197,7 @@ func TestAdmiralBot_CodexChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testing.
 		if got.IsError {
 			t.Fatalf("list_ships over the Codex chat's MCP server was refused: %s", got.text())
 		}
-		c.waitSession(15*time.Second, "the first message and the reply from the chat home's rollout", func(s chatSession) bool {
+		c.waitSession("the first message and the reply from the chat home's rollout", func(s chatSession) bool {
 			m := texts(s.Messages)
 			return slices.Contains(m, "user: Which ships are at anchor?") && slices.Contains(m, "assistant: Two ships are at anchor.")
 		})
@@ -325,7 +325,7 @@ func TestAdmiralBot_SavingAnotherHarnessStartsAFreshChatOnIt(t *testing.T) {
 	if !hasPair(r.argv, "--model", "opus") {
 		t.Errorf("the fresh chat's argv = %q, want --model opus", r.argv)
 	}
-	c.waitSession(10*time.Second, "a running chat past its start with one reset marker", func(s chatSession) bool {
+	c.waitSession("a running chat past its start with one reset marker", func(s chatSession) bool {
 		return s.Running && s.Error == "" && resets(s.Messages) == 1
 	})
 }

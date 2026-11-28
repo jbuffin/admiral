@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 type noticeItem struct {
@@ -44,16 +43,16 @@ func (in *fleetInst) notices(t *testing.T) []noticeItem {
 
 func (in *fleetInst) waitNotice(t *testing.T) noticeItem {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if n := in.notices(t); len(n) > 0 {
-			return n[0]
+	var got noticeItem
+	until(t, "GET /api/inbox listing a notice", func() bool {
+		n := in.notices(t)
+		if len(n) == 0 {
+			return false
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within 10s GET /api/inbox listed no notice")
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		got = n[0]
+		return true
+	})
+	return got
 }
 
 func (w *world) backups() []string {

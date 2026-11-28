@@ -73,7 +73,7 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 
 	// the wall clock ends the harness and keeps the pane
 	var stopped shipJSON
-	w.waitShipCount(30*time.Second, "the first ship to be anchored by the wall clock", func(s shipJSON) bool {
+	w.waitShipCount("the first ship to be anchored by the wall clock", func(s shipJSON) bool {
 		if s.Session == run.Ship && s.Status == "anchored" {
 			stopped = s
 			return true
@@ -112,7 +112,7 @@ func TestStopAllWorkerLaunchedEndsTheLiveEventShipsAndHoldFireCountsThem(t *test
 	w.start()
 	id := w.eventRoutine("Sweep", "act")
 	run := w.waitRun(id, "launched")
-	w.waitShipCount(30*time.Second, "the event ship to be live", func(s shipJSON) bool { return s.Session == run.Ship && live(s) }, 1)
+	w.waitShipCount("the event ship to be live", func(s shipJSON) bool { return s.Session == run.Ship && live(s) }, 1)
 
 	code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/fleets/work/hold-fire", nil)
 	if code != http.StatusOK || !strings.Contains(body, `"worker_ships":1`) {

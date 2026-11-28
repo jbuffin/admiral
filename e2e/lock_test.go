@@ -64,16 +64,16 @@ func (w *world) lockState() lockRes {
 
 func (w *world) waitLock(what string, pred func(lockRes) bool) lockRes {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if r := w.lockState(); pred(r) {
-			return r
+	var got lockRes
+	eventually(w.t, "the phone showing "+what, func() (bool, string) {
+		r := w.lockState()
+		if pred(r) {
+			got = r
+			return true, ""
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 10s phone never showed %s; it shows %+v", what, w.lockState())
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("%+v", r)
+	})
+	return got
 }
 
 type lockProc struct {
@@ -99,8 +99,8 @@ func (w *world) waitExit(l *lockProc, what string) int {
 	select {
 	case <-l.done:
 		return l.cmd.ProcessState.ExitCode()
-	case <-time.After(10 * time.Second):
-		w.t.Fatalf("%s: admiral lock did not exit within 10s; stderr %q", what, l.err.String())
+	case <-testCtx(w.t).Done():
+		hung(w.t, fmt.Sprintf("%s: admiral lock did not exit before the test run's deadline; stderr %q", what, l.err.String()))
 		return 0
 	}
 }

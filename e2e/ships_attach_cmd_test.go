@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 type shipRow struct{ name, session, fleet, harness, status, repo string }
@@ -48,7 +47,7 @@ func TestU12_S4_ShipsAndAttach(t *testing.T) {
 	w.start()
 	live := sail(t, w, "alpha", "hook working")
 	gone := sail(t, w, "bravo", "hook working", "exit 3")
-	w.in.waitShipsList(t, 10*time.Second, "alpha underway and bravo anchored", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "alpha underway and bravo anchored", func(l []shipJSON) bool {
 		m := map[string]string{}
 		for _, s := range l {
 			m[s.Session] = s.Status

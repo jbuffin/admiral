@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,7 +10,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 // ghSrcJSON is a source as /api/v1/sources lists it, with `views` and `warnings`.
@@ -56,21 +56,20 @@ func (w *world) ghSources() []ghSrcJSON {
 	return wrap.Sources
 }
 
-func (w *world) waitGH(key string, d time.Duration, what string, pred func(ghSrcJSON) bool) ghSrcJSON {
+func (w *world) waitGH(key string, what string, pred func(ghSrcJSON) bool) ghSrcJSON {
 	w.t.Helper()
-	deadline := time.Now().Add(d)
-	for {
+	var got ghSrcJSON
+	eventually(w.t, fmt.Sprintf("source %q showing %s", key, what), func() (bool, string) {
 		list := w.ghSources()
 		for _, s := range list {
 			if s.Key == key && pred(s) {
-				return s
+				got = s
+				return true, ""
 			}
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within %s source %q never showed %s; last list: %s", d, key, what, dump(list))
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, "list: " + dump(list)
+	})
+	return got
 }
 
 func (w *world) ghFleet(name string, roots []string, owners []string, env map[string]string) string {
@@ -155,8 +154,8 @@ func TestGitHubBuiltin(t *testing.T) {
 	w.start()
 
 	ready := func(s ghSrcJSON) bool { return s.State == "ok" && len(s.viewOrders("assigned-to-me")) > 0 }
-	a := w.waitGH("gha", 20*time.Second, "views with orders", ready)
-	b := w.waitGH("ghb", 20*time.Second, "views with orders", ready)
+	a := w.waitGH("gha", "views with orders", ready)
+	b := w.waitGH("ghb", "views with orders", ready)
 
 	for _, c := range []struct {
 		src  ghSrcJSON
@@ -180,7 +179,7 @@ func TestGitHubBuiltin(t *testing.T) {
 
 	// Signed out: the sign-in card shows and its search never runs. Then the
 	// account signs in and its items come.
-	w.waitGH("ghc", 20*time.Second, "the sign-in card", func(s ghSrcJSON) bool {
+	w.waitGH("ghc", "the sign-in card", func(s ghSrcJSON) bool {
 		return s.State == "auth_required" && s.Auth != nil && s.Auth.Message != ""
 	})
 	holdThat(t, "a search ran for the signed-out account", func() bool {
@@ -190,7 +189,7 @@ func TestGitHubBuiltin(t *testing.T) {
 	g.token("newbie", "fake-token-new-3")
 	code, body := w.srcReq(http.MethodPost, "/ghc/refresh", map[string]any{})
 	w.mustOK(code, body, "POST refresh")
-	w.waitGH("ghc", 20*time.Second, "the card gone and its items", func(s ghSrcJSON) bool {
+	w.waitGH("ghc", "the card gone and its items", func(s ghSrcJSON) bool {
 		return s.State == "ok" && s.Auth == nil && reflect.DeepEqual(s.viewOrders("newbie"), []string{"acme/widgets#21"})
 	})
 
@@ -208,7 +207,7 @@ func TestGitHubBuiltin(t *testing.T) {
 		"--env", "claude=CLAUDE_CONFIG_DIR="+filepath.Join(w.root, "claude-charlie"),
 		"--search-root", rootC)
 	w.expectExit(r, 0, "fleet add charlie")
-	w.waitGH("github-charlie", 20*time.Second, "the new fleet's assigned item", func(s ghSrcJSON) bool {
+	w.waitGH("github-charlie", "the new fleet's assigned item", func(s ghSrcJSON) bool {
 		return s.State == "ok" && reflect.DeepEqual(s.viewOrders("assigned-to-me"), []string{"newco/gadget#3"})
 	})
 	if got := w.readConfig().sources(t)["github-charlie"]; !sameJSON(t, got, `{"plugin":"github","name":"GitHub","fleet":"charlie","settings":{"views":[{"id":"for-you","hidden":false},{"id":"assigned-to-me","hidden":false},{"id":"review-requested","hidden":false},{"id":"my-prs","hidden":false}]}}`) {
@@ -226,8 +225,8 @@ func TestFleetEnv(t *testing.T) {
 		"bravo", w.ghFleet("Bravo", []string{w.work}, nil, nil),
 	}, rawSources(inFleetDef(tpSource("pa", pa, nil), "alpha"), inFleetDef(tpSource("pb", pb, nil), "bravo"))))
 	w.start()
-	w.waitSource("pa", 15*time.Second, "state ok", isOK)
-	w.waitSource("pb", 15*time.Second, "state ok", isOK)
+	w.waitSource("pa", "state ok", isOK)
+	w.waitSource("pb", "state ok", isOK)
 
 	// A plugin starts with Admiral's environment overlaid with its fleet's env
 	// (~ expanded); a fleet with no env changes nothing.

@@ -1,11 +1,11 @@
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 const crewTranscriptOption = "@admiral-crew-transcript"
@@ -42,17 +42,10 @@ func wantTranscript(w *world, ship, name, want string, wantSet bool, why string)
 
 func waitEvents(w *world, session string, n int) {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	eventually(w.t, fmt.Sprintf("%s running %d cue events", session, n), func() (bool, string) {
 		data, _ := os.ReadFile(filepath.Join(w.rec, session, "events-done"))
-		if strings.Count(string(data), "\n") >= n {
-			return
-		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("%s ran fewer than %d cue events within 10s: %q", session, n, data)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return strings.Count(string(data), "\n") >= n, fmt.Sprintf("%q", data)
+	})
 }
 
 // Claude records from any event, a later path replaces it, the ship (which runs

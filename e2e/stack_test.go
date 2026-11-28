@@ -226,7 +226,7 @@ func TestStackWhoseBottomLayerAlreadyMergedMergesTheRest(t *testing.T) {
 	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
 	g.prState(layer1, "MERGED")
 	w.kickMoored()
-	list := w.in.waitShipsList(t, 20*time.Second, "the bottom layer read merged and the top ready", func(l []shipJSON) bool {
+	list := w.in.waitShipsList(t, "the bottom layer read merged and the top ready", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
 		return len(sh.PRs) == 2 && sh.PRs[0].State == "MERGED" && sh.PRs[1].Ready
 	})
@@ -302,15 +302,9 @@ func runningWithPRs(t *testing.T, prs ...string) (*world, *fakeGH, shipJSON) {
 	w.start()
 
 	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
-	deadline := time.Now().Add(10 * time.Second)
-	for !transcriptHas(cfgDir, prs[len(prs)-1]) {
-		if time.Now().After(deadline) {
-			t.Fatal("the fake never wrote the tool results to its transcript")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	until(t, "the fake writing the tool results to its transcript", func() bool { return transcriptHas(cfgDir, prs[len(prs)-1]) })
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the running ship carrying the PRs it opened", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "the running ship carrying the PRs it opened", func(l []shipJSON) bool {
 		s := byName(l)[ship.Name]
 		return s.Status != "moored" && len(s.PRs) == len(prs)
 	})

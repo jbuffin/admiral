@@ -101,7 +101,7 @@ func TestCampaignFollowJourney(t *testing.T) {
 	writeConfig(t, w.home, ghConfig([]string{"alpha", w.ghFleet("Alpha", []string{w.work}, nil, nil)},
 		rawSources(srcDef{Key: "gha", Plugin: "github", Name: "GitHub", Fleet: "alpha", Settings: map[string]any{"views": []any{}}})))
 	w.start()
-	w.waitGH("gha", 20*time.Second, "its view", func(s ghSrcJSON) bool { return s.State == "ok" })
+	w.waitGH("gha", "its view", func(s ghSrcJSON) bool { return s.State == "ok" })
 
 	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/v1/campaigns", map[string]string{"reference": campIssueURL(20)})
 	if code != http.StatusCreated {
@@ -145,7 +145,7 @@ func TestCampaignFollowJourney(t *testing.T) {
 	}
 
 	w.release(ship.Session, "go")
-	w.in.waitShipsList(t, 15*time.Second, "the ship sailed off", func(l []shipJSON) bool { return statusOf(l, ship.Session) == "" })
+	w.in.waitShipsList(t, "the ship sailed off", func(l []shipJSON) bool { return statusOf(l, ship.Session) == "" })
 	deadline := time.Now().Add(15 * time.Second)
 	for st, _ := w.campaign(c.ID).status(21); st != "ready"; st, _ = w.campaign(c.ID).status(21) {
 		if time.Now().After(deadline) {
@@ -375,7 +375,7 @@ func (w *world) launchDrafting() shipJSON {
 
 func (w *world) waitDrafting(t *testing.T, session string, want bool) []shipJSON {
 	t.Helper()
-	return w.in.waitShipsList(t, 15*time.Second, "the drafting flag of "+session, func(l []shipJSON) bool {
+	return w.in.waitShipsList(t, "the drafting flag of "+session, func(l []shipJSON) bool {
 		s, ok := shipIn(l, session)
 		return ok && s.Drafting == want
 	})
@@ -401,7 +401,7 @@ func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
 		t.Errorf("a ship that has written nothing shows the notice %q", s.DraftingNotice)
 	}
 	w.release(quiet.Session, "end")
-	w.in.waitShipsList(t, 15*time.Second, "the drafting ship sailed off", func(l []shipJSON) bool { return statusOf(l, quiet.Session) == "" })
+	w.in.waitShipsList(t, "the drafting ship sailed off", func(l []shipJSON) bool { return statusOf(l, quiet.Session) == "" })
 	waitCond(t, "an Inbox item that "+quiet.Name+" ended without filing", func() bool { return len(w.endedItemIDs()) == 1 })
 	id := w.endedItemIDs()[0]
 	if b, _ := os.ReadFile(filepath.Join(w.home, "inbox", "_admiral", id+".json")); !strings.Contains(string(b), quiet.Name) {
@@ -434,9 +434,9 @@ func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
 
 	w.writeCampaignRef(d.Session, campIssueURL(22))
 	w.release(d.Session, "again")
-	w.in.waitShipsList(t, 15*time.Second, "the ship working again", func(l []shipJSON) bool { return statusOf(l, d.Session) == "underway" })
+	w.in.waitShipsList(t, "the ship working again", func(l []shipJSON) bool { return statusOf(l, d.Session) == "underway" })
 	w.release(d.Session, "seen")
-	w.in.waitShipsList(t, 15*time.Second, "a line on the ship about the other issue", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, "a line on the ship about the other issue", func(l []shipJSON) bool {
 		s, ok := shipIn(l, d.Session)
 		return ok && (strings.Contains(s.DraftingNotice, "#22") || strings.Contains(s.DraftingNotice, "/issues/22"))
 	})
@@ -449,6 +449,6 @@ func (w *world) draftingShipsFollowTheirCampaign(t *testing.T, ended string) {
 	}
 
 	w.release(d.Session, "end")
-	w.in.waitShipsList(t, 15*time.Second, "the drafting ship sailed off", func(l []shipJSON) bool { return statusOf(l, d.Session) == "" })
+	w.in.waitShipsList(t, "the drafting ship sailed off", func(l []shipJSON) bool { return statusOf(l, d.Session) == "" })
 	holdThat(t, "a ship that filed has no ended-without-filing item", func() bool { return len(w.endedItemIDs()) == 0 })
 }

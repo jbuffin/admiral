@@ -1,8 +1,8 @@
 package e2e
 
 import (
-	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -148,20 +148,20 @@ func (p *botProc) result() cliResult {
 	return cliResult{stdout: p.out.String(), stderr: p.err.String(), code: p.cmd.ProcessState.ExitCode()}
 }
 
-func (p *botProc) wait(d time.Duration) cliResult {
+func (p *botProc) wait() cliResult {
 	p.t.Helper()
 	select {
 	case <-p.done:
 		return p.result()
-	case <-time.After(d):
-		p.t.Fatalf("admiral %v still running after %s; stdout %q stderr %q", p.args, d, p.out.String(), p.err.String())
+	case <-testCtx(p.t).Done():
+		hung(p.t, fmt.Sprintf("admiral %v still running at the test run's deadline; stdout %q stderr %q", p.args, p.out.String(), p.err.String()))
 		return cliResult{}
 	}
 }
 
 func (w *world) botCLI(env []string, stdin string, args ...string) cliResult {
 	w.t.Helper()
-	return w.botStart(env, stdin, args...).wait(30 * time.Second)
+	return w.botStart(env, stdin, args...).wait()
 }
 
 // expectExitOf is expectExit for a command that must exist: an exit code from
@@ -222,37 +222,35 @@ func fetchBot(t *testing.T, base string) botSession {
 
 // waitQuestions fails with p's exit code and output once p has ended, so a
 // missing command reads as that and not as a timeout.
-func waitQuestions(t *testing.T, base string, p *botProc, d time.Duration, what string, pred func(botSession) bool) botSession {
+func waitQuestions(t *testing.T, base string, p *botProc, what string, pred func(botSession) bool) botSession {
 	t.Helper()
-	deadline := time.Now().Add(d)
-	for {
+	var got botSession
+	eventually(t, "GET /api/chat/chat/session showing "+what, func() (bool, string) {
 		s := fetchBot(t, base)
 		if pred(s) {
-			return s
+			got = s
+			return true, ""
 		}
 		if p != nil {
 			p.failIfExited(what)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within %s GET /api/chat/chat/session never showed %s; last: %+v", d, what, s)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("%+v", s)
+	})
+	return got
 }
 
 func hasQuestions(n int) func(botSession) bool {
 	return func(s botSession) bool { return len(s.Questions) == n }
 }
 
-func waitBotWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred func(botSession) bool) botSession {
+func waitBotWS(t *testing.T, c *websocket.Conn, what string, pred func(botSession) bool) botSession {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
+	ctx := testCtx(t)
 	var last string
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
-			t.Fatalf("within %s the websocket never delivered a `chat` message with %s (last chat message: %s): %v", d, what, last, err)
+			failRequest(t, fmt.Sprintf("the websocket delivering a `chat` message with %s (last chat message: %s)", what, last), err)
 		}
 		var m botSession
 		if json.Unmarshal(data, &m) != nil || m.Type != "chat" {
@@ -333,11 +331,11 @@ func TestAdmiralBot_ReadCommandsFindTheServerByADMIRAL_PORT(t *testing.T) {
 	if w.in.Port == "7420" {
 		t.Fatalf("the test needs a non-default port")
 	}
-	w.waitSource("a", 10*time.Second, "both panels, main with its order", func(s sourceJSON) bool {
+	w.waitSource("a", "both panels, main with its order", func(s sourceJSON) bool {
 		return s.State == "ok" && len(s.Views) == 2 && s.Views[0].hasOrder("o1")
 	})
 	ship := w.launchIn("ship", "claude", "repo1")
-	w.in.waitStatusList(t, 10*time.Second, ship.Session, "needs_you")
+	w.in.waitStatusList(t, ship.Session, "needs_you")
 	_, inboxDir := shipPaths(w.record(ship.Session))
 	seedItem(t, inboxDir, "q-1", questionItem("q-1", "2026-10-22T10:00:00Z"))
 	w.in.waitInbox(t, "q-1")
@@ -440,8 +438,8 @@ func TestOrdersAddCommand(t *testing.T) {
 	w := c.world
 	w.extra = append(w.extra, "ADMIRAL_CALL_TIMEOUT="+shortCall.String())
 	w.start()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
-	w.waitSource("hang", 10*time.Second, "state ok", isOK)
+	w.waitSource("orders", "state ok", isOK)
+	w.waitSource("hang", "state ok", isOK)
 	panel := w.panelID("orders")
 	env := w.botEnv("ADMIRAL_PORT=" + w.in.Port)
 
@@ -453,14 +451,14 @@ func TestOrdersAddCommand(t *testing.T) {
 		if id == "" || strings.ContainsAny(id, " \t\n") {
 			t.Fatalf("orders add printed %q, want just the new order's id", r.stdout)
 		}
-		s := w.waitSource("orders", 5*time.Second, "the new order", func(s sourceJSON) bool { return s.hasOrder(id) })
+		s := w.waitSource("orders", "the new order", func(s sourceJSON) bool { return s.hasOrder(id) })
 		if o, _ := s.order(id); !strings.Contains(o.Text, "second line") {
 			t.Errorf("the order's text = %q, want the stdin text", o.Text)
 		}
 		r = w.botCLI(env, "", "orders", "add", "--source", "orders", "--panel", panel, "--", "Check out the lighthouse")
 		w.expectExit(r, 0, "orders add (-- text)")
 		id2 := strings.TrimSpace(r.stdout)
-		w.waitSource("orders", 5*time.Second, "the second order", func(s sourceJSON) bool { return id2 != "" && id2 != id && s.hasOrder(id2) })
+		w.waitSource("orders", "the second order", func(s sourceJSON) bool { return id2 != "" && id2 != id && s.hasOrder(id2) })
 	})
 
 	t.Run("an unknown panel exits 1 with the server's error", func(t *testing.T) {
@@ -530,20 +528,20 @@ func (c *chatWorld) mcpCall(name, tool string, args map[string]any) mcpReply {
 	}
 	atomicWrite(c.t, filepath.Join(c.recDir(), name), string(req))
 	reply := filepath.Join(c.recDir(), name+".reply")
-	for end := time.Now().Add(20 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		raw, err := os.ReadFile(reply)
+	var raw []byte
+	eventually(c.t, "the fake chat answering `mcp "+name+"` ("+tool+")", func() (bool, string) {
+		raw, err = os.ReadFile(reply)
 		if err == nil && len(raw) > 0 {
-			var r mcpReply
-			if err := json.Unmarshal(raw, &r); err != nil {
-				c.t.Fatalf("the fake's reply to %s %s is not a tool result: %v\n%s", name, tool, err, raw)
-			}
-			return r
+			return true, ""
 		}
-		if time.Now().After(end) {
-			mcpErr, _ := os.ReadFile(filepath.Join(c.recDir(), "mcp-error"))
-			c.t.Fatalf("within 20s the fake chat never answered `mcp %s` (%s): the cue is not run or the MCP server is not reached; chat session %+v; the cue's errors: %s", name, tool, c.session(), mcpErr)
-		}
+		mcpErr, _ := os.ReadFile(filepath.Join(c.recDir(), "mcp-error"))
+		return false, fmt.Sprintf("the cue is not run or the MCP server is not reached; chat session %+v; the cue's errors: %s", c.session(), mcpErr)
+	})
+	var rep mcpReply
+	if err := json.Unmarshal(raw, &rep); err != nil {
+		c.t.Fatalf("the fake's reply to %s %s is not a tool result: %v\n%s", name, tool, err, raw)
 	}
+	return rep
 }
 
 // AdmiralBot acts only through the MCP server: it launches in its own fleet, a repeat in one
@@ -589,7 +587,7 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 	if other.Via != "" {
 		t.Errorf("the engineer's own launch is stamped via %q, want none", other.Via)
 	}
-	if log := w.waitShipLog(mine.Session, 10*time.Second, "a launched record", func(l []outRec) bool { return len(l) > 0 }); log[0]["via"] != "admiralbot" {
+	if log := w.waitShipLog(mine.Session, "a launched record", func(l []outRec) bool { return len(l) > 0 }); log[0]["via"] != "admiralbot" {
 		t.Errorf("the launched record = %v, want via admiralbot", log[0])
 	}
 
@@ -641,7 +639,7 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 		if r.IsError || !strings.Contains(r.text(), mine.Session) {
 			t.Fatalf("stop of %s gave %+v, want the stopped session", mine.Session, r)
 		}
-		log := w.waitShipLog(mine.Session, 15*time.Second, "a stopped record", func(l []outRec) bool { return lastOf(l, "stopped") != nil })
+		log := w.waitShipLog(mine.Session, "a stopped record", func(l []outRec) bool { return lastOf(l, "stopped") != nil })
 		if got := lastOf(log, "stopped"); got["via"] != "admiralbot" {
 			t.Errorf("the stopped record = %v, want via admiralbot", got)
 		}
@@ -972,7 +970,7 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 	c.start()
 
 	p := w.botStart(w.botEnv(), askStdin("Where does it go?"), "chat", "ask")
-	s := waitQuestions(t, w.in.LocalURL, p, 10*time.Second, "the question", hasQuestions(1))
+	s := waitQuestions(t, w.in.LocalURL, p, "the question", hasQuestions(1))
 	q := s.Questions[0]
 	id := qStr(q, "id")
 
@@ -1003,7 +1001,7 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 		if json.Unmarshal(raw, &item) != nil || item["version"] != float64(1) || item["id"] != id || item["kind"] != "question" {
 			t.Errorf("question file = %s, want version 1, the id and kind question", raw)
 		}
-		waitBotWS(t, ws, 5*time.Second, "the question", func(m botSession) bool { return len(m.Questions) == 1 && m.State == "waiting" })
+		waitBotWS(t, ws, "the question", func(m botSession) bool { return len(m.Questions) == 1 && m.State == "waiting" })
 		if got := w.in.waitInbox(t, "q-1", id); len(got) != 2 || got[1].Session != chatSessionName {
 			t.Errorf("the inbox lists %+v, want the ship's q-1 and the chat question of session %s", got, chatSessionName)
 		}
@@ -1030,7 +1028,7 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 		if code, body := w.answerChatQuestion(id, botAnswer("Work queue")); code/100 != 2 {
 			t.Fatalf("answer = %d, want 2xx: %s", code, body)
 		}
-		r := p.wait(10 * time.Second)
+		r := p.wait()
 		w.expectExit(r, 0, "chat ask after the answer")
 		file, err := os.ReadFile(filepath.Join(w.questionsDir(), id+".answer.json"))
 		if err != nil {
@@ -1047,7 +1045,7 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 		if json.Unmarshal(file, &a) != nil || a.Answers["1"].Choice != "Work queue" {
 			t.Errorf("answer file = %s, want the choice Work queue", file)
 		}
-		s := waitQuestions(t, w.in.LocalURL, nil, 5*time.Second, "the answer on the question", func(s botSession) bool {
+		s := waitQuestions(t, w.in.LocalURL, nil, "the answer on the question", func(s botSession) bool {
 			return len(s.Questions) == 1 && string(s.Questions[0]["answer"]) != "null"
 		})
 		if s.State == "waiting" {
@@ -1135,7 +1133,7 @@ func TestAdmiralBot_ChatAskWorksOnFilesAlone(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 		p.failIfExited("an answer that has not been written")
 		atomicWrite(t, filepath.Join(w.questionsDir(), id+".answer.json"), answerFile(id, "Freeform"))
-		got := p.wait(10 * time.Second)
+		got := p.wait()
 		w.expectExit(got, 0, "chat ask --wait after the answer")
 		if !strings.Contains(got.stdout, `"Freeform"`) {
 			t.Errorf("--wait printed %q, want the answer file", got.stdout)
@@ -1172,7 +1170,7 @@ func TestAdmiralBot_ChatAskWorksOnFilesAlone(t *testing.T) {
 		if err := os.Remove(filepath.Join(w.questionsDir(), name)); err != nil {
 			t.Fatal(err)
 		}
-		r := p.wait(10 * time.Second)
+		r := p.wait()
 		w.expectExit(r, 4, "chat ask after its question file was removed")
 		if !strings.Contains(strings.ToLower(r.both()), "withdrawn") {
 			t.Errorf("exit 4 said %q, want it to say the question was withdrawn", r.both())
@@ -1192,32 +1190,32 @@ func TestAdmiralBot_NewChatWithdrawsChatQuestions(t *testing.T) {
 	w.start()
 	ws := dialWS(t, w.in.instance)
 	c.start()
-	waitQuestions(t, w.in.LocalURL, nil, 10*time.Second, "the chat started (its transcript recorded)", func(s botSession) bool { return s.Running && s.Error == "" })
+	waitQuestions(t, w.in.LocalURL, nil, "the chat started (its transcript recorded)", func(s botSession) bool { return s.Running && s.Error == "" })
 
 	p := w.botStart(w.botEnv(), askStdin("Will be withdrawn"), "chat", "ask")
-	waitQuestions(t, w.in.LocalURL, p, 10*time.Second, "the question", hasQuestions(1))
-	waitBotWS(t, ws, 5*time.Second, "the question", func(m botSession) bool { return len(m.Questions) == 1 })
+	waitQuestions(t, w.in.LocalURL, p, "the question", hasQuestions(1))
+	waitBotWS(t, ws, "the question", func(m botSession) bool { return len(m.Questions) == 1 })
 
 	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/new", nil); code != http.StatusOK {
 		t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
 	}
-	r := p.wait(10 * time.Second)
+	r := p.wait()
 	w.expectExit(r, 4, "chat ask when New chat withdrew its question")
 	if s := fetchBot(t, w.in.LocalURL); len(s.Questions) != 0 {
 		t.Errorf("right after New chat: questions %v, want none", s.ids())
 	}
-	waitBotWS(t, ws, 5*time.Second, "no questions", hasQuestions(0))
+	waitBotWS(t, ws, "no questions", hasQuestions(0))
 	if got := w.questionFiles(); len(got) != 0 {
 		t.Errorf("New chat left %v in chat/questions", got)
 	}
 
 	// Starting a fresh session after the old one ended withdraws them too.
 	p2 := w.botStart(w.botEnv(), askStdin("Withdrawn by a fresh start"), "chat", "ask")
-	waitQuestions(t, w.in.LocalURL, p2, 10*time.Second, "the second question", hasQuestions(1))
+	waitQuestions(t, w.in.LocalURL, p2, "the second question", hasQuestions(1))
 	w.mustTmux("kill-session", "-t", "="+chatSessionName)
-	waitQuestions(t, w.in.LocalURL, nil, 5*time.Second, "the chat no longer running", func(s botSession) bool { return !s.Running })
+	waitQuestions(t, w.in.LocalURL, nil, "the chat no longer running", func(s botSession) bool { return !s.Running })
 	c.start()
-	w.expectExit(p2.wait(10*time.Second), 4, "chat ask when a fresh session withdrew its question")
+	w.expectExit(p2.wait(), 4, "chat ask when a fresh session withdrew its question")
 	if s := fetchBot(t, w.in.LocalURL); len(s.Questions) != 0 || len(w.questionFiles()) != 0 {
 		t.Errorf("after a fresh start: questions %v, files %v, want none", s.ids(), w.questionFiles())
 	}
@@ -1249,7 +1247,7 @@ func TestAdmiralBot_ChatQuestionsAreReadDefensively(t *testing.T) {
 	atomicWrite(t, filepath.Join(w.questionsDir(), "big-1.json"), itemJSON("big-1", strings.Repeat("x", 1<<20+10)))
 
 	p := w.botStart(w.botEnv(), askStdin("The real one"), "chat", "ask")
-	s := waitQuestions(t, w.in.LocalURL, p, 10*time.Second, "the real question", func(s botSession) bool {
+	s := waitQuestions(t, w.in.LocalURL, p, "the real question", func(s botSession) bool {
 		for _, q := range s.Questions {
 			if qStr(q, "title") == "The real one" {
 				return true

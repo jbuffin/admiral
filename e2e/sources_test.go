@@ -4,13 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
-	"time"
 )
 
 func (w *world) configSources() map[string]map[string]any {
@@ -47,17 +47,10 @@ func (w *world) panelID(key string) string {
 // waitUp waits until the server answers its plugins list: it has started.
 func (w *world) waitUp() {
 	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	eventually(w.t, "GET /api/plugins listing the plugins", func() (bool, string) {
 		code, body := send(w.t, http.MethodGet, w.in.LocalURL+"/api/plugins", nil)
-		if code == http.StatusOK && strings.Contains(body, `"github"`) {
-			return
-		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("within 10s GET /api/plugins never listed the plugins: %d %s", code, body)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return code == http.StatusOK && strings.Contains(body, `"github"`), fmt.Sprintf("%d %s", code, body)
+	})
 }
 
 func TestFreshInstall(t *testing.T) {
@@ -87,7 +80,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 		w := newWorld(t)
 		writeConfig(t, w.home, `{"version":1,"fleets":{},"sources":{}}`)
 		w.start()
-		w.waitSources(5*time.Second, "an empty list", func(l []sourceJSON) bool { return len(l) == 0 })
+		w.waitSources("an empty list", func(l []sourceJSON) bool { return len(l) == 0 })
 		if got := w.configSources(); len(got) != 0 {
 			t.Errorf("config sources = %v, want {} left alone", got)
 		}
@@ -108,12 +101,12 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 		w.startFresh()
 		w.waitUp()
 		replaceConfig(t, w.home, `{"version":1,"fleets":{}}`)
-		w.waitSources(10*time.Second, "no sources after the hand edit", func(l []sourceJSON) bool { return len(l) == 0 })
+		w.waitSources("no sources after the hand edit", func(l []sourceJSON) bool { return len(l) == 0 })
 		holdThat(t, "a reload re-added sources", func() bool { return !strings.Contains(w.readFile(configPath(w.home)), "sources") })
 		w.in.Stop()
 		w.startFresh()
 		w.waitUp()
-		w.waitSources(5*time.Second, "no source after a start", func(l []sourceJSON) bool { return len(l) == 0 })
+		w.waitSources("no source after a start", func(l []sourceJSON) bool { return len(l) == 0 })
 		if got := w.readFile(configPath(w.home)); strings.Contains(got, `"orders"`) {
 			t.Errorf("a start added a source to a file without sources: %s", got)
 		}
@@ -247,10 +240,10 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	w.startSources(w.orderSrcDef("orders", "Orders"))
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
+	w.waitSource("orders", "state ok", isOK)
 	panel := w.panelID("orders")
 	ws := w.ws()
-	waitSourcesMsg(t, ws, 5*time.Second, "the orders source on connect", func(l []sourceJSON) bool {
+	waitSourcesMsg(t, ws, "the orders source on connect", func(l []sourceJSON) bool {
 		_, ok := find(l, "orders")
 		return ok
 	})
@@ -260,7 +253,7 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 	code, body := w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": text})
 	w.mustOK(code, body, "POST /api/sources/orders/orders")
 	var first orderJSON
-	waitSourcesMsg(t, ws, 5*time.Second, "the new order pushed to the client", func(l []sourceJSON) bool {
+	waitSourcesMsg(t, ws, "the new order pushed to the client", func(l []sourceJSON) bool {
 		s, _ := find(l, "orders")
 		for _, p := range s.Views {
 			if len(p.Orders) == 1 {
@@ -279,7 +272,7 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 
 	code, body = w.srcReq(http.MethodPut, "/orders/orders/"+first.ID, map[string]any{"text": "Rewrite the parser\nwith care"})
 	w.mustOK(code, body, "PUT /api/sources/orders/orders/<id>")
-	w.waitSource("orders", 5*time.Second, "the edited order", func(s sourceJSON) bool {
+	w.waitSource("orders", "the edited order", func(s sourceJSON) bool {
 		o, ok := s.order(first.ID)
 		return ok && o.Title == "Rewrite the parser" && o.Text == "Rewrite the parser\nwith care"
 	})
@@ -310,21 +303,21 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 	w.mustOK(code, body, "POST of CRLF text")
 	crlfID := decodeID(body)
 	// the remove route looks the id up in the source's last list, which the add only asks to refresh
-	w.waitSource("orders", 5*time.Second, "the CRLF order", func(s sourceJSON) bool { return s.hasOrder(crlfID) })
+	w.waitSource("orders", "the CRLF order", func(s sourceJSON) bool { return s.hasOrder(crlfID) })
 	code, body = w.srcReq(http.MethodDelete, "/orders/orders/"+crlfID, nil)
 	w.mustOK(code, body, "DELETE of the CRLF order")
 	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": strings.Repeat("b", 12000)})
 	w.mustOK(code, body, "POST of exactly 12,000 bytes")
-	s := w.waitSource("orders", 5*time.Second, "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 && !s.hasOrder(crlfID) })
+	s := w.waitSource("orders", "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 && !s.hasOrder(crlfID) })
 	if o, _ := s.order(first.ID); o.Title != "Rewrite the parser" {
 		t.Errorf("a refused edit changed the order: %+v", o)
 	}
 
-	s = w.waitSource("orders", 5*time.Second, "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 })
+	s = w.waitSource("orders", "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 })
 
 	code, body = w.srcReq(http.MethodDelete, "/orders/orders/"+first.ID, nil)
 	w.mustOK(code, body, "DELETE /api/sources/orders/orders/<id>")
-	w.waitSource("orders", 5*time.Second, "the order removed", func(s sourceJSON) bool { return !s.hasOrder(first.ID) && len(s.orderIDs()) == 1 })
+	w.waitSource("orders", "the order removed", func(s sourceJSON) bool { return !s.hasOrder(first.ID) && len(s.orderIDs()) == 1 })
 	if got := w.readFile(store); strings.Contains(got, "Rewrite the parser") {
 		t.Errorf("data/orders/stored.json still holds the removed order: %q", got)
 	}
@@ -334,12 +327,12 @@ func TestLaunchTakesTheOrdersTextNotTheClients(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	w.startSources(w.orderSrcDef("orders", "Orders"))
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
+	w.waitSource("orders", "state ok", isOK)
 	panel := w.panelID("orders")
 	text := "Fix the flaky test\n\n\tsee the CI log\nthen rerun it"
 	code, body := w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": text})
 	w.mustOK(code, body, "add order")
-	s := w.waitSource("orders", 5*time.Second, "the order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
+	s := w.waitSource("orders", "the order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
 	id := s.orderIDs()[0]
 
 	code, body = send(t, http.MethodPost, w.in.LocalURL+"/api/ships", map[string]any{
@@ -355,8 +348,8 @@ func TestLaunchTakesTheOrdersTextNotTheClients(t *testing.T) {
 	if got := promptOf(t, w, w.record(ship.Session)); got != text {
 		t.Errorf("the harness prompt = %q, want the order's whole text %q", got, text)
 	}
-	w.in.waitShipsList(t, 10*time.Second, "the ship gone", func(l []shipJSON) bool { return len(l) == 0 })
-	w.waitSource("orders", 5*time.Second, "no orders left", func(s sourceJSON) bool { return len(s.orderIDs()) == 0 })
+	w.in.waitShipsList(t, "the ship gone", func(l []shipJSON) bool { return len(l) == 0 })
+	w.waitSource("orders", "no orders left", func(s sourceJSON) bool { return len(s.orderIDs()) == 0 })
 	if got := w.readFile(filepath.Join(w.dataDir("orders"), "stored.json")); strings.Contains(got, "Fix the flaky test") {
 		t.Errorf("stored.json still holds the launched order: %q", got)
 	}

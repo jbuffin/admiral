@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 )
@@ -86,10 +86,8 @@ func (b *bridgeClient) send(v any) {
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := b.c.Write(ctx, websocket.MessageText, data); err != nil {
-		b.t.Fatalf("sending %s: %v", data, err)
+	if err := b.c.Write(testCtx(b.t), websocket.MessageText, data); err != nil {
+		failRequest(b.t, "sending "+string(data), err)
 	}
 }
 
@@ -107,10 +105,8 @@ func (b *bridgeClient) visible(v bool) {
 // at a time, and answers a ping only when it reads the ping.
 func (b *bridgeClient) sync() {
 	b.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := b.c.Ping(ctx); err != nil {
-		b.t.Fatalf("pinging the bridge: %v", err)
+	if err := b.c.Ping(testCtx(b.t)); err != nil {
+		failRequest(b.t, "pinging the bridge", err)
 	}
 }
 func (b *bridgeClient) resize(cols, rows int) {
@@ -156,32 +152,42 @@ func (b *bridgeClient) texts(mark int, typ string) []json.RawMessage {
 	return out
 }
 
-func (b *bridgeClient) waitFor(d time.Duration, what string, pred func() bool) {
+func (b *bridgeClient) waitFor(what string, pred func() bool) {
 	b.t.Helper()
-	deadline := time.Now().Add(d)
-	for !pred() {
-		if time.Now().After(deadline) {
-			b.mu.Lock()
-			err := b.err
-			n := len(b.frames)
-			b.mu.Unlock()
-			b.t.Fatalf("within %s the bridge never delivered %s (%d frames received, connection error: %v)", d, what, n, err)
-		}
-		time.Sleep(15 * time.Millisecond)
-	}
+	b.waitSeen(what, func() (bool, string) { return pred(), "" })
 }
 
-func (b *bridgeClient) waitOutput(d time.Duration, mark int, want string) {
+// waitSeen is waitFor with a check that says what it saw, for the failure.
+func (b *bridgeClient) waitSeen(what string, check func() (bool, string)) {
 	b.t.Helper()
-	b.waitFor(d, "output containing "+quote(want)+" (got "+quote(b.output(mark))+")", func() bool {
-		return strings.Contains(b.output(mark), want)
+	eventually(b.t, "the bridge delivering "+what, func() (bool, string) {
+		ok, seen := check()
+		if ok {
+			return true, ""
+		}
+		b.mu.Lock()
+		err := b.err
+		n := len(b.frames)
+		b.mu.Unlock()
+		if seen != "" {
+			seen += "; "
+		}
+		return false, fmt.Sprintf("%s%d frames received, connection error: %v", seen, n, err)
+	})
+}
+
+func (b *bridgeClient) waitOutput(mark int, want string) {
+	b.t.Helper()
+	b.waitSeen("output containing "+quote(want), func() (bool, string) {
+		out := b.output(mark)
+		return strings.Contains(out, want), "got " + quote(out)
 	})
 }
 
 // waitJoin waits for the nth `join` message (1-based) and decodes it.
-func (b *bridgeClient) waitJoin(d time.Duration, n int) joinMsg {
+func (b *bridgeClient) waitJoin(n int) joinMsg {
 	b.t.Helper()
-	b.waitFor(d, "join message number "+itoa(n), func() bool { return len(b.texts(0, "join")) >= n })
+	b.waitFor("join message number "+itoa(n), func() bool { return len(b.texts(0, "join")) >= n })
 	var j joinMsg
 	if err := json.Unmarshal(b.texts(0, "join")[n-1], &j); err != nil {
 		b.t.Fatalf("join message is not the documented shape: %v", err)
@@ -189,10 +195,10 @@ func (b *bridgeClient) waitJoin(d time.Duration, n int) joinMsg {
 	return j
 }
 
-func (b *bridgeClient) waitShip(d time.Duration, mark int, what string, pred func(shipState) bool) shipState {
+func (b *bridgeClient) waitShip(mark int, what string, pred func(shipState) bool) shipState {
 	b.t.Helper()
 	var got shipState
-	b.waitFor(d, "a `ship` message with "+what, func() bool {
+	b.waitFor("a `ship` message with "+what, func() bool {
 		for _, raw := range b.texts(mark, "ship") {
 			var s struct {
 				shipState
@@ -207,9 +213,9 @@ func (b *bridgeClient) waitShip(d time.Duration, mark int, what string, pred fun
 	return got
 }
 
-func (b *bridgeClient) waitSize(d time.Duration, mark, cols, rows int) {
+func (b *bridgeClient) waitSize(mark, cols, rows int) {
 	b.t.Helper()
-	b.waitFor(d, "a `size` message "+itoa(cols)+"x"+itoa(rows), func() bool {
+	b.waitFor("a `size` message "+itoa(cols)+"x"+itoa(rows), func() bool {
 		for _, raw := range b.texts(mark, "size") {
 			var s struct{ Cols, Rows int }
 			if json.Unmarshal(raw, &s) == nil && s.Cols == cols && s.Rows == rows {
@@ -240,8 +246,7 @@ func bridgeDialAt(t *testing.T, base, prefix, session, query string, hdr http.He
 	u.Scheme = "ws"
 	u.Path = prefix + "/bridge/" + session
 	u.RawQuery = query
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := testCtx(t)
 	c, resp, err := websocket.Dial(ctx, u.String(), &websocket.DialOptions{
 		HTTPClient: &http.Client{Transport: noProxy()}, HTTPHeader: hdr, Host: host})
 	if err != nil {
@@ -284,9 +289,9 @@ func (w *world) dialBridgeAt(t *testing.T, prefix, session string) *bridgeClient
 	return b
 }
 
-func (b *bridgeClient) waitClosed(d time.Duration) (websocket.StatusCode, string) {
+func (b *bridgeClient) waitClosed() (websocket.StatusCode, string) {
 	b.t.Helper()
-	b.waitFor(d, "the server closing the socket", func() bool {
+	b.waitFor("the server closing the socket", func() bool {
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		return b.err != nil
@@ -306,7 +311,7 @@ func (w *world) joinBridge(t *testing.T, session string, cols, rows int) (*bridg
 	t.Helper()
 	b := w.dialBridge(t, session)
 	b.send(map[string]any{"type": "join", "cols": cols, "rows": rows})
-	return b, b.waitJoin(5*time.Second, 1)
+	return b, b.waitJoin(1)
 }
 
 func expectBridgeRefused(t *testing.T, base, session, query string, hdr http.Header, host string, want int) {
@@ -331,17 +336,10 @@ func (w *world) paneSize(session string) string {
 
 func (w *world) waitPaneSize(t *testing.T, session, want string) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
+	eventually(t, "the pane of "+session+" becoming "+want, func() (bool, string) {
 		got, err := w.tmux("display-message", "-p", "-t", w.target(session), "#{window_width}x#{window_height}")
-		if err == nil && got == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within 3s the pane of %s never became %s (it is %s)", session, want, got)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return err == nil && got == want, "it is " + got
+	})
 }
 
 // controlClients are the tmux clients in control mode attached to the session,
@@ -385,13 +383,10 @@ func (w *world) stdinOf(session string) string {
 // waitStdin waits until the fake has recorded exactly want.
 func (w *world) waitStdin(t *testing.T, session, want string) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for w.stdinOf(session) != want {
-		if time.Now().After(deadline) {
-			t.Fatalf("within 3s the fake harness of %s never recorded stdin %s (it has %s)", session, quote(want), quote(w.stdinOf(session)))
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
+	eventually(t, "the fake harness of "+session+" recording stdin "+quote(want), func() (bool, string) {
+		got := w.stdinOf(session)
+		return got == want, "it has " + quote(got)
+	})
 }
 
 // release lets a fake that is blocked in a `wait <name>` cue go on.

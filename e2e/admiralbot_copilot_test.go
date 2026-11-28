@@ -179,7 +179,7 @@ func TestAdmiralBot_CopilotChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testin
 		if got.IsError {
 			t.Fatalf("list_ships over the Copilot chat's MCP server was refused: %s", got.text())
 		}
-		c.waitSession(15*time.Second, "the first message and the reply from the chat home's session-state", func(s chatSession) bool {
+		c.waitSession("the first message and the reply from the chat home's session-state", func(s chatSession) bool {
 			m := texts(s.Messages)
 			return slices.Contains(m, "user: Which ships are at anchor?") && slices.Contains(m, "assistant: Two ships are at anchor.")
 		})
@@ -208,7 +208,7 @@ func TestAdmiralBot_CopilotChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testin
 			t.Fatalf("POST /api/chat/chat/messages after /clear = %d, want 200: %s", code, body)
 		}
 		// The history keeps what came before the New chat marker; after it only the new session's exchange may show.
-		c.waitSession(15*time.Second, "only the new session's exchange after the New chat marker", func(s chatSession) bool {
+		c.waitSession("only the new session's exchange after the New chat marker", func(s chatSession) bool {
 			i := slices.IndexFunc(s.Messages, func(m chatMsg) bool { return m.Kind == "reset" })
 			if i < 0 {
 				return false

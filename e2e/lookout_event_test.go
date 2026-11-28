@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -73,16 +74,14 @@ func (w *world) eventRoutine(name, before string) string {
 	var code int
 	var body string
 	// the source reports its event kinds once its plugin has initialized, which can be after the server starts
-	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+	eventually(w.t, "the gh source reporting its event kinds", func() (bool, string) {
 		code, body = send(w.t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines", map[string]any{
 			"name": name, "enabled": true, "before_acting": before,
 			"on": map[string]any{"source": "gh", "kind": "review_requested"},
 			"do": map[string]any{"launch": map[string]any{"harness": "claude", "dir": filepath.Join(w.root, "ra", "api"), "text": "sweep the board"}},
 		})
-		if code != http.StatusBadRequest || !strings.Contains(body, "raises events") || time.Now().After(deadline) {
-			break
-		}
-	}
+		return code != http.StatusBadRequest || !strings.Contains(body, "raises events"), fmt.Sprintf("POST routine = %d: %s", code, body)
+	})
 	if code != http.StatusCreated && code != http.StatusOK {
 		w.t.Fatalf("POST routine = %d: %s", code, body)
 	}
@@ -97,21 +96,23 @@ func (w *world) eventRoutine(name, before string) string {
 
 func (w *world) waitRun(routine, outcome string) runJSON {
 	w.t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for i := 0; ; i++ {
-		for _, r := range w.routineRuns(routine) {
+	var got runJSON
+	polls := 0
+	eventually(w.t, fmt.Sprintf("a %q record", outcome), func() (bool, string) {
+		runs := w.routineRuns(routine)
+		for _, r := range runs {
 			if r.Outcome == outcome {
-				return r
+				got = r
+				return true, ""
 			}
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("no %q record in 30 s: %+v", outcome, w.routineRuns(routine))
-		}
-		if i%10 == 0 { // the first poll only baselines, so ask for another
+		if polls%40 == 0 { // the first poll only baselines, so ask for another; every 40th poll (2s) re-asks
 			w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
 		}
-		time.Sleep(200 * time.Millisecond)
-	}
+		polls++
+		return false, fmt.Sprintf("%+v", runs)
+	})
+	return got
 }
 
 func TestAReviewRequestReachesAnAskFirstRoutineAsATieredRecordAndAnEventProposalWithNoEventText(t *testing.T) {
@@ -294,7 +295,7 @@ func TestAReviewRequestFromAnAllowlistedSenderLaunchesARestrictedDraftFixShipInI
 	if _, err := os.Stat(clone); !os.IsNotExist(err) {
 		t.Errorf("the clone %s is still there after undo (%v)", clone, err)
 	}
-	w.waitShipCount(30*time.Second, "no ship named "+run.Ship+" after undo", func(s shipJSON) bool { return s.Session == run.Ship }, 0)
+	w.waitShipCount("no ship named "+run.Ship+" after undo", func(s shipJSON) bool { return s.Session == run.Ship }, 0)
 	var marked bool
 	for _, r := range w.routineRuns(id) {
 		if r.ID == run.ID {
@@ -347,7 +348,7 @@ func TestPromotingARestrictedDraftFixShipStartsANormalShipWithTheTokensInItsOwnC
 	if !heir.Promoted || heir.Ship != run.Ship || heir.PromotedShip == run.Ship {
 		t.Fatalf("record = %+v, want promoted to a ship other than %s, with its own ship unchanged", heir, run.Ship)
 	}
-	w.waitShipCount(30*time.Second, "the promoted ship in the API", func(s shipJSON) bool { return s.Session == heir.PromotedShip }, 1)
+	w.waitShipCount("the promoted ship in the API", func(s shipJSON) bool { return s.Session == heir.PromotedShip }, 1)
 
 	rec := w.record(heir.PromotedShip)
 	for _, f := range []string{"--permission-mode", "--setting-sources", "--resume"} {
@@ -374,7 +375,7 @@ func TestPromotingARestrictedDraftFixShipStartsANormalShipWithTheTokensInItsOwnC
 	if _, err := os.Stat(filepath.Join(newClone, ".admiral", "untrusted")); err == nil {
 		t.Error("the promoted ship's clone holds the event file")
 	}
-	w.waitShipCount(30*time.Second, "the restricted ship stopped by Promote", func(s shipJSON) bool { return s.Session == run.Ship && live(s) }, 0)
+	w.waitShipCount("the restricted ship stopped by Promote", func(s shipJSON) bool { return s.Session == run.Ship && live(s) }, 0)
 
 	again, _ := send(t, http.MethodPost, promote, map[string]any{})
 	if again != http.StatusOK {

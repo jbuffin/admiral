@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 )
@@ -170,7 +169,7 @@ func TestBridgeJoin_APIVersion(t *testing.T) {
 	w.start()
 	s := w.launchIn("f", "claude", "apiv1")
 	w.waitFile(s.Session, "cues-done")
-	w.in.waitStatusList(t, 3*time.Second, s.Session, "underway")
+	w.in.waitStatusList(t, s.Session, "underway")
 
 	join := func(extra map[string]any) map[string]any {
 		m := map[string]any{"type": "join", "cols": 100, "rows": 30}
@@ -192,7 +191,7 @@ func TestBridgeJoin_APIVersion(t *testing.T) {
 			w := w.at(t)
 			b := w.dialBridgeAt(t, c.prefix, s.Session)
 			b.send(join(c.extra))
-			j := b.waitJoin(5*time.Second, 1)
+			j := b.waitJoin(1)
 			if j.Size.Cols != 100 || j.Ship.Status != "underway" {
 				t.Fatalf("join reply = %+v, want the ship's usual join payload", j)
 			}
@@ -215,7 +214,7 @@ func TestBridgeJoin_APIVersion(t *testing.T) {
 			w := w.at(t)
 			b := w.dialBridgeAt(t, c.prefix, s.Session)
 			b.send(join(map[string]any{"api": c.api}))
-			b.waitFor(5*time.Second, "an `error` frame", func() bool { return len(b.texts(0, "error")) > 0 })
+			b.waitFor("an `error` frame", func() bool { return len(b.texts(0, "error")) > 0 })
 			var e struct{ Error string }
 			if err := json.Unmarshal(b.texts(0, "error")[0], &e); err != nil {
 				t.Fatal(err)
@@ -226,7 +225,7 @@ func TestBridgeJoin_APIVersion(t *testing.T) {
 			if n := len(b.texts(0, "join")); n != 0 {
 				t.Errorf("an unsupported join still got %d join replies", n)
 			}
-			code, reason := b.waitClosed(5 * time.Second)
+			code, reason := b.waitClosed()
 			if code != websocket.StatusPolicyViolation || reason != e.Error {
 				t.Errorf("close = %d %q, want 1008 %q", code, reason, e.Error)
 			}
@@ -237,10 +236,10 @@ func TestBridgeJoin_APIVersion(t *testing.T) {
 		w := w.at(t)
 		b := w.dialBridgeAt(t, "/ws/v1", s.Session)
 		b.send(join(map[string]any{"api": 1}))
-		b.waitJoin(5*time.Second, 1)
+		b.waitJoin(1)
 		b.send(join(map[string]any{"api": 2}))
-		b.waitFor(5*time.Second, "an `error` frame", func() bool { return len(b.texts(0, "error")) > 0 })
-		if code, _ := b.waitClosed(5 * time.Second); code != websocket.StatusPolicyViolation {
+		b.waitFor("an `error` frame", func() bool { return len(b.texts(0, "error")) > 0 })
+		if code, _ := b.waitClosed(); code != websocket.StatusPolicyViolation {
 			t.Errorf("close code = %d, want 1008", code)
 		}
 	})

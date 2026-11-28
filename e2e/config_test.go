@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,7 +8,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 )
@@ -130,15 +128,14 @@ func dialWS(t *testing.T, in *instance) *websocket.Conn {
 	return c
 }
 
-func waitWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred func(cfgBody) bool) (cfgBody, string) {
+func waitWS(t *testing.T, c *websocket.Conn, what string, pred func(cfgBody) bool) (cfgBody, string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
+	ctx := testCtx(t)
 	var last string
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
-			t.Fatalf("within %s the websocket never delivered a `config` message with %s (last config message: %s): %v", d, what, last, err)
+			failRequest(t, fmt.Sprintf("the websocket delivering a `config` message with %s (last config message: %s)", what, last), err)
 		}
 		var b cfgBody
 		if json.Unmarshal(data, &b) != nil || b.Type != "config" {
@@ -165,19 +162,19 @@ func TestConfigS2_LiveReload(t *testing.T) {
 	writeConfig(t, home, withVersion(`"one":{"name":"One"}`))
 	in := startAdmiral(t, home, "127.0.0.1:0")
 	c := dialWS(t, in)
-	waitWS(t, c, 3*time.Second, "the initial config", fleetKeys("one"))
+	waitWS(t, c, "the initial config", fleetKeys("one"))
 
 	writeConfig(t, home, withVersion(`"one":{"name":"One"},"two":{"name":"Two"}`))
-	waitWS(t, c, 2*time.Second, "fleets one, two after an in-place edit", fleetKeys("one", "two"))
+	waitWS(t, c, "fleets one, two after an in-place edit", fleetKeys("one", "two"))
 
 	replaceConfig(t, home, withVersion(`"one":{"name":"One"},"two":{"name":"Two"},"three":{"name":"Three"}`))
-	waitWS(t, c, 2*time.Second, "fleets one, two, three after a rename-over save", fleetKeys("one", "two", "three"))
+	waitWS(t, c, "fleets one, two, three after a rename-over save", fleetKeys("one", "two", "three"))
 
 	// Deleting keeps the last good fleets and sets the error; recreating clears it.
 	if err := os.Remove(configPath(home)); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := waitWS(t, c, 2*time.Second, "an error after the file was deleted", hasErr)
+	b, _ := waitWS(t, c, "an error after the file was deleted", hasErr)
 	if !strings.Contains(b.Error.File, "config.json") || !strings.Contains(strings.ToLower(b.Error.Message), "not found") {
 		t.Errorf("error = %+v, want the file named and `not found` in the message", b.Error)
 	}
@@ -185,7 +182,7 @@ func TestConfigS2_LiveReload(t *testing.T) {
 		t.Errorf("fleets after delete = %v, want the last good [one two three]", b.keys())
 	}
 	writeConfig(t, home, withVersion(`"four":{"name":"Four"}`))
-	waitWS(t, c, 2*time.Second, "fleet four and no error after recreate", func(b cfgBody) bool {
+	waitWS(t, c, "fleet four and no error after recreate", func(b cfgBody) bool {
 		return reflect.DeepEqual(b.keys(), []string{"four"}) && b.Error == nil
 	})
 	if b, _ := fetchConfig(t, in); !reflect.DeepEqual(b.keys(), []string{"four"}) || b.Error != nil {
