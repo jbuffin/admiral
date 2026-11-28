@@ -2,9 +2,11 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 )
 
@@ -92,5 +94,46 @@ func TestCurrentDoesNotShareTheLoginList(t *testing.T) {
 	m.Current().Remote.AllowedLogins[0] = "mallory@example.com"
 	if got := m.Current().Remote.AllowedLogins; !slices.Equal(got, []string{"alice@example.com"}) {
 		t.Errorf("a caller's edit of its copy reached the manager: %v", got)
+	}
+}
+
+// The watcher's reload of an earlier write must not land after SetRemote's own, or the next edit builds on stale logins.
+func TestEditsBuiltOnCurrentKeepEveryLogin(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(`{`+remoteFleets+`}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 8 { // stand in for the watcher, whose reload can start before a write and store after it
+		wg.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					m.Reload()
+				}
+			}
+		})
+	}
+	defer func() { close(stop); wg.Wait() }()
+
+	var want []string
+	for i := range 100 {
+		login := fmt.Sprintf("user%d@example.com", i)
+		want = append(want, login)
+		cur := m.Current().Remote
+		if err := m.SetRemote(Remote{AllowedLogins: append(cur.AllowedLogins, login)}); err != nil {
+			t.Fatal(err)
+		}
+		if got := m.Current().Remote.AllowedLogins; !slices.Equal(got, want) {
+			t.Fatalf("after adding %s Current holds %d logins, want %d: a stale reload replaced the write", login, len(got), len(want))
+		}
 	}
 }

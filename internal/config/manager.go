@@ -30,6 +30,7 @@ type Manager struct {
 	done    chan struct{}
 
 	edit    sync.Mutex // serializes a fleet edit's read-modify-write; held across the file write, so never with mu
+	load    sync.Mutex // held from a reload's read to its store, so an earlier read never lands over a later one
 	mu      sync.Mutex
 	cur     *Config
 	probe   ChatProbe     // wired by the server; every reload carries it onto the new config
@@ -221,6 +222,8 @@ func (m *Manager) Reload() { m.reload() }
 
 // reload keeps the last good config on any failure.
 func (m *Manager) reload() {
+	m.load.Lock()
+	defer m.load.Unlock()
 	data, err := os.ReadFile(m.path)
 	m.syncWatches()
 
