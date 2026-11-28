@@ -35,6 +35,8 @@ type Supervisor struct {
 	envs    map[string]map[string]string
 	routing string
 	wg      sync.WaitGroup
+	// workers is set only by tests: it counts the GitHub sources' work loops.
+	workers *sync.WaitGroup
 }
 
 // Every plugin is stopped before Wait returns.
@@ -160,7 +162,7 @@ func (s *Supervisor) start(def config.Source) {
 	if s.OnEvent != nil {
 		onEvent = func(ev Event) { s.OnEvent(def.Key, ev) }
 	}
-	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, onEvent, s.stopping[def.Key], s.StackChecker)
+	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, onEvent, s.stopping[def.Key], s.StackChecker, s.workers)
 	s.runners[def.Key], s.cancels[def.Key] = r, cancel
 	s.wg.Add(1)
 	go func() {

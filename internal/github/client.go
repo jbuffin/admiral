@@ -23,11 +23,14 @@ const DefaultHost = "github.com"
 // MaxItems caps one search's answer.
 const MaxItems = 50
 
-// ghTimeout is the default limit for one gh call; Admiral gives a request 10 seconds.
-const ghTimeout = 8 * time.Second
+// CallTimeout is the default limit for one gh call; Admiral gives a request 10 seconds.
+var CallTimeout = 8 * time.Second
 
 // SearchTimeout is the limit for a background search, which reads up to MaxItems items with their rollups and timelines.
 var SearchTimeout = 60 * time.Second
+
+// KillGrace is how long a gh killed at its limit gets to close the pipes a child of it still holds.
+var KillGrace = time.Second
 
 const itemFields = "number title url createdAt bodyText author { login } repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
 
@@ -648,7 +651,7 @@ func (c *Client) tokenVar() string {
 func (c *Client) gh(ctx context.Context, args []string, tokenVar, token string) (stdout, stderr string, err error) {
 	timeout := c.Timeout
 	if timeout == 0 {
-		timeout = ghTimeout
+		timeout = CallTimeout
 	}
 	return c.ghWithin(ctx, timeout, "", nil, args, tokenVar, token)
 }
@@ -675,7 +678,7 @@ func (c *Client) ghStdin(ctx context.Context, timeout time.Duration, dir string,
 	var out, errOut bytes.Buffer
 	capped := &capWriter{w: &out, limit: limit}
 	cmd.Stdout, cmd.Stderr = capped, &errOut
-	cmd.WaitDelay = time.Second
+	cmd.WaitDelay = KillGrace
 	err = cmd.Run()
 	if err != nil {
 		if ctx.Err() != nil {

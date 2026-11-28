@@ -80,7 +80,7 @@ func (c *Client) rest(ctx context.Context, method, endpoint string, body any) ([
 	args = append(args, endpoint)
 	timeout := c.Timeout
 	if timeout == 0 {
-		timeout = ghTimeout
+		timeout = CallTimeout
 	}
 	out, stderr, err := c.ghStdin(ctx, timeout, "", nil, args, stdin, maxRESTAnswer, c.tokenVar(), token)
 	switch {

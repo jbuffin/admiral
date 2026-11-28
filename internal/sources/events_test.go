@@ -219,11 +219,8 @@ func TestTheBuiltInGitHubSourceEmitsNoEventWhenAViewGainsAnItem(t *testing.T) {
 	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
 	g.searchMore("mine", "acme/api", 2, "two", "bob")
 	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
-	f.waitView("gh", "item 2", func(v SourceView) bool { return len(v.orders("mine")) == 2 })
-	deadline := time.Now().Add(time.Second)
-	for s.n() == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	// A cycle raises its events before it stops refreshing, so none can still come once it ends.
+	f.waitView("gh", "item 2 and the cycle's end", func(v SourceView) bool { return len(v.orders("mine")) == 2 && !v.Refreshing })
 	if s.n() != 0 {
 		t.Errorf("%d events after item 2 appeared, want 0: %+v", s.n(), s.got)
 	}
@@ -509,13 +506,16 @@ func TestACappedAnswerEmitsNothingNewToAViewOrForAKindUnlessTheTimelineSaysSo(t 
 	answer("mine", "Q1", manyItems(1, 50, 0, old))
 	answer("rr", "review-requested:@me", manyItems(1, 50, 0, old))
 	f.startSources()
-	f.waitView("gh", "50 items", func(v SourceView) bool { return len(v.orders("mine")) == 50 })
-	time.Sleep(300 * time.Millisecond)
+	f.waitView("gh", "50 items and the first cycle's end", func(v SourceView) bool { return len(v.orders("mine")) == 50 && !v.Refreshing })
+	// A cycle raises its events before it stops refreshing, so none can still come once the wait ends.
+	refreshAndWait := func() {
+		f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+		f.waitView("gh", "the refresh's end", func(v SourceView) bool { return !v.Refreshing })
+	}
 	// item 99 rises into both capped answers, with no new timeline event on the kind search
 	answer("mine", "Q1", manyItems(2, 49, 0, old)+","+authored("acme/api", 99, "t", "amy"))
 	answer("rr", "review-requested:@me", manyItems(2, 49, 0, old)+","+authored("acme/api", 99, "t", "amy"))
-	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
-	time.Sleep(500 * time.Millisecond)
+	refreshAndWait()
 	if s.n() != 0 {
 		t.Fatalf("%d events from items that only rose into a capped answer, want 0: %+v", s.n(), s.got)
 	}
@@ -527,8 +527,7 @@ func TestACappedAnswerEmitsNothingNewToAViewOrForAKindUnlessTheTimelineSaysSo(t 
 	for s.n() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
-	time.Sleep(500 * time.Millisecond)
+	refreshAndWait()
 	if s.n() != 1 || s.got[0].Kind != "review_requested" || s.got[0].Actor != "bob" {
 		t.Errorf("events = %+v, want exactly one review_requested by bob", s.got)
 	}

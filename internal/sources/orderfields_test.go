@@ -140,19 +140,55 @@ func TestGitHubSourceServesTheOrderFieldsAndLeavesOutWhatIsUnknown(t *testing.T)
 	absent(t, issue, "the issue", "pr", "review_requested_at", "reviewed_since_push")
 }
 
-// slowSearch makes every gh graphql call wait the seconds in $FAKEGH_DIR/slow before the fake answers.
-func slowSearch(t *testing.T, g *fakeGH) {
-	t.Helper()
-	real, err := filepath.Abs("../../e2e/testdata/fakegh/gh")
-	if err != nil {
-		t.Fatal(err)
+// holdSearches makes every search wait until the returned release runs, and release returns when it did.
+func (g *fakeGH) holdSearches() (release func() time.Time) {
+	g.t.Helper()
+	g.write("search.hold", "")
+	return func() time.Time {
+		g.t.Helper()
+		at := time.Now()
+		if err := os.Remove(filepath.Join(g.dir, "search.hold")); err != nil {
+			g.t.Fatal(err)
+		}
+		return at
 	}
-	dir := t.TempDir()
-	script := "#!/bin/sh\n[ -s \"$FAKEGH_DIR/slow\" ] && case \"$*\" in *graphql*) sleep \"$(cat \"$FAKEGH_DIR/slow\")\";; esac\nexec " + real + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
+}
+
+// waitSearchBegun waits for a gh graphql call beyond the first n, which a held search is then stuck in.
+func (g *fakeGH) waitSearchBegun(n int) {
+	g.t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for g.searches() <= n {
+		if time.Now().After(deadline) {
+			g.t.Fatal("the search never began")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// restartUntilReady restarts the source and waits for the new process to list its panels, pull its orders and settle.
+func (f *serviceFixture) restartUntilReady(key string) {
+	f.t.Helper()
+	r := f.Svc.Sup.runner(key)
+	sid := func() (int, bool) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.sid, r.ready
+	}
+	before, _ := sid()
+	if !f.Svc.Sup.Restart(key) {
+		f.t.Fatal("Restart found no runner")
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if n, ready := sid(); n != before && ready {
+			return
+		}
+		if time.Now().After(deadline) {
+			f.t.Fatal("the source did not restart")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // refreshedAt is when the view was last answered, and false when its JSON has no refreshed_at.
@@ -168,7 +204,6 @@ func refreshedAt(t *testing.T, p Panel) (time.Time, bool) {
 func TestGitHubViewRefreshedAtMarksTheLastSuccessfulSearch(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
-	slowSearch(t, g)
 	g.write("search/bugs.match", "label:bug")
 	g.write("search/bugs.json", "{}")
 	g.fail("bugs")
@@ -214,19 +249,20 @@ func TestGitHubViewRefreshedAtMarksTheLastSuccessfulSearch(t *testing.T) {
 
 	// Refresh now answers at once, but only the finished search may stamp the time.
 	g.unfail("bugs")
-	g.write("slow", "1")
-	posted := time.Now()
+	release := g.holdSearches()
+	before := g.searches()
 	refresh()
+	g.waitSearchBegun(before)
 	if at, ok := refreshedAt(t, bugs(f.Svc.viewOf(t, "gha"))); !ok || !at.Equal(t2) {
-		t.Errorf("right after Refresh now refreshed_at = %v (present %v), want it unchanged at %v until the search has finished", at, ok, t2)
+		t.Errorf("while the search is held refreshed_at = %v (present %v), want it unchanged at %v until the search has finished", at, ok, t2)
 	}
-	done := f.waitView("gha", "the slow search to finish", func(s SourceView) bool {
+	released := release()
+	done := f.waitView("gha", "the held search to finish", func(s SourceView) bool {
 		at, ok := refreshedAt(t, bugs(s))
 		return ok && at.After(t2)
 	})
-	t3, _ := refreshedAt(t, bugs(done))
-	if t3.Sub(posted) < 900*time.Millisecond {
-		t.Errorf("refreshed_at = %v is %v after Refresh now, but the search takes a second: it was stamped before the search finished", t3, t3.Sub(posted))
+	if t3, _ := refreshedAt(t, bugs(done)); t3.Before(released) {
+		t.Errorf("refreshed_at = %v is before the search was released at %v: it was stamped before the search finished", t3, released)
 	}
 }
 
@@ -418,7 +454,6 @@ func TestParseOrdersReadsTheFailingCountOfAPrWhateverTheKeysCase(t *testing.T) {
 func TestGitHubViewKeepsItsOrdersAndTimeAcrossARestartUntilTheNewSearchAnswers(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
-	slowSearch(t, g)
 	writeSearch(t, g, "bugs", "label:bug", searchNode("issues", 13, obj{"subIssuesSummary": obj{"total": 0}}))
 	f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
 	f.startSources()
@@ -426,30 +461,16 @@ func TestGitHubViewKeepsItsOrdersAndTimeAcrossARestartUntilTheNewSearchAnswers(t
 	first := f.waitView("gha", "the first search", func(s SourceView) bool { _, ok := refreshedAt(t, bugs(s)); return ok && len(s.orders("bugs")) == 1 })
 	t1, _ := refreshedAt(t, bugs(first))
 
-	sid := func() int {
-		r := f.Svc.Sup.runner("gha")
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		return r.sid
-	}
-	before := sid()
 	writeSearch(t, g, "bugs", "label:bug", searchNode("issues", 14, obj{"subIssuesSummary": obj{"total": 0}}))
-	g.write("slow", "1")
-	if !f.Svc.Sup.Restart("gha") {
-		t.Fatal("Restart found no runner")
-	}
-	deadline := time.Now().Add(10 * time.Second)
-	for sid() == before {
-		if time.Now().After(deadline) {
-			t.Fatal("the source did not restart")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	time.Sleep(400 * time.Millisecond) // the new process has listed its panels and pulled; its search takes a second
+	release := g.holdSearches()
+	before := g.searches()
+	f.restartUntilReady("gha")
+	g.waitSearchBegun(before)
 	mid := f.Svc.viewOf(t, "gha")
 	if at, ok := refreshedAt(t, bugs(mid)); !ok || !at.Equal(t1) || len(mid.orders("bugs")) != 1 || bugs(mid).Orders[0].ID != "acme/widgets#13" {
 		t.Errorf("before the new search: orders %v refreshed_at %v (present %v), want the old order 13 and %v", mid.orders("bugs"), at, ok, t1)
 	}
+	release()
 	after := f.waitView("gha", "the new search", func(s SourceView) bool {
 		at, ok := refreshedAt(t, bugs(s))
 		return ok && at.After(t1)
