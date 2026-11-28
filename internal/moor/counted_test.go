@@ -106,19 +106,15 @@ func TestCountedCountsWhatGitHubConfirmsOpenInTheShipsFleet(t *testing.T) {
 }
 
 func TestCountedRetriesAFailingGhWithinABound(t *testing.T) {
-	old := RetryWindow
-	t.Cleanup(func() { RetryWindow = old })
-	RetryWindow = 2 * time.Second
-
+	t.Parallel()
 	flaky := &fakeGitHub{host: "github.com", open: map[string]bool{mine: true}, fail: 2}
-	if got := Counted(context.Background(), Check{Fleet: "work", GitHub: flaky, Route: route}, []string{mine}); !reflect.DeepEqual(got, []string{mine}) {
+	if got := Counted(context.Background(), Check{Fleet: "work", GitHub: flaky, Route: route, RetryWindow: 2 * time.Second}, []string{mine}); !reflect.DeepEqual(got, []string{mine}) {
 		t.Errorf("after two failures and an answer, counted %v, want the PR", got)
 	}
 
-	RetryWindow = 300 * time.Millisecond
 	down := &fakeGitHub{host: "github.com", open: map[string]bool{mine: true}, fail: -1}
 	start := time.Now()
-	got := Counted(context.Background(), Check{Fleet: "work", GitHub: down, Route: route}, []string{mine})
+	got := Counted(context.Background(), Check{Fleet: "work", GitHub: down, Route: route, RetryWindow: 300 * time.Millisecond}, []string{mine})
 	if len(got) != 0 {
 		t.Errorf("with gh failing throughout, counted %v, want none", got)
 	}

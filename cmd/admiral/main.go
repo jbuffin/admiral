@@ -40,6 +40,7 @@ import (
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/launchorders"
+	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/lockroute"
 	"github.com/jbuffin/admiral/internal/lookout"
 	"github.com/jbuffin/admiral/internal/moor"
@@ -487,7 +488,8 @@ func serve(args []string) error {
 		}
 		return vapidKey.Public()
 	}
-	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port, cfg.Current) }),
+	var followers *push.Followers
+	guard, err := auth.New(dir, port, auth.WithStart(time.Now()), auth.WithFollowing(func(device string) bool { return followers != nil && followers.Connected(device) }), auth.WithBaseURL(func() string { return pairingBase(port, cfg.Current) }),
 		auth.WithRemote(func() (bool, []string) {
 			r := cfg.Current().Remote
 			return r.Tailscale, r.AllowedLogins
@@ -506,7 +508,7 @@ func serve(args []string) error {
 		pushSinks = append(pushSinks, sender)
 	}
 	// A sink joins here: NewWatcher takes it after the notify func.
-	followers := push.NewFollowers(push.FollowersConfig{Ready: func() bool { return inboxService.Scanned() && host.Known() }})
+	followers = push.NewFollowers(push.FollowersConfig{Ready: func() bool { return inboxService.Scanned() && host.Known() }, Record: guard})
 	pushSinks = append(pushSinks, followers)
 	pushFeed := &push.Feed{Ships: shipService.List, Items: inboxService.List, InboxReady: inboxService.Scanned, ShipsReady: host.Known}
 	pushFeed.Watcher = push.NewWatcher(hub.Watching, func(fleet string) bool {
@@ -657,6 +659,14 @@ func serve(args []string) error {
 	}, pushFeed.Watcher.Emit)
 	chatService.OnQuestions = func() { inboxService.Changed(); commitmentRunner.Changed() }
 	chatService.FollowCampaign, chatService.CampaignFleet, commitmentRunner.Campaign, campaignService.OnRead = campaignService.Follow, campaignService.Owner, campaignService.Snapshot, commitmentRunner.Changed
+	campaignService.Commitment = func(fleet, campaignID string) (follow.CampaignCommitment, bool) {
+		open, err := chatService.Notes().Commitments(fleet)
+		if err != nil {
+			return follow.CampaignCommitment{}, false
+		}
+		c, ok := ledger.CampaignCommitment(open, campaignID)
+		return follow.CampaignCommitment{ID: c.ID, TS: c.TS, Launched: c.Launched, WaitingChildren: c.WaitingChildren}, ok
+	}
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
 		t, err := routineScheduler.Accept(ctx, p.Fleet, p.Routine, p.Trigger)
 		switch {
@@ -727,7 +737,7 @@ func serve(args []string) error {
 	updateChecker := update.New(update.Options{BaseURL: updateBase, Version: updateVersion, Exe: updateExe, Changed: updateChanged,
 		Enabled: func() bool { return updateReachable && cfg.Current().UpdateCheck }})
 	crewService := &crewapi.Service{Home: absDir, Config: cfg, GitHub: sources.FleetGitHub}
-	s := &server.Server{Path: auth.PathName, Version: version, Commit: commit, UI: web.UI(), Bearer: auth.BearerDevice, Messages: withMessage(convService.Messages(), "push_follow", followers.Handle), Config: cfg,
+	s := &server.Server{Path: auth.PathName, Version: version, Commit: commit, UI: web.UI(), Bearer: auth.BearerDevice, Device: func(r *http.Request) string { id, _ := auth.DeviceID(r); return id }, Messages: withMessage(withMessage(convService.Messages(), "push_follow", followers.Handle), "push_unfollow", followers.HandleUnfollow), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService, attentionService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, crewService, routineService, campaignService, bridgeService, resourceService, lockRoute, chatService, convService,
 			&usageapi.Service{Home: absDir, Config: cfg.Current, Live: liveUsage, Ships: shipService.List, Now: time.Now, Zone: time.Local},

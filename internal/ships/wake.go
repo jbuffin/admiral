@@ -8,7 +8,6 @@ import (
 	"io"
 	"maps"
 	"net/http"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -117,7 +116,7 @@ func (s *Service) handRoundStart(rec moor.Record, _ string) (undoFunc, error) {
 		return out, nil
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: waking by hand without a round window: %v\n", rec.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: waking by hand without a round window: %v\n", rec.Name, err)
 		return nil, nil
 	}
 	return undo, nil
@@ -149,7 +148,7 @@ func (s *Service) saveWake(name string, change func(moor.WakeState) (moor.WakeSt
 			err = moor.WriteWake(s.Launcher.Home, name, prev)
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be put back after the failed wake: %v\n", name, err)
+			fmt.Fprintf(s.log(), "admiral: ship %s: its wake state cannot be put back after the failed wake: %v\n", name, err)
 		}
 	}, nil
 }
@@ -159,13 +158,13 @@ func (s *Service) removeWake(name string) {
 	s.wakeMu.Lock()
 	defer s.wakeMu.Unlock()
 	if err := moor.RemoveWake(s.Launcher.Home, name); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be removed: %v\n", name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its wake state cannot be removed: %v\n", name, err)
 	}
 	if err := moor.RemoveRounds(s.Launcher.Home, name); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its round history cannot be removed: %v\n", name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its round history cannot be removed: %v\n", name, err)
 	}
 	if err := inbox.RemoveWakeProposals(s.Launcher.Home, name); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake proposals cannot be removed: %v\n", name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its wake proposals cannot be removed: %v\n", name, err)
 	}
 }
 
@@ -286,7 +285,7 @@ func (s *Service) wakeWith(opts wakeOpts, session string, prompt func(moor.Recor
 	s.releaseWhenListed(got.Session, release)
 	if kept := s.dropMoored(session, got.Launched); len(kept) > 0 {
 		if err := s.Host.SetOptions(context.Background(), got.Session, map[string]string{"reviewing": strings.Join(kept, ",")}); err != nil {
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: its reviewed PRs cannot be saved on the session: %v\n", got.Session, err)
+			fmt.Fprintf(s.log(), "admiral: ship %s: its reviewed PRs cannot be saved on the session: %v\n", got.Session, err)
 		}
 	}
 	s.broadcast()
@@ -372,7 +371,7 @@ func (s *Service) dropMoored(session, launched string) []string {
 		}
 		if err := moor.Remove(s.Launcher.Home, r.Name); err != nil {
 			// kept: the live session hides it from the list, and moor replaces a record of an earlier round
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be removed after the wake: %v\n", r.Name, err)
+			fmt.Fprintf(s.log(), "admiral: ship %s: its moored record cannot be removed after the wake: %v\n", r.Name, err)
 			return nil
 		}
 		s.moored = slices.Delete(s.moored, i, i+1)
@@ -542,7 +541,7 @@ func (s *Service) stackFor(ctx context.Context, rec moor.Record) (*moor.DetailSt
 	if gh == nil {
 		return nil, &launcher.Error{Status: http.StatusBadGateway, Msg: "fleet " + rec.Fleet + " has no GitHub access"}
 	}
-	ctx, cancel := context.WithTimeout(ctx, detailTimeout)
+	ctx, cancel := context.WithTimeout(ctx, s.detailTimeout())
 	defer cancel()
 	for _, u := range rec.PRs {
 		d, err := gh.PullRequestDetail(ctx, u)

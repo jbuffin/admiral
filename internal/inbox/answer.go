@@ -51,15 +51,45 @@ func (s *Service) open(session, id string) (Item, error) {
 
 // Answer's build runs under the lock, so it does no network I/O: anything slow runs before Answer, except a proposal's launch.
 func (s *Service) Answer(session, id, kind string, build func(Item) (file any, recs []outcomes.Record, err error)) error {
-	return s.answer(session, id, kind, false, build)
+	return s.answer(session, id, kind, false, nil, build)
 }
 
-func (s *Service) answer(session, id, kind string, removed bool, build func(Item) (file any, recs []outcomes.Record, err error)) error {
+// Guard lets a caller other than the Inbox's own routes answer an item. Check refuses an item other than the one the caller showed the engineer; it is a pure predicate, run before any gh call and again under the answer lock. Via reaches OnSettled only once the answer file is written, so nothing a caller does can mark an answer that was never written.
+type Guard struct {
+	Check func(it Item) error
+	Via   string
+}
+
+func (g *Guard) check(it Item) error {
+	if g == nil || g.Check == nil {
+		return nil
+	}
+	return g.Check(it)
+}
+
+func (g *Guard) via() string {
+	if g == nil {
+		return ""
+	}
+	return g.Via
+}
+
+// AnswerGuarded is Answer for a caller with a Guard.
+func (s *Service) AnswerGuarded(session, id, kind string, g *Guard, build func(Item) (file any, recs []outcomes.Record, err error)) error {
+	return s.answer(session, id, kind, false, g, func(it Item) (any, []outcomes.Record, error) {
+		if err := g.check(it); err != nil {
+			return nil, nil, err
+		}
+		return build(it)
+	})
+}
+
+func (s *Service) answer(session, id, kind string, removed bool, g *Guard, build func(Item) (file any, recs []outcomes.Record, err error)) error {
 	if err := s.writeAnswered(session, id, kind, build); err != nil {
 		return err
 	}
 	if s.OnSettled != nil {
-		s.OnSettled(session, id, removed)
+		s.OnSettled(session, id, removed, g.via())
 	}
 	// Outside answerMu: typing the resume text calls the ship's pane. Its text is in
 	// the state already, so the files may go whether or not it worked.
@@ -69,6 +99,13 @@ func (s *Service) answer(session, id, kind string, removed bool, build func(Item
 	s.answerMu.Unlock()
 	s.Refresh()
 	return nil
+}
+
+// settled tells OnSettled an answer was written through a path that calls writeAnswered itself.
+func (s *Service) settled(session, id string, g *Guard) {
+	if s.OnSettled != nil {
+		s.OnSettled(session, id, false, g.via())
+	}
 }
 
 func (s *Service) writeAnswered(session, id, kind string, build func(Item) (file any, recs []outcomes.Record, err error)) error {

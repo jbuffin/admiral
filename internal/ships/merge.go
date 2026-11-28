@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -155,7 +154,7 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		if stacked {
 			what = "stack " + strconv.Itoa(stackNumber)
 		}
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: merging %s failed: %s\n", session, what, strings.Join(strings.Fields(strings.Map(noControl, err.Error())), " "))
+		fmt.Fprintf(s.log(), "admiral: ship %s: merging %s failed: %s\n", session, what, strings.Join(strings.Fields(strings.Map(noControl, err.Error())), " "))
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -295,7 +294,7 @@ func (s *Service) serveUpdateBranch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusGatewayTimeout, err.Error())
 		return
 	case err != nil:
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: updating the branch of pull request %s failed: %s\n", session, number, strings.Join(strings.Fields(strings.Map(noControl, err.Error())), " "))
+		fmt.Fprintf(s.log(), "admiral: ship %s: updating the branch of pull request %s failed: %s\n", session, number, strings.Join(strings.Fields(strings.Map(noControl, err.Error())), " "))
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

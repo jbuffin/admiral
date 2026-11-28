@@ -73,33 +73,44 @@ type Service struct {
 	ChatQuestions func() []Item
 	// AnswerChat answers a chat question where the chat keeps it; the inbox has no copy.
 	AnswerChat func(session, id string, req QuestionRequest) error
+	// Now is the clock a routine proposal's expiry reads; nil is the wall clock.
+	Now func() time.Time
 	// OnChange runs after every change to the list is sent. It must not block.
 	OnChange func()
-	// OnSettled runs synchronously when an item is answered or removed through the Service, before a kept inbox's files are released.
-	OnSettled func(session, id string, removed bool)
+	// OnSettled runs synchronously after an item's answer file is written, before a kept inbox's files are released; via is the Guard's, empty for the Inbox's own.
+	OnSettled func(session, id string, removed bool, via string)
 
 	scanned atomic.Bool
 
-	answerMu sync.Mutex               // one answer at a time
-	actMu    sync.Mutex               // guards acting
-	acting   map[string]bool          // the items a gh action is running on
-	filed    map[string]filedCampaign // parents filed whose answer is not yet saved, by item id
-	resumeMu sync.Mutex               // one pass over the resume texts at a time
-	lastErr  map[string]string        // the last failure logged for a resume text; under resumeMu
-	resume   chan struct{}            // resume texts may be ready; buffered; under mu
-	scanMu   sync.Mutex               // one refresh at a time
-	mu       sync.Mutex               // guards items
-	items    []Item
-	notify   chan struct{} // a ship changed; buffered, so Notify never blocks
-	watched  map[string]os.FileInfo
-	watcher  *fsnotify.Watcher
+	answerMu  sync.Mutex               // one answer at a time
+	launchMu  sync.Mutex               // guards launching
+	launching map[string]int           // routine proposals with a launch in flight, by item id
+	actMu     sync.Mutex               // guards acting
+	acting    map[string]bool          // the items a gh action is running on
+	filed     map[string]filedCampaign // parents filed whose answer is not yet saved, by item id
+	resumeMu  sync.Mutex               // one pass over the resume texts at a time
+	lastErr   map[string]string        // the last failure logged for a resume text; under resumeMu
+	resume    chan struct{}            // resume texts may be ready; buffered; under mu
+	scanMu    sync.Mutex               // one refresh at a time
+	mu        sync.Mutex               // guards items
+	items     []Item
+	notify    chan struct{} // a ship changed; buffered, so Notify never blocks
+	watched   map[string]os.FileInfo
+	watcher   *fsnotify.Watcher
+}
+
+func (s *Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
 }
 
 func (s *Service) List() []Item {
 	s.mu.Lock()
 	items := append([]Item{}, s.items...)
 	s.mu.Unlock()
-	now := time.Now()
+	now := s.now()
 	items = slices.DeleteFunc(items, func(it Item) bool {
 		if p, ok := it.EventProposal(); ok {
 			if !p.expired(now) {

@@ -33,6 +33,14 @@ const (
 // PageFloor is how often, at most, opening a campaign's page rereads its tree from GitHub.
 var PageFloor = delay.From("ADMIRAL_CAMPAIGN_PAGE_FLOOR", 30*time.Second)
 
+// CampaignCommitment is the open work commitment of a campaign, as the campaign view shows it.
+type CampaignCommitment struct {
+	ID              string
+	TS              time.Time
+	Launched        int
+	WaitingChildren int
+}
+
 // Service follows campaigns and launches their children.
 type Service struct {
 	Store *Store
@@ -46,6 +54,8 @@ type Service struct {
 	Ships func() []ships.Ship
 	// Claims maps a ClaimKey to the ship holding that issue.
 	Claims func() map[string]string
+	// Commitment gives the open work commitment on a campaign in a fleet's ledger; nil means none.
+	Commitment func(fleet, campaignID string) (CampaignCommitment, bool)
 	// Launch is ships.Service.Launch.
 	Launch func(ctx context.Context, req launcher.Request) (ships.Ship, *launcher.Error)
 	// Next answers every order that is not a campaign's.

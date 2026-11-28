@@ -9,8 +9,12 @@ import (
 	"github.com/jbuffin/admiral/internal/moor"
 )
 
-// detailTimeout keeps a slow GitHub from holding the request open.
-var detailTimeout = 15 * time.Second
+func (s *Service) detailTimeout() time.Duration {
+	if s.DetailTimeout == 0 {
+		return 15 * time.Second
+	}
+	return s.DetailTimeout
+}
 
 // servePRDetail reads one PR a running or moored ship carries, fresh from GitHub through the ship's fleet.
 func (s *Service) servePRDetail(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +36,7 @@ func (s *Service) servePRDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "fleet "+fleet+" has no GitHub access")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), detailTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.detailTimeout())
 	defer cancel()
 	d, err := gh.PullRequestDetail(ctx, url)
 	if err != nil {

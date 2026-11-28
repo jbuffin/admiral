@@ -149,6 +149,11 @@ func (e *partialCreateError) Error() string { return e.msg }
 // outside answerMu, and an item has one action at a time, so a second press gets ErrBusy and never files a second parent.
 // A refusal before any GitHub write leaves the item unanswered.
 func (s *Service) CreateCampaignItem(ctx context.Context, id string, req CampaignDraftRequest) (CreatedCampaign, error) {
+	return s.CreateCampaignItemGuarded(ctx, id, req, nil)
+}
+
+// CreateCampaignItemGuarded is CreateCampaignItem for a caller with a Guard, checked before the hook files anything and again once the item's one action is held.
+func (s *Service) CreateCampaignItemGuarded(ctx context.Context, id string, req CampaignDraftRequest, g *Guard) (CreatedCampaign, error) {
 	if s.CreateCampaign == nil {
 		return CreatedCampaign{}, &refusedError{http.StatusNotImplemented, "creating a campaign from a draft is not wired"}
 	}
@@ -158,6 +163,9 @@ func (s *Service) CreateCampaignItem(ctx context.Context, id string, req Campaig
 	}
 	if it.Kind != KindCampaignDraft {
 		return CreatedCampaign{}, invalid("item %s is a %s, not a campaign draft", id, it.Kind)
+	}
+	if err := g.check(it); err != nil {
+		return CreatedCampaign{}, err
 	}
 	draft, _ := it.CampaignDraft()
 	if msg := validDraftText(req.Repo, req.Title, req.Body); msg != "" {
@@ -174,6 +182,13 @@ func (s *Service) CreateCampaignItem(ctx context.Context, id string, req Campaig
 		return CreatedCampaign{}, err
 	}
 	defer release()
+	// The item may have been answered, or replaced, while another action held it.
+	if it, err = s.open(AdmiralSession, id); err == nil {
+		err = g.check(it)
+	}
+	if err != nil {
+		return CreatedCampaign{}, err
+	}
 
 	// A parent filed by an earlier press whose answer didn't save is answered again, never filed twice.
 	created, status, msg := s.filedParent(id)
@@ -198,6 +213,9 @@ func (s *Service) CreateCampaignItem(ctx context.Context, id string, req Campaig
 	if werr == nil || errors.Is(werr, ErrAnswered) {
 		s.forgetParent(id)
 	}
+	if werr == nil {
+		s.settled(AdmiralSession, id, g)
+	}
 	// The campaign exists whether or not the answer was written, so the chat hears of it either way.
 	if s.PostCampaignCard != nil {
 		s.PostCampaignCard(draft.Fleet, card)
@@ -214,6 +232,11 @@ func (s *Service) CreateCampaignItem(ctx context.Context, id string, req Campaig
 
 // DismissCampaignDraft answers the item with a dismissal and posts the thrown-away card.
 func (s *Service) DismissCampaignDraft(id string) error {
+	return s.DismissCampaignDraftGuarded(id, nil)
+}
+
+// DismissCampaignDraftGuarded is DismissCampaignDraft for a caller with a Guard.
+func (s *Service) DismissCampaignDraftGuarded(id string, g *Guard) error {
 	release, err := s.beginAction(AdmiralSession, id)
 	if err != nil {
 		return err
@@ -221,6 +244,9 @@ func (s *Service) DismissCampaignDraft(id string) error {
 	defer release()
 	var dismissed CampaignDraft
 	err = s.writeAnswered(AdmiralSession, id, KindCampaignDraft, func(it Item) (any, []outcomes.Record, error) {
+		if err := g.check(it); err != nil {
+			return nil, nil, err
+		}
 		dismissed, _ = it.CampaignDraft()
 		file := map[string]any{"version": 1, "id": id, "kind": KindCampaignDraft, "answered": time.Now().UTC().Format(time.RFC3339), "dismissed": true}
 		return file, []outcomes.Record{{Event: "campaign_draft_dismissed", Fields: map[string]any{"item": id, "fleet": dismissed.Fleet}}}, nil
@@ -228,6 +254,7 @@ func (s *Service) DismissCampaignDraft(id string) error {
 	if err != nil {
 		return err
 	}
+	s.settled(AdmiralSession, id, g)
 	if s.PostCampaignCard != nil {
 		s.PostCampaignCard(dismissed.Fleet, CampaignCard{ID: id, Title: dismissed.Title})
 	}
@@ -242,11 +269,6 @@ func (s *Service) serveCreateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, err := s.CreateCampaignItem(r.Context(), id, req)
-	var partial *partialCreateError
-	if errors.As(err, &partial) {
-		writeJSON(w, partial.status, map[string]any{"error": partial.msg, "parent": partial.parent, "answered": id})
-		return
-	}
 	if err != nil {
 		respondProposal(w, id, err)
 		return

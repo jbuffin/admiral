@@ -13,7 +13,12 @@ import (
 
 // reRequestBudget bounds the fresh read, the id lookup and the mutation together (15 s, 8 s and 20 s at most), and the web
 // client waits longer, so the answer and its timeout message reach the page.
-var reRequestBudget = 45 * time.Second
+func (s *Service) reRequestBudget() time.Duration {
+	if s.ReRequestBudget == 0 {
+		return 45 * time.Second
+	}
+	return s.ReRequestBudget
+}
 
 const reRequestTimedOut = "the review request did not finish in time; look at the pull request on GitHub before asking again"
 
@@ -57,9 +62,9 @@ func (s *Service) serveReRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "fleet "+fleet+" has no GitHub access")
 		return
 	}
-	budget, stop := context.WithTimeout(r.Context(), reRequestBudget)
+	budget, stop := context.WithTimeout(r.Context(), s.reRequestBudget())
 	defer stop()
-	ctx, cancel := context.WithTimeout(budget, detailTimeout)
+	ctx, cancel := context.WithTimeout(budget, s.detailTimeout())
 	defer cancel()
 	d, err := gh.PullRequestDetail(ctx, req.PR)
 	if err != nil {

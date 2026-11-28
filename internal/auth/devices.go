@@ -21,6 +21,8 @@ const (
 	// A device's last-seen time and cookie are refreshed at most this often, so a busy page doesn't write the store on every request.
 	touchEvery   = time.Hour
 	reissueEvery = 24 * time.Hour
+	// stoppedAfter is how long a following device may have no socket open before it reads stopped.
+	stoppedAfter = 5 * time.Minute
 )
 
 type device struct {
@@ -33,6 +35,8 @@ type device struct {
 	// ThisMac marks the device that loopback browsers subscribe as, with no pairing; it has no token.
 	ThisMac       bool           `json:"thisMac,omitempty"`
 	Subscriptions []Subscription `json:"subscriptions,omitempty"`
+	Forwarding    bool           `json:"forwarding,omitempty"`
+	LastFollowed  *time.Time     `json:"lastFollowed,omitempty"`
 
 	reissued time.Time
 }
@@ -51,6 +55,9 @@ type Auth struct {
 	baseURL func() string
 	remote  func() (bool, []string)
 	pushKey func() string
+	start   time.Time
+	// following is whether a device has a follower socket open now; nil means none does.
+	following func(device string) bool
 
 	mu      sync.Mutex
 	devices []*device
@@ -62,6 +69,69 @@ type Auth struct {
 type Option func(*Auth)
 
 func WithClock(now func() time.Time) Option { return func(a *Auth) { a.now = now } }
+
+// WithStart gives the time Admiral started, which the forwarding rule counts from.
+func WithStart(t time.Time) Option { return func(a *Auth) { a.start = t } }
+
+// WithFollowing gives whether a device has a follower socket open now.
+func WithFollowing(open func(device string) bool) Option { return func(a *Auth) { a.following = open } }
+
+// Followed records that the device follows push events; a record that exists is left as it is.
+func (a *Auth) Followed(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if d := a.find(id); d != nil && !d.Forwarding {
+		d.Forwarding = true
+		a.saveOrRevert(func() { d.Forwarding = false })
+	}
+}
+
+// Unfollowed clears the device's forwarding record.
+func (a *Auth) Unfollowed(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if d := a.find(id); d != nil && (d.Forwarding || d.LastFollowed != nil) {
+		was, last := d.Forwarding, d.LastFollowed
+		d.Forwarding, d.LastFollowed = false, nil
+		a.saveOrRevert(func() { d.Forwarding, d.LastFollowed = was, last })
+	}
+}
+
+// FollowEnded saves when the device's last follower socket closed; a device with no record, cleared or revoked, stays as it is.
+func (a *Auth) FollowEnded(id string, at time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if d := a.find(id); d != nil && d.Forwarding {
+		last := d.LastFollowed
+		d.LastFollowed = &at
+		a.saveOrRevert(func() { d.LastFollowed = last })
+	}
+}
+
+// saveOrRevert keeps the change in memory only when it reached the disk, so a restart never disagrees with what was shown. Callers hold mu.
+func (a *Auth) saveOrRevert(undo func()) {
+	if a.save() != nil {
+		undo()
+	}
+}
+
+// forwardingState is "on" while a follower socket is open and for stoppedAfter past the later of the last close and Admiral's start, then "stopped"; nil for a device with no record. Callers hold mu.
+func (a *Auth) forwardingState(d *device) *string {
+	if !d.Forwarding {
+		return nil
+	}
+	state := "on"
+	if a.following == nil || !a.following(d.ID) {
+		from := a.start
+		if d.LastFollowed != nil && d.LastFollowed.After(from) {
+			from = *d.LastFollowed
+		}
+		if a.now().Sub(from) > stoppedAfter {
+			state = "stopped"
+		}
+	}
+	return &state
+}
 
 // WithBaseURL gives the address pairing URLs start with, such as http://192.168.1.10:7420.
 func WithBaseURL(base func() string) Option { return func(a *Auth) { a.baseURL = base } }
@@ -80,6 +150,9 @@ func New(home, port string, opts ...Option) (*Auth, error) {
 	a := &Auth{cookie: "admiral_token_" + port, home: home, now: time.Now, remote: func() (bool, []string) { return false, nil }, socks: map[*socket]struct{}{}}
 	for _, o := range opts {
 		o(a)
+	}
+	if a.start.IsZero() {
+		a.start = a.now()
 	}
 	// The shared token is retired with no fallback.
 	if err := os.Remove(filepath.Join(home, "token")); err != nil && !errors.Is(err, os.ErrNotExist) {

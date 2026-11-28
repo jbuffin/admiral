@@ -22,6 +22,8 @@ const (
 	StopNotStarted = "not_started"
 )
 
+var stopKinds = map[string]bool{StopPermission: true, StopTurn: true, StopNotStarted: true}
+
 // stopKind is the card kind a needs-you reason posts, or "" for a reason that posts none.
 func stopKind(reason string) string {
 	switch {
@@ -100,12 +102,16 @@ func (s *Service) stopPass() {
 		if err != nil {
 			at = time.Now()
 		}
-		// The record first: a reader that sees the entry must find its card.
-		n.add(id, needRec{Fleet: sh.Fleet, Session: sh.Session, Item: identity, Created: needCreated(at), Kind: kind, Reason: sh.Reason, Answerable: answerable, State: NeedOpen})
+		// As for an Inbox card: reserved before the append, saved after it.
+		if !n.reserve(id, needRec{Fleet: sh.Fleet, Session: sh.Session, Item: identity, Created: needCreated(at), Kind: kind, Reason: sh.Reason, Answerable: answerable, State: NeedOpen}) {
+			continue
+		}
 		if _, err := s.history().Append(sh.Fleet, chatlog.Entry{ID: id, Kind: chatlog.KindNeedCard, Text: stopTitle(sh, kind), At: at, Card: raw}); err != nil {
 			log.Printf("admiral: stop card for %s: %v", sh.Session, err)
-			n.forget(id)
+			n.release(id)
+			continue
 		}
+		n.commit()
 	}
 	for _, id := range n.openStopIDs() {
 		s.settleStop(id, byName)
@@ -131,7 +137,7 @@ func (n *needStore) openStopIDs() []string {
 	defer n.mu.Unlock()
 	var ids []string
 	for id, r := range n.recs {
-		if r.State == NeedOpen && r.Kind != "" {
+		if r.State == NeedOpen && stopKinds[r.Kind] {
 			ids = append(ids, id)
 		}
 	}
@@ -143,7 +149,7 @@ func (n *needStore) openStopIDs() []string {
 func (s *Service) settleStop(id string, byName map[string]ships.Ship) {
 	n := s.needs()
 	r, ok := n.get(id)
-	if !ok || r.State != NeedOpen || n.answeringItem(r.Session, r.Item) {
+	if !ok || r.State != NeedOpen || n.tapping(r.Session, r.Item) {
 		return
 	}
 	sh, listed := byName[r.Session]
@@ -193,8 +199,8 @@ func (s *Service) serveStopCardAnswer(w http.ResponseWriter, r *http.Request, n 
 		writeError(w, http.StatusInternalServerError, "ships cannot be answered here")
 		return
 	}
-	n.setAnswering(rec.Session, rec.Item, true)
-	defer n.setAnswering(rec.Session, rec.Item, false)
+	n.setTapping(rec.Session, rec.Item, true)
+	defer n.setTapping(rec.Session, rec.Item, false)
 	err := s.AnswerStop(r.Context(), rec.Session, ships.StopAnswer{StopID: rec.Item, Reason: rec.Reason, Choice: req.Choice, Text: req.Text})
 	var refused *ships.StopRefused
 	switch {

@@ -27,8 +27,8 @@ type ProposalBatch struct {
 }
 
 // ProposeT3 groups d.T3 into batches ready to propose and returns d.Next with their IDs recorded and the stale entries pruned.
-// A batch waits until its author's newest event is older than WakeDebounce, unless d wakes the ship on that PR: the round's cursor passes every event there.
-func ProposeT3(ship string, d Decision, now time.Time, validLogin func(string) bool) ([]ProposalBatch, WakeState) {
+// A batch waits until its author's newest event is older than debounce (zero is WakeInput's default), unless d wakes the ship on that PR: the round's cursor passes every event there.
+func ProposeT3(ship string, d Decision, now time.Time, debounce time.Duration, validLogin func(string) bool) ([]ProposalBatch, WakeState) {
 	next := cloneState(d.Next)
 	type key struct{ pr, login string }
 	groups := map[key][]Event{}
@@ -53,7 +53,7 @@ func ProposeT3(ship string, d Decision, now time.Time, validLogin func(string) b
 		events := groups[k]
 		sort.SliceStable(events, func(i, j int) bool { return events[i].At.Before(events[j].At) })
 		newest := events[len(events)-1].At
-		if !(d.Wake && d.PR == k.pr) && now.Sub(newest) < WakeDebounce {
+		if !(d.Wake && d.PR == k.pr) && now.Sub(newest) < debounceOr(debounce) {
 			continue
 		}
 		ids := make([]string, len(events))

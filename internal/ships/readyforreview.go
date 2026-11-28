@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 
@@ -110,7 +109,7 @@ func (s *Service) serveReadyForReview(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, moor.ErrMergeTimeout):
 			results[i] = markResult{URL: u, Outcome: markReadyFailed, Error: markUnknownResult}
 		case err != nil:
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: marking pull request %s ready for review failed: %s\n", session, urls[i], strings.Join(strings.Fields(strings.Map(noControl, err.Error())), " "))
+			fmt.Fprintf(s.log(), "admiral: ship %s: marking pull request %s ready for review failed: %s\n", session, urls[i], strings.Join(strings.Fields(strings.Map(noControl, err.Error())), " "))
 			results[i] = markResult{URL: u, Outcome: markReadyFailed, Error: err.Error()}
 		default:
 			results[i].Outcome = markedReady

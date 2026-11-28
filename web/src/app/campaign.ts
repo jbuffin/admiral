@@ -55,6 +55,7 @@ export interface Campaign {
   ready_without_you: number;
   reading: boolean;
   last_tried?: string;
+  commitment?: { id: string; ts: string; launched?: number; waiting_children?: number };
   root?: CampaignNode;
 }
 

@@ -531,5 +531,5 @@ func (s *Service) recordHandFailure(name, id, why string) {
 		fields["conversation"] = id
 	}
 	s.record(outcomes.Record{Ship: name, Event: "handing_failed", Fields: fields}, nil)
-	fmt.Fprintf(os.Stderr, "admiral: ship %s: not handed to Commodore: %s\n", name, why)
+	fmt.Fprintf(s.log(), "admiral: ship %s: not handed to Commodore: %s\n", name, why)
 }

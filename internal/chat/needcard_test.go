@@ -17,6 +17,7 @@ import (
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	admstate "github.com/jbuffin/admiral/internal/state"
 )
@@ -29,17 +30,20 @@ type needRig struct {
 	kept   *admstate.Store
 	pokes  atomic.Int64 // Inbox changes, which is what feeds a push
 	in     *inbox.Service
+	outc   *outcomes.Writer
 	svc    *Service
 	mux    *http.ServeMux
 	cancel context.CancelFunc
-	done   chan struct{} // closed when the poster has returned
+	done   chan struct{}        // closed when the poster has returned
+	wire   func(*inbox.Service) // sets the hooks of the Inbox begin builds, before the poster runs
+	chat   func(*Service)       // sets the chat service's seams, before the poster runs
 
 	stops stopBook // the ships the rig lists and the stop answers it was asked for
 }
 
 var shipFleets = map[string]string{
 	"s-home": "home", "s-work": "work", "s-off": "off", "odd ship %?#": "work",
-	"_chat-work": "work", "_admiral": "work", "nofleet": "",
+	"_chat-work": "work", "_admiral": "work", "nofleet": "", "s-ghost": "ghost",
 }
 
 func newNeedRig(t *testing.T) *needRig {
@@ -61,7 +65,8 @@ func newNeedRig(t *testing.T) *needRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &needRig{t: t, home: home, cfg: cfg, kept: st}
+	r := &needRig{t: t, home: home, cfg: cfg, kept: st, outc: outcomes.New(filepath.Join(home, "outcomes"), t.Logf)}
+	t.Cleanup(r.outc.Close)
 	t.Cleanup(func() { r.stop() })
 	return r
 }
@@ -76,12 +81,18 @@ func (r *needRig) start() {
 // begin is start up to the Inbox's first scan, the order cmd/admiral/main.go runs the poster in.
 func (r *needRig) begin() {
 	r.t.Helper()
-	r.in = &inbox.Service{Home: r.home, Hub: server.NewHub(), Kept: r.kept,
+	r.in = &inbox.Service{Home: r.home, Hub: server.NewHub(), Kept: r.kept, Outcomes: r.outc,
 		Ship: func(session string) (inbox.ShipInfo, bool) {
 			fleet, ok := shipFleets[session]
 			return inbox.ShipInfo{Name: session, Harness: "claude", Fleet: fleet, FleetName: fleet}, ok
 		}}
+	if r.wire != nil {
+		r.wire(r.in)
+	}
 	r.svc = &Service{Home: r.home, Config: func() *config.Config { return r.cfg }, Inbox: r.in, Ships: r.listShips, AnswerStop: r.answerStop}
+	if r.chat != nil {
+		r.chat(r.svc)
+	}
 	r.in.OnChange = func() { r.pokes.Add(1); r.svc.InboxChanged() }
 	r.in.OnSettled = r.svc.InboxSettled
 	r.mux = http.NewServeMux()
@@ -710,4 +721,25 @@ func mustMarshal(v any) []byte {
 
 func betaAnswers() map[string]inbox.QuestionAnswer {
 	return map[string]inbox.QuestionAnswer{"1": {Choice: json.RawMessage(`"Beta"`)}, "2": {Choice: json.RawMessage(`["X"]`)}}
+}
+
+func TestACardIsKnownToItsRouteBeforeItIsInTheLog(t *testing.T) {
+	r := newNeedRig(t)
+	var known, appended atomic.Bool
+	r.chat = func(s *Service) {
+		s.logOnce.Do(func() {
+			// The log stamps an entry with this clock as it writes it, so a client could read the entry from here on.
+			s.log = chatlog.New(s.Home, func() time.Time {
+				appended.Store(true)
+				known.Store(len(s.needs().openIDs("", "")) > 0)
+				return time.Now()
+			})
+		})
+	}
+	r.ask("s-home", "q1", createdA)
+	r.start()
+	r.waitLogged("home", 1)
+	if !appended.Load() || !known.Load() {
+		t.Errorf("the card was appended (%v) with no record for its route to find (known %v), so a tap on it would get 404", appended.Load(), known.Load())
+	}
 }

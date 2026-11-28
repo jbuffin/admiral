@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"slices"
 	"time"
 
@@ -22,7 +21,7 @@ func (s *Service) propose(r moor.Record, was moor.WakeState, d moor.Decision, no
 	if len(d.T3) == 0 {
 		return d.Next, nil, true
 	}
-	batches, next = moor.ProposeT3(r.Name, d, now, config.ValidLogin)
+	batches, next = moor.ProposeT3(r.Name, d, now, s.WakeDebounce, config.ValidLogin)
 	if len(batches) == 0 {
 		return next, nil, true
 	}
@@ -43,7 +42,7 @@ func (s *Service) propose(r moor.Record, was moor.WakeState, d moor.Decision, no
 			p.Events = append(p.Events, inbox.WakeProposalEvent{ID: e.ID, Kind: string(e.Kind), URL: e.URL, At: e.At, Body: e.Body})
 		}
 		if err := inbox.WriteWakeProposal(s.Launcher.Home, b.ID, p); err != nil {
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake proposal cannot be written: %v\n", r.Name, err)
+			fmt.Fprintf(s.log(), "admiral: ship %s: its wake proposal cannot be written: %v\n", r.Name, err)
 			return d.Next, nil, false
 		}
 	}

@@ -45,7 +45,11 @@ func cardIDs(it Item) []string {
 
 // AnswerFindings sends nothing to GitHub: the skill that resumes posts what was approved.
 func (s *Service) AnswerFindings(session, id string, req FindingsRequest) error {
-	return s.Answer(session, id, KindFindings, func(it Item) (any, []outcomes.Record, error) {
+	return s.AnswerFindingsGuarded(session, id, req, nil)
+}
+
+func (s *Service) AnswerFindingsGuarded(session, id string, req FindingsRequest, g *Guard) error {
+	return s.AnswerGuarded(session, id, KindFindings, g, func(it Item) (any, []outcomes.Record, error) {
 		want := map[string]bool{}
 		for _, c := range cardIDs(it) {
 			want[c] = true

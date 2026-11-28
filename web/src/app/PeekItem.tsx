@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { call, SLOW_TIMEOUT_MS } from './api';
+import { call, SLOW_TIMEOUT_MS, type Result } from './api';
 import { Actions, Button } from './Button';
 import { refreshCampaigns } from './campaignsLink';
 import { rememberFleet } from './fleets';
@@ -77,7 +77,7 @@ function PrLine({ pr }: { pr: ReturnType<typeof prLink> }) {
 }
 
 /** AdmiralBot's campaign draft: the modal's confirm step, then Create files the parent issue and Dismiss throws the draft away. */
-export function CampaignDraftBody({ entry, acting, fold }: { entry: Entry; acting: Acting; fold: (text: string) => void }) {
+export function CampaignDraftBody({ entry, acting, fold, createWith }: { entry: Entry; acting: Acting; fold: (text: string) => void; createWith?: (body: { repo: string; title: string; body: string }) => Promise<Result<unknown>> }) {
   const d = entry.item?.campaign_draft;
   const fleet = d?.fleet || entry.fleet?.key || '';
   const [filed, setFiled] = useState<Filed | null>(null);
@@ -85,7 +85,7 @@ export function CampaignDraftBody({ entry, acting, fold }: { entry: Entry; actin
   const here = useRef(true);
   useLayoutEffect(() => () => void (here.current = false), []);
   // The item's own Create follows the campaign here, not in the step: the Inbox push can unmount this Peek before the answer arrives.
-  const create = async (body: { repo: string; title: string; body: string }) => {
+  const create = createWith ?? (async (body: { repo: string; title: string; body: string }) => {
     const r = await call<{ campaign: { id: string; url: string } }>('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/create`, body, undefined, { timeoutMs: SLOW_TIMEOUT_MS });
     if (r.ok) {
       void refreshCampaigns();
@@ -96,7 +96,7 @@ export function CampaignDraftBody({ entry, acting, fold }: { entry: Entry; actin
     // The Inbox push usually closes the Peek before this answer: the folded row is then the one place the engineer sees the filed parent.
     if (r.parent && !here.current) fold(`Filed ${r.parent} but did not follow it: ${r.error}`);
     return !r.ok && r.status === 409 && !r.parent ? { ...r, error: 'This draft is being created already. Wait a moment and try again.' } : r;
-  };
+  });
   return (
     <div class="campaign-draft">
       <ConfirmStep
@@ -211,7 +211,7 @@ export function ReviewBody({ entry, ui, set, acting, submit, discard }: { entry:
       </div>
       <div class="inbox-prrow">
         <PrLine pr={pr} />
-        <span class="inbox-hint">Pending review #{String(r?.review_id ?? '')}, not yet submitted</span>
+        <span class="inbox-hint">{r?.review_id === undefined ? 'Pending review, not yet submitted' : `Pending review #${String(r.review_id)}, not yet submitted`}</span>
       </div>
       {(ui.step === 'idle' || acting.locked) && (
         <div class="inbox-send-row">

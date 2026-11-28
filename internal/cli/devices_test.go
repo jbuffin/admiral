@@ -18,7 +18,7 @@ import (
 	"github.com/jbuffin/admiral/internal/home"
 )
 
-type fakeDevice struct{ ID, Name, Login string }
+type fakeDevice struct{ ID, Name, Login, Forwarding, LastFollowed string }
 
 type seen struct{ Method, Path, Auth, Body string }
 
@@ -66,6 +66,13 @@ func startFake(t *testing.T, devices []fakeDevice) *fakeAdmiral {
 				if d.Login != "" {
 					m["login"] = d.Login
 				}
+				m["forwarding"], m["lastFollowed"] = nil, nil
+				if d.Forwarding != "" {
+					m["forwarding"] = d.Forwarding
+				}
+				if d.LastFollowed != "" {
+					m["lastFollowed"] = d.LastFollowed
+				}
 				out = append(out, m)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"devices": out})
@@ -99,8 +106,8 @@ func isUsage(err error) bool {
 	return errors.As(err, &u)
 }
 
-var tablet = fakeDevice{"d-aaa111", "Tablet", ""}
-var phone = fakeDevice{"d-bbb222", "Phone", "jason@example.test"}
+var tablet = fakeDevice{ID: "d-aaa111", Name: "Tablet"}
+var phone = fakeDevice{ID: "d-bbb222", Name: "Phone", Login: "jason@example.test"}
 
 func TestPairPrintsTheUrlCodeExpiryAndTheSingleUseRule(t *testing.T) {
 	f := startFake(t, nil)
@@ -197,8 +204,8 @@ func TestDevicesListsOneTabSeparatedLineEach(t *testing.T) {
 	}
 	for i, want := range []fakeDevice{tablet, phone} {
 		cols := strings.Split(lines[i], "\t")
-		if len(cols) != 5 {
-			t.Fatalf("line %d has %d columns, want NAME LOGIN PAIRED LAST-SEEN ID: %q", i, len(cols), lines[i])
+		if len(cols) != 6 {
+			t.Fatalf("line %d has %d columns, want NAME LOGIN PAIRED LAST-SEEN ID FORWARDING: %q", i, len(cols), lines[i])
 		}
 		if cols[0] != want.Name || cols[1] != want.Login || cols[4] != want.ID {
 			t.Errorf("line %d = %q, want name %q, login %q, id %q", i, cols, want.Name, want.Login, want.ID)
@@ -207,6 +214,26 @@ func TestDevicesListsOneTabSeparatedLineEach(t *testing.T) {
 			if c == "" || strings.Contains(c, "T05:06:07Z") {
 				t.Errorf("line %d: time column %q must be readable, not the raw RFC 3339 stamp", i, c)
 			}
+		}
+	}
+}
+
+func TestDevicesShowsForwardingAsTheLastColumn(t *testing.T) {
+	following := fakeDevice{ID: "d-fff111", Name: "Watch", Forwarding: "on", LastFollowed: "2026-03-04T05:10:00Z"}
+	stopped := fakeDevice{ID: "d-ggg222", Name: "Pad", Forwarding: "stopped", LastFollowed: "2026-03-04T05:10:00Z"}
+	f := startFake(t, []fakeDevice{tablet, following, stopped})
+	out, err := run(Devices, "--port", f.Port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want 3 lines, got %q", out)
+	}
+	for i, want := range []string{"", "on", "stopped 2026-03-04T05:10:00Z"} {
+		cols := strings.Split(lines[i], "\t")
+		if len(cols) != 6 || cols[4] == "" || cols[5] != want {
+			t.Errorf("line %d = %q, want ID in column 5 and %q last", i, cols, want)
 		}
 	}
 }
@@ -234,12 +261,12 @@ func TestDevicesJSONPrintsTheServersBody(t *testing.T) {
 }
 
 func TestDevicesListKeepsAControlCharacterOutOfTheColumns(t *testing.T) {
-	f := startFake(t, []fakeDevice{{"d-ccc333", "Ev\til\nname", ""}})
+	f := startFake(t, []fakeDevice{{ID: "d-ccc333", Name: "Ev\til\nname"}})
 	out, err := run(Devices, "--port", f.Port)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(out, "\n") != 1 || len(strings.Split(strings.TrimSuffix(out, "\n"), "\t")) != 5 {
+	if strings.Count(out, "\n") != 1 || len(strings.Split(strings.TrimSuffix(out, "\n"), "\t")) != 6 {
 		t.Errorf("a name with a tab and a newline broke the row: %q", out)
 	}
 }
@@ -321,7 +348,7 @@ func TestDevicesRevokeAllRevokesEveryDevice(t *testing.T) {
 }
 
 func TestDevicesNameMatchesExactlyNotAsAPrefix(t *testing.T) {
-	f := startFake(t, []fakeDevice{{"d-1", "Safari", ""}, {"d-2", "Safari on Mac", ""}})
+	f := startFake(t, []fakeDevice{{ID: "d-1", Name: "Safari"}, {ID: "d-2", Name: "Safari on Mac"}})
 	if _, err := run(Devices, "revoke", "Safari", "--port", f.Port); err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +393,7 @@ func TestDevicesUnknownNameOrIdExits1AndChangesNothing(t *testing.T) {
 }
 
 func TestDevicesAmbiguousNameExits1ListsTheIdsAndChangesNothing(t *testing.T) {
-	f := startFake(t, []fakeDevice{{"d-111", "Safari on Mac", ""}, {"d-222", "Safari on Mac", ""}, tablet})
+	f := startFake(t, []fakeDevice{{ID: "d-111", Name: "Safari on Mac"}, {ID: "d-222", Name: "Safari on Mac"}, tablet})
 	for _, args := range [][]string{{"revoke", "Safari on Mac"}, {"rename", "Safari on Mac", "Slate"}} {
 		_, err := run(Devices, append(args, "--port", f.Port)...)
 		if err == nil || isUsage(err) {
@@ -402,7 +429,7 @@ func TestPairAndDevicesHaveUsageText(t *testing.T) {
 }
 
 func TestDevicesKeyThatIsOneIdAndAnotherNameIsAmbiguous(t *testing.T) {
-	f := startFake(t, []fakeDevice{tablet, {"d-evil99", "d-aaa111", ""}})
+	f := startFake(t, []fakeDevice{tablet, {ID: "d-evil99", Name: "d-aaa111"}})
 	for _, args := range [][]string{{"revoke", "d-aaa111"}, {"rename", "d-aaa111", "Slate"}} {
 		_, err := run(Devices, append(args, "--port", f.Port)...)
 		if err == nil || isUsage(err) {

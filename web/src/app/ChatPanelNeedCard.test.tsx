@@ -118,13 +118,12 @@ test('a 409 shows no error, and the card shows answered once the next snapshot s
   expect(screen.queryByText(/already answered/)).toBeNull();
 });
 
-test('a 409 with the card still open for now shows no error either', async () => {
+test('a 409 with the card still open after the reread shows the server\'s message', async () => {
   serve(() => [entry('need-1', 'Pick a port')], () => new Response(JSON.stringify({ error: 'item q-port is already answered' }), { status: 409 }));
   await shown();
   fireEvent.click(screen.getByRole('radio', { name: /Harbor/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Send answers' }));
-  await waitFor(() => expect((screen.getByRole('button', { name: 'Send answers' }) as HTMLButtonElement).disabled).toBe(false));
-  expect(screen.queryByRole('alert')).toBeNull();
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('item q-port is already answered'));
 });
 
 test('any other failure shows its error on the card and keeps the choice', async () => {

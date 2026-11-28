@@ -86,8 +86,8 @@ func (r *needRig) cardsFor(fleet, ship string) []needEntry {
 	return out
 }
 
-// cardFor waits for the ship's one card and returns it.
-func (r *needRig) cardFor(fleet, ship string) needEntry {
+// stopCardFor waits for the ship's one card and returns it.
+func (r *needRig) stopCardFor(fleet, ship string) needEntry {
 	r.t.Helper()
 	var got []needEntry
 	waitFor(r.t, "a need card for "+ship+" in the "+fleet+" chat", func() bool { got = r.cardsFor(fleet, ship); return len(got) > 0 })
@@ -104,14 +104,14 @@ func TestAPermissionPromptPostsOneCardWithItsToolInItsShipsFleet(t *testing.T) {
 	r.setShips(needing("s-work", "work", "permission:Bash", "p-work"), copilot)
 	r.start()
 
-	c := r.cardFor("work", "s-work")
+	c := r.stopCardFor("work", "s-work")
 	if got := c.Card; got.ItemKind != "permission" || got.Item != "p-work" || got.State != NeedOpen || got.Tool != "Bash" || !got.Answerable {
 		t.Errorf("work's card = %+v, want an open answerable permission card for tool Bash whose item is the stop id p-work", got)
 	}
 	if c.Text == "" || !safeCardID.MatchString(c.ID) {
 		t.Errorf("card text %q and id %q, want a line of text and one URL path segment of [A-Za-z0-9_-]", c.Text, c.ID)
 	}
-	h := r.cardFor("home", "s-home")
+	h := r.stopCardFor("home", "s-home")
 	if got := h.Card; got.ItemKind != "permission" || got.Item != "p-home" || !got.Answerable {
 		t.Errorf("home's card = %+v, want an answerable permission card for Copilot's notification:permission_prompt", got)
 	}
@@ -125,10 +125,10 @@ func TestAFinishedTurnPostsAStopCardAndAShipNotStartedPostsOneWithNoAnswer(t *te
 	r.setShips(needing("s-work", "work", "stop", "t-1"), needing("s-home", "home", "not_started", "n-1"))
 	r.start()
 
-	if got := r.cardFor("work", "s-work").Card; got.ItemKind != "stop" || got.Item != "t-1" || got.State != NeedOpen || !got.Answerable {
+	if got := r.stopCardFor("work", "s-work").Card; got.ItemKind != "stop" || got.Item != "t-1" || got.State != NeedOpen || !got.Answerable {
 		t.Errorf("work's card = %+v, want an open answerable stop card with the stop id t-1", got)
 	}
-	if got := r.cardFor("home", "s-home").Card; got.ItemKind != "not_started" || got.Item != "n-1" || got.State != NeedOpen || got.Answerable {
+	if got := r.stopCardFor("home", "s-home").Card; got.ItemKind != "not_started" || got.Item != "n-1" || got.State != NeedOpen || got.Answerable {
 		t.Errorf("home's card = %+v, want an open not_started card with nothing to answer", got)
 	}
 }
@@ -144,7 +144,7 @@ func TestOtherNeedsYouReasonsAndShipsOutsideAFleetPostNoCard(t *testing.T) {
 	r.setShips(append(quiet, needing("s-work", "work", "permission:Bash", "p1"))...)
 	r.start()
 
-	r.cardFor("work", "s-work")
+	r.stopCardFor("work", "s-work")
 	holdCards(t, 300*time.Millisecond, func() string {
 		if n := len(r.logged("work")); n != 1 {
 			return "the work chat holds a need card for a reason no card is posted for, for AdmiralBot's chat, for Admiral itself, or for a ship in no fleet"
@@ -162,7 +162,7 @@ func TestAPermissionPromptAMenuCannotAnswerPostsACardWithNoAnswer(t *testing.T) 
 	r.start()
 
 	for _, name := range []string{"q-ask", "q-plan", "q-bare", "q-codex"} {
-		if got := r.cardFor("work", name).Card; got.ItemKind != "permission" || got.State != NeedOpen || got.Answerable {
+		if got := r.stopCardFor("work", name).Card; got.ItemKind != "permission" || got.State != NeedOpen || got.Answerable {
 			t.Errorf("%s's card = %+v, want an open permission card with nothing to answer: the menu is answered in the terminal", name, got)
 		}
 	}
@@ -173,12 +173,12 @@ func TestAStopWithNoIdentityYetPostsNoCardUntilItHasOne(t *testing.T) {
 	r.setShips(needing("s-work", "work", "permission:Bash", ""))
 	r.start()
 	r.setShips(needing("s-work", "work", "permission:Bash", ""), needing("s-home", "home", "stop", "t-1"))
-	r.cardFor("home", "s-home")
+	r.stopCardFor("home", "s-home")
 	if n := len(r.logged("work")); n != 0 {
 		t.Fatalf("the work chat holds %d cards for a stop with no id, want none", n)
 	}
 	r.setShips(needing("s-work", "work", "permission:Bash", "p-1"), needing("s-home", "home", "stop", "t-1"))
-	if got := r.cardFor("work", "s-work").Card.Item; got != "p-1" {
+	if got := r.stopCardFor("work", "s-work").Card.Item; got != "p-1" {
 		t.Errorf("the card's item = %q, want the stop id p-1 the ship got", got)
 	}
 }
@@ -188,7 +188,7 @@ func TestAnIdenticalPromptAfterAnEndedOneGetsItsOwnCardAndARestartPostsNothingTw
 	first := needing("s-work", "work", "permission:Bash", "p-1")
 	r.setShips(first)
 	r.start()
-	one := r.cardFor("work", "s-work")
+	one := r.stopCardFor("work", "s-work")
 
 	r.setShips(needing("s-work", "work", "permission:Bash", "p-2"))
 	var cards []needEntry
@@ -200,7 +200,7 @@ func TestAnIdenticalPromptAfterAnEndedOneGetsItsOwnCardAndARestartPostsNothingTw
 
 	r.restart()
 	r.setShips(needing("s-work", "work", "permission:Bash", "p-2"), needing("s-home", "home", "stop", "t-1"))
-	r.cardFor("home", "s-home")
+	r.stopCardFor("home", "s-home")
 	if n := len(r.logged("work")); n != 2 {
 		t.Errorf("after a restart the work chat holds %d cards, want the same two", n)
 	}
@@ -211,8 +211,8 @@ func TestAStopThatEndsWithNoRouteAnsweringItSettlesInTheTerminalOnce(t *testing.
 	ask := needing("s-work", "work", "permission:Bash", "p-1")
 	r.setShips(ask, needing("s-home", "home", "stop", "t-1"))
 	r.start()
-	pa := r.cardFor("work", "s-work")
-	stop := r.cardFor("home", "s-home")
+	pa := r.stopCardFor("work", "s-work")
+	stop := r.stopCardFor("home", "s-home")
 
 	// A permission denied at the terminal turns the prompt into a finished turn, with a new stop.
 	r.setShips(needing("s-work", "work", "stop", "t-2"), resumed(needing("s-home", "home", "stop", "t-1")))
@@ -238,8 +238,8 @@ func TestAStopAnsweredThroughAShipsRouteReadsAnsweredInTheInboxOrViaAdmiralBot(t
 	b := needing("s-home", "home", "stop", "t-1")
 	r.setShips(a, b)
 	r.start()
-	ca := r.cardFor("work", "s-work")
-	cb := r.cardFor("home", "s-home")
+	ca := r.stopCardFor("work", "s-work")
+	cb := r.stopCardFor("home", "s-home")
 
 	byHand, byBot := resumed(a), resumed(b)
 	byHand.StopAnswered = &ships.StopAnswered{StopID: "p-1"}
@@ -255,7 +255,7 @@ func TestAShipThatMoorsAnchorsOrLeavesTheListMovesOnItsOpenCards(t *testing.T) {
 	r.start()
 	ids := map[string]string{}
 	for _, n := range []string{"s-moor", "s-anchor", "s-gone"} {
-		ids[n] = r.cardFor("work", n).ID
+		ids[n] = r.stopCardFor("work", n).ID
 	}
 
 	moored, anchored := needing("s-moor", "work", "", ""), needing("s-anchor", "work", "", "")
@@ -271,7 +271,7 @@ func TestTheStateOfACardSurvivesARestartOfTheServer(t *testing.T) {
 	a := needing("s-work", "work", "stop", "t-1")
 	r.setShips(a)
 	r.start()
-	c := r.cardFor("work", "s-work")
+	c := r.stopCardFor("work", "s-work")
 	r.setShips(resumed(a))
 	r.waitState("work", c.ID, "settled_terminal", "")
 
@@ -287,7 +287,7 @@ func TestTappingAllowSendsTheChoiceBoundToTheStopAndTheCardReadsAnsweredInTheCha
 	a := needing("s-work", "work", "permission:Bash", "p-1")
 	r.setShips(a)
 	r.start()
-	c := r.cardFor("work", "s-work")
+	c := r.stopCardFor("work", "s-work")
 
 	// The ship leaves its prompt the instant the keys land, and the next pass may see that before the route returns.
 	stop := make(chan struct{})
@@ -335,7 +335,7 @@ func TestDenyingThroughTheCardAnswersItInTheChatAndTheNextPromptGetsItsOwnCard(t
 	r := newNeedRig(t)
 	r.setShips(needing("s-work", "work", "permission:Bash", "p-1"))
 	r.start()
-	c := r.cardFor("work", "s-work")
+	c := r.stopCardFor("work", "s-work")
 
 	if rec := r.post("work", c.ID, map[string]any{"choice": "deny"}); rec.Code != http.StatusOK {
 		t.Fatalf("POST deny = %d %s, want 200", rec.Code, rec.Body)
@@ -353,7 +353,7 @@ func TestSendingTextOnAStopCardTypesItBoundToTheStop(t *testing.T) {
 	r := newNeedRig(t)
 	r.setShips(needing("s-work", "work", "stop", "t-1"))
 	r.start()
-	c := r.cardFor("work", "s-work")
+	c := r.stopCardFor("work", "s-work")
 
 	if rec := r.post("work", c.ID, map[string]any{"text": "now run the tests"}); rec.Code != http.StatusOK {
 		t.Fatalf("POST text = %d %s, want 200", rec.Code, rec.Body)
@@ -370,7 +370,7 @@ func TestATapOnAStopTheShipHasLeftIsRefusedWithTheItemIsAnsweredMessage(t *testi
 			r := newNeedRig(t)
 			r.setShips(needing("s-work", "work", "permission:Bash", "p-1"))
 			r.start()
-			c := r.cardFor("work", "s-work")
+			c := r.stopCardFor("work", "s-work")
 			r.failStops(err)
 
 			rec := r.post("work", c.ID, map[string]any{"choice": "allow"})
@@ -385,7 +385,7 @@ func TestAnAnswerTheStopCannotTakeIs400WithTheShipsReason(t *testing.T) {
 	r := newNeedRig(t)
 	r.setShips(needing("s-work", "work", "stop", "t-1"))
 	r.start()
-	c := r.cardFor("work", "s-work")
+	c := r.stopCardFor("work", "s-work")
 	r.failStops(&ships.StopRefused{Msg: "text cannot be typed into the pane"})
 
 	rec := r.post("work", c.ID, map[string]any{"text": "bad"})
@@ -403,7 +403,7 @@ func TestATapOnASettledCardIsRefusedAndSendsNothing(t *testing.T) {
 	a := needing("s-work", "work", "permission:Bash", "p-1")
 	r.setShips(a)
 	r.start()
-	c := r.cardFor("work", "s-work")
+	c := r.stopCardFor("work", "s-work")
 	r.setShips(resumed(a))
 	r.waitState("work", c.ID, "settled_terminal", "")
 
@@ -424,7 +424,7 @@ func TestABodyThatDoesNotFitTheCardIsRefusedAndSendsNothing(t *testing.T) {
 	r.setShips(needing("s-perm", "work", "permission:Bash", "p-1"), needing("s-stop", "work", "stop", "t-1"),
 		needing("s-menu", "work", "permission:ExitPlanMode", "m-1"), needing("s-new", "work", "not_started", "n-1"))
 	r.start()
-	perm, stop, menu, fresh := r.cardFor("work", "s-perm"), r.cardFor("work", "s-stop"), r.cardFor("work", "s-menu"), r.cardFor("work", "s-new")
+	perm, stop, menu, fresh := r.stopCardFor("work", "s-perm"), r.stopCardFor("work", "s-stop"), r.stopCardFor("work", "s-menu"), r.stopCardFor("work", "s-new")
 
 	for name, c := range map[string]struct {
 		card string
@@ -454,7 +454,7 @@ func TestAMarkOnAStopThatStillStandsSettlesNothingAndTheEndOfTheStopSettlesItAns
 	a := needing("s-work", "work", "stop", "t-1")
 	r.setShips(a)
 	r.start()
-	c := r.cardFor("work", "s-work")
+	c := r.stopCardFor("work", "s-work")
 
 	// An Escape at an idle prompt marks the stop but ends nothing.
 	marked := a

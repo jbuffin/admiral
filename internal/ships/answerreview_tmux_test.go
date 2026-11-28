@@ -24,9 +24,7 @@ type answerRig struct {
 func newAnswerRig(t *testing.T, maxShips int) *answerRig {
 	t.Helper()
 	r := newWakeRig(t, maxShips)
-	old := moor.WakeDebounce
-	moor.WakeDebounce = 24 * time.Hour
-	t.Cleanup(func() { moor.WakeDebounce = old })
+	r.s.WakeDebounce = 24 * time.Hour
 	a := &answerRig{wakeRig: r, mux: http.NewServeMux(), gh: r.polling()}
 	r.s.Routes(a.mux)
 	return a
@@ -63,6 +61,7 @@ func (a *answerRig) shipPRs(t *testing.T) []moor.PR {
 }
 
 func TestAMooredShipsPRShowsItsFeedbackAndTheAnswerReviewWouldSend(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 3)
 	a.reviewed(t)
 
@@ -77,6 +76,7 @@ func TestAMooredShipsPRShowsItsFeedbackAndTheAnswerReviewWouldSend(t *testing.T)
 }
 
 func TestTheAnswerCountsTheNextRoundOfAShipThatHasHadOne(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 3)
 	a.gh.set(wakePR, aliceReview())
 	a.mooredResume(t, 2, "/commodore resume run-7", 30*time.Minute)
@@ -90,6 +90,7 @@ func TestTheAnswerCountsTheNextRoundOfAShipThatHasHadOne(t *testing.T) {
 }
 
 func TestAMooredPRWithNoNewWakingEventsShowsNeitherField(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name string
 		st   moor.Status
@@ -115,6 +116,7 @@ func TestAMooredPRWithNoNewWakingEventsShowsNeitherField(t *testing.T) {
 }
 
 func TestAPRThatAnswersBeforeTheFirstPollShowsNoFeedback(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 3)
 	a.mooredResume(t, 0, "/commodore resume run-7", 30*time.Minute)
 
@@ -124,6 +126,7 @@ func TestAPRThatAnswersBeforeTheFirstPollShowsNoFeedback(t *testing.T) {
 }
 
 func TestAShipWithNoValidResumeTextShowsFeedbackButNoAnswer(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 3)
 	a.gh.set(wakePR, aliceReview())
 	a.mooredResume(t, 0, "not a resume invocation", 30*time.Minute)
@@ -135,6 +138,7 @@ func TestAShipWithNoValidResumeTextShowsFeedbackButNoAnswer(t *testing.T) {
 }
 
 func TestAListedShipThatIsLiveCarriesNoFeedbackOrAnswer(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 3)
 	a.reviewed(t)
 	if prs := a.shipPRs(t); len(prs) != 1 || prs[0].Answer == "" {
@@ -154,6 +158,7 @@ func TestAListedShipThatIsLiveCarriesNoFeedbackOrAnswer(t *testing.T) {
 }
 
 func TestTheShipsListJSONCarriesFeedbackAndAnswerOnTheMooredPR(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 3)
 	a.reviewed(t)
 	rec := httptest.NewRecorder()
@@ -175,6 +180,7 @@ func TestTheShipsListJSONCarriesFeedbackAndAnswerOnTheMooredPR(t *testing.T) {
 }
 
 func TestAnswerReviewRefusesWhatIsNotAMooredShipWithAPRItCarries(t *testing.T) {
+	t.Parallel()
 	body := `{"pr":"` + wakePR + `"}`
 	t.Run("an unknown ship is 404, whatever the PR", func(t *testing.T) {
 		a := newAnswerRig(t, 3)
@@ -245,6 +251,7 @@ func TestAnswerReviewRefusesWhatIsNotAMooredShipWithAPRItCarries(t *testing.T) {
 }
 
 func TestAnswerReviewRelaunchesTheShipAttendedWithTheFeedbackInAFile(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 0) // a cap of 0 refuses every autopilot launch: a hand launch is never blocked by it
 	a.reviewed(t)
 	moored := a.state(t)
@@ -287,6 +294,7 @@ func TestAnswerReviewRelaunchesTheShipAttendedWithTheFeedbackInAFile(t *testing.
 }
 
 func TestAnswerReviewDoesNotCarryTheRequestsTextIntoThePrompt(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 3)
 	a.reviewed(t)
 
@@ -302,6 +310,7 @@ func TestAnswerReviewDoesNotCarryTheRequestsTextIntoThePrompt(t *testing.T) {
 }
 
 func TestTheNextPollAfterAnAnsweredRoundDoesNotWakeOnTheSameReview(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 3)
 	a.reviewed(t)
 	if rec := a.answer("saltpaw", `{"pr":"`+wakePR+`"}`); rec.Code != http.StatusCreated {
@@ -310,7 +319,7 @@ func TestTheNextPollAfterAnAnsweredRoundDoesNotWakeOnTheSameReview(t *testing.T)
 	a.started(t, 1)
 	a.kill(t, "saltpaw")
 	a.moored(t, 1) // the round ends and the ship moors again, now
-	moor.WakeDebounce = 0
+	a.s.WakeDebounce = time.Nanosecond
 
 	a.s.PollMoored(context.Background())
 
@@ -325,6 +334,7 @@ func TestTheNextPollAfterAnAnsweredRoundDoesNotWakeOnTheSameReview(t *testing.T)
 }
 
 func TestAFailedAnswerLaunchPutsTheWakeStateBack(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 3)
 	a.reviewed(t)
 	before := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
@@ -353,6 +363,7 @@ func TestAFailedAnswerLaunchPutsTheWakeStateBack(t *testing.T) {
 }
 
 func TestAnAnswerBuildsItsRoundFromTheWakeStateStoredWhenItIsMade(t *testing.T) {
+	t.Parallel()
 	a := newAnswerRig(t, 3)
 	a.reviewed(t)
 	// A state saved after the poll that showed the button: the answer reads the stored one, not the poll's.
