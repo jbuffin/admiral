@@ -68,7 +68,7 @@ func TestRevokingTheDeviceClosesItsFollowingSocket(t *testing.T) {
 		}
 	}
 	hub := server.NewHub()
-	followers := push.NewFollowers(push.FollowersConfig{})
+	followers := push.NewFollowers(push.FollowersConfig{Now: time.Now, Ready: func() bool { return true }})
 	s := &server.Server{Hub: hub, Bearer: auth.BearerDevice, Messages: map[string]server.MessageHandler{"push_follow": followers.Handle}}
 	mux := http.NewServeMux()
 	g.a.Routes(mux)

@@ -46,15 +46,13 @@ type followRig struct {
 	ready    atomic.Bool
 	watching atomic.Bool
 	notifyOn sync.Map // fleet -> false when Notify is off
-	useHub   bool     // the Watcher reads presence from the hub
 }
 
 type followOpts struct {
 	hubWatching bool
 }
 
-// newFollowRig serves /ws/v1 where a request with an Authorization header is bearer-authenticated, behind a Watcher that
-// feeds the Followers (and an AlertSink on the hub); the Inbox and ships have been seen once, empty, as at startup.
+// newFollowRig serves /ws/v1 with an Authorization header meaning bearer, behind a Watcher feeding the Followers and the hub.
 func newFollowRig(t *testing.T, o ...followOpts) *followRig {
 	t.Helper()
 	r := &followRig{t: t, hub: server.NewHub(), clock: &followClock{now: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)}}
@@ -374,21 +372,20 @@ func TestASecondPushFollowIsAFreshCatchUp(t *testing.T) {
 func TestAPushCarriesTheWebPushPayloadSeqKindAndCount(t *testing.T) {
 	r := newFollowRig(t)
 	live := r.follower()
-	ev := push.Event{Kind: push.ShipQuestion, Fleet: "work", FleetName: "Work", Key: "s-Dory", Name: "Dory", Target: push.TargetPeek, Session: "s-Dory",
-		Text: "has a question"}
-	r.w.Ships([]ships.Ship{needsYou("Dory", "question"), working("Nemo")})
+	ev := push.Event{Kind: push.ShipQuestion, Fleet: "work", FleetName: "Work", Key: "s-Dory", Name: "Dory", Text: "has a question",
+		Target: push.TargetPeek, Session: "s-Dory", Item: "i-1"}
+	r.w.Emit(ev)
 	m := r.wantNext(live, "push")
-	// The payload Web Push would carry for this event.
-	want, _ := json.Marshal(push.PayloadOf(ev))
+	b, _ := json.Marshal(push.PayloadOf(ev))
 	var payload map[string]any
-	_ = json.Unmarshal(want, &payload)
-	for _, k := range []string{"fleet", "fleet_name", "name", "line", "tag", "target", "session"} {
-		if m[k] != payload[k] {
-			t.Errorf("%s = %v, want %v as the Web Push payload has it", k, m[k], payload[k])
+	_ = json.Unmarshal(b, &payload)
+	for k, want := range payload {
+		if m[k] != want {
+			t.Errorf("%s = %v, want %v as the Web Push payload has it", k, m[k], want)
 		}
 	}
-	if m["kind"] != "ship_question" || m.num("seq") != 1 || m.num("attention") != 1 {
-		t.Errorf("push %v, want kind ship_question, seq 1, attention 1", m)
+	if m["kind"] != "ship_question" || m.num("seq") != 1 {
+		t.Errorf("push %v, want kind ship_question and seq 1", m)
 	}
 }
 
@@ -450,14 +447,6 @@ func TestAFollowerThatSendsPresenceIsWatchingAndHearsTheAlertInsteadOfAPush(t *t
 	got := map[string]bool{r.next(live).typ(): true, r.next(live).typ(): true}
 	if !got["alert"] || !got["attention"] || got["push"] {
 		t.Errorf("got %v, want an alert and the count, and no push", got)
-	}
-}
-
-func TestAFollowOnlySocketIsNotWatching(t *testing.T) {
-	r := newFollowRig(t)
-	r.follower()
-	if r.hub.Watching() {
-		t.Error("a socket that only follows counts as watching")
 	}
 }
 

@@ -117,13 +117,7 @@ func TestFollowingDoesNotMakeASocketWatchingButPresenceStillDoes(t *testing.T) {
 	if err := conn.Write(context.Background(), websocket.MessageText, b); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for !f.hub.Watching() {
-		if time.Now().After(deadline) {
-			t.Fatal("a following bearer socket that sent presence never counted as watching")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	eventually(t, "a following bearer socket that sent presence to count as watching", f.hub.Watching)
 	f.hub.SendWatching(map[string]any{"type": "alert"})
 	if got, err := read(t, conn, 2*time.Second); err != nil || got != "alert" {
 		t.Errorf("got %q, %v, want alert", got, err)
@@ -136,5 +130,19 @@ func TestClosingAClientEndsItsSocket(t *testing.T) {
 	c.Close()
 	if _, err := read(t, conn, 2*time.Second); err == nil || errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("the socket stayed open, read gave %v", err)
+	}
+}
+
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.After(5 * time.Second)
+	for !cond() {
+		select {
+		case <-tick.C:
+		case <-deadline:
+			t.Fatalf("timed out waiting for %s", what)
+		}
 	}
 }
