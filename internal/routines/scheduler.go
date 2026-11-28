@@ -176,22 +176,23 @@ func (s *Scheduler) Changed() {
 	}
 }
 
-// awaitHost waits for the ships host's first read; a nil Ready never waits. It is false when ctx ends first.
-func (s *Scheduler) awaitHost(ctx context.Context) bool {
-	if s.Ready == nil {
+// awaitHost waits for ready, the ships host's first read; a nil ready never waits. It is false when ctx ends first.
+func awaitHost(ctx context.Context, ready <-chan struct{}) bool {
+	if ready == nil {
 		return true
 	}
 	select {
 	case <-ctx.Done():
 		return false
-	case <-s.Ready:
+	case <-ready:
 		return true
 	}
 }
 
-// RunEvents handles queued events in order once the host has read, so a launch never waits on the host under the scheduler's lock.
-func (s *Scheduler) RunEvents(ctx context.Context, queue <-chan Event) {
-	if !s.awaitHost(ctx) {
+// RunEvents handles queued events in order once ready closes, so a launch never waits on the host under the scheduler's lock.
+// A nil ready is a host that never runs, where each launch answers 503 at once and the event becomes a proposal.
+func (s *Scheduler) RunEvents(ctx context.Context, queue <-chan Event, ready <-chan struct{}) {
+	if !awaitHost(ctx, ready) {
 		return
 	}
 	for {
@@ -210,7 +211,7 @@ func (s *Scheduler) RunEvents(ctx context.Context, queue <-chan Event) {
 // Run catches up missed runs, then ticks until ctx ends, sleeping until the earliest next run or a Changed.
 func (s *Scheduler) Run(ctx context.Context) {
 	s.init()
-	if !s.awaitHost(ctx) {
+	if !awaitHost(ctx, s.Ready) {
 		return
 	}
 	_ = s.CatchUp(ctx)

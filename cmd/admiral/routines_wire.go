@@ -143,7 +143,7 @@ func wallClockEnder(host *sessionhost.Host) func(session string, minutes int) er
 
 // wireEvents routes each source event to the scheduler, and answers an event routine's catalog check from the sources.
 // A held ship's dedupe_key is read from the trigger record that launched it.
-func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.Scheduler, list func() []ships.Ship, lk *lookout.Lookout, rv *reviewer.Reviewer, acts *lookout.Acts) {
+func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.Scheduler, list func() []ships.Ship, lk *lookout.Lookout, rv *reviewer.Reviewer, acts *lookout.Acts, hostRuns bool) {
 	sched.Enrich = lk.Enrich
 	sched.Review = rv.Review
 	sched.Acts = acts
@@ -178,7 +178,11 @@ func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.
 	}
 	// one worker keeps events in order and off the source's read loop; a full queue drops the event
 	queue := make(chan routines.Event, 256)
-	go sched.RunEvents(context.Background(), queue)
+	ready := sched.Ready
+	if !hostRuns {
+		ready = nil
+	}
+	go sched.RunEvents(context.Background(), queue, ready)
 	sup.OnEvent = func(source string, ev sources.Event) {
 		fleet, ok := sup.SourceFleet(source)
 		if !ok {
