@@ -142,7 +142,8 @@ func TestARefusedQuestionAnswerMarksNoStopAnswered(t *testing.T) {
 	t.Parallel()
 	p := newAnswerPane(t, "copilot", []conversation.Item{askItem("q-1", true, "A", "B")})
 	p.needsYou("permission:AskUserQuestion")
-	if code, _ := p.postAs("work", "/answer", `{"card":"question","reason":"permission:AskUserQuestion","item":"elsewhere","option":1}`); code != http.StatusConflict {
+	id := p.stopID()
+	if code, _ := p.postAs("work", "/answer", `{"card":"question","reason":"permission:AskUserQuestion","item":"elsewhere","option":1,"stop_id":"`+id+`"}`); code != http.StatusConflict {
 		t.Fatalf("answer to another item = %d, want 409", code)
 	}
 	if got := p.option(sessionhost.OptStopAnswered); got != "" {
