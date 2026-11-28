@@ -16,6 +16,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/needcard"
 	"github.com/jbuffin/admiral/internal/outcomes"
 )
@@ -333,6 +334,18 @@ func (s *Service) refreshRules(r needRec, c map[string]json.RawMessage) {
 			return
 		}
 	}
+}
+
+// needCardHeader is the line a reply under a need card opens with: the card's identity only, never the ship's own words.
+func (s *fleetChat) needCardHeader(cardID string) (string, *launcher.Error) {
+	rec, ok := s.needs().get(cardID)
+	if !ok || rec.Fleet != s.key {
+		return "", &launcher.Error{Status: http.StatusNotFound, Msg: "no need card " + cardID + " in the " + s.key + " chat"}
+	}
+	if rec.State != NeedOpen {
+		return "", &launcher.Error{Status: http.StatusConflict, Msg: "item " + rec.Item + " is already answered"}
+	}
+	return "[Need card: " + oneLine(cardID, 80) + " · ship " + oneLine(rec.Session, 120) + " · item " + oneLine(rec.Item, 120) + " · " + oneLine(rec.Kind, 40) + "]", nil
 }
 
 func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {

@@ -789,13 +789,25 @@ func (s *fleetChat) serveStart(w http.ResponseWriter, r *http.Request) {
 
 func (s *fleetChat) serveSend(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Text string `json:"text"`
+		Text     string `json:"text"`
+		NeedCard string `json:"need_card"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
-	if err := s.send(req.Text); err != nil {
+	text := req.Text
+	if req.NeedCard != "" {
+		header, lerr := s.needCardHeader(req.NeedCard)
+		if lerr != nil {
+			writeError(w, lerr.Status, lerr.Msg)
+			return
+		}
+		if t := sessionhost.CleanMessage(text); t != "" {
+			text = header + "\n\n" + t
+		}
+	}
+	if err := s.send(text); err != nil {
 		writeError(w, err.Status, err.Msg)
 		return
 	}

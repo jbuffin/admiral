@@ -91,8 +91,26 @@ function StopCardBody({ id, card, chat }: { id: string; card: StopCard; chat: Ch
   );
 }
 
+/** A reply in words under the card, for the engineer to talk it over with AdmiralBot before acting on the card's buttons. */
+function ReplyBox({ id, chat }: { id: string; chat: Chat }) {
+  const r = chat.replies[id] ?? { text: '', sending: false, error: '' };
+  return (
+    <div class="chat-card-reply">
+      <textarea class="inbox-note" value={r.text} rows={2} placeholder="Reply to AdmiralBot" aria-label="Reply to AdmiralBot" onInput={(e) => chat.editReply(id, (e.currentTarget as HTMLTextAreaElement).value)} />
+      <Actions class="inbox-send-row">
+        <Button disabled={r.sending || r.text.trim() === ''} onClick={() => void chat.replyNeed(id)} label="Send reply" />
+      </Actions>
+      {r.error ? <p class="line error" role="alert">{r.error}</p> : null}
+    </div>
+  );
+}
+
+/** Whether the card has a reply: every open card except one the engineer answers only in the terminal. */
+const repliable = (card: NeedCard) => card.item_kind !== 'not_started' && !(card.item_kind === 'permission' && !card.answerable);
+
 function OpenNeedCard({ item, chat, fleet }: { item: Need; chat: Chat; fleet: string }) {
   const card = item.card;
+  const reply = repliable(card) ? <ReplyBox id={item.id} chat={chat} /> : null;
   const acting = useNeedActing(item.id, chat);
   const session = 'ship' in card ? card.ship : '_admiral';
   const joined = inboxItems.value.find((i) => i.session === session && i.id === card.item);
@@ -112,6 +130,7 @@ function OpenNeedCard({ item, chat, fleet }: { item: Need; chat: Chat; fleet: st
         <p class="chat-card-eyebrow">{eyebrow}</p>
         <p class="line">{title}{card.tool && !title.includes(card.tool) ? ` (${card.tool})` : ''}</p>
         <StopCardBody id={item.id} card={card} chat={chat} />
+        {reply}
       </div>
     );
   }
@@ -122,6 +141,7 @@ function OpenNeedCard({ item, chat, fleet }: { item: Need; chat: Chat; fleet: st
         <p class="chat-card-eyebrow">{eyebrow}</p>
         {card.questions.length === 1 && item.text.trim() === card.questions[0].text.trim() ? null : <p class="line">{title}</p>}
         <PeekQuestions questions={card.questions} draft={draft} edit={(fn) => chat.editDraft(item.id, fn)} onSend={(b) => void chat.answerNeed(item.id, b)} />
+        {reply}
       </div>
     );
   }
@@ -142,6 +162,7 @@ function OpenNeedCard({ item, chat, fleet }: { item: Need; chat: Chat; fleet: st
         <CampaignDraftBody entry={entry} acting={acting} fold={noFold} createWith={(b) => chat.answerNeed(item.id, b, true)} />
       )}
       <Failure message={acting.error} />
+      {reply}
     </div>
   );
 }
