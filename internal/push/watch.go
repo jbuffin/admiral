@@ -68,6 +68,45 @@ type Watcher struct {
 	// pushedShips and pushedInbox hold the event behind each key whose last decided outcome was Push, per snapshot
 	// that detects it; events from Emit are in neither, so they never clear.
 	pushedShips, pushedInbox map[string]Event
+	// lastShips and lastItems are the lists last processed, for the sinks that follow the count.
+	lastShips []ships.Ship
+	lastItems []inbox.Item
+}
+
+// snapshot tells the sinks that follow the count which lists have been processed; called with w.mu released.
+func (w *Watcher) snapshot(shipList []ships.Ship, items []inbox.Item, ok bool) {
+	if !ok {
+		return
+	}
+	for _, s := range w.sinks {
+		if sn, is := s.(Snapshotter); is {
+			func() {
+				defer recoverSink()
+				sn.Snapshot(shipList, items)
+			}()
+		}
+	}
+}
+
+// settle runs after a snapshot's clears and events, so a count change that a push carried is not sent again.
+func (w *Watcher) settle(ok bool) {
+	if !ok {
+		return
+	}
+	for _, s := range w.sinks {
+		if sn, is := s.(Snapshotter); is {
+			func() {
+				defer recoverSink()
+				sn.Settle()
+			}()
+		}
+	}
+}
+
+func recoverSink() {
+	if r := recover(); r != nil {
+		log.Printf("push: a sink panicked: %v", r)
+	}
 }
 
 // takeCleared removes and returns the pushed events whose key is not in live. It is called with w.mu held.
@@ -141,11 +180,7 @@ func (w *Watcher) emit(ev Event, owner *map[string]Event) {
 
 // deliver keeps a panicking sink from taking the feed, and so Admiral, down with it.
 func deliver(s Sink, d Decided) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("push: a sink panicked: %v", r)
-		}
-	}()
+	defer recoverSink()
 	s.Deliver(d)
 }
 
@@ -247,11 +282,16 @@ func (w *Watcher) Ships(list []ships.Ship) {
 		live[k+":ready"] = true
 	}
 	cleared := takeCleared(w.pushedShips, live)
+	w.lastShips = list
+	both := w.inboxSeen
+	items := w.lastItems
 	w.mu.Unlock()
+	w.snapshot(list, items, both)
 	w.sendClears(cleared)
 	for _, ev := range events {
 		w.emit(ev, &w.pushedShips)
 	}
+	w.settle(both)
 }
 
 func (w *Watcher) Inbox(items []inbox.Item) {
@@ -271,11 +311,16 @@ func (w *Watcher) Inbox(items []inbox.Item) {
 	}
 	w.inboxSeen, w.inboxItems = true, seen
 	cleared := takeCleared(w.pushedInbox, seen)
+	w.lastItems = items
+	both := w.shipsSeen
+	shipList := w.lastShips
 	w.mu.Unlock()
+	w.snapshot(shipList, items, both)
 	w.sendClears(cleared)
 	for _, ev := range events {
 		w.emit(ev, &w.pushedInbox)
 	}
+	w.settle(both)
 }
 
 // itemEvent is called with w.mu held.

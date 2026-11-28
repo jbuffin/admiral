@@ -506,6 +506,8 @@ func serve(args []string) error {
 		pushSinks = append(pushSinks, sender)
 	}
 	// A sink joins here: NewWatcher takes it after the notify func.
+	followers := push.NewFollowers(push.FollowersConfig{Ready: func() bool { return inboxService.Scanned() && host.Known() }})
+	pushSinks = append(pushSinks, followers)
 	pushFeed := &push.Feed{Ships: shipService.List, Items: inboxService.List, InboxReady: inboxService.Scanned, ShipsReady: host.Known}
 	pushFeed.Watcher = push.NewWatcher(hub.Watching, func(fleet string) bool {
 		for _, f := range cfg.Current().Fleets {
@@ -721,7 +723,7 @@ func serve(args []string) error {
 	updateChecker := update.New(update.Options{BaseURL: updateBase, Version: updateVersion, Exe: updateExe, Changed: updateChanged,
 		Enabled: func() bool { return updateReachable && cfg.Current().UpdateCheck }})
 	crewService := &crewapi.Service{Home: absDir, Config: cfg, GitHub: sources.FleetGitHub}
-	s := &server.Server{Path: auth.PathName, Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
+	s := &server.Server{Path: auth.PathName, Version: version, Commit: commit, UI: web.UI(), Bearer: auth.BearerDevice, Messages: withMessage(convService.Messages(), "push_follow", followers.Handle), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService, attentionService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, crewService, routineService, campaignService, bridgeService, resourceService, lockRoute, chatService, convService,
 			&usageapi.Service{Home: absDir, Config: cfg.Current, Live: liveUsage, Ships: shipService.List, Now: time.Now, Zone: time.Local},
@@ -922,4 +924,14 @@ func digestReplyPush(fleetName func(fleet string) string, emit func(push.Event))
 	return func(fleet string, r chat.DigestReply) {
 		emit(push.DigestReplyEvent(push.Digest{Fleet: fleet, FleetName: fleetName(fleet), Turn: r.TurnID, Message: r.MessageID, Text: r.Text}))
 	}
+}
+
+// withMessage adds one handler to a copy of the message table.
+func withMessage(m map[string]server.MessageHandler, typ string, h server.MessageHandler) map[string]server.MessageHandler {
+	out := make(map[string]server.MessageHandler, len(m)+1)
+	for k, v := range m {
+		out[k] = v
+	}
+	out[typ] = h
+	return out
 }
