@@ -52,7 +52,9 @@ type Server struct {
 	// Path names how a request reached Admiral, for the move message; nil leaves every client's path unknown.
 	Path func(*http.Request) string
 	// Bearer is whether a request authenticated with a bearer token; nil means none did.
-	Bearer  func(*http.Request) bool
+	Bearer func(*http.Request) bool
+	// Device is the paired device id behind a request, empty when none; nil means none.
+	Device  func(*http.Request) string
 	Modules []Module
 	// Capabilities entries are only ever added within v1; they are not harness
 	// capabilities.
@@ -178,7 +180,11 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 	if s.Path != nil {
 		path = s.Path(r)
 	}
-	c := s.Hub.add(ctx, conn, path, s.Bearer != nil && s.Bearer(r))
+	device := ""
+	if s.Device != nil {
+		device = s.Device(r)
+	}
+	c := s.Hub.add(ctx, conn, path, s.Bearer != nil && s.Bearer(r), device)
 	defer s.Hub.remove(c)
 	s.sendConfig(c)
 	for _, m := range s.Modules {

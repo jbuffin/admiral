@@ -1082,7 +1082,7 @@ Body `{"code","name"?,"cookie"?}`. A code is case-insensitive, with or without t
 
 ### `GET /api/v1/devices`
 
-Answers `{"devices":[{"id","name","login"?,"pairedAt","lastSeen","current","notifications","thisMac"?}]}`. `login` is set for a device paired over the tailnet. `current` is true for the device making the request; on the Local route it is true for This Mac. `notifications` is true when the device holds at least one push subscription. `thisMac` is true on the This Mac row only, so a page can tell the Mac from a paired device. The subscription's keys are never listed.
+Answers `{"devices":[{"id","name","login"?,"pairedAt","lastSeen","current","notifications","thisMac"?,"forwarding","lastFollowed"}]}`. `login` is set for a device paired over the tailnet. `current` is true for the device making the request; on the Local route it is true for This Mac. `notifications` is true when the device holds at least one push subscription. `thisMac` is true on the This Mac row only, so a page can tell the Mac from a paired device. `forwarding` is `"on"`, `"stopped"` or null: null for a device that has never followed push events (or sent `push_unfollow` since), `on` while a follower socket of the device is open and for 5 minutes after the last one closed, `stopped` after that. The 5 minutes count from the later of the close and Admiral's start, so a restart never shows `stopped` early; a device Admiral lost while it followed counts from the start alone. `lastFollowed` is when its last follower socket closed (RFC 3339), null until one has. The subscription's keys are never listed.
 
 ### Web Push: `GET /api/v1/push/key`, `GET`, `PUT` and `DELETE /api/v1/push/subscription`
 
@@ -1135,6 +1135,8 @@ A device paired with a bearer token follows what would push on `/ws/v1` with `{"
 - `after` inside the ring: the events after it, in order, then `{"type":"attention","count":N}` with the current count.
 - `after` null: no replay, only an `attention` message with the current count. A client may see the connect-time `attention` every `/ws/v1` socket gets just before it, so it treats each `attention` as the current count.
 - `after` with a missing or other `boot`, past the latest `seq`, or older than the oldest event kept: `{"type":"push_reset","boot":"7f3a…","attention":N}` and nothing else. The client drops what it has and starts from the new `boot`; `attention` is left out before the lists are known.
+
+**Forwarding record.** A bearer-paired device's `push_follow` marks it as forwarding in `devices.json`, and the close of its last follower socket (counted across all its sockets) saves `lastFollowed`; a socket dropped for a slow queue counts as closed when the socket ends. `{"type":"push_unfollow"}` clears the record, flag and `lastFollowed`, and ends the follow on the socket that sent it; the device's other sockets keep following until they close; a later `push_follow` records the device again. A socket without a bearer token gets no answer to `push_unfollow`: it is ignored. `GET /api/v1/devices` shows the state as `forwarding` and `lastFollowed`.
 
 A follower that cannot keep up (its queue of 1024 messages fills) is closed, never left with a gap, and catches up when it reconnects.
 

@@ -19,6 +19,7 @@ type Client struct {
 	id     int
 	path   string // how the browser reached Admiral: "local", "lan", "tailnet" or ""
 	bearer bool
+	device string
 	// following is set once the client has asked to follow push events.
 	following atomic.Bool
 	conn      *websocket.Conn
@@ -40,6 +41,9 @@ func (c *Client) Path() string { return c.path }
 
 // Bearer is whether the socket authenticated with a bearer token.
 func (c *Client) Bearer() bool { return c.bearer }
+
+// Device is the paired device the socket came in under, empty when it has none.
+func (c *Client) Device() string { return c.device }
 
 // Following is whether the client follows push events; it then gets no window broadcast of the count.
 func (c *Client) Following() bool { return c.following.Load() }
@@ -132,11 +136,11 @@ func (h *Hub) SendWatching(v any) {
 
 func NewHub() *Hub { return &Hub{Now: time.Now, clients: map[int]*Client{}} }
 
-func (h *Hub) add(ctx context.Context, conn *websocket.Conn, path string, bearer bool) *Client {
+func (h *Hub) add(ctx context.Context, conn *websocket.Conn, path string, bearer bool, device string) *Client {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.next++
-	c := &Client{id: h.next, path: path, bearer: bearer, conn: conn, ctx: ctx, sent: map[string][]byte{}}
+	c := &Client{id: h.next, path: path, bearer: bearer, device: device, conn: conn, ctx: ctx, sent: map[string][]byte{}}
 	h.clients[c.id] = c
 	return c
 }

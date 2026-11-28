@@ -60,6 +60,7 @@ type followOpts struct {
 	hubWatching bool
 	queue       int
 	send        func(*server.Client, []byte) error
+	record      push.FollowRecorder
 }
 
 // newFollowRig serves /ws/v1 with an Authorization header meaning bearer, behind a Watcher feeding the Followers and the hub.
@@ -69,7 +70,7 @@ func newFollowRig(t *testing.T, o ...followOpts) *followRig {
 	r.ready.Store(true)
 	cfg := push.FollowersConfig{Now: r.clock.Now, Ready: r.ready.Load}
 	if len(o) > 0 {
-		cfg.Queue, cfg.Send = o[0].queue, o[0].send
+		cfg.Queue, cfg.Send, cfg.Record = o[0].queue, o[0].send, o[0].record
 	}
 	r.f = push.NewFollowers(cfg)
 	watching := r.watching.Load
@@ -84,13 +85,23 @@ func newFollowRig(t *testing.T, o ...followOpts) *followRig {
 		Hub:     r.hub,
 		Modules: []server.Module{joinProbe{r.joined}},
 		Bearer:  func(req *http.Request) bool { return req.Header.Get("Authorization") != "" },
-		Messages: map[string]server.MessageHandler{"push_follow": func(ctx context.Context, c *server.Client, raw json.RawMessage) {
-			r.f.Handle(ctx, c, raw)
-			select {
-			case r.handled <- struct{}{}:
-			default:
-			}
-		}},
+		Device:  func(req *http.Request) string { return req.Header.Get("X-Device") },
+		Messages: map[string]server.MessageHandler{
+			"push_follow": func(ctx context.Context, c *server.Client, raw json.RawMessage) {
+				r.f.Handle(ctx, c, raw)
+				select {
+				case r.handled <- struct{}{}:
+				default:
+				}
+			},
+			"push_unfollow": func(ctx context.Context, c *server.Client, raw json.RawMessage) {
+				r.f.HandleUnfollow(ctx, c, raw)
+				select {
+				case r.handled <- struct{}{}:
+				default:
+				}
+			},
+		},
 	}).Handler())
 	t.Cleanup(srv.Close)
 	r.url = "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws/v1"
@@ -99,13 +110,19 @@ func newFollowRig(t *testing.T, o ...followOpts) *followRig {
 	return r
 }
 
-func (r *followRig) dial(bearer bool) *websocket.Conn {
+func (r *followRig) dial(bearer bool) *websocket.Conn { return r.dialAs("", bearer) }
+
+// dialAs connects as the paired device, with a bearer token or, when bearer is false, only its cookie.
+func (r *followRig) dialAs(device string, bearer bool) *websocket.Conn {
 	r.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	opts := &websocket.DialOptions{}
+	opts := &websocket.DialOptions{HTTPHeader: map[string][]string{}}
 	if bearer {
-		opts.HTTPHeader = map[string][]string{"Authorization": {"Bearer fake-token-1"}}
+		opts.HTTPHeader["Authorization"] = []string{"Bearer fake-token-1"}
+	}
+	if device != "" {
+		opts.HTTPHeader["X-Device"] = []string{device}
 	}
 	conn, _, err := websocket.Dial(ctx, r.url, opts)
 	if err != nil {

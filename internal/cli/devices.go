@@ -69,6 +69,16 @@ type deviceRow struct {
 	Login    string `json:"login"`
 	PairedAt string `json:"pairedAt"`
 	LastSeen string `json:"lastSeen"`
+	// Forwarding is "on", "stopped" or empty for a device that does not follow push events.
+	Forwarding   string `json:"forwarding"`
+	LastFollowed string `json:"lastFollowed"`
+}
+
+func (d deviceRow) forwardingCell() string {
+	if d.Forwarding == "stopped" && d.LastFollowed != "" {
+		return "stopped " + d.LastFollowed
+	}
+	return d.Forwarding
 }
 
 func listDevices(base string) ([]deviceRow, []byte, error) {
@@ -117,7 +127,7 @@ func Devices(args []string, std IO) error {
 		return nil
 	}
 	for _, d := range devs {
-		row(std.Out, d.Name, d.Login, clock(d.PairedAt), clock(d.LastSeen), d.ID)
+		row(std.Out, d.Name, d.Login, clock(d.PairedAt), clock(d.LastSeen), d.ID, d.forwardingCell())
 	}
 	return nil
 }

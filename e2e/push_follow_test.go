@@ -140,6 +140,42 @@ func (f *follower) silent(what string) {
 	}
 }
 
+// forwarding is the state the Devices API shows for the paired device, read with its own token; "" for null.
+func (r *pushRig) forwarding(device string) string {
+	r.t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, r.in.lanURL()+"/api/v1/devices", nil)
+	req.Header.Set("Authorization", "Bearer "+r.tokens[device])
+	resp, err := client().Do(req)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Devices []struct {
+			Current    bool    `json:"current"`
+			Forwarding *string `json:"forwarding"`
+		} `json:"devices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		r.t.Fatal(err)
+	}
+	for _, d := range out.Devices {
+		if d.Current && d.Forwarding != nil {
+			return *d.Forwarding
+		}
+	}
+	return ""
+}
+
+func (f *follower) unfollow() {
+	f.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := f.ws.Write(ctx, websocket.MessageText, []byte(`{"type":"push_unfollow"}`)); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
 func ptr(p *int) any {
 	if p == nil {
 		return nil
@@ -170,6 +206,7 @@ func TestPushFollowJourneyFromQuestionToAnswerToReconnectToRestart(t *testing.T)
 	if m := f.expect("attention"); count(t, m) != 0 {
 		t.Fatalf("a follow with nothing asking got %+v, want a count of 0", m)
 	}
+	until(t, "the Devices API to show device a forwarding", func() bool { return r.forwarding("a") == "on" })
 
 	ship := r.launch("ans")
 	pushMsg := f.expect("push")
@@ -216,6 +253,10 @@ func TestPushFollowJourneyFromQuestionToAnswerToReconnectToRestart(t *testing.T)
 	if m := back.expect("attention"); count(t, m) != 1 {
 		t.Fatalf("after the replay got %+v, want a count of 1", m)
 	}
+
+	// A deliberate stop clears the record, so the row is a plain device again.
+	back.unfollow()
+	until(t, "the Devices API to show device a plain again after push_unfollow", func() bool { return r.forwarding("a") == "" })
 
 	// Restart: the ring is in memory only, so the old boot and seq are no longer known.
 	r.w.restartLAN(t)

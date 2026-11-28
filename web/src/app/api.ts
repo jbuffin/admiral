@@ -921,6 +921,8 @@ export interface Device {
   current?: boolean;
   thisMac?: boolean;
   notifications: boolean;
+  forwarding?: 'on' | 'stopped' | null;
+  lastFollowed?: string | null;
 }
 export interface PairingCode {
   code: string;
