@@ -511,7 +511,8 @@ func TestSetupAsksTheDefaultFleet(t *testing.T) {
 		t.Parallel()
 		w := seed(t)
 		before := string(w.configBytes())
-		r := run(w, "")
+		// Nothing is written, so no write question: Enter, Enter, Enter, then no to each Commodore offer.
+		r := w.admiralWith(cliOpts{env: w.cenv(), stdin: "\n\n\nn\nn\n"}, "setup")
 		w.expectExit(r, 0, "setup, Enter at the default fleet")
 		if !strings.Contains(r.stdout, "Default fleet [work]") || !strings.Contains(r.stdout, "No changes.") || string(w.configBytes()) != before {
 			t.Errorf("want the question with work preselected, then No changes. and the file as it was:\n%s", r.stdout)

@@ -76,3 +76,17 @@ func TestPutDefaultFleetOnABrokenConfigIsAConflict(t *testing.T) {
 		t.Errorf("code %d, want 409; body %s", code, body)
 	}
 }
+
+func TestPutDefaultFleetOnAnUnreadableConfigIs500(t *testing.T) {
+	f := newFleetFixture(t, fleetsFixture)
+	path := filepath.Join(f.home, config.FileName)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := f.do("PUT", "/api/default-fleet", `{"fleet":"home"}`); code != 500 {
+		t.Errorf("code %d, want 500; body %s", code, body)
+	}
+}

@@ -32,6 +32,9 @@ func SetFavoriteSkills(dir string, skills []string) error {
 	return setKey(dir, "favorite_skills", raw)
 }
 
+// testBeforeDefaultFleetWrite lets a test change the file between SetDefaultFleet's render and its write.
+var testBeforeDefaultFleetWrite func()
+
 // SetDefaultFleet refuses a key that is not a fleet in the file it renders; picking the first fleet still writes the key.
 func SetDefaultFleet(dir, key string) error {
 	writeMu.Lock()
@@ -41,17 +44,28 @@ func SetDefaultFleet(dir, key string) error {
 	if err != nil {
 		return err
 	}
-	before, out, err := renderKey(path, "default_fleet", raw)
+	data, err := readConfig(path)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrConflict, err)
+		return err
 	}
-	// The fleets are read from the bytes renderKey rendered from, so the check and the write see one file.
-	cfg, err := Parse(before)
+	// The fleets are read from the bytes the write renders from, so the check and the write see one file.
+	cfg, err := Parse(data)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrConflict, err)
+		return fmt.Errorf("%w: %s is invalid, fix it first: %w", ErrConflict, path, err)
 	}
 	if _, ok := cfg.Fleet(key); !ok {
 		return fmt.Errorf("%w %q", ErrNoFleet, key)
+	}
+	_, out, err := renderKey(path, "default_fleet", raw)
+	if err != nil {
+		return err
+	}
+	if testBeforeDefaultFleetWrite != nil {
+		testBeforeDefaultFleetWrite()
+	}
+	// writeMu covers this process only; the CLI writes the same file.
+	if now, err := readConfig(path); err != nil || !bytes.Equal(now, data) {
+		return fmt.Errorf("%w: config.json changed while saving; try again", ErrConflict)
 	}
 	return replaceFile(path, out)
 }
@@ -70,35 +84,6 @@ func remoteJSON(r Remote) (json.RawMessage, error) {
 		Tailscale     bool     `json:"tailscale"`
 		AllowedLogins []string `json:"allowedLogins"`
 	}{r.Tailscale, nonNil(r.AllowedLogins)})
-}
-
-// SetFleetsAndRemote writes both in one replace, so setup's diff and its write are the same change.
-func SetFleetsAndRemote(dir string, fleets json.RawMessage, r Remote) error {
-	writeMu.Lock()
-	defer writeMu.Unlock()
-	path := filepath.Join(dir, FileName)
-	_, out, err := renderKeys(path, keyValue{"fleets", fleets}, remoteKV(r))
-	if err != nil {
-		return err
-	}
-	if _, err := Parse(out); err != nil {
-		return err
-	}
-	return replaceFile(path, out)
-}
-
-// PreviewFleetsAndRemote is PreviewFleets for setup's combined write.
-func PreviewFleetsAndRemote(dir string, fleets json.RawMessage, r Remote) (before, after []byte, err error) {
-	writeMu.Lock()
-	defer writeMu.Unlock()
-	before, after, err = renderKeys(filepath.Join(dir, FileName), keyValue{"fleets", fleets}, remoteKV(r))
-	if err != nil {
-		return nil, nil, err
-	}
-	if _, err := Parse(after); err != nil {
-		return nil, nil, err
-	}
-	return before, after, nil
 }
 
 // SetupKeys is what setup writes in one replace: the fleets, and the remote and the default fleet when given.
@@ -120,7 +105,7 @@ func (k SetupKeys) kvs() []keyValue {
 	return kvs
 }
 
-// PreviewSetup is PreviewFleets for setup's write; a default fleet the rendered file lacks is refused.
+// PreviewSetup renders what SetSetup writes, indented the way Admiral writes so a diff shows only what changed; a default fleet the rendered file lacks is refused.
 func PreviewSetup(dir string, k SetupKeys) (before, after []byte, err error) {
 	writeMu.Lock()
 	defer writeMu.Unlock()
@@ -662,20 +647,6 @@ func nonNil(s []string) []string {
 		return []string{}
 	}
 	return s
-}
-
-// PreviewFleets indents both the way Admiral writes, so a diff shows only what changed.
-func PreviewFleets(dir string, fleets json.RawMessage) (before, after []byte, err error) {
-	writeMu.Lock()
-	defer writeMu.Unlock()
-	before, after, err = renderKey(filepath.Join(dir, FileName), "fleets", fleets)
-	if err != nil {
-		return nil, nil, err
-	}
-	if _, err := Parse(after); err != nil {
-		return nil, nil, err
-	}
-	return before, after, nil
 }
 
 func Fleets(dir string) (*Object, error) {

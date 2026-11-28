@@ -53,11 +53,11 @@ func fleetList(std IO) error {
 		for _, h := range f.Harnesses {
 			hs = append(hs, h.Name)
 		}
-		mark := ""
+		row := fmt.Sprintf("%s\t%s\t%s", f.Key, f.Name, strings.Join(hs, ","))
 		if f.Key == def {
-			mark = "default"
+			row += "\tdefault"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", f.Key, f.Name, strings.Join(hs, ","), mark)
+		fmt.Fprintln(tw, row)
 	}
 	return tw.Flush()
 }
@@ -72,6 +72,9 @@ func fleetDefault(args []string, std IO) error {
 	}
 	if len(args) == 0 {
 		key, fellBack := cfg.DefaultFleet()
+		if key == "" {
+			return errors.New("no fleets: add one with admiral fleet add or admiral setup")
+		}
 		fmt.Fprintln(std.Out, key)
 		if fellBack {
 			why := "no default_fleet is set"

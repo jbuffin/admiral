@@ -101,7 +101,7 @@ func TestSeveralNewFleetsInOneWriteEachGetTheirOwnSource(t *testing.T) {
 	for name, write := range map[string]func(dir string, fleets json.RawMessage) error{
 		"fleets": config.SetFleets,
 		"fleets and remote": func(dir string, f json.RawMessage) error {
-			return config.SetFleetsAndRemote(dir, f, config.Remote{})
+			return config.SetSetup(dir, config.SetupKeys{Fleets: f, Remote: &config.Remote{}})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -126,11 +126,11 @@ func TestSeveralNewFleetsInOneWriteEachGetTheirOwnSource(t *testing.T) {
 func TestPreviewShowsTheSourceTheWriteProduces(t *testing.T) {
 	dir := migrateDir(t, fmt.Sprintf(newFleetBase, ghSource))
 	fleets := fleetsWith(t, dir, "b")
-	_, after, err := config.PreviewFleetsAndRemote(dir, fleets, config.Remote{})
+	_, after, err := config.PreviewSetup(dir, config.SetupKeys{Fleets: fleets, Remote: &config.Remote{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := config.SetFleetsAndRemote(dir, fleets, config.Remote{}); err != nil {
+	if err := config.SetSetup(dir, config.SetupKeys{Fleets: fleets, Remote: &config.Remote{}}); err != nil {
 		t.Fatal(err)
 	}
 	written, _ := os.ReadFile(filepath.Join(dir, "config.json"))

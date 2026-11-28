@@ -495,8 +495,7 @@ func (s *session) askFleets() error {
 	}
 }
 
-// askDefaultFleet shows the resolved default but reads the raw line: Enter keeps what the file holds,
-// so a re-run answering Enter everywhere changes nothing, while typing a key (the first fleet too) writes it.
+// Enter keeps the stored key (not the shown default), so a re-run answering Enter everywhere changes nothing.
 func (s *session) askDefaultFleet() error {
 	keys := s.fleets.Keys()
 	if len(keys) < 2 {
