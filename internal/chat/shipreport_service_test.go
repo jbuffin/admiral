@@ -30,6 +30,7 @@ func postLaunchLine(t *testing.T, r *briefRig, text, title string) {
 }
 
 func TestAReportTurnIsQueuedUnderItsCardIdSoTheSameEventQueuesOnce(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	for range 2 {
 		if err := r.EnqueueShipReport("work", sampleCard(), "done"); err != nil {
@@ -46,6 +47,7 @@ func TestAReportTurnIsQueuedUnderItsCardIdSoTheSameEventQueuesOnce(t *testing.T)
 }
 
 func TestTheLaunchTextOfAReportTurnComesFromTheShipsLaunchLine(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	postLaunchLine(t, r, "Rebase acme/api#12 onto main and report what conflicted", "Rebase")
 	if got := r.LaunchTextOf("work", "calm-otter", "2026-11-17T10:00:00Z"); got != "Rebase acme/api#12 onto main and report what conflicted" {
@@ -63,6 +65,7 @@ func TestTheLaunchTextOfAReportTurnComesFromTheShipsLaunchLine(t *testing.T) {
 }
 
 func TestAReportTurnFallsBackToTheShipsTitleWhenItHasNoLaunchLine(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if err := r.EnqueueShipReport("work", sampleCard(), "done"); err != nil {
 		t.Fatal(err)
@@ -89,6 +92,7 @@ func findingsKeptInTurn(t *testing.T, r *briefRig, c ShipCard) bool {
 }
 
 func TestTheReportTurnSaysFindingsWereKeptWhenTheCardsVoyageHasThem(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.Service.Findings = findings.Open(r.home)
 	c := sampleCard()
@@ -99,6 +103,7 @@ func TestTheReportTurnSaysFindingsWereKeptWhenTheCardsVoyageHasThem(t *testing.T
 }
 
 func TestTheReportTurnSaysNoFindingsWhenTheVoyageKeptNone(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.Service.Findings = findings.Open(r.home)
 	if findingsKeptInTurn(t, r, sampleCard()) {
@@ -107,6 +112,7 @@ func TestTheReportTurnSaysNoFindingsWhenTheVoyageKeptNone(t *testing.T) {
 }
 
 func TestTheReportTurnSaysNoFindingsWhenTheServiceHasNoFindingsStore(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	c := sampleCard()
 	keepFindings(t, r.home, c.Ship, c.FirstLaunched, "work")
@@ -116,6 +122,7 @@ func TestTheReportTurnSaysNoFindingsWhenTheServiceHasNoFindingsStore(t *testing.
 }
 
 func TestTheReportTurnIgnoresFindingsOfAnotherVoyageOfTheSameShipName(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.Service.Findings = findings.Open(r.home)
 	c := sampleCard()

@@ -31,6 +31,7 @@ func wantIDs(t *testing.T, what string, got []Message, want ...string) {
 func anchors(an ...flushAnchor) *flushAnchors { as := flushAnchors(an); return &as }
 
 func TestFlushAnchor_HidesOnlyTheFlushTurn(t *testing.T) {
+	t.Parallel()
 	as := anchors(flushAnchor{pre: "a1"})
 	thread := []Message{u("u1", "hi"), a("a1", "hello"), u("f1", FlushPrompt), a("f2", "done")}
 	wantIDs(t, "a turn still running", as.hide(thread), "u1", "a1")
@@ -41,6 +42,7 @@ func TestFlushAnchor_HidesOnlyTheFlushTurn(t *testing.T) {
 }
 
 func TestFlushAnchor_AnAbandonedFlushWithAQuestionShowsTheReplyAfterTheAnswer(t *testing.T) {
+	t.Parallel()
 	as := anchors(flushAnchor{pre: "a1"})
 	thread := []Message{a("a1", "hello"), u("f1", FlushPrompt), a("f2", "Let me ask first")}
 	wantIDs(t, "before the question is seen", as.hide(thread), "a1")
@@ -51,6 +53,7 @@ func TestFlushAnchor_AnAbandonedFlushWithAQuestionShowsTheReplyAfterTheAnswer(t 
 }
 
 func TestFlushAnchor_StaysHiddenWhenThePromptSlidesOutOfTheWindow(t *testing.T) {
+	t.Parallel()
 	as := anchors(flushAnchor{pre: "a1"})
 	as.hide([]Message{a("a1", "hello"), u("f1", FlushPrompt), a("f2", "done")})
 	// The reader's window moved on: the prompt is gone, its late reply is the head, and a user message follows.
@@ -60,6 +63,7 @@ func TestFlushAnchor_StaysHiddenWhenThePromptSlidesOutOfTheWindow(t *testing.T) 
 }
 
 func TestFlushAnchor_AReplyAfterTheClearIsNotServed(t *testing.T) {
+	t.Parallel()
 	as := anchors(flushAnchor{pre: "a1"})
 	as.hide([]Message{a("a1", "hello"), u("f1", FlushPrompt)})
 	// New chat timed out the flush and cleared: the reader restarts after the prompt, and the reply lands first.
@@ -71,6 +75,7 @@ func TestFlushAnchor_AReplyAfterTheClearIsNotServed(t *testing.T) {
 
 // The turn's end reaches Admiral before the transcript's tail does: the reply is read after the marker.
 func TestFlushAnchor_ALateReplyAfterTheTurnEndedAndTheClearIsHidden(t *testing.T) {
+	t.Parallel()
 	as := anchors(flushAnchor{pre: "a1", from: "f1"})
 	// The flush loop saw the turn end with only the prompt read, then Admiral cleared.
 	wantIDs(t, "the prompt only", as.hide([]Message{a("a1", "hello"), u("f1", FlushPrompt)}), "a1")
@@ -81,6 +86,7 @@ func TestFlushAnchor_ALateReplyAfterTheTurnEndedAndTheClearIsHidden(t *testing.T
 }
 
 func TestFlushAnchor_AClosedTurnLeavesTheClearedChatAlone(t *testing.T) {
+	t.Parallel()
 	as := anchors(flushAnchor{from: "f1", until: "f2", closed: true})
 	wantIDs(t, "after the clear", as.hide([]Message{a("a9", "fresh")}), "a9")
 	if len(*as) != 0 {
@@ -89,12 +95,14 @@ func TestFlushAnchor_AClosedTurnLeavesTheClearedChatAlone(t *testing.T) {
 }
 
 func TestFlushAnchor_SeesAPromptTheEngineerPartlyTyped(t *testing.T) {
+	t.Parallel()
 	as := anchors(flushAnchor{until: "f2", closed: true})
 	wantIDs(t, "partial text before the paste", as.hide([]Message{u("f1", "half a thought "+FlushPrompt), a("f2", "done")}))
 }
 
 // A retried flush must not unhide the one abandoned before it.
 func TestFlushAnchor_ARetryKeepsTheAbandonedFlushHidden(t *testing.T) {
+	t.Parallel()
 	first := []Message{a("a1", "hello"), u("f1", FlushPrompt), a("f2", "Let me ask first")}
 	for name, c := range map[string]struct {
 		abandoned flushAnchor
@@ -120,6 +128,7 @@ func TestFlushAnchor_ARetryKeepsTheAbandonedFlushHidden(t *testing.T) {
 
 // One reset runs per fleet at a time: a claim holds until it is released, and it is the flag a send is refused by.
 func TestClaimReset_OnlyOneAtATime(t *testing.T) {
+	t.Parallel()
 	var s fleetChat
 	var won atomic.Int32
 	var wg sync.WaitGroup
@@ -146,6 +155,7 @@ func TestClaimReset_OnlyOneAtATime(t *testing.T) {
 }
 
 func TestOnlyAClaudeChatIsFlushedAndResetOnASchedule(t *testing.T) {
+	t.Parallel()
 	for harness, want := range map[string]bool{"claude": true, "codex": false, "copilot": false, "": false} {
 		if got := flushesBeforeReset(harness); got != want {
 			t.Errorf("flushesBeforeReset(%q) = %v, want %v", harness, got, want)
@@ -154,6 +164,7 @@ func TestOnlyAClaudeChatIsFlushedAndResetOnASchedule(t *testing.T) {
 }
 
 func TestTheFlushPromptAsksForAnyPromiseNotYetRecorded(t *testing.T) {
+	t.Parallel()
 	for _, want := range []string{"save_note", "make_commitment"} {
 		if !strings.Contains(FlushPrompt, want) {
 			t.Errorf("FlushPrompt = %q, want it to name %s", FlushPrompt, want)

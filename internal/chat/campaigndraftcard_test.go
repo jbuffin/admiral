@@ -8,6 +8,7 @@ import (
 )
 
 func TestACreatedCampaignDraftPostsACardNamingTheFiledCampaignAndStartsNoTurn(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if _, err := r.history().Append("work", chatlog.Entry{ID: "m1", Kind: chatlog.KindMessage, Role: "user", Text: "draft a campaign for the map"}); err != nil {
 		t.Fatal(err)
@@ -32,6 +33,7 @@ func TestACreatedCampaignDraftPostsACardNamingTheFiledCampaignAndStartsNoTurn(t 
 }
 
 func TestADismissedCampaignDraftPostsACardSayingItWasThrownAwayAndTwiceAddsOne(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	for range 2 {
 		if err := r.PostCampaignDraftCard("work", CampaignDraftCard{ID: "campaign-2", Title: "Speed up the fleet map"}); err != nil {

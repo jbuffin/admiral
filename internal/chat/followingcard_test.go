@@ -37,6 +37,7 @@ func followingCardsIn(t *testing.T, r *briefRig, fleet string) ([]followingView,
 }
 
 func TestAFollowingCardCarriesTheShipTheCampaignAndItsTitleInTheShipsFleetChat(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if err := r.PostFollowingCard("work", ships.FollowingCard{Ship: "saltpaw", CampaignID: "c-7", Title: "Make the fleet map load faster"}); err != nil {
 		t.Fatalf("PostFollowingCard = %v", err)
@@ -54,6 +55,7 @@ func TestAFollowingCardCarriesTheShipTheCampaignAndItsTitleInTheShipsFleetChat(t
 }
 
 func TestAFollowingCardForTheSameShipAndCampaignAddsNothingTheSecondTime(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	c := ships.FollowingCard{Ship: "saltpaw", CampaignID: "c-7", Title: "Map"}
 	for i := 0; i < 2; i++ {
@@ -67,6 +69,7 @@ func TestAFollowingCardForTheSameShipAndCampaignAddsNothingTheSecondTime(t *test
 }
 
 func TestAFollowingCardForALaterShipThatReusesTheNameStillPosts(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	for _, first := range []string{"2026-11-19T05:00:00Z", "2026-11-19T06:00:00Z"} {
 		if err := r.PostFollowingCard("work", ships.FollowingCard{Ship: "saltpaw", First: first, CampaignID: "c-7", Title: "Map"}); err != nil {
@@ -79,6 +82,7 @@ func TestAFollowingCardForALaterShipThatReusesTheNameStillPosts(t *testing.T) {
 }
 
 func TestAFollowingCardStripsBidiZeroWidthAndControlCharactersFromTheTitleAndText(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	hostile := "Make\u202e the\u200b map\x1b[31m load\x00 faster\n now"
 	if err := r.PostFollowingCard("work", ships.FollowingCard{Ship: "saltpaw", CampaignID: "c-7", Title: hostile}); err != nil {

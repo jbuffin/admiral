@@ -215,7 +215,7 @@ func (s *fleetChat) flush(pane string) bool {
 		s.dropFlush()
 		return false
 	}
-	for end := time.Now().Add(FlushWait()); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+	for end := time.Now().Add(s.flushWait()); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
 		if s.PromptKey(s.key) != before && s.paneIdle() {
 			// The hook ends the turn before the transcript's tail is on disk, so the reply can be read after the
 			// clear: the anchor stays open and hides it, and the engineer's next message closes it.

@@ -30,8 +30,8 @@ type turnRig struct {
 // newTurnRig is a chat that has started, so it can take a message.
 func newTurnRig(t *testing.T, harness string) *turnRig {
 	t.Helper()
-	t.Setenv("ADMIRAL_CHAT_FLUSH_WAIT", "300ms")
 	svc, fc := hostedChat(t, harness)
+	svc.FlushWait = 300 * time.Millisecond
 	record(t, svc, fc, harness)
 	if harness == "claude" {
 		claudeTranscript(t, svc, fc)
@@ -152,6 +152,7 @@ func (r *turnRig) restart() *Service {
 var harnesses = []string{"claude", "codex"}
 
 func TestAnItemQueuedOnAnIdleChatIsTypedOnceAsItsOwnMessage(t *testing.T) {
+	t.Parallel()
 	for _, h := range harnesses {
 		t.Run(h, func(t *testing.T) {
 			r := newTurnRig(t, h)
@@ -172,6 +173,7 @@ func TestAnItemQueuedOnAnIdleChatIsTypedOnceAsItsOwnMessage(t *testing.T) {
 }
 
 func TestAnItemWaitsWhileATurnRunsAndIsTypedOnceItEnds(t *testing.T) {
+	t.Parallel()
 	for _, h := range harnesses {
 		t.Run(h, func(t *testing.T) {
 			r := newTurnRig(t, h)
@@ -215,6 +217,7 @@ func (r *turnRig) answerQuestion(id string) {
 }
 
 func TestAnItemWaitsForAnOpenChatQuestionAndIsTypedOnceItIsAnswered(t *testing.T) {
+	t.Parallel()
 	r := newTurnRig(t, "claude")
 	id := r.askQuestion()
 	r.enqueue("a", "REPORT-A")
@@ -226,6 +229,7 @@ func TestAnItemWaitsForAnOpenChatQuestionAndIsTypedOnceItIsAnswered(t *testing.T
 }
 
 func TestTheSecondItemWaitsUntilTheFirstReportTurnHasEnded(t *testing.T) {
+	t.Parallel()
 	for _, h := range harnesses {
 		t.Run(h, func(t *testing.T) {
 			r := newTurnRig(t, h)
@@ -245,6 +249,7 @@ func TestTheSecondItemWaitsUntilTheFirstReportTurnHasEnded(t *testing.T) {
 }
 
 func TestTheSameIDEnqueuedTwiceIsTypedOnceEvenAfterItWasDelivered(t *testing.T) {
+	t.Parallel()
 	r := newTurnRig(t, "claude")
 	r.enqueue("a", "REPORT-A")
 	r.enqueue("a", "REPORT-A")
@@ -259,6 +264,7 @@ func TestTheSameIDEnqueuedTwiceIsTypedOnceEvenAfterItWasDelivered(t *testing.T) 
 }
 
 func TestTheGateIsClosedFromThePasteAndOpensWhenTheReportTurnEnds(t *testing.T) {
+	t.Parallel()
 	for _, h := range harnesses {
 		t.Run(h, func(t *testing.T) {
 			r := newTurnRig(t, h)
@@ -288,6 +294,7 @@ func TestTheGateIsClosedFromThePasteAndOpensWhenTheReportTurnEnds(t *testing.T) 
 }
 
 func TestAnEngineersMessageDuringAReportTurnIsPastedAndEndsTheGateWhenItsPromptStarts(t *testing.T) {
+	t.Parallel()
 	r := newTurnRig(t, "claude")
 	r.enqueue("a", "REPORT-A")
 	r.tickUntil("REPORT-A typed", r.typedOnce("REPORT-A"))
@@ -308,6 +315,7 @@ func TestAnEngineersMessageDuringAReportTurnIsPastedAndEndsTheGateWhenItsPromptS
 }
 
 func TestAnEngineerSendDuringAReportTurnAndStartAreNotBlockedByTheQueue(t *testing.T) {
+	t.Parallel()
 	r := newTurnRig(t, "claude")
 	r.enqueue("a", "REPORT-A")
 	r.tickUntil("REPORT-A typed", r.typedOnce("REPORT-A"))
@@ -327,6 +335,7 @@ func TestAnEngineerSendDuringAReportTurnAndStartAreNotBlockedByTheQueue(t *testi
 }
 
 func TestAReportIsNotTypedIntoAnEngineersTurnThatHasJustStarted(t *testing.T) {
+	t.Parallel()
 	r := newTurnRig(t, "claude")
 	// The engineer's message is pasted, and its prompt hook has not fired yet.
 	if err := r.fc.send("ENGINEER-HELLO"); err != nil {
@@ -349,6 +358,7 @@ func TestAReportIsNotTypedIntoAnEngineersTurnThatHasJustStarted(t *testing.T) {
 }
 
 func TestTheQueueSurvivesARestartAndADeliveredIDIsNotTypedAgain(t *testing.T) {
+	t.Parallel()
 	r := newTurnRig(t, "claude")
 	r.enqueue("kept", "REPORT-KEPT")
 	if got := r.restart().QueuedTurns("work"); !sameIDs(got, "kept") {
@@ -375,6 +385,7 @@ func TestTheQueueSurvivesARestartAndADeliveredIDIsNotTypedAgain(t *testing.T) {
 }
 
 func TestAnItemWaitsWhenTheChatCantTakeItAndIsTypedOnceItCan(t *testing.T) {
+	t.Parallel()
 	t.Run("a chat that has not started", func(t *testing.T) {
 		svc, fc := hostedChat(t, "claude")
 		record(t, svc, fc, "claude")
@@ -427,6 +438,7 @@ func (r *turnRig) newChat() (code int, took time.Duration) {
 }
 
 func TestNewChatWithAnItemQueuedReturnsAtOnceAndClearsOnlyAfterTheQueueDrained(t *testing.T) {
+	t.Parallel()
 	r := newTurnRig(t, "claude")
 	r.enqueue("a", "REPORT-A")
 	if code, _ := r.newChat(); code != http.StatusOK {
@@ -449,6 +461,7 @@ func TestNewChatWithAnItemQueuedReturnsAtOnceAndClearsOnlyAfterTheQueueDrained(t
 }
 
 func TestAScheduledResetSkipsAChatWithAnItemQueued(t *testing.T) {
+	t.Parallel()
 	// due runs the scheduler's two ticks a day apart over an idle chat and says whether a reset began.
 	due := func(t *testing.T, setup func(r *turnRig)) bool {
 		t.Helper()
@@ -497,6 +510,7 @@ func (r *turnRig) failReads() (restore func()) {
 }
 
 func TestAFailedStampReadNeverPastesAReportOrChangesTheTurn(t *testing.T) {
+	t.Parallel()
 	t.Run("nothing is pasted when the stamp before the paste can't be read", func(t *testing.T) {
 		r := newTurnRig(t, "claude")
 		restore := r.failReads()
@@ -529,6 +543,7 @@ func TestAFailedStampReadNeverPastesAReportOrChangesTheTurn(t *testing.T) {
 }
 
 func TestADeferredNewChatsFlushNeverHoldsTheQueueLoop(t *testing.T) {
+	t.Parallel()
 	r := newTurnRig(t, "claude")
 	r.enqueue("a", "REPORT-A")
 	if code, _ := r.newChat(); code != http.StatusOK {
@@ -537,7 +552,7 @@ func TestADeferredNewChatsFlushNeverHoldsTheQueueLoop(t *testing.T) {
 	r.tickUntil("REPORT-A typed", r.typedOnce("REPORT-A"))
 	r.promptStarts()
 	r.turnEnds()
-	t.Setenv("ADMIRAL_CHAT_FLUSH_WAIT", "20s")
+	r.svc.FlushWait = 20 * time.Second
 	tick := func() {
 		t.Helper()
 		start := time.Now()
@@ -582,6 +597,7 @@ func (r *turnRig) restartChat() {
 }
 
 func TestADeferredNewChatIsDroppedWhenTheChatIsNoLongerTheOneItWasAskedIn(t *testing.T) {
+	t.Parallel()
 	flushed := func(r *turnRig) func() bool {
 		return func() bool { return pasted(t, r.svc, r.fc) || strings.Contains(r.screen(), "/clear") }
 	}
@@ -616,6 +632,7 @@ func TestADeferredNewChatIsDroppedWhenTheChatIsNoLongerTheOneItWasAskedIn(t *tes
 }
 
 func TestATurnReadsAsOverWhenItsKeyMovedAndNotWhenItsKeyCannotBeReadWhileTheChatRuns(t *testing.T) {
+	t.Parallel()
 	r := newTurnRig(t, "claude")
 	r.promptStarts()
 	key, ok := r.svc.promptKey("work")

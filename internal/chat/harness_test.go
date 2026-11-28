@@ -47,6 +47,7 @@ const twoFleets = `{"version":1,"fleets":{
 	"b":{"name":"B","claude":{},"codex":{},"chat":{"harness":"codex","model":"gpt-6.1-sol"}}}}`
 
 func TestAChatStartsOnlyOnAnOfferedHarnessAndStartsOnceItsProbesPass(t *testing.T) {
+	t.Parallel()
 	p := fakeProbes{}
 	s := harnessService(t, twoFleets, p)
 	// Claude counts until its fence fails; codex needs both probes.
@@ -81,6 +82,7 @@ const copilotChat = `{"version":1,"fleets":{
 	"cl":{"name":"Cl","claude":{"env":{"CLAUDE_CONFIG_DIR":"/srv/fake-claude-identity"}}}}}`
 
 func TestTheChatsLoginDirIsTheEngineersIdentityDirForEachHarness(t *testing.T) {
+	t.Parallel()
 	s := harnessService(t, copilotChat, fakeProbes{})
 	if got, want := s.Login(sessionhost.ChatSession("cl")), config.IdentityDir("claude", map[string]string{"CLAUDE_CONFIG_DIR": "/srv/fake-claude-identity"}); got != want || got == "" {
 		t.Errorf("a claude chat's login dir = %q, want %q", got, want)
@@ -123,6 +125,7 @@ func servedFor(t *testing.T, s *Service, key string) []Message {
 }
 
 func TestTheChatReaderDecodesWithTheFleetsChatHarness(t *testing.T) {
+	t.Parallel()
 	s := harnessService(t, `{"version":1,"fleets":{
 		"cop":{"name":"Cop","copilot":{},"chat":{"harness":"copilot"}},
 		"cl":{"name":"Cl","claude":{}}}}`, fakeProbes{})
@@ -141,6 +144,7 @@ func TestTheChatReaderDecodesWithTheFleetsChatHarness(t *testing.T) {
 }
 
 func TestOnlyAClaudeChatGetsABrief(t *testing.T) {
+	t.Parallel()
 	s := harnessService(t, copilotChat, fakeProbes{"cop/copilot/bot.mcp_fence": {"passed", ""}, "cop/copilot/bot.config_home": {"passed", ""}})
 	s.Ships = func() []ships.Ship { return nil }
 	for _, fleet := range []string{"cl", "cop"} {

@@ -17,6 +17,7 @@ func localShip(name string) ships.Ship {
 }
 
 func TestALocalOnlyShipAdmiralEndedAsFinishedPostsOneDoneCardNamingItsBranch(t *testing.T) {
+	t.Parallel()
 	x := newDetector(t)
 	x.observe(0, []ships.Ship{localShip("calm-otter")})
 	finished := ShipRecord{At: t0.Add(time.Minute), Ship: "calm-otter", Event: "finished"}
@@ -31,6 +32,7 @@ func TestALocalOnlyShipAdmiralEndedAsFinishedPostsOneDoneCardNamingItsBranch(t *
 }
 
 func TestAFinishedShipsKilledEndedRecordAddsNoCardToItsDoneCard(t *testing.T) {
+	t.Parallel()
 	x := newReporting(t)
 	s := localShip("calm-otter")
 	s.Via = "admiralbot"
@@ -44,6 +46,7 @@ func TestAFinishedShipsKilledEndedRecordAddsNoCardToItsDoneCard(t *testing.T) {
 }
 
 func TestACleanEndAfterADoneReportOnALocalOnlyShipPostsTheDoneCardNotSailedOff(t *testing.T) {
+	t.Parallel()
 	x := newDetector(t)
 	x.observe(0, []ships.Ship{localShip("calm-otter")})
 	x.observe(5*time.Minute, nil, ShipRecord{At: t0.Add(time.Minute), Ship: "calm-otter", Event: "ended", Clean: true, ReportResult: "done", Result: "done"})
@@ -54,6 +57,7 @@ func TestACleanEndAfterADoneReportOnALocalOnlyShipPostsTheDoneCardNotSailedOff(t
 }
 
 func TestACleanEndOfAShipThatIsNotLocalOnlyOrReportedNoDoneStillSailsOff(t *testing.T) {
+	t.Parallel()
 	for name, c := range map[string]struct {
 		snap   ships.Ship
 		report string
@@ -72,6 +76,7 @@ func TestACleanEndOfAShipThatIsNotLocalOnlyOrReportedNoDoneStillSailsOff(t *test
 }
 
 func TestALocalOnlyShipWithNoWorktreeBranchPostsADoneCardWithNoBranch(t *testing.T) {
+	t.Parallel()
 	x := newDetector(t)
 	s := localShip("calm-otter")
 	s.Branch = ""
@@ -84,6 +89,7 @@ func TestALocalOnlyShipWithNoWorktreeBranchPostsADoneCardWithNoBranch(t *testing
 }
 
 func TestADoneShipAdmiralBotLaunchedQueuesOneReportTurn(t *testing.T) {
+	t.Parallel()
 	x := newReporting(t)
 	s := localShip("calm-otter")
 	s.Via = "admiralbot"
@@ -95,6 +101,7 @@ func TestADoneShipAdmiralBotLaunchedQueuesOneReportTurn(t *testing.T) {
 }
 
 func TestAReportTurnForADoneShipNamesItsBranchAndDoesNotAskForAPR(t *testing.T) {
+	t.Parallel()
 	c := sampleCard()
 	c.Result, c.PRs, c.Branch = "done", nil, "admiral/calm-otter"
 	text := ReportTurnText(c, "launch text", "done", false)
@@ -109,6 +116,7 @@ func TestAReportTurnForADoneShipNamesItsBranchAndDoesNotAskForAPR(t *testing.T) 
 }
 
 func TestADoneShipCardPostsWithItsBranch(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	c := sampleShipCard()
 	c.Result, c.Branch = "done", "admiral/calm-otter"
@@ -122,6 +130,7 @@ func TestADoneShipCardPostsWithItsBranch(t *testing.T) {
 }
 
 func TestPostedShipCardsCarryADoneCardsBranch(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	before := time.Now().Add(-time.Hour)
 	if err := r.PostShipCard("work", ShipCard{Ship: "s-dory", Name: "dory", FirstLaunched: "v1", Result: "done", Branch: "admiral/s-dory"}); err != nil {

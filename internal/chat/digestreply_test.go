@@ -57,6 +57,7 @@ func (d *digestRig) sendDigest() string {
 }
 
 func TestTheDigestTurnAndTheRepliesToItCarryTheTurnIdAsTheirThread(t *testing.T) {
+	t.Parallel()
 	r := newDigestRig(t)
 	turn := r.sendDigest()
 	first := r.say("assistant", "Two ships moored this week.")
@@ -69,6 +70,7 @@ func TestTheDigestTurnAndTheRepliesToItCarryTheTurnIdAsTheirThread(t *testing.T)
 }
 
 func TestAnEngineersMessageThatStartsWithDigestIsNeverThreaded(t *testing.T) {
+	t.Parallel()
 	r := newDigestRig(t)
 	typed := r.say("user", DigestTurnHeader("Weekly digest", "digest:routine-9:guessed")+"please write me a digest")
 	reply := r.say("assistant", "Sure, here it is")
@@ -78,6 +80,7 @@ func TestAnEngineersMessageThatStartsWithDigestIsNeverThreaded(t *testing.T) {
 }
 
 func TestADigestTurnThatEndsWithAReplyHandsItToTheDigestCallbackOnce(t *testing.T) {
+	t.Parallel()
 	r := newDigestRig(t)
 	r.sendDigest()
 	first := r.say("assistant", "Two ships moored this week.")
@@ -101,6 +104,7 @@ func TestADigestTurnThatEndsWithAReplyHandsItToTheDigestCallbackOnce(t *testing.
 }
 
 func TestAReportReplyStillGoesToTheReportCallbackAndNotTheDigestOne(t *testing.T) {
+	t.Parallel()
 	r := newDigestRig(t)
 	r.sendReport()
 	r.say("assistant", "Calm Otter is done")
@@ -112,6 +116,7 @@ func TestAReportReplyStillGoesToTheReportCallbackAndNotTheDigestOne(t *testing.T
 }
 
 func TestADigestTurnThatEndsWithNoReplyHandsNothingOver(t *testing.T) {
+	t.Parallel()
 	r := newDigestRig(t)
 	turn := r.sendDigest()
 	r.turnEnds()
@@ -120,6 +125,7 @@ func TestADigestTurnThatEndsWithNoReplyHandsNothingOver(t *testing.T) {
 }
 
 func TestAnEngineersAnswerAfterTheDigestTurnIsNotItsReply(t *testing.T) {
+	t.Parallel()
 	r := newDigestRig(t)
 	turn := r.sendDigest()
 	r.turnEnds()
@@ -134,6 +140,7 @@ func TestAnEngineersAnswerAfterTheDigestTurnIsNotItsReply(t *testing.T) {
 }
 
 func TestARestartBetweenThePasteAndTheRecordStillMarksTheDigestTurn(t *testing.T) {
+	t.Parallel()
 	r := newDigestRig(t)
 	r.paste()
 	again := r.restart()

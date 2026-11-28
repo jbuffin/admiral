@@ -83,6 +83,7 @@ func seeded(t *testing.T) *detector {
 }
 
 func TestAShipThatFirstMoorsWithAnOpenPRPostsOneMooredCardInItsFleetOnly(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{moored("calm-otter", "work", pr7)})
 	x.wantResults("work", "moored")
@@ -94,6 +95,7 @@ func TestAShipThatFirstMoorsWithAnOpenPRPostsOneMooredCardInItsFleetOnly(t *test
 }
 
 func TestOnlyTheFirstMoorPostsNotAReMoorOrAnotherPassOrARestart(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	m := moored("calm-otter", "work", pr7)
 	x.observe(time.Minute, []ships.Ship{m})
@@ -111,6 +113,7 @@ func TestOnlyTheFirstMoorPostsNotAReMoorOrAnotherPassOrARestart(t *testing.T) {
 }
 
 func TestAShipThatEndsWithAnErrorPostsOneAnchoredCardInItsFleetOnly(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
 	a := ship("calm-otter", "work", ships.StatusAnchored)
@@ -123,6 +126,7 @@ func TestAShipThatEndsWithAnErrorPostsOneAnchoredCardInItsFleetOnly(t *testing.T
 }
 
 func TestALiveShipThatEndsCleanWithNoMoorPostsOneSailedOffCardInItsFleetOnly(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
 	end := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Clean: true}
@@ -135,6 +139,7 @@ func TestALiveShipThatEndsCleanWithNoMoorPostsOneSailedOffCardInItsFleetOnly(t *
 }
 
 func TestACleanEndThatMoorsAfterwardsPostsMooredAndNotSailedOff(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
 	x.observe(5*time.Minute, []ships.Ship{moored("calm-otter", "work", pr7)},
@@ -144,6 +149,7 @@ func TestACleanEndThatMoorsAfterwardsPostsMooredAndNotSailedOff(t *testing.T) {
 }
 
 func TestAMooredShipWhosePRsAllClosedPostsOneSailedOffCard(t *testing.T) {
+	t.Parallel()
 	for _, reason := range []string{"merged", "closed", "prs_done"} {
 		t.Run(reason, func(t *testing.T) {
 			x := seeded(t)
@@ -160,6 +166,7 @@ func TestAMooredShipWhosePRsAllClosedPostsOneSailedOffCard(t *testing.T) {
 }
 
 func TestAMooredShipUnmooredByTheEngineerPostsNoSailedOffCard(t *testing.T) {
+	t.Parallel()
 	for _, reason := range []string{"dismissed", "unfollowed", "stopped"} {
 		t.Run(reason, func(t *testing.T) {
 			x := seeded(t)
@@ -171,6 +178,7 @@ func TestAMooredShipUnmooredByTheEngineerPostsNoSailedOffCard(t *testing.T) {
 }
 
 func TestAShipThatReturnsToPortPostsOneReturnedCardWhoeverLaunchedIt(t *testing.T) {
+	t.Parallel()
 	for name, s := range map[string]ships.Ship{"engineer": moored("calm-otter", "work", pr7), "admiralbot": viaBot(moored("calm-otter", "work", pr7))} {
 		t.Run(name, func(t *testing.T) {
 			x := seeded(t)
@@ -187,6 +195,7 @@ func TestAShipThatReturnsToPortPostsOneReturnedCardWhoeverLaunchedIt(t *testing.
 }
 
 func TestStopShipPostsNoCard(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
 	x.observe(3*time.Minute, nil, ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "stopped"})
@@ -194,6 +203,7 @@ func TestStopShipPostsNoCard(t *testing.T) {
 }
 
 func TestReadyToMergePostsOnlyForAShipAdmiralBotLaunchedAndOncePerVoyage(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	bot := viaBot(moored("calm-otter", "work", pr7))
 	hand := moored("brisk-finch", "work", "https://github.com/acme/api/pull/9")
@@ -212,6 +222,7 @@ func TestReadyToMergePostsOnlyForAShipAdmiralBotLaunchedAndOncePerVoyage(t *test
 }
 
 func TestAShipNotYetPolledIsNotReadyToMerge(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	m := viaBot(moored("calm-otter", "work", pr7))
 	m.StackReady = true // a restart leaves it true-looking until the first poll answers; PolledAt is still empty
@@ -220,6 +231,7 @@ func TestAShipNotYetPolledIsNotReadyToMerge(t *testing.T) {
 }
 
 func TestAReusedShipNameWithANewFirstLaunchedPostsItsOwnCards(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{moored("calm-otter", "work", pr7)})
 	x.observe(3*time.Minute, nil, ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "unmoored", Reason: "merged"})
@@ -231,6 +243,7 @@ func TestAReusedShipNameWithANewFirstLaunchedPostsItsOwnCards(t *testing.T) {
 }
 
 func TestShipsAlreadyMooredOrAnchoredOnTheFirstPassPostNothingAndLaterEventsStillPostOnceAfterRestarts(t *testing.T) {
+	t.Parallel()
 	x := newDetector(t)
 	old := []ships.Ship{moored("old-mooring", "work", pr7), ship("old-anchor", "work", ships.StatusAnchored), ready(viaBot(moored("old-ready", "home", pr7)))}
 	x.observe(0, old)
@@ -255,6 +268,7 @@ func TestShipsAlreadyMooredOrAnchoredOnTheFirstPassPostNothingAndLaterEventsStil
 }
 
 func TestARecordOfAShipTheDetectorNeverSawPostsNothing(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, nil, ShipRecord{At: t0, Ship: "ghost", Event: "ended", Clean: true})
 	x.wantResults("work")
@@ -262,6 +276,7 @@ func TestARecordOfAShipTheDetectorNeverSawPostsNothing(t *testing.T) {
 }
 
 func TestAMergedShipReturnedToPortPostsOneReturnedCardAndNoSailedOffCard(t *testing.T) {
+	t.Parallel()
 	at := t0.Add(2 * time.Minute)
 	unmoored := ShipRecord{At: at, Ship: "calm-otter", Event: "unmoored", Reason: "merged"}
 	returning := ShipRecord{At: at, Ship: "calm-otter", Event: "returning"}
@@ -285,6 +300,7 @@ func TestAMergedShipReturnedToPortPostsOneReturnedCardAndNoSailedOffCard(t *test
 }
 
 func TestTheEngineersReturnOfALiveShipPostsOneReturnedCard(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
 	returning := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "returning"}
@@ -297,6 +313,7 @@ func TestTheEngineersReturnOfALiveShipPostsOneReturnedCard(t *testing.T) {
 }
 
 func TestStopShipAfterACleanEndPostsNoSailedOffCard(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
 	end := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Clean: true}
@@ -305,6 +322,7 @@ func TestStopShipAfterACleanEndPostsNoSailedOffCard(t *testing.T) {
 }
 
 func TestASailOffIsNotDecidedWhileTheShipIsStillInTheSnapshotSailingOff(t *testing.T) {
+	t.Parallel()
 	end := ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Clean: true}
 	sailing := ship("calm-otter", "work", ships.StatusSailingOff)
 	t.Run("a restart before settle finishes, then a moor", func(t *testing.T) {
@@ -337,6 +355,7 @@ func TestASailOffIsNotDecidedWhileTheShipIsStillInTheSnapshotSailingOff(t *testi
 }
 
 func TestAMergedReturnWhoseUnmooredAndReturningRecordsSplitAcrossASecondPostsOnlyReturned(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{moored("calm-otter", "work", pr7)})
 	unmoored := ShipRecord{At: t0.Add(2*time.Minute + 59*time.Second), Ship: "calm-otter", Event: "unmoored", Reason: "merged"}
@@ -351,6 +370,7 @@ func TestAMergedReturnWhoseUnmooredAndReturningRecordsSplitAcrossASecondPostsOnl
 }
 
 func TestAReturnThatEndsCleanWithoutStoppingPostsSailedOff(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
 	returning := ShipRecord{At: t0.Add(90 * time.Second), Ship: "calm-otter", Event: "returning"}
@@ -360,6 +380,7 @@ func TestAReturnThatEndsCleanWithoutStoppingPostsSailedOff(t *testing.T) {
 }
 
 func TestAShipMooredAtTheSeedPostsNoReadyToMergeAtItsFirstAnsweredPoll(t *testing.T) {
+	t.Parallel()
 	x := newDetector(t)
 	old := viaBot(moored("calm-otter", "work", pr7))
 	x.observe(0, []ships.Ship{old})
@@ -376,6 +397,7 @@ func TestAShipMooredAtTheSeedPostsNoReadyToMergeAtItsFirstAnsweredPoll(t *testin
 }
 
 func TestACardCarriesItsVoyageAndTheShipsName(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	m := moored("calm-otter", "work", pr7)
 	m.Name = "Fix the login"
@@ -418,6 +440,7 @@ func TestACardCarriesItsVoyageAndTheShipsName(t *testing.T) {
 }
 
 func TestAVoyageWithNoParsableLaunchStampPostsNoCard(t *testing.T) {
+	t.Parallel()
 	for _, stamp := range []string{"", "yesterday"} {
 		x := seeded(t)
 		m := moored("calm-otter", "work", pr7)
@@ -442,6 +465,7 @@ func scoutEnd() []ShipRecord {
 }
 
 func TestAScoutThatRunsToItsEndPostsOneSailedOffCardInItsFleetOnly(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
 	end := scoutEnd()
@@ -459,6 +483,7 @@ func TestAScoutThatRunsToItsEndPostsOneSailedOffCardInItsFleetOnly(t *testing.T)
 }
 
 func TestAScoutStillInTheSnapshotPostsNoSailedOffCardYet(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
 	x.observe(5*time.Minute, []ships.Ship{scout("calm-otter", "work")}, scoutEnd()...)
@@ -469,6 +494,7 @@ func TestAScoutStillInTheSnapshotPostsNoSailedOffCardYet(t *testing.T) {
 }
 
 func TestAScoutStopAloneMakesTheCardAScoutsEvenWhenTheShipWasNeverListedAsOne(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
 	x.observe(5*time.Minute, nil, scoutEnd()...)
@@ -478,6 +504,7 @@ func TestAScoutStopAloneMakesTheCardAScoutsEvenWhenTheShipWasNeverListedAsOne(t 
 }
 
 func TestAScoutStopAnOlderBuildSavedPostsNothingAfterTheUpgradeButALaterOneStillPosts(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
 	x.observe(2*time.Minute, []ships.Ship{scout("calm-otter", "work")})
@@ -508,6 +535,7 @@ func TestAScoutStopAnOlderBuildSavedPostsNothingAfterTheUpgradeButALaterOneStill
 }
 
 func TestStopShipOfALiveShipPostsNoCardAlthoughItsKilledEndIsLogged(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{ship("calm-otter", "work", ships.StatusUnderway)})
 	x.observe(5*time.Minute, nil,
@@ -517,6 +545,7 @@ func TestStopShipOfALiveShipPostsNoCardAlthoughItsKilledEndIsLogged(t *testing.T
 }
 
 func TestTheKindOfAMooredShipsCardIsDecidedOnTheServer(t *testing.T) {
+	t.Parallel()
 	noSkill := func(s ships.Ship, kind string) ships.Ship { s.Skill, s.SkillKind = nil, kind; return s }
 	for name, tc := range map[string]struct {
 		ship ships.Ship
@@ -541,6 +570,7 @@ func TestTheKindOfAMooredShipsCardIsDecidedOnTheServer(t *testing.T) {
 }
 
 func TestTheCardOfAShipWithASettledTitleCarriesItAndAShipNotYetTitledCarriesNone(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	titled := moored("calm-otter", "work", pr7)
 	titled.Name, titled.Title, titled.Titled = "Calm Otter", "Fix the login redirect", true
@@ -570,6 +600,7 @@ func failedScoutEnd() []ShipRecord {
 }
 
 func TestAScoutThatLeftNoFindingsPostsOneFailedCardAndNoSailedOffCard(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
 	end := failedScoutEnd()
@@ -584,6 +615,7 @@ func TestAScoutThatLeftNoFindingsPostsOneFailedCardAndNoSailedOffCard(t *testing
 }
 
 func TestAScoutThatLeftNoFindingsAndExitedCleanOnItsOwnPostsFailedNotSailedOff(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
 	x.observe(5*time.Minute, nil, ShipRecord{At: t0.Add(2 * time.Minute), Ship: "calm-otter", Event: "ended", Clean: true, Result: "failed"})
@@ -592,6 +624,7 @@ func TestAScoutThatLeftNoFindingsAndExitedCleanOnItsOwnPostsFailedNotSailedOff(t
 }
 
 func TestAFailedScoutStillInTheSnapshotPostsNoFailedCardYet(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
 	x.observe(5*time.Minute, []ships.Ship{scout("calm-otter", "work")}, failedScoutEnd()...)
@@ -602,6 +635,7 @@ func TestAFailedScoutStillInTheSnapshotPostsNoFailedCardYet(t *testing.T) {
 }
 
 func TestAFailedScoutStopAnOlderBuildSavedPostsNoLateFailedCardButALaterOneStillPosts(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
 	x.observe(2*time.Minute, []ships.Ship{scout("calm-otter", "work")})
@@ -634,6 +668,7 @@ func TestAFailedScoutStopAnOlderBuildSavedPostsNoLateFailedCardButALaterOneStill
 }
 
 func TestAScoutThatSailedOffBeforeTheResultWasReadPostsNoSecondFailedCardWhenItsRecordsGainOne(t *testing.T) {
+	t.Parallel()
 	x := seeded(t)
 	x.observe(time.Minute, []ships.Ship{scout("calm-otter", "work")})
 	plain := []ShipRecord{
@@ -649,6 +684,7 @@ func TestAScoutThatSailedOffBeforeTheResultWasReadPostsNoSecondFailedCardWhenIts
 }
 
 func TestPostedShipCardsAreTheFleetsCardsLoggedAfterTheTimeWithTheirVoyage(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	before := time.Now().Add(-time.Hour)
 	for _, c := range []ShipCard{
@@ -675,6 +711,7 @@ func TestPostedShipCardsAreTheFleetsCardsLoggedAfterTheTimeWithTheirVoyage(t *te
 }
 
 func TestCardsSettledInOnePassPostInTheOrderTheirShipsEndedTiesByShipName(t *testing.T) {
+	t.Parallel()
 	x := newDetector(t)
 	x.observe(time.Minute, []ships.Ship{ship("ship-h", "work", ships.StatusUnderway), ship("ship-g", "work", ships.StatusUnderway),
 		scout("scout-f", "work"), ship("ship-e", "work", ships.StatusUnderway), ship("ship-d", "work", ships.StatusUnderway),

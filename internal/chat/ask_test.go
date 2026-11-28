@@ -63,6 +63,7 @@ func (r *askRig) ask(t *testing.T, fleet string) string {
 }
 
 func TestAskWritesTheQuestionForTheTokensFleetOnly(t *testing.T) {
+	t.Parallel()
 	r := newAskRig(t)
 	// The body names another fleet; the token decides.
 	rec := r.do("POST", "/api/chat/questions", strings.Replace(askBody, `{"title"`, `{"fleet":"work","title"`, 1), "home")
@@ -84,6 +85,7 @@ func TestAskWritesTheQuestionForTheTokensFleetOnly(t *testing.T) {
 }
 
 func TestAskRefusesARequestThatIsNotAnActors(t *testing.T) {
+	t.Parallel()
 	r := newAskRig(t)
 	rec := r.do("POST", "/api/chat/questions", askBody, "")
 	if rec.Code < 400 || rec.Code >= 500 || rec.Code == http.StatusNotFound {
@@ -95,6 +97,7 @@ func TestAskRefusesARequestThatIsNotAnActors(t *testing.T) {
 }
 
 func TestAskRefusesAQuestionThatIsNotOne(t *testing.T) {
+	t.Parallel()
 	r := newAskRig(t)
 	for _, body := range []string{`not json`, `{"title":"t"}`, `{"title":"","questions":[]}`} {
 		if rec := r.do("POST", "/api/chat/questions", body, "home"); rec.Code != http.StatusBadRequest {
@@ -120,6 +123,7 @@ func (r *askRig) poll(t *testing.T, id, query, fleet string) (int, answer, strin
 }
 
 func TestTheAnswerPollSaysWaitingUntilTheQuestionIsAnswered(t *testing.T) {
+	t.Parallel()
 	r := newAskRig(t)
 	id := r.ask(t, "home")
 	if code, a, body := r.poll(t, id, "?wait=0", "home"); code != 200 || a.State != "waiting" {
@@ -137,6 +141,7 @@ func TestTheAnswerPollSaysWaitingUntilTheQuestionIsAnswered(t *testing.T) {
 }
 
 func TestTheAnswerPollSaysWithdrawnWhenTheQuestionIsGone(t *testing.T) {
+	t.Parallel()
 	r := newAskRig(t)
 	id := r.ask(t, "home")
 	for _, f := range r.questionFiles(t, "home") {
@@ -150,6 +155,7 @@ func TestTheAnswerPollSaysWithdrawnWhenTheQuestionIsGone(t *testing.T) {
 }
 
 func TestTheAnswerPollNeverShowsAnotherFleetsAnswer(t *testing.T) {
+	t.Parallel()
 	r := newAskRig(t)
 	id := r.ask(t, "work")
 	path := filepath.Join(r.home, "chat", "work", "questions", inbox.AnswerName(id))
@@ -169,6 +175,7 @@ func TestTheAnswerPollNeverShowsAnotherFleetsAnswer(t *testing.T) {
 }
 
 func TestTheAnswerPollRefusesABadIDOrWait(t *testing.T) {
+	t.Parallel()
 	r := newAskRig(t)
 	id := r.ask(t, "home")
 	for _, c := range []struct{ id, query string }{{"..%2Fetc", "?wait=0"}, {"not-an-id", "?wait=0"}, {id, "?wait=abc"}, {id, "?wait=-1"}} {

@@ -104,5 +104,11 @@ func ContextTokens(kept []byte) (tokens int64, seen time.Time, ok bool) {
 	return u.Input + u.CacheCreation + u.CacheRead, l.Time, true
 }
 
-// FlushWait bounds how long a reset waits for the flush turn to end: 3 minutes, or ADMIRAL_CHAT_FLUSH_WAIT.
-func FlushWait() time.Duration { return delay.From("ADMIRAL_CHAT_FLUSH_WAIT", 3*time.Minute) }
+// flushWait bounds how long a reset waits for the flush turn to end: the service's FlushWait, else 3 minutes or
+// ADMIRAL_CHAT_FLUSH_WAIT.
+func (s *Service) flushWait() time.Duration {
+	if s.FlushWait > 0 {
+		return s.FlushWait
+	}
+	return delay.From("ADMIRAL_CHAT_FLUSH_WAIT", 3*time.Minute)
+}

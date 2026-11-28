@@ -14,6 +14,7 @@ func commitmentCard() commitments.Card {
 }
 
 func TestACommitmentCardIsAppendedToTheFleetChatWithItsOutcome(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if err := r.PostCard("work", commitmentCard()); err != nil {
 		t.Fatalf("PostCard = %v", err)
@@ -42,6 +43,7 @@ func TestACommitmentCardIsAppendedToTheFleetChatWithItsOutcome(t *testing.T) {
 }
 
 func TestPostingACommitmentCardTwiceAddsOneEntry(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	for range 2 {
 		if err := r.PostCard("work", commitmentCard()); err != nil {
@@ -55,6 +57,7 @@ func TestPostingACommitmentCardTwiceAddsOneEntry(t *testing.T) {
 }
 
 func TestACommitmentCardStartsNoTurnAndStaysOutOfTheBrief(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if _, err := r.history().Append("work", chatlog.Entry{ID: "m1", Kind: chatlog.KindMessage, Role: "user", Text: "where are the lanterns"}); err != nil {
 		t.Fatal(err)
@@ -76,6 +79,7 @@ func TestACommitmentCardStartsNoTurnAndStaysOutOfTheBrief(t *testing.T) {
 }
 
 func TestACampaignChildCardCarriesTheChildInTheChatEntry(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	c := commitmentCard()
 	c.ID, c.Child = "commitment-c1-launched-21", "https://github.com/acme/widgets/issues/21"

@@ -68,6 +68,7 @@ func postCard(t *testing.T, r *briefRig, ship, first, result string) {
 }
 
 func TestAServedShipCardCarriesFindingsTrueWhenItsVoyageKeptFindingsAndNothingWhenItDidNot(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.Service.Findings = findings.Open(r.home)
 	postCard(t, r, "calm-otter", firstA, ShipSailedOff)
@@ -92,6 +93,7 @@ func TestAServedShipCardCarriesFindingsTrueWhenItsVoyageKeptFindingsAndNothingWh
 }
 
 func TestAMooredCardGainsTheFindingsFlagWhenALaterRoundKeepsThem(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.Service.Findings = findings.Open(r.home)
 	postCard(t, r, "calm-otter", firstA, ShipMoored)
@@ -105,6 +107,7 @@ func TestAMooredCardGainsTheFindingsFlagWhenALaterRoundKeepsThem(t *testing.T) {
 }
 
 func TestAReusedShipNamesCardsEachSayWhetherTheirOwnVoyageKeptFindings(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.Service.Findings = findings.Open(r.home)
 	postCard(t, r, "calm-otter", firstA, ShipSailedOff)
@@ -120,6 +123,7 @@ func TestAReusedShipNamesCardsEachSayWhetherTheirOwnVoyageKeptFindings(t *testin
 }
 
 func TestTheFindingsFlagIsAddedWhenServedAndNeverWrittenToTheLog(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.Service.Findings = findings.Open(r.home)
 	postCard(t, r, "calm-otter", firstA, ShipSailedOff)
