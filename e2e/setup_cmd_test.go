@@ -502,9 +502,9 @@ func TestSetupAsksTheDefaultFleet(t *testing.T) {
 		w.saveFleets(w.fleetObj("work", "Work", "", "claude"), w.fleetObj("home", "Home", "", "claude"))
 		return w
 	}
-	// No new fleet, the default fleet answer, no Tailscale, then no to each Commodore offer.
+	// No new fleet, the default fleet answer, no Tailscale, yes to writing, then no to each Commodore offer.
 	run := func(w *world, answer string) cliResult {
-		return w.admiralWith(cliOpts{env: w.cenv(), stdin: "\n" + answer + "\n\nn\nn\n"}, "setup")
+		return w.admiralWith(cliOpts{env: w.cenv(), stdin: "\n" + answer + "\n\ny\nn\nn\n"}, "setup")
 	}
 
 	t.Run("Enter keeps an unset default unset", func(t *testing.T) {
@@ -535,7 +535,7 @@ func TestSetupAsksTheDefaultFleet(t *testing.T) {
 	t.Run("an unknown key asks again", func(t *testing.T) {
 		t.Parallel()
 		w := seed(t)
-		r := w.admiralWith(cliOpts{env: w.cenv(), stdin: "\nnope\nhome\n\nn\nn\n"}, "setup")
+		r := w.admiralWith(cliOpts{env: w.cenv(), stdin: "\nnope\nhome\n\ny\nn\nn\n"}, "setup")
 		w.expectExit(r, 0, "setup, typing nope then home")
 		if strings.Count(r.stdout, "Default fleet") < 2 || string(w.readConfig().top["default_fleet"]) != `"home"` {
 			t.Errorf("want the question twice and home written:\n%s", r.stdout)

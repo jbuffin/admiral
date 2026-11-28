@@ -43,12 +43,12 @@ func SetDefaultFleet(dir, key string) error {
 	}
 	before, out, err := renderKey(path, "default_fleet", raw)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrConflict, err)
 	}
 	// The fleets are read from the bytes renderKey rendered from, so the check and the write see one file.
 	cfg, err := Parse(before)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrConflict, err)
 	}
 	if _, ok := cfg.Fleet(key); !ok {
 		return fmt.Errorf("%w %q", ErrNoFleet, key)
@@ -99,6 +99,60 @@ func PreviewFleetsAndRemote(dir string, fleets json.RawMessage, r Remote) (befor
 		return nil, nil, err
 	}
 	return before, after, nil
+}
+
+// SetupKeys is what setup writes in one replace: the fleets, and the remote and the default fleet when given.
+type SetupKeys struct {
+	Fleets       json.RawMessage
+	Remote       *Remote
+	DefaultFleet *string
+}
+
+func (k SetupKeys) kvs() []keyValue {
+	kvs := []keyValue{{"fleets", k.Fleets}}
+	if k.Remote != nil {
+		kvs = append(kvs, remoteKV(*k.Remote))
+	}
+	if k.DefaultFleet != nil {
+		raw, _ := json.Marshal(*k.DefaultFleet)
+		kvs = append(kvs, keyValue{"default_fleet", raw})
+	}
+	return kvs
+}
+
+// PreviewSetup is PreviewFleets for setup's write; a default fleet the rendered file lacks is refused.
+func PreviewSetup(dir string, k SetupKeys) (before, after []byte, err error) {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	return previewSetup(dir, k)
+}
+
+func previewSetup(dir string, k SetupKeys) (before, after []byte, err error) {
+	before, after, err = renderKeys(filepath.Join(dir, FileName), k.kvs()...)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg, err := Parse(after)
+	if err != nil {
+		return nil, nil, err
+	}
+	if k.DefaultFleet != nil {
+		if _, ok := cfg.Fleet(*k.DefaultFleet); !ok {
+			return nil, nil, fmt.Errorf("default_fleet: %w %q", ErrNoFleet, *k.DefaultFleet)
+		}
+	}
+	return before, after, nil
+}
+
+// SetSetup writes what PreviewSetup renders.
+func SetSetup(dir string, k SetupKeys) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	_, out, err := previewSetup(dir, k)
+	if err != nil {
+		return err
+	}
+	return replaceFile(filepath.Join(dir, FileName), out)
 }
 
 func remoteKV(r Remote) keyValue {
