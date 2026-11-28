@@ -17,6 +17,7 @@ import (
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	admstate "github.com/jbuffin/admiral/internal/state"
 )
@@ -29,6 +30,7 @@ type needRig struct {
 	kept   *admstate.Store
 	pokes  atomic.Int64 // Inbox changes, which is what feeds a push
 	in     *inbox.Service
+	outc   *outcomes.Writer
 	svc    *Service
 	mux    *http.ServeMux
 	cancel context.CancelFunc
@@ -37,7 +39,7 @@ type needRig struct {
 
 var shipFleets = map[string]string{
 	"s-home": "home", "s-work": "work", "s-off": "off", "odd ship %?#": "work",
-	"_chat-work": "work", "_admiral": "work", "nofleet": "",
+	"_chat-work": "work", "_admiral": "work", "nofleet": "", "s-ghost": "ghost",
 }
 
 func newNeedRig(t *testing.T) *needRig {
@@ -59,7 +61,8 @@ func newNeedRig(t *testing.T) *needRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &needRig{t: t, home: home, cfg: cfg, kept: st}
+	r := &needRig{t: t, home: home, cfg: cfg, kept: st, outc: outcomes.New(filepath.Join(home, "outcomes"), t.Logf)}
+	t.Cleanup(r.outc.Close)
 	t.Cleanup(func() { r.stop() })
 	return r
 }
@@ -74,7 +77,7 @@ func (r *needRig) start() {
 // begin is start up to the Inbox's first scan, the order cmd/admiral/main.go runs the poster in.
 func (r *needRig) begin() {
 	r.t.Helper()
-	r.in = &inbox.Service{Home: r.home, Hub: server.NewHub(), Kept: r.kept,
+	r.in = &inbox.Service{Home: r.home, Hub: server.NewHub(), Kept: r.kept, Outcomes: r.outc,
 		Ship: func(session string) (inbox.ShipInfo, bool) {
 			fleet, ok := shipFleets[session]
 			return inbox.ShipInfo{Name: session, Harness: "claude", Fleet: fleet, FleetName: fleet}, ok
