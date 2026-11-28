@@ -111,6 +111,35 @@ test('a ship with an open Inbox item says so on its view, and Go to Inbox lands 
   await expect(peekOf(page)).toContainText('Two small fixes');
 });
 
+test('the tab title counts a needs-you stop and an Inbox item, keeps counting the stop once seen, and drops the item when it is removed', async ({ page, admiral }) => {
+  const visitor = await visitorWithReview(admiral);
+  const stop = await launchShip(admiral, { fleet: 'alpha', harness: 'codex' });
+  setReason(admiral, stop, 'question');
+  setState(admiral, stop, 'needs_you');
+  await page.goto(admiral.url + 'app/inbox?fleet=alpha');
+  await expect(page).toHaveTitle('(2) Admiral', { timeout: 15_000 });
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', /^data:image\/svg\+xml,/);
+
+  await page.goto(admiral.url + `app/ships/${encodeURIComponent(stop.session)}?fleet=alpha`);
+  await expect(page.getByRole('main')).toContainText(stop.name);
+  // Leaving by a link keeps the page alive, so the view's leave handler runs and marks the stop seen.
+  await page.getByRole('link', { name: /Inbox/ }).first().tap();
+  await expect
+    .poll(async () => ((await (await page.request.get(admiral.url + 'api/v1/ships')).json()) as { ships: { session: string; seen?: boolean }[] }).ships.find((s) => s.session === stop.session)?.seen)
+    .toBe(true);
+  // The Inbox hides a seen stop, so its row going means the page has the push that follows the seen mark.
+  await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: stop.name })).toHaveCount(0, { timeout: 15_000 });
+  await expect(page).toHaveTitle('(2) Admiral');
+
+  await page.goto(admiral.url + `app/ships/${encodeURIComponent(visitor.session)}?fleet=alpha`);
+  await page.getByRole('link', { name: /Go to Inbox/ }).tap();
+  await expect(peekOf(page)).toContainText('Two small fixes');
+  await page.locator('body').click({ position: { x: 2, y: 2 } });
+  await page.keyboard.press('e');
+  await peekOf(page).getByRole('button', { name: 'Remove', exact: true }).tap();
+  await expect(page).toHaveTitle('(1) Admiral');
+});
+
 test('on a portrait iPad Peek replaces the list instead of squeezing beside it, and the PR link has its own space', async ({ page, admiral }) => {
   await page.setViewportSize({ width: 834, height: 1194 });
   await visitorWithReview(admiral);

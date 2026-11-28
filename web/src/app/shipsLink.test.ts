@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ship } from './api';
-import { inboxItems, retryShips, ships, shipsLink, watchShips, chats } from './shipsLink';
+import { inboxItems, retryShips, servedAttention, ships, shipsLink, watchShips, chats } from './shipsLink';
 
 class FakeSocket extends EventTarget {
   static all: FakeSocket[] = [];
@@ -68,6 +68,7 @@ beforeEach(() => {
     return probeAnswer();
   });
   ships.value = [];
+  servedAttention.value = null;
 });
 
 afterEach(() => {
@@ -130,6 +131,39 @@ describe('watchShips', () => {
     expect(chats.value.alpha.state).toBe('working');
     expect(chats.value.beta.messages.map((m) => m.text)).toEqual(['beta one']);
     expect(ships.value.map((s) => s.name)).toEqual(['a']);
+  });
+
+  it('holds no attention count until the server serves one, and then the latest, 0 included', () => {
+    stop = watchShips();
+    last().open();
+    last().send({ type: 'ships', ships: [ship('a', 'needs_you')] });
+    expect(servedAttention.value).toBeNull();
+    last().send({ type: 'attention', count: 2 });
+    expect(servedAttention.value).toBe(2);
+    last().send({ type: 'attention', count: 0 });
+    expect(servedAttention.value).toBe(0);
+  });
+
+  it('ignores an attention count that is negative or not a whole number', () => {
+    stop = watchShips();
+    last().open();
+    last().send({ type: 'attention', count: 2 });
+    last().send({ type: 'attention', count: -1 });
+    last().send({ type: 'attention', count: 1.5 });
+    expect(servedAttention.value).toBe(2);
+  });
+
+  it('keeps the last served attention count across a reconnect until the new connection serves one', async () => {
+    stop = watchShips();
+    last().open();
+    last().send({ type: 'attention', count: 3 });
+    last().drop();
+    expect(servedAttention.value).toBe(3);
+    await tick(1000);
+    last().open();
+    expect(servedAttention.value).toBe(3);
+    last().send({ type: 'attention', count: 1 });
+    expect(servedAttention.value).toBe(1);
   });
 
   it('uses wss on an https page', () => {

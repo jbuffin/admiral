@@ -1,23 +1,13 @@
-// The attention count over the Inbox queue, and where it shows: title, favicon, app badge.
-import { describe, expect, it } from 'vitest';
-import type { CrewBoat, Ship } from './api';
+// Where the served attention count shows (title, favicon, app badge) and the shared Inbox queue the watcher keeps.
+import { afterEach, describe, expect, it } from 'vitest';
+import type { Ship } from './api';
 import { readFileSync } from 'node:fs';
-import { applyAttention, attentionApplier, DOT_ICON, type AttentionTarget } from './attention';
-import { attentionCount, createInboxQueue, HOLD_MS, sharedInboxQueue, type InboxItem } from './inbox';
+import { applyAttention, attentionApplier, DOT_ICON, watchAttention, type AttentionTarget } from './attention';
+import { inboxItems, servedAttention, ships } from './shipsLink';
+import { HOLD_MS, sharedInboxQueue, type InboxItem } from './inbox';
 
 const T0 = Date.parse('2026-10-22T10:00:00Z');
 const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
-
-const crew = (name: string, status: string, extra: Partial<CrewBoat> = {}): CrewBoat => ({
-  name,
-  conversation: true,
-  harness: 'claude',
-  status,
-  exit_code: null,
-  exit_signal: null,
-  launched: at(0),
-  ...extra,
-});
 
 const ship = (session: string, fleet: string, status: Ship['status'], extra: Partial<Ship> = {}): Ship => ({
   session,
@@ -50,108 +40,14 @@ const item = (session: string, id: string, created: string, extra: Partial<Inbox
   ...extra,
 });
 
-describe('attentionCount', () => {
-  const merge = (session: string) => ship(session, 'alpha', 'moored', { stack_ready: true });
-  const chatQuestion = (fleet: string) => item(`_chat-${fleet}`, 'q-chat', at(1), { kind: 'question', fleet });
-
-  it('counts stops, crew stops, merge entries and every item kind but notice, across fleets', () => {
-    const q = createInboxQueue();
-    q.sync(
-      {
-        items: [
-          item('a', 'q-1', at(1), { kind: 'question', fleet: 'alpha' }),
-          item('b', 'r-1', at(2), { fleet: 'bravo' }),
-          item('b', 'f-1', at(2), { kind: 'findings', fleet: 'bravo' }),
-          item('a', 'w-1', at(2), { kind: 'wake_proposal', fleet: 'alpha' }),
-          item('a', 'c-1', at(2), { kind: 'crew_notes', fleet: 'alpha' }),
-          item('a', 'c-2', at(2), { kind: 'crew_member', fleet: 'alpha' }),
-          chatQuestion('alpha'),
-          item('_admiral', 'n-1', at(3), { kind: 'notice' }),
-        ],
-        ships: [
-          ship('s', 'zulu', 'needs_you', { reason: 'question', stop_since: at(1) }),
-          ship('t', 'bravo', 'needs_you', { reason: 'crew', crew: [crew('Mate', 'needs_you')] }),
-          merge('m'),
-        ],
-      },
-      T0,
-    );
-    expect(attentionCount(q)).toBe(10);
-  });
-
-  it('is zero for an empty queue and for notices alone', () => {
-    const q = createInboxQueue();
-    expect(attentionCount(q)).toBe(0);
-    q.sync({ items: [item('_admiral', 'n-1', at(1), { kind: 'notice' })], ships: [] }, T0);
-    expect(attentionCount(q)).toBe(0);
-  });
-
-  it('drops at once on fold, before the hold is up', () => {
-    const q = createInboxQueue();
-    q.sync({ items: [item('a', 'q-1', at(1), { kind: 'question' })], ships: [merge('m')] }, T0);
-    expect(attentionCount(q)).toBe(2);
-    q.fold('item:a/q-1', 'Answered', T0);
-    expect(attentionCount(q)).toBe(1);
-    q.fold('merge:m', 'Merged', T0);
-    expect(attentionCount(q)).toBe(0);
-  });
-
-  it('stays down while a stale push serves an answered item or a merged ship, and counts it again once the server stops and serves it anew', () => {
-    const q = createInboxQueue();
-    const it = item('a', 'q-1', at(1), { kind: 'question' });
-    q.sync({ items: [it], ships: [merge('m')] }, T0);
-    q.fold('item:a/q-1', 'Answered', T0);
-    q.fold('merge:m', 'Merged', T0);
-    q.tick(T0 + HOLD_MS);
-    q.sync({ items: [it], ships: [merge('m')] }, T0 + HOLD_MS + 1);
-    expect(attentionCount(q)).toBe(0);
-    q.sync({ items: [], ships: [] }, T0 + HOLD_MS + 2);
-    q.sync({ items: [it], ships: [merge('m')] }, T0 + HOLD_MS + 3);
-    expect(attentionCount(q)).toBe(2);
-  });
-
-  it('drops when the server stops serving an item', () => {
-    const q = createInboxQueue();
-    q.sync({ items: [item('a', 'q-1', at(1), { kind: 'question' }), item('a', 'r-1', at(2))], ships: [] }, T0);
-    expect(attentionCount(q)).toBe(2);
-    q.sync({ items: [item('a', 'r-1', at(2))], ships: [] }, T0 + 1000);
-    expect(attentionCount(q)).toBe(1);
-  });
-
-  it('drops when a stop goes back underway, without waiting for the slide-out', () => {
-    const q = createInboxQueue();
-    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(1) }), ship('b', 'alpha', 'needs_you', { reason: 'crew', crew: [crew('Mate', 'needs_you')] })] }, T0);
-    expect(attentionCount(q)).toBe(2);
-    q.sync({ items: [], ships: [ship('a', 'alpha', 'underway'), ship('b', 'alpha', 'underway', { crew: [crew('Mate', 'idle')] })] }, T0 + 1000);
-    expect(q.entries().map((e) => e.folded)).toEqual(['Back underway', 'Back underway']);
-    expect(attentionCount(q)).toBe(0);
-  });
-
-  it('counts a stop that asks again during its hold', () => {
-    const q = createInboxQueue();
-    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(1) })] }, T0);
-    q.sync({ items: [], ships: [ship('a', 'alpha', 'underway')] }, T0 + 1000);
-    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(2) })] }, T0 + 2000);
-    expect(attentionCount(q)).toBe(0);
-    q.tick(T0 + 1000 + HOLD_MS);
-    expect(attentionCount(q)).toBe(1);
-  });
-
-  it('does not change when a push repeats the same items and ships', () => {
-    const q = createInboxQueue();
-    const input = { items: [item('a', 'q-1', at(1), { kind: 'question' })], ships: [ship('b', 'alpha', 'needs_you', { stop_since: at(1) })] };
-    q.sync(input, T0);
-    q.sync(input, T0 + 1000);
-    expect(attentionCount(q)).toBe(2);
-  });
-
-  it('is one queue for every surface: a fold through one handle drops the count read through another', () => {
+describe('the shared Inbox queue', () => {
+  it('is one queue for every surface: a fold through one handle shows through another', () => {
     const a = sharedInboxQueue();
     const b = sharedInboxQueue();
     a.sync({ items: [item('a', 'q-1', at(1), { kind: 'question' })], ships: [] }, T0);
-    expect(attentionCount(b)).toBe(1);
+    expect(b.entries().map((e) => e.folded)).toEqual([null]);
     b.fold('item:a/q-1', 'Answered', T0);
-    expect(attentionCount(a)).toBe(0);
+    expect(a.entries().map((e) => e.folded)).toEqual(['Answered']);
     a.sync({ items: [], ships: [] }, T0 + 1000);
     a.tick(T0 + HOLD_MS + 1000);
   });
@@ -227,5 +123,75 @@ describe('the dotted favicon', () => {
     const dotted = decodeURIComponent(DOT_ICON.slice('data:image/svg+xml,'.length));
     expect(dotted.startsWith(file.slice(0, -'</svg>'.length))).toBe(true);
     expect(dotted.slice(file.length - '</svg>'.length)).toMatch(/^<circle [^>]*\/><\/svg>$/);
+  });
+});
+
+describe('watchAttention shows the served count', () => {
+  const watched = () => {
+    const icon = { href: 'untouched.svg' };
+    const badge: (number | 'clear')[] = [];
+    const t: AttentionTarget = {
+      document: { title: 'untouched', querySelector: () => icon },
+      navigator: { setAppBadge: async (n?: number) => void badge.push(n!), clearAppBadge: async () => void badge.push('clear') },
+    };
+    return { t, icon, badge };
+  };
+  let stopWatching: (() => void) | undefined;
+  afterEach(() => {
+    stopWatching?.();
+    stopWatching = undefined;
+    servedAttention.value = null;
+    ships.value = [];
+    inboxItems.value = [];
+    const q = sharedInboxQueue();
+    q.sync({ items: [], ships: [] }, T0);
+    q.tick(T0 + HOLD_MS + 1000);
+  });
+
+  it('puts a served count above zero in the title, the favicon dot and the badge, and clears all three at a served 0', () => {
+    const { t, icon, badge } = watched();
+    stopWatching = watchAttention(t);
+    servedAttention.value = 2;
+    expect(t.document.title).toBe('(2) Admiral');
+    expect(icon.href).toBe(DOT_ICON);
+    expect(badge).toEqual([2]);
+    servedAttention.value = 0;
+    expect(t.document.title).toBe('Admiral');
+    expect(icon.href).toBe('/favicon.svg');
+    expect(badge).toEqual([2, 'clear']);
+  });
+
+  it('leaves the title, favicon and badge as they were while no count has been served, even with ships and items present', () => {
+    const { t, icon, badge } = watched();
+    ships.value = [ship('a', 'alpha', 'needs_you', { stop_since: at(1) })];
+    inboxItems.value = [item('b', 'q-1', at(1), { kind: 'question' })];
+    stopWatching = watchAttention(t);
+    expect(t.document.title).toBe('untouched');
+    expect(icon.href).toBe('untouched.svg');
+    expect(badge).toEqual([]);
+  });
+
+  it('shows the served count when the served ships and items work out to another number', () => {
+    const { t } = watched();
+    stopWatching = watchAttention(t);
+    ships.value = [ship('a', 'alpha', 'needs_you', { stop_since: at(1) })];
+    inboxItems.value = [item('b', 'q-1', at(1), { kind: 'question' }), item('c', 'q-2', at(2), { kind: 'question' })];
+    servedAttention.value = 1;
+    expect(t.document.title).toBe('(1) Admiral');
+    servedAttention.value = 0;
+    expect(t.document.title).toBe('Admiral');
+  });
+
+  it('keeps the title through an optimistic fold in the Inbox until the server serves the next count', () => {
+    const { t, badge } = watched();
+    stopWatching = watchAttention(t);
+    inboxItems.value = [item('a', 'q-1', at(1), { kind: 'question' }), item('a', 'q-2', at(2), { kind: 'question' })];
+    servedAttention.value = 2;
+    expect(sharedInboxQueue().entries().length).toBe(2);
+    sharedInboxQueue().fold('item:a/q-1', 'Answered', T0);
+    expect(t.document.title).toBe('(2) Admiral');
+    servedAttention.value = 1;
+    expect(t.document.title).toBe('(1) Admiral');
+    expect(badge).toEqual([2, 1]);
   });
 });

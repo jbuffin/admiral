@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CrewBoat, Ship } from './api';
-import { attentionCount, createInboxQueue, HOLD_MS, type InboxItem } from './inbox';
+import { createInboxQueue, HOLD_MS, type InboxItem } from './inbox';
 
 const T0 = Date.parse('2026-10-22T10:00:00Z');
 const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
@@ -381,14 +381,6 @@ describe('createInboxQueue: re-review', () => {
     expect(rows(q)).toEqual([]);
   });
 
-  it('counts in the attention count until it is folded', () => {
-    const q = createInboxQueue();
-    q.sync({ items: [], ships: [responded('a')] }, T0);
-    expect(attentionCount(q)).toBe(1);
-    q.fold('rereview:a', 'Re-reviewing', T0 + 1000);
-    expect(attentionCount(q)).toBe(0);
-  });
-
   it('folds with the given text, holds it for 5 s, then drops it', () => {
     const q = createInboxQueue();
     q.sync({ items: [], ships: [responded('a')] }, T0);
@@ -445,9 +437,9 @@ describe('createInboxQueue: re-review', () => {
 describe('a drafting ship that ended', () => {
   const ended: InboxItem = { version: 1, id: 'd-1', session: '_admiral', kind: 'drafting_ended', created: at(0), title: 'Saltpaw ended without filing a campaign', name: 'Admiral', fleet: 'a', drafting_ended: { ship: 'saltpaw', name: 'Saltpaw', fleet: 'a', harness: 'claude' } };
 
-  it('counts toward the Inbox count', () => {
+  it('is listed in the Inbox', () => {
     const q = createInboxQueue();
     q.sync({ items: [ended], ships: [] }, T0);
-    expect(attentionCount(q)).toBe(1);
+    expect(keys(q)).toEqual(['item:_admiral/d-1']);
   });
 });
