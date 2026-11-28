@@ -40,6 +40,7 @@ import (
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/launchorders"
+	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/lockroute"
 	"github.com/jbuffin/admiral/internal/lookout"
 	"github.com/jbuffin/admiral/internal/moor"
@@ -657,6 +658,14 @@ func serve(args []string) error {
 	}, pushFeed.Watcher.Emit)
 	chatService.OnQuestions = func() { inboxService.Changed(); commitmentRunner.Changed() }
 	chatService.FollowCampaign, chatService.CampaignFleet, commitmentRunner.Campaign, campaignService.OnRead = campaignService.Follow, campaignService.Owner, campaignService.Snapshot, commitmentRunner.Changed
+	campaignService.Commitment = func(fleet, campaignID string) (follow.CampaignCommitment, bool) {
+		open, err := chatService.Notes().Commitments(fleet)
+		if err != nil {
+			return follow.CampaignCommitment{}, false
+		}
+		c, ok := ledger.CampaignCommitment(open, campaignID)
+		return follow.CampaignCommitment{ID: c.ID, TS: c.TS, Launched: c.Launched, WaitingChildren: c.WaitingChildren}, ok
+	}
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
 		t, err := routineScheduler.Accept(ctx, p.Fleet, p.Routine, p.Trigger)
 		switch {

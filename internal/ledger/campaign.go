@@ -113,10 +113,8 @@ func (l *Ledger) AddCampaignCommitment(fleet string, c Commitment, via string) (
 	if err != nil {
 		return Commitment{}, false, err
 	}
-	for _, o := range open {
-		if o.Trigger.Kind == TriggerCampaign && o.Trigger.Subject == c.Trigger.Subject {
-			return o, false, nil
-		}
+	if o, ok := CampaignCommitment(open, c.Trigger.Subject); ok {
+		return o, false, nil
 	}
 	if len(open) >= MaxCommitments {
 		return Commitment{}, false, &RefusedError{fmt.Sprintf("the ledger is full: %d commitments are open. Tell the engineer they can cancel commitments on Preferences, then record this one again", MaxCommitments)}
@@ -182,4 +180,14 @@ func (l *Ledger) childEvent(fleet, id string, ev event) error {
 	}
 	ev.V, ev.TS, ev.ID = version, l.now().UTC().Truncate(time.Second), id
 	return l.append(fleet, ev)
+}
+
+// CampaignCommitment picks the open work commitment on a campaign out of a fleet's open commitments.
+func CampaignCommitment(open []Commitment, campaignID string) (Commitment, bool) {
+	for _, o := range open {
+		if o.Trigger.Kind == TriggerCampaign && o.Trigger.Subject == campaignID && o.Action == ActionWork {
+			return o, true
+		}
+	}
+	return Commitment{}, false
 }
