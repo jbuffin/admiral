@@ -306,7 +306,9 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 
 ## The default fleet
 
-`GET /api/config` also carries `default_fleet` (a fleet key) and `default_fleet_fallback`. `default_fleet` is the fleet the config names, which new sources, unclaimed GitHub items and migrated sources go to. When the config names none, or names a fleet that is gone, it is the first fleet and `default_fleet_fallback` is `true`. With no fleets it is `""` and the fallback is `true`.
+`GET /api/config` carries `default_fleet` (a fleet key) and `default_fleet_fallback`. `default_fleet` is the fleet the config names, which new sources, unclaimed GitHub items and migrated sources go to. When the config names none, or names a fleet that is gone, it is the first fleet and `default_fleet_fallback` is `true`. With no fleets it is `""` and the fallback is `true`.
+
+`PUT /api/default-fleet` with `{"fleet":"<key>"}` sets it, keeping every other key of `config.json`, and answers `200` with the same body as `GET /api/config`. Picking the first fleet still writes the key. It answers `422` for a key that is not a fleet (nothing is written), `400` for a body that is not JSON, or a `fleet` that is missing, not a string or empty, `409` when `config.json` is invalid or changed under the write, and `500` for any other failure. Any authenticated client may call it, a paired device's Bearer included (`/api/v1/default-fleet`); AdmiralBot's actor token is refused at the guard.
 
 ## A fleet's Limits
 

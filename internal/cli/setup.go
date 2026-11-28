@@ -73,7 +73,7 @@ func setup(args []string, std IO) error {
 			return err
 		}
 	}
-	if len(s.touched) == 0 && s.remote == nil {
+	if len(s.touched) == 0 && s.remote == nil && s.defaultFleet == nil {
 		fmt.Fprintln(std.Out, "No changes.")
 		if *dry {
 			return nil
@@ -82,7 +82,7 @@ func setup(args []string, std IO) error {
 	}
 
 	for {
-		p, err := newPlan(dir, s.fleets, s.touched, s.remote)
+		p, err := newPlan(dir, s.fleets, s.touched, s.remote, s.defaultFleet)
 		if err != nil {
 			return err
 		}
@@ -170,12 +170,14 @@ type session struct {
 	fleets  *config.Object
 	touched []string
 	remote  *remoteAsk // nil when the person asked for nothing under remote
-	serve   bool       // serve still has to be set up
-	served  bool       // setup ran tailscale serve
-	log     []answered // what was answered, to plan again on a changed file
-	in      *bufio.Reader
-	answers bool            // the answers came from --answers, so setup never asks to install
-	install map[string]bool // install_commodore by fleet key
+	// defaultFleet is nil when the person asked for nothing, which leaves the stored key alone.
+	defaultFleet *string
+	serve        bool       // serve still has to be set up
+	served       bool       // setup ran tailscale serve
+	log          []answered // what was answered, to plan again on a changed file
+	in           *bufio.Reader
+	answers      bool            // the answers came from --answers, so setup never asks to install
+	install      map[string]bool // install_commodore by fleet key
 }
 
 type answered struct {
@@ -227,9 +229,16 @@ func (s *session) fromFile(path string) error {
 			return err
 		}
 	}
+	if raw, ok := top.Get("default_fleet"); ok {
+		var key string
+		if json.Unmarshal(raw, &key) != nil || key == "" {
+			return fmt.Errorf("%s: default_fleet: want the key of a fleet", path)
+		}
+		s.defaultFleet = &key
+	}
 	raw, ok := top.Get("fleets")
-	if !ok && s.remote != nil {
-		return nil
+	if !ok && (s.remote != nil || s.defaultFleet != nil) {
+		return s.checkDefaultFleet(path)
 	}
 	if !ok {
 		return fmt.Errorf(`%s: expected {"fleets": {...}}`, path)
@@ -253,6 +262,17 @@ func (s *session) fromFile(path string) error {
 		if err := s.merge(key, a); err != nil {
 			return err
 		}
+	}
+	return s.checkDefaultFleet(path)
+}
+
+// checkDefaultFleet refuses early so a Tailscale step never runs for answers that cannot be written.
+func (s *session) checkDefaultFleet(path string) error {
+	if s.defaultFleet == nil {
+		return nil
+	}
+	if _, ok := s.fleets.Get(*s.defaultFleet); !ok {
+		return fmt.Errorf("%s: default_fleet: no fleet %q", path, *s.defaultFleet)
 	}
 	return nil
 }
@@ -437,6 +457,9 @@ func (s *session) ask() error {
 	if err := s.askFleets(); err != nil {
 		return err
 	}
+	if err := s.askDefaultFleet(); err != nil {
+		return err
+	}
 	return s.askRemote()
 }
 
@@ -469,6 +492,46 @@ func (s *session) askFleets() error {
 		if !more {
 			return nil
 		}
+	}
+}
+
+// Enter keeps the stored key (not the shown default), so a re-run answering Enter everywhere changes nothing.
+func (s *session) askDefaultFleet() error {
+	keys := s.fleets.Keys()
+	if len(keys) < 2 {
+		return nil
+	}
+	stored := ""
+	if data, err := config.ReadConfig(s.dir); err == nil {
+		if top, err := config.ParseObject(data); err == nil {
+			if raw, ok := top.Get("default_fleet"); ok {
+				_ = json.Unmarshal(raw, &stored)
+			}
+		}
+	}
+	shown := keys[0]
+	if _, ok := s.fleets.Get(stored); ok && stored != "" {
+		shown = stored
+	}
+	in, w := s.reader(), s.io.Out
+	for {
+		fmt.Fprintf(w, "Default fleet [%s]: ", shown)
+		line, err := in.ReadString('\n')
+		if err != nil && line == "" {
+			if errors.Is(err, io.EOF) {
+				return errInputEnded
+			}
+			return err
+		}
+		key := strings.TrimSpace(line)
+		if key == "" {
+			return nil
+		}
+		if _, ok := s.fleets.Get(key); ok {
+			s.defaultFleet = &key
+			return nil
+		}
+		fmt.Fprintf(w, "No fleet %q; the fleets are %s.\n", key, strings.Join(keys, ", "))
 	}
 }
 

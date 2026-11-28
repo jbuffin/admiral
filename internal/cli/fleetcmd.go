@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -11,7 +12,7 @@ import (
 
 func Fleet(args []string, std IO) error {
 	if len(args) == 0 {
-		return usagef("usage: admiral fleet list | add <key> | edit <key> | check [<key>]")
+		return usagef("usage: admiral fleet list | add <key> | edit <key> | check [<key>] | default [<key>]")
 	}
 	switch args[0] {
 	case "list":
@@ -22,8 +23,10 @@ func Fleet(args []string, std IO) error {
 		return fleetChange(args[1:], std, false)
 	case "check":
 		return fleetCheck(args[1:], std)
+	case "default":
+		return fleetDefault(args[1:], std)
 	}
-	return usagef("unknown command %q: want list, add, edit or check", "fleet "+args[0])
+	return usagef("unknown command %q: want list, add, edit, check or default", "fleet "+args[0])
 }
 
 func loadConfig() (*config.Config, error) {
@@ -43,15 +46,57 @@ func fleetList(std IO) error {
 	if err != nil {
 		return err
 	}
+	def, _ := cfg.DefaultFleet()
 	tw := tabwriter.NewWriter(std.Out, 0, 4, 2, ' ', 0)
 	for _, f := range cfg.Fleets {
 		var hs []string
 		for _, h := range f.Harnesses {
 			hs = append(hs, h.Name)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", f.Key, f.Name, strings.Join(hs, ","))
+		row := fmt.Sprintf("%s\t%s\t%s", f.Key, f.Name, strings.Join(hs, ","))
+		if f.Key == def {
+			row += "\tdefault"
+		}
+		fmt.Fprintln(tw, row)
 	}
 	return tw.Flush()
+}
+
+func fleetDefault(args []string, std IO) error {
+	if len(args) > 1 {
+		return usagef("usage: admiral fleet default [<key>]")
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	if len(args) == 0 {
+		key, fellBack := cfg.DefaultFleet()
+		if key == "" {
+			return errors.New("no fleets: add one with admiral fleet add or admiral setup")
+		}
+		fmt.Fprintln(std.Out, key)
+		if fellBack {
+			why := "no default_fleet is set"
+			if cfg.DefaultFleetKey != "" {
+				why = fmt.Sprintf("default_fleet names %q, which is not a fleet", cfg.DefaultFleetKey)
+			}
+			fmt.Fprintf(std.Err, "%s, so the first fleet is used\n", why)
+		}
+		return nil
+	}
+	dir, err := admiralHome()
+	if err != nil {
+		return err
+	}
+	if err := config.SetDefaultFleet(dir, args[0]); err != nil {
+		if errors.Is(err, config.ErrNoFleet) {
+			return fmt.Errorf("no fleet %q", args[0])
+		}
+		return err
+	}
+	fmt.Fprintf(std.Out, "Default fleet is %s\n", args[0])
+	return nil
 }
 
 // fleetCheck never runs an executable, only resolves it.
@@ -262,7 +307,7 @@ func fleetChange(args []string, std IO, create bool) error {
 	}
 
 	fleets.Set(key, fleet.JSON())
-	p, err := newPlan(dir, fleets, []string{key}, nil)
+	p, err := newPlan(dir, fleets, []string{key}, nil, nil)
 	if err != nil {
 		return err
 	}

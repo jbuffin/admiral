@@ -14,12 +14,13 @@ type plan struct {
 	before, after []byte
 	fleets        *config.Object
 	remote        *config.Remote // nil leaves the remote section out of the write
+	defaultFleet  *string        // nil leaves default_fleet as stored
 	cfg           *config.Config
 }
 
 // newPlan leaves fleets not in touched as they are, even when they share an
 // identity directory.
-func newPlan(dir string, fleets *config.Object, touched []string, ask *remoteAsk) (*plan, error) {
+func newPlan(dir string, fleets *config.Object, touched []string, ask *remoteAsk, defaultFleet *string) (*plan, error) {
 	var remote *config.Remote
 	if ask != nil {
 		cur, err := currentRemote(dir)
@@ -29,7 +30,7 @@ func newPlan(dir string, fleets *config.Object, touched []string, ask *remoteAsk
 		m := ask.merged(cur)
 		remote = &m
 	}
-	p := &plan{fleets: fleets, remote: remote}
+	p := &plan{fleets: fleets, remote: remote, defaultFleet: defaultFleet}
 	before, after, err := p.preview(dir)
 	if err != nil {
 		return nil, err
@@ -45,11 +46,12 @@ func newPlan(dir string, fleets *config.Object, touched []string, ask *remoteAsk
 	return p, nil
 }
 
+func (p *plan) keys() config.SetupKeys {
+	return config.SetupKeys{Fleets: p.fleets.JSON(), Remote: p.remote, DefaultFleet: p.defaultFleet}
+}
+
 func (p *plan) preview(dir string) (before, after []byte, err error) {
-	if p.remote != nil {
-		return config.PreviewFleetsAndRemote(dir, p.fleets.JSON(), *p.remote)
-	}
-	return config.PreviewFleets(dir, p.fleets.JSON())
+	return config.PreviewSetup(dir, p.keys())
 }
 
 var errChanged = errors.New("config.json changed since the change was planned; run it again")
@@ -62,10 +64,7 @@ func (p *plan) write(dir string) error {
 	if !bytes.Equal(before, p.before) {
 		return errChanged
 	}
-	if p.remote != nil {
-		return config.SetFleetsAndRemote(dir, p.fleets.JSON(), *p.remote)
-	}
-	return config.SetFleets(dir, p.fleets.JSON())
+	return config.SetSetup(dir, p.keys())
 }
 
 // config.IdentityDir falls back to Admiral's environment and then the harness

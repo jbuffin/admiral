@@ -27,7 +27,7 @@ func IsHelp(arg string) bool { return arg == "-h" || arg == "--help" || arg == "
 
 var usages = map[string]string{
 	"setup":      "usage: admiral setup [--answers <file> --yes] [--dry-run]",
-	"fleet":      "usage: admiral fleet list | add <key> --name <name> [flags] | edit <key> [flags] | check [<key>]\nflags: --color --harness --executable <h>=<path> --arg <h>=<arg> --env <h>=<NAME>=<value> --unset-env <h>=<NAME> --search-root --remove-search-root",
+	"fleet":      "usage: admiral fleet list | add <key> --name <name> [flags] | edit <key> [flags] | check [<key>] | default [<key>]\nflags: --color --harness --executable <h>=<path> --arg <h>=<arg> --env <h>=<NAME>=<value> --unset-env <h>=<NAME> --search-root --remove-search-root",
 	"config":     "usage: admiral config show | validate | edit",
 	"ships":      "usage: admiral ships [--port <n>] [--names]",
 	"attach":     "usage: admiral attach <ship>   (a display name or a session name; Ctrl-b d detaches)",

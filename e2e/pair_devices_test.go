@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -49,7 +51,16 @@ func bearer(token string) map[string]string {
 // `admiral devices`, and after `admiral devices revoke <name>` is refused and its open socket closes.
 func TestPairedDeviceWorksUntilAdmiralDevicesRevokesIt(t *testing.T) {
 	t.Parallel()
-	in := startLAN(t)
+	home := newHome(t)
+	exe := quote(filepath.Join(fakeDir(t), "claude"))
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "config.json"), []byte(`{"version":1,"fleets":{"alpha":{"name":"Alpha","search_roots":["~/code"],"claude":{"executable":`+exe+`}},"bravo":{"name":"Bravo","search_roots":["~/code"],"claude":{"executable":`+exe+`,"env":{"CLAUDE_CONFIG_DIR":"~/.claude-b"}}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	in := startAdmiral(t, home, "0.0.0.0:0")
+	requireLAN(t, in)
 	const name = "fake-tablet"
 
 	pair := in.admiralCLI(t, "pair")
@@ -78,6 +89,26 @@ func TestPairedDeviceWorksUntilAdmiralDevicesRevokesIt(t *testing.T) {
 
 	if r, body := get(t, in.lanURL()+"/api/v1/ships", bearer(paired.Token)); r.StatusCode != 200 {
 		t.Fatalf("Bearer on an API route = %d %s, want 200", r.StatusCode, body)
+	}
+	setDefault := func(fleet string) int {
+		req, _ := http.NewRequest(http.MethodPut, in.lanURL()+"/api/v1/default-fleet", strings.NewReader(`{"fleet":"`+fleet+`"}`))
+		req.Header.Set("Authorization", "Bearer "+paired.Token)
+		req.Header.Set("Content-Type", "application/json")
+		pr, err := client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pr.Body.Close()
+		return pr.StatusCode
+	}
+	if code := setDefault("nope"); code != http.StatusUnprocessableEntity {
+		t.Fatalf("a paired device's PUT /api/v1/default-fleet naming no fleet = %d, want 422", code)
+	}
+	if code := setDefault("bravo"); code != http.StatusOK {
+		t.Fatalf("a paired device's PUT /api/v1/default-fleet = %d, want 200", code)
+	}
+	if r, body := get(t, in.lanURL()+"/api/v1/config", bearer(paired.Token)); r.StatusCode != 200 || !strings.Contains(body, `"default_fleet":"bravo"`) {
+		t.Fatalf("GET /api/v1/config after the paired device set bravo = %d %s", r.StatusCode, body)
 	}
 	ws, wr, err := wsDialAt(t, in.lanURL(), "/ws/v1", "", http.Header{"Authorization": {"Bearer " + paired.Token}}, "")
 	if err != nil {

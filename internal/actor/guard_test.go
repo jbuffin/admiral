@@ -149,6 +149,7 @@ func TestAnActorIsRefusedEverythingOffTheList(t *testing.T) {
 			{"POST", "/ships/p-1/rereview"},
 			{"GET", "/config"},
 			{"PUT", "/fleets/personal"},
+			{"PUT", "/default-fleet"},
 			{"POST", "/sources"},
 			{"PUT", "/sources/p-1"},
 			{"DELETE", "/sources/p-1"},

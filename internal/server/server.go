@@ -104,6 +104,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.serveWS)
 	mux.HandleFunc("GET /api/config", s.serveConfig)
+	mux.HandleFunc("PUT /api/default-fleet", s.serveDefaultFleetSave)
 	mux.HandleFunc("PUT /api/fleets/{key}", s.serveFleetSave)
 	mux.HandleFunc("GET /api/fleets/{key}/drafting", s.serveDraftingGet)
 	mux.HandleFunc("PUT /api/fleets/{key}/drafting", s.serveDraftingPut)
@@ -290,6 +291,37 @@ func (s *Server) serveFleetSave(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusConflict, err.Error())
 	case err != nil:
 		writeJSONError(w, http.StatusBadRequest, err.Error())
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(s.Config.View())
+	}
+}
+
+func (s *Server) serveDefaultFleetSave(w http.ResponseWriter, r *http.Request) {
+	if s.Config == nil {
+		http.NotFound(w, r)
+		return
+	}
+	var req struct {
+		Fleet string `json:"fleet"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "request is not valid JSON with a fleet key: "+err.Error())
+		return
+	}
+	if req.Fleet == "" {
+		writeJSONError(w, http.StatusBadRequest, "fleet is required")
+		return
+	}
+	err := s.Config.SetDefaultFleet(req.Fleet)
+	switch {
+	case errors.Is(err, config.ErrNoFleet):
+		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+	case errors.Is(err, config.ErrConflict):
+		writeJSONError(w, http.StatusConflict, err.Error())
+	case err != nil:
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
