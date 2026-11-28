@@ -47,6 +47,7 @@ type followRig struct {
 	watching atomic.Bool
 	notifyOn sync.Map // fleet -> false when Notify is off
 	joined   chan struct{}
+	handled  chan struct{} // one per push_follow the server has finished handling
 }
 
 // joinProbe signals each socket the server has registered.
@@ -64,7 +65,7 @@ type followOpts struct {
 // newFollowRig serves /ws/v1 with an Authorization header meaning bearer, behind a Watcher feeding the Followers and the hub.
 func newFollowRig(t *testing.T, o ...followOpts) *followRig {
 	t.Helper()
-	r := &followRig{t: t, joined: make(chan struct{}, 64), hub: server.NewHub(), clock: &followClock{now: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)}}
+	r := &followRig{t: t, joined: make(chan struct{}, 64), handled: make(chan struct{}, 64), hub: server.NewHub(), clock: &followClock{now: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)}}
 	r.ready.Store(true)
 	cfg := push.FollowersConfig{Now: r.clock.Now, Ready: r.ready.Load}
 	if len(o) > 0 {
@@ -83,7 +84,13 @@ func newFollowRig(t *testing.T, o ...followOpts) *followRig {
 		Hub:      r.hub,
 		Modules:  []server.Module{joinProbe{r.joined}},
 		Bearer:   func(req *http.Request) bool { return req.Header.Get("Authorization") != "" },
-		Messages: map[string]server.MessageHandler{"push_follow": r.f.Handle},
+		Messages: map[string]server.MessageHandler{"push_follow": func(ctx context.Context, c *server.Client, raw json.RawMessage) {
+			r.f.Handle(ctx, c, raw)
+			select {
+			case r.handled <- struct{}{}:
+			default:
+			}
+		}},
 	}).Handler())
 	t.Cleanup(srv.Close)
 	r.url = "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws/v1"
@@ -608,6 +615,11 @@ func TestANullFollowBeforeReadySendsNothingUntilTheCountIsKnown(t *testing.T) {
 	r.ready.Store(false)
 	conn := r.dial(true)
 	r.follow(conn, nil, "")
+	select {
+	case <-r.handled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the server never handled the follow")
+	}
 	// A finished turn moves the count and pushes nothing; before ready it must not reach the follower either.
 	r.w.Ships([]ships.Ship{working("Dory"), needsYou("Nemo", "stop")})
 	r.ready.Store(true)
@@ -620,8 +632,8 @@ func TestANullFollowBeforeReadySendsNothingUntilTheCountIsKnown(t *testing.T) {
 func TestAFollowerWhoseSocketClosesStopsReceivingAndOthersStillDo(t *testing.T) {
 	r := newFollowRig(t)
 	gone := r.follower()
-	live := r.follower()
 	_ = gone.CloseNow()
+	live := r.follower()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
