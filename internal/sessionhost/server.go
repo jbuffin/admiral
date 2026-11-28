@@ -21,9 +21,10 @@ import (
 // Launches never go through the control connection: it is line-based and can't carry a multi-line prompt.
 type Server struct {
 	tmux, socket string
-	noUTF8       bool // no leading -u
-	keepEnv      bool // TMUX and TMUX_PANE stay in the environment
-	split        bool // a failure carries stderr alone
+	noUTF8       bool     // no leading -u
+	keepEnv      bool     // TMUX and TMUX_PANE stay in the environment
+	split        bool     // a failure carries stderr alone
+	holder       []string // the command a new session starts on; the placeholder when empty
 }
 
 func NewServer(tmux, socket string) Server { return Server{tmux: tmux, socket: socket} }
@@ -35,6 +36,9 @@ func (s Server) KeepingTMUXEnv() Server { s.keepEnv = true; return s }
 // StderrErrors reads a failure's text from stderr only, and the answer of a
 // success from stdout only.
 func (s Server) StderrErrors() Server { s.split = true; return s }
+
+// WithPlaceholder starts new sessions on argv instead of the placeholder, so a test can make the pane exit at once.
+func (s Server) WithPlaceholder(argv ...string) Server { s.holder = argv; return s }
 
 func FindTmux() (string, error) { return exec.LookPath("tmux") }
 
@@ -221,6 +225,8 @@ func (s Server) StartSession(spec SessionSpec) error {
 	if spec.Anchor {
 		cmds = append(cmds, []string{"set-option", "-p", "-t", pane, "remain-on-exit", "on"},
 			[]string{"set-option", "-w", "-t", pane, "monitor-bell", "on"})
+	} else {
+		cmds = append(cmds, []string{"set-option", "-p", "-u", "-t", pane, "remain-on-exit"})
 	}
 	for _, o := range spec.Options {
 		cmds = append(cmds, []string{"set-option", "-t", target, Prefix + o[0], o[1]})
@@ -247,19 +253,41 @@ func (s Server) StartSession(spec SessionSpec) error {
 	cmds = append(cmds, append([]string{"respawn-pane", "-k", "-t", pane, "-c", cdir, "--"}, spec.Argv...))
 
 	// The session is made on its own, so a failure here (the name taken, say)
-	// never kills a session that was not ours.
-	if out, err := s.runSpawn(call{args: append([]string{"new-session", "-d", "-s", spec.Name, "-c", cdir, "--"}, placeholder...)}); err != nil {
+	// never kills a session that was not ours. remain-on-exit rides in the same invocation, so a placeholder
+	// that dies at once leaves a dead pane and not a closed session.
+	holder := placeholder
+	if len(s.holder) > 0 {
+		holder = s.holder
+	}
+	create := append([]string{"new-session", "-d", "-s", spec.Name, "-c", cdir, "--"}, holder...)
+	create = append(create, ";", "set-option", "-p", "-t", pane, "remain-on-exit", "on")
+	if out, err := s.runSpawn(call{args: create}); err != nil {
 		return fmt.Errorf("tmux could not create the ship's session: %s", strings.TrimSpace(out))
 	}
 	// A pane's PATH is the one of the tmux client that spawns it, whatever the
 	// session environment says, so that client runs with the ship's PATH.
 	for _, batch := range batches(cmds) {
 		if out, err := s.runSpawn(call{args: batch, path: spec.Env["PATH"]}); err != nil {
+			seen := s.diagnose(target)
 			_, _ = s.run(call{args: []string{"kill-session", "-t", target}})
-			return fmt.Errorf("tmux could not start the ship: %s", strings.TrimSpace(out))
+			return fmt.Errorf("tmux could not start the ship: %s (%s)", strings.TrimSpace(out), seen)
 		}
 	}
 	return nil
+}
+
+// diagnose says what tmux sees of a session whose start just failed, so the error names why it went.
+func (s Server) diagnose(target string) string {
+	listed, err := s.run(call{args: []string{"list-sessions", "-F", "#{session_name}"}})
+	seen := "sessions: " + strings.Join(strings.Fields(listed), " ")
+	if err != nil {
+		seen = "list-sessions failed: " + strings.TrimSpace(listed)
+	}
+	pane, err := s.run(call{args: []string{"display-message", "-p", "-t", target, "pane_dead=#{pane_dead} pane_dead_status=#{pane_dead_status}"}})
+	if err != nil {
+		return seen + "; pane unknown: " + strings.TrimSpace(pane)
+	}
+	return seen + "; " + strings.TrimSpace(pane)
 }
 
 func (s Server) ShipOption(session, name string) (string, error) {

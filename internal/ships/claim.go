@@ -195,6 +195,14 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 	if lerr != nil {
 		return Ship{}, lerr
 	}
+	if needsHost(req) {
+		select {
+		case <-s.Host.Ready():
+		case <-ctx.Done():
+			release()
+			return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: ctx.Err().Error(), Wait: WaitHost, Cause: launcher.CauseHost}
+		}
+	}
 	got, lerr := s.LaunchOrder(req)
 	if lerr != nil {
 		release()
