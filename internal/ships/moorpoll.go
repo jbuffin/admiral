@@ -113,7 +113,7 @@ func (s *Service) PollMoored(ctx context.Context) {
 		for i, run := range runs[fleet] {
 			add(&urls, run.urls)
 			if route == nil {
-				route = github.RouterFromFleets(s.Launcher.Config().Fleets).Route
+				route = github.RouterFromFleets(s.Launcher.Config()).Route
 			}
 			if len(run.raw) > 0 {
 				runs[fleet][i].cands = s.freshCandidates(run, fleet, gh.Host(), route)

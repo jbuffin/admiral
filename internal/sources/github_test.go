@@ -320,6 +320,23 @@ func TestAddGitHubSourceNeedsNoPluginFolder(t *testing.T) {
 	sameJSON(t, "stored settings (a github source with views is the built-in one)", f.stored(added.Key), `{"views":[`+builtinViewEntries+`]}`)
 }
 
+func TestAddSourceWithNoFleetGoesToTheDefaultFleet(t *testing.T) {
+	newFakeGH(t)
+	f := newServiceFixture(t, `{"version":1,"default_fleet":"bravo","fleets":{"alpha":{"name":"Alpha","claude":{}},"bravo":{"name":"Bravo","claude":{}}}}`)
+	f.startSources()
+	code, body := f.do(http.MethodPost, "", map[string]any{"plugin": "github", "name": "GitHub Two"})
+	var added struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal([]byte(body), &added); code != http.StatusCreated || err != nil {
+		t.Fatalf("POST = %d %s, want 201 with the key", code, body)
+	}
+	src, ok := f.cfg.Current().Source(added.Key)
+	if !ok || src.Fleet != "bravo" {
+		t.Errorf("source %s is on fleet %q (found %v), want the default fleet bravo", added.Key, src.Fleet, ok)
+	}
+}
+
 func TestStaleSessionCannotSetWarnings(t *testing.T) {
 	changed := 0
 	r := &runner{sid: 2, notify: func() { changed++ }}

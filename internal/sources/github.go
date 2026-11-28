@@ -363,7 +363,7 @@ func (g *githubConn) refresh() {
 	g.mu.Lock()
 	client, views := g.client, g.settings.SearchViews()
 	g.mu.Unlock()
-	router := github.RouterFromFleets(g.cfg().Fleets)
+	router := github.RouterFromFleets(g.cfg())
 	warnings := append([]string{}, router.Warnings(g.fleet)...)
 	g.setWarnings(warnings)
 

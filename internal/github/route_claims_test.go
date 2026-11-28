@@ -9,7 +9,7 @@ func TestRouterClaimsListWhatRoutesToAFleet(t *testing.T) {
 	r := NewRouter([]RouteFleet{
 		{Key: "a", Repos: []string{"github.com/acme/widgets", "github.com/Acme/Zed", "ghe.example.com/corp/tools"}, Owners: []string{"Globex"}},
 		{Key: "b", Repos: []string{"github.com/acme/widgets", "github.com/bravo/app"}, Owners: []string{"globex", "Initech"}},
-	})
+	}, "")
 	a := r.Claims("a", "github.com")
 	if want := []string{"acme/widgets", "acme/zed"}; !reflect.DeepEqual(a.Repos, want) {
 		t.Errorf("a repos = %v, want %v: lowercase, this host only, the host stripped", a.Repos, want)
@@ -36,7 +36,7 @@ func TestRouterClaimsListWhatRoutesToAFleet(t *testing.T) {
 }
 
 func TestRouterClaimsOfAFleetWithNoneAreEmptyLists(t *testing.T) {
-	c := NewRouter([]RouteFleet{{Key: "a"}, {Key: "b"}}).Claims("b", "github.com")
+	c := NewRouter([]RouteFleet{{Key: "a"}, {Key: "b"}}, "").Claims("b", "github.com")
 	if c.Repos == nil || c.Owners == nil || len(c.Repos) != 0 || len(c.Owners) != 0 {
 		t.Errorf("claims = %+v, want empty non-nil lists so they encode as []", c)
 	}
@@ -46,7 +46,7 @@ func TestRouterClaimsAgreeWithRoute(t *testing.T) {
 	r := NewRouter([]RouteFleet{
 		{Key: "a", Repos: []string{"github.com/acme/widgets"}},
 		{Key: "b", Repos: []string{"github.com/acme/widgets", "github.com/bravo/app"}},
-	})
+	}, "")
 	for _, fleet := range []string{"a", "b"} {
 		for _, repo := range r.Claims(fleet, "github.com").Repos {
 			if got := r.Route("github.com", repo); got != fleet {

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -30,7 +31,7 @@ type Dropped struct {
 // Entry is an enabled panel autopilot entry the migration removed.
 type Entry struct {
 	Key, Name, Panel string // the source's key and name, and the panel id
-	Fleet            string // the fleet the source feeds: its own, else the first fleet
+	Fleet            string // the fleet the source feeds: its own, else the default fleet
 }
 
 type Migration struct {
@@ -90,11 +91,17 @@ func planMigration(data []byte) *migrationPlan {
 		if err != nil {
 			return nil
 		}
-		// The default fleet is the first one in the file.
+		// The default fleet is default_fleet when it names a fleet in the file, else the first one.
 		defKey, defName := "", ""
 		if rawFleets, ok := top.Get("fleets"); ok {
 			if fleets, err := ParseObject(rawFleets); err == nil && fleets.Len() > 0 {
 				defKey = fleets.Keys()[0]
+				if raw, ok := top.Get("default_fleet"); ok {
+					var picked string
+					if json.Unmarshal(raw, &picked) == nil && slices.Contains(fleets.Keys(), picked) {
+						defKey = picked
+					}
+				}
 				raw, _ := fleets.Get(defKey)
 				defName = nameOf(raw, defKey)
 			}

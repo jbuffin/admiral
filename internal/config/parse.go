@@ -21,10 +21,12 @@ const Version = 1
 const MaxFavoriteSkills = 5
 
 type Config struct {
-	Fleets         []Fleet // file order is marina order
-	FavoriteSkills []string
-	Sources        json.RawMessage // as in the file; nil when there is no sources key
-	SourceList     []Source        // Sources, in panel order
+	Fleets []Fleet // file order is marina order
+	// DefaultFleetKey is the top-level default_fleet as stored; DefaultFleet resolves it.
+	DefaultFleetKey string
+	FavoriteSkills  []string
+	Sources         json.RawMessage // as in the file; nil when there is no sources key
+	SourceList      []Source        // Sources, in panel order
 	// MaxShips counts every ship underway or needing you, hand launches included.
 	MaxShips  int
 	Resources map[string]Resource
@@ -189,6 +191,10 @@ func Parse(data []byte) (*Config, error) {
 			}
 			if len(cfg.FavoriteSkills) > MaxFavoriteSkills {
 				return nil, fmt.Errorf("favorite_skills: at most %d allowed, got %d", MaxFavoriteSkills, len(cfg.FavoriteSkills))
+			}
+		case "default_fleet":
+			if err := json.Unmarshal(m.raw, &cfg.DefaultFleetKey); err != nil {
+				return nil, fmt.Errorf("default_fleet: must be a fleet key string, got %s", m.raw)
 			}
 		case "max_ships":
 			if cfg.MaxShips, err = positiveInt("max_ships", m.raw); err != nil {
