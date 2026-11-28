@@ -353,6 +353,8 @@ a { color: inherit; text-decoration: none; }
 .meta { font-size: var(--font-size-meta); color: var(--color-muted); }
 .note { margin: 0; font-size: var(--font-size-meta); color: var(--color-text2); overflow-wrap: anywhere; }
 .note.warn { color: var(--color-needs); }
+/* a settings row's span subline rule (.set .t span) would otherwise mute it */
+.set .t span.note.warn { color: var(--color-needs); }
 .launch-error { margin: 0; padding: 8px 10px; border: 1px solid var(--color-needs-line); background: var(--color-needs-bg); border-radius: var(--shape-radius-md); overflow-wrap: anywhere; }
 .launch-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; }
 @media (min-width: 641px) {
