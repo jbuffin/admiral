@@ -42,10 +42,18 @@ func TestClaudeInterruptedLinesBecomeAnInterruptedItem(t *testing.T) {
 	}
 }
 
-func TestClaudeInterruptedLineWithPlainStringContentIsInterruptedToo(t *testing.T) {
+func TestClaudeInterruptedTextAsPlainStringContentStaysTheEngineersMessage(t *testing.T) {
 	items := read(t, claudeTurn+`{"type":"user","uuid":"i2","message":{"role":"user","content":"[Request interrupted by user]"}}`+"\n")
-	if got := kindStrings(items); fmt.Sprint(got) != fmt.Sprint([]string{"user", "assistant", "interrupted"}) {
-		t.Errorf("kinds = %v, want user, assistant, interrupted", got)
+	if got := kindStrings(items); fmt.Sprint(got) != fmt.Sprint([]string{"user", "assistant", "user"}) || items[2].Text != "[Request interrupted by user]" {
+		t.Errorf("items = %+v, want the typed text to stay a user item", items)
+	}
+}
+
+func TestClaudeInterruptedMarkerWithMoreTextStaysTheEngineersMessage(t *testing.T) {
+	text := "[Request interrupted by user] do X"
+	items := read(t, claudeInterruptLine("i3", text))
+	if len(items) != 1 || items[0].Kind != conversation.KindUser || items[0].Text != text {
+		t.Errorf("%q read as %+v, want one user item with the full text", text, items)
 	}
 }
 

@@ -419,8 +419,8 @@ Ends the chat's turn in progress and leaves its session and context as they are:
 
 - `state` `working` or `waiting`: `200 {"interrupted": true}`.
 - `state` `idle`: nothing is pressed or withdrawn, `200 {"interrupted": false}`.
-- `409` when the chat isn't running, is refreshing (`Refreshing`), or has no transcript recorded yet (`Open the terminal to finish starting the chat`), and nothing is pressed. These come before the state check, since a chat that has not started reads `idle`.
-- `502` `could not interrupt: ...` when tmux refuses the key; the questions stay open.
+- `409` for every reason a message send would be refused: the chat isn't running, is refreshing (`Refreshing`), or has not started (no transcript recorded yet, `Open the terminal to finish starting the chat`; for a Codex chat also when its hooks need trusting, it needs an update, or it isn't trusted, each with its own message). Nothing is pressed. These come before the state check, since a chat that has not started reads `idle`.
+- `502` `could not read the chat's state: ...` when the chat's pane can't be read, and `could not interrupt: ...` when tmux refuses the key; the questions stay open.
 
 The Claude Code or Codex turn then ends and the harness writes its own record of it, which the conversation reads as an `interrupted` entry (once, in the history too; the raw `[Request interrupted by user]` line never shows as the engineer's message). Claude Code does not run its `Stop` hook on an interrupt, so `state` can still read `working` until the next turn. A message already sent stays with the harness: Admiral neither withdraws nor resends it, and what the harness does with it after the Escape is its own (not confirmed here for either harness). A Copilot chat gets the same Escape, with no claim about its transcript.
 
