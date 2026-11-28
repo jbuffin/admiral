@@ -173,6 +173,7 @@ func TestServiceKeepsTheLastGoodListAndRecordsTheErrorWhenAListingFails(t *testi
 func TestServiceFirstListingThatFailsLeavesTheDockUnlistedWithItsErrorRecorded(t *testing.T) {
 	for _, mode := range []string{"fail", "garbage", "hang"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			home := homeDir(t)
 			svc := harnessmodels.New(home, 300*time.Millisecond, func() {})
 			h, _ := dock(t, "claude", map[string]string{"FAKE_MODELS": "a", "FAKE_MODE": mode})
