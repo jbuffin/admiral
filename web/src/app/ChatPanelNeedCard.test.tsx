@@ -74,7 +74,7 @@ test('choosing then Send answers posts to the card route and nothing before', as
   expect(posts).toHaveLength(0);
   fireEvent.click(screen.getByRole('button', { name: 'Send answers' }));
   await waitFor(() => expect(posts).toHaveLength(1));
-  expect(posts[0].url).toBe('/api/chat/alpha/need-cards/need-1/answer');
+  expect(posts[0].url).toBe('/api/v1/chat/alpha/need-cards/need-1/answer');
   expect(posts[0].body).toEqual({ answers: { port: { choice: 'Harbor' } } });
 });
 

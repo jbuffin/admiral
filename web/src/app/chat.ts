@@ -148,6 +148,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
     if (m.kind === 'ship_card' && m.card) return [{ t, i, item: { kind: 'ship', id: m.id, text: m.text, at: m.at, card: m.card as ShipCard } }];
     if (m.kind === 'campaign_draft_card' && m.card) return [{ t, i, item: { kind: 'campaign_draft', id: m.id, text: m.text, at: m.at, card: m.card as CampaignDraftCard } }];
     if (m.kind === 'following_card' && m.card) return [{ t, i, item: { kind: 'following', id: m.id, text: m.text, at: m.at, card: m.card as FollowingCard } }];
+    if (m.kind === 'need_card' && m.card) return [{ t, i, item: { kind: 'need', id: m.id, text: m.text, at: m.at, card: m.card as NeedCard } }];
     if (m.kind === 'question' && m.card) {
       const card = m.card as InboxItem;
       const answer = answers.get(card.id);

@@ -47,6 +47,29 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
   );
 }
 
+function NeedCardView({ item, chat }: { item: Extract<ThreadItem, { kind: 'need' }>; chat: Chat }) {
+  const { card } = item;
+  const name = ships.value.find((s) => s.session === card.ship)?.name || card.ship;
+  if (card.state === 'open') {
+    const draft = chat.drafts[item.id] ?? blankDraft();
+    return (
+      <div class="convo-card chat-card">
+        <p class="chat-card-eyebrow">{name}</p>
+        <p class="line">{item.text}</p>
+        <PeekQuestions questions={card.questions} draft={draft} edit={(fn) => chat.editDraft(item.id, fn)} onSend={(b) => void chat.answerNeed(item.id, b)} />
+      </div>
+    );
+  }
+  return (
+    <div class="convo-card chat-card quiet">
+      <p class="convo-card-title">{item.text}</p>
+      <p class="line">
+        {name} · {card.state === 'removed' ? 'Removed' : card.answered_in === 'inbox' ? 'Answered in the Inbox' : 'Answered in the chat'}
+      </p>
+    </div>
+  );
+}
+
 function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'commitment' }>; fleet: string }) {
   const v = commitmentCardView(item, fleet);
   return (
@@ -398,7 +421,9 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           <CampaignDraftCardView key={i.id} item={i} />
         ) : i.kind === 'following' ? (
           <FollowingCardView key={i.id} item={i} />
-        ) : i.kind === 'need' ? null : (
+        ) : i.kind === 'need' ? (
+          <NeedCardView key={i.id} item={i} chat={chat} />
+        ) : (
           <MessageView key={i.id} item={i} linkShips={linkShips} fleet={fleet} flash={flashId === i.id} />
         ),
       )}
