@@ -81,6 +81,7 @@ func TestMoorMoorsACarriedPRAfterAnAdmiralRestartBeforeTheFirstPoll(t *testing.T
 }
 
 func TestMoorRefusesAShipWhoseCarriedPRIsNotOpenOrNotConfirmedAndLeavesItAlone(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		setup func(r *liveRig)
@@ -90,13 +91,12 @@ func TestMoorRefusesAShipWhoseCarriedPRIsNotOpenOrNotConfirmedAndLeavesItAlone(t
 			"ship saltpaw has no open PR to moor"},
 		{"GitHub failing past the retry window", func(r *liveRig) {
 			r.gh.set(nil, errors.New("gh is down"))
-			old := moor.RetryWindow
-			moor.RetryWindow = 300 * time.Millisecond
-			t.Cleanup(func() { moor.RetryWindow = old })
+			r.s.MoorRetry = 300 * time.Millisecond
 		}, "GitHub did not confirm its PRs"},
 	} {
 		for _, route := range []string{"stop", "return"} {
 			t.Run(c.name+" on "+route, func(t *testing.T) {
+				t.Parallel()
 				r := newLiveRig(t, false)
 				r.carry(t, livePR7)
 				c.setup(r)

@@ -3,7 +3,6 @@ package ships
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -109,10 +108,10 @@ func (s *Service) moorVia(ctx context.Context, sess sessionhost.Session, prs []s
 		Source: o["source"], Panel: o["panel"], OrderID: o["order"], URL: o["url"], Issues: splitIssues(o["issues"]), Title: o["title"], Link: o["link"],
 		Resume: s.report(name).Resume, Round: round, Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Launched: o["launched"], FirstLaunched: firstLaunched(o), Resources: splitResources(o["resources"]), MooredAt: time.Now().UTC().Truncate(time.Second)}
 	if err := s.recordRound(ctx, sess, rec, time.Now().UTC()); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its round history cannot be written, so it keeps no dividers: %v\n", name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its round history cannot be written, so it keeps no dividers: %v\n", name, err)
 	}
 	if err := moor.Write(s.Launcher.Home, rec); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be written, so it sails off: %v\n", name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its moored record cannot be written, so it sails off: %v\n", name, err)
 		return false
 	}
 	if e := s.captureDraftEnd(sess); e != nil { // its pane goes with the session, so the end a later stop reports is read now
@@ -226,7 +225,7 @@ func (s *Service) loadMoored() {
 	s.mooredLoaded = true
 	recs, err := moor.List(s.Launcher.Home)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: the moored records cannot be read: %v\n", err)
+		fmt.Fprintf(s.log(), "admiral: the moored records cannot be read: %v\n", err)
 	}
 	s.moored = recs
 }

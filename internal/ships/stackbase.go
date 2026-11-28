@@ -3,7 +3,6 @@ package ships
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -140,5 +139,5 @@ func (s *Service) stackBaseLog(session string, err error) {
 		return
 	}
 	s.stackBase.logged[session] = err.Error()
-	fmt.Fprintf(os.Stderr, "admiral: ship %s: the stack's base check cannot run: %v\n", session, err)
+	fmt.Fprintf(s.log(), "admiral: ship %s: the stack's base check cannot run: %v\n", session, err)
 }

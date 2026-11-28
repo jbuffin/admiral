@@ -135,12 +135,11 @@ func TestReRequestReturnsGitHubsRefusalAndAFailedRead(t *testing.T) {
 }
 
 func TestReRequestAnswersWithItsTimeoutMessageWhenTheWholeBudgetRunsOut(t *testing.T) {
-	old := reRequestBudget
-	reRequestBudget = 50 * time.Millisecond
-	t.Cleanup(func() { reRequestBudget = old })
+	t.Parallel()
 	g := &pollGitHub{reRequestWait: true}
 	g.setDetail(reviewedPR())
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	f.s.ReRequestBudget = 50 * time.Millisecond
 	session := f.moor(t, "Nelson", "work", prSeven)
 
 	rec := f.reRequest(session, prSeven, "hubot")

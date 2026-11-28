@@ -441,6 +441,7 @@ func TestReturnWithMoorMoorsWithoutLoggingReturningOrTypingTheCleanUpPrompt(t *t
 }
 
 func TestMoorOnAShipWithoutAnOpenPRIsRefusedAndLeavesTheShipAlone(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name   string
 		woken  bool
@@ -451,9 +452,7 @@ func TestMoorOnAShipWithoutAnOpenPRIsRefusedAndLeavesTheShipAlone(t *testing.T) 
 		{"GitHub failing past the retry window", false, func(t *testing.T, r *liveRig) {
 			r.gh.set(nil, errors.New("gh is down"))
 			r.writeReport(t, "partial", livePR7)
-			old := moor.RetryWindow
-			moor.RetryWindow = 300 * time.Millisecond
-			t.Cleanup(func() { moor.RetryWindow = old })
+			r.s.MoorRetry = 300 * time.Millisecond
 		}},
 		{"a woken ship whose carried PR is closed and whose new report is not written yet", true, func(_ *testing.T, r *liveRig) {
 			r.gh.set(map[string]bool{}, nil)
@@ -461,6 +460,7 @@ func TestMoorOnAShipWithoutAnOpenPRIsRefusedAndLeavesTheShipAlone(t *testing.T) 
 	} {
 		for _, route := range []string{"stop", "return"} {
 			t.Run(c.name+" on "+route, func(t *testing.T) {
+				t.Parallel()
 				r := newLiveRig(t, c.woken)
 				c.report(t, r)
 				rec := r.post(route, `{"moor":true}`)
@@ -546,10 +546,9 @@ func TestReturnWithMoorOnAMooredShipKeepsTodays409(t *testing.T) {
 }
 
 func TestADoneShipWhoseGitHubCheckFailedMoorsOnceGitHubAnswersWithTheReportUnchanged(t *testing.T) {
-	oldWin, oldFirst := moor.RetryWindow, openRetryFirst
-	moor.RetryWindow, openRetryFirst = 200*time.Millisecond, 100*time.Millisecond
-	t.Cleanup(func() { moor.RetryWindow, openRetryFirst = oldWin, oldFirst })
+	t.Parallel()
 	r := newLiveRig(t, false)
+	r.s.MoorRetry, r.s.OpenRetryFirst = 200*time.Millisecond, 100*time.Millisecond
 	r.gh.set(nil, errors.New("gh is down"))
 	go r.s.Run(r.ctx)
 	r.writeReport(t, "done", livePR7)
@@ -566,10 +565,9 @@ func TestADoneShipWhoseGitHubCheckFailedMoorsOnceGitHubAnswersWithTheReportUncha
 }
 
 func TestMoorAnswers409WhenGitHubDoesNotAnswer(t *testing.T) {
-	old := moor.RetryWindow
-	moor.RetryWindow = 200 * time.Millisecond
-	t.Cleanup(func() { moor.RetryWindow = old })
+	t.Parallel()
 	r := newLiveRig(t, false)
+	r.s.MoorRetry = 200 * time.Millisecond
 	r.writeReport(t, "partial", livePR7)
 	r.gh.set(nil, errors.New("gh is down"))
 	if rec := r.post("stop", `{"moor":true}`); rec.Code != http.StatusConflict {

@@ -115,6 +115,8 @@ type WakeInput struct {
 	Answers   map[string]Status
 	Reviewers []string // the fleet's wake_reviewers
 	Now       time.Time
+	// Debounce is how long the newest waking event must have waited before the ship wakes; zero waits ADMIRAL_WAKE_DEBOUNCE, or 10 minutes.
+	Debounce time.Duration
 }
 
 // Decision is what a poll of one moored ship concludes. Next is the state to save: when Wake is true, at the round's start; otherwise right away, for the condition events first seen.
@@ -127,8 +129,14 @@ type Decision struct {
 	Next     WakeState
 }
 
-// WakeDebounce is how long the newest waking event must have waited before a ship wakes.
-var WakeDebounce = delay.From("ADMIRAL_WAKE_DEBOUNCE", 10*time.Minute)
+var defaultWakeDebounce = delay.From("ADMIRAL_WAKE_DEBOUNCE", 10*time.Minute)
+
+func debounceOr(d time.Duration) time.Duration {
+	if d == 0 {
+		return defaultWakeDebounce
+	}
+	return d
+}
 
 type tier int
 
@@ -445,7 +453,7 @@ func DecideWake(in WakeInput) Decision {
 	}
 	found, next, t3, chosen, newest := scan(in)
 	d.Next, d.T3 = next, t3
-	if chosen == "" || in.Now.Sub(newest) < WakeDebounce {
+	if chosen == "" || in.Now.Sub(newest) < debounceOr(in.Debounce) {
 		return d
 	}
 	events, next := openRound(in, found, next, chosen)

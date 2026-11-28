@@ -47,7 +47,7 @@ func (s *Service) serveStackShape(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "fleet "+fleet+" has no GitHub access")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), detailTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.detailTimeout())
 	defer cancel()
 	ans, err := readStack(ctx, gh, urls)
 	if err != nil {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"slices"
 	"time"
 
@@ -210,7 +209,7 @@ func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]
 	}
 	state, err := moor.ReadWake(s.Launcher.Home, r.Name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be read: %v\n", r.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its wake state cannot be read: %v\n", r.Name, err)
 		return
 	}
 	reviewers := s.wakeReviewers(r)
@@ -227,7 +226,7 @@ func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]
 	if !moor.ValidResume(r.Resume) || len(wr.PRs) == 0 {
 		return
 	}
-	d := moor.DecideWake(moor.WakeInput{Record: wr, State: state, Answers: answers, Reviewers: reviewers, Now: now})
+	d := moor.DecideWake(moor.WakeInput{Record: wr, State: state, Answers: answers, Reviewers: reviewers, Now: now, Debounce: s.WakeDebounce})
 	next, batches, ok := s.propose(r, state, d, now)
 	if !ok {
 		return
@@ -299,7 +298,7 @@ func (s *Service) saveNext(r moor.Record, was, next moor.WakeState) {
 		return
 	}
 	if err := moor.WriteWake(s.Launcher.Home, r.Name, next); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be saved: %v\n", r.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its wake state cannot be saved: %v\n", r.Name, err)
 	}
 }
 
@@ -431,7 +430,7 @@ func (s *Service) endMooredVia(session, reason, via string) (bool, error) {
 	}
 	if err := moor.Remove(s.Launcher.Home, rec.Name); err != nil { // kept, so the next poll ends it
 		s.mooredMu.Unlock()
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be removed: %v\n", rec.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its moored record cannot be removed: %v\n", rec.Name, err)
 		return false, err
 	}
 	prs := s.prsOf(rec)

@@ -3,7 +3,6 @@ package ships
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -37,7 +36,7 @@ func (s *Service) keepFindings(sess sessionhost.Session) (kept, failed bool) {
 		var kerr error
 		kept, kerr = store.Keep(sess.Name, first, sess.Options["fleet"], path)
 		if kerr != nil {
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: its findings are not kept: %v\n", sess.Name, kerr)
+			fmt.Fprintf(s.log(), "admiral: ship %s: its findings are not kept: %v\n", sess.Name, kerr)
 			return false, false
 		}
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -142,13 +141,13 @@ func (s *Service) returnMerged(r moor.Record, reason string, prs []moor.PR) bool
 		if lerr.Wait != "" {
 			return true // still moored: the next poll tries again
 		}
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: cannot wake it to return to port, so it sails off: %s\n", r.Name, lerr.Msg)
+		fmt.Fprintf(s.log(), "admiral: ship %s: cannot wake it to return to port, so it sails off: %s\n", r.Name, lerr.Msg)
 		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.Host.SetOptions(ctx, got.Session, map[string]string{sessionhost.OptReturning: "sent"}); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: woken to return to port but not marked returning: %v\n", r.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: woken to return to port but not marked returning: %v\n", r.Name, err)
 	}
 	final := make([]map[string]string, 0, len(prs))
 	for _, p := range prs {

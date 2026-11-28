@@ -426,6 +426,7 @@ func TestAStackLayerGitHubFailedToAnswerIsAskedAgainOnTheNextPoll(t *testing.T) 
 
 // A woken ship keeps the role of the record it was moored with, even when GitHub answers nothing for the round.
 func TestAWokenReviewingShipReMoorsReviewingWhenGitHubNeverAnswersTheRound(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	err := moor.Write(r.home, moor.Record{Name: "Saltpaw", Session: "saltpaw", Fleet: "work", Harness: "claude", Model: "opus",
 		Skill: moor.Skill{Kind: "skill", Name: "review"}, Checkout: r.checkout, Source: "s", OrderID: "o1", Panel: "p",
@@ -441,6 +442,7 @@ func TestAWokenReviewingShipReMoorsReviewingWhenGitHubNeverAnswersTheRound(t *te
 	g := &openGH{open: map[string]bool{wakePR: true}}
 	g.pollGitHub.set(wakePR, moor.Status{State: "OPEN", Author: author, Viewer: viewer})
 	r.s.GitHub = func(string) moor.GitHub { return g }
+	r.s.MoorRetry = 300 * time.Millisecond
 	r.s.PollMoored(context.Background()) // the moored poll the woken round starts from
 	if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {
 		t.Fatalf("Wake = %v", lerr)
@@ -454,9 +456,6 @@ func TestAWokenReviewingShipReMoorsReviewingWhenGitHubNeverAnswersTheRound(t *te
 		t.Errorf("woken session's reviewing option = %q, want %s", o["reviewing"], wakePR)
 	}
 
-	old := moor.RetryWindow
-	moor.RetryWindow = 300 * time.Millisecond
-	t.Cleanup(func() { moor.RetryWindow = old })
 	g.pollGitHub.err = context.DeadlineExceeded
 	g.set(nil, context.DeadlineExceeded)
 	r.exit(t, "0")
