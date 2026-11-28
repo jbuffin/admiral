@@ -223,8 +223,12 @@ A ledger entry for a fact the engineer told AdmiralBot to remember.
 A fleet's standing guidance for its AdmiralBot, which the engineer writes on Preferences and AdmiralBot can only read. Not a standing order, which is a rule for ships started by outside events.
 _Avoid_: system prompt, rules
 
+**AdmiralBot app**:
+The engineer's native app for talking to AdmiralBot on iPhone and iPad: each fleet's chat, the Inbox, pushes they can answer, and voice calls. To Admiral it is a paired device, and its pushes reach it through a forwarding device on the engineer's Mac.
+_Avoid_: AdmiralBot (for the app), AdmiralBot for iOS, native client, the app (Admiral's installed web app is also an app)
+
 **Voice call**:
-A hands-free spoken conversation the engineer starts with one fleet's AdmiralBot from a native client, which stays with that fleet until it ends. To Admiral it is a paired device chatting.
+A hands-free spoken conversation the engineer starts with one fleet's AdmiralBot from the AdmiralBot app, which stays with that fleet until it ends. To Admiral it is a paired device chatting.
 _Avoid_: voice mode, voice chat, phone call
 
 **Call marker**:
