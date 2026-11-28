@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'preact/hooks';
+import { useMemo, useRef, useState } from 'preact/hooks';
 import { AllowRulesBody } from './PeekAllowRules';
 import { blankReview, CampaignDraftBody, Failure, FindingsBody, ReviewBody, RoutineProposalBody, useFindings, type Acting } from './PeekItem';
 import { PeekQuestions } from './PeekQuestions';
@@ -67,8 +67,11 @@ function OpenNeedCard({ item, chat, fleet }: { item: Need; chat: Chat; fleet: st
   const session = 'ship' in card ? card.ship : '_admiral';
   const joined = inboxItems.value.find((i) => i.session === session && i.id === card.item);
   const fleetName = fleets.value.find((f) => f.key === fleet)?.name || fleet;
-  const shape = JSON.stringify(card);
-  const entry = useMemo<Entry>(() => ({ key: `need:${item.id}`, type: 'item', session, id: card.item, item: itemOf(card, joined, fleet), folded: null, since: 0, fleet: { key: fleet, name: fleetName, color: '' } }), [joined, shape, fleet, fleetName]);
+  // A reread serves a new object for the same card; the body keeps its decisions only while the item it reads is the same one.
+  const held = useRef(card);
+  if (JSON.stringify(held.current) !== JSON.stringify(card)) held.current = card;
+  const stable = held.current;
+  const entry = useMemo<Entry>(() => ({ key: `need:${item.id}`, type: 'item', session, id: stable.item, item: itemOf(stable, joined, fleet), folded: null, since: 0, fleet: { key: fleet, name: fleetName, color: '' } }), [item.id, session, stable, joined, fleet, fleetName]);
   const title = markHidden(item.text).text;
   const name = ships.value.find((s) => s.session === session)?.name || session;
   const eyebrow = FLEET_EYEBROW[card.item_kind] ?? name;
