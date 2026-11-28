@@ -22,6 +22,7 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/findings"
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/outcomes"
@@ -112,6 +113,8 @@ type Service struct {
 	OnDigestReply func(fleet string, r DigestReply)
 	// readPromptKey replaces the tmux read of the prompt key; a test seam.
 	readPromptKey func(fleet string) (string, bool)
+	// Inbox is the Needs You inbox whose questions post need cards and which a need card's answer goes through; nil posts none.
+	Inbox *inbox.Service
 	// Findings says which voyages kept findings, for the ship cards; nil reads as none.
 	Findings findings.Reader
 
@@ -268,6 +271,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat/{fleet}/new", s.route((*fleetChat).serveNew))
 	mux.HandleFunc("POST /api/chat/{fleet}/interrupt", s.route((*fleetChat).serveInterrupt))
 	mux.HandleFunc("POST /api/chat/{fleet}/questions/{id}/answer", s.route((*fleetChat).serveAnswer))
+	mux.HandleFunc("POST /api/chat/{fleet}/need-cards/{card}/answer", s.serveNeedCardAnswer)
 }
 
 // Connected sends one message per fleet whose chat is on.

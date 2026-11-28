@@ -41,6 +41,8 @@ const (
 	KindCampaignDraftCard = "campaign_draft_card"
 	// KindFollowingCard is the card a chat-launched drafting ship's followed campaign posts, shown to the engineer and never read by AdmiralBot.
 	KindFollowingCard = "following_card"
+	// KindNeedCard is the card a ship's question posts in its fleet's chat, shown to the engineer and never read by AdmiralBot.
+	KindNeedCard = "need_card"
 )
 
 const (
@@ -170,6 +172,11 @@ func endLine(f *os.File) error {
 	}
 	_, err = f.Write([]byte{'\n'})
 	return err
+}
+
+// Get is the entry with the id, wherever it sits in the fleet's files; the tail holds only the newest.
+func (l *Log) Get(fleet, id string) (Entry, bool, error) {
+	return Entry{}, false, errors.New("chat log: Get is not built yet")
 }
 
 // Recent is the last n entries, oldest first, across months. A fleet with no log has none.

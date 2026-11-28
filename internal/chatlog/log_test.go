@@ -228,3 +228,29 @@ func TestSinceGoesBackThroughTheMonthFilesPastTheInMemoryTail(t *testing.T) {
 		t.Errorf("Since on a fleet with no log = %v, %v, want none", ids(got), err)
 	}
 }
+
+func TestGetFindsAnEntryOlderThanTheTailAndAcrossMonths(t *testing.T) {
+	c := &clock{}
+	l, _ := newLog(t, c)
+	c.at("2026-10-31T12:00:00Z")
+	appendOK(t, l, "work", Entry{ID: "need-old", Kind: KindNeedCard, Text: "Which way?", Card: []byte(`{"item":"q-1"}`)})
+	c.at("2026-11-01T12:00:00Z")
+	for i := 0; i < tailCap+10; i++ {
+		appendOK(t, l, "work", msg(fmt.Sprintf("nov-%03d", i), "user", "hi"))
+	}
+	if got := recent(t, l, "work", tailCap+20); len(got) != tailCap || got[0].ID == "need-old" {
+		t.Fatalf("the tail holds %d entries from %s, want it to have dropped need-old", len(got), ids(got[:1]))
+	}
+	for name, l := range map[string]*Log{"the same log": l, "a log read again after a restart": New(l.home, func() time.Time { return c.now })} {
+		e, ok, err := l.Get("work", "need-old")
+		if err != nil || !ok || e.Kind != KindNeedCard || string(e.Card) != `{"item":"q-1"}` {
+			t.Errorf("%s: Get(need-old) = %+v, %v, %v, want the need card entry with its card", name, e, ok, err)
+		}
+	}
+	if _, ok, err := l.Get("work", "nope"); ok || err != nil {
+		t.Errorf("Get(nope) = %v, %v, want not found and no error", ok, err)
+	}
+	if _, ok, err := l.Get("home", "need-old"); ok || err != nil {
+		t.Errorf("Get on another fleet = %v, %v, want not found and no error", ok, err)
+	}
+}

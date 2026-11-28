@@ -168,6 +168,7 @@ func TestAnActorIsRefusedEverythingOffTheList(t *testing.T) {
 			{"GET", "/devices"},
 			{"POST", "/update"},
 			{"POST", "/inbox/p-1/i-1/submit"},
+			{"POST", "/chat/personal/need-cards/need-abc/answer"},
 		} {
 			r := newRig(t)
 			if code := r.do(c.method, prefix+c.path, "{}", "tok-personal", local).Code; code != 403 || r.reached != 0 {
