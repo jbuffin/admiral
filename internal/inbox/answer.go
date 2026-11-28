@@ -101,6 +101,13 @@ func (s *Service) answer(session, id, kind string, removed bool, g *Guard, build
 	return nil
 }
 
+// settled tells OnSettled an answer was written through a path that calls writeAnswered itself.
+func (s *Service) settled(session, id string, g *Guard) {
+	if s.OnSettled != nil {
+		s.OnSettled(session, id, false, g.via())
+	}
+}
+
 func (s *Service) writeAnswered(session, id, kind string, build func(Item) (file any, recs []outcomes.Record, err error)) error {
 	if !validSession(session) || !idPattern.MatchString(id) {
 		return ErrNotFound

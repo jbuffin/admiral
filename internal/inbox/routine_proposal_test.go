@@ -231,3 +231,27 @@ func TestAnswerOnARoutineProposalNamesLaunchOrDismiss(t *testing.T) {
 		t.Errorf("answer = %d %s, want 400 naming launch or dismiss", code, body)
 	}
 }
+
+func TestAReadOfWhetherTheProposalMovedOnFromInsideItsOwnLaunchHookReturns(t *testing.T) {
+	s, _, _, l := routineInbox(t)
+	id := publish(t, s, routineProposal("t1", time.Now().Add(time.Hour)))
+	moved := make(chan bool, 1)
+	l.reply = func() (any, int, string) {
+		m, launching := s.MovedOn(inbox.AdmiralSession, id)
+		moved <- m || !launching
+		return map[string]any{"session": "ship-1"}, 0, ""
+	}
+	done := make(chan error, 1)
+	go func() { _, err := s.LaunchRoutineItem(context.Background(), id); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("launch: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the launch never returned: MovedOn, read from its own hook, waits on the lock the launch holds")
+	}
+	if <-moved {
+		t.Error("MovedOn = true for a proposal whose launch was in flight, want false")
+	}
+}

@@ -152,10 +152,22 @@ func (s *Service) serveDismissProposal(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func respondProposal(w http.ResponseWriter, id string, err error) {
+// Refusal is the status and JSON body the Inbox answers a refused launch or create with; ok is false for any other error.
+func Refusal(id string, err error) (status int, body map[string]any, ok bool) {
 	var refused *refusedError
-	if errors.As(err, &refused) {
-		writeError(w, refused.status, refused.msg)
+	var partial *partialCreateError
+	switch {
+	case errors.As(err, &partial):
+		return partial.status, map[string]any{"error": partial.msg, "parent": partial.parent, "answered": id}, true
+	case errors.As(err, &refused):
+		return refused.status, map[string]any{"error": refused.msg}, true
+	}
+	return 0, nil, false
+}
+
+func respondProposal(w http.ResponseWriter, id string, err error) {
+	if status, body, ok := Refusal(id, err); ok {
+		writeJSON(w, status, body)
 		return
 	}
 	respond(w, AdmiralSession, id, ReviewResult{}, err)

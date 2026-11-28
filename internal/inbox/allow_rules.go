@@ -224,7 +224,15 @@ type allowRuleAnswer struct {
 
 // AnswerAllowRules adds the chosen rules to the fleet's store and records the skipped ones, then publishes the answer.
 func (s *Service) AnswerAllowRules(id string, req AllowRulesRequest) error {
+	return s.AnswerAllowRulesGuarded(id, req, nil)
+}
+
+// AnswerAllowRulesGuarded is AnswerAllowRules for a caller with a Guard, checked under the lock before any rule is written.
+func (s *Service) AnswerAllowRulesGuarded(id string, req AllowRulesRequest, g *Guard) error {
 	err := s.writeAnswered(AdmiralSession, id, KindAllowRules, func(it Item) (any, []outcomes.Record, error) {
+		if err := g.check(it); err != nil {
+			return nil, nil, err
+		}
 		o, _ := it.AllowRulesObject()
 		if s.AllowRules == nil {
 			return nil, nil, errors.New("allow rules are not available")
@@ -273,6 +281,7 @@ func (s *Service) AnswerAllowRules(id string, req AllowRulesRequest) error {
 		return file, recs, nil
 	})
 	if err == nil {
+		s.settled(AdmiralSession, id, g)
 		s.Refresh()
 	}
 	return err

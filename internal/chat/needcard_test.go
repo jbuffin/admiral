@@ -34,7 +34,9 @@ type needRig struct {
 	svc    *Service
 	mux    *http.ServeMux
 	cancel context.CancelFunc
-	done   chan struct{} // closed when the poster has returned
+	done   chan struct{}        // closed when the poster has returned
+	wire   func(*inbox.Service) // sets the hooks of the Inbox begin builds, before the poster runs
+	chat   func(*Service)       // sets the chat service's seams, before the poster runs
 }
 
 var shipFleets = map[string]string{
@@ -82,7 +84,13 @@ func (r *needRig) begin() {
 			fleet, ok := shipFleets[session]
 			return inbox.ShipInfo{Name: session, Harness: "claude", Fleet: fleet, FleetName: fleet}, ok
 		}}
+	if r.wire != nil {
+		r.wire(r.in)
+	}
 	r.svc = &Service{Home: r.home, Config: func() *config.Config { return r.cfg }, Inbox: r.in}
+	if r.chat != nil {
+		r.chat(r.svc)
+	}
 	r.in.OnChange = func() { r.pokes.Add(1); r.svc.InboxChanged() }
 	r.in.OnSettled = r.svc.InboxSettled
 	r.mux = http.NewServeMux()
@@ -709,4 +717,25 @@ func mustMarshal(v any) []byte {
 
 func betaAnswers() map[string]inbox.QuestionAnswer {
 	return map[string]inbox.QuestionAnswer{"1": {Choice: json.RawMessage(`"Beta"`)}, "2": {Choice: json.RawMessage(`["X"]`)}}
+}
+
+func TestACardIsKnownToItsRouteBeforeItIsInTheLog(t *testing.T) {
+	r := newNeedRig(t)
+	var known, appended atomic.Bool
+	r.chat = func(s *Service) {
+		s.logOnce.Do(func() {
+			// The log stamps an entry with this clock as it writes it, so a client could read the entry from here on.
+			s.log = chatlog.New(s.Home, func() time.Time {
+				appended.Store(true)
+				known.Store(len(s.needs().openIDs("", "")) > 0)
+				return time.Now()
+			})
+		})
+	}
+	r.ask("s-home", "q1", createdA)
+	r.start()
+	r.waitLogged("home", 1)
+	if !appended.Load() || !known.Load() {
+		t.Errorf("the card was appended (%v) with no record for its route to find (known %v), so a tap on it would get 404", appended.Load(), known.Load())
+	}
 }
