@@ -448,9 +448,9 @@ func send(t *testing.T, method, url string, body any) (int, string) {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := client().Do(req)
+	resp, err := client().Do(req.WithContext(testCtx(t)))
 	if err != nil {
-		t.Fatalf("%s %s: %v", method, url, err)
+		failRequest(t, method+" "+url, err)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)

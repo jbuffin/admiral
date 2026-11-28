@@ -61,14 +61,7 @@ func (p *tsProc) answers(base string) bool {
 
 func waitUntil(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	end := time.Now().Add(tsStartBound)
-	for time.Now().Before(end) {
-		if ok() {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for: %s", what)
+	until(t, what, ok)
 }
 
 func dialShips(t *testing.T, base string, header http.Header) *websocket.Conn {

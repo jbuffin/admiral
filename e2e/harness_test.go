@@ -145,6 +145,8 @@ func requireOwned(t *testing.T, in *instance) (stranger bool) {
 	}
 	if !owned {
 		in.Stop()
+	} else {
+		track(t, in)
 	}
 	return !owned
 }
@@ -423,9 +425,9 @@ func (in *instance) pair(t *testing.T) string {
 			t.Fatal(err)
 		}
 		req.Header.Set("Content-Type", "application/json")
-		resp, err := client().Do(req)
+		resp, err := client().Do(req.WithContext(testCtx(t)))
 		if err != nil {
-			t.Fatal(err)
+			failRequest(t, "POST "+url, err)
 		}
 		defer resp.Body.Close()
 		b, _ := io.ReadAll(resp.Body)
@@ -471,11 +473,11 @@ func noProxy() *http.Transport {
 }
 
 // client is an HTTP client that never follows redirects, never stores cookies
-// and gives up after 5 s. Tests send cookies explicitly.
+// and has no time limit of its own: a request bound to the test's context ends with
+// it. Tests send cookies explicitly.
 func client() *http.Client {
 	return &http.Client{
 		Transport:     noProxy(),
-		Timeout:       5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }
@@ -498,9 +500,9 @@ func do(t *testing.T, method, rawURL string, hdr map[string]string) (*http.Respo
 			req.Header.Set(k, v)
 		}
 	}
-	resp, err := client().Do(req)
+	resp, err := client().Do(req.WithContext(testCtx(t)))
 	if err != nil {
-		t.Fatalf("%s %s: %v", method, rawURL, err)
+		failRequest(t, method+" "+rawURL, err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)

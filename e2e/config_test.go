@@ -112,17 +112,13 @@ func fetchConfig(t *testing.T, in *instance) (cfgBody, string) {
 // about a second).
 func waitAPI(t *testing.T, in *instance, what string, pred func(cfgBody) bool) cfgBody {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
+	var got cfgBody
+	eventually(t, "GET /api/config showing "+what, func() (bool, string) {
 		b, raw := fetchConfig(t, in)
-		if pred(b) {
-			return b
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within 3s GET /api/config never showed %s; last body:\n%s", what, raw)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		got = b
+		return pred(b), raw
+	})
+	return got
 }
 
 func dialWS(t *testing.T, in *instance) *websocket.Conn {

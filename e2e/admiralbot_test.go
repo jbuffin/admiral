@@ -1319,7 +1319,7 @@ func TestAdmiralBot_AQuickShipFollowsAdmiralsClosingStepsToAPRAndMoors(t *testin
 
 	shipOf := func(skip string) shipJSON {
 		var found shipJSON
-		waitCond(t, 10*time.Second, "a chat ship", func() bool {
+		waitCond(t, "a chat ship", func() bool {
 			for _, s := range w.in.ships(t) {
 				if s.Fleet == chatFleet && s.Via == "admiralbot" && s.Session != skip {
 					found = s
@@ -1328,6 +1328,7 @@ func TestAdmiralBot_AQuickShipFollowsAdmiralsClosingStepsToAPRAndMoors(t *testin
 			}
 			return false
 		})
+
 		return found
 	}
 	promptOf := func(s shipJSON) string {

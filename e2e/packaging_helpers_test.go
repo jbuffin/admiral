@@ -51,12 +51,12 @@ var (
 	rel     release
 )
 
-func TestMain(m *testing.M) {
-	code := m.Run()
-	if rel.root != "" {
-		_ = os.RemoveAll(rel.root)
-	}
-	os.Exit(code)
+func init() {
+	afterRun = append(afterRun, func() {
+		if rel.root != "" {
+			_ = os.RemoveAll(rel.root)
+		}
+	})
 }
 
 func officialLogoFiles() []string {

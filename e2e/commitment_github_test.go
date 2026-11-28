@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 )
 
 // AdmiralBot records a remind commitment on a PR; the card comes when GitHub says the PR merged, with no chat turn.
@@ -37,12 +36,12 @@ func TestAdmiralBot_PRMergedCommitmentFiresAsACardWhenGitHubSaysMerged(t *testin
 		}
 		return nil
 	}
-	waitCond(t, 15*time.Second, "Admiral asked gh about the PR", func() bool { return g.asked(`repository(owner: "acme", name: "widgets") { pullRequest(number: 12)`) }) // the batched query names the PR by owner, repo and number, not by URL
+	waitCond(t, "Admiral asked gh about the PR", func() bool { return g.asked(`repository(owner: "acme", name: "widgets") { pullRequest(number: 12)`) }) // the batched query names the PR by owner, repo and number, not by URL
 	holdThat(t, "a card appeared while the PR is open", func() bool { return cardOf() == nil })
 
 	typed := c.stdin()
 	g.prState(pr, "MERGED")
-	waitCond(t, 15*time.Second, "the card for the merged PR", func() bool { return cardOf() != nil })
+	waitCond(t, "the card for the merged PR", func() bool { return cardOf() != nil })
 	var card struct {
 		Outcome string `json:"outcome"`
 	}

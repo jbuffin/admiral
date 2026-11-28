@@ -80,7 +80,7 @@ func TestMooredShipSurvivesRestart(t *testing.T) {
 		t.Errorf("record = %v, want name, session, fleet f, claude, model opus, checkout %s, the PR, resume, round 0, skill commodore", rec, ship.Dir)
 	}
 
-	waitCond(t, 10*time.Second, "the tmux session is gone", func() bool { return len(w.sessions()) == 0 })
+	waitCond(t, "the tmux session is gone", func() bool { return len(w.sessions()) == 0 })
 	log := w.waitEvent(ship.Session, "moored", 1)
 	if lastOf(log, "ended")["report"] == nil {
 		t.Errorf("the ended record has no report: %v", log)
@@ -109,10 +109,11 @@ func TestCleanExitFoundAtStartupIsChecked(t *testing.T) {
 	w.in.Stop()
 	w.seedShipFiles(rec, mooredReport(mooredPR))
 	w.touch(ship.Session, "go")
-	waitCond(t, 15*time.Second, "the pane has exited", func() bool {
+	waitCond(t, "the pane has exited", func() bool {
 		out, _ := w.tmux("list-panes", "-a", "-F", "#{pane_dead}")
 		return strings.Contains(out, "1")
 	})
+
 	w.in = launchAdmiral(t, w.home, "127.0.0.1:"+w.in.Port, w.baseEnv())
 
 	w.in.waitShipsList(t, 20*time.Second, "the exit-0 ship found at startup moored", func(l []shipJSON) bool {
@@ -131,7 +132,7 @@ func TestCleanExitWithoutAnOpenPRSailsOff(t *testing.T) {
 	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
 	w.exitWith(ship, mooredReport(mooredPR))
 
-	waitCond(t, 20*time.Second, "Admiral asked gh about the PR", func() bool { return g.asked(mooredPR) })
+	waitCond(t, "Admiral asked gh about the PR", func() bool { return g.asked(mooredPR) })
 	w.waitEvent(ship.Session, "ended", 1)
 	w.in.waitShipsList(t, 20*time.Second, "the ship sailed off", func(l []shipJSON) bool { _, ok := byName(l)[ship.Name]; return !ok })
 	if exists(w.mooredFile(ship.Name)) {
@@ -158,13 +159,9 @@ func TestNonZeroExitAnchorsWhateverTheReportSays(t *testing.T) {
 	})
 }
 
-func waitCond(t *testing.T, d time.Duration, what string, ok func() bool) {
+func waitCond(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	for end := time.Now().Add(d); !ok(); time.Sleep(100 * time.Millisecond) {
-		if time.Now().After(end) {
-			t.Fatalf("timed out after %s waiting for: %s", d, what)
-		}
-	}
+	until(t, what, ok)
 }
 
 // asked reports whether any gh call named the pull request.
@@ -321,7 +318,7 @@ func (w *world) wantMoored(ship shipJSON) {
 	if got := byName(list)[ship.Name]; len(got.PRs) != 1 || got.PRs[0].URL != mooredPR {
 		w.t.Errorf("moored ship = %+v, want its PR %s", got, mooredPR)
 	}
-	waitCond(w.t, 10*time.Second, "the tmux session is gone", func() bool { return !w.hasSession(ship.Session) })
+	waitCond(w.t, "the tmux session is gone", func() bool { return !w.hasSession(ship.Session) })
 	log := w.waitEvent(ship.Session, "ended", 1)
 	var got []string
 	for _, e := range eventsOf(log) {
@@ -498,7 +495,7 @@ func (w *world) wantMooredWith(ship shipJSON, reviewing bool, urls ...string) sh
 	if !reflect.DeepEqual(have, urls) {
 		w.t.Errorf("moored PRs = %v, want %v in this order", have, urls)
 	}
-	waitCond(w.t, 10*time.Second, "the tmux session is gone", func() bool { return !w.hasSession(ship.Session) })
+	waitCond(w.t, "the tmux session is gone", func() bool { return !w.hasSession(ship.Session) })
 	if !exists(w.mooredFile(ship.Name)) {
 		w.t.Errorf("no moored record for %s", ship.Name)
 	}
