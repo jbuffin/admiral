@@ -6,7 +6,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -18,7 +17,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 const (
