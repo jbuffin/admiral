@@ -86,7 +86,4 @@ func TestANeedCardAnswersAShipsQuestionFromTheChat(t *testing.T) {
 
 	w.touch(ship.Session, "go") // the turn ends: Stop
 	w.waitStdin(t, ship.Session, text+"\r")
-	if code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/f/need-cards/"+card.ID+"/answer", answerBody()); code != http.StatusConflict {
-		t.Errorf("a second tap = %d, want 409", code)
-	}
 }

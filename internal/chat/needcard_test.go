@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,14 +21,13 @@ import (
 	admstate "github.com/jbuffin/admiral/internal/state"
 )
 
-// needRig is Admiral's need card path over one home: the Inbox, the chat service posting cards, and what a restart rebuilds.
-// Fleets home and work have their chat on; off has none. Ships s-home, s-work, s-off and "odd ship %?#" sail in them;
-// _chat-work and _admiral are told to be in work, so only the card's own rule keeps them out; "orphan" is in no fleet.
+// needRig is the Inbox and the chat service wired as Admiral wires them, over one home; fleets home and work have their chat on, off has none.
 type needRig struct {
 	t      *testing.T
 	home   string
 	cfg    *config.Config
 	kept   *admstate.Store
+	pokes  atomic.Int64 // Inbox changes, which is what feeds a push
 	in     *inbox.Service
 	svc    *Service
 	mux    *http.ServeMux
@@ -36,7 +36,7 @@ type needRig struct {
 
 var shipFleets = map[string]string{
 	"s-home": "home", "s-work": "work", "s-off": "off", "odd ship %?#": "work",
-	"_chat-work": "work", "_admiral": "work",
+	"_chat-work": "work", "_admiral": "work", "nofleet": "",
 }
 
 func newNeedRig(t *testing.T) *needRig {
@@ -72,7 +72,7 @@ func (r *needRig) start() {
 			return inbox.ShipInfo{Name: session, Harness: "claude", Fleet: fleet, FleetName: fleet}, ok
 		}}
 	r.svc = &Service{Home: r.home, Config: func() *config.Config { return r.cfg }, Inbox: r.in}
-	r.in.OnChange = r.svc.InboxChanged
+	r.in.OnChange = func() { r.pokes.Add(1); r.svc.InboxChanged() }
 	r.in.OnSettled = r.svc.InboxSettled
 	r.mux = http.NewServeMux()
 	r.svc.Routes(r.mux)
@@ -173,6 +173,24 @@ func (r *needRig) served(fleet string) []needEntry {
 	return cardsOf(r.t, snap.Messages)
 }
 
+// servedQuietly is served for another goroutine: it never fails the test and returns nothing on a bad answer.
+func (r *needRig) servedQuietly(fleet string) []needEntry {
+	rec := httptest.NewRecorder()
+	r.mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/chat/"+fleet+"/session", nil))
+	var snap Snapshot
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &snap) != nil {
+		return nil
+	}
+	var out []needEntry
+	for _, m := range snap.Messages {
+		e := needEntry{ID: m.ID, Text: m.Text}
+		if m.Kind == chatlog.KindNeedCard && json.Unmarshal(m.Card, &e.Card) == nil {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // logged is the need cards in the fleet's chat log, which a fleet with its chat off keeps too.
 func (r *needRig) logged(fleet string) []needEntry {
 	r.t.Helper()
@@ -256,7 +274,8 @@ func TestAShipsQuestionPostsOneNeedCardInItsOwnFleetsChatWhetherOrNotThatChatIsO
 	r := newNeedRig(t)
 	r.ask("s-work", "q-1", "2026-11-20T10:00:00Z")
 	r.ask("s-off", "q-2", "2026-11-20T10:01:00Z")
-	r.ask("orphan", "q-3", "2026-11-20T10:02:00Z")
+	r.ask("nofleet", "q-3", "2026-11-20T10:02:00Z")
+	r.ask("orphan", "q-4", "2026-11-20T10:03:00Z")
 	r.start()
 
 	work := r.waitLogged("work", 1)
@@ -486,7 +505,7 @@ func TestACardKeepsItsSettledStateWhenAKeptInboxIsReleased(t *testing.T) {
 						return
 					default:
 					}
-					for _, c := range r.served("work") {
+					for _, c := range r.servedQuietly("work") {
 						if c.ID == card.ID {
 							states = append(states, c.Card.State+"/"+c.Card.AnsweredIn)
 						}
@@ -500,7 +519,14 @@ func TestACardKeepsItsSettledStateWhenAKeptInboxIsReleased(t *testing.T) {
 				return os.IsNotExist(err)
 			})
 			r.waitState("work", card.ID, "answered", tc.where)
-			time.Sleep(200 * time.Millisecond)
+			holdCards(t, 200*time.Millisecond, func() string {
+				for _, c := range r.served("work") {
+					if c.ID == card.ID && (c.Card.State != "answered" || c.Card.AnsweredIn != tc.where) {
+						return "the card left answered/" + tc.where + " after the release"
+					}
+				}
+				return ""
+			})
 			close(stop)
 			<-done
 			wrong := map[string]bool{"answered/" + map[string]string{"chat": "inbox", "inbox": "chat"}[tc.where]: true, "removed/": true}
@@ -646,12 +672,16 @@ func TestPostingCardsWritesNothingInTheInboxAndMarksNothingSeen(t *testing.T) {
 	itemsBefore := listed()
 	r.waitLogged("work", 1)
 	r.waitLogged("home", 1)
+	pokes := r.pokes.Load()
 	holdCards(t, 200*time.Millisecond, func() string {
 		if !reflect.DeepEqual(snapshot(), before) {
 			return "posting the cards changed the files under inbox/"
 		}
 		if listed() != itemsBefore {
 			return "posting the cards changed what the Inbox lists"
+		}
+		if r.pokes.Load() != pokes {
+			return "posting the cards changed the Inbox, which is what feeds a push"
 		}
 		return ""
 	})
