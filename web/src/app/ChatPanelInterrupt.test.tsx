@@ -32,6 +32,11 @@ const open = (state: ChatSnapshot['state'] | null, extra: Partial<ChatSnapshot> 
 const snapshotReady = () => waitFor(() => expect(screen.getByRole('textbox', { name: 'Message AdmiralBot' })).toBeTruthy());
 const button = () => screen.queryByRole('button', { name: 'Interrupt' });
 const tap = () => fireEvent.click(button()!);
+const busy = () => button()?.getAttribute('aria-busy');
+const settledBusy = async () => {
+  await waitFor(() => expect(busy()).toBe('true'));
+  await waitFor(() => expect(busy()).not.toBe('true'));
+};
 const interrupts = () => posts.filter((p) => p.endsWith('/interrupt'));
 
 const start = { loc: loc.value, fleets: fleets.value, chats: chats.value };
@@ -123,7 +128,7 @@ test('a press clears an earlier error first', async () => {
   await screen.findByRole('button', { name: 'Interrupt' });
   tap();
   await screen.findByRole('alert');
-  await new Promise((r) => setTimeout(r, 350));
+  await settledBusy();
   interrupt = () => new Promise(() => {});
   tap();
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
@@ -134,15 +139,15 @@ test('an Interrupt answered with interrupted false shows no error', async () => 
   open('working');
   await screen.findByRole('button', { name: 'Interrupt' });
   tap();
-  await waitFor(() => expect(interrupts()).toHaveLength(1));
-  await new Promise((r) => setTimeout(r, 350));
+  await settledBusy();
+  expect(interrupts()).toHaveLength(1);
   expect(screen.queryByRole('alert')).toBeNull();
 });
 
 test('the chat thread shows an interrupted entry as a divider with its time', async () => {
   const entry: ChatEntry = { id: 'int-1', kind: 'interrupted', text: 'Interrupted', at: '2026-01-02T14:02:00Z' };
   open('idle', { messages: [entry] });
-  await waitFor(() => expect(document.querySelector('.compaction')?.textContent).toMatch(/^Interrupted · \S+/));
+  expect((await screen.findByRole('separator')).textContent).toMatch(/^Interrupted · \S+/);
 });
 
 test("an interrupted turn's question reads Withdrawn with no answer controls while a campaign proposal stays open", async () => {

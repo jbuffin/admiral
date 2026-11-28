@@ -372,7 +372,7 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
       {items.length === 0 && !working ? <p class="line">No messages yet.</p> : null}
       {items.map((i) =>
         i.kind === 'reset' || i.kind === 'interrupted' ? (
-          <div key={i.id} class="compaction">
+          <div key={i.id} class="compaction" role="separator">
             <span>{resetLabel(i.text, i.at)}</span>
           </div>
         ) : i.kind === 'question' ? (
