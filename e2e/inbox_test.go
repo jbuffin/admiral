@@ -85,8 +85,7 @@ func ids(items []inboxItem) []string {
 	return out
 }
 
-// waitInbox polls GET /api/inbox until the item ids are want, within 30 s (a
-// wide margin for a loaded runner; a healthy inbox answers in about a second).
+// waitInbox polls GET /api/inbox until the item ids are want.
 func (in *fleetInst) waitInbox(t *testing.T, want ...string) []inboxItem {
 	t.Helper()
 	var got []inboxItem

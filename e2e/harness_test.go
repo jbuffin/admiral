@@ -370,7 +370,7 @@ func startAdmiralOnce(t *testing.T, home, listen string) (*instance, bool) {
 	return in, false
 }
 
-// Stop is safe to repeat. Its 5s grace before SIGKILL stays: cleanup runs after the test's deadline context may have ended.
+// Stop is safe to repeat. The 5s grace before SIGKILL only picks when to escalate, and Stop has no t to take a deadline from.
 func (in *instance) Stop() {
 	select {
 	case <-in.done:
@@ -508,7 +508,7 @@ func do(t *testing.T, method, rawURL string, hdr map[string]string) (*http.Respo
 	return resp, string(body)
 }
 
-// wsDial opens /ws on base (http://host:port) with a 5 s limit. host overrides
+// wsDial opens /ws on base (http://host:port) until the test run's deadline. host overrides
 // the Host header when non-empty. On refusal it returns the handshake response.
 func wsDial(t *testing.T, base, query string, hdr http.Header, host string) (*websocket.Conn, *http.Response, error) {
 	t.Helper()
@@ -536,7 +536,7 @@ func wsDialAt(t *testing.T, base, path, query string, hdr http.Header, host stri
 // killTmux ends every tmux process on sock. A client still starting when Admiral exits forks its server after the socket
 // stops answering, so it kills again until no process names the socket. pgrep lists processes before it reads their
 // command lines, so it misses a server whose forking client exited in between: only a second empty look in a row is clean.
-// The 5s bound stays: it runs in cleanup, after the test's deadline context may have ended.
+// The 5s bound only picks when to fall back to pkill, and killTmux has no t to take a deadline from.
 func killTmux(sock string) {
 	deadline := time.Now().Add(5 * time.Second)
 	for empty := 0; time.Now().Before(deadline); {

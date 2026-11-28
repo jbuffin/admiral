@@ -172,7 +172,7 @@ func firstText(items []convItem) string {
 	return items[0].Text
 }
 
-// holdFor polls cond for up to 15 s.
+// holdFor waits for cond to hold.
 func holdFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	until(t, what, cond)
