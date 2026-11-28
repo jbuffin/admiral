@@ -113,6 +113,7 @@ func TestAChoiceOnAReviewCardSubmitsItsEventOrDiscardsThroughTheInboxsPath(t *te
 			if len(calls) == 0 || !strings.Contains(calls[len(calls)-1], tc.call) {
 				t.Errorf("gh calls = %q, want the last to carry %s", calls, tc.call)
 			}
+			waitFor(t, "the outcome record", func() bool { return len(r.outcomesOf("s-work")) > 0 })
 			out := r.outcomesOf("s-work")
 			if len(out) != 1 || out[0]["event"] != tc.outcome {
 				t.Errorf("outcomes = %v, want one %s", out, tc.outcome)
