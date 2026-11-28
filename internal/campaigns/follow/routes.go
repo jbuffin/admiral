@@ -244,7 +244,7 @@ func (s *Service) serveGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !f.Ended() && s.now().Sub(s.lastTried(f)) >= pageFloor {
+	if !f.Ended() && s.now().Sub(s.lastTried(f)) >= PageFloor {
 		s.startReread(f.ID, false)
 	}
 	writeJSON(w, http.StatusOK, s.json(f))
