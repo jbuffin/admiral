@@ -238,10 +238,10 @@ func TestStackRouteLinksOneChainAtATimePerSource(t *testing.T) {
 
 func TestStackRouteAnswersOKWhenTheLinkTakesLongerThanTheReadAllowance(t *testing.T) {
 	old := readTimeout
-	readTimeout = 300 * time.Millisecond
+	readTimeout = 700 * time.Millisecond
 	t.Cleanup(func() { readTimeout = old })
 	f, g := stackFixture(t, true, "fake-viewer", "fake-viewer")
-	g.write("stack_link.sleep", "0.5\n")
+	g.write("stack_link.sleep", "1\n")
 	code, body := f.stack("gha", "ok", widgets+"41", widgets+"42")
 	wantCode(t, "POST stack when the link outlasts the read allowance", http.StatusOK, code, body)
 }
