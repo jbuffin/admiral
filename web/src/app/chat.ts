@@ -1,4 +1,4 @@
-import type { Ship } from './api';
+import type { AllowRuleCard, Ship } from './api';
 import type { InboxItem } from './inbox';
 import type { ReviewerFields } from './reviewerNote';
 import type { AnswerBody } from '../questions';
@@ -106,15 +106,23 @@ export type ThreadItem =
   | { kind: 'need'; id: string; text: string; at: string; card: NeedCard }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer; kept?: string };
 
-/** The card Admiral posts in a ship's own fleet's chat for each question the ship asks. */
-export interface NeedCard {
-  ship: string;
+interface NeedCardBase {
   item: string;
-  item_kind: 'question';
-  questions: NonNullable<InboxItem['question']>['questions'];
-  state: 'open' | 'answered' | 'removed';
+  state: 'open' | 'answered' | 'removed' | 'moved_on';
   answered_in?: 'chat' | 'inbox';
 }
+interface ShipNeedBase extends NeedCardBase {
+  ship: string;
+}
+
+/** The card Admiral posts in a fleet's chat for each thing in its Inbox that needs the engineer. */
+export type NeedCard =
+  | (ShipNeedBase & { item_kind: 'question'; questions: NonNullable<InboxItem['question']>['questions'] })
+  | (ShipNeedBase & { item_kind: 'review'; events: string[]; discard: boolean; pr_url?: string })
+  | (ShipNeedBase & { item_kind: 'findings'; cards: { id: string; proposal: { kind: string; content: string } | null }[] })
+  | (NeedCardBase & { item_kind: 'routine_proposal'; action: string; reason: string; expires_at?: string; routine_name?: string })
+  | (NeedCardBase & { item_kind: 'allow_rules'; cards: AllowRuleCard[] })
+  | (NeedCardBase & { item_kind: 'campaign_draft'; repo: string; title: string; body: string });
 
 export interface FollowingCard {
   ship: string;

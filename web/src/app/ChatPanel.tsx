@@ -19,13 +19,13 @@ import { Peek } from './Peek';
 import { campaignPath, go, loc, chatMessageOf, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
 import { safeHref } from './makeCampaign';
 import { renderMarkdown } from './markdown';
+import { NeedCardView } from './NeedCards';
 import { PeekQuestions } from './PeekQuestions';
 import { useChat } from './useChat';
 import { MessageField } from './Composer';
 import { workingLabel } from './turns';
 import type { Surface } from './surfaces';
 import { blankDraft } from '../questions';
-import { markHidden } from './crewItems';
 
 type Chat = ReturnType<typeof useChat>;
 
@@ -44,30 +44,6 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
     <div class="convo-card chat-card quiet">
       <p class="convo-card-title">{card.title}</p>
       <p class="line">{item.answer ? youAnswered(item.answer) : item.kept !== undefined ? `You answered: ${item.kept}` : 'Withdrawn'}</p>
-    </div>
-  );
-}
-
-function NeedCardView({ item, chat }: { item: Extract<ThreadItem, { kind: 'need' }>; chat: Chat }) {
-  const { card } = item;
-  const name = ships.value.find((s) => s.session === card.ship)?.name || card.ship;
-  const title = markHidden(item.text).text;
-  if (card.state === 'open') {
-    const draft = chat.drafts[item.id] ?? blankDraft();
-    return (
-      <div class="convo-card chat-card">
-        <p class="chat-card-eyebrow">{name}</p>
-        {card.questions.length === 1 && item.text.trim() === card.questions[0].text.trim() ? null : <p class="line">{title}</p>}
-        <PeekQuestions questions={card.questions} draft={draft} edit={(fn) => chat.editDraft(item.id, fn)} onSend={(b) => void chat.answerNeed(item.id, b)} />
-      </div>
-    );
-  }
-  return (
-    <div class="convo-card chat-card quiet">
-      <p class="convo-card-title">{title}</p>
-      <p class="line">
-        {name} · {card.state === 'removed' ? 'Removed' : card.answered_in === 'inbox' ? 'Answered in the Inbox' : 'Answered in the chat'}
-      </p>
     </div>
   );
 }
@@ -424,7 +400,7 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
         ) : i.kind === 'following' ? (
           <FollowingCardView key={i.id} item={i} />
         ) : i.kind === 'need' ? (
-          <NeedCardView key={i.id} item={i} chat={chat} />
+          <NeedCardView key={i.id} item={i} chat={chat} fleet={fleet} />
         ) : (
           <MessageView key={i.id} item={i} linkShips={linkShips} fleet={fleet} flash={flashId === i.id} />
         ),
