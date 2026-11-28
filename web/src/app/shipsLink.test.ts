@@ -144,6 +144,15 @@ describe('watchShips', () => {
     expect(servedAttention.value).toBe(0);
   });
 
+  it('ignores an attention count that is negative or not a whole number', () => {
+    stop = watchShips();
+    last().open();
+    last().send({ type: 'attention', count: 2 });
+    last().send({ type: 'attention', count: -1 });
+    last().send({ type: 'attention', count: 1.5 });
+    expect(servedAttention.value).toBe(2);
+  });
+
   it('keeps the last served attention count across a reconnect until the new connection serves one', async () => {
     stop = watchShips();
     last().open();

@@ -121,7 +121,7 @@ export function watchShips(): () => void {
         sourcesLoaded.value = true;
       }
       else if (msg.type === 'resources') resources.value = msg.resources ?? [];
-      else if (msg.type === 'attention' && typeof msg.count === 'number') servedAttention.value = msg.count;
+      else if (msg.type === 'attention' && Number.isInteger(msg.count) && msg.count >= 0) servedAttention.value = msg.count;
     };
     s.onclose = () => {
       connecting = false;

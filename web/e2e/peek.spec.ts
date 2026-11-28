@@ -127,6 +127,8 @@ test('the tab title counts a needs-you stop and an Inbox item, keeps counting th
   await expect
     .poll(async () => ((await (await page.request.get(admiral.url + 'api/v1/ships')).json()) as { ships: { session: string; seen?: boolean }[] }).ships.find((s) => s.session === stop.session)?.seen)
     .toBe(true);
+  // The Inbox hides a seen stop, so its row going means the page has the push that follows the seen mark.
+  await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: stop.name })).toHaveCount(0, { timeout: 15_000 });
   await expect(page).toHaveTitle('(2) Admiral');
 
   await page.goto(admiral.url + `app/ships/${encodeURIComponent(visitor.session)}?fleet=alpha`);

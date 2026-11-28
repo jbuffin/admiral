@@ -188,7 +188,7 @@ describe('watchAttention shows the served count', () => {
     inboxItems.value = [item('a', 'q-1', at(1), { kind: 'question' }), item('a', 'q-2', at(2), { kind: 'question' })];
     servedAttention.value = 2;
     expect(sharedInboxQueue().entries().length).toBe(2);
-    sharedInboxQueue().fold('item:a/q-1', 'Answered', Date.now());
+    sharedInboxQueue().fold('item:a/q-1', 'Answered', T0);
     expect(t.document.title).toBe('(2) Admiral');
     servedAttention.value = 1;
     expect(t.document.title).toBe('(1) Admiral');
