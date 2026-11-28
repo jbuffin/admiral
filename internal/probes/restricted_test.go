@@ -68,9 +68,7 @@ type restrictedRun struct {
 func restrictedFleet(t *testing.T, mode, wrapMode, log, rec string) config.Fleet {
 	t.Helper()
 	exe := filepath.Join(t.TempDir(), "claude")
-	if err := os.WriteFile(exe, []byte(restrictedWrapper), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, restrictedWrapper)
 	env := map[string]string{"WRAP_FAKE": realFake(t, "claude"), "WRAP_LOG": log, "WRAP_MODE": wrapMode, "FAKE_RECORD_DIR": rec,
 		"FAKE_RESTRICTED_PROBE": mode, "GH_TOKEN": "fake-token-work-2", "GITHUB_TOKEN": "fake-token-work-3", "GH_ENTERPRISE_TOKEN": "fake-token-work-4"}
 	return config.Fleet{Key: "work", Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true, Env: env}}}

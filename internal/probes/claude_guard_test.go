@@ -59,9 +59,7 @@ type guardRun struct {
 func runGuard(t *testing.T, mode string, timeout time.Duration, fleetEnv map[string]string) guardRun {
 	t.Helper()
 	exe := filepath.Join(t.TempDir(), "claude")
-	if err := os.WriteFile(exe, []byte(guardHarness), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, guardHarness)
 	g := guardRun{home: home(t), log: t.TempDir()}
 	env := map[string]string{"PROBE_FAKE_LOG": g.log, "PROBE_FAKE_MODE": mode, "ADMIRAL_AUTOPILOT": "0"}
 	for k, v := range fleetEnv {
@@ -288,9 +286,7 @@ func TestGuardProbeUsesAnEmptyThrowawayDirectoryAndLeavesNothingBehind(t *testin
 func TestGuardProbeDoesNotRunForOtherHarnesses(t *testing.T) {
 	t.Parallel()
 	exe := filepath.Join(t.TempDir(), "codex")
-	if err := os.WriteFile(exe, []byte(guardHarness), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, guardHarness)
 	logDir := t.TempDir()
 	fleet := config.Fleet{Key: "work", Harnesses: []config.Harness{{Name: "codex", Executable: exe, Found: true,
 		Env: map[string]string{"PROBE_FAKE_LOG": logDir, "PROBE_FAKE_MODE": "pass"}}}}
@@ -309,9 +305,7 @@ func TestGuardProbeDoesNotRunForOtherHarnesses(t *testing.T) {
 func TestGuardProbeFailsNamingAFleetArgThatWouldDisableTheHook(t *testing.T) {
 	t.Parallel()
 	exe := filepath.Join(t.TempDir(), "claude")
-	if err := os.WriteFile(exe, []byte(guardHarness), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, guardHarness)
 	log := t.TempDir()
 	fleet := config.Fleet{Key: "work", Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true,
 		Args: []string{"--bare"}, Env: map[string]string{"PROBE_FAKE_LOG": log, "PROBE_FAKE_MODE": "pass"}}}}

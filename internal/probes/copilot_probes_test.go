@@ -163,9 +163,7 @@ func stageCopilotProbe(t *testing.T, log, mode string) {
 func runCopilotProbe(t *testing.T, p probes.Probe, mode string, o copilotProbeOpts) copilotProbeRun {
 	t.Helper()
 	exe := filepath.Join(t.TempDir(), "copilot")
-	if err := os.WriteFile(exe, []byte(copilotFake), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, copilotFake)
 	c := copilotProbeRun{home: home(t), engineer: t.TempDir(), log: t.TempDir()}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("COPILOT_HOME", c.engineer)

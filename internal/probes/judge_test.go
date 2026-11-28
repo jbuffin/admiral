@@ -90,9 +90,7 @@ type jrig struct {
 func exeNamed(t *testing.T, name, body string) string {
 	t.Helper()
 	exe := filepath.Join(t.TempDir(), name)
-	if err := os.WriteFile(exe, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, body)
 	return exe
 }
 

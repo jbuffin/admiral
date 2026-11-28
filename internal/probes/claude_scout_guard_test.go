@@ -47,9 +47,7 @@ exit 0
 func runScoutGuard(t *testing.T, mode string, fleetEnv map[string]string) guardRun {
 	t.Helper()
 	exe := filepath.Join(t.TempDir(), "claude")
-	if err := os.WriteFile(exe, []byte(scoutHarness), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, scoutHarness)
 	g := guardRun{home: home(t), log: t.TempDir()}
 	env := map[string]string{"PROBE_FAKE_LOG": g.log, "PROBE_FAKE_MODE": mode}
 	for k, v := range fleetEnv {

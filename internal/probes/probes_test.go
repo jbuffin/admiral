@@ -2,7 +2,6 @@ package probes_test
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,9 +21,7 @@ func versionScript(t *testing.T) string {
 	body := "#!/bin/sh\n" +
 		`if [ "$1" = "--version" ]; then [ "$FAKE_VERSION" = FAIL ] && { echo boom >&2; exit 1; }; echo "$FAKE_VERSION"; exit 0; fi` + "\n" +
 		"exit 0\n"
-	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, p, body)
 	return p
 }
 
@@ -390,9 +387,7 @@ func TestCloseDuringVersionDetectionLeavesTheRecordedVersionAlone(t *testing.T) 
 		t.Fatal(err)
 	}
 	exe := filepath.Join(t.TempDir(), "claude")
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, "#!/bin/sh\nsleep 30\n")
 	r := probes.New(h, pass("x"))
 	r.Refresh(context.Background(), []config.Fleet{fleetOf(exe, "")})
 	time.Sleep(300 * time.Millisecond)
