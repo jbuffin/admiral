@@ -62,7 +62,7 @@ export function blocksOf(items: Item[]): Block[] {
       if (group) group.durationMs = item.durationMs ?? 0;
       group = null;
     } else {
-      if (item.kind === 'user' || item.kind === 'compaction' || item.kind === 'round') group = null;
+      if (item.kind === 'user' || item.kind === 'compaction' || item.kind === 'round' || item.kind === 'interrupted') group = null;
       blocks.push({ kind: 'item', item });
     }
   }

@@ -33,7 +33,7 @@ const callOf = (id: string) => id.split('#')[0];
 
 function currentTurnStart(items: Item[]): number {
   let at = items.length;
-  while (at > 0 && items[at - 1].kind !== 'user' && items[at - 1].kind !== 'turn_end') at--;
+  while (at > 0 && items[at - 1].kind !== 'user' && items[at - 1].kind !== 'interrupted' && items[at - 1].kind !== 'turn_end') at--;
   return at;
 }
 

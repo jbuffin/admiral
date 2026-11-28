@@ -59,6 +59,12 @@ export function useChat(fleet: string) {
     setText((now) => (now.startsWith(typed) ? now.slice(typed.length) : now));
   };
 
+  const interrupt = async () => {
+    setError('');
+    const r = await call('POST', `${base}/interrupt`);
+    if (!r.ok) setError(r.status === undefined ? "Admiral isn't reachable." : r.error);
+  };
+
   const newChat = async () => {
     if (resetting) return;
     setResetting(true);
@@ -82,5 +88,5 @@ export function useChat(fleet: string) {
     editDraft(id, (d) => ({ ...d, sending: false, error: r.ok ? '' : failure(r) }));
   };
 
-  return { snap, error, text, setText, sending, resetting, drafts, editDraft, send, newChat, answer };
+  return { snap, error, text, setText, sending, resetting, drafts, editDraft, send, interrupt, newChat, answer };
 }
