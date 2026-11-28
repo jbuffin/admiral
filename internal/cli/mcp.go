@@ -504,31 +504,31 @@ var mcpTools = []mcpTool{
 			return c.post("/api/inbox/"+url.PathEscape(a.Session)+"/"+url.PathEscape(a.ID)+"/answer", map[string]json.RawMessage{"answers": a.Answers})
 		}},
 	{"answer_stop", "Answer a ship's stop with the engineer's choice: a permission prompt (card permission, choice allow or deny) or a question menu (card question, the item and an option or answers). stop_id and reason come from list_ships and must match what the ship is waiting on now; a stop that was already answered or has moved on is refused. Send only what the engineer chose: never pick a choice or option yourself.",
-			obj([]string{"session", "stop_id", "card", "reason"}, map[string]any{
-				"session": str(sessionDoc), "stop_id": str("the stop's id, as list_ships gives it"),
-				"card": str("permission or question"), "reason": str("the reason the ship waits on, as list_ships gives it"),
-				"choice": str("allow or deny, for a permission card"), "item": str("the question's item id, for a question card"),
-				"option":  map[string]any{"type": "integer", "description": "the chosen option, 1-based, for a question card"},
-				"answers": map[string]any{"type": "array", "description": "one answer per question, in order: {\"options\": [1-based numbers]} or {\"other\": text}", "items": map[string]any{"type": "object"}}}),
-			func(c *mcpClient, raw json.RawMessage) (string, error) {
-				var a map[string]json.RawMessage
-				if err := json.Unmarshal(raw, &a); err != nil {
-					return "", err
+		obj([]string{"session", "stop_id", "card", "reason"}, map[string]any{
+			"session": str(sessionDoc), "stop_id": str("the stop's id, as list_ships gives it"),
+			"card": str("permission or question"), "reason": str("the reason the ship waits on, as list_ships gives it"),
+			"choice": str("allow or deny, for a permission card"), "item": str("the question's item id, for a question card"),
+			"option":  map[string]any{"type": "integer", "description": "the chosen option, 1-based, for a question card"},
+			"answers": map[string]any{"type": "array", "description": "one answer per question, in order: {\"options\": [1-based numbers]} or {\"other\": text}", "items": map[string]any{"type": "object"}}}),
+		func(c *mcpClient, raw json.RawMessage) (string, error) {
+			var a map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", err
+			}
+			var session string
+			_ = json.Unmarshal(a["session"], &session)
+			if session == "" {
+				return "", errors.New("session is required")
+			}
+			for _, k := range []string{"stop_id", "card", "reason"} {
+				if v := string(a[k]); v == "" || v == `""` || v == "null" {
+					return "", errors.New(k + " is required")
 				}
-				var session string
-				_ = json.Unmarshal(a["session"], &session)
-				if session == "" {
-					return "", errors.New("session is required")
-				}
-				for _, k := range []string{"stop_id", "card", "reason"} {
-					if v := string(a[k]); v == "" || v == `""` || v == "null" {
-						return "", errors.New(k + " is required")
-					}
-				}
-				delete(a, "session")
-				return c.post("/api/ships/"+url.PathEscape(session)+"/answer", a)
-			}},
-		{"next_prompt", "Give a ship whose turn has ended its next prompt. Refused while the ship is mid-turn or waiting on something else; a moored ship takes wake_ship.",
+			}
+			delete(a, "session")
+			return c.post("/api/ships/"+url.PathEscape(session)+"/answer", a)
+		}},
+	{"next_prompt", "Give a ship whose turn has ended its next prompt. Refused while the ship is mid-turn or waiting on something else; a moored ship takes wake_ship.",
 		obj([]string{"session", "text"}, map[string]any{"session": str(sessionDoc), "text": str("the prompt")}), shipPost("/next", true)},
 	{"wake_ship", "Wake a moored ship, optionally with text after its resume prompt.",
 		obj([]string{"session"}, map[string]any{"session": str("the moored ship's session, as list_ships gives it (for example vesper-vane, not Vesper Vane)"), "text": str("optional text for the new round")}), shipPost("/wake", true)},
