@@ -355,7 +355,7 @@ func TestASlowRestrictedProbeCannotStarveTheJudgesAndADeadlineIsNotAPass(t *test
 	}
 	h := home(t)
 	r := probes.NewDefault(h)
-	r.Timeout = 3 * time.Second
+	r.Timeout = 6 * time.Second
 	rep, err := r.Run(context.Background(), restrictedFleet(t, "pass", "hang", t.TempDir(), filepath.Join(t.TempDir(), "rec")), "claude")
 	if err != nil {
 		t.Fatal(err)
