@@ -437,3 +437,119 @@ func commandOf(pid int) string {
 	out, _ := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
 	return strings.Join(strings.Fields(string(out)), " ")
 }
+
+// rawAnswers writes an answers file from its full JSON text.
+func (w *world) rawAnswers(text string) string {
+	w.t.Helper()
+	p := filepath.Join(w.root, fmt.Sprintf("answers-%d.json", time.Now().UnixNano()))
+	w.writeRaw(p, text, 0o600)
+	return p
+}
+
+func TestSetupDefaultFleetAnswer(t *testing.T) {
+	t.Parallel()
+	twoFleets := func(w *world) string {
+		return `"zulu":{"name":"Zulu","search_roots":["~/code"],"claude":{"env":{"CLAUDE_CONFIG_DIR":"~/.claude-z"}}},` +
+			`"alpha":{"name":"Alpha","search_roots":["~/code"],"codex":{"env":{"CODEX_HOME":"~/.codex-a"}}}`
+	}
+
+	t.Run("is written with the fleets, keeping the file's other keys", func(t *testing.T) {
+		t.Parallel()
+		w := setupWorld(t)
+		w.writeRaw(configPath(w.home), `{"version":1,"x_future":{"keep":true}}`+"\n", 0o600)
+		file := w.rawAnswers(`{"default_fleet":"alpha","fleets":{` + twoFleets(w) + `}}`)
+		w.expectExit(w.admiral("setup", "--answers", file, "--yes"), 0, "setup with default_fleet")
+		c := w.readConfig()
+		if string(c.top["default_fleet"]) != `"alpha"` || string(c.top["x_future"]) == "" || strings.Join(c.fleetOrder, ",") != "zulu,alpha" {
+			t.Errorf("want default_fleet alpha, x_future kept, order zulu,alpha; got %s", w.configBytes())
+		}
+	})
+
+	t.Run("alone sets it on an existing file and the diff shows it", func(t *testing.T) {
+		t.Parallel()
+		w := setupWorld(t)
+		w.saveFleets(w.fleetObj("zulu", "Zulu", "", "claude"), w.fleetObj("alpha", "Alpha", "", "codex"))
+		file := w.rawAnswers(`{"default_fleet":"alpha"}`)
+		r := w.admiral("setup", "--answers", file, "--yes")
+		w.expectExit(r, 0, "setup with only default_fleet")
+		if strings.Contains(r.stdout, "No changes.") || !strings.Contains(r.stdout, "default_fleet") {
+			t.Errorf("the diff should show the new default_fleet line:\n%s", r.stdout)
+		}
+		if got := w.readConfig().top["default_fleet"]; string(got) != `"alpha"` {
+			t.Errorf("default_fleet = %s, want \"alpha\"", got)
+		}
+	})
+
+	t.Run("naming an unknown fleet, or a non-string, is refused with its path and writes nothing", func(t *testing.T) {
+		t.Parallel()
+		for name, answer := range map[string]string{"unknown": `"nope"`, "non-string": `3`} {
+			w := setupWorld(t)
+			w.saveFleets(w.fleetObj("zulu", "Zulu", "", "claude"))
+			before := string(w.configBytes())
+			r := w.admiral("setup", "--answers", w.rawAnswers(`{"default_fleet":`+answer+`}`), "--yes")
+			w.expectExit(r, 1, "default_fleet "+name)
+			if !strings.Contains(r.both(), "default_fleet") || string(w.configBytes()) != before {
+				t.Errorf("%s: want a refusal naming default_fleet and no write, got %q", name, r.both())
+			}
+		}
+	})
+}
+
+func TestSetupAsksTheDefaultFleet(t *testing.T) {
+	t.Parallel()
+	seed := func(t *testing.T) *world {
+		w := newWorld(t)
+		w.saveFleets(w.fleetObj("work", "Work", "", "claude"), w.fleetObj("home", "Home", "", "claude"))
+		return w
+	}
+	// No new fleet, the default fleet answer, no Tailscale, then no to each Commodore offer.
+	run := func(w *world, answer string) cliResult {
+		return w.admiralWith(cliOpts{env: w.cenv(), stdin: "\n" + answer + "\n\nn\nn\n"}, "setup")
+	}
+
+	t.Run("Enter keeps an unset default unset", func(t *testing.T) {
+		t.Parallel()
+		w := seed(t)
+		before := string(w.configBytes())
+		r := run(w, "")
+		w.expectExit(r, 0, "setup, Enter at the default fleet")
+		if !strings.Contains(r.stdout, "Default fleet [work]") || !strings.Contains(r.stdout, "No changes.") || string(w.configBytes()) != before {
+			t.Errorf("want the question with work preselected, then No changes. and the file as it was:\n%s", r.stdout)
+		}
+	})
+
+	t.Run("typing a fleet key writes it, the first fleet included", func(t *testing.T) {
+		t.Parallel()
+		w := seed(t)
+		w.expectExit(run(w, "home"), 0, "setup, typing home")
+		if got := w.readConfig().top["default_fleet"]; string(got) != `"home"` {
+			t.Errorf("default_fleet = %s, want \"home\"", got)
+		}
+		w = seed(t)
+		w.expectExit(run(w, "work"), 0, "setup, typing the first fleet")
+		if got := w.readConfig().top["default_fleet"]; string(got) != `"work"` {
+			t.Errorf("default_fleet = %s, want \"work\" written even as the first fleet", got)
+		}
+	})
+
+	t.Run("an unknown key asks again", func(t *testing.T) {
+		t.Parallel()
+		w := seed(t)
+		r := w.admiralWith(cliOpts{env: w.cenv(), stdin: "\nnope\nhome\n\nn\nn\n"}, "setup")
+		w.expectExit(r, 0, "setup, typing nope then home")
+		if strings.Count(r.stdout, "Default fleet") < 2 || string(w.readConfig().top["default_fleet"]) != `"home"` {
+			t.Errorf("want the question twice and home written:\n%s", r.stdout)
+		}
+	})
+
+	t.Run("one fleet gets no question", func(t *testing.T) {
+		t.Parallel()
+		w := newWorld(t)
+		w.saveFleets(w.fleetObj("work", "Work", "", "claude"))
+		r := w.admiralWith(cliOpts{env: w.cenv(), stdin: idle + "n\n"}, "setup")
+		w.expectExit(r, 0, "setup with one fleet")
+		if strings.Contains(r.stdout, "Default fleet") {
+			t.Errorf("one fleet should not be asked:\n%s", r.stdout)
+		}
+	})
+}

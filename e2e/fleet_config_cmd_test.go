@@ -76,6 +76,70 @@ func TestU12_S2_FleetList(t *testing.T) {
 	}
 }
 
+// fleet default prints, sets and refuses; fleet list marks the default row without moving its first three columns.
+func TestFleetDefaultPrintsSetsAndMarksTheListRow(t *testing.T) {
+	t.Parallel()
+	w, _ := cmdWorld(t)
+	marked := func() []string {
+		t.Helper()
+		r := w.admiral("fleet", "list")
+		w.expectExit(r, 0, "fleet list")
+		var keys []string
+		for _, l := range strings.Split(r.stdout, "\n") {
+			if f := strings.Fields(l); len(f) > 0 && strings.Contains(strings.ToLower(l), "default") {
+				keys = append(keys, f[0])
+			}
+		}
+		return keys
+	}
+
+	r := w.admiral("fleet", "default")
+	w.expectExit(r, 0, "fleet default with none set")
+	if !strings.Contains(r.stdout, "zulu") || !strings.Contains(strings.ToLower(r.both()), "first fleet") {
+		t.Errorf("with no default_fleet it should print zulu and say the first fleet is used, got %q", r.both())
+	}
+	if got := marked(); len(got) != 1 || got[0] != "zulu" {
+		t.Errorf("fleet list marks %v, want only zulu (the fallback)", got)
+	}
+
+	before := w.readConfig()
+	w.expectExit(w.admiral("fleet", "default", "alpha"), 0, "fleet default alpha")
+	c := w.readConfig()
+	if string(c.top["default_fleet"]) != `"alpha"` {
+		t.Errorf("default_fleet = %s, want \"alpha\"", c.top["default_fleet"])
+	}
+	if compactJSON(t, c.top["x_future"]) != compactJSON(t, before.top["x_future"]) || strings.Join(c.fleetOrder, ",") != "zulu,alpha" {
+		t.Errorf("setting the default changed other keys: %s", w.configBytes())
+	}
+	r = w.admiral("fleet", "default")
+	w.expectExit(r, 0, "fleet default after setting")
+	if strings.TrimSpace(r.stdout) != "alpha" || strings.TrimSpace(r.stderr) != "" {
+		t.Errorf("fleet default = stdout %q stderr %q, want just alpha", r.stdout, r.stderr)
+	}
+	if got := marked(); len(got) != 1 || got[0] != "alpha" {
+		t.Errorf("fleet list marks %v, want only alpha", got)
+	}
+
+	settled := string(w.configBytes())
+	r = w.admiral("fleet", "default", "nope")
+	w.expectExit(r, 1, "fleet default nope")
+	if !strings.Contains(r.both(), `no fleet "nope"`) || string(w.configBytes()) != settled {
+		t.Errorf("an unknown key should say no fleet \"nope\" and write nothing, got %q", r.both())
+	}
+	w.expectExit(w.admiral("fleet", "default", "alpha", "zulu"), 2, "fleet default with two keys")
+}
+
+func TestFleetDefaultNamingAGoneFleetSaysWhy(t *testing.T) {
+	t.Parallel()
+	w, text := cmdWorld(t)
+	w.writeRaw(configPath(w.home), strings.Replace(text, `"fleets"`, `"default_fleet": "gone", "fleets"`, 1), 0o600)
+	r := w.admiral("fleet", "default")
+	w.expectExit(r, 0, "fleet default naming a gone fleet")
+	if !strings.Contains(r.stdout, "zulu") || !strings.Contains(r.both(), "gone") || !strings.Contains(strings.ToLower(r.both()), "first fleet") {
+		t.Errorf("should print zulu and say gone is not a fleet so the first is used, got %q", r.both())
+	}
+}
+
 func TestU12_S2_FleetAddAndEditKeepWhatTheyDoNotTouch(t *testing.T) {
 	t.Parallel()
 	w, original := cmdWorld(t)

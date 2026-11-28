@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -22,6 +23,8 @@ func Fleet(args []string, std IO) error {
 		return fleetChange(args[1:], std, false)
 	case "check":
 		return fleetCheck(args[1:], std)
+	case "default":
+		return errors.New("not implemented")
 	}
 	return usagef("unknown command %q: want list, add, edit or check", "fleet "+args[0])
 }

@@ -104,6 +104,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.serveWS)
 	mux.HandleFunc("GET /api/config", s.serveConfig)
+	mux.HandleFunc("PUT /api/default-fleet", func(w http.ResponseWriter, r *http.Request) {
+		writeJSONError(w, http.StatusNotImplemented, "not implemented")
+	})
 	mux.HandleFunc("PUT /api/fleets/{key}", s.serveFleetSave)
 	mux.HandleFunc("GET /api/fleets/{key}/drafting", s.serveDraftingGet)
 	mux.HandleFunc("PUT /api/fleets/{key}/drafting", s.serveDraftingPut)
