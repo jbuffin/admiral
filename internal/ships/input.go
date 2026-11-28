@@ -103,7 +103,9 @@ func (s *Service) serveSendInput(w http.ResponseWriter, r *http.Request) {
 	// Not the request's context: a client that hangs up must not leave a half-sent message.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	undo := s.markStopAnswered(ctx, t, viaOf(r))
 	if err := s.tmux().PasteMessage(ctx, t.pane, text); err != nil {
+		undo()
 		writeError(w, http.StatusBadGateway, "could not send the message: "+err.Error())
 		return
 	}
@@ -130,7 +132,9 @@ func (s *Service) serveInterrupt(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	undo := s.markStopAnswered(ctx, t, viaOf(r))
 	if err := s.tmux().SendEscape(ctx, t.pane); err != nil {
+		undo()
 		writeError(w, http.StatusBadGateway, "could not interrupt: "+err.Error())
 		return
 	}
@@ -307,7 +311,9 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	// The card shows from the transcript while the answer checks the pane, so the log is where a refusal says which one disagreed.
+	undo := func() {}
 	refuse := func(status int, why string) {
+		undo()
 		log.Printf("admiral: answer to %s refused: %d %s (card %s, reason %.64q)", t.what, status, why, req.Card, req.Reason)
 		writeError(w, status, why)
 	}
@@ -315,6 +321,9 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	if why != "" {
 		refuse(http.StatusConflict, why)
 		return
+	}
+	if req.Card == "permission" {
+		undo = s.markStopAnswered(ctx, t, viaOf(r))
 	}
 	if plan != nil {
 		tm := s.tmux()
@@ -342,29 +351,60 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Card == "permission" {
-		ans := permlog.Allow
-		if req.Choice == "deny" {
-			ans = permlog.Deny
-		}
-		if home, err := filepath.Abs(s.Launcher.Home); err == nil {
-			if err := permlog.Append(home, session, permlog.Event{Ev: "card", Crew: t.crew, Answer: ans}); err != nil {
-				log.Printf("admiral: permission log of %s: %v", session, err)
-			}
-		}
-	}
-	if req.Choice == "deny" {
-		// The pane sits at its prompt after a deny; Claude's hooks don't say so, and Codex's Interrupt hook says it only after a flush, so write it now.
-		if err := s.Host.SetPaneNeedsYou(ctx, t.pane, "stop"); err != nil {
+		if err := s.finishPermission(ctx, t, session, req.Choice); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		_ = s.Host.Sync(ctx)
-		s.broadcast()
 	} else if err := t.clearSeen(); err != nil && !errors.Is(err, ErrExited) && !errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"answered": true})
+}
+
+// finishPermission is what follows keys sent to a permission prompt: the permission log, then the pane's new state.
+func (s *Service) finishPermission(ctx context.Context, t target, session, choice string) error {
+	ans := permlog.Allow
+	if choice == "deny" {
+		ans = permlog.Deny
+	}
+	if home, err := filepath.Abs(s.Launcher.Home); err == nil {
+		if err := permlog.Append(home, session, permlog.Event{Ev: "card", Crew: t.crew, Answer: ans}); err != nil {
+			log.Printf("admiral: permission log of %s: %v", session, err)
+		}
+	}
+	if choice == "deny" {
+		// The pane sits at its prompt after a deny; Claude's hooks don't say so, and Codex's Interrupt hook says it only after a flush, so write it now.
+		if err := s.Host.SetPaneNeedsYou(ctx, t.pane, "stop"); err != nil {
+			return err
+		}
+		_ = s.Host.Sync(ctx)
+		s.broadcast()
+		return nil
+	}
+	if err := t.clearSeen(); err != nil && !errors.Is(err, ErrExited) && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
+// markStopAnswered records on the ship's pane which route answered the stop it waits on, before the answer is sent so a hook that follows it cannot race the mark; the returned func clears the mark when the send fails.
+// A crew boat's pane and a ship that does not need you carry no stop.
+func (s *Service) markStopAnswered(ctx context.Context, t target, via string) func() {
+	if t.crew != "" || !t.needsYou {
+		return func() {}
+	}
+	id, err := s.tmux().ReadPaneOption(ctx, t.pane, sessionhost.OptStopID)
+	if err != nil || id == "" {
+		return func() {}
+	}
+	if via != "" {
+		id += " " + via
+	}
+	if s.Host.MarkStopAnswered(ctx, t.pane, id) != nil {
+		return func() {}
+	}
+	return func() { _ = s.Host.MarkStopAnswered(context.WithoutCancel(ctx), t.pane, "") }
 }
 
 // answerKeys gives the keys or the plan that answers, or why the pane cannot take the answer now.

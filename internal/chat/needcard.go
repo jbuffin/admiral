@@ -24,8 +24,12 @@ const (
 	NeedOpen      = "open"
 	NeedAnswered  = "answered"
 	NeedRemoved   = "removed"
-	AnsweredChat  = "chat"
-	AnsweredInbox = "inbox"
+	// NeedSettledTerminal is a stop that ended with no Admiral route answering it; NeedMovedOn is a ship that stopped needing you by leaving: moored, ended, gone.
+	NeedSettledTerminal = "settled_terminal"
+	NeedMovedOn         = "moved_on"
+	AnsweredChat        = "chat"
+	AnsweredInbox       = "inbox"
+	AnsweredAdmiralBot  = "admiralbot"
 )
 
 // needRec is what the chat keeps about a need card beside its log entry: which item it is for and, once it settles, how. The Inbox deletes a kept ship's files on answer, so the state cannot be read back from them.
@@ -35,6 +39,11 @@ type needRec struct {
 	Item    string `json:"item"`
 	Created string `json:"created"`
 	Sig     string `json:"sig,omitempty"`
+	// Kind is the stop kind of a stop card (permission, stop, not_started) and empty for a question card; Reason is the ship's reason the card was posted for.
+	Kind   string `json:"kind,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	// Answerable is false for a stop answered in the terminal.
+	Answerable bool `json:"answerable,omitempty"`
 	State   string `json:"state"`
 	In      string `json:"in,omitempty"`
 }
@@ -95,6 +104,13 @@ func (n *needStore) add(id string, r needRec) {
 	}
 }
 
+func (n *needStore) forget(id string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	delete(n.recs, id)
+	n.save()
+}
+
 // settle records how an open card ended; a settled card never changes.
 func (n *needStore) settle(id, state, in string) {
 	n.mu.Lock()
@@ -126,7 +142,7 @@ func (n *needStore) openIDs(session, item string) []string {
 	defer n.mu.Unlock()
 	var ids []string
 	for id, r := range n.recs {
-		if r.State == NeedOpen && (session == "" || r.Session == session && r.Item == item) {
+		if r.State == NeedOpen && (session == "" || r.Kind == "" && r.Session == session && r.Item == item) {
 			ids = append(ids, id)
 		}
 	}
@@ -156,7 +172,7 @@ func (s *Service) InboxChanged() {
 }
 
 // ShipsChanged tells the need card poster the ships' list changed; it never blocks.
-func (s *Service) ShipsChanged() {}
+func (s *Service) ShipsChanged() { s.InboxChanged() }
 
 // InboxSettled records, before the Inbox releases a kept ship's files, that an item was answered or removed through the Inbox.
 func (s *Service) InboxSettled(session, id string, removed bool) {
@@ -191,6 +207,7 @@ func (s *Service) RunNeedCards(ctx context.Context) {
 }
 
 func (s *Service) needPass() {
+	s.stopPass()
 	if !s.Inbox.Scanned() { // before the first scan the list is empty, not settled
 		return
 	}
@@ -219,11 +236,12 @@ func (s *Service) needPass() {
 		if err != nil {
 			continue
 		}
+		// The record first: a reader that sees the entry must find its card.
+		n.add(id, needRec{Fleet: it.Fleet, Session: it.Session, Item: it.ID, Created: created, Sig: needSig(it.Field(inbox.KindQuestion)), State: NeedOpen})
 		if _, err := s.history().Append(it.Fleet, chatlog.Entry{ID: id, Kind: chatlog.KindNeedCard, Text: title(it), At: it.Created, Card: card}); err != nil {
 			log.Printf("admiral: need card for %s/%s: %v", it.Session, it.ID, err)
-			continue
+			n.forget(id)
 		}
-		n.add(id, needRec{Fleet: it.Fleet, Session: it.Session, Item: it.ID, Created: created, Sig: needSig(it.Field(inbox.KindQuestion)), State: NeedOpen})
 	}
 	open := s.openItems(items)
 	for _, id := range n.openIDs("", "") {
@@ -246,7 +264,7 @@ func (s *Service) openItems(items []inbox.Item) map[string]bool {
 func (s *Service) needState(id string, open map[string]bool) (needRec, bool) {
 	n := s.needs()
 	r, ok := n.get(id)
-	if !ok || r.State != NeedOpen || s.Inbox == nil || !s.Inbox.Scanned() || open[r.Session+"\x00"+r.Item+"\x00"+r.Created] {
+	if !ok || r.Kind != "" || r.State != NeedOpen || s.Inbox == nil || !s.Inbox.Scanned() || open[r.Session+"\x00"+r.Item+"\x00"+r.Created] {
 		return r, ok
 	}
 	present, mark := s.Inbox.AnswerFile(r.Session, r.Item)
@@ -293,6 +311,10 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 	rec, ok := n.get(cardID)
 	if e, found, err := s.history().Get(fleet, cardID); !ok || rec.Fleet != fleet || err != nil || !found || e.Kind != chatlog.KindNeedCard || s.Inbox == nil {
 		writeError(w, http.StatusNotFound, "no need card "+cardID+" in the "+fleet+" chat")
+		return
+	}
+	if rec.Kind != "" {
+		s.serveStopCardAnswer(w, r, n, cardID, rec)
 		return
 	}
 	var req inbox.QuestionRequest

@@ -372,6 +372,10 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	sh.CrewLive = crewLive(sh.Crew)
 	if sh.Status == StatusNeedsYou {
 		sh.Reason = reasonOf(sess)
+		sh.StopID = o[sessionhost.OptStopID]
+	}
+	if id, via, _ := strings.Cut(o[sessionhost.OptStopAnswered], " "); id != "" {
+		sh.StopAnswered = &StopAnswered{StopID: id, Via: via}
 	}
 	if o["dir"] == "" {
 		sh.Repo = ""

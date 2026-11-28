@@ -88,7 +88,7 @@ export function useChat(fleet: string) {
     editDraft(id, (d) => ({ ...d, sending: false, error: r.ok ? '' : failure(r) }));
   };
 
-  const answerNeed = async (id: string, body: AnswerBody) => {
+  const answerNeed = async (id: string, body: AnswerBody | { choice: string } | { text: string }) => {
     if (drafts[id]?.sending) return;
     editDraft(id, (d) => ({ ...d, sending: true, error: '' }));
     const r = await call('POST', `${base}/need-cards/${encodeURIComponent(id)}/answer`, body);

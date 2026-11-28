@@ -48,13 +48,52 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
   );
 }
 
+const stopEnd: Record<string, string> = { settled_terminal: 'Settled in the terminal', moved_on: 'Moved on' };
+
+function StopCardBody({ item, chat }: { item: Extract<ThreadItem, { kind: 'need' }>; chat: Chat }) {
+  const { card } = item;
+  const [text, setText] = useState('');
+  const error = chat.drafts[item.id]?.error;
+  const busy = chat.drafts[item.id]?.sending === true;
+  if (card.item_kind === 'not_started') return <p class="line">It has not started: answer it in its Terminal tab.</p>;
+  if (!card.answerable) return <p class="line">Answer this one in the terminal.</p>;
+  return (
+    <>
+      {card.item_kind === 'permission' ? (
+        <Actions>
+          <Button disabled={busy} onClick={() => void chat.answerNeed(item.id, { choice: 'allow' })} label="Allow once" variant="primary" />
+          <Button disabled={busy} onClick={() => void chat.answerNeed(item.id, { choice: 'deny' })} label="Deny" />
+        </Actions>
+      ) : (
+        <>
+          <textarea value={text} rows={2} aria-label="Next prompt" onInput={(e) => setText((e.currentTarget as HTMLTextAreaElement).value)} />
+          <Actions>
+            <Button disabled={busy || text.trim() === ''} onClick={() => void chat.answerNeed(item.id, { text })} label="Send" variant="primary" />
+          </Actions>
+        </>
+      )}
+      {error ? <p class="line error" role="alert">{error}</p> : null}
+    </>
+  );
+}
+
 function NeedCardView({ item, chat }: { item: Extract<ThreadItem, { kind: 'need' }>; chat: Chat }) {
   const { card } = item;
   const questions = card.questions ?? [];
   const name = ships.value.find((s) => s.session === card.ship)?.name || card.ship;
   const title = markHidden(item.text).text;
+  const isStop = card.item_kind !== 'question';
   if (card.state === 'open') {
     const draft = chat.drafts[item.id] ?? blankDraft();
+    if (isStop) {
+      return (
+        <div class="convo-card chat-card">
+          <p class="chat-card-eyebrow">{name}</p>
+          <p class="line">{title}{card.tool && !title.includes(card.tool) ? ` (${card.tool})` : ''}</p>
+          <StopCardBody item={item} chat={chat} />
+        </div>
+      );
+    }
     return (
       <div class="convo-card chat-card">
         <p class="chat-card-eyebrow">{name}</p>
@@ -63,11 +102,12 @@ function NeedCardView({ item, chat }: { item: Extract<ThreadItem, { kind: 'need'
       </div>
     );
   }
+  const how = stopEnd[card.state] ?? (card.state === 'removed' ? 'Removed' : card.answered_in === 'inbox' ? 'Answered in the Inbox' : card.answered_in === 'admiralbot' ? 'Answered by AdmiralBot' : 'Answered in the chat');
   return (
     <div class="convo-card chat-card quiet">
       <p class="convo-card-title">{title}</p>
       <p class="line">
-        {name} · {card.state === 'removed' ? 'Removed' : card.answered_in === 'inbox' ? 'Answered in the Inbox' : 'Answered in the chat'}
+        {name} · {how}
       </p>
     </div>
   );

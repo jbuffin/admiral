@@ -32,14 +32,19 @@ func (s *Service) TypeResume(session, text string) (afloat, typed bool, err erro
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	typed, err = s.typeAtPrompt(ctx, sess.PaneID, sh.Harness, text)
+	return true, typed, err
+}
+
+// typeAtPrompt types text into the pane's prompt and submits it. typed is true once the text is in the prompt, even when Enter failed: typing it again would double it.
+func (s *Service) typeAtPrompt(ctx context.Context, pane, harness, text string) (typed bool, err error) {
 	srv := sessionhost.NewServer(s.Launcher.Tmux, s.Launcher.Socket)
-	pane := sess.PaneID
 	if !strings.Contains(text, "\n") {
 		err = srv.SendLiteral(ctx, pane, text)
 	} else {
 		var b [8]byte
 		if _, err := rand.Read(b[:]); err != nil {
-			return true, false, err
+			return false, err
 		}
 		buf := "admiral-resume-" + hex.EncodeToString(b[:])
 		if err = srv.LoadBuffer(ctx, buf, text); err == nil {
@@ -49,14 +54,13 @@ func (s *Service) TypeResume(session, text string) (afloat, typed bool, err erro
 		}
 	}
 	if err != nil {
-		return true, false, err
+		return false, err
 	}
-	if sh.Harness == "codex" {
+	if harness == "codex" {
 		time.Sleep(enterPause)
 	}
 	if err := srv.SendEnter(ctx, pane); err != nil {
-		// The text is in the prompt: typing it again would double it.
-		return true, true, err
+		return true, err
 	}
-	return true, true, nil
+	return true, nil
 }
