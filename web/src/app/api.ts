@@ -313,10 +313,17 @@ const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
     overridden: f.overridden ?? [],
   }));
 
-export async function fetchFleets(): Promise<Fleet[]> {
+type ViewBody = { fleets?: Fleet[] | null; default_fleet?: string; default_fleet_fallback?: boolean };
+const viewOf = (body: ViewBody): FleetsView => ({ fleets: fleetsOf(body), default_fleet: body.default_fleet ?? '', default_fleet_fallback: body.default_fleet_fallback ?? true });
+
+export async function fetchFleetsView(): Promise<FleetsView> {
   const res = await fetch(`${API}/config`);
   if (!res.ok) throw new Error(`config: ${res.status}`);
-  return fleetsOf(await res.json());
+  return viewOf(await res.json());
+}
+
+export async function fetchFleets(): Promise<Fleet[]> {
+  return (await fetchFleetsView()).fleets;
 }
 
 export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(harness)}`;
@@ -533,8 +540,9 @@ export interface FleetsView {
 }
 
 /** Makes a fleet the default; the server answers the new config view. */
-export async function saveDefaultFleet(_key: string): Promise<Result<FleetsView>> {
-  return { ok: false, error: 'not implemented' };
+export async function saveDefaultFleet(key: string): Promise<Result<FleetsView>> {
+  const r = await call<ViewBody>('PUT', '/default-fleet', { fleet: key });
+  return r.ok ? { ok: true, data: viewOf(r.data) } : r;
 }
 export interface ChatNote {
   id: string;

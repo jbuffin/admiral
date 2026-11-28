@@ -1,5 +1,5 @@
 import { computed, effect, signal } from '@preact/signals';
-import { fetchFleets, type Fleet } from './api';
+import { fetchFleetsView, type Fleet } from './api';
 import { chatTerminalOf, go, loc, pathAfterFleetSwitch, provideFleets } from './router';
 import { onShipsMessage, sources, sourcesLoaded } from './shipsLink';
 import { fleetPaint } from './fleetPaint';
@@ -64,8 +64,11 @@ let loadSeq = 0;
 export async function loadFleets() {
   const mine = ++loadSeq;
   try {
-    const list = await fetchFleets();
-    if (mine === loadSeq) fleets.value = list;
+    const view = await fetchFleetsView();
+    if (mine === loadSeq) {
+      fleets.value = view.fleets;
+      defaultFleet.value = { key: view.default_fleet, fallback: view.default_fleet_fallback };
+    }
   } catch {
     /* keep the last list */
   }

@@ -1,8 +1,8 @@
 import { useState } from 'preact/hooks';
-import { saveFleet, type Fleet } from './api';
+import { saveDefaultFleet, saveFleet, type Fleet } from './api';
 import { Button } from './Button';
 import { Flag } from './Flag';
-import { fleetPaint, fleets, loadFleets } from './fleets';
+import { defaultFleet, fleetPaint, fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage, saveBody, validShareRepo, type FleetFields } from './fleetSettings';
 
 const fieldsOf = (f: Fleet): FleetFields => ({ search_roots: f.search_roots, owners: f.owners, wake_reviewers: f.wake_reviewers, clone_root: f.clone_root, color: f.color, share_repo: f.crew_sharing?.share_repo ?? '' });
@@ -93,6 +93,49 @@ function SaveSwitch({ id, label, hint, on, body, fleetKey, onReload }: { id: str
   );
 }
 
+// Saves at once like SaveSwitch: the default is one Admiral-wide value, so it never rides on the form's Save.
+function DefaultFleetRow({ fleet, onReload }: { fleet: Fleet; onReload: () => Promise<void> }) {
+  const [error, setError] = useState<{ message: string; status?: number } | null>(null);
+  const { key, fallback } = defaultFleet.value;
+  const isDefault = key === fleet.key;
+  const nameOf = (k: string) => fleets.value.find((f) => f.key === k)?.name || k;
+  const make = async () => {
+    setError(null);
+    const r = await saveDefaultFleet(fleet.key);
+    if (r.ok) {
+      fleets.value = r.data.fleets;
+      defaultFleet.value = { key: r.data.default_fleet, fallback: r.data.default_fleet_fallback };
+    } else {
+      setError({ message: r.error, status: r.status });
+    }
+  };
+  return (
+    <div class="set">
+      <div class="t">
+        <span class="label">Default fleet</span>
+        <span>{isDefault ? `${nameOf(key)} is the default fleet.` : `The default fleet is ${nameOf(key)}.`}</span>
+        {fallback ? <span>No default fleet is picked, or the picked one is gone, so the first fleet is the default.</span> : null}
+        {error ? (
+          <p class="note error" role="alert">
+            {error.status === 409 ? 'The config file changed or is invalid, so nothing was saved. ' : ''}
+            {error.message}{' '}
+            {error.status === 409 ? (
+              <Button
+                label="Reload"
+                onClick={() => {
+                  setError(null);
+                  void onReload();
+                }}
+              />
+            ) : null}
+          </p>
+        ) : null}
+      </div>
+      {!isDefault || fallback ? <Button label="Make default" onClick={make} /> : null}
+    </div>
+  );
+}
+
 export function FleetPage({ fleet }: { fleet: Fleet }) {
   const [shown, setShown] = useState(() => fieldsOf(fleet));
   const [edited, setEdited] = useState(shown);
@@ -162,6 +205,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
         </p>
       ) : null}
       <div class="box notify-box">
+        <DefaultFleetRow fleet={fleet} onReload={reload} />
         <SaveSwitch id="notify" label="Notify" hint="Push to your devices when this fleet needs you. Off silences its pushes and alerts; the Inbox still lists everything." on={fleet.notify} body={{ notify: !fleet.notify }} fleetKey={fleet.key} onReload={reload} />
         <SaveSwitch id="crew-sharing" label="Crew sharing" hint="Lets you publish this fleet's crew members to a GitHub repo you own, public or private." on={fleet.crew_sharing.enabled} body={{ crew_sharing: { enabled: !fleet.crew_sharing.enabled } }} fleetKey={fleet.key} onReload={reload} />
       </div>
