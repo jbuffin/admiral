@@ -40,6 +40,7 @@ func (l *listed) count() int {
 }
 
 func TestRunListsTheDocksModelsEvenWhenItsVersionCannotBeDetected(t *testing.T) {
+	t.Parallel()
 	l := &listed{}
 	r := probes.New(home(t), pass("x"))
 	r.SetModelLister(l)
@@ -51,6 +52,7 @@ func TestRunListsTheDocksModelsEvenWhenItsVersionCannotBeDetected(t *testing.T) 
 }
 
 func TestRefreshListsTheDocksModelsEvenWhenItsVersionIsUnchangedOrCannotBeDetected(t *testing.T) {
+	t.Parallel()
 	l := &listed{}
 	r := probes.New(home(t), pass("x"))
 	r.SetModelLister(l)
@@ -67,6 +69,7 @@ func TestRefreshListsTheDocksModelsEvenWhenItsVersionIsUnchangedOrCannotBeDetect
 }
 
 func TestRunReturnsWhileAModelListingIsStillRunning(t *testing.T) {
+	t.Parallel()
 	l := &listed{enter: make(chan struct{}, 1), hold: make(chan struct{})}
 	r := probes.New(home(t), pass("x"))
 	r.SetModelLister(l)

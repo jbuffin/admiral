@@ -100,6 +100,7 @@ func (f fenceRun) read(t *testing.T, name string) string {
 }
 
 func TestFenceProbePassesOnAFencedRunAndStoresIt(t *testing.T) {
+	t.Parallel()
 	f := runFence(t, "pass", 0)
 	l := f.line(t)
 	if l.Status != capabilities.Passed || l.Detail == "" {
@@ -111,6 +112,7 @@ func TestFenceProbePassesOnAFencedRunAndStoresIt(t *testing.T) {
 }
 
 func TestFenceProbeRunsClaudeWithTheChatsFenceFlags(t *testing.T) {
+	t.Parallel()
 	f := runFence(t, "pass", 0, "--allowedTools", "Bash", "--mcp-config", "/elsewhere/mcp.json")
 	if l := f.line(t); l.Status != capabilities.Passed {
 		t.Fatalf("line = %+v, want passed", l)
@@ -144,6 +146,7 @@ func TestFenceProbeRunsClaudeWithTheChatsFenceFlags(t *testing.T) {
 }
 
 func TestFenceProbeConfigHasOneServerAndSettingsAllowOnlyIt(t *testing.T) {
+	t.Parallel()
 	f := runFence(t, "pass", 0)
 	if l := f.line(t); l.Status != capabilities.Passed {
 		t.Fatalf("line = %+v, want passed", l)
@@ -177,6 +180,7 @@ func TestFenceProbeConfigHasOneServerAndSettingsAllowOnlyIt(t *testing.T) {
 }
 
 func TestFenceProbeGivesItsServerItsSettingsOnlyThroughTheConfig(t *testing.T) {
+	t.Parallel()
 	f := runFence(t, "pass", 0)
 	if l := f.line(t); l.Status != capabilities.Passed {
 		t.Fatalf("line = %+v, want passed: the server must get its env from the config", l)
@@ -189,6 +193,7 @@ func TestFenceProbeGivesItsServerItsSettingsOnlyThroughTheConfig(t *testing.T) {
 }
 
 func TestFenceProbeLeavesNothingBehind(t *testing.T) {
+	t.Parallel()
 	f := runFence(t, "pass", 0)
 	if l := f.line(t); l.Status != capabilities.Passed {
 		t.Fatalf("line = %+v, want passed", l)
@@ -203,6 +208,7 @@ func TestFenceProbeLeavesNothingBehind(t *testing.T) {
 }
 
 func TestFenceProbeFailuresEachSayWhy(t *testing.T) {
+	t.Parallel()
 	want := map[string]string{
 		"builtin-listed": "built-in tool",
 		"second-server":  "other",
@@ -240,6 +246,7 @@ func TestFenceProbeFailuresEachSayWhy(t *testing.T) {
 }
 
 func TestFenceProbeThatHangsFailsAtTheTimeLimit(t *testing.T) {
+	t.Parallel()
 	start := time.Now()
 	f := runFence(t, "hang", 3*time.Second)
 	l := f.line(t)

@@ -27,6 +27,7 @@ func runFakeClaude(t *testing.T, stdin string, args ...string) string {
 }
 
 func TestTheFakeClaudeTakesAJudgeCallByItsOwnArgsNotByAnEmptyToolList(t *testing.T) {
+	t.Parallel()
 	judge := runFakeClaude(t, "hello", "-p", "--model", "haiku", "--tools", "", "--strict-mcp-config",
 		"--output-format", "json", "--no-session-persistence", "--setting-sources", "")
 	if !strings.Contains(judge, `"type":"result"`) {

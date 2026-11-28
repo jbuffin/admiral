@@ -55,6 +55,7 @@ func line(t *testing.T, r probes.Report, id capabilities.ID) probes.Line {
 }
 
 func TestARegisteredProbeIsRunAndItsResultStoredUnderTheDetectedVersion(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	r := probes.New(h, pass("saw it work"))
 	rep, err := r.Run(context.Background(), fleetOf(versionScript(t), "9.1.0"), "claude")
@@ -78,6 +79,7 @@ func TestARegisteredProbeIsRunAndItsResultStoredUnderTheDetectedVersion(t *testi
 }
 
 func TestACapabilityWithNoProbeStaysNotChecked(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	r := probes.New(h, pass("x"))
 	rep, err := r.Run(context.Background(), fleetOf(versionScript(t), "9.1.0"), "claude")
@@ -97,6 +99,7 @@ func TestACapabilityWithNoProbeStaysNotChecked(t *testing.T) {
 }
 
 func TestAProbeRegisteredForAnotherHarnessDoesNotRun(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int32
 	p := pass("x")
 	p.Harness = "codex"
@@ -114,6 +117,7 @@ func TestAProbeRegisteredForAnotherHarnessDoesNotRun(t *testing.T) {
 }
 
 func TestWhenTheVersionCannotBeDetectedRunFailsAndStoresNothing(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	r := probes.New(h, pass("x"))
 	if _, err := r.Run(context.Background(), fleetOf(versionScript(t), "FAIL"), "claude"); err == nil {
@@ -125,6 +129,7 @@ func TestWhenTheVersionCannotBeDetectedRunFailsAndStoresNothing(t *testing.T) {
 }
 
 func TestTwoRunsForOneHarnessShareOneProbeCall(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int32
 	entered, release := make(chan struct{}, 4), make(chan struct{})
 	p := probes.Probe{Harness: "claude", Capability: capabilities.JudgeNoTools,
@@ -174,6 +179,7 @@ func TestTwoRunsForOneHarnessShareOneProbeCall(t *testing.T) {
 }
 
 func TestRefreshRecordsTheVersionOfAHarnessNeverProbedAndRunsNothing(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	var calls atomic.Int32
 	p := pass("x")
@@ -191,6 +197,7 @@ func TestRefreshRecordsTheVersionOfAHarnessNeverProbedAndRunsNothing(t *testing.
 }
 
 func TestRefreshWithTheSameVersionRunsNothing(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	var calls atomic.Int32
 	p := pass("x")
@@ -209,6 +216,7 @@ func TestRefreshWithTheSameVersionRunsNothing(t *testing.T) {
 }
 
 func TestRefreshReprobesInTheBackgroundWhenTheVersionChanged(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	exe := versionScript(t)
 	entered, release := make(chan struct{}, 4), make(chan struct{})
@@ -255,6 +263,7 @@ func TestRefreshReprobesInTheBackgroundWhenTheVersionChanged(t *testing.T) {
 }
 
 func TestRefreshClearsTheRecordedVersionWhenDetectionFails(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	st := capabilities.Open(h)
 	if err := st.RecordVersion("work", "claude", "9.1.0", time.Now()); err != nil {
@@ -278,6 +287,7 @@ func TestRefreshClearsTheRecordedVersionWhenDetectionFails(t *testing.T) {
 }
 
 func TestAFailedVersionCheckKeepsItsReasonInTheStore(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	r := probes.New(h, pass("x"))
 	if _, err := r.Run(context.Background(), fleetOf(versionScript(t), "FAIL"), "claude"); err == nil {
@@ -310,6 +320,7 @@ func blocking(started chan<- struct{}, release <-chan struct{}) probes.Probe {
 }
 
 func TestACallerGoingAwayCancelsNothingForTheRun(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	started, release := make(chan struct{}, 1), make(chan struct{})
 	r := probes.New(h, blocking(started, release))
@@ -339,6 +350,7 @@ func TestACallerGoingAwayCancelsNothingForTheRun(t *testing.T) {
 }
 
 func TestCloseStopsARunQuicklyAndStoresNothingAndKeepsTheVersion(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	st := capabilities.Open(h)
 	if err := st.RecordVersion("work", "claude", "9.0.0", time.Now()); err != nil {
@@ -371,6 +383,7 @@ func TestCloseStopsARunQuicklyAndStoresNothingAndKeepsTheVersion(t *testing.T) {
 }
 
 func TestCloseDuringVersionDetectionLeavesTheRecordedVersionAlone(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	st := capabilities.Open(h)
 	if err := st.RecordVersion("work", "claude", "9.0.0", time.Now()); err != nil {
@@ -397,6 +410,7 @@ func TestCloseDuringVersionDetectionLeavesTheRecordedVersionAlone(t *testing.T) 
 }
 
 func TestARunsOwnTimeLimitStillCountsAsAFailure(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	started, release := make(chan struct{}, 1), make(chan struct{})
 	defer close(release)
@@ -412,6 +426,7 @@ func TestARunsOwnTimeLimitStillCountsAsAFailure(t *testing.T) {
 }
 
 func TestAPanickingProbeDoesNotHangTheNextRun(t *testing.T) {
+	t.Parallel()
 	boom := probes.Probe{Harness: "claude", Capability: capabilities.JudgeNoTools,
 		Run: func(context.Context, probes.Target) probes.Outcome { panic("boom") }}
 	r := probes.New(home(t), boom)
