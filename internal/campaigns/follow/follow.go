@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/campaigns"
+	"github.com/jbuffin/admiral/internal/delay"
 	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/repofinder"
@@ -25,10 +26,12 @@ const SourceKey = "campaign"
 
 const (
 	readTimeout  = 60 * time.Second // one tree read, so a refresh can't run forever
-	pageFloor    = 30 * time.Second // opening a page rereads no more often than this
 	launchFresh  = time.Minute      // a launch rereads first when the read is older than this
 	tickInterval = 5 * time.Minute  // each active campaign is reread this often
 )
+
+// PageFloor is how often, at most, opening a campaign's page rereads its tree from GitHub.
+var PageFloor = delay.From("ADMIRAL_CAMPAIGN_PAGE_FLOOR", 30*time.Second)
 
 // Service follows campaigns and launches their children.
 type Service struct {

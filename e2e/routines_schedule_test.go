@@ -64,6 +64,28 @@ func (w *world) fleetRoutineRuns(fleet, id string) []runJSON {
 	return wrap.Runs
 }
 
+// routineClock gives the world's routine scheduler a clock only the test moves, starting at the wall clock, and returns
+// the next minute boundary on it, in the zone the server reads a When in.
+func (w *world) routineClock() time.Time {
+	w.t.Helper()
+	now := time.Now()
+	w.setClock(now)
+	w.extra = append(w.extra, "ADMIRAL_E2E_CLOCK="+filepath.Join(w.root, "routine-clock"))
+	return now.Truncate(time.Minute).Add(time.Minute).In(time.Local)
+}
+
+// setClock moves the routine scheduler's clock to at.
+func (w *world) setClock(at time.Time) {
+	w.t.Helper()
+	path := filepath.Join(w.root, "routine-clock")
+	if err := os.WriteFile(path+".tmp", []byte(at.Format(time.RFC3339Nano)), 0o600); err != nil {
+		w.t.Fatal(err)
+	}
+	if err := os.Rename(path+".tmp", path); err != nil {
+		w.t.Fatal(err)
+	}
+}
+
 func (w *world) makeRoutine(fleet string, routine map[string]any) string {
 	w.t.Helper()
 	code, body := send(w.t, http.MethodPost, w.in.LocalURL+"/api/fleets/"+fleet+"/routines", routine)
@@ -116,20 +138,13 @@ func TestADigestRoutineQueuesATurnOnlyInTheFleetWithSomethingNewAndAdmiralBotCan
 	}
 	w, chats := newFleetsWorld(t, cue, fleetSpec{key: "alpha", model: "sonnet", effort: "high"}, fleetSpec{key: "beta", model: "sonnet", effort: "high"})
 	alpha, beta := chats["alpha"], chats["beta"]
-	now := time.Now()
-	skew := now.Truncate(time.Minute).Add(45 * time.Second).Sub(now)
-	if skew < 0 {
-		skew += time.Minute
-	}
-	w.extra = append(w.extra, "ADMIRAL_E2E_CLOCK_SKEW="+skew.String())
+	due := w.routineClock()
 	w.start()
 	alpha.start()
 	beta.start()
 	alpha.waitSession(10*time.Second, "the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
 	beta.waitSession(10*time.Second, "the chat started", func(s chatSession) bool { return s.Running && s.Error == "" })
 
-	due := time.Now().Add(skew).Add(5 * time.Second).Truncate(time.Minute).Add(time.Minute).In(time.Local)
-	realDue := due.Add(-skew)
 	when := due.Format("4 15") + " * * *"
 	// the other routine is made first, so on the tick it reports before the digest looks for what is new
 	w.makeRoutine("alpha", map[string]any{"name": "Other", "enabled": true, "when": when, "before_acting": "report_only", "do": map[string]any{"prompt": "sweep"}})
@@ -143,12 +158,9 @@ func TestADigestRoutineQueuesATurnOnlyInTheFleetWithSomethingNewAndAdmiralBotCan
 		}
 		return runs[0]
 	}
+	w.setClock(due)
 	for _, d := range []struct{ fleet, id string }{{"alpha", alphaDigest}, {"beta", betaDigest}} {
-		for end := realDue.Add(30 * time.Second); lastOutcome(d.fleet, d.id).Outcome == ""; time.Sleep(200 * time.Millisecond) {
-			if time.Now().After(end) {
-				t.Fatalf("no run record for the %s digest 30 s after %v", d.fleet, realDue)
-			}
-		}
+		waitCond(t, "a run record for the "+d.fleet+" digest", func() bool { return lastOutcome(d.fleet, d.id).Outcome != "" })
 	}
 
 	if got := lastOutcome("alpha", alphaDigest); got.Outcome != "queued" {
@@ -184,19 +196,9 @@ func TestARoutineAboutAMinuteAheadLaunchesAnAutopilotShipOnTime(t *testing.T) {
 	w := newWorld(t)
 	w.proveGuard()
 	w.writeCue("wait go", "exit 0")
-	// The scheduler's clock runs ahead so that it reads 15 s before a minute boundary when Admiral starts, and the boundary is seconds away.
-	now := time.Now()
-	skew := now.Truncate(time.Minute).Add(45 * time.Second).Sub(now)
-	if skew < 0 {
-		skew += time.Minute
-	}
-	w.extra = append(w.extra, "ADMIRAL_E2E_CLOCK_SKEW="+skew.String())
+	due := w.routineClock()
 	w.start()
 
-	// the next minute that is at least 5 s away on the scheduler's clock, in the zone the server reads a When in
-	schedNow := time.Now().Add(skew)
-	due := schedNow.Add(5 * time.Second).Truncate(time.Minute).Add(time.Minute).In(time.Local)
-	realDue := due.Add(-skew)
 	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines", map[string]any{
 		"name": "Every minute test", "enabled": true, "when": due.Format("4 15") + " * * *", "before_acting": "act",
 		"do": map[string]any{"launch": map[string]any{"harness": "claude", "dir": w.checkout("sched"), "text": "go"}},
@@ -211,21 +213,19 @@ func TestARoutineAboutAMinuteAheadLaunchesAnAutopilotShipOnTime(t *testing.T) {
 		t.Fatalf("created routine has no id: %v\n%s", err, body)
 	}
 
-	holdThat(t, "the routine launched before its time", func() bool { return time.Now().After(realDue) || len(w.routineRuns(made.ID)) == 0 })
+	w.setClock(due.Add(-time.Second))
+	holdThat(t, "the routine launched before its time", func() bool { return len(w.routineRuns(made.ID)) == 0 })
 
+	w.setClock(due)
 	var run runJSON
-	deadline := realDue.Add(30 * time.Second)
-	for run.Ship == "" {
-		if time.Now().After(deadline) {
-			t.Fatalf("no launched record 30 s after %v: %+v", realDue, w.routineRuns(made.ID))
-		}
+	waitCond(t, "the routine's launched run", func() bool {
 		for _, r := range w.routineRuns(made.ID) {
 			if r.Outcome == "launched" {
 				run = r
 			}
 		}
-		time.Sleep(200 * time.Millisecond)
-	}
+		return run.Ship != ""
+	})
 	if run.Tier != "T0" {
 		t.Errorf("record tier = %q, want T0", run.Tier)
 	}

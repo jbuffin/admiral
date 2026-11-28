@@ -75,9 +75,12 @@ The e2e harness shortens Admiral's production delays through environment variabl
 - `ADMIRAL_WALL_CLOCK_MINUTE` (1 min): the unit of a fleet's `wall_clock_minutes`, which is also what sets how soon the scheduler checks a worker ship's deadline. The wall-clock e2e sets `3s`.
 - `ADMIRAL_CHAT_RESET_IDLE` (10 min): AdmiralBot's short idle window before a scheduled reset; the long window is 6 times it. Set only by the tests of scheduled resets.
 - `ADMIRAL_CHAT_FLUSH_WAIT` (3 min): how long a reset or an idle New chat waits for the hidden flush turn. Set only by the tests of an abandoned flush.
+- `ADMIRAL_CAMPAIGN_PAGE_FLOOR` (30 s): how often, at most, opening a campaign's page rereads its tree. Set by AdmiralBot's campaign journey, which closes the campaign and opens the page to see it end.
 - `ADMIRAL_UPDATE_FIRST_CHECK` (1 min): how long after start the update check makes its first request. Set by the update badge journey, with the two seam variables below.
 
 A test sets its own value through `world.extra`.
+
+A routine's schedule runs on the scheduler's clock, which the routine store also stamps routines with. In a `-tags e2e` build, `ADMIRAL_E2E_CLOCK` names a file holding that clock's time (RFC 3339), and only the test moves it: `w.routineClock()` starts it at the wall clock and returns the next minute boundary, and `w.setClock(at)` moves it, so a routine due at that minute runs once the test moves the clock there, with no real wait.
 
 Tests sit at two seams. `e2e/` (Go) starts `bin/admiral` and drives it over HTTP and WebSocket. Its packaging checks (the release tarball, the install script, the formula and the service) carry the `packaging` build tag: `make e2e` leaves them out and the release runs them (see [releasing](releasing.md)). `web/e2e/` (Playwright, WebKit, touch) loads the new shell at `/app/` in two projects: `ipad-landscape` (1194x834) runs every spec but the `*-phone.spec.ts` ones, and `phone` (402x874) runs only those. Vitest covers the new shell's pure UI state logic and, in `*.test.tsx` under happy-dom, its components; the frozen old UI has one vitest, `web/src/ships.test.ts`, which checks that its ship feed drops a moored ship.
 

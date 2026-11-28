@@ -13,12 +13,12 @@ func TestHoldFireTurnsADueRoutineIntoAnInboxProposalThatLaunchesOneAutopilotShip
 	w := newWorld(t)
 	w.proveGuard()
 	w.writeCue("wait go", "exit 0")
+	due := w.routineClock()
 	w.start()
 
 	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/hold-fire/on", nil); code != http.StatusOK {
 		t.Fatalf("POST hold-fire/on = %d: %s", code, body)
 	}
-	due := time.Now().Add(5 * time.Second).Truncate(time.Minute).Add(time.Minute).In(time.Local)
 	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines", map[string]any{
 		"name": "Held sweep", "enabled": true, "when": due.Format("4 15") + " * * *", "before_acting": "act",
 		"do": map[string]any{"launch": map[string]any{"harness": "claude", "dir": w.checkout("held"), "text": "go"}},
@@ -27,19 +27,16 @@ func TestHoldFireTurnsADueRoutineIntoAnInboxProposalThatLaunchesOneAutopilotShip
 		t.Fatalf("POST routine = %d: %s", code, body)
 	}
 
+	w.setClock(due)
 	var proposal inboxItem
-	deadline := due.Add(30 * time.Second)
-	for proposal.ID == "" {
-		if time.Now().After(deadline) {
-			t.Fatalf("no routine proposal in the Inbox 30 s after %v: %+v", due, w.in.inbox(t))
-		}
+	waitCond(t, "the routine's proposal in the Inbox", func() bool {
 		for _, it := range w.in.inbox(t) {
 			if it.Kind == "routine_proposal" {
 				proposal = it
 			}
 		}
-		time.Sleep(200 * time.Millisecond)
-	}
+		return proposal.ID != ""
+	})
 	if proposal.Fleet != "work" || !strings.Contains(proposal.Title, "Held sweep") {
 		t.Errorf("proposal = %+v, want fleet work and a title naming the routine", proposal)
 	}

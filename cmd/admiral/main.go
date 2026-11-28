@@ -572,10 +572,11 @@ func serve(args []string) error {
 	claudeFeed := &uselive.Claude{Store: liveUsage, Login: liveLogin, Panes: liveTmux.ClaudePanes}
 	copilotFeed := &uselive.Copilot{Store: liveUsage, Files: liveTmux.CopilotFiles}
 	// one store, so a scheduler built on it shares the write lock
-	routineStore := &routines.Store{Home: absDir, Fleets: func(k string) (config.Fleet, bool) { return cfg.Current().Fleet(k) },
+	clock := routineClock() // the store stamps routines on the scheduler's timeline, which counts their runs from those stamps
+	routineStore := &routines.Store{Home: absDir, Now: clock.Now, Fleets: func(k string) (config.Fleet, bool) { return cfg.Current().Fleet(k) },
 		ResourceKnown: func(name string) bool { _, ok := cfg.Current().Resources[name]; return ok }}
 	cfg.RoutineNamer = func(fleet string) standing.RoutineNamer { return routineStore.Namer(fleet) }
-	routineScheduler := &routines.Scheduler{Store: routineStore, Clock: realClock{}, Ships: routineShips{shipService}, Chat: chatService, Facts: newFleetFacts(routineStore, chatService, shipService.List, inboxService, campaignService), Proposer: routineProposer{inboxService}, Zone: time.Local, Ready: host.Ready(), HostKnown: host.Known,
+	routineScheduler := &routines.Scheduler{Store: routineStore, Clock: clock, Ships: routineShips{shipService}, Chat: chatService, Facts: newFleetFacts(routineStore, chatService, shipService.List, inboxService, campaignService), Proposer: routineProposer{inboxService}, Zone: time.Local, Ready: host.Ready(), HostKnown: host.Known,
 		GitHubHosts: func(fleet string) []string {
 			c := cfg.Current()
 			if f, ok := c.Fleet(fleet); ok {

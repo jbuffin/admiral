@@ -247,6 +247,7 @@ func TestAdmiralBot_WorkOnACampaignLaunchesItsWithoutYouChildrenAndEndsWithIt(t 
 	g.search("partof", "Part of")
 	g.write("search/partof.json", `{"data":{"search":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}`)
 	w.writeCue("mcp work", "wait go", "exit 0")
+	w.extra = append(w.extra, "ADMIRAL_CAMPAIGN_PAGE_FLOOR=200ms")
 	w.start()
 	c.start()
 
@@ -306,7 +307,7 @@ func TestAdmiralBot_WorkOnACampaignLaunchesItsWithoutYouChildrenAndEndsWithIt(t 
 		}
 		return nil
 	}
-	// opening the campaign page rereads the tree, no more often than every 30s: the store's own tick is five minutes
+	// opening the campaign page rereads the tree, no more often than the page floor: the store's own tick is five minutes
 	campID := listed.Commitments[0].Trigger.Subject
 	waitCond(t, "the card for the ended campaign", func() bool { w.campaign(campID); return cardOf() != nil })
 	_, body = send(t, http.MethodGet, w.in.LocalURL+"/api/chat/"+chatFleet+"/commitments", nil)
