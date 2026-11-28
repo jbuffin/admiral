@@ -80,6 +80,8 @@ The e2e harness shortens Admiral's production delays through environment variabl
 
 A test sets its own value through `world.extra`.
 
+A routine's schedule runs on the scheduler's clock, which the routine store also stamps routines with. In a `-tags e2e` build, `ADMIRAL_E2E_CLOCK` names a file holding that clock's time (RFC 3339), and only the test moves it: `w.routineClock()` starts it at the wall clock and returns the next minute boundary, and `w.setClock(at)` moves it, so a routine due at that minute runs once the test moves the clock there, with no real wait.
+
 Tests sit at two seams. `e2e/` (Go) starts `bin/admiral` and drives it over HTTP and WebSocket. Its packaging checks (the release tarball, the install script, the formula and the service) carry the `packaging` build tag: `make e2e` leaves them out and the release runs them (see [releasing](releasing.md)). `web/e2e/` (Playwright, WebKit, touch) loads the new shell at `/app/` in two projects: `ipad-landscape` (1194x834) runs every spec but the `*-phone.spec.ts` ones, and `phone` (402x874) runs only those. Vitest covers the new shell's pure UI state logic and, in `*.test.tsx` under happy-dom, its components; the frozen old UI has one vitest, `web/src/ships.test.ts`, which checks that its ship feed drops a moored ship.
 
 - A fresh git worktree has no `web/node_modules`: run `npm --prefix web ci` before `make build`, or the build fails with `vite: command not found` and an e2e run then fails on `bin/admiral not found`.

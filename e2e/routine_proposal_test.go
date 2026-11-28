@@ -13,21 +13,12 @@ func TestHoldFireTurnsADueRoutineIntoAnInboxProposalThatLaunchesOneAutopilotShip
 	w := newWorld(t)
 	w.proveGuard()
 	w.writeCue("wait go", "exit 0")
-	// The scheduler's clock runs ahead so that it reads 15 s before a minute boundary when Admiral starts, and the boundary is seconds away.
-	now := time.Now()
-	skew := now.Truncate(time.Minute).Add(45 * time.Second).Sub(now)
-	if skew < 0 {
-		skew += time.Minute
-	}
-	w.extra = append(w.extra, "ADMIRAL_E2E_CLOCK_SKEW="+skew.String())
+	due := w.routineClock()
 	w.start()
 
 	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/hold-fire/on", nil); code != http.StatusOK {
 		t.Fatalf("POST hold-fire/on = %d: %s", code, body)
 	}
-	// the next minute that is at least 5 s away on the scheduler's clock, in the zone the server reads a When in
-	due := time.Now().Add(skew).Add(5 * time.Second).Truncate(time.Minute).Add(time.Minute).In(time.Local)
-	realDue := due.Add(-skew)
 	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines", map[string]any{
 		"name": "Held sweep", "enabled": true, "when": due.Format("4 15") + " * * *", "before_acting": "act",
 		"do": map[string]any{"launch": map[string]any{"harness": "claude", "dir": w.checkout("held"), "text": "go"}},
@@ -36,19 +27,16 @@ func TestHoldFireTurnsADueRoutineIntoAnInboxProposalThatLaunchesOneAutopilotShip
 		t.Fatalf("POST routine = %d: %s", code, body)
 	}
 
+	w.setClock(due)
 	var proposal inboxItem
-	deadline := realDue.Add(30 * time.Second)
-	for proposal.ID == "" {
-		if time.Now().After(deadline) {
-			t.Fatalf("no routine proposal in the Inbox 30 s after %v: %+v", realDue, w.in.inbox(t))
-		}
+	waitCond(t, "the routine's proposal in the Inbox", func() bool {
 		for _, it := range w.in.inbox(t) {
 			if it.Kind == "routine_proposal" {
 				proposal = it
 			}
 		}
-		time.Sleep(200 * time.Millisecond)
-	}
+		return proposal.ID != ""
+	})
 	if proposal.Fleet != "work" || !strings.Contains(proposal.Title, "Held sweep") {
 		t.Errorf("proposal = %+v, want fleet work and a title naming the routine", proposal)
 	}

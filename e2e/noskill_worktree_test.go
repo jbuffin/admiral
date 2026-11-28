@@ -454,16 +454,10 @@ func TestARoutineRunOfNoSkillGetsAWorktree(t *testing.T) {
 	w := newWorld(t)
 	w.proveGuard()
 	w.writeCue("wait go", "exit 0")
-	now := time.Now()
-	skew := now.Truncate(time.Minute).Add(45 * time.Second).Sub(now)
-	if skew < 0 {
-		skew += time.Minute
-	}
-	w.extra = append(w.extra, "ADMIRAL_E2E_CLOCK_SKEW="+skew.String())
+	due := w.routineClock()
 	dir, tip := w.originCheckout("sched")
 	w.start()
 
-	due := time.Now().Add(skew).Add(5 * time.Second).Truncate(time.Minute).Add(time.Minute).In(time.Local)
 	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines", map[string]any{
 		"name": "Every minute test", "enabled": true, "when": due.Format("4 15") + " * * *", "before_acting": "act",
 		"do": map[string]any{"launch": map[string]any{"harness": "claude", "dir": dir, "text": "go"}},
@@ -477,6 +471,7 @@ func TestARoutineRunOfNoSkillGetsAWorktree(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &made); err != nil || made.ID == "" {
 		t.Fatalf("created routine has no id: %v\n%s", err, body)
 	}
+	w.setClock(due)
 	var ship string
 	waitCond(t, "the routine's launched run", func() bool {
 		for _, r := range w.routineRuns(made.ID) {
