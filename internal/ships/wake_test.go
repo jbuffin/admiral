@@ -20,6 +20,7 @@ func (f *mooredFixture) wake(session, body string) *httptest.ResponseRecorder {
 }
 
 func TestWakeOfAShipThatIsNotMooredAnswers404(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	if rec := f.wake("no-such-ship", `{}`); rec.Code != http.StatusNotFound {
 		t.Errorf("wake of an unknown ship = %d %s, want 404", rec.Code, rec.Body)
@@ -27,6 +28,7 @@ func TestWakeOfAShipThatIsNotMooredAnswers404(t *testing.T) {
 }
 
 func TestStopEndsAMooredShipAndLogsItStopped(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	session := f.moor(t, "Saltpaw", "work", "https://github.com/acme/widgets/pull/7")
 	if rec := f.post("/api/ships/" + session + "/stop"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"stopped"`) {
@@ -44,6 +46,7 @@ func TestStopEndsAMooredShipAndLogsItStopped(t *testing.T) {
 }
 
 func TestAServiceWakeOfAnUnknownShipIs404(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	if _, lerr := f.s.Wake(context.Background(), "no-such-ship", ""); lerr == nil || lerr.Status != http.StatusNotFound {
 		t.Errorf("Wake of an unknown ship = %v, want a 404", lerr)
@@ -56,6 +59,7 @@ func TestAServiceWakeOfAnUnknownShipIs404(t *testing.T) {
 // The round and the resources ride the session's options through a woken ship's life, so a ship that
 // moors again keeps both for the next wake.
 func TestMooringAgainKeepsTheRoundAndTheResourcesInTheRecord(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	pr := "https://github.com/acme/widgets/pull/7"
 	f.s.moor(context.Background(), sessionhost.Session{Name: "saltpaw", Options: map[string]string{
@@ -70,6 +74,7 @@ func TestMooringAgainKeepsTheRoundAndTheResourcesInTheRecord(t *testing.T) {
 }
 
 func TestWakeOfAShipTheEngineerDismissedAnswers404(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	session := f.moor(t, "Saltpaw", "work", "https://github.com/acme/widgets/pull/7")
 	if rec := f.post("/api/ships/" + session + "/dismiss"); rec.Code != http.StatusOK {
@@ -82,6 +87,7 @@ func TestWakeOfAShipTheEngineerDismissedAnswers404(t *testing.T) {
 
 // A record a wake could not remove is the earlier round's: the ship's next mooring replaces it.
 func TestMooringAfterAWakeThatLeftItsOldRecordReplacesIt(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	pr := "https://github.com/acme/widgets/pull/7"
 	f.moor(t, "Saltpaw", "work", pr)
@@ -93,6 +99,7 @@ func TestMooringAfterAWakeThatLeftItsOldRecordReplacesIt(t *testing.T) {
 }
 
 func TestARoundsEndIsLoggedOnceHoweverOftenItIsReported(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	sess := sessionhost.Session{Name: "saltpaw", Options: map[string]string{"round": "2"}}
 	f.s.endRound(sess, "sailed")
@@ -103,6 +110,7 @@ func TestARoundsEndIsLoggedOnceHoweverOftenItIsReported(t *testing.T) {
 }
 
 func TestANewShipUnderAReusedNameLogsItsOwnRoundEvents(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	ship := func(launched string) sessionhost.Session {
 		return sessionhost.Session{Name: "saltpaw", Options: map[string]string{"round": "1", "launched": launched}}
@@ -116,6 +124,7 @@ func TestANewShipUnderAReusedNameLogsItsOwnRoundEvents(t *testing.T) {
 }
 
 func TestAShipThatWasNeverWokenLeavesNoRoundEntry(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	f.s.endRound(sessionhost.Session{Name: "saltpaw", Options: map[string]string{"launched": "2026-01-01T00:00:00Z"}}, "moored")
 	if n := len(f.s.roundLogged); n != 0 {

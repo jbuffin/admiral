@@ -10,6 +10,7 @@ import (
 )
 
 func TestCopilotConversationAnchor(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	env := map[string]string{"COPILOT_HOME": home}
 	now := time.Unix(1700000000, 0)

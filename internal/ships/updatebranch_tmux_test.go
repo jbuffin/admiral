@@ -11,6 +11,7 @@ import (
 )
 
 func TestUpdateBranchRefusesALiveShip(t *testing.T) {
+	t.Parallel()
 	s, _ := tailService(t)
 	s.Launcher = &launcher.Launcher{Home: t.TempDir(), Config: func() *config.Config { return &config.Config{} }}
 	s.MergeGuard = func(h http.Handler) http.Handler { return h }

@@ -34,6 +34,7 @@ func byAuthor() moor.Status {
 }
 
 func TestAMooredShipNeverWakesOrProposesForAReviewedPR(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, byAuthor())
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -53,6 +54,7 @@ func TestAMooredShipNeverWakesOrProposesForAReviewedPR(t *testing.T) {
 }
 
 func TestAReviewedPRRaisesNoWakeButTheShipsOwnPRStillDoes(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, byAuthor())
 	own := reviewed()
@@ -75,6 +77,7 @@ func TestAReviewedPRRaisesNoWakeButTheShipsOwnPRStillDoes(t *testing.T) {
 }
 
 func TestAMooredShipServesTheAuthorAndReviewingOfItsPRs(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "OPEN", Author: author, Viewer: viewer})
 	own := moor.Status{State: "OPEN", Author: viewer, Viewer: viewer}
@@ -96,6 +99,7 @@ func TestAMooredShipServesTheAuthorAndReviewingOfItsPRs(t *testing.T) {
 }
 
 func TestMergeAndDontFollowReviewsRefuseAShipWithAReviewedPR(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name string
 		prs  []string
@@ -132,6 +136,7 @@ func pushedPast() moor.Status {
 }
 
 func TestAMooredReviewingShipWhoseAuthorPushedShowsRespondedAndNothingWakesOrProposes(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, pushedPast())
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -157,6 +162,7 @@ func TestAMooredReviewingShipWhoseAuthorPushedShowsRespondedAndNothingWakesOrPro
 }
 
 func TestAMooredReviewingShipThatTheAuthorHasNotAnsweredShowsNoResponded(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	st := pushedPast()
 	st.Head = "abc123"
@@ -174,6 +180,7 @@ func TestAMooredReviewingShipThatTheAuthorHasNotAnsweredShowsNoResponded(t *test
 }
 
 func TestAnOwnPROnAMixedShipNeverShowsResponded(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, pushedPast())
 	own := pushedPast() // the same shape of answer, but the viewer opened it

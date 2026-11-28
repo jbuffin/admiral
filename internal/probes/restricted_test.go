@@ -125,6 +125,7 @@ func (r restrictedRun) wantFailed(t *testing.T, id capabilities.ID, parts ...str
 }
 
 func TestBothRestrictedProbesPassOnAConfinedRunAndAreStored(t *testing.T) {
+	t.Parallel()
 	r := runRestricted(t, "pass", "")
 	for id, label := range map[capabilities.ID]string{capabilities.RestrictedSandbox: "Commands are confined", capabilities.RestrictedAllow: "Network allowlist"} {
 		l := r.line(t, id)
@@ -147,6 +148,7 @@ func TestBothRestrictedProbesPassOnAConfinedRunAndAreStored(t *testing.T) {
 }
 
 func TestRestrictedProbeFailuresSayWhy(t *testing.T) {
+	t.Parallel()
 	t.Run("no sandbox", func(t *testing.T) {
 		r := runRestricted(t, "no-sandbox", "")
 		r.wantFailed(t, capabilities.RestrictedSandbox, "outside")
@@ -192,6 +194,7 @@ func TestRestrictedProbeFailuresSayWhy(t *testing.T) {
 }
 
 func TestRestrictedProbeRunsClaudeHeadlessInASharedCloneUnderTheRestrictedProfile(t *testing.T) {
+	t.Parallel()
 	r := runRestricted(t, "pass", "", probes.ClaudeRestrictedSandbox())
 	if l := r.line(t, capabilities.RestrictedSandbox); l.Status != capabilities.Passed {
 		t.Fatalf("line = %+v, want passed", l)
@@ -222,6 +225,7 @@ func TestRestrictedProbeRunsClaudeHeadlessInASharedCloneUnderTheRestrictedProfil
 }
 
 func TestRestrictedProbeSettingsAreTheDraftFixProfileAndDenyReadCoversEveryOutsideTarget(t *testing.T) {
+	t.Parallel()
 	r := runRestricted(t, "pass", "", probes.ClaudeRestrictedSandbox())
 	if l := r.line(t, capabilities.RestrictedSandbox); l.Status != capabilities.Passed {
 		t.Fatalf("line = %+v, want passed", l)
@@ -291,6 +295,7 @@ func TestRestrictedProbeSettingsAreTheDraftFixProfileAndDenyReadCoversEveryOutsi
 }
 
 func TestRestrictedProbeNeverPutsASecretInThePromptAndScrubsTheEnvironment(t *testing.T) {
+	t.Parallel()
 	r := runRestricted(t, "pass", "", probes.ClaudeRestrictedSandbox())
 	if l := r.line(t, capabilities.RestrictedSandbox); l.Status != capabilities.Passed {
 		t.Fatalf("line = %+v, want passed", l)
@@ -321,6 +326,7 @@ func TestRestrictedProbeNeverPutsASecretInThePromptAndScrubsTheEnvironment(t *te
 }
 
 func TestRestrictedProbesAreRegisteredAndNamedAsRestrictedHarnesses(t *testing.T) {
+	t.Parallel()
 	if got := probes.RestrictedHarnesses(); !slices.Equal(got, []string{"claude"}) {
 		t.Errorf("RestrictedHarnesses() = %q, want [claude]", got)
 	}
@@ -337,6 +343,7 @@ func TestRestrictedProbesAreRegisteredAndNamedAsRestrictedHarnesses(t *testing.T
 }
 
 func TestASlowRestrictedProbeCannotStarveTheJudgesAndADeadlineIsNotAPass(t *testing.T) {
+	t.Parallel()
 	if d := probes.NewDefault(home(t)).Timeout; d < 12*time.Minute {
 		t.Errorf("default run timeout = %v, want at least 12m: two more probes of up to 2 minutes each", d)
 	}
@@ -373,6 +380,7 @@ func (r restrictedRun) runs(t *testing.T) int {
 }
 
 func TestARunWhereTheModelSkippedACommandIsRetriedOnceAndThenPasses(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"skip-once", "unread-once"} {
 		t.Run(mode, func(t *testing.T) {
 			r := runRestricted(t, mode, "", probes.ClaudeRestrictedSandbox())
@@ -387,6 +395,7 @@ func TestARunWhereTheModelSkippedACommandIsRetriedOnceAndThenPasses(t *testing.T
 }
 
 func TestAFailureThatIsNotASkippedCommandIsNeverRetried(t *testing.T) {
+	t.Parallel()
 	for mode, want := range map[string]string{"tmp-open": "landed", "git-open": ".git", "no-commit": "index.lock", "no-sandbox": "outside"} {
 		t.Run(mode, func(t *testing.T) {
 			r := runRestricted(t, mode, "", probes.ClaudeRestrictedSandbox())
@@ -399,6 +408,7 @@ func TestAFailureThatIsNotASkippedCommandIsNeverRetried(t *testing.T) {
 }
 
 func TestARunThatLeakedIsNotRetriedEvenWhenTheModelAlsoSkippedACommand(t *testing.T) {
+	t.Parallel()
 	r := runRestricted(t, "skip-leak", "", probes.ClaudeRestrictedSandbox())
 	r.wantFailed(t, capabilities.RestrictedSandbox, "landed")
 	if n := r.runs(t); n != 3 {
@@ -407,6 +417,7 @@ func TestARunThatLeakedIsNotRetriedEvenWhenTheModelAlsoSkippedACommand(t *testin
 }
 
 func TestTheSandboxResultSaysThatGitCommittedInTheClone(t *testing.T) {
+	t.Parallel()
 	r := runRestricted(t, "pass", "", probes.ClaudeRestrictedSandbox())
 	if d := r.line(t, capabilities.RestrictedSandbox).Detail; !strings.Contains(d, "git committed in the clone") {
 		t.Errorf("detail = %q, want it to say git committed", d)
@@ -414,6 +425,7 @@ func TestTheSandboxResultSaysThatGitCommittedInTheClone(t *testing.T) {
 }
 
 func TestARunTheModelKeepsSkippingIsInconclusiveAndNeverFailsTheHarness(t *testing.T) {
+	t.Parallel()
 	r := runRestricted(t, "skip-always", "")
 	for _, id := range []capabilities.ID{capabilities.RestrictedSandbox, capabilities.RestrictedAllow} {
 		l := r.line(t, id)
@@ -447,6 +459,7 @@ func inHome(t *testing.T, h, mode, version string, ps ...probes.Probe) restricte
 }
 
 func TestAHarnessAlreadyProvenStaysProvenWhenALaterProbeIsInconclusive(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	first := inHome(t, h, "pass", "2.1.300")
 	ids := []capabilities.ID{capabilities.RestrictedSandbox, capabilities.RestrictedAllow}
@@ -473,6 +486,7 @@ func TestAHarnessAlreadyProvenStaysProvenWhenALaterProbeIsInconclusive(t *testin
 }
 
 func TestAPassForOneHarnessVersionNeverCarriesToANewOneThatIsInconclusive(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	inHome(t, h, "pass", "2.1.300").line(t, capabilities.RestrictedSandbox)
 	next := inHome(t, h, "skip-always", "2.1.301")
@@ -487,6 +501,7 @@ func TestAPassForOneHarnessVersionNeverCarriesToANewOneThatIsInconclusive(t *tes
 }
 
 func TestAConfinementFailureOnTheCommandsThatRanFailsAtOnceEvenWhenAnotherWasSkipped(t *testing.T) {
+	t.Parallel()
 	r := runRestricted(t, "skip-confine-fail", "", probes.ClaudeRestrictedSandbox())
 	r.wantFailed(t, capabilities.RestrictedSandbox, "did not refuse", "shell read")
 	if n := r.runs(t); n != 3 {
@@ -495,6 +510,7 @@ func TestAConfinementFailureOnTheCommandsThatRanFailsAtOnceEvenWhenAnotherWasSki
 }
 
 func TestAConfinementFailureOverwritesAStoredPassEvenWhenACommandWasSkipped(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	inHome(t, h, "pass", "2.1.300", probes.ClaudeRestrictedSandbox()).line(t, capabilities.RestrictedSandbox)
 	r := inHome(t, h, "skip-confine-fail", "2.1.300", probes.ClaudeRestrictedSandbox())
@@ -504,6 +520,7 @@ func TestAConfinementFailureOverwritesAStoredPassEvenWhenACommandWasSkipped(t *t
 }
 
 func TestANetworkLeakOnTheCommandThatRanFailsAtOnceEvenWhenTheOtherWasSkipped(t *testing.T) {
+	t.Parallel()
 	r := runRestricted(t, "skip-net-leak", "", probes.ClaudeRestrictedNetwork())
 	r.wantFailed(t, capabilities.RestrictedAllow, "example.com")
 	if n := r.runs(t); n != 1 {
@@ -512,6 +529,7 @@ func TestANetworkLeakOnTheCommandThatRanFailsAtOnceEvenWhenTheOtherWasSkipped(t 
 }
 
 func TestTheRestrictedProbesWorstCaseFitsTheDefaultRunBudget(t *testing.T) {
+	t.Parallel()
 	r := runRestricted(t, "skip-always", "")
 	need := 4*time.Minute + 6*time.Minute + time.Duration(r.runs(t))*defaultRestrictedRun
 	if got := probes.NewDefault(home(t)).Timeout; got < need {
@@ -523,6 +541,7 @@ func TestTheRestrictedProbesWorstCaseFitsTheDefaultRunBudget(t *testing.T) {
 const defaultRestrictedRun = 2 * time.Minute
 
 func TestAnInconclusiveCheckAfterAStoredFailureKeepsTheStoredFailureInItsDetail(t *testing.T) {
+	t.Parallel()
 	h := home(t)
 	inHome(t, h, "no-sandbox", "2.1.300", probes.ClaudeRestrictedSandbox()).line(t, capabilities.RestrictedSandbox)
 	l := inHome(t, h, "skip-always", "2.1.300", probes.ClaudeRestrictedSandbox()).line(t, capabilities.RestrictedSandbox)

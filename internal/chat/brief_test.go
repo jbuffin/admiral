@@ -74,6 +74,7 @@ func (r *briefRig) brief(fleet string) string {
 }
 
 func TestABriefHoldsANoteSavedThroughTheActorRoute(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.post(t, "/api/chat/notes", `{"text":"deploys go out on Tuesdays"}`, "home")
 	r.Tick()
@@ -86,6 +87,7 @@ func TestABriefHoldsANoteSavedThroughTheActorRoute(t *testing.T) {
 }
 
 func TestABriefIsRewrittenOnlyWhenItsTextChanges(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.post(t, "/api/chat/notes", `{"text":"first fact"}`, "home")
 	r.Tick()
@@ -109,6 +111,7 @@ func TestABriefIsRewrittenOnlyWhenItsTextChanges(t *testing.T) {
 }
 
 func TestABriefNamesTheShipsAndCampaignsOfItsFleetOnly(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.set(func() {
 		r.ships = []ships.Ship{
@@ -142,6 +145,7 @@ func TestABriefNamesTheShipsAndCampaignsOfItsFleetOnly(t *testing.T) {
 }
 
 func TestABriefHoldsTheFleetsWaitingChatQuestion(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.post(t, "/api/chat/questions", `{"title":"Which branch?","questions":[{"id":"q1","text":"Which branch?","multi":false,"options":[{"label":"main"},{"label":"dev"}]}]}`, "home")
 	r.Tick()
@@ -154,6 +158,7 @@ func TestABriefHoldsTheFleetsWaitingChatQuestion(t *testing.T) {
 }
 
 func TestABriefListsWaitingQuestionsNewestFirst(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	q := func(title string) string {
 		return `{"title":"` + title + `","questions":[{"id":"q","text":"` + title + `","multi":false,"options":[{"label":"a"}]}]}`
@@ -169,6 +174,7 @@ func TestABriefListsWaitingQuestionsNewestFirst(t *testing.T) {
 }
 
 func TestANewChatsBriefHoldsNoQuestionTheStartWithdrew(t *testing.T) {
+	t.Parallel()
 	l, home, _ := chatRig(t)
 	svc := serviceFor(t, l, home)
 	svc.Config, svc.Launcher = l.Config, l
@@ -194,6 +200,7 @@ func TestANewChatsBriefHoldsNoQuestionTheStartWithdrew(t *testing.T) {
 }
 
 func TestABriefShowsAnOpenCommitmentAndDropsItWhenItIsCancelled(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	path := filepath.Join(r.home, "chat", "home", "ledger.jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -227,6 +234,7 @@ func TestABriefShowsAnOpenCommitmentAndDropsItWhenItIsCancelled(t *testing.T) {
 }
 
 func TestABriefNamesACampaignCommitmentsCampaignAndCountsItsChildren(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.set(func() {
 		r.campaigns = []follow.Followed{{ID: "camp-1", URL: "https://github.com/acme/widgets/issues/20", Fleet: "home", Tree: &github.TreeNode{Number: 20, Title: "Ship the harbour", URL: "https://github.com/acme/widgets/issues/20", Repo: "acme/widgets"}}}

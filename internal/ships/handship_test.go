@@ -34,6 +34,7 @@ func (r *handRig) saltpaw(t *testing.T) map[string]any {
 }
 
 func TestACodexShipCarriesWhyItCannotBeHandedAndAClaudeShipDoesNot(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
 	codex := shipJSON(t, FromSession(sessionhost.Session{Name: "c", Options: map[string]string{"harness": "codex"}}, now))
 	if got, _ := codex["hand_refusal"].(string); got != "ship c runs on codex: only a Claude ship can be handed to Commodore" {
@@ -46,6 +47,7 @@ func TestACodexShipCarriesWhyItCannotBeHandedAndAClaudeShipDoesNot(t *testing.T)
 }
 
 func TestAShipShowsHandingWhileItsPaneCarriesTheMark(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	if v, ok := r.saltpaw(t)["handing"]; ok {
 		t.Fatalf("a ship nobody handed carries handing = %v", v)
@@ -57,6 +59,7 @@ func TestAShipShowsHandingWhileItsPaneCarriesTheMark(t *testing.T) {
 }
 
 func TestAHandThatFailsOnALiveShipSaysWhyUntilTheNextHandStarts(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	r.queue(t, `{"kind":"issue"}`)
 	r.endTurn(t)

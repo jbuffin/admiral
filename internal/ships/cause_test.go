@@ -13,6 +13,7 @@ import (
 
 // An event launch turns a refusal that a later try could clear into a proposal by its Cause, so each site sets it.
 func TestEachRefusalASecondTryCouldClearCarriesItsCause(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 	rig := func(t *testing.T, maxShips int) *Service {
 		cfg := &config.Config{MaxShips: maxShips, Resources: map[string]config.Resource{"phone": {Capacity: 1}}, Fleets: fleets(t)}

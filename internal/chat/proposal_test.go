@@ -49,6 +49,7 @@ func choice(label string) inbox.QuestionAnswer {
 }
 
 func TestAProposalIsAQuestionFileOfItsFleetWithAYesAndANoOption(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	propose(t, r, "home")
 	propose(t, r, "home")
@@ -83,6 +84,7 @@ func TestAProposalIsAQuestionFileOfItsFleetWithAYesAndANoOption(t *testing.T) {
 }
 
 func TestAProposalReadsOpenUntilAnsweredThenYesNoOrAnOtherOnlyNo(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		answer inbox.QuestionAnswer
 		want   string
@@ -106,6 +108,7 @@ func TestAProposalReadsOpenUntilAnsweredThenYesNoOrAnOtherOnlyNo(t *testing.T) {
 }
 
 func TestAProposalWhoseFileIsGoneReadsGoneAndWithdrawRemovesItsFile(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if got := r.Reply("home", propID); got != commitments.ProposalGone {
 		t.Errorf("Reply for a question never asked = %q, want gone", got)
@@ -131,6 +134,7 @@ func TestAProposalWhoseFileIsGoneReadsGoneAndWithdrawRemovesItsFile(t *testing.T
 func (r *briefRig) questions(fleet string) []Question { return r.chat(fleet).questions(true) }
 
 func TestAChatIsOnForAFleetWithAChatAndNotForAnUnknownOne(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if !r.ChatOn("home") || r.ChatOn("nowhere") {
 		t.Errorf("ChatOn(home) = %v, ChatOn(nowhere) = %v; want true and false", r.ChatOn("home"), r.ChatOn("nowhere"))
@@ -138,6 +142,7 @@ func TestAChatIsOnForAFleetWithAChatAndNotForAnUnknownOne(t *testing.T) {
 }
 
 func TestAProposalIsNotAWaitingInboxItemButAdmiralBotsOwnQuestionIs(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.post(t, "/api/chat/questions", askBody, "home")
 	propose(t, r, "home")
@@ -153,6 +158,7 @@ func TestAProposalIsNotAWaitingInboxItemButAdmiralBotsOwnQuestionIs(t *testing.T
 }
 
 func TestAProposalShowsInTheChatButDoesNotMakeItWaitOnAnAnswer(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	propose(t, r, "home")
 	qs := r.questions("home")
@@ -169,6 +175,7 @@ func TestAProposalShowsInTheChatButDoesNotMakeItWaitOnAnAnswer(t *testing.T) {
 }
 
 func TestANewChatWithdrawsAdmiralBotsQuestionsButKeepsAProposal(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	own := r.post(t, "/api/chat/questions", askBody, "home")
 	var asked struct{ ID string }
@@ -197,6 +204,7 @@ func section(brief, heading string) string {
 }
 
 func TestTheBriefListsAProposalApartFromAdmiralBotsWaitingQuestions(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.post(t, "/api/chat/questions", askBody, "home")
 	propose(t, r, "home")
@@ -211,6 +219,7 @@ func TestTheBriefListsAProposalApartFromAdmiralBotsWaitingQuestions(t *testing.T
 }
 
 func TestTheBriefNamesAProposedChildByItsReferenceNotItsTitle(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	c, _, err := r.notes().AddCampaignCommitment("home", ledger.Commitment{Text: "work on acme/widgets#20", Trigger: ledger.Trigger{Kind: ledger.TriggerCampaign, Subject: "camp-1"}, Action: ledger.ActionWork, Harness: "claude"}, "admiralbot")
 	if err != nil {
@@ -249,6 +258,7 @@ func answered(t *testing.T, r *briefRig, n int) {
 }
 
 func TestTwentyAnsweredProposalsDoNotCrowdOutAdmiralBotsQuestion(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	answered(t, r, 25)
 	r.post(t, "/api/chat/questions", askBody, "home")
@@ -270,6 +280,7 @@ func TestTwentyAnsweredProposalsDoNotCrowdOutAdmiralBotsQuestion(t *testing.T) {
 }
 
 func TestAProposalThatSortsBelowManyAnsweredOnesStillShowsOnceTheRunnerHasClearedThem(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	answered(t, r, 25)
 	for i := 0; i < 25; i++ {
@@ -286,6 +297,7 @@ func TestAProposalThatSortsBelowManyAnsweredOnesStillShowsOnceTheRunnerHasCleare
 }
 
 func TestANewChatClearsAnAnsweredProposalLeftOverAndKeepsAnOpenOne(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	answered(t, r, 2)
 	propose(t, r, "home")
@@ -297,6 +309,7 @@ func TestANewChatClearsAnAnsweredProposalLeftOverAndKeepsAnOpenOne(t *testing.T)
 }
 
 func TestARemovedAnsweredProposalKeepsItsAnswerInTheThreadSoItsCardReadsAnswered(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	propose(t, r, "home")
 	r.reply(t, "home", propID, choice(commitments.ProposalYes))
@@ -314,6 +327,7 @@ func TestARemovedAnsweredProposalKeepsItsAnswerInTheThreadSoItsCardReadsAnswered
 }
 
 func TestCancellingACampaignCommitmentWithdrawsItsOpenProposal(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	c, _, err := r.notes().AddCampaignCommitment("home", ledger.Commitment{Text: "work on acme/widgets#20", Trigger: ledger.Trigger{Kind: ledger.TriggerCampaign, Subject: "camp-1"}, Action: ledger.ActionWork, Harness: "claude"}, "admiralbot")
 	if err != nil {

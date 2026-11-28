@@ -153,6 +153,7 @@ func oneLine(t *testing.T, o probes.Outcome) {
 }
 
 func TestEveryHarnessRegistersItsJudgeProbesAndStoresThemUnderTheVersion(t *testing.T) {
+	t.Parallel()
 	want := map[string]map[capabilities.ID]string{ // "" means passed
 		"claude":  {capabilities.JudgeNoTools: "", capabilities.JudgeNoNetwork: "", capabilities.JudgeJSONSchema: "", capabilities.JudgeCallCap: ""},
 		"codex":   {capabilities.JudgeNoTools: "", capabilities.JudgeNoNetwork: "", capabilities.JudgeJSONSchema: "", capabilities.JudgeCallCap: "codex has no per-call cap"},
@@ -190,6 +191,7 @@ func TestEveryHarnessRegistersItsJudgeProbesAndStoresThemUnderTheVersion(t *test
 }
 
 func TestEachJudgeCallRunsTheSmallModelWithTheHarnessesOwnMechanism(t *testing.T) {
+	t.Parallel()
 	for _, name := range allHarnesses {
 		small, _, _ := judge.Models(name)
 		t.Run(name, func(t *testing.T) {
@@ -212,6 +214,7 @@ func TestEachJudgeCallRunsTheSmallModelWithTheHarnessesOwnMechanism(t *testing.T
 }
 
 func TestNoToolsProbePassesOnlyWhenNothingWasWrittenOrRead(t *testing.T) {
+	t.Parallel()
 	leaks := map[string]string{"write": "sentinel", "read": "nonce"}
 	for _, name := range allHarnesses {
 		t.Run(name+"/quiet", func(t *testing.T) {
@@ -244,6 +247,7 @@ func TestNoToolsProbePassesOnlyWhenNothingWasWrittenOrRead(t *testing.T) {
 }
 
 func TestNoToolsProbePassesWhenTheModelOnlyRepeatsTheNamedPaths(t *testing.T) {
+	t.Parallel()
 	for _, name := range allHarnesses {
 		if o := newJRig(t, name, "echo").run(t, capabilities.JudgeNoTools); !o.Passed {
 			t.Errorf("%s: outcome = %+v, want a pass: naming the path is not reading the file", name, o)
@@ -252,6 +256,7 @@ func TestNoToolsProbePassesWhenTheModelOnlyRepeatsTheNamedPaths(t *testing.T) {
 }
 
 func TestClaudesJudgeProbeCallsCarryASmallCostCapExceptTheCapProbeWhichUsesATinyOne(t *testing.T) {
+	t.Parallel()
 	for _, id := range []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork, capabilities.JudgeJSONSchema} {
 		j := newJRig(t, "claude", "pass")
 		if o := j.run(t, id); !o.Passed {
@@ -265,6 +270,7 @@ func TestClaudesJudgeProbeCallsCarryASmallCostCapExceptTheCapProbeWhichUsesATiny
 }
 
 func TestAJudgeProbeThatHitsItsCapFailsClosedAndSaysSo(t *testing.T) {
+	t.Parallel()
 	o := newJRig(t, "claude", "cap-always").run(t, capabilities.JudgeNoTools)
 	if o.Passed || !strings.Contains(o.Detail, "cap") || !strings.Contains(o.Detail, "closed") {
 		t.Errorf("outcome = %+v, want a fail that names the cap and fails closed", o)
@@ -272,6 +278,7 @@ func TestAJudgeProbeThatHitsItsCapFailsClosedAndSaysSo(t *testing.T) {
 }
 
 func TestNoNetworkProbePassesOnlyWhenTheListenerSawNothing(t *testing.T) {
+	t.Parallel()
 	for _, name := range allHarnesses {
 		t.Run(name+"/quiet", func(t *testing.T) {
 			if o := newJRig(t, name, "pass").run(t, capabilities.JudgeNoNetwork); !o.Passed {
@@ -294,6 +301,7 @@ func TestNoNetworkProbePassesOnlyWhenTheListenerSawNothing(t *testing.T) {
 }
 
 func TestJSONSchemaProbeClaudePassesOnlyOnStructuredOutputThatFits(t *testing.T) {
+	t.Parallel()
 	if o := newJRig(t, "claude", "pass").run(t, capabilities.JudgeJSONSchema); !o.Passed {
 		t.Errorf("outcome = %+v, want a pass on a structured_output that fits", o)
 	}
@@ -317,6 +325,7 @@ func TestJSONSchemaProbeClaudePassesOnlyOnStructuredOutputThatFits(t *testing.T)
 }
 
 func TestJSONSchemaProbeCodexPassesOnAFittingReplyAndNotesWhatItCannotSee(t *testing.T) {
+	t.Parallel()
 	o := newJRig(t, "codex", "pass").run(t, capabilities.JudgeJSONSchema)
 	if !o.Passed || !strings.Contains(strings.ToLower(o.Detail), "last message") {
 		t.Errorf("outcome = %+v, want a pass whose detail notes that -o holds the last message either way", o)
@@ -329,6 +338,7 @@ func TestJSONSchemaProbeCodexPassesOnAFittingReplyAndNotesWhatItCannotSee(t *tes
 }
 
 func TestCallCapProbePassesOnlyWhenClaudeReportsTheCapStoppedIt(t *testing.T) {
+	t.Parallel()
 	j := newJRig(t, "claude", "pass")
 	if o := j.run(t, capabilities.JudgeCallCap); !o.Passed {
 		t.Fatalf("outcome = %+v, want a pass on error_max_budget_usd", o)
@@ -345,6 +355,7 @@ func TestCallCapProbePassesOnlyWhenClaudeReportsTheCapStoppedIt(t *testing.T) {
 }
 
 func TestAFixedFailRecordsItsReasonAndMakesNoHarnessCall(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		harness string
 		id      capabilities.ID
@@ -368,6 +379,7 @@ func TestAFixedFailRecordsItsReasonAndMakesNoHarnessCall(t *testing.T) {
 }
 
 func TestAFullClaudeRunFitsTheRunnersTimeEvenWhenOneJudgeCallHangs(t *testing.T) {
+	t.Parallel()
 	j := newJRig(t, "claude", "hang-first")
 	h := home(t)
 	r := probes.NewDefault(h)
@@ -407,6 +419,7 @@ func realFake(t *testing.T, name string) string {
 }
 
 func TestTheFakeHarnessAnswersJudgeProbesAndLeavesHeadlessRunsAlone(t *testing.T) {
+	t.Parallel()
 	for _, leak := range []bool{false, true} {
 		for _, name := range allHarnesses {
 			t.Run(name+map[bool]string{false: "/default", true: "/leak"}[leak], func(t *testing.T) {

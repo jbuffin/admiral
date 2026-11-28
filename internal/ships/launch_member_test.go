@@ -8,6 +8,7 @@ import (
 )
 
 func TestMemberRefusalsComeBeforeTheClone(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	checkout := filepath.Join(root, "widget")
 	if err := os.MkdirAll(filepath.Join(checkout, ".git"), 0o755); err != nil {

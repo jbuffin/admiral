@@ -66,6 +66,7 @@ func (r *mergeRig) noMergedOutcome(t *testing.T) {
 }
 
 func TestMergeOfAShipWhoseStackOnGitHubIsNotExactlyItsPRsIsRefused(t *testing.T) {
+	t.Parallel()
 	d := stackedDetails(2)
 	st := d[layerURL(7)].Stack
 	st.Size = 3
@@ -76,18 +77,21 @@ func TestMergeOfAShipWhoseStackOnGitHubIsNotExactlyItsPRsIsRefused(t *testing.T)
 }
 
 func TestMergeOfChainedPRsGitHubDoesNotHoldAsAStackIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, chainedDetails(2), layerURL(7), layerURL(9))
 	r.refused(t, r.merge("{}"), http.StatusConflict, "stack it on GitHub")
 	r.noMergedOutcome(t)
 }
 
 func TestMergeOfAGitHubStackNamingAPRIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, stackedDetails(2), layerURL(7), layerURL(9))
 	r.refused(t, r.merge(`{"pr":"`+layerURL(7)+`"}`), http.StatusConflict, "name no pr")
 	r.noMergedOutcome(t)
 }
 
 func TestMergeWhenGitHubDoesNotAnswerTheShapeQuestionIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, stackedDetails(2), layerURL(7), layerURL(9))
 	r.g.detailErr = errors.New("gh: HTTP 502")
 	r.refused(t, r.merge("{}"), http.StatusBadGateway, "gh: HTTP 502")
@@ -95,6 +99,7 @@ func TestMergeWhenGitHubDoesNotAnswerTheShapeQuestionIsRefused(t *testing.T) {
 }
 
 func TestMergeOfAStackWithALayerThatStoppedBeingReadyIsRefusedAndRunsNoMerge(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, stackedDetails(2), layerURL(7), layerURL(9))
 	// The last poll found both ready; GitHub now says layer 2 is not.
 	st := readyStatus()
@@ -106,6 +111,7 @@ func TestMergeOfAStackWithALayerThatStoppedBeingReadyIsRefusedAndRunsNoMerge(t *
 
 // GitHub reports a change request as BLOCKED, and readiness reads only that merge state.
 func TestMergeOfASinglePRThatGitHubNowBlocksAfterTheLastPollIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, nil, layerURL(7))
 	r.s.PollMoored(context.Background())
 	if sh, _ := r.ship(t, "Nelson"); len(sh.PRs) != 1 || !sh.PRs[0].Ready {
@@ -120,6 +126,7 @@ func TestMergeOfASinglePRThatGitHubNowBlocksAfterTheLastPollIsRefused(t *testing
 }
 
 func TestMergeOfAPRNamingAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
+	t.Parallel()
 	const foreign = "https://attacker.example/acme/widgets/pull/21"
 	for what, prs := range map[string][]string{
 		"one PR":     {foreign},
@@ -138,6 +145,7 @@ func TestMergeOfAPRNamingAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
 }
 
 func TestMergeUpToNamesOnlyAPRTheShipOwnsAndOnlyGitHubsTopLayer(t *testing.T) {
+	t.Parallel()
 	// GitHub's bottom to top is 7, 11, 9; the ship's record ends with 11.
 	d := stackedDetails(3)
 	st := d[layerURL(7)].Stack
@@ -166,12 +174,14 @@ func TestMergeUpToNamesOnlyAPRTheShipOwnsAndOnlyGitHubsTopLayer(t *testing.T) {
 }
 
 func TestMergeNamingAPRTheShipDoesNotOwnIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, independentDetails(2), layerURL(7), layerURL(9))
 	r.refused(t, r.merge(`{"pr":"https://github.com/acme/widgets/pull/99"}`), http.StatusBadRequest, "pr is not one of")
 	r.noMergedOutcome(t)
 }
 
 func TestAFailedGhStackMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, stackedDetails(2), layerURL(7), layerURL(9))
 	r.g.stackMerr = errors.New("gh stack: layer 2 has a conflict with its base")
 	rec := r.merge("{}")
@@ -186,6 +196,7 @@ func TestAFailedGhStackMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T)
 }
 
 func TestMergeOfAShipThatIsNotThereIsNotFound(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, nil, layerURL(7))
 	r.session = "no-such-ship"
 	if rec := r.merge("{}"); rec.Code != http.StatusNotFound {
@@ -197,6 +208,7 @@ func TestMergeOfAShipThatIsNotThereIsNotFound(t *testing.T) {
 }
 
 func TestASecondMergeWhileOneIsRunningIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, nil, layerURL(7))
 	r.g.mergeBlock = make(chan struct{})
 	first := make(chan int, 1)
@@ -219,6 +231,7 @@ func TestASecondMergeWhileOneIsRunningIsRefused(t *testing.T) {
 }
 
 func TestMergeWithoutAGuardIsForbidden(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, nil, layerURL(7))
 	r.s.MergeGuard = nil
 	mux := http.NewServeMux()
@@ -231,6 +244,7 @@ func TestMergeWithoutAGuardIsForbidden(t *testing.T) {
 }
 
 func TestMergeOfAGitHubStackNeedsNoCheckoutInTheRecord(t *testing.T) {
+	t.Parallel()
 	r := newMergeRig(t, stackedDetails(2), layerURL(7), layerURL(9))
 	rec := r.records(t)[0]
 	rec.Checkout = ""

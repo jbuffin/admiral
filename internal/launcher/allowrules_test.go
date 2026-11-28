@@ -49,6 +49,7 @@ func allowOf(t *testing.T, argv []string) []string {
 }
 
 func TestAClaudeShipGetsItsReposAllowRulesAndLosesARemovedOne(t *testing.T) {
+	t.Parallel()
 	r := newCrewDirRig(t, nil)
 	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "git@github.com:acme/widgets.git"}} {
 		if out, err := exec.Command("git", append([]string{"-C", r.work}, args...)...).CombinedOutput(); err != nil {
@@ -86,6 +87,7 @@ func TestAClaudeShipGetsItsReposAllowRulesAndLosesARemovedOne(t *testing.T) {
 }
 
 func TestAClaudeShipInAnotherRepoGetsNoneOfTheRules(t *testing.T) {
+	t.Parallel()
 	r := newCrewDirRig(t, nil)
 	if err := r.l.AllowRules().Add("work", allowrules.Rule{Harness: "claude", Repo: filepath.Join(r.work, "elsewhere"), Rule: "Bash(make check)"}); err != nil {
 		t.Fatal(err)
@@ -107,6 +109,7 @@ func allowTools(argv []string) []string {
 }
 
 func TestACopilotShipAndCrewBoatGetOnlyTheirReposAllowRules(t *testing.T) {
+	t.Parallel()
 	r := newCrewDirRig(t, nil)
 	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "git@github.com:acme/widgets.git"}} {
 		if out, err := exec.Command("git", append([]string{"-C", r.work}, args...)...).CombinedOutput(); err != nil {
@@ -145,6 +148,7 @@ func TestACopilotShipAndCrewBoatGetOnlyTheirReposAllowRules(t *testing.T) {
 }
 
 func TestACopilotShipInAnotherRepoGetsNoneOfTheRules(t *testing.T) {
+	t.Parallel()
 	r := newCrewDirRig(t, nil)
 	if err := r.l.AllowRules().Add("work", allowrules.Rule{Harness: "copilot", Repo: filepath.Join(r.work, "elsewhere"), Rule: "shell(make check)"}); err != nil {
 		t.Fatal(err)
@@ -158,6 +162,7 @@ func TestACopilotShipInAnotherRepoGetsNoneOfTheRules(t *testing.T) {
 }
 
 func TestACodexShipsLaunchRestoresTheFleetsRulesFile(t *testing.T) {
+	t.Parallel()
 	codexHome := t.TempDir()
 	r := newCrewDirRig(t, map[string]string{"CODEX_HOME": codexHome})
 	if err := r.l.AllowRules().Add("work", allowrules.Rule{Harness: "codex", Pattern: []string{"gh", "pr", "view"}}); err != nil {
@@ -177,6 +182,7 @@ func TestACodexShipsLaunchRestoresTheFleetsRulesFile(t *testing.T) {
 }
 
 func TestTheStoreKeepsEachFleetsCodexRulesFileToItsRules(t *testing.T) {
+	t.Parallel()
 	work, home, shared := t.TempDir(), t.TempDir(), t.TempDir()
 	codex := func(dir string) []config.Harness {
 		return []config.Harness{{Name: "codex", Env: map[string]string{"CODEX_HOME": dir}}}

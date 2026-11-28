@@ -45,6 +45,7 @@ func stackLaunch(id string, anyway bool) func(*launcher.Request) {
 }
 
 func TestAStackLaunchTakesTheStackURLTitleAndTextFromTheLayersServedStack(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.s.Orders = &stackOrders{}
 	got := r.mustLaunch(t, stackLaunch("l41", false))
@@ -58,6 +59,7 @@ func TestAStackLaunchTakesTheStackURLTitleAndTextFromTheLayersServedStack(t *tes
 }
 
 func TestAStackLaunchOnAPRInNoGitHubStackIsRefusedAndListsNoShip(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.s.Orders = &stackOrders{}
 	body := `{"fleet":"work","harness":"claude","dir":"` + r.checkout + `","skill":{"kind":"none"},"source":"s","order_id":"l50","stack":true}`
@@ -70,6 +72,7 @@ func TestAStackLaunchOnAPRInNoGitHubStackIsRefusedAndListsNoShip(t *testing.T) {
 }
 
 func TestASecondLaunchOnAGitHubStackIsRefusedFromAnyLayerUnlessAnyway(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.s.Orders = &stackOrders{}
 	first := r.mustLaunch(t, stackLaunch("l41", false))
@@ -81,6 +84,7 @@ func TestASecondLaunchOnAGitHubStackIsRefusedFromAnyLayerUnlessAnyway(t *testing
 }
 
 func TestAStackLaunchDoesNotMarkTheLayerLaunched(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	o := &stackOrders{}
 	r.s.Orders = o

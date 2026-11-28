@@ -34,6 +34,7 @@ func (r *draftRig) exitedPane(t *testing.T, code string) sessionhost.Session {
 }
 
 func TestDismissingAnAnchoredDraftingShipThatFiledNothingPostsTheItem(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	if sess := r.exitedPane(t, "1"); status(sess, time.Now()) != StatusAnchored {
 		t.Fatalf("status = %s, want anchored", status(sess, time.Now()))
@@ -49,6 +50,7 @@ func TestDismissingAnAnchoredDraftingShipThatFiledNothingPostsTheItem(t *testing
 }
 
 func TestAShipThatSailsOffAfterAValidLateRefFollowsItAndPostsNoItem(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	dead := r.exitedPane(t, "0")
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
@@ -63,6 +65,7 @@ func TestAShipThatSailsOffAfterAValidLateRefFollowsItAndPostsNoItem(t *testing.T
 }
 
 func TestAShipThatSailsOffWithNoRefPostsTheItem(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	r.s.settle(context.Background(), r.exitedPane(t, "0"))
 	if item := r.waitEndedItem(t); !strings.Contains(item, "Saltpaw") {

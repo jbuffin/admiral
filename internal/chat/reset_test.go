@@ -30,6 +30,7 @@ func due(now time.Time) ResetInput {
 }
 
 func TestDueReset_ThresholdRule(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 11, 12, 14, 0, 0, 0, time.UTC)
 	fire := func(in ResetInput) ResetInput {
 		in.HaveContext, in.Context, in.IdleSince = true, 150_001, now.Add(-short)
@@ -61,6 +62,7 @@ func TestDueReset_ThresholdRule(t *testing.T) {
 }
 
 func TestDueReset_IdleRule(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 11, 12, 14, 0, 0, 0, time.UTC)
 	fire := func(in ResetInput) ResetInput {
 		// Under the threshold, so only the idle-hour rule can be the one that fires.
@@ -92,6 +94,7 @@ func TestDueReset_IdleRule(t *testing.T) {
 }
 
 func TestDueReset_DailyRule(t *testing.T) {
+	t.Parallel()
 	ny := local(t, "America/New_York")
 	at := func(h, m int) time.Time { return time.Date(2026, 11, 12, h, m, 0, 0, ny) }
 	fire := func(now time.Time) ResetInput {
@@ -162,6 +165,7 @@ func TestDueReset_DailyRule(t *testing.T) {
 
 // Whatever a rule would say, only an idle, running chat with no question open is reset.
 func TestDueReset_OnlyAnIdleChatIsReset(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 11, 12, 14, 0, 0, 0, time.UTC)
 	rules := map[ResetRule]func(*ResetInput){
 		ResetThreshold: func(in *ResetInput) {
@@ -210,6 +214,7 @@ func TestResetIdleWindows(t *testing.T) {
 }
 
 func TestContextTokens(t *testing.T) {
+	t.Parallel()
 	kept, err := os.ReadFile("../usage/testdata/claude-statusline-kept.json")
 	if err != nil {
 		t.Fatal(err)
@@ -234,6 +239,7 @@ func TestContextTokens(t *testing.T) {
 }
 
 func TestMarkResetCarriesItsText(t *testing.T) {
+	t.Parallel()
 	fc := newBriefRig(t).chat("home")
 	fc.markReset(MarkerRefreshed)
 	var got []string

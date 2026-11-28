@@ -36,7 +36,8 @@ func recordingLauncher(t *testing.T, harness string) (*Launcher, string, func() 
 	})
 	out := filepath.Join(tmp, "argv")
 	exe := filepath.Join(tmp, "harness")
-	script := "#!/bin/sh\nprintf '%s\\0' \"$@\" > " + out + ".part\nmv " + out + ".part " + out + "\nsleep 30\n"
+	// It refuses Copilot's --ui-server gate at once, as a build without the flag does, instead of sleeping through it.
+	script := "#!/bin/sh\nfor a; do [ \"$a\" = --version ] && exit 1; done\nprintf '%s\\0' \"$@\" > " + out + ".part\nmv " + out + ".part " + out + "\nsleep 30\n"
 	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +70,7 @@ func flagValue(argv []string, flag string) (string, bool) {
 }
 
 func TestLaunchModelAndEffortReachTheHarnessFlags(t *testing.T) {
+	t.Parallel()
 	l, work, argv := recordingLauncher(t, "claude")
 	if _, err := l.Launch(Request{Fleet: "work", Harness: "claude", Dir: work, Skill: Skill{Kind: "none"}, Model: "opus", Effort: "high"}); err != nil {
 		t.Fatal(err)
@@ -83,6 +85,7 @@ func TestLaunchModelAndEffortReachTheHarnessFlags(t *testing.T) {
 }
 
 func TestLaunchPassesAnyWellFormedModelNameTheHarnessListed(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ harness, model string }{
 		{"claude", "fable"}, {"claude", "claude-fable-5-2"}, {"claude", "opus[1m]"}, {"codex", "gpt-6.2-sol"},
 	} {
@@ -104,6 +107,7 @@ func TestLaunchPassesAnyWellFormedModelNameTheHarnessListed(t *testing.T) {
 }
 
 func TestLaunchWithNoModelOrEffortLeavesTheHarnessDefaults(t *testing.T) {
+	t.Parallel()
 	l, work, argv := recordingLauncher(t, "claude")
 	if _, err := l.Launch(Request{Fleet: "work", Harness: "claude", Dir: work, Skill: Skill{Kind: "none"}}); err != nil {
 		t.Fatal(err)
@@ -117,6 +121,7 @@ func TestLaunchWithNoModelOrEffortLeavesTheHarnessDefaults(t *testing.T) {
 }
 
 func TestLaunchCodexEffortIsAConfigOverride(t *testing.T) {
+	t.Parallel()
 	l, work, argv := recordingLauncher(t, "codex")
 	if _, err := l.Launch(Request{Fleet: "work", Harness: "codex", Dir: work, Skill: Skill{Kind: "none"}, Effort: "medium"}); err != nil {
 		t.Fatal(err)
@@ -134,6 +139,7 @@ func TestLaunchCodexEffortIsAConfigOverride(t *testing.T) {
 }
 
 func TestLaunchRefusesAModelOrEffortTheHarnessDoesNotOffer(t *testing.T) {
+	t.Parallel()
 	work := t.TempDir()
 	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Name: "Work", SearchRoots: []string{work}, Harnesses: []config.Harness{
 		{Name: "claude", Executable: "/bin/sh", Found: true},
@@ -160,6 +166,7 @@ func TestLaunchRefusesAModelOrEffortTheHarnessDoesNotOffer(t *testing.T) {
 }
 
 func TestFreeformLaunchMayNameASkill(t *testing.T) {
+	t.Parallel()
 	l, work, argv := recordingLauncher(t, "claude")
 	if _, err := l.Launch(Request{Fleet: "work", Harness: "claude", Dir: work, Skill: Skill{Kind: "skill", Name: "/review"},
 		Text: "  look at the parser \n", Note: "dropped"}); err != nil {

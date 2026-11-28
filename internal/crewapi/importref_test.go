@@ -11,6 +11,7 @@ import (
 )
 
 func TestParseImportRefAcceptsEveryForm(t *testing.T) {
+	t.Parallel()
 	member := func(name, ref string) crewapi.ImportRef {
 		return crewapi.ImportRef{Owner: "octocat", Repo: "admiral-crew", Name: name, Ref: ref}
 	}
@@ -47,6 +48,7 @@ func TestParseImportRefAcceptsEveryForm(t *testing.T) {
 }
 
 func TestParseImportRefRefusesEveryBadFormNamingTheAcceptedOnes(t *testing.T) {
+	t.Parallel()
 	bad := []string{
 		"", "a/b", "a/b/c/d", "a/b/Bad Name", "a/b/c@..", "a/b/c@-x", "a/b/c@", "a/b/c@.", "a/b/c@a/./b", "a/b/c@a//b",
 		"a/b/c@/x", "a/b/c@x/", "a/b/c@a..b", "a/b/c@a b", "a/b/c@ü", "a/b/c@" + strings.Repeat("x", 256),
@@ -70,6 +72,7 @@ func TestParseImportRefRefusesEveryBadFormNamingTheAcceptedOnes(t *testing.T) {
 }
 
 func TestParseImportRefTakesARefOf255BytesAndNoMore(t *testing.T) {
+	t.Parallel()
 	ok := strings.Repeat("x", 255)
 	if got, err := crewapi.ParseImportRef("a/b/c@" + ok); err != nil || got.Ref != ok {
 		t.Errorf("255-byte ref = %+v, %v; want accepted", got, err)
@@ -82,6 +85,7 @@ func TestParseImportRefTakesARefOf255BytesAndNoMore(t *testing.T) {
 func sha40() string { return "0123456789abcdef0123456789abcdef01234567" }
 
 func TestWriteImportedWritesTheBytesOnceAndLeavesNoTempFile(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	if err := crewapi.WriteImported(f.home, "work", "bosun", "---\nname: bosun\n---\nhi\n"); err != nil {
 		t.Fatal(err)
@@ -98,6 +102,7 @@ func TestWriteImportedWritesTheBytesOnceAndLeavesNoTempFile(t *testing.T) {
 }
 
 func TestWriteImportedNeverReplacesAFileEvenWithIdenticalBytes(t *testing.T) {
+	t.Parallel()
 	for _, existing := range []string{"other bytes\n", "same bytes\n"} {
 		f := newFixture(t)
 		path := filepath.Join(f.crewDir(), "bosun.md")

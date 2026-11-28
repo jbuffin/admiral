@@ -119,6 +119,7 @@ func (c *chatRun) mcpConfig(t *testing.T) map[string]mcpServer {
 }
 
 func TestChatRunsWithNoBuiltInToolsAndOnlyTheMCPConfig(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	argv, _ := c.start(t)
 
@@ -151,6 +152,7 @@ func TestChatRunsWithNoBuiltInToolsAndOnlyTheMCPConfig(t *testing.T) {
 }
 
 func TestChatSettingsAllowOnlyTheAdmiralServerAndKeepTheDenyBackstop(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	argv, _ := c.start(t)
 	path, ok := flagValue(argv, "--settings")
@@ -181,6 +183,7 @@ func TestChatSettingsAllowOnlyTheAdmiralServerAndKeepTheDenyBackstop(t *testing.
 }
 
 func TestChatMCPConfigNamesOnlyAdmiralMCPWithThisExecutableAndTheChatsEnv(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	c.start(t)
 
@@ -234,6 +237,7 @@ func TestChatMCPConfigNamesOnlyAdmiralMCPWithThisExecutableAndTheChatsEnv(t *tes
 }
 
 func TestChatDropsTheCompactionSwitchesAShipKeeps(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	dock := &c.l.Config().Fleets[0].Harnesses[0]
 	dock.Env = map[string]string{}
@@ -256,6 +260,7 @@ func TestChatDropsTheCompactionSwitchesAShipKeeps(t *testing.T) {
 }
 
 func TestChatTokenReachesOnlyTheMCPConfig(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	argv, env := c.start(t)
 	token := c.mcpConfig(t)["admiral"].Env["ADMIRAL_ACTOR_TOKEN"]
@@ -292,6 +297,7 @@ func TestChatTokenReachesOnlyTheMCPConfig(t *testing.T) {
 }
 
 func TestEachChatStartWritesAConfigWithTheNewSessionsToken(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	c.start(t)
 	first := c.mcpConfig(t)["admiral"].Env["ADMIRAL_ACTOR_TOKEN"]
@@ -313,6 +319,7 @@ func TestEachChatStartWritesAConfigWithTheNewSessionsToken(t *testing.T) {
 }
 
 func TestChatPromptTeachesTheToolsAndNoCLI(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	argv, _ := c.start(t)
 	prompt, ok := flagValue(argv, "--append-system-prompt")
@@ -342,6 +349,7 @@ func TestChatPromptTeachesTheToolsAndNoCLI(t *testing.T) {
 }
 
 func TestChatPromptTellsAdmiralBotToSaveANoteAndQuoteItBack(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	argv, _ := c.start(t)
 	prompt, _ := flagValue(argv, "--append-system-prompt")
@@ -353,6 +361,7 @@ func TestChatPromptTellsAdmiralBotToSaveANoteAndQuoteItBack(t *testing.T) {
 }
 
 func TestEachChatStartRemovesPlantedProjectSettingsWithoutFollowingLinks(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	dir := ChatDir(c.home, "work")
 	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o700); err != nil {
@@ -384,6 +393,7 @@ func TestEachChatStartRemovesPlantedProjectSettingsWithoutFollowingLinks(t *test
 }
 
 func TestChatPromptLeavesTheLaunchKeyToAdmiral(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	argv, _ := c.start(t)
 	prompt, _ := flagValue(argv, "--append-system-prompt")
@@ -396,6 +406,7 @@ func TestChatPromptLeavesTheLaunchKeyToAdmiral(t *testing.T) {
 }
 
 func TestChatStartIsRefusedWhenItsClaudeDirectoryIsALinkOutOfTheHome(t *testing.T) {
+	t.Parallel()
 	c := newChatRun(t)
 	dir := ChatDir(c.home, "work")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -417,6 +428,7 @@ func TestChatStartIsRefusedWhenItsClaudeDirectoryIsALinkOutOfTheHome(t *testing.
 }
 
 func TestOnlyAClaudeChatsPromptTellsItToSaveNotes(t *testing.T) {
+	t.Parallel()
 	for harness, want := range map[string]bool{"claude": true, "codex": false, "copilot": false} {
 		prompt := chatPromptFor(harness)
 		if got := strings.Contains(prompt, "call save_note with it"); got != want {
@@ -432,6 +444,7 @@ func TestOnlyAClaudeChatsPromptTellsItToSaveNotes(t *testing.T) {
 }
 
 func TestAClaudeChatsPromptNamesMakeCommitmentOnlyForWhatTheEngineerAsked(t *testing.T) {
+	t.Parallel()
 	prompt := chatPromptFor("claude")
 	if !strings.Contains(prompt, "make_commitment") || !strings.Contains(prompt, "save_note") {
 		t.Errorf("claude prompt = %q, want it to name make_commitment beside save_note", prompt)
@@ -443,6 +456,7 @@ func TestAClaudeChatsPromptNamesMakeCommitmentOnlyForWhatTheEngineerAsked(t *tes
 }
 
 func TestEveryChatPromptTeachesWorkOnAsAnInstructionOnlyAndItsLimits(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		i := strings.Index(prompt, "work_on_campaign")
@@ -460,6 +474,7 @@ func TestEveryChatPromptTeachesWorkOnAsAnInstructionOnlyAndItsLimits(t *testing.
 }
 
 func TestEveryChatPromptSendsAWhatIsLeftQuestionToReadCampaign(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		start := strings.Index(prompt, "Read with")
@@ -484,6 +499,7 @@ func TestEveryChatPromptSendsAWhatIsLeftQuestionToReadCampaign(t *testing.T) {
 }
 
 func TestEveryChatPromptSendsALayOutRequestToTheWayfinderSkillWithTheEngineersWordsAsTheOrder(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		i := strings.Index(prompt, "wayfinder")
@@ -501,6 +517,7 @@ func TestEveryChatPromptSendsALayOutRequestToTheWayfinderSkillWithTheEngineersWo
 }
 
 func TestEveryChatPromptGivesTheMakeCampaignLinkInsteadOfATool(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		start := strings.Index(prompt, "/app/orders?fleet=")
@@ -531,6 +548,7 @@ func promptSentences(prompt string) []string {
 }
 
 func TestEveryChatPromptRunsEveryLaunchInAutopilotUnlessTheEngineerSaysWithMe(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		var every bool
@@ -550,6 +568,7 @@ func TestEveryChatPromptRunsEveryLaunchInAutopilotUnlessTheEngineerSaysWithMe(t 
 }
 
 func TestEveryChatPromptTellsARefusedAutopilotAsItCameAndNeverRelaunchesInteractive(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		var found bool
 		for _, s := range promptSentences(chatPromptFor(harness)) {
@@ -565,6 +584,7 @@ func TestEveryChatPromptTellsARefusedAutopilotAsItCameAndNeverRelaunchesInteract
 }
 
 func TestEveryChatPromptLaunchesTheWayfinderWithMe(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		var found bool
 		for _, s := range promptSentences(chatPromptFor(harness)) {
@@ -579,6 +599,7 @@ func TestEveryChatPromptLaunchesTheWayfinderWithMe(t *testing.T) {
 }
 
 func TestTheChatPromptTellsAdmiralBotHowToReportAShipOnAReportTurn(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		i := strings.Index(prompt, "[Report:")
@@ -596,6 +617,7 @@ func TestTheChatPromptTellsAdmiralBotHowToReportAShipOnAReportTurn(t *testing.T)
 }
 
 func TestEveryChatPromptTeachesDraftCampaignAsAnInstructionOnlyAskingOnlyWhenSeveralReposFitAndLinkingTheItem(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		i := strings.Index(prompt, "draft_campaign")
@@ -631,6 +653,7 @@ func someSentence(prompt string, words ...string) bool {
 }
 
 func TestEveryChatPromptTeachesTheThreeKindsOfShipAndWhenToSendEach(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		if !someSentence(prompt, "scout", "launch_ship", "look", "report") {
@@ -646,6 +669,7 @@ func TestEveryChatPromptTeachesTheThreeKindsOfShipAndWhenToSendEach(t *testing.T
 }
 
 func TestEveryChatPromptSendsACommodoreShipWhenUnsureOfTheKind(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		if !someSentence(chatPromptFor(harness), "commodore ship", "unsure") {
 			t.Errorf("%s prompt does not say to send a Commodore ship when unsure of the kind", harness)
@@ -654,6 +678,7 @@ func TestEveryChatPromptSendsACommodoreShipWhenUnsureOfTheKind(t *testing.T) {
 }
 
 func TestEveryChatPromptAllowsAnyOtherLaunchOptionWhenNoKindFitsAndSaysWhichAndWhy(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		if !someSentence(chatPromptFor(harness), "none of", "launch_ship", "only as the rules above allow", "which", "why") {
 			t.Errorf("%s prompt does not allow another launch_ship option when none of the three kinds fits, saying which and why", harness)
@@ -662,6 +687,7 @@ func TestEveryChatPromptAllowsAnyOtherLaunchOptionWhenNoKindFitsAndSaysWhichAndW
 }
 
 func TestEveryChatPromptTeachesReasonAsTheLaunchLineThatStartsWithTo(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		if !someSentence(chatPromptFor(harness), "reason", "launch line", "starts with \"to\"", "why") {
 			t.Errorf("%s prompt does not teach reason as the launch line, starting with \"to\" and saying why", harness)
@@ -670,6 +696,7 @@ func TestEveryChatPromptTeachesReasonAsTheLaunchLineThatStartsWithTo(t *testing.
 }
 
 func TestEveryChatPromptTakesALaunchsRepoFromTheMapAndAsksOnlyBeforeLaunch(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		if !someSentence(prompt, "launch", "dir", "list_repos", "ask", "more than one", "unclear") {
@@ -691,6 +718,7 @@ func TestEveryChatPromptTakesALaunchsRepoFromTheMapAndAsksOnlyBeforeLaunch(t *te
 }
 
 func TestEveryChatPromptNeverAsksTheEngineerToPickAKind(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		if !someSentence(prompt, "never", "ask", "kind of ship") {

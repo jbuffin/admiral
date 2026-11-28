@@ -24,6 +24,7 @@ func (r *nextRig) afloat() bool {
 }
 
 func TestReturnToPortWaitsForTheTurnThenStopsAfterTheCleanUpTurn(t *testing.T) {
+	t.Parallel()
 	r := newNextRig(t)
 	r.turn(t, "working", "")
 
@@ -57,6 +58,7 @@ func TestReturnToPortWaitsForTheTurnThenStopsAfterTheCleanUpTurn(t *testing.T) {
 }
 
 func TestReturnToPortWaitsOnTheEngineerDuringTheCleanUpTurn(t *testing.T) {
+	t.Parallel()
 	r := newNextRig(t)
 	r.turn(t, "needs_you", "stop")
 	if rec := r.returnToPort("saltpaw"); rec.Code != http.StatusOK {
@@ -74,11 +76,13 @@ func TestReturnToPortWaitsOnTheEngineerDuringTheCleanUpTurn(t *testing.T) {
 }
 
 func TestReturnToPortRefusesAShipThatIsNotThere(t *testing.T) {
+	t.Parallel()
 	r := newNextRig(t)
 	wantError(t, r.returnToPort("nosuchship"), http.StatusNotFound, "an unknown ship")
 }
 
 func TestAMooredShipWhosePRsAreMergedIsWokenToCleanUpAndStoppedAfterThatTurn(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	g := &pollGitHub{}
 	g.set(wakePR, moor.Status{State: "MERGED"})
@@ -124,6 +128,7 @@ func TestAMooredShipWhosePRsAreMergedIsWokenToCleanUpAndStoppedAfterThatTurn(t *
 }
 
 func TestReturnToPortRefusesALiveShipThatCarriesAPR(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0)
 	if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {

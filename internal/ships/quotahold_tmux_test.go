@@ -32,6 +32,7 @@ func (r *wakeRig) overTheLine(t *testing.T, used float64) *quotaClock {
 }
 
 func TestAnUnattendedLaunchOverTheQuotaLineIsRefusedWithAWaitThatNamesTheHold(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	r.overTheLine(t, 93)
 	_, lerr := r.s.Launch(context.Background(), r.keyReq(func(q *launcher.Request) { q.Autopilot, q.Unattended = true, true }))
@@ -44,6 +45,7 @@ func TestAnUnattendedLaunchOverTheQuotaLineIsRefusedWithAWaitThatNamesTheHold(t 
 }
 
 func TestAFeedbackRoundOverTheQuotaLineShowsTheHoldAsTheWaitingTextAndWakesOnceTheWindowResets(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	g := r.polling()
 	g.set(wakePR, aliceReview())
@@ -72,6 +74,7 @@ func TestAFeedbackRoundOverTheQuotaLineShowsTheHoldAsTheWaitingTextAndWakesOnceT
 }
 
 func TestAProposalRoundOverTheQuotaLineLaunchesBecauseTheEngineerAcceptedIt(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	g := r.polling()
 	g.set(wakePR, openWith(nil, strangerComment("C1", "stranger-1", "please look again", 30*time.Minute)))
@@ -87,6 +90,7 @@ func TestAProposalRoundOverTheQuotaLineLaunchesBecauseTheEngineerAcceptedIt(t *t
 }
 
 func TestAHandWakeOverTheQuotaLineLaunches(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	r.moored(t, 0)
 	r.overTheLine(t, 100)
@@ -97,18 +101,21 @@ func TestAHandWakeOverTheQuotaLineLaunches(t *testing.T) {
 }
 
 func TestAHandLaunchWithAutopilotTickedOverTheQuotaLineLaunches(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	r.overTheLine(t, 100)
 	r.mustLaunch(t, func(q *launcher.Request) { q.Autopilot = true })
 }
 
 func TestAnAdmiralBotLaunchOnAnInstructionWithAutopilotOverTheQuotaLineLaunches(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	r.overTheLine(t, 100)
 	r.mustLaunch(t, func(q *launcher.Request) { q.Autopilot, q.Via = true, "admiralbot" })
 }
 
 func TestAClientCannotMarkALaunchUnattendedThroughTheLaunchRoute(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	r.overTheLine(t, 100)
 	body := `{"fleet":"work","harness":"claude","dir":` + `"` + r.checkout + `"` + `,"model":"opus","prompt":"go","skill":{"kind":"none"},"autopilot":true,"unattended":true,"Unattended":true}`

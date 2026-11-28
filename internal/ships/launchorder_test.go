@@ -27,6 +27,7 @@ func (oneOrder) Launched(source, id string) {}
 // An empty ship list before the host's first poll says nothing about which
 // orders hold a ship, so autopilot's tick could start an order that already runs.
 func TestLaunchOrderRefusesWhileShipsAreNotKnown(t *testing.T) {
+	t.Parallel()
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
 		Orders:   oneOrder{},
@@ -40,6 +41,7 @@ func TestLaunchOrderRefusesWhileShipsAreNotKnown(t *testing.T) {
 }
 
 func TestPendingListsAnUnlistedShipUntilItExpires(t *testing.T) {
+	t.Parallel()
 	s := &Service{Host: sessionhost.New("tmux", t.TempDir()+"/tmux.sock")}
 	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p", nil)
 	got := s.Pending()
@@ -82,7 +84,6 @@ func sliceService(t *testing.T) *mooredFixture {
 		_ = exec.Command(tmux, "-S", sock, "kill-server").Run()
 		_ = os.RemoveAll(dir)
 	})
-	t.Setenv("TMUX_TMPDIR", dir)
 	f.s.Host = sessionhost.New(tmux, sock)
 	f.s.Orders = sliceOrders{}
 	ctx, stop := context.WithCancel(context.Background())
@@ -97,6 +98,7 @@ func sliceService(t *testing.T) *mooredFixture {
 }
 
 func TestLaunchOrderRefusesASliceOverlappingAShipsClaim(t *testing.T) {
+	t.Parallel()
 	f := sliceService(t)
 	if err := moor.Write(f.home, moor.Record{Name: "Slice", Session: "slice", Fleet: "work", URL: sliceB, Issues: []string{sliceB}}); err != nil {
 		t.Fatal(err)
@@ -114,6 +116,7 @@ func TestLaunchOrderRefusesASliceOverlappingAShipsClaim(t *testing.T) {
 // A slice launched again under the order id its moored ship holds is refused by the order's hold,
 // which names the ship the way the issue check does.
 func TestLaunchOrderNamesTheShipHoldingASlicesOrder(t *testing.T) {
+	t.Parallel()
 	f := sliceService(t)
 	if err := moor.Write(f.home, moor.Record{Name: "Slice", Session: "slice", Fleet: "work", Source: "campaign", OrderID: "c/slice", URL: sliceA, Issues: []string{sliceA, sliceB}}); err != nil {
 		t.Fatal(err)
@@ -125,6 +128,7 @@ func TestLaunchOrderNamesTheShipHoldingASlicesOrder(t *testing.T) {
 }
 
 func TestLaunchOrderNamesALaunchInFlightForARacingSlice(t *testing.T) {
+	t.Parallel()
 	f := sliceService(t)
 	key := OrderKey{"campaign", "c/slice"}
 	if !f.s.lockOrder(key) {

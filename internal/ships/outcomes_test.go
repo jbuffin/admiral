@@ -18,6 +18,7 @@ func events(recs []outcomes.Record) []string {
 }
 
 func TestReasonOf(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ state, reason, want string }{
 		{"", "", "not_started"}, // no hook has spoken: the 10 s rule
 		{"needs_you", "question", "question"},
@@ -33,6 +34,7 @@ func TestReasonOf(t *testing.T) {
 }
 
 func TestAdvanceFollowsStops(t *testing.T) {
+	t.Parallel()
 	t0 := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	at := func(s int) time.Time { return t0.Add(time.Duration(s) * time.Second) }
 	var all []outcomes.Record
@@ -63,6 +65,7 @@ func TestAdvanceFollowsStops(t *testing.T) {
 // After a restart an open stop is neither written again nor lost: its start
 // comes back from tmux and the first pass that sees it end writes underway.
 func TestBaselineKeepsAnOpenStop(t *testing.T) {
+	t.Parallel()
 	since := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	now := since.Add(30 * time.Second)
 	sess := sessionhost.Session{State: "needs_you", Reason: "stop", Options: map[string]string{
@@ -86,6 +89,7 @@ func TestBaselineKeepsAnOpenStop(t *testing.T) {
 // A ship can set its own tally options to anything: a non-finite seconds value
 // would make `ended` unmarshalable, so it counts as unset.
 func TestBaselineIgnoresNonFiniteSeconds(t *testing.T) {
+	t.Parallel()
 	for _, v := range []string{"NaN", "+Inf", "1.7e308"} {
 		sess := sessionhost.Session{Options: map[string]string{sessionhost.OptNeedsSecs: v}}
 		if got := baseline(sess, time.Now()).Seconds; got != 0 {

@@ -192,6 +192,7 @@ func TestALaunchFromACheckoutWithNoOriginAndNoDefaultBranchIsRefusedNamingTheBra
 }
 
 func TestALaunchFromANonGitHubOriginStillFetchesAndCutsFromOriginsDefaultTip(t *testing.T) {
+	t.Parallel()
 	p := githubRig(t, "https://gitlab.com/acme/api.git")
 	tip := git(t, p.work, "ls-remote", "origin", "trunk")
 	out, err := p.l.Launch(p.noSkill())
@@ -215,6 +216,7 @@ const ghClosingSteps = "## Closing steps\n\n" +
 	"If you found something worth reading later, write it in markdown to the file named by $ADMIRAL_FINDINGS."
 
 func TestAQuickShipFromAGitHubOriginGetsTheClosingStepsByteForByte(t *testing.T) {
+	t.Parallel()
 	p := githubRig(t, "https://github.com/acme/api.git")
 	if _, err := p.l.Launch(p.chatLaunch()); err != nil {
 		t.Fatalf("Launch = %v", err)
@@ -282,6 +284,7 @@ func TestADraftingLaunchFromACheckoutWithNoOriginIsRefusedBecauseCampaignsNeedGi
 }
 
 func TestADraftingLaunchFromAGitHubOriginStillGetsItsWorktree(t *testing.T) {
+	t.Parallel()
 	p := githubRig(t, "https://github.com/acme/api.git")
 	skill := filepath.Join(p.work, ".claude", "skills", "wayfinder")
 	mustMkdir(t, skill)

@@ -69,6 +69,7 @@ func (g guardRun) scout(t *testing.T) probes.Line {
 }
 
 func TestScoutGuardProbeIsClaudeOnly(t *testing.T) {
+	t.Parallel()
 	if got := probes.ScoutGuardHarnesses(); !slices.Equal(got, []string{"claude"}) {
 		t.Errorf("ScoutGuardHarnesses = %v, want [claude]: Codex and Copilot have no guard hook wiring", got)
 	}
@@ -78,6 +79,7 @@ func TestScoutGuardProbeIsClaudeOnly(t *testing.T) {
 }
 
 func TestScoutGuardProbePassesOnlyWhenTheGuardSawTheWriteAndNoFileExists(t *testing.T) {
+	t.Parallel()
 	g := runScoutGuard(t, "pass", nil)
 	l := g.scout(t)
 	if l.Status != capabilities.Passed || l.Detail == "" {
@@ -89,6 +91,7 @@ func TestScoutGuardProbePassesOnlyWhenTheGuardSawTheWriteAndNoFileExists(t *test
 }
 
 func TestScoutGuardProbeFailuresEachSayWhy(t *testing.T) {
+	t.Parallel()
 	want := map[string]string{
 		"skip-hook-says-denied":  "without running the guard hook",
 		"no-tool":                "never called the Write tool",
@@ -124,6 +127,7 @@ func TestScoutGuardProbeFailuresEachSayWhy(t *testing.T) {
 }
 
 func TestScoutGuardProbeRunsClaudeWithTheRealBundleAndACheckoutItOwns(t *testing.T) {
+	t.Parallel()
 	g := runScoutGuard(t, "pass", map[string]string{"ADMIRAL_SCOUT": "/somewhere/else", "ADMIRAL_AUTOPILOT": "0"})
 	g.scout(t)
 	argv := strings.Split(strings.TrimSuffix(g.read(t, "argv"), "\x00"), "\x00")
@@ -163,6 +167,7 @@ func TestScoutGuardProbeRunsClaudeWithTheRealBundleAndACheckoutItOwns(t *testing
 }
 
 func TestScoutGuardProbeLeavesNothingBehind(t *testing.T) {
+	t.Parallel()
 	g := runScoutGuard(t, "pass", nil)
 	g.scout(t)
 	dir := strings.TrimSpace(strings.SplitN(strings.SplitN(g.read(t, "env"), probes.DirEnv+"=", 2)[1], "\n", 2)[0])

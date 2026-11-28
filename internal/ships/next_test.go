@@ -84,6 +84,7 @@ func wantError(t *testing.T, rec *httptest.ResponseRecorder, status int, why str
 }
 
 func TestNextTypesTheTextAtAShipsPromptOnceItsTurnHasEnded(t *testing.T) {
+	t.Parallel()
 	r := newNextRig(t)
 	r.turn(t, "needs_you", "stop")
 
@@ -101,6 +102,7 @@ func TestNextTypesTheTextAtAShipsPromptOnceItsTurnHasEnded(t *testing.T) {
 }
 
 func TestNextRefusesAShipWhoseTurnHasNotEnded(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, state, reason string }{
 		{"mid-turn", "working", ""},
 		{"waiting on an approval", "needs_you", "permission:Bash"},
@@ -121,6 +123,7 @@ func TestNextRefusesAShipWhoseTurnHasNotEnded(t *testing.T) {
 }
 
 func TestNextRefusesTextThatCannotBeTypedAtAPrompt(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, text string }{
 		{"a control character", "fix\x01it"},
 		{"only whitespace", "  \n "},
@@ -139,6 +142,7 @@ func TestNextRefusesTextThatCannotBeTypedAtAPrompt(t *testing.T) {
 }
 
 func TestNextIsNotFoundForAnUnknownShipOrACrewBoat(t *testing.T) {
+	t.Parallel()
 	r := newNextRig(t)
 	r.turn(t, "needs_you", "stop")
 	if out, err := exec.Command(r.s.Launcher.Tmux, "-S", r.s.Launcher.Socket, "new-window", "-d", "-t", "saltpaw", "-n", "boat").CombinedOutput(); err != nil {
@@ -153,6 +157,7 @@ func TestNextIsNotFoundForAnUnknownShipOrACrewBoat(t *testing.T) {
 }
 
 func TestNextTellsYouToWakeAMooredShip(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	session := f.moor(t, "Saltpaw", "work", prSeven)
 	rec := httptest.NewRecorder()
@@ -163,6 +168,7 @@ func TestNextTellsYouToWakeAMooredShip(t *testing.T) {
 }
 
 func TestNextIsNotFoundForAShipNoServiceKnows(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	rec := httptest.NewRecorder()
 	f.mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/ships/nosuchship/next", strings.NewReader(`{"text":"go"}`)))
@@ -170,6 +176,7 @@ func TestNextIsNotFoundForAShipNoServiceKnows(t *testing.T) {
 }
 
 func TestAWakeByAnActorStampsTheWokenRecordViaAdmiralbot(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, fleet, via string }{{"AdmiralBot", "work", "admiralbot"}, {"the engineer", "", ""}} {
 		t.Run(c.name, func(t *testing.T) {
 			r := newWakeRig(t, 0)
@@ -198,6 +205,7 @@ func TestAWakeByAnActorStampsTheWokenRecordViaAdmiralbot(t *testing.T) {
 }
 
 func TestNextRefusesAnActorsHarnessCommandButTypesItsOrdinaryText(t *testing.T) {
+	t.Parallel()
 	for _, text := range []string{"/compact", "  /clear", "!rm -rf x", "\n!ls"} {
 		t.Run(text, func(t *testing.T) {
 			r := newNextRig(t)
@@ -229,6 +237,7 @@ func TestNextRefusesAnActorsHarnessCommandButTypesItsOrdinaryText(t *testing.T) 
 }
 
 func TestAnActorsWakeTextNeverLeadsThePrompt(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0)
 	mux := http.NewServeMux()

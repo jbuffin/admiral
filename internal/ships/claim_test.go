@@ -13,6 +13,7 @@ import (
 )
 
 func TestClaimKeyReadsOneIssueWhateverItsSpelling(t *testing.T) {
+	t.Parallel()
 	a, okA := ClaimKey("https://github.com/acme/widgets/issues/21")
 	for _, spelling := range []string{
 		"https://GitHub.com/Acme/Widgets/issues/21",
@@ -31,6 +32,7 @@ func TestClaimKeyReadsOneIssueWhateverItsSpelling(t *testing.T) {
 }
 
 func TestClaimKeyIgnoresURLsThatAreNotIssues(t *testing.T) {
+	t.Parallel()
 	for _, u := range []string{"", "https://dashboard.example.com/orders/7", "https://github.com/acme/widgets/pull/5", "https://github.com/acme/widgets"} {
 		if k, ok := ClaimKey(u); ok {
 			t.Errorf("ClaimKey(%q) = %q, true; a URL that is not a GitHub issue must not be claimed", u, k)
@@ -39,6 +41,7 @@ func TestClaimKeyIgnoresURLsThatAreNotIssues(t *testing.T) {
 }
 
 func TestClaimsOfCountsListedShipsOfEveryStatus(t *testing.T) {
+	t.Parallel()
 	const u = "https://github.com/acme/widgets/issues/"
 	list := []Ship{
 		{Name: "a", Status: StatusUnderway, URL: u + "21"},
@@ -65,6 +68,7 @@ func TestClaimsOfCountsListedShipsOfEveryStatus(t *testing.T) {
 }
 
 func TestClaimsHoldAnIssueWhileItsLaunchIsPendingOrInFlight(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	s := &Service{Host: sessionhost.New("tmux", home+"/tmux.sock"), Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{} }}}
 	const pending, flying = "https://github.com/acme/widgets/issues/31", "https://github.com/acme/widgets/issues/32"
@@ -92,6 +96,7 @@ func TestClaimsHoldAnIssueWhileItsLaunchIsPendingOrInFlight(t *testing.T) {
 }
 
 func TestLaunchKeepsTheCloneAndSourceRefusalsOfThePostRoute(t *testing.T) {
+	t.Parallel()
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
 		Orders:   oneOrder{},
@@ -108,6 +113,7 @@ func TestLaunchKeepsTheCloneAndSourceRefusalsOfThePostRoute(t *testing.T) {
 }
 
 func TestPostShipsRefusesTheCampaignSource(t *testing.T) {
+	t.Parallel()
 	s := &Service{}
 	rec := launchPost(t, s, `{"fleet":"work","harness":"claude","source":"campaign","order_id":"https://github.com/acme/widgets/issues/21","dir":"/x"}`)
 	if rec.Code != http.StatusBadRequest {
@@ -118,6 +124,7 @@ func TestPostShipsRefusesTheCampaignSource(t *testing.T) {
 const sliceA, sliceB = "https://github.com/acme/widgets/issues/21", "https://github.com/acme/widgets/issues/29"
 
 func TestClaimsOfHoldsEveryIssueOfASliceShip(t *testing.T) {
+	t.Parallel()
 	list := []Ship{{Name: "slice", Status: StatusUnderway, URL: sliceA, Issues: []string{sliceA, "https://GitHub.com/acme/widgets/issues/29/"}}}
 	got := ClaimsOf(list)
 	for _, u := range []string{sliceA, sliceB} {
@@ -128,6 +135,7 @@ func TestClaimsOfHoldsEveryIssueOfASliceShip(t *testing.T) {
 }
 
 func TestClaimsHoldEveryIssueOfAPendingSliceLaunch(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	s := &Service{Host: sessionhost.New("tmux", home+"/tmux.sock"), Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{} }}}
 	key := OrderKey{"campaign", "c1/" + sliceA}
@@ -145,6 +153,7 @@ func TestClaimsHoldEveryIssueOfAPendingSliceLaunch(t *testing.T) {
 }
 
 func TestLockIssuesTakesEveryIssueOfASliceOrNone(t *testing.T) {
+	t.Parallel()
 	s := &Service{}
 	const free = "https://github.com/acme/widgets/issues/30"
 	if holder, ok := s.lockIssues([]string{sliceA, sliceB}, "slice launch"); !ok {
@@ -170,6 +179,7 @@ func TestLockIssuesTakesEveryIssueOfASliceOrNone(t *testing.T) {
 }
 
 func TestFromSessionReadsASliceShipsIssues(t *testing.T) {
+	t.Parallel()
 	opts := map[string]string{"name": "Slice", "url": sliceA, "issues": sliceA + "," + sliceB}
 	sh := FromSession(sessionhost.Session{Name: "slice", Options: opts}, time.Now())
 	if len(sh.Issues) != 2 || sh.Issues[0] != sliceA || sh.Issues[1] != sliceB || sh.URL != sliceA {
@@ -178,6 +188,7 @@ func TestFromSessionReadsASliceShipsIssues(t *testing.T) {
 }
 
 func TestAShipSerialisesItsIssuesForClients(t *testing.T) {
+	t.Parallel()
 	b, err := json.Marshal(Ship{URL: sliceA, Issues: []string{sliceA, sliceB}})
 	if err != nil {
 		t.Fatal(err)
@@ -192,6 +203,7 @@ func TestAShipSerialisesItsIssuesForClients(t *testing.T) {
 }
 
 func TestLaunchedOutcomeNamesEveryChildOfASlice(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	req := launcher.Request{Harness: "claude", Skill: launcher.Skill{Kind: "commodore"}, URL: sliceA, Issues: []string{sliceA, sliceB}}
 	f.s.launched(req, &launcher.Launched{Session: "slice", Options: map[string]string{"url": sliceA}}, "")

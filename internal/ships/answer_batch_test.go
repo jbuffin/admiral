@@ -83,6 +83,7 @@ func fourAnswers() []batchAnswer {
 }
 
 func TestClaudeBatchAnswerIsSentOnlyWhilePaneAsksThatWholeCall(t *testing.T) {
+	t.Parallel()
 	p := newMenuPane(t, callItems("call", true))
 	p.needsYou("question")
 	post := func(body string) int {
@@ -128,6 +129,7 @@ func TestClaudeBatchAnswerIsSentOnlyWhilePaneAsksThatWholeCall(t *testing.T) {
 }
 
 func TestClaudeBatchAnswerIsRefusedWhenAnyQuestionOfTheCallIsNotPending(t *testing.T) {
+	t.Parallel()
 	items := callItems("call", true)
 	items[1].Question.Pending = false
 	p := newAnswerPane(t, "claude", items)
@@ -141,6 +143,7 @@ func TestClaudeBatchAnswerIsRefusedWhenAnyQuestionOfTheCallIsNotPending(t *testi
 }
 
 func TestClaudeBatchAnswerIsRefusedForACallThatIsNotTheNewest(t *testing.T) {
+	t.Parallel()
 	p := newAnswerPane(t, "claude", append(callItems("old", true), callItems("new", true)...))
 	p.needsYou("question")
 	if code, msg := p.post(batchBody(t, "question", "old#0", fourAnswers()...)); !refused(code) {
@@ -152,6 +155,7 @@ func TestClaudeBatchAnswerIsRefusedForACallThatIsNotTheNewest(t *testing.T) {
 }
 
 func TestCopilotAndCodexSendNothingForABatchOrAMultiSelect(t *testing.T) {
+	t.Parallel()
 	for harness, reason := range map[string]string{"copilot": "question", "codex": "bell"} {
 		batch := callItems("call", true)
 		p := newAnswerPane(t, harness, batch)
@@ -176,6 +180,7 @@ func TestCopilotAndCodexSendNothingForABatchOrAMultiSelect(t *testing.T) {
 }
 
 func TestClaudeBatchAnswerIsRefusedWhenTheMenuIsNotFreshAndTheShipStillAsks(t *testing.T) {
+	t.Parallel()
 	p := newMenuPane(t, callItems("call", true))
 	p.needsYou("question")
 	// Someone already answered the first question in the terminal.
@@ -198,6 +203,7 @@ func TestClaudeBatchAnswerIsRefusedWhenTheMenuIsNotFreshAndTheShipStillAsks(t *t
 }
 
 func TestClaudeBatchAnswerTypesEachTabsKeys(t *testing.T) {
+	t.Parallel()
 	p := newMenuPane(t, callItems("call", true))
 	p.needsYou("question")
 	answers := []batchAnswer{{"options": []int{2}}, {"options": []int{1, 3}}, {"other": "Medium, thanks"}, {"options": []int{2}}}

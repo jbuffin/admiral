@@ -62,18 +62,21 @@ func chatKey(id string) func(*launcher.Request) {
 }
 
 func TestASecondLaunchOfALiveOrderIsRefusedNamingItsShip(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, func(q *launcher.Request) { q.Source, q.OrderID = "s", "o1" })
 	r.wantHeld(t, func(q *launcher.Request) { q.Source, q.OrderID = "s", "o1" }, first)
 }
 
 func TestASecondLaunchOfALiveIssueIsRefusedWhateverItsSpelling(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} })
 	r.wantHeld(t, func(q *launcher.Request) { q.Issues = []string{"https://GitHub.com/Acme/Widgets/issues/41/"} }, first)
 }
 
 func TestASecondLaunchOfALiveSliceIsRefusedInAnyOrderOrSpelling(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA, keyIssueB} })
 	r.wantHeld(t, func(q *launcher.Request) {
@@ -82,6 +85,7 @@ func TestASecondLaunchOfALiveSliceIsRefusedInAnyOrderOrSpelling(t *testing.T) {
 }
 
 func TestASecondLaunchOfALiveChatMessageIsRefusedNamingItsShip(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, chatKey("m1"))
 	r.wantHeld(t, chatKey("m1"), first)
@@ -89,6 +93,7 @@ func TestASecondLaunchOfALiveChatMessageIsRefusedNamingItsShip(t *testing.T) {
 }
 
 func TestAnywayLaunchesAgainFromTheSameChatMessage(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, chatKey("m1"))
 	r.mustLaunch(t, func(q *launcher.Request) { q.ChatMessage, q.Anyway = "m1", true })
@@ -98,6 +103,7 @@ func TestAnywayLaunchesAgainFromTheSameChatMessage(t *testing.T) {
 
 // The anyway ship's own key must not be the chat key, or it would hold the message against a plain launch.
 func TestAnAnywayShipDoesNotHoldItsChatMessage(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.mustLaunch(t, func(q *launcher.Request) { q.ChatMessage, q.Anyway = "m7", true })
 	plain := r.mustLaunch(t, chatKey("m7"))
@@ -105,6 +111,7 @@ func TestAnAnywayShipDoesNotHoldItsChatMessage(t *testing.T) {
 }
 
 func TestAnywayLaunchesASecondShipOnTheSameOrder(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	order := func(q *launcher.Request) { q.Source, q.OrderID = "s", "o1" }
 	first := r.mustLaunch(t, order)
@@ -117,6 +124,7 @@ func TestAnywayLaunchesASecondShipOnTheSameOrder(t *testing.T) {
 }
 
 func TestAnywayLaunchesASecondShipOnAnIssueAnotherShipHolds(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} })
 	r.wantHeld(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} }, first)
@@ -128,11 +136,13 @@ func TestAnywayLaunchesASecondShipOnAnIssueAnotherShipHolds(t *testing.T) {
 }
 
 func TestAnAnywayLaunchFromAnOrderWithNoShipStillWorks(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.mustLaunch(t, func(q *launcher.Request) { q.Source, q.OrderID, q.Anyway = "s", "fresh", true })
 }
 
 func TestAnActorsAnywayNeverGetsPastAnOrderOrAnIssueAnotherShipHolds(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	order := r.mustLaunch(t, func(q *launcher.Request) { q.Source, q.OrderID = "s", "o1" })
 	issue := r.mustLaunch(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} })
@@ -156,6 +166,7 @@ func TestAnActorsAnywayNeverGetsPastAnOrderOrAnIssueAnotherShipHolds(t *testing.
 }
 
 func TestAHandLaunchWithNoSourceIssuesOrChatMessageIsNeverRefusedForAKey(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	a := r.mustLaunch(t, nil)
 	b := r.mustLaunch(t, nil)
@@ -176,6 +187,7 @@ func (r *wakeRig) stopShip(t *testing.T, session string) {
 }
 
 func TestAKeyAndItsClaimsAreFreeOnceTheShipIsStopped(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	order := func(q *launcher.Request) {
 		q.Source, q.OrderID, q.ChatMessage, q.Issues = "s", "o1", "m1", []string{keyIssueA, keyIssueB}
@@ -187,6 +199,7 @@ func TestAKeyAndItsClaimsAreFreeOnceTheShipIsStopped(t *testing.T) {
 }
 
 func TestAKeyIsFreeOnceItsShipSailsOff(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, chatKey("m1"))
 	r.wantHeld(t, chatKey("m1"), first)
@@ -207,6 +220,7 @@ func TestAKeyIsFreeOnceItsShipSailsOff(t *testing.T) {
 }
 
 func TestASourcelessLaunchOfIssuesTakesTheClaimsOfEveryChild(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	got := r.mustLaunch(t, func(q *launcher.Request) {
 		q.Issues = []string{keyIssueA, keyIssueB}
@@ -229,6 +243,7 @@ func TestASourcelessLaunchOfIssuesTakesTheClaimsOfEveryChild(t *testing.T) {
 }
 
 func TestASourcelessLaunchOfANonIssueURLIs400(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	_, lerr := r.s.Launch(context.Background(), r.keyReq(func(q *launcher.Request) {
 		q.Issues = []string{keyIssueA, "https://github.com/acme/widgets/pull/5"}
@@ -243,6 +258,7 @@ func TestASourcelessLaunchOfANonIssueURLIs400(t *testing.T) {
 
 // Two launches of one issue racing each other: exactly one gets a ship, the other is refused.
 func TestTwoRacingSourcelessLaunchesOfOneIssueMakeOneShip(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	var wg sync.WaitGroup
 	codes := make([]int, 2)
@@ -264,6 +280,7 @@ func TestTwoRacingSourcelessLaunchesOfOneIssueMakeOneShip(t *testing.T) {
 }
 
 func TestAClientCanNameIssuesOnTheLaunchRoute(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	mux := http.NewServeMux()
 	r.s.Routes(mux)
@@ -287,6 +304,7 @@ func (r *wakeRig) restarted() *Service {
 }
 
 func TestAKeyAndItsClaimsSurviveAnAdmiralRestart(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, func(q *launcher.Request) { q.ChatMessage, q.Issues = "m1", []string{keyIssueA, keyIssueB} })
 	s2 := r.restarted()
@@ -310,6 +328,7 @@ func (r *wakeRig) moorKeyed(t *testing.T) Ship {
 }
 
 func TestAKeyAndItsClaimsSurviveMooring(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.moorKeyed(t)
 	for _, mod := range []func(*launcher.Request){chatKey("m1"), func(q *launcher.Request) { q.Issues = []string{keyIssueB} }} {
@@ -321,6 +340,7 @@ func TestAKeyAndItsClaimsSurviveMooring(t *testing.T) {
 }
 
 func TestAMooredShipWakesWithoutItsOwnKeyOrClaimsRefusingIt(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.moorKeyed(t)
 	recs, err := moor.List(r.home)
@@ -347,6 +367,7 @@ func TestAMooredShipWakesWithoutItsOwnKeyOrClaimsRefusingIt(t *testing.T) {
 }
 
 func TestAKeyIsFreeOnceItsMooredShipIsDismissed(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moorKeyed(t)
 	mux := http.NewServeMux()
@@ -365,6 +386,7 @@ func TestAKeyIsFreeOnceItsMooredShipIsDismissed(t *testing.T) {
 }
 
 func TestASourcedLaunchRefusesClientIssues(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	mux := http.NewServeMux()
 	r.s.Routes(mux)
@@ -385,6 +407,7 @@ func (r *wakeRig) launchActing(fleet string, mod func(*launcher.Request)) (Ship,
 }
 
 func TestAnActorRefusedByAnotherFleetsShipLearnsTheFleetNotTheShip(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} })
 	_, lerr := r.launchActing("home", func(q *launcher.Request) { q.Issues = []string{keyIssueA} })
@@ -399,6 +422,7 @@ func TestAnActorRefusedByAnotherFleetsShipLearnsTheFleetNotTheShip(t *testing.T)
 }
 
 func TestAChatMessageIdIsScopedToItsFleet(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.mustLaunch(t, chatKey("m1"))
 	if _, lerr := r.launchActing("home", chatKey("m1")); lerr != nil {
@@ -407,6 +431,7 @@ func TestAChatMessageIdIsScopedToItsFleet(t *testing.T) {
 }
 
 func TestASourcelessIssueURLMustBeHttpsOnAHostTheFleetUses(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	for _, u := range []string{"http://github.com/acme/widgets/issues/41", "https://evil.example/acme/widgets/issues/41"} {
 		_, lerr := r.s.Launch(context.Background(), r.keyReq(func(q *launcher.Request) { q.Issues = []string{u} }))
@@ -421,6 +446,7 @@ func TestASourcelessIssueURLMustBeHttpsOnAHostTheFleetUses(t *testing.T) {
 }
 
 func TestASourcelessPendingEntryIsDroppedOnceListed(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.s.holdUnlisted(OrderKey{OrderID: "gone"}, "no-such-session", "", nil)
 	r.s.mu.Lock()
@@ -443,6 +469,7 @@ func (r *wakeRig) promptRig(key *string) {
 func freeform(q *launcher.Request) { q.Text = "look at the harbour log" }
 
 func TestAnActorsSecondFreeformLaunchInOnePromptIsRefusedNamingTheFirst(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	prompt := "n1-100"
 	r.promptRig(&prompt)
@@ -460,6 +487,7 @@ func TestAnActorsSecondFreeformLaunchInOnePromptIsRefusedNamingTheFirst(t *testi
 }
 
 func TestAnActorsFreeformLaunchIsAllowedAgainOnTheNextPromptAndInANewSession(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	prompt := "n1-100"
 	r.promptRig(&prompt)
@@ -477,6 +505,7 @@ func TestAnActorsFreeformLaunchIsAllowedAgainOnTheNextPromptAndInANewSession(t *
 }
 
 func TestAnActorCannotChooseItsFreeformKey(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	prompt := "n1-100"
 	r.promptRig(&prompt)
@@ -490,6 +519,7 @@ func TestAnActorCannotChooseItsFreeformKey(t *testing.T) {
 }
 
 func TestAnActorsLaunchFromAnIssueIsNotKeyedOnThePrompt(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	prompt := "n1-100"
 	r.promptRig(&prompt)
@@ -502,6 +532,7 @@ func TestAnActorsLaunchFromAnIssueIsNotKeyedOnThePrompt(t *testing.T) {
 }
 
 func TestAnEngineersFreeformLaunchIsNotKeyedOnThePrompt(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	prompt := "n1-100"
 	r.promptRig(&prompt)

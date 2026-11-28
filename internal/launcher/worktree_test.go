@@ -120,6 +120,7 @@ func worktreeRig(t *testing.T) (p *pinRig, tip, head string) {
 }
 
 func TestANoSkillLaunchRunsInAFreshWorktreeOnItsOwnBranchCutFromOriginsDefaultTip(t *testing.T) {
+	t.Parallel()
 	p, tip, head := worktreeRig(t)
 	out, err := p.l.Launch(p.noSkill())
 	if err != nil {
@@ -144,6 +145,7 @@ func TestANoSkillLaunchRunsInAFreshWorktreeOnItsOwnBranchCutFromOriginsDefaultTi
 }
 
 func TestANoSkillLaunchLeavesTheEngineersCheckoutWithItsHeadBranchAndStatus(t *testing.T) {
+	t.Parallel()
 	p, _, head := worktreeRig(t)
 	statusBefore := git(t, p.work, "status", "--porcelain")
 	if _, err := p.l.Launch(p.noSkill()); err != nil {
@@ -171,6 +173,7 @@ func TestANoSkillLaunchLeavesTheEngineersCheckoutWithItsHeadBranchAndStatus(t *t
 }
 
 func TestBeforeRunsInTheWorktreeSoARoundsFeedbackNeverLandsInTheCheckout(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	req := p.noSkill()
 	var got string
@@ -193,6 +196,7 @@ func TestBeforeRunsInTheWorktreeSoARoundsFeedbackNeverLandsInTheCheckout(t *test
 }
 
 func TestARelaunchOfANoSkillShipRunsInTheSameWorktreeWithNoNewWorktreeOrBranch(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	first, err := p.l.Launch(p.noSkill())
 	if err != nil {
@@ -226,6 +230,7 @@ func TestARelaunchOfANoSkillShipRunsInTheSameWorktreeWithNoNewWorktreeOrBranch(t
 }
 
 func TestAFailedRelaunchNeverRemovesTheWorktreeItReused(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	first, err := p.l.Launch(p.noSkill())
 	if err != nil {
@@ -253,6 +258,7 @@ func TestAFailedRelaunchNeverRemovesTheWorktreeItReused(t *testing.T) {
 }
 
 func TestAFailedFirstLaunchRemovesTheWorktreeItMade(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	req := p.noSkill()
 	var made string
@@ -278,6 +284,7 @@ func TestAFailedFirstLaunchRemovesTheWorktreeItMade(t *testing.T) {
 }
 
 func TestALaunchWhoseFetchFailsFailsVisiblyInsteadOfFallingBackToTheLocalHead(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	p.l.Worktrees = GitWorktrees{}
 	commitRepo(t, p.work)
@@ -299,6 +306,7 @@ func TestALaunchWhoseFetchFailsFailsVisiblyInsteadOfFallingBackToTheLocalHead(t 
 }
 
 func TestAWorktreeIsMadeOnlyWhenTheSearchRootIsAGitCheckout(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	p.l.Worktrees = GitWorktrees{}
 	if _, err := p.l.Launch(p.noSkill()); err != nil {
@@ -318,6 +326,7 @@ func TestAWorktreeIsMadeOnlyWhenTheSearchRootIsAGitCheckout(t *testing.T) {
 }
 
 func TestOnlyAShipLaunchedWithNoSkillGetsAWorktree(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	req := p.noSkill()
 	req.Skill = Skill{Kind: "commodore"}
@@ -340,6 +349,7 @@ func TestOnlyAShipLaunchedWithNoSkillGetsAWorktree(t *testing.T) {
 }
 
 func TestAScoutRunsInTheCheckoutItWasLaunchedInWithNoWorktreeOrBranch(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	out, err := p.l.Launch(p.scoutRequest(p.work))
 	if err != nil {
@@ -368,6 +378,7 @@ func TestAScoutRunsInTheCheckoutItWasLaunchedInWithNoWorktreeOrBranch(t *testing
 }
 
 func TestAnEventShipKeepsItsOwnCloneWhileANoSkillShipGetsAWorktree(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	req, fc := p.eventShip()
 	fc.t = t
@@ -404,6 +415,7 @@ func blockOtherNames(t *testing.T, p *pinRig, keep string) {
 }
 
 func TestANameWhoseWorktreeADismissKeptIsNotGivenToANewShip(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	first, err := p.l.Launch(p.noSkill())
 	if err != nil {
@@ -423,6 +435,7 @@ func TestANameWhoseWorktreeADismissKeptIsNotGivenToANewShip(t *testing.T) {
 }
 
 func TestANameWhoseBranchSurvivedItsWorktreesRemovalIsNotGivenToANewShip(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	first, err := p.l.Launch(p.noSkill())
 	if err != nil {
@@ -449,6 +462,7 @@ func TestANameWhoseBranchSurvivedItsWorktreesRemovalIsNotGivenToANewShip(t *test
 }
 
 func TestARelaunchOfAShipWithNoWorktreeRunsInTheCheckoutAndMakesNone(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	p.l.Worktrees = nil // a ship moored before ships got worktrees
 	first, err := p.l.Launch(p.noSkill())
@@ -499,6 +513,7 @@ func TestALaunchWhoseFetchHangsIsRefusedAsTimedOutAndPutsNoShipToSea(t *testing.
 }
 
 func TestTheCheckoutsSharedExcludeFileIsUntouchedAndAFeedbackRoundLeavesTheWorktreeClean(t *testing.T) {
+	t.Parallel()
 	p, _, _ := worktreeRig(t)
 	exclude := filepath.Join(p.work, ".git", "info", "exclude")
 	before, _ := os.ReadFile(exclude)

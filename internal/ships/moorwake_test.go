@@ -41,6 +41,7 @@ func (f *mooredFixture) wakeState(t *testing.T, name string) moor.WakeState {
 }
 
 func TestAConditionFirstSeenIsSavedAndTheNextPollKeepsItsTime(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, conflicting())
 	g.set(prNine, moor.Status{State: "OPEN"})
@@ -70,6 +71,7 @@ func TestAConditionFirstSeenIsSavedAndTheNextPollKeepsItsTime(t *testing.T) {
 }
 
 func TestAMergedShipThatCannotBeWokenSailsOffAndNothingIsDecided(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	merged := reviewed()
 	merged.State = "MERGED"
@@ -93,6 +95,7 @@ func TestAMergedShipThatCannotBeWokenSailsOffAndNothingIsDecided(t *testing.T) {
 }
 
 func TestAShipWithNoValidResumeTextIsNotDecidedAndShowsNoWaiting(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, reviewed())
 	g.set(prNine, reviewed())
@@ -111,6 +114,7 @@ func TestAShipWithNoValidResumeTextIsNotDecidedAndShowsNoWaiting(t *testing.T) {
 }
 
 func TestWaitingClearsOnAPollThatNoLongerDecidesToWake(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, reviewed())
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -129,6 +133,7 @@ func TestWaitingClearsOnAPollThatNoLongerDecidesToWake(t *testing.T) {
 }
 
 func TestANextWriteIsSkippedForAShipWhoseWakeHasCommitted(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, conflicting())
 	g.set(prNine, conflicting())
@@ -151,6 +156,7 @@ func TestANextWriteIsSkippedForAShipWhoseWakeHasCommitted(t *testing.T) {
 }
 
 func TestTwoPollsWithNothingNewWriteTheWakeStateAtMostOnce(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "OPEN", Head: "h1", Contexts: []moor.CheckContext{{Name: "ci", Kind: "CheckRun", State: "SUCCESS"}}})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})

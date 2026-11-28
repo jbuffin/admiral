@@ -780,7 +780,7 @@ func serve(args []string) error {
 		probeRunner.Wait()
 		background.Wait()
 		supervisor.Wait()
-		_ = st.Flush()
+		_ = st.Close()
 	}()
 	actorGuard := actorwire.Guard(actorwire.Deps{
 		FleetKeys: func() []string {

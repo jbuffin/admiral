@@ -11,6 +11,7 @@ import (
 )
 
 func TestADraftingLaunchThatAsksForACloneIsRefusedBeforeAnyCloneIsMade(t *testing.T) {
+	t.Parallel()
 	fl := fleets(t)
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"),
@@ -23,6 +24,7 @@ func TestADraftingLaunchThatAsksForACloneIsRefusedBeforeAnyCloneIsMade(t *testin
 }
 
 func TestADraftingLaunchIgnoresAutopilotSoTheCapAndTheGuardNeverRefuseIt(t *testing.T) {
+	t.Parallel()
 	fl := fleets(t)
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
@@ -36,6 +38,7 @@ func TestADraftingLaunchIgnoresAutopilotSoTheCapAndTheGuardNeverRefuseIt(t *test
 }
 
 func TestAShipReusingADraftingShipsNameIsNotADraftingShip(t *testing.T) {
+	t.Parallel()
 	s := &Service{}
 	s.markDrafting("ship-1", "2026-11-18T10:00:00Z", "work", "claude", false)
 	if !s.IsDrafting("ship-1", "2026-11-18T10:00:00Z") {

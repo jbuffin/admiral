@@ -8,6 +8,7 @@ import (
 )
 
 func TestBundleRegistersSubagentEvents(t *testing.T) {
+	t.Parallel()
 	asJSON := func(v any) string {
 		raw, err := json.Marshal(v)
 		if err != nil {
@@ -34,6 +35,7 @@ func TestBundleRegistersSubagentEvents(t *testing.T) {
 }
 
 func TestBundleRunsTheGuard(t *testing.T) {
+	t.Parallel()
 	raw, _ := json.Marshal(claudeSettings())
 	var settings struct {
 		Hooks map[string][]struct {
@@ -87,6 +89,7 @@ func TestBundleRunsTheGuard(t *testing.T) {
 }
 
 func TestCodexBundleRegistersSessionStartSoTheRolloutIsRecorded(t *testing.T) {
+	t.Parallel()
 	flags := strings.Join(codexFlags(), " ")
 	if !strings.Contains(flags, "hooks.SessionStart=") || !strings.Contains(flags, "admiral hook SessionStart") {
 		t.Errorf("codex flags = %s, want a SessionStart hook that runs admiral hook SessionStart", flags)
@@ -94,6 +97,7 @@ func TestCodexBundleRegistersSessionStartSoTheRolloutIsRecorded(t *testing.T) {
 }
 
 func TestBundleSettingsRunTheStatuslineWrapper(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name     string
 		settings any
@@ -119,6 +123,7 @@ func TestBundleSettingsRunTheStatuslineWrapper(t *testing.T) {
 }
 
 func TestChatBundleCarriesTheBackstopWindowAndAnAutoPreCompactHook(t *testing.T) {
+	t.Parallel()
 	raw, err := json.Marshal(claudeChatSettings())
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +150,7 @@ func TestChatBundleCarriesTheBackstopWindowAndAnAutoPreCompactHook(t *testing.T)
 }
 
 func TestShipBundleHasNeitherTheWindowNorAPreCompactHook(t *testing.T) {
+	t.Parallel()
 	raw, err := json.Marshal(claudeSettings())
 	if err != nil {
 		t.Fatal(err)
@@ -157,6 +163,7 @@ func TestShipBundleHasNeitherTheWindowNorAPreCompactHook(t *testing.T) {
 }
 
 func TestCodexAndCopilotChatBundlesCarryNoClaudeOnlyBackstop(t *testing.T) {
+	t.Parallel()
 	var codex strings.Builder
 	for _, f := range codexFlags() {
 		codex.WriteString(f + "\n")

@@ -70,6 +70,7 @@ func prURLs(prs []moor.PR) []string {
 }
 
 func TestARunningShipCarriesAPRTheFleetsUserOpenedAfterItLaunched(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.candidates = []string{prSeven}
 	r.mine(prSeven, "OPEN", time.Minute)
@@ -99,6 +100,7 @@ func TestARunningShipCarriesAPRTheFleetsUserOpenedAfterItLaunched(t *testing.T) 
 }
 
 func TestARunningShipDoesNotCarryAPRItDidNotOpenSinceItLaunched(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.candidates = []string{prSeven, prNine, prOther, wakePR}
 	r.mine(prSeven, "OPEN", time.Minute)
@@ -114,6 +116,7 @@ func TestARunningShipDoesNotCarryAPRItDidNotOpenSinceItLaunched(t *testing.T) {
 }
 
 func TestAFleetsPollAsksForRunningAndMooredShipsTogetherAndFreshCandidatesApart(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.candidates = []string{prSeven}
 	r.mine(prSeven, "OPEN", time.Minute)
@@ -140,6 +143,7 @@ func TestAFleetsPollAsksForRunningAndMooredShipsTogetherAndFreshCandidatesApart(
 }
 
 func TestAFailedPollKeepsWhatARunningShipCarriesAndMarksItStale(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.candidates = []string{prSeven}
 	r.mine(prSeven, "OPEN", time.Minute)
@@ -159,6 +163,7 @@ func TestAFailedPollKeepsWhatARunningShipCarriesAndMarksItStale(t *testing.T) {
 }
 
 func TestAFleetWithNoGitHubClientIsSkippedWhileAnotherFleetsShipsAreAnswered(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.candidates = []string{prSeven}
 	r.mine(prSeven, "OPEN", time.Minute)
@@ -187,6 +192,7 @@ func TestAFleetWithNoGitHubClientIsSkippedWhileAnotherFleetsShipsAreAnswered(t *
 }
 
 func TestAWokenShipShowsItsMooredPRsAtOnceAndKeepsThemBesideTheNewOnes(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0) // the record holds wakePR
 	g := r.polling()
@@ -238,6 +244,7 @@ func reportPath(env string) string {
 }
 
 func TestACleanExitMoorsTheShipWithItsCarriedPRsMergedWithTheReports(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name    string
 		carried map[string]string // url to state
@@ -312,6 +319,7 @@ func TestACleanExitMoorsTheShipWithItsCarriedPRsMergedWithTheReports(t *testing.
 }
 
 func TestACandidateNotOnTheFleetsHostOrWithAnUnusableNumberIsNeverAsked(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.candidates = []string{
 		"https://ghe.example.com/acme/widgets/pull/7",
@@ -333,6 +341,7 @@ func TestACandidateNotOnTheFleetsHostOrWithAnUnusableNumberIsNeverAsked(t *testi
 }
 
 func TestAtMostTwentyFreshCandidatesAreAskedInOnePollAndTheRestWaitForTheNext(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	var urls []string
 	for i := 1; i <= 25; i++ {
@@ -353,6 +362,7 @@ func TestAtMostTwentyFreshCandidatesAreAskedInOnePollAndTheRestWaitForTheNext(t 
 }
 
 func TestACandidateInARepositoryGitHubCannotFindDoesNotStaleTheShipOrHideItsRealPR(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.candidates = []string{prOther, prSeven}
 	r.mine(prSeven, "OPEN", time.Minute)
@@ -378,6 +388,7 @@ func TestACandidateInARepositoryGitHubCannotFindDoesNotStaleTheShipOrHideItsReal
 }
 
 func TestACandidateQueryThatFailsOutrightLeavesMooredShipsAnsweredAndIsDroppedAfterThreeTries(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.candidates = []string{prSeven}
 	r.gh.mu.Lock()
@@ -418,6 +429,7 @@ func TestACandidateQueryThatFailsOutrightLeavesMooredShipsAnsweredAndIsDroppedAf
 }
 
 func TestACarriedPRSurvivesAnAdmiralRestartWithNoTranscriptToReadItFrom(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.candidates = []string{prSeven}
 	r.mine(prSeven, "OPEN", time.Minute)
@@ -440,6 +452,7 @@ func TestACarriedPRSurvivesAnAdmiralRestartWithNoTranscriptToReadItFrom(t *testi
 }
 
 func TestAWokenShipWhoseMooredPollSawItsPRMergedShowsItMergedBeforeAnyPoll(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0)
 	r.s.mooredMu.Lock()
@@ -462,6 +475,7 @@ func TestAWokenShipWhoseMooredPollSawItsPRMergedShowsItMergedBeforeAnyPoll(t *te
 }
 
 func TestMoorOnAShipWhoseOnlyOpenPRIsACarriedOneMoorsItWithThatPR(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.gh.mu.Lock()
 	r.gh.exitCheck = true

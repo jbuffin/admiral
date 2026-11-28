@@ -82,7 +82,8 @@ type Service struct {
 	ConfigChanges func() (<-chan struct{}, func())
 	Tmux          string // the tmux binary
 	Socket        string
-	Home          string // $ADMIRAL_HOME, where chat/<fleet>/ is
+	Home          string        // $ADMIRAL_HOME, where chat/<fleet>/ is
+	FlushWait     time.Duration // zero reads ADMIRAL_CHAT_FLUSH_WAIT, else 3 minutes
 	// Outcomes takes a usage record at each reset; nil writes none.
 	Outcomes *outcomes.Writer
 	// LastLive gives a chat's last live figures when its transcript has none; nil when nothing keeps them.

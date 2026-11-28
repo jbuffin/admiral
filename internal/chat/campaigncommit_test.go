@@ -75,6 +75,7 @@ func (r *promiseRig) workOn(t *testing.T, ref, harness, fleet string) (int, work
 }
 
 func TestWorkingOnACampaignRecordsOneCommitmentThatEndsWithIt(t *testing.T) {
+	t.Parallel()
 	r, _ := newCampaignRig(t, "home")
 	code, c, body := r.workOn(t, "acme/widgets#20", "claude", "home")
 	if code != http.StatusCreated || c.ID == "" {
@@ -92,6 +93,7 @@ func TestWorkingOnACampaignRecordsOneCommitmentThatEndsWithIt(t *testing.T) {
 }
 
 func TestASecondWorkOnReturnsTheOpenCommitmentWithOk(t *testing.T) {
+	t.Parallel()
 	r, _ := newCampaignRig(t, "home")
 	_, first, _ := r.workOn(t, "acme/widgets#20", "claude", "home")
 	code, second, body := r.workOn(t, campaignURL, "claude", "home")
@@ -104,6 +106,7 @@ func TestASecondWorkOnReturnsTheOpenCommitmentWithOk(t *testing.T) {
 }
 
 func TestWorkingOnAnotherFleetsCampaignIsRefusedAndRecordsNothing(t *testing.T) {
+	t.Parallel()
 	r, _ := newCampaignRig(t, "work")
 	code, _, body := r.workOn(t, "acme/widgets#20", "claude", "home")
 	if code != http.StatusForbidden {
@@ -115,6 +118,7 @@ func TestWorkingOnAnotherFleetsCampaignIsRefusedAndRecordsNothing(t *testing.T) 
 }
 
 func TestWorkingOnAnotherFleetsCampaignReadsAndFollowsNothingAndNeverSaysWhetherItExists(t *testing.T) {
+	t.Parallel()
 	r, ff := newCampaignRig(t, "work")
 	code1, _, body1 := r.workOn(t, "acme/widgets#20", "claude", "home")
 	code2, _, body2 := r.workOn(t, "acme/widgets#99", "claude", "home")
@@ -127,6 +131,7 @@ func TestWorkingOnAnotherFleetsCampaignReadsAndFollowsNothingAndNeverSaysWhether
 }
 
 func TestWorkingOnACampaignNeedsAnActor(t *testing.T) {
+	t.Parallel()
 	r, _ := newCampaignRig(t, "home")
 	if code, _, body := r.workOn(t, "acme/widgets#20", "claude", ""); code != http.StatusForbidden {
 		t.Errorf("work-on with no actor = %d %s, want 403", code, body)
@@ -134,6 +139,7 @@ func TestWorkingOnACampaignNeedsAnActor(t *testing.T) {
 }
 
 func TestWorkingOnACampaignWithAnUnprovenHarnessIsRefused(t *testing.T) {
+	t.Parallel()
 	r, ff := newCampaignRig(t, "work")
 	code, _, body := r.workOn(t, "acme/widgets#20", "claude", "work")
 	if code != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(body), "autopilot") {
@@ -148,6 +154,7 @@ func TestWorkingOnACampaignWithAnUnprovenHarnessIsRefused(t *testing.T) {
 }
 
 func TestWorkingOnAReferenceThatIsNoCampaignPassesTheFollowRefusalOn(t *testing.T) {
+	t.Parallel()
 	r, _ := newCampaignRig(t, "home")
 	if code, _, body := r.workOn(t, "nope", "claude", "home"); code != http.StatusBadRequest {
 		t.Errorf("work-on of a bad reference = %d %s, want the follow refusal's 400", code, body)
@@ -155,6 +162,7 @@ func TestWorkingOnAReferenceThatIsNoCampaignPassesTheFollowRefusalOn(t *testing.
 }
 
 func TestTheGenericCommitmentRouteRefusesACampaignCommitment(t *testing.T) {
+	t.Parallel()
 	r, _ := newCampaignRig(t, "home")
 	rec := r.do("POST", "/api/chat/commitments", `{"text":"work","trigger":{"kind":"campaign","subject":"camp-1"},"action":"work"}`, "home")
 	if rec.Code != http.StatusUnprocessableEntity {
@@ -166,6 +174,7 @@ func TestTheGenericCommitmentRouteRefusesACampaignCommitment(t *testing.T) {
 }
 
 func TestMakeCommitmentStillRefusesALaunchFromTheCampaignSource(t *testing.T) {
+	t.Parallel()
 	r, _ := newCampaignRig(t, "home")
 	launch := r.launch(`"source":"campaign","order_id":"camp-1/` + campaignURL + `"`)
 	rec := r.do("POST", "/api/chat/commitments", r.body(sailed, "launch", launch), "home")

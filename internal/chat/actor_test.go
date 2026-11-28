@@ -61,6 +61,7 @@ func serviceFor(t *testing.T, l *launcher.Launcher, home string) *Service {
 }
 
 func TestTheChatsActorTokenSurvivesARestartAndChangesWithANewChatSession(t *testing.T) {
+	t.Parallel()
 	l, home, sock := chatRig(t)
 	if err := l.StartChat("work"); err != nil {
 		t.Fatal(err)
@@ -91,6 +92,7 @@ func TestTheChatsActorTokenSurvivesARestartAndChangesWithANewChatSession(t *test
 }
 
 func TestThePromptKeyMovesWithEachPromptAndStartsOverWithANewSession(t *testing.T) {
+	t.Parallel()
 	l, home, sock := chatRig(t)
 	svc := serviceFor(t, l, home)
 	if got := svc.PromptKey("work"); got != "" {

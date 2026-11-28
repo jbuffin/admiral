@@ -14,6 +14,7 @@ func (p *pinRig) scoutRequest(dir string) Request {
 }
 
 func TestAScoutsEnvironmentNamesItsResolvedCheckoutAndRunsInAutopilot(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, map[string]string{"ADMIRAL_SCOUT": "/fleet/says/otherwise"})
 	real := filepath.Join(p.work, "real")
 	mustMkdir(t, real)
@@ -38,6 +39,7 @@ func TestAScoutsEnvironmentNamesItsResolvedCheckoutAndRunsInAutopilot(t *testing
 }
 
 func TestASessionOptionMarksAScoutAndOnlyAScout(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	scout, err := p.l.Launch(p.scoutRequest(p.work))
 	if err != nil {
@@ -56,6 +58,7 @@ func TestASessionOptionMarksAScoutAndOnlyAScout(t *testing.T) {
 }
 
 func TestAScoutsPromptEndsWithItsContractAndAnotherShipsDoesNot(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	if _, err := p.l.Launch(p.scoutRequest(p.work)); err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -78,6 +81,7 @@ func TestAScoutsPromptEndsWithItsContractAndAnotherShipsDoesNot(t *testing.T) {
 }
 
 func TestAScoutsCrewBoatInheritsTheSessionsScoutVariable(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	scout, err := p.l.Launch(p.scoutRequest(p.work))
 	if err != nil {
@@ -98,6 +102,7 @@ func TestAScoutsCrewBoatInheritsTheSessionsScoutVariable(t *testing.T) {
 }
 
 func TestACrewLaunchFromAScoutNeedsTheScoutGateOfTheBoatsHarness(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	ship := p.ship(t)
 	var asked []string
@@ -132,6 +137,7 @@ func TestACrewLaunchFromAScoutNeedsTheScoutGateOfTheBoatsHarness(t *testing.T) {
 }
 
 func TestACrewLaunchFromAScoutWithNoScoutGateIsRefused(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	ship := p.ship(t)
 	if err := p.l.LaunchCrew(CrewRequest{Session: ship.Session, Name: "boat", Harness: "claude", Dir: p.work, Prompt: "go", Scout: true}); err == nil {

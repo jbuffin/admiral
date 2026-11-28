@@ -66,18 +66,21 @@ func wantOutcomes(t *testing.T, what string, got []string, want ...string) {
 }
 
 func TestAnActorReadsOnlyItsFleetsOutcomes(t *testing.T) {
+	t.Parallel()
 	f := outcomesFixture(t)
 	wantOutcomes(t, "work", f.readOutcomes(t, "work", ""), "a-1 launched", "a-1 stopped", "saltpaw unmoored")
 	wantOutcomes(t, "home", f.readOutcomes(t, "home", ""), "b-1 launched", "b-1 stopped")
 }
 
 func TestTheEngineerReadsEveryOutcome(t *testing.T) {
+	t.Parallel()
 	f := outcomesFixture(t)
 	wantOutcomes(t, "no actor", f.readOutcomes(t, "", ""),
 		"a-1 launched", "b-1 launched", "a-1 stopped", "b-1 stopped", "ghost stopped", "saltpaw unmoored")
 }
 
 func TestOutcomesCanBeNarrowedToAShipAndCappedToTheLatestFirst(t *testing.T) {
+	t.Parallel()
 	f := outcomesFixture(t)
 	wantOutcomes(t, "ship=a-1", f.readOutcomes(t, "", "?ship=a-1"), "a-1 launched", "a-1 stopped")
 	wantOutcomes(t, "limit=2 for the engineer", f.readOutcomes(t, "", "?limit=2"), "ghost stopped", "saltpaw unmoored")
@@ -87,6 +90,7 @@ func TestOutcomesCanBeNarrowedToAShipAndCappedToTheLatestFirst(t *testing.T) {
 }
 
 func TestAReusedShipNameKeepsEachFleetsRecordsApart(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	lines := []string{
 		`{"v":1,"ts":"2026-11-01T10:00:00Z","ship":"reuse","event":"launched","fleet":"a"}`,

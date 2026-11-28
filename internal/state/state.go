@@ -61,6 +61,7 @@ type Store struct {
 	timer *time.Timer
 
 	flushMu sync.Mutex // one write at a time, so an older snapshot never lands last
+	closed  bool       // under flushMu: once set, the settle timer writes nothing
 }
 
 // A file that is corrupt or has another version is moved to state.json.bad and the store starts empty.
@@ -244,15 +245,31 @@ func (s *Store) DirUsed(dir string) time.Time {
 // Every change pushes the write back, so a burst makes one.
 func (s *Store) changed() {
 	if s.timer == nil {
-		s.timer = time.AfterFunc(settle, func() { _ = s.Flush() })
+		s.timer = time.AfterFunc(settle, func() { _ = s.flush(false) })
 		return
 	}
 	s.timer.Reset(settle)
 }
 
-func (s *Store) Flush() error {
+func (s *Store) Flush() error { return s.flush(false) }
+
+// Close writes what the store holds now and stops the pending write, so nothing reaches the file after it returns.
+func (s *Store) Close() error { return s.flush(true) }
+
+func (s *Store) flush(closing bool) error {
 	s.flushMu.Lock()
 	defer s.flushMu.Unlock()
+	if s.closed {
+		return nil
+	}
+	if closing {
+		s.closed = true
+		s.mu.Lock()
+		if s.timer != nil {
+			s.timer.Stop()
+		}
+		s.mu.Unlock()
+	}
 	s.mu.Lock()
 	raw, err := json.MarshalIndent(s.data, "", "  ")
 	s.mu.Unlock()

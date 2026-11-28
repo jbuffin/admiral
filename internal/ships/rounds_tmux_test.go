@@ -58,6 +58,7 @@ func (r *wakeRig) exitAndMoor(t *testing.T) {
 }
 
 func TestMooringRecordsTheRoundWithItsSessionAndTranscript(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	before := time.Now().Add(-time.Minute)
 	r.launchRound(t, 0)
@@ -80,6 +81,7 @@ func TestMooringRecordsTheRoundWithItsSessionAndTranscript(t *testing.T) {
 }
 
 func TestAWokenRoundIsRecordedBesideTheEarlierOneUnderItsOwnSession(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.launchRound(t, 0)
 	argv1, _ := r.started(t, 1)
@@ -109,6 +111,7 @@ func TestAWokenRoundIsRecordedBesideTheEarlierOneUnderItsOwnSession(t *testing.T
 }
 
 func TestAForgedTranscriptOptionIsRecordedAsNoTranscript(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.launchRound(t, 0)
 	r.started(t, 1)
@@ -140,6 +143,7 @@ func TestAForgedTranscriptOptionIsRecordedAsNoTranscript(t *testing.T) {
 }
 
 func TestEndingAMooringForGoodRemovesTheRoundHistory(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.launchRound(t, 0)
 	r.started(t, 1)

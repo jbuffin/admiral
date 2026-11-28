@@ -38,7 +38,6 @@ func newStuckRig(t *testing.T) *stuckRig {
 		t.Fatal(err)
 	}
 	sock := filepath.Join(tmp, "tmux.sock")
-	t.Setenv("TMUX_TMPDIR", tmp)
 	t.Cleanup(func() {
 		_ = exec.Command(tmux, "-S", sock, "kill-server").Run()
 		_ = os.RemoveAll(tmp)
@@ -92,6 +91,7 @@ func (r *stuckRig) post(handler http.HandlerFunc, path string, body string, boat
 }
 
 func TestEveryCrewReaderSeesAStuckBoatAsNotStartedUntilTheEngineersKey(t *testing.T) {
+	t.Parallel()
 	r := newStuckRig(t)
 
 	boats, _ := r.s.Crew("stuck")
@@ -117,6 +117,7 @@ func TestEveryCrewReaderSeesAStuckBoatAsNotStartedUntilTheEngineersKey(t *testin
 }
 
 func TestMessageBoxAndInterruptSendNoKeysToANotStartedShipOrBoat(t *testing.T) {
+	t.Parallel()
 	r := newStuckRig(t)
 	for _, tc := range []struct{ what, boat string }{{"ship", ""}, {"boat", "mate"}} {
 		for name, call := range map[string]func() *httptest.ResponseRecorder{

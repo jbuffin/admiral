@@ -51,6 +51,7 @@ func copilotTranscript(text string) []byte {
 }
 
 func TestACopilotChatReaderReadsSessionsFromTheChatHomeOnly(t *testing.T) {
+	t.Parallel()
 	s := harnessService(t, copilotChatFleets, fakeProbes{})
 	own := writeAt(t, copilotSessionFile(copilotChatHome(t, s), copilotSessionA), copilotTranscript("hello"))
 	got := servedFromFile(t, s, "b", own)
@@ -69,6 +70,7 @@ func TestACopilotChatReaderReadsSessionsFromTheChatHomeOnly(t *testing.T) {
 }
 
 func TestACopilotClearRebindsTheReaderToTheNewSessionsTranscript(t *testing.T) {
+	t.Parallel()
 	s := harnessService(t, copilotChatFleets, fakeProbes{})
 	home := copilotChatHome(t, s)
 	a := writeAt(t, copilotSessionFile(home, copilotSessionA), copilotTranscript("first"))
@@ -84,6 +86,7 @@ func TestACopilotClearRebindsTheReaderToTheNewSessionsTranscript(t *testing.T) {
 }
 
 func TestAClearOnTheSamePathServesWhatWasWrittenAfterTheSizeTheHookMeasured(t *testing.T) {
+	t.Parallel()
 	s := harnessService(t, copilotChatFleets, fakeProbes{})
 	path := writeAt(t, copilotSessionFile(copilotChatHome(t, s), copilotSessionA), copilotTranscript("first"))
 	turn := func(text, n string) []byte {
@@ -136,6 +139,7 @@ func TestAClearOnTheSamePathServesWhatWasWrittenAfterTheSizeTheHookMeasured(t *t
 }
 
 func TestACopilotResetRecordsTheChatHomeSessionsUsageUnderCopilot(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "outcomes")
 	w := outcomes.New(dir, t.Logf)
 	t.Cleanup(w.Close)
@@ -162,6 +166,7 @@ func TestACopilotResetRecordsTheChatHomeSessionsUsageUnderCopilot(t *testing.T) 
 }
 
 func TestACopilotChatWithNoTranscriptIsReadyOnceItsComposerShows(t *testing.T) {
+	t.Parallel()
 	s := harnessService(t, copilotChatFleets, fakeProbes{})
 	copilotChatHome(t, s)
 	fc := s.chat("b")

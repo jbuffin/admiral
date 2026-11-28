@@ -844,6 +844,7 @@ func TestCustomizeOfAnUnknownNameIs404(t *testing.T) {
 }
 
 func TestAppendNoteMakesTheCrewDirectoryAndFileWithPrivateModes(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	if err := crewapi.AppendNote(f.home, "work", "bosun", "acme/api", "- "+note(1)); err != nil {
 		t.Fatal(err)
@@ -863,6 +864,7 @@ func TestAppendNoteMakesTheCrewDirectoryAndFileWithPrivateModes(t *testing.T) {
 }
 
 func TestAppendNoteToAFullScopeAnswersScopeFullAndChangesNothing(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	path := f.fleetNotes("bosun", lines(30)...)
 	before := readFile(t, path)
@@ -875,6 +877,7 @@ func TestAppendNoteToAFullScopeAnswersScopeFullAndChangesNothing(t *testing.T) {
 }
 
 func TestAppendNoteRefusesALinkAnywhereInThePathAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	for name, link := range map[string]func(f *fixture) string{
 		"the crew directory": func(f *fixture) string { return f.crewDir() },
 		"the memory root":    func(f *fixture) string { return f.memDir() },

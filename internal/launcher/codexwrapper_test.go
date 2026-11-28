@@ -53,6 +53,7 @@ func readNul(t *testing.T, path string) []string {
 var socketShape = regexp.MustCompile(fmt.Sprintf(`^/tmp/admiral-%d/[0-9a-f]+\.sock$`, os.Getuid()))
 
 func TestCodexShipRunsBehindThePaneWrapper(t *testing.T) {
+	t.Parallel()
 	l, work, harnessArgv := recordingLauncher(t, "codex")
 	wrapperArgv := installFakeWrapper(t, l.Home)
 	out, err := l.Launch(Request{Fleet: "work", Harness: "codex", Dir: work, Skill: Skill{Kind: "none"}, Text: "do it"})
@@ -85,6 +86,7 @@ func TestCodexShipRunsBehindThePaneWrapper(t *testing.T) {
 }
 
 func TestEachCodexShipGetsItsOwnSocket(t *testing.T) {
+	t.Parallel()
 	l, work, _ := recordingLauncher(t, "codex")
 	wrapperArgv := installFakeWrapper(t, l.Home)
 	var socks []string
@@ -103,6 +105,7 @@ func TestEachCodexShipGetsItsOwnSocket(t *testing.T) {
 }
 
 func TestClaudeAndCopilotShipsAreNotWrapped(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "copilot"} {
 		t.Run(harness, func(t *testing.T) {
 			l, work, argv := recordingLauncher(t, harness)
@@ -122,6 +125,7 @@ func TestClaudeAndCopilotShipsAreNotWrapped(t *testing.T) {
 }
 
 func TestCodexCrewBoatKeepsItsOwnArgv(t *testing.T) {
+	t.Parallel()
 	r := newCrewDirRig(t, nil)
 	installFakeWrapper(t, r.home)
 	ship := r.launch(t)
@@ -141,6 +145,7 @@ func TestCodexCrewBoatKeepsItsOwnArgv(t *testing.T) {
 }
 
 func TestCodexDockArgsThatWouldBreakTheWrapperAreRefusedBeforeLaunch(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--remote", "unix:///x"}, {"--remote=unix:///x"}, {"app-server"}, {"exec"}, {"--"},
 		{"-c", "hooks.Stop=[]"}, {"--config", "hooks.x=1"}, {"--config=hooks.x=1"}, {"-chooks.x=1"}, {"--disable", "hooks"}, {"-c", "features.codex_hooks=false"}, {"-c", ` "hooks" . x=1`},
@@ -162,6 +167,7 @@ func TestCodexDockArgsThatWouldBreakTheWrapperAreRefusedBeforeLaunch(t *testing.
 }
 
 func TestCodexDockProfilesAndFeaturesStillLaunch(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"-p", "work"}, {"--profile=work"}, {"-c", "profile=work"}, {"-c", "features.web_search=true"}, {"--enable", "x"}, {"--disable", "web_search"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			l, work, _ := recordingLauncher(t, "codex")

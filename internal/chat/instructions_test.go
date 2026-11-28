@@ -56,6 +56,7 @@ func (r *notesRig) instructionsFile(fleet string) string {
 }
 
 func TestInstructionsStartEmptyWithTheirCapAndSaveThroughPUT(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	if got := r.instructions(t, "home"); got.Text != "" || got.Max != 2000 {
 		t.Errorf("GET = %+v, want {\"\", 2000}", got)
@@ -77,6 +78,7 @@ func TestInstructionsStartEmptyWithTheirCapAndSaveThroughPUT(t *testing.T) {
 }
 
 func TestAnEmptyPUTClearsTheInstructions(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	if rec := r.putInstructions("home", "something"); rec.Code != 200 || r.instructionsFile("home") == "" {
 		t.Fatalf("seeding instructions = %d %s", rec.Code, rec.Body)
@@ -92,6 +94,7 @@ func TestAnEmptyPUTClearsTheInstructions(t *testing.T) {
 }
 
 func TestInstructionsOverTheCapAreRefusedSayingByHowMuchAndKeepTheOldOnes(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	r.putInstructions("home", "keep me")
 	rec := r.putInstructions("home", strings.Repeat("x", 2005))
@@ -107,6 +110,7 @@ func TestInstructionsOverTheCapAreRefusedSayingByHowMuchAndKeepTheOldOnes(t *tes
 }
 
 func TestAMalformedInstructionsBodyIsRefusedAndNothingChanges(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	r.putInstructions("home", "keep me")
 	for _, body := range []string{`not json`, `{}`, `{"text":5}`} {
@@ -120,6 +124,7 @@ func TestAMalformedInstructionsBodyIsRefusedAndNothingChanges(t *testing.T) {
 }
 
 func TestTheEngineerDeletesANoteAndItsCancelCarriesNoVia(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	keep := r.addNote(t, "home", "keep")
 	gone := r.addNote(t, "home", "gone")
@@ -136,6 +141,7 @@ func TestTheEngineerDeletesANoteAndItsCancelCarriesNoVia(t *testing.T) {
 }
 
 func TestDeletingAnUnknownOrAlreadyDeletedNoteIs404(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	n := r.addNote(t, "home", "once")
 	if rec := r.do("DELETE", "/api/chat/home/notes/"+n.ID, "", ""); rec.Code < 200 || rec.Code >= 300 {
@@ -152,6 +158,7 @@ func TestDeletingAnUnknownOrAlreadyDeletedNoteIs404(t *testing.T) {
 }
 
 func TestPromotingANoteMovesItsTextAfterTheInstructionsAndRemovesTheNote(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	r.putInstructions("home", "Be terse.")
 	n := r.addNote(t, "home", "Deploys go out on Tuesdays.")
@@ -170,6 +177,7 @@ func TestPromotingANoteMovesItsTextAfterTheInstructionsAndRemovesTheNote(t *test
 }
 
 func TestPromotingPastTheCapIs409SayingByHowMuchAndChangesNothing(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	r.putInstructions("home", strings.Repeat("i", 1990))
 	n := r.addNote(t, "home", strings.Repeat("n", 20))
@@ -196,6 +204,7 @@ func engineerRoutes(fleet, id string) []struct{ method, path, body string } {
 }
 
 func TestTheNotesAndInstructionsRoutesRefuseAnUnknownFleetOrAKeyThatIsNotOne(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	for _, fleet := range []string{"nowhere", "bad.key"} {
 		for _, c := range engineerRoutes(fleet, "n1") {
@@ -207,6 +216,7 @@ func TestTheNotesAndInstructionsRoutesRefuseAnUnknownFleetOrAKeyThatIsNotOne(t *
 }
 
 func TestTheNotesAndInstructionsRoutesStayServedWhileTheFleetsChatIsOff(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	if err := os.MkdirAll(filepath.Join(r.home, "chat", "off"), 0o700); err != nil {
 		t.Fatal(err)
@@ -260,6 +270,7 @@ func newClashRig(t *testing.T) *notesRig {
 }
 
 func TestEveryNotesAndInstructionsRouteRefusesAFleetWhoseKeyClashesInCaseWithAnEarlierOne(t *testing.T) {
+	t.Parallel()
 	r := newClashRig(t)
 	for _, c := range engineerRoutes("Work", "n1") {
 		if rec := r.do(c.method, c.path, c.body, ""); rec.Code != http.StatusConflict || !strings.Contains(errorOf(rec), "differs only in case") {

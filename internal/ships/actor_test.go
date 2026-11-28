@@ -23,6 +23,7 @@ func (f *mooredFixture) asActor(t *testing.T, fleet, method, path string) *httpt
 }
 
 func TestAnActorsShipListHoldsOnlyItsFleetsShipsMooredOnesIncluded(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	f.moor(t, "Saltpaw", "work", prSeven)
 	f.moor(t, "Dory", "home", prSeven)
@@ -72,6 +73,7 @@ func outcomeLines(t *testing.T, home, ship, event string) []map[string]any {
 }
 
 func TestStoppingAShipAsAnActorStampsItsStoppedRecordViaAdmiralbot(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.launchRound(t, 0)
 	r.started(t, 1)
@@ -91,6 +93,7 @@ func TestStoppingAShipAsAnActorStampsItsStoppedRecordViaAdmiralbot(t *testing.T)
 }
 
 func TestStoppingAShipAsTheEngineerLeavesItsStoppedRecordUnstamped(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.launchRound(t, 0)
 	r.started(t, 1)
@@ -151,6 +154,7 @@ func (r *wakeRig) shipsVia(t *testing.T, session string) (via string, listed boo
 }
 
 func TestAShipAnActorLaunchesIsStampedViaAdmiralbotInItsLaunchedRecordAndTheShipList(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	session := r.launchAs(t, "work")
 	var got []map[string]any
@@ -165,6 +169,7 @@ func TestAShipAnActorLaunchesIsStampedViaAdmiralbotInItsLaunchedRecordAndTheShip
 }
 
 func TestALaunchBodyWithDataAfterItsFirstValueLaunchesNothing(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	mux := http.NewServeMux()
 	r.s.Routes(mux)
@@ -185,6 +190,7 @@ func TestALaunchBodyWithDataAfterItsFirstValueLaunchesNothing(t *testing.T) {
 }
 
 func TestAShipTheEngineerLaunchesCarriesNoVia(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	session := r.launchAs(t, "")
 	var got []map[string]any
@@ -199,6 +205,7 @@ func TestAShipTheEngineerLaunchesCarriesNoVia(t *testing.T) {
 }
 
 func TestAnActorDismissingAMooredShipStampsItsUnmooredRecordViaAdmiralbot(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	f.moor(t, "Saltpaw", "work", prSeven)
 	if rec := f.asActor(t, "work", "POST", "/api/ships/saltpaw/dismiss"); rec.Code != 200 {
@@ -211,6 +218,7 @@ func TestAnActorDismissingAMooredShipStampsItsUnmooredRecordViaAdmiralbot(t *tes
 }
 
 func TestAMooredShipsFleetIsKnownToTheGuardAsALiveShipsIs(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	f.moor(t, "Saltpaw", "work", prSeven)
 	if got, ok := f.s.FleetOf("saltpaw"); !ok || got != "work" {

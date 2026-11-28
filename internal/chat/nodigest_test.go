@@ -24,6 +24,7 @@ func (r *briefRig) writesNoDigest(t *testing.T, what string) {
 }
 
 func TestACommitmentCardAddsItsEntryAndWritesNoDigestFile(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	for range 2 {
 		if err := r.PostCard("work", commitmentCard()); err != nil {
@@ -38,6 +39,7 @@ func TestACommitmentCardAddsItsEntryAndWritesNoDigestFile(t *testing.T) {
 }
 
 func TestACampaignDraftCardAddsItsEntryAndWritesNoDigestFile(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	card := CampaignDraftCard{ID: "campaign-3", Title: "Speed up the fleet map", URL: "https://github.com/acme/widgets/issues/99", Created: true}
 	for range 2 {
@@ -53,6 +55,7 @@ func TestACampaignDraftCardAddsItsEntryAndWritesNoDigestFile(t *testing.T) {
 }
 
 func TestChatTicksOverShipChangesAndAnsweredQuestionsWriteNoDigestFile(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	r.set(func() {
 		r.ships = []ships.Ship{{Session: "s1", Name: "bold-heron", Fleet: "home", Status: ships.StatusUnderway}}

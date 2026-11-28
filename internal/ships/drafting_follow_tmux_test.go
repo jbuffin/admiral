@@ -128,6 +128,7 @@ func (r *draftRig) waitEndedItem(t *testing.T) string {
 }
 
 func TestADraftingShipsRefIsFollowedOncePerTurnEndAndTheFileIsDeleted(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
 	r.endTurn(t, "saltpaw")
@@ -147,6 +148,7 @@ func TestADraftingShipsRefIsFollowedOncePerTurnEndAndTheFileIsDeleted(t *testing
 }
 
 func TestARefWrittenBeforeATurnEndsIsNotReadUntilItDoes(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	r.turnOf(t, "saltpaw", "working", "")
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
@@ -162,6 +164,7 @@ func TestARefWrittenBeforeATurnEndsIsNotReadUntilItDoes(t *testing.T) {
 }
 
 func TestARefTheFollowRefusesShowsItsReasonOnTheShip(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	refusal := "That campaign belongs to fleet home, not work"
 	r.err = errString(refusal)
@@ -179,6 +182,7 @@ type errString string
 func (e errString) Error() string { return string(e) }
 
 func TestARefToTheAlreadyFollowedIssueLeavesNoNoticeAndALaterOtherRefIsIgnoredWithOne(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
 	r.endTurn(t, "saltpaw")
@@ -205,6 +209,7 @@ func TestARefToTheAlreadyFollowedIssueLeavesNoNoticeAndALaterOtherRefIsIgnoredWi
 }
 
 func TestAnUnsafeRefIsNotReadAndTheNextValidOneIs(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		write func(t *testing.T, path string)
@@ -252,6 +257,7 @@ func TestAnUnsafeRefIsNotReadAndTheNextValidOneIs(t *testing.T) {
 }
 
 func TestAWokenDraftingShipStaysDraftingAndItsRefIsFollowed(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first, _ := shipJSON(t, r.moorKeyed(t))["first_launched"].(string)
 	r.s.markDrafting("saltpaw", first, "work", "claude", false)
@@ -296,6 +302,7 @@ func TestAWokenDraftingShipStaysDraftingAndItsRefIsFollowed(t *testing.T) {
 }
 
 func TestStoppingADraftingShipThatFiledNothingPostsOneItemNamingIt(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	r.stopShip(t, "saltpaw")
 	item := r.waitEndedItem(t)
@@ -305,6 +312,7 @@ func TestStoppingADraftingShipThatFiledNothingPostsOneItemNamingIt(t *testing.T)
 }
 
 func TestADraftingShipWithALateRefIsFollowedAtTheStopNotReportedEnded(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
 	r.stopShip(t, "saltpaw")
@@ -318,6 +326,7 @@ func TestADraftingShipWithALateRefIsFollowedAtTheStopNotReportedEnded(t *testing
 }
 
 func TestAFollowedDraftingShipThatStopsPostsNoItem(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
 	r.endTurn(t, "saltpaw")
@@ -344,6 +353,7 @@ func (r *draftRig) bramble(t *testing.T) {
 }
 
 func TestHandingAndReturningADraftingShipPostNoItemOnlyAStoppedOneDoes(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	r.bramble(t)
 
@@ -363,6 +373,7 @@ func TestHandingAndReturningADraftingShipPostNoItemOnlyAStoppedOneDoes(t *testin
 }
 
 func TestReturningADraftingShipToPortPostsNoItem(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	r.bramble(t)
 	r.turnOf(t, "saltpaw", "needs_you", "stop")
@@ -391,6 +402,7 @@ func (r *draftRig) moorDrafting(t *testing.T) {
 }
 
 func TestAMooredDraftingShipKeepsDraftingAndPostsNoItemUntilItEnds(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	r.moorDrafting(t)
 	if sh := r.draftingJSON(t, "saltpaw"); sh["status"] != StatusMoored || sh["drafting"] != true {
@@ -403,6 +415,7 @@ func TestAMooredDraftingShipKeepsDraftingAndPostsNoItemUntilItEnds(t *testing.T)
 }
 
 func TestStoppingAMooredDraftingShipThatFiledNothingPostsOneItem(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	r.moorDrafting(t)
 	rec := httptest.NewRecorder()
@@ -419,6 +432,7 @@ func TestStoppingAMooredDraftingShipThatFiledNothingPostsOneItem(t *testing.T) {
 }
 
 func TestAMooredDraftingShipWhoseCampaignIsFollowedPostsNoItemWhenStopped(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
 	r.endTurn(t, "saltpaw")
@@ -432,6 +446,7 @@ func TestAMooredDraftingShipWhoseCampaignIsFollowedPostsNoItemWhenStopped(t *tes
 }
 
 func TestARewrittenFleetOptionDoesNotMoveARefIntoAnotherFleet(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	r.s.FollowDrafted = func(fleet, ref string) (string, string, error) { // the real rule: only the fleet that owns the repo follows it
 		r.mu.Lock()
@@ -459,6 +474,7 @@ func TestARewrittenFleetOptionDoesNotMoveARefIntoAnotherFleet(t *testing.T) {
 }
 
 func TestAShipWrittenRefLeavesNoTextInTheIgnoredNotice(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
 	r.endTurn(t, "saltpaw")
@@ -470,6 +486,7 @@ func TestAShipWrittenRefLeavesNoTextInTheIgnoredNotice(t *testing.T) {
 }
 
 func TestTheShipsListCarriesTheDraftingFieldsOverHTTP(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	rec := httptest.NewRecorder()
 	r.mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/ships", nil))

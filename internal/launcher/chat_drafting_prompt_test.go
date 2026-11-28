@@ -6,6 +6,7 @@ import (
 )
 
 func TestEveryChatPromptSaysWhenToDraftAndWhichPathToTake(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		i := strings.Index(prompt, "get_drafting_skill")
@@ -34,6 +35,7 @@ func TestEveryChatPromptSaysWhenToDraftAndWhichPathToTake(t *testing.T) {
 }
 
 func TestEveryChatPromptKeepsWayfinderForChartingAnExistingCampaignAndDraftingForANewOne(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		if !strings.Contains(prompt, "You never create a campaign yourself") {
@@ -62,6 +64,7 @@ func sentenceAround(s string, i int) string {
 }
 
 func TestEveryChatPromptSendsEachDraftRequestToOnePathNotTwo(t *testing.T) {
+	t.Parallel()
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		prompt := chatPromptFor(harness)
 		for i, from := 0, 0; ; from = i + 1 {

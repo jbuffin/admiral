@@ -8,6 +8,7 @@ import (
 
 // The bundle runs the guard for the tools a scout's guard decides on, and a hook that fails blocks the call.
 func TestBundleRunsTheGuardForAScoutsEditAndMCPWriteTools(t *testing.T) {
+	t.Parallel()
 	raw, _ := json.Marshal(claudeSettings())
 	var settings struct {
 		Hooks map[string][]struct {

@@ -136,6 +136,7 @@ func (r *promiseRig) body(trigger, action, launch string) string {
 const sailed = `{"kind":"ship_sailed","subject":"saltpaw"}`
 
 func TestACommitmentAdmiralBotRecordsIsStoredStampedAndListed(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	rec := r.do("POST", "/api/chat/commitments", r.body(sailed, "launch", r.launch("")), "home")
 	var c promiseBody
@@ -158,6 +159,7 @@ func TestACommitmentAdmiralBotRecordsIsStoredStampedAndListed(t *testing.T) {
 }
 
 func TestARemindCommitmentNeedsNoLaunchSpecAndGoesToTheTokensFleet(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	rec := r.do("POST", "/api/chat/commitments", `{"fleet":"work","text":"tell me about the deploy","trigger":{"kind":"none"},"action":"remind"}`, "home")
 	if rec.Code != http.StatusCreated {
@@ -169,6 +171,7 @@ func TestARemindCommitmentNeedsNoLaunchSpecAndGoesToTheTokensFleet(t *testing.T)
 }
 
 func TestTheEngineersOwnRequestCannotRecordACommitment(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	if rec := r.do("POST", "/api/chat/commitments", `{"text":"x","trigger":{"kind":"none"},"action":"remind"}`, ""); rec.Code != http.StatusForbidden {
 		t.Errorf("POST commitment with no actor = %d %s, want 403", rec.Code, rec.Body)
@@ -176,6 +179,7 @@ func TestTheEngineersOwnRequestCannotRecordACommitment(t *testing.T) {
 }
 
 func TestTheEngineerCancelsACommitmentOnceAndThenItIsGone(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	var c promiseBody
 	rec := r.do("POST", "/api/chat/commitments", `{"text":"remind me","trigger":{"kind":"none"},"action":"remind"}`, "home")
@@ -195,6 +199,7 @@ func TestTheEngineerCancelsACommitmentOnceAndThenItIsGone(t *testing.T) {
 }
 
 func TestACommitmentIdCannotBeCancelledThroughAnotherFleetOrAsANote(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	var c promiseBody
 	rec := r.do("POST", "/api/chat/commitments", `{"text":"remind me","trigger":{"kind":"none"},"action":"remind"}`, "home")
@@ -221,6 +226,7 @@ func cloneSpec(extra string) string {
 }
 
 func TestARecordTimeRefusalIs4xxStoresNothingAndPostsNoInboxNotice(t *testing.T) {
+	t.Parallel()
 	past := promiseT0.Add(-time.Hour).Format(time.RFC3339)
 	cases := []struct {
 		name, fleet string
@@ -317,6 +323,7 @@ func TestARecordTimeRefusalIs4xxStoresNothingAndPostsNoInboxNotice(t *testing.T)
 }
 
 func TestAPRAndAnIssueOnAFleetGitHubHostAreAcceptedAsSubjects(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	for _, c := range []struct{ kind, subject string }{
 		{"pr_merged", "https://github.com/acme/widget/pull/7"},
@@ -332,6 +339,7 @@ func TestAPRAndAnIssueOnAFleetGitHubHostAreAcceptedAsSubjects(t *testing.T) {
 }
 
 func TestAValidLaunchSpecWithAnOrderAndAResourceIsAccepted(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	spec := fmt.Sprintf(`{"harness":"claude","dir":%q,"text":"do T-1","skill":{"kind":"none"},"source":"tracker","order_id":"T-1","resources":["gpu"],"autopilot":true}`, r.repo)
 	if rec := r.do("POST", "/api/chat/commitments", r.body(sailed, "launch", spec), "home"); rec.Code != http.StatusCreated {
@@ -340,6 +348,7 @@ func TestAValidLaunchSpecWithAnOrderAndAResourceIsAccepted(t *testing.T) {
 }
 
 func TestTheListHoldsOpenAndWaitingCommitmentsAndMarksWhichAndOmitsClosedOnes(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	dir := filepath.Join(r.home, "chat", "home")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -369,6 +378,7 @@ func TestTheListHoldsOpenAndWaitingCommitmentsAndMarksWhichAndOmitsClosedOnes(t 
 }
 
 func TestACloneLaunchIsAcceptedAndStoredWithShapeChecksOnly(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	for name, extra := range map[string]string{
 		"an order's repo":    `"source":"tracker","order_id":"T-1","clone_repo":"GitHub.com/ACME/widget"`,
@@ -385,6 +395,7 @@ func TestACloneLaunchIsAcceptedAndStoredWithShapeChecksOnly(t *testing.T) {
 }
 
 func TestAShipTriggerIsStoredWithTheShipsLaunchStamp(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	body := r.body(`{"kind":"ship_anchored","subject":"stamped"}`, "remind", "")
 	if rec := r.do("POST", "/api/chat/commitments", body, "home"); rec.Code != http.StatusCreated {
@@ -396,6 +407,7 @@ func TestAShipTriggerIsStoredWithTheShipsLaunchStamp(t *testing.T) {
 }
 
 func TestSubjectsAreStoredCanonically(t *testing.T) {
+	t.Parallel()
 	r := newPromiseRig(t)
 	at := time.Now().Add(72 * time.Hour).In(time.FixedZone("x", 5*3600)).Truncate(time.Second)
 	for _, c := range []struct{ kind, sent, want string }{
@@ -413,6 +425,7 @@ func TestSubjectsAreStoredCanonically(t *testing.T) {
 }
 
 func TestANilOrderSeamRefusesInsteadOfPanicking(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 	home := t.TempDir()
 	cfg, _ := config.Parse([]byte(`{"version":1,"fleets":{"home":{"name":"Home","search_roots":["` + home + `"],"claude":{"executable":"/bin/sh"}}}}`))

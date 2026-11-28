@@ -11,6 +11,7 @@ import (
 var uuidShape = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 func TestConversationAnchor(t *testing.T) {
+	t.Parallel()
 	cfgDir := t.TempDir()
 	env := map[string]string{"CLAUDE_CONFIG_DIR": cfgDir}
 	now := time.Unix(1700000000, 0)
@@ -46,6 +47,7 @@ func TestConversationAnchor(t *testing.T) {
 }
 
 func TestConversationAnchorResumesTheGivenConversation(t *testing.T) {
+	t.Parallel()
 	cfgDir := t.TempDir()
 	const id = "0f8fad5b-d9cb-469f-a165-70867728950e"
 	flags, pane := conversationAnchor(

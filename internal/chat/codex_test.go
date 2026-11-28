@@ -49,6 +49,7 @@ func codexChatHome(t *testing.T, s *Service) string {
 }
 
 func TestACodexChatsLoginDirIsTheEngineersAndNotItsOwnHome(t *testing.T) {
+	t.Parallel()
 	s := harnessService(t, codexChatFleets, fakeProbes{})
 	want := config.IdentityDir("codex", map[string]string{"CODEX_HOME": "/srv/fake-codex-identity"})
 	got := s.Login(sessionhost.ChatSession("b"))
@@ -82,6 +83,7 @@ func servedFromFile(t *testing.T, s *Service, key, path string, source ...string
 }
 
 func TestTheCodexChatReaderReadsRolloutsFromTheChatHomeOnly(t *testing.T) {
+	t.Parallel()
 	s := harnessService(t, codexChatFleets, fakeProbes{})
 	home := codexChatHome(t, s)
 	own := writeAt(t, filepath.Join(home, "sessions", "2026", "11", "12", "rollout-own.jsonl"), codexRollout(t))
@@ -100,6 +102,7 @@ func TestTheCodexChatReaderReadsRolloutsFromTheChatHomeOnly(t *testing.T) {
 }
 
 func TestACodexResetRecordsTheChatHomeRolloutsUsageUnderCodex(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "outcomes")
 	w := outcomes.New(dir, t.Logf)
 	t.Cleanup(w.Close)
@@ -126,6 +129,7 @@ func TestACodexResetRecordsTheChatHomeRolloutsUsageUnderCodex(t *testing.T) {
 }
 
 func TestACodexChatWithNoTranscriptIsReadyOnceItsComposerShowsAndItsHooksAreTrusted(t *testing.T) {
+	t.Parallel()
 	s := harnessService(t, codexChatFleets, fakeProbes{})
 	home := codexChatHome(t, s)
 	fc := s.chat("b")

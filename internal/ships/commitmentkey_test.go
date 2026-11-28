@@ -18,6 +18,7 @@ import (
 
 // The quiet gate refuses an unproven autopilot launch the way the normal gate does, but leaves the Inbox alone.
 func TestAQuietGateRefusesAnUnprovenHarnessWithoutAnInboxNotice(t *testing.T) {
+	t.Parallel()
 	fl := fleets(t)
 	home := guardedHome(t) // proven for claude in work only
 	s := &Service{
@@ -48,6 +49,7 @@ func TestAQuietGateRefusesAnUnprovenHarnessWithoutAnInboxNotice(t *testing.T) {
 }
 
 func TestACommitmentKeyHoldsASecondLaunchAndNamesNoRoutine(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	const key = "commitment:c1"
 	first := r.mustLaunch(t, func(q *launcher.Request) { q.CommitmentKey = key })
@@ -67,6 +69,7 @@ func TestACommitmentKeyHoldsASecondLaunchAndNamesNoRoutine(t *testing.T) {
 
 // A ship trigger pairs a ship with its `launched` outcome record by the launch stamp, so the record must carry the stamp the listed ship has.
 func TestTheLaunchedOutcomeRecordCarriesTheShipsLaunchStamp(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	sh := r.mustLaunch(t, nil)
 	if sh.Launched == "" {
@@ -182,6 +185,7 @@ func TestACommitmentCloneThatMeetsTheCapAfterCloningLaunchesIntoItOnTheRetry(t *
 
 // A ship trigger on a woken ship pairs by the wake's stamp, so the `woken` record must carry it.
 func TestAWokenOutcomeRecordCarriesTheWokenShipsLaunchStamp(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0)
 	ship, lerr := r.s.Wake(context.Background(), "saltpaw", "")
@@ -196,6 +200,7 @@ func TestAWokenOutcomeRecordCarriesTheWokenShipsLaunchStamp(t *testing.T) {
 
 // A ship trigger recorded on a moored ship needs the stamp its launch record carries.
 func TestAMooredShipIsListedWithItsLaunchStamp(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	if err := moor.Write(f.home, moor.Record{Name: "Saltpaw", Session: "saltpaw", Fleet: "work", Launched: "2026-11-12T06:00:00Z"}); err != nil {
 		t.Fatal(err)

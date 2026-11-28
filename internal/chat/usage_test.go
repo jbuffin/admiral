@@ -26,6 +26,7 @@ func noLive() (usage.Figures, bool) { return usage.Figures{}, false }
 // A reset's figures are what the chat used since the last reset: the transcript's cost-state is cumulative
 // while its path stays the same, and a new path is a new session.
 func TestResetUsageFirstResetRecordsTheWholeFile(t *testing.T) {
+	t.Parallel()
 	var u resetUsage
 	got := u.figures("/c/projects/p/a.jsonl", fig(100, 0.5), noLive)
 	if got == nil || got.Tokens.Input != 100 || got.Money.Amount != 0.5 {
@@ -34,6 +35,7 @@ func TestResetUsageFirstResetRecordsTheWholeFile(t *testing.T) {
 }
 
 func TestResetUsageSamePathRecordsTheDelta(t *testing.T) {
+	t.Parallel()
 	var u resetUsage
 	u.figures("/c/projects/p/a.jsonl", fig(100, 0.5), noLive)
 	got := u.figures("/c/projects/p/a.jsonl", fig(250, 1.25), noLive)
@@ -48,6 +50,7 @@ func TestResetUsageSamePathRecordsTheDelta(t *testing.T) {
 
 // Sub says reset when a figure went down: the file started over, so its figures are the use.
 func TestResetUsageFigureThatWentDownRecordsTheCurrentFigures(t *testing.T) {
+	t.Parallel()
 	var u resetUsage
 	u.figures("/c/projects/p/a.jsonl", fig(500, 2), noLive)
 	got := u.figures("/c/projects/p/a.jsonl", fig(40, 0.1), noLive)
@@ -58,6 +61,7 @@ func TestResetUsageFigureThatWentDownRecordsTheCurrentFigures(t *testing.T) {
 
 // After a kill and restart the chat has a new transcript: its figures are its own.
 func TestResetUsageNewPathRecordsTheWholeFile(t *testing.T) {
+	t.Parallel()
 	var u resetUsage
 	u.figures("/c/projects/p/a.jsonl", fig(500, 2), noLive)
 	got := u.figures("/c/projects/p/b.jsonl", fig(30, 0.1), noLive)
@@ -71,6 +75,7 @@ func TestResetUsageNewPathRecordsTheWholeFile(t *testing.T) {
 }
 
 func TestResetUsageNoFiguresUsesTheLastLiveFigures(t *testing.T) {
+	t.Parallel()
 	var u resetUsage
 	live := usage.Figures{Tokens: usage.Tokens{Input: 9}, Money: est(0.05)}
 	got := u.figures("/c/projects/p/a.jsonl", nil, func() (usage.Figures, bool) { return live, true })
@@ -80,6 +85,7 @@ func TestResetUsageNoFiguresUsesTheLastLiveFigures(t *testing.T) {
 }
 
 func TestResetUsageNoFiguresAndNoLiveFiguresIsNil(t *testing.T) {
+	t.Parallel()
 	var u resetUsage
 	if got := u.figures("/c/projects/p/a.jsonl", nil, noLive); got != nil {
 		t.Errorf("got %+v, want nil so the record has null figures", got)
@@ -91,6 +97,7 @@ func TestResetUsageNoFiguresAndNoLiveFiguresIsNil(t *testing.T) {
 
 // A reset with no figures leaves the last reading alone: the next one is still a delta against it.
 func TestResetUsageAReadThatFoundNothingKeepsThePreviousReading(t *testing.T) {
+	t.Parallel()
 	var u resetUsage
 	u.figures("/c/projects/p/a.jsonl", fig(100, 0.5), noLive)
 	u.figures("/c/projects/p/a.jsonl", nil, noLive)
@@ -103,6 +110,7 @@ func TestResetUsageAReadThatFoundNothingKeepsThePreviousReading(t *testing.T) {
 // A /clear with no transcript figures records the cost the status line last showed for the session that ended,
 // not the $0 line the new session started with.
 func TestResetRecordsTheStatusLinesLastCostOfTheSessionThatEnded(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "outcomes")
 	w := outcomes.New(dir, t.Logf)
 	t.Cleanup(w.Close)
@@ -152,6 +160,7 @@ func usageMoney(t *testing.T, dir string) []any {
 
 // Session A spends $3, /clear, then /clear again before the new session spends: A is counted once.
 func TestTwoClearsInARowCountThePreClearSessionOnce(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "outcomes")
 	w := outcomes.New(dir, t.Logf)
 	t.Cleanup(w.Close)

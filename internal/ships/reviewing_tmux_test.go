@@ -97,6 +97,7 @@ func (r *liveRig) prs(t *testing.T) []moor.PR {
 }
 
 func TestAShipLaunchedOnAnotherAuthorsPRCarriesItAsReviewing(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, livePR7)
 	r.others(livePR7)
 	r.poll()
@@ -116,6 +117,7 @@ func TestAShipLaunchedOnAnotherAuthorsPRCarriesItAsReviewing(t *testing.T) {
 }
 
 func TestAShipLaunchedOnItsOwnPRDoesNotGainReviewing(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, livePR7)
 	r.s.Candidates = func(string) []string { return []string{livePR7} } // the ship printed the PR it opened
 	launched, _ := time.Parse(time.RFC3339, r.options(t, "saltpaw")["launched"])
@@ -132,6 +134,7 @@ func TestAShipLaunchedOnItsOwnPRDoesNotGainReviewing(t *testing.T) {
 }
 
 func TestAShipLaunchedFromFreeTextCarriesNoPRAndAsksGitHubNothing(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, "")
 	r.others(livePR7)
 	r.poll()
@@ -151,6 +154,7 @@ const (
 )
 
 func TestAShipLaunchedOnAStackCarriesEveryOpenLayerBottomFirstAndReviewsOnlyOthers(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, reviewStack)
 	r.gh.stacks = map[string][]string{"acme/widgets/12": {stackL1, stackL2, stackL3, stackL4}}
 	r.others(stackL1)
@@ -171,6 +175,7 @@ func TestAShipLaunchedOnAStackCarriesEveryOpenLayerBottomFirstAndReviewsOnlyOthe
 }
 
 func TestAShipLaunchedOnAStackOfOnlyTheViewersLayersCarriesThemAndReviewsNothing(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, reviewStack)
 	r.gh.stacks = map[string][]string{"acme/widgets/12": {stackL1, stackL2}}
 	r.mine(stackL1)
@@ -184,6 +189,7 @@ func TestAShipLaunchedOnAStackOfOnlyTheViewersLayersCarriesThemAndReviewsNothing
 }
 
 func TestAShipOnAStackOfOnlyTheViewersLayersMoorsCarryingThemWhenItsReportListsNoPRs(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, reviewStack)
 	r.gh.stacks = map[string][]string{"acme/widgets/12": {stackL1, stackL2}}
 	r.mine(stackL1)
@@ -207,6 +213,7 @@ func TestAShipOnAStackOfOnlyTheViewersLayersMoorsCarryingThemWhenItsReportListsN
 }
 
 func TestAShipOnAMixedStackMoorsCarryingEveryLayerAndReviewingOnlyTheOthers(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, reviewStack)
 	r.gh.stacks = map[string][]string{"acme/widgets/12": {stackL1, stackL2, stackL3}}
 	r.others(stackL1)
@@ -229,6 +236,7 @@ func TestAShipOnAMixedStackMoorsCarryingEveryLayerAndReviewingOnlyTheOthers(t *t
 }
 
 func TestAStackGitHubDoesNotHaveIsAskedOnceAndCarriesNothing(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, reviewStack) // no stack answer: a 404
 	for range 3 {
 		r.poll()
@@ -242,6 +250,7 @@ func TestAStackGitHubDoesNotHaveIsAskedOnceAndCarriesNothing(t *testing.T) {
 }
 
 func TestAFailingStackLookupIsRetriedUpToMaxCandidateTriesThenGivenUp(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, reviewStack)
 	r.gh.stackErr = context.DeadlineExceeded
 	for range maxCandidateTries + 3 {
@@ -253,6 +262,7 @@ func TestAFailingStackLookupIsRetriedUpToMaxCandidateTriesThenGivenUp(t *testing
 }
 
 func TestAnAnswerlessReviewedPRIsGivenUpAfterMaxCandidateTries(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, livePR7)
 	r.gh.failOn = livePR7
 	for range maxCandidateTries + 3 {
@@ -264,6 +274,7 @@ func TestAnAnswerlessReviewedPRIsGivenUpAfterMaxCandidateTries(t *testing.T) {
 }
 
 func TestAPrintedCopyOfTheOrderURLDoesNotUndoReviewing(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, livePR7)
 	r.s.Candidates = func(string) []string { return []string{livePR7} }
 	r.others(livePR7)
@@ -276,6 +287,7 @@ func TestAPrintedCopyOfTheOrderURLDoesNotUndoReviewing(t *testing.T) {
 }
 
 func TestAReviewingShipMoorsWhenItsTurnEndsDoneWithAReportThatListsNoPRs(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, livePR7)
 	r.others(livePR7)
 	go r.s.Run(r.ctx)
@@ -296,6 +308,7 @@ func TestAReviewingShipMoorsWhenItsTurnEndsDoneWithAReportThatListsNoPRs(t *test
 }
 
 func TestAReviewingShipMoorsItsReviewedPRsBeforeTheOnesItsReportListsWithoutDuplicates(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, livePR7)
 	r.others(livePR7)
 	go r.s.Run(r.ctx)
@@ -313,13 +326,14 @@ func TestAReviewingShipMoorsItsReviewedPRsBeforeTheOnesItsReportListsWithoutDupl
 
 // A guard: the same done report with no PRs moors nothing for a free-text ship.
 func TestAFreeTextShipWithADoneReportThatListsNoPRsStaysLive(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, "")
 	r.others(livePR7)
 	go r.s.Run(r.ctx)
 	r.turn(t, "working", "")
 	r.writeReport(t, "done")
 	r.turn(t, "needs_you", "stop")
-	holdsFor(t, 1500*time.Millisecond, "the ship moored", func() bool {
+	holdsFor(t, settleHold(), "the ship moored", func() bool {
 		_, err := os.Stat(r.mooredFile())
 		return err != nil && r.live(t)
 	})
@@ -327,6 +341,7 @@ func TestAFreeTextShipWithADoneReportThatListsNoPRsStaysLive(t *testing.T) {
 
 // A guard: a PR the ship only printed (a transcript candidate, not part of its order) does not make a done report moor it.
 func TestAShipCarryingAPrintedOwnPRWithADoneReportThatListsNoPRsIsNotMoored(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name      string
 		localOnly bool
@@ -351,7 +366,7 @@ func TestAShipCarryingAPrintedOwnPRWithADoneReportThatListsNoPRsIsNotMoored(t *t
 				r.gone(t, "the finished ship to leave the live list")
 				waitUntil(t, "the finished record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "finished")) == 1 })
 			}
-			holdsFor(t, 1500*time.Millisecond, "the ship moored", func() bool {
+			holdsFor(t, settleHold(), "the ship moored", func() bool {
 				_, err := os.Stat(r.mooredFile())
 				return err != nil && (c.localOnly || r.live(t))
 			})
@@ -382,6 +397,7 @@ func readRecord(t *testing.T, path string) moor.Record {
 }
 
 func TestAStackLayerGitHubFailedToAnswerIsAskedAgainOnTheNextPoll(t *testing.T) {
+	t.Parallel()
 	const l1, l2 = "https://github.com/acme/widgets/pull/21", "https://github.com/acme/widgets/pull/22"
 	r := newReviewingRig(t, reviewStack)
 	r.gh.stacks = map[string][]string{"acme/widgets/12": {l1, l2}}
@@ -455,6 +471,7 @@ func TestAWokenReviewingShipReMoorsReviewingWhenGitHubNeverAnswersTheRound(t *te
 }
 
 func TestALiveReviewingShipShowsRespondedOnItsReviewedPRWhenTheAuthorPushed(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, livePR7)
 	r.gh.pollGitHub.set(livePR7, pushedPast())
 	r.poll()

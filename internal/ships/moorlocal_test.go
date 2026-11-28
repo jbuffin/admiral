@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"testing"
-	"time"
 )
 
 // markShip sets a launch-time option on saltpaw's session the way the launcher does.
@@ -24,12 +23,13 @@ func (r *liveRig) markLocalOnly(t *testing.T) {
 }
 
 func TestALocalOnlyShipWhoseTurnEndsOnADoneReportWithNoPRIsFinishedWithoutStop(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	r.markLocalOnly(t)
 	go r.s.Run(r.ctx)
 	r.turn(t, "working", "")
 	r.writeReport(t, "done")
-	holdsFor(t, 1200*time.Millisecond, "the ship ended while its turn was still running", func() bool { return r.live(t) })
+	holdsFor(t, settleHold(), "the ship ended while its turn was still running", func() bool { return r.live(t) })
 
 	r.turn(t, "needs_you", "stop")
 	r.gone(t, "the finished ship to leave the live list")
@@ -46,6 +46,7 @@ func TestALocalOnlyShipWhoseTurnEndsOnADoneReportWithNoPRIsFinishedWithoutStop(t
 }
 
 func TestAShipThatIsNotDoneOrNotLocalOnlyIsNotFinishedByItsTurnEnding(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name      string
 		localOnly bool
@@ -66,7 +67,7 @@ func TestAShipThatIsNotDoneOrNotLocalOnlyIsNotFinishedByItsTurnEnding(t *testing
 				r.writeReport(t, c.report)
 			}
 			r.turn(t, "needs_you", "stop")
-			holdsFor(t, 1500*time.Millisecond, "the ship was ended or finished", func() bool {
+			holdsFor(t, settleHold(), "the ship was ended or finished", func() bool {
 				s, _, ok := r.wire(t)
 				return ok && s.Status == "needs_you" && !contains(r.eventNames(t), "finished")
 			})
@@ -75,6 +76,7 @@ func TestAShipThatIsNotDoneOrNotLocalOnlyIsNotFinishedByItsTurnEnding(t *testing
 }
 
 func TestALiveShipCarriesLocalOnlyAndItsBranchOnTheWireOnlyWhenItIsLocalOnly(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	_ = r.s.Host.Sync(context.Background())
 	if _, raw, ok := r.wire(t); !ok || raw["local_only"] != nil || raw["branch"] != nil {

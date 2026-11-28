@@ -74,6 +74,7 @@ func (r *notesRig) list(t *testing.T, fleet string) []noteBody {
 }
 
 func TestANoteAdmiralBotSavesIsStampedAndTheEngineerCanListIt(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	rec := r.do("POST", "/api/chat/notes", `{"text":"  deploys go out on Tuesdays "}`, "home")
 	var n noteBody
@@ -93,6 +94,7 @@ func TestANoteAdmiralBotSavesIsStampedAndTheEngineerCanListIt(t *testing.T) {
 }
 
 func TestANoteGoesToTheTokensFleetWhateverTheBodyNames(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	if rec := r.do("POST", "/api/chat/notes", `{"fleet":"work","text":"mine"}`, "home"); rec.Code != http.StatusCreated {
 		t.Fatalf("POST note = %d %s, want 201", rec.Code, rec.Body)
@@ -106,6 +108,7 @@ func TestANoteGoesToTheTokensFleetWhateverTheBodyNames(t *testing.T) {
 }
 
 func TestTheEngineersOwnRequestCannotWriteANote(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	rec := r.do("POST", "/api/chat/notes", `{"text":"x"}`, "")
 	if rec.Code != http.StatusForbidden {
@@ -117,6 +120,7 @@ func TestTheEngineersOwnRequestCannotWriteANote(t *testing.T) {
 }
 
 func TestABadNoteIsRefusedAndNothingIsWritten(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	for _, body := range []string{`not json`, `{}`, `{"text":""}`, `{"text":"  \n"}`, `{"text":"` + strings.Repeat("x", 501) + `"}`} {
 		if rec := r.do("POST", "/api/chat/notes", body, "home"); rec.Code < 400 || rec.Code >= 500 || rec.Code == http.StatusForbidden || rec.Code == http.StatusNotFound {
@@ -129,6 +133,7 @@ func TestABadNoteIsRefusedAndNothingIsWritten(t *testing.T) {
 }
 
 func TestTheThirtyFirstNoteIsRefusedWithAMessageThatPointsAtPreferences(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	for i := range 30 {
 		if rec := r.do("POST", "/api/chat/notes", `{"text":"note `+strings.Repeat("n", i)+`"}`, "home"); rec.Code != http.StatusCreated {
@@ -150,6 +155,7 @@ func TestTheThirtyFirstNoteIsRefusedWithAMessageThatPointsAtPreferences(t *testi
 }
 
 func TestListingNotesForAFleetWithNoLedgerGivesAnEmptyList(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	rec := r.do("GET", "/api/chat/home/notes", "", "")
 	if rec.Code != 200 || !strings.Contains(strings.ReplaceAll(rec.Body.String(), " ", ""), `"notes":[]`) {
@@ -158,6 +164,7 @@ func TestListingNotesForAFleetWithNoLedgerGivesAnEmptyList(t *testing.T) {
 }
 
 func TestNotesStayListableWhileTheFleetsChatIsOff(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	if err := os.MkdirAll(filepath.Join(r.home, "chat", "off"), 0o700); err != nil {
 		t.Fatal(err)
@@ -172,6 +179,7 @@ func TestNotesStayListableWhileTheFleetsChatIsOff(t *testing.T) {
 }
 
 func TestListingNotesRefusesAnUnknownFleetOrAKeyThatIsNotOne(t *testing.T) {
+	t.Parallel()
 	r := newNotesRig(t)
 	for _, fleet := range []string{"nowhere", "bad.key", "a%20b"} {
 		if rec := r.do("GET", "/api/chat/"+fleet+"/notes", "", ""); rec.Code != http.StatusNotFound || !strings.HasPrefix(rec.Body.String(), "{") {

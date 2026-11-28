@@ -15,6 +15,7 @@ func routineKey(id string) func(*launcher.Request) {
 }
 
 func TestASecondLaunchOfARoutineWhileItsShipIsListedIsRefusedNamingTheShip(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, routineKey("r1"))
 	r.wantHeld(t, routineKey("r1"), first)
@@ -24,6 +25,7 @@ func TestASecondLaunchOfARoutineWhileItsShipIsListedIsRefusedNamingTheShip(t *te
 }
 
 func TestAShipThatHoldsARoutineKeyIsFoundByIt(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, routineKey("r1"))
 	waitUntil(t, "the ship listed with its routine key", func() bool { _, ok := r.s.Holder("routine:r1"); return ok })
@@ -37,6 +39,7 @@ func TestAShipThatHoldsARoutineKeyIsFoundByIt(t *testing.T) {
 }
 
 func TestTheLaunchedOutcomePointsAtItsTriggerRecord(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	got := r.mustLaunch(t, func(q *launcher.Request) { q.RoutineKey, q.TriggerID = "routine:r1", "trig-7" })
 	var rec []map[string]any
@@ -48,6 +51,7 @@ func TestTheLaunchedOutcomePointsAtItsTriggerRecord(t *testing.T) {
 }
 
 func TestARoutineLaunchBeforeShipsAreKnownIsAWaitNotARefusal(t *testing.T) {
+	t.Parallel()
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
 		Launcher: &launcher.Launcher{Config: func() *config.Config { return &config.Config{} }},

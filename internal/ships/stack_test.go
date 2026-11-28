@@ -29,6 +29,7 @@ func (f *mooredFixture) getStack(session string) *httptest.ResponseRecorder {
 }
 
 func TestStackLinkPassesGitHubsNumbersBottomToTopWhateverOrderTheShipRecordedThem(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	chainedSevenNine(g)
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -57,6 +58,7 @@ func TestStackLinkPassesGitHubsNumbersBottomToTopWhateverOrderTheShipRecordedThe
 }
 
 func TestStackLinkThatRunsPastItsLimitAnswers504AndAsksForAPoll(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{linkErr: moor.ErrMergeTimeout}
 	chainedSevenNine(g)
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -74,6 +76,7 @@ func TestStackLinkThatRunsPastItsLimitAnswers504AndAsksForAPoll(t *testing.T) {
 }
 
 func TestStackLinkThatGhRefusesAnswers502WithGhsMessage(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{linkErr: errNoStack}
 	chainedSevenNine(g)
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -86,6 +89,7 @@ func TestStackLinkThatGhRefusesAnswers502WithGhsMessage(t *testing.T) {
 }
 
 func TestStackOfAFleetWithNoGitHubSourceIsRefused(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, map[string]*pollGitHub{})
 	session := f.moor(t, "Nelson", "work", prSeven, prNine)
 
@@ -98,6 +102,7 @@ func TestStackOfAFleetWithNoGitHubSourceIsRefused(t *testing.T) {
 }
 
 func TestStackOfAnUnknownShipIsNotFound(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, map[string]*pollGitHub{"work": {}})
 	if rec := f.getStack("nobody"); rec.Code != http.StatusNotFound {
 		t.Errorf("GET stack = %d %s, want 404", rec.Code, rec.Body)
@@ -108,6 +113,7 @@ func TestStackOfAnUnknownShipIsNotFound(t *testing.T) {
 }
 
 func TestStackOfAShipWhoseDetailReadFailsAnswers502(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{detailErr: errNoStack}
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
 	session := f.moor(t, "Nelson", "work", prSeven, prNine)
@@ -120,6 +126,7 @@ func TestStackOfAShipWhoseDetailReadFailsAnswers502(t *testing.T) {
 }
 
 func TestStackLinkRefusesPRsOfTwoRepositoriesAndRunsNoLink(t *testing.T) {
+	t.Parallel()
 	const other = "https://github.com/acme/other/pull/9"
 	g := &pollGitHub{detail: map[string]moor.Detail{
 		prSeven: {Number: 7, State: "OPEN", Head: "b7", Base: "main", DefaultBranch: "main"},
@@ -138,6 +145,7 @@ func TestStackLinkRefusesPRsOfTwoRepositoriesAndRunsNoLink(t *testing.T) {
 }
 
 func TestStackLinkOfAWakingShipIsRefusedAndRunsNoLink(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	chainedSevenNine(g)
 	f := mooredService(t, map[string]*pollGitHub{"work": g})

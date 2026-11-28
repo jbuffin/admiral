@@ -96,6 +96,7 @@ func (g guardRun) read(t *testing.T, name string) string {
 }
 
 func TestGuardProbePassesOnlyWithTheDenialRecordAndNoSentinel(t *testing.T) {
+	t.Parallel()
 	g := runGuard(t, "pass", 0, nil)
 	l := g.guard(t)
 	if l.Status != capabilities.Passed || l.Detail == "" {
@@ -107,6 +108,7 @@ func TestGuardProbePassesOnlyWithTheDenialRecordAndNoSentinel(t *testing.T) {
 }
 
 func TestGuardProbeFailuresEachSayWhy(t *testing.T) {
+	t.Parallel()
 	details := map[string]string{}
 	want := map[string]string{
 		"skip-hook-says-denied": "without running the guard hook",
@@ -145,6 +147,7 @@ func TestGuardProbeFailuresEachSayWhy(t *testing.T) {
 }
 
 func TestGuardProbeTimesOutAsAFailureAndKillsTheHarness(t *testing.T) {
+	t.Parallel()
 	g := runGuard(t, "hang", 1500*time.Millisecond, nil)
 	l := g.guard(t)
 	if l.Status != capabilities.Failed || l.Detail == "" {
@@ -156,6 +159,7 @@ func TestGuardProbeTimesOutAsAFailureAndKillsTheHarness(t *testing.T) {
 }
 
 func TestGuardProbeRunsTheHarnessHeadlessOnTheCheapestModelWithBashAllowed(t *testing.T) {
+	t.Parallel()
 	g := runGuard(t, "pass", 0, nil)
 	g.guard(t)
 	argv := strings.Split(strings.TrimSuffix(g.read(t, "argv"), "\x00"), "\x00")
@@ -228,6 +232,7 @@ func TestGuardProbeEnvIsScrubbedAndAutopilotIsOurs(t *testing.T) {
 }
 
 func TestGuardProbeWorksOnAHomeNoServerEverStarted(t *testing.T) {
+	t.Parallel()
 	g := runGuard(t, "pass", 0, nil)
 	g.guard(t)
 	if _, err := os.Stat(g.home); err != nil {
@@ -258,6 +263,7 @@ func TestGuardProbeWorksOnAHomeNoServerEverStarted(t *testing.T) {
 }
 
 func TestGuardProbeUsesAnEmptyThrowawayDirectoryAndLeavesNothingBehind(t *testing.T) {
+	t.Parallel()
 	g := runGuard(t, "pass", 0, nil)
 	g.guard(t)
 	cwd := strings.TrimSpace(g.read(t, "cwd"))
@@ -280,6 +286,7 @@ func TestGuardProbeUsesAnEmptyThrowawayDirectoryAndLeavesNothingBehind(t *testin
 }
 
 func TestGuardProbeDoesNotRunForOtherHarnesses(t *testing.T) {
+	t.Parallel()
 	exe := filepath.Join(t.TempDir(), "codex")
 	if err := os.WriteFile(exe, []byte(guardHarness), 0o755); err != nil {
 		t.Fatal(err)
@@ -300,6 +307,7 @@ func TestGuardProbeDoesNotRunForOtherHarnesses(t *testing.T) {
 }
 
 func TestGuardProbeFailsNamingAFleetArgThatWouldDisableTheHook(t *testing.T) {
+	t.Parallel()
 	exe := filepath.Join(t.TempDir(), "claude")
 	if err := os.WriteFile(exe, []byte(guardHarness), 0o755); err != nil {
 		t.Fatal(err)
@@ -321,6 +329,7 @@ func TestGuardProbeFailsNamingAFleetArgThatWouldDisableTheHook(t *testing.T) {
 }
 
 func TestGuardProbeSeenWithoutSentinelOrDenialIsADifferentCommand(t *testing.T) {
+	t.Parallel()
 	l := runGuard(t, "different-command-failed", 0, nil).guard(t)
 	if l.Status != capabilities.Failed || !strings.Contains(l.Detail, "different command") {
 		t.Errorf("line = %+v, want failed as a different command", l)

@@ -18,6 +18,7 @@ func launchedShip(state string, activity time.Time) sessionhost.Session {
 }
 
 func TestShipWithNoHookSinceLaunchNeedsYouAsNotStartedAndTheOutcomeSaysSo(t *testing.T) {
+	t.Parallel()
 	sess := launchedShip("", time.Time{})
 
 	if sh := FromSession(sess, insideTheWait()); sh.Status != StatusUnderway {
@@ -36,6 +37,7 @@ func TestShipWithNoHookSinceLaunchNeedsYouAsNotStartedAndTheOutcomeSaysSo(t *tes
 
 // A dock launch with no text runs SessionStart and then waits at its prompt with no state: it has started.
 func TestShipThatRanSessionStartButHasNoStateStaysIdle(t *testing.T) {
+	t.Parallel()
 	sess := launchedShip("", launchedAt.Add(2*time.Second))
 	sh := FromSession(sess, pastTheWait())
 	if sh.Status != StatusNeedsYou || sh.Reason != "idle" {
@@ -44,6 +46,7 @@ func TestShipThatRanSessionStartButHasNoStateStaysIdle(t *testing.T) {
 }
 
 func TestAStampInTheSameSecondAsTheLaunchCountsAsStarted(t *testing.T) {
+	t.Parallel()
 	sh := FromSession(launchedShip("", launchedAt), pastTheWait())
 	if sh.Status != StatusNeedsYou || sh.Reason != "idle" {
 		t.Errorf("status %q reason %q, want needs_you idle", sh.Status, sh.Reason)
@@ -51,6 +54,7 @@ func TestAStampInTheSameSecondAsTheLaunchCountsAsStarted(t *testing.T) {
 }
 
 func TestAStartedStampFromAnEarlierLaunchDoesNotCount(t *testing.T) {
+	t.Parallel()
 	sess := launchedShip("", launchedAt.Add(-time.Hour))
 	sh := FromSession(sess, pastTheWait())
 	if sh.Status != StatusNeedsYou || sh.Reason != "not_started" {
@@ -59,6 +63,7 @@ func TestAStartedStampFromAnEarlierLaunchDoesNotCount(t *testing.T) {
 }
 
 func TestTheFirstStateWritingHookClearsNotStarted(t *testing.T) {
+	t.Parallel()
 	if sh := FromSession(launchedShip("", time.Time{}), pastTheWait()); sh.Reason != "not_started" {
 		t.Fatalf("before the hook: reason %q, want not_started", sh.Reason)
 	}
@@ -71,6 +76,7 @@ func TestTheFirstStateWritingHookClearsNotStarted(t *testing.T) {
 
 // Answering "No, exit" at the trust prompt kills the pane.
 func TestNotStartedShipThatExitsAnchorsAndItsBoatAnchors(t *testing.T) {
+	t.Parallel()
 	sess := launchedShip("", time.Time{})
 	sess.PaneDead, sess.ExitStatus = true, 1
 	if sh := FromSession(sess, pastTheWait()); sh.Status != StatusAnchored {
@@ -88,6 +94,7 @@ func liveBoat(activity time.Time) sessionhost.Crew {
 }
 
 func TestCrewBoatWithNoHookPastTheWaitNeedsYouAsNotStartedAndLiftsItsShip(t *testing.T) {
+	t.Parallel()
 	boats := crewBoats([]sessionhost.Crew{liveBoat(time.Time{})}, pastTheWait())
 	if boats[0].Status != sessionhost.CrewNeedsYou || boats[0].Reason != "not_started" {
 		t.Fatalf("boat status %q reason %q, want needs_you not_started", boats[0].Status, boats[0].Reason)
@@ -103,6 +110,7 @@ func TestCrewBoatWithNoHookPastTheWaitNeedsYouAsNotStartedAndLiftsItsShip(t *tes
 }
 
 func TestCrewBoatThatHasHadAHookIsNotNotStarted(t *testing.T) {
+	t.Parallel()
 	boats := crewBoats([]sessionhost.Crew{liveBoat(launchedAt.Add(2 * time.Second))}, pastTheWait())
 	if boats[0].Status != sessionhost.CrewUnderway || boats[0].Reason != "" {
 		t.Errorf("boat status %q reason %q, want underway and no reason", boats[0].Status, boats[0].Reason)

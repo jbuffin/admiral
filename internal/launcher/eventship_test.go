@@ -32,6 +32,7 @@ func (p *pinRig) mustEventShip(t *testing.T) (*Launched, *fakeCheckouts, []strin
 }
 
 func TestAnEventShipWorksInItsOwnCloneAndNotInTheRequestsDir(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	out, fc, _, env := p.mustEventShip(t)
 	if len(fc.calls) != 1 {
@@ -46,6 +47,7 @@ func TestAnEventShipWorksInItsOwnCloneAndNotInTheRequestsDir(t *testing.T) {
 }
 
 func TestAnEventShipGetsTheEventInItsUntrustedFileByteForByteAndNeverInItsArgs(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, fc, argv, _ := p.mustEventShip(t)
 	got, err := os.ReadFile(filepath.Join(fc.madeFor, ".admiral", "untrusted", "event.md"))
@@ -65,6 +67,7 @@ func TestAnEventShipGetsTheEventInItsUntrustedFileByteForByteAndNeverInItsArgs(t
 }
 
 func TestAnEventShipsPromptIsTheTemplateThenTheEventFileLineThenTheGuidance(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	_, _, argv, _ := p.mustEventShip(t)
 	want := "Triage the new issue.\n\n" + eventFileLine + "\n\n## Standing orders\n\n" + guidanceText
@@ -74,6 +77,7 @@ func TestAnEventShipsPromptIsTheTemplateThenTheEventFileLineThenTheGuidance(t *t
 }
 
 func TestAnEventShipIsANormalShipWithNoRestrictedProfileAndItsFleetsEnv(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, fleetTokens())
 	out, fc, argv, env := p.mustEventShip(t)
 	if fc.madeFor == "" {
@@ -99,6 +103,7 @@ func TestAnEventShipIsANormalShipWithNoRestrictedProfileAndItsFleetsEnv(t *testi
 }
 
 func TestAnEventShipWhoseCloneFailsStartsNoShip(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.eventShip()
 	fc.err = errors.New("no room for a checkout")
@@ -115,6 +120,7 @@ func TestAnEventShipWhoseCloneFailsStartsNoShip(t *testing.T) {
 }
 
 func TestALateFailureOfAnEventShipRemovesItsClone(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.eventShip()
 	fc.t = t
@@ -131,6 +137,7 @@ func TestALateFailureOfAnEventShipRemovesItsClone(t *testing.T) {
 }
 
 func TestARelaunchOfAnEventShipKeepsItsCloneAndItsEventFile(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.eventShip()
 	fc.t = t
@@ -160,6 +167,7 @@ func TestARelaunchOfAnEventShipKeepsItsCloneAndItsEventFile(t *testing.T) {
 }
 
 func TestAnEventShipInARealCloneIsOnItsOwnBranchWithAdmiralExcludedFromGit(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	commitRepo(t, p.work)
 	p.l.Checkouts = GitCheckouts{}
@@ -193,6 +201,7 @@ func TestAnEventShipInARealCloneIsOnItsOwnBranchWithAdmiralExcludedFromGit(t *te
 const eventPR = "https://github.com/acme/api/pull/7"
 
 func TestAnEventShipsPromptIsTheSkillThenTheEventURLThenTheTextThenTheEventFileLineThenTheGuidance(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ name, skill, template, want string }{
 		{"commodore with text", "commodore", "Triage the new issue.", "/commodore " + eventPR + "\n\nTriage the new issue."},
 		{"commodore with no text", "commodore", "", "/commodore " + eventPR},
@@ -218,6 +227,7 @@ func TestAnEventShipsPromptIsTheSkillThenTheEventURLThenTheTextThenTheEventFileL
 }
 
 func TestAnEventShipWithAnEventURLWritesItAsTheShipsURLOption(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.eventShip()
 	fc.t = t
@@ -232,6 +242,7 @@ func TestAnEventShipWithAnEventURLWritesItAsTheShipsURLOption(t *testing.T) {
 }
 
 func TestAnEventShipAskedOnlyForALinkIsTitledByIt(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	req, fc := p.eventShip()
 	fc.t = t

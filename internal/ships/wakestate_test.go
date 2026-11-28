@@ -25,6 +25,7 @@ func seedWake(t *testing.T, f *mooredFixture, name string) {
 }
 
 func TestAWakeKeepsTheShipsWakeState(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "OPEN"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -41,6 +42,7 @@ func TestAWakeKeepsTheShipsWakeState(t *testing.T) {
 }
 
 func TestEndingAMooringForGoodRemovesTheWakeState(t *testing.T) {
+	t.Parallel()
 	t.Run("dismiss", func(t *testing.T) {
 		g := &pollGitHub{}
 		g.set(prSeven, moor.Status{State: "OPEN"})

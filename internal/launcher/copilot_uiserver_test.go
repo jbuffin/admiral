@@ -43,6 +43,7 @@ func gateRuns(t *testing.T, log string) []string {
 }
 
 func TestUIServerGateFollowsWhatTheBinaryAccepts(t *testing.T) {
+	t.Parallel()
 	bin, log := fakeCopilot(t, t.TempDir(), "GitHub Copilot CLI 1.0.109", 0)
 	if !uiServerSupported(bin) {
 		t.Fatal("a binary that exits 0 for --ui-server --port N --version was refused")
@@ -62,6 +63,7 @@ func TestUIServerGateFollowsWhatTheBinaryAccepts(t *testing.T) {
 }
 
 func TestUIServerGateAsksOncePerBinaryAndVersion(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	bin, log := fakeCopilot(t, dir, "GitHub Copilot CLI 1.0.109", 0)
 	for i := 0; i < 3; i++ {
@@ -80,6 +82,7 @@ func TestUIServerGateAsksOncePerBinaryAndVersion(t *testing.T) {
 }
 
 func TestUIServerFlags(t *testing.T) {
+	t.Parallel()
 	const port = 54321
 	for _, c := range []struct {
 		name    string

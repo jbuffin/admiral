@@ -26,6 +26,7 @@ func (p *pinRig) allowGates() {
 }
 
 func TestACrewBoatInAScoutSessionKeepsTheScoutEnvAfterTheSessionDropsIt(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	scout, err := p.l.Launch(p.scoutRequest(p.work))
 	if err != nil {
@@ -45,6 +46,7 @@ func TestACrewBoatInAScoutSessionKeepsTheScoutEnvAfterTheSessionDropsIt(t *testi
 }
 
 func TestACrewLaunchWithNoScoutInTheCallersEnvIntoAScoutSessionStillHitsTheScoutGate(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	scout, err := p.l.Launch(p.scoutRequest(p.work))
 	if err != nil {
@@ -67,6 +69,7 @@ func TestACrewLaunchWithNoScoutInTheCallersEnvIntoAScoutSessionStillHitsTheScout
 }
 
 func TestACrewBoatInAShipThatIsNotAScoutGetsNoScoutEnv(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	ship := p.ship(t)
 	if err := p.l.LaunchCrew(CrewRequest{Session: ship.Session, Name: "boat", Harness: "claude", Dir: p.work, Prompt: "go"}); err != nil {

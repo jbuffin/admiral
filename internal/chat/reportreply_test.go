@@ -36,7 +36,7 @@ type replyRig struct {
 func newReplyRig(t *testing.T) *replyRig {
 	t.Helper()
 	r := &replyRig{turnRig: newTurnRig(t, "claude")}
-	r.path = filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", "p", claudeSession+".jsonl")
+	r.path = filepath.Join(r.fc.loginDirFor("claude"), "projects", "p", claudeSession+".jsonl")
 	r.svc.OnReply = func(_ string, rep ReportReply) {
 		r.mu.Lock()
 		r.got = append(r.got, rep)
@@ -119,6 +119,7 @@ func (r *replyRig) wantThread(th map[string]string, id, want, what string) {
 }
 
 func TestThePastedReportTurnAndTheRepliesToItCarryTheShipCardId(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	turn := r.sendReport()
 	first := r.say("assistant", "Calm Otter is done: [PR 7](https://github.com/acme/api/pull/7)")
@@ -131,6 +132,7 @@ func TestThePastedReportTurnAndTheRepliesToItCarryTheShipCardId(t *testing.T) {
 }
 
 func TestANoticeInsideTheReportTurnIsNotMarkedAndDoesNotCutTheThread(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	r.sendReport()
 	first := r.say("assistant", "Checking the PR")
@@ -143,6 +145,7 @@ func TestANoticeInsideTheReportTurnIsNotMarkedAndDoesNotCutTheThread(t *testing.
 }
 
 func TestAnEngineersMessageThatStartsWithReportIsNeverThreaded(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	typed := r.say("user", "[Report: Calm Otter] please write me a report")
 	reply := r.say("assistant", "Sure, here it is")
@@ -158,6 +161,7 @@ func TestAnEngineersMessageThatStartsWithReportIsNeverThreaded(t *testing.T) {
 }
 
 func TestARereadTranscriptAddsNoDuplicatesAndChangesNoMarksAcrossARestart(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	turn := r.sendReport()
 	reply := r.say("assistant", "Calm Otter is done")
@@ -187,6 +191,7 @@ func TestARereadTranscriptAddsNoDuplicatesAndChangesNoMarksAcrossARestart(t *tes
 }
 
 func TestTheThreadIsServedOnTheSessionEndpointAndInTheChatMessage(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	turn := r.sendReport()
 	r.say("assistant", "Calm Otter is done")
@@ -225,6 +230,7 @@ func (r *replyRig) repliesWithin(window time.Duration) []ReportReply {
 }
 
 func TestATurnThatEndsWithAReplyHandsItOverOnceAndReadsTheTranscriptItself(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	r.sendReport()
 	first := r.say("assistant", "Calm Otter is done: [PR 7](https://github.com/acme/api/pull/7)")
@@ -243,6 +249,7 @@ func TestATurnThatEndsWithAReplyHandsItOverOnceAndReadsTheTranscriptItself(t *te
 }
 
 func TestATurnThatEndsWithNoReplyHandsNothingOver(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	turn := r.sendReport()
 	r.turnEnds()
@@ -251,6 +258,7 @@ func TestATurnThatEndsWithNoReplyHandsNothingOver(t *testing.T) {
 }
 
 func TestAnEngineersAnswerAfterTheTurnIsNotTheReportsReply(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	turn := r.sendReport()
 	r.turnEnds()
@@ -265,6 +273,7 @@ func TestAnEngineersAnswerAfterTheTurnIsNotTheReportsReply(t *testing.T) {
 }
 
 func TestADroppedTurnHandsNothingOverEvenWithAReplyLogged(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	r.sendReport()
 	reply := r.say("assistant", "Calm Otter is done")
@@ -274,6 +283,7 @@ func TestADroppedTurnHandsNothingOverEvenWithAReplyLogged(t *testing.T) {
 }
 
 func TestARepeatedEndHandsOverOnceEvenAfterTheQueueFileIsReloaded(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	r.sendReport()
 	r.say("assistant", "Calm Otter is done")
@@ -292,6 +302,7 @@ func TestARepeatedEndHandsOverOnceEvenAfterTheQueueFileIsReloaded(t *testing.T) 
 }
 
 func TestAnEngineersMessageDuringTheTurnEndsTheThread(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	r.sendReport()
 	before := r.say("assistant", "Checking the PR")
@@ -304,6 +315,7 @@ func TestAnEngineersMessageDuringTheTurnEndsTheThread(t *testing.T) {
 }
 
 func TestAReplyLoggedAfterTheTurnEndsIsThreadedButPushesNothing(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	turn := r.sendReport()
 	r.turnEnds()
@@ -366,6 +378,7 @@ func (r *replyRig) socketThreads() map[string]string {
 const aNotice = "<task-notification>\n<summary>subagent finished</summary>\n</task-notification>"
 
 func TestANoticeAfterTheTurnEndsClosesTheThread(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	r.sendReport()
 	reply := r.say("assistant", "Calm Otter is done")
@@ -380,6 +393,7 @@ func TestANoticeAfterTheTurnEndsClosesTheThread(t *testing.T) {
 }
 
 func TestANoticeThatStartedTheNextTurnClosesTheThreadEvenWhenNothingReadItBeforeTheEnd(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	r.sendReport()
 	reply := r.say("assistant", "Calm Otter is done")
@@ -394,6 +408,7 @@ func TestANoticeThatStartedTheNextTurnClosesTheThreadEvenWhenNothingReadItBefore
 }
 
 func TestOnlyTheTurnsOwnCardLineAfterThePasteIsTakenForTheTurn(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	r.enqueue(replyCard, replyTurn)
 	r.tickUntil("the report turn typed", r.typedOnce("REPORT-TURN-TEXT"))
@@ -415,6 +430,7 @@ func TestOnlyTheTurnsOwnCardLineAfterThePasteIsTakenForTheTurn(t *testing.T) {
 }
 
 func TestARestartBetweenThePasteAndTheRecordStillMarksTheTurnAndPushesNothing(t *testing.T) {
+	t.Parallel()
 	r := newReplyRig(t)
 	r.enqueue(replyCard, replyTurn)
 	r.tickUntil("the report turn typed", r.typedOnce("REPORT-TURN-TEXT"))

@@ -11,6 +11,7 @@ import (
 )
 
 func TestLaunchRefusesADirectoryNotInTheFleetsList(t *testing.T) {
+	t.Parallel()
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	work := filepath.Join(root, "work")
 	mk := func(p string, checkout bool) string {
@@ -54,6 +55,7 @@ func TestLaunchRefusesADirectoryNotInTheFleetsList(t *testing.T) {
 }
 
 func TestAFleetWithCommodoreAsAHarnessPluginLaunchesItByTheHarnessMark(t *testing.T) {
+	t.Parallel()
 	put := func(path, body string) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)

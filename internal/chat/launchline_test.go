@@ -40,6 +40,7 @@ func launchLinesIn(t *testing.T, r *briefRig, fleet string) []launchLineView {
 }
 
 func TestALaunchLineCarriesTheShipItsKindTheReasonAndTheLaunchText(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	line := ships.LaunchLine{Ship: "calm-otter", Name: "Calm Otter", FirstLaunched: "2026-11-17T10:00:00Z", Kind: "quick_ship", Reason: "to read the AWS logs", Text: "Read the logs and fix the 500."}
 	if err := r.PostLaunchLine("work", line); err != nil {
@@ -56,6 +57,7 @@ func TestALaunchLineCarriesTheShipItsKindTheReasonAndTheLaunchText(t *testing.T)
 }
 
 func TestALaunchLinePostsInItsOwnFleetAndNoOther(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if err := r.PostLaunchLine("work", ships.LaunchLine{Ship: "calm-otter", Kind: "scout", Reason: "to look", Text: "look"}); err != nil {
 		t.Fatalf("PostLaunchLine = %v", err)
@@ -82,6 +84,7 @@ func rawLaunchLine(t *testing.T, r *briefRig, fleet string) map[string]any {
 }
 
 func TestALaunchLineCarriesTheShipsTitleBesideItsName(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	line := ships.LaunchLine{Ship: "calm-otter", Name: "Calm Otter", Title: "Fix the login redirect", FirstLaunched: "2026-11-17T10:00:00Z", Kind: "scout", Reason: "to look", Text: "look"}
 	if err := r.PostLaunchLine("work", line); err != nil {
@@ -93,6 +96,7 @@ func TestALaunchLineCarriesTheShipsTitleBesideItsName(t *testing.T) {
 }
 
 func TestALaunchLineWithNoTitleHasNoTitleKey(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	line := ships.LaunchLine{Ship: "calm-otter", Name: "Calm Otter", FirstLaunched: "2026-11-17T10:00:00Z", Kind: "scout", Reason: "to look", Text: "look"}
 	if err := r.PostLaunchLine("work", line); err != nil {

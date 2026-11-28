@@ -11,6 +11,7 @@ import (
 )
 
 func TestPromptForms(t *testing.T) {
+	t.Parallel()
 	skill := func(name string) string {
 		t.Helper()
 		n, err := skillName(Skill{Kind: "skill", Name: name})
@@ -44,6 +45,7 @@ func TestPromptForms(t *testing.T) {
 }
 
 func TestLaunchRefusesWhatTmuxCannotCarry(t *testing.T) {
+	t.Parallel()
 	work := t.TempDir()
 	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Name: "Work", SearchRoots: []string{work},
 		Harnesses: []config.Harness{{Name: "claude", Executable: "/bin/sh"}}}}}

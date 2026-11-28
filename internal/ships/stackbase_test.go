@@ -117,6 +117,7 @@ func (r *stackBaseRig) poll(t *testing.T) Ship {
 }
 
 func TestAStackThatConflictsWithItsBaseAsAWholeIsNotReadyWhileEachLayerStaysReady(t *testing.T) {
+	t.Parallel()
 	for name, details := range map[string]map[string]moor.Detail{
 		"a GitHub stack":      stackedDetails(3),
 		"a chain of branches": chainedDetails(3),
@@ -143,6 +144,7 @@ func TestAStackThatConflictsWithItsBaseAsAWholeIsNotReadyWhileEachLayerStaysRead
 }
 
 func TestAStackThatMergesCleanlyIntoItsBaseStaysReady(t *testing.T) {
+	t.Parallel()
 	r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
 	r.ck.set(false, nil)
 
@@ -157,6 +159,7 @@ func TestAStackThatMergesCleanlyIntoItsBaseStaysReady(t *testing.T) {
 }
 
 func TestAStackBaseCheckThatCannotRunChangesNothing(t *testing.T) {
+	t.Parallel()
 	t.Run("the checker fails", func(t *testing.T) {
 		r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
 		r.ck.set(false, errors.New("no gh auth"))
@@ -182,6 +185,7 @@ func TestAStackBaseCheckThatCannotRunChangesNothing(t *testing.T) {
 }
 
 func TestTheStackBaseCheckRunsOnlyForAStackedOrChainedShipWhoseOpenLayersAreAllMergeable(t *testing.T) {
+	t.Parallel()
 	blockedOnReview := readyAt("top-1")
 	blockedOnReview.Review, blockedOnReview.MergeState = "REVIEW_REQUIRED", "BLOCKED"
 	behind := readyAt("h9")
@@ -220,6 +224,7 @@ func TestTheStackBaseCheckRunsOnlyForAStackedOrChainedShipWhoseOpenLayersAreAllM
 }
 
 func TestTheStackShapeIsReadOnceUntilALayersHeadMoves(t *testing.T) {
+	t.Parallel()
 	r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
 	r.poll(t)
 	first := len(r.g.detailLog())
@@ -244,6 +249,7 @@ func TestTheStackShapeIsReadOnceUntilALayersHeadMoves(t *testing.T) {
 }
 
 func TestMergeComesBackOnTheNextPollOnceTheConflictIsGone(t *testing.T) {
+	t.Parallel()
 	r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
 	if sh := r.poll(t); sh.StackReady {
 		t.Fatal("the premise fails: the conflicting stack is ready")
@@ -257,6 +263,7 @@ func TestMergeComesBackOnTheNextPollOnceTheConflictIsGone(t *testing.T) {
 }
 
 func TestAStackWhoseLowerLayerMergedIsCheckedFromItsOpenLayers(t *testing.T) {
+	t.Parallel()
 	merged := readyAt("h7")
 	merged.State = "MERGED"
 	details := stackedDetails(3)
@@ -277,6 +284,7 @@ func TestAStackWhoseLowerLayerMergedIsCheckedFromItsOpenLayers(t *testing.T) {
 }
 
 func TestOneOpenLayerOnTopOfMergedOnesIsLeftToGitHub(t *testing.T) {
+	t.Parallel()
 	merged := readyAt("h7")
 	merged.State = "MERGED"
 	r := newStackBaseRig(t, stackedDetails(3), merged, merged, readyAt("top-1"))
@@ -292,6 +300,7 @@ func TestOneOpenLayerOnTopOfMergedOnesIsLeftToGitHub(t *testing.T) {
 }
 
 func TestAReviewedShipsStackIsNotChecked(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{detail: stackedDetails(2)}
 	g.set(layerURL(7), readyAt("h7"))
 	g.set(layerURL(9), readyAt("top-1"))
@@ -308,6 +317,7 @@ func TestAReviewedShipsStackIsNotChecked(t *testing.T) {
 }
 
 func TestAMooredShipServesTheStackConflictOnItsTopPRWithoutAFixOffer(t *testing.T) {
+	t.Parallel()
 	r := newStackBaseRig(t, stackedDetails(3), readyAt("h7"), readyAt("h9"), readyAt("top-1"))
 
 	sh := r.poll(t)

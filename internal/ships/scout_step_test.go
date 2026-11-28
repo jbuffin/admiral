@@ -33,6 +33,7 @@ func scoutRig(t *testing.T, scout bool) *liveRig {
 }
 
 func TestAScoutIsStoppedWhenItsTurnEndsAndTheLogReadsItSailed(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, true)
 	r.turn(t, "working", "")
 	r.turn(t, "needs_you", "stop")
@@ -49,23 +50,26 @@ func TestAScoutIsStoppedWhenItsTurnEndsAndTheLogReadsItSailed(t *testing.T) {
 }
 
 func TestAScoutIsLeftAloneAtAQuestionOrAPermission(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, true)
 	r.turn(t, "working", "")
 	r.turn(t, "needs_you", "permission:Bash")
-	holdsFor(t, 1500*time.Millisecond, "the scout was stopped at a permission", func() bool { return r.live(t) })
+	holdsFor(t, settleHold(), "the scout was stopped at a permission", func() bool { return r.live(t) })
 }
 
 func TestAPlainAutopilotShipIsNotStoppedAtItsStop(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, false)
 	r.turn(t, "working", "")
 	r.turn(t, "needs_you", "stop")
-	holdsFor(t, 1500*time.Millisecond, "an autopilot ship that is not a scout was stopped", func() bool { return r.live(t) })
+	holdsFor(t, settleHold(), "an autopilot ship that is not a scout was stopped", func() bool { return r.live(t) })
 	if got := outcomeLines(t, r.home, "saltpaw", "stopped"); len(got) != 0 {
 		t.Errorf("stopped records = %v, want none", got)
 	}
 }
 
 func TestAScoutWhoseReportNamesAnOpenPRIsStoppedNotMoored(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, true)
 	r.turn(t, "working", "")
 	r.writeReport(t, "done", livePR7)
@@ -81,6 +85,7 @@ func TestAScoutWhoseReportNamesAnOpenPRIsStoppedNotMoored(t *testing.T) {
 }
 
 func TestAShipsJSONSaysWhenItIsAScout(t *testing.T) {
+	t.Parallel()
 	for _, scout := range []bool{true, false} {
 		r := scoutRig(t, scout)
 		_, raw, ok := r.wire(t)
@@ -98,6 +103,7 @@ func TestAShipsJSONSaysWhenItIsAScout(t *testing.T) {
 }
 
 func TestHandToCommodoreIsRefusedOnAScout(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, true)
 	r.turn(t, "working", "")
 	before := r.pane(t)

@@ -111,6 +111,7 @@ func cardIDOf(ship, result string) string {
 }
 
 func TestScoutsFromOneTurnQueueOneReportAfterTheLastEndsNamingAllOfThemUnderTheLastsCard(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", turnOne)})
 	g.observe(3*time.Minute, []ships.Ship{botScout("scout-b", turnOne)}, sailedOff("scout-a", 2*time.Minute)...)
@@ -133,6 +134,7 @@ func TestScoutsFromOneTurnQueueOneReportAfterTheLastEndsNamingAllOfThemUnderTheL
 }
 
 func TestAScoutThatEndedAndSettledBeforeItsSiblingWasLaunchedStillJoinsTheOneReport(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.turnOver = false
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne)})
@@ -147,6 +149,7 @@ func TestAScoutThatEndedAndSettledBeforeItsSiblingWasLaunchedStillJoinsTheOneRep
 }
 
 func TestAGroupWhoseScoutsAllEndedMidTurnReportsOnceWhenTheTurnEndsAndNotBefore(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.turnOver = false
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", turnOne)})
@@ -162,6 +165,7 @@ func TestAGroupWhoseScoutsAllEndedMidTurnReportsOnceWhenTheTurnEndsAndNotBefore(
 }
 
 func TestAScoutGroupWaitsForEveryScoutStillOut(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", turnOne), botScout("scout-c", turnOne)})
 	ends := join(sailedOff("scout-a", 2*time.Minute), sailedOff("scout-b", 3*time.Minute))
@@ -173,6 +177,7 @@ func TestAScoutGroupWaitsForEveryScoutStillOut(t *testing.T) {
 }
 
 func TestScoutsOfDifferentTurnsReportSeparately(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", "nonce-1"), botScout("scout-b", "nonce-2")})
 	g.observe(5*time.Minute, nil, join(sailedOff("scout-a", 2*time.Minute), sailedOff("scout-b", 3*time.Minute))...)
@@ -180,6 +185,7 @@ func TestScoutsOfDifferentTurnsReportSeparately(t *testing.T) {
 }
 
 func TestAScoutWithNoRecordedTurnReportsAloneAndASingleScoutOfATurnDoes(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", ""), botScout("scout-b", ""), botScout("scout-c", turnOne)})
 	g.observe(5*time.Minute, []ships.Ship{botScout("scout-b", "")}, join(sailedOff("scout-a", 2*time.Minute), sailedOff("scout-c", 3*time.Minute))...)
@@ -189,6 +195,7 @@ func TestAScoutWithNoRecordedTurnReportsAloneAndASingleScoutOfATurnDoes(t *testi
 }
 
 func TestAScoutsReportNeverWaitsOnAQuickShipFromTheSameTurnAndTheQuickShipKeepsItsOwnTurn(t *testing.T) {
+	t.Parallel()
 	quick := func(s ships.Ship) ships.Ship { s.PromptKey = turnOne; return s }
 	t.Run("the quick ship moors first", func(t *testing.T) {
 		g := newGrouping(t)
@@ -215,6 +222,7 @@ func TestAScoutsReportNeverWaitsOnAQuickShipFromTheSameTurnAndTheQuickShipKeepsI
 }
 
 func TestAScoutThatLeftNoFindingsEndsTheGroupAsFailedOnItsCardAndInTheTurn(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", turnOne)})
 	g.observe(5*time.Minute, nil, join(sailedOff("scout-a", 2*time.Minute), leftNothing("scout-b", 3*time.Minute))...)
@@ -223,6 +231,7 @@ func TestAScoutThatLeftNoFindingsEndsTheGroupAsFailedOnItsCardAndInTheTurn(t *te
 }
 
 func TestEveryEndOfTheLastScoutQueuesTheGroupsOneTurnWithItsCard(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		last   func(g *grouping)
 		result string
@@ -260,6 +269,7 @@ func TestEveryEndOfTheLastScoutQueuesTheGroupsOneTurnWithItsCard(t *testing.T) {
 }
 
 func TestAWokenScoutLeavesItsGroupAndNeverHoldsIt(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	woken := botScout("scout-b", turnOne)
 	woken.Launched, woken.Round = "2026-11-17T10:05:00Z", 1
@@ -269,6 +279,7 @@ func TestAWokenScoutLeavesItsGroupAndNeverHoldsIt(t *testing.T) {
 }
 
 func TestReplayingTheSameRecordsAndRestartingQueueNoSecondGroupTurn(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", turnOne)})
 	ends := join(sailedOff("scout-a", 2*time.Minute), sailedOff("scout-b", 3*time.Minute))
@@ -281,6 +292,7 @@ func TestReplayingTheSameRecordsAndRestartingQueueNoSecondGroupTurn(t *testing.T
 }
 
 func TestAGroupTurnThatFailsToQueueIsQueuedByTheNextPassAndOnceAfterThat(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne)})
 	g.scouts.fail = errors.New("the queue file is not writable")
@@ -298,6 +310,7 @@ func TestAGroupTurnThatFailsToQueueIsQueuedByTheNextPassAndOnceAfterThat(t *test
 const savedBeforeGroups = `{"Seeded":true,"Scouts":true,"Voyages":{"scout-old|2026-11-17T10:00:00Z":{"Ship":"scout-old","Name":"scout-old","Fleet":"work","Via":"admiralbot","SkillKind":"none","Scout":true,"Round":0,"Reported":false,"FirstLaunched":"2026-11-17T10:00:00Z","Done":{"sailed_off":true},"ScoutEndedAt":"2026-11-17T10:02:00Z","LastSeen":"2026-11-17T10:03:00Z"}}}`
 
 func TestAScoutCardSettledByAnOlderBuildQueuesNoGroupTurnOnTheFirstPassAfterTheUpgrade(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	if err := os.WriteFile(filepath.Join(g.r.home, "ship-cards.json"), []byte(savedBeforeGroups), 0o600); err != nil {
 		t.Fatal(err)
@@ -313,6 +326,7 @@ func TestAScoutCardSettledByAnOlderBuildQueuesNoGroupTurnOnTheFirstPassAfterTheU
 }
 
 func TestAScoutAnchoredAtTheSeedQueuesNoGroupTurnForThatFirstEvent(t *testing.T) {
+	t.Parallel()
 	x := newDetector(t)
 	log := &scoutLog{}
 	x.d.QueueScoutReports(log.report)
@@ -329,6 +343,7 @@ func TestAScoutAnchoredAtTheSeedQueuesNoGroupTurnForThatFirstEvent(t *testing.T)
 }
 
 func TestAScoutTheEngineerStoppedOrThatWasLostIsFailedWithoutFindingsAndSailedOffWithThem(t *testing.T) {
+	t.Parallel()
 	stopped := []ShipRecord{
 		{At: at(2 * time.Minute), Ship: "scout-a", Event: "ended"},
 		{At: at(2*time.Minute + time.Second), Ship: "scout-a", Event: "stopped"},
@@ -357,6 +372,7 @@ func TestAScoutTheEngineerStoppedOrThatWasLostIsFailedWithoutFindingsAndSailedOf
 }
 
 func TestAScoutStillInTheSnapshotIsNotLostAndAnchoredOneIsNotCardedAgainWhenItLeaves(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", turnOne)})
 	anchored := withStatus(botScout("scout-b", turnOne), ships.StatusAnchored)
@@ -372,6 +388,7 @@ func (g *grouping) hostState(lost bool, unreadable ...string) {
 }
 
 func TestAScoutMissingWhileTmuxIsLostIsNotLostAndItsRealEndPostsTheRightCard(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne)})
 	g.hostState(true)
@@ -388,6 +405,7 @@ func TestAScoutMissingWhileTmuxIsLostIsNotLostAndItsRealEndPostsTheRightCard(t *
 }
 
 func TestAScoutWhoseOptionsCouldNotBeReadIsNotLostWhileTmuxStillListsIt(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne)})
 	g.hostState(false, "scout-a")
@@ -398,6 +416,7 @@ func TestAScoutWhoseOptionsCouldNotBeReadIsNotLostWhileTmuxStillListsIt(t *testi
 }
 
 func TestAScoutKeepsTheEngineerTurnItWasFirstSeenInWhateverItsOptionLaterSays(t *testing.T) {
+	t.Parallel()
 	g := newGrouping(t)
 	g.observe(time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", turnOne)})
 	g.observe(2*time.Minute, []ships.Ship{botScout("scout-a", turnOne), botScout("scout-b", "nonce-9")})

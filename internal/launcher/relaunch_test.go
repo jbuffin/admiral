@@ -8,6 +8,7 @@ import (
 )
 
 func TestLaunchUnderAGivenNameTakesTheNameItsRecordReserves(t *testing.T) {
+	t.Parallel()
 	l, work, argv := recordingLauncher(t, "claude")
 	if err := moor.Write(l.Home, moor.Record{Name: "Saltpaw II", Session: "saltpaw-ii", Fleet: "work", Harness: "claude"}); err != nil {
 		t.Fatal(err)
@@ -29,6 +30,7 @@ func TestLaunchUnderAGivenNameTakesTheNameItsRecordReserves(t *testing.T) {
 }
 
 func TestLaunchUnderAGivenNameRefusesWhileThatSessionIsLive(t *testing.T) {
+	t.Parallel()
 	l, work, _ := recordingLauncher(t, "claude")
 	req := Request{Fleet: "work", Harness: "claude", Dir: work, Skill: Skill{Kind: "none"}, Name: "Saltpaw II", Session: "saltpaw-ii", Round: 1}
 	if _, err := l.Launch(req); err != nil {

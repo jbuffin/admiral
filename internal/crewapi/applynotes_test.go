@@ -11,6 +11,7 @@ import (
 )
 
 func TestApplyNotesRefusesAnAppendIntoAFullScopeAndWritesNothingForAnyNote(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	full := f.repoNotes("bosun", "acme/api", lines(30)...)
 	before := readFile(t, full)
@@ -31,6 +32,7 @@ func TestApplyNotesRefusesAnAppendIntoAFullScopeAndWritesNothingForAnyNote(t *te
 }
 
 func TestApplyNotesWithReplacesFillsAFullScopeInPlace(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	path := f.fleetNotes("bosun", lines(30)...)
 	err := crewapi.ApplyNotes(f.home, "work", []crewapi.NoteWrite{
@@ -47,6 +49,7 @@ func TestApplyNotesWithReplacesFillsAFullScopeInPlace(t *testing.T) {
 }
 
 func TestApplyNotesRefusesAReplacesThatMatchesNoLineEvenInAScopeWithRoom(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	path := f.fleetNotes("bosun", lines(2)...)
 	before := readFile(t, path)
@@ -63,6 +66,7 @@ func TestApplyNotesRefusesAReplacesThatMatchesNoLineEvenInAScopeWithRoom(t *test
 }
 
 func TestApplyNotesDoesNotWriteAFactThatIsAlreadyInTheScope(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	path := f.fleetNotes("bosun", "- 2026-09-01 (run-old): the build needs make")
 	err := crewapi.ApplyNotes(f.home, "work", []crewapi.NoteWrite{
@@ -77,6 +81,7 @@ func TestApplyNotesDoesNotWriteAFactThatIsAlreadyInTheScope(t *testing.T) {
 }
 
 func TestApplyNotesPutsBackTheScopesAlreadyWrittenWhenALaterWriteFails(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}

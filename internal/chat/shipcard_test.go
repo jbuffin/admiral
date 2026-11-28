@@ -49,6 +49,7 @@ func sampleShipCard() ShipCard {
 }
 
 func TestAShipCardCarriesWhatTheClientNeedsToRenderAndOpenTheShip(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if err := r.PostShipCard("work", sampleShipCard()); err != nil {
 		t.Fatalf("PostShipCard = %v", err)
@@ -67,6 +68,7 @@ func TestAShipCardCarriesWhatTheClientNeedsToRenderAndOpenTheShip(t *testing.T) 
 }
 
 func TestAShipCardPostsInItsOwnFleetAndNoOther(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if err := r.PostShipCard("work", sampleShipCard()); err != nil {
 		t.Fatalf("PostShipCard = %v", err)
@@ -77,6 +79,7 @@ func TestAShipCardPostsInItsOwnFleetAndNoOther(t *testing.T) {
 }
 
 func TestAShipCardIsPostedOncePerVoyageAndResult(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	post := func(c ShipCard) {
 		t.Helper()
@@ -102,6 +105,7 @@ func TestAShipCardIsPostedOncePerVoyageAndResult(t *testing.T) {
 }
 
 func TestAShipCardAcceptsALostResult(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	c := sampleShipCard()
 	c.Result = ShipLost
@@ -114,6 +118,7 @@ func TestAShipCardAcceptsALostResult(t *testing.T) {
 }
 
 func TestAShipCardStartsNoTurnAndNeverReachesTheBrief(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	if _, err := r.history().Append("work", chatlog.Entry{ID: "m1", Kind: chatlog.KindMessage, Role: "user", Text: "where are the lanterns"}); err != nil {
 		t.Fatal(err)
@@ -148,6 +153,7 @@ func rawShipCard(t *testing.T, r *briefRig, fleet string) map[string]any {
 }
 
 func TestAShipCardCarriesTheShipsTitleBesideItsName(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	c := sampleShipCard()
 	c.Name, c.Title = "Calm Otter", "Fix the login redirect"
@@ -160,6 +166,7 @@ func TestAShipCardCarriesTheShipsTitleBesideItsName(t *testing.T) {
 }
 
 func TestAShipCardOfAShipWithNoTitleHasNoTitleKey(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	c := sampleShipCard()
 	c.Name = "Calm Otter"
@@ -174,6 +181,7 @@ func TestAShipCardOfAShipWithNoTitleHasNoTitleKey(t *testing.T) {
 }
 
 func TestShipCardOfReadsTheShipsNameAndResultFromItsCardInThatFleetOnly(t *testing.T) {
+	t.Parallel()
 	r := newBriefRig(t)
 	c := sampleShipCard()
 	if err := r.PostShipCard("work", c); err != nil {

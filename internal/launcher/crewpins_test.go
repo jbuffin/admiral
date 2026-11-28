@@ -94,6 +94,7 @@ func fileNames(t *testing.T, dir string) []string {
 }
 
 func TestPinnedMembersBecomeTheShipsRunLayer(t *testing.T) {
+	t.Parallel()
 	// The fleet's env cannot name the run layer.
 	p := newPinRig(t, map[string]string{"ADMIRAL_RUN_CREW": "/fleet/says/otherwise"})
 	member(t, p.builtIn(), "scout", "scribe", "", "Built-in scout.")
@@ -118,6 +119,7 @@ func TestPinnedMembersBecomeTheShipsRunLayer(t *testing.T) {
 }
 
 func TestAMemberLockedToAnotherHarnessCanBePinned(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	coder := member(t, p.fleet(), "coder", "implementer", "harness: codex\n", "Runs on codex.")
 
@@ -130,6 +132,7 @@ func TestAMemberLockedToAnotherHarnessCanBePinned(t *testing.T) {
 }
 
 func TestNoPinsLeaveNoRunLayer(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, map[string]string{"ADMIRAL_RUN_CREW": "/fleet/says/otherwise"})
 	member(t, p.builtIn(), "scout", "scribe", "", "Built-in scout.")
 	for name, crew := range map[string][]string{"absent": nil, "empty": {}} {
@@ -141,6 +144,7 @@ func TestNoPinsLeaveNoRunLayer(t *testing.T) {
 }
 
 func TestPinRefusalsComeBeforeAnySession(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		setup func(t *testing.T, p *pinRig)
@@ -185,6 +189,7 @@ func TestPinRefusalsComeBeforeAnySession(t *testing.T) {
 }
 
 func TestACommodoreWithNoCrewDirectoryHasAnEmptyBuiltInLayer(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	if err := os.RemoveAll(p.builtIn()); err != nil {
 		t.Fatal(err)
@@ -208,6 +213,7 @@ func (p *pinRig) reuse(t *testing.T, ship *Launched) {
 }
 
 func TestARunLayerIsClearedWhenItsShipNameIsReused(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.builtIn(), "scout", "scribe", "", "Built-in scout.")
 	first, env := p.mustLaunchPinned(t, []string{"scout"})
@@ -240,6 +246,7 @@ func TestARunLayerIsClearedWhenItsShipNameIsReused(t *testing.T) {
 }
 
 func TestRemovingAShipsFilesRemovesItsRunLayerAndNotTheFleetCrew(t *testing.T) {
+	t.Parallel()
 	p := newPinRig(t, nil)
 	member(t, p.fleet(), "mate", "reviewer", "", "Fleet mate.")
 	ship, env := p.mustLaunchPinned(t, []string{"mate"})
@@ -256,6 +263,7 @@ func TestRemovingAShipsFilesRemovesItsRunLayerAndNotTheFleetCrew(t *testing.T) {
 }
 
 func TestCrewBoatKeepsTheShipsRunLayer(t *testing.T) {
+	t.Parallel()
 	// The docks set the name, so the boat's -u loop and -e env would clear or replace it.
 	p := newPinRig(t, nil)
 	fleet := p.l.Config().Fleets[0]

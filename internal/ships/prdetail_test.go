@@ -35,6 +35,7 @@ func sevenDetail(title string) moor.Detail {
 }
 
 func TestTheDetailRouteServesAMooredShipsPRReadFreshEveryTime(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{detail: map[string]moor.Detail{prSeven: sevenDetail("First")}}
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
 	f.moor(t, "Nelson", "work", prSeven)
@@ -62,6 +63,7 @@ func TestTheDetailRouteServesAMooredShipsPRReadFreshEveryTime(t *testing.T) {
 }
 
 func TestTheDetailRouteRefusesAPRTheShipDoesNotCarryAndAShipThatIsNotThere(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{detail: map[string]moor.Detail{prSeven: sevenDetail("T"), prNine: sevenDetail("Other")}}
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
 	f.moor(t, "Nelson", "work", prSeven)
@@ -104,6 +106,7 @@ func TestTheDetailRouteAnswersAnErrorWhenGitHubFailsTimesOutOrIsNotConfigured(t 
 }
 
 func TestTheDetailRouteServesAPRARunningShipCarries(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.gh.mu.Lock()
 	r.gh.detail = map[string]moor.Detail{prSeven: sevenDetail("Running")}

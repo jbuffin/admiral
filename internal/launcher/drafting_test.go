@@ -63,6 +63,7 @@ func (r *draftRig) installPlugin(t *testing.T, plugin string, skills ...string) 
 }
 
 func TestADraftingLaunchOfAnInstalledSkillInACheckoutIsAccepted(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	if _, err := r.check(r.request()); err != nil {
 		t.Fatalf("CheckSpec = %v, want the launch accepted", err)
@@ -70,6 +71,7 @@ func TestADraftingLaunchOfAnInstalledSkillInACheckoutIsAccepted(t *testing.T) {
 }
 
 func TestADraftingLaunchSetsTheDraftingPaneOptionAndAPlainSkillLaunchDoesNot(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	opt := func(req Request) string {
 		chk, err := r.check(req)
@@ -94,6 +96,7 @@ func TestADraftingLaunchSetsTheDraftingPaneOptionAndAPlainSkillLaunchDoesNot(t *
 }
 
 func TestADraftingLaunchIsRefusedWhenItCannotDraft(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name   string
 		mutate func(r *draftRig, req *Request)
@@ -118,6 +121,7 @@ func TestADraftingLaunchIsRefusedWhenItCannotDraft(t *testing.T) {
 }
 
 func TestADraftingLaunchWhoseNameTwoInstalledSkillsCarryIsRefusedListingBoth(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	r.installPlugin(t, "a", "wayfinder")
 	_, err := r.check(r.request())
@@ -127,6 +131,7 @@ func TestADraftingLaunchWhoseNameTwoInstalledSkillsCarryIsRefusedListingBoth(t *
 }
 
 func TestADraftingLaunchNamingOneOfTwoAmbiguousSkillsIsAccepted(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	r.installPlugin(t, "a", "wayfinder")
 	req := r.request()
@@ -137,6 +142,7 @@ func TestADraftingLaunchNamingOneOfTwoAmbiguousSkillsIsAccepted(t *testing.T) {
 }
 
 func TestADraftingLaunchFindsAPluginSkillByItsBareName(t *testing.T) {
+	t.Parallel()
 	r := newDraftRig(t)
 	if err := os.RemoveAll(filepath.Join(r.checkout, ".claude")); err != nil {
 		t.Fatal(err)
@@ -179,6 +185,7 @@ func draftingWorktreeRig(t *testing.T) *pinRig {
 }
 
 func TestADraftingLaunchGetsItsOwnWorktreeAndNamesTheCampaignRefInItsLaunchText(t *testing.T) {
+	t.Parallel()
 	p := draftingWorktreeRig(t)
 	out, cwd, text, _ := launchedDrafting(t, p, Request{Fleet: "work", Harness: "claude", Dir: p.work, Skill: Skill{Kind: "skill", Name: "wayfinder"}, Text: "draft the campaign", Drafting: true})
 	if samePath(t, cwd, p.work) || !registered(t, p.work, cwd) {
@@ -192,6 +199,7 @@ func TestADraftingLaunchGetsItsOwnWorktreeAndNamesTheCampaignRefInItsLaunchText(
 }
 
 func TestADraftingSkillLaunchIsTheOnlySkillLaunchWithAWorktreeAndACampaignRef(t *testing.T) {
+	t.Parallel()
 	p := draftingWorktreeRig(t)
 	_, cwd, text, _ := launchedDrafting(t, p, Request{Fleet: "work", Harness: "claude", Dir: p.work, Skill: Skill{Kind: "skill", Name: "wayfinder"}, Text: "go"})
 	if !samePath(t, cwd, p.work) {

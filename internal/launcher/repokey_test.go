@@ -8,6 +8,7 @@ import (
 )
 
 func TestThePermissionLogAndLaunchNameARepoByOneKey(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		config []string // git config key, value pairs

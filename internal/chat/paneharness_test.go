@@ -29,19 +29,10 @@ func hostedChat(t *testing.T, harness string) (*Service, *fleetChat) {
 	}
 	svc := serviceFor(t, l, home)
 	svc.Launcher = l
-	model := map[string]string{"claude": "opus", "codex": "gpt-6.1-sol"}[harness]
-	{
-		raw, _ := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{"work": map[string]any{
-			"name": "Work", "claude": map[string]any{}, "codex": map[string]any{},
-			"chat": map[string]any{"harness": harness, "model": model, "effort": "high"}}}})
-		cfg, err := config.Parse(raw)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// A Codex chat counts as on only once its probes passed.
-		cfg.ChatProbe = fakeProbes{"work/codex/bot.mcp_fence": {"passed", ""}, "work/codex/bot.config_home": {"passed", ""}}.probe
-		svc.Config = func() *config.Config { return cfg }
-	}
+	cfg := configFor(t, harness, t.TempDir())
+	// A Codex chat counts as on only once its probes passed.
+	cfg.ChatProbe = fakeProbes{"work/codex/bot.mcp_fence": {"passed", ""}, "work/codex/bot.config_home": {"passed", ""}}.probe
+	svc.Config = func() *config.Config { return cfg }
 	svc.Host = sessionhost.New(l.Tmux, l.Socket)
 	ctx, stop := context.WithCancel(context.Background())
 	t.Cleanup(stop)
@@ -99,6 +90,7 @@ func (s *fleetChat) clears(f config.Fleet) bool {
 }
 
 func TestALaunchedClaudeChatRecordsItsHarnessAndIsTrackedForResets(t *testing.T) {
+	t.Parallel()
 	svc, fc := hostedChat(t, "claude")
 	read(t, fc, "claude")
 	fc.resetTick(time.Now())
@@ -112,6 +104,7 @@ func TestALaunchedClaudeChatRecordsItsHarnessAndIsTrackedForResets(t *testing.T)
 }
 
 func TestNoScheduledResetOrClearReachesAPaneThatRecordsNoHarnessOrAnotherOne(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct{ config, recorded string }{
 		"a Claude pane started before the harness was recorded": {"claude", ""},
 		"a Codex pane on a fleet switched to Claude":            {"claude", "codex"},
@@ -121,6 +114,7 @@ func TestNoScheduledResetOrClearReachesAPaneThatRecordsNoHarnessOrAnotherOne(t *
 	} {
 		t.Run(name, func(t *testing.T) {
 			svc, fc := hostedChat(t, tc.config)
+			svc.FlushWait = 200 * time.Millisecond
 			record(t, svc, fc, tc.recorded)
 			fc.resetTick(time.Now().Add(25 * time.Hour))
 			if fc.tracked() {
@@ -145,7 +139,7 @@ func pasted(t *testing.T, svc *Service, fc *fleetChat) bool {
 }
 
 func TestNewChatFlushesTheRunningPanesHarnessNotTheConfigs(t *testing.T) {
-	t.Setenv("ADMIRAL_CHAT_FLUSH_WAIT", "200ms")
+	t.Parallel()
 	idle := Snapshot{State: "idle"}
 	for name, tc := range map[string]struct {
 		config, recorded string
@@ -157,6 +151,7 @@ func TestNewChatFlushesTheRunningPanesHarnessNotTheConfigs(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			svc, fc := hostedChat(t, tc.config)
+			svc.FlushWait = 200 * time.Millisecond
 			record(t, svc, fc, tc.recorded)
 			fc.flushIfIdle(idle)
 			if got := pasted(t, svc, fc); got != tc.want {
@@ -166,11 +161,12 @@ func TestNewChatFlushesTheRunningPanesHarnessNotTheConfigs(t *testing.T) {
 	}
 }
 
-func configFor(t *testing.T, harness string) *config.Config {
+// configFor is the fleet config of a chat on harness whose Claude identity is the directory identity.
+func configFor(t *testing.T, harness, identity string) *config.Config {
 	t.Helper()
 	model := map[string]string{"claude": "opus", "codex": "gpt-6.1-sol"}[harness]
 	raw, _ := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{"work": map[string]any{
-		"name": "Work", "claude": map[string]any{}, "codex": map[string]any{},
+		"name": "Work", "claude": map[string]any{"env": map[string]any{"CLAUDE_CONFIG_DIR": identity}}, "codex": map[string]any{},
 		"chat": map[string]any{"harness": harness, "model": model, "effort": "high"}}}})
 	cfg, err := config.Parse(raw)
 	if err != nil {
@@ -182,10 +178,11 @@ func configFor(t *testing.T, harness string) *config.Config {
 // switchable makes the service's config changeable while the chat runs.
 func switchable(t *testing.T, svc *Service, harness string) func(string) {
 	t.Helper()
+	identity := svc.chat("work").loginDirFor("claude")
 	var cur atomic.Pointer[config.Config]
-	cur.Store(configFor(t, harness))
+	cur.Store(configFor(t, harness, identity))
 	svc.Config = func() *config.Config { return cur.Load() }
-	return func(h string) { cur.Store(configFor(t, h)) }
+	return func(h string) { cur.Store(configFor(t, h, identity)) }
 }
 
 func setPane(t *testing.T, svc *Service, name, value string) {
@@ -215,11 +212,10 @@ func claudeLineAt(t *testing.T, kind, id, text, at string) string {
 	return string(b) + "\n"
 }
 
-// claudeTranscript gives the chat a Claude transcript under CLAUDE_CONFIG_DIR with one exchange and returns its path.
+// claudeTranscript gives the chat a Claude transcript under its fleet's CLAUDE_CONFIG_DIR with one exchange and returns its path.
 func claudeTranscript(t *testing.T, svc *Service, fc *fleetChat) string {
 	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	dir := fc.loginDirFor("claude")
 	path := filepath.Join(dir, "projects", "p", claudeSession+".jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
@@ -260,8 +256,9 @@ func endFlushTurn(t *testing.T, svc *Service, fc *fleetChat, path string, betwee
 }
 
 func TestAClaudePaneUnderACodexConfigHasItsFlushTurnAwaitedAndHidden(t *testing.T) {
-	t.Setenv("ADMIRAL_CHAT_FLUSH_WAIT", "20s")
+	t.Parallel()
 	svc, fc := hostedChat(t, "codex")
+	svc.FlushWait = 20 * time.Second
 	record(t, svc, fc, "claude")
 	path := claudeTranscript(t, svc, fc)
 	go endFlushTurn(t, svc, fc, path, nil)
@@ -287,8 +284,9 @@ func TestAClaudePaneUnderACodexConfigHasItsFlushTurnAwaitedAndHidden(t *testing.
 }
 
 func TestASwitchSavedDuringTheFlushWaitSendsThePaneNoResetCommand(t *testing.T) {
-	t.Setenv("ADMIRAL_CHAT_FLUSH_WAIT", "20s")
+	t.Parallel()
 	svc, fc := hostedChat(t, "claude")
+	svc.FlushWait = 20 * time.Second
 	switchTo := switchable(t, svc, "claude")
 	record(t, svc, fc, "claude")
 	path := claudeTranscript(t, svc, fc)

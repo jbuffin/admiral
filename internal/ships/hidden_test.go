@@ -3,6 +3,7 @@ package ships
 import "testing"
 
 func TestHiddenOrders(t *testing.T) {
+	t.Parallel()
 	fleet := []Ship{
 		{Session: "a", Source: "todo", OrderID: "1", Status: "underway"},
 		{Session: "b", Source: "todo", OrderID: "2", Status: "needs_you"},

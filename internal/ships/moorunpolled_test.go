@@ -40,6 +40,7 @@ func (r *liveRig) wantMooredWith(t *testing.T, url string) {
 }
 
 func TestMoorMoorsAShipWithNoReportForTheOpenPRItCarriesBeforeAnyPoll(t *testing.T) {
+	t.Parallel()
 	for _, woken := range []bool{false, true} {
 		for _, route := range []string{"stop", "return"} {
 			name := route
@@ -62,6 +63,7 @@ func TestMoorMoorsAShipWithNoReportForTheOpenPRItCarriesBeforeAnyPoll(t *testing
 }
 
 func TestMoorMoorsACarriedPRAfterAnAdmiralRestartBeforeTheFirstPoll(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	r.carry(t, livePR7)
 	r.gh.pollGitHub.set(livePR7, moor.Status{State: "OPEN"})
@@ -102,7 +104,7 @@ func TestMoorRefusesAShipWhoseCarriedPRIsNotOpenOrNotConfirmedAndLeavesItAlone(t
 				if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), c.want) {
 					t.Fatalf("%s with moor = %d %s, want 409 %q", route, rec.Code, rec.Body, c.want)
 				}
-				holdsFor(t, 500*time.Millisecond, "the refused ship was touched", func() bool {
+				holdsFor(t, settleHold(), "the refused ship was touched", func() bool {
 					_, err := os.Stat(r.mooredFile())
 					names := r.eventNames(t)
 					return r.live(t) && err != nil && !contains(names, "moored") && !contains(names, "stopped") &&
@@ -114,6 +116,7 @@ func TestMoorRefusesAShipWhoseCarriedPRIsNotOpenOrNotConfirmedAndLeavesItAlone(t
 }
 
 func TestACleanExitMoorsAShipWithNoReportForTheOpenPRItCarriesBeforeAnyPoll(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.gh.mu.Lock()
 	r.gh.exitCheck = true
