@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/pre
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Fleet } from './api';
 import { FleetPage } from './FleetPage';
-import { fleets } from './fleets';
+import { defaultFleet, fleets } from './fleets';
 
 const base = {
   key: 'zulu',
@@ -24,16 +24,28 @@ const base = {
 let stored: Fleet;
 let puts: Record<string, unknown>[];
 let refuse: string | null;
+let defaultPuts: Record<string, unknown>[];
+let defaultGate: Promise<void> | null;
+let defaultRefusal: Promise<{ error: string; status: number }> | null;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 beforeEach(() => {
   stored = { ...base };
   puts = [];
   refuse = null;
+  defaultPuts = [];
+  defaultRefusal = null;
+  defaultGate = null;
   fleets.value = [stored];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === 'PUT' && path.endsWith('/default-fleet')) {
+        defaultPuts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        if (defaultGate) await defaultGate;
+        if (defaultRefusal) return defaultRefusal.then((r) => json({ error: r.error }, r.status));
+        return json({ fleets: fleets.value, default_fleet: 'bravo', default_fleet_fallback: false });
+      }
       if (init?.method === 'PUT' && path.endsWith('/fleets/zulu')) {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
         puts.push(body);
@@ -196,4 +208,77 @@ test('the Share repo field says it takes a GitHub repo as owner/repo and that sh
   render(<FleetPage fleet={stored} />);
   expect(screen.getByText('The GitHub repo, as owner/repo, that this fleet\'s crew is published to. Sharing a member can create it.')).toBeTruthy();
   expect(screen.queryByText(/public GitHub repo/)).toBeNull();
+});
+
+const FALLBACK_LINE = 'No default fleet is picked, or the picked one is gone, so the first fleet is the default.';
+const alpha = { ...base, key: 'alpha', name: 'Alpha' } as Fleet;
+const bravo = { ...base, key: 'bravo', name: 'Bravo' } as Fleet;
+const makeDefault = () => screen.getByRole('button', { name: 'Make default' });
+
+function twoFleets(key: string, fallback: boolean) {
+  fleets.value = [alpha, bravo];
+  defaultFleet.value = { key, fallback };
+}
+
+test('the default fleet row says this fleet is the default and offers no button', () => {
+  twoFleets('alpha', false);
+  render(<FleetPage fleet={alpha} />);
+  expect(screen.getByText('Alpha is the default fleet.')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Make default' })).toBeNull();
+  expect(screen.queryByText(FALLBACK_LINE)).toBeNull();
+});
+
+test('another fleet names the default and Make default sends the key once, busy until the server answers, then says it is the default', async () => {
+  twoFleets('alpha', false);
+  let release!: () => void;
+  defaultGate = new Promise<void>((r) => (release = r));
+  render(<FleetPage fleet={bravo} />);
+  expect(screen.getByText('The default fleet is Alpha.')).toBeTruthy();
+  fireEvent.click(makeDefault());
+  await waitFor(() => expect(makeDefault().getAttribute('aria-busy')).toBe('true'));
+  await waitFor(() => expect(defaultPuts).toEqual([{ fleet: 'bravo' }]));
+  release();
+  await waitFor(() => expect(screen.getByText('Bravo is the default fleet.')).toBeTruthy());
+  expect(screen.queryByRole('button', { name: 'Make default' })).toBeNull();
+  expect(defaultFleet.value).toEqual({ key: 'bravo', fallback: false });
+  expect(defaultPuts).toHaveLength(1);
+});
+
+test('a refused Make default shows the server message in the row and keeps the button', async () => {
+  twoFleets('alpha', false);
+  defaultRefusal = Promise.resolve({ error: 'no such fleet', status: 422 });
+  render(<FleetPage fleet={bravo} />);
+  fireEvent.click(makeDefault());
+  expect((await screen.findByRole('alert')).textContent).toContain('no such fleet');
+  expect(makeDefault()).toBeTruthy();
+  expect(screen.getByText('The default fleet is Alpha.')).toBeTruthy();
+});
+
+test('a conflicting Make default says nothing was saved and Reload clears the error', async () => {
+  twoFleets('alpha', false);
+  defaultRefusal = Promise.resolve({ error: 'conflict: the file changed', status: 409 });
+  render(<FleetPage fleet={bravo} />);
+  fireEvent.click(makeDefault());
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('nothing was saved');
+  expect(alert.textContent).toContain('conflict: the file changed');
+  fireEvent.click(within(alert).getByRole('button', { name: 'Reload' }));
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  expect(makeDefault()).toBeTruthy();
+});
+
+test('with the default fallen back, the first fleet says it is the default, shows the fallback line and still offers Make default', () => {
+  twoFleets('alpha', true);
+  render(<FleetPage fleet={alpha} />);
+  expect(screen.getByText('Alpha is the default fleet.')).toBeTruthy();
+  expect(screen.getByText(FALLBACK_LINE)).toBeTruthy();
+  expect(makeDefault()).toBeTruthy();
+});
+
+test('with the default fallen back, another fleet names the default, shows the fallback line and offers Make default', () => {
+  twoFleets('alpha', true);
+  render(<FleetPage fleet={bravo} />);
+  expect(screen.getByText('The default fleet is Alpha.')).toBeTruthy();
+  expect(screen.getByText(FALLBACK_LINE)).toBeTruthy();
+  expect(makeDefault()).toBeTruthy();
 });

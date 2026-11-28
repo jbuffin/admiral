@@ -535,6 +535,7 @@ test('a fleet with no GitHub source says so and offers nothing to add', async ({
 });
 
 const zulu = (a: Admiral) => JSON.parse(readFileSync(join(a.home, 'config.json'), 'utf8')).fleets.zulu as Record<string, unknown>;
+const topLevel = (a: Admiral) => JSON.parse(readFileSync(join(a.home, 'config.json'), 'utf8')) as Record<string, unknown>;
 const viewOf = async (a: Admiral, key: string) =>
   ((await (await fetch(`${a.url}api/v1/config`)).json()) as { fleets: { key: string; search_roots: string[] }[] }).fleets.find((f) => f.key === key);
 
@@ -570,6 +571,20 @@ test('a fleet page opens from the switcher, writes its owners and clone root to 
   expect(zulu(admiral)).toMatchObject({ clone_root: clones, search_roots: [stored] });
   await page.reload();
   await expect(owners.getByRole('textbox', { name: 'Owner 1' })).toHaveValue('acme');
+
+  // Make default writes the key at the file's top level, keeps the rest, and the config view serves it.
+  await page.goto(admiral.url + 'app/preferences/alpha/fleet');
+  const makeDefault = page.getByRole('button', { name: 'Make default' });
+  await expect(page.getByRole('main')).toContainText(`The default fleet is ${WORK}.`);
+  expect((await makeDefault.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await makeDefault.tap();
+  await expect.poll(() => topLevel(admiral).default_fleet).toBe('alpha');
+  expect(Object.keys(topLevel(admiral).fleets as object)).toEqual(['zulu', 'alpha']);
+  expect(topLevel(admiral).version).toBe(1);
+  await expect(page.getByRole('main')).toContainText(`${HOME} is the default fleet.`);
+  await expect(makeDefault).toHaveCount(0);
+  const view = (await (await fetch(`${admiral.url}api/v1/config`)).json()) as { default_fleet: string; default_fleet_fallback: boolean };
+  expect(view).toMatchObject({ default_fleet: 'alpha', default_fleet_fallback: false });
 
   // A touch target is at least 44px tall; the component test has no layout.
   expect((await page.getByRole('switch', { name: 'Notify' }).boundingBox())?.height).toBeGreaterThanOrEqual(44);

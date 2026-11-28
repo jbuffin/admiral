@@ -7,6 +7,8 @@ import { fleetPaint } from './fleetPaint';
 export { fleetPaint };
 export const fleets = signal<Fleet[]>([]);
 export const loaded = signal(false);
+/** The default fleet the server resolved; `fallback` is true when none is picked or the picked one is gone. */
+export const defaultFleet = signal({ key: '', fallback: true });
 
 const STORE = 'admiral.app.fleet';
 const store = {

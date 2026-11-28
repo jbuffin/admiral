@@ -1,5 +1,5 @@
 import { beforeAll, expect, test, vi } from 'vitest';
-import { fleets, loaded, loadFleets, watchFleets } from './fleets';
+import { defaultFleet, fleets, loaded, loadFleets, watchFleets } from './fleets';
 import { go } from './router';
 import { watchShips } from './shipsLink';
 
@@ -59,4 +59,13 @@ test('a slower older config response never replaces a newer one', async () => {
     vi.stubGlobal('fetch', real);
   }
   await loadFleets();
+});
+
+test('loadFleets reads the default fleet and whether it fell back, and a view without them reads as fallen back', async () => {
+  served = { ...served, default_fleet: 'zulu', default_fleet_fallback: false } as typeof served;
+  await loadFleets();
+  expect(defaultFleet.value).toEqual({ key: 'zulu', fallback: false });
+  served = { fleets: served.fleets };
+  await loadFleets();
+  expect(defaultFleet.value).toEqual({ key: '', fallback: true });
 });

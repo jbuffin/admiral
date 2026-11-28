@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { call, fetchFleets, fetchStackShape, linkStack, mergeShip, probeShips, refreshSource } from './api';
+import { call, fetchFleets, fetchStackShape, linkStack, mergeShip, probeShips, refreshSource, saveDefaultFleet } from './api';
 
 const answer = (status: number, body: unknown) => vi.stubGlobal('fetch', async () => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }));
 
@@ -202,5 +202,25 @@ describe('fetchFleets on a dock', () => {
     const dock = (await fetchFleets())[0]!.docks[0]!;
     expect(dock.models).toEqual([]);
     expect(dock.warnings).toEqual([]);
+  });
+});
+
+describe('saveDefaultFleet', () => {
+  it('PUTs the key and answers the fleets with the new default, so the caller loses neither', async () => {
+    const seen: { url: string; method?: string; body?: unknown }[] = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      seen.push({ url, method: init.method, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify({ fleets: [{ key: 'bravo', docks: [{ harness: 'claude' }] }], default_fleet: 'bravo', default_fleet_fallback: false }), { status: 200 });
+    });
+    const r = await saveDefaultFleet('bravo');
+    expect(seen).toEqual([{ url: '/api/v1/default-fleet', method: 'PUT', body: { fleet: 'bravo' } }]);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.data).toMatchObject({ default_fleet: 'bravo', default_fleet_fallback: false });
+    expect(r.data.fleets[0]!.docks[0]!.models).toEqual([]);
+  });
+
+  it('answers the server message and status on a 422', async () => {
+    answer(422, { error: 'no such fleet' });
+    expect(await saveDefaultFleet('gone')).toMatchObject({ ok: false, status: 422, error: 'no such fleet' });
   });
 });

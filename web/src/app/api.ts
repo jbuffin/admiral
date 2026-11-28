@@ -526,6 +526,16 @@ export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_r
   const r = await call<{ fleets?: Fleet[] | null }>('PUT', `/fleets/${encodeURIComponent(key)}`, body);
   return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
 }
+export interface FleetsView {
+  fleets: Fleet[];
+  default_fleet: string;
+  default_fleet_fallback: boolean;
+}
+
+/** Makes a fleet the default; the server answers the new config view. */
+export async function saveDefaultFleet(_key: string): Promise<Result<FleetsView>> {
+  return { ok: false, error: 'not implemented' };
+}
 export interface ChatNote {
   id: string;
   kind: string;
