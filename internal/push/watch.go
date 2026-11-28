@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/needcard"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -53,6 +54,7 @@ type Watcher struct {
 	notify   func(fleet string) bool
 	sinks    []Sink
 	now      func() time.Time
+	cards    Cards
 
 	mu         sync.Mutex
 	shipsSeen  bool
@@ -131,6 +133,18 @@ func (w *Watcher) sendClears(evs []Event) {
 
 func NewWatcher(watching func() bool, notify func(fleet string) bool, sinks ...Sink) *Watcher {
 	return &Watcher{watching: watching, notify: notify, sinks: sinks, now: time.Now}
+}
+
+// Cards says which need card a ship or an Inbox item has and its choices; needcard.Resolver is one.
+type Cards interface {
+	ForShip(ships.Ship) (string, []needcard.Choice)
+	ForItem(inbox.Item) (string, []needcard.Choice)
+}
+
+// WithCards gives the Watcher the cards its events name.
+func (w *Watcher) WithCards(c Cards) *Watcher {
+	w.cards = c
+	return w
 }
 
 // WithClock replaces the clock NotStartedPushWait is measured on.
