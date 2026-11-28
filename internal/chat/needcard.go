@@ -280,7 +280,7 @@ func needFleet(it inbox.Item) string {
 	return it.Fleet
 }
 
-// needCardBody is the card's JSON for an item, with what its kind's choices need so the web never reads the Inbox item.
+// needCardBody is the card's JSON for an item, with what its kind's choices need; a review's summary and a set of finding cards' quotes stay in the Inbox item, which the web joins.
 func needCardBody(it inbox.Item) (map[string]any, bool) {
 	card := map[string]any{"ship": it.Session, "item": it.ID, "item_kind": it.Kind, "state": NeedOpen}
 	switch it.Kind {

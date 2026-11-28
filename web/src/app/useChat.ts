@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call } from './api';
+import { call, type Result } from './api';
 import type { ChatSnapshot } from './chat';
 import { chats, shipsLink } from './shipsLink';
 import { type AnswerBody, type Draft, blankDraft } from '../questions';
@@ -22,7 +22,10 @@ export function useChat(fleet: string) {
 
   const reread = async () => {
     const r = await call<ChatSnapshot>('GET', `${base}/session`);
-    if (r.ok && alive.current) setSnap(clean(r.data));
+    if (!r.ok) return undefined;
+    const next = clean(r.data);
+    if (alive.current) setSnap(next);
+    return next;
   };
 
   useEffect(() => {
@@ -88,13 +91,20 @@ export function useChat(fleet: string) {
     editDraft(id, (d) => ({ ...d, sending: false, error: r.ok ? '' : failure(r) }));
   };
 
-  const answerNeed = async (id: string, body: AnswerBody) => {
-    if (drafts[id]?.sending) return;
+  /** `own` leaves the failure to the caller's form, which shows it where the engineer is looking. */
+  const answerNeed = async (id: string, body: unknown, own = false): Promise<Result<unknown>> => {
+    if (drafts[id]?.sending) return { ok: false, error: 'Already sending.' };
     editDraft(id, (d) => ({ ...d, sending: true, error: '' }));
     const r = await call('POST', `${base}/need-cards/${encodeURIComponent(id)}/answer`, body);
-    // A 409 means the item was answered elsewhere; the next snapshot says where, so it is no failure.
-    if (r.ok || r.status === 409 || r.status === 404) await reread();
-    editDraft(id, (d) => ({ ...d, sending: false, error: r.ok || r.status === 409 ? '' : failure(r) }));
+    // A refusal that says the item moved on, or a campaign create that filed its parent, changes the card; the reread says how.
+    const grown = !r.ok && r.status === 400 && /^card .+ has no decision$/.test(r.error);
+    const changed = r.ok || r.status === 409 || r.status === 404 || !!(!r.ok && r.parent) || grown;
+    const next = changed ? await reread() : undefined;
+    const open = next?.messages.some((m) => m.id === id && m.kind === 'need_card' && (m.card as { state?: string } | undefined)?.state === 'open');
+    // A 409 that leaves the card open means the item is busy elsewhere, so the server's message is the answer.
+    const hide = r.ok || grown || (r.status === 409 && !open) || own;
+    editDraft(id, (d) => ({ ...d, sending: false, error: hide ? '' : failure(r) }));
+    return r;
   };
 
   return { snap, error, text, setText, sending, resetting, drafts, editDraft, send, interrupt, newChat, answer, answerNeed };
