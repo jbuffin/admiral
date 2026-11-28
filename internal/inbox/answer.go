@@ -51,8 +51,15 @@ func (s *Service) open(session, id string) (Item, error) {
 
 // Answer's build runs under the lock, so it does no network I/O: anything slow runs before Answer, except a proposal's launch.
 func (s *Service) Answer(session, id, kind string, build func(Item) (file any, recs []outcomes.Record, err error)) error {
+	return s.answer(session, id, kind, false, build)
+}
+
+func (s *Service) answer(session, id, kind string, removed bool, build func(Item) (file any, recs []outcomes.Record, err error)) error {
 	if err := s.writeAnswered(session, id, kind, build); err != nil {
 		return err
+	}
+	if s.OnSettled != nil {
+		s.OnSettled(session, id, removed)
 	}
 	// Outside answerMu: typing the resume text calls the ship's pane. Its text is in
 	// the state already, so the files may go whether or not it worked.
@@ -99,6 +106,19 @@ func (s *Service) writeAnswered(session, id, kind string, build func(Item) (file
 	}
 	s.CaptureResume(session) // before anything deletes the report
 	return nil
+}
+
+// AnswerFile says whether the item has an answer file, whoever wrote it, and whether it only marks the item removed.
+func (s *Service) AnswerFile(session, id string) (present, removedMark bool) {
+	if !validSession(session) || !idPattern.MatchString(id) {
+		return false, false
+	}
+	dir, err := openShipDir(s.Home, session)
+	if err != nil {
+		return false, false
+	}
+	defer dir.Close()
+	return Answered(dir, id), removed(dir, id)
 }
 
 // WriteAnswerFile's caller holds the lock that makes this one answer at a time.

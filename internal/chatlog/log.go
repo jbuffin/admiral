@@ -41,6 +41,8 @@ const (
 	KindCampaignDraftCard = "campaign_draft_card"
 	// KindFollowingCard is the card a chat-launched drafting ship's followed campaign posts, shown to the engineer and never read by AdmiralBot.
 	KindFollowingCard = "following_card"
+	// KindNeedCard is the card a ship's question posts in its fleet's chat, shown to the engineer and never read by AdmiralBot.
+	KindNeedCard = "need_card"
 )
 
 const (
@@ -170,6 +172,45 @@ func endLine(f *os.File) error {
 	}
 	_, err = f.Write([]byte{'\n'})
 	return err
+}
+
+// Get is the entry with the id, wherever it sits in the fleet's files; the tail holds only the newest.
+func (l *Log) Get(fleet, id string) (Entry, bool, error) {
+	if !fleetKey.MatchString(fleet) {
+		return Entry{}, false, fmt.Errorf("chat log: %q is not a fleet key", fleet)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fl, err := l.load(fleet)
+	if err != nil || !fl.seen[id] {
+		return Entry{}, false, err
+	}
+	for i := len(fl.tail) - 1; i >= 0; i-- {
+		if fl.tail[i].ID == id {
+			return fl.tail[i], true, nil
+		}
+	}
+	dir, err := l.fleetDir(fleet, false)
+	if err != nil {
+		return Entry{}, false, err
+	}
+	defer dir.Close()
+	names, err := listFiles(dir)
+	if err != nil {
+		return Entry{}, false, err
+	}
+	for i := len(names) - 1; i >= 0; i-- {
+		es, err := readFile(dir, names[i])
+		if err != nil {
+			return Entry{}, false, err
+		}
+		for _, e := range es {
+			if e.ID == id {
+				return e, true, nil
+			}
+		}
+	}
+	return Entry{}, false, nil
 }
 
 // Recent is the last n entries, oldest first, across months. A fleet with no log has none.

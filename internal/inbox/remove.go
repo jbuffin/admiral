@@ -41,7 +41,7 @@ func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 		gone, err := s.answerCrewMember(id, "drop", false)
 		return ReviewResult{Forgotten: true, FileRemoved: &gone}, err
 	}
-	err = s.Answer(session, id, it.Kind, func(Item) (any, []outcomes.Record, error) {
+	err = s.answer(session, id, it.Kind, true, func(Item) (any, []outcomes.Record, error) {
 		file := struct {
 			Version  int    `json:"version"`
 			ID       string `json:"id"`
