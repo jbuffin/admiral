@@ -32,7 +32,14 @@ type openState struct {
 }
 
 // A check GitHub did not answer is retried with a doubling wait, so a long outage costs a few calls, not one per tick.
-var openRetryFirst, openRetryMax = 30 * time.Second, 4 * time.Minute
+const openRetryMax = 4 * time.Minute
+
+func (s *Service) openRetryFirst() time.Duration {
+	if s.OpenRetryFirst == 0 {
+		return 30 * time.Second
+	}
+	return s.OpenRetryFirst
+}
 
 // reportStamp says a report file changed without reading it.
 type reportStamp struct {
@@ -121,7 +128,7 @@ func (s *Service) dueCheck(ctx context.Context, sess sessionhost.Session, st *op
 			if answered {
 				st.prs, st.pending = prs, nil
 			} else {
-				st.backoff = min(max(st.backoff*2, openRetryFirst), openRetryMax)
+				st.backoff = min(max(st.backoff*2, s.openRetryFirst()), openRetryMax)
 				st.retryAt = time.Now().Add(st.backoff)
 			}
 		}
@@ -291,7 +298,7 @@ func (s *Service) countedFrom(ctx context.Context, sess sessionhost.Session, prs
 	}
 	fleet := sess.Options["fleet"]
 	router := github.RouterFromFleets(s.Launcher.Config().Fleets)
-	return moor.CountedAnswered(ctx, moor.Check{Fleet: fleet, GitHub: s.GitHub(fleet), Route: router.Route}, prs)
+	return moor.CountedAnswered(ctx, moor.Check{Fleet: fleet, GitHub: s.GitHub(fleet), Route: router.Route, RetryWindow: s.MoorRetry}, prs)
 }
 
 // withCarried is the carried PRs then the report's, each URL once.

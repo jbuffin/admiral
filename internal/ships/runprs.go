@@ -3,7 +3,6 @@ package ships
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -223,7 +222,7 @@ func (s *Service) persistCarried(ctx context.Context, sess sessionhost.Session) 
 	rv := strings.Join(s.reviewingOf(sess), ",")
 	s.mooredMu.Unlock()
 	if err := s.Host.SetOptions(ctx, sess.Name, map[string]string{"prs": v, "reviewing": rv}); err != nil && ctx.Err() == nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its carried PRs cannot be saved on the session: %v\n", sess.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its carried PRs cannot be saved on the session: %v\n", sess.Name, err)
 	}
 }
 

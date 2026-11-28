@@ -77,19 +77,20 @@ func TestTheDetailRouteRefusesAPRTheShipDoesNotCarryAndAShipThatIsNotThere(t *te
 }
 
 func TestTheDetailRouteAnswersAnErrorWhenGitHubFailsTimesOutOrIsNotConfigured(t *testing.T) {
+	t.Parallel()
 	t.Run("GitHub fails", func(t *testing.T) {
+		t.Parallel()
 		g := &pollGitHub{detailErr: errors.New("gh: HTTP 502")}
 		f := mooredService(t, map[string]*pollGitHub{"work": g})
 		f.moor(t, "Nelson", "work", prSeven)
 		wantFailure(t, f.detail("nelson", prSeven), "a failing read")
 	})
 	t.Run("GitHub does not answer in time", func(t *testing.T) {
-		old := detailTimeout
-		detailTimeout = 50 * time.Millisecond
-		t.Cleanup(func() { detailTimeout = old })
+		t.Parallel()
 		g := &pollGitHub{detailBlock: make(chan struct{})}
 		t.Cleanup(func() { close(g.detailBlock) })
 		f := mooredService(t, map[string]*pollGitHub{"work": g})
+		f.s.DetailTimeout = 50 * time.Millisecond
 		f.moor(t, "Nelson", "work", prSeven)
 		start := time.Now()
 		rec := f.detail("nelson", prSeven)
@@ -99,6 +100,7 @@ func TestTheDetailRouteAnswersAnErrorWhenGitHubFailsTimesOutOrIsNotConfigured(t 
 		}
 	})
 	t.Run("the fleet has no client", func(t *testing.T) {
+		t.Parallel()
 		f := mooredService(t, map[string]*pollGitHub{})
 		f.moor(t, "Nelson", "work", prSeven)
 		wantFailure(t, f.detail("nelson", prSeven), "a fleet with no GitHub")

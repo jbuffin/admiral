@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -222,6 +224,19 @@ type Service struct {
 	// GitHub is the client of the fleet's built-in GitHub source; nil when the
 	// fleet has none, and the ship then sails off.
 	GitHub func(fleet string) moor.GitHub
+	// The delays below shorten in tests; zero keeps each one's default.
+	// WakeDebounce is every wake decision's moor.WakeInput Debounce.
+	WakeDebounce time.Duration
+	// MoorRetry is the moor.Check RetryWindow of every count of a ship's PRs.
+	MoorRetry time.Duration
+	// DetailTimeout bounds one fresh read of a pull request; zero is 15 seconds.
+	DetailTimeout time.Duration
+	// ReRequestBudget bounds a whole Re-request review; zero is 45 seconds.
+	ReRequestBudget time.Duration
+	// OpenRetryFirst is the first wait before an unanswered check of a report's PRs is retried; zero is 30 seconds.
+	OpenRetryFirst time.Duration
+	// Log takes the service's log lines; nil writes them to stderr.
+	Log io.Writer
 	// StackChecker says whether a stack's top conflicts with its base; nil means the check never runs.
 	StackChecker moor.StackChecker
 	stackBase    stackBaseState
@@ -1256,4 +1271,11 @@ func (s *Service) QuotaHold(fleet, harness string) (standing.QuotaHold, bool) {
 	q, _, have := s.Quota.Quota(s.dockConfig(fleet, harness))
 	hold := standing.CheckQuotaHold(f.Limits, q, have)
 	return hold, hold.Held
+}
+
+func (s *Service) log() io.Writer {
+	if s.Log == nil {
+		return os.Stderr
+	}
+	return s.Log
 }

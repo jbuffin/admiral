@@ -280,7 +280,7 @@ func (s *Service) queueEnded(e ending) {
 		// A killed ship's session is usually gone by now. Without the marker the
 		// next start writes `ended` a second time.
 		if merr != nil && !killed && !sessionhost.IsNoSession(merr) {
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: its ended marker cannot be set: %v\n", name, merr)
+			fmt.Fprintf(s.log(), "admiral: ship %s: its ended marker cannot be set: %v\n", name, merr)
 		}
 		if clean {
 			s.removeShipFiles(name, owner)
@@ -350,7 +350,7 @@ func (s *Service) keepInbox(sess sessionhost.Session) bool {
 	o := sess.Options
 	rec := state.KeptShip{Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"], FleetColor: o["fleet-color"], Harness: o["harness"]}
 	if err := s.State.KeepInbox(sess.Name, rec); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its inbox cannot be kept: %v\n", sess.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its inbox cannot be kept: %v\n", sess.Name, err)
 		return false
 	}
 	if !inbox.Waiting(home, sess.Name) {
@@ -395,7 +395,7 @@ func (s *Service) removeShipFiles(session string, owner *track) {
 func (s *Service) readReport(session string) json.RawMessage {
 	raw, problem := s.loadReport(session)
 	if problem != "" {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: %s\n", session, problem)
+		fmt.Fprintf(s.log(), "admiral: ship %s: %s\n", session, problem)
 	}
 	return raw
 }
@@ -455,7 +455,7 @@ func (s *Service) writeCrewItems(sess sessionhost.Session, report []byte) {
 		},
 	}
 	if err := inbox.WriteCrewItems(run, report); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: crew items were not written: %v\n", sess.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: crew items were not written: %v\n", sess.Name, err)
 	}
 }
 

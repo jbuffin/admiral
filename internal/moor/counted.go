@@ -9,8 +9,7 @@ import (
 	"github.com/jbuffin/admiral/internal/delay"
 )
 
-// RetryWindow bounds how long a failing GitHub is retried before the ship sails off.
-var RetryWindow = delay.From("ADMIRAL_MOOR_RETRY", 8*time.Second)
+var defaultRetryWindow = delay.From("ADMIRAL_MOOR_RETRY", 8*time.Second)
 
 // GitHub is the fleet's built-in GitHub client.
 type GitHub interface {
@@ -55,6 +54,8 @@ type Check struct {
 	Fleet  string
 	GitHub GitHub // nil when the fleet has no GitHub source
 	Route  func(host, nameWithOwner string) string
+	// RetryWindow bounds how long a failing GitHub is retried before the ship sails off; zero is ADMIRAL_MOOR_RETRY, or 8 seconds.
+	RetryWindow time.Duration
 }
 
 // Counted returns the PRs that count towards mooring: GitHub confirms them open,
@@ -80,9 +81,13 @@ func CountedAnswered(ctx context.Context, c Check, prs []string) (counted []stri
 	if len(candidates) == 0 {
 		return nil, true
 	}
-	ctx, cancel := context.WithTimeout(ctx, RetryWindow)
+	window := c.RetryWindow
+	if window == 0 {
+		window = defaultRetryWindow
+	}
+	ctx, cancel := context.WithTimeout(ctx, window)
 	defer cancel()
-	pause := min(RetryWindow/5, 500*time.Millisecond)
+	pause := min(window/5, 500*time.Millisecond)
 	for {
 		open, err := c.GitHub.OpenPRs(ctx, candidates)
 		if err == nil {

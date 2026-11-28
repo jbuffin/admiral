@@ -2,7 +2,6 @@ package ships
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -18,7 +17,7 @@ import (
 func (s *Service) proposeAllowRules(sess sessionhost.Session, report []byte) {
 	recs, err := permlog.ReadRound(s.Launcher.Home, sess.Name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its permission log cannot be read: %v\n", sess.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: its permission log cannot be read: %v\n", sess.Name, err)
 		return
 	}
 	if len(recs) == 0 || recs[0].Fleet == "" {
@@ -31,12 +30,12 @@ func (s *Service) proposeAllowRules(sess sessionhost.Session, report []byte) {
 		var fromEvent bool
 		var tierText string
 		if restricted, fromEvent, tierText, err = s.EventShip(fleet, sess.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: no allow rules proposed, its launch cannot be read: %v\n", sess.Name, err)
+			fmt.Fprintf(s.log(), "admiral: ship %s: no allow rules proposed, its launch cannot be read: %v\n", sess.Name, err)
 			return
 		}
 		if fromEvent {
 			if tier, err = parseTier(tierText); err != nil {
-				fmt.Fprintf(os.Stderr, "admiral: ship %s: no allow rules proposed, its trigger's tier is unreadable: %v\n", sess.Name, err)
+				fmt.Fprintf(s.log(), "admiral: ship %s: no allow rules proposed, its trigger's tier is unreadable: %v\n", sess.Name, err)
 				return
 			}
 		}
@@ -47,12 +46,12 @@ func (s *Service) proposeAllowRules(sess sessionhost.Session, report []byte) {
 	}
 	have, err := s.Launcher.AllowRules().List(fleet)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: the fleet's allow rules cannot be read: %v\n", sess.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: the fleet's allow rules cannot be read: %v\n", sess.Name, err)
 		return
 	}
 	cands, _ := allowrules.Candidates(prompts, map[string]allowrules.Fleet{fleet: have}, s.Launcher.Home)
 	if err := inbox.WriteAllowRuleProposals(s.Launcher.Home, fleet, cands, inbox.AllowRuleReasons(report)); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: allow rule proposals were not written: %v\n", sess.Name, err)
+		fmt.Fprintf(s.log(), "admiral: ship %s: allow rule proposals were not written: %v\n", sess.Name, err)
 	}
 }
 

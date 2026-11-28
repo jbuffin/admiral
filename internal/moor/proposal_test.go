@@ -57,7 +57,7 @@ func TestProposeT3MakesOneBatchPerPRAndAuthor(t *testing.T) {
 		strangerEvent(wpr1, "b1", "stranger-2", wEv),
 		strangerEvent(wpr2, "c1", "stranger-1", wEv),
 	)
-	batches, _ := ProposeT3("Nelson", d, wNow, validTestLogin)
+	batches, _ := ProposeT3("Nelson", d, wNow, 0, validTestLogin)
 	want := map[string][]string{
 		wpr1 + " stranger-1": {"a1", "a2"},
 		wpr1 + " stranger-2": {"b1"},
@@ -77,7 +77,7 @@ func TestProposeT3SkipsEventsAlreadyProposed(t *testing.T) {
 	ps.Proposed = []ProposedEvent{{ID: "a1", At: wEv}}
 	d.Next.PRs[wpr1] = ps
 
-	batches, next := ProposeT3("Nelson", d, wNow, validTestLogin)
+	batches, next := ProposeT3("Nelson", d, wNow, 0, validTestLogin)
 	if got, want := byAuthor(batches), map[string][]string{wpr1 + " stranger-1": {"a2"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("batches = %v, want only the new event %v", got, want)
 	}
@@ -86,19 +86,19 @@ func TestProposeT3SkipsEventsAlreadyProposed(t *testing.T) {
 	}
 
 	d.Next = next
-	if again, _ := ProposeT3("Nelson", d, wNow, validTestLogin); len(again) != 0 {
+	if again, _ := ProposeT3("Nelson", d, wNow, 0, validTestLogin); len(again) != 0 {
 		t.Fatalf("a repeated poll proposed again: %v", byAuthor(again))
 	}
 }
 
 func TestProposeT3HoldsAFreshAuthorsBatchUntilItsNewestEventIsOldEnough(t *testing.T) {
 	d := t3Decision(
-		strangerEvent(wpr1, "old", "stranger-1", wNow.Add(-3*WakeDebounce)),
+		strangerEvent(wpr1, "old", "stranger-1", wNow.Add(-3*defaultWakeDebounce)),
 		strangerEvent(wpr1, "fresh", "stranger-2", wNow.Add(-time.Minute)),
-		strangerEvent(wpr1, "mixed-old", "stranger-3", wNow.Add(-3*WakeDebounce)),
+		strangerEvent(wpr1, "mixed-old", "stranger-3", wNow.Add(-3*defaultWakeDebounce)),
 		strangerEvent(wpr1, "mixed-fresh", "stranger-3", wNow.Add(-time.Minute)),
 	)
-	batches, next := ProposeT3("Nelson", d, wNow, validTestLogin)
+	batches, next := ProposeT3("Nelson", d, wNow, 0, validTestLogin)
 	want := map[string][]string{wpr1 + " stranger-1": {"old"}}
 	if got := byAuthor(batches); !reflect.DeepEqual(got, want) {
 		t.Fatalf("batches = %v, want only the author whose newest event is old enough: %v", got, want)
@@ -114,7 +114,7 @@ func TestProposeT3ProposesFreshEventsOnThePRThatWakes(t *testing.T) {
 		strangerEvent(wpr2, "on-other-pr", "stranger-1", wNow.Add(-time.Minute)),
 	)
 	d.Wake, d.PR = true, wpr1
-	batches, _ := ProposeT3("Nelson", d, wNow, validTestLogin)
+	batches, _ := ProposeT3("Nelson", d, wNow, 0, validTestLogin)
 	want := map[string][]string{wpr1 + " stranger-1": {"on-waking-pr"}}
 	if got := byAuthor(batches); !reflect.DeepEqual(got, want) {
 		t.Fatalf("batches = %v, want %v: the round's cursor passes the events of the PR that wakes only", got, want)
@@ -131,7 +131,7 @@ func TestProposeT3PrunesRecordedEventsTheCursorHasPassed(t *testing.T) {
 			{ID: "after", At: cursor.Add(5 * time.Minute)},
 		},
 	}
-	_, next := ProposeT3("Nelson", d, wNow, validTestLogin)
+	_, next := ProposeT3("Nelson", d, wNow, 0, validTestLogin)
 	if got, want := proposedIDs(next, wpr1), []string{"after", "new"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("recorded IDs = %v, want %v: an entry goes once the cursor is past its time", got, want)
 	}
@@ -146,7 +146,7 @@ func TestProposeT3GroupsAGhostUnderGhost(t *testing.T) {
 		strangerEvent(wpr1, "g2", "not a login!", wEv),
 		strangerEvent(wpr1, "ok", "stranger-1", wEv),
 	)
-	batches, _ := ProposeT3("Nelson", d, wNow, validTestLogin)
+	batches, _ := ProposeT3("Nelson", d, wNow, 0, validTestLogin)
 	want := map[string][]string{wpr1 + " ghost": {"g1", "g2"}, wpr1 + " stranger-1": {"ok"}}
 	if got := byAuthor(batches); !reflect.DeepEqual(got, want) {
 		t.Fatalf("batches = %v, want %v", got, want)
@@ -158,7 +158,7 @@ func TestProposeT3BatchIDIsTheProposalID(t *testing.T) {
 		strangerEvent(wpr1, "a2", "stranger-1", wEv.Add(time.Minute)),
 		strangerEvent(wpr1, "a1", "stranger-1", wEv),
 	)
-	batches, _ := ProposeT3("Nelson", d, wNow, validTestLogin)
+	batches, _ := ProposeT3("Nelson", d, wNow, 0, validTestLogin)
 	if len(batches) != 1 {
 		t.Fatalf("batches = %v, want one", byAuthor(batches))
 	}
