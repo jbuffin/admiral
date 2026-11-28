@@ -147,8 +147,51 @@ func TestACookieOnlySocketsFollowAndUnfollowNeverReachTheRecord(t *testing.T) {
 	tablet := r.dialAs("d-tablet", true)
 	r.follow(tablet, nil, "")
 	r.wantNext(tablet, "attention")
+	r.closeAndWaitGone(tablet)
+	r.wantEnded(rc)
 	got := rc.all()
-	if len(got) != 1 || got[0].call != "followed" || got[0].device != "d-tablet" {
-		t.Errorf("record heard %+v, want only the bearer socket's follow of d-tablet", got)
+	if len(got) != 2 || got[0].call != "followed" || got[0].device != "d-tablet" || got[1].call != "ended" || got[1].device != "d-tablet" {
+		t.Errorf("record heard %+v, want only the bearer socket's follow and end of d-tablet", got)
+	}
+}
+
+func TestConnectedIsTrueWhileADeviceHasAFollowerSocketOpen(t *testing.T) {
+	r := newFollowRig(t)
+	if r.f.Connected("d-phone") {
+		t.Fatal("connected before any follow")
+	}
+	a, b := r.dialAs("d-phone", true), r.dialAs("d-phone", true)
+	for _, c := range []*websocket.Conn{a, b} {
+		r.follow(c, nil, "")
+		r.wantNext(c, "attention")
+	}
+	if !r.f.Connected("d-phone") {
+		t.Error("not connected after a bearer push_follow")
+	}
+	r.closeAndWaitGone(a)
+	if !r.f.Connected("d-phone") {
+		t.Error("not connected with one of two sockets still open")
+	}
+	r.closeAndWaitGone(b)
+	r.waitConnected("d-phone", false)
+
+	c := r.dialAs("d-phone", true)
+	r.follow(c, nil, "")
+	r.wantNext(c, "attention")
+	r.waitConnected("d-phone", true)
+	r.write(c, map[string]any{"type": "push_unfollow"})
+	r.handledOne()
+	r.handledOne()
+	r.waitConnected("d-phone", false)
+}
+
+func (r *followRig) waitConnected(device string, want bool) {
+	r.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for r.f.Connected(device) != want {
+		if time.Now().After(deadline) {
+			r.t.Fatalf("Connected(%q) never became %v", device, want)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

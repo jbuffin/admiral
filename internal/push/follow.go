@@ -35,7 +35,7 @@ type FollowersConfig struct {
 	Record FollowRecorder
 }
 
-// FollowRecorder is where Followers reports a device's follow state, once per device and not per socket.
+// FollowRecorder is where Followers reports a device's follow state, `Followed` on every bearer push_follow, `Unfollowed` on push_unfollow, and `FollowEnded` once when a device's last follower socket ends.
 type FollowRecorder interface {
 	Followed(device string)
 	Unfollowed(device string)
@@ -67,8 +67,9 @@ type Followers struct {
 	count     int
 
 	// smu guards socks and is never held across a Record call, so auth can ask Connected while it holds its own lock.
-	smu   sync.Mutex
-	socks map[string]map[int]struct{} // per device, the sockets that follow
+	smu     sync.Mutex
+	socks   map[string]map[int]struct{} // per device, the sockets that follow
+	watched map[int]struct{}            // sockets with a watcher on their context, so a re-follow starts no second one
 }
 
 func NewFollowers(cfg FollowersConfig) *Followers {
@@ -86,7 +87,7 @@ func NewFollowers(cfg FollowersConfig) *Followers {
 	if cfg.Send == nil {
 		cfg.Send = func(c *server.Client, msg []byte) error { return c.Send(json.RawMessage(msg)) }
 	}
-	return &Followers{cfg: cfg, followers: map[int]*follower{}, socks: map[string]map[int]struct{}{}}
+	return &Followers{cfg: cfg, followers: map[int]*follower{}, socks: map[string]map[int]struct{}{}, watched: map[int]struct{}{}}
 }
 
 type pushMsg struct {
@@ -313,19 +314,23 @@ func (f *Followers) joined(ctx context.Context, c *server.Client) {
 		set = map[int]struct{}{}
 		f.socks[d] = set
 	}
-	_, had := set[c.ID()]
 	set[c.ID()] = struct{}{}
+	_, watching := f.watched[c.ID()]
+	f.watched[c.ID()] = struct{}{}
 	f.smu.Unlock()
-	if !had {
+	if f.cfg.Record != nil {
+		f.cfg.Record.Followed(d)
+	}
+	if !watching {
 		go func() {
 			<-ctx.Done()
+			f.smu.Lock()
+			delete(f.watched, c.ID())
+			f.smu.Unlock()
 			if f.leave(c) && f.cfg.Record != nil {
 				f.cfg.Record.FollowEnded(d, f.cfg.Now())
 			}
 		}()
-	}
-	if f.cfg.Record != nil {
-		f.cfg.Record.Followed(d)
 	}
 }
 
