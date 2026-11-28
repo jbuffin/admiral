@@ -410,11 +410,15 @@ func (w *world) startLAN(t *testing.T) *fleetInst {
 		writeConfig(t, w.home, w.config())
 	}
 	w.in = launchAdmiral(t, w.home, "0.0.0.0:0", w.baseEnv())
-	if m := lanLine.FindStringSubmatch(w.in.LANLine); m != nil {
-		w.in.LANIP = m[1]
-	}
+	w.in.setLANIP()
 	requireLAN(t, w.in.instance)
 	return w.in
+}
+
+func (in *fleetInst) setLANIP() {
+	if m := lanLine.FindStringSubmatch(in.LANLine); m != nil {
+		in.LANIP = m[1]
+	}
 }
 
 func readFile(p string) (string, error) {
