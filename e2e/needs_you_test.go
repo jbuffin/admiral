@@ -313,6 +313,9 @@ func TestNoFirstHook(t *testing.T) {
 	}
 	w.waitPaneState(busy.Session, "working") // a loaded runner starts the fake late
 	w.in.waitStatusList(t, busy.Session, "underway")
+	holdThat(t, "the ship that fired working left underway", func() bool {
+		return statusOf(w.in.ships(t), busy.Session) == "underway"
+	})
 
 	if code := w.inputSeen(quiet.Session); code/100 != 2 {
 		t.Fatalf("input-seen = %d, want 2xx", code)
