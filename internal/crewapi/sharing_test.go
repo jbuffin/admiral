@@ -452,6 +452,7 @@ func readSidecar(t *testing.T, dir, name string) map[string]any {
 }
 
 func TestWriteSidecarWritesTheSchemaPrivatelyAndLeavesNoTempFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	tag := "v1.2"
 	s := crewapi.Sidecar{Version: 1, Host: "github.com", Repo: "octocat/admiral-crew", Path: "crew/bosun.md", UpstreamName: "bosun", Commit: commit40, Tag: &tag, UpstreamBlob: strings.Repeat("b", 40), ContentSHA256: hexSum("x"), ImportedAt: "2026-11-20T10:00:00Z", UpdatedAt: "2026-11-20T10:00:00Z"}
@@ -476,6 +477,7 @@ func TestWriteSidecarWritesTheSchemaPrivatelyAndLeavesNoTempFile(t *testing.T) {
 }
 
 func TestWriteSidecarKeepsTheUnknownFieldsOfOneAlreadyThere(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "bosun.shared.json"), sidecarFor("old"))
 	s := crewapi.Sidecar{Version: 1, Host: "github.com", Repo: "octocat/admiral-crew", Path: "crew/bosun.md", UpstreamName: "bosun", Commit: commit40, UpstreamBlob: strings.Repeat("b", 40), ContentSHA256: hexSum("new"), ImportedAt: "2026-11-20T10:00:00Z", UpdatedAt: "2026-11-21T10:00:00Z"}
@@ -489,6 +491,7 @@ func TestWriteSidecarKeepsTheUnknownFieldsOfOneAlreadyThere(t *testing.T) {
 }
 
 func TestWriteSidecarRefusesAFileThatIsNotAJSONObjectAndLeavesItAlone(t *testing.T) {
+	t.Parallel()
 	for name, content := range map[string]string{"an array": "[1]", "null": "null", "garbage": "not json"} {
 		dir := t.TempDir()
 		writeFile(t, filepath.Join(dir, "bosun.shared.json"), content)
@@ -503,6 +506,7 @@ func TestWriteSidecarRefusesAFileThatIsNotAJSONObjectAndLeavesItAlone(t *testing
 }
 
 func TestSidecarPresentSeesAnythingAtTheName(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if got, err := crewapi.SidecarPresent(dir, "bosun"); err != nil || got {
 		t.Errorf("empty dir: %v, %v, want false", got, err)
@@ -533,6 +537,7 @@ func resolvedMember(t *testing.T, file string) crew.Member {
 }
 
 func TestCanonicalBytesDropUnknownFieldsAndAdHocMarks(t *testing.T) {
+	t.Parallel()
 	m := resolvedMember(t, "---\nname: bosun\nrole: triager\npick-me-when: Fleet bosun.\nx-extra: secret-ish\n---\n\nDo the work.\n")
 	run := "run-1"
 	m.AdHoc, m.AdHocRun = true, &run
@@ -548,12 +553,14 @@ func TestCanonicalBytesDropUnknownFieldsAndAdHocMarks(t *testing.T) {
 }
 
 func TestCheckPublishAcceptsACleanFileWithNewlinesAndTabs(t *testing.T) {
+	t.Parallel()
 	if r := crewapi.CheckPublish([]byte("---\nname: bosun\n---\n\n\tIndented line.\n"), crewapi.PublishPaths{AdmiralHome: "/Users/ann/.admiral", Home: "/Users/ann"}); r != nil {
 		t.Errorf("refused a clean file: %+v", r)
 	}
 }
 
 func TestCheckPublishRefusesEachHiddenRuneAndNamesTheCodePointAndLine(t *testing.T) {
+	t.Parallel()
 	for r, code := range map[rune]string{
 		0x202E: "U+202E", 0x200B: "U+200B", 0xFEFF: "U+FEFF", 0x0007: "U+0007", 0xE0041: "U+E0041", 0xFE0F: "U+FE0F",
 		0xE0100: "U+E0100", 0x115F: "U+115F", 0x1160: "U+1160", 0x3164: "U+3164", 0xFFA0: "U+FFA0", 0x2800: "U+2800",
@@ -569,6 +576,7 @@ func TestCheckPublishRefusesEachHiddenRuneAndNamesTheCodePointAndLine(t *testing
 }
 
 func TestCheckPublishRefusesEveryFormOfAMacPath(t *testing.T) {
+	t.Parallel()
 	p := crewapi.PublishPaths{AdmiralHome: "/Users/ann/admiral-home", Home: "/Users/ann", CloneRoot: "/Volumes/code/clones", SearchRoots: []string{"/Volumes/work/repos"}}
 	for _, line := range []string{
 		"see /Users/ann/admiral-home/fleets/work",
@@ -587,6 +595,7 @@ func TestCheckPublishRefusesEveryFormOfAMacPath(t *testing.T) {
 }
 
 func TestCheckPublishRefusesTheHomeBaseNameSegment(t *testing.T) {
+	t.Parallel()
 	got := crewapi.CheckPublish([]byte("work from /Volumes/backup/ann/project\n"), crewapi.PublishPaths{Home: "/Users/ann"})
 	if got == nil || got.Check != crewapi.CheckPaths {
 		t.Errorf("got %+v, want a path refusal on the home's base name", got)
@@ -594,6 +603,7 @@ func TestCheckPublishRefusesTheHomeBaseNameSegment(t *testing.T) {
 }
 
 func TestCheckPublishRefusesEachWayToSpellAHomePath(t *testing.T) {
+	t.Parallel()
 	p := crewapi.PublishPaths{AdmiralHome: "/Users/ann/admiral-home", Home: "/Users/ann/", CloneRoot: "/Users/ann//clones/"}
 	for name, line := range map[string]string{
 		"$HOME":            "see $HOME/github_repos/private-repo",
@@ -612,12 +622,14 @@ func TestCheckPublishRefusesEachWayToSpellAHomePath(t *testing.T) {
 }
 
 func TestCheckPublishLeavesAnUnrelatedPathAlone(t *testing.T) {
+	t.Parallel()
 	if got := crewapi.CheckPublish([]byte("use /usr/local/bin and ./relative/path and https://example.com/a\n"), crewapi.PublishPaths{AdmiralHome: "/Users/ann/admiral-home", Home: "/Users/ann"}); got != nil {
 		t.Errorf("refused: %+v", got)
 	}
 }
 
 func TestCheckPublishRefusesGitleaksAllowAndNamesTheLine(t *testing.T) {
+	t.Parallel()
 	got := crewapi.CheckPublish([]byte("a\nb\nkey = value # gitleaks:allow\n"), crewapi.PublishPaths{})
 	if got == nil || got.Check != crewapi.CheckGitleaksAllow || got.Line != 3 {
 		t.Errorf("got %+v, want a gitleaks:allow refusal on line 3", got)
@@ -625,6 +637,7 @@ func TestCheckPublishRefusesGitleaksAllowAndNamesTheLine(t *testing.T) {
 }
 
 func TestCheckPublishReportsPathsBeforeHiddenBeforeGitleaksAllow(t *testing.T) {
+	t.Parallel()
 	p := crewapi.PublishPaths{Home: "/Users/ann"}
 	all := "/Users/ann/x \u202e gitleaks:allow\n"
 	if got := crewapi.CheckPublish([]byte(all), p); got == nil || got.Check != crewapi.CheckPaths {

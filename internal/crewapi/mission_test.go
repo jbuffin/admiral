@@ -11,6 +11,7 @@ import (
 )
 
 func TestKeepMissionCreatesTheMissionsDirectoryAndWritesTheTextOnce(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	const text = "---\nname: sweep\n---\n\nRead every file ✓\n"
 	written, err := crewapi.KeepMission(home, "work", "sweep", text)
@@ -35,6 +36,7 @@ func TestKeepMissionCreatesTheMissionsDirectoryAndWritesTheTextOnce(t *testing.T
 }
 
 func TestKeepMissionRefusesADifferentFileWithAMissionRefusedErrorAndLeavesIt(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	dir := filepath.Join(home, "fleets", "work", "missions")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -54,6 +56,7 @@ func TestKeepMissionRefusesADifferentFileWithAMissionRefusedErrorAndLeavesIt(t *
 }
 
 func TestKeepMissionRefusesAnyNameOrKeyThatIsNotASafeSingleComponent(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	for _, c := range [][2]string{{"work", "../x"}, {"work", "a/b"}, {"work", "Bad"}, {"work", ""}, {"../work", "sweep"}, {"", "sweep"}, {"a/b", "sweep"}} {
 		if written, err := crewapi.KeepMission(home, c[0], c[1], "text"); written || err == nil {
@@ -69,6 +72,7 @@ func TestKeepMissionRefusesAnyNameOrKeyThatIsNotASafeSingleComponent(t *testing.
 }
 
 func TestKeepMissionErrorsOnALinkOrANonDirectoryOnThePath(t *testing.T) {
+	t.Parallel()
 	for name, setup := range map[string]func(t *testing.T, home, outside string){
 		"fleets is a link": func(t *testing.T, home, outside string) {
 			if err := os.Symlink(outside, filepath.Join(home, "fleets")); err != nil {
@@ -118,6 +122,7 @@ func TestKeepMissionErrorsOnALinkOrANonDirectoryOnThePath(t *testing.T) {
 }
 
 func TestKeepMissionRacersWriteOneFileAndTheRestSeeItKept(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	var wg sync.WaitGroup
 	results := make([]bool, 8)

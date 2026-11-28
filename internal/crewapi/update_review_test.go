@@ -42,6 +42,7 @@ func TestUpdateAResultThatHoldsUnknownIsNotReusedInsideFiveMinutes(t *testing.T)
 }
 
 func TestUpdateAStateSetAfterACheckBeganSurvivesTheCheck(t *testing.T) {
+	t.Parallel()
 	got := crewapi.StoreKeepsASetStateOverAnOlderCheck()
 	if got["a"] != "none" || got["b"] != "available" {
 		t.Errorf("states = %v, want a none (set after the check began) and b available", got)
