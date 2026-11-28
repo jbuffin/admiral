@@ -35,6 +35,8 @@ func newPushRig(t *testing.T) *pushRig {
 	w.cueFleets(map[string][]string{
 		"f": {"hook working", "sleep 1", pushingCue, "wait go"},
 		"q": {"hook working", "sleep 1", pushingCue, "wait go"},
+		// Answered by releasing go; the last wait keeps the fake alive so its exit is no push or count change of its own.
+		"ans": {"hook working", "sleep 1", pushingCue, "wait go", "hook working", "wait never"},
 	})
 	roots := filepath.Join(w.root, "push-roots.pem")
 	if err := os.WriteFile(roots, svc.CertPEM(), 0o600); err != nil {
