@@ -212,6 +212,7 @@ func samePathAs(t *testing.T, a, b string) bool {
 }
 
 func TestPromoteStopsTheRestrictedShipThenLaunchesANormalAutopilotShipFromItsWork(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec, clone, tip := p.ready()
 	body := p.mustPromote(rec.ID)
@@ -248,6 +249,7 @@ func TestPromoteStopsTheRestrictedShipThenLaunchesANormalAutopilotShipFromItsWor
 }
 
 func TestAPromotedRecordShowsThePromotedShipAndKeepsItsOwnShip(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec, _, _ := p.ready()
 	before, err := p.rig.store.Records("work")
@@ -269,6 +271,7 @@ func TestAPromotedRecordShowsThePromotedShipAndKeepsItsOwnShip(t *testing.T) {
 }
 
 func TestAPromotedRecordSurvivesAReopenOfTheStore(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec, _, _ := p.ready()
 	p.mustPromote(rec.ID)
@@ -289,6 +292,7 @@ func TestAPromotedRecordSurvivesAReopenOfTheStore(t *testing.T) {
 }
 
 func TestASecondPromoteAnswersTheFirstShipAndLaunchesAndStopsNothing(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec, _, _ := p.ready()
 	p.mustPromote(rec.ID)
@@ -302,6 +306,7 @@ func TestASecondPromoteAnswersTheFirstShipAndLaunchesAndStopsNothing(t *testing.
 }
 
 func TestPromoteRefusesWhatIsNotARestrictedDraftFixLaunchOfThisRoutine(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		rec    func(p *promoRig) routines.Trigger
 		status int
@@ -326,6 +331,7 @@ func TestPromoteRefusesWhatIsNotARestrictedDraftFixLaunchOfThisRoutine(t *testin
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			p := newPromoRig(t, true)
 			clone := p.clone(restrictedShip)
 			p.commitIn(clone, "fix.txt", "the fix\n", "fix")
@@ -340,6 +346,7 @@ func TestPromoteRefusesWhatIsNotARestrictedDraftFixLaunchOfThisRoutine(t *testin
 }
 
 func TestPromoteAnswers404ForAnUnknownRecordOrRoutine(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	code, body := p.promote(p.routine.ID, "no-such-record")
 	wantError(t, code, body, http.StatusNotFound)
@@ -351,6 +358,7 @@ func TestPromoteAnswers404ForAnUnknownRecordOrRoutine(t *testing.T) {
 }
 
 func TestPromoteRefusesAnUndoneRecordAndOneWhoseCloneIsGone(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec, clone, _ := p.ready()
 	if code, body := p.do("POST", "/api/fleets/work/routines/"+p.routine.ID+"/runs/"+rec.ID+"/undo", ""); code != http.StatusOK {
@@ -371,6 +379,7 @@ func TestPromoteRefusesAnUndoneRecordAndOneWhoseCloneIsGone(t *testing.T) {
 }
 
 func TestPromoteRefusesNothingToPromoteAndCommitsThatTouchAdmiralBeforeStoppingTheShip(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec := p.draftFix(restrictedShip)
 	clone := p.clone(restrictedShip)
@@ -391,6 +400,7 @@ func TestPromoteRefusesNothingToPromoteAndCommitsThatTouchAdmiralBeforeStoppingT
 }
 
 func TestPromoteRefusesAClonesChangedAlternatesBeforeStoppingTheShip(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec, clone, _ := p.ready()
 	alt := filepath.Join(clone, ".git", "objects", "info", "alternates")
@@ -410,6 +420,7 @@ func TestPromoteRefusesAClonesChangedAlternatesBeforeStoppingTheShip(t *testing.
 }
 
 func TestALaunchRefusalAnswersItsOwnStatusWithItsReasonAndRecordsNothing(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec, _, _ := p.ready()
 	p.seams.refuse = &launcher.Error{Status: http.StatusTooManyRequests, Msg: "the global cap of 4 ships is reached"}
@@ -428,6 +439,7 @@ func TestALaunchRefusalAnswersItsOwnStatusWithItsReasonAndRecordsNothing(t *test
 }
 
 func TestALauncherSetupFailureAnswersItsOwn500NotA409(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec, _, _ := p.ready()
 	p.seams.refuse = &launcher.Error{Status: http.StatusInternalServerError, Msg: "could not start the ship from the restricted work"}
@@ -436,6 +448,7 @@ func TestALauncherSetupFailureAnswersItsOwn500NotA409(t *testing.T) {
 }
 
 func TestPromoteRefusesHarnessConfigAndSymlinksBeforeStoppingTheShip(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec := p.draftFix(restrictedShip)
 	clone := p.clone(restrictedShip)
@@ -457,6 +470,7 @@ func TestPromoteRefusesHarnessConfigAndSymlinksBeforeStoppingTheShip(t *testing.
 }
 
 func TestPromoteWithNoLaunchSeamIsA500AndRecordsNothing(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, false)
 	rec, _, _ := p.ready()
 	code, body := p.promote(p.routine.ID, rec.ID)
@@ -467,6 +481,7 @@ func TestPromoteWithNoLaunchSeamIsA500AndRecordsNothing(t *testing.T) {
 }
 
 func TestUndoOfAPromotedRecordIsRefusedAndLeavesTheCloneAndTheRecord(t *testing.T) {
+	t.Parallel()
 	p := newPromoRig(t, true)
 	rec, clone, _ := p.ready()
 	p.mustPromote(rec.ID)
@@ -484,8 +499,10 @@ func TestUndoOfAPromotedRecordIsRefusedAndLeavesTheCloneAndTheRecord(t *testing.
 }
 
 func TestPromoteRefusesAClonesPlantedGitCarrierWith400NamingItsPathBeforeStoppingTheShip(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ kind, rel string }{{"folder", "src/deep/.git"}, {"file", "one/.git"}, {"gitmodules", "src/deep/.gitmodules"}} {
 		t.Run(c.kind, func(t *testing.T) {
+			t.Parallel()
 			p := newPromoRig(t, true)
 			rec, clone, _ := p.ready()
 			path := filepath.Join(clone, filepath.FromSlash(c.rel))
