@@ -178,11 +178,7 @@ func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.
 	}
 	// one worker keeps events in order and off the source's read loop; a full queue drops the event
 	queue := make(chan routines.Event, 256)
-	go func() {
-		for ev := range queue {
-			sched.HandleEvent(ev)
-		}
-	}()
+	go sched.RunEvents(context.Background(), queue)
 	sup.OnEvent = func(source string, ev sources.Event) {
 		fleet, ok := sup.SourceFleet(source)
 		if !ok {

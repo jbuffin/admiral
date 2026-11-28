@@ -176,15 +176,42 @@ func (s *Scheduler) Changed() {
 	}
 }
 
-// Run catches up missed runs, then ticks until ctx ends, sleeping until the earliest next run or a Changed.
-func (s *Scheduler) Run(ctx context.Context) {
-	s.init()
-	if s.Ready != nil {
+// awaitHost waits for the ships host's first read; a nil Ready never waits. It is false when ctx ends first.
+func (s *Scheduler) awaitHost(ctx context.Context) bool {
+	if s.Ready == nil {
+		return true
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-s.Ready:
+		return true
+	}
+}
+
+// RunEvents handles queued events in order once the host has read, so a launch never waits on the host under the scheduler's lock.
+func (s *Scheduler) RunEvents(ctx context.Context, queue <-chan Event) {
+	if !s.awaitHost(ctx) {
+		return
+	}
+	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-s.Ready:
+		case ev, ok := <-queue:
+			if !ok {
+				return
+			}
+			s.HandleEvent(ev)
 		}
+	}
+}
+
+// Run catches up missed runs, then ticks until ctx ends, sleeping until the earliest next run or a Changed.
+func (s *Scheduler) Run(ctx context.Context) {
+	s.init()
+	if !s.awaitHost(ctx) {
+		return
 	}
 	_ = s.CatchUp(ctx)
 	for ctx.Err() == nil {

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -20,8 +19,23 @@ import (
 type hostRig struct {
 	*mooredFixture
 	tmux, link, sock string
-	entered          <-chan struct{} // closes when a launch first reads the config, which is before its host check
 	ctx              context.Context
+}
+
+// parkedCtx closes parked when its Done is first read, which is where a launch waits for the host.
+type parkedCtx struct {
+	context.Context
+	parked chan struct{}
+	once   sync.Once
+}
+
+func newParkedCtx(parent context.Context) *parkedCtx {
+	return &parkedCtx{Context: parent, parked: make(chan struct{})}
+}
+
+func (c *parkedCtx) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.parked) })
+	return c.Context.Done()
 }
 
 func newHostRig(t *testing.T) *hostRig {
@@ -48,14 +62,7 @@ func newHostRig(t *testing.T) *hostRig {
 	r.mooredFixture = mooredService(t, nil)
 	r.s.Host = sessionhost.New(r.link, r.sock)
 	r.s.Orders = sliceOrders{}
-	enter := make(chan struct{})
-	var once sync.Once
-	cfg := r.s.Launcher.Config
-	r.s.Launcher.Config = func() *config.Config {
-		once.Do(func() { close(enter) })
-		return cfg()
-	}
-	r.entered = enter
+	r.s.Launcher.Tmux = r.link
 	ctx, stop := context.WithCancel(context.Background())
 	t.Cleanup(stop)
 	r.ctx = ctx
@@ -77,14 +84,19 @@ func TestALaunchBeforeTheHostsFirstReadWaitsForItInsteadOfAnswering503(t *testin
 	t.Parallel()
 	r := newHostRig(t)
 	req := r.sliceLaunch(t)
+	pc := newParkedCtx(context.Background())
 	done := make(chan *launcher.Error, 1)
 	go func() {
-		_, lerr := r.s.Launch(context.Background(), req)
+		_, lerr := r.s.Launch(pc, req)
 		done <- lerr
 	}()
-	<-r.entered
-	r.startHost()
-	lerr := <-done
+	var lerr *launcher.Error
+	select {
+	case <-pc.parked:
+		r.startHost()
+		lerr = <-done
+	case lerr = <-done:
+	}
 	if lerr == nil || lerr.Status != http.StatusConflict || !strings.Contains(lerr.Msg, "(Slice)") {
 		t.Fatalf("a launch that began before the host's first read = %v, want it to wait for the read and be refused by the Slice ship's claim (409)", lerr)
 	}
@@ -96,14 +108,19 @@ func TestALaunchWhoseRequestEndsBeforeTheHostsFirstReadReturnsTheContextsError(t
 	req := r.sliceLaunch(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	pc := newParkedCtx(ctx)
 	done := make(chan *launcher.Error, 1)
 	go func() {
-		_, lerr := r.s.Launch(ctx, req)
+		_, lerr := r.s.Launch(pc, req)
 		done <- lerr
 	}()
-	<-r.entered
-	cancel()
-	lerr := <-done
+	var lerr *launcher.Error
+	select {
+	case <-pc.parked:
+		cancel()
+		lerr = <-done
+	case lerr = <-done:
+	}
 	if lerr == nil || !strings.Contains(lerr.Msg, context.Canceled.Error()) {
 		t.Fatalf("a launch whose request ended before the first read = %v, want the context's error (%q)", lerr, context.Canceled)
 	}
@@ -128,5 +145,32 @@ func TestALaunchWhileTheHostsConnectionIsLostAnswers503(t *testing.T) {
 	_, lerr := r.s.Launch(context.Background(), req)
 	if lerr == nil || lerr.Status != http.StatusServiceUnavailable || lerr.Msg != NotKnownMsg {
 		t.Fatalf("a launch while the connection is lost = %v, want a 503 %q", lerr, NotKnownMsg)
+	}
+}
+
+// The cap counts ships the host lists, which is nothing until its first read, so a launch must wait for the read before it is admitted.
+func TestAnAutopilotLaunchBeforeTheHostsFirstReadIsRefusedByTheCapOnceItLands(t *testing.T) {
+	t.Parallel()
+	r := newWakeRig(t, 1)
+	r.mustLaunch(t, nil) // the one ship the cap allows
+	s2 := r.restarted()
+	s2.Host = sessionhost.New(r.s.Launcher.Tmux, r.s.Launcher.Socket)
+	hostCtx, stop := context.WithCancel(context.Background())
+	t.Cleanup(stop)
+	pc := newParkedCtx(context.Background())
+	done := make(chan *launcher.Error, 1)
+	go func() {
+		_, lerr := s2.Launch(pc, r.keyReq(func(q *launcher.Request) { q.Autopilot, q.Source, q.OrderID = true, "s", "o2" }))
+		done <- lerr
+	}()
+	var lerr *launcher.Error
+	select {
+	case <-pc.parked:
+		go s2.Host.Run(hostCtx)
+		lerr = <-done
+	case lerr = <-done:
+	}
+	if lerr == nil || lerr.Status != http.StatusConflict || !strings.Contains(lerr.Msg, launcher.AutopilotCapText) {
+		t.Fatalf("an autopilot launch made before the first read, with the cap reached = %v, want a 409 %q", lerr, launcher.AutopilotCapText)
 	}
 }

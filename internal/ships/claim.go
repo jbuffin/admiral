@@ -150,6 +150,15 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 	if lerr := launcher.CheckPins(req.Skill.Kind, req.Crew); lerr != nil {
 		return Ship{}, lerr
 	}
+	// The wait holds no lock and no reservation, and comes before admit so the cap counts real ships.
+	// Without tmux the host never reads, so that launch goes on to its 503.
+	if needsHost(req) && s.Launcher.Tmux != "" {
+		select {
+		case <-s.Host.Ready():
+		case <-ctx.Done():
+			return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: ctx.Err().Error(), Wait: WaitHost, Cause: launcher.CauseHost}
+		}
+	}
 	if req.Clone {
 		if req.Dir != "" {
 			return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "send dir or clone, not both"}
@@ -194,14 +203,6 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 	release, lerr := s.admit(req)
 	if lerr != nil {
 		return Ship{}, lerr
-	}
-	if needsHost(req) {
-		select {
-		case <-s.Host.Ready():
-		case <-ctx.Done():
-			release()
-			return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: ctx.Err().Error(), Wait: WaitHost, Cause: launcher.CauseHost}
-		}
 	}
 	got, lerr := s.LaunchOrder(req)
 	if lerr != nil {
