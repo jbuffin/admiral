@@ -174,6 +174,26 @@ func (s *socket) pushed(window time.Duration) map[string]string {
 	}
 }
 
+// idOfPushed is the id of the first item pushed with text, read to one deadline.
+func (s *socket) idOfPushed(text string) string {
+	s.t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case m := <-s.in:
+			items, _ := m["items"].([]any)
+			for _, it := range items {
+				o := it.(map[string]any)
+				if tx, _ := o["text"].(string); tx == text {
+					return o["id"].(string)
+				}
+			}
+		case <-deadline:
+			return ""
+		}
+	}
+}
+
 // idOf finds the id of the item with text in what pushed returned.
 func idOf(m map[string]string, text string) string {
 	for id, tx := range m {
@@ -237,7 +257,7 @@ func TestCopilotUIServerDroppedMidTurnFallsBackToTheFile(t *testing.T) {
 	peer.attach()
 	sub.opened("pilot")
 	peer.delta("m2", "Hello")
-	live := idOf(sub.pushed(2*time.Second), "Hello")
+	live := sub.idOfPushed("Hello")
 	if live == "" {
 		t.Fatal("the live reply was never pushed")
 	}
@@ -245,7 +265,7 @@ func TestCopilotUIServerDroppedMidTurnFallsBackToTheFile(t *testing.T) {
 	peer.c.Close()
 	appendTo(t, path, copilotAssistant(2, "Hello"))
 	// The file's copy of the reply is the live item, not a second one.
-	for id, text := range sub.pushed(3 * time.Second) {
+	for id, text := range sub.pushed(quietWindow) {
 		if text == "Hello" && id != live {
 			t.Errorf("the file's reply arrived as %q after the live one %q", id, live)
 		}

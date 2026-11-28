@@ -44,11 +44,13 @@ type Tails struct {
 	tails   map[string]string
 	seeds   map[string]Seed
 	reads   int // refreshes of a reader, for tests
+
+	pollEvery time.Duration // zero is the production poll; tests set it short
 }
 
 // Tails returns the follower of the service's ships; run it with Run and read it with Tail.
 func (s *Service) Tails() *Tails {
-	return &Tails{list: s.Ships.List, locate: s.locate, open: openAt}
+	return &Tails{list: s.Ships.List, locate: s.locate, open: openAt, pollEvery: s.pollEvery}
 }
 
 // Tail is the ship's last known tail, "" when nothing is readable.
@@ -74,7 +76,7 @@ func (t *Tails) Seed(session string) (Seed, bool) {
 
 // Run follows until ctx ends. The ships service sees a changed tail on its own tick.
 func (t *Tails) Run(ctx context.Context) {
-	tick := time.NewTicker(pollEvery)
+	tick := time.NewTicker(orDefault(t.pollEvery, pollEvery))
 	defer tick.Stop()
 	for {
 		t.Poll()

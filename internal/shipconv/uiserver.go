@@ -32,7 +32,7 @@ func uiServerPort(startCmd string) (int, bool) {
 // observe follows the ship's server until ctx ends. A missing or refusing server is the ordinary case, so it
 // retries slowly and the file serves meanwhile.
 func (s *Service) observe(ctx context.Context, w *watch, port int) {
-	const first, most = time.Second, 15 * time.Second
+	first, most := orDefault(s.uiRetry, time.Second), 15*time.Second
 	wait := first
 	for ctx.Err() == nil {
 		if s.ownsPort(w.loc.ship, port) {
