@@ -123,11 +123,11 @@ func TestRouterFromFleets(t *testing.T) {
 	if err := os.MkdirAll(rootA, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	r := RouterFromFleets([]config.Fleet{
+	r := RouterFromFleets(&config.Config{Fleets: []config.Fleet{
 		{Key: "a", SearchRoots: []string{rootA}, Owners: []string{"acme"}},
 		{Key: "b", SearchRoots: []string{rootB}},
 		{Key: "c", SearchRoots: []string{rootC}},
-	})
+	}})
 	cases := []struct{ host, repo, want string }{
 		{"github.com", "acme/widgets", "b"},    // depth 1 checkout beats a's owner claim
 		{"ghe.example.com", "corp/tools", "b"}, // depth 2 checkout, any host kept
@@ -146,12 +146,36 @@ func TestRouterFromFleetsCountsTheCloneRootAsARoot(t *testing.T) {
 	tmp := t.TempDir()
 	clones := filepath.Join(tmp, "elsewhere")
 	mkCheckout(t, filepath.Join(clones, "widget"), "https://github.com/acme/widget.git")
-	r := RouterFromFleets([]config.Fleet{
+	r := RouterFromFleets(&config.Config{Fleets: []config.Fleet{
 		{Key: "a", SearchRoots: []string{filepath.Join(tmp, "a")}, Owners: []string{"acme"}},
 		{Key: "b", SearchRoots: []string{filepath.Join(tmp, "b")}, CloneRoot: clones},
-	})
+	}})
 	if got := r.Route("github.com", "acme/widget"); got != "b" {
 		t.Errorf("Route(acme/widget) = %q, want b: its checkout is under b's clone_root", got)
+	}
+}
+
+func TestRouterFromFleetsSendsUnclaimedItemsToTheDefaultFleet(t *testing.T) {
+	fleets := []config.Fleet{{Key: "alpha", Owners: []string{"acme"}}, {Key: "bravo"}}
+	cases := []struct {
+		name, def, repo, want string
+	}{
+		{"a picked fleet takes what nobody claims", "bravo", "nobody/thing", "bravo"},
+		{"a claim still beats the picked default", "bravo", "acme/widgets", "alpha"},
+		{"no pick falls back to the first fleet", "", "nobody/thing", "alpha"},
+		{"a pick that is gone falls back to the first fleet", "gone", "nobody/thing", "alpha"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := RouterFromFleets(&config.Config{Fleets: fleets, DefaultFleetKey: c.def})
+			if got := r.Route("github.com", c.repo); got != c.want {
+				t.Errorf("Route(%q) = %q, want %q", c.repo, got, c.want)
+			}
+		})
+	}
+	r := RouterFromFleets(&config.Config{Fleets: fleets, DefaultFleetKey: "bravo"})
+	if r.Claims("bravo", "github.com").Default != true || r.Claims("alpha", "github.com").Default {
+		t.Error("Claims.Default must follow the picked default fleet")
 	}
 }
 

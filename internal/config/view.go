@@ -7,7 +7,10 @@ type View struct {
 	Type           string      `json:"type"`
 	Fleets         []FleetView `json:"fleets"`
 	FavoriteSkills []string    `json:"favorite_skills"`
-	Error          *ErrorView  `json:"error"` // the banner; null when the file is fine
+	DefaultFleet   string      `json:"default_fleet"`
+	// DefaultFleetFallback is true when default_fleet is unset or names a fleet that is gone.
+	DefaultFleetFallback bool       `json:"default_fleet_fallback"`
+	Error                *ErrorView `json:"error"` // the banner; null when the file is fine
 }
 
 // ChatView is a fleet's chat settings with their defaults filled in; Effort is empty for the

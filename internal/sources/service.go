@@ -810,7 +810,7 @@ func (s *Service) serveRepos(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "source "+key+" is not a GitHub source")
 		return
 	}
-	router := github.RouterFromFleets(cfg.Fleets)
+	router := github.RouterFromFleets(cfg)
 	c := router.Claims(def.Fleet, githubSettings(def.Settings).Host)
 	warnings := append([]string{}, router.Warnings(def.Fleet)...)
 	w.Header().Set("Cache-Control", "no-store")

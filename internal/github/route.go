@@ -92,9 +92,9 @@ func (r *Router) warn(claimants []string, msg func(fleets string) string) {
 
 // RouterFromFleets reads each fleet's checkouts and builds a router. Search
 // roots are not projects, and remotes on every host are kept.
-func RouterFromFleets(fleets []config.Fleet) *Router {
-	rf := make([]RouteFleet, 0, len(fleets))
-	for _, f := range fleets {
+func RouterFromFleets(cfg *config.Config) *Router {
+	rf := make([]RouteFleet, 0, len(cfg.Fleets))
+	for _, f := range cfg.Fleets {
 		var repos []string
 		for _, e := range repofinder.List(repofinder.FleetRoots(f.SearchRoots, f.CloneRoot)) {
 			if e.Kind == repofinder.KindCheckout {

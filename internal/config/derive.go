@@ -188,6 +188,14 @@ func (h Harness) Resolve() (string, bool) {
 	return resolveExecutable(h.Executable, h.Env)
 }
 
+// DefaultFleet is the fleet default_fleet names, else the first; fellBack says it was the else.
+func (c *Config) DefaultFleet() (key string, fellBack bool) {
+	if len(c.Fleets) == 0 {
+		return "", true
+	}
+	return c.Fleets[0].Key, false
+}
+
 func (c *Config) Fleet(key string) (Fleet, bool) {
 	for _, f := range c.Fleets {
 		if f.Key == key {

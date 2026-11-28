@@ -297,7 +297,7 @@ func (s *Service) countedFrom(ctx context.Context, sess sessionhost.Session, prs
 		return nil, true
 	}
 	fleet := sess.Options["fleet"]
-	router := github.RouterFromFleets(s.Launcher.Config().Fleets)
+	router := github.RouterFromFleets(s.Launcher.Config())
 	return moor.CountedAnswered(ctx, moor.Check{Fleet: fleet, GitHub: s.GitHub(fleet), Route: router.Route, RetryWindow: s.MoorRetry}, prs)
 }
 

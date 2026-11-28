@@ -463,7 +463,7 @@ func serve(args []string) error {
 	}
 	// Campaign children answer their own orders; every other order goes to the sources.
 	campaignService := &follow.Service{Store: followStore, Next: sourceService,
-		Route:   func(host, nwo string) string { return github.RouterFromFleets(cfg.Current().Fleets).Route(host, nwo) },
+		Route:   func(host, nwo string) string { return github.RouterFromFleets(cfg.Current()).Route(host, nwo) },
 		Clients: supervisor.GitHubClient, Ships: allShips,
 		FleetScope: func(fleet string) (string, github.FleetClaims, bool) {
 			current := cfg.Current()
@@ -471,7 +471,7 @@ func serve(args []string) error {
 			if client == nil {
 				return "", github.FleetClaims{}, false
 			}
-			return client.Host(), github.RouterFromFleets(current.Fleets).Claims(fleet, client.Host()), true
+			return client.Host(), github.RouterFromFleets(current).Claims(fleet, client.Host()), true
 		},
 		Claims: shipService.Claims, Launch: shipService.Launch}
 	defer campaignService.Close()
@@ -681,7 +681,7 @@ func serve(args []string) error {
 	}
 	// A draft's repo is one of the fleet's github.com projects that route to it, so every draft can be created.
 	inboxService.FleetRepos = func(fleet string) []string {
-		router := github.RouterFromFleets(cfg.Current().Fleets)
+		router := github.RouterFromFleets(cfg.Current())
 		var out []string
 		for _, repo := range fleetRepos(cfg, github.DefaultHost)(fleet) {
 			if router.Route(github.DefaultHost, repo) == fleet {

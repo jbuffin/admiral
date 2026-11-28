@@ -21,10 +21,12 @@ const Version = 1
 const MaxFavoriteSkills = 5
 
 type Config struct {
-	Fleets         []Fleet // file order is marina order
-	FavoriteSkills []string
-	Sources        json.RawMessage // as in the file; nil when there is no sources key
-	SourceList     []Source        // Sources, in panel order
+	Fleets []Fleet // file order is marina order
+	// DefaultFleetKey is the top-level default_fleet as stored; DefaultFleet resolves it.
+	DefaultFleetKey string
+	FavoriteSkills  []string
+	Sources         json.RawMessage // as in the file; nil when there is no sources key
+	SourceList      []Source        // Sources, in panel order
 	// MaxShips counts every ship underway or needing you, hand launches included.
 	MaxShips  int
 	Resources map[string]Resource

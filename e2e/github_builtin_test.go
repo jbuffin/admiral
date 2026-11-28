@@ -131,7 +131,7 @@ func TestGitHubBuiltin(t *testing.T) {
 	g.token("work", "fake-token-work-2")
 
 	// acme/widgets is checked out in both fleets, so it conflicts; bravo also
-	// claims the owner globex. alpha is the first fleet, the default.
+	// claims the owner globex. bravo is the picked default fleet, so it takes what nobody claims.
 	rootA, rootB := filepath.Join(w.root, "ra"), filepath.Join(w.root, "rb")
 	w.checkoutOf(rootA, "widgets", "acme/widgets")
 	w.checkoutOf(rootB, "widgets-fork", "acme/widgets")
@@ -141,7 +141,7 @@ func TestGitHubBuiltin(t *testing.T) {
 		ghNode("github.com", "other/thing", 9, false, "Somebody else's"))
 	g.search("review", "review-requested:@me", ghNode("github.com", "globex/app", 6, true, "Globex PR"))
 
-	writeConfig(t, w.home, ghConfig([]string{
+	cfg := ghConfig([]string{
 		"alpha", w.ghFleet("Alpha", []string{rootA}, nil, nil),
 		"bravo", w.ghFleet("Bravo", []string{rootB}, []string{"globex"}, nil),
 	}, rawSources(
@@ -150,7 +150,8 @@ func TestGitHubBuiltin(t *testing.T) {
 		// Nobody has signed this account in yet.
 		srcDef{Key: "ghc", Plugin: "github", Name: "GitHub", Fleet: "alpha", Settings: map[string]any{
 			"account": "newbie", "views": []map[string]any{{"title": "Newbie", "query": "is:open label:newbie"}}}},
-	)))
+	))
+	writeConfig(t, w.home, strings.Replace(cfg, `{"version":1,`, `{"version":1,"default_fleet":"bravo",`, 1))
 	w.start()
 
 	ready := func(s ghSrcJSON) bool { return s.State == "ok" && len(s.viewOrders("assigned-to-me")) > 0 }
@@ -162,8 +163,8 @@ func TestGitHubBuiltin(t *testing.T) {
 		view string
 		want []string
 	}{
-		{a, "assigned-to-me", []string{"acme/widgets#12", "other/thing#9"}},
-		{b, "assigned-to-me", []string{"globex/app#5"}},
+		{a, "assigned-to-me", []string{"acme/widgets#12"}},
+		{b, "assigned-to-me", []string{"globex/app#5", "other/thing#9"}},
 		{b, "review-requested", []string{"globex/app#6"}},
 		{a, "review-requested", []string{}},
 	} {

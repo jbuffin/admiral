@@ -59,7 +59,7 @@ func (s *Service) serveBuiltinLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.Config.Current()
-	fleetKey := github.RouterFromFleets(cfg.Fleets).Route(ref.Host, ref.Owner+"/"+ref.Repo)
+	fleetKey := github.RouterFromFleets(cfg).Route(ref.Host, ref.Owner+"/"+ref.Repo)
 	fleet, found := cfg.Fleet(fleetKey)
 	if !found {
 		writeError(w, http.StatusBadRequest, "the issue routes to no fleet")
