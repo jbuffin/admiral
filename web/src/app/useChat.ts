@@ -66,7 +66,7 @@ export function useChat(fleet: string) {
     setText((now) => (now.startsWith(typed) ? now.slice(typed.length) : now));
   };
 
-  /** A reply in words under a need card: its own text, busy and error in the card's draft, apart from the composer and the card's answer. */
+  /** A reply in words under a need card: its own text, busy and error, apart from the composer and the card's answer draft. */
   const replyNeed = async (id: string) => {
     const d = replies[id];
     const typed = d?.text ?? '';

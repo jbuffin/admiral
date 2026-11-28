@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/jbuffin/admiral/internal/chatlog"
@@ -345,7 +346,12 @@ func (s *fleetChat) needCardHeader(cardID string) (string, *launcher.Error) {
 	if rec.State != NeedOpen {
 		return "", &launcher.Error{Status: http.StatusConflict, Msg: "item " + rec.Item + " is already answered"}
 	}
-	return "[Need card: " + oneLine(cardID, 80) + " · ship " + oneLine(rec.Session, 120) + " · item " + oneLine(rec.Item, 120) + " · " + oneLine(rec.Kind, 40) + "]", nil
+	return "[Need card: " + headerField(cardID, 80) + " · ship " + headerField(rec.Session, 120) + " · item " + headerField(rec.Item, 120) + " · " + headerField(rec.Kind, 40) + "]", nil
+}
+
+// headerField is one line with no bracket or separator, so a hostile name cannot fake a second header.
+func headerField(s string, n int) string {
+	return oneLine(strings.NewReplacer("[", "(", "]", ")", "·", "-").Replace(s), n)
 }
 
 func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
