@@ -65,6 +65,20 @@ describe('the thread', () => {
     expect(t.map((i) => i.kind)).toEqual(['message', 'reset', 'message']);
   });
 
+  it('keeps an interrupted entry in order, with its text and time', () => {
+    const t = threadOf(
+      snap({
+        messages: [
+          { id: 'u-2', kind: 'message', role: 'user', text: 'after', at: '2026-01-02T03:04:08Z' },
+          { id: 'int-1', kind: 'interrupted', text: 'Interrupted', at: '2026-01-02T03:04:07Z' },
+          { id: 'u-1', kind: 'message', role: 'user', text: 'before', at: '2026-01-02T03:04:05Z' },
+        ],
+      }),
+    );
+    expect(t.map((i) => i.id)).toEqual(['u-1', 'int-1', 'u-2']);
+    expect(t[1]).toMatchObject({ kind: 'interrupted', text: 'Interrupted', at: '2026-01-02T03:04:07Z' });
+  });
+
   it('carries a reset entry\'s own text to its marker', () => {
     const t = threadOf(snap({ messages: [{ id: 'reset-2', kind: 'reset', text: 'Context refreshed', at: '2026-01-02T03:04:06Z' }] }));
     expect(t[0]).toMatchObject({ kind: 'reset', text: 'Context refreshed' });

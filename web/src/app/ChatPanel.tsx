@@ -371,8 +371,8 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
     >
       {items.length === 0 && !working ? <p class="line">No messages yet.</p> : null}
       {items.map((i) =>
-        i.kind === 'reset' ? (
-          <div key={i.id} class="compaction">
+        i.kind === 'reset' || i.kind === 'interrupted' ? (
+          <div key={i.id} class="compaction" role="separator">
             <span>{resetLabel(i.text, i.at)}</span>
           </div>
         ) : i.kind === 'question' ? (
@@ -407,14 +407,20 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
   );
 }
 
-function ChatComposer({ chat }: { chat: Chat }) {
-  const { text, setText, send, sending, error } = chat;
+function ChatComposer({ chat, fleet }: { chat: Chat; fleet: string }) {
+  const { text, setText, send, sending, error, snap, interrupt } = chat;
+  const running = snap?.state === 'working' || snap?.state === 'waiting';
   return (
     <div class="msg-box">
       {error ? (
         <p class="alert" role="alert">
           {error}
         </p>
+      ) : null}
+      {running ? (
+        <div class="msg-tools">
+          <Button label="Interrupt" variant="quiet" disabled={sending} pending={['fleet', fleet, 'interrupt']} onClick={interrupt} />
+        </div>
       ) : null}
       <MessageField label="Message AdmiralBot" placeholder="Ask AdmiralBot" text={text} setText={setText} send={() => void send()} disabled={false} canSend={!sending && text.trim() !== ''} primary />
     </div>
@@ -483,7 +489,7 @@ function Conversation({ fleet, head }: { fleet: string; head: (action: Component
         </p>
       ) : null}
       {snap ? <Thread items={items} working={snap.state === 'working'} chat={chat} fleet={fleet} /> : <p class="line">Loading…</p>}
-      <ChatComposer chat={chat} />
+      <ChatComposer chat={chat} fleet={fleet} />
     </>
   );
 }

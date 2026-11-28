@@ -266,7 +266,7 @@ export interface Question {
   pending: boolean;
   multiSelect?: boolean;
 }
-export type ItemKind = 'user' | 'assistant' | 'tool_call' | 'question' | 'turn_end' | 'compaction' | 'notice' | 'round';
+export type ItemKind = 'user' | 'assistant' | 'tool_call' | 'question' | 'turn_end' | 'compaction' | 'notice' | 'round' | 'interrupted';
 export interface Item {
   id: string;
   kind: ItemKind;

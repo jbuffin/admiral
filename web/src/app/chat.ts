@@ -69,7 +69,7 @@ export interface LaunchLine {
 
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card' | 'following_card';
+  kind: 'message' | 'question' | 'reset' | 'interrupted' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card' | 'following_card';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
@@ -95,6 +95,7 @@ export type ThreadMessage = { kind: 'message'; id: string; role: 'user' | 'assis
 export type ThreadItem =
   | ThreadMessage
   | { kind: 'reset'; id: string; text: string; at: string }
+  | { kind: 'interrupted'; id: string; text: string; at: string }
   | { kind: 'commitment'; id: string; text: string; at: string; card: CommitmentCard }
   | { kind: 'event'; id: string; text: string; at: string; card: EventCard }
   | { kind: 'launch'; id: string; text: string; at: string; card: LaunchCard }
@@ -128,6 +129,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
   const rows = s.messages.flatMap((m, i): { t: number; i: number; item: ThreadItem }[] => {
     const t = Date.parse(m.at);
     if (m.kind === 'reset') return [{ t, i, item: { kind: 'reset', id: m.id, text: m.text, at: m.at } }];
+    if (m.kind === 'interrupted') return [{ t, i, item: { kind: 'interrupted', id: m.id, text: m.text, at: m.at } }];
     if (m.kind === 'commitment' && m.card) return [{ t, i, item: { kind: 'commitment', id: m.id, text: m.text, at: m.at, card: m.card as CommitmentCard } }];
     if (m.kind === 'event_card' && m.card) return [{ t, i, item: { kind: 'event', id: m.id, text: m.text, at: m.at, card: m.card as EventCard } }];
     if (m.kind === 'launch_card' && m.card) return [{ t, i, item: { kind: 'launch', id: m.id, text: m.text, at: m.at, card: m.card as LaunchCard } }];

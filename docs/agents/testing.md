@@ -37,7 +37,7 @@ Find elements by role and accessible name, as a person would, and assert what sh
 
 - Stub `fetch` or mock `./api` in every test. happy-dom's `fetch` is real, and no test touches a network.
 - Module-level state (the skills cache, global signals) persists within a file. Reset it with `vi.resetModules` or give each test its own inputs, so no test depends on order.
-- Never import `src/app/main.tsx` (CSS, router, WebSockets, the service worker). A component that reads a global store or opens a WebSocket (`Shell`, `ShipView`, `ConversationView`) is covered by E2E or by its view model in Vitest.
+- Never import `src/app/main.tsx` (CSS, router, WebSockets, the service worker). A component that reads a global store or opens a WebSocket (`Shell`, `ShipView`) is covered by E2E or by its view model in Vitest.
 - happy-dom has no layout and no real touch. Whether a thing fits, scrolls sideways, sits under a sheet or takes a tap stays in Playwright.
 
 ### Playwright and E2E

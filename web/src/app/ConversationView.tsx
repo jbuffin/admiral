@@ -7,6 +7,7 @@ import { Icon } from './Icon';
 import type { Conversation } from './conversation';
 import { renderMarkdown } from './markdown';
 import { QuestionCall } from './QuestionCall';
+import { resetLabel } from './chat';
 import { blocksOf, capOutput, roundLabel, roundNote, toolRowLabel, workingLabel } from './turns';
 
 function Output({ text, error }: { text: string; error?: boolean }) {
@@ -60,6 +61,12 @@ function Message({ item }: { item: Item }) {
     return (
       <div class="compaction" role="separator">
         <span>Conversation compacted</span>
+      </div>
+    );
+  if (item.kind === 'interrupted')
+    return (
+      <div class="compaction" role="separator">
+        <span>{resetLabel(item.text ?? '', item.at)}</span>
       </div>
     );
   if (item.kind === 'round') {
