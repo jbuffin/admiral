@@ -99,14 +99,19 @@ const pr = (repo: string, n = 1) => ({ url: `https://github.com/${repo}/pull/${n
 const placed = (name: string, extra: Partial<Ship>): Ship => ({ ...ship(name, 'underway'), ...extra });
 
 describe('workRepo', () => {
-  it('is the repo of the ship\'s PRs, not re-homed when it is the checkout\'s origin', () => {
+  it('is the checkout\'s origin even when the ship\'s PRs are in that same repo', () => {
     const s = placed('a', { prs: [pr('acme/widgets')], origin_repo: 'acme/widgets', repo: 'widgets' });
     expect(workRepo(s)).toEqual({ repo: 'acme/widgets', rehomed: false });
   });
 
-  it('re-homes a ship whose PR is in another repo than its checkout', () => {
+  it('keeps a ship under the repo it was launched in when its PR is in another repo', () => {
     const s = placed('a', { prs: [pr('jbuffin/dotfiles')], origin_repo: 'acme/widgets', repo: 'widgets' });
-    expect(workRepo(s)).toEqual({ repo: 'jbuffin/dotfiles', rehomed: true });
+    expect(workRepo(s)).toEqual({ repo: 'acme/widgets', rehomed: false });
+  });
+
+  it('keeps Pilot Pup under the admiral repo although it read a PR in admiral-app', () => {
+    const s = placed('pilot-pup', { prs: [pr('jbuffin/admiral-app', 65)], origin_repo: 'jbuffin/admiral', repo: 'admiral' });
+    expect(workRepo(s)).toEqual({ repo: 'jbuffin/admiral', rehomed: false });
   });
 
   it('re-homes a ship launched in a search root with no origin when its PR is elsewhere', () => {
@@ -130,8 +135,8 @@ describe('workRepo', () => {
   });
 
   it('reads PRs and ignores open_prs', () => {
-    const s = placed('a', { open_prs: ['https://github.com/x/other/pull/9'], origin_repo: 'acme/widgets' });
-    expect(workRepo(s)).toEqual({ repo: 'acme/widgets', rehomed: false });
+    const s = placed('a', { prs: [pr('acme/widgets')], open_prs: ['https://github.com/x/other/pull/9', 'https://github.com/x/other/pull/10'], origin_repo: undefined });
+    expect(workRepo(s)).toEqual({ repo: 'acme/widgets', rehomed: true });
   });
 
   it('is the checkout\'s origin when the ship has no PR', () => {
@@ -154,9 +159,9 @@ describe('workRepo', () => {
     expect(workRepo(s)).toEqual({ repo: 'acme/widgets', rehomed: false });
   });
 
-  it('prefers the PRs to the origin and the order URL', () => {
+  it('prefers the origin to the PRs and the order URL', () => {
     const s = placed('a', { prs: [pr('p/q')], origin_repo: 'acme/widgets', url: 'https://github.com/other/thing/issues/1' });
-    expect(workRepo(s).repo).toBe('p/q');
+    expect(workRepo(s)).toEqual({ repo: 'acme/widgets', rehomed: false });
   });
 
   it('is the folder name as is when nothing else says', () => {
@@ -164,9 +169,9 @@ describe('workRepo', () => {
     expect(workRepo(placed('b', {}))).toEqual({ repo: '', rehomed: false });
   });
 
-  it('compares repos without regard to case and keeps the casing of the URL', () => {
-    const s = placed('a', { prs: [pr('Acme/Widgets')], origin_repo: 'acme/widgets' });
-    expect(workRepo(s)).toEqual({ repo: 'Acme/Widgets', rehomed: false });
+  it('counts PRs without regard to case and keeps the first casing, for a ship with no origin', () => {
+    const s = placed('a', { prs: [pr('other/thing', 1), pr('Acme/Widgets', 2), pr('acme/widgets', 3)] });
+    expect(workRepo(s)).toEqual({ repo: 'Acme/Widgets', rehomed: true });
   });
 });
 
@@ -204,6 +209,12 @@ describe('byWorkRepo', () => {
       ['jbuffin/dotfiles', ['zephyr']],
     ]);
   });
+
+  it('groups a ship with a PR in another repo with the other ships launched in its origin', () => {
+    const pup = placed('pilot-pup', { prs: [pr('jbuffin/admiral-app', 65)], origin_repo: 'jbuffin/admiral', repo: 'admiral' });
+    const groups = byWorkRepo([pup, inRepo('b', 'jbuffin/admiral')]);
+    expect(groups.map((g) => [g.repo, g.ships.map((s) => s.name)])).toEqual([['jbuffin/admiral', ['pilot-pup', 'b']]]);
+  });
 });
 
 describe('oneWorkRepo', () => {
@@ -211,5 +222,13 @@ describe('oneWorkRepo', () => {
     expect(oneWorkRepo([])).toBe(true);
     expect(oneWorkRepo([placed('a', { origin_repo: 'a/b' }), placed('b', { prs: [pr('A/B')] })])).toBe(true);
     expect(oneWorkRepo([placed('a', { origin_repo: 'a/b' }), placed('b', { origin_repo: 'a/c' })])).toBe(false);
+  });
+
+  it('is true when every ship was launched in one repo, whatever repo a PR is in', () => {
+    const ships = [
+      placed('a', { origin_repo: 'jbuffin/admiral' }),
+      placed('b', { origin_repo: 'jbuffin/admiral', prs: [pr('jbuffin/admiral-app', 65)] }),
+    ];
+    expect(oneWorkRepo(ships)).toBe(true);
   });
 });

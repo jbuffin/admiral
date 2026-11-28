@@ -60,8 +60,9 @@ const GITHUB_REPO_URL = /^https:\/\/github\.com\/([^/\s]+\/[^/\s#?]+)\/(?:pull|i
 
 const repoOfUrl = (url: string | undefined): string => GITHUB_REPO_URL.exec(url ?? '')?.[1] ?? '';
 
-/** The repo a ship works in: its PRs', else its checkout's origin, else its order URL's, else the folder name. Re-homed when it differs from the checkout's origin. */
+/** The repo a ship was launched in: its checkout's origin; with no origin, its PRs', else its order URL's, else the folder name. Re-homed when it came from the PRs or the order URL. */
 export function workRepo(ship: Ship): { repo: string; rehomed: boolean } {
+  if (ship.origin_repo) return { repo: ship.origin_repo, rehomed: false };
   const counts = new Map<string, { repo: string; n: number }>();
   for (const p of ship.prs ?? []) {
     const repo = repoOfUrl(p.url);
@@ -73,10 +74,7 @@ export function workRepo(ship: Ship): { repo: string; rehomed: boolean } {
   }
   let best: { repo: string; n: number } | undefined;
   for (const entry of counts.values()) if (!best || entry.n > best.n) best = entry;
-  const origin = ship.origin_repo ?? '';
-  const away = (repo: string) => repo.toLowerCase() !== origin.toLowerCase();
-  if (best) return { repo: best.repo, rehomed: away(best.repo) };
-  if (origin) return { repo: origin, rehomed: false };
+  if (best) return { repo: best.repo, rehomed: true };
   const fromOrder = repoOfUrl(ship.url);
   if (fromOrder) return { repo: fromOrder, rehomed: true };
   return { repo: ship.repo, rehomed: false };
