@@ -32,6 +32,33 @@ func SetFavoriteSkills(dir string, skills []string) error {
 	return setKey(dir, "favorite_skills", raw)
 }
 
+// SetDefaultFleet refuses a key that is not a fleet in the file it renders; picking the first fleet still writes the key.
+func SetDefaultFleet(dir, key string) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	path := filepath.Join(dir, FileName)
+	data, err := readConfig(path)
+	if err != nil {
+		return err
+	}
+	cfg, err := Parse(data)
+	if err != nil {
+		return fmt.Errorf("%s is invalid, fix it first: %w", path, err)
+	}
+	if _, ok := cfg.Fleet(key); !ok {
+		return fmt.Errorf("%w %q", ErrNoFleet, key)
+	}
+	raw, err := json.Marshal(key)
+	if err != nil {
+		return err
+	}
+	_, out, err := renderKey(path, "default_fleet", raw)
+	if err != nil {
+		return err
+	}
+	return replaceFile(path, out)
+}
+
 // SetRemote writes the remote section; allowedLogins is always written, so a cleared list stays visible.
 func SetRemote(dir string, r Remote) error {
 	raw, err := remoteJSON(r)

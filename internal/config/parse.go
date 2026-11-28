@@ -192,6 +192,10 @@ func Parse(data []byte) (*Config, error) {
 			if len(cfg.FavoriteSkills) > MaxFavoriteSkills {
 				return nil, fmt.Errorf("favorite_skills: at most %d allowed, got %d", MaxFavoriteSkills, len(cfg.FavoriteSkills))
 			}
+		case "default_fleet":
+			if err := json.Unmarshal(m.raw, &cfg.DefaultFleetKey); err != nil {
+				return nil, fmt.Errorf("default_fleet: must be a fleet key string, got %s", m.raw)
+			}
 		case "max_ships":
 			if cfg.MaxShips, err = positiveInt("max_ships", m.raw); err != nil {
 				return nil, err

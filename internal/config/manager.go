@@ -85,7 +85,11 @@ func (m *Manager) SetFavoriteSkills(skills []string) error {
 
 // SetDefaultFleet reloads before it returns.
 func (m *Manager) SetDefaultFleet(key string) error {
-	return errors.New("not implemented")
+	if err := SetDefaultFleet(filepath.Dir(m.path), key); err != nil {
+		return err
+	}
+	m.reload()
+	return nil
 }
 
 // SetRemote reloads before it returns.

@@ -105,6 +105,7 @@ func hasScoped(s standing.Skip) bool {
 
 func (m *Manager) viewLocked() View {
 	v := View{Type: "config", Fleets: []FleetView{}, FavoriteSkills: m.cur.FavoriteSkills}
+	v.DefaultFleet, v.DefaultFleetFallback = m.cur.DefaultFleet()
 	for _, f := range m.cur.Fleets {
 		opts := m.cur.ChatHarnessOptions(f)
 		off := m.cur.chatOffReason(f, opts)

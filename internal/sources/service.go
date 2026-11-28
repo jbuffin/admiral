@@ -375,14 +375,14 @@ func (s *Service) serveAdd(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	def := config.Source{Plugin: *req.Plugin}
-	// A source belongs to one fleet; with none named it takes the first, so the
+	// A source belongs to one fleet; with none named it takes the default fleet, so the
 	// add form needs no fleet picker.
 	cur := s.Config.Current()
 	if len(cur.Fleets) == 0 {
 		writeError(w, http.StatusConflict, "add a fleet first: a source belongs to a fleet (admiral setup)")
 		return
 	}
-	def.Fleet = cur.Fleets[0].Key
+	def.Fleet, _ = cur.DefaultFleet()
 	if req.Fleet != nil && *req.Fleet != "" {
 		if _, ok := cur.Fleet(*req.Fleet); !ok {
 			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("fleet %q is not a fleet in the config", *req.Fleet))

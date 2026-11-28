@@ -18,7 +18,7 @@ type RouteFleet struct {
 }
 
 // Router decides which fleet owns an item's repo. A checkout beats an owner
-// claim, which beats the default fleet (the first one). Where two fleets claim
+// claim, which beats the default fleet. Where two fleets claim
 // the same repo or owner, the first in the file wins and each claimant gets a
 // warning.
 type Router struct {
@@ -28,8 +28,11 @@ type Router struct {
 	warnings map[string][]string
 }
 
-// NewRouter builds a router; fleets[0] is the default fleet.
-func NewRouter(fleets []RouteFleet) *Router {
+// NewRouter builds a router whose default fleet is the first.
+func NewRouter(fleets []RouteFleet) *Router { return NewRouterWithDefault(fleets, "") }
+
+// NewRouterWithDefault takes def as the default fleet; an empty or unknown one falls back to the first.
+func NewRouterWithDefault(fleets []RouteFleet, def string) *Router {
 	r := &Router{
 		repoFor:  map[string]string{},
 		ownerFor: map[string]string{},
@@ -37,6 +40,11 @@ func NewRouter(fleets []RouteFleet) *Router {
 	}
 	if len(fleets) > 0 {
 		r.def = fleets[0].Key
+		for _, f := range fleets {
+			if f.Key == def {
+				r.def = def
+			}
+		}
 	}
 	repoClaims := map[string][]string{}
 	ownerClaims := map[string][]string{}
@@ -103,7 +111,8 @@ func RouterFromFleets(cfg *config.Config) *Router {
 		}
 		rf = append(rf, RouteFleet{Key: f.Key, Repos: repos, Owners: f.Owners})
 	}
-	return NewRouter(rf)
+	def, _ := cfg.DefaultFleet()
+	return NewRouterWithDefault(rf, def)
 }
 
 // Route returns the one fleet key that owns the item's repo, or "" with no fleets.

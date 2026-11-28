@@ -193,7 +193,10 @@ func (c *Config) DefaultFleet() (key string, fellBack bool) {
 	if len(c.Fleets) == 0 {
 		return "", true
 	}
-	return c.Fleets[0].Key, false
+	if _, ok := c.Fleet(c.DefaultFleetKey); ok {
+		return c.DefaultFleetKey, false
+	}
+	return c.Fleets[0].Key, true
 }
 
 func (c *Config) Fleet(key string) (Fleet, bool) {
