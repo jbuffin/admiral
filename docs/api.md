@@ -514,7 +514,7 @@ The WebSocket (`/ws`, `/ws/v1`) also sends `{"type": "attention", "count": N}`: 
 - moored ships with `stack_ready` and no PR with `reviewing` set, whatever its state
 - moored ships with a PR that is `reviewing`, `responded` and `OPEN` (a re-review)
 
-Viewing a stop (`seen`) never changes the count; it drops only when what it counts goes away (an item answered or removed, a stop ended, a stack merged, a re-review done). Until the first inbox scan has finished and the ship list is known, no `attention` message is sent, since empty lists would read as zero; the first one follows as soon as both are known.
+Viewing a stop (`seen`) never changes the count; it drops only when what it counts goes away (an item answered or removed, a stop ended, a stack merged, a re-review done). Until the first inbox scan has finished and the ship list is known, no `attention` message is sent, since empty lists would read as zero; the first one follows as soon as both are known. A socket that follows push events (see "Following push events") gets its count from those messages instead of from this broadcast.
 
 A `crew_notes` item holds `crew_notes: {"fleet", "ship", "run_date", "notes": [{"id", "member", "role", "scope", "repo", "note", "replaces"}]}`. A `crew_member` item holds `crew_member: {"fleet", "ship", "run_date", "member", "role", "ad_hoc_run", "definition", "notes": [...]}`, where `definition` is the ad hoc file's text and the notes are that member's. `fleet` is the fleet key the ship was launched in. The answer files are `{"version": 1, "id", "kind", "answered", "notes": {"<note id>": {"decision", "note", "scope", "repo"}}}` for `crew_notes` and `{..., "decision", "file_removed"}` for `crew_member`.
 
@@ -1100,6 +1100,26 @@ Turn off. Body `{"confirm":true}`; anything else is 400. Only a request from thi
 ### The presence message
 
 A window tells the server whether anyone is watching it with `{"type":"presence","visible":true,"idle_ms":1500}` on `/ws/v1`: `visible` is whether the page is visible, `idle_ms` how long ago the person last used it (pointer, key or touch). The shell sends it when the socket opens or reopens, when visibility changes, on the first input after 10 s of none, and every 30 s while visible. The server counts a window as watching while it is visible and `idle_ms` plus the time since the report is under 2 minutes; a window that has not reported, or whose socket closed, does not count. While any window watches, an event that would push is an alert for the watched windows instead. A malformed or negative `idle_ms` is ignored.
+
+### Following push events
+
+A device paired with a bearer token follows what would push on `/ws/v1` with `{"type":"push_follow","after":<seq or null>,"boot":"<id>"}`. A client stores the last `seq` and `boot` it saw and sends them back when it reconnects; a first follow sends `"after":null` and no `boot`. Following adds no Web Push target, and a socket that only follows never counts as watching: it must send `presence` to get `alert` instead of `push`, and then it counts like a window. A second `push_follow` on the same socket is a fresh catch-up from its `after`.
+
+**Who may follow.** Only a socket whose request carried `Authorization: Bearer <token>`. A cookie-only socket (even a paired device's), a Local socket with no device and an unpaired one get `{"type":"push_refused","reason":"bearer_required"}` and stay open; they hear nothing more. The check is on the request, so revoking the device closes its following socket with the rest.
+
+**`push`** is sent for every event that would push, and never for an alert or for a fleet with Notify off: `{"type":"push","boot":"7f3a…","seq":12,"kind":"ship_question","attention":3,"fleet":"zulu","fleet_name":"Work","name":"Dory","line":"has a question","tag":"s-1","target":"peek","session":"s-1"}`. It holds the Web Push payload's fields (the same `name`, `line`, `tag`, `target`, `session`, `item`, `crew`, `merge`, `routine` and `message`), so nothing beyond what a lock screen already shows, plus `boot`, `seq`, `kind` (the event's kind: `ship_question`, `inbox_question`, `chat_question`, `wake_proposal`, `findings`, `ready_to_merge`, `anchored`, `code_approval`, `routine_notify`, `report_reply` or `digest_reply`) and `attention`. `choices` is not sent yet.
+
+**`push_clear`** is `{"type":"push_clear","boot":"7f3a…","seq":13,"tag":"s-1","attention":2}`, sent when a key that pushed stops needing the engineer: a question or approval is answered, an item is answered, removed or moved on, an anchored ship leaves that state, a stack stops being ready to merge. It carries no title or ask text. `tag` is the `tag` of the `push` it clears, an opaque string a client does not parse. `report_reply`, `digest_reply` and `routine_notify` never clear.
+
+**The count.** A follower gets one message per change of the attention count: the `push` or `push_clear` that carries it as `attention`, or `{"type":"attention","count":N}` when the count moved with no push. The count is the one above, worked out from the ship and inbox lists the push watcher has processed, so a message never carries a count newer or older than its own event. Until the ships and inbox are known, a follower gets no `attention` message, and a `push`, `push_clear` or `push_reset` leaves the `attention` field out rather than carry a false 0.
+
+**Catching up.** Admiral keeps the last 500 `push` and `push_clear` events, none older than a day, in memory only. `boot` is an id fresh for every run of Admiral and `seq` rises from 1 within it, one number across both kinds of event. After a `push_follow`:
+
+- `after` inside the ring: the events after it, in order, then `{"type":"attention","count":N}` with the current count.
+- `after` null: only that `attention` message.
+- `after` with a missing or other `boot`, past the latest `seq`, or older than the oldest event kept: `{"type":"push_reset","boot":"7f3a…","attention":N}` and nothing else. The client drops what it has and starts from the new `boot`; `attention` is left out before the lists are known.
+
+A follower that cannot keep up (its queue of 1024 messages fills) is closed, never left with a gap, and catches up when it reconnects.
 
 ### The alert message
 
