@@ -125,18 +125,16 @@ func TestAReviewRequestReachesAnAskFirstRoutineAsATieredRecordAndAnEventProposal
 		t.Errorf("record = %+v, want a tier", rec)
 	}
 	var item inboxItem
-	deadline := time.Now().Add(30 * time.Second)
-	for item.ID == "" {
-		if time.Now().After(deadline) {
-			t.Fatalf("no event proposal in the Inbox: %+v", w.in.inbox(t))
-		}
-		for _, it := range w.in.inbox(t) {
+	eventually(t, "an event proposal in the Inbox", func() (bool, string) {
+		items := w.in.inbox(t)
+		for _, it := range items {
 			if it.Kind == "event_proposal" {
 				item = it
+				return true, ""
 			}
 		}
-		time.Sleep(200 * time.Millisecond)
-	}
+		return false, fmt.Sprintf("%+v", items)
+	})
 	if code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/inbox", nil); code != http.StatusOK || strings.Contains(body, "mallory") || strings.Contains(body, "quarry") {
 		t.Errorf("GET /api/inbox = %d %s, want no event text", code, body)
 	}
@@ -158,17 +156,10 @@ func TestAReviewRequestReachesAReportOnlyRoutineAsAnEventCardInChatAndNothingLau
 	w.start()
 	id := w.eventRoutine("Report watch", "report_only")
 	w.waitRun(id, "reported")
-	deadline := time.Now().Add(30 * time.Second)
-	for {
+	eventually(t, "an event_card in the fleet chat", func() (bool, string) {
 		code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/chat/work/session", nil)
-		if code == http.StatusOK && strings.Contains(body, "event_card") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no event_card in the fleet chat: %d %s", code, body)
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+		return code == http.StatusOK && strings.Contains(body, "event_card"), fmt.Sprintf("%d %s", code, body)
+	})
 	for _, r := range w.routineRuns(id) {
 		if r.Ship != "" {
 			t.Errorf("record %+v launched a ship for a Report-only routine", r)

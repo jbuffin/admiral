@@ -726,14 +726,10 @@ func TestPositionsDroppedAfterTmuxRestarts(t *testing.T) {
 	w.mustTmux("kill-server")
 	w.in.waitShipsList(t, "no ships once tmux is gone", func(l []shipJSON) bool { return len(l) == 0 })
 	// Admiral reconnects, which starts a new server with its hidden session.
-	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(100 * time.Millisecond) {
-		if _, err := w.tmux("has-session", "-t", "=_admiral"); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("within 10s Admiral never started a new tmux server")
-		}
-	}
+	until(t, "Admiral starting a new tmux server", func() bool {
+		_, err := w.tmux("has-session", "-t", "=_admiral")
+		return err == nil
+	})
 	w.mustTmux("new-session", "-d", "-s", a.Session, "sleep", "3600")
 	w.mustTmux("set-option", "-t", a.Session+":", "@admiral-name", a.Name)
 	list := w.in.waitShipsList(t, "the recreated session", func(l []shipJSON) bool { return len(l) == 1 })

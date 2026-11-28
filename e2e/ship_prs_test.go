@@ -59,13 +59,7 @@ func TestShipPRs_ARunningShipCarriesThePRItOpenedThroughToMooring(t *testing.T) 
 	w.start()
 
 	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
-	deadline := time.Now().Add(10 * time.Second)
-	for !transcriptHas(cfgDir, mooredPR) {
-		if time.Now().After(deadline) {
-			t.Fatal("the fake never wrote the tool result to its transcript")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	until(t, "the fake writing the tool result to its transcript", func() bool { return transcriptHas(cfgDir, mooredPR) })
 	w.kickMoored()
 	list := w.in.waitShipsList(t, "the running ship carrying the PR it opened", func(l []shipJSON) bool {
 		s := byName(l)[ship.Name]

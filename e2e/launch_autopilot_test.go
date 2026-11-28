@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 // autopilotWorld starts a world whose config adds the top-level resource
@@ -66,13 +65,7 @@ func TestAutopilotLaunchNamesResources(t *testing.T) {
 	t.Parallel()
 	w := autopilotWorld(t, 0)
 	// The launch would race the resource's first refresh.
-	deadline := time.Now().Add(10 * time.Second)
-	for len(w.resourceList()) == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("GET /api/resources never listed phone")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	until(t, "GET /api/resources listing phone", func() bool { return len(w.resourceList()) > 0 })
 
 	ship := w.launch(w.autopilotLaunch("claude", "res", map[string]any{"resources": []string{"phone"}}))
 	got := w.resourceList()

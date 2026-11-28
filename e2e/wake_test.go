@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -165,12 +166,10 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 	seedRound(t, cfgDir, r, "round one")
 	w.exitWith(woken, wakeReport())
 	w.in.waitShipsList(t, "the ship moored again", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
-	var code int
-	var body string
 	var got []string
 	var divider string
-	for end := time.Now().Add(20 * time.Second); ; time.Sleep(200 * time.Millisecond) {
-		code, body = send(t, http.MethodGet, w.in.LocalURL+"/api/ships/"+ship.Session+"/conversation", nil)
+	eventually(t, "GET conversation of the moored ship listing ids [u-1 r1 r1:u-1] with r1 a round divider", func() (bool, string) {
+		code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/ships/"+ship.Session+"/conversation", nil)
 		var page struct {
 			State string `json:"state"`
 			Items []struct {
@@ -187,13 +186,11 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 				}
 			}
 			if reflect.DeepEqual(got, []string{"u-1", "r1", "r1:u-1"}) && divider == "r1" {
-				break
+				return true, ""
 			}
 		}
-		if time.Now().After(end) {
-			t.Fatalf("GET conversation of the moored ship = %d %s, want ok with ids [u-1 r1 r1:u-1] and r1 a round divider", code, body)
-		}
-	}
+		return false, fmt.Sprintf("%d %s", code, body)
+	})
 	var rec map[string]any
 	if err := json.Unmarshal([]byte(w.readFile(w.mooredFile(ship.Name))), &rec); err != nil {
 		t.Fatal(err)
@@ -305,10 +302,7 @@ func TestAReviewWakesAMooredShipOnItsOwnOnceAndOnlyOnce(t *testing.T) {
 			} `json:"events"`
 		} `json:"wake_proposal"`
 	}
-	for end := time.Now().Add(20 * time.Second); proposal.ID == ""; time.Sleep(200 * time.Millisecond) {
-		if time.Now().After(end) {
-			t.Fatal("the stranger's comment never became a wake proposal in the Inbox")
-		}
+	eventually(t, "the stranger's comment becoming a wake proposal in the Inbox", func() (bool, string) {
 		w.kickMoored()
 		_, body := send(t, http.MethodGet, w.in.LocalURL+"/api/inbox", nil)
 		var list struct {
@@ -323,7 +317,8 @@ func TestAReviewWakesAMooredShipOnItsOwnOnceAndOnlyOnce(t *testing.T) {
 				_ = json.Unmarshal(raw, &proposal)
 			}
 		}
-	}
+		return proposal.ID != "", body
+	})
 	if proposal.Title != "Wake "+ship.Name+" for @stranger-1's review?" || proposal.WakeProposal.Login != "stranger-1" ||
 		len(proposal.WakeProposal.Events) != 1 || !strings.Contains(proposal.WakeProposal.Events[0].Body, "STRANGER-TEXT") {
 		t.Errorf("proposal = %+v, want one for the ship from stranger-1 with the comment's text", proposal)

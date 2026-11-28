@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -221,20 +220,16 @@ func TestPushIsHeldBackWhileAWindowIsWatching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := ws.Write(ctx, websocket.MessageText, []byte(`{"type":"presence","visible":true,"idle_ms":0}`)); err != nil {
-		t.Fatal(err)
+	if err := ws.Write(testCtx(t), websocket.MessageText, []byte(`{"type":"presence","visible":true,"idle_ms":0}`)); err != nil {
+		failRequest(t, "writing the visible presence", err)
 	}
 	ship := r.launch("f")
 	r.in.waitStatusList(t, ship.Session, "needs_you")
 	holdThat(t, "a push went out while a window was watching", func() bool { return r.svc.Count() == 0 })
 
 	// Control: once the window stops watching, the next ship pushes, so the hold above was not a sender that was never wired.
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := ws.Write(ctx, websocket.MessageText, []byte(`{"type":"presence","visible":false,"idle_ms":0}`)); err != nil {
-		t.Fatal(err)
+	if err := ws.Write(testCtx(t), websocket.MessageText, []byte(`{"type":"presence","visible":false,"idle_ms":0}`)); err != nil {
+		failRequest(t, "writing the hidden presence", err)
 	}
 	next := r.launch("f")
 	for _, p := range r.collect(2) {
@@ -277,16 +272,9 @@ func TestA410DropsThatDevicesSubscriptionAndItsNotificationsShowOff(t *testing.T
 	first := r.launch("f")
 	r.collect(3)
 
-	deadline := time.Now().Add(10 * time.Second)
-	for r.notifications(r.tokens["b"])["(current)"] && time.Now().Before(deadline) {
-		if got := r.notifications(r.tokens["a"]); !got["(current)"] {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if r.notifications(r.tokens["a"])["(current)"] {
-		t.Fatal("device a still shows notifications on after the push service answered 410")
-	}
+	until(t, "device a's notifications going off after the push service answered 410", func() bool {
+		return !r.notifications(r.tokens["a"])["(current)"]
+	})
 	if !r.notifications(r.tokens["b"])["(current)"] || !r.notifications("")["(current)"] {
 		t.Fatal("a 410 for device a turned another device's notifications off")
 	}

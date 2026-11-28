@@ -381,15 +381,11 @@ func TestU12_NoFleetsOffersSetupOnATerminal(t *testing.T) {
 	wait := func(want string) string {
 		t.Helper()
 		var pane string
-		deadline := time.Now().Add(10 * time.Second)
-		for time.Now().Before(deadline) {
-			if pane = tmux("capture-pane", "-p", "-t", "=0:"); strings.Contains(pane, want) {
-				return pane
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		t.Fatalf("within 10s the terminal never showed %q; it shows:\n%s", want, pane)
-		return ""
+		eventually(t, fmt.Sprintf("the terminal showing %q", want), func() (bool, string) {
+			pane = tmux("capture-pane", "-p", "-t", "=0:")
+			return strings.Contains(pane, want), "it shows:\n" + pane
+		})
+		return pane
 	}
 	pane := wait("[y/N]")
 	if !strings.Contains(strings.ToLower(pane), "setup") {

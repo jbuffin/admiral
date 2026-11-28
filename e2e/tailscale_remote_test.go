@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 // Tailscale mode at startup, the ts.net URL, the pairing base and GET /api/remote, all against a fake tailscale CLI.
@@ -127,8 +126,6 @@ type tsProc struct {
 	out *syncBuffer
 }
 
-const tsStartBound = 20 * time.Second
-
 // start runs Admiral on loopback with the fake tailscale first on PATH. noBinary leaves tailscale off PATH.
 func (r *tsRig) start(mode bool, noBinary bool) *tsProc {
 	return r.owned(func() *tsProc { return r.startOnce(mode, noBinary) })
@@ -237,17 +234,18 @@ func (p *tsProc) otherDevices(t *testing.T) string {
 	return line
 }
 
-var tsClient = &http.Client{Transport: noProxy(), Timeout: 30 * time.Second}
+// tsClient has no timeout of its own: a call that runs tailscale is bound by the test run's deadline.
+var tsClient = &http.Client{Transport: noProxy()}
 
 func (p *tsProc) call(t *testing.T, method, path string) (int, []byte) {
 	t.Helper()
-	req, err := http.NewRequest(method, p.base()+path, nil)
+	req, err := http.NewRequestWithContext(testCtx(t), method, p.base()+path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp, err := tsClient.Do(req)
 	if err != nil {
-		t.Fatalf("%s %s: %v\nadmiral output:\n%s", method, path, err, p.out.String())
+		failRequest(t, fmt.Sprintf("%s %s (admiral output:\n%s)", method, path, p.out.String()), err)
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
@@ -416,10 +414,7 @@ func TestTailscaleStartupLineAndPairingBase(t *testing.T) {
 	}
 
 	r.writeConfig(false)
-	deadline := time.Now().Add(10 * time.Second)
-	for p.remote(t, "/api/v1/remote").Tailscale && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-	}
+	until(t, "the remote view showing the mode off", func() bool { return !p.remote(t, "/api/v1/remote").Tailscale })
 	if base := mint(); strings.Contains(base, tsName) {
 		t.Errorf("pairing base %q still the ts.net URL with the mode off", base)
 	}
@@ -436,13 +431,10 @@ func TestTailscaleStartupWarnsAboutAFailedCheckBesideTheURL(t *testing.T) {
 	if line, want := p.otherDevices(t), "On other devices: https://"+tsName+"/"; line != want {
 		t.Errorf("startup line %q, want %q", line, want)
 	}
-	deadline := time.Now().Add(tsStartBound)
-	for !strings.Contains(strings.ToLower(p.out.String()), "raw tcp forward") && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if got := strings.ToLower(p.out.String()); !strings.Contains(got, "warning") || !strings.Contains(got, "raw tcp forward") {
-		t.Errorf("want a warning about the raw TCP forward beside the URL:\n%s", p.out.String())
-	}
+	eventually(t, "a startup warning about the raw TCP forward beside the URL", func() (bool, string) {
+		got := strings.ToLower(p.out.String())
+		return strings.Contains(got, "warning") && strings.Contains(got, "raw tcp forward"), p.out.String()
+	})
 }
 
 // A serve HTTPS port other than 443 is in the startup line.

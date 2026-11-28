@@ -171,11 +171,9 @@ func TestADigestRoutineQueuesATurnOnlyInTheFleetWithSomethingNewAndAdmiralBotCan
 		t.Errorf("beta digest run = %+v, want skipped for %q", got, "nothing new")
 	}
 
-	for end := time.Now().Add(15 * time.Second); !strings.Contains(alpha.stdin(), "[Digest: Morning digest]"); time.Sleep(100 * time.Millisecond) {
-		if time.Now().After(end) {
-			t.Fatalf("within 15s alpha's chat was never typed a [Digest: Morning digest] turn; stdin: %q", alpha.stdin())
-		}
-	}
+	eventually(t, "alpha's chat being typed a [Digest: Morning digest] turn", func() (bool, string) {
+		return strings.Contains(alpha.stdin(), "[Digest: Morning digest]"), fmt.Sprintf("stdin: %q", alpha.stdin())
+	})
 	turn := alpha.stdin()
 	for _, want := range []string{"lead with PRs", "Other"} {
 		if !strings.Contains(turn, want) {
