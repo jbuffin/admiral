@@ -36,6 +36,11 @@ func TestAlertSinkSendsAnAlertToTheWatchedWindowsAndNothingForAPush(t *testing.T
 		t.Fatalf("a push outcome sent %d window messages, want none", len(log.sent))
 	}
 
+	sink.Deliver(push.Decided{Event: ev, Outcome: push.Clear})
+	if len(log.sent) != 0 {
+		t.Fatalf("a clear outcome sent %d window messages, want none", len(log.sent))
+	}
+
 	sink.Deliver(push.Decided{Event: ev, Outcome: push.Alert})
 	if len(log.sent) != 1 {
 		t.Fatalf("an alert outcome sent %d window messages, want 1", len(log.sent))

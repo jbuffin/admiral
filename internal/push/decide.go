@@ -131,6 +131,8 @@ const (
 	Push
 	// Alert is the chime and toast in the windows being watched.
 	Alert
+	// Clear tells the sinks that a key which pushed no longer needs the engineer.
+	Clear
 )
 
 func (o Outcome) String() string {

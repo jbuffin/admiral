@@ -159,7 +159,7 @@ func TestDeliverIgnoresOutcomesThatAreNotAPush(t *testing.T) {
 	t.Parallel()
 	r := newSendRig(t, 8, 2*time.Second)
 	r.subscribe(t, "d1", "/ep/a")
-	for _, o := range []push.Outcome{push.Alert, push.Nothing} {
+	for _, o := range []push.Outcome{push.Alert, push.Nothing, push.Clear} {
 		d := question("n", "hello")
 		d.Outcome = o
 		r.send.Deliver(d)

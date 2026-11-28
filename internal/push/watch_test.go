@@ -51,7 +51,16 @@ func needsYou(name, reason string) ships.Ship { return ship(name, ships.StatusNe
 
 func working(name string) ships.Ship { return ship(name, ships.StatusUnderway, "") }
 
-func (r *rig) count() int { return len(r.rec.Events()) }
+// count is the Push and Alert outcomes: the events that announce something, not the clears that retire one.
+func (r *rig) count() int {
+	n := 0
+	for _, d := range r.rec.Events() {
+		if d.Outcome == push.Push || d.Outcome == push.Alert {
+			n++
+		}
+	}
+	return n
+}
 
 func TestShipThatNeedsYouForAQuestionIsOneEventEachTimeItComesBack(t *testing.T) {
 	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
