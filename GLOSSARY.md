@@ -10,6 +10,10 @@ Use these words in UI copy and in code alike.
 The agent CLI a session runs in: Claude Code, Codex CLI or GitHub Copilot CLI.
 _Avoid_: agent, CLI, tool
 
+**Model server**:
+A program or service that serves models through an open API, such as Ollama, LM Studio or vLLM, which a dock's harness can run on. It is not a harness: it runs no session, and Admiral never talks to it for a ship.
+_Avoid_: model source, provider, endpoint
+
 **Capability**:
 Something a harness has been proven to do on this machine, which a feature needs before it turns on. A capability counts only once its probe passes, whatever the harness claims.
 _Avoid_: support, feature flag
