@@ -12,6 +12,7 @@ import (
 )
 
 func TestMarkReadyForReviewOnARunningShip(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.candidates = []string{prSeven}
 	r.mine(prSeven, "OPEN", time.Minute)

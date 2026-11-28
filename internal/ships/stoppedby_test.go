@@ -10,6 +10,7 @@ import (
 )
 
 func TestAShipTheWallClockStoppedIsAnchoredWithItsSignalAndWhy(t *testing.T) {
+	t.Parallel()
 	sess := exitedShip("late", map[string]string{sessionhost.OptStoppedBy: "wall_clock:60"})
 	sess.Signal = "term"
 	sh := FromSession(sess, time.Date(2026, 11, 11, 10, 6, 0, 0, time.UTC))
@@ -28,6 +29,7 @@ func TestAShipTheWallClockStoppedIsAnchoredWithItsSignalAndWhy(t *testing.T) {
 }
 
 func TestAShipNoOneStoppedHasNoStoppedBy(t *testing.T) {
+	t.Parallel()
 	raw, _ := json.Marshal(FromSession(exitedShip("quiet", nil), time.Date(2026, 11, 11, 10, 6, 0, 0, time.UTC)))
 	var out map[string]any
 	_ = json.Unmarshal(raw, &out)

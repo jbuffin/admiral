@@ -24,6 +24,7 @@ func (r *nextRig) afloat() bool {
 }
 
 func TestReturnToPortWaitsForTheTurnThenStopsAfterTheCleanUpTurn(t *testing.T) {
+	t.Parallel()
 	r := newNextRig(t)
 	r.turn(t, "working", "")
 
@@ -49,12 +50,15 @@ func TestReturnToPortWaitsForTheTurnThenStopsAfterTheCleanUpTurn(t *testing.T) {
 	r.turn(t, "needs_you", "stop")
 	r.s.advanceReturns()
 	waitUntil(t, "the ship to be stopped", func() bool { return !r.afloat() })
+	// The stopped record is queued to the outcomes writer, which may still be writing it after the session is gone.
+	waitUntil(t, "the stopped record", func() bool { return len(outcomeLines(t, r.home, "saltpaw", "stopped")) > 0 })
 	if got := outcomeLines(t, r.home, "saltpaw", "stopped"); len(got) != 1 || got[0]["returned"] != true {
 		t.Errorf("stopped records = %v, want one marked returned", got)
 	}
 }
 
 func TestReturnToPortWaitsOnTheEngineerDuringTheCleanUpTurn(t *testing.T) {
+	t.Parallel()
 	r := newNextRig(t)
 	r.turn(t, "needs_you", "stop")
 	if rec := r.returnToPort("saltpaw"); rec.Code != http.StatusOK {
@@ -72,11 +76,13 @@ func TestReturnToPortWaitsOnTheEngineerDuringTheCleanUpTurn(t *testing.T) {
 }
 
 func TestReturnToPortRefusesAShipThatIsNotThere(t *testing.T) {
+	t.Parallel()
 	r := newNextRig(t)
 	wantError(t, r.returnToPort("nosuchship"), http.StatusNotFound, "an unknown ship")
 }
 
 func TestAMooredShipWhosePRsAreMergedIsWokenToCleanUpAndStoppedAfterThatTurn(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	g := &pollGitHub{}
 	g.set(wakePR, moor.Status{State: "MERGED"})
@@ -122,6 +128,7 @@ func TestAMooredShipWhosePRsAreMergedIsWokenToCleanUpAndStoppedAfterThatTurn(t *
 }
 
 func TestReturnToPortRefusesALiveShipThatCarriesAPR(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0)
 	if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {

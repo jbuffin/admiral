@@ -10,6 +10,7 @@ import (
 )
 
 func TestCrewBoatsCarryRoleAndConversationFlagButNotThePath(t *testing.T) {
+	t.Parallel()
 	boats := crewBoats([]sessionhost.Crew{
 		{Name: "a", Harness: "claude", Role: "reviewer", Transcript: "/x/projects/p/s.jsonl"},
 		{Name: "b", Harness: "claude"},

@@ -90,6 +90,7 @@ func (r *liveRig) wantFindings(t *testing.T, first string, want keptFindings) {
 }
 
 func TestAQuickShipsFindingsAreServedAfterItSailsOffAndItsFilesAreGone(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, false)
 	first := r.firstLaunched(t)
 	r.writeFindings(t, "# Found\n\nthe race is in the cache\n")
@@ -108,6 +109,7 @@ func TestAQuickShipsFindingsAreServedAfterItSailsOffAndItsFilesAreGone(t *testin
 }
 
 func TestAShipThatWroteNoFindingsIsNotMarkedFailed(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, false)
 	r.sailClean(t)
 	e := r.ended(t)
@@ -118,6 +120,7 @@ func TestAShipThatWroteNoFindingsIsNotMarkedFailed(t *testing.T) {
 }
 
 func TestAScoutsEndedRecordSaysFindingsAndLeavesTheReportAlone(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, true)
 	r.turn(t, "working", "")
 	r.writeFindings(t, "# Flaky test\n\nit sleeps\n")
@@ -134,6 +137,7 @@ func TestAScoutsEndedRecordSaysFindingsAndLeavesTheReportAlone(t *testing.T) {
 }
 
 func TestAScoutThatLeavesNoFindingsOrAnEmptyFileEndsFailedWithItsReportUntouched(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		write bool
@@ -158,6 +162,7 @@ func TestAScoutThatLeavesNoFindingsOrAnEmptyFileEndsFailedWithItsReportUntouched
 }
 
 func TestAFindingsFileThatIsAPipeDoesNotHangAdmiralAndTheShipStillSailsOff(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, false)
 	if err := syscall.Mkfifo(r.findingsPath(), 0o600); err != nil {
 		t.Fatal(err)
@@ -189,6 +194,7 @@ func voyageRig(t *testing.T, first string) *liveRig {
 }
 
 func TestAWakeStartsWithoutTheFindingsFileTheLastRoundLeft(t *testing.T) {
+	t.Parallel()
 	const old = "2026-01-02T03:04:05Z"
 	r := voyageRig(t, old)
 	r.writeFindings(t, "old voyage\n")

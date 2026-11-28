@@ -13,6 +13,7 @@ import (
 
 // A moored ship keeps its order hidden, so the order cannot be launched twice.
 func TestMooredShipHidesItsOrder(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	if err := moor.Write(home, moor.Record{Name: "Saltpaw II", Session: "saltpaw-ii", Fleet: "work", Source: "gh", OrderID: "acme/widgets#12"}); err != nil {
 		t.Fatal(err)
@@ -25,6 +26,7 @@ func TestMooredShipHidesItsOrder(t *testing.T) {
 }
 
 func TestMooredSliceShipKeepsClaimingEveryIssue(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	if err := moor.Write(f.home, moor.Record{Name: "Slice", Session: "slice", Fleet: "work", URL: sliceA, Issues: []string{sliceA, sliceB}}); err != nil {
 		t.Fatal(err)
@@ -41,6 +43,7 @@ func TestMooredSliceShipKeepsClaimingEveryIssue(t *testing.T) {
 }
 
 func TestAMooredShipListsItsSkillKind(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	if err := moor.Write(f.home, moor.Record{Name: "Hood", Session: "hood", Fleet: "work", Skill: moor.Skill{Kind: "commodore"}}); err != nil {
 		t.Fatal(err)
@@ -52,6 +55,7 @@ func TestAMooredShipListsItsSkillKind(t *testing.T) {
 }
 
 func TestAMooredShipReportsItsWorktreeWhileItStandsAndOmitsItOnceGone(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	for _, session := range []string{"kept", "gone"} {
 		if err := moor.Write(home, moor.Record{Name: session, Session: session, Fleet: "work", Checkout: "/src/widgets"}); err != nil {

@@ -12,6 +12,7 @@ import (
 )
 
 func TestStackShapesAnswerTheBarAndOnlyChainedPRsCanBeStacked(t *testing.T) {
+	t.Parallel()
 	const fourth = "https://github.com/acme/widgets/pull/24"
 	seven, nine := layerURL(7), layerURL(9)
 	mixed := chainedDetails(2)
@@ -85,6 +86,7 @@ func TestStackShapesAnswerTheBarAndOnlyChainedPRsCanBeStacked(t *testing.T) {
 }
 
 func TestStackLinkOfAShipWithAPROnAnotherHostIsRefusedAndRunsNoLink(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	chainedSevenNine(g)
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -96,6 +98,7 @@ func TestStackLinkOfAShipWithAPROnAnotherHostIsRefusedAndRunsNoLink(t *testing.T
 }
 
 func TestStackLinkWhileAnotherLinkIsRunningIsRefused(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{linkBlock: make(chan struct{})}
 	chainedSevenNine(g)
 	f := mooredService(t, map[string]*pollGitHub{"work": g})

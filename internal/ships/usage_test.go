@@ -109,6 +109,7 @@ func figs() *usage.Figures {
 }
 
 func TestExitWritesOneUsageRecordBesideEnded(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{Own: figs()} }
 	r.s.queueEnded(ending1(exitedShip("a-1", nil)))
@@ -133,6 +134,7 @@ func TestExitWritesOneUsageRecordBesideEnded(t *testing.T) {
 }
 
 func TestMooredRoundCarriesItsRoundNumber(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{Own: figs()} }
 	r.s.queueEnded(ending1(exitedShip("a-1", map[string]string{"round": "2"})))
@@ -143,6 +145,7 @@ func TestMooredRoundCarriesItsRoundNumber(t *testing.T) {
 
 // A retry of `ended` (a failed write, or a kill that queues it again) is the same exit.
 func TestRetryOfEndedWritesNoSecondUsage(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	reads := make(chan struct{}, 8)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage {
@@ -162,6 +165,7 @@ func TestRetryOfEndedWritesNoSecondUsage(t *testing.T) {
 
 // Another exit of the same name (a new round, a relaunch) is a new exit with its own record.
 func TestNextExitOfTheSameNameWritesItsOwnUsage(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{Own: figs()} }
 	r.s.queueEnded(ending1(exitedShip("a-1", map[string]string{"round": "1"})))
@@ -171,6 +175,7 @@ func TestNextExitOfTheSameNameWritesItsOwnUsage(t *testing.T) {
 
 // A transcript read that hangs must not hold `ended` back, and ended is not lost when it ends.
 func TestSlowTranscriptReadDoesNotDelayEnded(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	release := make(chan struct{})
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { <-release; return ExitUsage{Own: figs()} }
@@ -190,6 +195,7 @@ func TestSlowTranscriptReadDoesNotDelayEnded(t *testing.T) {
 }
 
 func TestNoFiguresWritesNullsSoTheExitIsCounted(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{} }
 	r.s.queueEnded(ending1(exitedShip("a-1", nil)))
@@ -206,6 +212,7 @@ func TestNoFiguresWritesNullsSoTheExitIsCounted(t *testing.T) {
 }
 
 func TestNoFiguresAsksTheLastLiveFigures(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{} }
 	var asked string
@@ -227,6 +234,7 @@ func TestNoFiguresAsksTheLastLiveFigures(t *testing.T) {
 }
 
 func TestLastLiveIsNotAskedWhenTheTranscriptHasFigures(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{Own: figs()} }
 	r.s.LastLive = func(string) (usage.Figures, bool) {
@@ -238,6 +246,7 @@ func TestLastLiveIsNotAskedWhenTheTranscriptHasFigures(t *testing.T) {
 }
 
 func TestLastLiveWithNothingStillWritesNulls(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{} }
 	r.s.LastLive = func(string) (usage.Figures, bool) { return usage.Figures{}, false }
@@ -248,6 +257,7 @@ func TestLastLiveWithNothingStillWritesNulls(t *testing.T) {
 }
 
 func TestCrewBoatsAreAddedAndListed(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	boat := usage.Figures{Tokens: usage.Tokens{Input: 20}, Money: &usage.Money{Amount: 0.25, Basis: usage.BasisEstimate}}
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage {
@@ -273,6 +283,7 @@ func TestCrewBoatsAreAddedAndListed(t *testing.T) {
 
 // A ship killed before its transcript has figures still records what the status line last showed.
 func TestKilledShipWithNoTranscriptRecordsTheLiveStoresFigures(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{} }
 	now := time.Unix(1800000000, 0)
@@ -292,6 +303,7 @@ func TestKilledShipWithNoTranscriptRecordsTheLiveStoresFigures(t *testing.T) {
 
 // Moored rounds and a new ship of an ended ship's name share the name: a record takes the live figures once.
 func TestSecondRoundKilledWithNoFiguresRecordsNothingFromRoundOne(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{} }
 	now := time.Unix(1800000000, 0)
@@ -319,6 +331,7 @@ func TestSecondRoundKilledWithNoFiguresRecordsNothingFromRoundOne(t *testing.T) 
 }
 
 func TestEndedShipsLiveFiguresAreForgottenEvenWhenTheTranscriptHadFigures(t *testing.T) {
+	t.Parallel()
 	r := newUsageRig(t)
 	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{Own: figs()} }
 	now := time.Unix(1800000000, 0)

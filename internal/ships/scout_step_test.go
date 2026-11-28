@@ -33,6 +33,7 @@ func scoutRig(t *testing.T, scout bool) *liveRig {
 }
 
 func TestAScoutIsStoppedWhenItsTurnEndsAndTheLogReadsItSailed(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, true)
 	r.turn(t, "working", "")
 	r.turn(t, "needs_you", "stop")
@@ -49,6 +50,7 @@ func TestAScoutIsStoppedWhenItsTurnEndsAndTheLogReadsItSailed(t *testing.T) {
 }
 
 func TestAScoutIsLeftAloneAtAQuestionOrAPermission(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, true)
 	r.turn(t, "working", "")
 	r.turn(t, "needs_you", "permission:Bash")
@@ -56,6 +58,7 @@ func TestAScoutIsLeftAloneAtAQuestionOrAPermission(t *testing.T) {
 }
 
 func TestAPlainAutopilotShipIsNotStoppedAtItsStop(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, false)
 	r.turn(t, "working", "")
 	r.turn(t, "needs_you", "stop")
@@ -66,6 +69,7 @@ func TestAPlainAutopilotShipIsNotStoppedAtItsStop(t *testing.T) {
 }
 
 func TestAScoutWhoseReportNamesAnOpenPRIsStoppedNotMoored(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, true)
 	r.turn(t, "working", "")
 	r.writeReport(t, "done", livePR7)
@@ -81,6 +85,7 @@ func TestAScoutWhoseReportNamesAnOpenPRIsStoppedNotMoored(t *testing.T) {
 }
 
 func TestAShipsJSONSaysWhenItIsAScout(t *testing.T) {
+	t.Parallel()
 	for _, scout := range []bool{true, false} {
 		r := scoutRig(t, scout)
 		_, raw, ok := r.wire(t)
@@ -98,6 +103,7 @@ func TestAShipsJSONSaysWhenItIsAScout(t *testing.T) {
 }
 
 func TestHandToCommodoreIsRefusedOnAScout(t *testing.T) {
+	t.Parallel()
 	r := scoutRig(t, true)
 	r.turn(t, "working", "")
 	before := r.pane(t)

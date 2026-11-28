@@ -8,6 +8,7 @@ import (
 )
 
 func TestAnswerRefusesWhatIsNotAnAnswerToThePaneNow(t *testing.T) {
+	t.Parallel()
 	s, _ := tailService(t)
 	mux := http.NewServeMux()
 	s.Routes(mux)

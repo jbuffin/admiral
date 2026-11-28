@@ -39,6 +39,7 @@ func scoutBody(t *testing.T, harness, extra string) string {
 }
 
 func TestAScoutIsRefusedWhereItsGuardIsNotProven(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name, home, harness string
 	}{
@@ -60,6 +61,7 @@ func TestAScoutIsRefusedWhereItsGuardIsNotProven(t *testing.T) {
 }
 
 func TestAScoutWithBothPassesIsAdmitted(t *testing.T) {
+	t.Parallel()
 	rec := launchPost(t, scoutService(t, scoutHome(t), 5), scoutBody(t, "claude", ""))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("scout on claude with both passes = %d %s, want it admitted up to the host that is not ready (503)", rec.Code, rec.Body)
@@ -67,6 +69,7 @@ func TestAScoutWithBothPassesIsAdmitted(t *testing.T) {
 }
 
 func TestAScoutWithoutAutopilotIsRefused(t *testing.T) {
+	t.Parallel()
 	body := strings.Replace(scoutBody(t, "claude", ""), `"autopilot":true,`, "", 1)
 	rec := launchPost(t, scoutService(t, scoutHome(t), 5), body)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(strings.ToLower(rec.Body.String()), "autopilot") {
@@ -75,6 +78,7 @@ func TestAScoutWithoutAutopilotIsRefused(t *testing.T) {
 }
 
 func TestAScoutTakesNoSkillMemberIssuesSourceOrderOrClone(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	checkout := filepath.Join(root, "widget")
 	if err := os.MkdirAll(filepath.Join(checkout, ".git"), 0o755); err != nil {
@@ -108,6 +112,7 @@ func TestAScoutTakesNoSkillMemberIssuesSourceOrderOrClone(t *testing.T) {
 }
 
 func TestAScoutMayHoldResources(t *testing.T) {
+	t.Parallel()
 	s := scoutService(t, scoutHome(t), 5)
 	s.Launcher.Config = func() *config.Config {
 		return &config.Config{MaxShips: 5, Fleets: fleets(t), Resources: map[string]config.Resource{"phone": {Capacity: 1}}}
@@ -120,6 +125,7 @@ func TestAScoutMayHoldResources(t *testing.T) {
 }
 
 func TestACappedFleetNeverBlocksAScoutAndStillBlocksAutopilot(t *testing.T) {
+	t.Parallel()
 	s := scoutService(t, scoutHome(t), 1)
 	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p", nil)
 	if rec := launchPost(t, s, scoutBody(t, "claude", "")); rec.Code != http.StatusServiceUnavailable {
@@ -132,6 +138,7 @@ func TestACappedFleetNeverBlocksAScoutAndStillBlocksAutopilot(t *testing.T) {
 }
 
 func TestACodexScoutOverTheCapGetsItsGuardRefusalNotTheCap(t *testing.T) {
+	t.Parallel()
 	s := scoutService(t, scoutHome(t), 1)
 	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p", nil)
 	rec := launchPost(t, s, scoutBody(t, "codex", ""))
@@ -141,6 +148,7 @@ func TestACodexScoutOverTheCapGetsItsGuardRefusalNotTheCap(t *testing.T) {
 }
 
 func TestAScoutIsRefusedWhereTheFleetHasNoAdvisor(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	store, now := capabilities.Open(home), time.Now()
 	if err := store.RecordVersion("work", "claude", "2.1.300", now); err != nil {

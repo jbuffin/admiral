@@ -135,6 +135,7 @@ func (r *handRig) wantRefusedBeforeAnySideEffect(t *testing.T, rec *httptest.Res
 }
 
 func TestHandToCommodoreRefusesWhatCannotBeHanded(t *testing.T) {
+	t.Parallel()
 	messages := map[string]string{}
 	note := func(t *testing.T, name, msg string) {
 		t.Helper()
@@ -248,6 +249,7 @@ func TestHandToCommodoreRefusesWhatCannotBeHanded(t *testing.T) {
 }
 
 func TestHandToCommodoreWaitsForTheTurnThenAsksForAnIssueInTheShipsRepo(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	ref := r.queue(t, `{"kind":"issue"}`)
 
@@ -270,6 +272,7 @@ func TestHandToCommodoreWaitsForTheTurnThenAsksForAnIssueInTheShipsRepo(t *testi
 }
 
 func TestHandToCommodoreOtherQuotesTheEngineersTextInThePrompt(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	r.queue(t, `{"kind":"other","text":"write the design to a doc\nand keep it short"}`)
 	pane := r.fullPane(t)
@@ -281,6 +284,7 @@ func TestHandToCommodoreOtherQuotesTheEngineersTextInThePrompt(t *testing.T) {
 }
 
 func TestHandToCommodoreStopsTheShipAndRelaunchesItAsCommodoreOnAGoodIssueRef(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	ref := r.queue(t, `{"kind":"issue"}`)
 	writeRef(t, ref, "https://github.com/Acme/Widgets/issues/9\n")
@@ -304,6 +308,7 @@ func TestHandToCommodoreStopsTheShipAndRelaunchesItAsCommodoreOnAGoodIssueRef(t 
 }
 
 func TestHandToCommodoreAcceptsAnOtherBriefUnderTheShipsRefDirectory(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	r.queue(t, `{"kind":"other","text":"brief it"}`)
 	brief := filepath.Join(r.home, "ships", "saltpaw", "brief.md")
@@ -325,6 +330,7 @@ func TestHandToCommodoreAcceptsAnOtherBriefUnderTheShipsRefDirectory(t *testing.
 }
 
 func TestHandToCommodoreLeavesTheShipRunningOnABadRef(t *testing.T) {
+	t.Parallel()
 	outside := filepath.Join(t.TempDir(), "elsewhere.md")
 	for _, c := range []struct {
 		name  string
@@ -387,6 +393,7 @@ func TestHandToCommodoreLeavesTheShipRunningOnABadRef(t *testing.T) {
 }
 
 func TestHandToCommodoreRecordsWhyAndLeavesTheShipStoppedWhenTheRelaunchFails(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	ref := r.queue(t, `{"kind":"issue"}`)
 	sessionID := sessionIDOf(t, mustArgv(t, r, 1))
@@ -415,6 +422,7 @@ func mustArgv(t *testing.T, r *handRig, n int) []string {
 }
 
 func TestHandToCommodoreFailsWhenAPaneOptionChangesDuringThePromptedTurn(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ option, value, field string }{
 		{"@admiral-fleet", "personal", "fleet"},
 		{"@admiral-dir", "/tmp", "dir"},
@@ -442,6 +450,7 @@ func TestHandToCommodoreFailsWhenAPaneOptionChangesDuringThePromptedTurn(t *test
 }
 
 func TestAHandingMarkAdmiralHoldsNoEntryForIsClearedAndFails(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	r.turn(t, "working", "")
 	r.setPaneOption(t, "@admiral-handing", "sent")
@@ -462,6 +471,7 @@ func TestAHandingMarkAdmiralHoldsNoEntryForIsClearedAndFails(t *testing.T) {
 }
 
 func TestStoppingAShipDuringAHandFailsTheHandAndLeavesNoHandedRecord(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	r.turn(t, "working", "")
 	if rec := r.hand("saltpaw", `{"kind":"issue"}`); rec.Code != http.StatusAccepted {
@@ -484,6 +494,7 @@ func TestStoppingAShipDuringAHandFailsTheHandAndLeavesNoHandedRecord(t *testing.
 }
 
 func TestAShipBeingHandedCannotReturnToPort(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	r.turn(t, "working", "")
 	if rec := r.hand("saltpaw", `{"kind":"issue"}`); rec.Code != http.StatusAccepted {
@@ -498,6 +509,7 @@ func TestAShipBeingHandedCannotReturnToPort(t *testing.T) {
 }
 
 func TestAShipBeingHandedIsNotMooredAtTheEndOfItsTurnForADoneReportWithAnOpenPR(t *testing.T) {
+	t.Parallel()
 	h := newHandRig(t)
 	r := &liveRig{nextRig: h.nextRig, gh: &openGH{open: map[string]bool{livePR7: true}}, stamp: time.Now()}
 	r.s.GitHub = func(string) moor.GitHub { return r.gh }
@@ -518,6 +530,7 @@ func TestAShipBeingHandedIsNotMooredAtTheEndOfItsTurnForADoneReportWithAnOpenPR(
 }
 
 func TestAHandOnAShipThatExitsFirstLeavesNoFailureLineOnTheEndedShip(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	r.queue(t, `{"kind":"issue"}`)
 	if err := os.WriteFile(filepath.Join(r.rec, "exit"), []byte("0"), 0o600); err != nil {

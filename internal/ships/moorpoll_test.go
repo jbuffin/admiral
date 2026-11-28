@@ -290,6 +290,7 @@ func mooredService(t *testing.T, gh map[string]*pollGitHub) *mooredFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() }) // its settle timer must not write after the test
 	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Name: "Work"}, {Key: "home", Name: "Home"}}}
 	w := outcomes.New(filepath.Join(home, "outcomes"), t.Logf)
 	t.Cleanup(w.Close)
@@ -381,6 +382,7 @@ func finalStates(t *testing.T, ev map[string]any) map[string]string {
 }
 
 func TestAMooredShipShowsItsPRsAsOpenUntilTheFirstPollAnswers(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
 	f.moor(t, "Nelson", "work", prSeven)
@@ -391,6 +393,7 @@ func TestAMooredShipShowsItsPRsAsOpenUntilTheFirstPollAnswers(t *testing.T) {
 }
 
 func TestPollMooredServesTheChipsOnTheShip(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "OPEN", Review: "CHANGES_REQUESTED", Checks: "FAILURE", Mergeable: "CONFLICTING"})
 	g.set(prNine, moor.Status{State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", MergeState: "CLEAN"})
@@ -418,6 +421,7 @@ func TestPollMooredServesTheChipsOnTheShip(t *testing.T) {
 }
 
 func TestPollMooredAsksOnceForEveryShipOfAFleetClient(t *testing.T) {
+	t.Parallel()
 	work, home := &pollGitHub{}, &pollGitHub{}
 	work.set(prSeven, moor.Status{State: "OPEN"})
 	work.set(prNine, moor.Status{State: "OPEN"})
@@ -438,6 +442,7 @@ func TestPollMooredAsksOnceForEveryShipOfAFleetClient(t *testing.T) {
 }
 
 func TestPollMooredSailsOffAShipWhoseEveryPRIsDone(t *testing.T) {
+	t.Parallel()
 	for name, c := range map[string]struct {
 		a, b   *moor.Status // nil: GitHub answers NOT_FOUND
 		reason string
@@ -487,6 +492,7 @@ func TestPollMooredSailsOffAShipWhoseEveryPRIsDone(t *testing.T) {
 }
 
 func TestPollMooredKeepsAShipWithAnOpenPR(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "MERGED"})
 	g.set(prNine, moor.Status{State: "OPEN", Review: "APPROVED"})
@@ -505,6 +511,7 @@ func TestPollMooredKeepsAShipWithAnOpenPR(t *testing.T) {
 }
 
 func TestATransportFailureKeepsTheChipsAndMarksThePollStale(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -539,6 +546,7 @@ func TestATransportFailureKeepsTheChipsAndMarksThePollStale(t *testing.T) {
 }
 
 func TestAFailedFirstPollNeverEndsMooring(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{err: errors.New("gh: HTTP 502")}
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
 	f.moor(t, "Nelson", "work", prSeven)
@@ -550,6 +558,7 @@ func TestAFailedFirstPollNeverEndsMooring(t *testing.T) {
 }
 
 func TestRefreshAnswers202AtOnceAndKicksesNeverOverlap(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{block: make(chan struct{})}
 	g.set(prSeven, moor.Status{State: "OPEN"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -601,6 +610,7 @@ func waitUntil(t *testing.T, what string, ok func() bool) {
 }
 
 func TestDismissEndsAMooredShip(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "OPEN"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -626,6 +636,7 @@ func TestDismissEndsAMooredShip(t *testing.T) {
 }
 
 func TestUnfollowEndsAMooredShip(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "OPEN"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -645,6 +656,7 @@ func TestUnfollowEndsAMooredShip(t *testing.T) {
 }
 
 func TestUnfollowRefusesAShipThatIsNotMoored(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	if rec := f.post("/api/ships/nobody/unfollow"); rec.Code != http.StatusNotFound {
 		t.Errorf("Don't follow reviews on an unknown ship = %d, want 404", rec.Code)
@@ -653,6 +665,7 @@ func TestUnfollowRefusesAShipThatIsNotMoored(t *testing.T) {
 
 // A live ship is refused by Dismiss unless it is anchored; Don't follow reviews refuses it the same way.
 func TestUnfollowRefusesALiveShipAsDismissDoes(t *testing.T) {
+	t.Parallel()
 	s, _ := tailService(t)
 	s.Launcher = &launcher.Launcher{Home: t.TempDir(), Config: func() *config.Config { return &config.Config{} }}
 	mux := http.NewServeMux()
@@ -672,6 +685,7 @@ func TestUnfollowRefusesALiveShipAsDismissDoes(t *testing.T) {
 }
 
 func TestTwoEndingsOfOneShipWriteOneEventAndRemoveTheRecordOnce(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "MERGED"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -703,6 +717,7 @@ func TestTwoEndingsOfOneShipWriteOneEventAndRemoveTheRecordOnce(t *testing.T) {
 }
 
 func TestAnUnansweredPRKeepsItsShipMooredAndStaleWhileTheFleetsOthersAreAnswered(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{un: []string{prSeven}}
 	g.set(prNine, moor.Status{State: "MERGED"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -721,6 +736,7 @@ func TestAnUnansweredPRKeepsItsShipMooredAndStaleWhileTheFleetsOthersAreAnswered
 }
 
 func TestAPollThatAnswersAfterItsShipEndedSaysNothingOfTheNextShipOfTheSession(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{block: make(chan struct{})}
 	g.set(prSeven, moor.Status{State: "MERGED"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -744,6 +760,7 @@ func TestAPollThatAnswersAfterItsShipEndedSaysNothingOfTheNextShipOfTheSession(t
 }
 
 func TestAMooredRecordThatCannotBeRemovedAnswers500AndStaysMoored(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "OPEN"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -769,6 +786,7 @@ func TestAMooredRecordThatCannotBeRemovedAnswers500AndStaysMoored(t *testing.T) 
 
 // u1 writes the record before it kills the session, so for a moment a record's session is still live.
 func TestARecordWhoseSessionIsStillLiveIsNotMoored(t *testing.T) {
+	t.Parallel()
 	s, _ := tailService(t)
 	home := t.TempDir()
 	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Name: "Work"}}}
@@ -800,6 +818,7 @@ func TestARecordWhoseSessionIsStillLiveIsNotMoored(t *testing.T) {
 }
 
 func TestSailingOffAMooredSliceShipReleasesEveryIssue(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "MERGED"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -830,6 +849,7 @@ func readyStatus() moor.Status {
 }
 
 func TestAMooredStackServesWhetherItIsReadyAndUpToWhichLayer(t *testing.T) {
+	t.Parallel()
 	notReady := readyStatus()
 	notReady.Checks, notReady.MergeState = "PENDING", "BLOCKED"
 	for name, c := range map[string]struct {
@@ -860,6 +880,7 @@ func TestAMooredStackServesWhetherItIsReadyAndUpToWhichLayer(t *testing.T) {
 }
 
 func TestAMergeThatRunsPastItsLimitAnswers504AndAsksForAPoll(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{mergeErr: moor.ErrMergeTimeout}
 	g.set(prSeven, moor.Status{State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", MergeState: "CLEAN"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})

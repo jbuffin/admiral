@@ -23,6 +23,7 @@ func (r *liveRig) markLocalOnly(t *testing.T) {
 }
 
 func TestALocalOnlyShipWhoseTurnEndsOnADoneReportWithNoPRIsFinishedWithoutStop(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	r.markLocalOnly(t)
 	go r.s.Run(r.ctx)
@@ -45,6 +46,7 @@ func TestALocalOnlyShipWhoseTurnEndsOnADoneReportWithNoPRIsFinishedWithoutStop(t
 }
 
 func TestAShipThatIsNotDoneOrNotLocalOnlyIsNotFinishedByItsTurnEnding(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name      string
 		localOnly bool
@@ -74,6 +76,7 @@ func TestAShipThatIsNotDoneOrNotLocalOnlyIsNotFinishedByItsTurnEnding(t *testing
 }
 
 func TestALiveShipCarriesLocalOnlyAndItsBranchOnTheWireOnlyWhenItIsLocalOnly(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	_ = r.s.Host.Sync(context.Background())
 	if _, raw, ok := r.wire(t); !ok || raw["local_only"] != nil || raw["branch"] != nil {

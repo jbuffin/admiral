@@ -43,6 +43,7 @@ func (r *liveRig) forgetTheLaunch() {
 }
 
 func TestAShipLaunchedOnItsOwnPRCarriesItWithoutReviewingBeforeItPrintsAnything(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, livePR7)
 	r.mine(livePR7)
 	r.poll()
@@ -54,6 +55,7 @@ func TestAShipLaunchedOnItsOwnPRCarriesItWithoutReviewingBeforeItPrintsAnything(
 }
 
 func TestAShipLaunchedOnAPRThatIsAStackLayerCarriesOnlyThatPRAndNeverAsksForTheStack(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, livePR7)
 	r.gh.stacks = map[string][]string{"acme/widgets/12": {livePR7, livePR8, livePR9}}
 	r.mine(livePR7)
@@ -70,6 +72,7 @@ func TestAShipLaunchedOnAPRThatIsAStackLayerCarriesOnlyThatPRAndNeverAsksForTheS
 }
 
 func TestAFreeTextShipCarriesAPRNamedAmongItsWordsAndShowsItOnTheWire(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{text: "please review " + livePR7 + " and report back"})
 	r.others(livePR7)
 	r.poll()
@@ -86,6 +89,7 @@ func TestAFreeTextShipCarriesAPRNamedAmongItsWordsAndShowsItOnTheWire(t *testing
 }
 
 func TestAFreeTextShipCarriesAPRNamedInItsNote(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{note: "context: " + livePR7, text: "look at the failing check"})
 	r.others(livePR7)
 	r.poll()
@@ -94,6 +98,7 @@ func TestAFreeTextShipCarriesAPRNamedInItsNote(t *testing.T) {
 }
 
 func TestAShipWhoseWholePromptIsAPRURLCarriesIt(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{text: livePR7})
 	r.others(livePR7)
 	r.poll()
@@ -102,6 +107,7 @@ func TestAShipWhoseWholePromptIsAPRURLCarriesIt(t *testing.T) {
 }
 
 func TestACommodoreLaunchOnAPRURLCarriesIt(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{kind: "commodore", text: livePR7})
 	r.others(livePR7)
 	r.poll()
@@ -110,6 +116,7 @@ func TestACommodoreLaunchOnAPRURLCarriesIt(t *testing.T) {
 }
 
 func TestEveryOpenPRTheLaunchTextNamesIsCarriedAndTheOwnOneIsNotReviewing(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{text: "compare " + livePR7 + ", " + livePR8 + " and " + livePR9})
 	r.others(livePR7)
 	r.mine(livePR8)
@@ -123,6 +130,7 @@ func TestEveryOpenPRTheLaunchTextNamesIsCarriedAndTheOwnOneIsNotReviewing(t *tes
 }
 
 func TestAClosedAndAMergedLaunchPRAreNotCarriedAndAreNotAskedAboutAgain(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{text: livePR7 + " " + livePR8 + " " + livePR9})
 	r.finished(livePR7, "CLOSED")
 	r.finished(livePR8, "MERGED")
@@ -136,6 +144,7 @@ func TestAClosedAndAMergedLaunchPRAreNotCarriedAndAreNotAskedAboutAgain(t *testi
 }
 
 func TestAnOwnOrderPRThatIsClosedIsNotCarried(t *testing.T) {
+	t.Parallel()
 	r := newReviewingRig(t, livePR7)
 	r.finished(livePR7, "CLOSED")
 	r.poll()
@@ -144,6 +153,7 @@ func TestAnOwnOrderPRThatIsClosedIsNotCarried(t *testing.T) {
 }
 
 func TestAFreeTextLaunchNamesNoPRWhenItHoldsOnlyAnIssueOrAnotherHost(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{text: "fix https://github.com/acme/widgets/issues/3, see https://ghe.example.com/acme/widgets/pull/7"})
 	r.others(livePR7)
 	r.poll()
@@ -155,6 +165,7 @@ func TestAFreeTextLaunchNamesNoPRWhenItHoldsOnlyAnIssueOrAnotherHost(t *testing.
 }
 
 func TestASourceOrdersTextThatCitesAPRDoesNotAttachIt(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{orderText: "Broken since " + livePR7 + ", see " + livePR9})
 	r.others(livePR7)
 	r.others(livePR9)
@@ -167,6 +178,7 @@ func TestASourceOrdersTextThatCitesAPRDoesNotAttachIt(t *testing.T) {
 }
 
 func TestAnAdmiralRestartBeforeTheFirstPollStillJudgesTheLaunchPRs(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{text: "review " + livePR7 + " and " + livePR8})
 	r.forgetTheLaunch()
 	r.others(livePR7)
@@ -177,6 +189,7 @@ func TestAnAdmiralRestartBeforeTheFirstPollStillJudgesTheLaunchPRs(t *testing.T)
 }
 
 func TestLaunchPRsJudgedBeforeAnAdmiralRestartStayCarriedAfterIt(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{text: "review " + livePR7 + " and " + livePR8})
 	r.others(livePR7)
 	r.mine(livePR8)
@@ -191,6 +204,7 @@ func TestLaunchPRsJudgedBeforeAnAdmiralRestartStayCarriedAfterIt(t *testing.T) {
 }
 
 func TestALaunchWithAPRInItsTextAsksThePollerToLookAtOnceAndOneWithNoneDoesNot(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name string
 		spec launchSpec
@@ -210,6 +224,7 @@ func TestALaunchWithAPRInItsTextAsksThePollerToLookAtOnceAndOneWithNoneDoesNot(t
 }
 
 func TestAScoutCarriesNoPRItsLaunchTextNamesAndAsksGitHubNothing(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{scout: true, text: "review " + livePR7})
 	r.others(livePR7)
 	r.poll()
@@ -221,6 +236,7 @@ func TestAScoutCarriesNoPRItsLaunchTextNamesAndAsksGitHubNothing(t *testing.T) {
 }
 
 func TestALaunchNamingMoreThanTwentyPRsCarriesOnlyTheFirstTwenty(t *testing.T) {
+	t.Parallel()
 	var urls []string
 	for i := 1; i <= 21; i++ {
 		u := fmt.Sprintf("https://github.com/acme/widgets/pull/%d", 100+i)
@@ -237,6 +253,7 @@ func TestALaunchNamingMoreThanTwentyPRsCarriesOnlyTheFirstTwenty(t *testing.T) {
 }
 
 func TestALaunchPRWhoseFirstAskFailsIsCarriedAfterALaterPollAnswers(t *testing.T) {
+	t.Parallel()
 	r := newLaunchedRig(t, launchSpec{text: "review " + livePR7})
 	r.others(livePR7)
 	r.gh.failOn = livePR7

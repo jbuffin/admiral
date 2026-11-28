@@ -28,6 +28,7 @@ func (f *mooredFixture) listed(t *testing.T) map[string]map[string]any {
 
 // no_resume tells a client a moored ship's wake starts bare, so it is true only then and absent otherwise.
 func TestAMooredShipWithNoValidResumeTextCarriesNoResumeAndOneWithItDoesNot(t *testing.T) {
+	t.Parallel()
 	f := mooredService(t, nil)
 	for name, resume := range map[string]string{"Bare": "", "Loose": "resume it", "Valid": "/commodore resume run-7"} {
 		rec := moor.Record{Name: name, Session: name, Fleet: "work", Harness: "claude", Checkout: "/src/widgets",

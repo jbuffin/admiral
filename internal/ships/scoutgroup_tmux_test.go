@@ -10,6 +10,7 @@ import (
 // Which engineer turn a launch records on a ship.
 
 func TestAScoutAdmiralBotLaunchesRecordsTheEngineerTurnItLaunchedInAndNoOtherShipDoes(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	if err := capabilities.Open(r.home).Record("work", "claude", "2.1.300", capabilities.ScoutGuard, capabilities.Result{Passed: true, At: time.Now()}); err != nil {
 		t.Fatal(err)

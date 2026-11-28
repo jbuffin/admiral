@@ -240,6 +240,7 @@ func (r *liveRig) wantMooredLog(t *testing.T) {
 }
 
 func TestOpenPRsListsTheReportPRsThatGitHubConfirmsOpenAndAsksOnlyWhenTheReportChanges(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	go r.s.Run(r.ctx)
 	if s, raw, ok := r.wire(t); !ok || s.OpenPRs != nil || raw["open_prs"] != nil {
@@ -271,6 +272,7 @@ func TestOpenPRsListsTheReportPRsThatGitHubConfirmsOpenAndAsksOnlyWhenTheReportC
 }
 
 func TestListingShipsNeverAsksGitHubForTheOpenPRs(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false) // no Run: only the request could ask
 	r.writeReport(t, "done", livePR7)
 	for range 3 {
@@ -282,6 +284,7 @@ func TestListingShipsNeverAsksGitHubForTheOpenPRs(t *testing.T) {
 }
 
 func TestAShipMoorsWhenItsTurnEndsWithADoneReportAndAnOpenPR(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	go r.s.Run(r.ctx)
 	r.turn(t, "working", "")
@@ -300,6 +303,7 @@ func TestAShipMoorsWhenItsTurnEndsWithADoneReportAndAnOpenPR(t *testing.T) {
 }
 
 func TestAShipThatIsNotDoneWithOpenPRsStaysLive(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name, result string
 		prs          []string
@@ -341,6 +345,7 @@ func contains(l []string, s string) bool {
 }
 
 func TestAReturningShipIsStoppedNotMooredWhenItsCleanUpTurnEnds(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	go r.s.Run(r.ctx)
 	r.turn(t, "working", "")
@@ -364,6 +369,7 @@ func TestAReturningShipIsStoppedNotMooredWhenItsCleanUpTurnEnds(t *testing.T) {
 }
 
 func TestAWokenShipThatMoorsLogsItsRoundMooredNotAnchored(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		moors func(t *testing.T, r *liveRig)
@@ -394,6 +400,7 @@ func TestAWokenShipThatMoorsLogsItsRoundMooredNotAnchored(t *testing.T) {
 }
 
 func TestStopWithMoorMoorsAShipWhosePRsGitHubConfirmsAtThatMoment(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false) // no Run, so no cached list: the answer comes from a fresh check
 	r.writeReport(t, "partial", livePR7, livePR8)
 
@@ -406,6 +413,7 @@ func TestStopWithMoorMoorsAShipWhosePRsGitHubConfirmsAtThatMoment(t *testing.T) 
 }
 
 func TestStopWithMoorFromAdmiralBotStampsTheMooredRecordVia(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	r.writeReport(t, "partial", livePR7)
 	ctx := actor.WithFleet(context.Background(), "work")
@@ -419,6 +427,7 @@ func TestStopWithMoorFromAdmiralBotStampsTheMooredRecordVia(t *testing.T) {
 }
 
 func TestReturnWithMoorMoorsWithoutLoggingReturningOrTypingTheCleanUpPrompt(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	r.writeReport(t, "partial", livePR7)
 	r.turn(t, "needs_you", "stop") // a plain Return to port would type its prompt now
@@ -470,6 +479,7 @@ func TestMoorOnAShipWithoutAnOpenPRIsRefusedAndLeavesTheShipAlone(t *testing.T) 
 }
 
 func TestMoorWhoseRecordCannotBeWrittenKeepsTheShipLive(t *testing.T) {
+	t.Parallel()
 	for _, route := range []string{"stop", "return"} {
 		t.Run(route, func(t *testing.T) {
 			r := newLiveRig(t, false)
@@ -490,6 +500,7 @@ func TestMoorWhoseRecordCannotBeWrittenKeepsTheShipLive(t *testing.T) {
 }
 
 func TestADoneShipWhoseRecordCannotBeWrittenStaysLive(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	if err := os.WriteFile(filepath.Join(r.home, "moored"), []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
@@ -505,6 +516,7 @@ func TestADoneShipWhoseRecordCannotBeWrittenStaysLive(t *testing.T) {
 }
 
 func TestMoorFalseOrNoBodyKeepsTodaysStopAndReturnToPort(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	r.writeReport(t, "done", livePR7)
 	r.turn(t, "working", "")
@@ -521,6 +533,7 @@ func TestMoorFalseOrNoBodyKeepsTodaysStopAndReturnToPort(t *testing.T) {
 }
 
 func TestReturnWithMoorOnAMooredShipKeepsTodays409(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0)
 	mux := http.NewServeMux()
@@ -568,6 +581,7 @@ func TestMoorAnswers409WhenGitHubDoesNotAnswer(t *testing.T) {
 }
 
 func TestMoorFindsNothingToMoorWhenAStopEndedTheShipFirst(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	r.writeReport(t, "partial", livePR7)
 	unlock := r.s.lockShip("saltpaw") // the Stop in progress

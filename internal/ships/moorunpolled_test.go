@@ -40,6 +40,7 @@ func (r *liveRig) wantMooredWith(t *testing.T, url string) {
 }
 
 func TestMoorMoorsAShipWithNoReportForTheOpenPRItCarriesBeforeAnyPoll(t *testing.T) {
+	t.Parallel()
 	for _, woken := range []bool{false, true} {
 		for _, route := range []string{"stop", "return"} {
 			name := route
@@ -62,6 +63,7 @@ func TestMoorMoorsAShipWithNoReportForTheOpenPRItCarriesBeforeAnyPoll(t *testing
 }
 
 func TestMoorMoorsACarriedPRAfterAnAdmiralRestartBeforeTheFirstPoll(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	r.carry(t, livePR7)
 	r.gh.pollGitHub.set(livePR7, moor.Status{State: "OPEN"})
@@ -114,6 +116,7 @@ func TestMoorRefusesAShipWhoseCarriedPRIsNotOpenOrNotConfirmedAndLeavesItAlone(t
 }
 
 func TestACleanExitMoorsAShipWithNoReportForTheOpenPRItCarriesBeforeAnyPoll(t *testing.T) {
+	t.Parallel()
 	r := newPRRig(t)
 	r.gh.mu.Lock()
 	r.gh.exitCheck = true

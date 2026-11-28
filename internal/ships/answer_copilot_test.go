@@ -52,7 +52,6 @@ func newPaneRunning(t *testing.T, harness string, questions []conversation.Item,
 		t.Fatal(err)
 	}
 	sock := filepath.Join(dir, "tmux.sock")
-	t.Setenv("TMUX_TMPDIR", dir)
 	t.Cleanup(func() {
 		_ = exec.Command(tmux, "-S", sock, "kill-server").Run()
 		_ = os.RemoveAll(dir)
@@ -87,6 +86,7 @@ func newPaneRunning(t *testing.T, harness string, questions []conversation.Item,
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() }) // its settle timer must not write after the test
 	s := &Service{Host: h, State: st, Hub: server.NewHub(),
 		Launcher:  &launcher.Launcher{Home: dir, Tmux: tmux, Socket: sock, Config: func() *config.Config { return &config.Config{} }},
 		Questions: func(string, string) []conversation.Item { return questions }}
@@ -166,6 +166,7 @@ func checkNotificationReasonsAreCopilotsAlone(t *testing.T) {
 }
 
 func TestCopilotPermissionAllowSendsYesAndDenySendsEscThenStops(t *testing.T) {
+	t.Parallel()
 	defer checkNotificationReasonsAreCopilotsAlone(t)
 	p := newAnswerPane(t, "copilot", nil)
 	p.needsYou("notification:permission_prompt")
@@ -189,6 +190,7 @@ func TestCopilotPermissionAllowSendsYesAndDenySendsEscThenStops(t *testing.T) {
 }
 
 func TestCopilotQuestionOptionTwoSendsDownThenEnterForTheNewestPendingQuestion(t *testing.T) {
+	t.Parallel()
 	p := newAnswerPane(t, "copilot", []conversation.Item{
 		askItem("stale", true, "Old"), askItem("new", true, "Red", "Green", "Blue")})
 	p.needsYou("question")
@@ -208,6 +210,7 @@ func TestCopilotQuestionOptionTwoSendsDownThenEnterForTheNewestPendingQuestion(t
 
 // ask_user leaves the pane on question, so this reason stands alone only for a dialog that is not ask_user's.
 func TestCopilotElicitationDialogIsAnsweredInTheTerminal(t *testing.T) {
+	t.Parallel()
 	const body = `{"card":"question","reason":"notification:elicitation_dialog","item":"q","option":1}`
 	p := newAnswerPane(t, "copilot", []conversation.Item{askItem("q", true, "Red", "Green")})
 	p.needsYou("notification:elicitation_dialog")
@@ -220,6 +223,7 @@ func TestCopilotElicitationDialogIsAnsweredInTheTerminal(t *testing.T) {
 }
 
 func TestCopilotQuestionFormWithNoOptionsGetsNoKeys(t *testing.T) {
+	t.Parallel()
 	p := newAnswerPane(t, "copilot", []conversation.Item{askItem("q", true)})
 	p.needsYou("question")
 	if code, msg := p.post(`{"card":"question","reason":"question","item":"q","option":1}`); code != http.StatusConflict {
@@ -231,6 +235,7 @@ func TestCopilotQuestionFormWithNoOptionsGetsNoKeys(t *testing.T) {
 }
 
 func TestAPaneWithNoKeyMapIsNotCalledAClaudeCodePane(t *testing.T) {
+	t.Parallel()
 	p := newAnswerPane(t, "gemini", nil)
 	p.needsYou("permission:Bash")
 	code, msg := p.post(`{"card":"permission","reason":"permission:Bash","choice":"allow"}`)

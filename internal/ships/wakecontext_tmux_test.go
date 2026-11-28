@@ -76,6 +76,7 @@ func (r *wakeRig) seedReport(t *testing.T, result string) {
 }
 
 func TestAHandWakeEndsItsPromptWithTheShipsContext(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	gitCheckout(t, r.checkout, "feature-x", "https://github.com/acme/widgets.git")
 	r.moored(t, 1)
@@ -107,6 +108,7 @@ func TestAHandWakeEndsItsPromptWithTheShipsContext(t *testing.T) {
 }
 
 func TestAWakeWritesTheContextFileBesideTheReportAndPointsTheShipAtIt(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	gitCheckout(t, r.checkout, "feature-x", "https://github.com/acme/widgets.git")
 	r.moored(t, 0)
@@ -126,6 +128,7 @@ func TestAWakeWritesTheContextFileBesideTheReportAndPointsTheShipAtIt(t *testing
 }
 
 func TestAWokenShipGetsItsOrderTextOnlyAsAnUntrustedFile(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0)
 	if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {
@@ -151,6 +154,7 @@ func (goneOrder) Order(source, id string) (text, title, repo, url, panel string,
 }
 
 func TestAWokenShipWhoseSourceNoLongerListsItsOrderGetsNoOrderFileAndTheContextSaysSo(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.s.Orders = goneOrder{}
 	r.moored(t, 0)
@@ -167,6 +171,7 @@ func TestAWokenShipWhoseSourceNoLongerListsItsOrderGetsNoOrderFileAndTheContextS
 }
 
 func TestAWakeRemovesAnOrderFileLeftByAnEarlierRoundWhenTheOrderIsGone(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.s.Orders = goneOrder{}
 	r.moored(t, 0)
@@ -183,6 +188,7 @@ func TestAWakeRemovesAnOrderFileLeftByAnEarlierRoundWhenTheOrderIsGone(t *testin
 }
 
 func TestAWakeRefusesALinkPlantedAtTheOrderFileAndStartsNothing(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0)
 	target := filepath.Join(t.TempDir(), "precious")
@@ -208,6 +214,7 @@ func TestAWakeRefusesALinkPlantedAtTheOrderFileAndStartsNothing(t *testing.T) {
 }
 
 func TestAFeedbackRoundKeepsItsPromptAndStillCarriesTheContextFile(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	r.moored(t, 1)
 	if _, lerr := r.s.FeedbackRound(context.Background(), "saltpaw", wakePR, "please fix", moor.WakeState{}); lerr != nil {
@@ -223,6 +230,7 @@ func TestAFeedbackRoundKeepsItsPromptAndStillCarriesTheContextFile(t *testing.T)
 }
 
 func TestAWakeLeavesTheLastReportAndAnAnsweredInboxItemInTheCheckoutAfterTheLaunchClearsThem(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0)
 	r.seedReport(t, "done")
@@ -255,6 +263,7 @@ func TestAWakeLeavesTheLastReportAndAnAnsweredInboxItemInTheCheckoutAfterTheLaun
 }
 
 func TestAWakeRefusesALinkPlantedAtTheInboxCopyAndStartsNothing(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.moored(t, 0)
 	r.seedReport(t, "done")

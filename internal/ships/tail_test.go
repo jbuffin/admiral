@@ -32,7 +32,6 @@ func tailService(t *testing.T) (*Service, func(string)) {
 		t.Fatal(err)
 	}
 	sock := filepath.Join(dir, "tmux.sock")
-	t.Setenv("TMUX_TMPDIR", dir)
 	t.Cleanup(func() {
 		_ = exec.Command(tmux, "-S", sock, "kill-server").Run()
 		_ = os.RemoveAll(dir)
@@ -64,6 +63,7 @@ func tailService(t *testing.T) (*Service, func(string)) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() }) // its settle timer must not write after the test
 	s := &Service{Host: h, State: st,
 		Launcher: &launcher.Launcher{Home: dir, Config: func() *config.Config { return &config.Config{} }},
 		Tail:     func(session string) string { mu.Lock(); defer mu.Unlock(); return tails[session] }}
@@ -90,6 +90,7 @@ func wireShips(t *testing.T, s *Service) []map[string]any {
 }
 
 func TestShipsMessageCarriesTheTailAndItChangesLive(t *testing.T) {
+	t.Parallel()
 	s, setTail := tailService(t)
 
 	// A ship with nothing readable still has the field, as "".

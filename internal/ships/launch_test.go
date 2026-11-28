@@ -25,14 +25,9 @@ func launchPost(t *testing.T, s *Service, body string) *httptest.ResponseRecorde
 }
 
 // guardedHome is a home where claude's guard probe and its judge probes passed in fleet
-// work, the way the probe runner leaves it, with a claude on PATH for the judge harness.
+// work, the way the probe runner leaves it.
 func guardedHome(t *testing.T) string {
 	t.Helper()
-	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	home := t.TempDir()
 	store, now := capabilities.Open(home), time.Now()
 	if err := store.RecordVersion("work", "claude", "2.1.300", now); err != nil {
@@ -44,6 +39,17 @@ func guardedHome(t *testing.T) string {
 		}
 	}
 	return home
+}
+
+// fakeClaude is a claude executable that does nothing, resolved the way a loaded config resolves one, so the
+// judge harness is found without the test's PATH.
+func fakeClaude(t *testing.T) string {
+	t.Helper()
+	exe := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return exe
 }
 
 // claudeEnv points a claude harness at a config directory of its own, holding a Commodore skill, so a launch
@@ -66,7 +72,7 @@ func fleets(t *testing.T) []config.Fleet {
 	dock := func(n string) config.Harness {
 		h := config.Harness{Name: n, Executable: n, Found: true}
 		if n == "claude" {
-			h.Env = claudeEnv(t)
+			h.Executable, h.Env = fakeClaude(t), claudeEnv(t)
 		}
 		return h
 	}
@@ -77,6 +83,7 @@ func fleets(t *testing.T) []config.Fleet {
 }
 
 func TestLaunchAPIRefusesWhatAutopilotModeMayNotClaim(t *testing.T) {
+	t.Parallel()
 	fl := fleets(t)
 	held := 0
 	s := &Service{
@@ -120,6 +127,7 @@ func TestLaunchAPIRefusesWhatAutopilotModeMayNotClaim(t *testing.T) {
 // The cap counts every ship underway or needing you, however it was launched; it
 // refuses an autopilot launch and never an interactive one.
 func TestAutopilotLaunchOverTheCapIsRefusedButAHandLaunchIsNot(t *testing.T) {
+	t.Parallel()
 	fl := fleets(t)
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
@@ -139,6 +147,7 @@ func TestAutopilotLaunchOverTheCapIsRefusedButAHandLaunchIsNot(t *testing.T) {
 // Without a passed guard probe in the launch's fleet, autopilot mode is refused with the
 // same 400 the old harness list gave, nothing starts, and the Inbox says so once.
 func TestAutopilotLaunchWithoutAProvenGuardIsRefusedAndNoticed(t *testing.T) {
+	t.Parallel()
 	fl := fleets(t)
 	home := guardedHome(t) // proven in work only
 	s := &Service{
@@ -191,6 +200,7 @@ func TestAutopilotLaunchWithoutAProvenGuardIsRefusedAndNoticed(t *testing.T) {
 
 // A fleet or dock the config doesn't have is a 404 before the gate, as in Launch, and posts no notice.
 func TestAutopilotLaunchOnAnUnknownFleetOrDockIs404AndPostsNoNotice(t *testing.T) {
+	t.Parallel()
 	fl := fleets(t)
 	home := guardedHome(t)
 	s := &Service{
@@ -211,6 +221,7 @@ func TestAutopilotLaunchOnAnUnknownFleetOrDockIs404AndPostsNoNotice(t *testing.T
 
 // Only AdmiralBot's own token context, never a body field, lifts the cap; its launch still counts.
 func TestAnAdmiralBotInstructionLaunchIsNeverBlockedByTheCapButStillCounts(t *testing.T) {
+	t.Parallel()
 	fl := fleets(t)
 	s := &Service{
 		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: a launch that got past the cap is a 503

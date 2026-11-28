@@ -164,6 +164,7 @@ func promptShips(card map[string]any) []string {
 const viewRuleText = "Bash(gh pr view:*)"
 
 func TestAHandAllowedPromptLeavesOneCardWhenItsRoundEnds(t *testing.T) {
+	t.Parallel()
 	r := newRuleRig(t)
 	r.launch(t, "saltpaw", "2026-11-11T10:00:00Z", "claude")
 	r.handAllowed(t, "saltpaw", "p1", "gh pr view:*")
@@ -186,6 +187,7 @@ func TestAHandAllowedPromptLeavesOneCardWhenItsRoundEnds(t *testing.T) {
 }
 
 func TestASecondShipWithTheSamePromptRaisesTheCardsCountAndMakesNoSecondCard(t *testing.T) {
+	t.Parallel()
 	r := newRuleRig(t)
 	r.launch(t, "saltpaw", "2026-11-11T10:00:00Z", "claude")
 	r.handAllowed(t, "saltpaw", "p1", "gh pr view:*")
@@ -204,6 +206,7 @@ func TestASecondShipWithTheSamePromptRaisesTheCardsCountAndMakesNoSecondCard(t *
 }
 
 func TestACrewBoatsHandAllowedPromptProposesUnderItsShip(t *testing.T) {
+	t.Parallel()
 	r := newRuleRig(t)
 	r.launch(t, "saltpaw", "2026-11-11T10:00:00Z", "claude")
 	r.prompt(t, "saltpaw", "b1", "implementer-1", claudeCall("Bash", "gh pr view:*"), permlog.Allow, permlog.Person)
@@ -225,6 +228,7 @@ func TestACrewBoatsHandAllowedPromptProposesUnderItsShip(t *testing.T) {
 }
 
 func TestARestrictedShipAndAT2EventShipProposeNothingButAT1OneDoes(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		restricted bool
@@ -256,6 +260,7 @@ func TestARestrictedShipAndAT2EventShipProposeNothingButAT1OneDoes(t *testing.T)
 }
 
 func TestAnEventShipWhoseTierWontParseOrWhoseLookupFailsProposesNothing(t *testing.T) {
+	t.Parallel()
 	for name, lookup := range map[string]func(string, string) (bool, bool, string, error){
 		"a tier that won't parse": func(string, string) (bool, bool, string, error) { return false, true, "high", nil },
 		"an empty tier":           func(string, string) (bool, bool, string, error) { return false, true, "", nil },
@@ -277,6 +282,7 @@ func TestAnEventShipWhoseTierWontParseOrWhoseLookupFailsProposesNothing(t *testi
 }
 
 func TestAShipWithNoReportOrANonV2ReportStillProposes(t *testing.T) {
+	t.Parallel()
 	for name, report := range map[string]any{
 		"no report":     nil,
 		"a v1 report":   map[string]any{"version": 1, "result": "done", "why": "ok"},
@@ -298,6 +304,7 @@ func TestAShipWithNoReportOrANonV2ReportStillProposes(t *testing.T) {
 }
 
 func TestAReportsReasonShowsOnTheCardWhoseRuleMatchesAndAddsNoCandidate(t *testing.T) {
+	t.Parallel()
 	r := newRuleRig(t)
 	r.report(t, "saltpaw", map[string]any{"version": 2, "result": "done", "why": "ok", "allow_rules": []map[string]string{
 		{"rule": viewRuleText, "reason": "read-only lookups of the PR I was asked to review"},
@@ -321,6 +328,7 @@ func TestAReportsReasonShowsOnTheCardWhoseRuleMatchesAndAddsNoCandidate(t *testi
 }
 
 func TestAReasonIsCutToTwoHundredCharacters(t *testing.T) {
+	t.Parallel()
 	r := newRuleRig(t)
 	r.report(t, "saltpaw", map[string]any{"version": 2, "result": "done", "why": "ok", "allow_rules": []map[string]string{
 		{"rule": viewRuleText, "reason": strings.Repeat("x", 300)},
@@ -336,6 +344,7 @@ func TestAReasonIsCutToTwoHundredCharacters(t *testing.T) {
 }
 
 func TestACodexCardHasNoRepoSaysItCoversEveryRepoAndTakesItsReasonByTheWordsOfItsPattern(t *testing.T) {
+	t.Parallel()
 	r := newRuleRig(t)
 	r.report(t, "saltpaw", map[string]any{"version": 2, "result": "done", "why": "ok", "allow_rules": []map[string]string{
 		{"rule": "make check", "reason": "runs the repo's checks"},
@@ -361,6 +370,7 @@ func TestACodexCardHasNoRepoSaysItCoversEveryRepoAndTakesItsReasonByTheWordsOfIt
 }
 
 func TestAFeedbackRoundCountsOnlyItsOwnPrompts(t *testing.T) {
+	t.Parallel()
 	r := newRuleRig(t)
 	r.launch(t, "saltpaw", "2026-11-11T10:00:00Z", "claude")
 	r.handAllowed(t, "saltpaw", "p1", "gh pr view:*")
@@ -379,6 +389,7 @@ func TestAFeedbackRoundCountsOnlyItsOwnPrompts(t *testing.T) {
 }
 
 func TestAFeedbackRoundReadsOnlyItsOwnPromptsEvenWhenTheEarlierItemIsGone(t *testing.T) {
+	t.Parallel()
 	r := newRuleRig(t)
 	r.launch(t, "saltpaw", "2026-11-11T10:00:00Z", "claude")
 	r.handAllowed(t, "saltpaw", "p1", "gh pr view:*")
@@ -402,6 +413,7 @@ func TestAFeedbackRoundReadsOnlyItsOwnPromptsEvenWhenTheEarlierItemIsGone(t *tes
 }
 
 func TestANewShipReusingAnOldNameDoesNotProposeTheOldShipsPromptsAgain(t *testing.T) {
+	t.Parallel()
 	r := newRuleRig(t)
 	r.launch(t, "saltpaw", "2026-11-11T10:00:00Z", "claude")
 	r.handAllowed(t, "saltpaw", "p1", "gh pr view:*")
@@ -431,6 +443,7 @@ func TestANewShipReusingAnOldNameDoesNotProposeTheOldShipsPromptsAgain(t *testin
 }
 
 func TestAnItemWithAnAnswerIsNeverRewrittenAndALaterRoundsSameRuleLandsOnANewOne(t *testing.T) {
+	t.Parallel()
 	r := newRuleRig(t)
 	r.launch(t, "saltpaw", "2026-11-11T10:00:00Z", "claude")
 	r.handAllowed(t, "saltpaw", "p1", "gh pr view:*")
@@ -465,6 +478,7 @@ func TestAnItemWithAnAnswerIsNeverRewrittenAndALaterRoundsSameRuleLandsOnANewOne
 }
 
 func TestARuleTheFleetAlreadyHasOrSkippedIsNotProposed(t *testing.T) {
+	t.Parallel()
 	rule := allowrules.Rule{Harness: "claude", Repo: "acme/widgets", Rule: viewRuleText}
 	for name, seed := range map[string]func(*allowrules.Store) error{
 		"already added": func(s *allowrules.Store) error { return s.Add("work", rule) },

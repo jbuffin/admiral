@@ -7,6 +7,7 @@ import (
 )
 
 func TestRefHolderNamesTheListedShipThatHoldsAPROrAnIssue(t *testing.T) {
+	t.Parallel()
 	list := []Ship{
 		{Name: "a", Session: "sess-a", Status: StatusUnderway, URL: "https://github.com/acme/widgets/issues/21"},
 		{Name: "b", Session: "sess-b", Status: "moored", PRs: []moor.PR{{URL: "https://github.com/acme/widgets/pull/7"}, {URL: "https://github.com/acme/widgets/pull/8"}}},
@@ -38,6 +39,7 @@ func TestRefHolderNamesTheListedShipThatHoldsAPROrAnIssue(t *testing.T) {
 }
 
 func TestAShipWhoseOrderURLIsAPRHoldsItInAnySpellingWhateverItsStatus(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{StatusUnderway, "needs_you", "anchored"} {
 		list := []Ship{{Name: "dory", Session: "sess-dory", Status: status, URL: "https://github.com/acme/widgets/pull/7"}}
 		for _, ref := range []string{
@@ -54,6 +56,7 @@ func TestAShipWhoseOrderURLIsAPRHoldsItInAnySpellingWhateverItsStatus(t *testing
 }
 
 func TestAShipWhoseURLIsAnotherPRDoesNotHoldThisOne(t *testing.T) {
+	t.Parallel()
 	list := []Ship{{Name: "dory", Session: "sess-dory", Status: StatusUnderway, URL: "https://github.com/acme/widgets/pull/7/files"}}
 	for _, ref := range []string{
 		"https://github.com/acme/widgets/pull/8",

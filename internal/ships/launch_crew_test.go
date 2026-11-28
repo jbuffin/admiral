@@ -9,6 +9,7 @@ import (
 
 // These refusals need no disk, so they come before a clone: each request names a repo that has a checkout, which the clone path would refuse with a 409.
 func TestPinRefusalsComeBeforeTheClone(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	checkout := filepath.Join(root, "widget")
 	if err := os.MkdirAll(filepath.Join(checkout, ".git"), 0o755); err != nil {

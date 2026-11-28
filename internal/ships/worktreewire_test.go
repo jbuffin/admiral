@@ -8,6 +8,7 @@ import (
 )
 
 func TestAShipWithAWorktreeReportsItOnTheWireAndOneWithoutOmitsIt(t *testing.T) {
+	t.Parallel()
 	r := newLiveRig(t, false)
 	if _, raw, ok := r.wire(t); !ok || raw["worktree"] != nil {
 		t.Fatalf("a ship with no worktree: wire = %v (listed %v), want no worktree field", raw, ok)

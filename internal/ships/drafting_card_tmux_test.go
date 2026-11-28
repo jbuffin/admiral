@@ -43,6 +43,7 @@ func newCardRig(t *testing.T, fromChat bool) (*draftRig, *cardCatcher) {
 }
 
 func TestAChatLaunchedDraftingShipsFollowedRefPostsOneFollowingCardNamingTheCampaignAdmiralRead(t *testing.T) {
+	t.Parallel()
 	r, cc := newCardRig(t, true)
 	// What the ship wrote is only a URL; the title is Admiral's own read of the issue.
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
@@ -58,6 +59,7 @@ func TestAChatLaunchedDraftingShipsFollowedRefPostsOneFollowingCardNamingTheCamp
 }
 
 func TestAFollowingCardPostsOncePerShipNotForALaterRefTheFollowIgnores(t *testing.T) {
+	t.Parallel()
 	r, cc := newCardRig(t, true)
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
 	r.endTurn(t, "saltpaw")
@@ -71,6 +73,7 @@ func TestAFollowingCardPostsOncePerShipNotForALaterRefTheFollowIgnores(t *testin
 }
 
 func TestAChatLaunchedDraftingShipThatFilesAtItsEndPostsTheFollowingCard(t *testing.T) {
+	t.Parallel()
 	r, cc := newCardRig(t, true)
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")
 	r.stopShip(t, "saltpaw")
@@ -81,6 +84,7 @@ func TestAChatLaunchedDraftingShipThatFilesAtItsEndPostsTheFollowingCard(t *test
 }
 
 func TestOnlyADraftingShipAdmiralBotLaunchesFromTheChatPostsAFollowingCard(t *testing.T) {
+	t.Parallel()
 	r, cc := newCardRig(t, false)
 	skill := filepath.Join(r.checkout, ".claude", "skills", "wayfinder", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
@@ -105,6 +109,7 @@ func TestOnlyADraftingShipAdmiralBotLaunchesFromTheChatPostsAFollowingCard(t *te
 }
 
 func TestAChatLaunchedDraftingShipWhoseRefTheFollowRefusesPostsNoCard(t *testing.T) {
+	t.Parallel()
 	r, cc := newCardRig(t, true)
 	r.err = errString("That campaign belongs to fleet home, not work")
 	writeRef(t, r.refOf("saltpaw"), campaignIssue+"\n")

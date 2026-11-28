@@ -45,6 +45,7 @@ func reviewedPR() moor.Detail {
 }
 
 func TestReRequestAsksGitHubToReRequestAPersonOrBotWhoReviewedAndIsNotPending(t *testing.T) {
+	t.Parallel()
 	for _, login := range []string{"hubot", "copilot-pull-request-reviewer"} {
 		t.Run(login, func(t *testing.T) {
 			g := &pollGitHub{}
@@ -66,6 +67,7 @@ func TestReRequestAsksGitHubToReRequestAPersonOrBotWhoReviewedAndIsNotPending(t 
 }
 
 func TestReRequestRefusesWhatGitHubsPageDoesNotOfferWithoutCallingGitHub(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ why, login string }{
 		{"the PR's author, who also reviewed", "octocat"},
 		{"someone requested again after reviewing", "defunkt"},
@@ -93,6 +95,7 @@ func TestReRequestRefusesWhatGitHubsPageDoesNotOfferWithoutCallingGitHub(t *test
 }
 
 func TestReRequestRefusesAPRTheShipDoesNotCarryAndAShipThatIsNotThere(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.setDetail(reviewedPR())
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -106,6 +109,7 @@ func TestReRequestRefusesAPRTheShipDoesNotCarryAndAShipThatIsNotThere(t *testing
 }
 
 func TestReRequestReturnsGitHubsRefusalAndAFailedRead(t *testing.T) {
+	t.Parallel()
 	t.Run("GitHub refuses the request", func(t *testing.T) {
 		g := &pollGitHub{reRequestErr: errors.New("Could not resolve to a User with the login of 'hubot'.")}
 		g.setDetail(reviewedPR())

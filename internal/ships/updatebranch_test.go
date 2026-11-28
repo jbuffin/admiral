@@ -48,6 +48,7 @@ func (r *updateRig) refused(t *testing.T, rec *httptest.ResponseRecorder, code i
 }
 
 func TestUpdateBranchOfABehindPROnAShipThatCannotResumeRunsGhOnceAndAnswers202(t *testing.T) {
+	t.Parallel()
 	r := newUpdateRig(t, nil, layerURL(7))
 	rec := r.update(`{"pr":"` + layerURL(7) + `"}`)
 	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), `"updated":true`) {
@@ -63,6 +64,7 @@ func TestUpdateBranchOfABehindPROnAShipThatCannotResumeRunsGhOnceAndAnswers202(t
 }
 
 func TestUpdateBranchOfAPRThatIsNotBehindIsRefused(t *testing.T) {
+	t.Parallel()
 	for name, mod := range map[string]func(*moor.Status){
 		"ready":  func(s *moor.Status) { *s = readyStatus() },
 		"closed": func(s *moor.Status) { s.State = "CLOSED" },
@@ -80,16 +82,19 @@ func TestUpdateBranchOfAPRThatIsNotBehindIsRefused(t *testing.T) {
 }
 
 func TestUpdateBranchNamingAPRTheShipDoesNotOwnIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newUpdateRig(t, nil, layerURL(7))
 	r.refused(t, r.update(`{"pr":"https://github.com/acme/widgets/pull/99"}`), http.StatusBadRequest, "pr is not one of")
 }
 
 func TestUpdateBranchOfALayerOfAGitHubStackIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newUpdateRig(t, stackedDetails(2), layerURL(7), layerURL(9))
 	r.refused(t, r.update(`{"pr":"`+layerURL(9)+`"}`), http.StatusConflict, "stack")
 }
 
 func TestUpdateBranchOfAPRNamingAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
+	t.Parallel()
 	const foreign = "https://attacker.example/acme/widgets/pull/21"
 	r := newUpdateRig(t, nil, foreign)
 	r.refused(t, r.update(`{"pr":"`+foreign+`"}`), http.StatusUnprocessableEntity, "GitHub host")
@@ -99,6 +104,7 @@ func TestUpdateBranchOfAPRNamingAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
 }
 
 func TestUpdateBranchOfAReviewShipsPRIsRefused(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{}
 	g.set(prSeven, behindStatus())
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -114,6 +120,7 @@ func TestUpdateBranchOfAReviewShipsPRIsRefused(t *testing.T) {
 }
 
 func TestUpdateBranchOfAShipThatIsNotThereIsNotFound(t *testing.T) {
+	t.Parallel()
 	r := newUpdateRig(t, nil, layerURL(7))
 	r.session = "no-such-ship"
 	if rec := r.update(`{"pr":"` + layerURL(7) + `"}`); rec.Code != http.StatusNotFound {
@@ -125,6 +132,7 @@ func TestUpdateBranchOfAShipThatIsNotThereIsNotFound(t *testing.T) {
 }
 
 func TestAFailedGhUpdateBranchReturnsItsMessageAndKeepsTheShipMoored(t *testing.T) {
+	t.Parallel()
 	r := newUpdateRig(t, nil, layerURL(7))
 	r.g.updateErr = errors.New("gh: Head branch was modified. Review and try the update again.")
 	rec := r.update(`{"pr":"` + layerURL(7) + `"}`)
@@ -138,6 +146,7 @@ func TestAFailedGhUpdateBranchReturnsItsMessageAndKeepsTheShipMoored(t *testing.
 }
 
 func TestAnUpdateBranchThatRunsPastGhsLimitAnswers504AndRefreshesThePoll(t *testing.T) {
+	t.Parallel()
 	r := newUpdateRig(t, nil, layerURL(7))
 	r.g.updateErr = moor.ErrMergeTimeout
 	rec := r.update(`{"pr":"` + layerURL(7) + `"}`)
@@ -152,6 +161,7 @@ func TestAnUpdateBranchThatRunsPastGhsLimitAnswers504AndRefreshesThePoll(t *test
 }
 
 func TestASecondUpdateBranchWhileOneIsRunningIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newUpdateRig(t, nil, layerURL(7))
 	r.g.updateBlock = make(chan struct{})
 	first := make(chan int, 1)
@@ -177,6 +187,7 @@ func TestASecondUpdateBranchWhileOneIsRunningIsRefused(t *testing.T) {
 }
 
 func TestUpdateBranchWithoutAGuardIsForbidden(t *testing.T) {
+	t.Parallel()
 	r := newUpdateRig(t, nil, layerURL(7))
 	r.s.MergeGuard = nil
 	mux := http.NewServeMux()
@@ -189,6 +200,7 @@ func TestUpdateBranchWithoutAGuardIsForbidden(t *testing.T) {
 }
 
 func TestAMooredPRBehindItsBaseServesWhyItCannotMerge(t *testing.T) {
+	t.Parallel()
 	r := newUpdateRig(t, nil, layerURL(7))
 	r.s.PollMoored(t.Context())
 	sh, ok := r.ship(t, "Nelson")

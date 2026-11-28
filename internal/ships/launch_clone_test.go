@@ -33,6 +33,7 @@ func cloneService(t *testing.T, root, orderRepo string) *Service {
 
 // Each refusal comes before gh runs: none of these services could clone.
 func TestCloneLaunchRefusals(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	checkout := filepath.Join(root, "widget")
 	if err := os.MkdirAll(filepath.Join(checkout, ".git"), 0o755); err != nil {

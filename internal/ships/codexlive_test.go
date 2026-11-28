@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -19,7 +18,7 @@ import (
 func codexAsking(t *testing.T, s *Service, harness, reason string) (typed func() string) {
 	t.Helper()
 	tmux, _ := exec.LookPath("tmux")
-	sock := filepath.Join(os.Getenv("TMUX_TMPDIR"), "tmux.sock")
+	sock := filepath.Join(s.Launcher.Home, "tmux.sock")
 	s.Launcher.Tmux, s.Launcher.Socket = tmux, sock // the route reads and types through the launcher's tmux
 	s.Hub = server.NewHub()
 	run := func(args ...string) string {
@@ -64,6 +63,7 @@ func liveQuestion(id string, options int, multi bool) conversation.Item {
 }
 
 func TestCodexQuestionIsAnsweredOnlyWhileBellMeetsTheObserversPendingQuestion(t *testing.T) {
+	t.Parallel()
 	const body = `{"card":"question","reason":"bell","item":"call_q1#0","option":2}`
 
 	t.Run("a bell with the observer's matching question sends the digit", func(t *testing.T) {
@@ -149,6 +149,7 @@ func TestCodexQuestionIsAnsweredOnlyWhileBellMeetsTheObserversPendingQuestion(t 
 }
 
 func TestCodexQuestionSignalPutsTheShipAtNeedsYouWithTheBellsReason(t *testing.T) {
+	t.Parallel()
 	paneOf := func(s *Service) (state, reason string) {
 		sess, _ := s.find("alpha")
 		return sess.State, sess.Reason

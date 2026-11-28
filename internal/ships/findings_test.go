@@ -45,6 +45,7 @@ func getFindings(s *Service, session, query string) *httptest.ResponseRecorder {
 }
 
 func TestTheFindingsRouteAnswersTheKeptVoyageAndRefusesWhatItCannotServe(t *testing.T) {
+	t.Parallel()
 	s, home := findingsService(t)
 	const newer = "2026-11-19T09:30:00Z"
 	s.seedFindings(t, home, "dory", findingsFirst, "old\n")
@@ -66,6 +67,7 @@ func TestTheFindingsRouteAnswersTheKeptVoyageAndRefusesWhatItCannotServe(t *test
 }
 
 func TestAScoutIsFailedOnlyWhenItsVoyageHoldsNoKeptFindings(t *testing.T) {
+	t.Parallel()
 	s, home := findingsService(t)
 	scout := func(name string) sessionhost.Session {
 		return sessionhost.Session{Name: name, Options: map[string]string{"scout": "1", "fleet": "work", "first-launched": findingsFirst}}
@@ -84,6 +86,7 @@ func TestAScoutIsFailedOnlyWhenItsVoyageHoldsNoKeptFindings(t *testing.T) {
 }
 
 func TestAStoreErrorDoesNotFailAScoutThatWroteFindings(t *testing.T) {
+	t.Parallel()
 	s, home := findingsService(t)
 	if err := os.WriteFile(filepath.Join(home, "findings"), []byte("in the way"), 0o600); err != nil {
 		t.Fatal(err)
@@ -122,6 +125,7 @@ func getFindingsAs(s *Service, fleet, session, query string) *httptest.ResponseR
 }
 
 func TestAnActorReadsFindingsOfItsOwnFleetsShip(t *testing.T) {
+	t.Parallel()
 	s, home := findingsService(t)
 	s.seedFindingsOf(t, home, "dory", findingsFirst, "work", "work findings\n")
 	rec := getFindingsAs(s, "work", "dory", "")
@@ -133,6 +137,7 @@ func TestAnActorReadsFindingsOfItsOwnFleetsShip(t *testing.T) {
 }
 
 func TestAnActorIsRefusedAnotherFleetsShipAnUnknownShipAndAVoyageWithNoFleetWithOneAndTheSame404(t *testing.T) {
+	t.Parallel()
 	s, home := findingsService(t)
 	s.seedFindingsOf(t, home, "dory", findingsFirst, "home", "home findings\n")
 	s.seedFindingsOf(t, home, "plover", findingsFirst, "", "stray findings\n")
@@ -155,6 +160,7 @@ func TestAnActorIsRefusedAnotherFleetsShipAnUnknownShipAndAVoyageWithNoFleetWith
 }
 
 func TestAReusedShipNameShowsAnActorOnlyItsOwnFleetsLatestVoyageAndTheWebTheNewest(t *testing.T) {
+	t.Parallel()
 	s, home := findingsService(t)
 	older := "2026-11-18T09:30:00Z"
 	newer := "2026-11-19T09:30:00Z"

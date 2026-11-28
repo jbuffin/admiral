@@ -60,6 +60,7 @@ func (r *wakeRig) launchBody(t *testing.T, asBot bool, extra string) string {
 }
 
 func TestAChatLaunchPostsOneLaunchLineWithTheShipsKindTheReasonAndTheLaunchTextAsWritten(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, extra, kind string }{
 		{"a quick ship", `,"skill":{"kind":"none"},"autopilot":true,"reason":"to read the AWS logs"`, "quick_ship"},
 		{"a scout", `,"skill":{"kind":"none"},"autopilot":true,"scout":true,"reason":"to read the AWS logs"`, "scout"},
@@ -86,6 +87,7 @@ func TestAChatLaunchPostsOneLaunchLineWithTheShipsKindTheReasonAndTheLaunchTextA
 }
 
 func TestALaunchThatIsNotAChatLaunchAddsNoLaunchLine(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	caught := &lineCatcher{}
 	r.s.PostLaunchLine = caught.post
@@ -104,6 +106,7 @@ func TestALaunchThatIsNotAChatLaunchAddsNoLaunchLine(t *testing.T) {
 }
 
 func TestAChatLaunchFromAnOrderPostsItsLineWithTheOrdersTitle(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	caught := &lineCatcher{}
 	r.s.PostLaunchLine = caught.post
@@ -115,6 +118,7 @@ func TestAChatLaunchFromAnOrderPostsItsLineWithTheOrdersTitle(t *testing.T) {
 }
 
 func TestAFreeformChatLaunchPostsItsLineWithNoTitle(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	caught := &lineCatcher{}
 	r.s.PostLaunchLine = caught.post

@@ -35,6 +35,7 @@ func writeTranscript(t *testing.T, path string, lines ...string) string {
 
 // The crew boats' transcripts are read from the fleet's own config directories, one rollout per Codex boat.
 func TestTranscriptUsageReadsEachCrewBoatsTranscript(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	claudeDir, codexDir := filepath.Join(root, "claude"), filepath.Join(root, "codex")
 	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Harnesses: []config.Harness{
@@ -95,6 +96,7 @@ func codexService(t *testing.T) (*Service, string) {
 
 // A Codex ship or boat that ran /new keeps the tokens of the thread it left: every recorded rollout is summed.
 func TestTranscriptUsageSumsEveryRolloutAPaneRecorded(t *testing.T) {
+	t.Parallel()
 	s, dir := codexService(t)
 	r1 := writeTranscript(t, filepath.Join(dir, "rollout-1.jsonl"), codexLine(100), codexLine(300))
 	r2 := writeTranscript(t, filepath.Join(dir, "rollout-2.jsonl"), codexLine(7))
@@ -118,6 +120,7 @@ func TestTranscriptUsageSumsEveryRolloutAPaneRecorded(t *testing.T) {
 
 // A boat closed before its ship exits is still counted, from the paths the close kept on the session.
 func TestTranscriptUsageCountsClosedBoats(t *testing.T) {
+	t.Parallel()
 	s, dir := codexService(t)
 	a := writeTranscript(t, filepath.Join(dir, "rollout-a.jsonl"), codexLine(40))
 	b := writeTranscript(t, filepath.Join(dir, "rollout-b.jsonl"), codexLine(2))

@@ -72,6 +72,7 @@ func (r *readyRig) refused(t *testing.T, rec *httptest.ResponseRecorder, code in
 }
 
 func TestMarkingADraftReadyForReviewRunsGhOnceAndReportsItMarked(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, nil, layerURL(7))
 	got := r.results(t, r.post(urlsBody(layerURL(7))))
 	if want := []readyResult{{URL: layerURL(7), Outcome: "marked_ready"}}; !reflect.DeepEqual(got, want) {
@@ -85,6 +86,7 @@ func TestMarkingADraftReadyForReviewRunsGhOnceAndReportsItMarked(t *testing.T) {
 }
 
 func TestMarkingAStackTriesEveryDraftBottomToTopAndOneFailingDoesNotStopTheRest(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, nil, layerURL(7), layerURL(9), layerURL(11))
 	r.g.readyErr = map[string]error{layerURL(9): errors.New("gh: Pull request is in a state that cannot be marked ready")}
 	got := r.results(t, r.post(urlsBody(layerURL(7), layerURL(9), layerURL(11))))
@@ -106,6 +108,7 @@ func TestMarkingAStackTriesEveryDraftBottomToTopAndOneFailingDoesNotStopTheRest(
 }
 
 func TestAPRAlreadyReadyForReviewIsSkippedWithNoCall(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, map[string]bool{layerURL(9): true}, layerURL(7), layerURL(9))
 	got := r.results(t, r.post(urlsBody(layerURL(7), layerURL(9))))
 	if len(got) != 2 || got[0].Outcome != "marked_ready" || got[1].URL != layerURL(9) || got[1].Outcome != "already_ready_for_review" {
@@ -117,6 +120,7 @@ func TestAPRAlreadyReadyForReviewIsSkippedWithNoCall(t *testing.T) {
 }
 
 func TestAMarkThatRunsPastGhsLimitIsAFailedLineSayingTheResultIsUnknown(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, nil, layerURL(7))
 	r.g.readyErr = map[string]error{layerURL(7): moor.ErrMergeTimeout}
 	got := r.results(t, r.post(urlsBody(layerURL(7))))
@@ -131,6 +135,7 @@ func TestAMarkThatRunsPastGhsLimitIsAFailedLineSayingTheResultIsUnknown(t *testi
 }
 
 func TestMarkingReadyAsksForAPollSoTheChipsChange(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, nil, layerURL(7))
 	r.results(t, r.post(urlsBody(layerURL(7))))
 	select {
@@ -141,6 +146,7 @@ func TestMarkingReadyAsksForAPollSoTheChipsChange(t *testing.T) {
 }
 
 func TestMarkingReadyWithoutAMergeGuardIsForbidden(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, nil, layerURL(7))
 	r.s.MergeGuard = nil
 	mux := http.NewServeMux()
@@ -153,12 +159,14 @@ func TestMarkingReadyWithoutAMergeGuardIsForbidden(t *testing.T) {
 }
 
 func TestMarkingReadyOnAShipThatIsNotThereIsNotFound(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, nil, layerURL(7))
 	r.session = "no-such-ship"
 	r.refused(t, r.post(urlsBody(layerURL(7))), http.StatusNotFound)
 }
 
 func TestMarkingReadyOnAReviewShipIsRefused(t *testing.T) {
+	t.Parallel()
 	g := &pollGitHub{detail: map[string]moor.Detail{prSeven: openDetail(prSeven, true)}}
 	g.set(prSeven, readyStatus())
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
@@ -171,17 +179,20 @@ func TestMarkingReadyOnAReviewShipIsRefused(t *testing.T) {
 }
 
 func TestMarkingAPRTheShipDoesNotOwnIsRefusedAndMarksNothing(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, nil, layerURL(7))
 	r.refused(t, r.post(urlsBody(layerURL(7), "https://github.com/acme/widgets/pull/99")), http.StatusBadRequest)
 }
 
 func TestMarkingAPROnAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
+	t.Parallel()
 	const foreign = "https://attacker.example/acme/widgets/pull/21"
 	r := newReadyRig(t, nil, foreign)
 	r.refused(t, r.post(urlsBody(foreign)), http.StatusUnprocessableEntity)
 }
 
 func TestARequestWithAClosedPRMarksNoneOfThem(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, nil, layerURL(7), layerURL(9))
 	closed := openDetail(layerURL(9), true)
 	closed.State = "CLOSED"
@@ -190,11 +201,13 @@ func TestARequestWithAClosedPRMarksNoneOfThem(t *testing.T) {
 }
 
 func TestARequestThatIsNotJSONIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, nil, layerURL(7))
 	r.refused(t, r.post("{not json"), http.StatusBadRequest)
 }
 
 func TestMarkingReadyWhileAMergeOrUpdateIsUnderWayIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newReadyRig(t, nil, layerURL(7))
 	if !r.s.startMerge(r.session) {
 		t.Fatal("could not start a merge to hold the ship")

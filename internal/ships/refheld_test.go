@@ -16,6 +16,7 @@ func eventOn(url, routine string) func(*launcher.Request) {
 }
 
 func TestASecondEventLaunchOnTheSameIssueIsRefusedAsIssueHeldNamingTheFirstShip(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := r.mustLaunch(t, eventOn(heldIssue, "r1"))
 	before := len(r.s.List())
@@ -35,6 +36,7 @@ func TestASecondEventLaunchOnTheSameIssueIsRefusedAsIssueHeldNamingTheFirstShip(
 }
 
 func TestAnEventLaunchOnAnotherIssueIsNotRefused(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.mustLaunch(t, eventOn(heldIssue, "r1"))
 	r.mustLaunch(t, eventOn("https://github.com/acme/api/issues/43", "r2"))

@@ -14,6 +14,7 @@ import (
 const oldStamp = "2026-11-12T06:00:00Z"
 
 func TestAFreshShipsFirstLaunchStampIsItsLaunchStamp(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	got := r.mustLaunch(t, func(q *launcher.Request) { q.Name, q.Session = "Saltpaw", "saltpaw" })
 	o := r.options(t, "saltpaw")
@@ -26,6 +27,7 @@ func TestAFreshShipsFirstLaunchStampIsItsLaunchStamp(t *testing.T) {
 }
 
 func TestAMooredShipIsListedWithAndWakesWithItsFirstLaunchStamp(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	first := shipJSON(t, r.moorKeyed(t))["first_launched"]
 	if first == nil || first == "" {
@@ -63,6 +65,7 @@ func TestAMooredShipIsListedWithAndWakesWithItsFirstLaunchStamp(t *testing.T) {
 
 // A record written before the field has no first launch to carry, so its launch stamp stands in.
 func TestAWakeOfARecordFromBeforeTheFieldFallsBackToItsLaunchStamp(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	if err := moor.Write(r.home, moor.Record{Name: "Saltpaw", Session: "saltpaw", Fleet: "work", Harness: "claude", Model: "opus",
 		Skill: moor.Skill{Kind: "skill", Name: "review"}, Checkout: r.checkout, Source: "s", OrderID: "o1", Panel: "p",
@@ -86,6 +89,7 @@ func TestAWakeOfARecordFromBeforeTheFieldFallsBackToItsLaunchStamp(t *testing.T)
 }
 
 func TestAHandRelaunchKeepsTheShipsFirstLaunchStamp(t *testing.T) {
+	t.Parallel()
 	r := newHandRig(t)
 	r.setPaneOption(t, "@admiral-first-launched", oldStamp)
 	ref := r.queue(t, `{"kind":"issue"}`)

@@ -56,6 +56,7 @@ func (r *wakeRig) stillMoored(t *testing.T) bool {
 }
 
 func TestAReviewFromAWakeReviewerWakesTheShipOnceWithThePRAndTheFeedbackFile(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	g := r.polling()
 	g.set(wakePR, aliceReview())
@@ -87,6 +88,7 @@ func TestAReviewFromAWakeReviewerWakesTheShipOnceWithThePRAndTheFeedbackFile(t *
 }
 
 func TestTheNextPollAfterTheRoundDoesNotWakeTheShipOnTheSameReview(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	g := r.polling()
 	g.set(wakePR, aliceReview())
@@ -111,6 +113,7 @@ func TestTheNextPollAfterTheRoundDoesNotWakeTheShipOnTheSameReview(t *testing.T)
 }
 
 func TestAtTheCapTheStateIsUnchangedAndTheShipWaitsThenWakesOnceThereIsRoom(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 1)
 	g := r.polling()
 	g.set(wakePR, aliceReview())
@@ -145,6 +148,7 @@ func TestAtTheCapTheStateIsUnchangedAndTheShipWaitsThenWakesOnceThereIsRoom(t *t
 }
 
 func TestABusyResourceShowsItsNameAndLeavesTheStateThenTheShipWakesWhenItFrees(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	g := r.polling()
 	g.set(wakePR, aliceReview())
@@ -174,6 +178,7 @@ func TestABusyResourceShowsItsNameAndLeavesTheStateThenTheShipWakesWhenItFrees(t
 }
 
 func TestARefusalNoWaitingClearsIsShownAsCantWakeWithItsMessage(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	g := r.polling()
 	g.set(wakePR, aliceReview())
@@ -192,6 +197,7 @@ func TestARefusalNoWaitingClearsIsShownAsCantWakeWithItsMessage(t *testing.T) {
 
 // A file where the fleet's directory belongs fails the launch in shipContract, after the round-start hook ran.
 func TestALaunchThatFailsAfterTheHookPutsTheWakeStateBack(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	g := r.polling()
 	g.set(wakePR, aliceReview())
@@ -223,6 +229,7 @@ func TestALaunchThatFailsAfterTheHookPutsTheWakeStateBack(t *testing.T) {
 }
 
 func TestAHandWakeWritesTheRoundStartAndTheBoundaryCursorAndKeepsTheRest(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	moored := r.mooredResume(t, 0, "/commodore resume run-7", 30*time.Minute)
 	seen := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
@@ -249,6 +256,7 @@ func TestAHandWakeWritesTheRoundStartAndTheBoundaryCursorAndKeepsTheRest(t *test
 }
 
 func TestAFailedHandWakeLaunchPutsTheWakeStateBack(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 0)
 	r.mooredResume(t, 0, "/commodore resume run-7", 30*time.Minute)
 	seen := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
@@ -270,6 +278,7 @@ func TestAFailedHandWakeLaunchPutsTheWakeStateBack(t *testing.T) {
 }
 
 func TestAFailedLaunchWithNoEarlierWakeStateLeavesNoWakeStateFile(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	g := r.polling()
 	g.set(wakePR, aliceReview())
@@ -286,6 +295,7 @@ func TestAFailedLaunchWithNoEarlierWakeStateLeavesNoWakeStateFile(t *testing.T) 
 }
 
 func TestARoundIsRefusedWhenTheWakeStateChangedSinceItWasDecided(t *testing.T) {
+	t.Parallel()
 	r := newWakeRig(t, 3)
 	r.mooredResume(t, 0, "/commodore resume run-7", 30*time.Minute)
 	decidedFrom := moor.WakeState{}
