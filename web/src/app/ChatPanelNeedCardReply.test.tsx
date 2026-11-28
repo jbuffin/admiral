@@ -151,3 +151,32 @@ test("the engineer's card reply shows in the thread as their own words, without 
   expect(msg.textContent?.trim()).toBe('go with Harbor');
   expect(document.body.textContent).not.toContain('Need card:');
 });
+
+const settled = (c: ReturnType<typeof question>) => ({ ...c, card: { ...c.card, state: 'answered', answered_in: 'inbox' } });
+const refuseThenSettle = (c: ReturnType<typeof question>) => {
+  reply = () => {
+    served = [settled(c)];
+    return new Response(JSON.stringify({ error: 'item item-need-q is already answered' }), { status: 409 });
+  };
+};
+
+test('a reply refused because the card was answered elsewhere moves its words to the composer with a note', async () => {
+  const c = question();
+  await shown(c);
+  refuseThenSettle(c);
+  fireEvent.input(replyBox(cardOf(c.text)) as HTMLTextAreaElement, { target: { value: 'go with Harbor' } });
+  fireEvent.click(within(cardOf(c.text)).getByRole('button', { name: 'Send reply' }));
+  await waitFor(() => expect((screen.getByRole('textbox', { name: 'Message AdmiralBot' }) as HTMLTextAreaElement).value).toBe('go with Harbor'));
+  expect(screen.getByRole('alert').textContent).toContain('already answered');
+  expect(screen.queryByRole('textbox', { name: 'Reply to AdmiralBot' })).toBeNull();
+});
+
+test('words moved to a composer that already has text go after it on a new line', async () => {
+  const c = question();
+  await shown(c);
+  refuseThenSettle(c);
+  fireEvent.input(screen.getByRole('textbox', { name: 'Message AdmiralBot' }), { target: { value: 'half a thought' } });
+  fireEvent.input(replyBox(cardOf(c.text)) as HTMLTextAreaElement, { target: { value: 'go with Harbor' } });
+  fireEvent.click(within(cardOf(c.text)).getByRole('button', { name: 'Send reply' }));
+  await waitFor(() => expect((screen.getByRole('textbox', { name: 'Message AdmiralBot' }) as HTMLTextAreaElement).value).toBe('half a thought\ngo with Harbor'));
+});

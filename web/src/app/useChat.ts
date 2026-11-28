@@ -74,8 +74,16 @@ export function useChat(fleet: string) {
     const edit = (fn: (r: Reply) => Reply) => setReplies((all) => ({ ...all, [id]: fn(all[id] ?? blankReply) }));
     edit((r) => ({ ...r, sending: true, error: '' }));
     const r = await call('POST', `${base}/messages`, { text: typed, need_card: id });
-    // A 409 or 404 means the card closed or went; the reread shows it closed.
-    if (r.ok || r.status === 409 || r.status === 404) await reread();
+    // A 409 or 404 means the card closed or went; the reread says which.
+    const next = r.ok || r.status === 409 || r.status === 404 ? await reread() : undefined;
+    const gone = !r.ok && !!next && !next.messages.some((m) => m.id === id && m.kind === 'need_card' && (m.card as { state?: string } | undefined)?.state === 'open');
+    if (gone) {
+      // The card is closed and its box goes with it, so the words move to the composer, after anything already there.
+      setText((now) => (now.trim() ? `${now}\n${typed}` : typed));
+      setError('That card was already answered, so your words are in the message box to send as a plain message.');
+      edit((x) => ({ text: x.text.startsWith(typed) ? x.text.slice(typed.length) : x.text, sending: false, error: '' }));
+      return;
+    }
     edit((x) => ({ text: r.ok && x.text.startsWith(typed) ? x.text.slice(typed.length) : x.text, sending: false, error: r.ok ? '' : failure(r) }));
   };
   const editReply = (id: string, text: string) => setReplies((all) => ({ ...all, [id]: { ...(all[id] ?? blankReply), text } }));
