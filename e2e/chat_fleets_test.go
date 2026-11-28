@@ -327,6 +327,9 @@ func TestChatFleets_TwoChatsStayApart(t *testing.T) {
 	ws := dialWS(t, w.in.instance)
 	a.start()
 	b.start()
+	for _, f := range []*chatDock{a, b} {
+		waitCond(t, f.fleet+"'s chat started", func() bool { s := f.session(); return s.Running && s.Error == "" })
+	}
 
 	t.Run("each chat runs in its own directory with its own settings", func(t *testing.T) {
 		w := w.at(t)

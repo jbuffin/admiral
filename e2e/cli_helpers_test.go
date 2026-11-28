@@ -2,15 +2,14 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 type cliResult struct {
@@ -43,8 +42,7 @@ func (w *world) admiral(args ...string) cliResult {
 
 func (w *world) admiralWith(o cliOpts, args ...string) cliResult {
 	w.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
+	ctx := testCtx(w.t)
 	cmd := exec.CommandContext(ctx, binaryPath(w.t), args...)
 	cmd.Dir = w.userHom
 	if o.stdin != "" {
@@ -74,8 +72,10 @@ func (w *world) admiralWith(o cliOpts, args ...string) cliResult {
 	case err == nil:
 	case errors.As(err, &ee) && ctx.Err() == nil:
 		res.code = ee.ExitCode()
+	case ctx.Err() != nil:
+		hung(w.t, fmt.Sprintf("admiral %v was still running at the test run's deadline (a prompt waiting on stdin?): stdout %q stderr %q", args, res.stdout, res.stderr))
 	default:
-		w.t.Fatalf("admiral %v: %v (a prompt waiting on stdin? stdout %q stderr %q)", args, err, res.stdout, res.stderr)
+		w.t.Fatalf("admiral %v: %v: stdout %q stderr %q", args, err, res.stdout, res.stderr)
 	}
 	return res
 }
