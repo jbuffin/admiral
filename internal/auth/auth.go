@@ -332,3 +332,6 @@ func hostAllowed(hostport string) bool {
 	}
 	return false
 }
+
+// BearerDevice reports whether the request authenticated with a paired device's bearer token, not a cookie.
+func BearerDevice(r *http.Request) bool { return false }

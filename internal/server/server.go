@@ -50,7 +50,9 @@ type Server struct {
 	Config   *config.Manager
 	Hub      *Hub
 	// Path names how a request reached Admiral, for the move message; nil leaves every client's path unknown.
-	Path    func(*http.Request) string
+	Path func(*http.Request) string
+	// Bearer is whether a request authenticated with a bearer token; nil means none did.
+	Bearer  func(*http.Request) bool
 	Modules []Module
 	// Capabilities entries are only ever added within v1; they are not harness
 	// capabilities.

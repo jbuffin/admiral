@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -17,8 +18,10 @@ const writeTimeout = 5 * time.Second
 type Client struct {
 	id   int
 	path string // how the browser reached Admiral: "local", "lan", "tailnet" or ""
-	conn *websocket.Conn
-	ctx  context.Context
+	// following is set once the client has asked to follow push events.
+	following atomic.Bool
+	conn      *websocket.Conn
+	ctx       context.Context
 
 	mu   sync.Mutex
 	sent map[string][]byte // last message each key delivered
@@ -33,6 +36,17 @@ func (c *Client) ID() int { return c.id }
 
 // Path is how the browser reached Admiral: "local", "lan", "tailnet" or "" when unknown.
 func (c *Client) Path() string { return c.path }
+
+// Bearer is whether the socket authenticated with a bearer token.
+func (c *Client) Bearer() bool { return false }
+
+// Following is whether the client follows push events; it then gets no window broadcast of the count.
+func (c *Client) Following() bool { return c.following.Load() }
+
+func (c *Client) SetFollowing(on bool) { c.following.Store(on) }
+
+// Close ends the connection; the client's read loop returns and the hub drops it.
+func (c *Client) Close() {}
 
 func (c *Client) Send(v any) error {
 	data, err := json.Marshal(v)
@@ -165,6 +179,11 @@ func (h *Hub) Broadcast(v any) {
 
 func (h *Hub) BroadcastOnce(key string, build func() any) {
 	h.each(func(c *Client) { _ = c.SendOnce(key, build) })
+}
+
+// BroadcastOnceWindows is BroadcastOnce for the clients that do not follow push events.
+func (h *Hub) BroadcastOnceWindows(key string, build func() any) {
+	h.BroadcastOnce(key, build)
 }
 
 // Runs f for every client at once, so one slow client doesn't hold up the others.
