@@ -115,9 +115,9 @@ func TestLaunchAPIRefusesWhatAutopilotModeMayNotClaim(t *testing.T) {
 	}
 	held--
 
-	// The launch fails after it took the unit (ships are not known yet): the unit is given back.
-	if rec := launchPost(t, s, `{`+base+`,"resources":["phone"]}`); rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("a launch before the host is ready = %d %s, want 503", rec.Code, rec.Body)
+	// The launch fails after it took the unit (the service has no tmux): the unit is given back.
+	if rec := launchPost(t, s, `{`+base+`,"resources":["phone"]}`); rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "tmux not found") {
+		t.Errorf("a launch with no tmux = %d %s, want 503 naming tmux", rec.Code, rec.Body)
 	}
 	if held != 0 {
 		t.Errorf("a failed launch left %d unit(s) held, want none", held)

@@ -644,7 +644,7 @@ func serve(args []string) error {
 	shipService.EventShip = eventShip(routineStore, listedShips(allShips))
 	routineScheduler.EndHarness = wallClockEnder(host)
 	lk := newLookout(absDir, cfg, fleetRepos(cfg, ""), supervisor)
-	wireEvents(supervisor, routineStore, routineScheduler, allShips, lk, newReviewer(lk), lookoutActs)
+	wireEvents(supervisor, routineStore, routineScheduler, allShips, lk, newReviewer(lk), lookoutActs, tmuxPath != "")
 	inboxService.LaunchEvent = launchEvent(routineScheduler)
 	wireStandingOrders(shipService.Launcher, routineStore, routineService, cfg)
 	chatService.OnReply = reportReplyPush(chatService, func(fleet string) string {

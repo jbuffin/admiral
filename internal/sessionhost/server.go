@@ -244,22 +244,44 @@ func (s Server) StartSession(spec SessionSpec) error {
 		}
 		cmds = append(cmds, c)
 	}
+	if !spec.Anchor {
+		// Last before the respawn, so the pane keeps remain-on-exit until the harness replaces the placeholder; only a batch split between the two reopens the window.
+		cmds = append(cmds, []string{"set-option", "-p", "-u", "-t", pane, "remain-on-exit"})
+	}
 	cmds = append(cmds, append([]string{"respawn-pane", "-k", "-t", pane, "-c", cdir, "--"}, spec.Argv...))
 
 	// The session is made on its own, so a failure here (the name taken, say)
-	// never kills a session that was not ours.
-	if out, err := s.runSpawn(call{args: append([]string{"new-session", "-d", "-s", spec.Name, "-c", cdir, "--"}, placeholder...)}); err != nil {
+	// never kills a session that was not ours. remain-on-exit rides in the same invocation, so a placeholder
+	// that dies at once leaves a dead pane and not a closed session.
+	create := append([]string{"new-session", "-d", "-s", spec.Name, "-c", cdir, "--"}, placeholder...)
+	create = append(create, ";", "set-option", "-p", "-t", pane, "remain-on-exit", "on")
+	if out, err := s.runSpawn(call{args: create}); err != nil {
 		return fmt.Errorf("tmux could not create the ship's session: %s", strings.TrimSpace(out))
 	}
 	// A pane's PATH is the one of the tmux client that spawns it, whatever the
 	// session environment says, so that client runs with the ship's PATH.
 	for _, batch := range batches(cmds) {
 		if out, err := s.runSpawn(call{args: batch, path: spec.Env["PATH"]}); err != nil {
+			seen := s.diagnose(target)
 			_, _ = s.run(call{args: []string{"kill-session", "-t", target}})
-			return fmt.Errorf("tmux could not start the ship: %s", strings.TrimSpace(out))
+			return fmt.Errorf("tmux could not start the ship: %s (%s)", strings.TrimSpace(out), seen)
 		}
 	}
 	return nil
+}
+
+// diagnose says what tmux sees of a session whose start just failed, so the error names why it went.
+func (s Server) diagnose(target string) string {
+	listed, err := s.run(call{args: []string{"list-sessions", "-F", "#{session_name}"}})
+	seen := "sessions: " + strings.Join(strings.Fields(listed), " ")
+	if err != nil {
+		seen = "list-sessions failed: " + strings.TrimSpace(listed)
+	}
+	pane, err := s.run(call{args: []string{"display-message", "-p", "-t", target, "pane_dead=#{pane_dead} pane_dead_status=#{pane_dead_status}"}})
+	if err != nil {
+		return seen + "; pane unknown: " + strings.TrimSpace(pane)
+	}
+	return seen + "; " + strings.TrimSpace(pane)
 }
 
 func (s Server) ShipOption(session, name string) (string, error) {

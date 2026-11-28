@@ -765,6 +765,11 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 	return release, nil
 }
 
+// needsHost says a launch's refusal rules read the ship list, so an empty one before the host's first read would let a held order start twice.
+func needsHost(req launcher.Request) bool {
+	return req.Round == 0 && (req.Source != "" || len(req.Issues) > 0 || req.ChatOption() != "" || req.RoutineKey != "" || req.CommitmentKey != "")
+}
+
 // LaunchOrder serves hand launches and autopilot alike, so the refusal rules
 // cannot drift. A source's order launches with the source's text, whatever the request holds.
 func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
@@ -811,7 +816,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	if req.Round > 0 {
 		self = cmpName(req.Name, req.Session)
 	}
-	if req.Round == 0 && (req.Source != "" || len(req.Issues) > 0 || chat != "" || req.RoutineKey != "" || req.CommitmentKey != "") && !s.Host.Known() {
+	if needsHost(req) && !s.Host.Known() {
 		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg, Wait: WaitHost, Cause: launcher.CauseHost}
 	}
 	// A hand launch's anyway opens a second ship on a held order or issue; AdmiralBot's never does.

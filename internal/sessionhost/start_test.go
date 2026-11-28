@@ -139,3 +139,71 @@ exec ` + tmux + ` "$@"
 		}
 	}
 }
+
+// tmuxRig is a real tmux on a private socket, reached through a wrapper script the test writes.
+func tmuxRig(t *testing.T, wrapper func(tmux string) string) (Server, string) {
+	t.Helper()
+	tmux := needTmux(t)
+	tmp, err := os.MkdirTemp("/tmp", "sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(tmp, "tmux.sock")
+	t.Setenv("TMUX_TMPDIR", tmp)
+	t.Cleanup(func() {
+		_ = exec.Command(tmux, "-S", sock, "kill-server").Run()
+		_ = os.RemoveAll(tmp)
+	})
+	bin := filepath.Join(tmp, "wrapped-tmux")
+	if err := os.WriteFile(bin, []byte(wrapper(tmux)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return NewServer(bin, sock), sock
+}
+
+// The wrapper kills the placeholder after new-session and holds the next call until its pane is dead or gone, the worst case of a placeholder that exits at once.
+func TestASessionWhosePlaceholderExitsAtOnceIsStillLaunchable(t *testing.T) {
+	s, _ := tmuxRig(t, func(tmux string) string {
+		return `#!/bin/sh
+case " $* " in
+*" new-session "*) exec ` + tmux + ` "$@";;
+esac
+mkdir "$(dirname "$0")/held" 2>/dev/null || exec ` + tmux + ` "$@"
+sock=; prev=
+for a in "$@"; do [ "$prev" = -S ] && sock=$a; prev=$a; done
+kill $(` + tmux + ` -S "$sock" list-panes -t '=ship:' -F '#{pane_pid}')
+while dead=$(` + tmux + ` -S "$sock" list-panes -t '=ship:' -F '#{pane_dead}' 2>/dev/null) && [ "$dead" = 0 ]; do sleep 0.01; done
+exec ` + tmux + ` "$@"
+`
+	})
+	tmp := t.TempDir()
+	if err := s.StartSession(SessionSpec{Name: "ship", Dir: tmp, Argv: []string{"/bin/cat"}}); err != nil {
+		t.Fatalf("StartSession after the placeholder exited: %v", err)
+	}
+	if rows, _ := s.SessionRows(); len(rows) != 1 {
+		t.Errorf("sessions = %v, want the ship's", rows)
+	}
+	if got, err := s.run(call{args: []string{"show-options", "-pqv", "-t", "=ship:", "remain-on-exit"}}); err != nil || strings.TrimSpace(got) != "" {
+		t.Errorf("remain-on-exit on a ship that is not anchored = %q, %v, want it unset again", got, err)
+	}
+}
+
+func TestAFailedStartNamesWhatTmuxSawOfTheSession(t *testing.T) {
+	s, _ := tmuxRig(t, func(tmux string) string {
+		return `#!/bin/sh
+case " $* " in
+*" history-limit "*) echo "no such session: =ship:" >&2; exit 1;;
+esac
+exec ` + tmux + ` "$@"
+`
+	})
+	err := s.StartSession(SessionSpec{Name: "ship", Dir: t.TempDir(), Argv: []string{"/bin/cat"}})
+	if err == nil {
+		t.Fatal("StartSession succeeded, want the batch's failure")
+	}
+	for _, want := range []string{"tmux could not start the ship:", "no such session: =ship:", "sessions: ship", "pane_dead=0"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+}

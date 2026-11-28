@@ -1,6 +1,7 @@
 package routines_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -1077,4 +1078,43 @@ func TestASaveNamingTheRetiredViewTriggerIsRefusedAndSaysItWasRemoved(t *testing
 	if _, err := r.store.Update("work", saved.ID, saved); !errors.Is(err, routines.ErrInvalid) || !strings.Contains(err.Error(), "removed") {
 		t.Errorf("Update keeping new_in_view (a rename) = %v, want ErrInvalid saying the trigger was removed", err)
 	}
+}
+
+func TestEventsWaitForTheHostsFirstReadBeforeTheyAreHandled(t *testing.T) {
+	h := newHarness(t)
+	h.withEvents(standing.PresetLimits(standing.Home))
+	ready := make(chan struct{})
+	h.sched.Ready = ready
+	handled := make(chan struct{})
+	h.sched.Enrich = func(routines.Event) routines.Enrichment {
+		close(handled)
+		return routines.Enrichment{}
+	}
+	h.onRoutine(routines.AskFirst, nil)
+	queue := make(chan routines.Event) // unbuffered: a send completes only when the worker takes the event
+	go h.sched.RunEvents(context.Background(), queue, ready)
+	sent := make(chan struct{})
+	go func() { queue <- evFrom("Eng"); close(sent) }()
+	select {
+	case <-sent:
+		t.Fatal("the worker took an event before the host's first read")
+	default:
+	}
+	close(ready)
+	<-handled
+}
+
+func TestEventsAreHandledAtOnceWhenNoHostWillRun(t *testing.T) {
+	h := newHarness(t)
+	h.withEvents(standing.PresetLimits(standing.Home))
+	handled := make(chan struct{})
+	h.sched.Enrich = func(routines.Event) routines.Enrichment {
+		close(handled)
+		return routines.Enrichment{}
+	}
+	h.onRoutine(routines.AskFirst, nil)
+	queue := make(chan routines.Event)
+	go h.sched.RunEvents(context.Background(), queue, nil)
+	queue <- evFrom("Eng")
+	<-handled
 }
