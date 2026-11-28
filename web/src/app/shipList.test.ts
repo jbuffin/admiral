@@ -135,8 +135,8 @@ describe('workRepo', () => {
   });
 
   it('reads PRs and ignores open_prs', () => {
-    const s = placed('a', { open_prs: ['https://github.com/x/other/pull/9'], origin_repo: 'acme/widgets' });
-    expect(workRepo(s)).toEqual({ repo: 'acme/widgets', rehomed: false });
+    const s = placed('a', { prs: [pr('acme/widgets')], open_prs: ['https://github.com/x/other/pull/9', 'https://github.com/x/other/pull/10'], origin_repo: undefined });
+    expect(workRepo(s)).toEqual({ repo: 'acme/widgets', rehomed: true });
   });
 
   it('is the checkout\'s origin when the ship has no PR', () => {

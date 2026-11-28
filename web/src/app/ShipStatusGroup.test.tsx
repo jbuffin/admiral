@@ -75,10 +75,9 @@ test('a re-homed row says "from <folder>" in place of the repo label', () => {
 test('a ship with a PR in another repo sits under the repo it was launched in, with no "from" label', () => {
   const appPR = { url: 'https://github.com/jbuffin/admiral-app/pull/65', state: 'OPEN' } as MooredPR;
   show([ship('pilot-pup', { origin_repo: 'jbuffin/admiral', prs: [appPR], repo: 'admiral' }), ship('b')], true);
-  expect(screen.queryByText('jbuffin/admiral-app')).toBeNull();
-  const head = screen.getByText('jbuffin/admiral').closest('.repo-head') as HTMLElement;
-  const list = document.getElementById(head.getAttribute('aria-controls') ?? '') as HTMLElement;
-  expect(within(list).getByText('pilot-pup')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /admiral-app/ })).toBeNull();
+  const list = document.getElementById(repoButton(/^jbuffin\/admiral/).getAttribute('aria-controls') ?? '') as HTMLElement;
+  expect(within(list).getByRole('link', { name: 'pilot-pup' })).toBeTruthy();
   expect(document.querySelector('.ship-repo')).toBeNull();
 });
 
