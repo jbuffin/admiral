@@ -114,7 +114,7 @@ func TestAPermissionCardSettlesWhenThePromptIsClearedInTheTerminalAndALateTapSen
 	}
 
 	before := w.stdinOf(ship.Session)
-	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/f/need-cards/"+card.ID+"/answer", `{"choice":"allow"}`)
+	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/f/need-cards/"+card.ID+"/answer", map[string]string{"choice": "allow"})
 	if code != http.StatusConflict || !strings.Contains(body, "item "+card.Card.Item+" is already answered") {
 		t.Errorf("a late tap = %d %s, want 409 item %s is already answered", code, body, card.Card.Item)
 	}
