@@ -346,7 +346,7 @@ func TestReturnToPortOfAMooredNoSkillShipWhosePRMergedRemovesItsWorktreeAndKeeps
 	w.waitPaneState(ship.Session, "working")
 	pane := strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", "="+ship.Session+":0", "#{pane_id}"))
 	w.hookAt(pane, "Stop", hookStop)
-	waitUntil(t, "the moored record removed", func() bool { return !exists(w.mooredFile(ship.Name)) })
+	until(t, "the moored record removed", func() bool { return !exists(w.mooredFile(ship.Name)) })
 	waitCond(t, "the worktree removed", func() bool { return !exists(cwd) && len(w.worktreesOf(dir)) == 1 })
 	if got := strings.Fields(w.branches(dir)); !slices.Contains(got, branch) || len(got) != 2 {
 		t.Errorf("branches = %v, want main and %s only, with no branch made by the wake", got, branch)

@@ -49,9 +49,23 @@ func (r *tsRig) startDerivedOnce(mode bool) *tsProc {
 	return &tsProc{instance: in, out: out}
 }
 
-func (p *tsProc) answers(base string) bool {
-	c := &http.Client{Transport: noProxy(), Timeout: 2 * time.Second}
-	resp, err := c.Get(base + "/api/remote")
+// tryGet is one GET bound only by the test run's deadline: a refused or reset connection is the caller's answer, and a hang is the run's.
+func tryGet(t *testing.T, url string) (*http.Response, error) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(testCtx(t), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := (&http.Client{Transport: noProxy()}).Do(req)
+	if err != nil && testCtx(t).Err() != nil {
+		failRequest(t, "GET "+url, err)
+	}
+	return resp, err
+}
+
+func serves(t *testing.T, base string) bool {
+	t.Helper()
+	resp, err := tryGet(t, base+"/api/remote")
 	if err != nil {
 		return false
 	}
@@ -59,9 +73,27 @@ func (p *tsProc) answers(base string) bool {
 	return true
 }
 
-func waitUntil(t *testing.T, what string, ok func() bool) {
+// loopbackAnswers waits for loopback to serve (and, with ships, to list ships); a failure says what it last saw.
+func loopbackAnswers(t *testing.T, p *tsProc, ships bool) {
 	t.Helper()
-	until(t, what, ok)
+	eventually(t, "loopback answering", func() (bool, string) {
+		resp, err := tryGet(t, p.LocalURL+"/api/remote")
+		if err != nil {
+			return false, err.Error() + exitedNote(p)
+		}
+		resp.Body.Close()
+		if ships && !p.shipsAnswer(t) {
+			return false, "/api/remote answers but /api/ships does not" + exitedNote(p)
+		}
+		return true, ""
+	})
+}
+
+func exitedNote(p *tsProc) string {
+	if p.exited() {
+		return " (Admiral has exited)"
+	}
+	return ""
 }
 
 func dialShips(t *testing.T, base string, header http.Header) *websocket.Conn {
@@ -154,14 +186,10 @@ func TestModeOnMovesAdmiralOffTheLAN(t *testing.T) {
 		t.Errorf("the LAN browser was sent to %q, want %q", got, want)
 	}
 	awaitClosed(t, lan)
-	waitUntil(t, "the LAN address stops answering", func() bool { return !p.answers(p.lanURL()) })
-	if !p.answers(p.LocalURL) || !p.shipsAnswer(t) {
-		t.Error("loopback stopped answering or lost its ships")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := local.Ping(ctx); err != nil {
-		t.Errorf("the loopback socket did not stay open: %v", err)
+	until(t, "the LAN address stops answering", func() bool { return !serves(t, p.lanURL()) })
+	loopbackAnswers(t, p, true)
+	if err := local.Ping(testCtx(t)); err != nil {
+		failRequest(t, "pinging the loopback socket, which should have stayed open", err)
 	}
 	if p.exited() || pidOf(p) != pid {
 		t.Error("Admiral restarted to move")
@@ -191,8 +219,8 @@ func TestModeOffMovesTailnetBrowsersToTheLAN(t *testing.T) {
 	if got, want := awaitMove(t, tail), p.advertisedLAN(); got != want {
 		t.Errorf("the tailnet browser was sent to %q, want the LAN form %q", got, want)
 	}
-	waitUntil(t, "Admiral listens on every interface again", func() bool { return p.listensOn(t) == "*:"+p.Port })
-	waitUntil(t, "Admiral answers on the LAN again", func() bool { return p.answers(p.lanURL()) })
+	until(t, "Admiral listens on every interface again", func() bool { return p.listensOn(t) == "*:"+p.Port })
+	until(t, "Admiral answers on the LAN again", func() bool { return serves(t, p.lanURL()) })
 	if p.exited() || pidOf(p) != pid || !p.shipsAnswer(t) {
 		t.Error("Admiral restarted to move, or lost its ships")
 	}
@@ -203,7 +231,7 @@ func TestModeOffMovesTailnetBrowsersToTheLAN(t *testing.T) {
 
 func (p *tsProc) otherDevicesBound(t *testing.T) bool {
 	t.Helper()
-	waitUntil(t, "serve is recognised", func() bool { return len(p.remote(t, "/api/remote").failed()) == 0 })
+	until(t, "serve is recognised", func() bool { return len(p.remote(t, "/api/remote").failed()) == 0 })
 	return true
 }
 
@@ -221,10 +249,8 @@ func TestModeOnWithoutServeStillMoves(t *testing.T) {
 		t.Errorf("move url %q, want none", got)
 	}
 	awaitClosed(t, lan)
-	waitUntil(t, "the LAN address stops answering", func() bool { return !p.answers(p.lanURL()) })
-	if !p.answers(p.LocalURL) {
-		t.Error("loopback stopped answering")
-	}
+	until(t, "the LAN address stops answering", func() bool { return !serves(t, p.lanURL()) })
+	loopbackAnswers(t, p, false)
 }
 
 // An explicit --listen is never rebound: the LAN keeps answering and no browser is told to move.
@@ -249,9 +275,8 @@ func TestExplicitListenNeverMoves(t *testing.T) {
 	}()
 
 	r.writeConfig(true)
-	waitUntil(t, "the mode shows as on", func() bool {
-		c := &http.Client{Transport: noProxy(), Timeout: 2 * time.Second}
-		resp, err := c.Get(in.LocalURL + "/api/remote")
+	until(t, "the mode shows as on", func() bool {
+		resp, err := tryGet(t, in.LocalURL+"/api/remote")
 		if err != nil {
 			return false
 		}
@@ -260,12 +285,14 @@ func TestExplicitListenNeverMoves(t *testing.T) {
 		return json.NewDecoder(resp.Body).Decode(&v) == nil && v.Tailscale
 	})
 	holdThat(t, "a browser was told to move although --listen was given", func() bool { return len(moved) == 0 })
-	c := &http.Client{Transport: noProxy(), Timeout: 2 * time.Second}
-	if resp, err := c.Get(in.lanURL() + "/"); err != nil {
-		t.Errorf("the LAN address stopped answering: %v", err)
-	} else {
+	eventually(t, "the LAN address answering", func() (bool, string) {
+		resp, err := tryGet(t, in.lanURL()+"/")
+		if err != nil {
+			return false, err.Error()
+		}
 		resp.Body.Close()
-	}
+		return true, ""
+	})
 }
 
 // A bind that fails keeps the old listener and shows as a failed "listen" check.
@@ -286,7 +313,7 @@ func TestFailedRebindKeepsTheOldListener(t *testing.T) {
 	stop, refused := make(chan struct{}), make(chan error, 4)
 	var stopOnce sync.Once
 	stopDialers := func() { stopOnce.Do(func() { close(stop) }) }
-	defer stopDialers() // a failed waitUntil must not leave the dialers spinning
+	defer stopDialers() // a failed wait must not leave the dialers spinning
 	var dialers sync.WaitGroup
 	addr := net.JoinHostPort("127.0.0.1", p.Port)
 	for range 4 {
@@ -315,7 +342,7 @@ func TestFailedRebindKeepsTheOldListener(t *testing.T) {
 	}
 	r.writeConfig(false)
 
-	waitUntil(t, "the failed bind shows as a check", func() bool {
+	until(t, "the failed bind shows as a check", func() bool {
 		for _, id := range p.remote(t, "/api/remote").failed() {
 			if id == "listen" {
 				return true
@@ -330,7 +357,8 @@ func TestFailedRebindKeepsTheOldListener(t *testing.T) {
 		t.Errorf("loopback refused a dial during the failed bind: %v", err)
 	default:
 	}
-	if !p.answers(p.LocalURL) || p.exited() {
-		t.Error("Admiral is no longer listening on loopback after the failed bind")
+	loopbackAnswers(t, p, false)
+	if p.exited() {
+		t.Error("Admiral is no longer running after the failed bind")
 	}
 }

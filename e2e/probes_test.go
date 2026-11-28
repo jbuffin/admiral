@@ -2,13 +2,13 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // probeWorld is a setup world whose fake claude reports a version from a file and acts out $FAKE_PROBE.
@@ -220,19 +220,16 @@ func TestProbe_ANewHarnessVersionReprobesAtServerStartInTheBackground(t *testing
 	pw.writeRaw(pw.versionFile, "2.1.400 (fake)", 0o644)
 	pw.extra = pw.env()
 	pw.start()
-	end := time.Now().Add(15 * time.Second)
-	for pw.headlessRuns() < 4 && time.Now().Before(end) {
-		time.Sleep(100 * time.Millisecond)
+	eventually(t, "both guard probes running again after the version moved", func() (bool, string) {
+		return pw.headlessRuns() >= 4, fmt.Sprintf("headless runs = %d", pw.headlessRuns())
+	})
+	if got := pw.headlessRuns(); got != 4 {
+		t.Fatalf("headless runs = %d after the version moved, want both guard probes again", got)
 	}
-	if pw.headlessRuns() != 4 {
-		t.Fatalf("headless runs = %d after the version moved, want both guard probes again", pw.headlessRuns())
-	}
-	for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && !strings.Contains(pw.storeText(), `"2.1.400 (fake)": {`); {
-		time.Sleep(100 * time.Millisecond)
-	}
-	if s := pw.storeText(); !strings.Contains(s, `"2.1.400 (fake)": {`) {
-		t.Errorf("the new result is not stored under 2.1.400:\n%s", s)
-	}
+	eventually(t, "the new result stored under 2.1.400", func() (bool, string) {
+		s := pw.storeText()
+		return strings.Contains(s, `"2.1.400 (fake)": {`), s
+	})
 }
 
 func TestProbe_ServerStartRecordsTheVersionOfAHarnessNeverProbedWithoutRunningIt(t *testing.T) {
@@ -240,13 +237,10 @@ func TestProbe_ServerStartRecordsTheVersionOfAHarnessNeverProbedWithoutRunningIt
 	pw := newProbeWorld(t)
 	pw.extra = pw.env()
 	pw.start()
-	end := time.Now().Add(10 * time.Second)
-	for time.Now().Before(end) && !strings.Contains(pw.storeText(), "2.1.300") {
-		time.Sleep(100 * time.Millisecond)
-	}
-	if !strings.Contains(pw.storeText(), "2.1.300") {
-		t.Fatalf("server start did not record the version:\n%s", pw.storeText())
-	}
+	eventually(t, "server start recording the version", func() (bool, string) {
+		s := pw.storeText()
+		return strings.Contains(s, "2.1.300"), s
+	})
 	holdThat(t, "a harness never probed was probed at server start", func() bool { return pw.headlessRuns() == 0 })
 	if strings.Contains(pw.storeText(), "autopilot.guard_hook") {
 		t.Errorf("a guard result appeared without a probe:\n%s", pw.storeText())
@@ -260,16 +254,10 @@ func TestProbe_AFailedVersionCheckAtServerStartClearsTheRecordedVersion(t *testi
 	pw.writeRaw(pw.versionFile, "FAIL", 0o644)
 	pw.extra = pw.env()
 	pw.start()
-	end := time.Now().Add(10 * time.Second)
-	has := func() bool {
-		return strings.Contains(strings.ReplaceAll(pw.storeText(), `": "`, `":"`), `"version":"2.1.300`)
-	}
-	for time.Now().Before(end) && has() {
-		time.Sleep(100 * time.Millisecond)
-	}
-	if s := pw.storeText(); has() {
-		t.Errorf("the recorded version survived a failed --version, so the old result still counts:\n%s", s)
-	}
+	eventually(t, "a failed --version clearing the recorded version, so the old result no longer counts", func() (bool, string) {
+		s := pw.storeText()
+		return !strings.Contains(strings.ReplaceAll(s, `": "`, `":"`), `"version":"2.1.300`), s
+	})
 }
 
 func TestProbe_TheProbeCannotTouchAShipOrThePaneItRunsIn(t *testing.T) {

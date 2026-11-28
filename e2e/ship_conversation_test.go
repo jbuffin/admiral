@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 )
@@ -146,8 +145,8 @@ func TestShipConversation_FromLaunchToDismiss(t *testing.T) {
 		if len(items) != 1 || items[0].Text != msg(251) {
 			t.Errorf("pushed items = %+v, want one holding %q", items, msg(251))
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("within 10s the opener never got the appended item")
+	case <-testCtx(t).Done():
+		hung(t, "the opener never got the appended item")
 	}
 	holdThat(t, "a client that never opened the ship received its conversation", func() bool { return len(strays) == 0 })
 

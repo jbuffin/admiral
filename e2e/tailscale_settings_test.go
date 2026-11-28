@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 )
@@ -37,7 +35,7 @@ type setupAnswer struct {
 // asTailnet is a request as tailscale serve forwards it: loopback peer, the user's login and the device's token.
 func (p *tsProc) asTailnet(t *testing.T, method, path, login, token, body string) (int, []byte) {
 	t.Helper()
-	req, err := http.NewRequest(method, p.base()+path, strings.NewReader(body))
+	req, err := http.NewRequestWithContext(testCtx(t), method, p.base()+path, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +47,7 @@ func (p *tsProc) asTailnet(t *testing.T, method, path, login, token, body string
 	}
 	resp, err := tsClient.Do(req)
 	if err != nil {
-		t.Fatalf("%s %s: %v", method, path, err)
+		failRequest(t, method+" "+path, err)
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
@@ -58,14 +56,14 @@ func (p *tsProc) asTailnet(t *testing.T, method, path, login, token, body string
 
 func (p *tsProc) post(t *testing.T, path, body string) (int, []byte) {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, p.base()+path, strings.NewReader(body))
+	req, err := http.NewRequestWithContext(testCtx(t), http.MethodPost, p.base()+path, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := tsClient.Do(req)
 	if err != nil {
-		t.Fatalf("POST %s: %v", path, err)
+		failRequest(t, "POST "+path, err)
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
@@ -174,24 +172,21 @@ func TestRemovingALoginCutsItsSocket(t *testing.T) {
 	p.otherDevices(t)
 	token := p.pairOverTailnet(t, bobLogin)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
+	ctx := testCtx(t)
 	conn, _, err := websocket.Dial(ctx, "ws://127.0.0.1:"+p.Port+"/ws/v1", &websocket.DialOptions{HTTPHeader: http.Header{
 		"Authorization": {"Bearer " + token}, "Tailscale-User-Login": {bobLogin}, "X-Forwarded-For": {"100.64.0.9"}}})
 	if err != nil {
-		t.Fatalf("dial as bob: %v", err)
+		failRequest(t, "dialling as bob", err)
 	}
 	defer conn.CloseNow()
 
 	if code, body := p.post(t, "/api/v1/remote/logins", `{"remove":"`+bobLogin+`"}`); code != http.StatusOK {
 		t.Fatalf("remove bob: %d %s", code, body)
 	}
-	readCtx, stop := context.WithTimeout(ctx, 5*time.Second)
-	defer stop()
 	for {
-		if _, _, err := conn.Read(readCtx); err != nil {
-			if readCtx.Err() != nil {
-				t.Fatalf("bob's socket stayed open after his login was removed")
+		if _, _, err := conn.Read(ctx); err != nil {
+			if ctx.Err() != nil {
+				failRequest(t, "bob's socket closing after his login was removed", err)
 			}
 			break
 		}

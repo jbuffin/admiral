@@ -213,12 +213,11 @@ func TestHooksSetNeedsYouAndUnderway(t *testing.T) {
 	if got := strings.TrimSpace(w.readFile(filepath.Join(w.rec, sl.Session, "statusline-exit"))); got != "0" {
 		t.Errorf("the status line exited %q, want 0: Claude shows the output only after exit 0", got)
 	}
-	deadline := time.Now().Add(5 * time.Second)
 	var kept string
-	for kept == "" && time.Now().Before(deadline) {
+	until(t, "the pane keeping @admiral-statusline", func() bool {
 		kept, _ = w.tmux("show-options", "-t", sl.Session, "-p", "-qv", "@admiral-statusline")
-		time.Sleep(50 * time.Millisecond)
-	}
+		return kept != ""
+	})
 	var m struct {
 		SessionID string `json:"session_id"`
 		Cost      struct {
@@ -312,9 +311,11 @@ func TestNoFirstHook(t *testing.T) {
 	if el := time.Since(t0); el < noHookWait-time.Second {
 		t.Errorf("a ship with no hook became needs_you after %s, want about %s", el, noHookWait)
 	}
-	if got := statusOf(w.in.ships(t), busy.Session); got != "underway" {
-		t.Errorf("a ship that fired working at 1s has status %q past %s, want underway", got, noHookWait)
-	}
+	w.waitPaneState(busy.Session, "working") // a loaded runner starts the fake late
+	w.in.waitStatusList(t, busy.Session, "underway")
+	holdThat(t, "the ship that fired working left underway", func() bool {
+		return statusOf(w.in.ships(t), busy.Session) == "underway"
+	})
 
 	if code := w.inputSeen(quiet.Session); code/100 != 2 {
 		t.Fatalf("input-seen = %d, want 2xx", code)
@@ -605,13 +606,7 @@ func TestRestartKillsShipThatSailedOff(t *testing.T) {
 		t.Fatalf("setup: the dead pane's session should survive Admiral being stopped")
 	}
 	w.restart()
-	deadline := time.Now().Add(15 * time.Second)
-	for w.hasSession(s.Session) {
-		if time.Now().After(deadline) {
-			t.Fatalf("session %s of an exit-0 ship still exists 15s after the restart", s.Session)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	until(t, "the session of the exit-0 ship going after the restart", func() bool { return !w.hasSession(s.Session) })
 	w.in.waitShipsList(t, "no ships", func(l []shipJSON) bool { return len(l) == 0 })
 }
 

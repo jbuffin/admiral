@@ -527,15 +527,16 @@ func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
 		if c.line {
 			lines++
 		}
-		deadline := time.Now().Add(3 * time.Second)
-		for w.stderrLines("its report") < lines && time.Now().Before(deadline) {
-			time.Sleep(50 * time.Millisecond)
-		}
-		time.Sleep(300 * time.Millisecond)
-		if got := w.stderrLines("its report"); got != lines {
-			t.Errorf("%s: Admiral logged %d lines about the report so far, want %d (one per bad file, none for a missing one); stderr: %s",
-				c.repo, got, lines, w.in.stderrBuf.String())
-		}
+		eventually(t, c.repo+": Admiral logging its lines about the report", func() (bool, string) {
+			return w.stderrLines("its report") >= lines, fmt.Sprintf("%d of %d lines; stderr: %s", w.stderrLines("its report"), lines, w.in.stderrBuf.String())
+		})
+		holdClean(t, hold, func() string {
+			if w.stderrLines("its report") == lines {
+				return ""
+			}
+			return fmt.Sprintf("%s: Admiral logged %d lines about the report, want %d (one per bad file, none for a missing one); stderr: %s",
+				c.repo, w.stderrLines("its report"), lines, w.in.stderrBuf.String())
+		})
 
 		w.in.waitStatusList(t, ship.Session, "anchored")
 		if !exists(inboxPath) || (c.content != "" && !exists(reportPath)) {
@@ -654,11 +655,9 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	if code, _ := send(t, http.MethodGet, w.in.LocalURL+"/api/ships", nil); code != 200 || !w.hasSession(b.Session) {
 		t.Errorf("with an unwritable log GET /api/ships = %d, ship b present: %v", code, w.hasSession(b.Session))
 	}
-	for deadline := time.Now().Add(5 * time.Second); w.stderrLines("outcome log:") == 0; time.Sleep(50 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("Admiral logged nothing about the unwritable outcome log; stderr: %s", w.in.stderrBuf.String())
-		}
-	}
+	eventually(t, "Admiral logging the unwritable outcome log", func() (bool, string) {
+		return w.stderrLines("outcome log:") > 0, "stderr: " + w.in.stderrBuf.String()
+	})
 	holdThat(t, "Admiral logged more than one line about the outcome log across four failed records", func() bool {
 		return w.stderrLines("outcome log:") == 1
 	})
@@ -667,22 +666,16 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	reportPath, inboxPath := w.seedShipFiles(w.record(z.Session), `{"status":"done"}`)
 	w.touch(z.Session, "go")
 	w.in.waitStatusList(t, z.Session, "sailing_off")
-	for deadline := time.Now().Add(15 * time.Second); w.hasSession(z.Session); time.Sleep(100 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("the exit-0 ship did not sail off while the log was unwritable")
-		}
-	}
-	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
-		if !exists(reportPath) || !exists(inboxPath) {
-			t.Fatalf("a ship that sailed off without its ended in the log lost its report or inbox")
-		}
-	}
+	until(t, "the exit-0 ship sailing off while the log was unwritable", func() bool { return !w.hasSession(z.Session) })
+	holdWindow(t, time.Second, "a ship that sailed off without its ended in the log lost its report or inbox", func() bool {
+		return exists(reportPath) && exists(inboxPath)
+	})
 
 	y := w.launchIn("y", "claude", "unw-dismiss")
 	_, yInbox := shipPaths(w.record(y.Session))
 	w.touch(y.Session, "go")
 	w.in.waitStatusList(t, y.Session, "anchored")
-	waitUntil(t, "the writer tried the anchored ship's queued `ended`, and failed", func() bool {
+	until(t, "the writer tried the anchored ship's queued `ended`, and failed", func() bool {
 		return strings.Contains(w.in.stderrBuf.String(), "e2e: outcome write failed: ended "+y.Session+"\n")
 	})
 

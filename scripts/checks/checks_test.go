@@ -173,6 +173,16 @@ var checkCases = []check{
 		},
 	},
 	{
+		name: "e2e-own-clock",
+		hint: "wait with eventually or until on the test run's one deadline, not a clock of the test's own",
+		bad:  map[string]string{"e2e/a_test.go": "package e2e\n\nfunc f() { deadline := time.Now().Add(5 * time.Second) }\n"},
+		want: "e2e/a_test.go:3:",
+		clean: map[string]string{
+			"e2e/a_test.go": ownClockClean,
+			"internal/x.go": strings.Join(ownClockBad, "\n") + "\n",
+		},
+	},
+	{
 		name: "gofmt",
 		hint: "run gofmt -w on these files",
 		bad:  map[string]string{"internal/a b.go": "package a\n\nfunc f( ) {}\n"},
@@ -182,6 +192,108 @@ var checkCases = []check{
 			"web/notes.txt": "func f( ) {}\n",
 		},
 	},
+}
+
+// ownClockBad is one line per shape e2e-own-clock must flag in an e2e Go file.
+var ownClockBad = []string{
+	"deadline := time.Now().Add(5 * time.Second)",
+	"deadline = time.Now().Add(5 * time.Second)",
+	"for end := time.Now().Add(5 * time.Second); time.Now().Before(end); {",
+	"end := time.Now().Add(time.Minute)",
+	"for time.Now().Before(limit) {",
+	"if time.Now().After(limit) {",
+	"ctx, cancel := context.WithTimeout(ctx, 5*time.Second)",
+	"ctx, cancel := context.WithDeadline(ctx, limit)",
+	"case <-time.After(5 * time.Second):",
+	"t := time.NewTimer(5 * time.Second)",
+	"time.AfterFunc(5*time.Second, stop)",
+	"c := &http.Client{Transport: noProxy(), Timeout: 2 * time.Second}",
+	"c, err := net.DialTimeout(\"tcp\", addr, time.Second)",
+	"cmd.WaitDelay = 500 * time.Millisecond",
+	"if deadline++; deadline > 300 {",
+	"if attempt == 8 {",
+}
+
+// ownClockClean holds what the rule must leave alone in an e2e Go file.
+var ownClockClean = strings.Join([]string{
+	"package e2e",
+	"",
+	"func f() {",
+	"\tstamp := time.Now().Add(-time.Hour)",
+	"\tcreatedAt := time.Now().Add(time.Minute)",
+	"\teventually(t, \"it shows\", func() (bool, string) { time.Sleep(50 * time.Millisecond); return ok, last })",
+	"\tctx := testCtx(t)",
+	"\tif time.Since(start) > 5*time.Second {",
+	"\tenv = append(env, \"ADMIRAL_CALL_TIMEOUT=\"+shortCall)",
+	"\tc := &http.Client{Transport: noProxy()}",
+	"}",
+	"",
+}, "\n")
+
+func TestE2EOwnClockFailsOnEachShape(t *testing.T) {
+	for _, line := range ownClockBad {
+		t.Run(line, func(t *testing.T) {
+			dir := fixtureRepo(t, map[string]string{"e2e/z_test.go": "package e2e\n\n" + line + "\n"})
+			res := run(t, dir, "scripts/checks/e2e-own-clock.sh")
+			if res.code != 1 {
+				t.Fatalf("exit %d, want 1\nstderr: %s", res.code, res.stderr)
+			}
+			if !strings.Contains(res.stderr, "e2e/z_test.go:3:") {
+				t.Errorf("stderr lacks the hit e2e/z_test.go:3:\n%s", res.stderr)
+			}
+		})
+	}
+}
+
+func TestE2EOwnClockLeavesThePlumbingFilesAlone(t *testing.T) {
+	body := "package e2e\n\n" + strings.Join(ownClockBad, "\n") + "\n"
+	dir := fixtureRepo(t, map[string]string{
+		"e2e/deadline_test.go":      body,
+		"e2e/harness_test.go":       body,
+		"e2e/harness_ports_test.go": body,
+	})
+	res := run(t, dir, "scripts/checks/e2e-own-clock.sh")
+	if res.code != 0 || res.stdout != "" || res.stderr != "" {
+		t.Fatalf("exit %d, want 0 and no output\nstdout: %s\nstderr: %s", res.code, res.stdout, res.stderr)
+	}
+}
+
+func TestE2EOwnClockAllowsItsListedExceptions(t *testing.T) {
+	dir := fixtureRepo(t, map[string]string{
+		"e2e/push_follow_test.go":   "package e2e\n\nfunc f() {\n\tctx, cancel := context.WithTimeout(context.Background(), hold)\n}\n",
+		"e2e/ships_helpers_test.go": "package e2e\n\nfunc f() {\n\t\tcase <-time.After(pollEvery):\n}\n",
+	})
+	res := run(t, dir, "scripts/checks/e2e-own-clock.sh")
+	if res.code != 0 || res.stdout != "" || res.stderr != "" {
+		t.Fatalf("exit %d, want 0 and no output\nstdout: %s\nstderr: %s", res.code, res.stdout, res.stderr)
+	}
+}
+
+func TestE2EOwnClockExceptionsAreOneFileAndOneLineOnly(t *testing.T) {
+	dir := fixtureRepo(t, map[string]string{
+		// the listed line in another file, and another shape in the listed file
+		"e2e/other_test.go":       "package e2e\n\nfunc f() {\n\tctx, cancel := context.WithTimeout(context.Background(), hold)\n}\n",
+		"e2e/push_follow_test.go": "package e2e\n\nfunc f() {\n\tctx, cancel := context.WithTimeout(context.Background(), hold)\n\tdeadline := time.Now().Add(time.Second)\n}\n",
+	})
+	res := run(t, dir, "scripts/checks/e2e-own-clock.sh")
+	if res.code != 1 {
+		t.Fatalf("exit %d, want 1\nstderr: %s", res.code, res.stderr)
+	}
+	for _, want := range []string{"e2e/other_test.go:4:", "e2e/push_follow_test.go:5:"} {
+		if !strings.Contains(res.stderr, want) {
+			t.Errorf("stderr lacks the hit %q:\n%s", want, res.stderr)
+		}
+	}
+	if strings.Contains(res.stderr, "e2e/push_follow_test.go:4:") {
+		t.Errorf("stderr flags the excepted line:\n%s", res.stderr)
+	}
+}
+
+func TestE2EOwnClockPassesOnTheTree(t *testing.T) {
+	res := run(t, repoRoot(t), "scripts/checks/e2e-own-clock.sh")
+	if res.code != 0 || res.stdout != "" || res.stderr != "" {
+		t.Fatalf("exit %d, want 0 and no output\nstdout: %s\nstderr: %s", res.code, res.stdout, res.stderr)
+	}
 }
 
 func TestCheckFailsOnABreak(t *testing.T) {

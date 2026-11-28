@@ -240,13 +240,9 @@ func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
 
 	first.release()
 	w.waitExit(first, "first")
-	deadline := time.Now().Add(10 * time.Second)
-	for _, err := os.Stat(ran); err != nil; _, err = os.Stat(ran) {
-		if time.Now().After(deadline) {
-			t.Fatalf("the --wait lock never ran its command within 10s of the unit freeing; stderr %q", second.err.String())
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(t, "the --wait lock running its command once the unit freed", func() (bool, string) {
+		return exists(ran), fmt.Sprintf("stderr %q", second.err.String())
+	})
 	second.release()
 	if code := w.waitExit(second, "second"); code != 0 {
 		t.Errorf("the --wait lock exited %d, want 0", code)
@@ -282,13 +278,9 @@ func TestLockWaitsBehindAShipUntilItEnds(t *testing.T) {
 		return !exists(filepath.Join(l.dir, "started")) && !l.exited()
 	})
 	w.mustTmux("kill-session", "-t", ship.Session)
-	deadline := time.Now().Add(10 * time.Second)
-	for _, err := os.Stat(filepath.Join(l.dir, "started")); err != nil; _, err = os.Stat(filepath.Join(l.dir, "started")) {
-		if time.Now().After(deadline) {
-			t.Fatalf("the --wait lock never ran within 10s of the ship's session ending; stderr %q", l.err.String())
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(t, "the --wait lock running once the ship's session ended", func() (bool, string) {
+		return exists(filepath.Join(l.dir, "started")), fmt.Sprintf("stderr %q", l.err.String())
+	})
 	l.release()
 	if code := w.waitExit(l, "after release"); code != 0 {
 		t.Errorf("admiral lock exited %d, want 0", code)
@@ -314,14 +306,10 @@ func TestLockLostWhenTheServerStops(t *testing.T) {
 	w.startPhone()
 	l := w.holds()
 	w.in.Stop()
-	deadline := time.Now().Add(10 * time.Second)
 	want := "lost the lock on phone (the server went away); sh is still running without it"
-	for !strings.Contains(l.err.String(), want) {
-		if time.Now().After(deadline) {
-			t.Fatalf("no lost-lock line within 10s of the server stopping; stderr %q", l.err.String())
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(t, "the lost-lock line after the server stopped", func() (bool, string) {
+		return strings.Contains(l.err.String(), want), fmt.Sprintf("stderr %q", l.err.String())
+	})
 	if l.exited() {
 		t.Fatalf("admiral lock exited when the server stopped; the command should keep running: %q", l.err.String())
 	}

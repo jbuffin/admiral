@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 )
 
 // admiralCLI runs bin/admiral as a command against this instance's home and port.
@@ -145,12 +143,11 @@ func TestPairedDeviceWorksUntilAdmiralDevicesRevokesIt(t *testing.T) {
 		r, _ := get(t, in.lanURL()+"/api/v1/ships", bearer(paired.Token))
 		return r.StatusCode == http.StatusUnauthorized
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := testCtx(t)
 	for {
 		if _, _, err := ws.Read(ctx); err != nil {
 			if ctx.Err() != nil {
-				t.Fatal("the revoked device's socket did not close within 5s")
+				failRequest(t, "the revoked device's socket closing", err)
 			}
 			break
 		}

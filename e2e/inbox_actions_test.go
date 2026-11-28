@@ -713,13 +713,7 @@ func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 
 	w.touch(ship.Session, "go")
 	w.waitEvent(ship.Session, "ended", 1)
-	deadline := time.Now().Add(15 * time.Second)
-	for w.hasSession(ship.Session) {
-		if time.Now().After(deadline) {
-			t.Fatalf("the exit-0 ship's session never went")
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	until(t, "the exit-0 ship's session going", func() bool { return !w.hasSession(ship.Session) })
 	waitKept(t, w.home, ship.Session)
 
 	served := func(when string) {
@@ -756,13 +750,7 @@ func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 	waitGone(t, inboxPath, reportPath)
 	w.in.waitInbox(t)
 	// The record goes with the files, or the name is never drawn again.
-	deadline = time.Now().Add(15 * time.Second)
-	for kept(t, w.home, ship.Session) {
-		if time.Now().After(deadline) {
-			t.Fatalf("state.json still holds a kept_inboxes entry for %s", ship.Session)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	until(t, "state.json dropping the kept_inboxes entry for "+ship.Session, func() bool { return !kept(t, w.home, ship.Session) })
 }
 
 func kept(t *testing.T, home, session string) bool {

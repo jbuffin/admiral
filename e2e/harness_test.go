@@ -158,7 +158,7 @@ func lanPortFrom(t *testing.T, listen string, stderr *syncBuffer) string {
 		return ""
 	}
 	var port string
-	waitUntil(t, "Admiral reports its LAN port", func() bool {
+	until(t, "Admiral reports its LAN port", func() bool {
 		m := lanPortLine.FindStringSubmatch(stderr.String())
 		if m != nil {
 			port = m[1]

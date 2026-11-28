@@ -2,6 +2,7 @@
 package e2e
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -27,11 +28,24 @@ func (w *world) firstRun(routine, outcome string) (runJSON, bool) {
 	return runJSON{}, false
 }
 
+// reviewRequest is a PR whose review was requested of the viewer by a stranger at that offset from now.
+func reviewRequest(number int, title string, at time.Duration) map[string]any {
+	node := ghNode("github.com", "acme/api", number, true, title)
+	node["author"] = map[string]any{"login": "mallory-the-stranger"}
+	node["timelineItems"] = map[string]any{"nodes": []map[string]any{{"__typename": "ReviewRequestedEvent",
+		"createdAt": time.Now().Add(at).UTC().Format(time.RFC3339), "actor": map[string]any{"login": "mallory-the-stranger"},
+		"requestedReviewer": map[string]any{"login": "fake-viewer"}}}}
+	return node
+}
+
 func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesTheCap(t *testing.T) {
 	t.Parallel()
 	w, g := lookoutWorldWith(t, budgetLimits(1, 1))
 	w.seedRestricted("work")
 	w.extra = append(w.extra, "ADMIRAL_WALL_CLOCK_MINUTE=3s")
+	// Both events are on the board before the server starts: the first launches and the cap holds the other as a proposal in one
+	// pass, so a slow machine cannot let the wall clock free the cap before the second event is judged.
+	g.search("review", "review-requested:@me", reviewRequest(7, "Fix the quarry lantern", time.Hour), reviewRequest(8, "Fix the harbour lantern", 2*time.Hour))
 	w.start()
 	a := w.eventRoutine("Sweep A", "act")
 	b := w.eventRoutine("Sweep B", "act")
@@ -55,20 +69,11 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 		return ok && held.Reason == "ref_has_ship" && held.HeldBy == run.Ship
 	})
 
-	// the cap of one: an event on another PR is a proposal that says why
-	reviewRequest := func(number int, at time.Duration) map[string]any {
-		node := ghNode("github.com", "acme/api", number, true, "Fix the harbour lantern")
-		node["author"] = map[string]any{"login": "mallory-the-stranger"}
-		node["timelineItems"] = map[string]any{"nodes": []map[string]any{{"__typename": "ReviewRequestedEvent",
-			"createdAt": time.Now().Add(at).UTC().Format(time.RFC3339), "actor": map[string]any{"login": "mallory-the-stranger"},
-			"requestedReviewer": map[string]any{"login": "fake-viewer"}}}}
-		return node
-	}
-	g.search("review", "review-requested:@me", reviewRequest(8, 2*time.Hour))
-	waitCond(t, "the other routine's event to be a proposal that names the cap", func() bool {
+	// the cap of one: the event on the other PR is a proposal that says why
+	eventually(t, "the other routine's event to be a proposal that names the cap", func() (bool, string) {
 		w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
 		held, ok := w.firstRun(second, "proposed")
-		return ok && strings.Contains(held.Reason, "concurrent")
+		return ok && strings.Contains(held.Reason, "concurrent"), fmt.Sprintf("runs of the other routine: %+v", w.routineRuns(second))
 	})
 
 	// the wall clock ends the harness and keeps the pane
@@ -96,7 +101,7 @@ func TestAnEventShipPastItsWallClockIsStoppedAndAnchoredAndItsFailedRecordFreesT
 	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines/"+first+"/off", map[string]any{}); code != http.StatusOK {
 		t.Fatalf("switching %s off = %d %s, want 200", first, code, body)
 	}
-	g.search("review", "review-requested:@me", reviewRequest(9, 3*time.Hour))
+	g.search("review", "review-requested:@me", reviewRequest(9, "Fix the harbour lantern", 3*time.Hour))
 	waitCond(t, "the second routine to launch once the first ship's slot is free", func() bool {
 		w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
 		_, ok := w.firstRun(second, "launched")

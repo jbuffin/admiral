@@ -221,13 +221,14 @@ func TestSetupSaysServeRanWhenTheReplannedWriteIsDeclined(t *testing.T) {
 	t.Parallel()
 	s := newSetupRig(t)
 	s.ts.put("servebg.delay", "1")
+	ctx := testCtx(t)
 	go func() {
-		for i := 0; i < 100; i++ {
+		for ctx.Err() == nil {
 			if len(s.serveCalls()) > 0 {
 				s.writeRaw(filepath.Join(s.home, "config.json"), `{"version":1,"fleets":{},"remote":{"allowedLogins":["other@example.com"]}}`, 0o600)
 				return
 			}
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(pollEvery)
 		}
 	}()
 	r := s.run("\ny\ny\ny\nn\n")
