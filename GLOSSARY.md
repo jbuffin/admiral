@@ -292,6 +292,10 @@ A saved Commodore mission file. The fleet's missions directory, `$ADMIRAL_HOME/f
 The engineer ends a ship that is still running, from its conversation. Admiral kills the ship's session, crew boats included, and records `ended` with a `KILL` signal, then `stopped`. The ship leaves open water as after a dismissal. A ship with an open PR (one it carries, or its report lists) asks first: Moor ends it and keeps the PRs, the other button ends it and forgets them.
 _Avoid_: kill, abort
 
+**Interrupt**:
+Ending the turn in progress of a ship, a crew boat or AdmiralBot, leaving its session and context as they are. Nothing the turn already did is undone, and a message already sent stays with the harness. AdmiralBot's chat shows an "Interrupted" marker, and a chat question the turn was waiting on is withdrawn.
+_Avoid_: stop (that ends a ship), cancel
+
 **Return to port**:
 A ship ending once it is done, after it cleans up: Admiral tells it to clean up after itself, never how, and stops it like Stop ship when that turn ends. The engineer starts it from the bridge of a live ship once its turn ends; a moored ship starts it by itself once its PRs are merged. A live ship that carries a PR doesn't offer it. A ship with an open PR may moor instead, with no clean-up prompt.
 _Avoid_: clean up (for the action), dock, finish
