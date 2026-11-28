@@ -1,5 +1,5 @@
 import { beforeAll, expect, test, vi } from 'vitest';
-import { defaultFleet, fleets, loaded, loadFleets, watchFleets } from './fleets';
+import { defaultFleet, fleets, loaded, loadFleets, setFleetsView, watchFleets } from './fleets';
 import { go } from './router';
 import { watchShips } from './shipsLink';
 
@@ -68,4 +68,20 @@ test('loadFleets reads the default fleet and whether it fell back, and a view wi
   served = { fleets: served.fleets };
   await loadFleets();
   expect(defaultFleet.value).toEqual({ key: '', fallback: true });
+});
+
+test('a load that started before a save answered and lands after it does not put the old default back', async () => {
+  const answers: ((r: Response) => void)[] = [];
+  const real = fetch;
+  try {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => answers.push(resolve))));
+    const older = loadFleets();
+    setFleetsView({ fleets: [fleets.value[0]!], default_fleet: 'bravo', default_fleet_fallback: false });
+    answers[0]!(new Response(JSON.stringify({ fleets: [{ key: 'zulu', name: 'Zulu', docks: [dock([])] }], default_fleet: 'zulu', default_fleet_fallback: false })));
+    await older;
+    expect(defaultFleet.value).toEqual({ key: 'bravo', fallback: false });
+  } finally {
+    vi.stubGlobal('fetch', real);
+  }
+  await loadFleets();
 });

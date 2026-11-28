@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { saveDefaultFleet, saveFleet, type Fleet } from './api';
 import { Button } from './Button';
 import { Flag } from './Flag';
-import { defaultFleet, fleetPaint, fleets, loadFleets } from './fleets';
+import { defaultFleet, fleetPaint, fleets, loadFleets, setFleetsView } from './fleets';
 import { errorTarget, fieldMessage, saveBody, validShareRepo, type FleetFields } from './fleetSettings';
 
 const fieldsOf = (f: Fleet): FleetFields => ({ search_roots: f.search_roots, owners: f.owners, wake_reviewers: f.wake_reviewers, clone_root: f.clone_root, color: f.color, share_repo: f.crew_sharing?.share_repo ?? '' });
@@ -103,8 +103,7 @@ function DefaultFleetRow({ fleet, onReload }: { fleet: Fleet; onReload: () => Pr
     setError(null);
     const r = await saveDefaultFleet(fleet.key);
     if (r.ok) {
-      fleets.value = r.data.fleets;
-      defaultFleet.value = { key: r.data.default_fleet, fallback: r.data.default_fleet_fallback };
+      setFleetsView(r.data);
     } else {
       setError({ message: r.error, status: r.status });
     }

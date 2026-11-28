@@ -26,6 +26,7 @@ let puts: Record<string, unknown>[];
 let refuse: string | null;
 let defaultPuts: Record<string, unknown>[];
 let defaultGate: Promise<void> | null;
+let served: { fleets: Fleet[]; default_fleet: string; default_fleet_fallback: boolean } | null;
 let defaultRefusal: Promise<{ error: string; status: number }> | null;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -36,7 +37,9 @@ beforeEach(() => {
   defaultPuts = [];
   defaultRefusal = null;
   defaultGate = null;
+  served = null;
   fleets.value = [stored];
+  defaultFleet.value = { key: 'zulu', fallback: false };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (path: string, init?: RequestInit) => {
@@ -54,7 +57,7 @@ beforeEach(() => {
         if (body.color === '') stored = { ...stored, color: '#8899aa' };
         return json({ fleets: [stored] });
       }
-      return json({ fleets: [stored] });
+      return json(served ?? { fleets: [stored], default_fleet: 'zulu', default_fleet_fallback: false });
     }),
   );
 });
@@ -218,6 +221,7 @@ const makeDefault = () => screen.getByRole('button', { name: 'Make default' });
 function twoFleets(key: string, fallback: boolean) {
   fleets.value = [alpha, bravo];
   defaultFleet.value = { key, fallback };
+  served = { fleets: [alpha, bravo], default_fleet: key, default_fleet_fallback: fallback };
 }
 
 test('the default fleet row says this fleet is the default and offers no button', () => {

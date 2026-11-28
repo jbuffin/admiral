@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { call, fetchFleets, fetchStackShape, linkStack, mergeShip, probeShips, refreshSource, saveDefaultFleet } from './api';
+import { call, fetchFleetsView, fetchStackShape, linkStack, mergeShip, probeShips, refreshSource, saveDefaultFleet } from './api';
 
 const answer = (status: number, body: unknown) => vi.stubGlobal('fetch', async () => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }));
 
@@ -196,10 +196,10 @@ describe('refreshSource', () => {
   });
 });
 
-describe('fetchFleets on a dock', () => {
+describe('fetchFleetsView on a dock', () => {
   it('gives a dock the server sent no list for an empty one, as it does warnings', async () => {
     answer(200, { fleets: [{ key: 'zulu', docks: [{ harness: 'claude' }] }] });
-    const dock = (await fetchFleets())[0]!.docks[0]!;
+    const dock = (await fetchFleetsView()).fleets[0]!.docks[0]!;
     expect(dock.models).toEqual([]);
     expect(dock.warnings).toEqual([]);
   });

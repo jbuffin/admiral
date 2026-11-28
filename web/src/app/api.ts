@@ -322,10 +322,6 @@ export async function fetchFleetsView(): Promise<FleetsView> {
   return viewOf(await res.json());
 }
 
-export async function fetchFleets(): Promise<Fleet[]> {
-  return (await fetchFleetsView()).fleets;
-}
-
 export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(harness)}`;
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number; field?: string; note?: string; kind?: string; reason?: string; parent?: string; linked?: string[]; output?: string; commands?: string[]; aborted?: boolean; use_existing?: string; suggested?: string; code?: string };

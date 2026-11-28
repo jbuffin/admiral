@@ -1,5 +1,5 @@
 import { computed, effect, signal } from '@preact/signals';
-import { fetchFleetsView, type Fleet } from './api';
+import { fetchFleetsView, type Fleet, type FleetsView } from './api';
 import { chatTerminalOf, go, loc, pathAfterFleetSwitch, provideFleets } from './router';
 import { onShipsMessage, sources, sourcesLoaded } from './shipsLink';
 import { fleetPaint } from './fleetPaint';
@@ -61,14 +61,22 @@ export function chooseFleet(key: string) {
 
 let loadSeq = 0;
 
+const applyView = (view: FleetsView) => {
+  fleets.value = view.fleets;
+  defaultFleet.value = { key: view.default_fleet, fallback: view.default_fleet_fallback };
+};
+
+/** The one writer for a config view the page already holds, such as a save's answer; it also drops any older load still in flight. */
+export function setFleetsView(view: FleetsView) {
+  loadSeq++;
+  applyView(view);
+}
+
 export async function loadFleets() {
   const mine = ++loadSeq;
   try {
     const view = await fetchFleetsView();
-    if (mine === loadSeq) {
-      fleets.value = view.fleets;
-      defaultFleet.value = { key: view.default_fleet, fallback: view.default_fleet_fallback };
-    }
+    if (mine === loadSeq) applyView(view);
   } catch {
     /* keep the last list */
   }
