@@ -23,6 +23,7 @@ var writes = []struct{ method, path, body string }{
 	{"POST", "/api/ships/w-1/stop", ""},
 	{"POST", "/api/ships/w-1/dismiss", ""},
 	{"POST", "/api/ships/w-1/next", ""},
+	{"POST", "/api/ships/w-1/answer", `{}`},
 	{"POST", "/api/ships/w-1/wake", ""},
 	{"POST", "/api/chat/questions", `{}`},
 	{"POST", "/api/fleets/work/routines/r1/off", ""},

@@ -103,7 +103,7 @@ func (s *Service) serveSendInput(w http.ResponseWriter, r *http.Request) {
 	// Not the request's context: a client that hangs up must not leave a half-sent message.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	undo := s.markStopAnswered(ctx, t, viaOf(r))
+	undo := s.markStopAnswered(ctx, t, "", viaOf(r))
 	if err := s.tmux().PasteMessage(ctx, t.pane, text); err != nil {
 		undo()
 		writeError(w, http.StatusBadGateway, "could not send the message: "+err.Error())
@@ -132,7 +132,7 @@ func (s *Service) serveInterrupt(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	undo := s.markStopAnswered(ctx, t, viaOf(r))
+	undo := s.markStopAnswered(ctx, t, "", viaOf(r))
 	if err := s.tmux().SendEscape(ctx, t.pane); err != nil {
 		undo()
 		writeError(w, http.StatusBadGateway, "could not interrupt: "+err.Error())
@@ -245,6 +245,8 @@ type answerRequest struct {
 	Card   string `json:"card"`
 	Reason string `json:"reason"`
 	Choice string `json:"choice"`
+	// StopID, when given, must be the stop the pane waits on now and not yet answered.
+	StopID string `json:"stop_id"`
 	Item   string `json:"item"`
 	Option int    `json:"option"`
 	// Answers answers every question of a call at once, in order: the listed options chosen (1-based) or an Other text.
@@ -299,6 +301,10 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "the answer needs a card, its reason, and a choice or an item and option")
 		return
 	}
+	if viaOf(r) != "" && req.StopID == "" {
+		writeError(w, http.StatusBadRequest, "AdmiralBot's answer needs the stop_id of the stop it answers")
+		return
+	}
 	session := r.PathValue("session")
 	t, ok := s.resolve(w, session, r.PathValue("name"))
 	if !ok {
@@ -317,14 +323,27 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		log.Printf("admiral: answer to %s refused: %d %s (card %s, reason %.64q)", t.what, status, why, req.Card, req.Reason)
 		writeError(w, status, why)
 	}
+	if req.StopID != "" && t.crew == "" {
+		if t.exited {
+			refuse(http.StatusConflict, t.what+" has exited")
+			return
+		}
+		liveID, answered, err := s.readStopBinding(ctx, t.pane)
+		switch {
+		case err != nil:
+			refuse(http.StatusConflict, t.what+" could not be read: "+err.Error())
+			return
+		case !stopStillOpen(req.StopID, liveID, answered):
+			refuse(http.StatusConflict, "that stop of "+t.what+" is already answered or has moved on")
+			return
+		}
+	}
 	keys, plan, why := s.answerKeys(ctx, t, session, req)
 	if why != "" {
 		refuse(http.StatusConflict, why)
 		return
 	}
-	if req.Card == "permission" {
-		undo = s.markStopAnswered(ctx, t, viaOf(r))
-	}
+	undo = s.markStopAnswered(ctx, t, req.StopID, viaOf(r))
 	if plan != nil {
 		tm := s.tmux()
 		// Claude clips its menu to the pane, and a phone's terminal leaves the pane too short for the plan to read the menu.
@@ -388,14 +407,38 @@ func (s *Service) finishPermission(ctx context.Context, t target, session, choic
 	return nil
 }
 
+// stopStillOpen says whether stopID is the stop the pane waits on and no answer has marked it yet: the first answer wins, whichever route it came by.
+func stopStillOpen(stopID, liveID, answered string) bool {
+	first, _, _ := strings.Cut(answered, " ")
+	return sessionhost.ValidStopID(stopID) && liveID == stopID && first != stopID
+}
+
+// readStopBinding reads the pane's live stop id and its answered mark.
+func (s *Service) readStopBinding(ctx context.Context, pane string) (liveID, answered string, err error) {
+	tm := s.tmux()
+	if liveID, err = tm.ReadPaneOption(ctx, pane, sessionhost.OptStopID); err != nil {
+		return "", "", err
+	}
+	answered, err = tm.ReadPaneOption(ctx, pane, sessionhost.OptStopAnswered)
+	return liveID, answered, err
+}
+
 // markStopAnswered records on the ship's pane which route answered the stop it waits on, before the answer is sent so a hook that follows it cannot race the mark; the returned func clears the mark when the send fails.
 // A crew boat's pane and a ship that does not need you carry no stop.
-func (s *Service) markStopAnswered(ctx context.Context, t target, via string) func() {
+// A stopID the caller named is the one marked, so a hook that swaps stops after the check can't get its new stop marked.
+func (s *Service) markStopAnswered(ctx context.Context, t target, stopID, via string) func() {
 	if t.crew != "" || !t.needsYou {
 		return func() {}
 	}
-	id, err := s.tmux().ReadPaneOption(ctx, t.pane, sessionhost.OptStopID)
-	if err != nil || !sessionhost.ValidStopID(id) {
+	id := stopID
+	if id == "" {
+		var err error
+		id, err = s.tmux().ReadPaneOption(ctx, t.pane, sessionhost.OptStopID)
+		if err != nil {
+			return func() {}
+		}
+	}
+	if !sessionhost.ValidStopID(id) {
 		return func() {}
 	}
 	if via != "" {

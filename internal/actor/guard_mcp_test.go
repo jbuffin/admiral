@@ -26,6 +26,19 @@ func TestAnActorCannotGiveAnotherFleetsShipANextPromptOrWakeIt(t *testing.T) {
 	}
 }
 
+func TestAnActorMayAnswerAStopOfAShipInItsOwnFleetAndNoOtherFleets(t *testing.T) {
+	for _, prefix := range []string{"/api", "/api/v1"} {
+		r := newRig(t)
+		if code := r.do("POST", prefix+"/ships/p-1/answer", `{"card":"permission"}`, "tok-personal", local).Code; code != 200 || r.reached != 1 || !r.acting || r.fleet != "personal" {
+			t.Errorf("POST %s/ships/p-1/answer: code %d, reached %d, acting %v for %q; want AdmiralBot let through for personal", prefix, code, r.reached, r.acting, r.fleet)
+		}
+	}
+	r := newRig(t)
+	if rec := r.do("POST", "/api/ships/w-1/answer", `{}`, "tok-personal", local); rec.Code != 403 || r.reached != 0 || !strings.Contains(rec.Body.String(), "work") {
+		t.Errorf("POST another fleet's ship answer: code %d, reached %d, body %q; want 403 naming fleet work and nothing reached", rec.Code, r.reached, rec.Body)
+	}
+}
+
 func TestAnActorMayReadOutcomesAndUseTheChatQuestionRoutes(t *testing.T) {
 	for _, c := range []struct{ method, path, body string }{
 		{"GET", "/api/outcomes?ship=p-1&limit=20", ""},

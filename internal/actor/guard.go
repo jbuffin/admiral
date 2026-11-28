@@ -56,6 +56,7 @@ var allowed = []struct {
 	{"POST", []string{"ships", "*", "stop"}, ship},
 	{"POST", []string{"ships", "*", "dismiss"}, ship},
 	{"POST", []string{"ships", "*", "next"}, ship},
+	{"POST", []string{"ships", "*", "answer"}, ship},
 	{"POST", []string{"ships", "*", "wake"}, ship},
 	{"GET", []string{"outcomes"}, plain},
 	{"POST", []string{"chat", "questions"}, plain},

@@ -221,7 +221,7 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 // The tools by name, with the route each calls. Anything not in this list is a tool the Never list forbids or one
 // nobody specified: approvals, typing mid-turn, config, sources, settings and Preferences have none.
 var wantTools = []string{
-	"add_order", "answer_item", "ask_question", "dismiss_ship", "draft_campaign", "draft_routine", "get_drafting_skill", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_cloneable_repos",
+	"add_order", "answer_item", "answer_stop", "ask_question", "dismiss_ship", "draft_campaign", "draft_routine", "get_drafting_skill", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_cloneable_repos",
 	"list_crew", "list_docks", "list_inbox", "list_repos", "list_routines", "list_ships", "list_skills", "list_sources", "make_commitment", "next_prompt", "read_campaign", "read_conversation", "read_findings", "read_hold_fire", "read_outcomes",
 	"save_note", "stop_ship", "turn_routine_off", "wake_ship", "work_on_campaign",
 }
@@ -392,6 +392,101 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 }
 
 func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
+
+// answer_stop forwards exactly what the caller gave: it never adds a default choice, option or answer.
+func TestAnswerStopSendsItsRouteAndExactlyTheGivenFields(t *testing.T) {
+	for _, c := range []struct{ name, args, body string }{
+		{"a permission choice", `{"session":"saltpaw","stop_id":"s-1","card":"permission","reason":"permission:Bash","choice":"deny"}`,
+			`{"stop_id":"s-1","card":"permission","reason":"permission:Bash","choice":"deny"}`},
+		{"no choice", `{"session":"saltpaw","stop_id":"s-1","card":"permission","reason":"permission:Bash"}`,
+			`{"stop_id":"s-1","card":"permission","reason":"permission:Bash"}`},
+		{"a question's item and option", `{"session":"saltpaw","stop_id":"s-1","card":"question","reason":"question","item":"t-9","option":2}`,
+			`{"stop_id":"s-1","card":"question","reason":"question","item":"t-9","option":2}`},
+		{"a question's answers", `{"session":"saltpaw","stop_id":"s-1","card":"question","reason":"question","item":"t-9","answers":[{"options":[1,3]},{"other":"both"}]}`,
+			`{"stop_id":"s-1","card":"question","reason":"question","item":"t-9","answers":[{"options":[1,3]},{"other":"both"}]}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"answered":true}` })
+			a.env(t, mcpToken)
+			replies, _, err := serve(t, call(1, "answer_stop", c.args))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tr := result(t, replies, "1"); tr.IsError {
+				t.Fatalf("result = %+v, want the server's answer", tr)
+			}
+			got := a.requests()
+			if len(got) != 1 {
+				t.Fatalf("requests = %+v, want exactly one", got)
+			}
+			g := got[0]
+			if g.Method != "POST" || g.Path != "/api/ships/saltpaw/answer" || g.Actor != mcpToken {
+				t.Errorf("request = %s %s actor %q, want POST /api/ships/saltpaw/answer with the token", g.Method, g.Path, g.Actor)
+			}
+			if gb := mustJSON(g.Body); !sameJSON(gb, c.body) {
+				t.Errorf("body = %s, want exactly %s", gb, c.body)
+			}
+		})
+	}
+}
+
+func sameJSON(a, b string) bool {
+	var x, y any
+	return json.Unmarshal([]byte(a), &x) == nil && json.Unmarshal([]byte(b), &y) == nil && mustJSON(x) == mustJSON(y)
+}
+
+func TestAnswerStopRefusesACallWithNoStopIdAndSendsNothing(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"answered":true}` })
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "answer_stop", `{"session":"saltpaw","card":"permission","reason":"permission:Bash","choice":"allow"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "stop_id") {
+		t.Errorf("result = %+v, want isError naming stop_id", tr)
+	}
+	if got := a.requests(); len(got) != 0 {
+		t.Errorf("requests = %+v, want none", got)
+	}
+}
+
+func TestAnswerStopRequiresItsStopIdInItsInputSchema(t *testing.T) {
+	a := newStandIn(t, nil)
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, rpc(1, "tools/list", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Tools []struct {
+			Name        string
+			InputSchema struct {
+				Required   []string
+				Properties map[string]json.RawMessage
+			}
+		}
+	}
+	if err := json.Unmarshal(replies["1"].Result, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range list.Tools {
+		if tl.Name != "answer_stop" {
+			continue
+		}
+		for _, want := range []string{"session", "stop_id", "card", "reason"} {
+			if !slices.Contains(tl.InputSchema.Required, want) {
+				t.Errorf("answer_stop requires %v, want %q among them", tl.InputSchema.Required, want)
+			}
+		}
+		for _, want := range []string{"choice", "item", "option", "answers"} {
+			if _, ok := tl.InputSchema.Properties[want]; !ok || slices.Contains(tl.InputSchema.Required, want) {
+				t.Errorf("answer_stop property %q: present %v, required %v; want an optional property", want, ok, slices.Contains(tl.InputSchema.Required, want))
+			}
+		}
+		return
+	}
+	t.Error("tools/list has no answer_stop")
+}
 
 func TestHoldFireOnRefusesAllFleetsAndSendsNothing(t *testing.T) {
 	a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"ok":true}` })

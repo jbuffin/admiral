@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/inbox"
@@ -490,6 +491,23 @@ func TestAnAnswerGivenAnyOtherWayReadsAnsweredInTheInboxOrRemoved(t *testing.T) 
 			r.waitState("work", card.ID, tc.state, tc.where)
 		})
 	}
+}
+
+func TestAnItemAnsweredThroughTheInboxRouteUnderTheAdmiralBotTokenReadsAnsweredViaAdmiralBot(t *testing.T) {
+	r := newNeedRig(t)
+	r.ask("s-work", "q-1", "2026-11-20T10:00:00Z")
+	r.start()
+	card := r.waitLogged("work", 1)[0]
+	mux := http.NewServeMux()
+	r.in.Routes(mux)
+	body := `{"answers":{"1":{"choice":"Beta"},"2":{"choice":["X"]}}}`
+	req := httptest.NewRequest("POST", "/api/inbox/s-work/q-1/answer", strings.NewReader(body)).WithContext(actor.WithFleet(context.Background(), "work"))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("answer under the actor token failed: %s", rec.Body)
+	}
+	r.waitState("work", card.ID, "answered", "admiralbot")
 }
 
 func TestACardKeepsItsSettledStateWhenAKeptInboxIsReleased(t *testing.T) {

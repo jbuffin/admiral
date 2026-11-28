@@ -62,11 +62,7 @@ func (s *Service) AnswerStop(ctx context.Context, session string, a StopAnswer) 
 		}
 		live[name] = v
 	}
-	if status(sess, time.Now()) == StatusAnchored || live["state"] != "needs_you" || live["reason"] != a.Reason || !sessionhost.ValidStopID(a.StopID) || live[sessionhost.OptStopID] != a.StopID {
-		return ErrStopMoved
-	}
-	// The first answer to a stop wins, whichever route it came by.
-	if first, _, _ := strings.Cut(live[sessionhost.OptStopAnswered], " "); first == a.StopID {
+	if status(sess, time.Now()) == StatusAnchored || live["state"] != "needs_you" || live["reason"] != a.Reason || !stopStillOpen(a.StopID, live[sessionhost.OptStopID], live[sessionhost.OptStopAnswered]) {
 		return ErrStopMoved
 	}
 	via := viaOfCtx(ctx)
