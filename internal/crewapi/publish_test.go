@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/crewapi"
 )
@@ -451,7 +452,11 @@ func TestTheOptOutWithAUsableGitleaksIs400ForCleanHitAndFailed(t *testing.T) {
 func TestAScanThatCrashesErrorsOrHangsIs422WithTheErrorAndNoOptOut(t *testing.T) {
 	for mode, want := range map[string]string{"crash": "", "error": "fake gitleaks: boom", "hang": "timed out"} {
 		t.Run(mode, func(t *testing.T) {
-			p := newPub(t, pubOpts{})
+			o := pubOpts{}
+			if mode == "hang" {
+				o.scanTimeout = 300 * time.Millisecond // the fake sleeps 600s
+			}
+			p := newPub(t, o)
 			p.ready("bosun", "Do the work.")
 			p.leakFail(mode)
 			status, out := p.preview("bosun")

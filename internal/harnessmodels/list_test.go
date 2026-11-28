@@ -158,6 +158,7 @@ func TestListFailsWhenTheHarnessFailsHangsOrPrintsGarbage(t *testing.T) {
 	}{{"fail", 20 * time.Second}, {"hang", 400 * time.Millisecond}, {"garbage", 400 * time.Millisecond}} {
 		for _, harness := range []string{"claude", "codex", "copilot"} {
 			t.Run(c.mode+"/"+harness, func(t *testing.T) {
+				t.Parallel()
 				h, rec := dock(t, harness, map[string]string{"FAKE_MODELS": "a,b", "FAKE_MODE": c.mode})
 				start := time.Now()
 				got, err := harnessmodels.List(context.Background(), h, c.timeout)

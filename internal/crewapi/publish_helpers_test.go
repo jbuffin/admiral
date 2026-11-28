@@ -199,6 +199,8 @@ type pubOpts struct {
 	noGitHub  bool   // the fleet has no GitHub source
 	host      string // GitHub host; default github.com
 	noGitleak bool   // the fleet PATH lacks the fake gitleaks
+	// scanTimeout bounds one gitleaks run; default 2s, so a healthy scan survives a busy host.
+	scanTimeout time.Duration
 }
 
 func repoRoot(t *testing.T) string {
@@ -241,7 +243,11 @@ func newPub(t *testing.T, o pubOpts) *pubFixture {
 	if host == "" {
 		host = "github.com"
 	}
-	svc := &crewapi.Service{Home: f.home, Config: m, ScanTimeout: 2 * time.Second,
+	scanTimeout := o.scanTimeout
+	if scanTimeout == 0 {
+		scanTimeout = 2 * time.Second
+	}
+	svc := &crewapi.Service{Home: f.home, Config: m, ScanTimeout: scanTimeout,
 		GitHub: func(*config.Config, string) *github.Client {
 			if o.noGitHub {
 				return nil
