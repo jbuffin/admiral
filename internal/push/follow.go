@@ -65,6 +65,10 @@ type Followers struct {
 	followers map[int]*follower
 	known     bool // the Watcher has processed both lists
 	count     int
+
+	// smu guards socks and is never held across a Record call, so auth can ask Connected while it holds its own lock.
+	smu   sync.Mutex
+	socks map[string]map[int]struct{} // per device, the sockets that follow
 }
 
 func NewFollowers(cfg FollowersConfig) *Followers {
@@ -82,7 +86,7 @@ func NewFollowers(cfg FollowersConfig) *Followers {
 	if cfg.Send == nil {
 		cfg.Send = func(c *server.Client, msg []byte) error { return c.Send(json.RawMessage(msg)) }
 	}
-	return &Followers{cfg: cfg, followers: map[int]*follower{}}
+	return &Followers{cfg: cfg, followers: map[int]*follower{}, socks: map[string]map[int]struct{}{}}
 }
 
 type pushMsg struct {
@@ -217,6 +221,7 @@ func (f *Followers) Handle(ctx context.Context, c *server.Client, raw json.RawMe
 	if json.Unmarshal(raw, &req) != nil {
 		return
 	}
+	f.joined(ctx, c)
 	haveAfter := len(req.After) > 0 && string(req.After) != "null"
 	var after int
 	validAfter := haveAfter && json.Unmarshal(req.After, &after) == nil && after >= 0
@@ -271,8 +276,75 @@ drain:
 	}
 }
 
-// HandleUnfollow is the message handler for "push_unfollow".
-func (f *Followers) HandleUnfollow(ctx context.Context, c *server.Client, raw json.RawMessage) {}
+// HandleUnfollow is the message handler for "push_unfollow": the device's record is cleared and this socket stops following. A socket
+// without a bearer token is ignored.
+func (f *Followers) HandleUnfollow(ctx context.Context, c *server.Client, raw json.RawMessage) {
+	if !c.Bearer() {
+		return
+	}
+	f.leave(c)
+	f.mu.Lock()
+	if fw := f.followers[c.ID()]; fw != nil {
+		f.drop(fw)
+	}
+	c.SetFollowing(false)
+	f.mu.Unlock()
+	if d := c.Device(); d != "" && f.cfg.Record != nil {
+		f.cfg.Record.Unfollowed(d)
+	}
+}
+
+// Connected is whether the device has a follower socket open.
+func (f *Followers) Connected(device string) bool {
+	f.smu.Lock()
+	defer f.smu.Unlock()
+	return len(f.socks[device]) > 0
+}
+
+// joined counts the socket among its device's followers and tells the record; the socket's end, not a send failure, ends the count.
+func (f *Followers) joined(ctx context.Context, c *server.Client) {
+	d := c.Device()
+	if d == "" {
+		return
+	}
+	f.smu.Lock()
+	set := f.socks[d]
+	if set == nil {
+		set = map[int]struct{}{}
+		f.socks[d] = set
+	}
+	_, had := set[c.ID()]
+	set[c.ID()] = struct{}{}
+	f.smu.Unlock()
+	if !had {
+		go func() {
+			<-ctx.Done()
+			if f.leave(c) && f.cfg.Record != nil {
+				f.cfg.Record.FollowEnded(d, f.cfg.Now())
+			}
+		}()
+	}
+	if f.cfg.Record != nil {
+		f.cfg.Record.Followed(d)
+	}
+}
+
+// leave stops counting the socket and reports whether it was the device's last.
+func (f *Followers) leave(c *server.Client) bool {
+	d := c.Device()
+	f.smu.Lock()
+	defer f.smu.Unlock()
+	set := f.socks[d]
+	if _, ok := set[c.ID()]; !ok {
+		return false
+	}
+	delete(set, c.ID())
+	if len(set) > 0 {
+		return false
+	}
+	delete(f.socks, d)
+	return true
+}
 
 // inRing is whether every event after seq is still held. Called with f.mu held.
 func (f *Followers) inRing(after int, boot string) bool {

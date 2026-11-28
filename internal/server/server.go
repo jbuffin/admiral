@@ -180,7 +180,11 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 	if s.Path != nil {
 		path = s.Path(r)
 	}
-	c := s.Hub.add(ctx, conn, path, s.Bearer != nil && s.Bearer(r))
+	device := ""
+	if s.Device != nil {
+		device = s.Device(r)
+	}
+	c := s.Hub.add(ctx, conn, path, s.Bearer != nil && s.Bearer(r), device)
 	defer s.Hub.remove(c)
 	s.sendConfig(c)
 	for _, m := range s.Modules {

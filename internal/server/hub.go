@@ -136,11 +136,11 @@ func (h *Hub) SendWatching(v any) {
 
 func NewHub() *Hub { return &Hub{Now: time.Now, clients: map[int]*Client{}} }
 
-func (h *Hub) add(ctx context.Context, conn *websocket.Conn, path string, bearer bool) *Client {
+func (h *Hub) add(ctx context.Context, conn *websocket.Conn, path string, bearer bool, device string) *Client {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.next++
-	c := &Client{id: h.next, path: path, bearer: bearer, conn: conn, ctx: ctx, sent: map[string][]byte{}}
+	c := &Client{id: h.next, path: path, bearer: bearer, device: device, conn: conn, ctx: ctx, sent: map[string][]byte{}}
 	h.clients[c.id] = c
 	return c
 }

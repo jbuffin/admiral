@@ -52,7 +52,7 @@ func (a *Auth) serveList(w http.ResponseWriter, r *http.Request) {
 	out := make([]deviceView, 0, len(a.devices))
 	for _, d := range a.devices {
 		isCurrent := (current != "" && d.ID == current) || (local && d.ThisMac)
-		out = append(out, deviceView{d.ID, d.Name, d.Login, d.PairedAt, d.LastSeen, isCurrent, len(d.Subscriptions) > 0, d.ThisMac, nil, nil})
+		out = append(out, deviceView{d.ID, d.Name, d.Login, d.PairedAt, d.LastSeen, isCurrent, len(d.Subscriptions) > 0, d.ThisMac, a.forwardingState(d), d.LastFollowed})
 	}
 	a.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out})

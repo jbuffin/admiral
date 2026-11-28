@@ -111,6 +111,8 @@ function DeviceRow({ device, reload, onResult }: { device: Device; reload: () =>
           {mark ? <strong>{mark} · </strong> : null}
           {device.login ? `${device.login} · ` : ''}paired {stamp(device.pairedAt)} · last seen {stamp(device.lastSeen)}
         </span>
+        {device.forwarding === 'on' ? <span class="note">Notifications on · forwarded</span> : null}
+        {device.forwarding === 'stopped' ? <span class="note warn">Forwarding stopped{device.lastFollowed ? ` · last followed ${stamp(device.lastFollowed)}` : ''}</span> : null}
         {error ? <span class="note error-text">{error}</span> : null}
         {confirming ? (
           <div class="confirm" role="group" aria-label={`Revoke ${device.name}`}>
