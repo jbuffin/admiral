@@ -113,7 +113,7 @@ func (f *serviceFixture) startSources() {
 	f.t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	f.Svc.Sup.Start(ctx)
-	f.t.Cleanup(func() { cancel(); f.Svc.Sup.Wait() })
+	f.t.Cleanup(func() { cancel(); f.Svc.Sup.Wait(); workers.Wait() })
 }
 
 func (f *serviceFixture) waitView(key, what string, pred func(SourceView) bool) SourceView {

@@ -132,6 +132,9 @@ type kindPoll struct {
 	emitted map[string]time.Time
 }
 
+// workers counts the running work loops, which outlive stop; tests wait on it before they restore a github package limit.
+var workers sync.WaitGroup
+
 func openGitHub(a openArgs) *githubConn {
 	ctx, cancel := context.WithCancel(context.Background())
 	g := &githubConn{openArgs: a, fleet: a.def.Fleet, gone: make(chan struct{}), ctx: ctx, cancel: cancel,
@@ -181,7 +184,10 @@ func (g *githubConn) call(ctx context.Context, method string, params any, _ time
 			list = append(list, map[string]string{"id": v.ID, "title": v.Title})
 		}
 		g.mu.Unlock()
-		g.once.Do(func() { go g.work() }) // only now may the source send notifications
+		g.once.Do(func() { // only now may the source send notifications
+			workers.Add(1)
+			go func() { defer workers.Done(); g.work() }()
+		})
 		return json.Marshal(list)
 	case "orders.list":
 		var p struct {

@@ -254,41 +254,19 @@ func TestConnectionSurvivesARestartOfTheSource(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
 	g.write("viewer", "octocat")
-	slowSearch(t, g)
 	g.search("bugs", "label:bug", [3]any{"acme/widgets", 13, "Any bug"})
 	f := newServiceFixture(t, ghConfig(campaignFleet, connSource))
 	f.startSources()
 	f.waitConnection("gh", "connected", func(c map[string]any) bool { return c["state"] == "connected" && c["login"] == "octocat" })
 
-	sid := func() int {
-		r := f.Svc.Sup.runner("gh")
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		return r.sid
-	}
-	before := sid()
-	g.write("slow", "0.3")
-	if !f.Svc.Sup.Restart("gh") {
-		t.Fatal("Restart found no runner")
-	}
-	deadline := time.Now().Add(10 * time.Second)
-	for sid() == before {
-		if time.Now().After(deadline) {
-			t.Fatal("the source did not restart")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	// The new process's search has begun, after its token call and before it settles the connection.
-	deadline = time.Now().Add(10 * time.Second)
-	for _, err := os.Stat(filepath.Join(g.dir, "slow-started")); err != nil; _, err = os.Stat(filepath.Join(g.dir, "slow-started")) {
-		if time.Now().After(deadline) {
-			t.Fatal("the new search never started")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	release := g.holdSearches()
+	before := g.searches()
+	f.restartUntilReady("gh")
+	g.waitSearchBegun(before) // the new process's search is in flight, past its token call
 	if c := f.connectionOf("gh"); c["state"] != "connected" || c["login"] != "octocat" {
 		t.Errorf("the connection left the last one during the restart: %v", c)
 	}
+	release()
 }
 
 func TestCheckAgainRefusals(t *testing.T) {
@@ -577,15 +555,17 @@ func TestACancelledCheckRecordsNothing(t *testing.T) {
 
 func TestASlowTokenCallKeepsTheConnectionAndShowsOnTheViews(t *testing.T) {
 	old := github.CallTimeout
-	github.CallTimeout = 500 * time.Millisecond
-	t.Cleanup(func() { github.CallTimeout = old }) // runs after the fixture stops the source, which reads it
+	t.Cleanup(func() { github.CallTimeout = old }) // registered before the fixture, so it runs after the fixture has waited out the work loop that reads it
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
 	g.search("bugs", "label:bug", [3]any{"acme/widgets", 13, "Any bug"})
 	f := newServiceFixture(t, ghConfig(campaignFleet, connSource))
 	f.startSources()
 	c := f.waitConnection("gh", "connected", func(c map[string]any) bool { return c["state"] == "connected" })
+	f.waitView("gh", "its first cycle to end", func(s SourceView) bool { return !s.Refreshing })
 
+	// Set after the first cycle has ended, so no read of it is still under way and the first token call has the production limit.
+	github.CallTimeout = 500 * time.Millisecond
 	g.write("token.sleep", "5")
 	if code, body := f.do(http.MethodPost, "/gh/refresh", map[string]any{}); code != http.StatusOK {
 		t.Fatalf("POST refresh = %d %s", code, body)
