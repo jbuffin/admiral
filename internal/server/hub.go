@@ -16,8 +16,9 @@ const writeTimeout = 5 * time.Second
 
 // Modules push to a Client through Send and never see the WebSocket library.
 type Client struct {
-	id   int
-	path string // how the browser reached Admiral: "local", "lan", "tailnet" or ""
+	id     int
+	path   string // how the browser reached Admiral: "local", "lan", "tailnet" or ""
+	bearer bool
 	// following is set once the client has asked to follow push events.
 	following atomic.Bool
 	conn      *websocket.Conn
@@ -38,7 +39,7 @@ func (c *Client) ID() int { return c.id }
 func (c *Client) Path() string { return c.path }
 
 // Bearer is whether the socket authenticated with a bearer token.
-func (c *Client) Bearer() bool { return false }
+func (c *Client) Bearer() bool { return c.bearer }
 
 // Following is whether the client follows push events; it then gets no window broadcast of the count.
 func (c *Client) Following() bool { return c.following.Load() }
@@ -46,7 +47,7 @@ func (c *Client) Following() bool { return c.following.Load() }
 func (c *Client) SetFollowing(on bool) { c.following.Store(on) }
 
 // Close ends the connection; the client's read loop returns and the hub drops it.
-func (c *Client) Close() {}
+func (c *Client) Close() { _ = c.conn.CloseNow() }
 
 func (c *Client) Send(v any) error {
 	data, err := json.Marshal(v)
@@ -131,11 +132,11 @@ func (h *Hub) SendWatching(v any) {
 
 func NewHub() *Hub { return &Hub{Now: time.Now, clients: map[int]*Client{}} }
 
-func (h *Hub) add(ctx context.Context, conn *websocket.Conn, path string) *Client {
+func (h *Hub) add(ctx context.Context, conn *websocket.Conn, path string, bearer bool) *Client {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.next++
-	c := &Client{id: h.next, path: path, conn: conn, ctx: ctx, sent: map[string][]byte{}}
+	c := &Client{id: h.next, path: path, bearer: bearer, conn: conn, ctx: ctx, sent: map[string][]byte{}}
 	h.clients[c.id] = c
 	return c
 }
@@ -183,7 +184,11 @@ func (h *Hub) BroadcastOnce(key string, build func() any) {
 
 // BroadcastOnceWindows is BroadcastOnce for the clients that do not follow push events.
 func (h *Hub) BroadcastOnceWindows(key string, build func() any) {
-	h.BroadcastOnce(key, build)
+	h.each(func(c *Client) {
+		if !c.Following() {
+			_ = c.SendOnce(key, build)
+		}
+	})
 }
 
 // Runs f for every client at once, so one slow client doesn't hold up the others.

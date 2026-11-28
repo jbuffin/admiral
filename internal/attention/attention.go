@@ -75,9 +75,9 @@ func (s *Service) Connected(c *server.Client) {
 	}
 }
 
-// Changed re-works the count after a ships or inbox change.
+// Changed re-works the count after a ships or inbox change. A client that follows push events gets its count from them.
 func (s *Service) Changed() {
 	if s.ready() {
-		s.Hub.BroadcastOnce("attention", s.message)
+		s.Hub.BroadcastOnceWindows("attention", s.message)
 	}
 }

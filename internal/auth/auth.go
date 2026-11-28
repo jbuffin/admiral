@@ -31,6 +31,8 @@ type route struct {
 
 type ctxKey struct{}
 
+type bearerKey struct{}
+
 func classify(r *http.Request) route {
 	loopback := peerIsLoopback(r)
 	proxied := hasProxyHeaders(r)
@@ -215,6 +217,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				unauthorized(w, r)
 				return
 			}
+			r = r.WithContext(context.WithValue(r.Context(), bearerKey{}, true))
 			a.serve(w, r, next, isWS, id, rt)
 			return
 		}
@@ -334,4 +337,7 @@ func hostAllowed(hostport string) bool {
 }
 
 // BearerDevice reports whether the request authenticated with a paired device's bearer token, not a cookie.
-func BearerDevice(r *http.Request) bool { return false }
+func BearerDevice(r *http.Request) bool {
+	b, _ := r.Context().Value(bearerKey{}).(bool)
+	return b
+}

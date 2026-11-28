@@ -46,18 +46,31 @@ type followRig struct {
 	ready    atomic.Bool
 	watching atomic.Bool
 	notifyOn sync.Map // fleet -> false when Notify is off
+	joined   chan struct{}
 }
+
+// joinProbe signals each socket the server has registered.
+type joinProbe struct{ ch chan struct{} }
+
+func (joinProbe) Routes(*http.ServeMux)      {}
+func (p joinProbe) Connected(*server.Client) { p.ch <- struct{}{} }
 
 type followOpts struct {
 	hubWatching bool
+	queue       int
+	send        func(*server.Client, []byte) error
 }
 
 // newFollowRig serves /ws/v1 with an Authorization header meaning bearer, behind a Watcher feeding the Followers and the hub.
 func newFollowRig(t *testing.T, o ...followOpts) *followRig {
 	t.Helper()
-	r := &followRig{t: t, hub: server.NewHub(), clock: &followClock{now: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)}}
+	r := &followRig{t: t, joined: make(chan struct{}, 64), hub: server.NewHub(), clock: &followClock{now: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)}}
 	r.ready.Store(true)
-	r.f = push.NewFollowers(push.FollowersConfig{Now: r.clock.Now, Ready: r.ready.Load})
+	cfg := push.FollowersConfig{Now: r.clock.Now, Ready: r.ready.Load}
+	if len(o) > 0 {
+		cfg.Queue, cfg.Send = o[0].queue, o[0].send
+	}
+	r.f = push.NewFollowers(cfg)
 	watching := r.watching.Load
 	if len(o) > 0 && o[0].hubWatching {
 		watching = r.hub.Watching
@@ -68,6 +81,7 @@ func newFollowRig(t *testing.T, o ...followOpts) *followRig {
 	}, push.NewAlertSink(r.hub), r.f)
 	srv := httptest.NewServer((&server.Server{
 		Hub:      r.hub,
+		Modules:  []server.Module{joinProbe{r.joined}},
 		Bearer:   func(req *http.Request) bool { return req.Header.Get("Authorization") != "" },
 		Messages: map[string]server.MessageHandler{"push_follow": r.f.Handle},
 	}).Handler())
@@ -86,13 +100,16 @@ func (r *followRig) dial(bearer bool) *websocket.Conn {
 	if bearer {
 		opts.HTTPHeader = map[string][]string{"Authorization": {"Bearer fake-token-1"}}
 	}
-	want := r.hub.Len() + 1
 	conn, _, err := websocket.Dial(ctx, r.url, opts)
 	if err != nil {
 		r.t.Fatal(err)
 	}
 	r.t.Cleanup(func() { _ = conn.CloseNow() })
-	eventually(r.t, "the server to register the socket", func() bool { return r.hub.Len() >= want })
+	select {
+	case <-r.joined:
+	case <-ctx.Done():
+		r.t.Fatal("the server never registered the socket")
+	}
 	return conn
 }
 
@@ -509,7 +526,7 @@ func TestAFollowerGetsOneMessagePerChangeOfTheCount(t *testing.T) {
 func TestANoticeInTheInboxMovesNoCountSoAFollowerHearsNothing(t *testing.T) {
 	r := newFollowRig(t)
 	live := r.follower()
-	r.w.Inbox([]inbox.Item{item(t, "s-Dory", "i-1", "notice", "Heads up")})
+	r.w.Inbox([]inbox.Item{item(t, inbox.AdmiralSession, "i-1", "notice", "Heads up")})
 	r.quiet(live)
 }
 
@@ -517,7 +534,9 @@ func TestBeforeTheShipsAndInboxAreKnownAFollowerGetsNoCountNotEvenAFalseZero(t *
 	r := newFollowRig(t)
 	r.ready.Store(false)
 	conn := r.dial(true)
-	r.follow(conn, nil, "")
+	// A null follow answers nothing before ready, so a reset is the answer that says the follow is registered.
+	r.follow(conn, 5, "no-such-boot")
+	r.wantNext(conn, "push_reset")
 	r.ask("Dory")
 	m := r.wantNext(conn, "push")
 	if _, has := m["attention"]; has {
@@ -566,4 +585,46 @@ func TestEventsEmittedWhileAFollowerCatchesUpAreNeitherLostNorDoubled(t *testing
 		}
 	}
 	wg.Wait()
+}
+
+func TestAFollowerThatCannotKeepUpIsClosedAndTheSinkNeverBlocks(t *testing.T) {
+	stall, entered := make(chan struct{}), make(chan struct{}, 1)
+	r := newFollowRig(t, followOpts{queue: 2, send: func(*server.Client, []byte) error {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-stall
+		return nil
+	}})
+	t.Cleanup(func() { close(stall) })
+	conn := r.dial(true)
+	r.follow(conn, nil, "")
+	select {
+	case <-entered: // the follow is registered and its writer is stuck on the first message
+	case <-time.After(5 * time.Second):
+		t.Fatal("the follow never reached its writer")
+	}
+	emitted := make(chan struct{})
+	go func() {
+		defer close(emitted)
+		for i := range 10 {
+			r.w.Emit(askEvent(i))
+		}
+	}()
+	select {
+	case <-emitted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the sink blocked on a follower that does not read")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for {
+		if _, _, err := conn.Read(ctx); err != nil {
+			if ctx.Err() != nil {
+				t.Fatal("the slow follower was left open")
+			}
+			return
+		}
+	}
 }
