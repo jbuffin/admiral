@@ -1116,7 +1116,7 @@ A device paired with a bearer token follows what would push on `/ws/v1` with `{"
 **Catching up.** Admiral keeps the last 500 `push` and `push_clear` events, none older than a day, in memory only. `boot` is an id fresh for every run of Admiral and `seq` rises from 1 within it, one number across both kinds of event. After a `push_follow`:
 
 - `after` inside the ring: the events after it, in order, then `{"type":"attention","count":N}` with the current count.
-- `after` null: only that `attention` message.
+- `after` null: no replay, only an `attention` message with the current count. A client may see the connect-time `attention` every `/ws/v1` socket gets just before it, so it treats each `attention` as the current count.
 - `after` with a missing or other `boot`, past the latest `seq`, or older than the oldest event kept: `{"type":"push_reset","boot":"7f3a…","attention":N}` and nothing else. The client drops what it has and starts from the new `boot`; `attention` is left out before the lists are known.
 
 A follower that cannot keep up (its queue of 1024 messages fills) is closed, never left with a gap, and catches up when it reconnects.
