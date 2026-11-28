@@ -21,9 +21,9 @@ import (
 
 // The states and places a need card reads.
 const (
-	NeedOpen      = "open"
-	NeedAnswered  = "answered"
-	NeedRemoved   = "removed"
+	NeedOpen     = "open"
+	NeedAnswered = "answered"
+	NeedRemoved  = "removed"
 	// NeedSettledTerminal is a stop that ended with no Admiral route answering it; NeedMovedOn is a ship that stopped needing you by leaving: moored, ended, gone.
 	NeedSettledTerminal = "settled_terminal"
 	NeedMovedOn         = "moved_on"
@@ -43,9 +43,9 @@ type needRec struct {
 	Kind   string `json:"kind,omitempty"`
 	Reason string `json:"reason,omitempty"`
 	// Answerable is false for a stop answered in the terminal.
-	Answerable bool `json:"answerable,omitempty"`
-	State   string `json:"state"`
-	In      string `json:"in,omitempty"`
+	Answerable bool   `json:"answerable,omitempty"`
+	State      string `json:"state"`
+	In         string `json:"in,omitempty"`
 }
 
 type needStore struct {
