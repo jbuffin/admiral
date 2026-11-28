@@ -787,16 +787,12 @@ func TestFleetNeedCardARoutineCardAnswersEachInboxRefusalWithTheRoutesStatusAndM
 	t.Run("the proposal expired", func(t *testing.T) {
 		r := newNeedRig(t)
 		f := r.fleetHooks()
-		var skew atomic.Int64
-		wire := r.wire
-		r.wire = func(s *inbox.Service) {
-			wire(s)
-			s.Now = func() time.Time { return time.Now().Add(time.Duration(skew.Load())) }
-		}
+		skew := r.skewClock()
 		r.item("_admiral", "routine-t1", fleetRoutine("t1", "home", createdA, inAnHour(), sweepAction))
 		r.start()
 		card := r.cardFor("home", "routine-t1")
-		// No pass or read of the cards runs meanwhile, so the card has not yet moved on and the tap meets the Inbox's 410.
+		// With the poster stopped no pass can settle the card before the tap, so the tap meets the Inbox's 410.
+		r.stop()
 		skew.Store(int64(2 * time.Hour))
 
 		rec := r.post("home", card.ID, map[string]any{"launch": true})
@@ -987,4 +983,56 @@ func TestFleetNeedCardAnAnswerUnderAnotherFleetsRouteCannotAnswerThisFleetsItem(
 	if f.launched() != 0 || f.created() != 0 {
 		t.Errorf("refused taps launched %d and created %d", f.launched(), f.created())
 	}
+}
+
+// skewClock makes the Inbox's expiry clock the wall clock plus the returned offset.
+func (r *needRig) skewClock() *atomic.Int64 {
+	var skew atomic.Int64
+	wire := r.wire
+	r.wire = func(s *inbox.Service) {
+		if wire != nil {
+			wire(s)
+		}
+		s.Now = func() time.Time { return time.Now().Add(time.Duration(skew.Load())) }
+	}
+	return &skew
+}
+
+func TestFleetNeedCardALaunchThatCrossesTheProposalsExpiryReadsAnsweredNotMovedOn(t *testing.T) {
+	t.Run("tapped in the chat", func(t *testing.T) {
+		r := newNeedRig(t)
+		f := r.fleetHooks()
+		skew := r.skewClock()
+		r.item("_admiral", "routine-t1", fleetRoutine("t1", "home", createdA, inAnHour(), sweepAction))
+		r.start()
+		card := r.cardFor("home", "routine-t1")
+		f.launchReply = func() (any, int, string) {
+			skew.Store(int64(2 * time.Hour))
+			r.served("home") // a read while the launch runs and the proposal has expired
+			return map[string]any{"session": "ship-1"}, 0, ""
+		}
+		if rec := r.post("home", card.ID, map[string]any{"launch": true}); !is2xx(rec) {
+			t.Fatalf("tap = %d %s, want success", rec.Code, rec.Body)
+		}
+		r.waitState("home", card.ID, "answered", "chat")
+	})
+	t.Run("launched in the Inbox", func(t *testing.T) {
+		r := newNeedRig(t)
+		f := r.fleetHooks()
+		skew := r.skewClock()
+		r.item("_admiral", "routine-t1", fleetRoutine("t1", "home", createdA, inAnHour(), sweepAction))
+		r.start()
+		card := r.cardFor("home", "routine-t1")
+		read := make(chan struct{})
+		f.launchReply = func() (any, int, string) {
+			skew.Store(int64(2 * time.Hour))
+			go func() { defer close(read); r.served("home") }()
+			return map[string]any{"session": "ship-1"}, 0, ""
+		}
+		if rec := r.inboxPost("/api/inbox/_admiral/routine-t1/launch", `{}`); !is2xx(rec) {
+			t.Fatalf("the Inbox's launch = %d %s, want success", rec.Code, rec.Body)
+		}
+		<-read
+		r.waitState("home", card.ID, "answered", "inbox")
+	})
 }

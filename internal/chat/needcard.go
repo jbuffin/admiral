@@ -344,10 +344,18 @@ func (s *Service) needState(id string, open map[string]bool) (needRec, bool) {
 	if !ok || r.State != NeedOpen || s.Inbox == nil || !s.Inbox.Scanned() || open[r.Session+"\x00"+r.Item+"\x00"+r.Created] {
 		return r, ok
 	}
+	if r.Kind == inbox.KindRoutineProposal {
+		// An engineer's launch wins over expiry, so a tap in flight leaves the card open and MovedOn waits for an Inbox launch's answer file before it reads the clock.
+		if n.tapping(r.Session, r.Item) {
+			return r, ok
+		}
+		if s.Inbox.MovedOn(r.Session, r.Item) {
+			n.settle(id, NeedMovedOn, "")
+			return n.get(id)
+		}
+	}
 	present, mark := s.Inbox.AnswerFile(r.Session, r.Item)
 	switch {
-	case r.Kind == inbox.KindRoutineProposal && s.Inbox.MovedOn(r.Session, r.Item):
-		n.settle(id, NeedMovedOn, "")
 	case !present || mark:
 		n.settle(id, NeedRemoved, "")
 	case n.tapping(r.Session, r.Item):

@@ -160,6 +160,9 @@ func (s *Service) MovedOn(session, id string) bool {
 	if session != AdmiralSession || !idPattern.MatchString(id) {
 		return false
 	}
+	// A launch holds answerMu across its hook, so waiting here shows its answer file instead of an expiry it crossed.
+	s.answerMu.Lock()
+	defer s.answerMu.Unlock()
 	dir, err := openShipDir(s.Home, session)
 	if err != nil {
 		return false

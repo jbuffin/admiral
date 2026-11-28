@@ -269,11 +269,6 @@ func (s *Service) serveCreateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, err := s.CreateCampaignItem(r.Context(), id, req)
-	var partial *partialCreateError
-	if errors.As(err, &partial) {
-		writeJSON(w, partial.status, map[string]any{"error": partial.msg, "parent": partial.parent, "answered": id})
-		return
-	}
 	if err != nil {
 		respondProposal(w, id, err)
 		return

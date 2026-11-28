@@ -166,9 +166,8 @@ func Refusal(id string, err error) (status int, body map[string]any, ok bool) {
 }
 
 func respondProposal(w http.ResponseWriter, id string, err error) {
-	var refused *refusedError
-	if errors.As(err, &refused) {
-		writeError(w, refused.status, refused.msg)
+	if status, body, ok := Refusal(id, err); ok {
+		writeJSON(w, status, body)
 		return
 	}
 	respond(w, AdmiralSession, id, ReviewResult{}, err)
