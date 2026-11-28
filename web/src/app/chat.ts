@@ -109,11 +109,16 @@ export type ThreadItem =
 /** The card Admiral posts in a ship's own fleet's chat for each question the ship asks. */
 export interface NeedCard {
   ship: string;
+  /** A question's item id; for a stop card, the id of the one stop it is bound to. */
   item: string;
-  item_kind: 'question';
-  questions: NonNullable<InboxItem['question']>['questions'];
-  state: 'open' | 'answered' | 'removed';
-  answered_in?: 'chat' | 'inbox';
+  item_kind: 'question' | 'permission' | 'stop' | 'not_started';
+  questions?: NonNullable<InboxItem['question']>['questions'];
+  /** The tool a permission prompt asks about. */
+  tool?: string;
+  /** Whether the card has buttons or a text box; false says to answer in the terminal. */
+  answerable?: boolean;
+  state: 'open' | 'answered' | 'removed' | 'settled_terminal' | 'moved_on';
+  answered_in?: 'chat' | 'inbox' | 'admiralbot';
 }
 
 export interface FollowingCard {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -18,6 +19,8 @@ type needCardMsg struct {
 		ItemKind   string `json:"item_kind"`
 		State      string
 		AnsweredIn string `json:"answered_in"`
+		Tool       string
+		Answerable bool
 	}
 }
 
@@ -86,4 +89,35 @@ func TestANeedCardAnswersAShipsQuestionFromTheChat(t *testing.T) {
 
 	w.touch(ship.Session, "go") // the turn ends: Stop
 	w.waitStdin(t, ship.Session, text+"\r")
+}
+
+// A permission prompt posts a card; the prompt is cleared in the terminal, the card reads Settled in the terminal, and a late tap is refused with nothing sent to the pane.
+func TestAPermissionCardSettlesWhenThePromptIsClearedInTheTerminalAndALateTapSendsNothing(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.resumeConfig(map[string][]string{"f": {"record", "hook working", "wait go0", "event PermissionRequest " + permAsk, "wait clear", "event PostToolUse " + permRan, "wait end"}})
+	w.start()
+	ship := w.launchIn("f", "claude", "stopcard")
+	w.waitFile(ship.Session, "recording")
+	w.waitPaneWorking(shipPaneOf(w, ship.Session))
+	w.touch(ship.Session, "go0")
+
+	card := w.waitNeedCard("f", "open", "")
+	if c := card.Card; c.Ship != ship.Session || c.ItemKind != "permission" || c.Tool != "Bash" || !c.Answerable || c.Item == "" {
+		t.Fatalf("card = %+v, want an answerable permission card for Bash on %s with a stop id", c, ship.Session)
+	}
+
+	w.touch(ship.Session, "clear") // the engineer answers in the terminal: the ship runs the tool and works again
+	settled := w.waitNeedCard("f", "settled_terminal", "")
+	if settled.ID != card.ID {
+		t.Errorf("settled card %s, want the one posted, %s", settled.ID, card.ID)
+	}
+
+	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/f/need-cards/"+card.ID+"/answer", `{"choice":"allow"}`)
+	if code != http.StatusConflict || !strings.Contains(body, "item "+card.Card.Item+" is already answered") {
+		t.Errorf("a late tap = %d %s, want 409 item %s is already answered", code, body, card.Card.Item)
+	}
+	if got := w.stdinOf(ship.Session); got != "" {
+		t.Errorf("the pane received %s after the late tap, want nothing", quote(got))
+	}
 }

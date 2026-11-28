@@ -50,6 +50,7 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
 
 function NeedCardView({ item, chat }: { item: Extract<ThreadItem, { kind: 'need' }>; chat: Chat }) {
   const { card } = item;
+  const questions = card.questions ?? [];
   const name = ships.value.find((s) => s.session === card.ship)?.name || card.ship;
   const title = markHidden(item.text).text;
   if (card.state === 'open') {
@@ -57,8 +58,8 @@ function NeedCardView({ item, chat }: { item: Extract<ThreadItem, { kind: 'need'
     return (
       <div class="convo-card chat-card">
         <p class="chat-card-eyebrow">{name}</p>
-        {card.questions.length === 1 && item.text.trim() === card.questions[0].text.trim() ? null : <p class="line">{title}</p>}
-        <PeekQuestions questions={card.questions} draft={draft} edit={(fn) => chat.editDraft(item.id, fn)} onSend={(b) => void chat.answerNeed(item.id, b)} />
+        {questions.length === 1 && item.text.trim() === questions[0].text.trim() ? null : <p class="line">{title}</p>}
+        <PeekQuestions questions={questions} draft={draft} edit={(fn) => chat.editDraft(item.id, fn)} onSend={(b) => void chat.answerNeed(item.id, b)} />
       </div>
     );
   }

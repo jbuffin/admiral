@@ -106,6 +106,9 @@ const (
 	OptNeedsCount = "needs-count"
 	OptNeedsSecs  = "needs-s"
 	OptStopSince  = "stop-since"
+	// OptStopID is the id of the prompt the pane waits on; OptStopAnswered is "<stop id> <via>" once a ships route answered it.
+	OptStopID       = "stop-id"
+	OptStopAnswered = "stop-answered"
 	// OptReturning is "queued" until the clean-up prompt is typed, then "sent" until the ship is stopped.
 	OptReturning = "returning"
 	// OptStoppedBy is why Admiral ended the harness while keeping the pane: wall_clock:<minutes>.

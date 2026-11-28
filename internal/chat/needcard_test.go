@@ -33,6 +33,8 @@ type needRig struct {
 	mux    *http.ServeMux
 	cancel context.CancelFunc
 	done   chan struct{} // closed when the poster has returned
+
+	stops stopBook // the ships the rig lists and the stop answers it was asked for
 }
 
 var shipFleets = map[string]string{
@@ -79,7 +81,7 @@ func (r *needRig) begin() {
 			fleet, ok := shipFleets[session]
 			return inbox.ShipInfo{Name: session, Harness: "claude", Fleet: fleet, FleetName: fleet}, ok
 		}}
-	r.svc = &Service{Home: r.home, Config: func() *config.Config { return r.cfg }, Inbox: r.in}
+	r.svc = &Service{Home: r.home, Config: func() *config.Config { return r.cfg }, Inbox: r.in, Ships: r.listShips, AnswerStop: r.answerStop}
 	r.in.OnChange = func() { r.pokes.Add(1); r.svc.InboxChanged() }
 	r.in.OnSettled = r.svc.InboxSettled
 	r.mux = http.NewServeMux()
@@ -145,6 +147,8 @@ type needCard struct {
 	Questions  []map[string]any `json:"questions"`
 	State      string           `json:"state"`
 	AnsweredIn string           `json:"answered_in"`
+	Tool       string           `json:"tool"`
+	Answerable bool             `json:"answerable"`
 }
 
 type needEntry struct {

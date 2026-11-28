@@ -161,6 +161,18 @@ func TestReadyToMergeReturnedAndASecondMoorQueueNoTurn(t *testing.T) {
 	x.want("calm-otter:moored")
 }
 
+func TestAHandLaunchedShipsReadyToMergePostsTheCardAndQueuesNoTurn(t *testing.T) {
+	t.Parallel()
+	x := newReporting(t)
+	hand := withStatus(quickBot("calm-otter"), ships.StatusMoored, pr7)
+	hand.Via = ""
+	x.observe(time.Minute, []ships.Ship{hand})
+	x.observe(2*time.Minute, []ships.Ship{ready(hand)})
+	x.wantResults("work", "moored", "ready_to_merge")
+	x.control(3 * time.Minute)
+	x.want("control-gull:anchored")
+}
+
 func TestAShipThatReturnsToPortBeforeItsFirstReportingEventQueuesNoTurn(t *testing.T) {
 	t.Parallel()
 	x := newReporting(t)

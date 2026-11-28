@@ -155,6 +155,9 @@ func (s *Service) InboxChanged() {
 	}
 }
 
+// ShipsChanged tells the need card poster the ships' list changed; it never blocks.
+func (s *Service) ShipsChanged() {}
+
 // InboxSettled records, before the Inbox releases a kept ship's files, that an item was answered or removed through the Inbox.
 func (s *Service) InboxSettled(session, id string, removed bool) {
 	n := s.needs()

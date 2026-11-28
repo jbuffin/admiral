@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Fleet, Ship } from './api';
 import type { NeedCard } from './chat';
@@ -219,4 +219,94 @@ test('a 404 from the card route shows its error', async () => {
   fireEvent.click(screen.getByRole('radio', { name: /Harbor/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Send answers' }));
   await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('no such card'));
+});
+
+// Stop cards: a permission prompt, a finished turn, or a ship that has not started.
+const stop = (id: string, text: string, c: Partial<NeedCard>) => ({ id, kind: 'need_card', text, at: '2026-01-02T03:04:05Z', card: { ship: 'calm-otter', item: 'p-1', item_kind: 'permission', tool: 'Bash', answerable: true, state: 'open', ...c } });
+
+test('an open permission card names the ship and tool and offers Allow once and Deny', async () => {
+  serve(() => [stop('need-p', 'Calm Otter wants to run Bash', {})]);
+  const el = await shown();
+  expect(el.textContent).toContain('Calm Otter');
+  expect(el.textContent).toContain('Bash');
+  expect(screen.getByRole('button', { name: 'Allow once' })).not.toBeNull();
+  expect(screen.getByRole('button', { name: 'Deny' })).not.toBeNull();
+});
+
+test.each([
+  ['Allow once', 'allow'],
+  ['Deny', 'deny'],
+])('tapping %s posts the choice to the card route', async (label, choice) => {
+  const posts = serve(() => [stop('need-p', 'Calm Otter wants to run Bash', {})], () => new Response(JSON.stringify({ answered: 'p-1' })));
+  await shown();
+  fireEvent.click(screen.getByRole('button', { name: label }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].url).toBe('/api/v1/chat/alpha/need-cards/need-p/answer');
+  expect(posts[0].body).toEqual({ choice });
+});
+
+test('a tap that gets 409 shows no error and the card reads what the next snapshot says', async () => {
+  let served = stop('need-p', 'Calm Otter wants to run Bash', {});
+  serve(
+    () => [served],
+    () => {
+      served = stop('need-p', 'Calm Otter wants to run Bash', { state: 'settled_terminal' });
+      return new Response(JSON.stringify({ error: 'item p-1 is already answered' }), { status: 409 });
+    },
+  );
+  await shown();
+  fireEvent.click(screen.getByRole('button', { name: 'Allow once' }));
+  await waitFor(() => expect(document.querySelector('.chat-card.quiet')?.textContent).toContain('Settled in the terminal'));
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('a failed tap shows its error and keeps the buttons', async () => {
+  serve(() => [stop('need-p', 'Calm Otter wants to run Bash', {})], () => new Response(JSON.stringify({ error: 'tmux is gone' }), { status: 500 }));
+  await shown();
+  fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('tmux is gone'));
+  expect((screen.getByRole('button', { name: 'Deny' }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('a permission card the menu cannot answer has no buttons and says to answer in the terminal', async () => {
+  serve(() => [stop('need-p', 'Calm Otter asks a question', { tool: 'AskUserQuestion', answerable: false })]);
+  const el = await shown();
+  expect(screen.queryByRole('button', { name: 'Allow once' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Deny' })).toBeNull();
+  expect(el.textContent).toMatch(/terminal/i);
+});
+
+test('a stop card has a text box and Send, which posts the text and clears nothing before', async () => {
+  const posts = serve(() => [stop('need-s', 'Calm Otter finished its turn', { item: 't-1', item_kind: 'stop', tool: undefined })]);
+  const el = await shown();
+  const send = () => within(el).getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+  expect(send().disabled).toBe(true);
+  fireEvent.input(within(el).getByRole('textbox'), { target: { value: 'now run the tests' } });
+  expect(posts).toHaveLength(0);
+  fireEvent.click(send());
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].url).toBe('/api/v1/chat/alpha/need-cards/need-s/answer');
+  expect(posts[0].body).toEqual({ text: 'now run the tests' });
+});
+
+test('a not-started card has no buttons or text box and points to the Terminal tab', async () => {
+  serve(() => [stop('need-n', 'Calm Otter has not started', { item: 'n-1', item_kind: 'not_started', tool: undefined, answerable: false })]);
+  const el = await shown();
+  expect(within(el).queryByRole('button')).toBeNull();
+  expect(within(el).queryByRole('textbox')).toBeNull();
+  expect(el.textContent).toContain('Terminal tab');
+});
+
+test.each([
+  [{ state: 'answered', answered_in: 'admiralbot' }, 'Answered by AdmiralBot'],
+  [{ state: 'settled_terminal' }, 'Settled in the terminal'],
+  [{ state: 'moved_on' }, 'Moved on'],
+] as [Partial<NeedCard>, string][])('a stop card served %j collapses to one line saying %s', async (over, words) => {
+  serve(() => [stop('need-p', 'Calm Otter wants to run Bash', over)]);
+  const el = await shown();
+  expect(el.classList.contains('quiet')).toBe(true);
+  expect(el.textContent).toContain('Calm Otter wants to run Bash');
+  expect(el.textContent).toContain(words);
+  expect(within(el).queryByRole('button')).toBeNull();
+  expect(within(el).queryByRole('textbox')).toBeNull();
 });
