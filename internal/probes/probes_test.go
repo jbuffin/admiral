@@ -410,7 +410,7 @@ func TestARunsOwnTimeLimitStillCountsAsAFailure(t *testing.T) {
 	started, release := make(chan struct{}, 1), make(chan struct{})
 	defer close(release)
 	r := probes.New(h, blocking(started, release))
-	r.Timeout = time.Second
+	r.Timeout = 800 * time.Millisecond
 	rep, err := r.Run(context.Background(), fleetOf(versionScript(t), "9.1.0"), "claude")
 	if err != nil {
 		t.Fatal(err)

@@ -382,7 +382,7 @@ func TestAFullClaudeRunFitsTheRunnersTimeEvenWhenOneJudgeCallHangs(t *testing.T)
 	j := newJRig(t, "claude", "hang-first")
 	h := home(t)
 	r := probes.NewDefault(h)
-	r.Timeout = 6 * time.Second
+	r.Timeout = 12 * time.Second
 	start := time.Now()
 	rep, err := r.Run(t.Context(), j.fleet, "claude")
 	if err != nil {

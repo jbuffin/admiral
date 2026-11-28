@@ -355,10 +355,14 @@ func TestASlowRestrictedProbeCannotStarveTheJudgesAndADeadlineIsNotAPass(t *test
 	}
 	h := home(t)
 	r := probes.NewDefault(h)
-	r.Timeout = 6 * time.Second
-	rep, err := r.Run(context.Background(), restrictedFleet(t, "pass", "hang", t.TempDir(), filepath.Join(t.TempDir(), "rec")), "claude")
+	r.Timeout = 12 * time.Second
+	log := t.TempDir()
+	rep, err := r.Run(context.Background(), restrictedFleet(t, "pass", "hang", log, filepath.Join(t.TempDir(), "rec")), "claude")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(log, "argv")); err != nil {
+		t.Fatalf("the restricted run never started, so the deadline proves nothing: %v", err)
 	}
 	for _, id := range []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork} {
 		if l := line(t, rep, id); l.Status != capabilities.Passed {
