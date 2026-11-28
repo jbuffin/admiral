@@ -54,7 +54,24 @@ func (h *Host) setPaneAt(ctx context.Context, pane, state, reason string) error 
 	if reason != "" {
 		setReason = "set-option -p -t " + target + " " + ReasonOption + " " + tmuxQuote(reason)
 	}
-	_, err := h.commandList(ctx, setReason, "set-option -p -t "+target+" "+StateOption+" "+state)
+	cmds := []string{setReason}
+	switch state {
+	case "needs_you":
+		cmds = append(cmds, "set-option -p -t "+target+" "+Prefix+OptStopID+" "+NewStopID())
+	case "working":
+		cmds = append(cmds, "set-option -p -u -q -t "+target+" "+Prefix+OptStopID)
+	}
+	_, err := h.commandList(ctx, append(cmds, "set-option -p -t "+target+" "+StateOption+" "+state)...)
+	return err
+}
+
+// MarkStopAnswered records on the pane which route answered the stop with this id; value is "<id>" or "<id> <via>", and empty clears the mark.
+func (h *Host) MarkStopAnswered(ctx context.Context, paneID, value string) error {
+	if value == "" {
+		_, err := h.command(ctx, "set-option -p -u -q -t "+tmuxQuote(paneID)+" "+Prefix+OptStopAnswered)
+		return err
+	}
+	_, err := h.command(ctx, "set-option -p -t "+tmuxQuote(paneID)+" "+Prefix+OptStopAnswered+" "+tmuxQuote(value))
 	return err
 }
 

@@ -224,7 +224,7 @@ func (d *ShipCards) Observe(snap []ships.Ship, records []ShipRecord, now time.Ti
 			}
 			held := v.ReadyHeld
 			v.ReadyHeld = false
-			if s.Via == "admiralbot" && s.StackReady {
+			if s.StackReady {
 				errs = append(errs, d.emit(v, ShipReadyToMerge, seeding || held))
 			}
 		case ships.StatusAnchored:

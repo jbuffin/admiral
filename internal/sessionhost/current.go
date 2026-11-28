@@ -2,6 +2,8 @@ package sessionhost
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"os/exec"
 	"strings"
 	"time"
@@ -51,9 +53,31 @@ func UnsetPaneCall(pane, option string) []string {
 	return []string{"set", "-p", "-u", "-q", "-t", pane, option}
 }
 
+// NewStopID is the id of one needs-you prompt, minted by whoever writes the state.
+func NewStopID() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+// ValidStopID is true only for an id NewStopID could have made: a pane option anyone can set is not a stop id until it has this shape.
+func ValidStopID(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // The reason goes first so the poll never sees needs_you without it. ifUnset (-o) keeps
 // permission:Bash whichever order Claude's PermissionRequest and Notification come in;
 // -q keeps a set reason from making tmux skip the state write.
+// Each needs_you write mints the stop id (an ifUnset one only when none stands) and working clears it, so an
+// answer can be bound to the one prompt it was posted for. The answered mark is left alone: it names its stop, and the card reads it after the ship works.
 func StateCall(pane, reason string, ifUnset bool, state string) []string {
 	reasonCall := []string{"set", "-p"}
 	switch {
@@ -64,7 +88,16 @@ func StateCall(pane, reason string, ifUnset bool, state string) []string {
 	default:
 		reasonCall = append(reasonCall, "-t", pane, ReasonOption, reason)
 	}
-	return Join(reasonCall, SetPaneCall(pane, StateOption, state))
+	var stop []string
+	switch {
+	case state == "needs_you" && ifUnset:
+		stop = []string{"set", "-p", "-o", "-q", "-t", pane, Prefix + OptStopID, NewStopID()}
+	case state == "needs_you":
+		stop = []string{"set", "-p", "-t", pane, Prefix + OptStopID, NewStopID()}
+	case state == "working":
+		stop = UnsetPaneCall(pane, Prefix+OptStopID)
+	}
+	return Join(reasonCall, stop, SetPaneCall(pane, StateOption, state))
 }
 
 // CrewTranscriptCall sets the option only where the pane's window has a crew name, so a

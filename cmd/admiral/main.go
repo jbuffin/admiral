@@ -534,6 +534,7 @@ func serve(args []string) error {
 	shipService.PromptKey = chatService.PromptKey
 	chatService.Findings = shipService.Findings()
 	chatService.Ships, chatService.Campaigns = shipService.List, followStore.List
+	chatService.AnswerStop = shipService.AnswerStop
 	sourceService.IssueClaims = shipService.Claims
 	sourceService.SendChat = chatService.SendStatus
 	chatService.SourceFleet = func(key string) (string, bool) {
@@ -711,7 +712,7 @@ func serve(args []string) error {
 		inboxService.Notify()
 		pushFeed.ShipsChanged()
 		attentionService.Changed()
-		chatService.InboxChanged() // a ship's fleet may only now be known
+		chatService.ShipsChanged() // a ship's fleet may only now be known, and a stop may have ended
 		routineScheduler.Changed()
 		commitmentRunner.Changed()
 		shipCards.Changed()

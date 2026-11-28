@@ -23,12 +23,15 @@ import (
 
 // The states and places a need card reads.
 const (
-	NeedOpen      = "open"
-	NeedAnswered  = "answered"
-	NeedRemoved   = "removed"
-	NeedMovedOn   = "moved_on"
-	AnsweredChat  = "chat"
-	AnsweredInbox = "inbox"
+	NeedOpen     = "open"
+	NeedAnswered = "answered"
+	NeedRemoved  = "removed"
+	// NeedSettledTerminal is a stop that ended with no Admiral route answering it; NeedMovedOn is a routine proposal that closed without the engineer, or a ship that stopped needing you by leaving: moored, ended, gone.
+	NeedSettledTerminal = "settled_terminal"
+	NeedMovedOn         = "moved_on"
+	AnsweredChat        = "chat"
+	AnsweredInbox       = "inbox"
+	AnsweredAdmiralBot  = "admiralbot"
 )
 
 // needRec is what the chat keeps about a need card beside its log entry: which item it is for and, once it settles, how. The Inbox deletes a kept ship's files on answer, so the state cannot be read back from them.
@@ -36,11 +39,16 @@ type needRec struct {
 	Fleet   string `json:"fleet"`
 	Session string `json:"session"`
 	Item    string `json:"item"`
-	Kind    string `json:"kind,omitempty"` // empty on a card posted before other kinds had one: a question
+	// Kind is the Inbox item's kind, empty on a card posted before other kinds had one (a question), or a stop card's kind (stopKinds).
+	Kind    string `json:"kind,omitempty"`
 	Created string `json:"created"`
 	Sig     string `json:"sig,omitempty"`
-	State   string `json:"state"`
-	In      string `json:"in,omitempty"`
+	// Reason is the ship's reason a stop card was posted for.
+	Reason string `json:"reason,omitempty"`
+	// Answerable is false for a stop answered in the terminal.
+	Answerable bool   `json:"answerable,omitempty"`
+	State      string `json:"state"`
+	In         string `json:"in,omitempty"`
 }
 
 type needStore struct {
@@ -144,7 +152,7 @@ func (n *needStore) openIDs(session, item string) []string {
 	defer n.mu.Unlock()
 	var ids []string
 	for id, r := range n.recs {
-		if r.State == NeedOpen && (session == "" || r.Session == session && r.Item == item) {
+		if r.State == NeedOpen && (session == "" || !stopKinds[r.Kind] && r.Session == session && r.Item == item) {
 			ids = append(ids, id)
 		}
 	}
@@ -172,6 +180,9 @@ func (s *Service) InboxChanged() {
 	default:
 	}
 }
+
+// ShipsChanged tells the need card poster the ships' list changed; it never blocks.
+func (s *Service) ShipsChanged() { s.InboxChanged() }
 
 // InboxSettled records, before the Inbox releases a kept ship's files, that an item was answered or removed through the Inbox.
 func (s *Service) InboxSettled(session, id string, removed bool, via string) {
@@ -206,6 +217,7 @@ func (s *Service) RunNeedCards(ctx context.Context) {
 }
 
 func (s *Service) needPass() {
+	s.stopPass()
 	if !s.Inbox.Scanned() { // before the first scan the list is empty, not settled
 		return
 	}
@@ -357,7 +369,7 @@ func (s *Service) openItems(items []inbox.Item) map[string]bool {
 func (s *Service) needState(id string, open map[string]bool) (needRec, bool) {
 	n := s.needs()
 	r, ok := n.get(id)
-	if !ok || r.State != NeedOpen || s.Inbox == nil || !s.Inbox.Scanned() || open[r.Session+"\x00"+r.Item+"\x00"+r.Created] {
+	if !ok || stopKinds[r.Kind] || r.State != NeedOpen || s.Inbox == nil || !s.Inbox.Scanned() || open[r.Session+"\x00"+r.Item+"\x00"+r.Created] {
 		return r, ok
 	}
 	if r.Kind == inbox.KindRoutineProposal {
@@ -434,6 +446,10 @@ func (s *Service) serveNeedCardAnswer(w http.ResponseWriter, r *http.Request) {
 	rec, ok := n.get(cardID)
 	if e, found, err := s.history().Get(fleet, cardID); !ok || rec.Fleet != fleet || err != nil || !found || e.Kind != chatlog.KindNeedCard || s.Inbox == nil {
 		writeError(w, http.StatusNotFound, "no need card "+cardID+" in the "+fleet+" chat")
+		return
+	}
+	if stopKinds[rec.Kind] {
+		s.serveStopCardAnswer(w, r, n, cardID, rec)
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))

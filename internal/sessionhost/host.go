@@ -96,7 +96,7 @@ const rawFormat = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_
 	"#{@admiral-launched}" + sep + "#{@admiral-first-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}" + sep + "#{@admiral-link}" + sep + "#{@admiral-titled}" + sep + "#{@admiral-issues}" + sep + "#{@admiral-panel}" + sep + "#{@admiral-resources}" + sep + "#{@admiral-prs}" + sep + "#{@admiral-reviewing}" + sep + "#{@admiral-launch-prs}" + sep +
 	"#{@admiral-origin-source}" + sep + "#{@admiral-origin-panel}" + sep + "#{@admiral-model}" + sep + "#{@admiral-skill-kind}" + sep + "#{@admiral-round}" + sep + "#{@admiral-via}" + sep + "#{@admiral-chat}" + sep + "#{@admiral-routine}" + sep + "#{@admiral-commitment}" + sep + "#{@admiral-scout}" + sep + "#{@admiral-drafting}" + sep + "#{@admiral-local-only}" + sep + "#{@admiral-branch}" + sep + "#{@admiral-prompt-key}" + sep +
 	"#{@admiral-" + OptEnded + "}" + sep + "#{@admiral-" + OptNeedsCount + "}" + sep +
-	"#{@admiral-" + OptNeedsSecs + "}" + sep + "#{@admiral-" + OptStopSince + "}" + sep + "#{@admiral-" + OptClosedCrew + "}" + sep + "#{@admiral-" + OptReturning + "}" + sep + "#{@admiral-" + OptStoppedBy + "}" + sep + "#{@admiral-" + OptHanding + "}" + sep + "#{@admiral-" + OptHandFailed + "}" + sep +
+	"#{@admiral-" + OptNeedsSecs + "}" + sep + "#{@admiral-" + OptStopSince + "}" + sep + "#{@admiral-" + OptClosedCrew + "}" + sep + "#{@admiral-" + OptReturning + "}" + sep + "#{@admiral-" + OptStoppedBy + "}" + sep + "#{@admiral-" + OptHanding + "}" + sep + "#{@admiral-" + OptHandFailed + "}" + sep + "#{@admiral-" + OptStopID + "}" + sep + "#{@admiral-" + OptStopAnswered + "}" + sep +
 	CrewNameFormat + sep + "#{pane_id}" + sep + "#{window_id}" + sep + "#{" + ActivityOption + "}" + sep +
 	"#{@admiral-role}" + sep + "#{" + CrewTranscriptOption + "}" + sep + "#{" + SubagentsOption + "}"
 
@@ -106,6 +106,9 @@ const (
 	OptNeedsCount = "needs-count"
 	OptNeedsSecs  = "needs-s"
 	OptStopSince  = "stop-since"
+	// OptStopID is the id of the prompt the pane waits on; OptStopAnswered is "<stop id> <via>" once a ships route answered it.
+	OptStopID       = "stop-id"
+	OptStopAnswered = "stop-answered"
 	// OptReturning is "queued" until the clean-up prompt is typed, then "sent" until the ship is stopped.
 	OptReturning = "returning"
 	// OptStoppedBy is why Admiral ended the harness while keeping the pane: wall_clock:<minutes>.
@@ -123,7 +126,7 @@ const tailFields = 7
 
 // optionNames are in the order format lists them.
 var optionNames = []string{"name", "fleet", "fleet-name", "fleet-color", "harness", "dir",
-	"skill", "source", "order", "launched", "first-launched", "title", "url", "link", "titled", "issues", "panel", "resources", "prs", "reviewing", "launch-prs", "origin-source", "origin-panel", "model", "skill-kind", "round", "via", "chat", "routine", "commitment", "scout", "drafting", "local-only", "branch", "prompt-key", OptEnded, OptNeedsCount, OptNeedsSecs, OptStopSince, OptClosedCrew, OptReturning, OptStoppedBy, OptHanding, OptHandFailed}
+	"skill", "source", "order", "launched", "first-launched", "title", "url", "link", "titled", "issues", "panel", "resources", "prs", "reviewing", "launch-prs", "origin-source", "origin-panel", "model", "skill-kind", "round", "via", "chat", "routine", "commitment", "scout", "drafting", "local-only", "branch", "prompt-key", OptEnded, OptNeedsCount, OptNeedsSecs, OptStopSince, OptClosedCrew, OptReturning, OptStoppedBy, OptHanding, OptHandFailed, OptStopID, OptStopAnswered}
 
 type Session struct {
 	Name       string
@@ -370,7 +373,8 @@ func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) 
 
 // # is left for format expansion.
 func tmuxQuote(s string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`).Replace(s) + `"`
+	// A raw line break would end the control-mode command line and start another.
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "\n", `\n`, "\r", `\r`).Replace(s) + `"`
 }
 
 func (h *Host) poll(ctx context.Context) error {

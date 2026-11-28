@@ -100,6 +100,10 @@ type Ship struct {
 	// for a ship no hook has spoken for.
 	Reason    string `json:"reason,omitempty"`
 	StopSince string `json:"stop_since,omitempty"`
+	// StopID names the one prompt the ship waits on; every needs-you write mints a new one, so two identical prompts differ. Empty while it is not known.
+	StopID string `json:"stop_id,omitempty"`
+	// StopAnswered says which route answered the prompt StopID names, set until the ship's next prompt.
+	StopAnswered *StopAnswered `json:"stop_answered,omitempty"`
 	// Seen is set while the ship needs you for a stop the engineer has looked at but not answered.
 	Seen bool `json:"seen,omitempty"`
 	// Returning is set from Return to port until the ship is stopped.
@@ -383,6 +387,12 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	sh.CrewLive = crewLive(sh.Crew)
 	if sh.Status == StatusNeedsYou {
 		sh.Reason = reasonOf(sess)
+		if id := o[sessionhost.OptStopID]; sessionhost.ValidStopID(id) {
+			sh.StopID = id
+		}
+	}
+	if id, via, _ := strings.Cut(o[sessionhost.OptStopAnswered], " "); sessionhost.ValidStopID(id) && (via == "" || via == "admiralbot") {
+		sh.StopAnswered = &StopAnswered{StopID: id, Via: via}
 	}
 	if o["dir"] == "" {
 		sh.Repo = ""

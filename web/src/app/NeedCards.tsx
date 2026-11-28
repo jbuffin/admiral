@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'preact/hooks';
+import { Actions, Button } from './Button';
 import { AllowRulesBody } from './PeekAllowRules';
 import { blankReview, CampaignDraftBody, Failure, FindingsBody, ReviewBody, RoutineProposalBody, useFindings, type Acting } from './PeekItem';
 import { PeekQuestions } from './PeekQuestions';
@@ -62,6 +63,34 @@ function FindingsCardBody({ entry, acting }: { entry: Entry; acting: Acting }) {
   return <FindingsBody entry={entry} acting={acting} state={useFindings(entry)} />;
 }
 
+type StopCard = Extract<NeedCard, { item_kind: 'permission' | 'stop' | 'not_started' }>;
+
+function StopCardBody({ id, card, chat }: { id: string; card: StopCard; chat: Chat }) {
+  const [text, setText] = useState('');
+  const error = chat.drafts[id]?.error;
+  const busy = chat.drafts[id]?.sending === true;
+  if (card.item_kind === 'not_started') return <p class="line">It has not started: answer it in its Terminal tab.</p>;
+  if (!card.answerable) return <p class="line">Answer this one in the terminal.</p>;
+  return (
+    <>
+      {card.item_kind === 'permission' ? (
+        <Actions class="inbox-send-row">
+          <Button disabled={busy} onClick={() => void chat.answerNeed(id, { choice: 'allow' })} label="Allow once" variant="primary" />
+          <Button disabled={busy} onClick={() => void chat.answerNeed(id, { choice: 'deny' })} label="Deny" />
+        </Actions>
+      ) : (
+        <>
+          <textarea class="inbox-note" value={text} rows={2} aria-label="Next prompt" onInput={(e) => setText((e.currentTarget as HTMLTextAreaElement).value)} />
+          <Actions class="inbox-send-row">
+            <Button disabled={busy || text.trim() === ''} onClick={() => void chat.answerNeed(id, { text })} label="Send" variant="primary" />
+          </Actions>
+        </>
+      )}
+      {error ? <p class="line error" role="alert">{error}</p> : null}
+    </>
+  );
+}
+
 function OpenNeedCard({ item, chat, fleet }: { item: Need; chat: Chat; fleet: string }) {
   const card = item.card;
   const acting = useNeedActing(item.id, chat);
@@ -77,6 +106,15 @@ function OpenNeedCard({ item, chat, fleet }: { item: Need; chat: Chat; fleet: st
   const name = ships.value.find((s) => s.session === session)?.name || session;
   const eyebrow = FLEET_EYEBROW[card.item_kind] ?? name;
   const details = (card.item_kind === 'review' || card.item_kind === 'findings') && !joined;
+  if (card.item_kind === 'permission' || card.item_kind === 'stop' || card.item_kind === 'not_started') {
+    return (
+      <div class="convo-card chat-card">
+        <p class="chat-card-eyebrow">{eyebrow}</p>
+        <p class="line">{title}{card.tool && !title.includes(card.tool) ? ` (${card.tool})` : ''}</p>
+        <StopCardBody id={item.id} card={card} chat={chat} />
+      </div>
+    );
+  }
   if (card.item_kind === 'question') {
     const draft = chat.drafts[item.id] ?? blankDraft();
     return (
@@ -108,12 +146,13 @@ function OpenNeedCard({ item, chat, fleet }: { item: Need; chat: Chat; fleet: st
   );
 }
 
-const WORDS = { removed: 'Removed', moved_on: 'Moved on' } as const;
+const WORDS = { removed: 'Removed', moved_on: 'Moved on', settled_terminal: 'Settled in the terminal' } as const;
+const ANSWERED = { inbox: 'Answered in the Inbox', admiralbot: 'Answered via AdmiralBot', chat: 'Answered in the chat' } as const;
 
 export function NeedCardView({ item, chat, fleet }: { item: Need; chat: Chat; fleet: string }) {
   const { card } = item;
   if (card.state === 'open') return <OpenNeedCard item={item} chat={chat} fleet={fleet} />;
-  const words = card.state === 'answered' ? (card.answered_in === 'inbox' ? 'Answered in the Inbox' : 'Answered in the chat') : WORDS[card.state];
+  const words = card.state === 'answered' ? ANSWERED[card.answered_in ?? 'chat'] : WORDS[card.state];
   const name = 'ship' in card ? ships.value.find((s) => s.session === card.ship)?.name || card.ship : '';
   return (
     <div class="convo-card chat-card quiet">

@@ -96,8 +96,10 @@ type Service struct {
 	// OnQuestions runs when a chat's questions may have changed, for the Inbox that lists them.
 	OnQuestions func()
 	// Ships and Campaigns feed the brief; nil reads as empty.
-	Ships     func() []ships.Ship
-	Campaigns func() []follow.Followed
+	Ships func() []ships.Ship
+	// AnswerStop answers a ship's stop through the ship answer gate; the need card route calls it. Nil refuses every answer.
+	AnswerStop func(ctx context.Context, session string, a ships.StopAnswer) error
+	Campaigns  func() []follow.Followed
 	// FollowCampaign follows the campaign a reference names, or returns the one already followed; created says which.
 	FollowCampaign func(ctx context.Context, reference string) (follow.Followed, bool, *launcher.Error)
 	// CampaignFleet is the fleet a reference's campaign belongs to, resolved without reading it.

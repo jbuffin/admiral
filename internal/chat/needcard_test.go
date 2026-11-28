@@ -37,6 +37,8 @@ type needRig struct {
 	done   chan struct{}        // closed when the poster has returned
 	wire   func(*inbox.Service) // sets the hooks of the Inbox begin builds, before the poster runs
 	chat   func(*Service)       // sets the chat service's seams, before the poster runs
+
+	stops stopBook // the ships the rig lists and the stop answers it was asked for
 }
 
 var shipFleets = map[string]string{
@@ -87,7 +89,7 @@ func (r *needRig) begin() {
 	if r.wire != nil {
 		r.wire(r.in)
 	}
-	r.svc = &Service{Home: r.home, Config: func() *config.Config { return r.cfg }, Inbox: r.in}
+	r.svc = &Service{Home: r.home, Config: func() *config.Config { return r.cfg }, Inbox: r.in, Ships: r.listShips, AnswerStop: r.answerStop}
 	if r.chat != nil {
 		r.chat(r.svc)
 	}
@@ -156,6 +158,8 @@ type needCard struct {
 	Questions  []map[string]any `json:"questions"`
 	State      string           `json:"state"`
 	AnsweredIn string           `json:"answered_in"`
+	Tool       string           `json:"tool"`
+	Answerable bool             `json:"answerable"`
 }
 
 type needEntry struct {

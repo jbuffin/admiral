@@ -202,7 +202,7 @@ func TestStopShipPostsNoCard(t *testing.T) {
 	x.wantResults("work")
 }
 
-func TestReadyToMergePostsOnlyForAShipAdmiralBotLaunchedAndOncePerVoyage(t *testing.T) {
+func TestReadyToMergePostsForEveryShipOnceEachPerVoyage(t *testing.T) {
 	t.Parallel()
 	x := seeded(t)
 	bot := viaBot(moored("calm-otter", "work", pr7))
@@ -210,15 +210,21 @@ func TestReadyToMergePostsOnlyForAShipAdmiralBotLaunchedAndOncePerVoyage(t *test
 	x.observe(time.Minute, []ships.Ship{bot, hand})
 	x.wantResults("work", "moored", "moored")
 	x.observe(2*time.Minute, []ships.Ship{ready(bot), ready(hand)})
-	x.wantResults("work", "moored", "moored", "ready_to_merge")
-	if c := shipCardsIn(t, x.r, "work")[2]; c.Ship != "calm-otter" || c.Result != "ready_to_merge" {
-		t.Errorf("the ready card is %+v, want the AdmiralBot ship's", c)
+	x.wantResults("work", "moored", "moored", "ready_to_merge", "ready_to_merge")
+	var readied []string
+	for _, c := range shipCardsIn(t, x.r, "work") {
+		if c.Result == "ready_to_merge" {
+			readied = append(readied, c.Ship)
+		}
 	}
-	// Ready goes away and comes back, and the server restarts: still one.
+	if !slices.Equal(readied, []string{"calm-otter", "brisk-finch"}) {
+		t.Errorf("the ready cards are for %v, want the AdmiralBot ship's and the hand-launched ship's", readied)
+	}
+	// Ready goes away and comes back, and the server restarts: still one each.
 	x.observe(3*time.Minute, []ships.Ship{bot, hand})
 	x.restart()
 	x.observe(4*time.Minute, []ships.Ship{ready(bot), ready(hand)})
-	x.wantResults("work", "moored", "moored", "ready_to_merge")
+	x.wantResults("work", "moored", "moored", "ready_to_merge", "ready_to_merge")
 }
 
 func TestAShipNotYetPolledIsNotReadyToMerge(t *testing.T) {
