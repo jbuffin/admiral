@@ -133,9 +133,7 @@ func stageCodex(t *testing.T, log, mode string) {
 func runCodex(t *testing.T, p probes.Probe, mode string, o codexOpts) codexRun {
 	t.Helper()
 	exe := filepath.Join(t.TempDir(), "codex")
-	if err := os.WriteFile(exe, []byte(codexHarness), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, codexHarness)
 	c := codexRun{home: home(t), engineer: t.TempDir(), log: t.TempDir()}
 	// Neither the process nor the dock may fall back to the real ~/.codex.
 	t.Setenv("HOME", t.TempDir())

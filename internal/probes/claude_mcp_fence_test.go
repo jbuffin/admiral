@@ -68,9 +68,7 @@ type fenceRun struct {
 func runFence(t *testing.T, mode string, timeout time.Duration, fleetArgs ...string) fenceRun {
 	t.Helper()
 	exe := filepath.Join(t.TempDir(), "claude")
-	if err := os.WriteFile(exe, []byte(fenceHarness), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, fenceHarness)
 	f := fenceRun{home: home(t), log: t.TempDir()}
 	fleet := config.Fleet{Key: "work", Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true, Args: fleetArgs,
 		Env: map[string]string{"PROBE_FAKE_LOG": f.log, "PROBE_FAKE_MODE": mode}}}}
@@ -261,9 +259,7 @@ func TestFenceProbeThatHangsFailsAtTheTimeLimit(t *testing.T) {
 
 func TestTheFenceProbeIsRegisteredWithTheDefaultProbes(t *testing.T) {
 	exe := filepath.Join(t.TempDir(), "claude")
-	if err := os.WriteFile(exe, []byte(fenceHarness), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExe(t, exe, fenceHarness)
 	log := t.TempDir()
 	fleet := config.Fleet{Key: "work", Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true,
 		Env: map[string]string{"PROBE_FAKE_LOG": log, "PROBE_FAKE_MODE": "pass"}}}}
