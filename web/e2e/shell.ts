@@ -1087,6 +1087,15 @@ export function seedInboxItem(a: Admiral, session: string, item: { id: string; k
   writeFileSync(join(dir, `${item.id}.json`), JSON.stringify({ version: 1, created: new Date().toISOString(), ...item }));
 }
 
+/** The answer file the server wrote for a ship's inbox item, or undefined while there is none. */
+export const shipAnswerFile = (a: Admiral, session: string, id: string) => {
+  try {
+    return JSON.parse(readFileSync(join(a.home, 'inbox', session, `${id}.answer.json`), 'utf8')) as { answers: Record<string, { choice?: string }> };
+  } catch {
+    return undefined;
+  }
+};
+
 /** Scripts the fake gh: a REST call with this method and endpoint (no leading slash) gets this status and body. */
 export function rest(a: Admiral, key: string, method: string, endpoint: string, status: number, body: unknown = {}, stderr = '') {
   const dir = join(a.home, 'fakegh', 'rest');

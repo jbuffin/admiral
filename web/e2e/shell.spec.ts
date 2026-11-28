@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, LAUNCH_MODELS, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, AGENT_CUES, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatTurnEnds, chatLaunches, chatLaunchReply, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, chip, expectSeededTurn, flotilla, interruptButton, launchCrew, LAUNCH_MODELS, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, AGENT_CUES, HOSTILE, seedInboxItem, setReason, chatAnswerFile, shipAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatPrompts, chatTurnEnds, chatLaunches, chatLaunchReply, chatSession, launchAsAdmiralBot, mooringEnv, gitCheckout, dropFetchRedirect } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
@@ -814,6 +814,27 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   await expect(page).toHaveURL(new RegExp(`/app/chat/harbor/item/${encodeURIComponent(login.session)}/q-port`));
   await expect(page.getByRole('region', { name: 'Peek' })).toContainText('Which port should the login use?');
   await expect(page.getByRole('heading', { name: 'AdmiralBot · Harborlight fleet' })).toBeVisible();
+
+  // A ship's question is a need card in its own fleet's chat; a tap on a choice and Send answers writes the answer and the card collapses.
+  seedInboxItem(admiral, login.session, {
+    id: 'q-need',
+    kind: 'question',
+    title: 'Which database should the login use?',
+    question: { questions: [{ id: 'db', text: 'Which database should the login use?', options: [{ label: 'Postgres' }, { label: 'SQLite' }] }] },
+  });
+  await page.goto(admiral.url + 'app/chat?fleet=zulu');
+  const need = main.locator('.chat-card', { hasText: 'Which database should the login use?' });
+  await expect(need).toContainText(login.name);
+  await need.getByText('SQLite', { exact: true }).tap();
+  await need.getByRole('button', { name: 'Send answers' }).tap();
+  await expect(need).toContainText('Answered in the chat');
+  await expect(need.getByRole('button', { name: 'Send answers' })).toHaveCount(0);
+  await expect.poll(() => shipAnswerFile(admiral, login.session, 'q-need')?.answers['db']?.choice).toBe('SQLite');
+  // The collapsed card survives a reload, and the other fleet's chat has no card for it.
+  await page.reload();
+  await expect(main.locator('.chat-card', { hasText: 'Which database should the login use?' })).toContainText('Answered in the chat');
+  await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  await expect(main.locator('.chat-card', { hasText: 'Which database should the login use?' })).toHaveCount(0);
 
   // A ship AdmiralBot launched is a link in its reply, and tapping it opens the ship's screen in this page.
   await page.goto(admiral.url + 'app/chat?fleet=harbor');

@@ -398,7 +398,7 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           <CampaignDraftCardView key={i.id} item={i} />
         ) : i.kind === 'following' ? (
           <FollowingCardView key={i.id} item={i} />
-        ) : (
+        ) : i.kind === 'need' ? null : (
           <MessageView key={i.id} item={i} linkShips={linkShips} fleet={fleet} flash={flashId === i.id} />
         ),
       )}

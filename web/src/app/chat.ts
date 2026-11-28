@@ -69,11 +69,11 @@ export interface LaunchLine {
 
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'interrupted' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card' | 'following_card';
+  kind: 'message' | 'question' | 'reset' | 'interrupted' | 'commitment' | 'event_card' | 'answer' | 'launch_card' | 'ship_card' | 'launch_line' | 'campaign_draft_card' | 'following_card' | 'need_card';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
-  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard | LaunchLine | CampaignDraftCard | FollowingCard;
+  card?: InboxItem | CommitmentCard | EventCard | LaunchCard | ShipCard | LaunchLine | CampaignDraftCard | FollowingCard | NeedCard;
   /** The id of the ship card this entry belongs to: a report turn and its reply. */
   thread?: string;
 }
@@ -103,7 +103,18 @@ export type ThreadItem =
   | { kind: 'ship'; id: string; text: string; at: string; card: ShipCard; thread?: ThreadMessage[] }
   | { kind: 'campaign_draft'; id: string; text: string; at: string; card: CampaignDraftCard }
   | { kind: 'following'; id: string; text: string; at: string; card: FollowingCard }
+  | { kind: 'need'; id: string; text: string; at: string; card: NeedCard }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer; kept?: string };
+
+/** The card Admiral posts in a ship's own fleet's chat for each question the ship asks. */
+export interface NeedCard {
+  ship: string;
+  item: string;
+  item_kind: 'question';
+  questions: NonNullable<InboxItem['question']>['questions'];
+  state: 'open' | 'answered' | 'removed';
+  answered_in?: 'chat' | 'inbox';
+}
 
 export interface FollowingCard {
   ship: string;
