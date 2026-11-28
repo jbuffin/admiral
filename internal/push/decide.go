@@ -136,7 +136,7 @@ const (
 )
 
 func (o Outcome) String() string {
-	return [...]string{"nothing", "push", "alert"}[o]
+	return [...]string{"nothing", "push", "alert", "clear"}[o]
 }
 
 // Decide: a fleet with Notify off hears nothing at all, a watched window gets the alert instead of a push, and an

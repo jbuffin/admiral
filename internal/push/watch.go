@@ -16,13 +16,14 @@ import (
 // NotStartedPushWait is how long past launch a session must be not started before it pushes; the inbox shows it sooner.
 const NotStartedPushWait = 30 * time.Second
 
-// Decided is an event with what Decide made of it.
+// Decided is an event with what Decide made of it. For a Clear, Event is the event that pushed.
 type Decided struct {
 	Event   Event
 	Outcome Outcome
 }
 
-// Sink receives each event that Decide did not drop. It must not block.
+// Sink receives each event that Decide did not drop, and a Clear when a key that pushed stops needing the engineer.
+// It must not block.
 type Sink interface {
 	Deliver(Decided)
 }
@@ -64,6 +65,40 @@ type Watcher struct {
 	waiting    bool // a not-started session is still inside NotStartedPushWait
 	inboxSeen  bool
 	inboxItems map[string]bool
+	// pushed is the event behind each key whose last decided outcome was Push, for the kinds a snapshot can answer.
+	pushed map[string]Event
+}
+
+// clearable is the kinds that stop needing the engineer when their key leaves a snapshot; the reply and routine kinds never do.
+func clearable(k Kind) bool {
+	switch k {
+	case ShipQuestion, Anchored, ReadyToMerge, InboxQuestion, ChatQuestion, WakeProposal, Findings:
+		return true
+	}
+	return false
+}
+
+func shipKind(k Kind) bool { return k == ShipQuestion || k == Anchored || k == ReadyToMerge }
+
+// takeCleared removes and returns the pushed events of the ship kinds (or Inbox kinds) whose key is not in live.
+// It is called with w.mu held.
+func (w *Watcher) takeCleared(ships bool, live func(Event) bool) []Event {
+	var out []Event
+	for key, ev := range w.pushed {
+		if shipKind(ev.Kind) == ships && !live(ev) {
+			out = append(out, ev)
+			delete(w.pushed, key)
+		}
+	}
+	return out
+}
+
+func (w *Watcher) sendClears(evs []Event) {
+	for _, ev := range evs {
+		for _, s := range w.sinks {
+			deliver(s, Decided{ev, Clear})
+		}
+	}
 }
 
 func NewWatcher(watching func() bool, notify func(fleet string) bool, sinks ...Sink) *Watcher {
@@ -98,6 +133,14 @@ func (w *Watcher) Emit(ev Event) {
 	out := Decide(ev, w.watching(), notify)
 	if out == Nothing {
 		return
+	}
+	if out == Push && clearable(ev.Kind) {
+		w.mu.Lock()
+		if w.pushed == nil {
+			w.pushed = map[string]Event{}
+		}
+		w.pushed[ev.Key] = ev
+		w.mu.Unlock()
 	}
 	for _, s := range w.sinks {
 		deliver(s, Decided{ev, out})
@@ -201,7 +244,17 @@ func (w *Watcher) Ships(list []ships.Ship) {
 		}
 	}
 	w.shipsSeen, w.asking, w.anchored, w.ready, w.polled, w.fleetOf, w.waiting = true, asking, anchored, ready, polled, fleetOf, waiting
+	cleared := w.takeCleared(true, func(ev Event) bool {
+		switch ev.Kind {
+		case Anchored:
+			return anchored[ev.Session]
+		case ReadyToMerge:
+			return ready[ev.Session]
+		}
+		return asking[ev.Key]
+	})
 	w.mu.Unlock()
+	w.sendClears(cleared)
 	for _, ev := range events {
 		w.Emit(ev)
 	}
@@ -223,7 +276,9 @@ func (w *Watcher) Inbox(items []inbox.Item) {
 		}
 	}
 	w.inboxSeen, w.inboxItems = true, seen
+	cleared := w.takeCleared(false, func(ev Event) bool { return seen[ev.Key] })
 	w.mu.Unlock()
+	w.sendClears(cleared)
 	for _, ev := range events {
 		w.Emit(ev)
 	}
