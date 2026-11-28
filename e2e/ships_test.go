@@ -726,9 +726,12 @@ func TestPositionsDroppedAfterTmuxRestarts(t *testing.T) {
 	w.mustTmux("kill-server")
 	w.in.waitShipsList(t, "no ships once tmux is gone", func(l []shipJSON) bool { return len(l) == 0 })
 	// Admiral reconnects, which starts a new server with its hidden session.
-	until(t, "Admiral starting a new tmux server", func() bool {
+	eventually(t, "Admiral starting a new tmux server", func() (bool, string) {
 		_, err := w.tmux("has-session", "-t", "=_admiral")
-		return err == nil
+		if err != nil {
+			return false, err.Error()
+		}
+		return true, ""
 	})
 	w.mustTmux("new-session", "-d", "-s", a.Session, "sleep", "3600")
 	w.mustTmux("set-option", "-t", a.Session+":", "@admiral-name", a.Name)
