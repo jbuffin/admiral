@@ -106,9 +106,11 @@ func TestLaunchKeepsTheCloneAndSourceRefusalsOfThePostRoute(t *testing.T) {
 	if lerr == nil || lerr.Status != http.StatusBadRequest {
 		t.Errorf("Launch with dir and clone = %v, want a 400 \"send dir or clone, not both\"", lerr)
 	}
-	_, lerr = s.Launch(context.Background(), launcher.Request{Fleet: "work", Harness: "claude", Dir: t.TempDir(), Skill: launcher.Skill{Kind: "none"}, Source: "s", OrderID: "o1"})
+	ended, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, lerr = s.Launch(ended, launcher.Request{Fleet: "work", Harness: "claude", Dir: t.TempDir(), Skill: launcher.Skill{Kind: "none"}, Source: "s", OrderID: "o1"})
 	if lerr == nil || lerr.Status != http.StatusServiceUnavailable {
-		t.Errorf("Launch of an order before the host is ready = %v, want a 503", lerr)
+		t.Errorf("Launch of an order whose request ended before the host is ready = %v, want a 503", lerr)
 	}
 }
 
