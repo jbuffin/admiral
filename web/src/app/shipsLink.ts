@@ -22,6 +22,8 @@ export const sourcesLoaded = signal(false);
 export const resources = signal<Resource[]>([]);
 // Each fleet's latest chat message, keyed by fleet; a message replaces only its own fleet's.
 export const chats = signal<Record<string, ChatSnapshot>>({});
+// The count the server last served on `attention`; null until one arrives, so "not yet known" is never read as zero.
+export const servedAttention = signal<number | null>(null);
 export const shipsLink = signal<'connecting' | 'open' | 'reconnecting' | 'signed-out' | 'unreachable'>('connecting');
 
 type Listener = (msg: { type: string; ship?: string; crew?: string; items?: unknown[]; reset?: boolean }) => void;

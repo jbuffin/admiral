@@ -1,8 +1,9 @@
 // The attention count over the Inbox queue, and where it shows: title, favicon, app badge.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { CrewBoat, Ship } from './api';
 import { readFileSync } from 'node:fs';
-import { applyAttention, attentionApplier, DOT_ICON, type AttentionTarget } from './attention';
+import { applyAttention, attentionApplier, DOT_ICON, watchAttention, type AttentionTarget } from './attention';
+import { inboxItems, servedAttention, ships } from './shipsLink';
 import { attentionCount, createInboxQueue, HOLD_MS, sharedInboxQueue, type InboxItem } from './inbox';
 
 const T0 = Date.parse('2026-10-22T10:00:00Z');
@@ -227,5 +228,75 @@ describe('the dotted favicon', () => {
     const dotted = decodeURIComponent(DOT_ICON.slice('data:image/svg+xml,'.length));
     expect(dotted.startsWith(file.slice(0, -'</svg>'.length))).toBe(true);
     expect(dotted.slice(file.length - '</svg>'.length)).toMatch(/^<circle [^>]*\/><\/svg>$/);
+  });
+});
+
+describe('watchAttention shows the served count', () => {
+  const watched = () => {
+    const icon = { href: 'untouched.svg' };
+    const badge: (number | 'clear')[] = [];
+    const t: AttentionTarget = {
+      document: { title: 'untouched', querySelector: () => icon },
+      navigator: { setAppBadge: async (n?: number) => void badge.push(n!), clearAppBadge: async () => void badge.push('clear') },
+    };
+    return { t, icon, badge };
+  };
+  let stopWatching: (() => void) | undefined;
+  afterEach(() => {
+    stopWatching?.();
+    stopWatching = undefined;
+    servedAttention.value = null;
+    ships.value = [];
+    inboxItems.value = [];
+    const q = sharedInboxQueue();
+    q.sync({ items: [], ships: [] }, T0);
+    q.tick(T0 + HOLD_MS + 1000);
+  });
+
+  it('puts a served count above zero in the title, the favicon dot and the badge, and clears all three at a served 0', () => {
+    const { t, icon, badge } = watched();
+    stopWatching = watchAttention(t);
+    servedAttention.value = 2;
+    expect(t.document.title).toBe('(2) Admiral');
+    expect(icon.href).toBe(DOT_ICON);
+    expect(badge).toEqual([2]);
+    servedAttention.value = 0;
+    expect(t.document.title).toBe('Admiral');
+    expect(icon.href).toBe('/favicon.svg');
+    expect(badge).toEqual([2, 'clear']);
+  });
+
+  it('leaves the title, favicon and badge as they were while no count has been served, even with ships and items present', () => {
+    const { t, icon, badge } = watched();
+    ships.value = [ship('a', 'alpha', 'needs_you', { stop_since: at(1) })];
+    inboxItems.value = [item('b', 'q-1', at(1), { kind: 'question' })];
+    stopWatching = watchAttention(t);
+    expect(t.document.title).toBe('untouched');
+    expect(icon.href).toBe('untouched.svg');
+    expect(badge).toEqual([]);
+  });
+
+  it('shows the served count when the served ships and items work out to another number', () => {
+    const { t } = watched();
+    stopWatching = watchAttention(t);
+    ships.value = [ship('a', 'alpha', 'needs_you', { stop_since: at(1) })];
+    inboxItems.value = [item('b', 'q-1', at(1), { kind: 'question' }), item('c', 'q-2', at(2), { kind: 'question' })];
+    servedAttention.value = 1;
+    expect(t.document.title).toBe('(1) Admiral');
+    servedAttention.value = 0;
+    expect(t.document.title).toBe('Admiral');
+  });
+
+  it('keeps the title through an optimistic fold in the Inbox until the server serves the next count', () => {
+    const { t, badge } = watched();
+    stopWatching = watchAttention(t);
+    inboxItems.value = [item('a', 'q-1', at(1), { kind: 'question' }), item('a', 'q-2', at(2), { kind: 'question' })];
+    servedAttention.value = 2;
+    expect(sharedInboxQueue().entries().length).toBe(2);
+    sharedInboxQueue().fold('item:a/q-1', 'Answered', Date.now());
+    expect(t.document.title).toBe('(2) Admiral');
+    servedAttention.value = 1;
+    expect(t.document.title).toBe('(1) Admiral');
+    expect(badge).toEqual([2, 1]);
   });
 });
