@@ -64,6 +64,13 @@ type nodeView struct {
 	DefaultSkill *skillView `json:"default_skill,omitempty"`
 }
 
+type campaignCommitmentView struct {
+	ID              string `json:"id"`
+	TS              string `json:"ts"`
+	Launched        int    `json:"launched,omitempty"`
+	WaitingChildren int    `json:"waiting_children,omitempty"`
+}
+
 type campaignView struct {
 	ID       string         `json:"id"`
 	URL      string         `json:"url"`
@@ -75,6 +82,8 @@ type campaignView struct {
 	Progress progressView   `json:"progress"`
 	Counts   map[string]int `json:"counts"`
 	Root     *nodeView      `json:"root"`
+
+	Commitment *campaignCommitmentView `json:"commitment,omitempty"`
 
 	Title           string `json:"title"`
 	Number          int    `json:"number"`
@@ -126,6 +135,11 @@ func (s *Service) json(f Followed) campaignView {
 	}
 	if t := s.lastTried(f); !t.IsZero() {
 		out.LastTried = t.UTC().Format(time.RFC3339)
+	}
+	if s.Commitment != nil {
+		if c, ok := s.Commitment(f.Fleet, f.ID); ok {
+			out.Commitment = &campaignCommitmentView{ID: c.ID, TS: c.TS.UTC().Format(time.RFC3339), Launched: c.Launched, WaitingChildren: c.WaitingChildren}
+		}
 	}
 	out.Reading = s.reader(f.ID).active.Load() > 0
 	out.FollowedAt = f.FollowedAt.UTC().Format(time.RFC3339)

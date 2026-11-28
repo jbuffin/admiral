@@ -41,6 +41,7 @@ import { IssueLabels } from './IssueLabels';
 import { LaunchForm } from './LaunchDialog';
 import { campaignPath, go, shipPath } from './router';
 import { Sheet } from './Sheet';
+import { commitmentMarks } from './chatSettings';
 import { ships } from './shipsLink';
 import { when } from './when';
 
@@ -512,6 +513,11 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
       <p class="meta">
         {campaign.reading ? 'Reading the tree…' : campaign.last_read ? `Last read ${when(campaign.last_read)}` : 'Not read yet'}
       </p>
+      {campaign.commitment ? (
+        <p class="meta">{['AdmiralBot is working on this campaign', ...commitmentMarks(campaign.commitment)].join(' · ')}</p>
+      ) : !campaign.ended ? (
+        <p class="meta">Admiral is only following this campaign; AdmiralBot isn't working on it. Tell AdmiralBot "work on {ref}" to start.</p>
+      ) : null}
       {followChangeError ? (
         <p class="alert" role="alert">
           {followChangeError}
