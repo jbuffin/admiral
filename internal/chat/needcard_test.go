@@ -35,6 +35,7 @@ type needRig struct {
 	mux    *http.ServeMux
 	cancel context.CancelFunc
 	done   chan struct{} // closed when the poster has returned
+	wire   func(*inbox.Service) // sets the hooks of the Inbox begin builds, before the poster runs
 }
 
 var shipFleets = map[string]string{
@@ -82,6 +83,9 @@ func (r *needRig) begin() {
 			fleet, ok := shipFleets[session]
 			return inbox.ShipInfo{Name: session, Harness: "claude", Fleet: fleet, FleetName: fleet}, ok
 		}}
+	if r.wire != nil {
+		r.wire(r.in)
+	}
 	r.svc = &Service{Home: r.home, Config: func() *config.Config { return r.cfg }, Inbox: r.in}
 	r.in.OnChange = func() { r.pokes.Add(1); r.svc.InboxChanged() }
 	r.in.OnSettled = r.svc.InboxSettled
