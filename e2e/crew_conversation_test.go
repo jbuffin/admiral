@@ -207,9 +207,10 @@ func TestCrewConversation_ReadStreamExitAndClose(t *testing.T) {
 
 	conn := dialWS(t, c.in.instance)
 	msgs := make(chan crewWSMsg, 16)
+	ctx := testCtx(t)
 	go func() {
 		for {
-			_, data, err := conn.Read(testCtx(t))
+			_, data, err := conn.Read(ctx)
 			if err != nil {
 				return
 			}
@@ -220,7 +221,7 @@ func TestCrewConversation_ReadStreamExitAndClose(t *testing.T) {
 		}
 	}()
 	open, _ := json.Marshal(map[string]string{"type": "conversation_open", "ship": c.sess, "crew": "rev"})
-	if err := conn.Write(testCtx(t), websocket.MessageText, open); err != nil {
+	if err := conn.Write(ctx, websocket.MessageText, open); err != nil {
 		t.Fatal(err)
 	}
 	select {

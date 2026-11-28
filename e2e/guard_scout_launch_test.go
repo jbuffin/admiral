@@ -80,14 +80,12 @@ func TestAScoutLaunchedThroughTheAPIIsGuardedAndSailsAtItsStop(t *testing.T) {
 	var handlers [][3]string
 	eventually(t, "four guard handlers that exited 2: commit, push, PR create and the Write", func() (bool, string) {
 		handlers, _ = handlersOf(t, r.dir)
-		exit2 := 0
-		for _, h := range handlers {
-			if h[2] == "admiral guard pretooluse" && h[1] == "2" {
-				exit2++
-			}
-		}
+		exit2 := countExit2(handlers)
 		return exit2 >= 4, fmt.Sprintf("%d exited 2 in %q", exit2, handlers)
 	})
+	if exit2 := countExit2(handlers); exit2 != 4 {
+		t.Errorf("guard exited 2 %d times in %q, want 4: commit, push, PR create and the Write", exit2, handlers)
+	}
 
 	seen := map[string]bool{}
 	eventually(t, "the scout leaving the ship list after its stop", func() (bool, string) {
@@ -159,4 +157,14 @@ func TestACrewBoatFromAScoutNeedsTheScoutGuardOfItsHarness(t *testing.T) {
 		t.Errorf("stderr = %q, want it to say the scout guard is not proven for codex", r.stderr)
 	}
 	w.expectExit(w.admiralWith(cliOpts{env: env}, "crew", "launch", "--dir", dir, "--name", "mate", "--", "hi"), 0, "a scout's crew boat on claude")
+}
+
+func countExit2(handlers [][3]string) int {
+	n := 0
+	for _, h := range handlers {
+		if h[2] == "admiral guard pretooluse" && h[1] == "2" {
+			n++
+		}
+	}
+	return n
 }

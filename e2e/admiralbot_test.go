@@ -728,7 +728,12 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 			}
 			return false, c.diag()
 		})
-		holdThat(t, "a fired commitment started a turn: the chat was sent more than "+typed, func() bool { return c.stdin() == typed })
+		holdClean(t, hold, func() string {
+			if got := c.stdin(); got != typed {
+				return fmt.Sprintf("a fired commitment started a turn: the chat was sent %q, want %q", got, typed)
+			}
+			return ""
+		})
 	})
 }
 

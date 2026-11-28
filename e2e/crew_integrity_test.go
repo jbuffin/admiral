@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A boat writes its own window's @admiral-crew-name, and tmux prints option
@@ -68,7 +69,8 @@ func TestCrewNamesAreNotForged(t *testing.T) {
 		name := "\xff\n" + forgedRow(victim.Session, shipPane) + "\n"
 		// -u: without it a client in a plain locale rewrites the invalid byte.
 		w.mustTmux("-u", "set-option", "-w", "-t", w.winOf(mallory.pane), "@admiral-crew-name", name)
-		holdClean(t, hold, func() string {
+		// Four crew polls.
+		holdClean(t, 2*time.Second, func() string {
 			w.noForgedBoat(t, victim.Session)
 			return ""
 		})

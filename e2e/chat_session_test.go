@@ -485,7 +485,7 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 		}
 		// The chat's Claude can run tmux on its own session; it must not make itself a ship.
 		w.mustTmux("set-option", "-t", "="+chatSessionName+":", "@admiral-name", "Sneaky")
-		holdClean(t, hold, func() string {
+		holdClean(t, 2*time.Second, func() string {
 			for _, s := range w.in.ships(t) {
 				if s.Session == chatSessionName {
 					return fmt.Sprintf("setting @admiral-name made the chat a ship: %+v", s)
@@ -726,12 +726,7 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	if code, body := send(t, http.MethodPut, w.in.LocalURL+"/api/fleets/chat", map[string]any{"chat": map[string]any{"harness": "claude", "model": "sonnet", "effort": ""}}); code != http.StatusOK {
 		t.Fatalf("PUT /api/fleets/chat = %d: %s", code, body)
 	}
-	holdClean(t, hold, func() string {
-		if got := c.session(); !got.Running {
-			return fmt.Sprintf("a config change stopped a running chat: %+v", got)
-		}
-		return ""
-	})
+	c.stays(hold, "a running chat after a config change", func(s chatSession) bool { return s.Running })
 	appendLines(t, tpB, userLine("u-30", "Fresh start", nil))
 	// The flush runs in the old session, before the kill.
 	newChat := c.postNewChat()

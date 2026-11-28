@@ -318,7 +318,14 @@ func TestCrewBridge(t *testing.T) {
 			}
 			j := c.waitJoin(1)
 			seen := stripSGR(j.Scrollback) + stripSGR(j.Screen)
-			return strings.Contains(seen, "RELAY-NEW-LIVE"), fmt.Sprintf("join screen %q", seen)
+			if !strings.Contains(seen, "RELAY-NEW-LIVE") {
+				return false, fmt.Sprintf("join screen %q", seen)
+			}
+			// The dial is on the new window; its stream must follow it too.
+			m := c.mark()
+			w.paneWriteID(fresh.pane, "RELAY-NEW-STREAM\r\n")
+			c.waitOutput(m, "RELAY-NEW-STREAM")
+			return true, ""
 		})
 	})
 
