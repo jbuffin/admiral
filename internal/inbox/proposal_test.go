@@ -42,6 +42,7 @@ func logOutcomes(t *testing.T, s *inbox.Service) (read func() []map[string]any) 
 	t.Helper()
 	dir := t.TempDir()
 	w := outcomes.New(dir, t.Logf)
+	t.Cleanup(w.Close) // runs before the TempDir's RemoveAll: the writer may still be writing into it
 	s.Outcomes = w
 	return func() []map[string]any {
 		w.Close()
