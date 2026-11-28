@@ -20,6 +20,7 @@ import (
 	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/actorwire"
 	"github.com/jbuffin/admiral/internal/allowrulesapi"
+	"github.com/jbuffin/admiral/internal/attention"
 	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/bridge"
@@ -514,7 +515,8 @@ func serve(args []string) error {
 		}
 		return true
 	}, append([]push.Sink{push.NewAlertSink(push.Async(hub))}, pushSinks...)...)
-	inboxService.OnChange = pushFeed.InboxChanged
+	attentionService := &attention.Service{Hub: hub, Ships: shipService.List, Items: inboxService.List, Ready: func() bool { return inboxService.Scanned() && host.Known() }}
+	inboxService.OnChange = func() { pushFeed.InboxChanged(); attentionService.Changed() }
 
 	minter, err := actor.NewMinter(absDir)
 	if err != nil {
@@ -694,6 +696,7 @@ func serve(args []string) error {
 		resourceService.Broadcast()
 		inboxService.Notify()
 		pushFeed.ShipsChanged()
+		attentionService.Changed()
 		routineScheduler.Changed()
 		commitmentRunner.Changed()
 		shipCards.Changed()
@@ -719,7 +722,7 @@ func serve(args []string) error {
 		Enabled: func() bool { return updateReachable && cfg.Current().UpdateCheck }})
 	crewService := &crewapi.Service{Home: absDir, Config: cfg, GitHub: sources.FleetGitHub}
 	s := &server.Server{Path: auth.PathName, Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
-		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
+		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService, attentionService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, crewService, routineService, campaignService, bridgeService, resourceService, lockRoute, chatService, convService,
 			&usageapi.Service{Home: absDir, Config: cfg.Current, Live: liveUsage, Ships: shipService.List, Now: time.Now, Zone: time.Local},
 			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, &fleetmap.Service{Home: dir, Config: cfg.Current}, &allowrulesapi.Service{Config: cfg.Current, Store: shipService.Launcher.AllowRules()}, &editors.Service{Local: auth.IsLocal, VSCode: vscodeInstalled}, guardRoutes{guard}, updateRoutes{updateChecker}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
