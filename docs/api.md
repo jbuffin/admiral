@@ -304,9 +304,11 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 - The server follows the file by offset, about four times a second while any client has the ship open.
 - Live text (Copilot ships with a `--ui-server`): while a client has the ship open, the server also attaches to the ship's server as a read-only second client and pushes the assistant text of a turn as it is written, before the file has it. A live reply has the id of Copilot's message (`messageId`), which is also the id the file's item gets, so the finished item replaces the live one and the text never shows twice. Every other live item has the id of its event, which is the id of its line in the file. The HTTP page and the ship's `tail` read the file only. An interrupted reply (Esc, an error) keeps the partial text it already showed in every open tab until the conversation is reopened, because there is no message that removes an item; the file page never has it. Subagent text is not shown live, as in the file. When the server cannot be reached, is not the ship's own, or goes away, the conversation comes from the file alone, with no error; the server retries slowly.
 
-## A fleet's Limits
+## The default fleet
 
 `GET /api/config` also carries `default_fleet` (a fleet key) and `default_fleet_fallback`. `default_fleet` is the fleet the config names, which new sources, unclaimed GitHub items and migrated sources go to. When the config names none, or names a fleet that is gone, it is the first fleet and `default_fleet_fallback` is `true`. With no fleets it is `""` and the fallback is `true`.
+
+## A fleet's Limits
 
 Each fleet in `GET /api/config` carries `preset` (`"work"` or `"home"`, `"work"` when the file has none), `limits`, `sentences` and `overridden`. `limits` is the full effective set: the preset's values with the fleet's own saved Limits layered over them leaf by leaf. Levels are `"A0"`, `"A1"`, `"A3"`, `"A4"` and `"A5"` (there is no A2). `overridden` lists the Limits the fleet stores itself, as the `field` paths of the sentences (`ceilings.t1`, `rates.concurrent`, `wall_clock_minutes`), so a client can mark them and reset them. `sentences` is one `{field, sentence}` per Limit in catalog order (a skip scoped to a routine reads `<value> (<routine name> only)`, or `<value> (a deleted routine only)` once the routine is gone), then two fixed sentences with an empty `field` (a restricted ship never pushes; its network reaches package registries only).
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -65,16 +66,20 @@ func TestDefaultFleetFollowsTheLastGoodConfigWhileTheFileIsInvalid(t *testing.T)
 }
 
 func TestSetDefaultFleetKeepsEveryOtherKey(t *testing.T) {
-	m, dir := openView(t, richConfig)
+	withRemote := strings.Replace(richConfig, `"favorite_skills"`, `"remote": {"tailscale": true, "allowedLogins": ["me@example.com"]}, "favorite_skills"`, 1)
+	m, dir := openView(t, withRemote)
 	path := filepath.Join(dir, "config.json")
 	before := decode(t, path)
+	if _, ok := before["remote"]; !ok {
+		t.Fatal("the fixture lost its remote key")
+	}
 
 	if err := m.SetDefaultFleet("alpha"); err != nil {
 		t.Fatalf("SetDefaultFleet: %v", err)
 	}
 	after := decode(t, path)
 	if string(after["default_fleet"]) != `"alpha"` {
-		t.Errorf("default_fleet = %s, want \"alpha\": picking the first fleet still writes the key", after["default_fleet"])
+		t.Errorf("default_fleet = %s, want \"alpha\": picking a fleet writes the key", after["default_fleet"])
 	}
 	for k, want := range before {
 		if !jsonEqual(t, want, after[k]) {

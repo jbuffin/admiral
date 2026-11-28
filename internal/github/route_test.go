@@ -26,7 +26,7 @@ func TestRoute(t *testing.T) {
 		{"same remote on its own host is a project", "ghe.example.com", "corp/tools", "b"},
 		{"owner claims ignore host", "ghe.example.com", "acme/anything", "a"},
 	}
-	r := NewRouter(fleets)
+	r := NewRouter(fleets, "")
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if got := r.Route(c.host, c.repo); got != c.want {
@@ -34,7 +34,7 @@ func TestRoute(t *testing.T) {
 			}
 		})
 	}
-	if got := NewRouter(nil).Route("github.com", "acme/widgets"); got != "" {
+	if got := NewRouter(nil, "").Route("github.com", "acme/widgets"); got != "" {
 		t.Errorf("no fleets: Route = %q, want empty", got)
 	}
 }
@@ -45,7 +45,7 @@ func TestRouteConflicts(t *testing.T) {
 			{Key: "a", Repos: []string{"github.com/acme/widgets"}},
 			{Key: "b", Repos: []string{"github.com/acme/widgets"}},
 			{Key: "c"},
-		})
+		}, "")
 		if got := r.Route("github.com", "acme/widgets"); got != "a" {
 			t.Errorf("winner = %q, want a", got)
 		}
@@ -60,7 +60,7 @@ func TestRouteConflicts(t *testing.T) {
 			{Key: "a"},
 			{Key: "b", Owners: []string{"acme"}},
 			{Key: "c", Owners: []string{"ACME"}},
-		})
+		}, "")
 		if got := r.Route("github.com", "acme/x"); got != "b" {
 			t.Errorf("winner = %q, want b", got)
 		}
@@ -74,7 +74,7 @@ func TestRouteConflicts(t *testing.T) {
 		r := NewRouter([]RouteFleet{
 			{Key: "a", Repos: []string{"github.com/acme/widgets", "github.com/acme/widgets"}},
 			{Key: "b", Repos: []string{"ghe.example.com/acme/widgets"}, Owners: []string{"acme"}},
-		})
+		}, "")
 		for _, k := range []string{"a", "b"} {
 			if w := r.Warnings(k); len(w) != 0 {
 				t.Errorf("fleet %s has warnings %v, want none", k, w)
@@ -184,7 +184,7 @@ func TestRouteWarningWithThreeClaimants(t *testing.T) {
 		{Key: "a", Repos: []string{"github.com/acme/widgets"}},
 		{Key: "b", Repos: []string{"github.com/acme/widgets"}},
 		{Key: "c", Repos: []string{"github.com/acme/widgets"}},
-	})
+	}, "")
 	const want = "github.com/acme/widgets is checked out in fleets a, b and c; a takes its items"
 	for _, k := range []string{"a", "b", "c"} {
 		ws := r.Warnings(k)

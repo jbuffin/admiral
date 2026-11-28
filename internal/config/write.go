@@ -37,24 +37,21 @@ func SetDefaultFleet(dir, key string) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
 	path := filepath.Join(dir, FileName)
-	data, err := readConfig(path)
-	if err != nil {
-		return err
-	}
-	cfg, err := Parse(data)
-	if err != nil {
-		return fmt.Errorf("%s is invalid, fix it first: %w", path, err)
-	}
-	if _, ok := cfg.Fleet(key); !ok {
-		return fmt.Errorf("%w %q", ErrNoFleet, key)
-	}
 	raw, err := json.Marshal(key)
 	if err != nil {
 		return err
 	}
-	_, out, err := renderKey(path, "default_fleet", raw)
+	before, out, err := renderKey(path, "default_fleet", raw)
 	if err != nil {
 		return err
+	}
+	// The fleets are read from the bytes renderKey rendered from, so the check and the write see one file.
+	cfg, err := Parse(before)
+	if err != nil {
+		return err
+	}
+	if _, ok := cfg.Fleet(key); !ok {
+		return fmt.Errorf("%w %q", ErrNoFleet, key)
 	}
 	return replaceFile(path, out)
 }

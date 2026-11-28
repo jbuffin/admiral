@@ -91,7 +91,7 @@ func planMigration(data []byte) *migrationPlan {
 		if err != nil {
 			return nil
 		}
-		// The default fleet is the first one in the file.
+		// The default fleet is default_fleet when it names a fleet in the file, else the first one.
 		defKey, defName := "", ""
 		if rawFleets, ok := top.Get("fleets"); ok {
 			if fleets, err := ParseObject(rawFleets); err == nil && fleets.Len() > 0 {

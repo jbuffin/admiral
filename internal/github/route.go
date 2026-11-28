@@ -28,11 +28,8 @@ type Router struct {
 	warnings map[string][]string
 }
 
-// NewRouter builds a router whose default fleet is the first.
-func NewRouter(fleets []RouteFleet) *Router { return NewRouterWithDefault(fleets, "") }
-
-// NewRouterWithDefault takes def as the default fleet; an empty or unknown one falls back to the first.
-func NewRouterWithDefault(fleets []RouteFleet, def string) *Router {
+// NewRouter builds a router; def is the default fleet, and an empty or unknown one means the first.
+func NewRouter(fleets []RouteFleet, def string) *Router {
 	r := &Router{
 		repoFor:  map[string]string{},
 		ownerFor: map[string]string{},
@@ -112,7 +109,7 @@ func RouterFromFleets(cfg *config.Config) *Router {
 		rf = append(rf, RouteFleet{Key: f.Key, Repos: repos, Owners: f.Owners})
 	}
 	def, _ := cfg.DefaultFleet()
-	return NewRouterWithDefault(rf, def)
+	return NewRouter(rf, def)
 }
 
 // Route returns the one fleet key that owns the item's repo, or "" with no fleets.
