@@ -1,5 +1,5 @@
 import { computed, effect, signal } from '@preact/signals';
-import { fetchFleets, type Fleet } from './api';
+import { fetchFleetsView, type Fleet, type FleetsView } from './api';
 import { chatTerminalOf, go, loc, pathAfterFleetSwitch, provideFleets } from './router';
 import { onShipsMessage, sources, sourcesLoaded } from './shipsLink';
 import { fleetPaint } from './fleetPaint';
@@ -7,6 +7,8 @@ import { fleetPaint } from './fleetPaint';
 export { fleetPaint };
 export const fleets = signal<Fleet[]>([]);
 export const loaded = signal(false);
+/** The default fleet the server resolved; `fallback` is true when none is picked or the picked one is gone. */
+export const defaultFleet = signal({ key: '', fallback: true });
 
 const STORE = 'admiral.app.fleet';
 const store = {
@@ -59,11 +61,22 @@ export function chooseFleet(key: string) {
 
 let loadSeq = 0;
 
+const applyView = (view: FleetsView) => {
+  fleets.value = view.fleets;
+  defaultFleet.value = { key: view.default_fleet, fallback: view.default_fleet_fallback };
+};
+
+/** The one writer for a config view the page already holds, such as a save's answer; it also drops any older load still in flight. */
+export function setFleetsView(view: FleetsView) {
+  loadSeq++;
+  applyView(view);
+}
+
 export async function loadFleets() {
   const mine = ++loadSeq;
   try {
-    const list = await fetchFleets();
-    if (mine === loadSeq) fleets.value = list;
+    const view = await fetchFleetsView();
+    if (mine === loadSeq) applyView(view);
   } catch {
     /* keep the last list */
   }
