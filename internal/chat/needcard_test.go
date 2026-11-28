@@ -32,6 +32,7 @@ type needRig struct {
 	svc    *Service
 	mux    *http.ServeMux
 	cancel context.CancelFunc
+	done   chan struct{} // closed when the poster has returned
 }
 
 var shipFleets = map[string]string{
@@ -85,12 +86,14 @@ func (r *needRig) begin() {
 	r.svc.Routes(r.mux)
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
-	go r.svc.RunNeedCards(ctx)
+	r.done = make(chan struct{})
+	go func() { defer close(r.done); r.svc.RunNeedCards(ctx) }()
 }
 
 func (r *needRig) stop() {
 	if r.cancel != nil {
 		r.cancel()
+		<-r.done // a pass still running would write beside the next service or the removed TempDir
 		r.cancel = nil
 	}
 }
