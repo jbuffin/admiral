@@ -577,6 +577,22 @@ test("a 409 rereads, and a card still open then shows the server's message", asy
   expect(button("Launch")).not.toBeNull();
 });
 
+test("a 409 whose reread fails still shows the server's message", async () => {
+  answer = () => {
+    served = () => {
+      throw new Error("offline");
+    };
+    return json({ error: "another action on item-1 is still running" }, 409);
+  };
+  await shown(routineCard());
+  fireEvent.click(button("Launch"));
+  await waitFor(() =>
+    expect(screen.getByRole("alert").textContent).toContain(
+      "another action on item-1 is still running",
+    ),
+  );
+});
+
 test("a 409 whose reread shows the card answered shows no message", async () => {
   let entry = routineCard();
   answer = () => {
@@ -610,10 +626,17 @@ test("an allow rules 400 saying a card has no decision rereads and shows no mess
       screen.getByRole("group", { name: "Decision for rule 2" }),
     ).getByRole("button", { name: "Skip" }),
   );
-  const before = reads;
+  served = () => [
+    need(
+      "allow_rules",
+      {
+        cards: [rule("r1", "make test"), rule("r2", "go vet"), rule("r3", "go build")],
+      },
+    ),
+  ];
   fireEvent.click(button("Send"));
   await sent();
-  await waitFor(() => expect(reads).toBeGreaterThan(before));
+  await screen.findByRole("group", { name: "Decision for rule 3" });
   expect(screen.queryByRole("alert")).toBeNull();
   expect(document.querySelector(".chat-card")!.textContent).not.toContain(
     "has no decision",
@@ -638,7 +661,7 @@ test.each([
   },
 );
 
-test("a campaign create that filed its parent but failed shows the error, and the reread shows the card answered", async () => {
+test("a campaign create that filed its parent but failed leaves the card answered in the chat after the reread", async () => {
   let entry = draftCard();
   answer = () => {
     entry = {

@@ -35,7 +35,8 @@ function useNeedActing(id: string, chat: Chat): Acting {
 /** The Inbox item the card stands for: the joined one, else what the card itself carries. */
 function itemOf(card: NeedCard, joined: InboxItem | undefined, fleet: string): InboxItem {
   const base = { id: card.item, session: 'ship' in card ? card.ship : '_admiral' };
-  if (joined) return joined;
+  // The card's own rules are refreshed by the server on every read; the joined item can lag a push behind.
+  if (joined) return card.item_kind === 'allow_rules' ? ({ ...joined, allow_rules: { ...joined.allow_rules, cards: card.cards } } as InboxItem) : joined;
   switch (card.item_kind) {
     case 'review':
       return { ...base, kind: 'review', review: { pr_url: card.pr_url, summary: '' } } as InboxItem;

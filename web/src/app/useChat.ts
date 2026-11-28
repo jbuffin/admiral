@@ -97,10 +97,11 @@ export function useChat(fleet: string) {
     editDraft(id, (d) => ({ ...d, sending: true, error: '' }));
     const r = await call('POST', `${base}/need-cards/${encodeURIComponent(id)}/answer`, body);
     // A refusal that says the item moved on, or a campaign create that filed its parent, changes the card; the reread says how.
-    const grown = !r.ok && r.status === 400 && /^card .+ has no decision$/.test(r.error);
+    const grown = !r.ok && r.status === 400 && /^(card .+ has no decision|the item has no card .+)$/.test(r.error);
     const changed = r.ok || r.status === 409 || r.status === 404 || !!(!r.ok && r.parent) || grown;
     const next = changed ? await reread() : undefined;
-    const open = next?.messages.some((m) => m.id === id && m.kind === 'need_card' && (m.card as { state?: string } | undefined)?.state === 'open');
+    // A reread that failed leaves the card as it was: open.
+    const open = !next || next.messages.some((m) => m.id === id && m.kind === 'need_card' && (m.card as { state?: string } | undefined)?.state === 'open');
     // A 409 that leaves the card open means the item is busy elsewhere, so the server's message is the answer.
     const hide = r.ok || grown || (r.status === 409 && !open) || own;
     editDraft(id, (d) => ({ ...d, sending: false, error: hide ? '' : failure(r) }));
