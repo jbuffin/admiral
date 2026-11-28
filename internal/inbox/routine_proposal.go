@@ -81,6 +81,7 @@ func (s *Service) LaunchRoutineItemGuarded(ctx context.Context, id string, g *Gu
 		return nil, &refusedError{http.StatusNotImplemented, "launching a routine proposal is not wired"}
 	}
 	var ship any
+	defer s.markLaunching(id)()
 	err := s.writeAnswered(AdmiralSession, id, KindRoutineProposal, func(it Item) (any, []outcomes.Record, error) {
 		if err := g.check(it); err != nil {
 			return nil, nil, err
@@ -155,38 +156,62 @@ func (s *Service) fleetOf(key string) (FleetInfo, bool) {
 	return s.Fleet(key)
 }
 
-// MovedOn says whether a routine proposal closed without the engineer: it expired, or the routine's next run replaced it.
-func (s *Service) MovedOn(session, id string) bool {
+// MovedOn says whether a routine proposal closed without the engineer: it expired, or the routine's next run replaced it. launching says a launch is in flight, whose answer is not yet written, so the proposal is neither moved on nor gone.
+func (s *Service) MovedOn(session, id string) (moved, launching bool) {
 	if session != AdmiralSession || !idPattern.MatchString(id) {
-		return false
+		return false, false
 	}
-	// A launch holds answerMu across its hook, so waiting here shows its answer file instead of an expiry it crossed.
-	s.answerMu.Lock()
-	defer s.answerMu.Unlock()
+	// A launch's hook may read the chat, which lands here, so this never takes answerMu: the mark stands until the answer file is written, so no mark means the file is there or the launch will refuse on expiry.
+	if s.isLaunching(id) {
+		return false, true
+	}
 	dir, err := openShipDir(s.Home, session)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer dir.Close()
 	it, err := readItem(dir, session, id)
 	if err != nil {
-		return false
+		return false, false
 	}
 	p, ok := it.RoutineProposal()
 	if !ok {
-		return false
+		return false, false
 	}
 	if !Answered(dir, id) {
-		return p.expired(s.now())
+		return p.expired(s.now()), false
 	}
 	f, err := dir.OpenFile(answerName(id), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer f.Close()
 	var a struct {
 		Expired bool `json:"expired"`
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxItem))
-	return err == nil && json.Unmarshal(b, &a) == nil && a.Expired
+	return err == nil && json.Unmarshal(b, &a) == nil && a.Expired, false
+}
+
+// markLaunching notes a launch of routine proposal id from before it takes the answer lock until its file is written; the returned func clears it.
+func (s *Service) markLaunching(id string) func() {
+	s.launchMu.Lock()
+	if s.launching == nil {
+		s.launching = map[string]int{}
+	}
+	s.launching[id]++
+	s.launchMu.Unlock()
+	return func() {
+		s.launchMu.Lock()
+		defer s.launchMu.Unlock()
+		if s.launching[id]--; s.launching[id] <= 0 {
+			delete(s.launching, id)
+		}
+	}
+}
+
+func (s *Service) isLaunching(id string) bool {
+	s.launchMu.Lock()
+	defer s.launchMu.Unlock()
+	return s.launching[id] > 0
 }

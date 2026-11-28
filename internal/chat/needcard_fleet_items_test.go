@@ -1008,7 +1008,7 @@ func TestFleetNeedCardALaunchThatCrossesTheProposalsExpiryReadsAnsweredNotMovedO
 		card := r.cardFor("home", "routine-t1")
 		f.launchReply = func() (any, int, string) {
 			skew.Store(int64(2 * time.Hour))
-			r.served("home") // a read while the launch runs and the proposal has expired
+			r.servedQuietly("home") // a read while the launch runs and the proposal has expired
 			return map[string]any{"session": "ship-1"}, 0, ""
 		}
 		if rec := r.post("home", card.ID, map[string]any{"launch": true}); !is2xx(rec) {
@@ -1023,16 +1023,14 @@ func TestFleetNeedCardALaunchThatCrossesTheProposalsExpiryReadsAnsweredNotMovedO
 		r.item("_admiral", "routine-t1", fleetRoutine("t1", "home", createdA, inAnHour(), sweepAction))
 		r.start()
 		card := r.cardFor("home", "routine-t1")
-		read := make(chan struct{})
 		f.launchReply = func() (any, int, string) {
 			skew.Store(int64(2 * time.Hour))
-			go func() { defer close(read); r.served("home") }()
+			r.servedQuietly("home") // read from the hook itself, as a prompt routine's launch does
 			return map[string]any{"session": "ship-1"}, 0, ""
 		}
 		if rec := r.inboxPost("/api/inbox/_admiral/routine-t1/launch", `{}`); !is2xx(rec) {
 			t.Fatalf("the Inbox's launch = %d %s, want success", rec.Code, rec.Body)
 		}
-		<-read
 		r.waitState("home", card.ID, "answered", "inbox")
 	})
 }

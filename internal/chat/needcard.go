@@ -90,13 +90,27 @@ func (n *needStore) get(id string) (needRec, bool) {
 	return *r, true
 }
 
-func (n *needStore) add(id string, r needRec) {
+// reserve holds the record in memory only and says whether the card was new.
+func (n *needStore) reserve(id string, r needRec) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if _, ok := n.recs[id]; !ok {
-		n.recs[id] = &r
-		n.save()
+	if _, ok := n.recs[id]; ok {
+		return false
 	}
+	n.recs[id] = &r
+	return true
+}
+
+func (n *needStore) release(id string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	delete(n.recs, id)
+}
+
+func (n *needStore) commit() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.save()
 }
 
 // settle records how an open card ended; a settled card never changes.
@@ -208,9 +222,6 @@ func (s *Service) needPass() {
 		}
 		created := needCreated(it.Created)
 		id := needCardID(it.Session, it.ID, created)
-		if _, ok := n.get(id); ok {
-			continue
-		}
 		body, ok := needCardBody(it)
 		if !ok {
 			continue
@@ -219,15 +230,20 @@ func (s *Service) needPass() {
 		if err != nil {
 			continue
 		}
-		if _, err := s.history().Append(fleet, chatlog.Entry{ID: id, Kind: chatlog.KindNeedCard, Text: title(it), At: it.Created, Card: card}); err != nil {
-			log.Printf("admiral: need card for %s/%s: %v", it.Session, it.ID, err)
-			continue
-		}
 		sig := needSig(it.Field(it.Kind))
 		if it.Kind == inbox.KindAllowRules {
 			sig = "" // the item grows in place under its id and created; its card follows
 		}
-		n.add(id, needRec{Fleet: fleet, Session: it.Session, Item: it.ID, Kind: it.Kind, Created: created, Sig: sig, State: NeedOpen})
+		// Known to the route before it is in the log, so a client that sees the card and taps at once finds its record; saved only once the entry is in, so a crash between posts it again.
+		if !n.reserve(id, needRec{Fleet: fleet, Session: it.Session, Item: it.ID, Kind: it.Kind, Created: created, Sig: sig, State: NeedOpen}) {
+			continue
+		}
+		if _, err := s.history().Append(fleet, chatlog.Entry{ID: id, Kind: chatlog.KindNeedCard, Text: title(it), At: it.Created, Card: card}); err != nil {
+			log.Printf("admiral: need card for %s/%s: %v", it.Session, it.ID, err)
+			n.release(id)
+			continue
+		}
+		n.commit()
 	}
 	open := s.openItems(items)
 	for _, id := range n.openIDs("", "") {
@@ -345,11 +361,15 @@ func (s *Service) needState(id string, open map[string]bool) (needRec, bool) {
 		return r, ok
 	}
 	if r.Kind == inbox.KindRoutineProposal {
-		// An engineer's launch wins over expiry, so a tap in flight leaves the card open and MovedOn waits for an Inbox launch's answer file before it reads the clock.
+		// An engineer's launch wins over expiry: a launch in flight, from the chat or the Inbox, leaves the card open until its answer file is written.
 		if n.tapping(r.Session, r.Item) {
 			return r, ok
 		}
-		if s.Inbox.MovedOn(r.Session, r.Item) {
+		moved, launching := s.Inbox.MovedOn(r.Session, r.Item)
+		if launching {
+			return r, ok
+		}
+		if moved {
 			n.settle(id, NeedMovedOn, "")
 			return n.get(id)
 		}
