@@ -506,7 +506,7 @@ func serve(args []string) error {
 		pushSinks = append(pushSinks, sender)
 	}
 	// A sink joins here: NewWatcher takes it after the notify func.
-	pushFeed := &push.Feed{Ships: shipService.List, Items: inboxService.List, InboxReady: inboxService.Scanned}
+	pushFeed := &push.Feed{Ships: shipService.List, Items: inboxService.List, InboxReady: inboxService.Scanned, ShipsReady: host.Known}
 	pushFeed.Watcher = push.NewWatcher(hub.Watching, func(fleet string) bool {
 		for _, f := range cfg.Current().Fleets {
 			if f.Key == fleet {

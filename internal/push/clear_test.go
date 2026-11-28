@@ -1,10 +1,14 @@
 package push_test
 
 import (
+	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/push"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
@@ -62,14 +66,15 @@ func TestClearHasAName(t *testing.T) {
 }
 
 func TestAnInboxItemThatPushedClearsOnceWhenItIsAnsweredOrRemoved(t *testing.T) {
-	for _, kind := range []string{"question", "findings", "wake_proposal"} {
-		t.Run(kind, func(t *testing.T) {
+	for _, c := range []struct{ name, session, kind string }{
+		{"question", "s-Dory", "question"},
+		{"findings", "s-Dory", "findings"},
+		{"wake_proposal", inbox.AdmiralSession, "wake_proposal"},
+		{"chat question", sessionhost.ChatSession("work"), "question"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
 			r := newRig(t).started(nil, nil)
-			session := "s-Dory"
-			if kind == "wake_proposal" {
-				session = inbox.AdmiralSession
-			}
-			it := item(t, session, "i-1", kind, "Which way?")
+			it := item(t, c.session, "i-1", c.kind, "Which way?")
 			r.w.Inbox([]inbox.Item{it})
 			pushed := r.pushed()
 			if len(pushed) != 1 {
@@ -340,5 +345,65 @@ func TestPushOnlyKindsNeverClear(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAShipListReadWhileTheHostIsNotReadyClearsNothing(t *testing.T) {
+	var mu sync.Mutex
+	ready, list, reads, refused := true, []ships.Ship{working("Dory")}, 0, 0
+	rec := &push.Recorder{}
+	w := push.NewWatcher(func() bool { return false }, func(string) bool { return true }, rec)
+	f := &push.Feed{Watcher: w, Items: func() []inbox.Item { return nil },
+		Ships: func() []ships.Ship { mu.Lock(); defer mu.Unlock(); reads++; return list },
+		ShipsReady: func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			if !ready {
+				refused++
+			}
+			return ready
+		}}
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go f.Run(ctx)
+
+	until := func(what string, ok func() bool) {
+		t.Helper()
+		for end := time.Now().Add(5 * time.Second); !ok(); time.Sleep(5 * time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatalf("never saw: %s", what)
+			}
+		}
+	}
+	set := func(r bool, l ...ships.Ship) {
+		mu.Lock()
+		ready, list = r, l
+		mu.Unlock()
+		f.ShipsChanged()
+	}
+	count := func(o push.Outcome, key string) (n int) {
+		for _, d := range rec.Events() {
+			if d.Outcome == o && d.Event.Key == key {
+				n++
+			}
+		}
+		return n
+	}
+
+	f.ShipsChanged()
+	until("the startup snapshot", func() bool { mu.Lock(); defer mu.Unlock(); return reads > 0 })
+	set(true, needsYou("Dory", "question"))
+	until("Dory's push", func() bool { return count(push.Push, "s-Dory") == 1 })
+
+	set(false)
+	until("the feed refusing the list", func() bool { mu.Lock(); defer mu.Unlock(); return refused > 0 })
+
+	set(true, needsYou("Dory", "question"), needsYou("Nemo", "question"))
+	until("Nemo's push", func() bool { return count(push.Push, "s-Nemo") == 1 })
+	if n := count(push.Clear, "s-Dory"); n != 0 {
+		t.Errorf("Dory, still asking, got %d clears across a not-ready list", n)
+	}
+	if n := count(push.Push, "s-Dory"); n != 1 {
+		t.Errorf("Dory pushed %d times, want once", n)
 	}
 }
