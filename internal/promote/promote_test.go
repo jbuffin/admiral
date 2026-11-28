@@ -318,13 +318,16 @@ func hide(t *testing.T, clone, target string) {
 func TestAReplaceRefThatHidesAnAdmiralOrHarnessCommitDoesNotHideIt(t *testing.T) {
 	t.Parallel()
 	for path, want := range map[string]error{".admiral/untrusted/event.md": promote.ErrAdmiralPaths, ".claude/settings.json": promote.ErrHarness} {
-		w := newWorld(t)
-		commit(t, w.clone, "c.txt", "c\n")
-		bad := commit(t, w.clone, path, "smuggled\n")
-		hide(t, w.clone, bad)
-		if _, err := w.read(t); !errors.Is(err, want) {
-			t.Errorf("%s hidden by a replace ref: Read err = %v, want %v", path, err, want)
-		}
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			w := newWorld(t)
+			commit(t, w.clone, "c.txt", "c\n")
+			bad := commit(t, w.clone, path, "smuggled\n")
+			hide(t, w.clone, bad)
+			if _, err := w.read(t); !errors.Is(err, want) {
+				t.Errorf("%s hidden by a replace ref: Read err = %v, want %v", path, err, want)
+			}
+		})
 	}
 }
 
