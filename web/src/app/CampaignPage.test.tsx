@@ -72,7 +72,7 @@ const campaign: Campaign = {
   counts: { ready: 1 },
   title: "Widgets overhaul",
   number: 20,
-  repo: "acme/widgets",
+  repo: "https://github.com/acme/widgets",
   followed_at: "",
   ready_with_you: 1,
   ready_without_you: 0,
@@ -534,8 +534,18 @@ test("a working campaign with no children launched yet shows the line and no zer
 test("a followed campaign with no commitment says Admiral is only following it and how to start the work with its own ref", async () => {
   render(<CampaignPage id="camp-1" title />);
   expect(await screen.findByText(/only following/i)).toBeTruthy();
-  expect(screen.getByText(/work on acme\/widgets#20/)).toBeTruthy();
+  expect(screen.getByText(/"work on acme\/widgets#20"/)).toBeTruthy();
   expect(screen.queryByText(/AdmiralBot is working on this campaign/)).toBeNull();
+});
+
+test("the following-only hint names the issue URL when the campaign is not on github.com", async () => {
+  served = {
+    ...campaign,
+    url: "https://ghe.example.com/acme/widgets/issues/20",
+    repo: "https://ghe.example.com/acme/widgets",
+  };
+  render(<CampaignPage id="camp-1" title />);
+  expect(await screen.findByText(/"work on https:\/\/ghe\.example\.com\/acme\/widgets\/issues\/20"/)).toBeTruthy();
 });
 
 test("an ended campaign with no commitment shows neither the working line nor the following-only hint", async () => {

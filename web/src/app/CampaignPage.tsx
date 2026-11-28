@@ -458,6 +458,8 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
 
   const rootHref = safeHref(campaign.url);
   const ref = `${campaign.repo.replace(/^https?:\/\//, '')}#${campaign.number}`;
+  const [workHost, ...workPath] = campaign.repo.replace(/^https?:\/\//, '').split('/');
+  const workRef = workHost.toLowerCase() === 'github.com' ? `${workPath.join('/')}#${campaign.number}` : campaign.url;
   const heading = campaign.root ? (
     <button type="button" class="camp-title-open" onClick={() => setPickedUrl(campaign.root!.url)}>
       {campaign.title}
@@ -516,7 +518,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
       {campaign.commitment ? (
         <p class="meta">{['AdmiralBot is working on this campaign', ...commitmentMarks(campaign.commitment)].join(' · ')}</p>
       ) : !campaign.ended ? (
-        <p class="meta">Admiral is only following this campaign; AdmiralBot isn't working on it. Tell AdmiralBot "work on {ref}" to start.</p>
+        <p class="meta">Admiral is only following this campaign; AdmiralBot isn't working on it. Tell AdmiralBot "work on {workRef}" to start.</p>
       ) : null}
       {followChangeError ? (
         <p class="alert" role="alert">
