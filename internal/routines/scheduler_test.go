@@ -32,7 +32,7 @@ type fakeClock struct {
 	mu      sync.Mutex
 	now     time.Time
 	waiters []*waiter
-	armed   int // After calls so far
+	armed   int // At calls so far
 }
 
 func (c *fakeClock) Now() time.Time {
@@ -41,12 +41,12 @@ func (c *fakeClock) Now() time.Time {
 	return c.now
 }
 
-func (c *fakeClock) After(d time.Duration) <-chan time.Time {
+func (c *fakeClock) At(t time.Time) <-chan time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.armed++
-	w := &waiter{at: c.now.Add(d), ch: make(chan time.Time, 1)}
-	if d <= 0 {
+	w := &waiter{at: t, ch: make(chan time.Time, 1)}
+	if !t.After(c.now) {
 		w.ch <- c.now
 		return w.ch
 	}

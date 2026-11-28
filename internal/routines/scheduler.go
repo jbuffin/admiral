@@ -13,10 +13,11 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 )
 
-// Clock is the scheduler's time seam; After fires once d has passed on it.
+// Clock is the scheduler's time seam; At fires once the clock reaches t. A deadline, not a duration, so a clock that
+// moves between the scheduler reading it and arming the timer can't push the timer past the run it waits for.
 type Clock interface {
 	Now() time.Time
-	After(d time.Duration) <-chan time.Time
+	At(t time.Time) <-chan time.Time
 }
 
 // ShipRef names a ship and its status (underway, needs_you, anchored, moored, ...).
@@ -187,18 +188,18 @@ func (s *Scheduler) Run(ctx context.Context) {
 	}
 	_ = s.CatchUp(ctx)
 	for ctx.Err() == nil {
-		d := idleWake
-		if next := s.nextDue(); !next.IsZero() {
-			d = next.Sub(s.Clock.Now())
+		wakeAt := s.nextDue()
+		if next := s.nextWallClock(); !next.IsZero() && (wakeAt.IsZero() || next.Before(wakeAt)) {
+			wakeAt = next
 		}
-		if next := s.nextWallClock(); !next.IsZero() {
-			d = min(d, next.Sub(s.Clock.Now()))
+		if wakeAt.IsZero() {
+			wakeAt = s.Clock.Now().Add(idleWake)
 		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.wake:
-		case <-s.Clock.After(d):
+		case <-s.Clock.At(wakeAt):
 		}
 		if ctx.Err() == nil {
 			_ = s.Tick(ctx)
