@@ -20,7 +20,7 @@ func (s *fleetChat) record(snap Snapshot) {
 	for _, m := range snap.Messages {
 		at, _ := time.Parse(time.RFC3339Nano, m.At)
 		thread, advance := s.th.classify(m, restored)
-		isNew, e := l.Append(s.key, chatlog.Entry{ID: m.ID, Kind: chatlog.KindMessage, Role: m.Role, Text: m.Text, At: at, Thread: thread})
+		isNew, e := l.Append(s.key, chatlog.Entry{ID: m.ID, Kind: m.Kind, Role: m.Role, Text: m.Text, At: at, Thread: thread})
 		if e != nil {
 			err = e
 		} else if isNew {

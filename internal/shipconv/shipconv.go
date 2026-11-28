@@ -889,7 +889,7 @@ func (s *Service) pendingQuestions(session, crew string) []conversation.Item {
 	}
 	var out []conversation.Item
 	for _, it := range items {
-		if it.Kind == conversation.KindUser || it.Kind == conversation.KindTurnEnd {
+		if it.Kind == conversation.KindUser || it.Kind == conversation.KindTurnEnd || it.Kind == conversation.KindInterrupted {
 			out = nil
 		}
 		if it.Kind == conversation.KindQuestion && it.Question != nil && it.Question.Pending {

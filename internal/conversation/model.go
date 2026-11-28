@@ -27,6 +27,8 @@ const (
 	KindCompaction Kind = "compaction"
 	KindNotice     Kind = "notice" // a line the harness wrote in the user's turn, not the engineer
 	KindRound      Kind = "round"  // the divider that opens a feedback round of a moored ship
+	// KindInterrupted marks where the engineer pressed Escape on a turn; it ends the turn like a user message does.
+	KindInterrupted Kind = "interrupted"
 )
 
 // Item is one thing in a conversation. ID is stable across reads and is the paging
@@ -84,5 +86,5 @@ type Option struct {
 
 // TextOnly is the chat's view: user and assistant text and the notices it shows.
 func TextOnly(it Item) bool {
-	return it.Kind == KindUser || it.Kind == KindAssistant || (it.Kind == KindNotice && !it.Meta)
+	return it.Kind == KindUser || it.Kind == KindAssistant || it.Kind == KindInterrupted || (it.Kind == KindNotice && !it.Meta)
 }

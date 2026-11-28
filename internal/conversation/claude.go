@@ -347,6 +347,10 @@ func (d *claudeDecoder) user(l claudeLine, b *lineItems) {
 	if text == "" || b.full() {
 		return
 	}
+	if strings.HasPrefix(text, "[Request interrupted by user") && !l.IsMeta {
+		b.add(Item{Kind: KindInterrupted, Text: "Interrupted"})
+		return
+	}
 	for _, p := range noticePrefixes {
 		if strings.HasPrefix(head, p) {
 			if p == "<task-notification>" {

@@ -722,7 +722,7 @@ func serve(args []string) error {
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, crewService, routineService, campaignService, bridgeService, resourceService, lockRoute, chatService, convService,
 			&usageapi.Service{Home: absDir, Config: cfg.Current, Live: liveUsage, Ships: shipService.List, Now: time.Now, Zone: time.Local},
 			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, &fleetmap.Service{Home: dir, Config: cfg.Current}, &allowrulesapi.Service{Config: cfg.Current, Store: shipService.Launcher.AllowRules()}, &editors.Service{Local: auth.IsLocal, VSCode: vscodeInstalled}, guardRoutes{guard}, updateRoutes{updateChecker}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
-		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "usage"}}
+		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "usage", "chat-interrupt"}}
 	shipService.MergeGuard = s.MergeGuard
 	sourceService.MergeGuard = s.MergeGuard
 	bg, stopBackground := context.WithCancel(context.Background())

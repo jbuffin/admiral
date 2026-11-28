@@ -261,6 +261,10 @@
 #                  that printed a URL would leave. Unlike `reply` it is not the last cue and answers nothing.
 #                  With no usable --session-id or no $CLAUDE_CONFIG_DIR it writes why to `toolresult-error`
 #                  and stderr and exits 1.
+#   interrupted    Claude only, not the last cue: waits until `stdin` holds an ESC byte (put `record` before it), then appends
+#                  Claude's `[Request interrupted by user]` user line to the transcript in the pane's
+#                  @admiral-transcript, as Claude Code does on an Escape. With no transcript bound it writes why to
+#                  `interrupted-error` and exits 1.
 #   replydelay <n> sleep n seconds before each message's lines are appended, so a test sees the
 #                  message sent and not yet recorded. Put it before `reply`.
 #
@@ -1299,6 +1303,16 @@ EOF5
 				done <"$d/.cmds"
 			fi
 			echo "$ev" >>"$d/events-done"
+			;;
+		interrupted)
+			until [ -f "$d/stdin" ] && LC_ALL=C grep -q "$(printf '\033')" "$d/stdin"; do sleep 0.1; done
+			raw=$(tmux show-options -pqv -t "$TMUX_PANE" @admiral-transcript)
+			path=${raw#* * }
+			if [ -z "$raw" ] || [ "$path" = "$raw" ]; then
+				echo "interrupted cue: no @admiral-transcript on the pane" | tee "$d/interrupted-error" >&2
+				exit 1
+			fi
+			printf '%s\n' '{"type":"user","uuid":"fake-interrupted","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}' >>"$path"
 			;;
 		toolresult)
 			sid=$(claude_sid "$@")

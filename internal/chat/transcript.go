@@ -12,7 +12,7 @@ import (
 // Message is one entry of the fleet's history: text, a question card or a New chat marker.
 type Message struct {
 	ID   string `json:"id"`
-	Kind string `json:"kind"`           // "message", "question", "reset", "commitment", "event_card", "launch_card", "ship_card", "launch_line" or "campaign_draft_card"
+	Kind string `json:"kind"`           // "message", "question", "reset", "interrupted", "commitment", "event_card", "launch_card", "ship_card", "launch_line" or "campaign_draft_card"
 	Role string `json:"role,omitempty"` // "user" or "assistant", for a message
 	Text string `json:"text"`           // a card's title; a marker's "New chat"
 	At   string `json:"at"`
@@ -27,6 +27,10 @@ type Message struct {
 func messages(items []conversation.Item) []Message {
 	out := make([]Message, 0, len(items))
 	for _, it := range items {
+		if it.Kind == conversation.KindInterrupted {
+			out = append(out, Message{ID: it.ID, Kind: chatlog.KindInterrupted, Text: it.Text, At: it.At})
+			continue
+		}
 		role := "user"
 		if it.Kind == conversation.KindAssistant {
 			role = "assistant"
