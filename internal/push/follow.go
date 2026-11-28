@@ -249,6 +249,9 @@ drain:
 		for _, e := range f.ring {
 			if e.seq > after {
 				f.enqueue(fw, e.msg)
+				if f.followers[c.ID()] != fw {
+					return
+				}
 			}
 		}
 	}
