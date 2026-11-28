@@ -9,63 +9,9 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/chatlog"
-	"github.com/jbuffin/admiral/internal/inbox"
-	"github.com/jbuffin/admiral/internal/keymap"
-	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/needcard"
 	"github.com/jbuffin/admiral/internal/ships"
 )
-
-// The kinds of a stop card.
-const (
-	StopPermission = "permission"
-	StopTurn       = "stop"
-	StopNotStarted = "not_started"
-)
-
-var stopKinds = map[string]bool{StopPermission: true, StopTurn: true, StopNotStarted: true}
-
-// stopKind is the card kind a needs-you reason posts, or "" for a reason that posts none.
-func stopKind(reason string) string {
-	switch {
-	case strings.HasPrefix(reason, "permission:"), reason == "permission", reason == "notification:permission_prompt":
-		return StopPermission
-	case reason == "stop":
-		return StopTurn
-	case reason == "not_started":
-		return StopNotStarted
-	}
-	return ""
-}
-
-// stopAnswerable is false for a permission prompt the answer route cannot key, which is answered in the terminal.
-func stopAnswerable(sh ships.Ship) bool {
-	switch sh.Reason {
-	case "stop":
-		return true
-	case "permission:AskUserQuestion", "permission:ExitPlanMode":
-		return false
-	}
-	if !strings.HasPrefix(sh.Reason, "permission:") && !(sh.Harness == "copilot" && sh.Reason == "notification:permission_prompt") {
-		return false
-	}
-	m, ok := keymap.For(sh.Harness)
-	return ok && m.CardTool(strings.TrimPrefix(sh.Reason, "permission:"))
-}
-
-// stopIdentity is what binds a card to one stop. A ship that was never started has had no hook write, so its launch stands for it.
-func stopIdentity(sh ships.Ship) string {
-	if sh.StopID != "" {
-		return sh.StopID
-	}
-	if sh.Reason == "not_started" {
-		return sh.Launched
-	}
-	return ""
-}
-
-func stopCardID(session, identity string) string {
-	return needCardID(session, "stop:"+identity, "")
-}
 
 // stopPass posts a card for each ship's stop that has none, then settles the open ones whose stop has ended.
 func (s *Service) stopPass() {
@@ -73,25 +19,22 @@ func (s *Service) stopPass() {
 		return
 	}
 	n := s.needs()
-	cfg := s.Config()
+	res := s.cardResolver()
 	list := s.Ships()
 	byName := make(map[string]ships.Ship, len(list))
 	for _, sh := range list {
 		byName[sh.Session] = sh
-		kind, identity := stopKind(sh.Reason), stopIdentity(sh)
-		if sh.Status != ships.StatusNeedsYou || kind == "" || identity == "" || sh.Fleet == "" || sessionhost.IsChatSession(sh.Session) || sh.Session == inbox.AdmiralSession {
+		kind, identity := needcard.StopKind(sh.Reason), needcard.StopIdentity(sh)
+		id, _ := res.ForShip(sh)
+		if id == "" {
 			continue
 		}
-		if _, _, ok := cfg.ChatFleet(sh.Fleet); !ok {
-			continue
-		}
-		id := stopCardID(sh.Session, identity)
 		if _, ok := n.get(id); ok {
 			continue
 		}
-		answerable := kind != StopNotStarted && stopAnswerable(sh)
+		answerable := kind != needcard.StopNotStarted && needcard.StopAnswerable(sh)
 		card := map[string]any{"ship": sh.Session, "item": identity, "item_kind": kind, "answerable": answerable, "state": NeedOpen}
-		if kind == StopPermission && strings.HasPrefix(sh.Reason, "permission:") {
+		if kind == needcard.StopPermission && strings.HasPrefix(sh.Reason, "permission:") {
 			card["tool"] = strings.TrimPrefix(sh.Reason, "permission:")
 		}
 		raw, err := json.Marshal(card)
@@ -103,7 +46,7 @@ func (s *Service) stopPass() {
 			at = time.Now()
 		}
 		// As for an Inbox card: reserved before the append, saved after it.
-		if !n.reserve(id, needRec{Fleet: sh.Fleet, Session: sh.Session, Item: identity, Created: needCreated(at), Kind: kind, Reason: sh.Reason, Answerable: answerable, State: NeedOpen}) {
+		if !n.reserve(id, needRec{Fleet: sh.Fleet, Session: sh.Session, Item: identity, Created: needcard.Created(at), Kind: kind, Reason: sh.Reason, Answerable: answerable, State: NeedOpen}) {
 			continue
 		}
 		if _, err := s.history().Append(sh.Fleet, chatlog.Entry{ID: id, Kind: chatlog.KindNeedCard, Text: stopTitle(sh, kind), At: at, Card: raw}); err != nil {
@@ -124,9 +67,9 @@ func stopTitle(sh ships.Ship, kind string) string {
 		name = sh.Session
 	}
 	switch kind {
-	case StopPermission:
+	case needcard.StopPermission:
 		return name + " asks to run a tool"
-	case StopTurn:
+	case needcard.StopTurn:
 		return name + " finished its turn"
 	}
 	return name + " has not started"
@@ -137,7 +80,7 @@ func (n *needStore) openStopIDs() []string {
 	defer n.mu.Unlock()
 	var ids []string
 	for id, r := range n.recs {
-		if r.State == NeedOpen && stopKinds[r.Kind] {
+		if r.State == NeedOpen && needcard.StopKinds[r.Kind] {
 			ids = append(ids, id)
 		}
 	}
@@ -154,7 +97,7 @@ func (s *Service) settleStop(id string, byName map[string]ships.Ship) {
 	}
 	sh, listed := byName[r.Session]
 	switch {
-	case listed && sh.Status == ships.StatusNeedsYou && stopIdentity(sh) == r.Item && sh.Reason == r.Reason:
+	case listed && sh.Status == ships.StatusNeedsYou && needcard.StopIdentity(sh) == r.Item && sh.Reason == r.Reason:
 		// The stop still stands: a mark with no end to the stop (an Escape at an idle prompt) answers nothing.
 	case listed && sh.StopAnswered != nil && sh.StopAnswered.StopID == r.Item:
 		if sh.StopAnswered.Via == "admiralbot" {
@@ -183,16 +126,16 @@ func (s *Service) serveStopCardAnswer(w http.ResponseWriter, r *http.Request, n 
 		return
 	}
 	switch {
-	case rec.Kind == StopNotStarted:
+	case rec.Kind == needcard.StopNotStarted:
 		writeError(w, http.StatusBadRequest, "that ship has not started: answer it in its Terminal tab")
 		return
 	case !rec.Answerable:
 		writeError(w, http.StatusBadRequest, "that prompt is answered in the terminal")
 		return
-	case rec.Kind == StopPermission && (req.Text != "" || req.Choice != "allow" && req.Choice != "deny"):
+	case rec.Kind == needcard.StopPermission && (req.Text != "" || req.Choice != "allow" && req.Choice != "deny"):
 		writeError(w, http.StatusBadRequest, "a permission card takes a choice of allow or deny")
 		return
-	case rec.Kind == StopTurn && (req.Choice != "" || strings.TrimSpace(req.Text) == ""):
+	case rec.Kind == needcard.StopTurn && (req.Choice != "" || strings.TrimSpace(req.Text) == ""):
 		writeError(w, http.StatusBadRequest, "a finished turn takes the text of its next prompt")
 		return
 	case s.AnswerStop == nil:

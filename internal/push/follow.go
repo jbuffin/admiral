@@ -10,6 +10,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/attention"
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/needcard"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -96,6 +97,9 @@ type pushMsg struct {
 	Seq       int    `json:"seq"`
 	Kind      Kind   `json:"kind"`
 	Attention *int   `json:"attention,omitempty"`
+	Card      string `json:"card,omitempty"`
+	// Choices is an array on every push, empty when no one tap answers the need.
+	Choices []needcard.Choice `json:"choices"`
 	Payload
 }
 
@@ -127,7 +131,11 @@ func (f *Followers) Deliver(d Decided) {
 	f.seq++
 	var msg any
 	if d.Outcome == Push {
-		msg = pushMsg{Type: "push", Boot: f.cfg.Boot, Seq: f.seq, Kind: d.Event.Kind, Attention: att, Payload: PayloadOf(d.Event)}
+		choices := d.Event.Choices
+		if choices == nil {
+			choices = []needcard.Choice{}
+		}
+		msg = pushMsg{Type: "push", Boot: f.cfg.Boot, Seq: f.seq, Kind: d.Event.Kind, Attention: att, Card: d.Event.Card, Choices: choices, Payload: PayloadOf(d.Event)}
 	} else {
 		msg = clearMsg{Type: "push_clear", Boot: f.cfg.Boot, Seq: f.seq, Tag: d.Event.Key, Attention: att}
 	}

@@ -41,7 +41,12 @@ type followMsg struct {
 	Target    string `json:"target"`
 	Session   string `json:"session"`
 	Reason    string `json:"reason"`
-	raw       []byte
+	Card      string `json:"card"`
+	Choices   []struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
+	} `json:"choices"`
+	raw []byte
 }
 
 type follower struct {
@@ -227,12 +232,35 @@ func TestPushFollowJourneyFromQuestionToAnswerToReconnectToRestart(t *testing.T)
 		}
 	}
 
+	// The push names its need card and offers the choices a tap answers it with; the paired device taps one over the LAN.
+	if pushMsg.Card == "" {
+		t.Fatalf("question push = %s, want the need card it asks on", pushMsg.raw)
+	}
+	wantChoices := []struct{ ID, Label string }{{"allow", "Allow once"}, {"deny", "Deny"}}
+	var gotChoices []struct{ ID, Label string }
+	for _, c := range pushMsg.Choices {
+		gotChoices = append(gotChoices, struct{ ID, Label string }{c.ID, c.Label})
+	}
+	if !reflect.DeepEqual(gotChoices, wantChoices) {
+		t.Fatalf("question push choices = %v, want %v", gotChoices, wantChoices)
+	}
+	answer := "/api/v1/chat/ans/need-cards/" + pushMsg.Card + "/answer"
+	if code, body := r.put(r.in.lanURL(), r.tokens["a"], http.MethodPost, answer, map[string]string{"choice": "allow"}); code != http.StatusOK {
+		t.Fatalf("POST %s with device a's bearer = %d %s, want 200", answer, code, body)
+	}
+
 	r.w.release(ship.Session, "go")
 	cleared := f.expect("push_clear")
 	if cleared.Boot != pushMsg.Boot || cleared.Seq != pushMsg.Seq+1 || cleared.Tag != pushMsg.Tag || count(t, cleared) != 0 {
 		t.Fatalf("answer push_clear = %+v, want boot %s, seq %d, tag %s and a count of 0", cleared, pushMsg.Boot, pushMsg.Seq+1, pushMsg.Tag)
 	}
 	f.silent("after the answer's push_clear, which already carries the count")
+	if card := r.w.waitNeedCard("ans", "answered", "chat"); card.ID != pushMsg.Card {
+		t.Errorf("the answered card is %s, want the one the push named, %s", card.ID, pushMsg.Card)
+	}
+	if code, body := r.put(r.in.lanURL(), r.tokens["a"], http.MethodPost, answer, map[string]string{"choice": "deny"}); code != http.StatusConflict {
+		t.Errorf("a second answer = %d %s, want 409", code, body)
+	}
 
 	// Away: the socket is closed (silent's read timeout closed it) and the next question happens without it.
 	// The Web Push leaves the sender on its own goroutine, so only a follower shows the event is in the ring.

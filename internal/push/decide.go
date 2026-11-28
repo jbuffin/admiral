@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jbuffin/admiral/internal/needcard"
 	"github.com/jbuffin/admiral/internal/textsafe"
 )
 
@@ -55,6 +56,9 @@ type Event struct {
 	Routine string
 	// A tap lands on the fleet's chat at this message (Target "chat").
 	Message string
+	// Card is the need card the event asks on, with the choices one tap answers it with; only the follower feed carries them.
+	Card    string
+	Choices []needcard.Choice
 }
 
 const (

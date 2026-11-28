@@ -44,6 +44,7 @@ import (
 	"github.com/jbuffin/admiral/internal/lockroute"
 	"github.com/jbuffin/admiral/internal/lookout"
 	"github.com/jbuffin/admiral/internal/moor"
+	"github.com/jbuffin/admiral/internal/needcard"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/permlog"
 	"github.com/jbuffin/admiral/internal/probes"
@@ -519,6 +520,7 @@ func serve(args []string) error {
 		}
 		return true
 	}, append([]push.Sink{push.NewAlertSink(push.Async(hub))}, pushSinks...)...)
+	pushFeed.Watcher.WithCards(needcard.Resolver{Configured: func(fleet string) bool { _, _, ok := cfg.Current().ChatFleet(fleet); return ok }})
 	attentionService := &attention.Service{Hub: hub, Ships: shipService.List, Items: inboxService.List, Ready: func() bool { return inboxService.Scanned() && host.Known() }}
 
 	minter, err := actor.NewMinter(absDir)

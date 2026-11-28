@@ -436,7 +436,7 @@ func TestAPushHoldsNothingBeyondTheWebPushPayload(t *testing.T) {
 	r.w.Emit(push.Event{Kind: push.ShipQuestion, Fleet: "work", FleetName: "Work", Key: "s-Dory", Name: "Dory", Target: push.TargetPeek, Session: "s-Dory",
 		Text: "has a question\nsecond line with a private path /Users/x/.ssh"})
 	m := r.wantNext(live, "push")
-	allowed := map[string]bool{"type": true, "boot": true, "seq": true, "kind": true, "attention": true}
+	allowed := map[string]bool{"type": true, "boot": true, "seq": true, "kind": true, "attention": true, "card": true, "choices": true}
 	b, _ := json.Marshal(push.PayloadOf(push.Event{}))
 	var shape map[string]any
 	_ = json.Unmarshal(b, &shape)
