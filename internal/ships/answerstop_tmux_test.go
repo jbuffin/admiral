@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -46,16 +47,23 @@ func (p *answerPane) working() {
 	}
 }
 
+// read is everything the pane has read so far, without waiting.
+func (p *answerPane) read() string {
+	b, _ := os.ReadFile(p.stdin)
+	return string(b)
+}
+
 // sentWith waits for the pane to have read text and returns everything it read.
 func (p *answerPane) sentWith(text string) string {
 	p.t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		b := p.sent("")
-		if strings.Contains(b, text) || time.Now().After(deadline) {
-			return b
-		}
-	}
+	waitUntil(p.t, "the pane to read "+text, func() bool { return strings.Contains(p.read(), text) })
+	return p.read()
+}
+
+// holdSent fails when the pane reads anything but want at any point in the window.
+func (p *answerPane) holdSent(want string) {
+	p.t.Helper()
+	holdsFor(p.t, time.Second, "the pane read "+strings.TrimPrefix(p.read(), want)+" it was not to", func() bool { return p.read() == want })
 }
 
 func (p *answerPane) answerStop(ctx context.Context, a StopAnswer) error {
@@ -115,9 +123,7 @@ func TestAnswerStopRefusesAndSendsNothingWhenThePaneIsNoLongerAtThatStop(t *test
 	if err := p.answerStop(context.Background(), StopAnswer{StopID: cur, Reason: ask.Reason, Choice: "allow"}); !errors.Is(err, ErrStopMoved) {
 		t.Errorf("AnswerStop for a prompt the ship has left = %v, want ErrStopMoved", err)
 	}
-	if got := p.sent(""); got != "" {
-		t.Errorf("the pane was sent %q by refused answers, want nothing", got)
-	}
+	p.holdSent("")
 }
 
 func TestAnswerStopForAShipTheHostDoesNotListIsNotFound(t *testing.T) {
@@ -139,14 +145,12 @@ func TestAnswerStopTypesTheTextOfAFinishedTurnAndTheStopIsGone(t *testing.T) {
 	if got := p.sentWith("now run the tests"); !strings.Contains(got, "now run the tests") {
 		t.Errorf("the pane read %q, want the text typed", got)
 	}
-	before := p.sent("")
+	before := p.read()
 	err := p.answerStop(context.Background(), StopAnswer{StopID: "stale", Reason: "stop", Text: "second"})
 	if !errors.Is(err, ErrStopMoved) {
 		t.Errorf("AnswerStop with another stop id = %v, want ErrStopMoved", err)
 	}
-	if got := p.sent(""); got != before {
-		t.Errorf("a refused text added %q to the pane, want nothing", strings.TrimPrefix(got, before))
-	}
+	p.holdSent(before)
 }
 
 func TestAnswerStopRefusesAnAnswerTheStopCannotTakeAndSendsNothing(t *testing.T) {
@@ -166,9 +170,7 @@ func TestAnswerStopRefusesAnAnswerTheStopCannotTakeAndSendsNothing(t *testing.T)
 			if err := p.answerStop(context.Background(), a); !errors.As(err, &refused) {
 				t.Errorf("AnswerStop = %v, want a *StopRefused naming why", err)
 			}
-			if got := p.sent(""); got != "" {
-				t.Errorf("the pane was sent %q, want nothing", got)
-			}
+			p.holdSent("")
 		})
 	}
 	t.Run("text a pane cannot be typed", func(t *testing.T) {
@@ -184,9 +186,7 @@ func TestAnswerStopRefusesAnAnswerTheStopCannotTakeAndSendsNothing(t *testing.T)
 				t.Errorf("AnswerStop with %s = %v, want a *StopRefused", name, err)
 			}
 		}
-		if got := p.sent(""); got != "" {
-			t.Errorf("the pane was sent %q, want nothing", got)
-		}
+		p.holdSent("")
 	})
 }
 
@@ -239,5 +239,56 @@ func TestAnAnswerARouteRefusesMarksNoStopAnswered(t *testing.T) {
 	}
 	if got := p.option(sessionhost.OptStopAnswered); got != "" {
 		t.Errorf("@admiral-stop-answered = %q after a refused answer, want none", got)
+	}
+}
+
+func TestAnswerStopAnswersAStopOnceWhicheverRouteGotThereFirst(t *testing.T) {
+	t.Parallel()
+	p := newAnswerPane(t, "claude", nil)
+	p.needsYou("stop")
+	id := p.stopID()
+	if err := p.answerStop(context.Background(), StopAnswer{StopID: id, Reason: "stop", Text: "first"}); err != nil {
+		t.Fatalf("AnswerStop = %v, want nil", err)
+	}
+	sent := p.sentWith("first")
+	if err := p.answerStop(context.Background(), StopAnswer{StopID: id, Reason: "stop", Text: "second"}); !errors.Is(err, ErrStopMoved) {
+		t.Errorf("a second answer to the same stop = %v, want ErrStopMoved", err)
+	}
+	p.holdSent(sent)
+}
+
+func TestAStopIdTheHostCouldNotHaveMintedIsNoStopId(t *testing.T) {
+	t.Parallel()
+	p := newAnswerPane(t, "claude", nil)
+	p.needsYou("stop")
+	forged := "t-1"
+	if out, err := exec.Command(p.tmux, "-S", p.sock, "set-option", "-p", "-t", p.pane, "@admiral-stop-id", forged).CombinedOutput(); err != nil {
+		t.Fatalf("set-option: %v %s", err, out)
+	}
+	if err := p.answerStop(context.Background(), StopAnswer{StopID: forged, Reason: "stop", Text: "hi"}); !errors.Is(err, ErrStopMoved) {
+		t.Errorf("AnswerStop at a pane whose stop id is %q = %v, want ErrStopMoved", forged, err)
+	}
+	p.holdSent("")
+}
+
+func TestAShipListsOnlyAStopIdAndAnAnsweredMarkTheHostCouldHaveMinted(t *testing.T) {
+	t.Parallel()
+	id := sessionhost.NewStopID()
+	opts := func(stop, answered string) map[string]string {
+		return map[string]string{"harness": "claude", sessionhost.OptStopID: stop, sessionhost.OptStopAnswered: answered}
+	}
+	good := FromSession(sessionhost.Session{Name: "a", PaneID: "%1", State: "needs_you", Reason: "stop", Options: opts(id, id+" admiralbot")}, time.Now())
+	if good.StopID != id || good.StopAnswered == nil || good.StopAnswered.StopID != id || good.StopAnswered.Via != "admiralbot" {
+		t.Errorf("a minted id lists as %q and %+v, want it and its mark", good.StopID, good.StopAnswered)
+	}
+	for name, o := range map[string]map[string]string{
+		"a forged stop id":      opts("t-1", ""),
+		"a forged answered id":  opts(id, "t-1"),
+		"a forged answered via": opts(id, id+" nobody"),
+	} {
+		sh := FromSession(sessionhost.Session{Name: "a", PaneID: "%1", State: "needs_you", Reason: "stop", Options: o}, time.Now())
+		if name == "a forged stop id" && sh.StopID != "" || name != "a forged stop id" && sh.StopAnswered != nil {
+			t.Errorf("%s lists as %q and %+v, want none", name, sh.StopID, sh.StopAnswered)
+		}
 	}
 }

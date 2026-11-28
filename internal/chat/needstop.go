@@ -148,6 +148,8 @@ func (s *Service) settleStop(id string, byName map[string]ships.Ship) {
 	}
 	sh, listed := byName[r.Session]
 	switch {
+	case listed && sh.Status == ships.StatusNeedsYou && stopIdentity(sh) == r.Item && sh.Reason == r.Reason:
+		// The stop still stands: a mark with no end to the stop (an Escape at an idle prompt) answers nothing.
 	case listed && sh.StopAnswered != nil && sh.StopAnswered.StopID == r.Item:
 		if sh.StopAnswered.Via == "admiralbot" {
 			n.settle(id, NeedAnswered, AnsweredAdmiralBot)
@@ -156,7 +158,6 @@ func (s *Service) settleStop(id string, byName map[string]ships.Ship) {
 		}
 	case !listed || sh.Status != ships.StatusNeedsYou && sh.Status != ships.StatusUnderway:
 		n.settle(id, NeedMovedOn, "")
-	case sh.Status == ships.StatusNeedsYou && stopIdentity(sh) == r.Item && sh.Reason == r.Reason:
 	default:
 		n.settle(id, NeedSettledTerminal, "")
 	}

@@ -298,7 +298,7 @@ test('a not-started card has no buttons or text box and points to the Terminal t
 });
 
 test.each([
-  [{ state: 'answered', answered_in: 'admiralbot' }, 'Answered by AdmiralBot'],
+  [{ state: 'answered', answered_in: 'admiralbot' }, 'Answered via AdmiralBot'],
   [{ state: 'settled_terminal' }, 'Settled in the terminal'],
   [{ state: 'moved_on' }, 'Moved on'],
 ] as [Partial<NeedCard>, string][])('a stop card served %j collapses to one line saying %s', async (over, words) => {

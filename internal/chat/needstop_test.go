@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -410,9 +411,12 @@ func TestATapOnASettledCardIsRefusedAndSendsNothing(t *testing.T) {
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "item p-1 is already answered") {
 		t.Errorf("POST on a settled card = %d %s, want 409 item p-1 is already answered", rec.Code, rec.Body)
 	}
-	if got := r.stopCalls(); len(got) != 0 {
-		t.Errorf("the ship was asked %+v for a card already settled, want nothing", got)
-	}
+	holdCards(t, 300*time.Millisecond, func() string {
+		if got := r.stopCalls(); len(got) != 0 {
+			return fmt.Sprintf("the ship was asked %+v for a card already settled, want nothing", got)
+		}
+		return ""
+	})
 }
 
 func TestABodyThatDoesNotFitTheCardIsRefusedAndSendsNothing(t *testing.T) {
@@ -437,7 +441,36 @@ func TestABodyThatDoesNotFitTheCardIsRefusedAndSendsNothing(t *testing.T) {
 			t.Errorf("%s = %d %s, want 400", name, rec.Code, rec.Body)
 		}
 	}
-	if got := r.stopCalls(); len(got) != 0 {
-		t.Errorf("the ship was asked %+v for bodies that do not fit their card, want nothing", got)
-	}
+	holdCards(t, 300*time.Millisecond, func() string {
+		if got := r.stopCalls(); len(got) != 0 {
+			return fmt.Sprintf("the ship was asked %+v for bodies that do not fit their card, want nothing", got)
+		}
+		return ""
+	})
+}
+
+func TestAMarkOnAStopThatStillStandsSettlesNothingAndTheEndOfTheStopSettlesItAnswered(t *testing.T) {
+	r := newNeedRig(t)
+	a := needing("s-work", "work", "stop", "t-1")
+	r.setShips(a)
+	r.start()
+	c := r.cardFor("work", "s-work")
+
+	// An Escape at an idle prompt marks the stop but ends nothing.
+	marked := a
+	marked.StopAnswered = &ships.StopAnswered{StopID: "t-1"}
+	r.setShips(marked)
+	holdCards(t, 300*time.Millisecond, func() string {
+		for _, e := range r.served("work") {
+			if e.ID == c.ID && e.Card.State != "open" {
+				return "the card reads " + e.Card.State + " while the stop still stands"
+			}
+		}
+		return ""
+	})
+
+	done := resumed(a)
+	done.StopAnswered = marked.StopAnswered
+	r.setShips(done)
+	r.waitState("work", c.ID, "answered", "inbox")
 }

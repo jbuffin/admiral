@@ -118,7 +118,10 @@ func TestAPermissionCardSettlesWhenThePromptIsClearedInTheTerminalAndALateTapSen
 	if code != http.StatusConflict || !strings.Contains(body, "item "+card.Card.Item+" is already answered") {
 		t.Errorf("a late tap = %d %s, want 409 item %s is already answered", code, body, card.Card.Item)
 	}
-	if got := w.stdinOf(ship.Session); got != before {
-		t.Errorf("the pane received %s after the late tap, want nothing", quote(strings.TrimPrefix(got, before)))
-	}
+	holdClean(t, hold, func() string {
+		if got := w.stdinOf(ship.Session); got != before {
+			return "the pane received " + quote(strings.TrimPrefix(got, before)) + " after the late tap, want nothing"
+		}
+		return ""
+	})
 }

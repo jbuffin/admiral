@@ -60,6 +60,19 @@ func NewStopID() string {
 	return hex.EncodeToString(b[:])
 }
 
+// ValidStopID is true only for an id NewStopID could have made: a pane option anyone can set is not a stop id until it has this shape.
+func ValidStopID(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // The reason goes first so the poll never sees needs_you without it. ifUnset (-o) keeps
 // permission:Bash whichever order Claude's PermissionRequest and Notification come in;
 // -q keeps a set reason from making tmux skip the state write.

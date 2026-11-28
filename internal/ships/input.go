@@ -395,7 +395,7 @@ func (s *Service) markStopAnswered(ctx context.Context, t target, via string) fu
 		return func() {}
 	}
 	id, err := s.tmux().ReadPaneOption(ctx, t.pane, sessionhost.OptStopID)
-	if err != nil || id == "" {
+	if err != nil || !sessionhost.ValidStopID(id) {
 		return func() {}
 	}
 	if via != "" {

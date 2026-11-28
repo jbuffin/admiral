@@ -60,14 +60,14 @@ function StopCardBody({ item, chat }: { item: Extract<ThreadItem, { kind: 'need'
   return (
     <>
       {card.item_kind === 'permission' ? (
-        <Actions>
+        <Actions class="inbox-send-row">
           <Button disabled={busy} onClick={() => void chat.answerNeed(item.id, { choice: 'allow' })} label="Allow once" variant="primary" />
           <Button disabled={busy} onClick={() => void chat.answerNeed(item.id, { choice: 'deny' })} label="Deny" />
         </Actions>
       ) : (
         <>
-          <textarea value={text} rows={2} aria-label="Next prompt" onInput={(e) => setText((e.currentTarget as HTMLTextAreaElement).value)} />
-          <Actions>
+          <textarea class="inbox-note" value={text} rows={2} aria-label="Next prompt" onInput={(e) => setText((e.currentTarget as HTMLTextAreaElement).value)} />
+          <Actions class="inbox-send-row">
             <Button disabled={busy || text.trim() === ''} onClick={() => void chat.answerNeed(item.id, { text })} label="Send" variant="primary" />
           </Actions>
         </>
@@ -102,7 +102,7 @@ function NeedCardView({ item, chat }: { item: Extract<ThreadItem, { kind: 'need'
       </div>
     );
   }
-  const how = stopEnd[card.state] ?? (card.state === 'removed' ? 'Removed' : card.answered_in === 'inbox' ? 'Answered in the Inbox' : card.answered_in === 'admiralbot' ? 'Answered by AdmiralBot' : 'Answered in the chat');
+  const how = stopEnd[card.state] ?? (card.state === 'removed' ? 'Removed' : card.answered_in === 'inbox' ? 'Answered in the Inbox' : card.answered_in === 'admiralbot' ? 'Answered via AdmiralBot' : 'Answered in the chat');
   return (
     <div class="convo-card chat-card quiet">
       <p class="convo-card-title">{title}</p>

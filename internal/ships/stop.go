@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
@@ -54,14 +55,18 @@ func (s *Service) AnswerStop(ctx context.Context, session string, a StopAnswer) 
 	defer cancel()
 	tm := s.tmux()
 	live := map[string]string{}
-	for _, name := range []string{"state", "reason", sessionhost.OptStopID} {
+	for _, name := range []string{"state", "reason", sessionhost.OptStopID, sessionhost.OptStopAnswered} {
 		v, err := tm.ReadPaneOption(ctx2, pane, name)
 		if err != nil {
 			return fmt.Errorf("ship %s could not be read: %w", session, err)
 		}
 		live[name] = v
 	}
-	if status(sess, time.Now()) == StatusAnchored || live["state"] != "needs_you" || live["reason"] != a.Reason || a.StopID == "" || live[sessionhost.OptStopID] != a.StopID {
+	if status(sess, time.Now()) == StatusAnchored || live["state"] != "needs_you" || live["reason"] != a.Reason || !sessionhost.ValidStopID(a.StopID) || live[sessionhost.OptStopID] != a.StopID {
+		return ErrStopMoved
+	}
+	// The first answer to a stop wins, whichever route it came by.
+	if first, _, _ := strings.Cut(live[sessionhost.OptStopAnswered], " "); first == a.StopID {
 		return ErrStopMoved
 	}
 	via := viaOfCtx(ctx)
@@ -87,6 +92,8 @@ func (s *Service) AnswerStop(ctx context.Context, session string, a StopAnswer) 
 		typed, err := s.typeAtPrompt(ctx2, pane, sess.Options["harness"], text)
 		if !typed {
 			_ = s.Host.MarkStopAnswered(ctx2, pane, "")
+		} else {
+			s.record(outcomes.Record{Ship: session, Event: "resumed", Fields: withVia(map[string]any{"live": true}, via)}, nil)
 		}
 		return err
 	}
@@ -109,6 +116,5 @@ func (s *Service) AnswerStop(ctx context.Context, session string, a StopAnswer) 
 		_ = s.Host.MarkStopAnswered(ctx2, pane, "")
 		return fmt.Errorf("could not send the answer: %w", err)
 	}
-	s.finishPermission(ctx2, t, session, a.Choice)
-	return nil
+	return s.finishPermission(ctx2, t, session, a.Choice)
 }

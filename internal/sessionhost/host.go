@@ -373,7 +373,8 @@ func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) 
 
 // # is left for format expansion.
 func tmuxQuote(s string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`).Replace(s) + `"`
+	// A raw line break would end the control-mode command line and start another.
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "\n", `\n`, "\r", `\r`).Replace(s) + `"`
 }
 
 func (h *Host) poll(ctx context.Context) error {
