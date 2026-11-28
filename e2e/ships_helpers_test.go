@@ -431,15 +431,29 @@ type prJSON struct {
 	Responded bool   `json:"responded"`
 }
 
-func send(t *testing.T, method, url string, body any) (int, string) {
+// send waits out the 503 a launch gets before the host's first tmux read, as a client does: Admiral prints its URLs
+// before that read lands, and a busy Mac widens the gap.
+func send(t *testing.T, method, url string, body any) (code int, data string) {
+	t.Helper()
+	var b []byte
+	if body != nil {
+		var err error
+		if b, err = json.Marshal(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	eventually(t, method+" "+url+" past the host's first read", func() (bool, string) {
+		code, data = sendOnce(t, method, url, b)
+		return code != http.StatusServiceUnavailable || !strings.Contains(data, "ships are not known yet"), data
+	})
+	return code, data
+}
+
+func sendOnce(t *testing.T, method, url string, body []byte) (int, string) {
 	t.Helper()
 	var r io.Reader
 	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		r = bytes.NewReader(b)
+		r = bytes.NewReader(body)
 	}
 	req, err := http.NewRequest(method, url, r)
 	if err != nil {
