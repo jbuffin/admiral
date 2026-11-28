@@ -286,6 +286,7 @@ func (f *Followers) run(ctx context.Context, fw *follower) {
 				f.mu.Lock()
 				f.drop(fw)
 				f.mu.Unlock()
+				fw.c.Close()
 				return
 			}
 		case <-fw.done:

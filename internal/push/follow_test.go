@@ -587,6 +587,54 @@ func TestEventsEmittedWhileAFollowerCatchesUpAreNeitherLostNorDoubled(t *testing
 	wg.Wait()
 }
 
+func TestAFollowerWhoseWriteFailsIsClosedSoItReconnectsAndCatchesUp(t *testing.T) {
+	r := newFollowRig(t, followOpts{send: func(*server.Client, []byte) error { return errors.New("write failed") }})
+	conn := r.dial(true)
+	r.follow(conn, nil, "")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for {
+		if _, _, err := conn.Read(ctx); err != nil {
+			if ctx.Err() != nil {
+				t.Fatal("a follower dropped on a write error was left open")
+			}
+			return
+		}
+	}
+}
+
+func TestANullFollowBeforeReadySendsNothingUntilTheCountIsKnown(t *testing.T) {
+	r := newFollowRig(t)
+	r.ready.Store(false)
+	conn := r.dial(true)
+	r.follow(conn, nil, "")
+	// A finished turn moves the count and pushes nothing; before ready it must not reach the follower either.
+	r.w.Ships([]ships.Ship{working("Dory"), needsYou("Nemo", "stop")})
+	r.ready.Store(true)
+	r.w.Ships([]ships.Ship{needsYou("Dory", "stop"), needsYou("Nemo", "stop")})
+	if m := r.wantNext(conn, "attention"); m.num("count") != 2 {
+		t.Fatalf("got %v, want the count 2 as the first message once ready", m)
+	}
+}
+
+func TestAFollowerWhoseSocketClosesStopsReceivingAndOthersStillDo(t *testing.T) {
+	r := newFollowRig(t)
+	gone := r.follower()
+	live := r.follower()
+	_ = gone.CloseNow()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.ask("Dory")
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a delivery blocked after a follower's socket closed")
+	}
+	r.wantNext(live, "push")
+}
+
 func TestAFollowerThatCannotKeepUpIsClosedAndTheSinkNeverBlocks(t *testing.T) {
 	stall, entered := make(chan struct{}), make(chan struct{}, 1)
 	r := newFollowRig(t, followOpts{queue: 2, send: func(*server.Client, []byte) error {

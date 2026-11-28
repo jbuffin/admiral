@@ -56,6 +56,10 @@ func TestOnlyABearerTokenMakesTheRequestABearerDevice(t *testing.T) {
 	if code != 200 || device != "" || viaBearer {
 		t.Errorf("the Local route: device %q bearer %v code %d, want no device and not bearer", device, viaBearer, code)
 	}
+	device, viaBearer, code = g.whoAmI(req{remote: loopback, host: "127.0.0.1:7420", hdr: bearer(token)})
+	if code != 200 || device != "" || viaBearer {
+		t.Errorf("a bearer header on the Local route: device %q bearer %v code %d, want no device and not bearer", device, viaBearer, code)
+	}
 }
 
 func TestRevokingTheDeviceClosesItsFollowingSocket(t *testing.T) {
