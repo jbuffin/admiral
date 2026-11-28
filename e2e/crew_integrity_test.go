@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
 
 // A boat writes its own window's @admiral-crew-name, and tmux prints option
@@ -69,11 +68,10 @@ func TestCrewNamesAreNotForged(t *testing.T) {
 		name := "\xff\n" + forgedRow(victim.Session, shipPane) + "\n"
 		// -u: without it a client in a plain locale rewrites the invalid byte.
 		w.mustTmux("-u", "set-option", "-w", "-t", w.winOf(mallory.pane), "@admiral-crew-name", name)
-		deadline := time.Now().Add(2 * time.Second) // four polls
-		for time.Now().Before(deadline) {
+		holdClean(t, hold, func() string {
 			w.noForgedBoat(t, victim.Session)
-			time.Sleep(200 * time.Millisecond)
-		}
+			return ""
+		})
 		// The ship's crew is read level-triggered, so the next subtest needs no wait for the restored name to be read.
 		w.mustTmux("set-option", "-w", "-t", w.winOf(mallory.pane), "@admiral-crew-name", "mallory")
 	})

@@ -181,16 +181,21 @@ func TestAutopilotGate_AProvenGuardWithNoJudgeHarnessIsRefusedForTheAdvisor(t *t
 		}
 	}
 	const title = "Couldn't launch unattended on Claude: advisor not proven"
-	deadline := time.Now().Add(10 * time.Second)
-	var found []noticeItem
-	for time.Now().Before(deadline) && len(found) == 0 {
+	titled := func() []noticeItem {
+		var out []noticeItem
 		for _, n := range w.in.notices(t) {
 			if n.Title == title {
-				found = append(found, n)
+				out = append(out, n)
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		return out
 	}
+	eventually(t, "a notice titled "+title, func() (bool, string) {
+		l := titled()
+		return len(l) > 0, fmt.Sprintf("%+v", w.in.notices(t))
+	})
+	holdThat(t, "a second notice titled "+title+" arrived", func() bool { return len(titled()) == 1 })
+	found := titled()
 	if len(found) != 1 || !strings.Contains(found[0].Notice.Body, "Work") {
 		t.Errorf("notices titled %q = %+v, want one that names the fleet Work", title, found)
 	}

@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 func campIssueURL(n int) string { return fmt.Sprintf("https://github.com/acme/widgets/issues/%d", n) }
@@ -114,9 +113,7 @@ func TestCampaignFollowJourney(t *testing.T) {
 	if st, _ := c.status(21); st != "ready" {
 		t.Errorf("child 21 = %q after follow, want ready: %s", st, body)
 	}
-	if n := len(w.in.ships(t)); n != 0 {
-		t.Fatalf("following launched %d ships, want none", n)
-	}
+	holdThat(t, "following launched a ship, want none", func() bool { return len(w.in.ships(t)) == 0 })
 
 	code, body = w.campaignLaunch(c.ID, 21)
 	if code != http.StatusCreated {
@@ -124,14 +121,10 @@ func TestCampaignFollowJourney(t *testing.T) {
 	}
 	ship := decodeShip(t, body)
 	var st, held string
-	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
-		if st, held = w.campaign(c.ID).status(21); st == "underway" && held == ship.Name {
-			break
-		}
-	}
-	if st != "underway" || held != ship.Name {
-		t.Fatalf("campaign view of 21 after launch = %s held by %q, want underway held by %s", st, held, ship.Name)
-	}
+	eventually(t, "the campaign view of 21 underway, held by "+ship.Name, func() (bool, string) {
+		st, held = w.campaign(c.ID).status(21)
+		return st == "underway" && held == ship.Name, fmt.Sprintf("%s held by %q", st, held)
+	})
 
 	code, body = w.campaignLaunch(c.ID, 21)
 	w.wantConflict(code, body, "second launch of child 21")
@@ -146,13 +139,10 @@ func TestCampaignFollowJourney(t *testing.T) {
 
 	w.release(ship.Session, "go")
 	w.in.waitShipsList(t, "the ship sailed off", func(l []shipJSON) bool { return statusOf(l, ship.Session) == "" })
-	deadline := time.Now().Add(15 * time.Second)
-	for st, _ := w.campaign(c.ID).status(21); st != "ready"; st, _ = w.campaign(c.ID).status(21) {
-		if time.Now().After(deadline) {
-			t.Fatalf("child 21 is %q after its ship sailed off, want ready again", st)
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	eventually(t, "child 21 ready again after its ship sailed off", func() (bool, string) {
+		st, _ := w.campaign(c.ID).status(21)
+		return st == "ready", st
+	})
 	if code, body = w.campaignLaunch(c.ID, 21); code != http.StatusCreated {
 		t.Errorf("launch after the sail-off = %d, want 201: %s", code, body)
 	}

@@ -2,13 +2,13 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -180,16 +180,7 @@ func TestAdmiralBot_CodexChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testing.
 
 	t.Run("the first message and its reply show with nothing typed in the terminal", func(t *testing.T) {
 		// A fresh trusted Codex chat has no transcript until its first turn: it takes a message once its composer shows.
-		var code int
-		var body string
-		deadline := time.Now().Add(15 * time.Second)
-		for {
-			code, body = send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/messages", map[string]any{"text": "Which ships are at anchor?"})
-			if code != http.StatusConflict || time.Now().After(deadline) {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		code, body := postChatMessageOnceUp(t, w.in.LocalURL, "Which ships are at anchor?")
 		if code != http.StatusOK {
 			t.Fatalf("POST /api/chat/chat/messages on a fresh trusted Codex chat = %d, want 200: %s", code, body)
 		}
@@ -314,13 +305,9 @@ func TestAdmiralBot_SavingAnotherHarnessStartsAFreshChatOnIt(t *testing.T) {
 	// Saving the fleet's chat on another harness is the switch: no New chat press.
 	c.setChat(map[string]any{"harness": "claude", "model": "opus", "effort": ""})
 
-	deadline := time.Now().Add(15 * time.Second)
-	for c.recordedHarness() != "claude" {
-		if time.Now().After(deadline) {
-			t.Fatalf("within 15s of saving chat.harness = claude the chat never started on claude (ran %q); %+v", c.recordedHarness(), c.session())
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	eventually(t, "the chat starting on claude after saving chat.harness = claude", func() (bool, string) {
+		return c.recordedHarness() == "claude", fmt.Sprintf("ran %q; %+v", c.recordedHarness(), c.session())
+	})
 	r := w.record(chatSessionName)
 	if !hasPair(r.argv, "--model", "opus") {
 		t.Errorf("the fresh chat's argv = %q, want --model opus", r.argv)

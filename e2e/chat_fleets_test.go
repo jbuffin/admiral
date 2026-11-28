@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 )
@@ -388,13 +387,10 @@ func TestChatFleets_TwoChatsStayApart(t *testing.T) {
 		if code < 200 || code > 299 {
 			t.Fatalf("POST /api/chat/alpha/messages = %d: %s", code, body)
 		}
-		deadline := time.Now().Add(5 * time.Second)
-		for !strings.Contains(a.stdin(), "to alpha only") {
-			if time.Now().After(deadline) {
-				t.Fatalf("within 5s alpha's pane never received the message; it has %q", a.stdin())
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
+		eventually(t, "alpha's pane receiving the message", func() (bool, string) {
+			in := a.stdin()
+			return strings.Contains(in, "to alpha only"), fmt.Sprintf("it has %q", in)
+		})
 		appendLines(t, a.transcript("t1"), userLine("a-u1", "to alpha only", nil), assistantLine("a-a1", "msg_a", map[string]any{"type": "text", "text": "Alpha heard."}))
 		appendLines(t, b.transcript("t1"), userLine("b-u1", "beta's own talk", nil))
 

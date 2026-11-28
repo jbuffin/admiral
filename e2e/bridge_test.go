@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -194,13 +195,10 @@ func TestBridgeS3_ControlClientDetachesAfterTheLastBrowserLeaves(t *testing.T) {
 	}
 	b.close()
 
-	deadline := time.Now().Add(6 * time.Second)
-	for len(w.controlClients(s.Session)) != 0 {
-		if time.Now().After(deadline) {
-			t.Fatalf("the control client was still attached 6s after the last browser left (idle linger 2s)")
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	eventually(t, "the control client detaching after the last browser left (idle linger 2s)", func() (bool, string) {
+		got := w.controlClients(s.Session)
+		return len(got) == 0, fmt.Sprint(got)
+	})
 	if got := w.paneSize(s.Session); got != "100x30" {
 		t.Errorf("after the detach the pane is %s, want it to keep its last size 100x30", got)
 	}

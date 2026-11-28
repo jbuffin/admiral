@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -77,41 +78,35 @@ func TestAScoutLaunchedThroughTheAPIIsGuardedAndSailsAtItsStop(t *testing.T) {
 	}
 	// A handler's line is appended only after it exits, so the last guard exit can trail its guard_denied record.
 	var handlers [][3]string
-	exit2 := 0
-	for end := time.Now().Add(10 * time.Second); exit2 < 4 && time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+	eventually(t, "four guard handlers that exited 2: commit, push, PR create and the Write", func() (bool, string) {
 		handlers, _ = handlersOf(t, r.dir)
-		exit2 = 0
+		exit2 := 0
 		for _, h := range handlers {
 			if h[2] == "admiral guard pretooluse" && h[1] == "2" {
 				exit2++
 			}
 		}
-	}
-	if exit2 != 4 {
-		t.Errorf("guard handlers that exited 2 = %d (%q), want 4: commit, push, PR create and the Write", exit2, handlers)
-	}
+		return exit2 >= 4, fmt.Sprintf("%d exited 2 in %q", exit2, handlers)
+	})
 
 	seen := map[string]bool{}
-	gone := false
-	for end := time.Now().Add(10 * time.Second); !gone && time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+	eventually(t, "the scout leaving the ship list after its stop", func() (bool, string) {
 		code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/ships", nil)
 		var list struct {
 			Ships []struct{ Session, Status string } `json:"ships"`
 		}
 		if code != http.StatusOK || json.Unmarshal([]byte(body), &list) != nil {
-			continue
+			return false, fmt.Sprintf("GET /api/ships = %d %s", code, body)
 		}
-		gone = true
+		gone := true
 		for _, s := range list.Ships {
 			if s.Session == ship.Session {
 				seen[s.Status] = true
 				gone = false
 			}
 		}
-	}
-	if !gone {
-		t.Fatalf("the scout is still listed 10s after its stop, with statuses %v", seen)
-	}
+		return gone, fmt.Sprintf("still listed with statuses %v", seen)
+	})
 	if seen["anchored"] || seen["moored"] {
 		t.Errorf("the scout showed statuses %v, want it never anchored or moored", seen)
 	}

@@ -104,13 +104,7 @@ func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
 	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for w.mustTmux("display-message", "-p", "-t", mate.pane, "#{pane_dead}") != "1" {
-		if time.Now().After(deadline) {
-			t.Fatalf("mate's pane never died")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	until(t, "mate's pane dying", func() bool { return w.mustTmux("display-message", "-p", "-t", mate.pane, "#{pane_dead}") == "1" })
 	if got := opt(mate.pane, "@admiral-state"); got != "working" {
 		t.Fatalf("the dead pane's @admiral-state = %q, want it to stay working", got)
 	}
