@@ -146,13 +146,14 @@ func TestGuardProbeFailuresEachSayWhy(t *testing.T) {
 
 func TestGuardProbeTimesOutAsAFailureAndKillsTheHarness(t *testing.T) {
 	t.Parallel()
-	g := runGuard(t, "hang", 800*time.Millisecond, nil)
+	g := runGuard(t, "hang", 1500*time.Millisecond, nil)
 	l := g.guard(t)
+	g.read(t, "prompt")
 	if l.Status != capabilities.Failed || l.Detail == "" {
 		t.Errorf("line = %+v, want failed with a detail", l)
 	}
 	if g.took > 10*time.Second {
-		t.Errorf("Run took %v for a 800ms timeout", g.took)
+		t.Errorf("Run took %v for a 1.5s timeout", g.took)
 	}
 }
 

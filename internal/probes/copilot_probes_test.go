@@ -395,7 +395,7 @@ func TestCopilotConfigHomeProbeFailuresEachSayWhy(t *testing.T) {
 
 func TestCopilotProbesThatHangFailAtTheTimeLimit(t *testing.T) {
 	start := time.Now()
-	c := runCopilotProbe(t, probes.CopilotMCPFence(), "hang", copilotProbeOpts{timeout: 800 * time.Millisecond})
+	c := runCopilotProbe(t, probes.CopilotMCPFence(), "hang", copilotProbeOpts{timeout: 3 * time.Second})
 	l := c.line(t, capabilities.BotMCPFence)
 	c.read(t, "argv")
 	if l.Status != capabilities.Failed {

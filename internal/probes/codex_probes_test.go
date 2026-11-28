@@ -370,7 +370,7 @@ func TestCodexProbesWithoutAnEngineerLoginFailNamingAuthJSON(t *testing.T) {
 
 func TestCodexProbesThatHangFailAtTheTimeLimit(t *testing.T) {
 	start := time.Now()
-	c := runCodex(t, probes.CodexMCPFence(), "hang", codexOpts{timeout: 800 * time.Millisecond})
+	c := runCodex(t, probes.CodexMCPFence(), "hang", codexOpts{timeout: 3 * time.Second})
 	l := c.line(t, capabilities.BotMCPFence)
 	c.read(t, "argv")
 	if l.Status != capabilities.Failed {

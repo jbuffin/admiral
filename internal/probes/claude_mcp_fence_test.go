@@ -246,7 +246,7 @@ func TestFenceProbeFailuresEachSayWhy(t *testing.T) {
 func TestFenceProbeThatHangsFailsAtTheTimeLimit(t *testing.T) {
 	t.Parallel()
 	start := time.Now()
-	f := runFence(t, "hang", 800*time.Millisecond)
+	f := runFence(t, "hang", 3*time.Second)
 	l := f.line(t)
 	f.read(t, "argv")
 	if l.Status != capabilities.Failed {
