@@ -80,7 +80,8 @@ export async function loadFleets() {
   } catch {
     /* keep the last list */
   }
-  loaded.value = true;
+  // A superseded load leaves the list empty; marking it loaded would send Preferences to Remote access.
+  if (mine === loadSeq) loaded.value = true;
 }
 
 export function watchFleets() {

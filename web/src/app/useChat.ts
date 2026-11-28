@@ -7,6 +7,9 @@ import { type AnswerBody, type Draft, blankDraft } from '../questions';
 // A failed request with no status never reached Admiral; the browser's own text for it names nothing useful.
 const failure = (r: { error: string; status?: number }) => (r.status === undefined ? "Admiral isn't reachable. Your message is kept." : r.error);
 
+type Reply = { text: string; sending: boolean; error: string };
+const blankReply: Reply = { text: '', sending: false, error: '' };
+
 const clean = (s: ChatSnapshot): ChatSnapshot => ({ ...s, messages: s.messages ?? [], questions: s.questions ?? [] });
 
 /** One fleet's chat: its snapshot, the composer's text, each question's draft and the actions. Opening it starts the session; the server leaves a running one alone. */
@@ -16,6 +19,7 @@ export function useChat(fleet: string) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [replies, setReplies] = useState<Record<string, Reply>>({});
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const alive = useRef(true);
   const base = `/chat/${encodeURIComponent(fleet)}`;
@@ -62,6 +66,28 @@ export function useChat(fleet: string) {
     setText((now) => (now.startsWith(typed) ? now.slice(typed.length) : now));
   };
 
+  /** A reply in words under a need card: its own text, busy and error, apart from the composer and the card's answer draft. */
+  const replyNeed = async (id: string) => {
+    const d = replies[id];
+    const typed = d?.text ?? '';
+    if (!typed.trim() || d?.sending) return;
+    const edit = (fn: (r: Reply) => Reply) => setReplies((all) => ({ ...all, [id]: fn(all[id] ?? blankReply) }));
+    edit((r) => ({ ...r, sending: true, error: '' }));
+    const r = await call('POST', `${base}/messages`, { text: typed, need_card: id });
+    // A 409 or 404 means the card closed or went; the reread says which.
+    const next = r.ok || r.status === 409 || r.status === 404 ? await reread() : undefined;
+    const gone = !r.ok && !!next && !next.messages.some((m) => m.id === id && m.kind === 'need_card' && (m.card as { state?: string } | undefined)?.state === 'open');
+    if (gone) {
+      // The card is closed and its box goes with it, so the words move to the composer, after anything already there.
+      setText((now) => (now.trim() ? `${now}\n${typed}` : typed));
+      setError('That card was already answered, so your words are in the message box to send as a plain message.');
+      edit((x) => ({ text: x.text.startsWith(typed) ? x.text.slice(typed.length) : x.text, sending: false, error: '' }));
+      return;
+    }
+    edit((x) => ({ text: r.ok && x.text.startsWith(typed) ? x.text.slice(typed.length) : x.text, sending: false, error: r.ok ? '' : failure(r) }));
+  };
+  const editReply = (id: string, text: string) => setReplies((all) => ({ ...all, [id]: { ...(all[id] ?? blankReply), text } }));
+
   const interrupt = async () => {
     setError('');
     const r = await call('POST', `${base}/interrupt`);
@@ -77,6 +103,7 @@ export function useChat(fleet: string) {
     if (!r.ok) return setError(failure(r));
     setText('');
     setDrafts({});
+    setReplies({});
     await reread();
   };
 
@@ -108,5 +135,5 @@ export function useChat(fleet: string) {
     return r;
   };
 
-  return { snap, error, text, setText, sending, resetting, drafts, editDraft, send, interrupt, newChat, answer, answerNeed };
+  return { snap, error, text, setText, sending, resetting, drafts, editDraft, replies, editReply, replyNeed, send, interrupt, newChat, answer, answerNeed };
 }

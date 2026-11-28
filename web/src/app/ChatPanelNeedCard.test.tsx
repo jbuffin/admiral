@@ -280,7 +280,7 @@ test('a stop card has a text box and Send, which posts the text and clears nothi
   const el = await shown();
   const send = () => within(el).getByRole('button', { name: 'Send' }) as HTMLButtonElement;
   expect(send().disabled).toBe(true);
-  fireEvent.input(within(el).getByRole('textbox'), { target: { value: 'now run the tests' } });
+  fireEvent.input(within(el).getByRole('textbox', { name: 'Next prompt' }), { target: { value: 'now run the tests' } });
   expect(posts).toHaveLength(0);
   fireEvent.click(send());
   await waitFor(() => expect(posts).toHaveLength(1));

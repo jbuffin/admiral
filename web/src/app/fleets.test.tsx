@@ -85,3 +85,26 @@ test('a load that started before a save answered and lands after it does not put
   }
   await loadFleets();
 });
+
+test('the fleets are not loaded while a newer load is pending, so an older answer cannot leave an empty list marked loaded', async () => {
+  const answers: ((r: Response) => void)[] = [];
+  const answer = () => new Response(JSON.stringify({ fleets: [{ key: 'zulu', name: 'Zulu', docks: [dock(['sonnet'])] }] }));
+  const real = fetch;
+  fleets.value = [];
+  loaded.value = false;
+  try {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => answers.push(resolve))));
+    const older = loadFleets();
+    const newer = loadFleets();
+    answers[0]!(answer());
+    await older;
+    expect(loaded.value).toBe(false);
+    answers[1]!(answer());
+    await newer;
+    expect(loaded.value).toBe(true);
+    expect(fleets.value.map((f) => f.key)).toEqual(['zulu']);
+  } finally {
+    vi.stubGlobal('fetch', real);
+  }
+  await loadFleets();
+});

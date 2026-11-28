@@ -837,6 +837,22 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   await expect(main.locator('.chat-card').first()).toBeVisible();
   await expect(main.locator('.chat-card', { hasText: 'Which database should the login use?' })).toHaveCount(0);
 
+  // A reply in words under an open card reaches AdmiralBot behind a header naming the card, and the thread shows only the engineer's words.
+  seedInboxItem(admiral, '_admiral', { id: 'camp-words', kind: 'campaign_draft', title: 'AdmiralBot drafted a campaign', campaign_draft: { fleet: 'harbor', repo: 'acme/widgets', title: 'Speed up the harbour map', body: 'Load the map in under a second.', via: 'admiralbot' } });
+  const words = main.locator('.chat-card', { hasText: 'AdmiralBot drafted a campaign' });
+  await expect(words).toBeVisible();
+  await words.getByRole('textbox', { name: 'Reply to AdmiralBot' }).fill('Hold this one until the port is chosen');
+  await words.getByRole('button', { name: 'Send reply' }).tap();
+  await expect.poll(() => chatReceived(admiral, 'harbor')).toContain('Hold this one until the port is chosen');
+  expect(chatReceived(admiral, 'harbor')).toContain('[Need card: ');
+  expect(chatReceived(admiral, 'harbor')).toContain('camp-words');
+  // Claude Code records the pasted turn, header and all; the thread shows only the engineer's words.
+  const pasted = chatReceived(admiral, 'harbor').match(/\[Need card: [^\n]*\]\n\nHold this one until the port is chosen/)?.[0];
+  expect(pasted).toBeTruthy();
+  chatSays(admiral, 'harbor', [line.user(pasted!)], true);
+  await expect(main.locator('.msg.user', { hasText: 'Hold this one until the port is chosen' })).toBeVisible();
+  await expect(main).not.toContainText('[Need card: ');
+
   // A ship AdmiralBot launched is a link in its reply, and tapping it opens the ship's screen in this page.
   await page.goto(admiral.url + 'app/chat?fleet=harbor');
   const launchText = 'Read the harbour log and report the three newest errors.';

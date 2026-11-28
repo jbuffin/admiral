@@ -305,12 +305,15 @@ function ReportSent({ item, flash }: { item: ThreadMessage; flash: boolean }) {
   );
 }
 
+// The server opens a reply under a need card with a header line the engineer never typed.
+const NEED_HEADER = /^\[Need card: [^\n]*\]\n\n/;
+
 function MessageView({ item, linkShips, fleet, flash }: { item: ThreadMessage; linkShips: ReturnType<typeof shipsOfLinkSet>; fleet: string; flash: boolean }) {
   const cls = flash ? ' flash' : '';
   if (item.report) return <ReportSent item={item} flash={flash} />;
   return item.role === 'user' ? (
     <div class={`msg user${cls}`} data-message-id={item.id}>
-      {item.text}
+      {item.text.replace(NEED_HEADER, '')}
     </div>
   ) : (
     <div class={`msg assistant md${cls}`} data-message-id={item.id} dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text, { ships: linkShips, fleet, at: item.at, search: fleetSearch.value }) }} />

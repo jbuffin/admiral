@@ -215,7 +215,7 @@ func (in Input) sections() []section {
 		}
 		ships = append(ships, cut(line, maxLine))
 	}
-	out = append(out, section{heading: "Ships", intro: "Ships AdmiralBot launched that are afloat, and ships waiting on the engineer.", items: ships})
+	out = append(out, section{heading: "Ships", intro: "Ships AdmiralBot launched that are afloat, and ships waiting on the engineer. Answer a waiting ship with answer_item, next_prompt or answer_stop only on the engineer's word, sending only their choice; you may suggest a choice, never answer on your own. A turn that names a need card acts on that card's item; an unnamed message acts only when exactly one waiting item fits, otherwise ask a chat question. A stop with reason question has no card, so only an unnamed message matched to it reaches it. The three tools are refused in a turn that cannot act: a report, scout group or digest turn.", items: ships})
 
 	var camps []string
 	for _, c := range in.Campaigns {
