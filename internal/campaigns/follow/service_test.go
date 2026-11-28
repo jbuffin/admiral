@@ -116,7 +116,7 @@ func TestUnfollowEndsTheCampaignAndKeepsItReadable(t *testing.T) {
 	r.clock.Advance(10 * time.Minute)
 	reads := r.gh.rootReads()
 	r.svc.Tick()
-	holds(t, "an ended campaign was reread", func() bool { return r.gh.rootReads() > reads })
+	r.holds("an ended campaign was reread", func() bool { return r.gh.rootReads() > reads })
 }
 
 func TestOverrideAndWorkRepoRoutesChangeWhatTheCampaignShows(t *testing.T) {
@@ -295,7 +295,7 @@ func TestOpeningTheCampaignRereadsNoMoreOftenThanEvery30Seconds(t *testing.T) {
 	reads := r.gh.rootReads()
 	r.clock.Advance(10 * time.Second)
 	r.get(c.ID)
-	holds(t, "opening the page within 30 s reread the tree", func() bool { return r.gh.rootReads() > reads })
+	r.holds("opening the page within 30 s reread the tree", func() bool { return r.gh.rootReads() > reads })
 	r.clock.Advance(25 * time.Second)
 	r.get(c.ID)
 	eventually(t, "a reread once 30 s passed", func() bool { return r.gh.rootReads() > reads })
@@ -304,13 +304,13 @@ func TestOpeningTheCampaignRereadsNoMoreOftenThanEvery30Seconds(t *testing.T) {
 func TestOnlyOneRereadRunsAtATime(t *testing.T) {
 	r := newRig(t, fixtureTree())
 	c := r.follow(rootURL)
-	r.gh.delay(time.Second)
+	r.gh.delay(50 * time.Millisecond)
 	reads := r.gh.rootReads()
 	r.clock.Advance(time.Minute)
 	for i := 0; i < 5; i++ {
 		r.get(c.ID)
 	}
-	time.Sleep(300 * time.Millisecond)
+	r.idle()
 	if got := r.gh.rootReads() - reads; got > 1 {
 		t.Errorf("%d rereads started while one was in flight, want at most 1", got)
 	}
@@ -342,14 +342,15 @@ func TestAChildShipAnchoringOrLeavingRereadsTheCampaign(t *testing.T) {
 			r := newRig(t, fixtureTree())
 			r.follow(rootURL)
 			r.setShips(tc.before...)
-			r.svc.ShipsChanged()
-			holds(t, "the baseline snapshot caused a reread", func() bool { return r.gh.rootReads() > 1 })
+			r.shipsChanged()
+			r.holds("the baseline snapshot caused a reread", func() bool { return r.gh.rootReads() > 1 })
 			r.setShips(tc.after...)
-			r.svc.ShipsChanged()
 			if tc.wantRereread {
+				r.svc.ShipsChanged()
 				eventually(t, "a reread after the child's ship changed", func() bool { return r.gh.rootReads() > 1 })
 			} else {
-				holds(t, "an unrelated change caused a reread", func() bool { return r.gh.rootReads() > 1 })
+				r.shipsChanged()
+				r.holds("an unrelated change caused a reread", func() bool { return r.gh.rootReads() > 1 })
 			}
 		})
 	}
@@ -375,7 +376,7 @@ func TestTickRereadsEveryFiveMinutesByTheInjectedClock(t *testing.T) {
 	reads := r.gh.rootReads()
 	r.clock.Advance(4 * time.Minute)
 	r.svc.Tick()
-	holds(t, "a tick before 5 min reread", func() bool { return r.gh.rootReads() > reads })
+	r.holds("a tick before 5 min reread", func() bool { return r.gh.rootReads() > reads })
 	r.clock.Advance(90 * time.Second)
 	r.svc.Tick()
 	eventually(t, "a tick at 5 min reread", func() bool { return r.gh.rootReads() > reads })
@@ -419,7 +420,7 @@ func TestACampaignEndsWhenEveryNodeIsClosed(t *testing.T) {
 			if tc.ends {
 				eventually(t, "the campaign to end", func() bool { return r.get(c.ID).Ended })
 			} else {
-				holds(t, "the campaign ended while work is open", func() bool { return r.get(c.ID).Ended })
+				r.holds("the campaign ended while work is open", func() bool { return r.get(c.ID).Ended })
 			}
 		})
 	}
@@ -511,10 +512,11 @@ func TestTheSameChildInTwoCampaignsLaunchesWithEachCampaignsOwnChoices(t *testin
 func TestShutdownIsNotRecordedAsAReadError(t *testing.T) {
 	r := newRig(t, fixtureTree())
 	c := r.follow(rootURL)
-	r.gh.delay(2 * time.Second)
+	r.gh.delay(300 * time.Millisecond)
+	reads := r.gh.rootReads()
 	r.clock.Advance(10 * time.Minute)
 	r.svc.Tick()
-	time.Sleep(200 * time.Millisecond)
+	eventually(t, "the read to start", func() bool { return r.gh.rootReads() > reads })
 	r.svc.Close()
 	if got := r.get(c.ID).ReadErr; got != "" {
 		t.Errorf("read error after shutdown = %q, want none", got)
@@ -609,7 +611,7 @@ func TestTheCappedBlockerStandInIsMarked(t *testing.T) {
 func TestTheViewSaysWhileAReadIsInFlightAndWhenItLastTried(t *testing.T) {
 	r := newRig(t, fixtureTree())
 	c := r.follow(rootURL)
-	r.gh.delay(100 * time.Millisecond) // a tree read makes several gh calls
+	r.gh.delay(50 * time.Millisecond) // a tree read makes several gh calls
 	r.clock.Advance(10 * time.Minute)
 	r.svc.Tick()
 	eventually(t, "reading", func() bool { return r.get(c.ID).Reading })

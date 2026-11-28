@@ -42,6 +42,8 @@ func newAlertRig(t *testing.T) *alertRig {
 
 func (r *alertRig) dial() *websocket.Conn {
 	r.t.Helper()
+	// Counted before dialing: the server may register the client before Dial returns.
+	want := r.hub.Len() + 1
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	conn, _, err := websocket.Dial(ctx, r.url, nil)
@@ -50,10 +52,12 @@ func (r *alertRig) dial() *websocket.Conn {
 	}
 	r.t.Cleanup(func() { _ = conn.CloseNow() })
 	// The server registers the client a moment after the handshake; a send before that would miss it.
-	want := r.hub.Len() + 1
 	deadline := time.Now().Add(5 * time.Second)
-	for r.hub.Len() < want && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
+	for r.hub.Len() < want {
+		if time.Now().After(deadline) {
+			r.t.Fatalf("hub has %d clients after 5s, want %d", r.hub.Len(), want)
+		}
+		time.Sleep(time.Millisecond)
 	}
 	return conn
 }

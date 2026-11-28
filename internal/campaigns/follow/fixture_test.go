@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -281,7 +282,7 @@ func (g *fakeGH) ghCalls() int {
 }
 
 func (g *fakeGH) delay(d time.Duration) {
-	if err := os.WriteFile(filepath.Join(g.dir, "delay"), []byte(fmt.Sprintf("%.1f", d.Seconds())), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(g.dir, "delay"), []byte(fmt.Sprintf("%.3f", d.Seconds())), 0o644); err != nil {
 		panic(err)
 	}
 }
@@ -331,6 +332,7 @@ type rig struct {
 	mux      *http.ServeMux
 	mu       sync.Mutex
 	shipList []ships.Ship
+	polls    atomic.Int32 // lists of the ships the service has taken
 	claims   map[string]string
 	launched []launcher.Request
 	routed   []string // "host nwo" of each Route call
@@ -360,6 +362,7 @@ func newRig(t *testing.T, root iss) *rig {
 			return r.gh.client(host), true
 		},
 		Ships: func() []ships.Ship {
+			r.polls.Add(1)
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			return append([]ships.Ship(nil), r.shipList...)
@@ -531,14 +534,38 @@ func eventually(t *testing.T, what string, ok func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// holds fails if ok turns true within a short window.
-func holds(t *testing.T, what string, bad func() bool) {
-	t.Helper()
-	for i := 0; i < 10; i++ {
-		if bad() {
-			t.Fatalf("%s", what)
+// idle waits until no campaign has a read under way, on the service's own goroutine or a request's.
+func (r *rig) idle() {
+	r.t.Helper()
+	eventually(r.t, "the reads to finish", func() bool {
+		r.svc.mu.Lock()
+		defer r.svc.mu.Unlock()
+		for _, rd := range r.svc.reads {
+			if rd.active.Load() != 0 {
+				return false
+			}
 		}
-		time.Sleep(20 * time.Millisecond)
+		return true
+	})
+}
+
+// shipsChanged tells the service the ships changed and returns once it has acted on that: the second poke is
+// taken only after the first one's diff, and the rereads it asked for, are done.
+func (r *rig) shipsChanged() {
+	r.t.Helper()
+	n := r.polls.Load()
+	r.svc.ShipsChanged()
+	eventually(r.t, "the service to list the ships", func() bool { return r.polls.Load() > n })
+	r.svc.ShipsChanged()
+	eventually(r.t, "the service to take the next poke", func() bool { return r.polls.Load() > n+1 })
+}
+
+// holds fails if bad is true once every read the service started has finished.
+func (r *rig) holds(what string, bad func() bool) {
+	r.t.Helper()
+	r.idle()
+	if bad() {
+		r.t.Fatalf("%s", what)
 	}
 }
 
