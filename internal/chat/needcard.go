@@ -184,6 +184,8 @@ func (s *Service) InboxSettled(session, id string, removed bool, via string) {
 			n.settle(cid, NeedRemoved, "")
 		case via == AnsweredChat:
 			n.settle(cid, NeedAnswered, AnsweredChat)
+		case via == AnsweredAdmiralBot:
+			n.settle(cid, NeedAnswered, AnsweredAdmiralBot)
 		default:
 			n.settle(cid, NeedAnswered, AnsweredInbox)
 		}

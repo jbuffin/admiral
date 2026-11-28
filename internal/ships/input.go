@@ -245,6 +245,8 @@ type answerRequest struct {
 	Card   string `json:"card"`
 	Reason string `json:"reason"`
 	Choice string `json:"choice"`
+	// StopID, when given, must be the stop the pane waits on now and not yet answered.
+	StopID string `json:"stop_id"`
 	Item   string `json:"item"`
 	Option int    `json:"option"`
 	// Answers answers every question of a call at once, in order: the listed options chosen (1-based) or an Other text.
@@ -317,14 +319,18 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		log.Printf("admiral: answer to %s refused: %d %s (card %s, reason %.64q)", t.what, status, why, req.Card, req.Reason)
 		writeError(w, status, why)
 	}
+	if req.StopID != "" && t.crew == "" {
+		if why := s.stopAlreadyAnswered(ctx, t, req.StopID); why != "" {
+			refuse(http.StatusConflict, why)
+			return
+		}
+	}
 	keys, plan, why := s.answerKeys(ctx, t, session, req)
 	if why != "" {
 		refuse(http.StatusConflict, why)
 		return
 	}
-	if req.Card == "permission" {
-		undo = s.markStopAnswered(ctx, t, viaOf(r))
-	}
+	undo = s.markStopAnswered(ctx, t, viaOf(r))
 	if plan != nil {
 		tm := s.tmux()
 		// Claude clips its menu to the pane, and a phone's terminal leaves the pane too short for the plan to read the menu.
@@ -386,6 +392,24 @@ func (s *Service) finishPermission(ctx context.Context, t target, session, choic
 		return err
 	}
 	return nil
+}
+
+// stopAlreadyAnswered says why an answer naming stopID can't go: the pane waits on another stop, or this one has its answer. The first answer wins, whichever route it came by.
+func (s *Service) stopAlreadyAnswered(ctx context.Context, t target, stopID string) string {
+	tm := s.tmux()
+	live, err := tm.ReadPaneOption(ctx, t.pane, sessionhost.OptStopID)
+	if err != nil {
+		return t.what + " could not be read: " + err.Error()
+	}
+	answered, err := tm.ReadPaneOption(ctx, t.pane, sessionhost.OptStopAnswered)
+	if err != nil {
+		return t.what + " could not be read: " + err.Error()
+	}
+	first, _, _ := strings.Cut(answered, " ")
+	if !sessionhost.ValidStopID(stopID) || live != stopID || first == stopID {
+		return "that stop of " + t.what + " is already answered or has moved on"
+	}
+	return ""
 }
 
 // markStopAnswered records on the ship's pane which route answered the stop it waits on, before the answer is sent so a hook that follows it cannot race the mark; the returned func clears the mark when the send fails.

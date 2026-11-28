@@ -22,7 +22,7 @@ func ChatCopilotHome(home, fleet string) string {
 // allowlist entry it does not know is dropped with a notice, never matched by a glob. internal/cli checks this list
 // against the server's own.
 var ChatTools = []string{"list_ships", "read_conversation", "read_outcomes", "read_findings", "list_inbox", "list_sources", "list_campaigns",
-	"launch_ship", "add_order", "answer_item", "next_prompt", "wake_ship", "stop_ship", "dismiss_ship",
+	"launch_ship", "add_order", "answer_item", "answer_stop", "next_prompt", "wake_ship", "stop_ship", "dismiss_ship",
 	"list_routines", "draft_routine", "get_standing_orders", "turn_routine_off", "hold_fire_on", "read_hold_fire", "ask_question", "save_note", "make_commitment", "work_on_campaign", "read_campaign", "draft_campaign",
 	"list_repos", "list_cloneable_repos", "list_docks", "list_crew", "list_skills", "get_drafting_skill"}
 

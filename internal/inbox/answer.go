@@ -258,7 +258,7 @@ func (s *Service) AnswerQuestion(session, id string, req QuestionRequest) error 
 
 // AnswerQuestionVia stamps the `answered` record with via when AdmiralBot gave the answer.
 func (s *Service) AnswerQuestionVia(session, id string, req QuestionRequest, via string) error {
-	return s.Answer(session, id, KindQuestion, func(it Item) (any, []outcomes.Record, error) {
+	return s.AnswerGuarded(session, id, KindQuestion, &Guard{Via: via}, func(it Item) (any, []outcomes.Record, error) {
 		file, err := BuildQuestionAnswer(it, req)
 		if err != nil {
 			return nil, nil, err
