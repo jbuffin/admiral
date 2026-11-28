@@ -327,7 +327,7 @@ func TestCopilotOnlyAShipStartedWithAUIServerIsObserved(t *testing.T) {
 	if _, ok := with.accepted(5 * time.Second); !ok {
 		t.Error("a ship started with --ui-server --port was never dialed")
 	}
-	if _, ok := without.accepted(time.Second); ok {
+	if _, ok := without.accepted(quietWindow); ok {
 		t.Error("a ship started without --ui-server was dialed on its --port")
 	}
 }
@@ -342,7 +342,7 @@ func TestCopilotUIServerOfAnotherProcessIsNeverDialed(t *testing.T) {
 
 	sub.send("conversation_open", "pilot")
 	sub.opened("pilot")
-	if _, ok := srv.accepted(time.Second); ok {
+	if _, ok := srv.accepted(quietWindow); ok {
 		t.Fatal("the observer dialed a server the ship's pane does not own")
 	}
 	appendTo(t, path, copilotAssistant(2, "From the file."))

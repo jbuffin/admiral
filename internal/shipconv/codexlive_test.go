@@ -313,7 +313,7 @@ func TestLiveObserverStartsOnlyWhenTheOptionMatchesTheStartCommand(t *testing.T)
 	f.starts["s"] = "'/bin/admiral' 'codex-pane' '--socket' '/tmp/some-other.sock' '--' '/bin/codex'"
 	f.mu.Unlock()
 	f.startLive()
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(quietWindow)
 	if n := fake.connections(); n != 0 {
 		t.Errorf("%d connections, want none: the pane's command names another socket", n)
 	}
